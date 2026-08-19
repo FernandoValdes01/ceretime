@@ -1,0 +1,4 @@
+{
+  "import": ["~/.config/ai/cspell.json"],
+  "words": ["bunx"]
+}

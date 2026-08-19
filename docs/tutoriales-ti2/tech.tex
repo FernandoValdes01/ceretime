@@ -175,14 +175,40 @@ Integración continua & GitHub Actions \\
 \end{tabularx}
 \end{table}
 
-Los comandos de esta guía utilizarán \texttt{npm} como gestor de paquetes.
+Los comandos de esta guía utilizarán \texttt{bun} como gestor de paquetes.
 
 Se deberá mantener un único gestor de paquetes por repositorio y no deberán
 mezclarse archivos de bloqueo de diferentes herramientas.
 
+\subsection{Instalación de Bun}
+
+Antes de ejecutar los comandos de esta guía, cada integrante deberá instalar
+Bun en su equipo y verificar que esté disponible en la terminal.
+
+En macOS y Linux se utilizará:
+
+\begin{lstlisting}
+curl -fsSL https://bun.sh/install | bash
+\end{lstlisting}
+
+En Windows se utilizará PowerShell:
+
+\begin{lstlisting}
+powershell -c "irm bun.sh/install.ps1|iex"
+\end{lstlisting}
+
+La mayoría de los integrantes de TI2 utilizará Windows, por lo que esa será la
+instalación de referencia para dicho equipo. Después de instalar Bun, se deberá
+abrir una nueva terminal y comprobar la instalación mediante:
+
+\begin{lstlisting}
+bun --version
+\end{lstlisting}
+
 Por ejemplo, no deberán coexistir:
 
 \begin{lstlisting}
+bun.lock
 package-lock.json
 pnpm-lock.yaml
 yarn.lock
@@ -593,14 +619,14 @@ duplicar la implementación del backend.
 TI4 podrá utilizar:
 
 \begin{lstlisting}
-npm install convex convex-helpers
+bun add convex convex-helpers
 \end{lstlisting}
 
 y generar el contrato TypeScript mediante la herramienta oficial correspondiente
 al deployment Convex:
 
 \begin{lstlisting}
-npx convex-helpers ts-api-spec
+bunx convex-helpers ts-api-spec
 \end{lstlisting}
 
 El archivo generado deberá mantenerse versionado en el repositorio TI4.
@@ -655,7 +681,7 @@ repositorio-ti2/
 +-- .env.example
 +-- .gitignore
 +-- package.json
-+-- package-lock.json
++-- bun.lock
 +-- tsconfig.json
 +-- vite.config.ts
 +-- vercel.json
@@ -711,7 +737,7 @@ repositorio-ti4/
 +-- app.json
 +-- eas.json
 +-- package.json
-+-- package-lock.json
++-- bun.lock
 +-- tsconfig.json
 +-- README.md
 \end{lstlisting}
@@ -731,20 +757,20 @@ representará el contrato tipado generado desde el backend Convex de TI2.
 \subsection{1. Crear aplicación React + TypeScript}
 
 \begin{lstlisting}
-npm create vite@latest . -- --template react-ts
-npm install
+bun create vite@latest . -- --template react-ts
+bun install
 \end{lstlisting}
 
 \subsection{2. Instalar Convex}
 
 \begin{lstlisting}
-npm install convex
+bun add convex
 \end{lstlisting}
 
 Luego:
 
 \begin{lstlisting}
-npx convex dev
+bunx convex dev
 \end{lstlisting}
 
 La primera ejecución permitirá vincular o crear el proyecto Convex y generará
@@ -757,9 +783,9 @@ convex/
 \subsection{3. Instalar TanStack Router}
 
 \begin{lstlisting}
-npm install @tanstack/react-router
-npm install -D @tanstack/router-plugin
-npm install -D @tanstack/react-router-devtools
+bun add @tanstack/react-router
+bun add -d @tanstack/router-plugin
+bun add -d @tanstack/react-router-devtools
 \end{lstlisting}
 
 En Vite se deberá agregar el plugin de TanStack Router antes del plugin de
@@ -786,7 +812,7 @@ export default defineConfig({
 \subsection{4. Instalar Better Auth}
 
 \begin{lstlisting}
-npm install better-auth @convex-dev/better-auth
+bun add better-auth @convex-dev/better-auth
 \end{lstlisting}
 
 La integración deberá realizarse dentro del backend Convex siguiendo la
@@ -819,7 +845,7 @@ mantenerse manualmente si puede evitarse.
 \subsection{1. Crear aplicación Expo}
 
 \begin{lstlisting}
-npx create-expo-app@latest .
+bunx create-expo-app@latest .
 \end{lstlisting}
 
 La plantilla estándar de Expo incorpora Expo Router.
@@ -827,7 +853,7 @@ La plantilla estándar de Expo incorpora Expo Router.
 \subsection{2. Instalar Convex}
 
 \begin{lstlisting}
-npm install convex
+bun add convex
 \end{lstlisting}
 
 TI4 solamente utilizará el cliente Convex.
@@ -837,7 +863,7 @@ No deberá crear ni desplegar una segunda implementación del backend.
 \subsection{3. Instalar herramientas para el contrato externo}
 
 \begin{lstlisting}
-npm install convex-helpers
+bun add convex-helpers
 \end{lstlisting}
 
 El contrato de funciones públicas se generará utilizando el deployment Convex
@@ -846,9 +872,9 @@ administrado por TI2.
 \subsection{4. Instalar Better Auth para Expo}
 
 \begin{lstlisting}
-npm install better-auth @better-auth/expo
-npm install expo-network
-npm install expo-secure-store
+bun add better-auth @better-auth/expo
+bun add expo-network
+bun add expo-secure-store
 \end{lstlisting}
 
 Better Auth utilizará Secure Store para almacenar información de sesión de
@@ -1055,7 +1081,7 @@ Durante el desarrollo TI2 normalmente utilizará dos procesos.
 \subsection{Terminal 1: Convex}
 
 \begin{lstlisting}
-npx convex dev
+bunx convex dev
 \end{lstlisting}
 
 Este proceso sincroniza los cambios del backend con el deployment de desarrollo.
@@ -1063,7 +1089,7 @@ Este proceso sincroniza los cambios del backend con el deployment de desarrollo.
 \subsection{Terminal 2: Web}
 
 \begin{lstlisting}
-npm run dev
+bun run dev
 \end{lstlisting}
 
 Conceptualmente:
@@ -1071,7 +1097,7 @@ Conceptualmente:
 \begin{lstlisting}
 Terminal 1                 Terminal 2
 
-npx convex dev             npm run dev
+bunx convex dev            bun run dev
       |                          |
       v                          v
 Backend Convex             React + Vite
@@ -1084,13 +1110,13 @@ Backend Convex             React + Vite
 La aplicación móvil se ejecutará mediante Expo.
 
 \begin{lstlisting}
-npm start
+bun run start
 \end{lstlisting}
 
 o equivalentemente:
 
 \begin{lstlisting}
-npx expo start
+bunx expo start
 \end{lstlisting}
 
 Desde esta sesión se podrá ejecutar la aplicación en:
@@ -1136,13 +1162,13 @@ Antes de considerar una versión lista para integración deberá poder generarse
 el build de producción.
 
 \begin{lstlisting}
-npm run build
+bun run build
 \end{lstlisting}
 
 Una aplicación que funciona solamente con:
 
 \begin{lstlisting}
-npm run dev
+bun run dev
 \end{lstlisting}
 
 pero cuyo build falla no se considera lista para integrar.
@@ -1154,13 +1180,13 @@ pero cuyo build falla no se considera lista para integrar.
 Durante desarrollo se utilizará:
 
 \begin{lstlisting}
-npx convex dev
+bunx convex dev
 \end{lstlisting}
 
 Para desplegar funciones, esquema e índices hacia producción se utilizará:
 
 \begin{lstlisting}
-npx convex deploy
+bunx convex deploy
 \end{lstlisting}
 
 El deployment de producción será responsabilidad de TI2.
@@ -1204,7 +1230,7 @@ CONVEX_DEPLOY_KEY
 El build podrá ejecutar:
 
 \begin{lstlisting}
-npx convex deploy --cmd 'npm run build'
+bunx convex deploy --cmd 'bun run build'
 \end{lstlisting}
 
 De esta manera se reduce el riesgo de publicar un frontend incompatible con las
@@ -1390,7 +1416,7 @@ Conceptualmente:
 Pull Request
      |
      v
-npm ci
+bun install --frozen-lockfile
      |
      v
 Type Check
