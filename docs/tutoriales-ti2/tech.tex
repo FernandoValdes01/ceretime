@@ -1,0 +1,1759 @@
+\documentclass[11pt,a4paper]{article}
+
+% =================================================
+% Paquetes
+% =================================================
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{parskip}
+
+\geometry{
+    top=2.5cm,
+    bottom=2.5cm,
+    left=2.7cm,
+    right=2.7cm
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue
+}
+
+\setlist[itemize]{
+    noitemsep,
+    topsep=4pt
+}
+
+\setlist[enumerate]{
+    noitemsep,
+    topsep=4pt
+}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    frame=single,
+    breaklines=true,
+    columns=fullflexible,
+    showstringspaces=false
+}
+
+% =================================================
+% Documento
+% =================================================
+
+\title{
+    \textbf{Guía de Tecnologías, Arquitectura y Despliegue}\\
+    \large Taller de Integración II y Taller de Integración IV
+}
+
+\author{}
+\date{Segundo semestre 2026}
+
+\begin{document}
+
+\maketitle
+
+% =================================================
+\section{Objetivo}
+% =================================================
+
+El presente documento define las principales tecnologías, la arquitectura
+general, la estructura de los repositorios y los procedimientos básicos de
+desarrollo y despliegue utilizados durante el trabajo conjunto de Taller de
+Integración II (TI2) y Taller de Integración IV (TI4).
+
+Los objetivos de esta guía son:
+
+\begin{itemize}
+    \item establecer un stack tecnológico común;
+    \item explicar la responsabilidad de cada tecnología;
+    \item justificar las principales decisiones tecnológicas;
+    \item definir la estructura inicial de ambos repositorios;
+    \item explicar cómo ejecutar los proyectos localmente;
+    \item definir cómo se comunican las aplicaciones con el backend;
+    \item establecer cómo se gestionan variables de entorno y secretos;
+    \item explicar cómo desplegar las diferentes partes del sistema;
+    \item establecer claramente las responsabilidades técnicas de TI2 y TI4;
+    \item reducir decisiones técnicas innecesarias durante el desarrollo.
+\end{itemize}
+
+Este documento complementa el protocolo de trabajo con Git, GitHub y Linear.
+
+% =================================================
+\section{Principio general de arquitectura}
+% =================================================
+
+El proyecto corresponde a un único producto, pero por requerimiento del curso
+estará dividido en \textbf{dos repositorios GitHub independientes}.
+
+\begin{lstlisting}
+Proyecto
+|
++-- Repositorio TI2
+|   |
+|   +-- Aplicacion Web
+|   +-- Backend Convex
+|   +-- Base de Datos Convex
+|   +-- Autenticacion Better Auth
+|
++-- Repositorio TI4
+    |
+    +-- Aplicacion Movil Expo
+\end{lstlisting}
+
+La existencia de dos repositorios no significa que existan dos sistemas
+independientes.
+
+Ambas aplicaciones utilizarán:
+
+\begin{itemize}
+    \item el mismo backend;
+    \item la misma base de datos;
+    \item el mismo sistema de autenticación;
+    \item las mismas reglas de negocio.
+\end{itemize}
+
+La arquitectura general será:
+
+\begin{lstlisting}
+                     CONVEX
+              Backend + Database
+                     |
+                Better Auth
+                /          \
+               /            \
+              v              v
+        Web - TI2        Mobile - TI4
+
+          React          React Native
+           Vite              Expo
+     TanStack Router      Expo Router
+\end{lstlisting}
+
+Por lo tanto, TI2 será propietario técnico del backend compartido y TI4
+consumirá los servicios disponibilizados por TI2.
+
+% =================================================
+\section{Stack tecnológico}
+% =================================================
+
+Las principales tecnologías seleccionadas son:
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{>{\bfseries}l X}
+\toprule
+Componente & Tecnología \\
+\midrule
+Lenguaje principal & TypeScript \\
+Frontend Web & React \\
+Build Web & Vite \\
+Routing Web & TanStack Router \\
+Aplicación móvil & React Native + Expo \\
+Routing móvil & Expo Router \\
+Backend & Convex \\
+Base de Datos & Convex \\
+Autenticación & Better Auth \\
+Build móvil & EAS Build \\
+Hosting Web & Vercel \\
+Hosting Backend & Convex Cloud \\
+Control de versiones & Git + GitHub \\
+Gestión del trabajo & Linear \\
+Integración continua & GitHub Actions \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Los comandos de esta guía utilizarán \texttt{npm} como gestor de paquetes.
+
+Se deberá mantener un único gestor de paquetes por repositorio y no deberán
+mezclarse archivos de bloqueo de diferentes herramientas.
+
+Por ejemplo, no deberán coexistir:
+
+\begin{lstlisting}
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+\end{lstlisting}
+
+% =================================================
+\section{TypeScript}
+% =================================================
+
+\subsection{Responsabilidad}
+
+TypeScript será el lenguaje principal de programación de ambos equipos.
+
+Será utilizado en:
+
+\begin{itemize}
+    \item frontend web;
+    \item aplicación móvil;
+    \item funciones del backend;
+    \item definición del modelo de datos;
+    \item autenticación;
+    \item contratos entre clientes y backend.
+\end{itemize}
+
+\subsection{Justificación}
+
+Utilizar TypeScript en todo el proyecto permite compartir un mismo modelo
+mental entre ambos equipos y detectar una gran cantidad de errores durante el
+desarrollo antes de ejecutar la aplicación.
+
+Además, Convex permite obtener tipado de extremo a extremo entre sus funciones
+de backend y los clientes TypeScript.
+
+Como regla general, el código nuevo deberá escribirse en TypeScript.
+
+% =================================================
+\section{React}
+% =================================================
+
+React será utilizado para construir la interfaz de usuario de la aplicación
+web de TI2.
+
+React será responsable de:
+
+\begin{itemize}
+    \item componentes visuales;
+    \item formularios;
+    \item composición de pantallas;
+    \item interacción con el usuario;
+    \item presentación de los datos obtenidos desde Convex.
+\end{itemize}
+
+React no será responsable de acceder directamente a la base de datos.
+
+El flujo esperado será:
+
+\begin{lstlisting}
+Componente React
+      |
+      v
+Cliente Convex
+      |
+      v
+Funcion Convex
+      |
+      v
+Base de Datos
+\end{lstlisting}
+
+% =================================================
+\section{Vite}
+% =================================================
+
+Vite será utilizado como herramienta de desarrollo y construcción de la
+aplicación web.
+
+Sus responsabilidades principales serán:
+
+\begin{itemize}
+    \item ejecutar el servidor de desarrollo;
+    \item procesar TypeScript y JSX;
+    \item administrar módulos durante desarrollo;
+    \item generar el build de producción.
+\end{itemize}
+
+\subsection{Justificación}
+
+La aplicación web funcionará principalmente como cliente de Convex.
+
+Por esta razón no es necesario introducir un segundo framework full-stack con
+una capa adicional de servidor.
+
+La arquitectura será deliberadamente simple:
+
+\begin{lstlisting}
+React
+ |
+ +-- TanStack Router
+ |
+ +-- Convex Client
+ |
+ +-- Better Auth Client
+\end{lstlisting}
+
+La lógica de servidor permanecerá en Convex.
+
+% =================================================
+\section{TanStack Router}
+% =================================================
+
+TanStack Router será utilizado como sistema de routing de la aplicación web.
+
+Será responsable de:
+
+\begin{itemize}
+    \item definición de páginas;
+    \item navegación;
+    \item parámetros de URL;
+    \item layouts;
+    \item rutas anidadas;
+    \item navegación type-safe.
+\end{itemize}
+
+Se utilizará routing basado en archivos.
+
+Por defecto las rutas se almacenarán en:
+
+\begin{lstlisting}
+src/routes/
+\end{lstlisting}
+
+TanStack Router generará automáticamente:
+
+\begin{lstlisting}
+src/routeTree.gen.ts
+\end{lstlisting}
+
+Este archivo es generado automáticamente y no deberá modificarse manualmente.
+
+\subsection{Justificación}
+
+Se utilizará TanStack Router en lugar de TanStack Start porque el servidor del
+proyecto ya está definido mediante Convex.
+
+TanStack Start incorporaría funcionalidades adicionales de servidor que no
+son necesarias para la arquitectura definida.
+
+% =================================================
+\section{Convex}
+% =================================================
+
+Convex será la plataforma central del backend.
+
+Será utilizado como:
+
+\begin{itemize}
+    \item backend;
+    \item base de datos;
+    \item plataforma de ejecución de funciones;
+    \item mecanismo de sincronización de datos con los clientes.
+\end{itemize}
+
+El backend será desarrollado y mantenido por TI2.
+
+\subsection{Tipos de funciones}
+
+La lógica principal se implementará mediante:
+
+\begin{description}
+    \item[Queries:] operaciones de lectura.
+    \item[Mutations:] operaciones que modifican datos.
+    \item[Actions:] operaciones que requieren interacción con servicios externos
+    o comportamientos que no corresponden a una query o mutation.
+\end{description}
+
+Conceptualmente:
+
+\begin{lstlisting}
+Cliente
+  |
+  +-- Query -------> Leer
+  |
+  +-- Mutation ----> Modificar
+  |
+  +-- Action ------> Servicio externo / proceso especial
+\end{lstlisting}
+
+La mayor parte de la lógica de negocio deberá permanecer en queries y
+mutations cuando corresponda.
+
+% =================================================
+\section{Base de datos Convex}
+% =================================================
+
+El modelo de datos será administrado mediante Convex.
+
+El esquema principal se encontrará en:
+
+\begin{lstlisting}
+convex/schema.ts
+\end{lstlisting}
+
+El esquema deberá formar parte del control de versiones.
+
+Los cambios relevantes al modelo de datos deberán:
+
+\begin{itemize}
+    \item realizarse mediante una branch;
+    \item pasar por Pull Request;
+    \item considerar el impacto sobre la aplicación web;
+    \item considerar el impacto sobre la aplicación móvil;
+    \item quedar asociados al issue correspondiente en Linear.
+\end{itemize}
+
+No deberán existir cambios manuales indispensables que solamente conozca un
+integrante del equipo.
+
+% =================================================
+\section{Better Auth}
+% =================================================
+
+Better Auth administrará la autenticación de los usuarios.
+
+La instancia principal de Better Auth será ejecutada sobre el backend Convex.
+
+Entre sus responsabilidades se encuentran:
+
+\begin{itemize}
+    \item registro de usuarios;
+    \item inicio de sesión;
+    \item cierre de sesión;
+    \item manejo de sesiones;
+    \item mecanismos adicionales de autenticación habilitados por el proyecto.
+\end{itemize}
+
+\subsection{Autenticación y autorización}
+
+Es importante distinguir:
+
+\begin{description}
+    \item[Autenticación:] determina quién es el usuario.
+    \item[Autorización:] determina qué puede hacer el usuario.
+\end{description}
+
+Por lo tanto:
+
+\begin{lstlisting}
+Better Auth
+    |
+    v
+Quien es el usuario?
+    |
+    v
+Convex
+    |
+    v
+Puede ejecutar esta operacion?
+\end{lstlisting}
+
+Las reglas de autorización propias del negocio deberán implementarse en el
+backend y no confiar exclusivamente en que una pantalla esté oculta en el
+frontend.
+
+% =================================================
+\section{Expo y React Native}
+% =================================================
+
+TI4 desarrollará la aplicación móvil utilizando React Native mediante Expo.
+
+Expo será responsable de proporcionar:
+
+\begin{itemize}
+    \item entorno de desarrollo móvil;
+    \item herramientas de ejecución;
+    \item configuración de Android e iOS;
+    \item integración con APIs nativas;
+    \item proceso de build mediante EAS.
+\end{itemize}
+
+\subsection{Justificación}
+
+Expo reduce la cantidad de configuración nativa que el equipo debe administrar
+directamente y permite mantener la mayor parte del desarrollo en TypeScript y
+React.
+
+Esto permite que ambos equipos compartan tecnologías y conceptos.
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+TI2 Web & TI4 Mobile \\
+\midrule
+React & React Native \\
+TanStack Router & Expo Router \\
+TypeScript & TypeScript \\
+Convex & Convex \\
+Better Auth & Better Auth \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% =================================================
+\section{Expo Router}
+% =================================================
+
+Expo Router será utilizado para administrar la navegación de la aplicación
+móvil.
+
+Las pantallas estarán representadas mediante archivos dentro de:
+
+\begin{lstlisting}
+app/
+\end{lstlisting}
+
+Por ejemplo:
+
+\begin{lstlisting}
+app/
+|
++-- _layout.tsx
++-- index.tsx
++-- login.tsx
+|
++-- usuarios/
+    |
+    +-- index.tsx
+    +-- [id].tsx
+\end{lstlisting}
+
+Expo Router será responsable de:
+
+\begin{itemize}
+    \item navegación;
+    \item layouts;
+    \item parámetros;
+    \item deep links;
+    \item organización de pantallas.
+\end{itemize}
+
+La lógica de negocio no deberá implementarse dentro del router.
+
+% =================================================
+\section{Dos repositorios y un solo backend}
+% =================================================
+
+Existe una consideración importante derivada de la separación obligatoria de
+repositorios.
+
+El backend Convex existirá solamente en el repositorio TI2.
+
+TI4 \textbf{no deberá crear una segunda carpeta Convex con una copia del
+backend}.
+
+La arquitectura correcta será:
+
+\begin{lstlisting}
+Repositorio TI2
+|
++-- convex/
+|   |
+|   +-- schema.ts
+|   +-- users.ts
+|   +-- auth...
+|
++-- Web
+
+
+Repositorio TI4
+|
++-- Mobile
+|
++-- api.ts
+    |
+    +-- Contrato TypeScript generado desde Convex
+\end{lstlisting}
+
+De esta forma existe una única implementación del servidor.
+
+% =================================================
+\section{Contrato tipado entre repositorios}
+% =================================================
+
+Convex permite generar una representación TypeScript de su API pública para
+clientes ubicados en otro repositorio.
+
+Se utilizará este mecanismo para mantener tipado entre TI2 y TI4.
+
+Conceptualmente:
+
+\begin{lstlisting}
+Repositorio TI2
+     |
+     | define funciones Convex
+     v
+Deployment Convex
+     |
+     | genera contrato
+     v
+api.ts
+     |
+     v
+Repositorio TI4
+\end{lstlisting}
+
+El archivo generado permitirá que TI4 utilice las funciones de Convex sin
+duplicar la implementación del backend.
+
+TI4 podrá utilizar:
+
+\begin{lstlisting}
+npm install convex convex-helpers
+\end{lstlisting}
+
+y generar el contrato TypeScript mediante la herramienta oficial correspondiente
+al deployment Convex:
+
+\begin{lstlisting}
+npx convex-helpers ts-api-spec
+\end{lstlisting}
+
+El archivo generado deberá mantenerse versionado en el repositorio TI4.
+
+Cuando TI2 modifique una función pública consumida por TI4, deberá coordinarse
+la actualización de este contrato.
+
+\subsection{Regla}
+
+TI4 consume la API pública de TI2.
+
+TI4 no copia ni modifica directamente las funciones backend de TI2.
+
+% =================================================
+\section{Estructura del repositorio TI2}
+% =================================================
+
+El repositorio TI2 contendrá la aplicación web y el backend Convex.
+
+No se incorporará inicialmente Turborepo, Nx ni otra herramienta adicional de
+monorepo.
+
+La estructura será aproximadamente:
+
+\begin{lstlisting}
+repositorio-ti2/
+|
++-- src/
+|   |
+|   +-- components/
+|   +-- features/
+|   +-- routes/
+|   +-- lib/
+|   +-- main.tsx
+|   +-- routeTree.gen.ts
+|
++-- convex/
+|   |
+|   +-- _generated/
+|   +-- betterAuth/
+|   +-- schema.ts
+|   +-- auth.config.ts
+|   +-- convex.config.ts
+|   +-- http.ts
+|   +-- ...
+|
++-- public/
+|
++-- .github/
+|   +-- workflows/
+|
++-- .env.example
++-- .gitignore
++-- package.json
++-- package-lock.json
++-- tsconfig.json
++-- vite.config.ts
++-- vercel.json
++-- README.md
+\end{lstlisting}
+
+El directorio:
+
+\begin{lstlisting}
+convex/_generated/
+\end{lstlisting}
+
+deberá mantenerse dentro del control de versiones.
+
+% =================================================
+\section{Estructura del repositorio TI4}
+% =================================================
+
+El repositorio TI4 contendrá exclusivamente la aplicación móvil y los archivos
+necesarios para consumir los servicios compartidos.
+
+Una estructura inicial será:
+
+\begin{lstlisting}
+repositorio-ti4/
+|
++-- app/
+|   |
+|   +-- _layout.tsx
+|   +-- index.tsx
+|   +-- ...
+|
++-- components/
+|
++-- features/
+|
++-- lib/
+|   |
+|   +-- auth-client.ts
+|   +-- convex.ts
+|
++-- api/
+|   |
+|   +-- api.ts
+|
++-- assets/
+|
++-- .github/
+|   +-- workflows/
+|
++-- .env.example
++-- .gitignore
++-- app.json
++-- eas.json
++-- package.json
++-- package-lock.json
++-- tsconfig.json
++-- README.md
+\end{lstlisting}
+
+El archivo:
+
+\begin{lstlisting}
+api/api.ts
+\end{lstlisting}
+
+representará el contrato tipado generado desde el backend Convex de TI2.
+
+% =================================================
+\section{Setup inicial del repositorio TI2}
+% =================================================
+
+\subsection{1. Crear aplicación React + TypeScript}
+
+\begin{lstlisting}
+npm create vite@latest . -- --template react-ts
+npm install
+\end{lstlisting}
+
+\subsection{2. Instalar Convex}
+
+\begin{lstlisting}
+npm install convex
+\end{lstlisting}
+
+Luego:
+
+\begin{lstlisting}
+npx convex dev
+\end{lstlisting}
+
+La primera ejecución permitirá vincular o crear el proyecto Convex y generará
+la carpeta:
+
+\begin{lstlisting}
+convex/
+\end{lstlisting}
+
+\subsection{3. Instalar TanStack Router}
+
+\begin{lstlisting}
+npm install @tanstack/react-router
+npm install -D @tanstack/router-plugin
+npm install -D @tanstack/react-router-devtools
+\end{lstlisting}
+
+En Vite se deberá agregar el plugin de TanStack Router antes del plugin de
+React.
+
+Ejemplo:
+
+\begin{lstlisting}
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { tanstackRouter } from '@tanstack/router-plugin/vite'
+
+export default defineConfig({
+  plugins: [
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
+    }),
+    react(),
+  ],
+})
+\end{lstlisting}
+
+\subsection{4. Instalar Better Auth}
+
+\begin{lstlisting}
+npm install better-auth @convex-dev/better-auth
+\end{lstlisting}
+
+La integración deberá realizarse dentro del backend Convex siguiendo la
+estructura oficial de Better Auth para Convex.
+
+Entre otros archivos, se utilizarán:
+
+\begin{lstlisting}
+convex/
+|
++-- auth.config.ts
++-- convex.config.ts
++-- http.ts
+|
++-- betterAuth/
+    |
+    +-- convex.config.ts
+    +-- auth.ts
+    +-- schema.ts
+    +-- adapter.ts
+\end{lstlisting}
+
+El esquema de Better Auth deberá generarse mediante sus herramientas y no
+mantenerse manualmente si puede evitarse.
+
+% =================================================
+\section{Setup inicial del repositorio TI4}
+% =================================================
+
+\subsection{1. Crear aplicación Expo}
+
+\begin{lstlisting}
+npx create-expo-app@latest .
+\end{lstlisting}
+
+La plantilla estándar de Expo incorpora Expo Router.
+
+\subsection{2. Instalar Convex}
+
+\begin{lstlisting}
+npm install convex
+\end{lstlisting}
+
+TI4 solamente utilizará el cliente Convex.
+
+No deberá crear ni desplegar una segunda implementación del backend.
+
+\subsection{3. Instalar herramientas para el contrato externo}
+
+\begin{lstlisting}
+npm install convex-helpers
+\end{lstlisting}
+
+El contrato de funciones públicas se generará utilizando el deployment Convex
+administrado por TI2.
+
+\subsection{4. Instalar Better Auth para Expo}
+
+\begin{lstlisting}
+npm install better-auth @better-auth/expo
+npm install expo-network
+npm install expo-secure-store
+\end{lstlisting}
+
+Better Auth utilizará Secure Store para almacenar información de sesión de
+forma apropiada para la aplicación móvil.
+
+Si el proyecto utiliza proveedores sociales, podrán requerirse además
+dependencias propias de Expo como linking o web browser.
+
+% =================================================
+\section{Conexión de la aplicación Web a Convex}
+% =================================================
+
+La aplicación web utilizará una instancia de:
+
+\begin{lstlisting}
+ConvexReactClient
+\end{lstlisting}
+
+configurada mediante la URL del deployment.
+
+La variable pública utilizada por Vite será:
+
+\begin{lstlisting}
+VITE_CONVEX_URL=
+\end{lstlisting}
+
+Dentro del frontend:
+
+\begin{lstlisting}
+const convex = new ConvexReactClient(
+  import.meta.env.VITE_CONVEX_URL
+)
+\end{lstlisting}
+
+El cliente deberá proveerse en la raíz de la aplicación.
+
+% =================================================
+\section{Conexión de la aplicación Mobile a Convex}
+% =================================================
+
+Expo utilizará el mismo cliente React de Convex.
+
+La variable será:
+
+\begin{lstlisting}
+EXPO_PUBLIC_CONVEX_URL=
+\end{lstlisting}
+
+En la raíz de Expo Router podrá configurarse:
+
+\begin{lstlisting}
+const convex = new ConvexReactClient(
+  process.env.EXPO_PUBLIC_CONVEX_URL!
+)
+\end{lstlisting}
+
+y proveerse a la aplicación mediante el provider correspondiente.
+
+Esto significa que:
+
+\begin{lstlisting}
+Web
+  |
+  +----\
+        \
+         > mismo deployment Convex
+        /
+Mobile /
+\end{lstlisting}
+
+% =================================================
+\section{URLs de Convex}
+% =================================================
+
+Convex utiliza URLs con responsabilidades distintas.
+
+Conceptualmente tendremos:
+
+\begin{description}
+    \item[Convex URL:] conexión del cliente React con las funciones Convex.
+    \item[Convex Site URL:] endpoints HTTP, incluyendo rutas utilizadas por
+    Better Auth cuando corresponda.
+\end{description}
+
+Por ejemplo, los clientes podrán necesitar variables equivalentes a:
+
+\begin{lstlisting}
+VITE_CONVEX_URL=
+VITE_CONVEX_SITE_URL=
+\end{lstlisting}
+
+para web, y:
+
+\begin{lstlisting}
+EXPO_PUBLIC_CONVEX_URL=
+EXPO_PUBLIC_CONVEX_SITE_URL=
+\end{lstlisting}
+
+para mobile.
+
+Estas URLs permiten localizar servicios públicos.
+
+\textbf{No son el lugar donde deben almacenarse secretos.}
+
+% =================================================
+\section{Variables de entorno}
+% =================================================
+
+Se distinguirán claramente variables públicas y secretos.
+
+\subsection{Frontend Web}
+
+Vite expone al código cliente variables con prefijo:
+
+\begin{lstlisting}
+VITE_
+\end{lstlisting}
+
+Por ejemplo:
+
+\begin{lstlisting}
+VITE_CONVEX_URL=
+\end{lstlisting}
+
+Toda variable \texttt{VITE\_} debe considerarse visible para el usuario final.
+
+\subsection{Aplicación móvil}
+
+Expo expone al código cliente las variables con prefijo:
+
+\begin{lstlisting}
+EXPO_PUBLIC_
+\end{lstlisting}
+
+Por ejemplo:
+
+\begin{lstlisting}
+EXPO_PUBLIC_CONVEX_URL=
+\end{lstlisting}
+
+Toda variable \texttt{EXPO\_PUBLIC\_} debe considerarse pública.
+
+\subsection{Backend}
+
+Los secretos utilizados por las funciones Convex deberán configurarse en el
+entorno de Convex.
+
+Por ejemplo:
+
+\begin{lstlisting}
+BETTER_AUTH_SECRET
+\end{lstlisting}
+
+Estos valores no deberán estar:
+
+\begin{itemize}
+    \item dentro del código;
+    \item dentro del frontend;
+    \item dentro de variables públicas;
+    \item versionados en Git.
+\end{itemize}
+
+% =================================================
+\section{Archivos de entorno}
+% =================================================
+
+Los archivos locales que contengan valores específicos de cada desarrollador no
+deberán subirse al repositorio.
+
+Por ejemplo:
+
+\begin{lstlisting}
+.env.local
+\end{lstlisting}
+
+Cada repositorio deberá mantener:
+
+\begin{lstlisting}
+.env.example
+\end{lstlisting}
+
+con las variables necesarias pero sin secretos.
+
+Ejemplo TI2:
+
+\begin{lstlisting}
+VITE_CONVEX_URL=
+VITE_CONVEX_SITE_URL=
+\end{lstlisting}
+
+Ejemplo TI4:
+
+\begin{lstlisting}
+EXPO_PUBLIC_CONVEX_URL=
+EXPO_PUBLIC_CONVEX_SITE_URL=
+\end{lstlisting}
+
+% =================================================
+\section{Ejecución local de TI2}
+% =================================================
+
+Durante el desarrollo TI2 normalmente utilizará dos procesos.
+
+\subsection{Terminal 1: Convex}
+
+\begin{lstlisting}
+npx convex dev
+\end{lstlisting}
+
+Este proceso sincroniza los cambios del backend con el deployment de desarrollo.
+
+\subsection{Terminal 2: Web}
+
+\begin{lstlisting}
+npm run dev
+\end{lstlisting}
+
+Conceptualmente:
+
+\begin{lstlisting}
+Terminal 1                 Terminal 2
+
+npx convex dev             npm run dev
+      |                          |
+      v                          v
+Backend Convex             React + Vite
+\end{lstlisting}
+
+% =================================================
+\section{Ejecución local de TI4}
+% =================================================
+
+La aplicación móvil se ejecutará mediante Expo.
+
+\begin{lstlisting}
+npm start
+\end{lstlisting}
+
+o equivalentemente:
+
+\begin{lstlisting}
+npx expo start
+\end{lstlisting}
+
+Desde esta sesión se podrá ejecutar la aplicación en:
+
+\begin{itemize}
+    \item Android;
+    \item iOS cuando el entorno lo permita;
+    \item dispositivo físico;
+    \item emulador o simulador.
+\end{itemize}
+
+TI4 deberá conectarse al deployment de desarrollo de Convex definido para el
+proyecto.
+
+TI4 no necesita ejecutar el backend para modificar exclusivamente la aplicación
+móvil.
+
+% =================================================
+\section{Ambientes}
+% =================================================
+
+Se distinguirán al menos:
+
+\begin{description}
+    \item[Development:] programación y pruebas durante el desarrollo.
+    \item[Production:] versión estable utilizada para las demostraciones y
+    entregas.
+\end{description}
+
+En móvil también podrá existir un ambiente:
+
+\begin{description}
+    \item[Preview:] build instalable destinado a pruebas del equipo.
+\end{description}
+
+Los entornos deberán utilizar configuraciones separadas cuando sea necesario.
+
+% =================================================
+\section{Build de la aplicación Web}
+% =================================================
+
+Antes de considerar una versión lista para integración deberá poder generarse
+el build de producción.
+
+\begin{lstlisting}
+npm run build
+\end{lstlisting}
+
+Una aplicación que funciona solamente con:
+
+\begin{lstlisting}
+npm run dev
+\end{lstlisting}
+
+pero cuyo build falla no se considera lista para integrar.
+
+% =================================================
+\section{Despliegue del backend Convex}
+% =================================================
+
+Durante desarrollo se utilizará:
+
+\begin{lstlisting}
+npx convex dev
+\end{lstlisting}
+
+Para desplegar funciones, esquema e índices hacia producción se utilizará:
+
+\begin{lstlisting}
+npx convex deploy
+\end{lstlisting}
+
+El deployment de producción será responsabilidad de TI2.
+
+No todos los integrantes deberán manipular manualmente producción.
+
+% =================================================
+\section{Despliegue de la aplicación Web}
+% =================================================
+
+La aplicación web será desplegada mediante Vercel.
+
+Vercel se conectará al repositorio GitHub de TI2.
+
+El flujo general será:
+
+\begin{lstlisting}
+GitHub TI2
+    |
+    v
+   main
+    |
+    v
+ Vercel
+    |
+    +---- Build React/Vite
+    |
+    +---- Deploy Convex
+    |
+    v
+Produccion
+\end{lstlisting}
+
+Para integrar el despliegue de Convex con Vercel deberá configurarse un deploy
+key de producción como variable segura en Vercel:
+
+\begin{lstlisting}
+CONVEX_DEPLOY_KEY
+\end{lstlisting}
+
+El build podrá ejecutar:
+
+\begin{lstlisting}
+npx convex deploy --cmd 'npm run build'
+\end{lstlisting}
+
+De esta manera se reduce el riesgo de publicar un frontend incompatible con las
+funciones Convex correspondientes.
+
+% =================================================
+\section{Configuración SPA en Vercel}
+% =================================================
+
+TanStack Router administrará las rutas en el cliente.
+
+Por ello, al solicitar directamente una ruta como:
+
+\begin{lstlisting}
+/usuarios/123
+\end{lstlisting}
+
+el hosting deberá entregar la aplicación y permitir que TanStack Router
+resuelva la ruta.
+
+El repositorio podrá incluir:
+
+\begin{lstlisting}
+vercel.json
+\end{lstlisting}
+
+con una regla equivalente a:
+
+\begin{lstlisting}
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
+\end{lstlisting}
+
+% =================================================
+\section{Build de la aplicación móvil}
+% =================================================
+
+Los builds instalables serán generados mediante EAS Build.
+
+Primero deberá configurarse EAS para el proyecto.
+
+Una configuración simplificada de:
+
+\begin{lstlisting}
+eas.json
+\end{lstlisting}
+
+podrá incluir:
+
+\begin{lstlisting}
+{
+  "build": {
+    "development": {
+      "developmentClient": true
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {}
+  }
+}
+\end{lstlisting}
+
+% =================================================
+\section{Build Preview de Mobile}
+% =================================================
+
+Durante el curso no será necesario publicar cada versión en Google Play o App
+Store.
+
+Para pruebas se utilizará preferentemente un build interno.
+
+Android:
+
+\begin{lstlisting}
+eas build --platform android --profile preview
+\end{lstlisting}
+
+iOS:
+
+\begin{lstlisting}
+eas build --platform ios --profile preview
+\end{lstlisting}
+
+EAS proporcionará un build que podrá compartirse con integrantes y personas
+autorizadas para pruebas.
+
+En Android, este mecanismo permite disponer de un APK instalable sin depender
+de una publicación en Play Store.
+
+% =================================================
+\section{Build de producción Mobile}
+% =================================================
+
+Cuando corresponda generar una versión de producción:
+
+\begin{lstlisting}
+eas build --platform android
+\end{lstlisting}
+
+o:
+
+\begin{lstlisting}
+eas build --platform ios
+\end{lstlisting}
+
+También puede utilizarse:
+
+\begin{lstlisting}
+eas build --platform all
+\end{lstlisting}
+
+La publicación efectiva en tiendas será una decisión independiente del proceso
+de desarrollo.
+
+% =================================================
+\section{Flujos de despliegue}
+% =================================================
+
+\subsection{TI2}
+
+\begin{lstlisting}
+GitHub
+  |
+  v
+main
+  |
+  v
+Vercel
+  |
+  +--> React/Vite
+  |
+  +--> Convex Production
+  |
+  v
+Web desplegada
+\end{lstlisting}
+
+\subsection{TI4}
+
+\begin{lstlisting}
+GitHub
+  |
+  v
+main
+  |
+  v
+EAS Build
+  |
+  +--> Preview
+  |
+  +--> Production
+  |
+  v
+Aplicacion instalable
+\end{lstlisting}
+
+% =================================================
+\section{Integración Continua}
+% =================================================
+
+GitHub Actions verificará los cambios antes de integrarlos.
+
+Como mínimo, cuando los scripts correspondientes existan, deberán ejecutarse:
+
+\begin{enumerate}
+    \item instalación de dependencias;
+    \item chequeo de TypeScript;
+    \item lint;
+    \item pruebas automatizadas disponibles;
+    \item build.
+\end{enumerate}
+
+Conceptualmente:
+
+\begin{lstlisting}
+Pull Request
+     |
+     v
+npm ci
+     |
+     v
+Type Check
+     |
+     v
+Lint
+     |
+     v
+Tests
+     |
+     v
+Build
+     |
+     v
+Code Review
+     |
+     v
+Merge
+\end{lstlisting}
+
+El despliegue no reemplaza al proceso de CI.
+
+% =================================================
+\section{Responsabilidades de TI2}
+% =================================================
+
+TI2 será responsable técnicamente de:
+
+\begin{itemize}
+    \item desarrollar la aplicación web;
+    \item mantener React y TanStack Router;
+    \item implementar las funciones Convex;
+    \item definir y mantener el modelo de datos;
+    \item implementar Better Auth;
+    \item implementar reglas de autorización;
+    \item desplegar el backend;
+    \item desplegar la aplicación web;
+    \item mantener disponibles los servicios requeridos por TI4;
+    \item mantener estable la API pública consumida por TI4;
+    \item informar cambios incompatibles;
+    \item mantener actualizado el contrato TypeScript cuando corresponda.
+\end{itemize}
+
+TI2 es propietario técnico del backend compartido.
+
+% =================================================
+\section{Responsabilidades de TI4}
+% =================================================
+
+TI4 será responsable técnicamente de:
+
+\begin{itemize}
+    \item desarrollar la aplicación móvil mediante Expo;
+    \item organizar la navegación mediante Expo Router;
+    \item integrar la aplicación con Convex;
+    \item integrar los flujos de Better Auth;
+    \item mantener actualizado el contrato TypeScript del backend;
+    \item detectar y reportar problemas de integración;
+    \item generar builds mediante EAS;
+    \item evitar duplicar lógica perteneciente al backend.
+\end{itemize}
+
+Además, TI4 mantiene las responsabilidades de gestión, coordinación, seguimiento
+y control de calidad definidas en el documento metodológico general.
+
+% =================================================
+\section{Frontera entre TI2 y TI4}
+% =================================================
+
+La frontera técnica entre ambos equipos estará formada principalmente por las
+funciones públicas de Convex y el sistema de autenticación compartido.
+
+TI4 no deberá:
+
+\begin{itemize}
+    \item crear una segunda base de datos;
+    \item crear una segunda implementación del backend;
+    \item copiar las funciones Convex al repositorio móvil;
+    \item modificar directamente producción de TI2;
+    \item duplicar reglas de negocio únicamente para hacer funcionar Mobile.
+\end{itemize}
+
+TI2 deberá mantener suficientemente documentadas las funciones públicas
+consumidas por TI4.
+
+Como mínimo deberá conocerse:
+
+\begin{itemize}
+    \item propósito;
+    \item argumentos;
+    \item resultado;
+    \item requerimientos de autenticación;
+    \item errores relevantes.
+\end{itemize}
+
+% =================================================
+\section{Cambios que afectan a ambos equipos}
+% =================================================
+
+Un cambio deberá coordinarse cuando modifique:
+
+\begin{itemize}
+    \item nombre de una función pública;
+    \item argumentos de una función;
+    \item tipo de retorno;
+    \item reglas de autenticación;
+    \item reglas de autorización;
+    \item estructura de datos utilizada por ambos clientes;
+    \item comportamiento funcional esperado por la aplicación móvil.
+\end{itemize}
+
+Estas dependencias deberán registrarse en Linear.
+
+Por ejemplo:
+
+\begin{lstlisting}
+TI2-42 Cambiar flujo de autenticacion
+              |
+              +-- bloquea -->
+                              TI4-18
+                              Adaptar login mobile
+\end{lstlisting}
+
+% =================================================
+\section{Qué corresponde a cada capa}
+% =================================================
+
+\subsection*{React}
+
+Interfaz de usuario Web.
+
+No contiene acceso directo a la base de datos.
+
+\subsection*{TanStack Router}
+
+Navegación Web.
+
+No contiene lógica de negocio.
+
+\subsection*{Expo / React Native}
+
+Interfaz de usuario Mobile.
+
+No reemplaza el backend.
+
+\subsection*{Expo Router}
+
+Navegación Mobile.
+
+No contiene reglas de negocio compartidas.
+
+\subsection*{Convex}
+
+Backend, persistencia y reglas de negocio compartidas.
+
+\subsection*{Better Auth}
+
+Identidad y sesiones.
+
+No reemplaza las reglas de autorización del sistema.
+
+% =================================================
+\section{Ejemplo de distribución de responsabilidades}
+% =================================================
+
+Supongamos que debe implementarse:
+
+\begin{center}
+\textit{``Mostrar el perfil de un usuario autenticado.''}
+\end{center}
+
+La responsabilidad se distribuirá así:
+
+\begin{lstlisting}
+Better Auth
+    |
+    +--> identifica al usuario actual
+    |
+    v
+Convex
+    |
+    +--> valida permisos
+    +--> obtiene informacion
+    |
+    +-------------+
+    |             |
+    v             v
+   Web          Mobile
+  React       React Native
+\end{lstlisting}
+
+El frontend decide \textbf{cómo mostrar} la información.
+
+El backend decide \textbf{qué información puede obtener} el usuario.
+
+% =================================================
+\section{Proceso para una funcionalidad compartida}
+% =================================================
+
+Una funcionalidad que afecte a ambos equipos podrá seguir el siguiente flujo:
+
+\begin{enumerate}
+    \item TI4 realiza el triage y se identifican las tareas necesarias.
+    \item TI2 define o modifica las funciones necesarias en Convex.
+    \item TI2 integra el cambio mediante Pull Request.
+    \item se actualiza el contrato público de Convex;
+    \item TI4 actualiza su \texttt{api.ts};
+    \item TI4 implementa el consumo desde la aplicación móvil;
+    \item ambos equipos prueban la integración;
+    \item los cambios llegan a sus respectivos procesos de despliegue.
+\end{enumerate}
+
+Conceptualmente:
+
+\begin{lstlisting}
+Linear
+   |
+   +-------------------+
+   |                   |
+   v                   v
+Issue TI2          Issue TI4
+   |                   |
+   v                   |
+Backend Convex         |
+   |                   |
+   v                   |
+Contrato API ----------+
+                       |
+                       v
+                    Mobile
+\end{lstlisting}
+
+% =================================================
+\section{Principios técnicos}
+% =================================================
+
+Durante el desarrollo se aplicarán los siguientes principios:
+
+\begin{enumerate}
+    \item existe un solo backend;
+    \item existe una sola fuente de verdad para los datos;
+    \item Web y Mobile consumen los mismos servicios;
+    \item los secretos nunca se almacenan en código cliente;
+    \item las reglas de autorización se validan en el backend;
+    \item los contratos entre repositorios deben ser explícitos;
+    \item los cambios incompatibles deben coordinarse antes de integrarse;
+    \item el código generado necesario para compilar debe mantenerse
+    correctamente versionado;
+    \item una aplicación que no puede generar su build no está terminada;
+    \item los entornos de desarrollo y producción deben mantenerse separados.
+\end{enumerate}
+
+% =================================================
+\section{Resumen de arquitectura}
+% =================================================
+
+El stack tecnológico puede resumirse de la siguiente manera:
+
+\begin{lstlisting}
+                         Convex
+                Backend + Base de Datos
+                         |
+                    Better Auth
+                         |
+             +-----------+-----------+
+             |                       |
+             v                       v
+
+          TI2 WEB                  TI4 MOBILE
+
+           React                  React Native
+           Vite                       Expo
+     TanStack Router              Expo Router
+             |                       |
+             +-----------+-----------+
+                         |
+                     TypeScript
+\end{lstlisting}
+
+El flujo de desarrollo y despliegue será:
+
+\begin{lstlisting}
+                       Linear
+                         |
+                         v
+                      Issue
+                         |
+                         v
+                  Feature Branch
+                         |
+                         v
+                   Pull Request
+                         |
+                 +-------+-------+
+                 |               |
+                 v               v
+                CI          Code Review
+                 |               |
+                 +-------+-------+
+                         |
+                         v
+                        main
+                         |
+             +-----------+-----------+
+             |                       |
+             v                       v
+         TI2 Deploy              TI4 Build
+             |                       |
+       Vercel + Convex            EAS Build
+             |                       |
+             v                       v
+            Web                  Mobile App
+\end{lstlisting}
+
+% =================================================
+\section{Referencias oficiales}
+% =================================================
+
+Las configuraciones específicas pueden evolucionar con nuevas versiones de las
+herramientas. Antes de realizar cambios importantes deberán consultarse sus
+documentaciones oficiales.
+
+\begin{itemize}
+
+    \item TanStack Router:
+    \url{https://tanstack.com/router/latest}
+
+    \item TanStack Router con Vite:
+    \url{https://tanstack.com/router/latest/docs/installation/with-vite}
+
+    \item Convex:
+    \url{https://docs.convex.dev/}
+
+    \item Convex con React:
+    \url{https://docs.convex.dev/client/react/overview}
+
+    \item Convex con React Native:
+    \url{https://docs.convex.dev/quickstart/react-native}
+
+    \item Convex con múltiples repositorios:
+    \url{https://docs.convex.dev/production/multiple-repos}
+
+    \item Convex en Vercel:
+    \url{https://docs.convex.dev/production/hosting/vercel}
+
+    \item Better Auth:
+    \url{https://better-auth.com/}
+
+    \item Better Auth con Convex:
+    \url{https://better-auth.com/docs/integrations/convex}
+
+    \item Better Auth con Expo:
+    \url{https://better-auth.com/docs/integrations/expo}
+
+    \item Expo:
+    \url{https://docs.expo.dev/}
+
+    \item EAS Build:
+    \url{https://docs.expo.dev/build/introduction/}
+
+    \item EAS Internal Distribution:
+    \url{https://docs.expo.dev/build/internal-distribution/}
+
+\end{itemize}
+
+\end{document}
