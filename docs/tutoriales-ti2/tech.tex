@@ -106,6 +106,11 @@ monorepo GitHub}. El monorepo contendrá las aplicaciones Web y Mobile, el
 backend compartido y los paquetes internos que se incorporen durante el
 desarrollo.
 
+La estructura de carpetas del monorepo no será la arquitectura completa. La
+arquitectura lógica del sistema será una \textbf{arquitectura por capas},
+aplicada de forma consistente en el backend y respetada por ambas
+aplicaciones cliente.
+
 \begin{lstlisting}
 Proyecto
 |
@@ -132,22 +137,68 @@ Ambas aplicaciones utilizarán:
 La arquitectura general será:
 
 \begin{lstlisting}
-                     CONVEX
-              Backend + Database
-                     |
-                Better Auth
-                /          \
-               /            \
-              v              v
-        Web - TI2        Mobile - TI4
-
-          React          React Native
-           Vite              Expo
-     TanStack Router      Expo Router
+                 PRESENTACIÓN
+       Web y Mobile + funciones publicas
+                         |
+                         v
+                    APLICACIÓN
+                 Casos de uso
+                         |
+                         v
+                     DOMINIO
+             Reglas y políticas del negocio
+                         ^
+                         |
+                 INFRAESTRUCTURA
+        Convex, Better Auth y servicios externos
 \end{lstlisting}
 
-Por lo tanto, TI2 será propietario técnico del backend compartido y TI4
-consumirá los servicios ofrecidos por TI2 desde la misma base de código.
+La dirección normal de una solicitud es \textbf{Presentación -> Aplicación ->
+Dominio}. La infraestructura implementa las interfaces que necesitan la
+aplicación y el dominio, por lo que puede depender de esas capas, pero las
+reglas del negocio no dependen de Convex, React, Expo ni Better Auth.
+
+\subsection{Responsabilidad de cada capa}
+
+\begin{description}
+  \item[Presentación:] recibe interacciones, valida el formato de entrada,
+    convierte la solicitud en una llamada al caso de uso y presenta el
+    resultado. Incluye pantallas, componentes, routers y funciones públicas de
+    Convex.
+  \item[Aplicación:] implementa casos de uso y coordina el flujo de una
+    operación. Decide qué servicios necesita, controla la autorización de la
+    operación y define los puertos que utilizará para acceder a recursos
+    externos.
+  \item[Dominio:] contiene entidades, objetos de valor, políticas y reglas de
+    negocio. Esta capa debe poder probarse sin levantar React, Expo, Convex ni
+    una base de datos.
+  \item[Infraestructura:] contiene adaptadores concretos para persistencia,
+    autenticación, servicios externos y configuración de ejecución. Aquí se
+    ubican el esquema de Convex, los repositorios, Better Auth y el código
+    generado.
+\end{description}
+
+\subsection{Reglas de dependencia}
+
+Durante el desarrollo se aplicarán las siguientes reglas:
+
+\begin{itemize}
+  \item una capa externa puede utilizar una capa interna, pero no al revés;
+  \item Presentación no accede directamente a la base de datos;
+  \item Aplicación no contiene componentes React ni consultas directas a
+    Convex;
+  \item Dominio no importa librerías de interfaz, infraestructura, variables
+    de entorno ni tipos generados;
+  \item Infraestructura implementa puertos definidos por Aplicación o Dominio;
+  \item Web y Mobile no duplican reglas de negocio que ya pertenecen al
+    backend;
+  \item los paquetes compartidos contienen contratos, tipos o utilidades
+    reutilizables, pero no se convertirán en un depósito de lógica sin dueño.
+\end{itemize}
+
+TI2 será propietario técnico del backend compartido y de sus capas de
+Aplicación, Dominio e Infraestructura. TI4 consumirá sus servicios y mantendrá
+la Presentación Mobile desde la misma base de código.
 
 % =================================================
 \section{Stack tecnológico}
@@ -161,6 +212,7 @@ Las principales tecnologías seleccionadas son:
     \toprule
     Componente & Tecnología \\
     \midrule
+    Modelo arquitectónico & Arquitectura por capas \\
     Lenguaje principal & TypeScript \\
     Frontend Web & React \\
     Build Web & Vite \\
@@ -258,7 +310,7 @@ Como regla general, el código nuevo deberá escribirse en TypeScript.
 % =================================================
 
 React será utilizado para construir la interfaz de usuario de la aplicación
-web de TI2.
+web de TI2 y pertenecerá principalmente a la capa de Presentación.
 
 React será responsable de:
 
@@ -267,10 +319,14 @@ React será responsable de:
   \item formularios;
   \item composición de pantallas;
   \item interacción con el usuario;
-  \item presentación de los datos obtenidos desde Convex.
+  \item presentación de los datos obtenidos desde los casos de uso;
+  \item captura de eventos y transformación de acciones del usuario en
+    comandos de Aplicación.
 \end{itemize}
 
 React no será responsable de acceder directamente a la base de datos.
+Tampoco deberá contener reglas de negocio que deban cumplirse de la misma
+forma en Web y Mobile.
 
 El flujo esperado será:
 
@@ -278,13 +334,16 @@ El flujo esperado será:
 Componente React
       |
       v
+Caso de uso del cliente
+      |
+      v
 Cliente Convex
       |
       v
-Función Convex
+Función pública de Convex
       |
       v
-Base de Datos
+Capas de Aplicación y Dominio
 \end{lstlisting}
 
 % =================================================
@@ -305,24 +364,30 @@ Sus responsabilidades principales serán:
 
 \subsection{Justificación}
 
-La aplicación web funcionará principalmente como cliente de Convex.
+La aplicación web funcionará principalmente como cliente de Convex. Vite es
+una herramienta de construcción y desarrollo, no una capa de negocio.
 
 Por esta razón no es necesario introducir un segundo framework full-stack con
 una capa adicional de servidor.
 
-La arquitectura será deliberadamente simple:
+La distribución del cliente Web será:
 
 \begin{lstlisting}
-React
+Presentación
  |
+ +-- React
  +-- TanStack Router
  |
- +-- Convex Client
- |
- +-- Better Auth Client
+ +-- Aplicación del cliente
+       |
+       +-- Infraestructura del cliente
+             |
+             +-- Convex Client
+             +-- Better Auth Client
 \end{lstlisting}
 
-La lógica de servidor permanecerá en Convex.
+La lógica de servidor permanecerá en Convex y seguirá la separación entre
+Presentación, Aplicación, Dominio e Infraestructura definida anteriormente.
 
 % =================================================
 \section{TanStack Router}
@@ -382,9 +447,15 @@ Será utilizado como:
 
 El backend será desarrollado y mantenido por TI2.
 
+Convex no define por sí solo la arquitectura del sistema. Las funciones
+públicas de Convex actuarán como adaptadores de la capa de Presentación: deben
+recibir la solicitud, validar su forma y delegar en un caso de uso. No deberán
+concentrar consultas, reglas de autorización y reglas de negocio en una única
+función extensa.
+
 \subsection{Tipos de funciones}
 
-La lógica principal se implementará mediante:
+La interfaz pública del backend se implementará mediante:
 
 \begin{description}
   \item[Queries:] operaciones de lectura.
@@ -392,6 +463,10 @@ La lógica principal se implementará mediante:
   \item[Actions:] operaciones que requieren interacción con servicios externos
     o comportamientos que no corresponden a una query o mutation.
 \end{description}
+
+Queries, mutations y actions pertenecen al borde de entrada del backend. El
+caso de uso que invocan pertenece a la capa de Aplicación y las reglas que el
+caso de uso debe respetar pertenecen al Dominio.
 
 Conceptualmente:
 
@@ -405,14 +480,17 @@ Cliente
   +-- Action ------> Servicio externo / proceso especial
 \end{lstlisting}
 
-La mayor parte de la lógica de negocio deberá permanecer en queries y
-mutations cuando corresponda.
+La mayor parte de la lógica de negocio no deberá permanecer directamente en
+queries, mutations o actions. Estas funciones deben mantenerse delgadas para
+que el mismo caso de uso pueda probarse y reutilizarse sin depender del
+runtime de Convex.
 
 % =================================================
 \section{Base de datos Convex}
 % =================================================
 
-El modelo de datos será administrado mediante Convex.
+El modelo de datos será administrado mediante Convex y pertenecerá a la capa de
+Infraestructura.
 
 El esquema principal se encontrará en:
 
@@ -421,6 +499,11 @@ convex/schema.ts
 \end{lstlisting}
 
 El esquema deberá formar parte del control de versiones.
+
+El esquema describe cómo se persisten los datos, pero no reemplaza las
+entidades ni las reglas del Dominio. Cuando una regla de negocio necesite leer o
+guardar información, la capa de Aplicación utilizará un puerto y la
+Infraestructura lo implementará mediante Convex.
 
 Los cambios relevantes al modelo de datos deberán:
 
@@ -439,7 +522,8 @@ integrante del equipo.
 \section{Better Auth}
 % =================================================
 
-Better Auth administrará la autenticación de los usuarios.
+Better Auth administrará la autenticación de los usuarios y se ubicará en la
+Infraestructura del backend.
 
 La instancia principal de Better Auth será ejecutada sobre el backend Convex.
 
@@ -453,6 +537,11 @@ Entre sus responsabilidades se encuentran:
   \item mecanismos adicionales de autenticación habilitados por el proyecto.
 \end{itemize}
 
+El adaptador de Better Auth podrá entregar la identidad autenticada al borde de
+entrada. La Aplicación y el Dominio utilizarán esa identidad para evaluar
+autorización y políticas del negocio, sin importar directamente módulos de
+Better Auth.
+
 \subsection{Autenticación y autorización}
 
 Es importante distinguir:
@@ -465,27 +554,33 @@ Es importante distinguir:
 Por lo tanto:
 
 \begin{lstlisting}
-Better Auth
+Infraestructura
+    |
+    +--> Better Auth entrega la identidad
     |
     v
-¿Quién es el usuario?
+Presentación
     |
     v
-Convex
+Aplicación
     |
-    v
 ¿Puede ejecutar esta operación?
+    |
+    v
+Dominio evalúa la política de autorización
 \end{lstlisting}
 
-Las reglas de autorización propias del negocio deberán implementarse en el
-backend y no confiar exclusivamente en que una pantalla esté oculta en el
-frontend.
+Las reglas de autorización propias del negocio deberán implementarse en las
+capas de Aplicación o Dominio, según corresponda, y no confiar exclusivamente
+en que una pantalla esté oculta en el frontend.
 
 % =================================================
 \section{Expo y React Native}
 % =================================================
 
 TI4 desarrollará la aplicación móvil utilizando React Native mediante Expo.
+React Native pertenecerá a la Presentación Mobile y Expo proporcionará el
+entorno de ejecución para esa capa.
 
 Expo será responsable de proporcionar:
 
@@ -524,7 +619,7 @@ Esto permite que ambos equipos compartan tecnologías y conceptos.
 % =================================================
 
 Expo Router será utilizado para administrar la navegación de la aplicación
-móvil.
+móvil y pertenecerá a la Presentación.
 
 Las pantallas estarán representadas mediante archivos dentro de:
 
@@ -557,7 +652,9 @@ Expo Router será responsable de:
   \item organización de pantallas.
 \end{itemize}
 
-La lógica de negocio no deberá implementarse dentro del router.
+La lógica de negocio no deberá implementarse dentro del router. Las pantallas
+deberán delegar las operaciones en la Aplicación del cliente o en el cliente
+de infraestructura que invoque la API pública.
 
 % =================================================
 \section{Monorepo y un solo backend}
@@ -572,20 +669,23 @@ La arquitectura correcta será:
 \begin{lstlisting}
 Monorepo
 |
- +-- convex/
- |   |
+ +-- convex/                         Backend
+ |   +-- presentation/               Entrada pública Convex
+ |   +-- application/                Casos de uso
+ |   +-- domain/                     Reglas de negocio
+ |   +-- infrastructure/             Adaptadores y persistencia
  |   +-- schema.ts
- |   +-- users.ts
- |   +-- auth...
-|
-+-- apps/
-    |
-    +-- web/
-    +-- mobile/
+ |
+ +-- apps/
+     +-- web/                        Presentación Web
+     +-- mobile/                     Presentación Mobile
 \end{lstlisting}
 
 De esta forma existe una única implementación del servidor y ambas
-aplicaciones consumen la misma API pública.
+aplicaciones consumen la misma API pública. Las carpetas de las capas podrán
+organizarse por funcionalidad dentro de cada capa cuando el producto crezca,
+pero no se deberán mezclar responsabilidades solamente para evitar crear un
+archivo nuevo.
 
 % =================================================
 \section{Tipos compartidos dentro del monorepo}
@@ -613,6 +713,12 @@ o un paquete interno definido por el monorepo. La configuración concreta del
 alias podrá variar, pero no deberá duplicar la implementación del backend ni
 mantener un contrato generado de forma independiente para cada aplicación.
 
+Estos tipos pertenecen al borde entre Infraestructura y Presentación. No deben
+convertirse en el modelo de Dominio ni hacer que las entidades del negocio
+dependan de \texttt{convex/\_generated}. Cuando sea necesario compartir
+contratos más estables, se podrán publicar desde \texttt{packages/shared/},
+manteniendo separadas las reglas del negocio.
+
 La dependencia de Convex se declarará en los workspaces que corresponda y se
 instalará desde la raíz:
 
@@ -636,9 +742,9 @@ segunda copia manual dentro de \texttt{apps/mobile/}.
 
 Web y Mobile consumen la API pública definida en \texttt{convex/}.
 
-TI4 puede consumir las funciones del backend y utilizar sus tipos,
-pero no debe modificar
-directamente las funciones Convex que no estén dentro de su responsabilidad.
+TI4 puede consumir las funciones del backend y utilizar sus tipos, pero no debe
+modificar directamente las funciones Convex que no estén dentro de su
+responsabilidad ni duplicar en Mobile los casos de uso del backend.
 
 % =================================================
 \section{Estructura del monorepo}
@@ -653,14 +759,18 @@ proyecto/
  |   |
  |   +-- web/
  |   |   +-- src/
+ |   |       +-- presentation/
+ |   |       +-- application/
+ |   |       +-- infrastructure/
  |   |   +-- public/
  |   |   +-- package.json
  |   |   +-- vite.config.ts
  |   |
  |   +-- mobile/
  |       +-- app/
- |       +-- components/
- |       +-- features/
+ |       +-- src/
+ |           +-- application/
+ |           +-- infrastructure/
  |       +-- package.json
  |       +-- app.json
 |
@@ -670,6 +780,10 @@ proyecto/
 |
  +-- convex/
  |   +-- _generated/
+ |   +-- presentation/
+ |   +-- application/
+ |   +-- domain/
+ |   +-- infrastructure/
  |   +-- betterAuth/
  |   +-- schema.ts
  |   +-- auth.config.ts
@@ -688,6 +802,11 @@ proyecto/
  +-- vercel.json
  +-- README.md
 \end{lstlisting}
+
+Las carpetas de las capas son límites de responsabilidad, no una obligación de
+crear archivos vacíos. Una funcionalidad pequeña puede comenzar con pocos
+archivos, siempre que cada archivo tenga una responsabilidad clara y conserve la
+dirección de dependencias.
 
 Los directorios \texttt{packages/ui/} y \texttt{packages/shared/} son
 opcionales. Solo deberán crearse cuando exista una responsabilidad compartida
@@ -761,7 +880,34 @@ la carpeta:
 convex/
 \end{lstlisting}
 
-\subsection{5. Instalar TanStack Router en Web}
+\subsection{5. Crear los límites de las capas}
+
+Después de crear el backend, se deberán establecer los límites de las capas
+antes de agregar lógica de negocio:
+
+\begin{lstlisting}
+convex/
++-- presentation/       Funciones públicas de Convex
++-- application/        Casos de uso
++-- domain/              Entidades y reglas de negocio
++-- infrastructure/      Convex, autenticación y servicios externos
+
+apps/web/src/
++-- presentation/
++-- application/
++-- infrastructure/
+
+apps/mobile/
++-- app/                 Rutas y pantallas
++-- src/application/
++-- src/infrastructure/
+\end{lstlisting}
+
+No es necesario crear archivos vacíos en cada carpeta. El objetivo es decidir
+primero dónde vive la responsabilidad y luego incorporar el código mínimo
+necesario para la funcionalidad.
+
+\subsection{6. Instalar TanStack Router en Web}
 
 \begin{lstlisting}
 bun add @tanstack/react-router --cwd apps/web
@@ -790,7 +936,7 @@ export default defineConfig({
 })
 \end{lstlisting}
 
-\subsection{6. Instalar Better Auth en el backend}
+\subsection{7. Instalar Better Auth en el backend}
 
 \begin{lstlisting}
 bun add better-auth @convex-dev/better-auth
@@ -1379,7 +1525,10 @@ verificaciones de los componentes afectados:
   \item instalación de dependencias desde la raíz;
   \item chequeo de TypeScript;
   \item lint;
-  \item pruebas automatizadas disponibles;
+  \item pruebas unitarias del Dominio y de los casos de uso;
+  \item pruebas de integración de los adaptadores de Infraestructura cuando
+    corresponda;
+  \item pruebas de Presentación disponibles;
   \item build de Web, Mobile o backend según las rutas modificadas.
 \end{enumerate}
 
@@ -1421,7 +1570,11 @@ TI2 será responsable técnicamente de:
 \begin{itemize}
   \item desarrollar la aplicación web;
   \item mantener React y TanStack Router;
-  \item implementar las funciones Convex;
+  \item implementar la Presentación pública del backend mediante funciones
+    Convex delgadas;
+  \item implementar los casos de uso de Aplicación;
+  \item definir y mantener las entidades y reglas del Dominio;
+  \item implementar los adaptadores de Infraestructura;
   \item definir y mantener el modelo de datos;
   \item implementar Better Auth;
   \item implementar reglas de autorización;
@@ -1445,7 +1598,10 @@ TI4 será responsable técnicamente de:
 \begin{itemize}
   \item desarrollar la aplicación móvil mediante Expo;
   \item organizar la navegación mediante Expo Router;
-  \item integrar la aplicación con Convex;
+  \item implementar la Presentación Mobile;
+  \item organizar la Aplicación específica de la interfaz cuando una pantalla
+    requiera más de una llamada al backend;
+  \item integrar la Infraestructura cliente con Convex;
   \item integrar los flujos de Better Auth;
   \item consumir los tipos generados desde la configuración compartida;
   \item detectar y reportar problemas de integración;
@@ -1460,9 +1616,10 @@ y control de calidad definidas en el documento metodológico general.
 \section{Frontera entre TI2 y TI4}
 % =================================================
 
-La frontera técnica entre ambos equipos estará formada principalmente por las
-funciones públicas de Convex, el sistema de autenticación compartido y los
-paquetes internos que sean consumidos por más de una aplicación.
+La frontera técnica entre ambos equipos estará formada principalmente por la
+API pública de la capa de Presentación del backend, los casos de uso que esa
+API expone, el sistema de autenticación compartido y los paquetes internos que
+sean consumidos por más de una aplicación.
 
 TI4 no deberá:
 
@@ -1497,8 +1654,10 @@ Un cambio deberá coordinarse mediante Linear cuando modifique:
   \item nombre de una función pública;
   \item argumentos de una función;
   \item tipo de retorno;
+  \item comportamiento de un caso de uso;
   \item reglas de autenticación;
   \item reglas de autorización;
+  \item regla o política del Dominio;
   \item estructura de datos utilizada por ambos clientes;
   \item comportamiento funcional esperado por la aplicación Mobile;
   \item un paquete compartido utilizado por Web y Mobile.
@@ -1520,39 +1679,46 @@ TI2-42 Cambiar flujo de autenticación
 \section{Qué corresponde a cada capa}
 % =================================================
 
-\subsection*{React}
+\subsection*{Presentación}
 
-Interfaz de usuario Web.
+React, React Native, TanStack Router, Expo Router y las funciones públicas de
+Convex forman los puntos de entrada de esta capa. Presentación se ocupa de
+recibir eventos, validar datos de entrada y mostrar estados de carga, éxito y
+error.
 
-No contiene acceso directo a la base de datos.
+No contiene acceso directo a la base de datos ni reglas de negocio compartidas.
 
-\subsection*{TanStack Router}
+\subsection*{Aplicación}
 
-Navegación Web.
+Los casos de uso representan acciones con significado para el producto, por
+ejemplo \textit{Obtener perfil}, \textit{Registrar usuario} o
+\textit{Reservar recurso}. Esta capa coordina autenticación, autorización,
+validaciones de negocio y persistencia mediante puertos.
 
-No contiene lógica de negocio.
+Un caso de uso no debe importar React, Expo, Convex Client ni componentes de
+interfaz.
 
-\subsection*{Expo / React Native}
+\subsection*{Dominio}
 
-Interfaz de usuario Mobile.
+El Dominio contiene entidades, objetos de valor, invariantes y políticas del
+negocio. Es la única capa que debe ser la fuente de verdad para las reglas que
+deben cumplirse independientemente de Web o Mobile.
 
-No reemplaza el backend.
+Debe ser código TypeScript independiente de frameworks. No deberá recibir
+directamente documentos de Convex ni tipos de navegación.
 
-\subsection*{Expo Router}
+\subsection*{Infraestructura}
 
-Navegación Mobile.
+Convex, el esquema, los repositorios, Better Auth, Convex Client y las
+integraciones con servicios externos forman adaptadores de Infraestructura.
+Esta capa conoce los detalles técnicos y traduce esos detalles a los puertos
+que consumen Aplicación y Dominio.
 
-No contiene reglas de negocio compartidas.
+\subsection*{Herramientas de soporte}
 
-\subsection*{Convex}
-
-Backend, persistencia y reglas de negocio compartidas.
-
-\subsection*{Better Auth}
-
-Identidad y sesiones.
-
-No reemplaza las reglas de autorización del sistema.
+Vite, Expo, EAS Build, Vercel, Bun y GitHub Actions son herramientas de
+desarrollo, construcción o despliegue. No son capas de la arquitectura y no
+deben utilizarse como ubicación para reglas del negocio.
 
 % =================================================
 \section{Ejemplo de distribución de responsabilidades}
@@ -1567,15 +1733,26 @@ Supongamos que debe implementarse:
 La responsabilidad se distribuirá así:
 
 \begin{lstlisting}
-Better Auth
+Presentación
     |
-    +--> identifica al usuario actual
+    +--> Web o Mobile solicita el perfil
     |
     v
-Convex
+Aplicación
     |
-    +--> valida permisos
-    +--> obtiene información
+    +--> caso de uso Obtener perfil
+    +--> solicita identidad y repositorio
+    |
+    v
+Dominio
+    |
+    +--> valida la política de acceso
+    |
+    v
+Infraestructura
+    |
+    +--> Better Auth identifica al usuario
+    +--> Repositorio Convex obtiene el perfil
     |
     +-------------+
     |             |
@@ -1586,7 +1763,8 @@ Convex
 
 El frontend decide \textbf{cómo mostrar} la información.
 
-El backend decide \textbf{qué información puede obtener} el usuario.
+Aplicación y Dominio deciden \textbf{qué información puede obtener} el
+usuario. Infraestructura solamente implementa la forma concreta de obtenerla.
 
 % =================================================
 \section{Proceso para una funcionalidad compartida}
@@ -1596,7 +1774,10 @@ Una funcionalidad que afecte a ambos equipos podrá seguir el siguiente flujo:
 
 \begin{enumerate}
   \item TI4 realiza el triage y se identifican las tareas necesarias.
-  \item TI2 implementa o modifica las funciones necesarias en Convex.
+  \item TI2 define el caso de uso y las reglas del Dominio.
+  \item TI2 implementa los puertos y adaptadores de Infraestructura necesarios.
+  \item TI2 expone una función pública de Convex como punto de entrada del caso
+    de uso.
   \item TI2 y TI4 integran el cambio mediante uno o más Pull Requests
     relacionados.
   \item se regeneran o actualizan los tipos públicos de Convex;
@@ -1616,10 +1797,13 @@ Linear
 Issue TI2          Issue TI4
    |                   |
    v                   |
-Backend Convex         |
+Caso de uso             |
    |                   |
    v                   |
-Tipos generados -------+
+API publica -------+    |
+   |               |    |
+   v               |    |
+Tipos generados ---+----+
                        |
                        v
                   apps/mobile
@@ -1635,6 +1819,13 @@ Durante el desarrollo se aplicarán los siguientes principios:
   \item existe un solo backend;
   \item existe una sola fuente de verdad para los datos;
   \item Web y Mobile consumen los mismos servicios;
+  \item las dependencias respetan la dirección Presentación $\rightarrow$
+    Aplicación $\rightarrow$ Dominio;
+  \item el Dominio no depende de frameworks ni proveedores concretos;
+  \item los casos de uso coordinan las operaciones y las funciones públicas
+    de Convex se mantienen delgadas;
+  \item la Infraestructura implementa puertos sin trasladar reglas de negocio
+    a los repositorios;
   \item los secretos nunca se almacenan en código cliente;
   \item las reglas de autorización se validan en el backend;
   \item la API pública y los paquetes compartidos deben ser explícitos;
@@ -1652,25 +1843,26 @@ Durante el desarrollo se aplicarán los siguientes principios:
 El stack tecnológico puede resumirse de la siguiente manera:
 
 \begin{lstlisting}
-                         Convex
-                Backend + Base de Datos
-                         |
-                    Better Auth
-                         |
-             +-----------+-----------+
-             |                       |
-             v                       v
-
-          apps/web                 apps/mobile
-
-           React                  React Native
-           Vite                       Expo
-     TanStack Router              Expo Router
-             |                       |
-             +-----------+-----------+
-                         |
-                     TypeScript
+       Web / Mobile
+       Presentación
+             |
+             v
+       Aplicación
+       Casos de uso
+             |
+             v
+         Dominio
+     Reglas de negocio
+             ^
+             |
+      Infraestructura
+   Convex + Better Auth
 \end{lstlisting}
+
+React, React Native, TanStack Router y Expo Router se ubican principalmente en
+Presentación. TypeScript se utiliza en todas las capas. Vite, Expo, EAS Build,
+Vercel y GitHub Actions soportan el desarrollo y despliegue, pero no contienen
+reglas de negocio.
 
 El flujo de desarrollo y despliegue será:
 

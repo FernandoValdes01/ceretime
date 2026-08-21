@@ -97,7 +97,8 @@ principalmente de:
 
 \begin{itemize}
   \item desarrollo de la aplicación web;
-  \item desarrollo del backend y API;
+  \item desarrollo del backend y API mediante arquitectura por capas;
+  \item implementación de los casos de uso y reglas de negocio compartidas;
   \item diseño e implementación de la base de datos;
   \item pruebas asociadas a sus componentes;
   \item despliegue de sus propios servicios;
@@ -141,7 +142,11 @@ Proyecto
 |   +-- web/                 Aplicación web de TI2
 |   +-- mobile/              Aplicación móvil de TI4
 |
-+-- convex/                  Backend y base de datos compartidos
++-- convex/                  Backend por capas y base de datos compartidos
+|   +-- presentation/        Funciones públicas de Convex
+|   +-- application/         Casos de uso
+|   +-- domain/              Reglas de negocio
+|   +-- infrastructure/      Persistencia y servicios externos
 +-- packages/                Código compartido cuando corresponda
 +-- .github/workflows/       Integración continua
 +-- package.json
@@ -156,8 +161,36 @@ responsabilidades: TI2 mantiene la aplicación web y el backend compartido,
 mientras TI4 mantiene la aplicación móvil.
 
 La principal frontera de integración entre ambos equipos será la API pública de
-Convex, cuyos tipos generados podrán ser consumidos directamente por ambas
-aplicaciones sin copiar implementaciones ni mantener contratos externos.
+la capa de Presentación del backend. Sus tipos generados podrán ser consumidos
+directamente por ambas aplicaciones sin copiar implementaciones ni mantener
+contratos externos.
+
+\subsection{Arquitectura por capas}
+
+El código deberá respetar la siguiente dirección de dependencias:
+
+\begin{lstlisting}
+Presentación
+      |
+      v
+Aplicación
+      |
+      v
+Dominio
+      ^
+      |
+Infraestructura
+\end{lstlisting}
+
+En el backend, las funciones públicas de Convex serán puntos de entrada
+delgados; los casos de uso coordinarán la operación; el Dominio concentrará
+las reglas; y la Infraestructura implementará la persistencia, autenticación y
+servicios externos.
+
+Una branch o Pull Request que cruce varias capas deberá explicar qué
+responsabilidad cambia en cada una. No se deberá resolver una necesidad de
+negocio agregando consultas directas a la base de datos desde React, Mobile o
+una función pública extensa.
 
 % -------------------------------------------------
 
@@ -562,6 +595,8 @@ La revisión deberá enfocarse principalmente en:
   \item errores potenciales;
   \item pruebas;
   \item seguridad;
+  \item respeto de la dirección de dependencias entre capas;
+  \item ubicación correcta de las reglas de negocio;
   \item compatibilidad con otros componentes;
   \item contrato de API cuando corresponda.
 \end{itemize}
@@ -665,7 +700,9 @@ como mínimo:
   \item ejecutar el build de la aplicación o paquete afectado;
   \item formatter;
   \item linter;
-  \item pruebas automatizadas disponibles.
+  \item pruebas unitarias del Dominio y de los casos de uso;
+  \item pruebas de integración de Infraestructura y de Presentación cuando
+    corresponda.
 \end{itemize}
 
 Cuando un cambio afecte el backend compartido, las aplicaciones Web y Mobile o
@@ -680,10 +717,12 @@ situación excepcional debidamente justificada.
 \section{Integración entre TI2 y TI4}
 
 El equipo TI2 será responsable de implementar y desplegar los servicios
-compartidos del proyecto utilizando \textbf{Convex}. Convex proporcionará la
-capa de servidor y persistencia de datos utilizada por las distintas
-aplicaciones del proyecto. La autenticación se implementará utilizando
-\textbf{Better Auth}.
+compartidos del proyecto utilizando \textbf{Convex} y arquitectura por capas.
+Convex proporcionará los puntos de entrada, la ejecución y la persistencia
+utilizada por las distintas aplicaciones del proyecto. Los casos de uso y las
+reglas de negocio no deberán quedar acoplados a Convex. La autenticación se
+implementará utilizando \textbf{Better Auth} como adaptador de
+Infraestructura.
 
 Al trabajar en un monorepo, TI2 y TI4 podrán modificar en un mismo Pull Request
 las partes de una funcionalidad que necesiten coordinación. También podrán
@@ -700,6 +739,8 @@ deberá:
   \item comunicar cambios incompatibles antes de integrarlos;
   \item mantener actualizada la documentación necesaria para consumir el
     servicio;
+  \item indicar si el cambio afecta Presentación, Aplicación, Dominio o
+    Infraestructura;
   \item incluir las modificaciones necesarias de autenticación, tipos o
     estructura de datos cuando corresponda.
 \end{itemize}
@@ -709,11 +750,13 @@ deberá:
 \section{Cambios en el modelo de datos}
 
 El almacenamiento de datos del proyecto será administrado mediante
-\textbf{Convex}. Los cambios realizados sobre el esquema, funciones, relaciones
-y estructuras de datos deberán mantenerse versionados en la carpeta
-\texttt{convex/} del monorepo. No deberán existir modificaciones necesarias
-para ejecutar el sistema que dependan exclusivamente de configuraciones
-manuales no documentadas.
+\textbf{Convex} como parte de la Infraestructura. Los cambios realizados sobre
+el esquema, funciones, relaciones y estructuras de datos deberán mantenerse
+versionados en la carpeta \texttt{convex/} del monorepo. Las entidades y reglas
+del negocio deberán permanecer en la capa de Dominio, no en el esquema ni en
+los componentes de interfaz. No deberán existir modificaciones necesarias para
+ejecutar el sistema que dependan exclusivamente de configuraciones manuales no
+documentadas.
 
 Cuando una modificación del modelo de datos afecte funcionalidades utilizadas
 por TI4, esta deberá ser tratada como una dependencia entre equipos y quedar
@@ -755,6 +798,7 @@ Como regla general, una tarea podrá marcarse como \texttt{Done} cuando:
   \item CI finalizó correctamente;
   \item las pruebas necesarias fueron realizadas;
   \item la documentación fue actualizada cuando corresponde;
+  \item las dependencias entre capas respetan la arquitectura definida;
   \item no deja dependencias conocidas sin registrar;
   \item el cambio se encuentra disponible en \texttt{main}.
 \end{itemize}
@@ -769,6 +813,8 @@ El flujo estándar será:
   \item TI4 realiza el triage inicial del trabajo.
   \item El issue queda en el Team y Cycle correspondiente.
   \item El integrante toma una tarea desde Linear.
+  \item Identifica las capas afectadas y el punto de entrada de la
+    funcionalidad.
   \item Actualiza localmente \texttt{main}.
   \item Crea desde Linear una branch asociada al issue dentro del monorepo.
   \item Implementa el cambio.
@@ -832,6 +878,7 @@ tecnologías definidas para el proyecto son:
     \toprule
     Componente & Tecnología seleccionada \\
     \midrule
+    Modelo arquitectónico & Arquitectura por capas \\
     Frontend Web & React + Vite + TanStack Router \\
     Servidor / Backend & Convex \\
     Base de Datos & Convex \\
@@ -846,9 +893,10 @@ tecnologías definidas para el proyecto son:
 \end{table}
 
 TI2 será responsable de desplegar y mantener los servicios compartidos,
-incluyendo la infraestructura implementada mediante Convex y la integración de
-autenticación con Better Auth. TI4 será responsable de integrar y mantener la
-aplicación móvil dentro del mismo monorepo. Las decisiones específicas de
+incluyendo las capas de Aplicación, Dominio e Infraestructura implementadas
+mediante Convex y la integración de autenticación con Better Auth. TI4 será
+responsable de integrar y mantener la Presentación Mobile y su infraestructura
+cliente dentro del mismo monorepo. Las decisiones específicas de
 implementación, bibliotecas auxiliares y configuraciones internas podrán
 evolucionar durante el proyecto, siempre que no modifiquen los contratos y
 dependencias entre ambos equipos sin la coordinación correspondiente.
@@ -868,6 +916,9 @@ Durante el proyecto se aplicarán los siguientes principios:
   \item Linear representa el estado del trabajo.
   \item GitHub representa el estado del código.
   \item El monorepo contiene todos los componentes principales del producto.
+  \item La arquitectura por capas mantiene separadas Presentación, Aplicación,
+    Dominio e Infraestructura.
+  \item Las reglas de negocio no se duplican en las aplicaciones cliente.
   \item La API compartida y los paquetes internos deben mantenerse explícitos
     y versionados.
   \item Los problemas deben hacerse visibles tempranamente.
