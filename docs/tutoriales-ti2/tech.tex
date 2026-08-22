@@ -75,12 +75,11 @@
 \section{Objetivo}
 % =================================================
 
-El presente documento define las principales tecnologías, la arquitectura
-general, la estructura del monorepo y los procedimientos básicos de
-desarrollo y despliegue utilizados durante el trabajo conjunto de Taller de
-Integración II (TI2) y Taller de Integración IV (TI4).
+Esta guía reúne el stack, la arquitectura, la estructura del monorepo y los
+procedimientos básicos de desarrollo y despliegue de Taller de Integración II
+(TI2) y Taller de Integración IV (TI4).
 
-Los objetivos de esta guía son:
+La guía sirve para:
 
 \begin{itemize}
   \item establecer un stack tecnológico común;
@@ -95,21 +94,18 @@ Los objetivos de esta guía son:
   \item reducir decisiones técnicas innecesarias durante el desarrollo.
 \end{itemize}
 
-Este documento complementa el protocolo de trabajo con Git, GitHub y Linear.
+La guía complementa el protocolo de trabajo con Git, GitHub y Linear.
 
 % =================================================
 \section{Principio general de arquitectura}
 % =================================================
 
-El proyecto corresponde a un único producto y se organizará en \textbf{un
-monorepo GitHub}. El monorepo contendrá las aplicaciones Web y Mobile, el
-backend compartido y los paquetes internos que se incorporen durante el
-desarrollo.
+El producto vive en un único \textbf{monorepo GitHub}. El monorepo contiene las
+aplicaciones Web y Mobile, el backend compartido y los paquetes internos que se
+incorporen durante el desarrollo.
 
-La estructura de carpetas del monorepo no será la arquitectura completa. La
-arquitectura lógica del sistema será una \textbf{arquitectura por capas},
-aplicada de forma consistente en el backend y respetada por ambas
-aplicaciones cliente.
+La estructura de carpetas no basta para describir la arquitectura. El backend y
+ambas aplicaciones cliente siguen una \textbf{arquitectura por capas}.
 
 \begin{lstlisting}
 Proyecto
@@ -125,7 +121,7 @@ Proyecto
 +-- bun.lock                 Único archivo de bloqueo
 \end{lstlisting}
 
-Ambas aplicaciones utilizarán:
+Web y Mobile comparten:
 
 \begin{itemize}
   \item el mismo backend;
@@ -134,7 +130,7 @@ Ambas aplicaciones utilizarán:
   \item las mismas reglas de negocio.
 \end{itemize}
 
-La arquitectura general será:
+La arquitectura lógica es:
 
 \begin{lstlisting}
                  PRESENTACIÓN
@@ -153,10 +149,10 @@ La arquitectura general será:
         Convex, Better Auth y servicios externos
 \end{lstlisting}
 
-La dirección normal de una solicitud es \textbf{Presentación -> Aplicación ->
-Dominio}. La infraestructura implementa las interfaces que necesitan la
-aplicación y el dominio, por lo que puede depender de esas capas, pero las
-reglas del negocio no dependen de Convex, React, Expo ni Better Auth.
+Una solicitud sigue la dirección \textbf{Presentación -> Aplicación ->
+Dominio}. Infraestructura implementa las interfaces que necesitan Aplicación y
+Dominio, por lo que puede depender de esas capas. Las reglas del negocio no
+dependen de Convex, React, Expo ni Better Auth.
 
 \subsection{Responsabilidad de cada capa}
 
@@ -180,7 +176,7 @@ reglas del negocio no dependen de Convex, React, Expo ni Better Auth.
 
 \subsection{Reglas de dependencia}
 
-Durante el desarrollo se aplicarán las siguientes reglas:
+Estas reglas rigen las dependencias:
 
 \begin{itemize}
   \item una capa externa puede utilizar una capa interna, pero no al revés;
@@ -196,15 +192,15 @@ Durante el desarrollo se aplicarán las siguientes reglas:
     reutilizables, pero no se convertirán en un depósito de lógica sin dueño.
 \end{itemize}
 
-TI2 será propietario técnico del backend compartido y de sus capas de
-Aplicación, Dominio e Infraestructura. TI4 consumirá sus servicios y mantendrá
-la Presentación Mobile desde la misma base de código.
+TI2 es propietario técnico del backend compartido y de sus capas de Aplicación,
+Dominio e Infraestructura. TI4 consume esos servicios y mantiene la
+Presentación Mobile desde la misma base de código.
 
 % =================================================
 \section{Stack tecnológico}
 % =================================================
 
-Las principales tecnologías seleccionadas son:
+El stack es:
 
 \begin{table}[h]
   \centering
@@ -233,40 +229,39 @@ Las principales tecnologías seleccionadas son:
   \end{tabularx}
 \end{table}
 
-Los comandos de esta guía utilizarán \texttt{bun} como gestor de paquetes y se
-ejecutarán desde la raíz del monorepo, salvo cuando se indique explícitamente
-una aplicación.
+Ejecuta los comandos con \texttt{bun} desde la raíz del monorepo, salvo cuando
+la guía indique explícitamente una aplicación.
 
-Se deberá mantener un único gestor de paquetes y un único archivo de bloqueo en
-la raíz del monorepo. Las aplicaciones y paquetes internos utilizarán los
-workspaces definidos en el \texttt{package.json} raíz.
+Mantén un único gestor de paquetes y un único archivo de bloqueo en la raíz del
+monorepo. Las aplicaciones y los paquetes internos usan los workspaces
+definidos en el \texttt{package.json} raíz.
 
 \subsection{Instalación de Bun}
 
-Antes de ejecutar los comandos de esta guía, cada integrante deberá instalar
-Bun en su equipo y verificar que esté disponible en la terminal.
+Antes de ejecutar la guía, instala Bun y verifica que esté disponible en la
+terminal.
 
-En macOS y Linux se utilizará:
+En macOS y Linux, ejecuta:
 
 \begin{lstlisting}
 curl -fsSL https://bun.sh/install | bash
 \end{lstlisting}
 
-En Windows se utilizará PowerShell:
+En Windows, ejecuta PowerShell:
 
 \begin{lstlisting}
 powershell -c "irm bun.sh/install.ps1|iex"
 \end{lstlisting}
 
-La mayoría de los integrantes de TI2 utilizará Windows, por lo que esa será la
-instalación de referencia para dicho equipo. Después de instalar Bun, se deberá
-abrir una nueva terminal y comprobar la instalación mediante:
+La mayoría de TI2 usa Windows, por lo que esa es la instalación de referencia
+para el equipo. Después de instalar Bun, abre una nueva terminal y comprueba la
+instalación con:
 
 \begin{lstlisting}
 bun --version
 \end{lstlisting}
 
-Por ejemplo, no deberán coexistir en el monorepo:
+En el monorepo no deben coexistir:
 
 \begin{lstlisting}
             bun.lock
@@ -281,9 +276,7 @@ Por ejemplo, no deberán coexistir en el monorepo:
 
 \subsection{Responsabilidad}
 
-TypeScript será el lenguaje principal de programación de ambos equipos.
-
-Será utilizado en:
+TypeScript es el lenguaje principal de ambos equipos. Se usa en:
 
 \begin{itemize}
   \item frontend web;
@@ -296,23 +289,20 @@ Será utilizado en:
 
 \subsection{Justificación}
 
-Utilizar TypeScript en todo el proyecto permite compartir un mismo modelo
-mental entre ambos equipos y detectar una gran cantidad de errores durante el
-desarrollo antes de ejecutar la aplicación.
+Usar TypeScript en todo el proyecto permite compartir tipos entre equipos y
+detectar muchos errores antes de ejecutar la aplicación.
 
 Además, Convex permite obtener tipos de extremo a extremo entre sus funciones
 de backend y los clientes TypeScript.
 
-Como regla general, el código nuevo deberá escribirse en TypeScript.
+Escribe el código nuevo en TypeScript.
 
 % =================================================
 \section{React}
 % =================================================
 
-React será utilizado para construir la interfaz de usuario de la aplicación
-web de TI2 y pertenecerá principalmente a la capa de Presentación.
-
-React será responsable de:
+React construye la interfaz de usuario de la aplicación web de TI2 y pertenece
+principalmente a la capa de Presentación. React maneja:
 
 \begin{itemize}
   \item componentes visuales;
@@ -324,11 +314,10 @@ React será responsable de:
     comandos de Aplicación.
 \end{itemize}
 
-React no será responsable de acceder directamente a la base de datos.
-Tampoco deberá contener reglas de negocio que deban cumplirse de la misma
-forma en Web y Mobile.
+React no accede directamente a la base de datos ni contiene reglas de negocio
+que deban cumplirse de la misma forma en Web y Mobile.
 
-El flujo esperado será:
+El flujo esperado es:
 
 \begin{lstlisting}
 Componente React
@@ -350,10 +339,8 @@ Capas de Aplicación y Dominio
 \section{Vite}
 % =================================================
 
-Vite será utilizado como herramienta de desarrollo y construcción de la
-aplicación web.
-
-Sus responsabilidades principales serán:
+Vite ejecuta el entorno de desarrollo y construye la aplicación web. Se ocupa
+de:
 
 \begin{itemize}
   \item ejecutar el servidor de desarrollo;
@@ -364,13 +351,11 @@ Sus responsabilidades principales serán:
 
 \subsection{Justificación}
 
-La aplicación web funcionará principalmente como cliente de Convex. Vite es
-una herramienta de construcción y desarrollo, no una capa de negocio.
+La aplicación web funciona principalmente como cliente de Convex. Vite se
+ocupa del desarrollo y la construcción, no de la lógica de negocio. Por eso no
+se incorpora un segundo framework full-stack con otra capa de servidor.
 
-Por esta razón no es necesario introducir un segundo framework full-stack con
-una capa adicional de servidor.
-
-La distribución del cliente Web será:
+La distribución del cliente Web queda así:
 
 \begin{lstlisting}
 Presentación
@@ -393,9 +378,7 @@ Presentación, Aplicación, Dominio e Infraestructura definida anteriormente.
 \section{TanStack Router}
 % =================================================
 
-TanStack Router será utilizado como sistema de routing de la aplicación web.
-
-Será responsable de:
+TanStack Router administra las rutas de la aplicación web. Se ocupa de:
 
 \begin{itemize}
   \item definición de páginas;
@@ -406,7 +389,7 @@ Será responsable de:
   \item navegación type-safe.
 \end{itemize}
 
-Se utilizará routing basado en archivos.
+Las rutas se definen mediante archivos.
 
 Por defecto las rutas se almacenarán en:
 
@@ -414,29 +397,25 @@ Por defecto las rutas se almacenarán en:
 src/routes/
 \end{lstlisting}
 
-TanStack Router generará automáticamente:
+TanStack Router genera automáticamente:
 
 \begin{lstlisting}
 src/routeTree.gen.ts
 \end{lstlisting}
 
-Este archivo es generado automáticamente y no deberá modificarse manualmente.
+No edites este archivo manualmente.
 
 \subsection{Justificación}
 
-Se utilizará TanStack Router en lugar de TanStack Start porque el servidor del
-proyecto ya está definido mediante Convex.
-
-TanStack Start incorporaría funcionalidades adicionales de servidor que no
-son necesarias para la arquitectura definida.
+Se usa TanStack Router en lugar de TanStack Start porque Convex ya define el
+servidor del proyecto. TanStack Start incorporaría funcionalidades de servidor
+que la arquitectura no necesita.
 
 % =================================================
 \section{Convex}
 % =================================================
 
-Convex será la plataforma central del backend.
-
-Será utilizado como:
+Convex es la plataforma central del backend. Aporta:
 
 \begin{itemize}
   \item backend;
@@ -445,17 +424,16 @@ Será utilizado como:
   \item mecanismo de sincronización de datos con los clientes.
 \end{itemize}
 
-El backend será desarrollado y mantenido por TI2.
+TI2 desarrolla y mantiene el backend.
 
-Convex no define por sí solo la arquitectura del sistema. Las funciones
-públicas de Convex actuarán como adaptadores de la capa de Presentación: deben
-recibir la solicitud, validar su forma y delegar en un caso de uso. No deberán
-concentrar consultas, reglas de autorización y reglas de negocio en una única
-función extensa.
+Convex no define por sí solo la arquitectura. Sus funciones públicas actúan
+como adaptadores de Presentación: reciben la solicitud, validan su forma y
+delegan en un caso de uso. No concentran consultas, autorización y reglas de
+negocio en una sola función extensa.
 
 \subsection{Tipos de funciones}
 
-La interfaz pública del backend se implementará mediante:
+La API pública del backend usa:
 
 \begin{description}
   \item[Queries:] operaciones de lectura.
@@ -464,11 +442,11 @@ La interfaz pública del backend se implementará mediante:
     o comportamientos que no corresponden a una query o mutation.
 \end{description}
 
-Queries, mutations y actions pertenecen al borde de entrada del backend. El
-caso de uso que invocan pertenece a la capa de Aplicación y las reglas que el
-caso de uso debe respetar pertenecen al Dominio.
+Queries, mutations y actions forman el borde de entrada del backend. El caso de
+uso que invocan pertenece a Aplicación; las reglas que debe respetar pertenecen
+al Dominio.
 
-Conceptualmente:
+La API se distribuye así:
 
 \begin{lstlisting}
 Cliente
@@ -480,17 +458,15 @@ Cliente
   +-- Action ------> Servicio externo / proceso especial
 \end{lstlisting}
 
-La mayor parte de la lógica de negocio no deberá permanecer directamente en
-queries, mutations o actions. Estas funciones deben mantenerse delgadas para
-que el mismo caso de uso pueda probarse y reutilizarse sin depender del
-runtime de Convex.
+La lógica de negocio no debe quedar directamente en queries, mutations o
+actions. Mantén delgadas estas funciones para poder probar y reutilizar el caso
+de uso sin depender del runtime de Convex.
 
 % =================================================
 \section{Base de datos Convex}
 % =================================================
 
-El modelo de datos será administrado mediante Convex y pertenecerá a la capa de
-Infraestructura.
+Convex administra el modelo de datos, que pertenece a Infraestructura.
 
 El esquema principal se encontrará en:
 
@@ -498,14 +474,14 @@ El esquema principal se encontrará en:
 convex/schema.ts
 \end{lstlisting}
 
-El esquema deberá formar parte del control de versiones.
+El esquema debe estar bajo control de versiones.
 
 El esquema describe cómo se persisten los datos, pero no reemplaza las
-entidades ni las reglas del Dominio. Cuando una regla de negocio necesite leer o
-guardar información, la capa de Aplicación utilizará un puerto y la
-Infraestructura lo implementará mediante Convex.
+entidades ni las reglas del Dominio. Cuando una regla de negocio necesita leer o
+guardar información, Aplicación usa un puerto e Infraestructura lo implementa
+con Convex.
 
-Los cambios relevantes al modelo de datos deberán:
+Para cada cambio relevante del modelo de datos:
 
 \begin{itemize}
   \item realizarse mediante una branch;
@@ -515,19 +491,18 @@ Los cambios relevantes al modelo de datos deberán:
   \item quedar asociados al issue correspondiente en Linear.
 \end{itemize}
 
-No deberán existir cambios manuales indispensables que solamente conozca un
-integrante del equipo.
+No dejes cambios manuales indispensables que solo conozca una persona.
 
 % =================================================
 \section{Better Auth}
 % =================================================
 
-Better Auth administrará la autenticación de los usuarios y se ubicará en la
+Better Auth administra la autenticación de usuarios y pertenece a
 Infraestructura del backend.
 
-La instancia principal de Better Auth será ejecutada sobre el backend Convex.
+La instancia principal de Better Auth corre sobre Convex.
 
-Entre sus responsabilidades se encuentran:
+Sus responsabilidades incluyen:
 
 \begin{itemize}
   \item registro de usuarios;
@@ -537,21 +512,20 @@ Entre sus responsabilidades se encuentran:
   \item mecanismos adicionales de autenticación habilitados por el proyecto.
 \end{itemize}
 
-El adaptador de Better Auth podrá entregar la identidad autenticada al borde de
-entrada. La Aplicación y el Dominio utilizarán esa identidad para evaluar
-autorización y políticas del negocio, sin importar directamente módulos de
-Better Auth.
+El adaptador de Better Auth entrega la identidad autenticada al borde de
+entrada. Aplicación y Dominio usan esa identidad para evaluar autorización y
+políticas del negocio, sin importar directamente módulos de Better Auth.
 
 \subsection{Autenticación y autorización}
 
-Es importante distinguir:
+Distingue:
 
 \begin{description}
   \item[Autenticación:] determina quién es el usuario.
   \item[Autorización:] determina qué puede hacer el usuario.
 \end{description}
 
-Por lo tanto:
+En consecuencia:
 
 \begin{lstlisting}
 Infraestructura
@@ -570,19 +544,17 @@ Aplicación
 Dominio evalúa la política de autorización
 \end{lstlisting}
 
-Las reglas de autorización propias del negocio deberán implementarse en las
-capas de Aplicación o Dominio, según corresponda, y no confiar exclusivamente
-en que una pantalla esté oculta en el frontend.
+Implementa las reglas de autorización del negocio en Aplicación o Dominio,
+según corresponda. No confíes solo en ocultar una pantalla del frontend.
 
 % =================================================
 \section{Expo y React Native}
 % =================================================
 
-TI4 desarrollará la aplicación móvil utilizando React Native mediante Expo.
-React Native pertenecerá a la Presentación Mobile y Expo proporcionará el
-entorno de ejecución para esa capa.
+TI4 desarrolla la aplicación móvil con React Native mediante Expo. React Native
+pertenece a Presentación Mobile y Expo proporciona el entorno de ejecución.
 
-Expo será responsable de proporcionar:
+Expo proporciona:
 
 \begin{itemize}
   \item entorno de desarrollo móvil;
@@ -594,11 +566,9 @@ Expo será responsable de proporcionar:
 
 \subsection{Justificación}
 
-Expo reduce la cantidad de configuración nativa que el equipo debe administrar
-directamente y permite mantener la mayor parte del desarrollo en TypeScript y
-React.
-
-Esto permite que ambos equipos compartan tecnologías y conceptos.
+Expo reduce la configuración nativa que el equipo administra directamente y
+mantiene la mayor parte del desarrollo en TypeScript y React. Así, ambos
+equipos comparten tecnologías y conceptos.
 
 \begin{center}
   \begin{tabular}{ll}
@@ -618,8 +588,8 @@ Esto permite que ambos equipos compartan tecnologías y conceptos.
 \section{Expo Router}
 % =================================================
 
-Expo Router será utilizado para administrar la navegación de la aplicación
-móvil y pertenecerá a la Presentación.
+Expo Router administra la navegación de la aplicación móvil y pertenece a
+Presentación.
 
 Las pantallas estarán representadas mediante archivos dentro de:
 
@@ -642,7 +612,7 @@ app/
     +-- [id].tsx
 \end{lstlisting}
 
-Expo Router será responsable de:
+Expo Router se ocupa de:
 
 \begin{itemize}
   \item navegación;
@@ -652,19 +622,18 @@ Expo Router será responsable de:
   \item organización de pantallas.
 \end{itemize}
 
-La lógica de negocio no deberá implementarse dentro del router. Las pantallas
-deberán delegar las operaciones en la Aplicación del cliente o en el cliente
-de infraestructura que invoque la API pública.
+La lógica de negocio no debe implementarse dentro del router. Las pantallas
+delegan las operaciones en la Aplicación del cliente o en el cliente de
+Infraestructura que invoca la API pública.
 
 % =================================================
 \section{Monorepo y un solo backend}
 % =================================================
 
-El backend Convex existirá solamente en la carpeta \texttt{convex/} de la raíz
-del monorepo. TI4 \textbf{no deberá crear una segunda carpeta Convex ni copiar
-funciones del backend}.
+El backend Convex vive únicamente en \texttt{convex/}, en la raíz del monorepo.
+TI4 \textbf{no debe crear otra carpeta Convex ni copiar funciones del backend}.
 
-La arquitectura correcta será:
+La arquitectura correcta es:
 
 \begin{lstlisting}
 Monorepo
@@ -681,21 +650,19 @@ Monorepo
      +-- mobile/                     Presentación Mobile
 \end{lstlisting}
 
-De esta forma existe una única implementación del servidor y ambas
-aplicaciones consumen la misma API pública. Las carpetas de las capas podrán
-organizarse por funcionalidad dentro de cada capa cuando el producto crezca,
-pero no se deberán mezclar responsabilidades solamente para evitar crear un
-archivo nuevo.
+Así existe una sola implementación del servidor y ambas aplicaciones consumen
+la misma API pública. Cuando el producto crezca, organiza cada capa por
+funcionalidad si ayuda a mantenerla clara; no mezcles responsabilidades para
+evitar crear un archivo nuevo.
 
 % =================================================
 \section{Tipos compartidos dentro del monorepo}
 % =================================================
 
-Convex genera una representación TypeScript de su API pública. En el monorepo
-esa representación estará disponible para las aplicaciones Web y Mobile desde
-la misma base de código.
+Convex genera una representación TypeScript de su API pública. En el monorepo,
+Web y Mobile acceden a esa representación desde la misma base de código.
 
-Conceptualmente:
+El flujo de tipos es:
 
 \begin{lstlisting}
 convex/
@@ -708,49 +675,46 @@ convex/_generated/api
 apps/web          apps/mobile
 \end{lstlisting}
 
-Ambas aplicaciones utilizarán los tipos generados por Convex mediante un alias
-o un paquete interno definido por el monorepo. La configuración concreta del
-alias podrá variar, pero no deberá duplicar la implementación del backend ni
-mantener un contrato generado de forma independiente para cada aplicación.
+Web y Mobile usan los tipos generados por Convex mediante un alias o un paquete
+interno definido por el monorepo. La configuración del alias puede variar, pero
+no dupliques la implementación del backend ni mantengas un contrato generado
+por separado para cada aplicación.
 
-Estos tipos pertenecen al borde entre Infraestructura y Presentación. No deben
-convertirse en el modelo de Dominio ni hacer que las entidades del negocio
-dependan de \texttt{convex/\_generated}. Cuando sea necesario compartir
-contratos más estables, se podrán publicar desde \texttt{packages/shared/},
-manteniendo separadas las reglas del negocio.
+Estos tipos pertenecen al borde entre Infraestructura y Presentación. No son el
+modelo de Dominio ni deben hacer que las entidades del negocio dependan de
+\texttt{convex/\_generated}. Cuando necesites contratos más estables, usa
+\texttt{packages/shared/} y mantén separadas las reglas del negocio.
 
-La dependencia de Convex se declarará en los workspaces que corresponda y se
-instalará desde la raíz:
+Declara la dependencia de Convex en los workspaces correspondientes e instala
+el paquete desde la raíz:
 
 \begin{lstlisting}
 bun add convex --cwd apps/web
 bun add convex --cwd apps/mobile
 \end{lstlisting}
 
-El comando de desarrollo del backend se ejecutará desde la raíz:
+Ejecuta el backend desde la raíz:
 
 \begin{lstlisting}
 bunx convex dev
 \end{lstlisting}
 
-La carpeta \texttt{convex/\_generated/} deberá mantenerse de acuerdo con la
-política del proyecto para archivos generados. Si la configuración de Convex
-permite regenerarla automáticamente en cada entorno, no se deberá crear una
-segunda copia manual dentro de \texttt{apps/mobile/}.
+Mantén \texttt{convex/\_generated/} según la política del proyecto para archivos
+generados. Si Convex puede regenerarla automáticamente en cada entorno, no
+crees una segunda copia manual dentro de \texttt{apps/mobile/}.
 
 \subsection{Regla}
 
-Web y Mobile consumen la API pública definida en \texttt{convex/}.
-
-TI4 puede consumir las funciones del backend y utilizar sus tipos, pero no debe
-modificar directamente las funciones Convex que no estén dentro de su
-responsabilidad ni duplicar en Mobile los casos de uso del backend.
+Web y Mobile consumen la API pública definida en \texttt{convex/}. TI4 puede
+consumir las funciones del backend y sus tipos, pero no modifica funciones
+Convex fuera de su responsabilidad ni duplica en Mobile los casos de uso del
+backend.
 
 % =================================================
 \section{Estructura del monorepo}
 % =================================================
 
-La estructura inicial será aproximadamente:
+La estructura inicial puede ser:
 
 \begin{lstlisting}
 proyecto/
@@ -803,14 +767,14 @@ proyecto/
  +-- README.md
 \end{lstlisting}
 
-Las carpetas de las capas son límites de responsabilidad, no una obligación de
-crear archivos vacíos. Una funcionalidad pequeña puede comenzar con pocos
-archivos, siempre que cada archivo tenga una responsabilidad clara y conserve la
-dirección de dependencias.
+Las carpetas de las capas marcan límites de responsabilidad; no obligan a crear
+archivos vacíos. Una funcionalidad pequeña puede comenzar con pocos archivos si
+cada uno tiene una responsabilidad clara y conserva la dirección de
+dependencias.
 
 Los directorios \texttt{packages/ui/} y \texttt{packages/shared/} son
-opcionales. Solo deberán crearse cuando exista una responsabilidad compartida
-real; no se incorporarán como capas vacías por anticipación.
+opcionales. Créelos solo cuando exista una responsabilidad compartida real; no
+los incorpores como capas vacías por anticipación.
 
 El directorio del backend:
 
@@ -818,23 +782,23 @@ El directorio del backend:
 convex/_generated/
 \end{lstlisting}
 
-se generará desde la configuración de Convex y no se deberá modificar
+Convex genera este directorio desde su configuración; no lo modifiques
 manualmente.
 
 % =================================================
-La aplicación móvil utilizará el backend y los paquetes compartidos desde este
-monorepo; no tendrá una copia local del backend ni un archivo de contrato
+La aplicación móvil usa el backend y los paquetes compartidos desde este
+monorepo; no tiene una copia local del backend ni un archivo de contrato
 externo.
 
 % =================================================
 \section{Setup inicial del monorepo}
 % =================================================
 
-Todos los comandos siguientes se ejecutarán desde la raíz del monorepo.
+Ejecuta todos los comandos siguientes desde la raíz del monorepo.
 
 \subsection{1. Crear la raíz y los workspaces}
 
-La raíz deberá declarar los workspaces de las aplicaciones y de los paquetes
+Declara en la raíz los workspaces de las aplicaciones y de los paquetes
 internos:
 
 \begin{lstlisting}
@@ -862,19 +826,18 @@ bunx create-expo-app@latest apps/mobile
 bun install
 \end{lstlisting}
 
-La plantilla estándar de Expo incorpora Expo Router.
+La plantilla estándar de Expo ya incorpora Expo Router.
 
 \subsection{4. Instalar Convex en la raíz}
 
-El backend Convex se configurará en la raíz del monorepo:
+Configura el backend Convex en la raíz del monorepo:
 
 \begin{lstlisting}
 bun add convex
 bunx convex dev
 \end{lstlisting}
 
-La primera ejecución permitirá vincular o crear el proyecto Convex y generará
-la carpeta:
+La primera ejecución vincula o crea el proyecto Convex y genera:
 
 \begin{lstlisting}
 convex/
@@ -882,8 +845,8 @@ convex/
 
 \subsection{5. Crear los límites de las capas}
 
-Después de crear el backend, se deberán establecer los límites de las capas
-antes de agregar lógica de negocio:
+Después de crear el backend, establece los límites de las capas antes de
+agregar lógica de negocio:
 
 \begin{lstlisting}
 convex/
@@ -903,9 +866,8 @@ apps/mobile/
 +-- src/infrastructure/
 \end{lstlisting}
 
-No es necesario crear archivos vacíos en cada carpeta. El objetivo es decidir
-primero dónde vive la responsabilidad y luego incorporar el código mínimo
-necesario para la funcionalidad.
+No crees archivos vacíos en cada carpeta. Decide primero dónde vive la
+responsabilidad y luego incorpora el código mínimo de la funcionalidad.
 
 \subsection{6. Instalar TanStack Router en Web}
 
@@ -915,8 +877,7 @@ bun add -d @tanstack/router-plugin --cwd apps/web
 bun add -d @tanstack/react-router-devtools --cwd apps/web
 \end{lstlisting}
 
-En Vite se deberá agregar el plugin de TanStack Router antes del plugin de
-React.
+Agrega en Vite el plugin de TanStack Router antes del plugin de React.
 
 Ejemplo:
 
@@ -942,10 +903,10 @@ export default defineConfig({
 bun add better-auth @convex-dev/better-auth
 \end{lstlisting}
 
-La integración deberá realizarse dentro del backend Convex siguiendo la
-estructura oficial de Better Auth para Convex.
+Realiza la integración dentro del backend Convex y sigue la estructura oficial
+de Better Auth para Convex.
 
-Entre otros archivos, se utilizarán:
+Entre otros, la integración usa:
 
 \begin{lstlisting}
 convex/
@@ -962,15 +923,15 @@ convex/
     +-- adapter.ts
 \end{lstlisting}
 
-El esquema de Better Auth deberá generarse mediante sus herramientas y no
-mantenerse manualmente si puede evitarse.
+Genera el esquema de Better Auth con sus herramientas; evita mantenerlo
+manualmente cuando sea posible.
 
 % =================================================
 \section{Dependencias de la aplicación Mobile}
 % =================================================
 
-TI4 solamente utilizará el cliente Convex y los tipos generados desde la carpeta
-compartida del backend. No deberá crear ni desplegar una segunda implementación.
+TI4 usa el cliente Convex y los tipos generados desde la carpeta compartida del
+backend. No crea ni despliega una segunda implementación.
 
 \subsection{1. Instalar Better Auth para Expo}
 
@@ -979,25 +940,25 @@ bun add better-auth @better-auth/expo --cwd apps/mobile
 bun add expo-network expo-secure-store --cwd apps/mobile
 \end{lstlisting}
 
-Better Auth utilizará Secure Store para almacenar información de sesión de
-forma apropiada para la aplicación móvil.
+Better Auth usa Secure Store para almacenar la sesión de forma apropiada en la
+aplicación móvil.
 
-Si el proyecto utiliza proveedores sociales, podrán requerirse además
-dependencias propias de Expo como linking o web browser.
+Si el proyecto usa proveedores sociales, también puede necesitar dependencias
+de Expo como linking o web browser.
 
 % =================================================
 \section{Conexión de la aplicación Web a Convex}
 % =================================================
 
-La aplicación web utilizará una instancia de:
+La aplicación web usa una instancia de:
 
 \begin{lstlisting}
 ConvexReactClient
 \end{lstlisting}
 
-configurada mediante la URL del deployment.
+configurada con la URL del deployment.
 
-La variable pública utilizada por Vite será:
+La variable pública de Vite es:
 
 \begin{lstlisting}
 VITE_CONVEX_URL=
@@ -1011,21 +972,21 @@ const convex = new ConvexReactClient(
 )
 \end{lstlisting}
 
-El cliente deberá proveerse en la raíz de la aplicación.
+Provee el cliente en la raíz de la aplicación.
 
 % =================================================
 \section{Conexión de la aplicación Mobile a Convex}
 % =================================================
 
-Expo utilizará el mismo cliente React de Convex.
+Expo usa el mismo cliente React de Convex.
 
-La variable será:
+La variable de Expo es:
 
 \begin{lstlisting}
 EXPO_PUBLIC_CONVEX_URL=
 \end{lstlisting}
 
-En la raíz de Expo Router podrá configurarse:
+Configura en la raíz de Expo Router:
 
 \begin{lstlisting}
 const convex = new ConvexReactClient(
@@ -1033,9 +994,9 @@ const convex = new ConvexReactClient(
 )
 \end{lstlisting}
 
-y proveerse a la aplicación mediante el provider correspondiente.
+Luego, provee el cliente a la aplicación mediante el provider correspondiente.
 
-Esto significa que:
+Ambas aplicaciones usan el mismo deployment:
 
 \begin{lstlisting}
 Web
@@ -1051,9 +1012,9 @@ Mobile /
 \section{URLs de Convex}
 % =================================================
 
-Convex utiliza URLs con responsabilidades distintas.
+Convex usa URLs con responsabilidades distintas.
 
-Conceptualmente tendremos:
+El proyecto distingue:
 
 \begin{description}
   \item[Convex URL:] conexión del cliente React con las funciones Convex.
@@ -1061,14 +1022,14 @@ Conceptualmente tendremos:
     Better Auth cuando corresponda.
 \end{description}
 
-Por ejemplo, los clientes podrán necesitar variables equivalentes a:
+Los clientes pueden necesitar variables equivalentes a:
 
 \begin{lstlisting}
 VITE_CONVEX_URL=
 VITE_CONVEX_SITE_URL=
 \end{lstlisting}
 
-para web, y:
+para Web, y:
 
 \begin{lstlisting}
 EXPO_PUBLIC_CONVEX_URL=
@@ -1077,7 +1038,7 @@ EXPO_PUBLIC_CONVEX_SITE_URL=
 
 para mobile.
 
-Estas URLs permiten localizar servicios públicos.
+Estas URLs localizan servicios públicos.
 
 \textbf{No son el lugar donde deben almacenarse secretos.}
 
@@ -1085,7 +1046,7 @@ Estas URLs permiten localizar servicios públicos.
 \section{Variables de entorno}
 % =================================================
 
-Se distinguirán claramente variables públicas y secretos.
+Distingue las variables públicas de los secretos.
 
 \subsection{Frontend Web}
 
@@ -1101,7 +1062,7 @@ Por ejemplo:
 VITE_CONVEX_URL=
 \end{lstlisting}
 
-Toda variable \texttt{VITE\_} debe considerarse visible para el usuario final.
+Toda variable \texttt{VITE\_} es visible para el usuario final.
 
 \subsection{Aplicación móvil}
 
@@ -1117,12 +1078,11 @@ Por ejemplo:
 EXPO_PUBLIC_CONVEX_URL=
 \end{lstlisting}
 
-Toda variable \texttt{EXPO\_PUBLIC\_} debe considerarse pública.
+Toda variable \texttt{EXPO\_PUBLIC\_} es pública.
 
 \subsection{Backend}
 
-Los secretos utilizados por las funciones Convex deberán configurarse en el
-entorno de Convex.
+Configura en el entorno de Convex los secretos que usan sus funciones.
 
 Por ejemplo:
 
@@ -1130,7 +1090,7 @@ Por ejemplo:
 BETTER_AUTH_SECRET
 \end{lstlisting}
 
-Estos valores no deberán estar:
+Estos valores no deben estar:
 
 \begin{itemize}
   \item dentro del código;
@@ -1143,24 +1103,24 @@ Estos valores no deberán estar:
 \section{Archivos de entorno}
 % =================================================
 
-Los archivos locales que contengan valores específicos de cada desarrollador no
-deberán subirse al monorepo.
+No subas al monorepo archivos locales con valores específicos de un
+desarrollador.
 
-Cada aplicación podrá mantener su propio archivo local dentro de su directorio:
+Cada aplicación puede mantener su archivo local dentro de su directorio:
 
 \begin{lstlisting}
 apps/web/.env.local
 apps/mobile/.env.local
 \end{lstlisting}
 
-El monorepo deberá mantener ejemplos de configuración sin secretos:
+Mantén en el monorepo ejemplos de configuración sin secretos:
 
 \begin{lstlisting}
 apps/web/.env.example
 apps/mobile/.env.example
 \end{lstlisting}
 
-con las variables necesarias pero sin secretos.
+Incluye las variables necesarias, pero ningún secreto.
 
 Ejemplo TI2:
 
@@ -1180,8 +1140,7 @@ EXPO_PUBLIC_CONVEX_SITE_URL=
 \section{Ejecución local del monorepo}
 % =================================================
 
-Durante el desarrollo normalmente se utilizarán al menos dos procesos desde la
-raíz del monorepo.
+Durante el desarrollo ejecuta al menos dos procesos desde la raíz del monorepo.
 
 \subsection{Terminal 1: Convex}
 
@@ -1197,7 +1156,7 @@ Este proceso sincroniza los cambios del backend con el deployment de desarrollo.
 bun --cwd apps/web run dev
 \end{lstlisting}
 
-Conceptualmente:
+Los procesos se relacionan así:
 
 \begin{lstlisting}
 Terminal 1                 Terminal 2
@@ -1212,7 +1171,7 @@ Backend Convex             React + Vite
 \section{Ejecución local de Mobile}
 % =================================================
 
-La aplicación móvil se ejecutará mediante Expo.
+Ejecuta la aplicación móvil mediante Expo.
 
 \begin{lstlisting}
 bun --cwd apps/mobile run start
@@ -1224,7 +1183,7 @@ o equivalentemente:
 cd apps/mobile && bunx expo start
 \end{lstlisting}
 
-Desde esta sesión se podrá ejecutar la aplicación en:
+Desde esta sesión puedes ejecutar la aplicación en:
 
 \begin{itemize}
   \item Android;
@@ -1233,18 +1192,17 @@ Desde esta sesión se podrá ejecutar la aplicación en:
   \item emulador o simulador.
 \end{itemize}
 
-La aplicación Mobile deberá conectarse al deployment de desarrollo de Convex
+La aplicación Mobile debe conectarse al deployment de desarrollo de Convex
 definido para el proyecto.
 
-No es necesario ejecutar el backend para modificar exclusivamente la aplicación
-Mobile, aunque sí deberá utilizarse un deployment válido para probar la
-integración.
+No necesitas ejecutar el backend para modificar exclusivamente Mobile, pero sí
+debes usar un deployment válido para probar la integración.
 
 % =================================================
 \section{Ambientes}
 % =================================================
 
-Se distinguirán al menos:
+Distingue al menos:
 
 \begin{description}
   \item[Development:] programación y pruebas durante el desarrollo.
@@ -1252,65 +1210,64 @@ Se distinguirán al menos:
     entregas.
 \end{description}
 
-En móvil también podrá existir un ambiente:
+En Mobile también puede existir:
 
 \begin{description}
   \item[Preview:] build destinado a pruebas del equipo.
 \end{description}
 
-Los entornos deberán utilizar configuraciones separadas cuando sea necesario.
+Usa configuraciones separadas cuando sea necesario.
 
 % =================================================
 \section{Build de la aplicación Web}
 % =================================================
 
-Antes de considerar una versión lista para integración deberá poder generarse
-el build de producción.
+Antes de integrar una versión, genera su build de producción.
 
 \begin{lstlisting}
 bun --cwd apps/web run build
 \end{lstlisting}
 
-Una aplicación que funciona solamente con:
+Una aplicación que solo funciona con:
 
 \begin{lstlisting}
 bun --cwd apps/web run dev
 \end{lstlisting}
 
-pero cuyo build falla no se considera lista para integrar.
+pero cuyo build falla no está lista para integrar.
 
 % =================================================
 \section{Despliegue del backend Convex}
 % =================================================
 
-Durante desarrollo se utilizará:
+Durante el desarrollo usa:
 
 \begin{lstlisting}
 bunx convex dev
 \end{lstlisting}
 
-Para desplegar funciones, esquema e índices hacia producción se utilizará:
+Para desplegar funciones, esquema e índices en producción usa:
 
 \begin{lstlisting}
 bunx convex deploy
 \end{lstlisting}
 
-El deployment de producción será responsabilidad de TI2 y se ejecutará desde la
-raíz del monorepo.
+TI2 es responsable del deployment de producción y lo ejecuta desde la raíz del
+monorepo.
 
-No todos los integrantes deberán manipular manualmente producción.
+No todos los integrantes deben manipular producción manualmente.
 
 % =================================================
 \section{Despliegue de la aplicación Web}
 % =================================================
 
-La aplicación web será desplegada mediante Vercel.
+Vercel despliega la aplicación web.
 
-Vercel se conectará al único repositorio GitHub y se configurará con
-\texttt{apps/web/} como directorio de la aplicación. Las órdenes de instalación
-y build deberán respetar el \texttt{bun.lock} ubicado en la raíz.
+Conecta Vercel al único repositorio GitHub y configura \texttt{apps/web/} como
+directorio de la aplicación. Las órdenes de instalación y build deben respetar
+el \texttt{bun.lock} de la raíz.
 
-El flujo general será:
+El flujo general es:
 
 \begin{lstlisting}
 GitHub
@@ -1329,38 +1286,38 @@ GitHub
 Producción
 \end{lstlisting}
 
-Para integrar el despliegue de Convex con Vercel deberá configurarse un deploy
-key de producción como variable segura en Vercel:
+Para integrar el despliegue de Convex con Vercel, configura un deploy key de
+producción como variable segura:
 
 \begin{lstlisting}
 CONVEX_DEPLOY_KEY
 \end{lstlisting}
 
-El build podrá ejecutar:
+El build puede ejecutar:
 
 \begin{lstlisting}
 bunx convex deploy --cmd 'bun --cwd apps/web run build'
 \end{lstlisting}
 
-De esta manera se reduce el riesgo de publicar un frontend incompatible con las
-funciones Convex correspondientes.
+Así reduces el riesgo de publicar un frontend incompatible con las funciones
+Convex correspondientes.
 
 % =================================================
 \section{Configuración SPA en Vercel}
 % =================================================
 
-TanStack Router administrará las rutas en el cliente.
+TanStack Router administra las rutas en el cliente.
 
-Por ello, al solicitar directamente una ruta como:
+Por eso, al solicitar directamente una ruta como:
 
 \begin{lstlisting}
 /usuarios/123
 \end{lstlisting}
 
-el hosting deberá entregar la aplicación y permitir que TanStack Router
-resuelva la ruta.
+el hosting debe entregar la aplicación y permitir que TanStack Router resuelva
+la ruta.
 
-El repositorio podrá incluir:
+El repositorio puede incluir:
 
 \begin{lstlisting}
 vercel.json
@@ -1383,12 +1340,12 @@ con una regla equivalente a:
 \section{Build de la aplicación móvil}
 % =================================================
 
-Los builds para instalar serán generados mediante EAS Build. La configuración de
-EAS deberá utilizar \texttt{apps/mobile/} como directorio de la aplicación y
-compartir el lockfile de la raíz cuando el flujo de CI se ejecute desde el
-monorepo.
+EAS Build genera los builds para instalar. Configura EAS con
+\texttt{apps/mobile/}
+como directorio de la aplicación y comparte el lockfile de la raíz cuando CI se
+ejecute desde el monorepo.
 
-Primero deberá configurarse EAS para el proyecto.
+Primero configura EAS para el proyecto.
 
 Una configuración simplificada de:
 
@@ -1396,7 +1353,7 @@ Una configuración simplificada de:
 eas.json
 \end{lstlisting}
 
-podrá incluir:
+puede incluir:
 
 \begin{lstlisting}
 {
@@ -1416,10 +1373,10 @@ podrá incluir:
 \section{Build Preview de Mobile}
 % =================================================
 
-Durante el curso no será necesario publicar cada versión en Google Play o App
+Durante el curso no es necesario publicar cada versión en Google Play o App
 Store.
 
-Para pruebas se utilizará preferentemente un build interno.
+Para las pruebas usa preferentemente un build interno.
 
 Android:
 
@@ -1433,17 +1390,16 @@ iOS:
 eas build --platform ios --profile preview
 \end{lstlisting}
 
-EAS proporcionará un build que podrá compartirse con integrantes y personas
-autorizadas para pruebas.
+EAS genera un build que puedes compartir con integrantes y personas autorizadas
+para pruebas.
 
-En Android, este mecanismo permite disponer de un APK para instalar sin depender
-de una publicación en Play Store.
+En Android, este mecanismo permite instalar un APK sin publicarlo en Play Store.
 
 % =================================================
 \section{Build de producción Mobile}
 % =================================================
 
-Cuando corresponda generar una versión de producción:
+Cuando necesites generar una versión de producción:
 
 \begin{lstlisting}
 eas build --platform android
@@ -1455,14 +1411,13 @@ o:
 eas build --platform ios
 \end{lstlisting}
 
-También puede utilizarse:
+También puedes usar:
 
 \begin{lstlisting}
 eas build --platform all
 \end{lstlisting}
 
-La publicación efectiva en tiendas será una decisión independiente del proceso
-de desarrollo.
+La publicación efectiva en tiendas es independiente del proceso de desarrollo.
 
 % =================================================
 \section{Flujos de despliegue}
@@ -1510,16 +1465,16 @@ Aplicación para instalar
 \section{Integración Continua}
 % =================================================
 
-GitHub Actions verificará los cambios del monorepo antes de integrarlos.
+GitHub Actions verifica los cambios del monorepo antes de integrarlos.
 
-La instalación deberá realizarse desde la raíz para utilizar el lockfile único:
+Instala desde la raíz para utilizar el lockfile único:
 
 \begin{lstlisting}
 bun install --frozen-lockfile
 \end{lstlisting}
 
-Cuando los scripts correspondientes existan, deberán ejecutarse como mínimo las
-verificaciones de los componentes afectados:
+Cuando existan los scripts correspondientes, ejecuta como mínimo estas
+verificaciones sobre los componentes afectados:
 
 \begin{enumerate}
   \item instalación de dependencias desde la raíz;
@@ -1532,7 +1487,7 @@ verificaciones de los componentes afectados:
   \item build de Web, Mobile o backend según las rutas modificadas.
 \end{enumerate}
 
-Conceptualmente:
+La secuencia de CI es:
 
 \begin{lstlisting}
 Pull Request
@@ -1559,13 +1514,13 @@ Code Review
 Merge
 \end{lstlisting}
 
-El despliegue no reemplaza al proceso de CI.
+El despliegue no reemplaza CI.
 
 % =================================================
 \section{Responsabilidades de TI2}
 % =================================================
 
-TI2 será responsable técnicamente de:
+TI2 es responsable técnicamente de:
 
 \begin{itemize}
   \item desarrollar la aplicación web;
@@ -1593,7 +1548,7 @@ TI2 es propietario técnico del backend compartido.
 \section{Responsabilidades de TI4}
 % =================================================
 
-TI4 será responsable técnicamente de:
+TI4 es responsable técnicamente de:
 
 \begin{itemize}
   \item desarrollar la aplicación móvil mediante Expo;
@@ -1609,19 +1564,19 @@ TI4 será responsable técnicamente de:
   \item evitar duplicar lógica perteneciente al backend.
 \end{itemize}
 
-Además, TI4 mantiene las responsabilidades de gestión, coordinación, seguimiento
-y control de calidad definidas en el documento metodológico general.
+TI4 también mantiene las responsabilidades de gestión, coordinación,
+seguimiento y control de calidad definidas en el documento metodológico general.
 
 % =================================================
 \section{Frontera entre TI2 y TI4}
 % =================================================
 
-La frontera técnica entre ambos equipos estará formada principalmente por la
-API pública de la capa de Presentación del backend, los casos de uso que esa
-API expone, el sistema de autenticación compartido y los paquetes internos que
-sean consumidos por más de una aplicación.
+La frontera técnica entre ambos equipos está formada por la API pública de
+Presentación del backend, los casos de uso que expone, el sistema de
+autenticación compartido y los paquetes internos que consumen ambas
+aplicaciones.
 
-TI4 no deberá:
+TI4 no debe:
 
 \begin{itemize}
   \item crear una segunda base de datos;
@@ -1631,10 +1586,9 @@ TI4 no deberá:
   \item duplicar reglas de negocio únicamente para hacer funcionar Mobile.
 \end{itemize}
 
-TI2 deberá mantener suficientemente documentadas las funciones públicas
-consumidas por Mobile.
+TI2 debe documentar suficientemente las funciones públicas que consume Mobile.
 
-Como mínimo deberá conocerse:
+Como mínimo, documenta:
 
 \begin{itemize}
   \item propósito;
@@ -1648,7 +1602,7 @@ Como mínimo deberá conocerse:
 \section{Cambios que afectan a ambos equipos}
 % =================================================
 
-Un cambio deberá coordinarse mediante Linear cuando modifique:
+Coordina mediante Linear cualquier cambio que modifique:
 
 \begin{itemize}
   \item nombre de una función pública;
@@ -1663,7 +1617,7 @@ Un cambio deberá coordinarse mediante Linear cuando modifique:
   \item un paquete compartido utilizado por Web y Mobile.
 \end{itemize}
 
-Estas dependencias deberán registrarse en Linear.
+Registra estas dependencias en Linear.
 
 Por ejemplo:
 
@@ -1704,8 +1658,8 @@ El Dominio contiene entidades, objetos de valor, invariantes y políticas del
 negocio. Es la única capa que debe ser la fuente de verdad para las reglas que
 deben cumplirse independientemente de Web o Mobile.
 
-Debe ser código TypeScript independiente de frameworks. No deberá recibir
-directamente documentos de Convex ni tipos de navegación.
+Es código TypeScript independiente de frameworks. No recibe directamente
+documentos de Convex ni tipos de navegación.
 
 \subsection*{Infraestructura}
 
@@ -1724,13 +1678,13 @@ deben utilizarse como ubicación para reglas del negocio.
 \section{Ejemplo de distribución de responsabilidades}
 % =================================================
 
-Supongamos que debe implementarse:
+Supón que debes implementar:
 
 \begin{center}
   \textit{``Mostrar el perfil de un usuario autenticado.''}
 \end{center}
 
-La responsabilidad se distribuirá así:
+La responsabilidad se distribuye así:
 
 \begin{lstlisting}
 Presentación
@@ -1761,32 +1715,30 @@ Infraestructura
   React       React Native
 \end{lstlisting}
 
-El frontend decide \textbf{cómo mostrar} la información.
-
-Aplicación y Dominio deciden \textbf{qué información puede obtener} el
-usuario. Infraestructura solamente implementa la forma concreta de obtenerla.
+El frontend decide \textbf{cómo mostrar} la información. Aplicación y Dominio
+deciden \textbf{qué información puede obtener} el usuario. Infraestructura
+implementa la forma concreta de obtenerla.
 
 % =================================================
 \section{Proceso para una funcionalidad compartida}
 % =================================================
 
-Una funcionalidad que afecte a ambos equipos podrá seguir el siguiente flujo:
+Una funcionalidad que afecte a ambos equipos sigue este flujo:
 
 \begin{enumerate}
-  \item TI4 realiza el triage y se identifican las tareas necesarias.
+  \item TI4 hace el triage y los equipos identifican las tareas necesarias.
   \item TI2 define el caso de uso y las reglas del Dominio.
   \item TI2 implementa los puertos y adaptadores de Infraestructura necesarios.
-  \item TI2 expone una función pública de Convex como punto de entrada del caso
-    de uso.
+  \item TI2 expone una función pública de Convex como entrada del caso de uso.
   \item TI2 y TI4 integran el cambio mediante uno o más Pull Requests
     relacionados.
-  \item se regeneran o actualizan los tipos públicos de Convex;
-  \item TI4 implementa el consumo desde la aplicación Mobile;
-  \item ambos equipos prueban la integración;
-  \item los cambios llegan a los procesos de despliegue de Web y Mobile.
+  \item Regeneran o actualizan los tipos públicos de Convex.
+  \item TI4 implementa el consumo desde la aplicación Mobile.
+  \item Ambos equipos prueban la integración.
+  \item Los cambios llegan a los procesos de despliegue de Web y Mobile.
 \end{enumerate}
 
-Conceptualmente:
+La dependencia entre equipos queda así:
 
 \begin{lstlisting}
 Linear
@@ -1813,7 +1765,7 @@ Tipos generados ---+----+
 \section{Principios técnicos}
 % =================================================
 
-Durante el desarrollo se aplicarán los siguientes principios:
+Durante el desarrollo rigen estos principios:
 
 \begin{enumerate}
   \item existe un solo backend;
@@ -1860,11 +1812,11 @@ El stack tecnológico puede resumirse de la siguiente manera:
 \end{lstlisting}
 
 React, React Native, TanStack Router y Expo Router se ubican principalmente en
-Presentación. TypeScript se utiliza en todas las capas. Vite, Expo, EAS Build,
+Presentación. TypeScript aparece en todas las capas. Vite, Expo, EAS Build,
 Vercel y GitHub Actions soportan el desarrollo y despliegue, pero no contienen
 reglas de negocio.
 
-El flujo de desarrollo y despliegue será:
+El flujo de desarrollo y despliegue es:
 
 \begin{lstlisting}
                        Linear
@@ -1903,9 +1855,9 @@ El flujo de desarrollo y despliegue será:
 \section{Referencias oficiales}
 % =================================================
 
-Las configuraciones específicas pueden evolucionar con nuevas versiones de las
-herramientas. Antes de realizar cambios importantes deberán consultarse sus
-documentaciones oficiales.
+Las configuraciones específicas pueden cambiar con nuevas versiones de las
+herramientas. Antes de cambiar una configuración importante, consulta la
+documentación oficial correspondiente.
 
 \begin{itemize}
 

@@ -61,15 +61,13 @@
 
 \section{Objetivo}
 
-El presente documento define la metodología de trabajo que utilizarán los
-equipos de Taller de Integración II (TI2) y Taller de Integración IV (TI4)
-durante el desarrollo conjunto del proyecto.
+Esta guía fija la forma en que los equipos de Taller de Integración II (TI2) y
+Taller de Integración IV (TI4) trabajarán en el proyecto.
 
-El objetivo es establecer un flujo de trabajo simple, trazable y consistente,
-que permita que ambos equipos colaboren sobre un mismo producto, manteniendo
-responsabilidades técnicas diferenciadas.
+El flujo busca dos cosas concretas: que el trabajo se pueda seguir desde Linear
+hasta GitHub y que cada equipo conserve sus responsabilidades técnicas.
 
-Las herramientas principales serán:
+El proyecto usa tres herramientas:
 
 \begin{itemize}
   \item \textbf{Linear}: planificación, asignación y seguimiento del trabajo.
@@ -78,7 +76,7 @@ Las herramientas principales serán:
     código e integración continua.
 \end{itemize}
 
-El principio general será:
+La división de responsabilidades es directa:
 
 \begin{center}
   \textbf{Linear gestiona el trabajo y GitHub gestiona el código.}
@@ -92,8 +90,7 @@ El proyecto estará compuesto por dos equipos.
 
 \subsection{Taller de Integración II}
 
-El equipo TI2 estará compuesto por seis estudiantes y será responsable
-principalmente de:
+TI2 tendrá seis estudiantes y se encargará de:
 
 \begin{itemize}
   \item desarrollo de la aplicación web;
@@ -107,8 +104,7 @@ principalmente de:
 
 \subsection{Taller de Integración IV}
 
-El equipo TI4 estará compuesto por tres estudiantes y será responsable
-principalmente de:
+TI4 tendrá tres estudiantes y se encargará de:
 
 \begin{itemize}
   \item desarrollo de la aplicación móvil;
@@ -121,19 +117,16 @@ principalmente de:
   \item apoyo técnico e inducción al equipo TI2 cuando sea necesario.
 \end{itemize}
 
-TI4 deberá procurar que TI2 pueda resolver progresivamente sus propias tareas.
-El objetivo de las revisiones no será corregir directamente el código de otro
-integrante, sino entregar retroalimentación que permita que su autor realice
-las modificaciones correspondientes.
+TI4 debe ayudar a TI2 a resolver sus tareas cada vez con más autonomía. En una
+revisión, TI4 señala el problema y explica el criterio. La persona autora hace
+el cambio en su propia rama.
 
 % -------------------------------------------------
 
 \section{Repositorio GitHub}
 
-Se utilizará \textbf{un único repositorio GitHub} para todo el producto. El
-repositorio tendrá una estructura de monorepo que permitirá mantener las
-aplicaciones, el backend y los paquetes compartidos bajo el mismo control de
-versiones.
+Todo el producto vivirá en \textbf{un único repositorio GitHub}. El monorepo
+contendrá las aplicaciones, el backend y los paquetes compartidos.
 
 \begin{lstlisting}
 Proyecto
@@ -153,21 +146,19 @@ Proyecto
 +-- bun.lock
 \end{lstlisting}
 
-Cada equipo será responsable del desarrollo, pruebas y despliegue de los
-componentes que tenga asignados dentro del monorepo.
+Cada equipo desarrolla, prueba y despliega los componentes que tiene asignados
+dentro del monorepo.
 
-La existencia de un solo repositorio no elimina la separación de
-responsabilidades: TI2 mantiene la aplicación web y el backend compartido,
-mientras TI4 mantiene la aplicación móvil.
+Un repositorio común no elimina la separación de responsabilidades. TI2
+mantiene la aplicación web y el backend. TI4 mantiene la aplicación móvil.
 
-La principal frontera de integración entre ambos equipos será la API pública de
-la capa de Presentación del backend. Sus tipos generados podrán ser consumidos
-directamente por ambas aplicaciones sin copiar implementaciones ni mantener
-contratos externos.
+La integración entre los equipos pasa por la API pública de la capa de
+Presentación del backend. Ambas aplicaciones consumen sus tipos generados. No
+se copian implementaciones ni se mantienen contratos externos.
 
 \subsection{Arquitectura por capas}
 
-El código deberá respetar la siguiente dirección de dependencias:
+Las dependencias deben avanzar en esta dirección:
 
 \begin{lstlisting}
 Presentación
@@ -182,21 +173,20 @@ Dominio
 Infraestructura
 \end{lstlisting}
 
-En el backend, las funciones públicas de Convex serán puntos de entrada
-delgados; los casos de uso coordinarán la operación; el Dominio concentrará
-las reglas; y la Infraestructura implementará la persistencia, autenticación y
+En el backend, las funciones públicas de Convex reciben la solicitud y llaman
+a un caso de uso. Los casos de uso coordinan la operación. El Dominio contiene
+las reglas. Infraestructura conecta con la persistencia, la autenticación y los
 servicios externos.
 
-Una branch o Pull Request que cruce varias capas deberá explicar qué
-responsabilidad cambia en cada una. No se deberá resolver una necesidad de
-negocio agregando consultas directas a la base de datos desde React, Mobile o
-una función pública extensa.
+Una branch o Pull Request que cruce varias capas debe explicar qué cambia en
+cada una. React, Mobile y las funciones públicas no deben resolver necesidades
+de negocio con consultas directas a la base de datos ni con funciones extensas.
 
 % -------------------------------------------------
 
 \section{Uso de Linear}
 
-Se utilizará \textbf{un único workspace de Linear} para todo el proyecto.
+Todo el proyecto usará \textbf{un único workspace de Linear}.
 
 Dentro de este workspace existirán dos Teams:
 
@@ -205,13 +195,11 @@ Dentro de este workspace existirán dos Teams:
   \item \textbf{TI4}: Gestión y Aplicación Móvil.
 \end{itemize}
 
-Ambos Teams representan partes del mismo proyecto.
+Los dos Teams forman parte del mismo proyecto.
 
 \subsection{Triage}
 
-TI4 será responsable de realizar inicialmente el \textit{triage} del trabajo.
-
-Esto incluye:
+TI4 hará el \textit{triage} inicial. Para cada issue debe:
 
 \begin{itemize}
   \item crear o revisar los issues necesarios;
@@ -223,25 +211,24 @@ Esto incluye:
   \item asignarlos al Cycle correspondiente.
 \end{itemize}
 
-Una vez que el trabajo se encuentre preparado en el backlog, cada equipo podrá
-organizar internamente su ejecución.
+Cuando un issue esté listo en el backlog, el equipo responsable organiza su
+ejecución.
 
 \subsection{Linear como fuente de verdad}
 
-Toda tarea técnica que requiera trabajo significativo debe existir en Linear.
+Toda tarea técnica que requiera trabajo significativo debe tener un issue en
+Linear.
 
-No se considerarán como mecanismo formal de asignación de trabajo mensajes
-aislados enviados por WhatsApp, Discord u otros canales.
-
-Estos medios podrán utilizarse para comunicación, pero la tarea deberá quedar
-registrada en Linear.
+WhatsApp, Discord y otros canales sirven para conversar, no para asignar trabajo
+de manera formal. Si una conversación genera una tarea, alguien debe registrarla
+en Linear.
 
 \subsection{Sub-issues}
 
-No se utilizarán \textbf{sub-issues} de Linear.
+El proyecto no usa \textbf{sub-issues} de Linear.
 
-Cuando una tarea necesite varios pasos pequeños, estos se registrarán mediante
-una lista dentro de la descripción del issue.
+Para una tarea con varios pasos pequeños, usa una lista en la descripción del
+issue.
 
 Por ejemplo:
 
@@ -255,22 +242,20 @@ TI2-37 Implementar autenticación
 - Documentar endpoint
 \end{lstlisting}
 
-Si una parte del trabajo tiene suficiente independencia como para requerir
-asignación, seguimiento o revisión propia, entonces deberá convertirse en un
-issue independiente.
+Si una parte del trabajo necesita asignación, seguimiento o revisión propios,
+conviértela en un issue independiente.
 
-Esta regla también permite administrar de mejor manera el límite de issues
-disponible en el plan utilizado durante el curso.
+Así se evita gastar issues del plan en tareas que no necesitan seguimiento
+separado.
 
 % -------------------------------------------------
 
 \section{Cycles y Sprints}
 
-Los \textit{Cycles} de Linear representarán los Sprints del proyecto.
+Cada \textit{Cycle} de Linear representa un Sprint. No crearemos un Cycle por
+semana.
 
-Por lo tanto, no se utilizará un Cycle diferente para cada semana.
-
-Conceptualmente:
+La correspondencia es esta:
 
 \begin{lstlisting}
 Cycle 1 -> Sprint 1
@@ -279,10 +264,10 @@ Cycle 3 -> Sprint 3
 Cycle 4 -> Sprint Final
 \end{lstlisting}
 
-Las semanas existentes dentro de un Sprint se utilizarán para seguimiento,
-reuniones y control de avance.
+Las semanas de cada Sprint quedan para seguimiento, reuniones y control de
+avance.
 
-Al finalizar un Cycle se deberá revisar:
+Al cerrar un Cycle, el equipo revisa:
 
 \begin{itemize}
   \item trabajo completado;
@@ -297,7 +282,7 @@ Al finalizar un Cycle se deberá revisar:
 
 \section{Estados de los Issues}
 
-Se utilizará un workflow reducido.
+El workflow tendrá pocos estados:
 
 \begin{center}
   \texttt{Backlog}
@@ -311,13 +296,13 @@ Se utilizará un workflow reducido.
   \texttt{Done}
 \end{center}
 
-También podrá existir el estado:
+También puedes usar:
 
 \begin{center}
   \texttt{Canceled}
 \end{center}
 
-Cada estado representa:
+Los estados significan lo siguiente:
 
 \begin{description}
   \item[Backlog:] trabajo identificado pero todavía no comprometido.
@@ -328,21 +313,19 @@ Cada estado representa:
   \item[Canceled:] el trabajo dejó de ser necesario.
 \end{description}
 
-Siempre que sea posible, los cambios de estado asociados al desarrollo deberán
-automatizarse mediante la integración Linear--GitHub.
+Cuando sea posible, la integración Linear--GitHub cambiará estos estados de
+forma automática.
 
 % -------------------------------------------------
 
 \section{Integración de Linear con GitHub}
 
-El repositorio GitHub del monorepo deberá conectarse al workspace de Linear.
+El repositorio del monorepo debe conectarse al workspace de Linear.
 
-Los issues conservarán el Team correspondiente, TI2 o TI4, y su identificador
-permitirá distinguir el área responsable aunque todos los cambios vivan en el
-mismo repositorio.
+Cada issue conserva el Team responsable, TI2 o TI4. El identificador distingue
+el área aunque todo el código viva en el mismo repositorio.
 
-Los identificadores de Linear serán utilizados para relacionar automáticamente
-el código con el trabajo correspondiente.
+Los identificadores de Linear relacionan el código con el trabajo.
 
 Por ejemplo:
 
@@ -351,10 +334,10 @@ TI2-37
 TI4-18
 \end{lstlisting}
 
-Un Pull Request puede hacer referencia al issue correspondiente mediante su
-branch, título o descripción.
+Un Pull Request puede referenciar el issue desde la branch, el título o la
+descripción.
 
-De esta forma será posible recorrer la trazabilidad:
+La trazabilidad queda así:
 
 \begin{center}
   \textbf{
@@ -376,29 +359,26 @@ De esta forma será posible recorrer la trazabilidad:
 
 \section{Estrategia de ramas}
 
-El repositorio utilizará una estrategia basada en
-\textbf{feature branches pequeñas y de corta duración}.
+El repositorio usará \textbf{feature branches pequeñas y de corta duración}.
 
-La única rama permanente será:
+La única rama permanente es:
 
 \begin{lstlisting}
 main
 \end{lstlisting}
 
-No se utilizará una rama permanente \texttt{develop}.
-
-Tampoco se utilizará Git Flow completo con ramas permanentes de desarrollo,
-release o hotfix.
+No habrá una rama permanente \texttt{develop}. Tampoco usaremos Git Flow con
+ramas permanentes de desarrollo, release o hotfix.
 
 \subsection{Creación de una rama}
 
-Antes de comenzar una tarea:
+Antes de empezar una tarea:
 
 \begin{enumerate}
-  \item verificar que exista un issue en Linear;
-  \item actualizar la rama \texttt{main};
-  \item crear una nueva rama desde \texttt{main};
-  \item desarrollar solamente el objetivo asociado al issue.
+  \item confirma que existe un issue en Linear;
+  \item actualiza la rama \texttt{main};
+  \item crea una rama desde \texttt{main};
+  \item trabaja solo en el objetivo del issue.
 \end{enumerate}
 
 Flujo conceptual:
@@ -417,9 +397,9 @@ main
 
 \section{Nombres de ramas}
 
-Se utilizará preferentemente el nombre de rama generado desde Linear.
+Usa, de preferencia, el nombre de branch que genera Linear.
 
-El formato deberá conservar:
+El nombre debe conservar:
 
 \begin{itemize}
   \item nombre o identificador del desarrollador;
@@ -433,8 +413,7 @@ Ejemplo:
 vrivera/ti2-37-login
 \end{lstlisting}
 
-Si Linear genera automáticamente un nombre excesivamente largo, este podrá
-abreviarse manualmente.
+Si Linear genera un nombre demasiado largo, puedes abreviarlo.
 
 Por ejemplo, en lugar de:
 
@@ -442,15 +421,15 @@ Por ejemplo, en lugar de:
 vrivera/ti2-37-implementar-endpoint-de-autenticacion-de-usuarios
 \end{lstlisting}
 
-se podrá utilizar:
+usa:
 
 \begin{lstlisting}
 vrivera/ti2-37-login
 \end{lstlisting}
 
-El identificador de Linear debe conservarse.
+Conserva siempre el identificador de Linear.
 
-No se deberá utilizar:
+No uses:
 
 \begin{lstlisting}
 login
@@ -464,9 +443,9 @@ rama-nueva
 
 \section{Tamaño de las ramas}
 
-Una rama debe resolver \textbf{una intención claramente identificable}.
+Una rama debe resolver \textbf{una intención concreta}.
 
-Las ramas deberán mantenerse pequeñas para facilitar:
+Mantén las ramas pequeñas para facilitar:
 
 \begin{itemize}
   \item revisión;
@@ -477,21 +456,20 @@ Las ramas deberán mantenerse pequeñas para facilitar:
   \item reversión de cambios.
 \end{itemize}
 
-No se establecerá un límite artificial de líneas modificadas.
-
-El criterio será que un Pull Request pueda ser entendido y revisado sin incluir
-múltiples funcionalidades independientes.
+No fijaremos un límite artificial de líneas modificadas. El criterio es que otra
+persona pueda entender y revisar el Pull Request sin encontrarse con varias
+funcionalidades independientes.
 
 % -------------------------------------------------
 
 \section{Pull Requests}
 
-Todo cambio que deba incorporarse a \texttt{main} deberá pasar por un
-\textbf{Pull Request} en el repositorio del monorepo.
+Todo cambio que llegue a \texttt{main} debe pasar por un \textbf{Pull Request}
+en el repositorio del monorepo.
 
-No se permitirá realizar push directo a \texttt{main}.
+Nadie puede hacer push directo a \texttt{main}.
 
-El Pull Request deberá indicar:
+El Pull Request debe indicar:
 
 \begin{itemize}
   \item qué problema resuelve;
@@ -507,21 +485,20 @@ Ejemplo:
 TI2-37: Implementar login de usuarios
 \end{lstlisting}
 
-La descripción deberá permitir que otra persona pueda comprender el cambio sin
-tener que reconstruir todo el contexto desde el código.
+La descripción debe dar el contexto suficiente para revisar el cambio sin
+reconstruirlo desde el código.
 
 % -------------------------------------------------
 
 \section{Relación entre Issues y Pull Requests}
 
-No existe una obligación de mantener una relación 1:1 entre un issue y un
-Pull Request.
+Un issue y un Pull Request no tienen que mantener una relación 1:1.
 
 Un issue representa una \textbf{unidad de trabajo}.
 
 Un Pull Request representa una \textbf{unidad de integración de código}.
 
-Por lo tanto, un mismo issue puede requerir varios Pull Requests.
+Un issue puede requerir varios Pull Requests.
 
 Ejemplo:
 
@@ -536,15 +513,14 @@ TI2-42 Autenticación
     +-- PR 3: refresh token
 \end{lstlisting}
 
-El issue solamente se considerará terminado cuando todo el trabajo necesario
-haya sido integrado.
+El issue termina cuando todo el trabajo necesario está integrado.
 
 % -------------------------------------------------
 
 \section{Stacked Pull Requests}
 
-Cuando una tarea no pueda dividirse completamente en cambios independientes,
-se podrán utilizar Pull Requests encadenados o \textit{stacked PRs}.
+Si no puedes dividir una tarea en cambios independientes, encadena Pull
+Requests o usa \textit{stacked PRs}.
 
 Ejemplo:
 
@@ -558,26 +534,24 @@ main
            +-- PR C
 \end{lstlisting}
 
-Esta técnica será excepcional y no el flujo predeterminado.
+Esta técnica es una excepción. No es el flujo predeterminado.
 
-Como regla:
+Como límite práctico:
 
 \begin{center}
-  \textbf{se recomienda un máximo de 3 stacked PRs y se permitirá un
-  máximo de 4.}
+  \textbf{usa como máximo 3 stacked PRs; el límite absoluto es 4.}
 \end{center}
 
-Si una cadena requiere más de cuatro Pull Requests dependientes entre sí,
-deberá revisarse la planificación y la división de la tarea.
+Si una cadena supera cuatro Pull Requests dependientes, revisa la planificación
+y divide la tarea de nuevo.
 
 % -------------------------------------------------
 
 \section{Revisión de código}
 
-Todo Pull Request deberá ser revisado por al menos otra persona antes de ser
-integrado.
+Otra persona debe revisar cada Pull Request antes de integrarlo.
 
-Las revisiones podrán terminar en:
+Una revisión puede terminar en:
 
 \begin{itemize}
   \item aprobación;
@@ -585,7 +559,7 @@ Las revisiones podrán terminar en:
   \item solicitud de cambios.
 \end{itemize}
 
-La revisión deberá enfocarse principalmente en:
+La revisión debe comprobar:
 
 \begin{itemize}
   \item cumplimiento del issue;
@@ -605,23 +579,21 @@ La revisión deberá enfocarse principalmente en:
 
 \section{Progresión de las revisiones de TI2}
 
-Debido a que TI2 se encuentra en una etapa inicial de formación, el nivel de
-supervisión evolucionará durante el semestre.
+TI2 está en una etapa inicial de formación, así que la supervisión cambiará
+durante el semestre.
 
 \subsection*{Etapa inicial}
 
-Los Pull Requests de TI2 deberán ser revisados por integrantes de TI4.
+Durante la primera etapa, integrantes de TI4 revisarán los Pull Requests de TI2.
 
-TI4 podrá solicitar modificaciones, explicar problemas y recomendar posibles
-soluciones.
-
-Sin embargo, el autor original deberá realizar los cambios en su propia rama.
+TI4 puede pedir cambios, explicar el problema y sugerir una solución. La persona
+autora hace los cambios en su propia rama.
 
 \subsection*{Etapa intermedia}
 
-TI2 comenzará a realizar revisiones entre pares.
+En la etapa intermedia, TI2 empezará a revisar código entre pares.
 
-TI4 mantendrá revisión directa principalmente en cambios relacionados con:
+TI4 seguirá revisando directamente los cambios relacionados con:
 
 \begin{itemize}
   \item API;
@@ -634,9 +606,9 @@ TI4 mantendrá revisión directa principalmente en cambios relacionados con:
 
 \subsection*{Etapa avanzada}
 
-TI2 deberá ser capaz de revisar e integrar de manera más autónoma sus cambios.
+En la etapa avanzada, TI2 debería revisar e integrar sus cambios con autonomía.
 
-TI4 mantendrá principalmente responsabilidades de:
+TI4 se concentrará en:
 
 \begin{itemize}
   \item coordinación;
@@ -648,28 +620,28 @@ TI4 mantendrá principalmente responsabilidades de:
 
 % -------------------------------------------------
 
-\section{Política de Merge} La estrategia estándar será:
-\begin{center} \textbf{Squash and Merge}
-\end{center} Esto permitirá mantener una historia de \texttt{main}
-simple y legible aunque durante el desarrollo de una branch existan
-múltiples commits intermedios. Después del merge:
+\section{Política de Merge}
+
+Usaremos \textbf{Squash and Merge}. Así, cada Pull Request deja un solo commit
+en \texttt{main}, aunque la branch tenga commits intermedios.
+
+Después del merge:
 \begin{itemize}
-  \item la rama utilizada para el desarrollo \textbf{no deberá eliminarse};
-  \item el issue relacionado deberá quedar actualizado;
-  \item cualquier documentación asociada deberá encontrarse incluida.
-\end{itemize} Las ramas ya integradas se conservarán como parte del
-historial de trabajo del proyecto y como evidencia de las actividades
-realizadas por cada integrante. Por lo tanto, deberá desactivarse en
-GitHub cualquier configuración que elimine automáticamente las ramas
-después de realizar un merge.
+  \item conserva la rama de desarrollo;
+  \item actualiza el issue relacionado;
+  \item incluye la documentación asociada.
+\end{itemize}
+
+Las ramas integradas forman parte del historial de trabajo y de la evidencia de
+participación de cada integrante. Desactiva en GitHub la eliminación automática
+de branches después del merge.
 % -------------------------------------------------
 
 \section{Protección de \texttt{main}}
 
-La rama \texttt{main} deberá protegerse mediante las opciones disponibles en
-GitHub.
+Protege la rama \texttt{main} con las opciones disponibles en GitHub.
 
-Como mínimo:
+Como mínimo, exige:
 
 \begin{itemize}
   \item no permitir push directo;
@@ -680,19 +652,16 @@ Como mínimo:
   \item exigir resolución de conversaciones pendientes antes del merge.
 \end{itemize}
 
-Estas reglas se aplicarán tanto a TI2 como a TI4.
-
-Los integrantes de TI4 tampoco deberán evitar el proceso de Pull Request.
+Estas reglas aplican a TI2 y TI4. El equipo TI4 también debe pasar por Pull
+Request.
 
 % -------------------------------------------------
 
 \section{Integración Continua}
 
-El repositorio deberá utilizar GitHub Actions u otro mecanismo equivalente para
-ejecutar automáticamente verificaciones sobre los Pull Requests.
+GitHub Actions ejecutará las verificaciones de cada Pull Request.
 
-Las verificaciones dependerán de las rutas modificadas, pero deberán considerar
-como mínimo:
+Las rutas modificadas determinan qué verificaciones se ejecutan. Como mínimo:
 
 \begin{itemize}
   \item instalar las dependencias desde el \texttt{package.json} y el único
@@ -705,69 +674,56 @@ como mínimo:
     corresponda.
 \end{itemize}
 
-Cuando un cambio afecte el backend compartido, las aplicaciones Web y Mobile o
-un paquete compartido, la CI deberá ejecutar las verificaciones de todos los
-componentes afectados.
+Si un cambio afecta el backend, Web, Mobile o un paquete compartido, la CI
+ejecuta las verificaciones de todos los componentes afectados.
 
-Un Pull Request con CI fallando no deberá integrarse a \texttt{main} salvo una
-situación excepcional debidamente justificada.
+No integres un Pull Request con la CI fallando, salvo una excepción justificada.
 
 % -------------------------------------------------
 
 \section{Integración entre TI2 y TI4}
 
-El equipo TI2 será responsable de implementar y desplegar los servicios
-compartidos del proyecto utilizando \textbf{Convex} y arquitectura por capas.
-Convex proporcionará los puntos de entrada, la ejecución y la persistencia
-utilizada por las distintas aplicaciones del proyecto. Los casos de uso y las
-reglas de negocio no deberán quedar acoplados a Convex. La autenticación se
-implementará utilizando \textbf{Better Auth} como adaptador de
+TI2 implementará y desplegará los servicios compartidos con \textbf{Convex} y
+arquitectura por capas. Convex ofrece los puntos de entrada, la ejecución y la
+persistencia que usan las aplicaciones. Los casos de uso y las reglas de
+negocio no deben acoplarse a Convex. Better Auth funcionará como adaptador de
 Infraestructura.
 
-Al trabajar en un monorepo, TI2 y TI4 podrán modificar en un mismo Pull Request
-las partes de una funcionalidad que necesiten coordinación. También podrán
-utilizar Pull Requests separados cuando exista una razón clara de revisión o
-despliegue. En ambos casos, la relación entre los cambios deberá quedar
-registrada en Linear.
+El monorepo permite que TI2 y TI4 modifiquen una funcionalidad en el mismo Pull
+Request cuando necesiten coordinarse. También pueden separar los cambios si la
+revisión o el despliegue lo justifican. En ambos casos, relacionen los cambios
+en Linear.
 
-Cuando un cambio realizado por TI2 afecte una funcionalidad utilizada por TI4,
-deberá:
+Cuando un cambio de TI2 afecte una funcionalidad de TI4:
 
 \begin{itemize}
-  \item quedar asociado a un issue de Linear;
-  \item identificar al equipo afectado cuando corresponda;
-  \item comunicar cambios incompatibles antes de integrarlos;
-  \item mantener actualizada la documentación necesaria para consumir el
-    servicio;
-  \item indicar si el cambio afecta Presentación, Aplicación, Dominio o
-    Infraestructura;
-  \item incluir las modificaciones necesarias de autenticación, tipos o
-    estructura de datos cuando corresponda.
+  \item relaciona el cambio con un issue de Linear;
+  \item identifica al equipo afectado;
+  \item comunica los cambios incompatibles antes de integrarlos;
+  \item actualiza la documentación del servicio;
+  \item indica si afecta Presentación, Aplicación, Dominio o Infraestructura;
+  \item actualiza autenticación, tipos o estructura de datos si corresponde.
 \end{itemize}
 
 % -------------------------------------------------
 
 \section{Cambios en el modelo de datos}
 
-El almacenamiento de datos del proyecto será administrado mediante
-\textbf{Convex} como parte de la Infraestructura. Los cambios realizados sobre
-el esquema, funciones, relaciones y estructuras de datos deberán mantenerse
-versionados en la carpeta \texttt{convex/} del monorepo. Las entidades y reglas
-del negocio deberán permanecer en la capa de Dominio, no en el esquema ni en
-los componentes de interfaz. No deberán existir modificaciones necesarias para
-ejecutar el sistema que dependan exclusivamente de configuraciones manuales no
-documentadas.
+\textbf{Convex} administra los datos como parte de Infraestructura. Versiona
+en \texttt{convex/} el esquema, las funciones, las relaciones y las estructuras
+de datos. Mantén las entidades y reglas del negocio en Dominio, no en el
+esquema ni en la interfaz. Toda configuración necesaria para ejecutar el
+sistema debe quedar documentada y versionada.
 
-Cuando una modificación del modelo de datos afecte funcionalidades utilizadas
-por TI4, esta deberá ser tratada como una dependencia entre equipos y quedar
-registrada en Linear.
+Si un cambio del modelo afecta una funcionalidad de TI4, registra esa
+dependencia entre equipos en Linear.
 
 % -------------------------------------------------
 
 \section{Dependencias entre equipos}
 
-Cuando una tarea de un equipo dependa del trabajo del otro, esta dependencia
-deberá quedar registrada en Linear.
+Si una tarea depende del trabajo del otro equipo, registra la dependencia en
+Linear.
 
 Ejemplo:
 
@@ -779,17 +735,16 @@ Bloqueada por:
 TI2-61 Endpoint de recuperación de clave
 \end{lstlisting}
 
-TI4 será responsable de monitorear estas dependencias dentro del proceso de
-coordinación del proyecto.
+TI4 hará seguimiento de estas dependencias durante la coordinación del proyecto.
 
 % -------------------------------------------------
 
 \section{Definición de Done}
 
-Un issue no se considerará terminado solamente porque ``el código funciona en
-el computador del desarrollador''.
+Un issue no termina porque ``el código funciona en el computador del
+desarrollador''.
 
-Como regla general, una tarea podrá marcarse como \texttt{Done} cuando:
+Marca una tarea como \texttt{Done} cuando:
 
 \begin{itemize}
   \item cumple sus criterios de aceptación;
@@ -800,38 +755,38 @@ Como regla general, una tarea podrá marcarse como \texttt{Done} cuando:
   \item la documentación fue actualizada cuando corresponde;
   \item las dependencias entre capas respetan la arquitectura definida;
   \item no deja dependencias conocidas sin registrar;
-  \item el cambio se encuentra disponible en \texttt{main}.
+  \item el cambio está disponible en \texttt{main}.
 \end{itemize}
 
 % -------------------------------------------------
 
 \section{Flujo de trabajo completo}
 
-El flujo estándar será:
+El flujo estándar es:
 
 \begin{enumerate}
-  \item TI4 realiza el triage inicial del trabajo.
-  \item El issue queda en el Team y Cycle correspondiente.
-  \item El integrante toma una tarea desde Linear.
+  \item TI4 hace el triage inicial del trabajo.
+  \item Linear asigna el issue al Team y al Cycle correspondientes.
+  \item El integrante toma la tarea desde Linear.
   \item Identifica las capas afectadas y el punto de entrada de la
     funcionalidad.
   \item Actualiza localmente \texttt{main}.
   \item Crea desde Linear una branch asociada al issue dentro del monorepo.
   \item Implementa el cambio.
-  \item Realiza commits en su branch.
+  \item Hace commits en su branch.
   \item Publica la branch en GitHub.
   \item Abre un Pull Request.
-  \item Linear relaciona el Pull Request con el issue.
-  \item El código pasa por CI.
-  \item Otro integrante realiza la revisión.
-  \item Si existen observaciones, el autor modifica su propia branch.
-  \item Cuando CI y review estén aprobados, se realiza Squash and Merge.
-  \item La branch utilizada se conserva en el repositorio.
-  \item Linear actualiza el estado del trabajo.
-  \item Cuando corresponda, el cambio es desplegado.
+  \item Relaciona el Pull Request con el issue en Linear.
+  \item Ejecuta CI sobre el cambio.
+  \item Otro integrante revisa el código.
+  \item Si hay observaciones, el autor modifica su propia branch.
+  \item Cuando CI y la revisión están aprobadas, hace Squash and Merge.
+  \item Conserva la branch utilizada en el repositorio.
+  \item Actualiza el estado del trabajo en Linear.
+  \item Despliega el cambio cuando corresponda.
 \end{enumerate}
 
-De forma resumida:
+El flujo queda así:
 
 \begin{lstlisting}
 Linear
@@ -868,9 +823,8 @@ La branch se conserva.
 
 \section{Stack tecnológico}
 
-Ambos equipos deberán conocer el stack tecnológico del proyecto, incluso cuando
-cada uno sea responsable solamente de determinados componentes. Las principales
-tecnologías definidas para el proyecto son:
+Ambos equipos deben conocer el stack tecnológico, aunque cada uno mantenga
+componentes distintos. El proyecto usa:
 
 \begin{table}[h]
   \centering
@@ -892,43 +846,40 @@ tecnologías definidas para el proyecto son:
   \end{tabularx}
 \end{table}
 
-TI2 será responsable de desplegar y mantener los servicios compartidos,
-incluyendo las capas de Aplicación, Dominio e Infraestructura implementadas
-mediante Convex y la integración de autenticación con Better Auth. TI4 será
-responsable de integrar y mantener la Presentación Mobile y su infraestructura
-cliente dentro del mismo monorepo. Las decisiones específicas de
-implementación, bibliotecas auxiliares y configuraciones internas podrán
-evolucionar durante el proyecto, siempre que no modifiquen los contratos y
-dependencias entre ambos equipos sin la coordinación correspondiente.
+TI2 despliega y mantiene los servicios compartidos, incluidas las capas de
+Aplicación, Dominio e Infraestructura implementadas con Convex y la integración
+de Better Auth. TI4 integra y mantiene la Presentación Mobile y su
+infraestructura cliente dentro del mismo monorepo. Las bibliotecas auxiliares y
+las configuraciones internas pueden evolucionar, pero cualquier cambio en los
+contratos o las dependencias entre equipos debe coordinarse antes.
 
 % -------------------------------------------------
 
 \section{Principios generales}
 
-Durante el proyecto se aplicarán los siguientes principios:
+Durante el proyecto rigen estos principios:
 
 \begin{enumerate}
-  \item Todo trabajo relevante debe ser trazable.
-  \item Nadie realiza push directo a \texttt{main}.
-  \item Las ramas deben ser pequeñas y de corta duración.
-  \item El código debe ser revisado por otra persona.
-  \item TI4 debe ayudar a TI2 a adquirir autonomía, no reemplazar su trabajo.
-  \item Linear representa el estado del trabajo.
-  \item GitHub representa el estado del código.
-  \item El monorepo contiene todos los componentes principales del producto.
-  \item La arquitectura por capas mantiene separadas Presentación, Aplicación,
-    Dominio e Infraestructura.
-  \item Las reglas de negocio no se duplican en las aplicaciones cliente.
-  \item La API compartida y los paquetes internos deben mantenerse explícitos
-    y versionados.
-  \item Los problemas deben hacerse visibles tempranamente.
+  \item Registra todo trabajo relevante para que pueda seguirse.
+  \item Nadie hace push directo a \texttt{main}.
+  \item Mantén las ramas pequeñas y de corta duración.
+  \item Haz que otra persona revise el código.
+  \item TI4 ayuda a TI2 a ganar autonomía sin reemplazar su trabajo.
+  \item Usa Linear para representar el estado del trabajo.
+  \item Usa GitHub para representar el estado del código.
+  \item Mantén todos los componentes principales del producto en el monorepo.
+  \item Separa Presentación, Aplicación, Dominio e Infraestructura.
+  \item Mantén las reglas de negocio fuera de las aplicaciones cliente.
+  \item Mantén explícitos y versionados la API compartida y los paquetes
+    internos.
+  \item Haz visibles los problemas cuanto antes.
 \end{enumerate}
 
 % -------------------------------------------------
 
 \section{Resumen}
 
-La metodología utilizada puede resumirse mediante tres relaciones principales:
+El proyecto queda organizado mediante estas relaciones:
 
 \begin{center}
   \textbf{Linear = planificación y seguimiento}
@@ -942,8 +893,7 @@ La metodología utilizada puede resumirse mediante tres relaciones principales:
   \textbf{Monorepo = código compartido, trazable y coordinado}
 \end{center}
 
-El objetivo final no es solamente completar el producto, sino establecer un
-proceso de desarrollo colaborativo, reproducible y progresivamente autónomo
-para ambos equipos.
+El resultado esperado es un proceso que ambos equipos puedan repetir y mantener
+sin depender de una sola persona.
 
 \end{document}
