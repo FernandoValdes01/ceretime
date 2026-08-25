@@ -78,19 +78,17 @@ Todos los integrantes deberán desarrollar sus actividades bajo los siguientes p
 
 \begin{itemize}
     \item Respeto entre todos los integrantes del equipo.
-    
+
     \item Responsabilidad individual respecto de las tareas, compromisos y funciones asumidas.
-    
+
     \item Transparencia frente a errores, dificultades, retrasos o problemas que puedan afectar al proyecto.
-    
+
     \item Colaboración entre los integrantes, especialmente cuando existan diferencias de conocimientos o experiencia.
-    
+
     \item Trazabilidad de las decisiones y modificaciones relevantes realizadas durante el proyecto.
-    
+
     \item Comunicación oportuna ante situaciones que puedan afectar el normal desarrollo del trabajo.
 \end{itemize}
-
-
 
 \section{Críticas y diferencias técnicas}
 
@@ -232,13 +230,26 @@ Esta excepción será válida únicamente cuando la modificación no altere cód
 
 Cada tarea o modificación deberá utilizar una rama destinada específicamente a su desarrollo.
 
-Se prohíbe:
+Las ramas creadas durante el proyecto constituyen parte de la documentación y de la evidencia del trabajo realizado por cada integrante. Permiten conservar trazabilidad respecto de las tareas desarrolladas, los cambios realizados y la participación de los distintos miembros del equipo.
+
+Por este motivo:
+
+\begin{center}
+    \textbf{Queda prohibida la eliminación de ramas del repositorio GitHub.}
+\end{center}
+
+Esta prohibición aplica tanto a ramas que se encuentren actualmente en desarrollo como a ramas que ya hayan sido integradas mediante una Pull Request.
+
+En consecuencia:
 
 \begin{itemize}
-    \item eliminar arbitrariamente ramas compartidas;
-    \item eliminar trabajo perteneciente a otros integrantes;
-    \item modificar deliberadamente el historial para ocultar acciones realizadas;
-    \item eliminar commits relevantes sin coordinación previa.
+    \item no se deberán eliminar manualmente ramas remotas;
+    \item no se deberán eliminar ramas después de realizar un merge;
+    \item deberá mantenerse desactivada la eliminación automática de ramas después de integrar una Pull Request;
+    \item las ramas utilizadas deberán conservarse como evidencia y documentación del trabajo realizado;
+    \item no se deberá eliminar trabajo perteneciente a otros integrantes;
+    \item no se deberá modificar deliberadamente el historial para ocultar acciones realizadas;
+    \item no se deberán eliminar commits relevantes con el objetivo de reducir o alterar la trazabilidad del proyecto.
 \end{itemize}
 
 Los movimientos relevantes realizados en el repositorio deberán conservar un nivel razonable de trazabilidad.
@@ -266,6 +277,8 @@ Las Pull Requests deberán integrarse utilizando el mecanismo:
 \end{center}
 
 Este procedimiento permitirá consolidar los commits realizados durante el desarrollo de una tarea antes de incorporarlos a la rama principal, manteniendo un historial más ordenado y comprensible.
+
+La realización del merge no implica la eliminación de la rama utilizada. La rama deberá permanecer disponible en GitHub como parte de la documentación y trazabilidad del proyecto.
 
 \subsection{Force Push}
 
@@ -360,13 +373,13 @@ Por ejemplo:
 
 \begin{itemize}
     \item Introducir accidentalmente un error y colaborar en su corrección no constituye una falta.
-    
+
     \item Detectar un error propio e informar oportunamente al equipo constituye una conducta responsable.
-    
+
     \item Detectar un problema relevante y ocultarlo deliberadamente podrá constituir una falta.
-    
+
     \item Intentar eliminar evidencia con el objetivo de ocultar una acción podrá constituir una falta grave.
-    
+
     \item Modificar intencionalmente el proyecto con el propósito de perjudicar su funcionamiento o el trabajo de otro integrante será considerado una falta muy grave.
 \end{itemize}
 
@@ -378,13 +391,13 @@ Para evaluar un incidente deberán considerarse conjuntamente los siguientes ele
 
 \begin{enumerate}
     \item \textbf{Intención:} si la acción fue accidental, negligente o deliberada.
-    
+
     \item \textbf{Impacto:} nivel de afectación producido sobre el proyecto, equipo, usuarios o información.
-    
+
     \item \textbf{Reincidencia:} existencia de incidentes similares anteriores.
-    
+
     \item \textbf{Ocultamiento:} existencia de intentos por esconder el problema o evitar asumir responsabilidad.
-    
+
     \item \textbf{Cooperación:} disposición del integrante para informar, corregir y prevenir nuevamente el problema.
 \end{enumerate}
 
@@ -436,7 +449,8 @@ Ejemplos:
     \item realizar acciones destinadas a alterar de manera no autorizada el historial del proyecto;
     \item ocultar deliberadamente un incidente relevante;
     \item ignorar conscientemente procedimientos de seguridad;
-    \item eliminar trabajo de otros integrantes sin autorización.
+    \item eliminar trabajo de otros integrantes sin autorización;
+    \item eliminar deliberadamente ramas del repositorio y afectar con ello la trazabilidad del trabajo realizado.
 \end{itemize}
 
 \subsection{Falta muy grave}
@@ -488,6 +502,52 @@ Puede constituir una falta grave
 \end{center}
 
 \section{Gestión de tareas}
+
+Las herramientas de gestión de tareas, especialmente Linear, deberán utilizarse como fuente formal para la asignación y seguimiento del trabajo.
+
+\subsection{Triage y asignación de tareas de Taller de Integración II}
+
+Los integrantes de Taller de Integración IV podrán crear, preparar, describir, priorizar y establecer los criterios de aceptación de las tareas correspondientes a Taller de Integración II.
+
+Sin embargo, las tareas destinadas a Taller de Integración II deberán ser dejadas inicialmente en el estado:
+
+\begin{center}
+    \textbf{Triage}
+\end{center}
+
+Los integrantes de Taller de Integración IV no deberán asignar directamente estas tareas a integrantes específicos de Taller de Integración II.
+
+La responsabilidad de revisar las tareas disponibles en Triage y distribuirlas dentro del equipo corresponderá exclusivamente al:
+
+\begin{center}
+    \textbf{Scrum Master de Taller de Integración II.}
+\end{center}
+
+En consecuencia, únicamente el Scrum Master de Taller de Integración II podrá:
+
+\begin{itemize}
+    \item retirar o mover una tarea de TI2 desde Triage para incorporarla formalmente al flujo de trabajo;
+    \item asignar inicialmente una tarea a un integrante de TI2;
+    \item cambiar al responsable de una tarea de TI2;
+    \item reasignar una tarea de un integrante de TI2 a otro integrante;
+    \item redistribuir tareas cuando existan problemas de carga de trabajo, bloqueos o dependencias.
+\end{itemize}
+
+Los demás integrantes de Taller de Integración II no podrán reasignarse tareas entre ellos ni modificar unilateralmente al responsable definido por el Scrum Master.
+
+Por ejemplo, un integrante de TI2 que tenga una tarea asignada no podrá entregársela o asignársela directamente a otro compañero mediante Linear.
+
+Cuando considere necesaria una reasignación, deberá comunicar la situación al Scrum Master de TI2, quien determinará si corresponde realizar el cambio.
+
+Esta restricción se refiere exclusivamente a la \textbf{asignación y reasignación de responsables}. El integrante responsable de una tarea sí deberá mantener actualizado su estado de avance dentro del flujo de trabajo correspondiente, por ejemplo:
+
+\begin{center}
+\texttt{Todo} $\rightarrow$ \texttt{In Progress} $\rightarrow$ \texttt{In Review} $\rightarrow$ \texttt{Done}
+\end{center}
+
+De esta manera se mantiene una distribución coordinada del trabajo sin impedir que cada integrante refleje correctamente el progreso de sus propias tareas.
+
+\subsection{Responsabilidad sobre las tareas asignadas}
 
 Cada tarea deberá contar con un integrante responsable claramente identificado.
 
@@ -563,17 +623,17 @@ Cuando ocurra un incidente relevante, se procurará seguir el siguiente procedim
 
 \begin{enumerate}
     \item \textbf{Informar:} comunicar la situación a los integrantes correspondientes.
-    
+
     \item \textbf{Contener:} evitar que el problema continúe generando consecuencias.
-    
+
     \item \textbf{Registrar:} conservar información suficiente para comprender lo ocurrido cuando la situación lo requiera.
-    
+
     \item \textbf{Analizar:} identificar la causa y alcance del problema.
-    
+
     \item \textbf{Corregir:} aplicar una solución técnica u organizacional.
-    
+
     \item \textbf{Evaluar:} determinar, cuando corresponda, la gravedad del incidente.
-    
+
     \item \textbf{Prevenir:} establecer medidas que reduzcan la posibilidad de repetición.
 \end{enumerate}
 
