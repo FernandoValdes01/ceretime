@@ -1,0 +1,601 @@
+\documentclass[10pt,a4paper,oneside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage[a4paper,top=2.05cm,bottom=2.0cm,left=2.15cm,right=2.05cm,headheight=14pt]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{ragged2e}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc}
+\usepackage[most]{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+\usepackage{titlesec}
+\usepackage[numbers,square,sort&compress]{natbib}
+\usepackage{url}
+\usepackage{setspace}
+\usepackage[hidelinks,bookmarksnumbered=true,pdfpagelabels=true]{hyperref}
+
+\definecolor{azuluct}{HTML}{17365D}
+\definecolor{azulclaro}{HTML}{EAF1F8}
+\definecolor{gristexto}{HTML}{3D4650}
+\definecolor{grislinea}{HTML}{B8C2CC}
+\definecolor{verdeclaro}{HTML}{EAF5EF}
+\definecolor{amarilloclaro}{HTML}{FFF7DF}
+\definecolor{rojoatenuado}{HTML}{FAEDEE}
+
+\hypersetup{
+  pdftitle={Síntesis del Análisis de Requerimientos --- Proyecto CERETI},
+  pdfauthor={Taller de Integración IV y Taller de Integración II},
+  pdfsubject={Ingeniería de Requerimientos},
+  colorlinks=true,linkcolor=azuluct,citecolor=azuluct,urlcolor=azuluct
+}
+
+\setstretch{1.02}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\setlength{\tabcolsep}{3.5pt}
+\setlength{\emergencystretch}{2em}
+\setlist[itemize]{leftmargin=*,itemsep=1pt,topsep=2pt}
+\setlist[enumerate]{leftmargin=*,itemsep=1pt,topsep=2pt}
+\setcounter{tocdepth}{1}
+\setcounter{secnumdepth}{2}
+
+\titleformat{\section}{\normalfont\Large\bfseries\color{azuluct}}{\thesection}{0.65em}{}[\vspace{0.15ex}\titlerule]
+\titleformat{\subsection}{\normalfont\large\bfseries\color{gristexto}}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{10pt}{5pt}
+\titlespacing*{\subsection}{0pt}{7pt}{3pt}
+\makeatletter
+\renewcommand*{\l@section}{\@dottedtocline{1}{0em}{2.2em}}
+\makeatother
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{gristexto}Síntesis de Requerimientos --- CERETI}
+\fancyhead[R]{\small\color{gristexto}Segundo semestre 2026}
+\fancyfoot[C]{\small\color{gristexto}\thepage\ de \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\newcolumntype{Y}{>{\RaggedRight\arraybackslash}X}
+\newcolumntype{L}[1]{>{\RaggedRight\arraybackslash}p{#1}}
+\newcommand{\id}[1]{\texttt{#1}}
+\newcommand{\must}{\textbf{Debe}}
+\newcommand{\should}{\textbf{Debería}}
+\newcommand{\could}{\textbf{Podría}}
+
+\begin{document}
+
+\begin{titlepage}
+  \thispagestyle{empty}
+  \begin{tikzpicture}[remember picture,overlay]
+    \fill[azuluct] (current page.north west) rectangle ([xshift=1.75cm]current page.south west);
+    \fill[azulclaro] ([xshift=1.75cm]current page.north west) rectangle (current page.north east);
+    \draw[azuluct,line width=1.1pt] ([xshift=1.75cm,yshift=-2.55cm]current page.north west) -- ([xshift=-2.05cm,yshift=-2.55cm]current page.north east);
+  \end{tikzpicture}
+  \vspace*{1.8cm}
+  \hspace*{0.9cm}\begin{minipage}{0.86\textwidth}
+    {\large\color{azuluct}\textsc{Universidad Católica de Temuco}}\\[0.25cm]
+    {\normalsize\color{gristexto}Taller de Integración IV}\par
+    \vspace{1.35cm}
+    {\Huge\bfseries\color{azuluct}Síntesis del Análisis\\[-0.05cm]
+    Requerimientos\\[0.2cm]
+    \Large\color{gristexto}Proyecto CERETI}
+    \vspace{1.15cm}
+    \begin{tcolorbox}[colback=white,colframe=grislinea,boxrule=0.5pt,arc=1mm,left=3mm,right=3mm]
+      \textbf{Propósito.} Presentar en forma ejecutiva la línea base de requerimientos del prototipo web y móvil de CERETI, su contexto, reglas de negocio, restricciones, arquitectura, privacidad, criterios de aceptación y pendientes de validación.
+    \end{tcolorbox}
+    \vspace{1.15cm}
+    {\large Segundo semestre 2026}\\[0.5cm]
+    \textbf{Profesor:} Ignacio Nicolas Lincolao Venegas
+  \end{minipage}\par
+  \vspace{1.8cm}
+  \noindent\hspace*{0.9cm}\begin{minipage}{0.86\textwidth}
+    \small
+    \begin{tabular}{@{}p{5.8cm}p{6.8cm}@{}}
+      \textbf{Taller de Integración IV} & \textbf{Taller de Integración II}\\
+      Fernando Valdes & Lucas Núñez\\
+      Vicente Rivera & Francisco Leal\\
+      Juan Muñoz & Wladimir Peñeipil Soto\\
+      & Rayen Castro\\
+      & Camilo Contreras\\
+      & Leonardo Ulloa
+    \end{tabular}
+  \end{minipage}\par
+  \vfill
+  \noindent\hspace*{0.9cm}\begin{minipage}{0.86\textwidth}\small\color{gristexto}
+    Documento académico sintetizado. El prototipo se diseña y demuestra con datos ficticios o anonimizados; no se presenta como sistema autorizado para operar con acompañamientos reales.
+  \end{minipage}
+\end{titlepage}
+
+\pagenumbering{roman}
+\tableofcontents
+\clearpage
+\pagenumbering{arabic}
+
+\section{Introducción y método de análisis}
+
+CERETI es el Centro de Recursos Tecnológicos Inclusivos de la Universidad Católica de Temuco. El prototipo analizado busca coordinar un proceso de apoyo para estudiantes, desde la solicitud inicial hasta el cierre de un acompañamiento, con continuidad, accesibilidad y trazabilidad. La agenda es sólo una parte del sistema: el núcleo del dominio es la relación entre solicitud, revisión, acompañamiento, atención, seguimiento y cierre \citep{context,especificacion}.
+
+El problema no se aborda como un sistema médico. La terminología funcional es la de CERETI: estudiante acompañado, profesional de CERETI, solicitud de acompañamiento, necesidad de acceso, derivación, atención, registro de seguimiento, nota interna, justificación de inasistencia y solicitud de privacidad. Se evita modelar a la persona como ``paciente'', ``caso'' o ``ficha clínica''.
+
+\subsection{Relación entre los talleres}
+
+El trabajo se organiza con un backend, una base de datos y una API compartidos. Taller de Integración II concentra Web, backend, dominio, base de datos, pruebas y despliegue; Taller de Integración IV concentra Mobile, coordinación, integración, aseguramiento de calidad y seguimiento del trabajo. Ambos equipos deben consumir los mismos casos de uso, reglas de negocio y contratos de API \citep{metodologia,tech,git}.
+
+\subsection{Criterios del análisis de requerimientos}
+
+El análisis se organiza con el ciclo de elicitación, análisis, especificación, validación y gestión descrito en el área de Software Requirements del SWEBOK. Este marco orienta la identificación de necesidades, la redacción verificable, la priorización, la trazabilidad, la revisión y el control de cambios. Sus áreas de arquitectura, diseño, calidad, seguridad y práctica profesional sirven para estudiar las consecuencias del análisis, no para inventar funcionalidades \citep{swebok}.
+
+\subsection{Elicitación y fuentes del levantamiento}
+
+La línea base funcional se construye principalmente a partir de conversaciones con la profesional vinculada al dominio de CERETI, discusiones y acuerdos entre los integrantes de ambos talleres, y el contraste de esas decisiones con la documentación técnica, académica y jurídica disponible. Las herramientas de inteligencia artificial se utilizan como apoyo para ordenar, comparar y redactar los insumos; no se consideran un stakeholder ni una autoridad funcional. Por ello, cada inferencia debe conservarse como derivada o quedar explícitamente abierta para revisión.
+
+\begin{center}
+\begin{tikzpicture}[
+  paso/.style={draw=azuluct,fill=azulclaro,rounded corners=2pt,minimum width=2.45cm,minimum height=8mm,align=center,font=\small\bfseries,text=azuluct},
+  flecha/.style={-{Latex[length=2mm]},thick,draw=azuluct}
+]
+\node[paso] (e) {Elicitación};
+\node[paso,right=of e] (a) {Análisis};
+\node[paso,right=of a] (s) {Especificación};
+\node[paso,right=of s] (v) {Validación};
+\node[paso,right=of v] (g) {Gestión};
+\draw[flecha] (e)--(a); \draw[flecha] (a)--(s); \draw[flecha] (s)--(v); \draw[flecha] (v)--(g);
+\draw[flecha] (g.south) -- ++(0,-0.85cm) |- (e.south);
+\node[font=\scriptsize,fill=white,inner sep=1pt] at ($(e.south)!0.5!(g.south)+(0,-0.85cm)$) {cambios y nueva evidencia};
+\end{tikzpicture}
+\end{center}
+
+La calidad de un requisito se revisa por claridad, atomicidad, factibilidad, consistencia y verificabilidad. Cada elemento debe conservar, cuando corresponda, identificador, fuente, prioridad, estabilidad, dependencias, criterio de aceptación y estado de validación.
+\section{Contexto, dominio y stakeholders}
+
+CERETI coordina acompañamientos para estudiantes de la UCT. Una solicitud puede ser revisada, aceptada, derivada, cerrada sin acompañamiento o cancelada. Sólo una solicitud aceptada ---y una derivación con contacto y aceptación del estudiante--- abre un acompañamiento. El acompañamiento puede estar activo, pausado o cerrado; al cerrarse conserva su historial y no se reabre. Una necesidad posterior inicia un nuevo flujo \citep{context,especificacion}.
+
+\begin{center}
+\begin{tikzpicture}[
+  node distance=4mm and 2mm,
+  paso/.style={draw=azuluct,fill=azulclaro,rounded corners=2pt,minimum height=8mm,text width=2.1cm,inner sep=1.5pt,align=center,font=\tiny\bfseries,text=azuluct},
+  flecha/.style={-{Latex[length=1.8mm]},thick,draw=azuluct}
+]
+\node[paso] (s) {Solicitud o derivación};
+\node[paso,right=of s] (r) {Revisión};
+\node[paso,right=of r] (a) {Acompañamiento};
+\node[paso,right=of a] (t) {Atención};
+\node[paso,right=of t] (f) {Seguimiento};
+\node[paso,right=of f] (c) {Cierre};
+\draw[flecha] (s)--(r); \draw[flecha] (r)--(a); \draw[flecha] (a)--(t); \draw[flecha] (t)--(f); \draw[flecha] (f)--(c);
+\end{tikzpicture}
+\end{center}
+
+\subsection{Stakeholders y actores}
+
+Los stakeholders organizacionales validan, financian, operan o resultan afectados por la solución; los actores interactúan directamente con el software. La separación evita confundir a CERETI o a la UCT con un rol técnico de la aplicación.
+
+\small
+\begin{tabularx}{\textwidth}{@{}L{0.20\textwidth}L{0.28\textwidth}Y@{}}
+\toprule
+\textbf{Entidad} & \textbf{Tipo} & \textbf{Interés o responsabilidad}\\
+\midrule
+Estudiante acompañado & Actor del software / stakeholder & Solicita acompañamiento, informa necesidades de acceso, agenda, participa en atenciones, justifica inasistencias y ejerce derechos sobre sus datos.\\
+Profesional de CERETI & Actor del software / stakeholder & Revisa solicitudes, deriva, acepta, asigna, coordina, registra atenciones y seguimiento, y cierra acompañamientos.\\
+Administrador provisional & Actor del software & Gestiona cuentas, configuración, espacios y reportes agregados, sujeto a permisos y cargos reales aún pendientes.\\
+CERETI & Unidad stakeholder & Define lenguaje, flujo operativo, canales, revisión de experiencia y validación del dominio.\\
+UCT & Stakeholder institucional & Debe validar responsable de datos, base jurídica, cargos, proveedores, conservación, seguridad y autorización de operación real.\\
+TI2 y TI4 & Stakeholders internos / equipos constructores & Implementan y coordinan Web, backend, Mobile, integración, calidad, documentación y despliegue.\\
+Google Workspace, Calendar, correo, push y hosting & Sistemas externos & Proveen identidad, eventos explícitos, comunicaciones y ejecución técnica; su autorización productiva permanece pendiente.\\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\subsection{Autenticación y autorización}
+
+Google Workspace establece quién es la persona y permite iniciar sesión; no concede automáticamente acceso a un acompañamiento. El backend debe comprobar identidad, rol, habilitación y relación con el recurso en cada operación protegida. Ocultar una pantalla en Web o Mobile no reemplaza la autorización de backend \citep{adr002,especificacion,tech}.
+\section{Alcance funcional y exclusiones}
+
+El prototipo es una solución web y móvil de extremo a extremo, con datos ficticios o anonimizados. Su propósito es demostrar continuidad y trazabilidad del acompañamiento, no sólo una agenda. Las funcionalidades se agrupan así:
+
+\small
+\begin{tabularx}{\textwidth}{@{}L{0.22\textwidth}Y@{}}
+\toprule
+\textbf{Dominio} & \textbf{Capacidades comprendidas en el prototipo}\\
+\midrule
+Identidad y acceso & Inicio de sesión institucional; área de estudiante o gestión; roles provisionales; autorización backend por recurso.\\
+Solicitud y derivación & Creación por estudiante o canal autorizado; necesidades de acceso; revisión; solicitud de información; aceptación, cancelación, cierre sin acompañamiento y derivación con aceptación.\\
+Acompañamiento & Apertura sólo tras aceptación; responsables; estados activo, pausado y cerrado; historial y cierre no reabrible.\\
+Agenda y atención & Disponibilidad recurrente y excepciones; espacios; modalidades presencial/en línea; reserva, cambio, cancelación, reagendamiento, conflictos y coordinación multiprofesional.\\
+Seguimiento & Atenciones realizadas/canceladas/reagendadas; inasistencias; justificaciones en cinco días hábiles; seguimiento operativo, acuerdos, tareas y notas internas restringidas.\\
+Comunicaciones & Centro de notificaciones, correo institucional, push opcional, mensajes externos genéricos, Calendar por atención mediante acción explícita y descarga \texttt{.ics}.\\
+Privacidad y control & Aviso de privacidad; solicitudes de acceso, corrección, bloqueo, exportación y supresión; auditoría; exportación de datos propios; reportes agregados.\\
+Accesibilidad & Web y Mobile con criterios WCAG pertinentes, foco, teclado, lectores de pantalla, contraste, reflujo, controles táctiles, alternativas textuales y lenguaje comprensible.\\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\subsection{Fuera del prototipo}
+
+No forman parte del alcance: operación con datos reales sin autorización institucional; diagnóstico, certificados o fichas clínicas; emergencias; mapas/geolocalización; inteligencia artificial; becas, materiales, talleres, eventos o grupos; modalidad híbrida; lectura completa de calendarios; WhatsApp/SMS; sanciones automáticas; integraciones internas de UCT; y eliminación o anonimización automática por vencimiento.
+
+\subsection{Prioridad de la línea base}
+
+\begin{tabularx}{\textwidth}{@{}L{0.16\textwidth}L{0.28\textwidth}Y@{}}
+\toprule
+\textbf{Prioridad} & \textbf{Interpretación} & \textbf{Ejemplos}\\
+\midrule
+\must & Esencial para que el flujo sea seguro y demostrable. & Identidad, autorización, solicitudes, acompañamiento, atención, seguimiento, privacidad, auditoría, accesibilidad y uso de datos ficticios.\\
+\should & Importante para una experiencia completa, pero puede ser posterior al núcleo. & Notificaciones, Calendar, reportes agregados, coordinación multiprofesional, configuración administrativa.\\
+\could & Aporta valor sin ser necesario para la demostración central. & Descarga \texttt{.ics} y algunas variantes de notificación.\\
+No se incluye & Explícitamente fuera del prototipo. & Datos reales, diagnóstico, emergencia, IA, integraciones internas y borrado automático.\\
+\bottomrule
+\end{tabularx}
+\section{Requerimientos funcionales}
+
+Los requisitos funcionales describen comportamientos observables y verificables. Para mantener la síntesis se conserva el identificador de cada requisito, pero se condensan precondiciones y resultados dentro de una única formulación. ``Base vigente'' indica respaldo documental o decisión aceptada; no equivale a autorización institucional de producción.
+
+\scriptsize
+\renewcommand{\arraystretch}{1.12}
+\begin{longtable}{@{}L{0.065\textwidth}L{0.56\textwidth}L{0.15\textwidth}L{0.18\textwidth}@{}}
+\caption{Línea base funcional resumida}\label{tab:rf-sintesis}\\
+\toprule
+\textbf{ID} & \textbf{El sistema deberá} & \textbf{Actor} & \textbf{Fuente / prioridad}\\
+\midrule
+\endfirsthead
+\toprule\textbf{ID} & \textbf{El sistema deberá} & \textbf{Actor} & \textbf{Fuente / prioridad}\\\midrule
+\endhead
+\bottomrule
+\endfoot
+\id{RF-01} & Permitir inicio de sesión con Google Workspace institucional mediante OIDC/OAuth 2.0, sin almacenar contraseñas. & Estudiante / personal & ADR-0002 / Debe\\
+\id{RF-02} & Determinar el área de acceso según dominio y habilitación: portal estudiantil o gestión CERETI. & Sistema & ADR-0002 / Debe\\
+\id{RF-03} & Reconocer estudiante, profesional y administrador como roles provisionales, sin convertirlos en cargos definitivos. & Administrador & Contexto, Especificación / Debe\\
+\id{RF-04} & Permitir al estudiante registrar una solicitud no urgente con necesidad, resultado esperado, necesidades de acceso y disponibilidad general. & Estudiante & Especificación / Debe\\
+\id{RF-05} & Permitir a personal autorizado ingresar una solicitud recibida por un canal institucional y conservar su origen. & Profesional & Especificación / Debería\\
+\id{RF-06} & Registrar una derivación sin abrir automáticamente un acompañamiento y dejarla pendiente de contacto y aceptación. & Profesional & Contexto, Especificación / Debe\\
+\id{RF-07} & Permitir revisar, solicitar información, aceptar, derivar, cerrar sin acompañamiento o registrar cancelación, con razón comprensible y auditoría. & Profesional & Contexto, Especificación / Debe\\
+\id{RF-08} & Crear un acompañamiento únicamente cuando la solicitud sea aceptada y asociarlo a su necesidad u objetivo. & Profesional & Contexto, Especificación / Debe\\
+\id{RF-09} & Permitir asignar uno o más profesionales a un acompañamiento según autorización. & Profesional & Especificación / Debe\\
+\id{RF-10} & Mostrar a cada persona sólo sus solicitudes, acompañamientos, atenciones, acuerdos, tareas, necesidades y recursos autorizados. & Estudiante / profesional & Especificación / Debe\\
+\id{RF-11} & Permitir actualizar necesidades de acceso para atenciones futuras sin alterar el historial. & Estudiante & Contexto, Especificación / Debe\\
+\id{RF-12} & Permitir bloques recurrentes de disponibilidad y excepciones, con duración, modalidad y lugar. & Profesional & Especificación / Debe\\
+\id{RF-13} & Mantener un catálogo de espacios presenciales con ubicación e instrucciones de acceso. & Administrador & Especificación / Debe\\
+\id{RF-14} & Comprobar cruces entre estudiante, profesionales y sala al crear o modificar una atención. & Sistema & Especificación / Debe\\
+\id{RF-15} & Permitir reservar una hora compatible cuando exista un acompañamiento activo y autorización. & Estudiante & Especificación / Debe\\
+\id{RF-16} & Permitir coordinar atenciones con varios profesionales y comunicar conflictos. & Profesional & Especificación / Debería\\
+\id{RF-17} & Registrar modalidad presencial con lugar accesible o modalidad en línea con datos operativos privados. & Profesional & Contexto, Especificación / Debe\\
+\id{RF-18} & Permitir cambiar, cancelar o reagendar según permisos, conservando la fecha original y el motivo de cancelación de CERETI. & Estudiante / profesional & Especificación / Debe\\
+\id{RF-19} & Registrar atención realizada, cancelada, reagendada o inasistencia, manteniendo auditoría. & Profesional & Contexto, Especificación / Debe\\
+\id{RF-20} & Permitir entregar y revisar una explicación accesible dentro de cinco días hábiles posteriores a una inasistencia. & Estudiante / profesional & Contexto, Especificación / Debe\\
+\id{RF-21} & Registrar sólo la recepción y revisión de un respaldo sensible entregado por canal autorizado; no almacenar su archivo. & Profesional & Contexto, ADR-0001 / Debe\\
+\id{RF-22} & Registrar seguimiento operativo, acuerdos, tareas, responsables, próximos pasos y fecha sugerida. & Profesional & Contexto, Especificación / Debe\\
+\id{RF-23} & Registrar notas internas breves y limitar su visibilidad a profesionales autorizados del acompañamiento. & Profesional & Contexto, Especificación / Debería\\
+\id{RF-24} & Mostrar acuerdos y tareas al estudiante y a profesionales autorizados, según alcance. & Estudiante / profesional & Especificación / Debe\\
+\id{RF-25} & Mantener notificaciones y enviar avisos por correo institucional; push será opcional y controlado. & Sistema & Especificación / Debería\\
+\id{RF-26} & Usar mensajes genéricos fuera de sesión, sin revelar CERETI, profesional, tipo de acompañamiento ni datos sensibles. & Sistema & Contexto, Especificación / Debe\\
+\id{RF-27} & Crear un evento de Google Calendar sólo por acción explícita y por atención, sin leer el calendario completo. & Estudiante / profesional & Especificación / Debería\\
+\id{RF-28} & Permitir descargar una atención como \texttt{.ics} sin información sensible innecesaria. & Estudiante / profesional & Especificación / Podría\\
+\id{RF-29} & Presentar un aviso de privacidad accesible, permanente y comprensible. & Sistema & Contexto, Especificación, Ley / Debe\\
+\id{RF-30} & Permitir solicitudes de acceso, corrección, bloqueo, exportación y supresión, con estado y respuesta fundada. & Estudiante & Contexto, Especificación, Ley / Debe\\
+\id{RF-31} & Auditar accesos, cambios, exportaciones y eliminaciones con actor, fecha, acción y recurso, sin copiar contenido sensible. & Sistema & Especificación, Ley / Debe\\
+\id{RF-32} & Consultar estadísticas agregadas de solicitudes, espera, atenciones, cancelaciones e inasistencias evitando grupos identificables. & Administrador / CERETI & Especificación, Ley / Debería\\
+\id{RF-33} & Exportar reportes agregados y registrar cada exportación en auditoría. & Administrador / CERETI & Especificación / Debería\\
+\id{RF-34} & Permitir al estudiante exportar sus propios datos mediante el flujo de privacidad. & Estudiante & Especificación, Ley / Debe\\
+\id{RF-35} & Gestionar cuentas habilitadas, configuración y espacios, sujeto a la matriz de permisos validada. & Administrador & Contexto, Especificación / Debería\\
+\id{RF-36} & Cerrar un acompañamiento conservando historial de sólo lectura; no permitir reapertura. & Profesional & Contexto, Especificación / Debe\\
+\id{RF-37} & Mostrar canales oficiales accesibles y código de referencia cuando no exista una hora compatible, sin reducir la necesidad de acceso. & Estudiante & Contexto, Especificación / Debe\\
+\end{longtable}
+\normalsize
+
+Los requisitos de agenda no deben dominar el análisis: prevenir cruces y reservar horas sólo tienen sentido dentro de un acompañamiento activo y de una autorización válida. El flujo de solicitud, derivación, seguimiento y cierre es el núcleo del dominio.
+\section{Reglas de negocio y requisitos de calidad}
+
+\subsection{Reglas de negocio}
+
+Las reglas son condiciones del dominio que deben cumplirse desde Web, Mobile o cualquier futura interfaz. No son detalles de React, Expo o Convex.
+
+\scriptsize
+\renewcommand{\arraystretch}{1.1}
+\begin{longtable}{@{}L{0.065\textwidth}L{0.70\textwidth}L{0.18\textwidth}@{}}
+\caption{Reglas de negocio resumidas}\label{tab:rn-sintesis}\\
+\toprule\textbf{ID} & \textbf{Regla} & \textbf{Fuente}\\\midrule
+\endfirsthead\toprule\textbf{ID} & \textbf{Regla} & \textbf{Fuente}\\\midrule\endhead
+\bottomrule\endfoot
+\id{RN-01} & El apoyo se denomina acompañamiento; ``atención'' sólo es un encuentro dentro de él y no se usa lenguaje clínico. & Contexto\\
+\id{RN-02} & La derivación requiere contacto de CERETI y aceptación del estudiante antes de abrir acompañamiento. & Contexto, Especificación\\
+\id{RN-03} & Un acompañamiento cerrado conserva historial, no se reabre y una necesidad posterior inicia uno nuevo. & Contexto, Especificación\\
+\id{RN-04} & Un estudiante puede tener acompañamientos simultáneos o históricos, cada uno con objetivo, responsables, atenciones y cierre propios. & Especificación\\
+\id{RN-05} & Actualizar necesidades de acceso afecta atenciones futuras y no modifica atenciones anteriores. & Contexto, Especificación\\
+\id{RN-06} & Pertenecer al dominio institucional no concede por sí solo acceso a un acompañamiento o recurso. & ADR-0002, Especificación\\
+\id{RN-07} & Una cuenta \texttt{@uct.cl} accede a gestión sólo si CERETI la habilitó previamente. & ADR-0002, Especificación\\
+\id{RN-08} & Lectura y modificación dependen de rol y relación con el acompañamiento; la UI no sustituye autorización backend. & Especificación, Guía técnica\\
+\id{RN-09} & Una atención no puede cruzarse para el mismo estudiante, profesional o sala. & Especificación\\
+\id{RN-10} & Una atención multiprofesional requiere coordinación de personal autorizado. & Especificación\\
+\id{RN-11} & La disponibilidad combina bloques recurrentes y excepciones; cada bloque define duración, modalidad y lugar. & Especificación\\
+\id{RN-12} & Sin hora compatible, se orienta a canales oficiales accesibles y código de referencia, sin ofrecer una sala incompatible ni reducir la necesidad. & Contexto, Especificación\\
+\id{RN-13} & Reagendar conserva la fecha original; CERETI informa el motivo al cancelar. & Especificación\\
+\id{RN-14} & La justificación se presenta dentro de cinco días hábiles; vencido o rechazado el plazo, queda sin justificar y no existe sanción automática. & Contexto, Especificación\\
+\id{RN-15} & El respaldo sensible no se almacena; sólo se registra su recepción y revisión por canal autorizado. & Contexto, ADR-0001\\
+\id{RN-16} & Un mensaje fuera de sesión debe ser genérico y no revelar datos sensibles del acompañamiento. & Contexto, Especificación\\
+\id{RN-17} & Calendar se integra por atención mediante acción explícita; no se lee el calendario completo. & Especificación\\
+\id{RN-18} & Los reportes evitan grupos pequeños identificables y no exportan masivamente notas, necesidades ni descripciones personales. & Especificación, Ley\\
+\id{RN-19} & Toda exportación queda auditada y la bitácora no copia contenido sensible. & Especificación, Ley\\
+\id{RN-20} & La conservación será configurable por UCT; obligación legal o procedimiento abierto puede suspender su operación. & ADR-0003\\
+\id{RN-21} & El prototipo no ejecuta eliminación o anonimización automática por vencimiento. & ADR-0003, Especificación\\
+\id{RN-22} & Durante el curso se usan sólo datos ficticios o anonimizados. & ADR-0001\\
+\id{RN-23} & La revisión de solicitudes es humana; no se toman decisiones automatizadas de aceptación, diagnóstico o perfilamiento. & Ley, Especificación\\
+\end{longtable}
+\normalsize
+
+\subsection{Requerimientos no funcionales}
+
+Los RNF establecen calidad, seguridad, privacidad, operación y mantenimiento. Cuando las fuentes no fijan una métrica, se registra la ausencia en vez de inventar un valor.
+
+\scriptsize
+\begin{longtable}{@{}L{0.075\textwidth}L{0.16\textwidth}L{0.60\textwidth}L{0.10\textwidth}@{}}
+\caption{Requerimientos no funcionales resumidos}\label{tab:rnf-sintesis}\\
+\toprule\textbf{ID} & \textbf{Categoría} & \textbf{Requisito verificable} & \textbf{Estado}\\\midrule
+\endfirsthead\toprule\textbf{ID} & \textbf{Categoría} & \textbf{Requisito verificable} & \textbf{Estado}\\\midrule\endhead
+\bottomrule\endfoot
+\id{RNF-01} & Accesibilidad & Web deberá aplicar WCAG 2.2 niveles A y AA en sus flujos, con revisión automatizada y manual. & Vigente\\
+\id{RNF-02} & Accesibilidad móvil & Mobile deberá aplicar criterios A y AA pertinentes mediante la guía WCAG2Mobile. & Vigente\\
+\id{RNF-03} & Accesibilidad & Web deberá poder operarse con teclado, foco visible y orden comprensible. & Vigente\\
+\id{RNF-04} & Accesibilidad & Nombres, roles, estados, mensajes y errores deberán ser reconocibles por lectores de pantalla. & Vigente\\
+\id{RNF-05} & Accesibilidad & Flujos deberán contemplar contraste, ampliación, reflujo, alternativas textuales, subtítulos y controles táctiles suficientes. & Vigente\\
+\id{RNF-06} & Accesibilidad cognitiva & No se exigirá voz, audio, gestos complejos ni percepción del color para completar una tarea. & Vigente\\
+\id{RNF-07} & Seguridad & Autenticación mediante OIDC/OAuth 2.0 con Google Workspace y sin almacenamiento de contraseñas. & Vigente\\
+\id{RNF-08} & Autorización & Toda operación protegida verifica en backend identidad, rol y alcance del recurso. & Vigente\\
+\id{RNF-09} & Seguridad & Datos en tránsito y reposo cifrados; sesiones y tokens gestionados de forma segura. & Vigente\\
+\id{RNF-10} & Seguridad & Secretos fuera del código, frontend, variables públicas y repositorio. & Vigente\\
+\id{RNF-11} & Integridad/auditoría & Bitácora protegida contra modificaciones desde interfaces normales y sin replicar contenido sensible. & Vigente\\
+\id{RNF-12} & Privacidad & Minimización: no pedir diagnóstico, RUT, certificados o documentos clínicos innecesarios. & Vigente\\
+\id{RNF-13} & Privacidad & Aviso accesible, permanente y distinguible entre información obligatoria y voluntaria. & Vigente\\
+\id{RNF-14} & Privacidad & Solicitudes de derechos trazables y con respuesta fundada según procedimiento institucional. & Pendiente\\
+\id{RNF-15} & Privacidad & Conservación basada en política configurable, no en un período arbitrario incrustado en código. & Vigente\\
+\id{RNF-16} & Privacidad & Desarrollo, pruebas y demostraciones sólo con datos ficticios o anonimizados. & Vigente\\
+\id{RNF-17} & Confidencialidad & Accesos limitados por rol y acompañamiento; notas internas no visibles al administrador por defecto. & Pendiente\\
+\id{RNF-18} & Interoperabilidad & Web y Mobile consumen la misma API, backend, base, autenticación y reglas. & Vigente\\
+\id{RNF-19} & Mantenibilidad & Dominio independiente de React, Expo, Convex, Better Auth, variables de entorno y tipos generados. & Vigente\\
+\id{RNF-20} & Testabilidad & Dominio, casos de uso, adaptadores e interfaces se prueban según su responsabilidad; CI verifica componentes afectados. & Vigente\\
+\id{RNF-21} & Calidad & Cambios relevantes pasan por Pull Request, revisión, CI y criterios de aceptación antes de \texttt{main}. & Vigente\\
+\id{RNF-22} & Recuperación & Respaldos cifrados y restauración probada para el entorno autorizado. & Diseño pendiente\\
+\id{RNF-23} & Disponibilidad & Considerar continuidad, disponibilidad y recuperación; no hay objetivos numéricos de disponibilidad, RPO o RTO. & Métrica pendiente\\
+\id{RNF-24} & Rendimiento & Evaluar rendimiento cuando se definan escenarios; no existen umbrales de latencia, throughput o concurrencia. & Métrica pendiente\\
+\id{RNF-25} & Interoperabilidad & Calendar y \texttt{.ics} usan títulos y datos genéricos sin revelar información sensible innecesaria. & Vigente\\
+\end{longtable}
+\normalsize
+\section{Privacidad, protección de datos y accesibilidad}
+
+\subsection{Prototipo académico frente a producción}
+
+El prototipo se construye, prueba, captura y demuestra con datos ficticios o anonimizados. La Ley 21.719, analizada en el documento jurídico interno, exige considerar finalidad, proporcionalidad, minimización, calidad temporal, transparencia, confidencialidad, seguridad, derechos, proveedores, transferencias, incidentes, evaluación de impacto, menores y auditoría \citep{ley21719}. La aplicación de estas obligaciones en una operación institucional requiere validación de la UCT y revisión jurídica.
+
+Los datos sobre necesidades de acceso pueden ser potencialmente sensibles. Por ello, el diseño debe solicitar sólo lo necesario, mostrar un aviso de privacidad accesible, distinguir campos obligatorios y voluntarios, limitar accesos por rol y acompañamiento, y evitar información sensible en notificaciones externas, Calendar, \texttt{.ics}, reportes o bitácoras.
+
+La conservación debe ser configurable y definida por UCT. Una obligación legal o procedimiento abierto puede suspender la operación; el prototipo no ejecuta automáticamente eliminación o anonimización. Tampoco define aún responsable institucional, base jurídica por finalidad, proveedores autorizados, países de tratamiento, tratamiento de menores o procedimiento de incidentes \citep{adr001,adr003}.
+
+\subsection{Accesibilidad}
+
+El alcance considera Web y Mobile, niveles A y AA pertinentes, sin afirmar conformidad AAA. La evidencia debe combinar revisión automatizada, inspección manual, pruebas de teclado y foco, lectores de pantalla, contraste, reflujo, nombres y roles accesibles, tamaño de controles, independencia del color, alternativas textuales, subtítulos, ausencia de dependencia de sonido o gestos complejos y lenguaje comprensible \citep{wcag22,wcagmobile}.
+
+\begin{tabularx}{\textwidth}{@{}L{0.25\textwidth}Y@{}}
+\toprule
+\textbf{Área} & \textbf{Evidencia esperada}\\
+\midrule
+Web & Flujos operables con teclado; foco visible; orden lógico; lector de pantalla; contraste; reflujo; formularios y errores comprensibles.\\
+Mobile & Objetivos táctiles suficientes; lector de pantalla; orientación y gestos alternativos; controles no dependientes de color, audio o vibración.\\
+Contenido & Avisos y mensajes directos, identificables y comprensibles; notificaciones externas genéricas.\\
+Validación CERETI & Revisión del flujo y lenguaje por CERETI. Esto no equivale a una validación completa con personas con todas las discapacidades.\\
+\bottomrule
+\end{tabularx}
+\section{Restricciones tecnológicas y arquitectónicas}
+
+\subsection{Stack y proceso}
+
+Las tecnologías son restricciones de implementación, no funcionalidades del dominio. El stack vigente comprende TypeScript; React, Vite y TanStack Router para Web; React Native, Expo y Expo Router para Mobile; Convex para backend, funciones y base de datos; Better Auth con Google Workspace; Bun workspaces; Git y GitHub; Linear; GitHub Actions; Vercel; Convex Cloud y EAS Build \citep{tech,git}.
+
+La organización es un monorepo con backend compartido. TI2 mantiene principalmente backend, dominio, base de datos, API, Web, autenticación, autorización y despliegue; TI4 mantiene Mobile, integración, builds, coordinación y QA. El trabajo se traza en Linear, se implementa en ramas pequeñas, pasa por Pull Request, revisión de otra persona, CI y criterios de aceptación antes de integrarse a \texttt{main} \citep{git,metodologia}.
+
+\subsection{Arquitectura por capas}
+
+\begin{center}
+\begin{tikzpicture}[
+  capa/.style={draw=azuluct,rounded corners=2pt,minimum width=9.2cm,minimum height=9mm,align=center,font=\small\bfseries},
+  flecha/.style={-{Latex[length=2mm]},thick,draw=azuluct}
+]
+\node[capa,fill=azulclaro] (p) {PRESENTACIÓN --- Web, Mobile y funciones públicas};
+\node[capa,below=of p,fill=white] (a) {APLICACIÓN --- casos de uso, autorización y puertos};
+\node[capa,below=of a,fill=white] (d) {DOMINIO --- entidades, invariantes y políticas};
+\node[capa,below=of d,fill=verdeclaro] (i) {INFRAESTRUCTURA --- Convex, Better Auth, persistencia y externos};
+\draw[flecha] (p)--(a); \draw[flecha] (a)--(d);
+\draw[flecha] (i.north east) to[bend left=25] node[right,font=\scriptsize,align=center]{implementa interfaces\\de capas internas} (a.south east);
+\end{tikzpicture}
+\end{center}
+
+Presentación recibe interacción y muestra estados. Aplicación coordina casos de uso, identidad, autorización y puertos. Dominio contiene reglas, estados, entidades e invariantes sin depender de frameworks. Infraestructura implementa persistencia, autenticación, correo, Calendar, push y servicios externos.
+
+\subsection{Consecuencias de diseño}
+
+Debe existir un único backend, una única base de datos y una API común. Web y Mobile no acceden directamente a la base ni duplican reglas. Las funciones públicas de Convex deben ser entradas del backend; la autorización definitiva permanece allí. El dominio debe poder probarse sin React, Expo, Convex ni Better Auth. Los contratos de API deben exponer errores de dominio suficientes para que ambos clientes presenten el mismo significado.
+
+La arquitectura define dónde se aplica una regla, pero no resuelve la matriz definitiva de permisos, cargos institucionales, estados completos, proveedores productivos ni objetivos de continuidad. Estas definiciones deben resolverse antes de una operación institucional.
+\clearpage
+\section{Requerimientos derivados, estados y aceptación}
+
+\subsection{Requerimientos derivados}
+
+Los siguientes requisitos se derivan lógicamente de restricciones o requisitos aceptados. Se identifican como derivados para que puedan validarse y cambiarse sin presentarlos como decisiones literales de CERETI \citep{swebok}.
+
+\small
+\begin{tabularx}{\textwidth}{@{}L{0.12\textwidth}L{0.31\textwidth}Y@{}}
+\toprule
+\textbf{ID} & \textbf{Derivado de} & \textbf{Consecuencia verificable para diseño}\\
+\midrule
+\id{RD-01} & RF-10, RF-30, RN-08, RNF-08 & Cada operación protegida recibe identidad, rol y recurso; se rechaza si la relación no está autorizada.\\
+\id{RD-02} & RF-25, RF-26, RN-16 & Backend genera o valida plantillas genéricas para avisos externos.\\
+\id{RD-03} & RF-31, RF-33, RN-19, RNF-11 & Auditoría append-only desde interfaces normales, con actor, fecha, acción, recurso y resultado, sin contenido sensible.\\
+\id{RD-04} & RF-11, RN-05 & Necesidades de acceso requieren vigencia o versión para preservar historial.\\
+\id{RD-05} & RF-14, RF-15, RF-16, RN-09 & Conflictos se verifican atómicamente en backend, no sólo en la interfaz.\\
+\id{RD-06} & RF-12, RN-11 & Modelo distingue recurrencia, excepción y ocupación efectiva.\\
+\id{RD-07} & RF-07, RF-08, RF-18, RF-20, RF-36, RN-03, RN-14 & Solicitud, acompañamiento, atención e inasistencia se modelan como estados con guardas y pruebas de transiciones.\\
+\id{RD-08} & RF-14, RF-37, RNF-18 & API común expone errores de conflicto y falta de compatibilidad para Web y Mobile.\\
+\id{RD-09} & RF-21, RF-23, RNF-12, RNF-17 & Se separan datos operativos, nota interna, recepción de respaldo y exportación del titular.\\
+\id{RD-10} & RF-30, RN-20, RN-21, RNF-15 & Arquitectura reserva política configurable y suspensión; no ejecuta borrado automático en el prototipo.\\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\subsection{Estados y ciclos de vida}
+
+\small
+\begin{tabularx}{\textwidth}{@{}L{0.20\textwidth}L{0.28\textwidth}Y@{}}
+\toprule
+\textbf{Entidad} & \textbf{Estados documentados} & \textbf{Reglas y transiciones que deben validarse}\\
+\midrule
+Solicitud & Recibida; en revisión; esperando información/aceptación; aceptada; derivada; cerrada sin acompañamiento; cancelada. & Aceptada abre acompañamiento; derivada no lo abre hasta contacto y aceptación; estados completos y excepciones pendientes.\\
+Acompañamiento & Activo; pausado; cerrado. & Cerrado conserva historial y no se reabre; solicitud posterior crea uno nuevo.\\
+Atención & Agendada; realizada; cancelada; reagendada; inasistencia. & No cruza recursos; reagendar conserva fecha original; cancelación y motivos requieren política precisa.\\
+Inasistencia & Registrada; justificada; sin justificar. & Justificación dentro de cinco días hábiles; sin sanción automática; respaldo sensible sólo como recepción.\\
+Solicitud de privacidad & Registrada y estados de gestión por definir. & Debe quedar trazable, con respuesta fundada y procedimiento institucional validado.\\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\subsection{Criterios de aceptación críticos}
+
+\small
+\begin{tabularx}{\textwidth}{@{}L{0.12\textwidth}Y@{}}
+\toprule\textbf{ID} & \textbf{Dado / Cuando / Entonces}\\\midrule
+CA-01 & Dado un usuario con cuenta institucional válida, cuando inicia sesión, entonces se crea una sesión sin pedir ni almacenar contraseña local.\\
+CA-02 & Dado un dominio institucional válido sin relación con el recurso, cuando intenta consultarlo, entonces el backend rechaza la operación.\\
+CA-03 & Dada una solicitud derivada sin aceptación del estudiante, cuando se intenta abrir acompañamiento, entonces la operación se rechaza.\\
+CA-04 & Dada una solicitud aceptada, cuando se confirma la aceptación, entonces se crea exactamente el acompañamiento asociado.\\
+CA-05 & Dada una hora ocupada por estudiante, profesional o sala, cuando se intenta reservar, entonces se informa conflicto y no se crea atención.\\
+CA-06 & Dada una necesidad actualizada, cuando se consulta una atención futura y una pasada, entonces sólo la futura usa el nuevo valor.\\
+CA-07 & Dada una inasistencia, cuando se entrega explicación dentro de cinco días hábiles, entonces se registra para revisión; vencido el plazo, queda sin justificar.\\
+CA-08 & Dada una notificación fuera de sesión, cuando se muestra en un dispositivo, entonces el texto es genérico y no revela datos sensibles.\\
+CA-09 & Dada una solicitud de exportación del titular, cuando se autoriza, entonces sólo se entrega su información y queda auditoría.\\
+CA-10 & Dada una búsqueda sin hora compatible, cuando termina la búsqueda, entonces se muestran canales accesibles y referencia sin ofrecer una alternativa incompatible.\\
+\bottomrule
+\end{tabularx}
+\normalsize
+\section{Gestión, trazabilidad y pendientes}
+
+\subsection{Validación y control de cambios}
+
+La validación combina revisión documental, escenarios Dado--Cuando--Entonces, revisión con CERETI, prototipado, pruebas de accesibilidad, pruebas de autorización, pruebas de estados y CI. Cada cambio debe registrar motivo, fuente, impacto, prioridad, dependencias, criterio de aceptación, decisión y versión. La estabilidad es alta para terminología, datos ficticios, arquitectura compartida y separación autenticación/autorización; es menor para permisos, proveedores, conservación, notificaciones, métricas y procedimientos institucionales.
+
+\subsection{Dependencias principales}
+
+\small
+\begin{tabularx}{\textwidth}{@{}L{0.24\textwidth}L{0.22\textwidth}Y@{}}
+\toprule\textbf{Requisito} & \textbf{Depende de} & \textbf{Razón}\\\midrule
+RF-02--RF-03 & RF-01 & Área y rol se determinan después de autenticar identidad.\\
+RF-04--RF-08 & RF-01--RF-03 & Solicitudes y derivaciones requieren actor y permiso de entrada.\\
+RF-09--RF-11 & RF-08 & Asignación y necesidades pertenecen a un acompañamiento válido.\\
+RF-12--RF-18 & RF-08, RF-14 & Agenda requiere acompañamiento activo, disponibilidad y conflictos.\\
+RF-19--RF-24 & RF-17--RF-18 & Seguimiento y tareas dependen de una atención registrada.\\
+RF-25--RF-28 & RF-19 & Avisos y eventos se construyen desde una atención existente.\\
+RF-29--RF-34 & RF-01, RF-10, RNF-08 & Privacidad, auditoría y exportación requieren identidad y alcance.\\
+RF-35--RF-36 & RF-09, RN-03 & Configuración y cierre deben respetar responsables, roles y ciclo de vida.\\
+RNF-18--RNF-21 & Guía técnica, Protocolo Git & API común, independencia del dominio y CI condicionan Web y Mobile.\\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\subsection{Matriz inicial de trazabilidad}
+
+La matriz relaciona requisito, fuente, actor, artefacto de diseño y prueba. Los casos de uso y componentes definitivos aún no tienen identificadores cerrados; por ello se utiliza \textit{Pendiente} en vez de inventar nombres.
+
+\scriptsize
+\begin{longtable}{@{}L{0.13\textwidth}L{0.14\textwidth}L{0.18\textwidth}L{0.16\textwidth}L{0.18\textwidth}L{0.10\textwidth}@{}}
+\caption{Matriz inicial de trazabilidad}\label{tab:traz-sintesis}\\
+\toprule\textbf{Requisito} & \textbf{Fuente} & \textbf{Actor} & \textbf{Caso de uso} & \textbf{Componente} & \textbf{Prueba}\\\midrule
+\endfirsthead\toprule\textbf{Requisito} & \textbf{Fuente} & \textbf{Actor} & \textbf{Caso de uso} & \textbf{Componente} & \textbf{Prueba}\\\midrule\endhead
+\bottomrule\endfoot
+RF-01--RF-03 & ADR-0002, Especificación, Contexto & usuario/admin & Pendiente & Aplicación + Infra & CA-01--02\\
+RF-04--RF-08 & Contexto, Especificación & estudiante/profesional & Pendiente & Dominio + Aplicación & CA-03--04\\
+RF-09--RF-18 & Especificación, Contexto & estudiante/profesional & Pendiente & Dominio + API & CA-05--06\\
+RF-19--RF-28 & Especificación, Contexto & estudiante/profesional & Pendiente & Aplicación + externos & CA-07--08\\
+RF-29--RF-34 & Especificación, Ley & estudiante/admin & Pendiente & Aplicación + Infra & CA-08--09\\
+RF-35--RF-37 & Especificación, Contexto & admin/profesional & Pendiente & Aplicación + Dominio & CA-10\\
+RN-01--RN-23 & Contexto, Especificación, ADR, Ley & todos & Pendiente & Dominio & Pendiente\\
+RNF-01--RNF-06 & Especificación, W3C & todos & Pendiente & Presentación & Pendiente\\
+RNF-07--RNF-17 & ADR, Especificación, Contexto, Ley & todos & Pendiente & Aplicación + Infra & CA-01--02, 08--09\\
+RNF-18--RNF-25 & Guía técnica, Protocolo Git, Especificación & TI2/TI4 & Pendiente & Todas las capas & Pendiente\\
+RD-01--RD-10 & RF, RN, RNF & equipos & Pendiente & Dominio + Aplicación & Pendiente\\
+\end{longtable}
+\normalsize
+
+\subsection{Pendientes de validación}
+
+\scriptsize
+\begin{longtable}{@{}L{0.07\textwidth}L{0.40\textwidth}L{0.24\textwidth}L{0.20\textwidth}@{}}
+\caption{Pendientes que no deben resolverse por inferencia}\label{tab:pend-sintesis}\\
+\toprule\textbf{ID} & \textbf{Pendiente} & \textbf{Impacto} & \textbf{Validación}\\\midrule
+\endfirsthead\toprule\textbf{ID} & \textbf{Pendiente} & \textbf{Impacto} & \textbf{Validación}\\\midrule\endhead
+\bottomrule\endfoot
+PV-01 & Matriz definitiva de permisos, cargos reales, excepciones y equivalencia de roles. & API, autorización, notas y pruebas. & CERETI + UCT + ciberseguridad\\
+PV-02 & UCT como responsable, unidad responsable y base jurídica por finalidad. & Aviso, derechos y responsabilidad. & UCT + jurídico\\
+PV-03 & Plazo de conservación, anonimización, eliminación y suspensiones. & Modelo, auditoría y operación. & UCT + jurídico\\
+PV-04 & Estados y transiciones completas de solicitudes, acompañamientos, atenciones, inasistencias y privacidad. & Modelo, errores y pruebas. & CERETI + UCT\\
+PV-05 & Canales accesibles y tiempo esperado cuando no existe hora compatible. & RF-37 y experiencia. & CERETI\\
+PV-06 & Credenciales, dominios y atributos institucionales de Google OAuth. & Autenticación y despliegue. & UCT + TI2\\
+PV-07 & Proveedores, países, subencargados y transferencias de hosting, correo, push y Calendar. & Contratos y seguridad. & UCT + jurídico + TI2\\
+PV-08 & Procedimiento para menores y datos sensibles de menores. & Acceso y base jurídica. & UCT + jurídico\\
+PV-09 & RPO, RTO, disponibilidad, concurrencia, rendimiento y carga. & RNF-22--24. & UCT + TI2 + TI4\\
+PV-10 & Notificaciones push, reintentos, fallos y revocación. & RF-25 y privacidad. & CERETI + UCT + TI2\\
+PV-11 & Cancelación, reagendamiento, feriados y días hábiles. & RF-18 y RF-20. & CERETI + UCT\\
+PV-12 & Umbral o regla para anonimizar grupos estadísticos pequeños. & RF-32/RF-33. & UCT + jurídico\\
+PV-13 & Integración Calendar y contenido exacto de \texttt{.ics}. & Contratos y privacidad. & TI2 + TI4 + UCT\\
+PV-14 & Revisión jurídica, ciberseguridad y autorización antes de datos reales. & Condición de operación. & UCT\\
+PV-15 & Semana definitiva del segundo incremento, referida como 12 y 13. & Planificación académica. & Docencia de ambos talleres\\
+\end{longtable}
+\normalsize
+\section{Conclusiones}
+
+La línea base sintetizada establece que CERETI requiere un prototipo web y móvil para coordinar solicitudes, acompañamientos, atenciones y seguimiento operativo. La agenda es una capacidad subordinada al dominio: no se puede reservar una hora sin acompañamiento activo, autorización, disponibilidad compatible y prevención de conflictos.
+
+El análisis conserva las decisiones actuales: datos ficticios o anonimizados; Google Workspace para identidad; separación entre autenticación y autorización; una API, backend y base compartidos; reglas fuera de los clientes; accesibilidad Web y Mobile; minimización; auditoría; conservación configurable; y ausencia de borrado automático en el prototipo. También identifica que permisos definitivos, estados detallados, proveedores, menores, conservación, continuidad, rendimiento, notificaciones y autorización productiva siguen abiertos.
+
+La siguiente etapa debe traducir esta base a casos de uso, modelo de dominio, modelo entidad--relación, estados, componentes, arquitectura, contratos API, matriz de autorización y pruebas. Cada artefacto debe conservar la trazabilidad hacia una fuente y un criterio de aceptación; cualquier cambio debe volver al ciclo de elicitación, análisis, especificación, validación y gestión.
+
+\begin{center}
+\begin{tikzpicture}[
+  paso/.style={draw=azuluct,fill=azulclaro,rounded corners=2pt,minimum width=2.4cm,minimum height=8mm,align=center,font=\scriptsize\bfseries,text=azuluct},
+  flecha/.style={-{Latex[length=1.8mm]},thick,draw=azuluct}
+]
+\node[paso] (f) {Fuentes};
+\node[paso,right=of f] (r) {Requisitos};
+\node[paso,right=of r] (d) {Diseño};
+\node[paso,right=of d] (p) {Pruebas};
+\draw[flecha] (f)--(r); \draw[flecha] (r)--(d); \draw[flecha] (d)--(p);
+\end{tikzpicture}
+\end{center}
+
+\addcontentsline{toc}{section}{Referencias}
+\small
+\begin{thebibliography}{99}
+\setlength{\itemsep}{0pt}
+\bibitem[IEEE Computer Society 2026]{swebok} IEEE Computer Society. \textit{Guide to the Software Engineering Body of Knowledge (SWEBOK Guide)}, versión 4.0a. IEEE Computer Society, 2026. Copia local analizada: \texttt{swebok-v4.pdf}.
+\bibitem[Equipo CERETI 2026a]{context} Equipo CERETI. \textit{Acompañamiento CERETI --- CONTEXT.md}. Documento interno del proyecto, 2026.
+\bibitem[Equipo CERETI 2026b]{especificacion} Equipo CERETI. \textit{Especificación del prototipo CERETI}. Documento interno del proyecto, 2026.
+\bibitem[Equipo CERETI 2026c]{adr001} Equipo CERETI. \textit{Desarrollar el prototipo sin datos reales}. ADR-0001 aceptado, 2026.
+\bibitem[Equipo CERETI 2026d]{adr002} Equipo CERETI. \textit{Usar Google Workspace para el inicio de sesión institucional}. ADR-0002 aceptado, 2026.
+\bibitem[Equipo CERETI 2026e]{adr003} Equipo CERETI. \textit{Configurar la conservación de los datos}. ADR-0003 aceptado, 2026.
+\bibitem[Equipo jurídico CERETI 2026]{ley21719} Equipo CERETI. \textit{Aplicación de la Ley 21.719 al prototipo CERETI}. Análisis interno basado en la normativa chilena, 2026.
+\bibitem[TI2--TI4 2026a]{tech} Taller de Integración II y Taller de Integración IV. \textit{Guía de Tecnologías, Arquitectura y Despliegue}. Documento técnico interno, segundo semestre 2026.
+\bibitem[TI2--TI4 2026b]{git} Taller de Integración II y Taller de Integración IV. \textit{Protocolo de Trabajo con Git, GitHub y Linear}. Documento técnico interno, segundo semestre 2026.
+\bibitem[TI2--TI4 2026c]{metodologia} Taller de Integración II y Taller de Integración IV. \textit{Metodología de trabajo actualizada}. Documento académico interno, 2026.
+\bibitem[Lincolao Venegas 2026]{intro1171} Lincolao Venegas, Ignacio. \textit{Introducción INFO1171}. Presentación académica, Escuela de Informática, semestre II--2026.
+\bibitem[UCT 2026]{sistematizacion} Universidad Católica de Temuco. \textit{Sistematización de Proyecto --- Taller de Integración IV}. Plantilla académica suministrada al equipo, 2026.
+\bibitem[W3C 2023]{wcag22} World Wide Web Consortium. \textit{Web Content Accessibility Guidelines (WCAG) 2.2}. W3C Recommendation, 2023. \url{https://www.w3.org/TR/WCAG22/}.
+\bibitem[W3C 2025]{wcagmobile} World Wide Web Consortium. \textit{Applying WCAG 2.2 to Mobile Applications}. W3C Working Draft, 2025. \url{https://www.w3.org/TR/wcag2mobile-22/}.
+\end{thebibliography}
+\normalsize
+
+\end{document}
