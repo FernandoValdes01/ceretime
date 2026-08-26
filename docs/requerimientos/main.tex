@@ -72,6 +72,7 @@
 \newcommand{\could}{\textbf{Podría}}
 
 \begin{document}
+\shorthandoff{<>}
 
 \begin{titlepage}
   \thispagestyle{empty}
@@ -101,7 +102,7 @@
     \small
     \begin{tabular}{@{}p{5.8cm}p{6.8cm}@{}}
       \textbf{Taller de Integración IV} & \textbf{Taller de Integración II}\\
-      Fernando Valdes & Lucas Núñez\\
+      Fernando Valdés & Lucas Núñez\\
       Vicente Rivera & Francisco Leal\\
       Juan Muñoz & Wladimir Peñeipil Soto\\
       & Rayen Castro\\
@@ -140,8 +141,9 @@ La línea base funcional se construye principalmente a partir de conversaciones 
 
 \begin{center}
 \begin{tikzpicture}[
+  node distance=6mm,
   paso/.style={draw=azuluct,fill=azulclaro,rounded corners=2pt,minimum width=2.45cm,minimum height=8mm,align=center,font=\small\bfseries,text=azuluct},
-  flecha/.style={-{Latex[length=2mm]},thick,draw=azuluct}
+  flecha/.style={-{Latex[length=2mm]},thick,draw=azuluct,shorten <=2pt,shorten >=2pt}
 ]
 \node[paso] (e) {Elicitación};
 \node[paso,right=of e] (a) {Análisis};
@@ -149,8 +151,10 @@ La línea base funcional se construye principalmente a partir de conversaciones 
 \node[paso,right=of s] (v) {Validación};
 \node[paso,right=of v] (g) {Gestión};
 \draw[flecha] (e)--(a); \draw[flecha] (a)--(s); \draw[flecha] (s)--(v); \draw[flecha] (v)--(g);
-\draw[flecha] (g.south) -- ++(0,-0.85cm) |- (e.south);
-\node[font=\scriptsize,fill=white,inner sep=1pt] at ($(e.south)!0.5!(g.south)+(0,-0.85cm)$) {cambios y nueva evidencia};
+\draw[flecha] (g.south) -- ([yshift=-9mm]g.south)
+  -- node[pos=0.5,below=4pt,font=\scriptsize,fill=white,inner sep=1pt]
+    {cambios y nueva evidencia} ([yshift=-9mm]e.south)
+  -- (e.south);
 \end{tikzpicture}
 \end{center}
 
@@ -161,13 +165,13 @@ CERETI coordina acompañamientos para estudiantes de la UCT. Una solicitud puede
 
 \begin{center}
 \begin{tikzpicture}[
-  node distance=4mm and 2mm,
-  paso/.style={draw=azuluct,fill=azulclaro,rounded corners=2pt,minimum height=8mm,text width=2.1cm,inner sep=1.5pt,align=center,font=\tiny\bfseries,text=azuluct},
-  flecha/.style={-{Latex[length=1.8mm]},thick,draw=azuluct}
+  node distance=4mm and 5mm,
+  paso/.style={draw=azuluct,fill=azulclaro,rounded corners=2pt,minimum width=1.95cm,minimum height=8mm,text width=1.75cm,inner sep=1.5pt,align=center,font=\scriptsize\bfseries,text=azuluct},
+  flecha/.style={-{Latex[length=1.8mm]},thick,draw=azuluct,shorten <=3pt,shorten >=3pt}
 ]
 \node[paso] (s) {Solicitud o derivación};
 \node[paso,right=of s] (r) {Revisión};
-\node[paso,right=of r] (a) {Acompañamiento};
+\node[paso,right=of r] (a) {Acompa\\ñamiento};
 \node[paso,right=of a] (t) {Atención};
 \node[paso,right=of t] (f) {Seguimiento};
 \node[paso,right=of f] (c) {Cierre};
@@ -241,53 +245,53 @@ Los requisitos funcionales describen comportamientos observables y verificables.
 
 \scriptsize
 \renewcommand{\arraystretch}{1.12}
-\begin{longtable}{@{}L{0.065\textwidth}L{0.56\textwidth}L{0.15\textwidth}L{0.18\textwidth}@{}}
+\begin{longtable}{@{}L{0.065\textwidth}L{0.60\textwidth}L{0.15\textwidth}L{0.14\textwidth}@{}}
 \caption{Línea base funcional resumida}\label{tab:rf-sintesis}\\
 \toprule
-\textbf{ID} & \textbf{El sistema deberá} & \textbf{Actor} & \textbf{Fuente / prioridad}\\
+\textbf{ID} & \textbf{El sistema deberá} & \textbf{Actor} & \textbf{Prioridad}\\
 \midrule
 \endfirsthead
-\toprule\textbf{ID} & \textbf{El sistema deberá} & \textbf{Actor} & \textbf{Fuente / prioridad}\\\midrule
+\toprule\textbf{ID} & \textbf{El sistema deberá} & \textbf{Actor} & \textbf{Prioridad}\\\midrule
 \endhead
 \bottomrule
 \endfoot
-\id{RF-01} & Permitir inicio de sesión con Google Workspace institucional mediante OIDC/OAuth 2.0, sin almacenar contraseñas. & Estudiante / personal & ADR-0002 / Debe\\
-\id{RF-02} & Determinar el área de acceso según dominio y habilitación: portal estudiantil o gestión CERETI. & Sistema & ADR-0002 / Debe\\
-\id{RF-03} & Reconocer estudiante, profesional y administrador como roles provisionales, sin convertirlos en cargos definitivos. & Administrador & Contexto, Especificación / Debe\\
-\id{RF-04} & Permitir al estudiante registrar una solicitud no urgente con necesidad, resultado esperado, necesidades de acceso y disponibilidad general. & Estudiante & Especificación / Debe\\
-\id{RF-05} & Permitir a personal autorizado ingresar una solicitud recibida por un canal institucional y conservar su origen. & Profesional & Especificación / Debería\\
-\id{RF-06} & Registrar una derivación sin abrir automáticamente un acompañamiento y dejarla pendiente de contacto y aceptación. & Profesional & Contexto, Especificación / Debe\\
-\id{RF-07} & Permitir revisar, solicitar información, aceptar, derivar, cerrar sin acompañamiento o registrar cancelación, con razón comprensible y auditoría. & Profesional & Contexto, Especificación / Debe\\
-\id{RF-08} & Crear un acompañamiento únicamente cuando la solicitud sea aceptada y asociarlo a su necesidad u objetivo. & Profesional & Contexto, Especificación / Debe\\
-\id{RF-09} & Permitir asignar uno o más profesionales a un acompañamiento según autorización. & Profesional & Especificación / Debe\\
-\id{RF-10} & Mostrar a cada persona sólo sus solicitudes, acompañamientos, atenciones, acuerdos, tareas, necesidades y recursos autorizados. & Estudiante / profesional & Especificación / Debe\\
-\id{RF-11} & Permitir actualizar necesidades de acceso para atenciones futuras sin alterar el historial. & Estudiante & Contexto, Especificación / Debe\\
-\id{RF-12} & Permitir bloques recurrentes de disponibilidad y excepciones, con duración, modalidad y lugar. & Profesional & Especificación / Debe\\
-\id{RF-13} & Mantener un catálogo de espacios presenciales con ubicación e instrucciones de acceso. & Administrador & Especificación / Debe\\
-\id{RF-14} & Comprobar cruces entre estudiante, profesionales y sala al crear o modificar una atención. & Sistema & Especificación / Debe\\
-\id{RF-15} & Permitir reservar una hora compatible cuando exista un acompañamiento activo y autorización. & Estudiante & Especificación / Debe\\
-\id{RF-16} & Permitir coordinar atenciones con varios profesionales y comunicar conflictos. & Profesional & Especificación / Debería\\
-\id{RF-17} & Registrar modalidad presencial con lugar accesible o modalidad en línea con datos operativos privados. & Profesional & Contexto, Especificación / Debe\\
-\id{RF-18} & Permitir cambiar, cancelar o reagendar según permisos, conservando la fecha original y el motivo de cancelación de CERETI. & Estudiante / profesional & Especificación / Debe\\
-\id{RF-19} & Registrar atención realizada, cancelada, reagendada o inasistencia, manteniendo auditoría. & Profesional & Contexto, Especificación / Debe\\
-\id{RF-20} & Permitir entregar y revisar una explicación accesible dentro de cinco días hábiles posteriores a una inasistencia. & Estudiante / profesional & Contexto, Especificación / Debe\\
-\id{RF-21} & Registrar sólo la recepción y revisión de un respaldo sensible entregado por canal autorizado; no almacenar su archivo. & Profesional & Contexto, ADR-0001 / Debe\\
-\id{RF-22} & Registrar seguimiento operativo, acuerdos, tareas, responsables, próximos pasos y fecha sugerida. & Profesional & Contexto, Especificación / Debe\\
-\id{RF-23} & Registrar notas internas breves y limitar su visibilidad a profesionales autorizados del acompañamiento. & Profesional & Contexto, Especificación / Debería\\
-\id{RF-24} & Mostrar acuerdos y tareas al estudiante y a profesionales autorizados, según alcance. & Estudiante / profesional & Especificación / Debe\\
-\id{RF-25} & Mantener notificaciones y enviar avisos por correo institucional; push será opcional y controlado. & Sistema & Especificación / Debería\\
-\id{RF-26} & Usar mensajes genéricos fuera de sesión, sin revelar CERETI, profesional, tipo de acompañamiento ni datos sensibles. & Sistema & Contexto, Especificación / Debe\\
-\id{RF-27} & Crear un evento de Google Calendar sólo por acción explícita y por atención, sin leer el calendario completo. & Estudiante / profesional & Especificación / Debería\\
-\id{RF-28} & Permitir descargar una atención como \texttt{.ics} sin información sensible innecesaria. & Estudiante / profesional & Especificación / Podría\\
-\id{RF-29} & Presentar un aviso de privacidad accesible, permanente y comprensible. & Sistema & Contexto, Especificación, Ley / Debe\\
-\id{RF-30} & Permitir solicitudes de acceso, corrección, bloqueo, exportación y supresión, con estado y respuesta fundada. & Estudiante & Contexto, Especificación, Ley / Debe\\
-\id{RF-31} & Auditar accesos, cambios, exportaciones y eliminaciones con actor, fecha, acción y recurso, sin copiar contenido sensible. & Sistema & Especificación, Ley / Debe\\
-\id{RF-32} & Consultar estadísticas agregadas de solicitudes, espera, atenciones, cancelaciones e inasistencias evitando grupos identificables. & Administrador / CERETI & Especificación, Ley / Debería\\
-\id{RF-33} & Exportar reportes agregados y registrar cada exportación en auditoría. & Administrador / CERETI & Especificación / Debería\\
-\id{RF-34} & Permitir al estudiante exportar sus propios datos mediante el flujo de privacidad. & Estudiante & Especificación, Ley / Debe\\
-\id{RF-35} & Gestionar cuentas habilitadas, configuración y espacios, sujeto a la matriz de permisos validada. & Administrador & Contexto, Especificación / Debería\\
-\id{RF-36} & Cerrar un acompañamiento conservando historial de sólo lectura; no permitir reapertura. & Profesional & Contexto, Especificación / Debe\\
-\id{RF-37} & Mostrar canales oficiales accesibles y código de referencia cuando no exista una hora compatible, sin reducir la necesidad de acceso. & Estudiante & Contexto, Especificación / Debe\\
+\id{RF-01} & Permitir inicio de sesión con Google Workspace institucional mediante OIDC/OAuth 2.0, sin almacenar contraseñas. & Estudiante / personal & Debe\\
+\id{RF-02} & Determinar el área de acceso según dominio y habilitación: portal estudiantil o gestión CERETI. & Sistema & Debe\\
+\id{RF-03} & Reconocer estudiante, profesional y administrador como roles provisionales, sin convertirlos en cargos definitivos. & Administrador & Debe\\
+\id{RF-04} & Permitir al estudiante registrar una solicitud no urgente con necesidad, resultado esperado, necesidades de acceso y disponibilidad general. & Estudiante & Debe\\
+\id{RF-05} & Permitir a personal autorizado ingresar una solicitud recibida por un canal institucional y conservar su origen. & Profesional & Debería\\
+\id{RF-06} & Registrar una derivación sin abrir automáticamente un acompañamiento y dejarla pendiente de contacto y aceptación. & Profesional & Debe\\
+\id{RF-07} & Permitir revisar, solicitar información, aceptar, derivar, cerrar sin acompañamiento o registrar cancelación, con razón comprensible y auditoría. & Profesional & Debe\\
+\id{RF-08} & Crear un acompañamiento únicamente cuando la solicitud sea aceptada y asociarlo a su necesidad u objetivo. & Profesional & Debe\\
+\id{RF-09} & Permitir asignar uno o más profesionales a un acompañamiento según autorización. & Profesional & Debe\\
+\id{RF-10} & Mostrar a cada persona sólo sus solicitudes, acompañamientos, atenciones, acuerdos, tareas, necesidades y recursos autorizados. & Estudiante / profesional & Debe\\
+\id{RF-11} & Permitir actualizar necesidades de acceso para atenciones futuras sin alterar el historial. & Estudiante & Debe\\
+\id{RF-12} & Permitir bloques recurrentes de disponibilidad y excepciones, con duración, modalidad y lugar. & Profesional & Debe\\
+\id{RF-13} & Mantener un catálogo de espacios presenciales con ubicación e instrucciones de acceso. & Administrador & Debe\\
+\id{RF-14} & Comprobar cruces entre estudiante, profesionales y sala al crear o modificar una atención. & Sistema & Debe\\
+\id{RF-15} & Permitir reservar una hora compatible cuando exista un acompañamiento activo y autorización. & Estudiante & Debe\\
+\id{RF-16} & Permitir coordinar atenciones con varios profesionales y comunicar conflictos. & Profesional & Debería\\
+\id{RF-17} & Registrar modalidad presencial con lugar accesible o modalidad en línea con datos operativos privados. & Profesional & Debe\\
+\id{RF-18} & Permitir cambiar, cancelar o reagendar según permisos, conservando la fecha original y el motivo de cancelación de CERETI. & Estudiante / profesional & Debe\\
+\id{RF-19} & Registrar atención realizada, cancelada, reagendada o inasistencia, manteniendo auditoría. & Profesional & Debe\\
+\id{RF-20} & Permitir entregar y revisar una explicación accesible dentro de cinco días hábiles posteriores a una inasistencia. & Estudiante / profesional & Debe\\
+\id{RF-21} & Registrar sólo la recepción y revisión de un respaldo sensible entregado por canal autorizado; no almacenar su archivo. & Profesional & Debe\\
+\id{RF-22} & Registrar seguimiento operativo, acuerdos, tareas, responsables, próximos pasos y fecha sugerida. & Profesional & Debe\\
+\id{RF-23} & Registrar notas internas breves y limitar su visibilidad a profesionales autorizados del acompañamiento. & Profesional & Debería\\
+\id{RF-24} & Mostrar acuerdos y tareas al estudiante y a profesionales autorizados, según alcance. & Estudiante / profesional & Debe\\
+\id{RF-25} & Mantener notificaciones y enviar avisos por correo institucional; push será opcional y controlado. & Sistema & Debería\\
+\id{RF-26} & Usar mensajes genéricos fuera de sesión, sin revelar CERETI, profesional, tipo de acompañamiento ni datos sensibles. & Sistema & Debe\\
+\id{RF-27} & Crear un evento de Google Calendar sólo por acción explícita y por atención, sin leer el calendario completo. & Estudiante / profesional & Debería\\
+\id{RF-28} & Permitir descargar una atención como \texttt{.ics} sin información sensible innecesaria. & Estudiante / profesional & Podría\\
+\id{RF-29} & Presentar un aviso de privacidad accesible, permanente y comprensible. & Sistema & Debe\\
+\id{RF-30} & Permitir solicitudes de acceso, corrección, bloqueo, exportación y supresión, con estado y respuesta fundada. & Estudiante & Debe\\
+\id{RF-31} & Auditar accesos, cambios, exportaciones y eliminaciones con actor, fecha, acción y recurso, sin copiar contenido sensible. & Sistema & Debe\\
+\id{RF-32} & Consultar estadísticas agregadas de solicitudes, espera, atenciones, cancelaciones e inasistencias evitando grupos identificables. & Administrador / CERETI & Debería\\
+\id{RF-33} & Exportar reportes agregados y registrar cada exportación en auditoría. & Administrador / CERETI & Debería\\
+\id{RF-34} & Permitir al estudiante exportar sus propios datos mediante el flujo de privacidad. & Estudiante & Debe\\
+\id{RF-35} & Gestionar cuentas habilitadas, configuración y espacios, sujeto a la matriz de permisos validada. & Administrador & Debería\\
+\id{RF-36} & Cerrar un acompañamiento conservando historial de sólo lectura; no permitir reapertura. & Profesional & Debe\\
+\id{RF-37} & Mostrar canales oficiales accesibles y código de referencia cuando no exista una hora compatible, sin reducir la necesidad de acceso. & Estudiante & Debe\\
 \end{longtable}
 \normalsize
 
@@ -300,34 +304,34 @@ Las reglas son condiciones del dominio que deben cumplirse desde Web, Mobile o c
 
 \scriptsize
 \renewcommand{\arraystretch}{1.1}
-\begin{longtable}{@{}L{0.065\textwidth}L{0.70\textwidth}L{0.18\textwidth}@{}}
+\begin{longtable}{@{}L{0.065\textwidth}L{0.92\textwidth}@{}}
 \caption{Reglas de negocio resumidas}\label{tab:rn-sintesis}\\
-\toprule\textbf{ID} & \textbf{Regla} & \textbf{Fuente}\\\midrule
-\endfirsthead\toprule\textbf{ID} & \textbf{Regla} & \textbf{Fuente}\\\midrule\endhead
+\toprule\textbf{ID} & \textbf{Regla}\\\midrule
+\endfirsthead\toprule\textbf{ID} & \textbf{Regla}\\\midrule\endhead
 \bottomrule\endfoot
-\id{RN-01} & El apoyo se denomina acompañamiento; ``atención'' sólo es un encuentro dentro de él y no se usa lenguaje clínico. & Contexto\\
-\id{RN-02} & La derivación requiere contacto de CERETI y aceptación del estudiante antes de abrir acompañamiento. & Contexto, Especificación\\
-\id{RN-03} & Un acompañamiento cerrado conserva historial, no se reabre y una necesidad posterior inicia uno nuevo. & Contexto, Especificación\\
-\id{RN-04} & Un estudiante puede tener acompañamientos simultáneos o históricos, cada uno con objetivo, responsables, atenciones y cierre propios. & Especificación\\
-\id{RN-05} & Actualizar necesidades de acceso afecta atenciones futuras y no modifica atenciones anteriores. & Contexto, Especificación\\
-\id{RN-06} & Pertenecer al dominio institucional no concede por sí solo acceso a un acompañamiento o recurso. & ADR-0002, Especificación\\
-\id{RN-07} & Una cuenta \texttt{@uct.cl} accede a gestión sólo si CERETI la habilitó previamente. & ADR-0002, Especificación\\
-\id{RN-08} & Lectura y modificación dependen de rol y relación con el acompañamiento; la UI no sustituye autorización backend. & Especificación, Guía técnica\\
-\id{RN-09} & Una atención no puede cruzarse para el mismo estudiante, profesional o sala. & Especificación\\
-\id{RN-10} & Una atención multiprofesional requiere coordinación de personal autorizado. & Especificación\\
-\id{RN-11} & La disponibilidad combina bloques recurrentes y excepciones; cada bloque define duración, modalidad y lugar. & Especificación\\
-\id{RN-12} & Sin hora compatible, se orienta a canales oficiales accesibles y código de referencia, sin ofrecer una sala incompatible ni reducir la necesidad. & Contexto, Especificación\\
-\id{RN-13} & Reagendar conserva la fecha original; CERETI informa el motivo al cancelar. & Especificación\\
-\id{RN-14} & La justificación se presenta dentro de cinco días hábiles; vencido o rechazado el plazo, queda sin justificar y no existe sanción automática. & Contexto, Especificación\\
-\id{RN-15} & El respaldo sensible no se almacena; sólo se registra su recepción y revisión por canal autorizado. & Contexto, ADR-0001\\
-\id{RN-16} & Un mensaje fuera de sesión debe ser genérico y no revelar datos sensibles del acompañamiento. & Contexto, Especificación\\
-\id{RN-17} & Calendar se integra por atención mediante acción explícita; no se lee el calendario completo. & Especificación\\
-\id{RN-18} & Los reportes evitan grupos pequeños identificables y no exportan masivamente notas, necesidades ni descripciones personales. & Especificación, Ley\\
-\id{RN-19} & Toda exportación queda auditada y la bitácora no copia contenido sensible. & Especificación, Ley\\
-\id{RN-20} & La conservación será configurable por UCT; obligación legal o procedimiento abierto puede suspender su operación. & ADR-0003\\
-\id{RN-21} & El prototipo no ejecuta eliminación o anonimización automática por vencimiento. & ADR-0003, Especificación\\
-\id{RN-22} & Durante el curso se usan sólo datos ficticios o anonimizados. & ADR-0001\\
-\id{RN-23} & La revisión de solicitudes es humana; no se toman decisiones automatizadas de aceptación, diagnóstico o perfilamiento. & Ley, Especificación\\
+\id{RN-01} & El apoyo se denomina acompañamiento; ``atención'' sólo es un encuentro dentro de él y no se usa lenguaje clínico.\\
+\id{RN-02} & La derivación requiere contacto de CERETI y aceptación del estudiante antes de abrir acompañamiento.\\
+\id{RN-03} & Un acompañamiento cerrado conserva historial, no se reabre y una necesidad posterior inicia uno nuevo.\\
+\id{RN-04} & Un estudiante puede tener acompañamientos simultáneos o históricos, cada uno con objetivo, responsables, atenciones y cierre propios.\\
+\id{RN-05} & Actualizar necesidades de acceso afecta atenciones futuras y no modifica atenciones anteriores.\\
+\id{RN-06} & Pertenecer al dominio institucional no concede por sí solo acceso a un acompañamiento o recurso.\\
+\id{RN-07} & Una cuenta \texttt{@uct.cl} accede a gestión sólo si CERETI la habilitó previamente.\\
+\id{RN-08} & Lectura y modificación dependen de rol y relación con el acompañamiento; la UI no sustituye autorización backend.\\
+\id{RN-09} & Una atención no puede cruzarse para el mismo estudiante, profesional o sala.\\
+\id{RN-10} & Una atención multiprofesional requiere coordinación de personal autorizado.\\
+\id{RN-11} & La disponibilidad combina bloques recurrentes y excepciones; cada bloque define duración, modalidad y lugar.\\
+\id{RN-12} & Sin hora compatible, se orienta a canales oficiales accesibles y código de referencia, sin ofrecer una sala incompatible ni reducir la necesidad.\\
+\id{RN-13} & Reagendar conserva la fecha original; CERETI informa el motivo al cancelar.\\
+\id{RN-14} & La justificación se presenta dentro de cinco días hábiles; vencido o rechazado el plazo, queda sin justificar y no existe sanción automática.\\
+\id{RN-15} & El respaldo sensible no se almacena; sólo se registra su recepción y revisión por canal autorizado.\\
+\id{RN-16} & Un mensaje fuera de sesión debe ser genérico y no revelar datos sensibles del acompañamiento.\\
+\id{RN-17} & Calendar se integra por atención mediante acción explícita; no se lee el calendario completo.\\
+\id{RN-18} & Los reportes evitan grupos pequeños identificables y no exportan masivamente notas, necesidades ni descripciones personales.\\
+\id{RN-19} & Toda exportación queda auditada y la bitácora no copia contenido sensible.\\
+\id{RN-20} & La conservación será configurable por UCT; obligación legal o procedimiento abierto puede suspender su operación.\\
+\id{RN-21} & El prototipo no ejecuta eliminación o anonimización automática por vencimiento.\\
+\id{RN-22} & Durante el curso se usan sólo datos ficticios o anonimizados.\\
+\id{RN-23} & La revisión de solicitudes es humana; no se toman decisiones automatizadas de aceptación, diagnóstico o perfilamiento.\\
 \end{longtable}
 \normalsize
 
@@ -404,15 +408,18 @@ La organización es un monorepo con backend compartido. TI2 mantiene principalme
 
 \begin{center}
 \begin{tikzpicture}[
+  node distance=7mm,
   capa/.style={draw=azuluct,rounded corners=2pt,minimum width=9.2cm,minimum height=9mm,align=center,font=\small\bfseries},
-  flecha/.style={-{Latex[length=2mm]},thick,draw=azuluct}
+  flecha/.style={-{Latex[length=2mm]},thick,draw=azuluct,shorten <=2pt,shorten >=2pt}
 ]
 \node[capa,fill=azulclaro] (p) {PRESENTACIÓN --- Web, Mobile y funciones públicas};
 \node[capa,below=of p,fill=white] (a) {APLICACIÓN --- casos de uso, autorización y puertos};
 \node[capa,below=of a,fill=white] (d) {DOMINIO --- entidades, invariantes y políticas};
 \node[capa,below=of d,fill=verdeclaro] (i) {INFRAESTRUCTURA --- Convex, Better Auth, persistencia y externos};
 \draw[flecha] (p)--(a); \draw[flecha] (a)--(d);
-\draw[flecha] (i.north east) to[bend left=25] node[right,font=\scriptsize,align=center]{implementa interfaces\\de capas internas} (a.south east);
+\draw[flecha] (i.north) -- (d.south);
+\draw[flecha] (i.north east) to[bend left=25]
+  node[right,font=\scriptsize,align=center]{implementa interfaces\\de capas internas} (a.east);
 \end{tikzpicture}
 \end{center}
 
