@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "ceretime",
+    "slug": "ceretime",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "ceretime",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "cl.rmv.ceretime"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "owner": "corvidown-crew",
+    "extra": {
+      "eas": {
+        "projectId": "ff9003db-9d48-429f-9461-ad924f4bd6fc"
+      }
+    },
+    "plugins": [
+      "expo-status-bar"
+    ]
+  }
+}

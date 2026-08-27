@@ -1,0 +1,14 @@
+{
+  "name": "ceretime",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "mobile:start": "bun run --cwd apps/mobile start",
+    "mobile:android": "bun run --cwd apps/mobile android",
+    "mobile:ios": "bun run --cwd apps/mobile ios",
+    "mobile:web": "bun run --cwd apps/mobile web"
+  }
+}

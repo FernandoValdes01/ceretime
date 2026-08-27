@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build and tool caches
+.turbo/
+coverage/
+dist/
+
+# System and editor files
+.DS_Store
+*.swp
+*.swo
+
+# Logs
+*.log
