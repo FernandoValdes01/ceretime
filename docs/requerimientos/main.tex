@@ -105,7 +105,7 @@
       Fernando Valdés & Lucas Núñez\\
       Vicente Rivera & Francisco Leal\\
       Juan Muñoz & Wladimir Peñeipil Soto\\
-      & Rayen Castro\\
+      & Rallen Castro\\
       & Camilo Contreras\\
       & Leonardo Ulloa
     \end{tabular}
@@ -201,7 +201,7 @@ Google Workspace, Calendar, correo, push y hosting & Sistemas externos & Proveen
 
 \subsection{Autenticación y autorización}
 
-Google Workspace establece quién es la persona y permite iniciar sesión; no concede automáticamente acceso a un acompañamiento. El backend debe comprobar identidad, rol, habilitación y relación con el recurso en cada operación protegida. Ocultar una pantalla en Web o Mobile no reemplaza la autorización de backend \citep{adr002,especificacion,tech}.
+Google Workspace establece quién es la persona y permite iniciar sesión; no concede automáticamente acceso a un acompañamiento. El acceso al sistema CERETI se realizará desde una aplicación independiente del portal UCT: no estará disponible dentro de dicho portal. El backend debe comprobar identidad, rol, habilitación y relación con el recurso en cada operación protegida. Ocultar una pantalla en Web o Mobile no reemplaza la autorización de backend \citep{adr002,especificacion,tech}.
 \section{Alcance funcional y exclusiones}
 
 El prototipo es una solución web y móvil de extremo a extremo, con datos ficticios o anonimizados. Su propósito es demostrar continuidad y trazabilidad del acompañamiento, no sólo una agenda. Las funcionalidades se agrupan así:
@@ -256,7 +256,7 @@ Los requisitos funcionales describen comportamientos observables y verificables.
 \bottomrule
 \endfoot
 \id{RF-01} & Permitir inicio de sesión con Google Workspace institucional mediante OIDC/OAuth 2.0, sin almacenar contraseñas. & Estudiante / personal & Debe\\
-\id{RF-02} & Determinar el área de acceso según dominio y habilitación: portal estudiantil o gestión CERETI. & Sistema & Debe\\
+\id{RF-02} & Determinar el área de acceso según dominio y habilitación dentro de una aplicación independiente del portal UCT. & Sistema & Debe\\
 \id{RF-03} & Reconocer estudiante, profesional y administrador como roles provisionales, sin convertirlos en cargos definitivos. & Administrador & Debe\\
 \id{RF-04} & Permitir al estudiante registrar una solicitud no urgente con necesidad, resultado esperado, necesidades de acceso y disponibilidad general. & Estudiante & Debe\\
 \id{RF-05} & Permitir a personal autorizado ingresar una solicitud recibida por un canal institucional y conservar su origen. & Profesional & Debería\\
@@ -310,7 +310,7 @@ Las reglas son condiciones del dominio que deben cumplirse desde Web, Mobile o c
 \endfirsthead\toprule\textbf{ID} & \textbf{Regla}\\\midrule\endhead
 \bottomrule\endfoot
 \id{RN-01} & El apoyo se denomina acompañamiento; ``atención'' sólo es un encuentro dentro de él y no se usa lenguaje clínico.\\
-\id{RN-02} & La derivación requiere contacto de CERETI y aceptación del estudiante antes de abrir acompañamiento.\\
+\id{RN-02} & El acceso al sistema CERETI se realizará desde una aplicación independiente del portal UCT, aunque la autenticación utiliza Google Workspace institucional; CERETI no estará disponible dentro del portal.\\
 \id{RN-03} & Un acompañamiento cerrado conserva historial, no se reabre y una necesidad posterior inicia uno nuevo.\\
 \id{RN-04} & Un estudiante puede tener acompañamientos simultáneos o históricos, cada uno con objetivo, responsables, atenciones y cierre propios.\\
 \id{RN-05} & Actualizar necesidades de acceso afecta atenciones futuras y no modifica atenciones anteriores.\\
@@ -332,6 +332,7 @@ Las reglas son condiciones del dominio que deben cumplirse desde Web, Mobile o c
 \id{RN-21} & El prototipo no ejecuta eliminación o anonimización automática por vencimiento.\\
 \id{RN-22} & Durante el curso se usan sólo datos ficticios o anonimizados.\\
 \id{RN-23} & La revisión de solicitudes es humana; no se toman decisiones automatizadas de aceptación, diagnóstico o perfilamiento.\\
+\id{RN-24} & La derivación requiere contacto de CERETI y aceptación del estudiante antes de abrir acompañamiento.\\
 \end{longtable}
 \normalsize
 
@@ -530,7 +531,7 @@ RF-09--RF-18 & Especificación, Contexto & estudiante/profesional & Pendiente & 
 RF-19--RF-28 & Especificación, Contexto & estudiante/profesional & Pendiente & Aplicación + externos & CA-07--08\\
 RF-29--RF-34 & Especificación, Ley & estudiante/admin & Pendiente & Aplicación + Infra & CA-08--09\\
 RF-35--RF-37 & Especificación, Contexto & admin/profesional & Pendiente & Aplicación + Dominio & CA-10\\
-RN-01--RN-23 & Contexto, Especificación, ADR, Ley & todos & Pendiente & Dominio & Pendiente\\
+RN-01--RN-24 & Contexto, Especificación, ADR, Ley & todos & Pendiente & Dominio & Pendiente\\
 RNF-01--RNF-06 & Especificación, W3C & todos & Pendiente & Presentación & Pendiente\\
 RNF-07--RNF-17 & ADR, Especificación, Contexto, Ley & todos & Pendiente & Aplicación + Infra & CA-01--02, 08--09\\
 RNF-18--RNF-25 & Guía técnica, Protocolo Git, Especificación & TI2/TI4 & Pendiente & Todas las capas & Pendiente\\
