@@ -190,6 +190,7 @@ Los stakeholders organizacionales validan, financian, operan o resultan afectado
 \midrule
 Estudiante acompañado & Actor del software / stakeholder & Solicita acompañamiento, informa necesidades de acceso, agenda, participa en atenciones, justifica inasistencias y ejerce derechos sobre sus datos.\\
 Profesional de CERETI & Actor del software / stakeholder & Revisa solicitudes, deriva, acepta, asigna, coordina, registra atenciones y seguimiento, y cierra acompañamientos.\\
+Practicante & Actor del software & Es habilitado por un profesional y sólo accede a los acompañamientos que éste le asigna; el profesional gestiona y revoca sus accesos.\\
 Administrador provisional & Actor del software & Gestiona cuentas, configuración, espacios y reportes agregados, sujeto a permisos y cargos reales aún pendientes.\\
 CERETI & Unidad stakeholder & Define lenguaje, flujo operativo, canales, revisión de experiencia y validación del dominio.\\
 UCT & Stakeholder institucional & Debe validar responsable de datos, base jurídica, cargos, proveedores, conservación, seguridad y autorización de operación real.\\
@@ -211,7 +212,7 @@ El prototipo es una solución web y móvil de extremo a extremo, con datos ficti
 \toprule
 \textbf{Dominio} & \textbf{Capacidades comprendidas en el prototipo}\\
 \midrule
-Identidad y acceso & Inicio de sesión institucional; área de estudiante o gestión; roles provisionales; autorización backend por recurso.\\
+Identidad y acceso & Inicio de sesión institucional; área de estudiante o gestión; roles provisionales; habilitación controlada de cuentas \texttt{@alu.uct.cl} como profesionales de prueba; practicantes; autorización backend por recurso.\\
 Solicitud y derivación & Creación por estudiante o canal autorizado; necesidades de acceso; revisión; solicitud de información; aceptación, cancelación, cierre sin acompañamiento y derivación con aceptación.\\
 Acompañamiento & Apertura sólo tras aceptación; responsables; estados activo, pausado y cerrado; historial y cierre no reabrible.\\
 Agenda y atención & Disponibilidad recurrente y excepciones; espacios; modalidades presencial/en línea; reserva, cambio, cancelación, reagendamiento, conflictos y coordinación multiprofesional.\\
@@ -257,7 +258,7 @@ Los requisitos funcionales describen comportamientos observables y verificables.
 \endfoot
 \id{RF-01} & Permitir inicio de sesión con Google Workspace institucional mediante OIDC/OAuth 2.0, sin almacenar contraseñas. & Estudiante / personal & Debe\\
 \id{RF-02} & Determinar el área de acceso según dominio y habilitación dentro de una aplicación independiente del portal UCT. & Sistema & Debe\\
-\id{RF-03} & Reconocer estudiante, profesional y administrador como roles provisionales, sin convertirlos en cargos definitivos. & Administrador & Debe\\
+\id{RF-03} & Reconocer estudiante, profesional, practicante y administrador como roles provisionales, sin convertirlos en cargos definitivos. & Administrador & Debe\\
 \id{RF-04} & Permitir al estudiante registrar una solicitud no urgente con necesidad, resultado esperado, necesidades de acceso y disponibilidad general. & Estudiante & Debe\\
 \id{RF-05} & Permitir a personal autorizado ingresar una solicitud recibida por un canal institucional y conservar su origen. & Profesional & Debería\\
 \id{RF-06} & Registrar una derivación sin abrir automáticamente un acompañamiento y dejarla pendiente de contacto y aceptación. & Profesional & Debe\\
@@ -292,6 +293,8 @@ Los requisitos funcionales describen comportamientos observables y verificables.
 \id{RF-35} & Gestionar cuentas habilitadas, configuración y espacios, sujeto a la matriz de permisos validada. & Administrador & Debería\\
 \id{RF-36} & Cerrar un acompañamiento conservando historial de sólo lectura; no permitir reapertura. & Profesional & Debe\\
 \id{RF-37} & Mostrar canales oficiales accesibles y código de referencia cuando no exista una hora compatible, sin reducir la necesidad de acceso. & Estudiante & Debe\\
+\id{RF-38} & Permitir a personal autorizado habilitar explícitamente una cuenta \texttt{@alu.uct.cl} como profesional de prueba sólo para acompañamientos específicos, con alcance y auditoría. & Administrador / profesional autorizado & Debe\\
+\id{RF-39} & Permitir que un profesional habilite una cuenta como practicante, la asigne a acompañamientos específicos y gestione, modifique o revoque sus accesos. & Profesional & Debe\\
 \end{longtable}
 \normalsize
 
@@ -333,6 +336,8 @@ Las reglas son condiciones del dominio que deben cumplirse desde Web, Mobile o c
 \id{RN-22} & Durante el curso se usan sólo datos ficticios o anonimizados.\\
 \id{RN-23} & La revisión de solicitudes es humana; no se toman decisiones automatizadas de aceptación, diagnóstico o perfilamiento.\\
 \id{RN-24} & La derivación requiere contacto de CERETI y aceptación del estudiante antes de abrir acompañamiento.\\
+\id{RN-25} & El dominio \texttt{@alu.uct.cl} no concede por sí solo el rol profesional; una cuenta de ese dominio sólo puede actuar como profesional de prueba cuando personal autorizado la habilita para acompañamientos específicos y auditados.\\
+\id{RN-26} & Un practicante sólo puede acceder a los acompañamientos que un profesional le asignó; ese profesional administra, modifica y revoca el alcance del acceso.\\
 \end{longtable}
 \normalsize
 
@@ -453,6 +458,8 @@ Los siguientes requisitos se derivan lógicamente de restricciones o requisitos 
 \id{RD-08} & RF-14, RF-37, RNF-18 & API común expone errores de conflicto y falta de compatibilidad para Web y Mobile.\\
 \id{RD-09} & RF-21, RF-23, RNF-12, RNF-17 & Se separan datos operativos, nota interna, recepción de respaldo y exportación del titular.\\
 \id{RD-10} & RF-30, RN-20, RN-21, RNF-15 & Arquitectura reserva política configurable y suspensión; no ejecuta borrado automático en el prototipo.\\
+\id{RD-11} & RF-38, RN-25, RNF-08 & La habilitación de una cuenta \texttt{@alu.uct.cl} como profesional de prueba exige autorización explícita, alcance por acompañamiento, auditoría y validación en backend.\\
+\id{RD-12} & RF-39, RN-26, RNF-08 & El acceso del practicante se modela como asignación revocable por acompañamiento, administrada por un profesional.\\
 \bottomrule
 \end{tabularx}
 \normalsize
@@ -488,6 +495,8 @@ CA-07 & Dada una inasistencia, cuando se entrega explicación dentro de cinco d�
 CA-08 & Dada una notificación fuera de sesión, cuando se muestra en un dispositivo, entonces el texto es genérico y no revela datos sensibles.\\
 CA-09 & Dada una solicitud de exportación del titular, cuando se autoriza, entonces sólo se entrega su información y queda auditoría.\\
 CA-10 & Dada una búsqueda sin hora compatible, cuando termina la búsqueda, entonces se muestran canales accesibles y referencia sin ofrecer una alternativa incompatible.\\
+CA-11 & Dada una cuenta \texttt{@alu.uct.cl}, cuando no existe habilitación explícita para un acompañamiento, entonces no puede operar como profesional; con habilitación válida, sólo accede al alcance asignado y la acción queda auditada.\\
+CA-12 & Dado un profesional y una cuenta de practicante, cuando el profesional la habilita y asigna un acompañamiento, entonces el practicante sólo puede acceder a ese acompañamiento; al revocarlo, pierde el acceso.\\
 \bottomrule
 \end{tabularx}
 \normalsize
@@ -509,7 +518,8 @@ RF-12--RF-18 & RF-08, RF-14 & Agenda requiere acompañamiento activo, disponibil
 RF-19--RF-24 & RF-17--RF-18 & Seguimiento y tareas dependen de una atención registrada.\\
 RF-25--RF-28 & RF-19 & Avisos y eventos se construyen desde una atención existente.\\
 RF-29--RF-34 & RF-01, RF-10, RNF-08 & Privacidad, auditoría y exportación requieren identidad y alcance.\\
-RF-35--RF-36 & RF-09, RN-03 & Configuración y cierre deben respetar responsables, roles y ciclo de vida.\\
+RF-35--RF-37 & RF-09, RN-03 & Configuración, canales y cierre deben respetar responsables, roles y ciclo de vida.\\
+RF-38--RF-39 & RF-01, RF-03, RN-25--RN-26, RNF-08 & Habilitación de profesionales de prueba y practicantes requiere identidad, rol, alcance y autorización backend.\\
 RNF-18--RNF-21 & Guía técnica, Protocolo Git & API común, independencia del dominio y CI condicionan Web y Mobile.\\
 \bottomrule
 \end{tabularx}
@@ -531,11 +541,12 @@ RF-09--RF-18 & Especificación, Contexto & estudiante/profesional & Pendiente & 
 RF-19--RF-28 & Especificación, Contexto & estudiante/profesional & Pendiente & Aplicación + externos & CA-07--08\\
 RF-29--RF-34 & Especificación, Ley & estudiante/admin & Pendiente & Aplicación + Infra & CA-08--09\\
 RF-35--RF-37 & Especificación, Contexto & admin/profesional & Pendiente & Aplicación + Dominio & CA-10\\
-RN-01--RN-24 & Contexto, Especificación, ADR, Ley & todos & Pendiente & Dominio & Pendiente\\
+RF-38--RF-39 & Especificación, Contexto & admin/profesional & Pendiente & Aplicación + Dominio & CA-11--12\\
+RN-01--RN-26 & Contexto, Especificación, ADR, Ley & todos & Pendiente & Dominio & Pendiente\\
 RNF-01--RNF-06 & Especificación, W3C & todos & Pendiente & Presentación & Pendiente\\
 RNF-07--RNF-17 & ADR, Especificación, Contexto, Ley & todos & Pendiente & Aplicación + Infra & CA-01--02, 08--09\\
 RNF-18--RNF-25 & Guía técnica, Protocolo Git, Especificación & TI2/TI4 & Pendiente & Todas las capas & Pendiente\\
-RD-01--RD-10 & RF, RN, RNF & equipos & Pendiente & Dominio + Aplicación & Pendiente\\
+RD-01--RD-12 & RF, RN, RNF & equipos & Pendiente & Dominio + Aplicación & Pendiente\\
 \end{longtable}
 \normalsize
 
@@ -562,6 +573,8 @@ PV-12 & Umbral o regla para anonimizar grupos estadísticos pequeños. & RF-32/R
 PV-13 & Integración Calendar y contenido exacto de \texttt{.ics}. & Contratos y privacidad. & TI2 + TI4 + UCT\\
 PV-14 & Revisión jurídica, ciberseguridad y autorización antes de datos reales. & Condición de operación. & UCT\\
 PV-15 & Semana definitiva del segundo incremento, referida como 12 y 13. & Planificación académica. & Docencia de ambos talleres\\
+PV-16 & Responsable y alcance para habilitar cuentas \texttt{@alu.uct.cl} como profesionales de prueba en acompañamientos específicos. & RF-38 y permisos. & CERETI + UCT + TI2/TI4\\
+PV-17 & Permisos exactos, datos visibles y revocación del rol de practicante por acompañamiento. & RF-39 y RN-26. & CERETI + profesionales + TI2/TI4\\
 \end{longtable}
 \normalsize
 \section{Conclusiones}
