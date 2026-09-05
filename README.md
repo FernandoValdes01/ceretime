@@ -2,8 +2,8 @@
 
 ## Comandos mínimos de Arranque desde cero:
 
-- Instala dependencias limpias desde la raíz con ´bun install --frozen-lockfile´
-- Seguido de los comandos para ejecutar los servicios (utiliza distintas terminales). ´bunx convex dev´ para el backend (convex), ´bun --cwd apps/web run dev´ para la ejecución web, o ´bun --cwd apps/mobile run start´ en el caso de la ejecución app mobile.
+- Instala dependencias limpias desde la raíz con `bun install`
+- Seguido de los comandos para ejecutar los servicios (utiliza distintas terminales). `bunx convex dev` para el backend (convex), `bun --cwd apps/web run dev` para la ejecución web, o `bun --cwd apps/mobile run start` en el caso de la ejecución app mobile.
 
 ## Documentación de variables de entorno
 
@@ -11,8 +11,8 @@
 
 Se debe distinguir las variables según la plataforma:
 
-- En frontend web usa el prefijo ´VITE_´ (estas variables son visibles para el navegador del usuario final)
-- En App móvil usa el prefijo ´EXPO_PUBLIC´
+- En frontend web usa el prefijo `VITE_` (estas variables son visibles para el navegador del usuario final)
+- En App móvil usa el prefijo `EXPO_PUBLIC`
 
 **Queda estrictamente prohibido incluir contraseñas, tokens de API o secretos de autenticación (como BETTER_AUTH_SECRET) dentro de los archivos .env.example o en el código cliente.**
 
