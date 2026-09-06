@@ -1,12 +1,18 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, StyleSheet } from 'react-native';
+
+import { StudentAreaExample } from './src/StudentAreaExample';
+import { createMockMobileClient } from './src/mock-mobile-client';
+
+// Composition root only: UI consumes the replaceable MobileClient boundary.
+const mobileClient = createMockMobileClient();
 
 export default function App() {
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
+    <SafeAreaView style={styles.container}>
+      <StudentAreaExample client={mobileClient} />
       <StatusBar style="auto" />
-    </View>
+    </SafeAreaView>
   );
 }
 
