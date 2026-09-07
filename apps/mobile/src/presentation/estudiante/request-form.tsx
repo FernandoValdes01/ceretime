@@ -5,11 +5,12 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
-import { Action } from '../components/screen';
+import { StudentAction } from './student-screen';
+import { StudentText as Text, useStudentFont } from './student-text';
+import { studentTheme as theme } from '../../theme';
 import {
   initialRequestValues,
   validateRequestForm,
@@ -48,6 +49,7 @@ function Choice({
   single?: boolean;
   controlRef?: Ref<View>;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <Pressable
       ref={controlRef}
@@ -56,16 +58,30 @@ function Choice({
       accessibilityLabel={label}
       accessibilityState={{ checked: selected }}
       onPress={onPress}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={({ pressed }) => [
         styles.choice,
         selected && styles.selected,
         pressed && styles.pressed,
+        focused && styles.focused,
       ]}
     >
-      <Text style={styles.choiceText}>
-        {selected ? '✓ ' : ''}
-        {label}
-      </Text>
+      <View
+        accessible={false}
+        style={[
+          styles.indicator,
+          single && styles.radio,
+          selected && styles.checkedIndicator,
+        ]}
+      >
+        {selected ? (
+          <Text accessible={false} style={styles.check}>
+            ✓
+          </Text>
+        ) : null}
+      </View>
+      <Text style={styles.choiceText}>{label}</Text>
     </Pressable>
   );
 }
@@ -83,6 +99,10 @@ export function RequestForm({
 }: {
   onRevealGroup: (y: number) => void;
 }) {
+  const fontFamily = useStudentFont();
+  const [focusedField, setFocusedField] = useState<
+    keyof RequestFormValues | null
+  >(null);
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
   const [reviewed, setReviewed] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -157,7 +177,7 @@ export function RequestForm({
   ) {
     return (
       <View style={styles.field}>
-        <Text nativeID={`${key}-label`} style={styles.label}>
+        <Text weight="semibold" nativeID={`${key}-label`} style={styles.label}>
           {label}
         </Text>
         <Text style={styles.hint}>{hint}</Text>
@@ -171,11 +191,15 @@ export function RequestForm({
           aria-describedby={errors[key] ? `${key}-error` : undefined}
           value={values[key]}
           onChangeText={(value) => update(key, value)}
+          onFocus={() => setFocusedField(key)}
+          onBlur={() => setFocusedField(null)}
           multiline={multiline}
           style={[
             styles.input,
             multiline && styles.multiline,
             errors[key] && styles.invalid,
+            focusedField === key && styles.focused,
+            { fontFamily },
           ]}
           textAlignVertical={multiline ? 'top' : 'center'}
           autoCapitalize={key.startsWith('available') ? 'none' : 'sentences'}
@@ -201,7 +225,9 @@ export function RequestForm({
       }}
     >
       <View style={styles.notice}>
-        <Text style={styles.noticeTitle}>Formulario de prueba</Text>
+        <Text weight="semibold" style={styles.noticeTitle}>
+          Formulario de prueba
+        </Text>
         <Text style={styles.hint}>
           Usa datos ficticios. Puedes revisar los campos, pero todavía no enviar
           la solicitud. Los cambios se pierden al salir.
@@ -211,21 +237,23 @@ export function RequestForm({
         Los campos marcados con * son obligatorios. No incluyas diagnósticos,
         RUT ni certificados.
       </Text>
-      {field(
-        'needSummary',
-        '¿Qué necesidad quieres abordar? *',
-        'Describe la barrera o dificultad que encuentras.',
-        true,
-      )}
-      {field(
-        'expectedOutcome',
-        '¿Qué esperas de CERETI? *',
-        'Cuéntanos qué te gustaría lograr con el acompañamiento.',
-        true,
-      )}
+      <View style={styles.section}>
+        {field(
+          'needSummary',
+          '¿Qué necesidad quieres abordar? *',
+          'Describe la barrera o dificultad que encuentras.',
+          true,
+        )}
+        {field(
+          'expectedOutcome',
+          '¿Qué esperas de CERETI? *',
+          'Cuéntanos qué te gustaría lograr con el acompañamiento.',
+          true,
+        )}
+      </View>
 
-      <View style={styles.field}>
-        <Text accessibilityRole="header" style={styles.label}>
+      <View style={styles.section}>
+        <Text weight="semibold" accessibilityRole="header" style={styles.label}>
           Necesidades de acceso
         </Text>
         <Text style={styles.hint}>
@@ -256,12 +284,12 @@ export function RequestForm({
       </View>
 
       <View
-        style={styles.field}
+        style={styles.section}
         onLayout={(event) => {
           groupTop.current.modalityPreference = event.nativeEvent.layout.y;
         }}
       >
-        <Text accessibilityRole="header" style={styles.label}>
+        <Text weight="semibold" accessibilityRole="header" style={styles.label}>
           Modalidad preferida *
         </Text>
         <Choice
@@ -281,12 +309,12 @@ export function RequestForm({
       </View>
 
       <View
-        style={styles.field}
+        style={styles.section}
         onLayout={(event) => {
           groupTop.current.preferredWeekdays = event.nativeEvent.layout.y;
         }}
       >
-        <Text accessibilityRole="header" style={styles.label}>
+        <Text weight="semibold" accessibilityRole="header" style={styles.label}>
           Disponibilidad general *
         </Text>
         <Text style={styles.hint}>
@@ -324,12 +352,14 @@ export function RequestForm({
         {field('availableFrom', 'Desde', 'Formato HH:MM, por ejemplo 09:00.')}
         {field('availableTo', 'Hasta', 'Formato HH:MM, por ejemplo 13:00.')}
       </View>
-      {field(
-        'preferredAccessibleInformationChannel',
-        '¿Cómo prefieres recibir información? *',
-        'Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.',
-        true,
-      )}
+      <View style={styles.section}>
+        {field(
+          'preferredAccessibleInformationChannel',
+          '¿Cómo prefieres recibir información? *',
+          'Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.',
+          true,
+        )}
+      </View>
       <Text style={styles.hint}>
         El nombre y correo se obtendrán de la cuenta institucional cuando esté
         disponible el inicio de sesión.
@@ -344,43 +374,83 @@ export function RequestForm({
           Campos revisados. La solicitud todavía no se ha enviado.
         </Text>
       )}
-      <Action label="Revisar formulario" onPress={review} />
+      <StudentAction label="Revisar formulario" onPress={review} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  form: { gap: 24 },
-  field: { gap: 10 },
-  label: { color: '#182C31', fontSize: 18, fontWeight: '600' },
-  hint: { color: '#42565B', fontSize: 16, lineHeight: 24 },
-  input: {
+  form: { gap: theme.spacing.large },
+  field: { gap: theme.spacing.small },
+  section: {
+    gap: theme.spacing.medium,
+    padding: theme.spacing.medium,
+    borderRadius: theme.radius.card,
     borderWidth: 1,
-    borderColor: '#687E83',
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    color: '#182C31',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+  },
+  label: { color: theme.colors.text, fontSize: 18, lineHeight: 26 },
+  hint: { color: theme.colors.textSecondary, fontSize: 16, lineHeight: 26 },
+  input: {
+    borderWidth: 2,
+    borderColor: theme.colors.outline,
+    borderRadius: theme.radius.control,
+    backgroundColor: theme.colors.surface,
+    color: theme.colors.text,
     minHeight: 52,
-    padding: 14,
-    fontSize: 17,
+    padding: theme.spacing.medium,
+    fontSize: 16,
+    lineHeight: 26,
   },
   multiline: { minHeight: 112 },
-  invalid: { borderColor: '#A32626', borderWidth: 2 },
-  error: { color: '#A32626', fontSize: 16, lineHeight: 24 },
+  invalid: { borderColor: theme.colors.error },
+  focused: { borderColor: theme.colors.focus },
+  error: { color: theme.colors.error, fontSize: 16, lineHeight: 26 },
   choice: {
     minHeight: 52,
-    justifyContent: 'center',
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#687E83',
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.small,
+    padding: theme.spacing.small,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.control,
+    backgroundColor: theme.colors.surface,
   },
-  selected: { borderColor: '#246259', backgroundColor: '#E0EFEA' },
+  selected: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.surfaceLow,
+  },
+  indicator: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: theme.colors.outline,
+    borderRadius: theme.radius.indicator,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radio: { borderRadius: theme.radius.round },
+  checkedIndicator: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primary,
+  },
+  check: { color: theme.colors.onPrimary, fontSize: 16, lineHeight: 20 },
   pressed: { opacity: 0.75 },
-  choiceText: { color: '#182C31', fontSize: 17 },
-  days: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  notice: { padding: 16, gap: 8, backgroundColor: '#E0EFEA', borderRadius: 10 },
-  noticeTitle: { color: '#182C31', fontSize: 17, fontWeight: '600' },
-  success: { color: '#17483F', fontSize: 17, lineHeight: 26 },
+  choiceText: {
+    color: theme.colors.text,
+    fontSize: 16,
+    lineHeight: 26,
+    flexShrink: 1,
+  },
+  days: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.small },
+  notice: {
+    padding: theme.spacing.medium,
+    gap: theme.spacing.small,
+    backgroundColor: theme.colors.surfaceLow,
+    borderRadius: theme.radius.card,
+  },
+  noticeTitle: { color: theme.colors.primary, fontSize: 18, lineHeight: 26 },
+  success: { color: theme.colors.primaryPressed, fontSize: 18, lineHeight: 29 },
 });

@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@expo-google-fonts/fira-sans": "^0.4.1",
     "expo": "~57.0.20",
     "expo-constants": "~57.0.17",
     "expo-dev-client": "~57.0.18",
+    "expo-font": "~57.0.3",
     "expo-linking": "~57.0.9",
     "expo-router": "~57.0.19",
     "expo-status-bar": "~57.0.1",

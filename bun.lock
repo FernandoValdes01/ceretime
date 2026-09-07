@@ -9,9 +9,11 @@
       "name": "ceretime",
       "version": "1.0.0",
       "dependencies": {
+        "@expo-google-fonts/fira-sans": "^0.4.1",
         "expo": "~57.0.20",
         "expo-constants": "~57.0.17",
         "expo-dev-client": "~57.0.18",
+        "expo-font": "~57.0.3",
         "expo-linking": "~57.0.9",
         "expo-router": "~57.0.19",
         "expo-status-bar": "~57.0.1",
@@ -208,6 +210,8 @@
     "@babel/types": ["@babel/types@7.29.8", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg=="],
 
     "@bcoe/v8-coverage": ["@bcoe/v8-coverage@0.2.3", "", {}, "sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw=="],
+
+    "@expo-google-fonts/fira-sans": ["@expo-google-fonts/fira-sans@0.4.1", "", {}, "sha512-zQVs67baYyBVEScaCGKG3MBtGe2hPNc7R3Axmj7JmWs310kOem4poL1mB+O52rwfFqiigzxV876BHFZBxoie1Q=="],
 
     "@expo-google-fonts/material-symbols": ["@expo-google-fonts/material-symbols@0.4.45", "", {}, "sha512-D5gd/uFa7KfMJX9S11hvej4GpQnBl27oKiUgyIq3cLTPtyDOWBwRgmeePIdV6+PGcedlDkaCND2BnRgAkxzNaA=="],
 

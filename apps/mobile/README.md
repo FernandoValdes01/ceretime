@@ -75,7 +75,7 @@ bun run --cwd apps/mobile export
 
 Las pruebas cargan las rutas reales de `app/` con Expo Router. Cubren arranque, entrada y salida de los cuatro roles, eliminación del historial protegido, enlaces directos sin sesión, intentos de acceso entre roles y recuperación de rutas inexistentes.
 
-Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el workspace para evitar instancias diferentes por variantes de peer dependencies. Se usa React Native Testing Library 13 porque el helper `renderRouter` de Expo Router 57 requiere su render síncrono. El único mock adicional desactiva el WebSocket de herramientas de desarrollo de Expo; las rutas y la sesión se ejecutan sin mocks.
+Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el workspace para evitar instancias diferentes por variantes de peer dependencies. Se usa React Native Testing Library 13 porque el helper `renderRouter` de Expo Router 57 requiere su render síncrono. Un mock desactiva el WebSocket de herramientas de desarrollo de Expo; las rutas y la sesión se ejecutan sin mocks. Las pruebas aisladas de tipografía simulan `expo-font` para comprobar carga y fallo sin perder los valores del formulario.
 
 `export` genera bundles de Android, iOS y web en `dist/`. No genera un APK ni reemplaza la ejecución en dispositivo. La construcción Preview con EAS se mantiene en `eas.json`.
 
@@ -114,9 +114,17 @@ HH:MM y en orden creciente. No son reglas canónicas del backend. No se piden
 RUT, diagnósticos, adjuntos, nombre ni correo: la sesión temporal sólo contiene
 un rol y la identidad institucional se integrará posteriormente.
 
-No se encontraron imágenes de referencia adjuntas a TI4-8 ni en la documentación
-local consultada; se conserva el estilo de la navegación de TI4-6. La fidelidad
-a esos mockups queda pendiente de disponer de las imágenes.
+La presentación toma como referencia **Inicio - Portal Estudiante (Móvil)** del
+[proyecto de Stitch](https://stitch.withgoogle.com/projects/9057834843157775417),
+pantalla `8eba1da09323417bac7d8f939c65ea79`. No hay una vista específica de Nueva
+solicitud: se adaptan la tipografía Fira Sans, los colores y las superficies al
+formulario de TI4-8, sin incorporar agendas, perfiles ni datos de los mockups.
+Los tokens utilizados viven en `src/theme.ts` y sólo se aplican al flujo del
+estudiante. Se usa el primario `#00695b` del HTML mobile; los controles conservan
+etiquetas de al menos 16 puntos, estados de foco y áreas táctiles de 52 puntos.
+Fira Sans se incluye desde el paquete local; la fuente del sistema mantiene el
+formulario utilizable mientras carga o si falla. Las referencias originales no
+se incluyen en el repositorio.
 
 Para verificar el formulario:
 
