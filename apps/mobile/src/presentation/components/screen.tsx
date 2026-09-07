@@ -9,7 +9,7 @@ export function Screen({
 }: PropsWithChildren<{ title: string; description: string }>) {
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
         <Text style={styles.brand}>CERETIME</Text>
         <Text accessibilityRole="header" style={styles.title}>
           {title}

@@ -31,7 +31,8 @@ La navegación funciona sin backend, variables de entorno ni credenciales. La pa
 | -------------------------- | ------------- | ------------------------------------------------------------------ |
 | `/`                        | Público       | Redirige a `/login` o al inicio del rol activo.                    |
 | `/login`                   | Sin sesión    | Selector temporal de los cuatro roles.                             |
-| `/estudiante`              | Estudiante    | Inicio provisional para solicitudes.                               |
+| `/estudiante`              | Estudiante    | Inicio con acceso a Nueva solicitud.                               |
+| `/estudiante/nueva-solicitud` | Estudiante  | Formulario local y validaciones de presentación de TI4-8.          |
 | `/profesional`             | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos. |
 | `/practicante`             | Practicante   | Inicio provisional de consulta de acompañamientos asignados.       |
 | `/administrador`           | Administrador | Inicio provisional de habilitación de cuentas.                     |
@@ -90,6 +91,51 @@ Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el works
 La evidencia nativa y la revisión de otro integrante deben completarse antes de integrar y cerrar TI4-6.
 
 ## Referencias
+
+### Formulario del estudiante: TI4-8
+
+Desde el inicio del Estudiante, abrir **Nueva solicitud**. La pantalla permite
+describir la necesidad y el resultado esperado, seleccionar varios apoyos de
+acceso y agregar otro en texto libre, elegir modalidad y días de disponibilidad,
+indicar una franja horaria opcional y describir el medio accesible preferido para
+recibir información. **Revisar formulario** comprueba los campos localmente;
+no crea una solicitud ni confirma su recepción. El borrador se pierde al salir.
+
+Las fuentes son RF-04 y la sección Solicitudes de la especificación del prototipo.
+Los nombres de los campos se alinean con las proyecciones provisionales de TI4-5,
+consultadas en el PR #5. Esta rama no importa ni copia esa capa pendiente de
+integración: `request-form-state.ts` contiene exclusivamente valores editables
+de presentación, con horarios como texto y selecciones locales. TI4-30 deberá
+mapearlos al contrato de creación que se acuerde e integrar el hook de TI4-29.
+No se generan identificadores, fechas ni estados de una solicitud.
+
+Decisiones provisionales de presentación: necesidad, resultado, modalidad, al
+menos un día y medio de información requieren respuesta; los apoyos y la franja
+horaria son opcionales. Si se completa una hora, se exigen ambas en formato
+HH:MM y en orden creciente. No son reglas canónicas del backend. No se piden
+RUT, diagnósticos, adjuntos, nombre ni correo: la sesión temporal sólo contiene
+un rol y la identidad institucional se integrará posteriormente.
+
+No se encontraron imágenes de referencia adjuntas a TI4-8 ni en la documentación
+local consultada; se conserva el estilo de la navegación de TI4-6. La fidelidad
+a esos mockups queda pendiente de disponer de las imágenes.
+
+Para verificar el formulario:
+
+1. Entrar como Estudiante, abrir Nueva solicitud y revisar los campos vacíos.
+2. Corregir los errores y comprobar que se conservan los valores ya ingresados.
+3. Seleccionar y desmarcar varios apoyos y días; cambiar entre modalidades.
+4. Probar una franja incompleta, una hora inválida y una franja invertida.
+5. Completar los campos obligatorios con datos ficticios y revisar. El mensaje
+   debe aclarar que la solicitud no se ha enviado. Editar un campo retira ese mensaje.
+6. Volver al inicio, cambiar de rol y verificar que otros roles no abren la ruta.
+7. En dispositivo, comprobar teclado, desplazamiento, etiquetas accesibles y
+   texto ampliado. Adjuntar evidencia al PR identificando el commit probado.
+
+Las pruebas `student-request.test.tsx` ejercitan las rutas reales. También deben
+seguir pasando las pruebas de navegación de TI4-6.
+
+### Documentación técnica
 
 - [Instalación de Expo Router](https://docs.expo.dev/router/installation/).
 - [Rutas protegidas](https://docs.expo.dev/router/advanced/protected/).
