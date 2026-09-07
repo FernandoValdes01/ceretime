@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { render } from '@testing-library/react-native';
+import { RequestForm } from '../src/presentation/estudiante/request-form';
 import { router } from 'expo-router';
 import {
   act,
@@ -40,6 +42,37 @@ function fillRequiredFields() {
 }
 
 describe('Formulario de solicitud del estudiante', () => {
+  test('solicita mostrar la selección pendiente al revisar modalidad o días', async () => {
+    const revealGroup = jest.fn();
+    render(<RequestForm onRevealGroup={revealGroup} />);
+    fireEvent.changeText(
+      screen.getByLabelText('¿Qué necesidad quieres abordar? *'),
+      'Leer materiales.',
+    );
+    fireEvent.changeText(
+      screen.getByLabelText('¿Qué esperas de CERETI? *'),
+      'Usar un lector.',
+    );
+    fireEvent.changeText(
+      screen.getByLabelText('¿Cómo prefieres recibir información? *'),
+      'Correo accesible.',
+    );
+    fireEvent.press(screen.getByRole('button', { name: 'Revisar formulario' }));
+    await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(1));
+    expect(screen.getByText('Selecciona una modalidad.')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('radio', { name: 'Presencial' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Revisar formulario' }));
+    await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('Selecciona al menos un día.')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('checkbox', { name: 'Lunes' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Revisar formulario' }));
+    expect(
+      screen.getByText(
+        'Campos revisados. La solicitud todavía no se ha enviado.',
+      ),
+    ).toBeOnTheScreen();
+    expect(revealGroup).toHaveBeenCalledTimes(2);
+  });
   test('recorre Inicio → Nueva solicitud → Inicio', async () => {
     const navigation = await openForm();
     expect(navigation.getPathname()).toBe('/estudiante/nueva-solicitud');

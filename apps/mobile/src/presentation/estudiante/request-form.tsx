@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type Ref } from 'react';
 import {
   AccessibilityInfo,
   Keyboard,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -39,14 +40,18 @@ function Choice({
   selected,
   onPress,
   single = false,
+  controlRef,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   single?: boolean;
+  controlRef?: Ref<View>;
 }) {
   return (
     <Pressable
+      ref={controlRef}
+      tabIndex={0}
       accessibilityRole={single ? 'radio' : 'checkbox'}
       accessibilityLabel={label}
       accessibilityState={{ checked: selected }}
@@ -73,7 +78,11 @@ function ErrorText({ message }: { message?: string }) {
   ) : null;
 }
 
-export function RequestForm() {
+export function RequestForm({
+  onRevealGroup,
+}: {
+  onRevealGroup: (y: number) => void;
+}) {
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
   const [reviewed, setReviewed] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -81,6 +90,10 @@ export function RequestForm() {
     Partial<Record<keyof RequestFormValues, TextInput | null>>
   >({});
   const errors: RequestFormErrors = reviewed ? validateRequestForm(values) : {};
+  const formTop = useRef(0);
+  const groupTop = useRef({ modalityPreference: 0, preferredWeekdays: 0 });
+  const modalityControl = useRef<View>(null);
+  const weekdayControl = useRef<View>(null);
 
   function update<K extends keyof RequestFormValues>(
     key: K,
@@ -97,7 +110,27 @@ export function RequestForm() {
       keyof RequestFormValues | undefined;
     if (firstError) {
       setChecked(false);
-      inputs.current[firstError]?.focus();
+      if (
+        firstError === 'modalityPreference' ||
+        firstError === 'preferredWeekdays'
+      ) {
+        Keyboard.dismiss();
+        const control =
+          firstError === 'modalityPreference'
+            ? modalityControl
+            : weekdayControl;
+        requestAnimationFrame(() => {
+          onRevealGroup(formTop.current + groupTop.current[firstError]);
+          if (control.current) {
+            if (Platform.OS === 'web') control.current.focus();
+            else
+              AccessibilityInfo.sendAccessibilityEvent(
+                control.current,
+                'focus',
+              );
+          }
+        });
+      } else inputs.current[firstError]?.focus();
       AccessibilityInfo.announceForAccessibility(
         `Revisa el formulario. ${nextErrors[firstError]}`,
       );
@@ -161,7 +194,12 @@ export function RequestForm() {
   }
 
   return (
-    <View style={styles.form}>
+    <View
+      style={styles.form}
+      onLayout={(event) => {
+        formTop.current = event.nativeEvent.layout.y;
+      }}
+    >
       <View style={styles.notice}>
         <Text style={styles.noticeTitle}>Formulario de prueba</Text>
         <Text style={styles.hint}>
@@ -217,11 +255,17 @@ export function RequestForm() {
         )}
       </View>
 
-      <View style={styles.field}>
+      <View
+        style={styles.field}
+        onLayout={(event) => {
+          groupTop.current.modalityPreference = event.nativeEvent.layout.y;
+        }}
+      >
         <Text accessibilityRole="header" style={styles.label}>
           Modalidad preferida *
         </Text>
         <Choice
+          controlRef={modalityControl}
           label="Presencial"
           single
           selected={values.modalityPreference === 'inPerson'}
@@ -236,7 +280,12 @@ export function RequestForm() {
         <ErrorText message={errors.modalityPreference} />
       </View>
 
-      <View style={styles.field}>
+      <View
+        style={styles.field}
+        onLayout={(event) => {
+          groupTop.current.preferredWeekdays = event.nativeEvent.layout.y;
+        }}
+      >
         <Text accessibilityRole="header" style={styles.label}>
           Disponibilidad general *
         </Text>
@@ -249,6 +298,7 @@ export function RequestForm() {
             const day = (index + 1) % 7;
             return (
               <Choice
+                controlRef={index === 0 ? weekdayControl : undefined}
                 key={label}
                 label={label}
                 selected={values.preferredWeekdays.includes(day)}

@@ -1,4 +1,4 @@
-import type { PropsWithChildren } from 'react';
+import type { PropsWithChildren, Ref } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -6,10 +6,19 @@ export function Screen({
   title,
   description,
   children,
-}: PropsWithChildren<{ title: string; description: string }>) {
+  scrollRef,
+}: PropsWithChildren<{
+  title: string;
+  description: string;
+  scrollRef?: Ref<ScrollView>;
+}>) {
   return (
     <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+      <ScrollView
+        ref={scrollRef}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.content}
+      >
         <Text style={styles.brand}>CERETIME</Text>
         <Text accessibilityRole="header" style={styles.title}>
           {title}
