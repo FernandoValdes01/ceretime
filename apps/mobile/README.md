@@ -90,9 +90,7 @@ Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el works
 
 La evidencia nativa y la revisión de otro integrante deben completarse antes de integrar y cerrar TI4-6.
 
-## Referencias
-
-### Formulario del estudiante: TI4-8
+## Formulario del estudiante: TI4-8
 
 Desde el inicio del Estudiante, abrir **Nueva solicitud**. La pantalla permite
 describir la necesidad y el resultado esperado, seleccionar varios apoyos de
@@ -135,7 +133,7 @@ Para verificar el formulario:
 Las pruebas `student-request.test.tsx` ejercitan las rutas reales. También deben
 seguir pasando las pruebas de navegación de TI4-6.
 
-### Documentación técnica
+## Referencias
 
 - [Instalación de Expo Router](https://docs.expo.dev/router/installation/).
 - [Rutas protegidas](https://docs.expo.dev/router/advanced/protected/).
