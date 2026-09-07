@@ -27,7 +27,6 @@ export function StudentAreaExample({ studentArea }: StudentAreaExampleProps) {
       {accompaniment ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Acompañamiento</Text>
-          <Text>{accompaniment.professionalName}</Text>
           <Text style={styles.muted}>Estado: {accompaniment.status}</Text>
         </View>
       ) : null}

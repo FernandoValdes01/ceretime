@@ -1,6 +1,6 @@
 import type { StudentAreaSnapshot } from '../application/student-area-models';
 
-/** Fictional, demo-only values. The reserved .invalid domain is deliberate. */
+/** Fictional, demo-only values owned by Infrastructure. */
 export const fictionalStudentArea: StudentAreaSnapshot = {
   student: {
     id: 'example-student-1',
@@ -16,13 +16,12 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
       updatedAt: '2026-08-12T15:00:00.000Z',
       needSummary: 'Organizar apoyos para participar en actividades académicas.',
       expectedOutcome: 'Contar con coordinación accesible durante el semestre.',
-      requiredInformation: 'Canal para coordinar los apoyos iniciales.',
       accessNeeds: [{ id: 'example-access-1', label: 'Material digital accesible' }],
       generalAvailability: {
         preferredWeekdays: [2, 4],
         preferredTimeRange: { from: '10:00', to: '13:00' },
       },
-      modalityPreference: 'either',
+      modalityPreference: 'online',
       preferredAccessibleInformationChannel: 'Correo institucional accesible (demo)',
     },
   ],
@@ -31,7 +30,6 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
       id: 'example-accompaniment-1',
       requestId: 'example-request-1',
       status: 'active',
-      professionalName: 'Profesional de CERETI de ejemplo',
       createdAt: '2026-08-12T15:00:00.000Z',
     },
   ],

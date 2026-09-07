@@ -31,7 +31,7 @@ export interface GeneralAvailability {
   };
 }
 
-export type ModalityPreference = 'inPerson' | 'online' | 'either';
+export type ModalityPreference = 'inPerson' | 'online';
 
 /**
  * Provisional and intentionally open: TI2 can map this value to its canonical
@@ -43,7 +43,7 @@ export type ProvisionalAccessibleInformationChannel = string;
 export type StudentRequestStatus =
   | 'received'
   | 'underReview'
-  | 'awaitingInformation'
+  | 'awaitingInformationOrAcceptance'
   | 'accepted'
   | 'referred'
   | 'closedWithoutAccompaniment'
@@ -59,7 +59,6 @@ export interface StudentRequest {
   readonly updatedAt: IsoDateTime;
   readonly needSummary: string;
   readonly expectedOutcome: string;
-  readonly requiredInformation: string;
   readonly accessNeeds: readonly AccessNeed[];
   readonly generalAvailability: GeneralAvailability;
   readonly modalityPreference: ModalityPreference;
@@ -73,7 +72,6 @@ export interface Accompaniment {
   readonly id: string;
   readonly requestId: string;
   readonly status: AccompanimentStatus;
-  readonly professionalName: string;
   readonly createdAt: IsoDateTime;
 }
 
