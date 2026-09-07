@@ -339,12 +339,12 @@ export function RequestForm({
           Hay campos por revisar. Corrige los mensajes indicados arriba.
         </Text>
       )}
-      <Action label="Revisar formulario" onPress={review} />
       {checked && (
         <Text accessibilityLiveRegion="polite" style={styles.success}>
           Campos revisados. La solicitud todavía no se ha enviado.
         </Text>
       )}
+      <Action label="Revisar formulario" onPress={review} />
     </View>
   );
 }
