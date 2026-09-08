@@ -15,6 +15,7 @@ export type ProvisionalRole =
 export interface StudentIdentity {
   readonly id: string;
   readonly displayName: string;
+  readonly email: string;
   readonly role: ProvisionalRole;
 }
 
@@ -54,6 +55,8 @@ export type StudentRequestOrigin = 'student' | 'institutionalChannel';
 export interface StudentRequest {
   readonly id: string;
   readonly status: StudentRequestStatus;
+  /** Present when a request is closed without opening an accompaniment. */
+  readonly closureReason?: string;
   readonly origin: StudentRequestOrigin;
   readonly createdAt: IsoDateTime;
   readonly updatedAt: IsoDateTime;

@@ -5,6 +5,7 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
   student: {
     id: 'example-student-1',
     displayName: 'Estudiante de ejemplo',
+    email: 'estudiante.demo@example.com',
     role: 'student',
   },
   requests: [
