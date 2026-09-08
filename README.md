@@ -3,10 +3,13 @@
 ## Comandos mínimos de Arranque desde cero:
 
 - Instala dependencias limpias desde la raíz con `bun install`
-- Seguido de los siguientes comandos para ejecutar los servicios, a) SOLO para la ejecución web (TI2), y b) SOLO para la ejecución mobile (TI4) (utiliza distintas terminales);
-  ejecuta `bunx convex dev` en la primera terminal para iniciar el desarrollo del backend con Convex.
-  a) en la segunda terminal ejecuta `bun run --cwd apps/web dev` para levantar un servidor local web
-  b) en la segunda terminal ejecuta `bun run --cwd apps/mobile start` para inicializar el servidor para la app movil
+- En una primera terminal ejecuta `bunx convex dev`para iniciar el desarrollo del backend con Convex. Si es la primera vez que clonas el repositorio y nunca has ejecutado Convex en tu entorno local, al correr el comando por primera vez ocurrirá un asistente interactivo para iniciar sesión:
+  1. Login: la terminal te pedirá un nombre del dispositivo, con ENTER puedes utilizar el recomendado, Después deberás permitirle entrar en la pagina web para hacer el login con tu cuenta de Convex con Google o GitHub.
+  2. Vinculación: El asistente te guiará para crear un nuevo proyecto en la nube o vincular uno existente (por ejemplo, asignándole el nombre del monorepo: `ceretime`).
+  3. Generación de la `CONVEX_URL`: Una vez completado el vínculo, la plataforma de Convex provisiona automáticamente el entorno en la nube y genera las credenciales de conexión necesarias (incluyendo la `CONVEX_URL` y `CONVEX_SITE_URL`), además de crear localmente la carpeta de tipos `convex/_generated/`
+- Una vez terminado el proceso de Convex, abre otra terminal y ejecuta uno de los siguientes comandos dependiendo de tu área correspondiente; a) para TI2 (web) o b) para TI4 (mobile):
+  a) ejecuta `bun run --cwd apps/web dev` para levantar un servidor local web
+  b) ejecuta `bun run --cwd apps/mobile start` para inicializar el servidor para la app movil
 
 ## Documentación de variables de entorno
 
