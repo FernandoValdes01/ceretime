@@ -10,5 +10,8 @@
     "mobile:android": "bun run --cwd apps/mobile android",
     "mobile:ios": "bun run --cwd apps/mobile ios",
     "mobile:web": "bun run --cwd apps/mobile web"
+  },
+  "dependencies": {
+    "convex": "^1.45.0"
   }
 }
