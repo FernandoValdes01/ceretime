@@ -26,7 +26,7 @@ Se debe distinguir las variables según la plataforma:
 
 ## Issue tracker
 
-Se recomienda conectar tu agente al MCP de Linear, ya están configurados en `opencode.json` y `.codex/config.toml`, cada miembro debe autenticarse una vez por máquina, los tokens quedan en cada máquina y no se versionan.
+Se recomienda conectar tu agente al MCP de Linear, ya están configurados en `opencode.json`, `.codex/config.toml` y `.mcp.json`, cada miembro debe autenticarse una vez por máquina, los tokens quedan en cada máquina y no se versionan.
 
 Opencode:
 
@@ -40,4 +40,11 @@ Codex:
 ```sh
 codex mcp login linear
 codex mcp list
+```
+
+Claude Code:
+
+```sh
+claude mcp login linear
+claude mcp list
 ```
