@@ -59,11 +59,11 @@
 % -------------------------------------------------
 
 \title{
-  \textbf{Guía de integración Google Workspace para TI2}\\
+  \textbf{Guía de Google OAuth para TI2}\\
   \large Taller de Integración II y Taller de Integración IV (TI4-16, Parte 1)
 }
 
-\author{}
+\author{Vicente Rivera}
 \date{Segundo semestre 2026}
 
 \begin{document}
@@ -71,67 +71,18 @@
 \maketitle
 
 % =================================================
-\section{Objetivo y alcance del Sprint 1}
+\section{Objetivo y alcance}
 % =================================================
 
-Esta guía prepara a TI2 para iniciar en Semana 2 la autenticación
-institucional con Google Workspace. Es una tarea de investigación y
-documentación (TI4-16). TI4 no implementa la integración en Backend, Web ni
-Database en este sprint.
+Esta guía prepara a TI2 para implementar en Semana 2 la autenticación
+institucional con Google (TI2-3). Es investigación y documentación (TI4-16):
+TI4 no implementa Backend, Web ni Database en este sprint.
 
-La Parte 1 cubre solo lo necesario para comenzar:
-
-\begin{itemize}
-  \item delimitar qué es autenticación institucional en este proyecto;
-  \item explicar Google Workspace con OAuth 2.0 y OpenID Connect;
-  \item explicar cómo encajan Better Auth y Convex;
-  \item documentar los dominios \texttt{@alu.uct.cl} y \texttt{@uct.cl};
-  \item distinguir autenticación de autorización;
-  \item identificar variables, callbacks y redirects sin valores reales;
-  \item dejar referencias oficiales y un checklist corto.
-\end{itemize}
-
-Queda expresamente fuera de esta tarea y del Sprint 1 la integración con
-Google Calendar. Calendar se tratará más adelante como asistencia de TI4 a
-TI2, con guía técnica y apoyo de implementación cuando corresponda al alcance
-de agenda.
-
-Esta guía complementa la guía de tecnologías, arquitectura y despliegue, y se
-coordina con TI2-3 (proveedor y sesión), TI2-14 (logout, errores y seguridad)
-y TI2-15 (pruebas y documentación).
-
-% =================================================
-\section{Delimitación: qué sí es Sprint 1}
-% =================================================
-
-Autenticación institucional en Sprint 1 significa: un usuario con cuenta
-Google de la universidad inicia sesión con OAuth, el backend reconoce su
-identidad y el cliente mantiene una sesión válida.
-
-\begin{lstlisting}
-Cuenta Google UCT
-      |
-      v
-OAuth 2.0 + OpenID Connect
-      |
-      v
-Better Auth sobre Convex entrega identidad
-      |
-      v
-Convex valida JWT en cada función
-      |
-      v
-Web (React + Vite + TanStack Router) mantiene sesión
-\end{lstlisting}
-
-No es Sprint 1: roles finos por recurso, organizaciones, login con RUT o
-contraseña propia, doble factor, auditoría, ni Calendar. Esas piezas
-pertenecen a TI2-3, TI2-14 y TI2-15, o a sprints posteriores.
-
-El stack de referencia ya está fijado: React con Vite y TanStack Router en
-Web, Convex como único backend y Better Auth como sistema de autenticación.
-No se usa TanStack Start porque Convex ya es el servidor; un segundo servidor
-Node solo agregaría complejidad innecesaria.
+Cubre el flujo OAuth con los dos dominios institucionales, el encaje de
+Better Auth y Convex, Cloud Console, variables sin valores reales y un
+checklist. Google Calendar queda fuera del Sprint 1. Se coordina con TI2-3
+(proveedor y sesión), TI2-14 (logout y seguridad) y TI2-15 (pruebas y
+documentación).
 
 % =================================================
 \section{Google Workspace, OAuth 2.0 y OpenID Connect}
@@ -167,8 +118,8 @@ application con:
   \item redirect URI autorizada: la ruta de callback de Better Auth en el Site
     URL de Convex, equivalente a \texttt{/api/auth/callback/google};
   \item pantalla de consentimiento con logo, contacto y scopes mínimos;
-  \item estado de publicación coherente con el uso (interno o externo según
-    defina la universidad).
+  \item pantalla de consentimiento de tipo externo, con test users
+    institucionales mientras la app esté en prueba.
 \end{itemize}
 
 Esta guía no incluye valores reales de clientes, secretos ni URLs de
@@ -183,27 +134,28 @@ parte más propensa a errores porque un dato mal copiado bloquea el login con
 mensajes crípticos. Sigue este orden y verifica cada paso antes de pasar al
 siguiente.
 
-\subsection{1. Proyecto}
+\subsection{Proyecto}
 
-Crea o selecciona un único proyecto del equipo. Un solo proyecto es más
-simple de administrar y basta para este alcance. Todo lo que sigue vive
-dentro de ese proyecto: pantalla de consentimiento, credenciales y usuarios
-de prueba. No es necesario habilitar APIs adicionales en la biblioteca,
-porque el Sprint 1 solo usa autenticación (\texttt{openid}, \texttt{email} y
-\texttt{profile}) y no consume ninguna API de Google.
+Inicia sesión en la consola con una cuenta Google no institucional: las
+cuentas institucionales tienen Google Cloud bloqueado. Crea o selecciona un
+único proyecto del equipo. Un solo proyecto es más simple de administrar y
+basta para este alcance. Todo lo que sigue vive dentro de ese proyecto:
+pantalla de consentimiento, credenciales y usuarios de prueba. No es
+necesario habilitar APIs adicionales en la biblioteca, porque el Sprint 1
+solo usa autenticación (\texttt{openid}, \texttt{email} y \texttt{profile})
+y no consume ninguna API de Google.
 
-\subsection{2. Pantalla de consentimiento OAuth}
+\subsection{Pantalla de consentimiento OAuth}
 
 Ruta: APIs y servicios, Pantalla de consentimiento. Define lo que ve el
 usuario cuando Google le pide permiso.
 
 \begin{itemize}
-  \item Tipo de usuario \textbf{interno}: solo cuentas de la organización
-    Workspace. No necesita usuarios de prueba y es la opción esperable si la
-    universidad administra el Workspace.
-  \item Tipo de usuario \textbf{externo}: cualquier cuenta Google. Mientras la
-    app esté en modo de prueba, solo entran los usuarios registrados como
-    test users; publicar exige verificación de Google.
+  \item Tipo de usuario \textbf{externo}: es el que corresponde, porque el
+    proyecto vive en una cuenta no institucional y el tipo interno no está
+    disponible. Mientras la app esté en modo de prueba, solo entran los
+    usuarios registrados como test users; registra ahí las cuentas
+    institucionales del equipo.
   \item Datos obligatorios: nombre de la aplicación, correo de asistencia y
     dominios autorizados.
   \item Scopes: solo \texttt{openid}, \texttt{email} y \texttt{profile}. Son
@@ -211,12 +163,7 @@ usuario cuando Google le pide permiso.
     extendida que exigen Calendar o Drive.
 \end{itemize}
 
-Si la universidad administra el Workspace, coordina con su TI qué tipo de
-usuario corresponde y si el administrador debe permitir la app: un admin
-puede bloquear apps de terceros y Google responde con
-\texttt{admin\_policy\_enforced}.
-
-\subsection{3. ID de cliente OAuth}
+\subsection{ID de cliente OAuth}
 
 Ruta: APIs y servicios, Credenciales, Crear credenciales, ID de cliente
 OAuth. Tipo: \textbf{Aplicación web}.
@@ -234,16 +181,14 @@ OAuth. Tipo: \textbf{Aplicación web}.
     deployment solo con \texttt{convex env set}.
 \end{itemize}
 
-\subsection{4. Errores típicos y su causa}
+\subsection{Errores típicos y su causa}
 
 \begin{description}
   \item[\texttt{redirect\_uri\_mismatch}:] el callback no está registrado o
     difiere en un carácter. Revisa la lista de URIs en Credenciales.
-  \item[\texttt{org\_internal}:] cliente de tipo interno con una cuenta fuera
-    de la organización. Entra con cuenta institucional o revisa el tipo de
-    usuario.
   \item[\texttt{admin\_policy\_enforced}:] el admin del Workspace bloquea apps
-    de terceros. Lo resuelve el administrador, no el código.
+    de terceros para sus usuarios. Lo resuelve el administrador de la
+    universidad, no el código.
   \item[\texttt{invalid\_client}:] secreto incorrecto o cliente eliminado.
     Regenera el secreto y actualiza el deployment.
   \item[Acceso bloqueado en modo de prueba:] la cuenta no es test user o la
@@ -257,7 +202,7 @@ OAuth. Tipo: \textbf{Aplicación web}.
 El proyecto distingue dos dominios:
 
 \begin{description}
-  \item[\texttt{@alu.uct.cl}:] estudiantes.
+  \item[\texttt{@alu.uct.cl}:] estudiantes, incluidos los practicantes.
   \item[\texttt{@uct.cl}:] docentes, funcionarios y administración.
 \end{description}
 
@@ -266,27 +211,28 @@ hosted domain de Workspace. El parámetro \texttt{hd} sugiere el dominio en la
 pantalla de Google y, configurado en el proveedor, hace que Better Auth
 rechace tokens cuyo claim \texttt{hd} no coincida.
 
-El patrón probado en cuestionarios-uct usa dos inicios lógicos sobre el mismo
-OAuth Client de Google, uno con \texttt{hd} de estudiantes y otro con
-\texttt{hd} de docentes, más una validación dura del sufijo del email en el
-mapeo de perfil para el rol docente. El parámetro \texttt{hd} por sí solo es
-una sugerencia de UX; la garantía real es validar el dominio en el servidor.
+El flujo obligatorio usa dos inicios lógicos sobre el mismo OAuth Client de
+Google, uno por población. Cada uno fija su \texttt{hd}, valida el sufijo
+del email en el servidor y asigna el rol inicial ahí mismo. El parámetro
+\texttt{hd} por sí solo es una sugerencia de UX; la garantía real es validar
+el dominio en el servidor, nunca solo en el frontend.
 
 \begin{lstlisting}
-socialProviders: {
-  google: {
-    clientId: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    hd: "alu.uct.cl",
-  },
-}
+Estudiantes: hd "alu.uct.cl" + sufijo "@alu.uct.cl" + Estudiante o Practicante
+Personal:    hd "uct.cl"     + sufijo "@uct.cl"     + solo cuentas habilitadas
 \end{lstlisting}
 
-Para dos poblaciones, TI2 puede optar por un proveedor con \texttt{hd} único
-si el sprint decide un solo dominio inicial, o por la variante de dos
-proveedores lógicos ya validada en cuestionarios-uct. Lo importante es que la
-decisión quede en el servidor (Better Auth sobre Convex), nunca solo en el
-frontend.
+El dominio abre la puerta, la habilitación decide el acceso. El inicio de
+estudiantes cubre a Estudiante y Practicante: ambos son alumnos y se
+distinguen por habilitación y asignación (TI2-18 y TI2-28), no por el
+dominio. El de personal cubre a Profesional, pero un email
+\texttt{@uct.cl} por sí solo no otorga nada: solo entran las cuentas que
+nosotros habilitamos (estado de habilitación de TI2-4, matriz de TI2-5). El
+Administrador es transversal al dominio: inicialmente somos nosotros, con
+cuentas \texttt{@alu.uct.cl}, así que el rol admin se otorga solo por
+habilitación explícita, venga del inicio que venga. Un email fuera de ambos
+sufijos, o sin habilitación, se rechaza en el servidor sin crear sesión
+útil.
 
 % =================================================
 \section{Cómo encajan Better Auth y Convex}
@@ -384,10 +330,9 @@ await authClient.signIn.social({
 
 La sesión reactiva se lee con \texttt{authClient.useSession()}. La verdad
 autoritativa, sin embargo, siempre está en el backend con
-\texttt{ctx.auth.getUserIdentity()} o
-\texttt{authComponent.getAuthUser(ctx)}. El patrón verificado en ponderapp y
-reportevecino es: nunca aceptar un \texttt{userId} desde los argumentos para
-autorizar; la identidad viene del JWT.
+\texttt{ctx.auth.getUserIdentity()} o la lectura del usuario autenticado que
+expone el componente. La regla es: nunca aceptar un \texttt{userId} desde los
+argumentos para autorizar; la identidad viene del JWT.
 
 % =================================================
 \section{Autenticación no es autorización}
@@ -414,9 +359,52 @@ Convex ejecuta o rechaza
 
 Ocultar un botón en React no es autorización. Toda regla (rol, recurso,
 pertenencia) debe verificarse en la función Convex antes de leer o mutar.
-Los roles finos y la matriz de permisos se definen en TI2-3 y se endurecen en
-TI2-14; en Sprint 1 basta con distinguir usuario autenticado de anónimo y
-dejar el punto de extensión para roles.
+La matriz de permisos vive en TI2-5 y las rutas protegidas en TI2-6 y TI2-20;
+esta guía solo muestra cómo se conectan con la sesión.
+
+% =================================================
+\section{De la sesión al portal correcto}
+% =================================================
+
+El login deja una sesión, pero no decide a qué portal entra el usuario. Esa
+decisión combina tres piezas, cada una con su dueño:
+
+\begin{lstlisting}
+TI2-3 entrega identidad (quién + email verificado)
+      |
+      v
+TI2-5 entrega rol (qué es: Estudiante, Profesional,
+      Practicante o Administrador)
+      |
+      v
+TI2-6 y TI2-20 navegan (guards que leen sesión + rol
+      y redirigen al portal o a denegado)
+\end{lstlisting}
+
+El dominio sugiere, la habilitación decide. Hay dos dominios y cuatro roles:
+\texttt{@alu.uct.cl} anticipa Estudiante o Practicante, y \texttt{@uct.cl}
+anticipa Profesional, siempre que la cuenta esté habilitada. El
+Administrador queda fuera de esa correspondencia: se otorga por habilitación
+explícita sin importar el dominio. Navegar solo por \texttt{hd} o por sufijo
+del email lleva al portal equivocado. El guard debe leer el rol que expone
+el Backend, nunca deducir el destino desde el dominio.
+
+El patrón esperado es:
+
+\begin{itemize}
+  \item el Backend expone una query autenticada que devuelve el rol del
+    usuario actual a partir de \texttt{ctx.auth.getUserIdentity()};
+  \item el guard de TanStack Router (por ejemplo en \texttt{beforeLoad})
+    exige sesión válida y rol permitido;
+  \item sin sesión redirige a \texttt{/login} conservando la ruta de retorno;
+  \item con sesión pero sin rol suficiente muestra acceso denegado;
+  \item el guard es UX, no seguridad: la función Convex vuelve a verificar el
+    permiso antes de responder.
+\end{itemize}
+
+El detalle de la matriz queda en TI2-5 y el de cada portal en TI2-6 y TI2-20.
+Esta sección existe para que TI2 no diseñe el login aislado del portal que lo
+continúa.
 
 % =================================================
 \section{Variables, callbacks y redirects}
@@ -466,12 +454,13 @@ Archivos de ejemplo sin secretos: \texttt{apps/web/.env.example} con
 % =================================================
 
 \begin{enumerate}
-  \item Completar la sección de Consola de Google Cloud: proyecto, pantalla de
-    consentimiento (interno o externo), OAuth Client Web con redirect al Site
-    URL de Convex y scopes \texttt{openid}, \texttt{email}, \texttt{profile}.
-  \item Fijar decisión de dominios: un \texttt{hd} inicial o los dos
-    (\texttt{alu.uct.cl} y \texttt{uct.cl}) con validación de sufijo en el
-    servidor.
+  \item Completar la sección de Consola de Google Cloud: cuenta no
+    institucional, pantalla de consentimiento externa con test users, OAuth
+    Client Web con redirect al Site URL de Convex y scopes \texttt{openid},
+    \texttt{email}, \texttt{profile}.
+  \item Implementar los dos inicios con \texttt{hd}
+    (\texttt{alu.uct.cl} y \texttt{uct.cl}), validación de sufijo y rol
+    inicial en el servidor.
   \item Levantar \texttt{convex/auth.config.ts}, \texttt{convex.config.ts},
     \texttt{http.ts} y \texttt{auth.ts} según la estructura oficial.
   \item Configurar secretos solo con \texttt{convex env set} y publicar
@@ -514,16 +503,5 @@ Archivos de ejemplo sin secretos: \texttt{apps/web/.env.example} con
   \item TanStack Router con Vite:
     \url{https://tanstack.com/router/latest/docs/installation/with-vite}
 \end{itemize}
-
-Patrones internos verificados: cuestionarios-uct
-(\texttt{apps/web/src/server/auth/index.ts},
-  \texttt{src/lib/auth/client.ts},
-\texttt{src/lib/constants.ts}) para Google con \texttt{hd} y validación por
-dominio; ponderapp (\texttt{apps/backend/convex/auth.ts},
-\texttt{apps/web/src/lib/auth-client.ts}) y reportevecino
-(\texttt{apps/backend/convex/auth.ts},
-  \texttt{apps/backend/convex/access.ts},
-\texttt{apps/dashboard/src/integrations/convex/provider.tsx}) para Better Auth
-sobre Convex y verificación de sesión en backend.
 
 \end{document}
