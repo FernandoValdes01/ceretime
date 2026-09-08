@@ -1,7 +1,6 @@
-import { useState, type PropsWithChildren, type Ref } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { type PropsWithChildren, type Ref } from 'react';
+import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { studentTheme as theme } from '../../theme';
 import { StudentFonts, StudentText } from './student-text';
 
 export interface StudentScreenProps extends PropsWithChildren {
@@ -18,26 +17,34 @@ export function StudentScreen({
 }: StudentScreenProps) {
   return (
     <StudentFonts>
-      <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'bottom']}>
-        <View style={styles.brandBar}>
-          <StudentText weight="bold" style={styles.brand}>
+      <SafeAreaView
+        className="flex-1 bg-student-background"
+        edges={['left', 'right', 'bottom']}
+      >
+        <View className="items-center border-b border-student-border p-4">
+          <StudentText
+            weight="bold"
+            className="text-student-primary text-2xl leading-[34px]"
+          >
             CERETI
           </StudentText>
         </View>
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={styles.content}
+          contentContainerClassName="grow w-full max-w-[600px] self-center px-4 py-6 gap-8"
         >
-          <View style={styles.introduction}>
+          <View className="gap-2">
             <StudentText
               weight="semibold"
               accessibilityRole="header"
-              style={styles.title}
+              className="text-student-text text-[28px] leading-[37px]"
             >
               {title}
             </StudentText>
-            <StudentText style={styles.description}>{description}</StudentText>
+            <StudentText className="text-student-secondary text-lg leading-[29px]">
+              {description}
+            </StudentText>
           </View>
           {children}
         </ScrollView>
@@ -59,109 +66,35 @@ export function StudentAction({
   onPress,
   secondary = false,
 }: StudentActionProps) {
-  const [focused, setFocused] = useState(false);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={description}
       onPress={onPress}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      style={({ pressed }) => [
-        styles.button,
-        description && styles.actionCard,
-        secondary && styles.secondary,
-        pressed && styles.pressed,
-        focused && styles.focused,
-      ]}
+      className={`items-center justify-center border-2 p-4 active:opacity-75 focus:border-student-focus ${description ? 'min-h-24 flex-row gap-4 rounded-xl' : 'min-h-[52px] rounded-lg'} ${secondary ? 'bg-student-surface border-student-border' : 'bg-student-primary border-student-primary'}`}
     >
-      <View style={styles.actionCopy}>
+      <View className="shrink gap-2">
         <StudentText
           weight="semibold"
-          style={[
-            styles.buttonLabel,
-            description && styles.actionTitle,
-            secondary && styles.secondaryLabel,
-          ]}
+          className={`${description ? 'text-2xl leading-[34px] text-left' : 'text-lg leading-[25px] text-center'} ${secondary ? 'text-student-primary' : 'text-white'}`}
         >
           {label}
         </StudentText>
         {description ? (
-          <StudentText style={styles.actionDescription}>
+          <StudentText className="text-white text-base leading-[25px]">
             {description}
           </StudentText>
         ) : null}
       </View>
       {description ? (
-        <StudentText accessible={false} style={styles.arrow}>
+        <StudentText
+          accessible={false}
+          className="text-white text-[32px] ml-auto"
+        >
           ›
         </StudentText>
       ) : null}
     </Pressable>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: theme.colors.background },
-  brandBar: {
-    padding: theme.spacing.medium,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  brand: { color: theme.colors.primary, fontSize: 24, lineHeight: 34 },
-  content: {
-    flexGrow: 1,
-    width: '100%',
-    maxWidth: 600,
-    alignSelf: 'center',
-    paddingHorizontal: theme.spacing.medium,
-    paddingVertical: theme.spacing.large,
-    gap: theme.spacing.section,
-  },
-  introduction: { gap: theme.spacing.small },
-  title: { color: theme.colors.text, fontSize: 28, lineHeight: 37 },
-  description: {
-    color: theme.colors.textSecondary,
-    fontSize: 18,
-    lineHeight: 29,
-  },
-  button: {
-    minHeight: 52,
-    padding: theme.spacing.medium,
-    borderRadius: theme.radius.control,
-    backgroundColor: theme.colors.primary,
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  buttonLabel: {
-    color: theme.colors.onPrimary,
-    fontSize: 18,
-    lineHeight: 25,
-    textAlign: 'center',
-  },
-  actionCard: {
-    minHeight: 96,
-    flexDirection: 'row',
-    gap: theme.spacing.medium,
-    borderRadius: theme.radius.card,
-  },
-  actionCopy: { flexShrink: 1, gap: theme.spacing.small },
-  actionTitle: { fontSize: 24, lineHeight: 34, textAlign: 'left' },
-  actionDescription: {
-    color: theme.colors.onPrimary,
-    fontSize: 16,
-    lineHeight: 25,
-  },
-  arrow: { color: theme.colors.onPrimary, fontSize: 32, marginLeft: 'auto' },
-  secondary: {
-    backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.border,
-  },
-  secondaryLabel: { color: theme.colors.primary },
-  pressed: { opacity: 0.75 },
-  focused: { borderColor: theme.colors.focus },
-});

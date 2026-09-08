@@ -4,13 +4,11 @@ import {
   Keyboard,
   Platform,
   Pressable,
-  StyleSheet,
   TextInput,
   View,
 } from 'react-native';
 import { StudentAction } from './student-screen';
 import { StudentText as Text, useStudentFont } from './student-text';
-import { studentTheme as theme } from '../../theme';
 import {
   initialRequestValues,
   validateRequestForm,
@@ -49,7 +47,6 @@ function Choice({
   single?: boolean;
   controlRef?: Ref<View>;
 }) {
-  const [focused, setFocused] = useState(false);
   return (
     <Pressable
       ref={controlRef}
@@ -58,37 +55,31 @@ function Choice({
       accessibilityLabel={label}
       accessibilityState={{ checked: selected }}
       onPress={onPress}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      style={({ pressed }) => [
-        styles.choice,
-        selected && styles.selected,
-        pressed && styles.pressed,
-        focused && styles.focused,
-      ]}
+      className={`min-h-[52px] flex-row items-center gap-2 p-2 border-2 rounded-lg active:opacity-75 focus:border-student-focus ${selected ? 'border-student-primary bg-student-muted' : 'border-student-border bg-student-surface'}`}
     >
       <View
         accessible={false}
-        style={[
-          styles.indicator,
-          single && styles.radio,
-          selected && styles.checkedIndicator,
-        ]}
+        className={`w-6 h-6 border-2 items-center justify-center ${single ? 'rounded-full' : 'rounded'} ${selected ? 'border-student-primary bg-student-primary' : 'border-student-outline'}`}
       >
         {selected ? (
-          <Text accessible={false} style={styles.check}>
+          <Text accessible={false} className="text-white text-base leading-5">
             ✓
           </Text>
         ) : null}
       </View>
-      <Text style={styles.choiceText}>{label}</Text>
+      <Text className="text-student-text text-base leading-[26px] shrink">
+        {label}
+      </Text>
     </Pressable>
   );
 }
 
 function ErrorText({ message }: { message?: string }) {
   return message ? (
-    <Text accessibilityRole="alert" style={styles.error}>
+    <Text
+      accessibilityRole="alert"
+      className="text-student-error text-base leading-[26px]"
+    >
       {message}
     </Text>
   ) : null;
@@ -127,7 +118,8 @@ export function RequestForm({
     const nextErrors = validateRequestForm(values);
     setReviewed(true);
     const firstError = Object.keys(nextErrors)[0] as
-      keyof RequestFormValues | undefined;
+      | keyof RequestFormValues
+      | undefined;
     if (firstError) {
       setChecked(false);
       if (
@@ -176,11 +168,17 @@ export function RequestForm({
     multiline = false,
   ) {
     return (
-      <View style={styles.field}>
-        <Text weight="semibold" nativeID={`${key}-label`} style={styles.label}>
+      <View className="gap-2">
+        <Text
+          weight="semibold"
+          nativeID={`${key}-label`}
+          className="text-student-text text-lg leading-[26px]"
+        >
           {label}
         </Text>
-        <Text style={styles.hint}>{hint}</Text>
+        <Text className="text-student-secondary text-base leading-[26px]">
+          {hint}
+        </Text>
         <TextInput
           ref={(input) => {
             inputs.current[key] = input;
@@ -194,13 +192,8 @@ export function RequestForm({
           onFocus={() => setFocusedField(key)}
           onBlur={() => setFocusedField(null)}
           multiline={multiline}
-          style={[
-            styles.input,
-            multiline && styles.multiline,
-            errors[key] && styles.invalid,
-            focusedField === key && styles.focused,
-            { fontFamily },
-          ]}
+          className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${multiline ? 'min-h-28' : 'min-h-[52px]'} ${focusedField === key ? 'border-student-focus' : errors[key] ? 'border-student-error' : 'border-student-outline'}`}
+          style={{ fontFamily }}
           textAlignVertical={multiline ? 'top' : 'center'}
           autoCapitalize={key.startsWith('available') ? 'none' : 'sentences'}
         />
@@ -208,7 +201,7 @@ export function RequestForm({
           <Text
             nativeID={`${key}-error`}
             accessibilityRole="alert"
-            style={styles.error}
+            className="text-student-error text-base leading-[26px]"
           >
             {errors[key]}
           </Text>
@@ -219,25 +212,28 @@ export function RequestForm({
 
   return (
     <View
-      style={styles.form}
+      className="gap-6"
       onLayout={(event) => {
         formTop.current = event.nativeEvent.layout.y;
       }}
     >
-      <View style={styles.notice}>
-        <Text weight="semibold" style={styles.noticeTitle}>
+      <View className="p-4 gap-2 bg-student-muted rounded-xl">
+        <Text
+          weight="semibold"
+          className="text-student-primary text-lg leading-[26px]"
+        >
           Formulario de prueba
         </Text>
-        <Text style={styles.hint}>
+        <Text className="text-student-secondary text-base leading-[26px]">
           Usa datos ficticios. Puedes revisar los campos, pero todavía no enviar
           la solicitud. Los cambios se pierden al salir.
         </Text>
       </View>
-      <Text style={styles.hint}>
+      <Text className="text-student-secondary text-base leading-[26px]">
         Los campos marcados con * son obligatorios. No incluyas diagnósticos,
         RUT ni certificados.
       </Text>
-      <View style={styles.section}>
+      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
         {field(
           'needSummary',
           '¿Qué necesidad quieres abordar? *',
@@ -252,11 +248,15 @@ export function RequestForm({
         )}
       </View>
 
-      <View style={styles.section}>
-        <Text weight="semibold" accessibilityRole="header" style={styles.label}>
+      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
+        <Text
+          weight="semibold"
+          accessibilityRole="header"
+          className="text-student-text text-lg leading-[26px]"
+        >
           Necesidades de acceso
         </Text>
-        <Text style={styles.hint}>
+        <Text className="text-student-secondary text-base leading-[26px]">
           Opcional. Selecciona todos los apoyos que necesitas para participar o
           comunicarte.
         </Text>
@@ -284,12 +284,16 @@ export function RequestForm({
       </View>
 
       <View
-        style={styles.section}
+        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
         onLayout={(event) => {
           groupTop.current.modalityPreference = event.nativeEvent.layout.y;
         }}
       >
-        <Text weight="semibold" accessibilityRole="header" style={styles.label}>
+        <Text
+          weight="semibold"
+          accessibilityRole="header"
+          className="text-student-text text-lg leading-[26px]"
+        >
           Modalidad preferida *
         </Text>
         <Choice
@@ -309,19 +313,23 @@ export function RequestForm({
       </View>
 
       <View
-        style={styles.section}
+        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
         onLayout={(event) => {
           groupTop.current.preferredWeekdays = event.nativeEvent.layout.y;
         }}
       >
-        <Text weight="semibold" accessibilityRole="header" style={styles.label}>
+        <Text
+          weight="semibold"
+          accessibilityRole="header"
+          className="text-student-text text-lg leading-[26px]"
+        >
           Disponibilidad general *
         </Text>
-        <Text style={styles.hint}>
+        <Text className="text-student-secondary text-base leading-[26px]">
           Selecciona los días que te acomodan. Esta preferencia no reserva una
           hora.
         </Text>
-        <View style={styles.days}>
+        <View className="flex-row flex-wrap gap-2">
           {weekdays.map((label, index) => {
             const day = (index + 1) % 7;
             return (
@@ -345,14 +353,14 @@ export function RequestForm({
           })}
         </View>
         <ErrorText message={errors.preferredWeekdays} />
-        <Text style={styles.hint}>
+        <Text className="text-student-secondary text-base leading-[26px]">
           Opcional. Indica una franja común para los días seleccionados, usando
           el formato de 24 horas.
         </Text>
         {field('availableFrom', 'Desde', 'Formato HH:MM, por ejemplo 09:00.')}
         {field('availableTo', 'Hasta', 'Formato HH:MM, por ejemplo 13:00.')}
       </View>
-      <View style={styles.section}>
+      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
         {field(
           'preferredAccessibleInformationChannel',
           '¿Cómo prefieres recibir información? *',
@@ -360,17 +368,23 @@ export function RequestForm({
           true,
         )}
       </View>
-      <Text style={styles.hint}>
+      <Text className="text-student-secondary text-base leading-[26px]">
         El nombre y correo se obtendrán de la cuenta institucional cuando esté
         disponible el inicio de sesión.
       </Text>
       {reviewed && Object.keys(errors).length > 0 && (
-        <Text accessibilityRole="alert" style={styles.error}>
+        <Text
+          accessibilityRole="alert"
+          className="text-student-error text-base leading-[26px]"
+        >
           Hay campos por revisar. Corrige los mensajes indicados arriba.
         </Text>
       )}
       {checked && (
-        <Text accessibilityLiveRegion="polite" style={styles.success}>
+        <Text
+          accessibilityLiveRegion="polite"
+          className="text-student-success text-lg leading-[29px]"
+        >
           Campos revisados. La solicitud todavía no se ha enviado.
         </Text>
       )}
@@ -378,79 +392,3 @@ export function RequestForm({
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  form: { gap: theme.spacing.large },
-  field: { gap: theme.spacing.small },
-  section: {
-    gap: theme.spacing.medium,
-    padding: theme.spacing.medium,
-    borderRadius: theme.radius.card,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-  },
-  label: { color: theme.colors.text, fontSize: 18, lineHeight: 26 },
-  hint: { color: theme.colors.textSecondary, fontSize: 16, lineHeight: 26 },
-  input: {
-    borderWidth: 2,
-    borderColor: theme.colors.outline,
-    borderRadius: theme.radius.control,
-    backgroundColor: theme.colors.surface,
-    color: theme.colors.text,
-    minHeight: 52,
-    padding: theme.spacing.medium,
-    fontSize: 16,
-    lineHeight: 26,
-  },
-  multiline: { minHeight: 112 },
-  invalid: { borderColor: theme.colors.error },
-  focused: { borderColor: theme.colors.focus },
-  error: { color: theme.colors.error, fontSize: 16, lineHeight: 26 },
-  choice: {
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.small,
-    padding: theme.spacing.small,
-    borderWidth: 2,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.control,
-    backgroundColor: theme.colors.surface,
-  },
-  selected: {
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.surfaceLow,
-  },
-  indicator: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: theme.colors.outline,
-    borderRadius: theme.radius.indicator,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  radio: { borderRadius: theme.radius.round },
-  checkedIndicator: {
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.primary,
-  },
-  check: { color: theme.colors.onPrimary, fontSize: 16, lineHeight: 20 },
-  pressed: { opacity: 0.75 },
-  choiceText: {
-    color: theme.colors.text,
-    fontSize: 16,
-    lineHeight: 26,
-    flexShrink: 1,
-  },
-  days: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.small },
-  notice: {
-    padding: theme.spacing.medium,
-    gap: theme.spacing.small,
-    backgroundColor: theme.colors.surfaceLow,
-    borderRadius: theme.radius.card,
-  },
-  noticeTitle: { color: theme.colors.primary, fontSize: 18, lineHeight: 26 },
-  success: { color: theme.colors.primaryPressed, fontSize: 18, lineHeight: 29 },
-});

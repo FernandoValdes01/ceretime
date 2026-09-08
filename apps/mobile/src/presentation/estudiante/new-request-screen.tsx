@@ -10,7 +10,7 @@ export default function NewRequestScreen() {
   const scrollRef = useRef<ScrollView>(null);
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      className="flex-1"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={headerHeight}
     >

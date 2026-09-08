@@ -119,12 +119,23 @@ La presentación toma como referencia **Inicio - Portal Estudiante (Móvil)** de
 pantalla `8eba1da09323417bac7d8f939c65ea79`. No hay una vista específica de Nueva
 solicitud: se adaptan la tipografía Fira Sans, los colores y las superficies al
 formulario de TI4-8, sin incorporar agendas, perfiles ni datos de los mockups.
-Los tokens utilizados viven en `src/theme.ts` y sólo se aplican al flujo del
+Los tokens utilizados viven en `tailwind.config.js` y sólo se aplican al flujo del
 estudiante. Se usa el primario `#00695b` del HTML mobile; los controles conservan
 etiquetas de al menos 16 puntos, estados de foco y áreas táctiles de 52 puntos.
 Fira Sans se incluye desde el paquete local; la fuente del sistema mantiene el
 formulario utilizable mientras carga o si falla. Las referencias originales no
 se incluyen en el repositorio.
+
+El inicio y el formulario de estudiante usan Tailwind CSS 3 mediante NativeWind 4.
+`global.css`, Babel y Metro configuran la conversión a estilos nativos; `inlineRem: 16`
+conserva la escala de espaciado entre web y nativo. Los componentes usan `className`
+y `contentContainerClassName`, incluidas las variantes de foco y pulsación. Sólo la
+fuente cargada dinámicamente conserva `style`. Las pantallas provisionales de los
+otros roles mantienen sus estilos anteriores. Tras cambiar la configuración, reinicia
+Expo con `bun run --cwd apps/mobile start --clear`.
+
+Jest compila las clases reales con Tailwind y las registra en NativeWind antes de
+ejecutar las pruebas. Así también se pueden comprobar medidas y estados nativos.
 
 Para verificar el formulario:
 
