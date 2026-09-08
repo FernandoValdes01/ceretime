@@ -1,0 +1,507 @@
+\documentclass[11pt,a4paper]{article}
+
+% -------------------------------------------------
+% Paquetes
+% -------------------------------------------------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{geometry}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{parskip}
+
+\geometry{
+  top=2.5cm,
+  bottom=2.5cm,
+  left=2.7cm,
+  right=2.7cm
+}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  urlcolor=blue
+}
+
+\setlist[itemize]{
+  noitemsep,
+  topsep=4pt
+}
+
+\setlist[enumerate]{
+  noitemsep,
+  topsep=4pt
+}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  frame=single,
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false
+}
+
+\lstset{
+  literate=
+  {á}{{\'a}}1 {é}{{\'e}}1 {í}{{\'i}}1 {ó}{{\'o}}1 {ú}{{\'u}}1
+  {Á}{{\'A}}1 {É}{{\'E}}1 {Í}{{\'I}}1 {Ó}{{\'O}}1 {Ú}{{\'U}}1
+  {ñ}{{\~n}}1 {Ñ}{{\~N}}1 {¿}{{?`}}1 {¡}{{!`}}1
+}
+
+% -------------------------------------------------
+% Documento
+% -------------------------------------------------
+
+\title{
+  \textbf{Guía de Google OAuth para TI2}\\
+  \large Taller de Integración II y Taller de Integración IV (TI4-16, Parte 1)
+}
+
+\author{Vicente Rivera}
+\date{Segundo semestre 2026}
+
+\begin{document}
+
+\maketitle
+
+% =================================================
+\section{Objetivo y alcance}
+% =================================================
+
+Esta guía prepara a TI2 para implementar en Semana 2 la autenticación
+institucional con Google (TI2-3). Es investigación y documentación (TI4-16):
+TI4 no implementa Backend, Web ni Database en este sprint.
+
+Cubre el flujo OAuth con los dos dominios institucionales, el encaje de
+Better Auth y Convex, Cloud Console, variables sin valores reales y un
+checklist. Google Calendar queda fuera del Sprint 1. Se coordina con TI2-3
+(proveedor y sesión), TI2-14 (logout y seguridad) y TI2-15 (pruebas y
+documentación).
+
+% =================================================
+\section{Google Workspace, OAuth 2.0 y OpenID Connect}
+% =================================================
+
+Google Workspace es el proveedor de identidad. La universidad administra las
+cuentas, Google verifica la contraseña y el segundo factor, y nuestro sistema
+solo recibe una identidad verificada. Nunca vemos ni guardamos la contraseña
+institucional.
+
+El flujo estándar es Authorization Code con OpenID Connect:
+
+\begin{enumerate}
+  \item la Web redirige a \texttt{accounts.google.com} con cliente, scopes y
+    \texttt{hd} cuando corresponda;
+  \item el usuario autentica con Google y aprueba los scopes;
+  \item Google devuelve un código a nuestro callback;
+  \item Better Auth intercambia el código por tokens y obtiene el perfil
+    OpenID (\texttt{openid}, \texttt{email}, \texttt{profile});
+  \item se crea la sesión y Convex emite su propio JWT para las funciones.
+\end{enumerate}
+
+Los scopes del Sprint 1 son solo \texttt{openid}, \texttt{email} y
+\texttt{profile}. Pedir scopes de Calendar, Drive o correo queda prohibido en
+esta etapa.
+
+En Google Cloud Console el proyecto necesita un OAuth Client de tipo Web
+application con:
+
+\begin{itemize}
+  \item JavaScript origins autorizados: el origen de la Web y el Site URL de
+    Convex;
+  \item redirect URI autorizada: la ruta de callback de Better Auth en el Site
+    URL de Convex, equivalente a \texttt{/api/auth/callback/google};
+  \item pantalla de consentimiento con logo, contacto y scopes mínimos;
+  \item pantalla de consentimiento de tipo externo, con test users
+    institucionales mientras la app esté en prueba.
+\end{itemize}
+
+Esta guía no incluye valores reales de clientes, secretos ni URLs de
+deployment. Solo los nombres de las variables y la forma de las rutas.
+
+% =================================================
+\section{Consola de Google Cloud paso a paso}
+% =================================================
+
+Todo lo anterior se configura en \texttt{console.cloud.google.com}. Es la
+parte más propensa a errores porque un dato mal copiado bloquea el login con
+mensajes crípticos. Sigue este orden y verifica cada paso antes de pasar al
+siguiente.
+
+\subsection{Proyecto}
+
+Inicia sesión en la consola con una cuenta Google no institucional: las
+cuentas institucionales tienen Google Cloud bloqueado. Crea o selecciona un
+único proyecto del equipo. Un solo proyecto es más simple de administrar y
+basta para este alcance. Todo lo que sigue vive dentro de ese proyecto:
+pantalla de consentimiento, credenciales y usuarios de prueba. No es
+necesario habilitar APIs adicionales en la biblioteca, porque el Sprint 1
+solo usa autenticación (\texttt{openid}, \texttt{email} y \texttt{profile})
+y no consume ninguna API de Google.
+
+\subsection{Pantalla de consentimiento OAuth}
+
+Ruta: APIs y servicios, Pantalla de consentimiento. Define lo que ve el
+usuario cuando Google le pide permiso.
+
+\begin{itemize}
+  \item Tipo de usuario \textbf{externo}: es el que corresponde, porque el
+    proyecto vive en una cuenta no institucional y el tipo interno no está
+    disponible. Mientras la app esté en modo de prueba, solo entran los
+    usuarios registrados como test users; registra ahí las cuentas
+    institucionales del equipo.
+  \item Datos obligatorios: nombre de la aplicación, correo de asistencia y
+    dominios autorizados.
+  \item Scopes: solo \texttt{openid}, \texttt{email} y \texttt{profile}. Son
+    scopes no sensibles, por lo que no disparan el proceso de verificación
+    extendida que exigen Calendar o Drive.
+\end{itemize}
+
+\subsection{ID de cliente OAuth}
+
+Ruta: APIs y servicios, Credenciales, Crear credenciales, ID de cliente
+OAuth. Tipo: \textbf{Aplicación web}.
+
+\begin{itemize}
+  \item Orígenes de JavaScript autorizados: el origen de la Web en desarrollo
+    (localhost con su puerto) y el origen de producción en Vercel.
+  \item URIs de redirección autorizadas: la ruta de callback de Better Auth
+    bajo el Site URL de Convex, con forma equivalente a
+    \texttt{https://<deployment>.convex.site/api/auth/callback/google}.
+    Debe coincidir exacta: esquema, mayúsculas y slash final. Cualquier
+    diferencia devuelve \texttt{redirect\_uri\_mismatch}.
+  \item Al crear el cliente, copia el Client ID y el Client Secret. El secreto
+    se muestra una sola vez. Guárdalos fuera del repositorio y llévalos al
+    deployment solo con \texttt{convex env set}.
+\end{itemize}
+
+\subsection{Errores típicos y su causa}
+
+\begin{description}
+  \item[\texttt{redirect\_uri\_mismatch}:] el callback no está registrado o
+    difiere en un carácter. Revisa la lista de URIs en Credenciales.
+  \item[\texttt{admin\_policy\_enforced}:] el admin del Workspace bloquea apps
+    de terceros para sus usuarios. Lo resuelve el administrador de la
+    universidad, no el código.
+  \item[\texttt{invalid\_client}:] secreto incorrecto o cliente eliminado.
+    Regenera el secreto y actualiza el deployment.
+  \item[Acceso bloqueado en modo de prueba:] la cuenta no es test user o la
+    app externa aún no se publica. Agrega la cuenta o avanza la publicación.
+\end{description}
+
+% =================================================
+\section{Dominios institucionales}
+% =================================================
+
+El proyecto distingue dos dominios:
+
+\begin{description}
+  \item[\texttt{@alu.uct.cl}:] estudiantes, incluidos los practicantes.
+  \item[\texttt{@uct.cl}:] docentes, funcionarios y administración.
+\end{description}
+
+Better Auth soporta la opción \texttt{hd} del proveedor Google para exigir un
+hosted domain de Workspace. El parámetro \texttt{hd} sugiere el dominio en la
+pantalla de Google y, configurado en el proveedor, hace que Better Auth
+rechace tokens cuyo claim \texttt{hd} no coincida.
+
+El flujo obligatorio usa dos inicios lógicos sobre el mismo OAuth Client de
+Google, uno por población. Cada uno fija su \texttt{hd}, valida el sufijo
+del email en el servidor y asigna el rol inicial ahí mismo. El parámetro
+\texttt{hd} por sí solo es una sugerencia de UX; la garantía real es validar
+el dominio en el servidor, nunca solo en el frontend.
+
+\begin{lstlisting}
+Estudiantes: hd "alu.uct.cl" + sufijo "@alu.uct.cl" + Estudiante o Practicante
+Personal:    hd "uct.cl"     + sufijo "@uct.cl"     + solo cuentas habilitadas
+\end{lstlisting}
+
+El dominio abre la puerta, la habilitación decide el acceso. El inicio de
+estudiantes cubre a Estudiante y Practicante: ambos son alumnos y se
+distinguen por habilitación y asignación (TI2-18 y TI2-28), no por el
+dominio. El de personal cubre a Profesional, pero un email
+\texttt{@uct.cl} por sí solo no otorga nada: solo entran las cuentas que
+nosotros habilitamos (estado de habilitación de TI2-4, matriz de TI2-5). El
+Administrador es transversal al dominio: inicialmente somos nosotros, con
+cuentas \texttt{@alu.uct.cl}, así que el rol admin se otorga solo por
+habilitación explícita, venga del inicio que venga. Un email fuera de ambos
+sufijos, o sin habilitación, se rechaza en el servidor sin crear sesión
+útil.
+
+% =================================================
+\section{Cómo encajan Better Auth y Convex}
+% =================================================
+
+Better Auth administra registro, login social, sesión y logout. Convex aporta
+ejecución, base de datos y verificación del JWT en cada función. La
+integración oficial (\texttt{@convex-dev/better-auth}) hace que Better Auth
+corra como rutas HTTP dentro del deployment Convex y persista sus tablas en
+el componente \texttt{betterAuth}.
+
+\begin{lstlisting}
+Web (Vite SPA)
+  |
+  +-- authClient.signIn.social({ provider: "google" })
+  |
+  v
+https://<deployment>.convex.site/api/auth/*
+  (Better Auth sobre Convex)
+  |
+  +-- Google OAuth + callback
+  +-- tablas user, session, account, verification
+  |
+  v
+Convex functions verifican ctx.auth.getUserIdentity()
+\end{lstlisting}
+
+Los archivos del backend son siempre los mismos:
+
+\begin{lstlisting}
+convex/
+|
++-- auth.config.ts       proveedor JWT de Better Auth
++-- convex.config.ts     registra el componente betterAuth
++-- http.ts              expone /api/auth/* en Convex Site
++-- auth.ts              createAuth: baseURL, adapter,
+|                       socialProviders.google, trustedOrigins
++-- schema.ts            solo dominio; auth vive en el componente
+\end{lstlisting}
+
+Fragmento de forma (sin valores):
+
+\begin{lstlisting}
+auth.config.ts:
+  providers: [getAuthConfigProvider()]
+
+convex.config.ts:
+  app.use(betterAuth)
+
+http.ts:
+  authComponent.registerRoutes(http, createAuth)
+
+auth.ts:
+  baseURL: process.env.BETTER_AUTH_URL
+  database: authComponent.adapter(ctx)
+  socialProviders: { google: { clientId, clientSecret } }
+  plugins: [convex(), crossDomain()]
+\end{lstlisting}
+
+En la Web Vite (SPA, sin Start) el cliente es:
+
+\begin{lstlisting}
+import { createAuthClient } from "better-auth/react";
+import { convexClient, crossDomainClient } from
+  "@convex-dev/better-auth/client/plugins";
+
+export const authClient = createAuthClient({
+  baseURL: import.meta.env.VITE_CONVEX_SITE_URL,
+  plugins: [convexClient(), crossDomainClient()],
+});
+\end{lstlisting}
+
+Y el provider en la raíz:
+
+\begin{lstlisting}
+const convex = new ConvexReactClient(
+  import.meta.env.VITE_CONVEX_URL
+);
+
+<ConvexBetterAuthProvider client={convex} authClient={authClient}>
+  <App />
+</ConvexBetterAuthProvider>
+\end{lstlisting}
+
+El login social desde TanStack Router es una llamada al cliente, con
+\texttt{callbackURL} y \texttt{errorCallbackURL} del frontend:
+
+\begin{lstlisting}
+await authClient.signIn.social({
+  provider: "google",
+  callbackURL: "/",
+  errorCallbackURL: "/login",
+});
+\end{lstlisting}
+
+La sesión reactiva se lee con \texttt{authClient.useSession()}. La verdad
+autoritativa, sin embargo, siempre está en el backend con
+\texttt{ctx.auth.getUserIdentity()} o la lectura del usuario autenticado que
+expone el componente. La regla es: nunca aceptar un \texttt{userId} desde los
+argumentos para autorizar; la identidad viene del JWT.
+
+% =================================================
+\section{Autenticación no es autorización}
+% =================================================
+
+\begin{description}
+  \item[Autenticación:] quién es el usuario. La resuelve Better Auth con
+    Google y la entrega como identidad.
+  \item[Autorización:] qué puede hacer. La resuelven los casos de uso y el
+    dominio, en el backend, a partir de esa identidad.
+\end{description}
+
+\begin{lstlisting}
+Infraestructura
+    |
+    +--> Better Auth entrega identidad (quién)
+    |
+    v
+Aplicación y Dominio evalúan permiso (qué puede)
+    |
+    v
+Convex ejecuta o rechaza
+\end{lstlisting}
+
+Ocultar un botón en React no es autorización. Toda regla (rol, recurso,
+pertenencia) debe verificarse en la función Convex antes de leer o mutar.
+La matriz de permisos vive en TI2-5 y las rutas protegidas en TI2-6 y TI2-20;
+esta guía solo muestra cómo se conectan con la sesión.
+
+% =================================================
+\section{De la sesión al portal correcto}
+% =================================================
+
+El login deja una sesión, pero no decide a qué portal entra el usuario. Esa
+decisión combina tres piezas, cada una con su dueño:
+
+\begin{lstlisting}
+TI2-3 entrega identidad (quién + email verificado)
+      |
+      v
+TI2-5 entrega rol (qué es: Estudiante, Profesional,
+      Practicante o Administrador)
+      |
+      v
+TI2-6 y TI2-20 navegan (guards que leen sesión + rol
+      y redirigen al portal o a denegado)
+\end{lstlisting}
+
+El dominio sugiere, la habilitación decide. Hay dos dominios y cuatro roles:
+\texttt{@alu.uct.cl} anticipa Estudiante o Practicante, y \texttt{@uct.cl}
+anticipa Profesional, siempre que la cuenta esté habilitada. El
+Administrador queda fuera de esa correspondencia: se otorga por habilitación
+explícita sin importar el dominio. Navegar solo por \texttt{hd} o por sufijo
+del email lleva al portal equivocado. El guard debe leer el rol que expone
+el Backend, nunca deducir el destino desde el dominio.
+
+El patrón esperado es:
+
+\begin{itemize}
+  \item el Backend expone una query autenticada que devuelve el rol del
+    usuario actual a partir de \texttt{ctx.auth.getUserIdentity()};
+  \item el guard de TanStack Router (por ejemplo en \texttt{beforeLoad})
+    exige sesión válida y rol permitido;
+  \item sin sesión redirige a \texttt{/login} conservando la ruta de retorno;
+  \item con sesión pero sin rol suficiente muestra acceso denegado;
+  \item el guard es UX, no seguridad: la función Convex vuelve a verificar el
+    permiso antes de responder.
+\end{itemize}
+
+El detalle de la matriz queda en TI2-5 y el de cada portal en TI2-6 y TI2-20.
+Esta sección existe para que TI2 no diseñe el login aislado del portal que lo
+continúa.
+
+% =================================================
+\section{Variables, callbacks y redirects}
+% =================================================
+
+Solo nombres. Ningún valor real pertenece a esta guía ni al repositorio.
+
+\begin{table}[h]
+  \centering
+  \begin{tabularx}{\textwidth}{>{\bfseries}l X}
+    \toprule
+    Variable & Uso \\
+    \midrule
+    \texttt{GOOGLE\_CLIENT\_ID} & OAuth Client de Google, solo servidor \\
+    \texttt{GOOGLE\_CLIENT\_SECRET} & Secreto OAuth, solo servidor \\
+    \texttt{BETTER\_AUTH\_SECRET} & Firma de sesiones, solo servidor \\
+    \texttt{BETTER\_AUTH\_URL} & Base URL de Better Auth en Convex \\
+    \texttt{BETTER\_AUTH\_TRUSTED\_ORIGINS} & Orígenes extra permitidos \\
+    \texttt{VITE\_CONVEX\_URL} & Cliente Convex, pública \\
+    \texttt{VITE\_CONVEX\_SITE\_URL} & Base de \texttt{/api/auth/*}, pública \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+Reglas:
+
+\begin{itemize}
+  \item las secretas se configuran con \texttt{convex env set} en el
+    deployment, nunca con prefijo \texttt{VITE\_} ni en el bundle;
+  \item las públicas \texttt{VITE\_} son visibles para cualquiera; solo
+    localizan servicios;
+  \item \texttt{trustedOrigins} debe incluir el origen de desarrollo Vite
+    (puerto de \texttt{dev}), el origen de producción en Vercel y el Site URL
+    de Convex; se extiende por entorno con
+    \texttt{BETTER\_AUTH\_TRUSTED\_ORIGINS};
+  \item el callback Google es la ruta \texttt{/api/auth/callback/google} bajo
+    el Convex Site URL; el frontend solo define \texttt{callbackURL} y
+    \texttt{errorCallbackURL} de navegación post-login.
+\end{itemize}
+
+Archivos de ejemplo sin secretos: \texttt{apps/web/.env.example} con
+\texttt{VITE\_CONVEX\_URL} y \texttt{VITE\_CONVEX\_SITE\_URL}; locales en
+\texttt{.env.local} fuera de Git.
+
+% =================================================
+\section{Checklist para que TI2 comience en Semana 2}
+% =================================================
+
+\begin{enumerate}
+  \item Completar la sección de Consola de Google Cloud: cuenta no
+    institucional, pantalla de consentimiento externa con test users, OAuth
+    Client Web con redirect al Site URL de Convex y scopes \texttt{openid},
+    \texttt{email}, \texttt{profile}.
+  \item Implementar los dos inicios con \texttt{hd}
+    (\texttt{alu.uct.cl} y \texttt{uct.cl}), validación de sufijo y rol
+    inicial en el servidor.
+  \item Levantar \texttt{convex/auth.config.ts}, \texttt{convex.config.ts},
+    \texttt{http.ts} y \texttt{auth.ts} según la estructura oficial.
+  \item Configurar secretos solo con \texttt{convex env set} y publicar
+    \texttt{.env.example} sin valores.
+  \item Conectar la SPA Vite con \texttt{authClient}, \texttt{convexClient},
+    \texttt{crossDomainClient} y \texttt{ConvexBetterAuthProvider}.
+  \item Implementar login y logout con \texttt{signIn.social} y
+    \texttt{signOut}, más lectura con \texttt{useSession}.
+  \item Verificar en una query que \texttt{ctx.auth.getUserIdentity()} distingue
+    autenticado de anónimo.
+  \item Registrar decisiones y dudas como comentarios en TI2-3 para coordinar
+    con TI4.
+\end{enumerate}
+
+% =================================================
+\section{Referencias oficiales}
+% =================================================
+
+\begin{itemize}
+  \item Better Auth, Google social provider y opción \texttt{hd}:
+    \url{https://better-auth.com/docs/authentication/google}
+  \item Better Auth, uso de \texttt{signIn.social}:
+    \url{https://better-auth.com/docs/basic-usage}
+  \item Better Auth con Convex (guía marco React):
+    \url{https://labs.convex.dev/better-auth/framework-guides/react}
+  \item Better Auth con Convex (integración):
+    \url{https://better-auth.com/docs/integrations/convex}
+  \item Convex, cliente React:
+    \url{https://docs.convex.dev/client/react/overview}
+  \item Convex en hosting Vercel:
+    \url{https://docs.convex.dev/production/hosting/vercel}
+  \item Google Identity, OAuth 2.0 y OpenID Connect:
+    \url{https://developers.google.com/identity/openid-connect/openid-connect}
+  \item Google Cloud, configuración de pantalla de consentimiento y Client ID:
+    \url{https://developers.google.com/identity/protocols/oauth2}
+  \item Google Cloud, página de clientes OAuth (crear credenciales):
+    \url{https://console.developers.google.com/auth/clients}
+  \item Google Cloud, tipos de usuario y pantalla de consentimiento:
+    \url{https://support.google.com/cloud/answer/10311615}
+  \item TanStack Router con Vite:
+    \url{https://tanstack.com/router/latest/docs/installation/with-vite}
+\end{itemize}
+
+\end{document}
