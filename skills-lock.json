@@ -2,12 +2,12 @@
   "version": 1,
   "skills": {
     "blast-radius": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "a3cffbe142a88e2f2419e7c7e93a2ada273be5ab1de3ecf22512ea09c294749c"
     },
     "codebase-design": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "8a5bea555dfc33e4b62eaff3b8061cf706e1d1e846398cba4a4edf2831a0fb8c"
     },
@@ -210,42 +210,42 @@
       "computedHash": "dbe65a37ca2e9a5afa55669b8928ce1dc3ac765151452008f9105bde049228f7"
     },
     "diagnosing-bugs": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "9f437244bd6cf353c0183d2fd5a26babab386c00d8f75e773a18879fba2e5151"
     },
     "domain-modeling": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "828e2992427ef4b82e16e37a4008d1ebfeae2915032ce48fe8f023ff9fab2c57"
     },
     "frontend-design": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "c5303e3429a0345534547ed352f3190f1c8ef4e01026e5316d013115f3035eb8"
     },
     "grill-with-docs": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "9c460cbd94fd3c63cdef967dbdb6e66ca687103cdc380cd37834e4d10b738f78"
     },
     "grilling": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "d90955d4bef9e96a575ec538134db3783982d12d98f3bfd8b932ae3685d79dab"
     },
     "handoff": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "ad03e8d4ea3cbbff66420eb7ba3cc375b5cbe1821a2449b53e863256cf5b5cde"
     },
     "to-questionnaire": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "d8938509f3400d9977343e11e876fc6e1982b0b9c133a2f2e9d3d730a67a103e"
     },
     "unslop": {
-      "source": "../../dotfiles/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "39c0298b293b0a2ac468a2f711ef56d74f8fd7fa63229abef7becc9ee795dd8b"
     }

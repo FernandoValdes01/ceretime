@@ -127,7 +127,7 @@ Key brand attributes:
 
 ## Colors
 
-The color strategy is deeply rooted in the CERETI visual identity, optimized for WCAG 2.2 AA compliance. 
+The color strategy is deeply rooted in the CERETI visual identity, optimized for WCAG 2.2 AA compliance.
 
 - **Primary (#1D8473):** A deep teal used for institutional branding, primary actions, and headers. It provides high contrast against white backgrounds.
 - **Secondary (#EBB41E):** A warm mustard yellow extracted from the logo. It is used as a highlight and "warm" accent, though text should avoid this color to maintain accessibility.
@@ -188,12 +188,12 @@ The shape language is **Rounded (8px / 0.5rem)**. This provides a soft, friendly
 
 ### Buttons
 - **Primary:** Solid `#1D8473` with white text. Minimum height 48px.
-- **Secondary:** Outlined `#1D8473` (2px) with `#1D8473` text. 
+- **Secondary:** Outlined `#1D8473` (2px) with `#1D8473` text.
 - **Tertiary/Ghost:** No border, `#1D8473` text, used for less prominent actions like "Cancel."
 
 ### Input Fields
 - Labels must always be visible above the input (no placeholder-only labels).
-- Use a 1px border (#5A5A5A) for high visibility. 
+- Use a 1px border (#5A5A5A) for high visibility.
 - Error states must include both a red border and an error icon/text to satisfy color-blindness requirements.
 
 ### Cards
@@ -203,7 +203,7 @@ The shape language is **Rounded (8px / 0.5rem)**. This provides a soft, friendly
 
 ### Chips/Tags
 - Used for "Necesidades de acceso" (e.g., "Intérprete Lense").
-- Light gray background with dark text. 
+- Light gray background with dark text.
 - Large enough to be easily dismissible with a clear "X" icon.
 
 ### Accessibility Specifics

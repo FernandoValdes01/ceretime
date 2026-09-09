@@ -52,6 +52,8 @@ codex mcp login linear
 codex mcp list
 ```
 
+Codex sólo carga `.codex/config.toml` cuando el proyecto está marcado como confiable. Al abrir el repositorio por primera vez, acepta la confianza del proyecto; si lo abres como no confiable, la configuración MCP definida en el repositorio no se cargará.
+
 Claude Code:
 
 ```sh
@@ -65,7 +67,7 @@ claude mcp list
 2. Crea o cambia a la rama que sugiere Linear, respetando el formato `usuario/TEAM-nnn-slug`.
 3. Pide al agente que trabaje en esa issue. Antes de empezar debe confirmar la rama y el alcance.
 4. Al terminar, ejecuta las validaciones del proyecto y abre la PR ya sea manual o con `gh pr create`, siguiendo los lineamientos establecidos.
-5. Antes de pedir revisión, pídele al agente: `Ejecuta la skill self-review sobre esta PR`. La skill contrasta el cambio con la issue, corrige el título si es necesario y deja el resultado comentado en GitHub.
+5. Antes de pedir revisión, abre una sesión nueva del agente y pídele: `Ejecuta la skill self-review sobre esta PR`. La sesión nueva permite revisar el cambio con una perspectiva independiente de la implementación. La skill contrasta el cambio con la issue, corrige el título si es necesario y deja el resultado comentado en GitHub.
 
 ### Workflows manuales
 

@@ -2,17 +2,17 @@
   "version": 1,
   "skills": {
     "building-native-ui": {
-      "source": "../../../ponderapp/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "e8eef46f3b3d06ca19bdd3cf356cc9e2310ba0b319e1445326228eda23427955"
     },
     "native-data-fetching": {
-      "source": "../../../ponderapp/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "f4e2709e10badf55f6c348a05218fca0b0eab28c7829c659e5a65117155ca987"
     },
     "react-native-best-practices": {
-      "source": "../../../ponderapp/.agents/skills",
+      "source": "./.agents/skills",
       "sourceType": "local",
       "computedHash": "fa0782c156fc0c5add8b97ffd45c0f08f2f76928d42e7e10bce1cf54b2208bb0"
     }
