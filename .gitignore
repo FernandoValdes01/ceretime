@@ -11,6 +11,19 @@ node_modules/
 coverage/
 dist/
 
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+
 # System and editor files
 .DS_Store
 *.swp
