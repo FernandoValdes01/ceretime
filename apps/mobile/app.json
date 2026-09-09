@@ -30,6 +30,6 @@
         "projectId": "ff9003db-9d48-429f-9461-ad924f4bd6fc"
       }
     },
-    "plugins": ["expo-status-bar", "expo-router"]
+    "plugins": ["expo-status-bar", "expo-router", "expo-font"]
   }
 }
