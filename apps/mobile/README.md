@@ -157,5 +157,5 @@ seguir pasando las pruebas de navegación de TI4-6.
 - [Instalación de Expo Router](https://docs.expo.dev/router/installation/).
 - [Rutas protegidas](https://docs.expo.dev/router/advanced/protected/).
 - [Referencia Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/).
-- [Protocolo de Git, GitHub y Linear](../../docs/tutoriales-ti2/git.pdf).
-- [Guía técnica del proyecto](../../docs/tutoriales-ti2/tech.pdf).
+- [Protocolo de Git, GitHub y Linear](../../docs/tutoriales/git.pdf).
+- [Guía técnica del proyecto](../../docs/tutoriales/tech.pdf).
