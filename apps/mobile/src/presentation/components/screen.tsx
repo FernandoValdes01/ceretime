@@ -39,6 +39,8 @@ export function Action({
 }) {
   return (
     <Pressable
+      // Este botón conserva el callback de StyleSheet, sin conversión de clases.
+      cssInterop={false}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [styles.button, pressed && styles.pressed]}

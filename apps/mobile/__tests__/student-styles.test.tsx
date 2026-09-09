@@ -4,6 +4,18 @@ import {
   StudentAction,
 } from '../src/presentation/estudiante/student-screen';
 import { RequestForm } from '../src/presentation/estudiante/request-form';
+import { Action } from '../src/presentation/components/screen';
+
+test('la integración conserva los estilos de las acciones anteriores', () => {
+  render(<Action label="Entrar como Estudiante" onPress={() => {}} />);
+  expect(
+    screen.getByRole('button', { name: 'Entrar como Estudiante' }),
+  ).toHaveStyle({
+    minHeight: 52,
+    paddingVertical: 14,
+    backgroundColor: '#246259',
+  });
+});
 
 jest.mock('expo-font', () => ({ useFonts: () => [true, null] }));
 
