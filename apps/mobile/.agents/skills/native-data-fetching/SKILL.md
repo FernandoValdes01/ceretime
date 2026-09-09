@@ -10,7 +10,7 @@ metadata:
 
 # Expo Networking
 
-Use this skill for remote infrastructure concerns, not for core domain logic. PonderApp is offline-first: local SQLite remains the source of truth and Convex only synchronizes/backups data.
+Use this skill for remote infrastructure concerns, not for core domain logic.
 
 ## When to Use
 
