@@ -41,6 +41,11 @@ La fuente de verdad operativa de cada issue es Linear: la issue vigente manda so
 
 - En archivos `.md` versionados, mantén cada párrafo en una sola línea física; verifica el archivo con `bunx prettier --check <archivo>` y, para normalizarlo, ejecuta `bunx prettier --write <archivo>`.
 
+## Verificación de textos
+
+- En archivos de texto versionados y textos visibles de la aplicación, ejecuta `bunx --package cspell --package @cspell/dict-es-es cspell lint --no-progress <archivo>`; la configuración está en `.cspell.json`.
+- Ante una palabra desconocida, corrige el texto si contiene un error de escritura o falta una tilde; solo agrega a `words` nombres propios e identificadores técnicos.
+
 # Issues y Pull Requests
 
 Cada miembro se identifica solo con el issue ID en el nombre de su rama (`usuario/TEAM-nnn-slug`); el detalle operativo vive en `docs/agents/issue-tracker.md` y `docs/agents/pull-requests.md`. Por defecto se usa el `gitBranchName` que sugiere Linear.
