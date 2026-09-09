@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "shadcn": {
+      "source": "../../../../dotfiles/.agents/skills",
+      "sourceType": "local",
+      "computedHash": "cfcdf0133c8f6f80a0b7fdb0f475061be8175a4d1c7b6fdfd77617e7e793cd97"
+    },
+    "web-design-guidelines": {
+      "source": "../../../../dotfiles/.agents/skills",
+      "sourceType": "local",
+      "computedHash": "c70f095ecac10104c6295e158950004b2d034988b95f626db8dbc326dfdc32c1"
+    }
+  }
+}
