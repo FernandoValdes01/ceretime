@@ -7,7 +7,7 @@ Para integrarte completamente al flujo (desarrollo, issue tracker y pull request
 - Arch Linux: `sudo pacman -S github-cli`
 - Windows: `winget install --id GitHub.cli`
 
-Después autentícate una vez por máquina con `gh auth login`.
+Después, autentica la CLI una vez por máquina con `gh auth login`.
 
 ## Comandos mínimos de arranque desde cero
 
