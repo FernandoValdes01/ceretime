@@ -6,5 +6,38 @@
       "url": "https://mcp.linear.app/mcp",
       "enabled": true
     }
+  },
+  "permission": {
+    "skill": {
+      "*": "allow"
+    }
+  },
+  "agent": {
+    "ti2": {
+      "mode": "primary",
+      "description": "Agente TI2: web y backend. Las skills de mobile quedan bloqueadas.",
+      "permission": {
+        "skill": {
+          "building-native-ui": "deny",
+          "native-data-fetching": "deny",
+          "react-native-best-practices": "deny",
+          "shadcn": "allow",
+          "web-design-guidelines": "allow"
+        }
+      }
+    },
+    "ti4": {
+      "mode": "primary",
+      "description": "Agente TI4: mobile y supervisión de TI2.",
+      "permission": {
+        "skill": {
+          "building-native-ui": "allow",
+          "native-data-fetching": "allow",
+          "react-native-best-practices": "allow",
+          "shadcn": "deny",
+          "web-design-guidelines": "deny"
+        }
+      }
+    }
   }
 }

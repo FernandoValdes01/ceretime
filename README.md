@@ -1,24 +1,34 @@
 # **ceretime**
 
-## Comandos mínimos de Arranque desde cero:
+## Requisitos
 
-- Instala dependencias limpias desde la raíz con `bun install`
-- En una primera terminal ejecuta `bunx convex dev`para iniciar el desarrollo del backend con Convex. Si es la primera vez que clonas el repositorio y nunca has ejecutado Convex en tu entorno local, al correr el comando por primera vez ocurrirá un asistente interactivo para iniciar sesión:
-  1. Login: la terminal te pedirá un nombre del dispositivo, con ENTER puedes utilizar el recomendado, Después deberás permitirle entrar en la pagina web para hacer el login con tu cuenta de Convex con Google o GitHub.
-  2. Vinculación: El asistente te guiará para crear un nuevo proyecto en la nube o vincular uno existente (por ejemplo, asignándole el nombre del monorepo: `ceretime`).
-  3. Generación de la `CONVEX_URL`: Una vez completado el vínculo, la plataforma de Convex provisiona automáticamente el entorno en la nube y genera las credenciales de conexión necesarias (incluyendo la `CONVEX_URL` y `CONVEX_SITE_URL`), además de crear localmente la carpeta de tipos `convex/_generated/`
-- Una vez terminado el proceso de Convex, abre otra terminal y ejecuta uno de los siguientes comandos dependiendo de tu área correspondiente; a) para TI2 (web) o b) para TI4 (mobile):
-  a) ejecuta `bun run --cwd apps/web dev` para levantar un servidor local web
-  b) ejecuta `bun run --cwd apps/mobile start` para inicializar el servidor para la app movil
+Para integrarte completamente al flujo (desarrollo, issue tracker y pull requests) necesitas `bun` y la GitHub CLI (`gh`).
 
-## Documentación de variables de entorno
+- Arch Linux: `sudo pacman -S github-cli`
+- Windows: `winget install --id GitHub.cli`
 
-apps/mobile/.env.example (TI4) y apps/web/.env.example (TI2) son archivos que sirven de plantilla de configuración sin secretos que se versiona y se sube al repositorio de Git. Su propósito es servir de guía para que cualquier desarrollador sepa exactamente qué variables de entorno necesita la aplicación para funcionar. Al clonar el repositorio, debes tomar este archivo, duplicarlo con el nombre .env.local y completar con los valores locales;
+Después autentícate una vez por máquina con `gh auth login`.
 
-Se debe distinguir las variables según la plataforma:
+## Comandos mínimos de arranque desde cero
 
-- En frontend web usa el prefijo `VITE_` (estas variables son visibles para el navegador del usuario final)
-- En App móvil usa el prefijo `EXPO_PUBLIC`
+- Instala dependencias limpias desde la raíz con `bun install`.
+- Levanta todo con un solo comando según tu área (backend + app en la misma terminal):
+  a) TI2 (web): `bun run dev:web`
+  b) TI4 (mobile): `bun run dev:mobile`
+- La primera vez, `convex dev` abre un asistente interactivo de login y vinculación; el detalle está en [convex/README.md](convex/README.md).
+
+## Variables de entorno
+
+Los `.env.example` listan las variables requeridas, sin valores reales. Los `.env.local` guardan los valores y nunca se suben a Git.
+
+- **Raíz**: sin acción manual, `bunx convex dev` crea solo el `.env.local`.
+- **`apps/web` y `apps/mobile`**: copiar la plantilla y pedir los valores al equipo:
+
+```bash
+cp apps/web/.env.example apps/web/.env.local
+```
+
+`VITE_*` queda visible en el navegador y `EXPO_PUBLIC_*` en la app: nunca pongas secretos en esas variables.
 
 **Queda estrictamente prohibido incluir contraseñas, tokens de API o secretos de autenticación (como BETTER_AUTH_SECRET) dentro de apps/mobile/.env.example, apps/web/.env.example o en el código cliente.**
 
@@ -48,3 +58,11 @@ Claude Code:
 claude mcp login linear
 claude mcp list
 ```
+
+## Flujo de trabajo
+
+1. En Linear, abre la issue asignada y revisa su descripción, criterios y dependencias.
+2. Crea o cambia a la rama que sugiere Linear, respetando el formato `usuario/TEAM-nnn-slug`.
+3. Pide al agente que trabaje en esa issue. Antes de empezar debe confirmar la rama y el alcance.
+4. Al terminar, ejecuta las validaciones del proyecto y abre la PR ya sea manual o con `gh pr create`, siguiendo los lineamientos establecidos.
+5. Antes de pedir revisión, pídele al agente: `Ejecuta la skill self-review sobre esta PR`. La skill contrasta el cambio con la issue, corrige el título si es necesario y deja el resultado comentado en GitHub.
