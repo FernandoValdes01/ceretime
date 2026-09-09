@@ -1,0 +1,11 @@
+# Configuración MCP compartida del proyecto CERETI (TI4).
+# Este archivo se versiona para que todos los miembros tengan la misma conexión.
+# Codex lo carga como config project-scoped (.codex/config.toml) en proyectos trusted.
+
+# Autenticación: Linear
+# Cada miembro ejecuta su propio login, los tokens quedan en su máquina, no en el repo.
+# - Linear: `codex mcp login linear` (OAuth contra workspace ceretime)
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+enabled = true
