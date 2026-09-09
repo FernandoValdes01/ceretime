@@ -37,6 +37,10 @@ Estamos usando Linear como Issue Tracker, tenemos los equipos separados
 
 La fuente de verdad operativa de cada issue es Linear: la issue vigente manda sobre alcance, prioridad, dependencias y criterios de cierre. La fuente de verdad del producto permanece en `CONTEXT.md`, `DESIGN.md`, `docs/` y los ADR.
 
+## Verificación de Markdown
+
+- En archivos `.md` versionados, mantén cada párrafo en una sola línea física; verifica el archivo con `bunx prettier --check <archivo>` y, para normalizarlo, ejecuta `bunx prettier --write <archivo>`.
+
 # Issues y Pull Requests
 
 Cada miembro se identifica solo con el issue ID en el nombre de su rama (`usuario/TEAM-nnn-slug`); el detalle operativo vive en `docs/agents/issue-tracker.md` y `docs/agents/pull-requests.md`. Por defecto se usa el `gitBranchName` que sugiere Linear.
