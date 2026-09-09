@@ -66,3 +66,11 @@ claude mcp list
 3. Pide al agente que trabaje en esa issue. Antes de empezar debe confirmar la rama y el alcance.
 4. Al terminar, ejecuta las validaciones del proyecto y abre la PR ya sea manual o con `gh pr create`, siguiendo los lineamientos establecidos.
 5. Antes de pedir revisión, pídele al agente: `Ejecuta la skill self-review sobre esta PR`. La skill contrasta el cambio con la issue, corrige el título si es necesario y deja el resultado comentado en GitHub.
+
+### Workflows manuales
+
+Estos workflows no se ejecutan automáticamente. Pídeselos al agente por su nombre cuando los necesites:
+
+- `grill-with-docs`: cuestionar y refinar un plan, dejando registradas las decisiones en la documentación.
+- `to-questionnaire`: convertir dudas o contradicciones sobre el alcance en preguntas concretas para el grupo de TI4.
+- `handoff`: opción avanzada para dejar el contexto y el estado del trabajo preparados cuando otro agente o integrante deba continuar.
