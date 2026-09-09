@@ -6,6 +6,8 @@
     "apps/*"
   ],
   "scripts": {
+    "dev:web": "concurrently -n convex,web -c green,blue \"bunx convex dev\" \"bun run --cwd apps/web dev\"",
+    "dev:mobile": "concurrently -n convex,mobile -c green,magenta \"bunx convex dev\" \"bun run mobile:start\"",
     "mobile:start": "bun run --cwd apps/mobile start",
     "mobile:android": "bun run --cwd apps/mobile android",
     "mobile:ios": "bun run --cwd apps/mobile ios",
@@ -13,5 +15,8 @@
   },
   "dependencies": {
     "convex": "^1.45.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
   }
 }
