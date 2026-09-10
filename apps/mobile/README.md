@@ -92,20 +92,9 @@ La evidencia nativa y la revisión de otro integrante deben completarse antes de
 
 ## Formulario del estudiante: TI4-8
 
-Desde el inicio del Estudiante, abrir **Nueva solicitud**. La pantalla permite
-describir la necesidad y el resultado esperado, seleccionar varios apoyos de
-acceso y agregar otro en texto libre, elegir modalidad y días de disponibilidad,
-indicar una franja horaria opcional y describir el medio accesible preferido para
-recibir información. **Revisar formulario** comprueba los campos localmente;
-no crea una solicitud ni confirma su recepción. El borrador se pierde al salir.
+Desde el inicio del Estudiante, abrir **Nueva solicitud**. La pantalla permite describir la necesidad y el resultado esperado, seleccionar varios apoyos de acceso y agregar otro en texto libre, elegir modalidad y días de disponibilidad, indicar una franja horaria opcional y describir el medio accesible preferido para recibir información. **Enviar solicitud** comprueba los campos localmente y, cuando son válidos, inicia el flujo simulado de TI4-30. El borrador se pierde al salir.
 
-Las fuentes son RF-04 y la sección Solicitudes de la especificación del prototipo.
-Los nombres de los campos se alinean con las proyecciones provisionales de TI4-5,
-consultadas en el PR #5. Esta rama no importa ni copia esa capa pendiente de
-integración: `request-form-state.ts` contiene exclusivamente valores editables
-de presentación, con horarios como texto y selecciones locales. TI4-30 deberá
-mapearlos al contrato de creación que se acuerde e integrar el hook de TI4-29.
-No se generan identificadores, fechas ni estados de una solicitud.
+Las fuentes son RF-04 y la sección Solicitudes de la especificación del prototipo. Los nombres de los campos se alinean con las proyecciones provisionales de TI4-5, consultadas en el PR #5. `request-form-state.ts` contiene exclusivamente valores editables de presentación, con horarios como texto y selecciones locales. El flujo de TI4-30 los mapea a un comando provisional antes de entregarlos al adaptador inyectado.
 
 Decisiones provisionales de presentación: necesidad, resultado, modalidad, al
 menos un día y medio de información requieren respuesta; los apoyos y la franja
@@ -113,6 +102,12 @@ horaria son opcionales. Si se completa una hora, se exigen ambas en formato
 HH:MM y en orden creciente. No son reglas canónicas del backend. No se piden
 RUT, diagnósticos, adjuntos, nombre ni correo: la sesión temporal sólo contiene
 un rol y la identidad institucional se integrará posteriormente.
+
+## Envío simulado: TI4-30
+
+El formulario usa un puerto de aplicación independiente del lector de TI4-29. La app inyecta un adaptador mock que espera brevemente y devuelve un comprobante ficticio; no llama a Convex, no guarda datos ni replica reglas del backend.
+
+Durante el envío, la acción queda deshabilitada y una guarda inmediata impide iniciar una segunda promesa. Si el adaptador falla, los campos permanecen editables y **Reintentar envío** repite exactamente el mismo comando. Cuando el adaptador responde, el formulario se reemplaza por una confirmación con una referencia de prueba. Las pruebas inyectan adaptadores controlados para cubrir éxito, error, reintento y doble pulsación sin incorporar controles especiales en la interfaz visible.
 
 La presentación toma como referencia **Inicio - Portal Estudiante (Móvil)** del
 [proyecto de Stitch](https://stitch.withgoogle.com/projects/9057834843157775417),

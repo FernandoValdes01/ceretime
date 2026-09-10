@@ -2,6 +2,9 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import { StudentScreen, StudentAction } from "../src/presentation/estudiante/student-screen";
 import { RequestForm } from "../src/presentation/estudiante/request-form";
 import { Action } from "../src/presentation/components/screen";
+import { createMockStudentRequestSubmitter } from "../src/infrastructure/mock-student-request-submitter";
+
+const submitter = createMockStudentRequestSubmitter({ delayMs: 0 });
 
 test("la integración conserva los estilos de las acciones anteriores", () => {
   render(<Action label="Entrar como Estudiante" onPress={() => {}} />);
@@ -17,7 +20,7 @@ jest.mock("expo-font", () => ({ useFonts: () => [true, null] }));
 test("Tailwind conserva la tipografía y las medidas de los controles nativos", () => {
   render(
     <StudentScreen title="Solicitud" description="Prueba de estilos">
-      <RequestForm onRevealGroup={() => {}} />
+      <RequestForm submitter={submitter} onRevealGroup={() => {}} />
     </StudentScreen>,
   );
   expect(screen.getByRole("header", { name: "Solicitud" })).toHaveStyle({
@@ -33,7 +36,7 @@ test("Tailwind conserva la tipografía y las medidas de los controles nativos", 
     fontSize: 16,
     lineHeight: 26,
   });
-  expect(screen.getByRole("button", { name: "Revisar formulario" })).toHaveStyle({
+  expect(screen.getByRole("button", { name: "Enviar solicitud" })).toHaveStyle({
     minHeight: 52,
     padding: 16,
     backgroundColor: "#00695b",
@@ -41,7 +44,7 @@ test("Tailwind conserva la tipografía y las medidas de los controles nativos", 
 });
 
 test("Tailwind distingue selección, foco y pulsación sin perder la selección", () => {
-  render(<RequestForm onRevealGroup={() => {}} />);
+  render(<RequestForm submitter={submitter} onRevealGroup={() => {}} />);
   const choice = screen.getByRole("checkbox", { name: "Lunes" });
   fireEvent.press(choice);
   expect(choice).toBeChecked();
@@ -60,8 +63,8 @@ test("Tailwind distingue selección, foco y pulsación sin perder la selección"
 });
 
 test("el foco del campo tiene prioridad sobre el borde de error", () => {
-  render(<RequestForm onRevealGroup={() => {}} />);
-  fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
+  render(<RequestForm submitter={submitter} onRevealGroup={() => {}} />);
+  fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
   const input = screen.getByLabelText("¿Qué necesidad quieres abordar? *");
   expect(input).toHaveStyle({ borderColor: "#ba1a1a" });
   fireEvent(input, "focus");

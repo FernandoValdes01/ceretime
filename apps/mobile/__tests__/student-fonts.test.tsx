@@ -2,12 +2,15 @@ import { fireEvent, render, screen } from "@testing-library/react-native";
 import { useFonts } from "expo-font";
 import { StudentScreen } from "../src/presentation/estudiante/student-screen";
 import { RequestForm } from "../src/presentation/estudiante/request-form";
+import { createMockStudentRequestSubmitter } from "../src/infrastructure/mock-student-request-submitter";
 
 jest.mock("expo-font", () => ({ useFonts: jest.fn() }));
 
+const submitter = createMockStudentRequestSubmitter({ delayMs: 0 });
+
 const form = (
   <StudentScreen title="Solicitud" description="Prueba de fuentes">
-    <RequestForm onRevealGroup={() => {}} />
+    <RequestForm submitter={submitter} onRevealGroup={() => {}} />
   </StudentScreen>
 );
 
@@ -21,7 +24,7 @@ test("cargar la tipografía no borra los valores ingresados", () => {
   jest.mocked(useFonts).mockReturnValue([true, null]);
   rerender(
     <StudentScreen title="Solicitud" description="Prueba de fuentes">
-      <RequestForm onRevealGroup={() => {}} />
+      <RequestForm submitter={submitter} onRevealGroup={() => {}} />
     </StudentScreen>,
   );
   expect(screen.getByDisplayValue("Leer materiales accesibles.")).toHaveStyle({
@@ -32,7 +35,7 @@ test("cargar la tipografía no borra los valores ingresados", () => {
 test("un fallo de la fuente no bloquea la revisión del formulario", () => {
   jest.mocked(useFonts).mockReturnValue([false, new Error("Fuente no disponible")]);
   render(form);
-  fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
+  fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
   expect(screen.getByText("Describe la necesidad que quieres abordar.")).toBeOnTheScreen();
   expect(screen.getByRole("header", { name: "Solicitud" })).toHaveStyle({
     fontFamily: undefined,

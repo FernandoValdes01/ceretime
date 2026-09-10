@@ -1,5 +1,11 @@
-import { useRef, useState, type Ref } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 import { AccessibilityInfo, Keyboard, Platform, Pressable, TextInput, View } from "react-native";
+import type {
+  StudentRequestSubmissionReceipt,
+  SubmitStudentRequestCommand,
+} from "../../application/student-area-models";
+import type { StudentRequestSubmitter } from "../../application/student-area-port";
+import { useSubmitStudentRequest } from "../hooks/useSubmitStudentRequest";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text, useStudentFont } from "./student-text";
 import {
@@ -65,12 +71,66 @@ function ErrorText({ message }: { message?: string }) {
   ) : null;
 }
 
-export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => void }) {
+function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCommand {
+  const availableFrom = values.availableFrom.trim();
+  const availableTo = values.availableTo.trim();
+  const otherAccessNeed = values.otherAccessNeed.trim();
+
+  return {
+    needSummary: values.needSummary.trim(),
+    expectedOutcome: values.expectedOutcome.trim(),
+    accessNeeds: [...values.accessNeeds],
+    ...(otherAccessNeed ? { otherAccessNeed } : {}),
+    generalAvailability: {
+      preferredWeekdays: [...values.preferredWeekdays],
+      ...(availableFrom && availableTo
+        ? { preferredTimeRange: { from: availableFrom, to: availableTo } }
+        : {}),
+    },
+    modalityPreference:
+      values.modalityPreference as SubmitStudentRequestCommand["modalityPreference"],
+    preferredAccessibleInformationChannel: values.preferredAccessibleInformationChannel.trim(),
+  };
+}
+
+function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubmissionReceipt }) {
+  return (
+    <View accessibilityLiveRegion="polite" className="gap-5">
+      <View className="gap-3 p-5 rounded-xl border-2 border-student-success bg-student-surface">
+        <Text
+          weight="semibold"
+          accessibilityRole="header"
+          className="text-student-success text-2xl leading-[34px]"
+        >
+          Solicitud enviada
+        </Text>
+        <Text className="text-student-text text-lg leading-[29px]">
+          Recibimos tu solicitud ficticia. Este envío solo existe en el simulador de la aplicación.
+        </Text>
+      </View>
+      <View className="gap-2 p-4 rounded-xl bg-student-muted">
+        <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
+          Comprobante de prueba
+        </Text>
+        <Text className="text-student-text text-base leading-[26px]">
+          Referencia: {receipt.requestId}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+export interface RequestFormProps {
+  readonly onRevealGroup: (y: number) => void;
+  readonly submitter: StudentRequestSubmitter;
+}
+
+export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
   const fontFamily = useStudentFont();
   const [focusedField, setFocusedField] = useState<keyof RequestFormValues | null>(null);
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
   const [reviewed, setReviewed] = useState(false);
-  const [checked, setChecked] = useState(false);
+  const submission = useSubmitStudentRequest(submitter);
   const inputs = useRef<Partial<Record<keyof RequestFormValues, TextInput | null>>>({});
   const errors: RequestFormErrors = reviewed ? validateRequestForm(values) : {};
   const formTop = useRef(0);
@@ -80,15 +140,13 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
 
   function update<K extends keyof RequestFormValues>(key: K, value: RequestFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
-    setChecked(false);
   }
 
-  function review() {
+  function submit() {
     const nextErrors = validateRequestForm(values);
     setReviewed(true);
     const firstError = Object.keys(nextErrors)[0] as keyof RequestFormValues | undefined;
     if (firstError) {
-      setChecked(false);
       if (firstError === "modalityPreference" || firstError === "preferredWeekdays") {
         Keyboard.dismiss();
         const control = firstError === "modalityPreference" ? modalityControl : weekdayControl;
@@ -103,11 +161,23 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
       AccessibilityInfo.announceForAccessibility(`Revisa el formulario. ${nextErrors[firstError]}`);
     } else {
       Keyboard.dismiss();
-      setChecked(true);
-      AccessibilityInfo.announceForAccessibility(
-        "Campos revisados. La solicitud todavía no se ha enviado.",
-      );
+      AccessibilityInfo.announceForAccessibility("Enviando solicitud ficticia.");
+      void submission.submit(toSubmissionCommand(values));
     }
+  }
+
+  useEffect(() => {
+    if (submission.status === "error") {
+      AccessibilityInfo.announceForAccessibility(
+        "No pudimos enviar la solicitud ficticia. Puedes reintentar.",
+      );
+    } else if (submission.status === "success") {
+      AccessibilityInfo.announceForAccessibility("Solicitud ficticia enviada.");
+    }
+  }, [submission.status]);
+
+  if (submission.status === "success" && submission.receipt) {
+    return <RequestConfirmation receipt={submission.receipt} />;
   }
 
   function field(
@@ -175,8 +245,8 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
           Formulario de prueba
         </Text>
         <Text className="text-student-secondary text-base leading-[26px]">
-          Usa datos ficticios. Puedes revisar los campos, pero todavía no enviar la solicitud. Los
-          cambios se pierden al salir.
+          Usa datos ficticios. El envío se realizará solamente contra un simulador local y los
+          cambios se perderán al salir.
         </Text>
       </View>
       <Text className="text-student-secondary text-base leading-[26px]">
@@ -322,15 +392,25 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
           Hay campos por revisar. Corrige los mensajes indicados arriba.
         </Text>
       )}
-      {checked && (
-        <Text
-          accessibilityLiveRegion="polite"
-          className="text-student-success text-lg leading-[29px]"
+      {submission.status === "error" && (
+        <View
+          accessibilityLiveRegion="assertive"
+          className="gap-3 p-4 rounded-xl border-2 border-student-error bg-student-surface"
         >
-          Campos revisados. La solicitud todavía no se ha enviado.
-        </Text>
+          <Text weight="semibold" className="text-student-error text-lg leading-[29px]">
+            No pudimos enviar la solicitud ficticia.
+          </Text>
+          <Text className="text-student-secondary text-base leading-[26px]">
+            Tus datos siguen en el formulario. Puedes intentar nuevamente.
+          </Text>
+          <StudentAction label="Reintentar envío" onPress={() => void submission.retry()} />
+        </View>
       )}
-      <StudentAction label="Revisar formulario" onPress={review} />
+      <StudentAction
+        label={submission.status === "submitting" ? "Enviando solicitud…" : "Enviar solicitud"}
+        disabled={submission.status === "submitting"}
+        onPress={submit}
+      />
     </View>
   );
 }

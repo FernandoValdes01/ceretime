@@ -1,10 +1,24 @@
 import path from "node:path";
 import { render } from "@testing-library/react-native";
+import type {
+  StudentRequestSubmissionReceipt,
+  SubmitStudentRequestCommand,
+} from "../src/application/student-area-models";
+import type { StudentRequestSubmitter } from "../src/application/student-area-port";
 import { RequestForm } from "../src/presentation/estudiante/request-form";
 import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 
 const appDirectory = path.resolve(__dirname, "../app");
+
+const testReceipt: StudentRequestSubmissionReceipt = {
+  requestId: "SOL-DEMO-TEST",
+  receivedAt: "2026-09-10T12:00:00.000Z",
+};
+
+const successfulSubmitter: StudentRequestSubmitter = {
+  submitStudentRequest: async () => testReceipt,
+};
 
 async function openForm() {
   const navigation = renderRouter(appDirectory);
@@ -34,7 +48,7 @@ function fillRequiredFields() {
 describe("Formulario de solicitud del estudiante", () => {
   test("solicita mostrar la selección pendiente al revisar modalidad o días", async () => {
     const revealGroup = jest.fn();
-    render(<RequestForm onRevealGroup={revealGroup} />);
+    render(<RequestForm submitter={successfulSubmitter} onRevealGroup={revealGroup} />);
     fireEvent.changeText(
       screen.getByLabelText("¿Qué necesidad quieres abordar? *"),
       "Leer materiales.",
@@ -44,18 +58,16 @@ describe("Formulario de solicitud del estudiante", () => {
       screen.getByLabelText("¿Cómo prefieres recibir información? *"),
       "Correo accesible.",
     );
-    fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Selecciona una modalidad.")).toBeOnTheScreen();
     fireEvent.press(screen.getByRole("radio", { name: "Presencial" }));
-    fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Selecciona al menos un día.")).toBeOnTheScreen();
     fireEvent.press(screen.getByRole("checkbox", { name: "Lunes" }));
-    fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
-    expect(
-      screen.getByText("Campos revisados. La solicitud todavía no se ha enviado."),
-    ).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+    expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
     expect(revealGroup).toHaveBeenCalledTimes(2);
   });
   test("recorre Inicio → Nueva solicitud → Inicio", async () => {
@@ -69,31 +81,20 @@ describe("Formulario de solicitud del estudiante", () => {
   test("muestra errores visibles y permite corregirlos sin perder valores", async () => {
     await openForm();
     fireEvent.changeText(screen.getByLabelText("¿Qué necesidad quieres abordar? *"), "   ");
-    fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     expect(screen.getByText("Describe la necesidad que quieres abordar.")).toBeOnTheScreen();
     expect(screen.getByText("Selecciona una modalidad.")).toBeOnTheScreen();
     expect(screen.getByText("Selecciona al menos un día.")).toBeOnTheScreen();
     fillRequiredFields();
     expect(screen.queryByText("Describe la necesidad que quieres abordar.")).not.toBeOnTheScreen();
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
-    expect(
-      screen.getByText("Campos revisados. La solicitud todavía no se ha enviado."),
-    ).toBeOnTheScreen();
     fireEvent.changeText(screen.getByLabelText("¿Qué esperas de CERETI? *"), "");
-    expect(
-      screen.queryByText("Campos revisados. La solicitud todavía no se ha enviado."),
-    ).not.toBeOnTheScreen();
     expect(screen.getByText("Indica qué esperas del acompañamiento.")).toBeOnTheScreen();
   });
 
   test("permite varios apoyos y texto libre, sin exigir necesidades de acceso", async () => {
     await openForm();
     fillRequiredFields();
-    fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
-    expect(
-      screen.getByText("Campos revisados. La solicitud todavía no se ha enviado."),
-    ).toBeOnTheScreen();
     for (const label of ["Comunicación escrita", "Persona de apoyo"]) {
       fireEvent.press(screen.getByRole("checkbox", { name: label }));
       expect(screen.getByRole("checkbox", { name: label })).toBeChecked();
@@ -113,7 +114,7 @@ describe("Formulario de solicitud del estudiante", () => {
     await openForm();
     fillRequiredFields();
     fireEvent.changeText(screen.getByLabelText("Desde"), "25:00");
-    fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     expect(
       screen.getByText("Escribe la hora inicial en formato HH:MM, por ejemplo 09:00."),
     ).toBeOnTheScreen();
@@ -124,10 +125,71 @@ describe("Formulario de solicitud del estudiante", () => {
     fireEvent.changeText(screen.getByLabelText("Hasta"), "09:00");
     expect(screen.getByText("La hora final debe ser posterior a la inicial.")).toBeOnTheScreen();
     fireEvent.changeText(screen.getByLabelText("Hasta"), "14:00");
-    fireEvent.press(screen.getByRole("button", { name: "Revisar formulario" }));
     expect(
-      screen.getByText("Campos revisados. La solicitud todavía no se ha enviado."),
-    ).toBeOnTheScreen();
+      screen.queryByText("La hora final debe ser posterior a la inicial."),
+    ).not.toBeOnTheScreen();
+  });
+
+  test("envía la solicitud ficticia y muestra su comprobante", async () => {
+    await openForm();
+    fillRequiredFields();
+
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+
+    expect(screen.getByRole("button", { name: "Enviando solicitud…" })).toBeDisabled();
+    expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
+    expect(screen.getByText(/^Referencia: SOL-DEMO-/)).toBeOnTheScreen();
+  });
+
+  test("conserva los datos después de un error y reintenta el mismo envío", async () => {
+    const commands: SubmitStudentRequestCommand[] = [];
+    let attempts = 0;
+    const submitter: StudentRequestSubmitter = {
+      async submitStudentRequest(command) {
+        commands.push(command);
+        attempts += 1;
+        if (attempts === 1) throw new Error("Falla controlada");
+        return testReceipt;
+      },
+    };
+    render(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
+    fillRequiredFields();
+
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+
+    expect(await screen.findByText("No pudimos enviar la solicitud ficticia.")).toBeOnTheScreen();
+    expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: "Reintentar envío" }));
+
+    expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toEqual(commands[0]);
+    expect(commands[0]).toMatchObject({
+      needSummary: "Me cuesta leer los materiales del curso.",
+      expectedOutcome: "Aprender a usar un lector de pantalla.",
+      modalityPreference: "online",
+      generalAvailability: { preferredWeekdays: [1] },
+      preferredAccessibleInformationChannel: "Correo con texto accesible",
+    });
+  });
+
+  test("impide iniciar dos envíos mientras el primero sigue pendiente", async () => {
+    let resolveSubmission!: (receipt: StudentRequestSubmissionReceipt) => void;
+    const pending = new Promise<StudentRequestSubmissionReceipt>((resolve) => {
+      resolveSubmission = resolve;
+    });
+    const submitStudentRequest = jest.fn(() => pending);
+    render(<RequestForm submitter={{ submitStudentRequest }} onRevealGroup={() => undefined} />);
+    fillRequiredFields();
+    const action = screen.getByRole("button", { name: "Enviar solicitud" });
+
+    fireEvent.press(action);
+    fireEvent.press(action);
+
+    expect(submitStudentRequest).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Enviando solicitud…" })).toBeDisabled();
+    await act(async () => resolveSubmission(testReceipt));
+    expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
   });
 
   test("el formulario no conserva el borrador después de cerrar sesión", async () => {

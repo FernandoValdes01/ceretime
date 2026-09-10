@@ -83,3 +83,20 @@ export interface StudentAreaSnapshot {
   readonly requests: readonly StudentRequest[];
   readonly accompaniments: readonly Accompaniment[];
 }
+
+/** Provisional command used only by the isolated mobile submission flow. */
+export interface SubmitStudentRequestCommand {
+  readonly needSummary: string;
+  readonly expectedOutcome: string;
+  readonly accessNeeds: readonly string[];
+  readonly otherAccessNeed?: string;
+  readonly generalAvailability: GeneralAvailability;
+  readonly modalityPreference: ModalityPreference;
+  readonly preferredAccessibleInformationChannel: ProvisionalAccessibleInformationChannel;
+}
+
+/** Minimal receipt returned by a student-request submission capability. */
+export interface StudentRequestSubmissionReceipt {
+  readonly requestId: string;
+  readonly receivedAt: IsoDateTime;
+}
