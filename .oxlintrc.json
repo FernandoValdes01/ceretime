@@ -15,7 +15,25 @@
     "**/android/**",
     "convex/_generated/**"
   ],
-  "rules": {},
+  "rules": {
+    "react/rules-of-hooks": "error"
+  },
+  "overrides": [
+    {
+      "files": ["apps/web/**"],
+      "plugins": [
+        "react",
+        "jest",
+        "typescript",
+        "unicorn",
+        "oxc",
+        "jsx-a11y"
+      ],
+      "rules": {
+        "jsx-a11y/alt-text": "error"
+      }
+    }
+  ],
   "env": {
     "builtin": true,
     "browser": true,

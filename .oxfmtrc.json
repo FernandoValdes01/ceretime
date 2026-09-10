@@ -9,6 +9,8 @@
     "**/web-build/**",
     "**/ios/**",
     "**/android/**",
+    "**/.agents/**",
+    "**/.claude/**",
     "convex/_generated/**"
   ],
   "proseWrap": "preserve"
