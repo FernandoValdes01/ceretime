@@ -2,26 +2,26 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
-    users: defineTable({
-        email: v.string(),
-        nombreCompleto: v.string(),
-        rol: v.union(
-            v.literal("estudiante"),
-            v.literal("profesional"),
-            v.literal("practicante"),
-            v.literal("administrador")
-        ),
-        estadoInstitucional: v.union(
-            v.literal("habilitado"),
-            v.literal("deshabilitado"),
-            v.literal("pendiente")
-        ),
-        estadoCuenta: v.union(
-            v.literal("activo"),
-            v.literal("inactivo")
-        ),
-    })
+  users: defineTable({
+    email: v.string(),
+    fullName: v.string(),
+    role: v.union(
+      v.literal("student"),
+      v.literal("professional"),
+      v.literal("intern"),
+      v.literal("admin")
+    ),
+    institutionalStatus: v.union(
+      v.literal("enabled"),
+      v.literal("disabled"),
+      v.literal("pending")
+    ),
+    accountStatus: v.union(
+      v.literal("active"),
+      v.literal("inactive")
+    ),
+  })
     .index("by_email", ["email"])
-    .index("by_rol", ["rol"])
-    .index("by_estado_institucional", ["estadoInstitucional"])
-}); 
+    .index("by_role", ["role"])
+    .index("by_institutional_status", ["institutionalStatus"]),
+});
