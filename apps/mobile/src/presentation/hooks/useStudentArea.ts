@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
   Accompaniment,
   StudentAreaSnapshot,
   StudentIdentity,
   StudentRequest,
-} from '../../application/student-area-models';
-import type { StudentAreaReader } from '../../application/student-area-port';
+} from "../../application/student-area-models";
+import type { StudentAreaReader } from "../../application/student-area-port";
 
-export type StudentAreaLoadStatus = 'loading' | 'success' | 'error';
-export type StudentAreaCollectionStatus = StudentAreaLoadStatus | 'empty';
+export type StudentAreaLoadStatus = "loading" | "success" | "error";
+export type StudentAreaCollectionStatus = StudentAreaLoadStatus | "empty";
 
 export interface StudentAreaSnapshotState {
   readonly status: StudentAreaLoadStatus;
@@ -54,18 +54,15 @@ interface StudentAreaLoad {
 }
 
 function loadingLoad(reader: StudentAreaReader): StudentAreaLoad {
-  return { reader, status: 'loading', snapshot: null, error: null };
+  return { reader, status: "loading", snapshot: null, error: null };
 }
 
 function errorLoad(reader: StudentAreaReader, error: unknown): StudentAreaLoad {
-  return { reader, status: 'error', snapshot: null, error };
+  return { reader, status: "error", snapshot: null, error };
 }
 
-function successLoad(
-  reader: StudentAreaReader,
-  snapshot: StudentAreaSnapshot,
-): StudentAreaLoad {
-  return { reader, status: 'success', snapshot, error: null };
+function successLoad(reader: StudentAreaReader, snapshot: StudentAreaSnapshot): StudentAreaLoad {
+  return { reader, status: "success", snapshot, error: null };
 }
 
 /**
@@ -91,10 +88,7 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
     let disposed = false;
     const currentRequestId = ++requestId.current;
 
-    setLoad(loadingLoad(reader));
-
-    const isCurrent = () =>
-      !disposed && requestId.current === currentRequestId;
+    const isCurrent = () => !disposed && requestId.current === currentRequestId;
     let pending: Promise<StudentAreaSnapshot>;
 
     try {
@@ -143,10 +137,10 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
   };
   const requests: StudentRequestsState = {
     status:
-      visibleLoad.status === 'success'
+      visibleLoad.status === "success"
         ? requestData.length === 0
-          ? 'empty'
-          : 'success'
+          ? "empty"
+          : "success"
         : visibleLoad.status,
     data: requestData,
     error,
@@ -154,10 +148,10 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
   };
   const accompaniments: StudentAccompanimentsState = {
     status:
-      visibleLoad.status === 'success'
+      visibleLoad.status === "success"
         ? accompanimentData.length === 0
-          ? 'empty'
-          : 'success'
+          ? "empty"
+          : "success"
         : visibleLoad.status,
     data: accompanimentData,
     error,
@@ -176,9 +170,7 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
 }
 
 /** Snapshot-only view; it still performs exactly one read for this instance. */
-export function useStudentAreaSnapshot(
-  reader: StudentAreaReader,
-): StudentAreaSnapshotState {
+export function useStudentAreaSnapshot(reader: StudentAreaReader): StudentAreaSnapshotState {
   const area = useStudentArea(reader);
   return {
     status: area.status,
@@ -189,22 +181,16 @@ export function useStudentAreaSnapshot(
 }
 
 /** Optional aggregate view. Prefer `useStudentArea` when several are needed. */
-export function useStudentIdentity(
-  reader: StudentAreaReader,
-): StudentIdentityState {
+export function useStudentIdentity(reader: StudentAreaReader): StudentIdentityState {
   return useStudentArea(reader).identity;
 }
 
 /** Optional aggregate view. Prefer `useStudentArea` when several are needed. */
-export function useStudentRequests(
-  reader: StudentAreaReader,
-): StudentRequestsState {
+export function useStudentRequests(reader: StudentAreaReader): StudentRequestsState {
   return useStudentArea(reader).requests;
 }
 
 /** Optional aggregate view. Prefer `useStudentArea` when several are needed. */
-export function useStudentAccompaniments(
-  reader: StudentAreaReader,
-): StudentAccompanimentsState {
+export function useStudentAccompaniments(reader: StudentAreaReader): StudentAccompanimentsState {
   return useStudentArea(reader).accompaniments;
 }

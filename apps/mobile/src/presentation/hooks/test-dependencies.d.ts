@@ -1,4 +1,4 @@
-declare module 'bun:test' {
+declare module "bun:test" {
   interface Matchers {
     toBe(expected: unknown): void;
     toBeNull(): void;
@@ -10,18 +10,21 @@ declare module 'bun:test' {
   export function test(name: string, callback: () => void | Promise<void>): void;
 }
 
-declare module 'react-test-renderer' {
+declare module "react-test-renderer" {
   export interface ReactTestRenderer {
-    update(element: import('react').ReactElement): void;
+    root: {
+      findByType(type: (props: { readonly value: unknown }) => null): {
+        readonly props: { readonly value: unknown };
+      };
+    };
+    update(element: import("react").ReactElement): void;
     unmount(): void;
   }
 
-  export function act(
-    callback: () => void | Promise<void>,
-  ): void | Promise<void>;
+  export function act(callback: () => void | Promise<void>): void | Promise<void>;
 
   const TestRenderer: {
-    create(element: import('react').ReactElement): ReactTestRenderer;
+    create(element: import("react").ReactElement): ReactTestRenderer;
   };
   export default TestRenderer;
 }
