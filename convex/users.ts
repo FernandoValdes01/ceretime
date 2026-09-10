@@ -1,5 +1,5 @@
-import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { internalMutation, internalQuery } from "./_generated/server";
 
 /**
  * Crea un usuario de prueba para validar persistencia, roles y estados.
@@ -7,11 +7,20 @@ import { v } from "convex/values";
 export const createTestUser = internalMutation({
   args: {
     email: v.string(),
-    name: v.string(),
-    role: v.string(),
-    status: v.string(),
+    fullName: v.string(),
+    role: v.union(
+      v.literal("student"),
+      v.literal("professional"),
+      v.literal("intern"),
+      v.literal("admin")
+    ),
+    institutionalStatus: v.union(
+      v.literal("enabled"),
+      v.literal("disabled"),
+      v.literal("pending")
+    ),
+    accountStatus: v.string(),
   },
-
   handler: async (ctx, args) => {
     return await ctx.db.insert("users", args);
   },
