@@ -1,6 +1,21 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "./_generated/server";
 
+const roleUnion = v.union(
+  v.literal("student"),
+  v.literal("professional"),
+  v.literal("intern"),
+  v.literal("admin"),
+);
+
+const institutionalStatusUnion = v.union(
+  v.literal("enabled"),
+  v.literal("disabled"),
+  v.literal("pending"),
+);
+
+const accountStatusUnion = v.union(v.literal("active"), v.literal("inactive"));
+
 /**
  * Crea un usuario de prueba para validar persistencia, roles y estados.
  */
@@ -8,21 +23,9 @@ export const createTestUser = internalMutation({
   args: {
     email: v.string(),
     fullName: v.string(),
-    role: v.union(
-      v.literal("student"),
-      v.literal("professional"),
-      v.literal("intern"),
-      v.literal("admin")
-    ),
-    institutionalStatus: v.union(
-      v.literal("enabled"),
-      v.literal("disabled"),
-      v.literal("pending")
-    ),
-    accountStatus: v.union(
-      v.literal("active"),
-      v.literal("inactive")
-    ),
+    role: roleUnion,
+    institutionalStatus: institutionalStatusUnion,
+    accountStatus: accountStatusUnion,
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("users", args);
