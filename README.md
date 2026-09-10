@@ -36,7 +36,7 @@ cp apps/web/.env.example apps/web/.env.local
 
 ## Calidad de código
 
-Oxlint y Oxfmt se configuran en la raíz y cubren el código compatible de `apps/`, `convex/` y `packages/` cuando esa carpeta exista. Las salidas generadas, dependencias y builds quedan excluidas. Estas comprobaciones no reemplazan typecheck, pruebas ni builds.
+Oxlint y Oxfmt se configuran en la raíz. Oxfmt también comprueba los archivos de configuración y documentación compatibles de la raíz, junto con `apps/`, `convex/`, `packages/` y `.github/` cuando esas carpetas existan. Las salidas generadas, dependencias y builds quedan excluidas. Estas comprobaciones no reemplazan typecheck, pruebas ni builds.
 
 Desde la raíz del monorepo:
 
