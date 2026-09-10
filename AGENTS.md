@@ -39,12 +39,16 @@ La fuente de verdad operativa de cada issue es Linear: la issue vigente manda so
 
 ## Verificación de Markdown
 
-- En archivos `.md` versionados, mantén cada párrafo en una sola línea física; verifica el archivo con `bunx prettier --check <archivo>` y, para normalizarlo, ejecuta `bunx prettier --write <archivo>`.
+- En los archivos Markdown incluidos en el alcance de Oxfmt, mantén cada párrafo en una sola línea física; verifica el formato con `bun run format:check` y, para normalizarlo, ejecuta `bun run format`.
 
 ## Verificación de textos
 
 - En archivos de texto versionados y textos visibles de la aplicación, ejecuta `bunx --package cspell --package @cspell/dict-es-es cspell lint --no-progress <archivo>`; la configuración está en `.cspell.json`.
 - Ante una palabra desconocida, corrige el texto si contiene un error de escritura o falta una tilde; solo agrega a `words` nombres propios e identificadores técnicos.
+
+## Verificación de código
+
+- Antes de finalizar cualquier cambio, ejecuta desde la raíz `bun run lint` y `bun run format:check`; si el formato falla, corrígelo con `bun run format` y vuelve a ejecutar ambos checks.
 
 # Issues y Pull Requests
 

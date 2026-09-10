@@ -1,7 +1,6 @@
 {
   "name": "ceretime",
   "private": true,
-  "packageManager": "bun@1.3.14",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -9,6 +8,9 @@
   "scripts": {
     "dev:web": "concurrently -n convex,web -c green,blue \"bunx convex dev\" \"bun run --cwd apps/web dev\"",
     "dev:mobile": "concurrently -n convex,mobile -c green,magenta \"bunx convex dev\" \"bun run mobile:start\"",
+    "lint": "oxlint . --deny-warnings",
+    "format": "oxfmt apps convex packages .github package.json README.md DESIGN.md CONTEXT.md AGENTS.md CLAUDE.md opencode.json skills-lock.json .oxlintrc.json .oxfmtrc.json .cspell.json '!**/.agents/**' '!**/.claude/**' --no-error-on-unmatched-pattern",
+    "format:check": "oxfmt apps convex packages .github package.json README.md DESIGN.md CONTEXT.md AGENTS.md CLAUDE.md opencode.json skills-lock.json .oxlintrc.json .oxfmtrc.json .cspell.json '!**/.agents/**' '!**/.claude/**' --check --no-error-on-unmatched-pattern",
     "mobile:start": "bun run --cwd apps/mobile start",
     "mobile:android": "bun run --cwd apps/mobile android",
     "mobile:ios": "bun run --cwd apps/mobile ios",
@@ -19,6 +21,8 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.5",
-    "@types/bun": "latest"
-  }
+    "oxfmt": "^0.67.0",
+    "oxlint": "^1.82.0"
+  },
+  "packageManager": "bun@1.3.14"
 }

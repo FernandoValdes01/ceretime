@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.expo/**",
+    "**/web-build/**",
+    "**/ios/**",
+    "**/android/**",
+    "**/.agents/**",
+    "**/.claude/**",
+    "convex/_generated/**"
+  ],
+  "proseWrap": "preserve"
+}
