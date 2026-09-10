@@ -19,7 +19,10 @@ export const createTestUser = internalMutation({
       v.literal("disabled"),
       v.literal("pending")
     ),
-    accountStatus: v.string(),
+    accountStatus: v.union(
+      v.literal("active"),
+      v.literal("inactive")
+    ),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("users", args);
