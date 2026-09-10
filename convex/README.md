@@ -13,3 +13,15 @@ Si es la primera vez que clonas el repositorio y nunca has ejecutado Convex en t
 ## Variables de entorno
 
 El comando genera solo el `.env.local` de la raíz (`CONVEX_DEPLOYMENT`, `CONVEX_URL`, `CONVEX_SITE_URL`); la plantilla versionada es `.env.example`. Los secretos del backend se configuran en el entorno de Convex, nunca en archivos del repositorio.
+
+## Autenticación institucional (TI2-3)
+
+El proveedor de identidad es Google Workspace con OpenID Connect y solo los alcances `openid`, `email` y `profile`; pedir Calendar, Drive o correo queda prohibido en Sprint 1. Better Auth corre como rutas HTTP dentro del deployment Convex (`convex/auth.ts`, `convex/http.ts`) y persiste sus tablas (`user`, `session`, `account`, `verification`) en el componente `betterAuth`, aisladas del dominio; `convex/schema.ts` solo contendrá tablas de negocio.
+
+El callback OAuth de Google es `{CONVEX_SITE_URL}/api/auth/callback/google` y debe registrarse exacto (esquema, mayúsculas y slash final) como URI de redirección autorizada del OAuth Client Web en Google Cloud Console; el flujo de retorno de la SPA son `callbackURL: "/"` y `errorCallbackURL: "/?auth=error"`, que la pantalla traduce a un mensaje genérico sin detalles sensibles.
+
+Hay dos inicios lógicos sobre el mismo OAuth Client, uno por población: `alu.uct.cl` (estudiante) y `uct.cl` (personal). Cada uno envía su `hd` como sugerencia de cuenta y el servidor valida el sufijo del correo (`convex/domain/auth/institutional-domain.ts`) antes de considerar la sesión útil; el `hd` por sí solo nunca autoriza y no hay roles ni habilitaciones en este alcance (TI2-4 / TI2-5).
+
+La sesión se recupera con la query `presentation/session:getSessionState`, que resuelve la identidad con `ctx.auth.getUserIdentity()` y devuelve solo datos mínimos (`email`, `name`, población) o `unauthenticated` ante ausencia, expiración o correo no institucional, sin exponer el motivo. La Web combina esa verdad autoritativa con `authClient.useSession()` y ante expiración muestra únicamente “Tu sesión terminó. Vuelve a ingresar.”.
+
+Configura los secretos solo con `convex env set` en el deployment (nunca con prefijo `VITE_` ni en el bundle): `BETTER_AUTH_SECRET` (firma de sesiones), `SITE_URL` (origen de la SPA, p. ej. `http://localhost:5173` en desarrollo), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y, cuando haya orígenes extra (Vercel), `BETTER_AUTH_TRUSTED_ORIGINS` separados por comas. Las variables públicas del cliente (`VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL`, `VITE_SITE_URL`) solo localizan servicios y se documentan sin valores en `apps/web/.env.example`; los `.env.local` nunca se versionan.
