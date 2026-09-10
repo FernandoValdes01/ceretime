@@ -18,6 +18,7 @@
     "convex": "^1.45.0"
   },
   "devDependencies": {
-    "concurrently": "^10.0.5"
+    "concurrently": "^10.0.5",
+    "@types/bun": "latest"
   }
 }
