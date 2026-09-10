@@ -1,0 +1,25 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "jest", "typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/.expo/**",
+    "**/web-build/**",
+    "**/ios/**",
+    "**/android/**",
+    "convex/_generated/**"
+  ],
+  "rules": {},
+  "env": {
+    "builtin": true,
+    "browser": true,
+    "node": true,
+    "jest": true
+  }
+}

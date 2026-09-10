@@ -7,10 +7,10 @@ export type IsoDateTime = string;
 
 /** Roles are intentionally provisional and limited to this client projection. */
 export type ProvisionalRole =
-  | 'student'
-  | 'ceretiProfessional'
-  | 'practitioner'
-  | 'provisionalAdministrator';
+  | "student"
+  | "ceretiProfessional"
+  | "practitioner"
+  | "provisionalAdministrator";
 
 export interface StudentIdentity {
   readonly id: string;
@@ -32,7 +32,7 @@ export interface GeneralAvailability {
   };
 }
 
-export type ModalityPreference = 'inPerson' | 'online';
+export type ModalityPreference = "inPerson" | "online";
 
 /**
  * Provisional and intentionally open: TI2 can map this value to its canonical
@@ -42,15 +42,15 @@ export type ModalityPreference = 'inPerson' | 'online';
 export type ProvisionalAccessibleInformationChannel = string;
 
 export type StudentRequestStatus =
-  | 'received'
-  | 'underReview'
-  | 'awaitingInformationOrAcceptance'
-  | 'accepted'
-  | 'referred'
-  | 'closedWithoutAccompaniment'
-  | 'cancelled';
+  | "received"
+  | "underReview"
+  | "awaitingInformationOrAcceptance"
+  | "accepted"
+  | "referred"
+  | "closedWithoutAccompaniment"
+  | "cancelled";
 
-export type StudentRequestOrigin = 'student' | 'institutionalChannel';
+export type StudentRequestOrigin = "student" | "institutionalChannel";
 
 export interface StudentRequest {
   readonly id: string;
@@ -68,7 +68,7 @@ export interface StudentRequest {
   readonly preferredAccessibleInformationChannel: ProvisionalAccessibleInformationChannel;
 }
 
-export type AccompanimentStatus = 'active' | 'paused' | 'closed';
+export type AccompanimentStatus = "active" | "paused" | "closed";
 
 /** The minimum resulting representation for an accepted request. */
 export interface Accompaniment {

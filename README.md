@@ -34,6 +34,20 @@ cp apps/web/.env.example apps/web/.env.local
 
 **Los secretos del backend se configuran directamente de forma segura en el entorno de Convex, nunca en los archivos de ejemplo del monorepo.**
 
+## Calidad de código
+
+Oxlint y Oxfmt se configuran en la raíz y cubren el código compatible de `apps/`, `convex/` y `packages/` cuando esa carpeta exista. Las salidas generadas, dependencias y builds quedan excluidas. Estas comprobaciones no reemplazan typecheck, pruebas ni builds.
+
+Desde la raíz del monorepo:
+
+```sh
+bun install --frozen-lockfile
+bun run lint
+bun run format:check
+```
+
+Para aplicar el formato automáticamente, ejecuta `bun run format` y vuelve a comprobar con `bun run format:check`.
+
 ## Issue tracker
 
 Se recomienda conectar tu agente al MCP de Linear, ya están configurados en `opencode.json`, `.codex/config.toml` y `.mcp.json`, cada miembro debe autenticarse una vez por máquina, los tokens quedan en cada máquina y no se versionan.

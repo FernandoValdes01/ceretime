@@ -1,7 +1,17 @@
 {
   "name": "ceretime",
   "version": "1.0.0",
+  "private": true,
   "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --runInBand",
+    "export": "expo export --platform all"
+  },
   "dependencies": {
     "@expo-google-fonts/fira-sans": "^0.4.1",
     "expo": "~57.0.20",
@@ -37,31 +47,21 @@
     "tailwindcss": "^3.4.17",
     "typescript": "~6.0.3"
   },
-  "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web",
-    "typecheck": "tsc --noEmit",
-    "test": "jest --runInBand",
-    "export": "expo export --platform all"
-  },
   "jest": {
+    "moduleNameMapper": {
+      "^expo($|/.*)": "<rootDir>/node_modules/expo$1"
+    },
     "preset": "jest-expo",
     "setupFilesAfterEnv": [
       "<rootDir>/jest.setup.ts"
     ],
-    "moduleNameMapper": {
-      "^expo($|/.*)": "<rootDir>/node_modules/expo$1"
-    },
+    "testMatch": [
+      "**/__tests__/**/*.test.tsx"
+    ],
     "transformIgnorePatterns": [
       "/node_modules/(?!(\\.bun|\\.pnpm|react-native|@react-native|@react-native-community|expo|@expo|@expo-google-fonts|react-navigation|@react-navigation|@sentry/react-native|native-base|standard-navigation))",
       "/node_modules/react-native-reanimated/plugin/",
       "/node_modules/@react-native/babel-preset/"
-    ],
-    "testMatch": [
-      "**/__tests__/**/*.test.tsx"
     ]
-  },
-  "private": true
+  }
 }

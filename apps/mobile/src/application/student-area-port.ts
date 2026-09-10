@@ -1,4 +1,4 @@
-import type { StudentAreaSnapshot } from './student-area-models';
+import type { StudentAreaSnapshot } from "./student-area-models";
 
 /**
  * Small, replaceable application capability for the isolated student-area
