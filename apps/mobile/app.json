@@ -21,6 +21,7 @@
       "package": "cl.rmv.ceretime"
     },
     "web": {
+      "bundler": "metro",
       "favicon": "./assets/favicon.png"
     },
     "owner": "corvidown-crew",
@@ -29,8 +30,6 @@
         "projectId": "ff9003db-9d48-429f-9461-ad924f4bd6fc"
       }
     },
-    "plugins": [
-      "expo-status-bar"
-    ]
+    "plugins": ["expo-status-bar", "expo-router", "expo-font"]
   }
 }

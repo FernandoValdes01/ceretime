@@ -55,6 +55,12 @@ yarn-error.*
 CLAUDE.md
 .turbo/
 
+# Skills del proyecto: una fuente física bajo .agents y enlaces desde .claude.
+!.claude/
+!.claude/skills
+!.agents/
+!.agents/skills/
+
 # tests
 coverage/
 
