@@ -1,11 +1,11 @@
-import '../global.css';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import "../global.css";
+import { Stack } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 
 import {
   NavigationSessionProvider,
   useNavigationSession,
-} from '../src/presentation/navigation/session';
+} from "../src/presentation/navigation/session";
 
 function RootNavigator() {
   const { role } = useNavigationSession();
@@ -19,10 +19,7 @@ function RootNavigator() {
       <Stack.Protected guard={role !== null}>
         <Stack.Screen name="(protected)" options={{ headerShown: false }} />
       </Stack.Protected>
-      <Stack.Screen
-        name="+not-found"
-        options={{ title: 'Página no encontrada' }}
-      />
+      <Stack.Screen name="+not-found" options={{ title: "Página no encontrada" }} />
     </Stack>
   );
 }

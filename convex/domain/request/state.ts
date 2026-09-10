@@ -24,10 +24,7 @@ export const FUTURE_REQUEST_STATES = [
   "cancelled",
 ] as const;
 
-export const REQUEST_STATES = [
-  ...SPRINT_1_REQUEST_STATES,
-  ...FUTURE_REQUEST_STATES,
-] as const;
+export const REQUEST_STATES = [...SPRINT_1_REQUEST_STATES, ...FUTURE_REQUEST_STATES] as const;
 
 export type Sprint1RequestState = (typeof SPRINT_1_REQUEST_STATES)[number];
 export type FutureRequestState = (typeof FUTURE_REQUEST_STATES)[number];
@@ -36,8 +33,6 @@ export type RequestState = (typeof REQUEST_STATES)[number];
 export const INITIAL_REQUEST_STATE: Sprint1RequestState = "received";
 
 /** Evita exponer estados que todavía no tienen operación asociada. */
-export function isSprint1RequestState(
-  state: RequestState,
-): state is Sprint1RequestState {
+export function isSprint1RequestState(state: RequestState): state is Sprint1RequestState {
   return (SPRINT_1_REQUEST_STATES as readonly RequestState[]).includes(state);
 }

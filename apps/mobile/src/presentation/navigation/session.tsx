@@ -1,11 +1,6 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  type PropsWithChildren,
-} from 'react';
+import { createContext, useContext, useState, type PropsWithChildren } from "react";
 
-import type { NavigationRole } from './roles';
+import type { NavigationRole } from "./roles";
 
 type NavigationSession = {
   role: NavigationRole | null;
@@ -31,7 +26,7 @@ export function NavigationSessionProvider({ children }: PropsWithChildren) {
 export function useNavigationSession() {
   const session = useContext(SessionContext);
   if (!session) {
-    throw new Error('La navegación necesita NavigationSessionProvider.');
+    throw new Error("La navegación necesita NavigationSessionProvider.");
   }
   return session;
 }

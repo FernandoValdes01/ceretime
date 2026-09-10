@@ -27,16 +27,16 @@ La navegación funciona sin backend, variables de entorno ni credenciales. La pa
 
 ## Mapa de rutas
 
-| URL                        | Acceso        | Resultado                                                          |
-| -------------------------- | ------------- | ------------------------------------------------------------------ |
-| `/`                        | Público       | Redirige a `/login` o al inicio del rol activo.                    |
-| `/login`                   | Sin sesión    | Selector temporal de los cuatro roles.                             |
-| `/estudiante`              | Estudiante    | Inicio con acceso a Nueva solicitud.                               |
-| `/estudiante/nueva-solicitud` | Estudiante  | Formulario local y validaciones de presentación de TI4-8.          |
-| `/profesional`             | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos. |
-| `/practicante`             | Practicante   | Inicio provisional de consulta de acompañamientos asignados.       |
-| `/administrador`           | Administrador | Inicio provisional de habilitación de cuentas.                     |
-| Cualquier ruta inexistente | Público       | Página no encontrada con regreso al inicio.                        |
+| URL                           | Acceso        | Resultado                                                          |
+| ----------------------------- | ------------- | ------------------------------------------------------------------ |
+| `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                    |
+| `/login`                      | Sin sesión    | Selector temporal de los cuatro roles.                             |
+| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud.                               |
+| `/estudiante/nueva-solicitud` | Estudiante    | Formulario local y validaciones de presentación de TI4-8.          |
+| `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos. |
+| `/practicante`                | Practicante   | Inicio provisional de consulta de acompañamientos asignados.       |
+| `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                     |
+| Cualquier ruta inexistente    | Público       | Página no encontrada con regreso al inicio.                        |
 
 ```text
 app/
