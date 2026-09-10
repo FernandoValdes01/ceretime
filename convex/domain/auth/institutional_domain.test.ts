@@ -4,7 +4,7 @@ import {
   getInstitutionalPopulation,
   isInstitutionalEmail,
   normalizeEmail,
-} from "./institutional-domain";
+} from "./institutional_domain";
 
 describe("normalizeEmail", () => {
   test("recorta espacios y pasa a minúsculas", () => {

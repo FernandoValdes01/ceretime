@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { toMinimalIdentity } from "../application/session/minimal-identity";
+import { toMinimalIdentity } from "../application/session/minimal_identity";
 import { query } from "../_generated/server";
 
 /**

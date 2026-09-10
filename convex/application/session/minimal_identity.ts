@@ -3,7 +3,7 @@ import {
   isInstitutionalEmail,
   normalizeEmail,
   type InstitutionalPopulation,
-} from "../../domain/auth/institutional-domain";
+} from "../../domain/auth/institutional_domain";
 
 /**
  * Caso de uso: recuperar el estado de sesión (TI2-3).

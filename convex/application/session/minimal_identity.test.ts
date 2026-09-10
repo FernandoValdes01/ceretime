@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { toMinimalIdentity } from "./minimal-identity";
+import { toMinimalIdentity } from "./minimal_identity";
 
 describe("toMinimalIdentity", () => {
   test("conserva solo correo, nombre y población", () => {
