@@ -14,9 +14,14 @@ Durante el envío, la acción queda deshabilitada y comunica su estado. Un error
 
 - El adaptador no llama a Convex ni reproduce reglas del backend.
 - Los datos y comprobantes son ficticios y viven solamente en memoria.
-- Los errores se controlan mediante dependencias inyectadas en las pruebas, no mediante controles ocultos o especiales en la interfaz del estudiante.
+- El modo normal del adaptador confirma la solicitud. Para demostrar la recuperación ante errores en Expo, `EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE=fail-once` hace que falle el primer intento y que el reintento confirme la misma solicitud.
+- La configuración del escenario ocurre en la raíz de composición. La interfaz del estudiante y el hook no leen variables de entorno ni incluyen controles especiales para pruebas.
 - El contrato es provisional y podrá reemplazarse cuando TI2 publique el contrato canónico.
+
+## Contrato provisional
+
+El comando de envío representa cada necesidad de acceso con `AccessNeed`, el mismo tipo usado por la proyección de solicitudes. La presentación conserva el identificador estable y la etiqueta visible; un futuro adaptador de TI2 podrá mapear ambos campos sin depender del texto mostrado en pantalla.
 
 ## Verificación
 
-Las pruebas cubren validación, transición de envío a confirmación, rechazo, conservación de datos, reintento y prevención de envíos duplicados. También se ejecutan el chequeo de tipos, lint y formato del repositorio.
+Las pruebas cubren validación, transición de envío a confirmación, fallo único configurable, conservación de datos, reintento y prevención de envíos duplicados. El recorrido manual ejecuta el modo normal y `fail-once` en Expo, registra el estado de envío, el error, el reintento y la confirmación. También se ejecutan el chequeo de tipos, lint y formato del repositorio.
