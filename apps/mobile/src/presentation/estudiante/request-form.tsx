@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type Ref } from "react";
 import { AccessibilityInfo, Keyboard, Platform, Pressable, TextInput, View } from "react-native";
 import type {
+  AccessNeed,
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
 } from "../../application/student-area-models";
 import type { StudentRequestSubmitter } from "../../application/student-area-port";
-import { useSubmitStudentRequest } from "../hooks/useSubmitStudentRequest";
+import { useSubmitStudentRequest } from "../hooks/use-submit-student-request";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text, useStudentFont } from "./student-text";
 import {
@@ -15,13 +16,13 @@ import {
   type RequestFormValues,
 } from "./request-form-state";
 
-const accessOptions = [
-  "Comunicación escrita",
-  "Intérprete de lengua de señas",
-  "Sala físicamente accesible",
-  "Reducción de estímulos",
-  "Más tiempo para comunicarme",
-  "Persona de apoyo",
+const accessOptions: readonly AccessNeed[] = [
+  { id: "written-communication", label: "Comunicación escrita" },
+  { id: "sign-language-interpreter", label: "Intérprete de lengua de señas" },
+  { id: "physically-accessible-room", label: "Sala físicamente accesible" },
+  { id: "reduced-stimulation", label: "Reducción de estímulos" },
+  { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
+  { id: "support-person", label: "Persona de apoyo" },
 ];
 const weekdays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
@@ -65,7 +66,11 @@ function Choice({
 
 function ErrorText({ message }: { message?: string }) {
   return message ? (
-    <Text accessibilityRole="alert" className="text-student-error text-base leading-[26px]">
+    <Text
+      selectable
+      accessibilityRole="alert"
+      className="text-student-error text-base leading-[26px]"
+    >
       {message}
     </Text>
   ) : null;
@@ -79,7 +84,7 @@ function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCom
   return {
     needSummary: values.needSummary.trim(),
     expectedOutcome: values.expectedOutcome.trim(),
-    accessNeeds: [...values.accessNeeds],
+    accessNeeds: values.accessNeeds.map((need) => ({ ...need })),
     ...(otherAccessNeed ? { otherAccessNeed } : {}),
     generalAvailability: {
       preferredWeekdays: [...values.preferredWeekdays],
@@ -112,7 +117,7 @@ function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubm
         <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
           Comprobante de prueba
         </Text>
-        <Text className="text-student-text text-base leading-[26px]">
+        <Text selectable className="text-student-text text-base leading-[26px]">
           Referencia: {receipt.requestId}
         </Text>
       </View>
@@ -222,6 +227,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         />
         {errors[key] && (
           <Text
+            selectable
             nativeID={`${key}-error`}
             accessibilityRole="alert"
             className="text-student-error text-base leading-[26px]"
@@ -278,17 +284,17 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         <Text className="text-student-secondary text-base leading-[26px]">
           Opcional. Selecciona todos los apoyos que necesitas para participar o comunicarte.
         </Text>
-        {accessOptions.map((label) => (
+        {accessOptions.map((option) => (
           <Choice
-            key={label}
-            label={label}
-            selected={values.accessNeeds.includes(label)}
+            key={option.id}
+            label={option.label}
+            selected={values.accessNeeds.some((need) => need.id === option.id)}
             onPress={() =>
               update(
                 "accessNeeds",
-                values.accessNeeds.includes(label)
-                  ? values.accessNeeds.filter((value) => value !== label)
-                  : [...values.accessNeeds, label],
+                values.accessNeeds.some((need) => need.id === option.id)
+                  ? values.accessNeeds.filter((need) => need.id !== option.id)
+                  : [...values.accessNeeds, option],
               )
             }
           />
@@ -397,10 +403,10 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
           accessibilityLiveRegion="assertive"
           className="gap-3 p-4 rounded-xl border-2 border-student-error bg-student-surface"
         >
-          <Text weight="semibold" className="text-student-error text-lg leading-[29px]">
+          <Text selectable weight="semibold" className="text-student-error text-lg leading-[29px]">
             No pudimos enviar la solicitud ficticia.
           </Text>
-          <Text className="text-student-secondary text-base leading-[26px]">
+          <Text selectable className="text-student-secondary text-base leading-[26px]">
             Tus datos siguen en el formulario. Puedes intentar nuevamente.
           </Text>
           <StudentAction label="Reintentar envío" onPress={() => void submission.retry()} />

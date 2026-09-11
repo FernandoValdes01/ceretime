@@ -23,7 +23,7 @@ Para revisar la misma interfaz en navegador:
 bun run mobile:web
 ```
 
-La navegación funciona sin backend, variables de entorno ni credenciales. La pantalla de acceso permite elegir un rol simulado. La sesión vive únicamente en memoria y se pierde al reiniciar o recargar el proceso de la aplicación. «Cambiar de rol» elimina la sesión y vuelve al selector.
+La navegación funciona sin backend ni credenciales. El envío simulado confirma por defecto y acepta una variable de entorno opcional para demostrar la recuperación ante errores. La pantalla de acceso permite elegir un rol simulado. La sesión vive únicamente en memoria y se pierde al reiniciar o recargar el proceso de la aplicación. «Cambiar de rol» elimina la sesión y vuelve al selector.
 
 ## Mapa de rutas
 
@@ -32,7 +32,7 @@ La navegación funciona sin backend, variables de entorno ni credenciales. La pa
 | `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                    |
 | `/login`                      | Sin sesión    | Selector temporal de los cuatro roles.                             |
 | `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud.                               |
-| `/estudiante/nueva-solicitud` | Estudiante    | Formulario local y validaciones de presentación de TI4-8.          |
+| `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.       |
 | `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos. |
 | `/practicante`                | Practicante   | Inicio provisional de consulta de acompañamientos asignados.       |
 | `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                     |
@@ -107,7 +107,15 @@ un rol y la identidad institucional se integrará posteriormente.
 
 El formulario usa un puerto de aplicación independiente del lector de TI4-29. La app inyecta un adaptador mock que espera brevemente y devuelve un comprobante ficticio; no llama a Convex, no guarda datos ni replica reglas del backend.
 
-Durante el envío, la acción queda deshabilitada y una guarda inmediata impide iniciar una segunda promesa. Si el adaptador falla, los campos permanecen editables y **Reintentar envío** repite exactamente el mismo comando. Cuando el adaptador responde, el formulario se reemplaza por una confirmación con una referencia de prueba. Las pruebas inyectan adaptadores controlados para cubrir éxito, error, reintento y doble pulsación sin incorporar controles especiales en la interfaz visible.
+Durante el envío, la acción queda deshabilitada y una guarda inmediata impide iniciar una segunda promesa. Si el adaptador falla, los campos permanecen editables y **Reintentar envío** repite exactamente el mismo comando. Cuando el adaptador responde, el formulario se reemplaza por una confirmación con una referencia de prueba.
+
+El modo normal no necesita configuración. Para demostrar el error controlado, inicia Expo desde la raíz con el escenario `fail-once`:
+
+```sh
+EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE=fail-once bun run mobile:start --clear
+```
+
+El primer intento falla y el reintento confirma la solicitud. La variable es pública y solo selecciona el comportamiento del adaptador ficticio; no contiene secretos. Expo inserta las variables `EXPO_PUBLIC_` en el bundle, por lo que debes recargar completamente la aplicación después de cambiarla. También puedes copiar `apps/mobile/.env.example` a `apps/mobile/.env.local`, seleccionar `success` o `fail-once` y ejecutar `bun run mobile:start --clear`.
 
 La presentación toma como referencia **Inicio - Portal Estudiante (Móvil)** del
 [proyecto de Stitch](https://stitch.withgoogle.com/projects/9057834843157775417),
@@ -138,19 +146,18 @@ Para verificar el formulario:
 2. Corregir los errores y comprobar que se conservan los valores ya ingresados.
 3. Seleccionar y desmarcar varios apoyos y días; cambiar entre modalidades.
 4. Probar una franja incompleta, una hora inválida y una franja invertida.
-5. Completar los campos obligatorios con datos ficticios y revisar. El mensaje
-   debe aclarar que la solicitud no se ha enviado. Editar un campo retira ese mensaje.
-6. Volver al inicio, cambiar de rol y verificar que otros roles no abren la ruta.
-7. En dispositivo, comprobar teclado, desplazamiento, etiquetas accesibles y
-   texto ampliado. Adjuntar evidencia al PR identificando el commit probado.
+5. Con el modo `success`, completar los campos obligatorios, pulsar **Enviar solicitud** dos veces con rapidez y comprobar que la acción muestra **Enviando solicitud…**, queda deshabilitada y termina con la confirmación `SOL-DEMO-001`.
+6. Reiniciar Expo con `EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE=fail-once`, repetir el formulario y comprobar que el primer intento muestra el error sin borrar los campos. Pulsar **Reintentar envío** y comprobar la confirmación.
+7. Volver al inicio, cambiar de rol y verificar que otros roles no abren la ruta.
+8. En dispositivo, comprobar teclado, desplazamiento, etiquetas accesibles y texto ampliado. Adjuntar evidencia al PR identificando el commit probado.
 
-Las pruebas `student-request.test.tsx` ejercitan las rutas reales. También deben
-seguir pasando las pruebas de navegación de TI4-6.
+Las pruebas `student-request.test.tsx` y `student-request-demo-mode.test.tsx` ejercitan las rutas reales, el contrato con tipos, el adaptador configurable y la prevención de doble envío. También deben seguir pasando las pruebas de navegación de TI4-6.
 
 ## Referencias
 
 - [Instalación de Expo Router](https://docs.expo.dev/router/installation/).
 - [Rutas protegidas](https://docs.expo.dev/router/advanced/protected/).
 - [Referencia Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/).
+- [Variables de entorno en Expo](https://docs.expo.dev/guides/environment-variables/).
 - [Protocolo de Git, GitHub y Linear](../../docs/tutoriales/git.pdf).
 - [Guía técnica del proyecto](../../docs/tutoriales/tech.pdf).

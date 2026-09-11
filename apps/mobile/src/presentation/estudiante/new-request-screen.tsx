@@ -7,7 +7,9 @@ import { createMockStudentRequestSubmitter } from "../../infrastructure/mock-stu
 import { StudentScreen } from "./student-screen";
 import { RequestForm } from "./request-form";
 
-const defaultSubmitter = createMockStudentRequestSubmitter();
+const defaultSubmitter = createMockStudentRequestSubmitter({
+  failureMode: process.env.EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE === "fail-once" ? "once" : "never",
+});
 
 export interface NewRequestScreenProps {
   readonly submitter?: StudentRequestSubmitter;

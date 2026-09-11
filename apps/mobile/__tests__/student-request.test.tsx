@@ -5,9 +5,11 @@ import type {
   SubmitStudentRequestCommand,
 } from "../src/application/student-area-models";
 import type { StudentRequestSubmitter } from "../src/application/student-area-port";
+import { createMockStudentRequestSubmitter } from "../src/infrastructure/mock-student-request-submitter";
 import { RequestForm } from "../src/presentation/estudiante/request-form";
 import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
+import { fillRequiredStudentRequestFields } from "./student-request-test-helpers";
 
 const appDirectory = path.resolve(__dirname, "../app");
 
@@ -26,23 +28,6 @@ async function openForm() {
   fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
   await screen.findByRole("header", { name: "Solicitud de acompañamiento" });
   return navigation;
-}
-
-function fillRequiredFields() {
-  fireEvent.changeText(
-    screen.getByLabelText("¿Qué necesidad quieres abordar? *"),
-    "Me cuesta leer los materiales del curso.",
-  );
-  fireEvent.changeText(
-    screen.getByLabelText("¿Qué esperas de CERETI? *"),
-    "Aprender a usar un lector de pantalla.",
-  );
-  fireEvent.press(screen.getByRole("radio", { name: "En línea" }));
-  fireEvent.press(screen.getByRole("checkbox", { name: "Lunes" }));
-  fireEvent.changeText(
-    screen.getByLabelText("¿Cómo prefieres recibir información? *"),
-    "Correo con texto accesible",
-  );
 }
 
 describe("Formulario de solicitud del estudiante", () => {
@@ -85,7 +70,7 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(screen.getByText("Describe la necesidad que quieres abordar.")).toBeOnTheScreen();
     expect(screen.getByText("Selecciona una modalidad.")).toBeOnTheScreen();
     expect(screen.getByText("Selecciona al menos un día.")).toBeOnTheScreen();
-    fillRequiredFields();
+    fillRequiredStudentRequestFields();
     expect(screen.queryByText("Describe la necesidad que quieres abordar.")).not.toBeOnTheScreen();
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
     fireEvent.changeText(screen.getByLabelText("¿Qué esperas de CERETI? *"), "");
@@ -94,7 +79,7 @@ describe("Formulario de solicitud del estudiante", () => {
 
   test("permite varios apoyos y texto libre, sin exigir necesidades de acceso", async () => {
     await openForm();
-    fillRequiredFields();
+    fillRequiredStudentRequestFields();
     for (const label of ["Comunicación escrita", "Persona de apoyo"]) {
       fireEvent.press(screen.getByRole("checkbox", { name: label }));
       expect(screen.getByRole("checkbox", { name: label })).toBeChecked();
@@ -112,7 +97,7 @@ describe("Formulario de solicitud del estudiante", () => {
 
   test("valida una franja opcional incompleta, inválida o invertida", async () => {
     await openForm();
-    fillRequiredFields();
+    fillRequiredStudentRequestFields();
     fireEvent.changeText(screen.getByLabelText("Desde"), "25:00");
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     expect(
@@ -132,7 +117,7 @@ describe("Formulario de solicitud del estudiante", () => {
 
   test("envía la solicitud ficticia y muestra su comprobante", async () => {
     await openForm();
-    fillRequiredFields();
+    fillRequiredStudentRequestFields();
 
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
 
@@ -141,7 +126,7 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(screen.getByText(/^Referencia: SOL-DEMO-/)).toBeOnTheScreen();
   });
 
-  test("conserva los datos después de un error y reintenta el mismo envío", async () => {
+  test("conserva los datos después de un error y vuelve a enviar el mismo comando", async () => {
     const commands: SubmitStudentRequestCommand[] = [];
     let attempts = 0;
     const submitter: StudentRequestSubmitter = {
@@ -153,7 +138,8 @@ describe("Formulario de solicitud del estudiante", () => {
       },
     };
     render(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
-    fillRequiredFields();
+    fillRequiredStudentRequestFields();
+    fireEvent.press(screen.getByRole("checkbox", { name: "Persona de apoyo" }));
 
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
 
@@ -168,6 +154,7 @@ describe("Formulario de solicitud del estudiante", () => {
       needSummary: "Me cuesta leer los materiales del curso.",
       expectedOutcome: "Aprender a usar un lector de pantalla.",
       modalityPreference: "online",
+      accessNeeds: [{ id: "support-person", label: "Persona de apoyo" }],
       generalAvailability: { preferredWeekdays: [1] },
       preferredAccessibleInformationChannel: "Correo con texto accesible",
     });
@@ -180,7 +167,7 @@ describe("Formulario de solicitud del estudiante", () => {
     });
     const submitStudentRequest = jest.fn(() => pending);
     render(<RequestForm submitter={{ submitStudentRequest }} onRevealGroup={() => undefined} />);
-    fillRequiredFields();
+    fillRequiredStudentRequestFields();
     const action = screen.getByRole("button", { name: "Enviar solicitud" });
 
     fireEvent.press(action);
@@ -194,7 +181,7 @@ describe("Formulario de solicitud del estudiante", () => {
 
   test("el formulario no conserva el borrador después de cerrar sesión", async () => {
     await openForm();
-    fillRequiredFields();
+    fillRequiredStudentRequestFields();
     await act(async () => router.back());
     fireEvent.press(await screen.findByRole("button", { name: "Cambiar de rol" }));
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
@@ -224,4 +211,30 @@ describe("Formulario de solicitud del estudiante", () => {
       expect(screen.queryByLabelText("¿Qué necesidad quieres abordar? *")).not.toBeOnTheScreen();
     },
   );
+});
+
+describe("Adaptador mock de envío", () => {
+  test("falla una vez y confirma el reintento cuando se configura fail-once", async () => {
+    const submitter = createMockStudentRequestSubmitter({
+      delayMs: 0,
+      failureMode: "once",
+      now: () => new Date("2026-09-10T12:00:00.000Z"),
+    });
+    const command: SubmitStudentRequestCommand = {
+      needSummary: "Acceder al material del curso.",
+      expectedOutcome: "Leer el contenido con tecnología de apoyo.",
+      accessNeeds: [{ id: "written-communication", label: "Comunicación escrita" }],
+      generalAvailability: { preferredWeekdays: [1] },
+      modalityPreference: "online",
+      preferredAccessibleInformationChannel: "Correo con texto accesible",
+    };
+
+    await expect(submitter.submitStudentRequest(command)).rejects.toThrow(
+      "Falla simulada del envío",
+    );
+    await expect(submitter.submitStudentRequest(command)).resolves.toEqual({
+      requestId: "SOL-DEMO-001",
+      receivedAt: "2026-09-10T12:00:00.000Z",
+    });
+  });
 });

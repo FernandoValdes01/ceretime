@@ -88,7 +88,7 @@ export interface StudentAreaSnapshot {
 export interface SubmitStudentRequestCommand {
   readonly needSummary: string;
   readonly expectedOutcome: string;
-  readonly accessNeeds: readonly string[];
+  readonly accessNeeds: readonly AccessNeed[];
   readonly otherAccessNeed?: string;
   readonly generalAvailability: GeneralAvailability;
   readonly modalityPreference: ModalityPreference;
