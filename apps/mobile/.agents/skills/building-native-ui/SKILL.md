@@ -1,6 +1,6 @@
 ---
 name: building-native-ui
-description: UI nativa con Expo Router. Usar al crear o rediseñar pantallas, estilos, componentes, navegación, animaciones visuales, patrones de interfaz o pestañas nativas en la app mobile.
+description: UI nativa con Expo Router. Usar al crear o cambiar el diseño de pantallas, estilos, componentes, navegación, animaciones visuales, patrones de interfaz o pestañas nativas en la app mobile.
 version: 1.0.0
 license: MIT
 disable-model-invocation: true
@@ -111,16 +111,21 @@ Follow Apple Human Interface Guidelines.
 
 ## General Styling Rules
 
+- Use NativeWind as the primary styling system for the mobile application
+- Prefer `className` for layout, spacing, colors, typography, borders, responsive states, and shared design tokens
+- Keep reusable visual values in the NativeWind theme instead of duplicating arbitrary values across components
+- Use the React Native `style` prop only for dynamic values, platform-specific properties, or properties that NativeWind cannot represent clearly, such as `borderCurve`
+- Use Reanimated's `useAnimatedStyle` for values that change during animations
+- Reserve `StyleSheet.create` for complex reusable styles, components that do not support `className`, or measured performance problems
+- Do not mix NativeWind, inline styles, and `StyleSheet.create` in the same component without a concrete technical reason
 - Prefer flex gap over margin and padding styles
 - Prefer padding over margin where possible
 - Always account for safe area, either with stack headers, tabs, or ScrollView/FlatList `contentInsetAdjustmentBehavior="automatic"`
 - Ensure both top and bottom safe area insets are accounted for
-- Inline styles not StyleSheet.create unless reusing styles is faster
 - Add entering and exiting animations for state changes
 - Use `{ borderCurve: 'continuous' }` for rounded corners unless creating a capsule shape
 - ALWAYS use a navigation stack title instead of a custom text element on the page
 - When padding a ScrollView, use `contentContainerStyle` padding and gap instead of padding on the ScrollView itself (reduces clipping)
-- CSS and Tailwind are not supported - use inline styles
 
 ## Text Styling
 
