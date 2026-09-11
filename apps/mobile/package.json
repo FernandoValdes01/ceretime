@@ -49,9 +49,11 @@
   },
   "jest": {
     "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/src/$1",
       "^expo($|/.*)": "<rootDir>/node_modules/expo$1"
     },
     "preset": "jest-expo",
+    "resolver": "react-native-worklets/jest/resolver",
     "setupFilesAfterEnv": [
       "<rootDir>/jest.setup.ts"
     ],

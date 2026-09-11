@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type Ref } from "react";
-import { AccessibilityInfo, Keyboard, Platform, Pressable, TextInput, View } from "react-native";
+import { AccessibilityInfo, Keyboard, Pressable, TextInput, View } from "react-native";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import type {
   AccessNeed,
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
-} from "../../application/student-area-models";
-import type { StudentRequestSubmitter } from "../../application/student-area-port";
-import { useSubmitStudentRequest } from "../hooks/use-submit-student-request";
+} from "@/application/student-area-models";
+import type { StudentRequestSubmitter } from "@/application/student-area-port";
+import { useSubmitStudentRequest } from "@/presentation/hooks/use-submit-student-request";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text, useStudentFont } from "./student-text";
 import {
@@ -48,10 +49,12 @@ function Choice({
       accessibilityState={{ checked: selected }}
       onPress={onPress}
       className={`min-h-[52px] flex-row items-center gap-2 p-2 border-2 rounded-lg active:opacity-75 focus:border-student-focus ${selected ? "border-student-primary bg-student-muted" : "border-student-border bg-student-surface"}`}
+      style={{ borderCurve: "continuous" }}
     >
       <View
         accessible={false}
         className={`w-6 h-6 border-2 items-center justify-center ${single ? "rounded-full" : "rounded"} ${selected ? "border-student-primary bg-student-primary" : "border-student-outline"}`}
+        style={single ? undefined : { borderCurve: "continuous" }}
       >
         {selected ? (
           <Text accessible={false} className="text-white text-base leading-5">
@@ -100,8 +103,18 @@ function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCom
 
 function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubmissionReceipt }) {
   return (
-    <View accessibilityLiveRegion="polite" className="gap-5">
-      <View className="gap-3 p-5 rounded-xl border-2 border-student-success bg-student-surface">
+    <Animated.View
+      testID="request-confirmation"
+      entering={FadeIn.duration(200)}
+      exiting={FadeOut.duration(150)}
+      accessibilityLiveRegion="polite"
+      className="gap-5"
+    >
+      <View
+        testID="request-confirmation-card"
+        className="gap-3 p-5 rounded-xl border-2 border-student-success bg-student-surface"
+        style={{ borderCurve: "continuous" }}
+      >
         <Text
           weight="semibold"
           accessibilityRole="header"
@@ -113,7 +126,7 @@ function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubm
           Recibimos tu solicitud ficticia. Este envío solo existe en el simulador de la aplicación.
         </Text>
       </View>
-      <View className="gap-2 p-4 rounded-xl bg-student-muted">
+      <View className="gap-2 p-4 rounded-xl bg-student-muted" style={{ borderCurve: "continuous" }}>
         <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
           Comprobante de prueba
         </Text>
@@ -121,7 +134,7 @@ function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubm
           Referencia: {receipt.requestId}
         </Text>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -158,7 +171,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         requestAnimationFrame(() => {
           onRevealGroup(formTop.current + groupTop.current[firstError]);
           if (control.current) {
-            if (Platform.OS === "web") control.current.focus();
+            if (process.env.EXPO_OS === "web") control.current.focus();
             else AccessibilityInfo.sendAccessibilityEvent(control.current, "focus");
           }
         });
@@ -221,7 +234,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
           onBlur={() => setFocusedField(null)}
           multiline={multiline}
           className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${multiline ? "min-h-28" : "min-h-[52px]"} ${focusedField === key ? "border-student-focus" : errors[key] ? "border-student-error" : "border-student-outline"}`}
-          style={{ fontFamily }}
+          style={{ fontFamily, borderCurve: "continuous" }}
           textAlignVertical={multiline ? "top" : "center"}
           autoCapitalize={key.startsWith("available") ? "none" : "sentences"}
         />
@@ -246,7 +259,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         formTop.current = event.nativeEvent.layout.y;
       }}
     >
-      <View className="p-4 gap-2 bg-student-muted rounded-xl">
+      <View className="p-4 gap-2 bg-student-muted rounded-xl" style={{ borderCurve: "continuous" }}>
         <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
           Formulario de prueba
         </Text>
@@ -258,7 +271,10 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
       <Text className="text-student-secondary text-base leading-[26px]">
         Los campos marcados con * son obligatorios. No incluyas diagnósticos, RUT ni certificados.
       </Text>
-      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
+      <View
+        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
+      >
         {field(
           "needSummary",
           "¿Qué necesidad quieres abordar? *",
@@ -273,7 +289,10 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         )}
       </View>
 
-      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
+      <View
+        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
+      >
         <Text
           weight="semibold"
           accessibilityRole="header"
@@ -284,21 +303,24 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         <Text className="text-student-secondary text-base leading-[26px]">
           Opcional. Selecciona todos los apoyos que necesitas para participar o comunicarte.
         </Text>
-        {accessOptions.map((option) => (
-          <Choice
-            key={option.id}
-            label={option.label}
-            selected={values.accessNeeds.some((need) => need.id === option.id)}
-            onPress={() =>
-              update(
-                "accessNeeds",
-                values.accessNeeds.some((need) => need.id === option.id)
-                  ? values.accessNeeds.filter((need) => need.id !== option.id)
-                  : [...values.accessNeeds, option],
-              )
-            }
-          />
-        ))}
+        {accessOptions.map((option) => {
+          const selected = values.accessNeeds.some((need) => need.id === option.id);
+          return (
+            <Choice
+              key={option.id}
+              label={option.label}
+              selected={selected}
+              onPress={() =>
+                update(
+                  "accessNeeds",
+                  selected
+                    ? values.accessNeeds.filter((need) => need.id !== option.id)
+                    : [...values.accessNeeds, option],
+                )
+              }
+            />
+          );
+        })}
         {field(
           "otherAccessNeed",
           "Otra necesidad de acceso",
@@ -309,6 +331,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
 
       <View
         className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
         onLayout={(event) => {
           groupTop.current.modalityPreference = event.nativeEvent.layout.y;
         }}
@@ -338,6 +361,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
 
       <View
         className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
         onLayout={(event) => {
           groupTop.current.preferredWeekdays = event.nativeEvent.layout.y;
         }}
@@ -355,16 +379,17 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         <View className="flex-row flex-wrap gap-2">
           {weekdays.map((label, index) => {
             const day = (index + 1) % 7;
+            const selected = values.preferredWeekdays.includes(day);
             return (
               <Choice
                 controlRef={index === 0 ? weekdayControl : undefined}
                 key={label}
                 label={label}
-                selected={values.preferredWeekdays.includes(day)}
+                selected={selected}
                 onPress={() =>
                   update(
                     "preferredWeekdays",
-                    values.preferredWeekdays.includes(day)
+                    selected
                       ? values.preferredWeekdays.filter((value) => value !== day)
                       : [...values.preferredWeekdays, day],
                   )
@@ -381,7 +406,10 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         {field("availableFrom", "Desde", "Formato HH:MM, por ejemplo 09:00.")}
         {field("availableTo", "Hasta", "Formato HH:MM, por ejemplo 13:00.")}
       </View>
-      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
+      <View
+        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
+      >
         {field(
           "preferredAccessibleInformationChannel",
           "¿Cómo prefieres recibir información? *",
@@ -394,14 +422,22 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
         de sesión.
       </Text>
       {reviewed && Object.keys(errors).length > 0 && (
-        <Text accessibilityRole="alert" className="text-student-error text-base leading-[26px]">
+        <Text
+          selectable
+          accessibilityRole="alert"
+          className="text-student-error text-base leading-[26px]"
+        >
           Hay campos por revisar. Corrige los mensajes indicados arriba.
         </Text>
       )}
       {submission.status === "error" && (
-        <View
+        <Animated.View
+          testID="submission-error"
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(150)}
           accessibilityLiveRegion="assertive"
           className="gap-3 p-4 rounded-xl border-2 border-student-error bg-student-surface"
+          style={{ borderCurve: "continuous" }}
         >
           <Text selectable weight="semibold" className="text-student-error text-lg leading-[29px]">
             No pudimos enviar la solicitud ficticia.
@@ -410,7 +446,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
             Tus datos siguen en el formulario. Puedes intentar nuevamente.
           </Text>
           <StudentAction label="Reintentar envío" onPress={() => void submission.retry()} />
-        </View>
+        </Animated.View>
       )}
       <StudentAction
         label={submission.status === "submitting" ? "Enviando solicitud…" : "Enviar solicitud"}

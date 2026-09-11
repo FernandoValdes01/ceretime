@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { useFonts } from "expo-font";
-import { StudentScreen } from "../src/presentation/estudiante/student-screen";
-import { RequestForm } from "../src/presentation/estudiante/request-form";
-import { createMockStudentRequestSubmitter } from "../src/infrastructure/mock-student-request-submitter";
+import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
+import { RequestForm } from "@/presentation/estudiante/request-form";
+import { StudentScreen } from "@/presentation/estudiante/student-screen";
 
 jest.mock("expo-font", () => ({ useFonts: jest.fn() }));
 

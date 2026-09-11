@@ -1,4 +1,4 @@
-import type { StudentRequestSubmitter } from "../application/student-area-port";
+import type { StudentRequestSubmitter } from "@/application/student-area-port";
 
 export interface MockStudentRequestSubmitterOptions {
   readonly delayMs?: number;

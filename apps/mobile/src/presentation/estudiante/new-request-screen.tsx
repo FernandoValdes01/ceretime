@@ -1,9 +1,9 @@
 import { Stack } from "expo-router";
 import { useRef } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { KeyboardAvoidingView, ScrollView } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
-import type { StudentRequestSubmitter } from "../../application/student-area-port";
-import { createMockStudentRequestSubmitter } from "../../infrastructure/mock-student-request-submitter";
+import type { StudentRequestSubmitter } from "@/application/student-area-port";
+import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
 import { StudentScreen } from "./student-screen";
 import { RequestForm } from "./request-form";
 
@@ -23,7 +23,7 @@ export default function NewRequestScreen({
   return (
     <KeyboardAvoidingView
       className="flex-1"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={process.env.EXPO_OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={headerHeight}
     >
       <Stack.Screen options={{ title: "Nueva solicitud" }} />

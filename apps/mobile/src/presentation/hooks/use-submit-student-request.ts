@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
-} from "../../application/student-area-models";
-import type { StudentRequestSubmitter } from "../../application/student-area-port";
+} from "@/application/student-area-models";
+import type { StudentRequestSubmitter } from "@/application/student-area-port";
 
 export type StudentRequestSubmissionStatus = "idle" | "submitting" | "error" | "success";
 
@@ -46,7 +46,7 @@ export function useSubmitStudentRequest(
     };
   }, []);
 
-  const perform = useCallback(
+  const performSubmission = useCallback(
     async (command: SubmitStudentRequestCommand) => {
       if (inFlight.current) return;
 
@@ -76,14 +76,14 @@ export function useSubmitStudentRequest(
     async (command: SubmitStudentRequestCommand) => {
       if (inFlight.current) return;
       lastCommand.current = command;
-      await perform(command);
+      await performSubmission(command);
     },
-    [perform],
+    [performSubmission],
   );
 
   const retry = useCallback(async () => {
-    if (lastCommand.current) await perform(lastCommand.current);
-  }, [perform]);
+    if (lastCommand.current) await performSubmission(lastCommand.current);
+  }, [performSubmission]);
 
   return { ...result, submit, retry };
 }

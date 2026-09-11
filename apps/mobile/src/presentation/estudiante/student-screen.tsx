@@ -66,6 +66,7 @@ export function StudentAction({
       onPress={onPress}
       disabled={disabled}
       className={`items-center justify-center border-2 p-4 active:opacity-75 focus:border-student-focus ${disabled ? "opacity-60" : ""} ${description ? "min-h-24 flex-row gap-4 rounded-xl" : "min-h-[52px] rounded-lg"} ${secondary ? "bg-student-surface border-student-border" : "bg-student-primary border-student-primary"}`}
+      style={{ borderCurve: "continuous" }}
     >
       <View className="shrink gap-2">
         <StudentText

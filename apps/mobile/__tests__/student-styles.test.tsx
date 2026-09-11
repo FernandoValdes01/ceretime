@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
-import { StudentScreen, StudentAction } from "../src/presentation/estudiante/student-screen";
-import { RequestForm } from "../src/presentation/estudiante/request-form";
-import { Action } from "../src/presentation/components/screen";
-import { createMockStudentRequestSubmitter } from "../src/infrastructure/mock-student-request-submitter";
+import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
+import { Action } from "@/presentation/components/screen";
+import { RequestForm } from "@/presentation/estudiante/request-form";
+import { StudentScreen, StudentAction } from "@/presentation/estudiante/student-screen";
 
 const submitter = createMockStudentRequestSubmitter({ delayMs: 0 });
 
@@ -33,12 +33,14 @@ test("Tailwind conserva la tipografía y las medidas de los controles nativos", 
     padding: 16,
     borderWidth: 2,
     borderRadius: 8,
+    borderCurve: "continuous",
     fontSize: 16,
     lineHeight: 26,
   });
   expect(screen.getByRole("button", { name: "Enviar solicitud" })).toHaveStyle({
     minHeight: 52,
     padding: 16,
+    borderCurve: "continuous",
     backgroundColor: "#00695b",
   });
 });
@@ -51,6 +53,7 @@ test("Tailwind distingue selección, foco y pulsación sin perder la selección"
   expect(choice).toHaveStyle({
     borderColor: "#00695b",
     backgroundColor: "#f5f3f3",
+    borderCurve: "continuous",
   });
   fireEvent(choice, "focus");
   expect(choice).toHaveStyle({ borderColor: "#2563eb" });

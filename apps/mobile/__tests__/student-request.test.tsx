@@ -3,10 +3,10 @@ import { render } from "@testing-library/react-native";
 import type {
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
-} from "../src/application/student-area-models";
-import type { StudentRequestSubmitter } from "../src/application/student-area-port";
-import { createMockStudentRequestSubmitter } from "../src/infrastructure/mock-student-request-submitter";
-import { RequestForm } from "../src/presentation/estudiante/request-form";
+} from "@/application/student-area-models";
+import type { StudentRequestSubmitter } from "@/application/student-area-port";
+import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
+import { RequestForm } from "@/presentation/estudiante/request-form";
 import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import { fillRequiredStudentRequestFields } from "./student-request-test-helpers";
@@ -50,6 +50,9 @@ describe("Formulario de solicitud del estudiante", () => {
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Selecciona al menos un día.")).toBeOnTheScreen();
+    expect(
+      screen.getByText("Hay campos por revisar. Corrige los mensajes indicados arriba."),
+    ).toHaveProp("selectable", true);
     fireEvent.press(screen.getByRole("checkbox", { name: "Lunes" }));
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
@@ -124,6 +127,10 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(screen.getByRole("button", { name: "Enviando solicitud…" })).toBeDisabled();
     expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
     expect(screen.getByText(/^Referencia: SOL-DEMO-/)).toBeOnTheScreen();
+    expect(screen.getByTestId("request-confirmation")).toHaveProp("entering");
+    expect(screen.getByTestId("request-confirmation-card")).toHaveStyle({
+      borderCurve: "continuous",
+    });
   });
 
   test("conserva los datos después de un error y vuelve a enviar el mismo comando", async () => {
@@ -144,6 +151,8 @@ describe("Formulario de solicitud del estudiante", () => {
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
 
     expect(await screen.findByText("No pudimos enviar la solicitud ficticia.")).toBeOnTheScreen();
+    expect(screen.getByTestId("submission-error")).toHaveProp("entering");
+    expect(screen.getByTestId("submission-error")).toHaveStyle({ borderCurve: "continuous" });
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
     fireEvent.press(screen.getByRole("button", { name: "Reintentar envío" }));
 
