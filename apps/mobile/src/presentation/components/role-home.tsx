@@ -1,13 +1,7 @@
-import { useNavigationSession } from '../navigation/session';
-import { Action, Screen } from './screen';
+import { useNavigationSession } from "../navigation/session";
+import { Action, Screen } from "./screen";
 
-export function RoleHome({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
+export function RoleHome({ title, description }: { title: string; description: string }) {
   const { clearSession } = useNavigationSession();
 
   return (

@@ -7,13 +7,9 @@
  */
 
 /** Sufijos institucionales aceptados por la UCT. */
-export const INSTITUTIONAL_EMAIL_SUFFIXES = [
-  "@alu.uct.cl",
-  "@uct.cl",
-] as const;
+export const INSTITUTIONAL_EMAIL_SUFFIXES = ["@alu.uct.cl", "@uct.cl"] as const;
 
-export type InstitutionalEmailSuffix =
-  (typeof INSTITUTIONAL_EMAIL_SUFFIXES)[number];
+export type InstitutionalEmailSuffix = (typeof INSTITUTIONAL_EMAIL_SUFFIXES)[number];
 
 /** Población lógica para el inicio: no es un rol ni una autorización. */
 export type InstitutionalPopulation = "estudiante" | "personal";
@@ -25,9 +21,7 @@ export function normalizeEmail(email: unknown): string {
 /** Verdadero solo si el correo pertenece a un dominio institucional. */
 export function isInstitutionalEmail(email: unknown): boolean {
   const normalized = normalizeEmail(email);
-  return INSTITUTIONAL_EMAIL_SUFFIXES.some((suffix) =>
-    normalized.endsWith(suffix),
-  );
+  return INSTITUTIONAL_EMAIL_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
 }
 
 /**
@@ -35,9 +29,7 @@ export function isInstitutionalEmail(email: unknown): boolean {
  * `@uct.cl` anticipa personal. No otorga acceso: la habilitación y el rol se
  * resuelven en otra issue (TI2-4 / TI2-5).
  */
-export function getInstitutionalPopulation(
-  email: unknown,
-): InstitutionalPopulation | null {
+export function getInstitutionalPopulation(email: unknown): InstitutionalPopulation | null {
   const normalized = normalizeEmail(email);
   if (normalized.endsWith("@alu.uct.cl")) return "estudiante";
   if (normalized.endsWith("@uct.cl")) return "personal";
@@ -45,8 +37,6 @@ export function getInstitutionalPopulation(
 }
 
 /** `hd` de Google Workspace correspondiente a cada población. */
-export function getHostedDomainForPopulation(
-  population: InstitutionalPopulation,
-): string {
+export function getHostedDomainForPopulation(population: InstitutionalPopulation): string {
   return population === "estudiante" ? "alu.uct.cl" : "uct.cl";
 }

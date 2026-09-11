@@ -8,9 +8,7 @@ import {
 
 describe("normalizeEmail", () => {
   test("recorta espacios y pasa a minúsculas", () => {
-    expect(normalizeEmail("  Estudiante@ALU.uct.CL ")).toBe(
-      "estudiante@alu.uct.cl",
-    );
+    expect(normalizeEmail("  Estudiante@ALU.uct.CL ")).toBe("estudiante@alu.uct.cl");
   });
 
   test("devuelve vacío ante valores no textuales", () => {

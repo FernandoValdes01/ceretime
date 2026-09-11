@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-format:
+    name: Lint y formato
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+
+      - name: Ejecutar Oxlint
+        run: bun run lint
+
+      - name: Comprobar formato con Oxfmt
+        run: bun run format:check
+
+  mobile:
+    name: Validación Mobile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+
+      - name: Verificar tipos de Mobile
+        run: bun run --cwd apps/mobile typecheck
+
+      - name: Ejecutar pruebas de Mobile
+        run: bun run --cwd apps/mobile test
+
+  web:
+    name: Validación Web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+
+      - name: Ejecutar lint existente de Web
+        run: bun run --cwd apps/web lint
+
+      - name: Construir Web
+        run: bun run --cwd apps/web build
+
+  backend:
+    name: Verificación Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+
+      - name: Verificar tipos de Convex
+        run: bun run --cwd apps/web tsc -p ../../convex/tsconfig.json --noEmit

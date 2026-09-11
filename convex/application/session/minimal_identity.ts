@@ -29,9 +29,7 @@ export type MinimalIdentity = {
  * devuelve `null` para que Presentación responda como no autenticado, sin
  * exponer el motivo exacto al cliente.
  */
-export function toMinimalIdentity(
-  input: MinimalIdentityInput,
-): MinimalIdentity | null {
+export function toMinimalIdentity(input: MinimalIdentityInput): MinimalIdentity | null {
   const email = normalizeEmail(input.email);
   if (!isInstitutionalEmail(email)) return null;
 

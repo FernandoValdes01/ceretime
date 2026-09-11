@@ -1,7 +1,7 @@
-import type { ReactElement } from 'react';
+import type { ReactElement } from "react";
 
-import { createMockStudentAreaReader } from '../../infrastructure/mock-student-area-reader';
-import { renderStudentAreaExample } from './StudentAreaExample';
+import { createMockStudentAreaReader } from "../../infrastructure/mock-student-area-reader";
+import { renderStudentAreaExample } from "./StudentAreaExample";
 
 /**
  * Isolated evidence of the intended wiring. This helper is not an app

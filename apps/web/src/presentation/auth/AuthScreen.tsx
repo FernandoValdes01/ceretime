@@ -34,8 +34,7 @@ export function AuthScreen() {
   const clientSession = authClient.useSession();
   const serverState = useQuery(api.presentation.session.getSessionState);
   const [notice, setNotice] = useState<string | null>(readInitialNotice);
-  const [pendingPopulation, setPendingPopulation] =
-    useState<InstitutionalPopulation | null>(null);
+  const [pendingPopulation, setPendingPopulation] = useState<InstitutionalPopulation | null>(null);
   const [prevServerStatus, setPrevServerStatus] = useState<
     "authenticated" | "unauthenticated" | undefined
   >(undefined);
@@ -48,19 +47,14 @@ export function AuthScreen() {
   // Ajuste durante el render (patrón documentado de React), sin efectos.
   if (serverStatus !== prevServerStatus) {
     setPrevServerStatus(serverStatus);
-    if (
-      prevServerStatus === "authenticated" &&
-      serverStatus === "unauthenticated"
-    ) {
+    if (prevServerStatus === "authenticated" && serverStatus === "unauthenticated") {
       setPendingPopulation(null);
       setNotice(GENERIC_AUTH_MESSAGES.sessionExpired);
     }
   }
 
   const isLoading =
-    isBackendConfigured &&
-    !signedIn &&
-    (clientSession.isPending || serverState === undefined);
+    isBackendConfigured && !signedIn && (clientSession.isPending || serverState === undefined);
 
   useEffect(() => {
     headingRef.current?.focus();
@@ -86,9 +80,7 @@ export function AuthScreen() {
     }
   }
 
-  const sessionErrorNotice = clientSession.error
-    ? GENERIC_AUTH_MESSAGES.signInError
-    : notice;
+  const sessionErrorNotice = clientSession.error ? GENERIC_AUTH_MESSAGES.signInError : notice;
 
   if (!isBackendConfigured) {
     return (
@@ -151,9 +143,7 @@ export function AuthScreen() {
             aria-busy={pendingPopulation === entry.id}
             onClick={() => void handleSignIn(entry.id)}
           >
-            {pendingPopulation === entry.id
-              ? GENERIC_AUTH_MESSAGES.loading
-              : entry.buttonLabel}
+            {pendingPopulation === entry.id ? GENERIC_AUTH_MESSAGES.loading : entry.buttonLabel}
           </button>
         ))}
       </div>

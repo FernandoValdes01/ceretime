@@ -3,9 +3,11 @@ import { toMinimalIdentity } from "./minimal_identity";
 
 describe("toMinimalIdentity", () => {
   test("conserva solo correo, nombre y población", () => {
-    expect(
-      toMinimalIdentity({ email: "a@alu.uct.cl", name: " Ana " }),
-    ).toEqual({ email: "a@alu.uct.cl", name: "Ana", population: "estudiante" });
+    expect(toMinimalIdentity({ email: "a@alu.uct.cl", name: " Ana " })).toEqual({
+      email: "a@alu.uct.cl",
+      name: "Ana",
+      population: "estudiante",
+    });
     expect(toMinimalIdentity({ email: "b@uct.cl", name: "Luz" })).toEqual({
       email: "b@uct.cl",
       name: "Luz",
@@ -23,9 +25,7 @@ describe("toMinimalIdentity", () => {
   });
 
   test("rechaza correos no institucionales sin exponer motivo", () => {
-    expect(
-      toMinimalIdentity({ email: "a@gmail.com", name: "Ana" }),
-    ).toBe(null);
+    expect(toMinimalIdentity({ email: "a@gmail.com", name: "Ana" })).toBe(null);
     expect(toMinimalIdentity({ email: "", name: "Ana" })).toBe(null);
     expect(toMinimalIdentity({ email: null, name: "Ana" })).toBe(null);
   });
