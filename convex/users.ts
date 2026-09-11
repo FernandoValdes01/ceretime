@@ -17,7 +17,18 @@ const institutionalStatusUnion = v.union(
 const accountStatusUnion = v.union(v.literal("active"), v.literal("inactive"));
 
 /**
- * Crea un usuario de prueba para validar persistencia, roles y estados.
+ * Handlers internos expuestos para pruebas unitarias de persistencia.
+ */
+export const createTestUserHandler = async (ctx: any, args: any) => {
+  return await ctx.db.insert("users", args);
+};
+
+export const getUserByIdHandler = async (ctx: any, args: { id: any }) => {
+  return await ctx.db.get(args.id);
+};
+
+/**
+ * Crea un usuario ficticio de prueba para validar persistencia, roles y estados.
  */
 export const createTestUser = internalMutation({
   args: {
@@ -27,17 +38,13 @@ export const createTestUser = internalMutation({
     institutionalStatus: institutionalStatusUnion,
     accountStatus: accountStatusUnion,
   },
-  handler: async (ctx, args) => {
-    return await ctx.db.insert("users", args);
-  },
+  handler: createTestUserHandler,
 });
 
 /**
- * Consulta un usuario por su ID interno.
+ * Consulta un usuario ficticio por su ID interno.
  */
 export const getUserById = internalQuery({
   args: { id: v.id("users") },
-  handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
-  },
+  handler: getUserByIdHandler,
 });
