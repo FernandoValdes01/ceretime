@@ -10,6 +10,6 @@ import { ConvexReactClient } from "convex/react";
 export const convexUrl = import.meta.env.VITE_CONVEX_URL ?? "";
 export const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL ?? "";
 
-export const isBackendConfigured = convexUrl.length > 0;
+export const isBackendConfigured = convexUrl.length > 0 && convexSiteUrl.length > 0;
 
 export const convexClient = new ConvexReactClient(convexUrl || "https://127.0.0.1:1");
