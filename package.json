@@ -1,7 +1,9 @@
 {
   "name": "ceretime",
   "private": true,
-  "workspaces": ["apps/*"],
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
     "dev:web": "concurrently -n convex,web -c green,blue \"bunx convex dev\" \"bun run --cwd apps/web dev\"",
     "dev:mobile": "concurrently -n convex,mobile -c green,magenta \"bunx convex dev\" \"bun run mobile:start\"",
