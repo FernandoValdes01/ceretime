@@ -1,23 +1,16 @@
-import { expect, test } from "bun:test";
+/// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import * as api from "./_generated/api";
+import { expect, test } from "vitest";
 import { internal } from "./_generated/api";
-import * as server from "./_generated/server";
 import schema from "./schema";
-import * as users from "./users";
+
+const modules = import.meta.glob("./**/*.ts");
 
 /**
  * Prueba de integración para la entidad 'users' utilizando 'convex-test'
- * mapeando la carpeta '_generated' para compatibilidad nativa con Bun.
+ * con el runner Vitest del monorepo.
  */
 test("Persistencia de usuario: crear, consultar y verificar rol/estado en Convex", async () => {
-  // Mapeo de módulos incluyendo _generated para detectar la raíz de Convex
-  const modules = {
-    "./_generated/api.js": async () => api,
-    "./_generated/server.js": async () => server,
-    "./users.ts": async () => users,
-  };
-
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
 
@@ -49,13 +42,6 @@ test("Persistencia de usuario: crear, consultar y verificar rol/estado en Convex
 });
 
 test("Consultar un usuario inexistente retorna null", async () => {
-  // Mapeo de módulos incluyendo _generated para detectar la raíz de Convex
-  const modules = {
-    "./_generated/api.js": async () => api,
-    "./_generated/server.js": async () => server,
-    "./users.ts": async () => users,
-  };
-
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
 
@@ -80,13 +66,6 @@ test("Consultar un usuario inexistente retorna null", async () => {
 });
 
 test("Rechaza roles o estados inválidos al crear un usuario", async () => {
-  // Mapeo de módulos incluyendo _generated para detectar la raíz de Convex
-  const modules = {
-    "./_generated/api.js": async () => api,
-    "./_generated/server.js": async () => server,
-    "./users.ts": async () => users,
-  };
-
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
 
@@ -105,7 +84,7 @@ test("Rechaza roles o estados inválidos al crear un usuario", async () => {
       ...dummyUserData,
       role: "superadmin" as never,
     }),
-  ).rejects.toThrow();
+  ).rejects.toThrow("Validator error");
 
   // Un estado institucional fuera del catálogo debe ser rechazado por el validador
   await expect(
@@ -113,7 +92,7 @@ test("Rechaza roles o estados inválidos al crear un usuario", async () => {
       ...dummyUserData,
       institutionalStatus: "graduated" as never,
     }),
-  ).rejects.toThrow();
+  ).rejects.toThrow("Validator error");
 
   // Un estado de cuenta fuera del catálogo debe ser rechazado por el validador
   await expect(
@@ -121,5 +100,5 @@ test("Rechaza roles o estados inválidos al crear un usuario", async () => {
       ...dummyUserData,
       accountStatus: "suspended" as never,
     }),
-  ).rejects.toThrow();
+  ).rejects.toThrow("Validator error");
 });
