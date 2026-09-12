@@ -31,8 +31,10 @@ La navegación funciona sin backend ni credenciales. El envío simulado confirma
 | ----------------------------- | ------------- | ------------------------------------------------------------------ |
 | `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                    |
 | `/login`                      | Sin sesión    | Selector temporal de los cuatro roles.                             |
-| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud.                               |
+| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud y Mis solicitudes.             |
 | `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.       |
+| `/estudiante/solicitudes`     | Estudiante    | Listado ficticio de solicitudes propias y estados de carga.        |
+| `/estudiante/solicitudes/:id` | Estudiante    | Detalle de una solicitud propia.                                   |
 | `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos. |
 | `/practicante`                | Practicante   | Inicio provisional de consulta de acompañamientos asignados.       |
 | `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                     |
@@ -49,6 +51,7 @@ app/
 └── (protected)/
     ├── _layout.tsx             Protección por rol
     ├── estudiante/             _layout.tsx + index.tsx
+    │   └── solicitudes/         index.tsx + [requestId].tsx
     ├── profesional/            _layout.tsx + index.tsx
     ├── practicante/            _layout.tsx + index.tsx
     └── administrador/         _layout.tsx + index.tsx
@@ -152,6 +155,20 @@ Para verificar el formulario:
 8. En dispositivo, comprobar teclado, desplazamiento, etiquetas accesibles y texto ampliado. Adjuntar evidencia al PR identificando el commit probado.
 
 Las pruebas `student-request.test.tsx` y `student-request-demo-mode.test.tsx` ejercitan las rutas reales, el contrato con tipos, el adaptador configurable y la prevención de doble envío. También deben seguir pasando las pruebas de navegación de TI4-6.
+
+## Listado y detalle de solicitudes: TI4-19
+
+Desde el inicio del Estudiante, abrir **Mis solicitudes**. El listado muestra únicamente la proyección ficticia entregada por `StudentAreaReader`; cada tarjeta abre el detalle de su solicitud. El detalle presenta la referencia, fechas, necesidad, resultado esperado, necesidades de acceso, disponibilidad, modalidad y canal accesible preferido. La representación accesible del estado pertenece a TI4-31 y el acompañamiento resultante a TI4-35.
+
+La pantalla cubre carga, listado vacío, error con reintento y éxito. Para demostrar los escenarios del adapter mock, reinicia Expo con una de estas configuraciones:
+
+```sh
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=success EXPO_PUBLIC_STUDENT_AREA_DELAY_MS=1200 bun run mobile:start --clear
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=empty bun run mobile:start --clear
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=error bun run mobile:start --clear
+```
+
+Las variables sólo controlan datos ficticios y no contienen secretos. Después de cambiar una variable `EXPO_PUBLIC_`, recarga completamente la aplicación. Un identificador de detalle que no pertenezca al snapshot del estudiante muestra una recuperación controlada y no consulta datos de otro estudiante.
 
 ## Referencias
 

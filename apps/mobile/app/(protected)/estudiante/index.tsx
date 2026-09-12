@@ -14,6 +14,12 @@ export default function StudentHome() {
         description="Cuéntanos qué acompañamiento necesitas"
         onPress={() => router.push("/estudiante/nueva-solicitud")}
       />
+      <StudentAction
+        label="Mis solicitudes"
+        description="Consulta tus solicitudes enviadas"
+        onPress={() => router.push("/estudiante/solicitudes")}
+        secondary
+      />
       <StudentAction label="Cambiar de rol" onPress={clearSession} secondary />
     </StudentScreen>
   );

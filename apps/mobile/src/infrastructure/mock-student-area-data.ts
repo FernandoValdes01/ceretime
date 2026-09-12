@@ -25,6 +25,24 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
       modalityPreference: "online",
       preferredAccessibleInformationChannel: "Correo institucional accesible (demo)",
     },
+    {
+      id: "example-request-2",
+      status: "underReview",
+      origin: "student",
+      createdAt: "2026-09-01T11:30:00.000Z",
+      updatedAt: "2026-09-02T09:15:00.000Z",
+      needSummary: "Contar con apoyos para organizar las evaluaciones del semestre.",
+      expectedOutcome: "Planificar cada evaluación con información accesible.",
+      accessNeeds: [
+        { id: "example-access-2", label: "Comunicación escrita" },
+        { id: "example-access-3", label: "Más tiempo para comunicarme" },
+      ],
+      generalAvailability: {
+        preferredWeekdays: [1, 3, 5],
+      },
+      modalityPreference: "inPerson",
+      preferredAccessibleInformationChannel: "Correo institucional accesible (demo)",
+    },
   ],
   accompaniments: [
     {

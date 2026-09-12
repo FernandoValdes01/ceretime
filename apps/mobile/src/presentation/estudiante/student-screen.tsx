@@ -21,6 +21,7 @@ export function StudentScreen({ title, description, scrollRef, children }: Stude
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior="automatic"
           contentContainerClassName="grow w-full max-w-[600px] self-center px-4 py-6 gap-8"
         >
           <View className="gap-2">
@@ -76,11 +77,19 @@ export function StudentAction({
           {label}
         </StudentText>
         {description ? (
-          <StudentText className="text-white text-base leading-[25px]">{description}</StudentText>
+          <StudentText
+            className={`${secondary ? "text-student-secondary" : "text-white"} text-base leading-[25px]`}
+            selectable
+          >
+            {description}
+          </StudentText>
         ) : null}
       </View>
       {description ? (
-        <StudentText accessible={false} className="text-white text-[32px] ml-auto">
+        <StudentText
+          accessible={false}
+          className={`${secondary ? "text-student-primary" : "text-white"} text-[32px] ml-auto`}
+        >
           ›
         </StudentText>
       ) : null}
