@@ -31,6 +31,23 @@ test("identidad institucional recibe identidad mínima", async () => {
   });
 });
 
+test("identidad personal recibe población personal", async () => {
+  const t = convexTest(schema, modules);
+  const authed = t.withIdentity({
+    subject: "uct-789",
+    issuer: "https://accounts.google.com",
+    email: "p@uct.cl",
+    name: "Pao",
+  });
+  const state = await authed.query(api.presentation.session.getSessionState, {});
+  expect(state).toEqual({
+    status: "authenticated",
+    email: "p@uct.cl",
+    name: "Pao",
+    population: "personal",
+  });
+});
+
 test("dominio externo responde no autenticado sin motivo", async () => {
   const t = convexTest(schema, modules);
   const authed = t.withIdentity({
