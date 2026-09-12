@@ -47,6 +47,7 @@ export interface StudentActionProps {
   readonly description?: string;
   readonly onPress: () => void;
   readonly secondary?: boolean;
+  readonly disabled?: boolean;
 }
 
 export function StudentAction({
@@ -54,14 +55,18 @@ export function StudentAction({
   description,
   onPress,
   secondary = false,
+  disabled = false,
 }: StudentActionProps) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={description}
+      accessibilityState={{ disabled }}
       onPress={onPress}
-      className={`items-center justify-center border-2 p-4 active:opacity-75 focus:border-student-focus ${description ? "min-h-24 flex-row gap-4 rounded-xl" : "min-h-[52px] rounded-lg"} ${secondary ? "bg-student-surface border-student-border" : "bg-student-primary border-student-primary"}`}
+      disabled={disabled}
+      className={`items-center justify-center border-2 p-4 active:opacity-75 focus:border-student-focus ${disabled ? "opacity-60" : ""} ${description ? "min-h-24 flex-row gap-4 rounded-xl" : "min-h-[52px] rounded-lg"} ${secondary ? "bg-student-surface border-student-border" : "bg-student-primary border-student-primary"}`}
+      style={{ borderCurve: "continuous" }}
     >
       <View className="shrink gap-2">
         <StudentText
