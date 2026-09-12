@@ -8,9 +8,19 @@ const appDirectory = path.resolve(__dirname, "../app");
 
 async function openForm() {
   const navigation = renderRouter(appDirectory);
-  fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
-  fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
-  await screen.findByRole("header", { name: "Solicitud de acompañamiento" });
+  const loginButton = await screen.findByRole("button", { name: "Entrar como Estudiante" });
+  await act(async () => {
+    fireEvent.press(loginButton);
+    await Promise.resolve();
+  });
+  await waitFor(() => expect(screen.getByText("Inicio de Estudiante")).toBeOnTheScreen());
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Nueva solicitud" }));
+    await Promise.resolve();
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("header", { name: "Solicitud de acompañamiento" })).toBeOnTheScreen(),
+  );
   return navigation;
 }
 
@@ -134,12 +144,23 @@ describe("Formulario de solicitud del estudiante", () => {
     await openForm();
     fillRequiredFields();
     await act(async () => router.back());
-    fireEvent.press(await screen.findByRole("button", { name: "Cambiar de rol" }));
-    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
-    fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
-    expect(await screen.findByLabelText("¿Qué necesidad quieres abordar? *")).toHaveProp(
-      "value",
-      "",
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByText("Explora la aplicación")).toBeOnTheScreen());
+    const loginButton = await screen.findByRole("button", { name: "Entrar como Estudiante" });
+    await act(async () => {
+      fireEvent.press(loginButton);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByText("Inicio de Estudiante")).toBeOnTheScreen());
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Nueva solicitud" }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText("¿Qué necesidad quieres abordar? *")).toHaveProp("value", ""),
     );
   });
 
@@ -155,9 +176,16 @@ describe("Formulario de solicitud del estudiante", () => {
     "%s no puede acceder al formulario",
     async (role) => {
       const navigation = renderRouter(appDirectory);
-      fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${role}` }));
-      await screen.findByText(`Inicio de ${role}`);
-      await act(async () => router.push("/estudiante/nueva-solicitud"));
+      const loginButton = await screen.findByRole("button", { name: `Entrar como ${role}` });
+      await act(async () => {
+        fireEvent.press(loginButton);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(screen.getByText(`Inicio de ${role}`)).toBeOnTheScreen());
+      await act(async () => {
+        router.push("/estudiante/nueva-solicitud");
+        await Promise.resolve();
+      });
       await waitFor(() => expect(navigation.getPathname()).toBe(`/${role.toLowerCase()}`));
       expect(screen.queryByLabelText("¿Qué necesidad quieres abordar? *")).not.toBeOnTheScreen();
     },

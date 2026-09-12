@@ -21,12 +21,19 @@ describe("Navegación principal", () => {
     "%s puede entrar y salir sin conservar historial protegido",
     async (label, href) => {
       const navigation = renderRouter(appDirectory);
-      await fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${label}` }));
-      expect(await screen.findByText(`Inicio de ${label}`)).toBeOnTheScreen();
+      const loginButton = await screen.findByRole("button", { name: `Entrar como ${label}` });
+      await act(async () => {
+        fireEvent.press(loginButton);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(screen.getByText(`Inicio de ${label}`)).toBeOnTheScreen());
       expect(navigation.getPathname()).toBe(href);
 
-      await fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
-      expect(await screen.findByText("Explora la aplicación")).toBeOnTheScreen();
+      await act(async () => {
+        fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(screen.getByText("Explora la aplicación")).toBeOnTheScreen());
       expect(navigation.getPathname()).toBe("/login");
       expect(router.canGoBack()).toBe(false);
     },
@@ -45,13 +52,21 @@ describe("Navegación principal", () => {
     "%s no puede navegar a las entradas de los otros roles",
     async (label, href) => {
       const navigation = renderRouter(appDirectory);
-      await fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${label}` }));
-      await screen.findByText(`Inicio de ${label}`);
+      const loginButton = await screen.findByRole("button", { name: `Entrar como ${label}` });
+      await act(async () => {
+        fireEvent.press(loginButton);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(screen.getByText(`Inicio de ${label}`)).toBeOnTheScreen());
 
       for (const [otherLabel, otherHref] of roleCases) {
         if (otherHref === href) continue;
-        await act(async () => router.push(otherHref));
+        await act(async () => {
+          router.push(otherHref);
+          await Promise.resolve();
+        });
         await waitFor(() => expect(navigation.getPathname()).toBe(href));
+        expect(screen.getByText("Acceso denegado")).toBeOnTheScreen();
         expect(screen.queryByText(`Inicio de ${otherLabel}`)).not.toBeOnTheScreen();
       }
     },
