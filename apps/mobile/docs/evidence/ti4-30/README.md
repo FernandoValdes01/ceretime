@@ -2,6 +2,8 @@
 
 Recorrido ejecutado el 11 de septiembre de 2026 en un Samsung SM-S911B con Android 16 y Expo Go. El dispositivo se conectó por USB. Se ejecutó una sesión sin variables para el modo normal y otra con `EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE=fail-once`.
 
+Las capturas de los escenarios funcionales se tomaron sobre el commit `6120e1aba1985cb5e0edb2aa1dbdada1f8d6e72a`. La verificación visual posterior de los cambios de presentación se ejecutó sobre `57ce5145de1bcf8ddf99c498cc9ee6f3b6eb94db`.
+
 ## Modo normal
 
 Sin la variable de escenario, el primer envío confirmó la solicitud como `SOL-DEMO-001`.
