@@ -124,7 +124,7 @@ export function AuthScreen() {
         {sessionErrorNotice ? <p role="alert">{sessionErrorNotice}</p> : null}
         <button
           type="button"
-          className="auth-button auth-button--primary"
+          className="auth-button auth-button--primary auth-button--block"
           onClick={() => void handleSignOut()}
         >
           Cerrar sesión
