@@ -4,6 +4,18 @@ Recorrido ejecutado el 11 de septiembre de 2026 en un Samsung SM-S911B con Andro
 
 Las capturas de los escenarios funcionales se tomaron sobre el commit `6120e1aba1985cb5e0edb2aa1dbdada1f8d6e72a`. La verificación visual posterior de los cambios de presentación se ejecutó sobre `57ce5145de1bcf8ddf99c498cc9ee6f3b6eb94db`.
 
+## Verificación manual de accesibilidad
+
+El 12 de septiembre de 2026 se recorrió el formulario sobre el head de implementación `b3330229ca005c176d832370ebdc7765d763ce8a`, sin cambios locales, en el AVD `Pixel_5_Liviano` con Android 15, API 35, y TalkBack 15.0.0.639625893. TalkBack permaneció enlazado con exploración táctil y salida hablada mediante Google TTS; la navegación se realizó con foco secuencial y activación por teclado usando las flechas y Enter. La sesión usó `EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE=fail-once` para recorrer el error y el reintento sin conectar un backend.
+
+| Estado            | Resultado manual con TalkBack                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Envío             | Aprobado. Al activar `Enviar solicitud`, TalkBack recibió el anuncio de envío; el formulario pasó a estado no editable y sus controles quedaron deshabilitados mientras se resolvía la operación. |
+| Error y reintento | Aprobado. El mensaje `No pudimos enviar la solicitud ficticia` recibió el foco, los datos permanecieron en el formulario y `Reintentar envío` se alcanzó y activó en el orden de foco.            |
+| Confirmación      | Aprobado. TalkBack recibió el anuncio de solicitud enviada; el encabezado `Solicitud enviada`, el texto explicativo y la referencia `SOL-DEMO-001` quedaron disponibles en el recorrido de foco.  |
+
+Resultado general: aprobado sin bloqueos de foco ni controles inaccesibles. El commit posterior que incorpora este registro modifica solo documentación; el código móvil verificado corresponde al hash indicado arriba.
+
 ## Modo normal
 
 Sin la variable de escenario, el primer envío confirmó la solicitud como `SOL-DEMO-001`.
