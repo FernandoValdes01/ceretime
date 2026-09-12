@@ -22,5 +22,7 @@
     "noEmit": true
   },
   "include": ["./**/*"],
-  "exclude": ["./_generated"]
+  // Las pruebas unitarias (`bun test`) no se despliegan: usan el runner de
+  // Bun y sus tipos no pertenecen al runtime de Convex.
+  "exclude": ["./_generated", "./**/*.test.ts"]
 }

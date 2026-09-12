@@ -92,3 +92,5 @@ jobs:
 
       - name: Ejecutar pruebas del Backend
         run: bun run test:backend
+      - name: Ejecutar pruebas del backend
+        run: bun run test:convex

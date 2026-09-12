@@ -1,9 +1,11 @@
 // Estado editable de presentación, no contrato de creación ni entidad del backend.
 // Los campos corresponden a la especificación y las proyecciones provisionales TI4-5.
+import type { AccessNeed } from "@/application/student-area-models";
+
 export interface RequestFormValues {
   needSummary: string;
   expectedOutcome: string;
-  accessNeeds: string[];
+  accessNeeds: AccessNeed[];
   otherAccessNeed: string;
   modalityPreference: "" | "inPerson" | "online";
   preferredWeekdays: number[];
