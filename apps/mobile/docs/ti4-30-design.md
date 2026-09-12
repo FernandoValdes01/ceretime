@@ -6,9 +6,9 @@ El envío de solicitudes se modela como una capacidad independiente de la lectur
 
 ## Flujo
 
-El formulario conserva la validación de TI4-8. Cuando los campos son válidos, crea una copia de los datos y comienza el envío. El hook expone los estados `idle`, `submitting`, `error` y `success`, además de una operación de reintento. Una guarda inmediata impide iniciar dos promesas aunque se pulse la acción más de una vez antes del siguiente render.
+El formulario conserva la validación de TI4-8. Cuando los campos son válidos, crea una copia de los datos y comienza el envío. El hook expone los estados `idle`, `submitting`, `error` y `success`, además de la operación protegida de envío. Una guarda inmediata impide iniciar dos promesas aunque se pulse la acción más de una vez antes del siguiente render.
 
-Durante el envío, la acción queda deshabilitada y comunica su estado. Un error mantiene los campos y permite reenviar la misma copia. Un resultado exitoso reemplaza el formulario por una confirmación con un identificador ficticio; no se crea una ruta nueva ni se persisten datos.
+Durante el envío, los controles quedan deshabilitados y la acción comunica su estado. Un error mantiene los campos, permite corregirlos y reconstruye el comando con los valores visibles al reintentar. Un resultado exitoso reemplaza el formulario por una confirmación con un identificador ficticio; no se crea una ruta nueva ni se persisten datos.
 
 ## Límites
 

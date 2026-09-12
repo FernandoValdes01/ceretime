@@ -133,7 +133,7 @@ describe("Formulario de solicitud del estudiante", () => {
     });
   });
 
-  test("conserva los datos después de un error y vuelve a enviar el mismo comando", async () => {
+  test("conserva los datos después de un error y vuelve a enviar los valores visibles", async () => {
     const commands: SubmitStudentRequestCommand[] = [];
     let attempts = 0;
     const submitter: StudentRequestSubmitter = {
@@ -154,11 +154,14 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(screen.getByTestId("submission-error")).toHaveProp("entering");
     expect(screen.getByTestId("submission-error")).toHaveStyle({ borderCurve: "continuous" });
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
+    fireEvent.changeText(
+      screen.getByLabelText("¿Qué necesidad quieres abordar? *"),
+      "Necesito acceder a las lecturas actualizadas.",
+    );
     fireEvent.press(screen.getByRole("button", { name: "Reintentar envío" }));
 
     expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
     expect(commands).toHaveLength(2);
-    expect(commands[1]).toEqual(commands[0]);
     expect(commands[0]).toMatchObject({
       needSummary: "Me cuesta leer los materiales del curso.",
       expectedOutcome: "Aprender a usar un lector de pantalla.",
@@ -166,6 +169,9 @@ describe("Formulario de solicitud del estudiante", () => {
       accessNeeds: [{ id: "support-person", label: "Persona de apoyo" }],
       generalAvailability: { preferredWeekdays: [1] },
       preferredAccessibleInformationChannel: "Correo con texto accesible",
+    });
+    expect(commands[1]).toMatchObject({
+      needSummary: "Necesito acceder a las lecturas actualizadas.",
     });
   });
 
@@ -178,12 +184,18 @@ describe("Formulario de solicitud del estudiante", () => {
     render(<RequestForm submitter={{ submitStudentRequest }} onRevealGroup={() => undefined} />);
     fillRequiredStudentRequestFields();
     const action = screen.getByRole("button", { name: "Enviar solicitud" });
+    const needSummary = screen.getByLabelText("¿Qué necesidad quieres abordar? *");
+    const modality = screen.getByRole("radio", { name: "En línea" });
+    const weekday = screen.getByRole("checkbox", { name: "Lunes" });
 
     fireEvent.press(action);
     fireEvent.press(action);
 
     expect(submitStudentRequest).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Enviando solicitud…" })).toBeDisabled();
+    expect(needSummary).toHaveProp("editable", false);
+    expect(modality).toBeDisabled();
+    expect(weekday).toBeDisabled();
     await act(async () => resolveSubmission(testReceipt));
     expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
   });

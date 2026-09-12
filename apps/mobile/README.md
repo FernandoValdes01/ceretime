@@ -107,7 +107,7 @@ un rol y la identidad institucional se integrará posteriormente.
 
 El formulario usa un puerto de aplicación independiente del lector de TI4-29. La app inyecta un adaptador mock que espera brevemente y devuelve un comprobante ficticio; no llama a Convex, no guarda datos ni replica reglas del backend.
 
-Durante el envío, la acción queda deshabilitada y una guarda inmediata impide iniciar una segunda promesa. Si el adaptador falla, los campos permanecen editables y **Reintentar envío** repite exactamente el mismo comando. Cuando el adaptador responde, el formulario se reemplaza por una confirmación con una referencia de prueba.
+Durante el envío, los campos y las acciones quedan deshabilitados y una guarda inmediata impide iniciar una segunda promesa. Si el adaptador falla, los campos vuelven a quedar editables y **Reintentar envío** valida y envía los valores visibles del formulario. Cuando el adaptador responde, el formulario se reemplaza por una confirmación con una referencia de prueba.
 
 El modo normal no necesita configuración. Para demostrar el error controlado, inicia Expo desde la raíz con el escenario `fail-once`:
 

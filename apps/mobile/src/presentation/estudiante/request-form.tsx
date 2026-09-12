@@ -33,22 +33,25 @@ function Choice({
   onPress,
   single = false,
   controlRef,
+  disabled = false,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   single?: boolean;
   controlRef?: Ref<View>;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       ref={controlRef}
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
       accessibilityRole={single ? "radio" : "checkbox"}
       accessibilityLabel={label}
-      accessibilityState={{ checked: selected }}
+      accessibilityState={{ checked: selected, disabled }}
       onPress={onPress}
-      className={`min-h-[52px] flex-row items-center gap-2 p-2 border-2 rounded-lg active:opacity-75 focus:border-student-focus ${selected ? "border-student-primary bg-student-muted" : "border-student-border bg-student-surface"}`}
+      disabled={disabled}
+      className={`min-h-[52px] flex-row items-center gap-2 p-2 border-2 rounded-lg active:opacity-75 focus:border-student-focus ${disabled ? "opacity-60" : ""} ${selected ? "border-student-primary bg-student-muted" : "border-student-border bg-student-surface"}`}
       style={{ borderCurve: "continuous" }}
     >
       <View
@@ -149,6 +152,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
   const [reviewed, setReviewed] = useState(false);
   const submission = useSubmitStudentRequest(submitter);
+  const isSubmitting = submission.status === "submitting";
   const inputs = useRef<Partial<Record<keyof RequestFormValues, TextInput | null>>>({});
   const errors: RequestFormErrors = reviewed ? validateRequestForm(values) : {};
   const formTop = useRef(0);
@@ -232,8 +236,10 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
           onChangeText={(value) => update(key, value)}
           onFocus={() => setFocusedField(key)}
           onBlur={() => setFocusedField(null)}
+          editable={!isSubmitting}
+          accessibilityState={{ disabled: isSubmitting }}
           multiline={multiline}
-          className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${multiline ? "min-h-28" : "min-h-[52px]"} ${focusedField === key ? "border-student-focus" : errors[key] ? "border-student-error" : "border-student-outline"}`}
+          className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${isSubmitting ? "opacity-60" : ""} ${multiline ? "min-h-28" : "min-h-[52px]"} ${focusedField === key ? "border-student-focus" : errors[key] ? "border-student-error" : "border-student-outline"}`}
           style={{ fontFamily, borderCurve: "continuous" }}
           textAlignVertical={multiline ? "top" : "center"}
           autoCapitalize={key.startsWith("available") ? "none" : "sentences"}
@@ -310,6 +316,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
               key={option.id}
               label={option.label}
               selected={selected}
+              disabled={isSubmitting}
               onPress={() =>
                 update(
                   "accessNeeds",
@@ -348,12 +355,14 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
           label="Presencial"
           single
           selected={values.modalityPreference === "inPerson"}
+          disabled={isSubmitting}
           onPress={() => update("modalityPreference", "inPerson")}
         />
         <Choice
           label="En línea"
           single
           selected={values.modalityPreference === "online"}
+          disabled={isSubmitting}
           onPress={() => update("modalityPreference", "online")}
         />
         <ErrorText message={errors.modalityPreference} />
@@ -386,6 +395,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
                 key={label}
                 label={label}
                 selected={selected}
+                disabled={isSubmitting}
                 onPress={() =>
                   update(
                     "preferredWeekdays",
@@ -445,7 +455,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
           <Text selectable className="text-student-secondary text-base leading-[26px]">
             Tus datos siguen en el formulario. Puedes intentar nuevamente.
           </Text>
-          <StudentAction label="Reintentar envío" onPress={() => void submission.retry()} />
+          <StudentAction label="Reintentar envío" onPress={submit} />
         </Animated.View>
       )}
       <StudentAction

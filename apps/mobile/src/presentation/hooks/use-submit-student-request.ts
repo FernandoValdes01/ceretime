@@ -13,7 +13,6 @@ export interface StudentRequestSubmissionState {
   readonly receipt: StudentRequestSubmissionReceipt | null;
   readonly error: unknown | null;
   readonly submit: (command: SubmitStudentRequestCommand) => Promise<void>;
-  readonly retry: () => Promise<void>;
 }
 
 interface SubmissionResult {
@@ -33,7 +32,6 @@ export function useSubmitStudentRequest(
 ): StudentRequestSubmissionState {
   const [result, setResult] = useState<SubmissionResult>(initialResult);
   const inFlight = useRef(false);
-  const lastCommand = useRef<SubmitStudentRequestCommand | null>(null);
   const attemptId = useRef(0);
   const mounted = useRef(true);
 
@@ -74,16 +72,10 @@ export function useSubmitStudentRequest(
 
   const submit = useCallback(
     async (command: SubmitStudentRequestCommand) => {
-      if (inFlight.current) return;
-      lastCommand.current = command;
       await performSubmission(command);
     },
     [performSubmission],
   );
 
-  const retry = useCallback(async () => {
-    if (lastCommand.current) await performSubmission(lastCommand.current);
-  }, [performSubmission]);
-
-  return { ...result, submit, retry };
+  return { ...result, submit };
 }
