@@ -1,20 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-
-const roleUnion = v.union(
-  v.literal("student"),
-  v.literal("professional"),
-  v.literal("intern"),
-  v.literal("admin"),
-);
-
-const institutionalStatusUnion = v.union(
-  v.literal("enabled"),
-  v.literal("disabled"),
-  v.literal("pending"),
-);
-
-const accountStatusUnion = v.union(v.literal("active"), v.literal("inactive"));
+import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "./validators";
 
 /**
  * Esquema de base de datos Convex para la gestión de usuarios.

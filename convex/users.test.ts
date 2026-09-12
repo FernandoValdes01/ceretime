@@ -47,3 +47,79 @@ test("Persistencia de usuario: crear, consultar y verificar rol/estado en Convex
   expect(fetchedUser?.institutionalStatus).toBe(dummyUserData.institutionalStatus);
   expect(fetchedUser?.accountStatus).toBe(dummyUserData.accountStatus);
 });
+
+test("Consultar un usuario inexistente retorna null", async () => {
+  // Mapeo de módulos incluyendo _generated para detectar la raíz de Convex
+  const modules = {
+    "./_generated/api.js": async () => api,
+    "./_generated/server.js": async () => server,
+    "./users.ts": async () => users,
+  };
+
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+
+  // ID con formato válido que no existe: se inserta y elimina un usuario ficticio
+  const missingId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("users", {
+      email: "temporal.ficticio@cereti.cl",
+      fullName: "Temporal Ficticio",
+      role: "student",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+
+  // La consulta de un ID inexistente debe retornar null
+  const fetchedUser = await t.query(internal.users.getUserById, {
+    id: missingId,
+  });
+  expect(fetchedUser).toBeNull();
+});
+
+test("Rechaza roles o estados inválidos al crear un usuario", async () => {
+  // Mapeo de módulos incluyendo _generated para detectar la raíz de Convex
+  const modules = {
+    "./_generated/api.js": async () => api,
+    "./_generated/server.js": async () => server,
+    "./users.ts": async () => users,
+  };
+
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+
+  // Datos ficticios del usuario de prueba
+  const dummyUserData = {
+    email: "estudiante.ficticio@cereti.cl",
+    fullName: "Usuario Ficticio de Prueba",
+    role: "student" as const,
+    institutionalStatus: "enabled" as const,
+    accountStatus: "active" as const,
+  };
+
+  // Un rol fuera del catálogo debe ser rechazado por el validador
+  await expect(
+    t.mutation(internal.users.createTestUser, {
+      ...dummyUserData,
+      role: "superadmin" as never,
+    }),
+  ).rejects.toThrow();
+
+  // Un estado institucional fuera del catálogo debe ser rechazado por el validador
+  await expect(
+    t.mutation(internal.users.createTestUser, {
+      ...dummyUserData,
+      institutionalStatus: "graduated" as never,
+    }),
+  ).rejects.toThrow();
+
+  // Un estado de cuenta fuera del catálogo debe ser rechazado por el validador
+  await expect(
+    t.mutation(internal.users.createTestUser, {
+      ...dummyUserData,
+      accountStatus: "suspended" as never,
+    }),
+  ).rejects.toThrow();
+});

@@ -89,3 +89,6 @@ jobs:
 
       - name: Verificar tipos de Convex
         run: bun run --cwd apps/web tsc -p ../../convex/tsconfig.json --noEmit
+
+      - name: Ejecutar pruebas del Backend
+        run: bun run test:backend
