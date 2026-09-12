@@ -4,8 +4,8 @@ import { betterAuth } from "better-auth/minimal";
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { env } from "./_generated/server";
+import { rejectExternalUser } from "./application/session/reject_external_user";
 import authConfig from "./auth.config";
-import { isInstitutionalEmail } from "./domain/auth/institutional_domain";
 
 /**
  * Infraestructura de autenticación (TI2-3).
@@ -46,9 +46,7 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     databaseHooks: {
       user: {
         create: {
-          before: async (user) => {
-            if (!isInstitutionalEmail(user.email)) return false;
-          },
+          before: (user) => rejectExternalUser(user.email),
         },
       },
     },

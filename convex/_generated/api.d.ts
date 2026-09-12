@@ -9,6 +9,7 @@
  */
 
 import type * as application_session_minimal_identity from "../application/session/minimal_identity.js";
+import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
 import type * as auth from "../auth.js";
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
 import type * as domain_request_state from "../domain/request/state.js";
@@ -24,6 +25,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "application/session/minimal_identity": typeof application_session_minimal_identity;
+  "application/session/reject_external_user": typeof application_session_reject_external_user;
   auth: typeof auth;
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
   "domain/request/state": typeof domain_request_state;
