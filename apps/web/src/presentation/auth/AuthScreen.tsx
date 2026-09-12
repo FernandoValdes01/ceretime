@@ -63,11 +63,18 @@ export function AuthScreen() {
   async function handleSignIn(population: InstitutionalPopulation) {
     setPendingPopulation(population);
     setNotice(null);
-    try {
-      await authClient.signIn.social(getLoginRequest(population));
-    } catch {
+    // `onError` + `catch`: si el flujo no redirige (fallo de red o rechazo
+    // del servidor), los botones se liberan y se muestra el mensaje genérico.
+    const reset = () => {
       setNotice(GENERIC_AUTH_MESSAGES.signInError);
       setPendingPopulation(null);
+    };
+    try {
+      await authClient.signIn.social(getLoginRequest(), {
+        onError: reset,
+      });
+    } catch {
+      reset();
     }
   }
 

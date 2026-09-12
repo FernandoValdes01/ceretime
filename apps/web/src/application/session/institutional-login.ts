@@ -2,9 +2,10 @@
  * Caso de uso del cliente: inicio institucional (TI2-3).
  *
  * Puro y sin dependencias de React o Convex: describe los dos inicios
- * lógicos sobre el mismo OAuth Client de Google, uno por población. El `hd`
- * es sugerencia de UX; la garantía real es la validación del sufijo en el
- * servidor (`convex/domain/auth/institutional-domain.ts`).
+ * lógicos sobre el mismo OAuth Client de Google, uno por población. Los
+ * botones orientan a elegir la cuenta correcta (`prompt: select_account` en
+ * el servidor); la garantía real es el rechazo de dominios en el backend
+ * (`databaseHooks` en `convex/auth.ts`), nunca un parámetro del cliente.
  *
  * No define roles ni autorizaciones: eso pertenece a TI2-4 / TI2-5.
  */
@@ -15,8 +16,6 @@ type PopulationLogin = {
   id: InstitutionalPopulation;
   /** Sufijo mostrado para que la persona elija su cuenta correcta. */
   emailSuffix: "@alu.uct.cl" | "@uct.cl";
-  /** `hd` de Google Workspace enviado como sugerencia de cuenta. */
-  hostedDomain: "alu.uct.cl" | "uct.cl";
   buttonLabel: string;
 };
 
@@ -24,13 +23,11 @@ export const POPULATION_LOGINS: readonly PopulationLogin[] = [
   {
     id: "estudiante",
     emailSuffix: "@alu.uct.cl",
-    hostedDomain: "alu.uct.cl",
     buttonLabel: "Continuar con cuenta @alu.uct.cl",
   },
   {
     id: "personal",
     emailSuffix: "@uct.cl",
-    hostedDomain: "uct.cl",
     buttonLabel: "Continuar con cuenta @uct.cl",
   },
 ];
@@ -43,13 +40,11 @@ export const POPULATION_LOGINS: readonly PopulationLogin[] = [
  * Convex). `errorCallbackURL` recibe los fallos con `?auth=error`, que la
  * pantalla traduce a un mensaje genérico sin detalles sensibles.
  */
-export function getLoginRequest(population: InstitutionalPopulation) {
-  const entry = POPULATION_LOGINS.find((item) => item.id === population);
+export function getLoginRequest() {
   return {
     provider: "google" as const,
     callbackURL: "/",
     errorCallbackURL: "/?auth=error",
-    additionalParams: { hd: entry?.hostedDomain ?? "alu.uct.cl" },
   };
 }
 

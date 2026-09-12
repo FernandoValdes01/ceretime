@@ -13,7 +13,8 @@
     "mobile:start": "bun run --cwd apps/mobile start",
     "mobile:android": "bun run --cwd apps/mobile android",
     "mobile:ios": "bun run --cwd apps/mobile ios",
-    "mobile:web": "bun run --cwd apps/mobile web"
+    "mobile:web": "bun run --cwd apps/mobile web",
+    "test:convex": "vitest run convex"
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.12.5",
@@ -21,9 +22,12 @@
     "convex": "^1.45.0"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "concurrently": "^10.0.5",
+    "convex-test": "^0.0.58",
     "oxfmt": "^0.67.0",
-    "oxlint": "^1.82.0"
+    "oxlint": "^1.82.0",
+    "vitest": "^5.0.0"
   },
   "packageManager": "bun@1.3.14"
 }

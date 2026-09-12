@@ -35,8 +35,3 @@ export function getInstitutionalPopulation(email: unknown): InstitutionalPopulat
   if (normalized.endsWith("@uct.cl")) return "personal";
   return null;
 }
-
-/** `hd` de Google Workspace correspondiente a cada población. */
-export function getHostedDomainForPopulation(population: InstitutionalPopulation): string {
-  return population === "estudiante" ? "alu.uct.cl" : "uct.cl";
-}

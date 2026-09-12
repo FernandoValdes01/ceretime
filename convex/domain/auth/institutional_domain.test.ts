@@ -1,6 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import {
-  getHostedDomainForPopulation,
   getInstitutionalPopulation,
   isInstitutionalEmail,
   normalizeEmail,
@@ -40,12 +39,5 @@ describe("getInstitutionalPopulation", () => {
 
   test("devuelve null fuera de la institución", () => {
     expect(getInstitutionalPopulation("a@gmail.com")).toBe(null);
-  });
-});
-
-describe("getHostedDomainForPopulation", () => {
-  test("mapea cada población a su hd de Workspace", () => {
-    expect(getHostedDomainForPopulation("estudiante")).toBe("alu.uct.cl");
-    expect(getHostedDomainForPopulation("personal")).toBe("uct.cl");
   });
 });
