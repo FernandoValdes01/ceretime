@@ -1,26 +1,25 @@
 import { expect, test } from "bun:test";
-import { createTestUserHandler, getUserByIdHandler } from "./users";
+import { convexTest } from "convex-test";
+import * as api from "./_generated/api";
+import { internal } from "./_generated/api";
+import * as server from "./_generated/server";
+import schema from "./schema";
+import * as users from "./users";
 
 /**
- * Prueba de persistencia para la entidad 'users' utilizando datos ficticios.
+ * Prueba de integración para la entidad 'users' utilizando 'convex-test'
+ * mapeando la carpeta '_generated' para compatibilidad nativa con Bun.
  */
-test("Persistencia de usuario: crear, consultar y verificar rol/estado", async () => {
-  const mockDb = new Map<string, any>();
-  let idCounter = 1;
-
-  const mockCtx = {
-    db: {
-      insert: async (_table: string, doc: any) => {
-        const id = `users:${idCounter++}` as any;
-        const record = { _id: id, _creationTime: Date.now(), ...doc };
-        mockDb.set(id, record);
-        return id;
-      },
-      get: async (id: any) => {
-        return mockDb.get(id) || null;
-      },
-    },
+test("Persistencia de usuario: crear, consultar y verificar rol/estado en Convex", async () => {
+  // Mapeo de módulos incluyendo _generated para detectar la raíz de Convex
+  const modules = {
+    "./_generated/api.js": async () => api,
+    "./_generated/server.js": async () => server,
+    "./users.ts": async () => users,
   };
+
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
 
   // Datos ficticios del usuario de prueba
   const dummyUserData = {
@@ -31,16 +30,16 @@ test("Persistencia de usuario: crear, consultar y verificar rol/estado", async (
     accountStatus: "active" as const,
   };
 
-  // 1. Crear usuario ficticio
-  const createdId = await createTestUserHandler(mockCtx, dummyUserData);
+  // 1. Ejecutar la mutación interna real de Convex
+  const createdId = await t.mutation(internal.users.createTestUser, dummyUserData);
   expect(createdId).toBeDefined();
 
-  // 2. Consultar usuario por ID
-  const fetchedUser = await getUserByIdHandler(mockCtx, {
+  // 2. Ejecutar la consulta interna real de Convex
+  const fetchedUser = await t.query(internal.users.getUserById, {
     id: createdId,
   });
 
-  // 3. Validar coincidencia de campos, rol y estados
+  // 3. Validar datos contra la base de datos de Convex
   expect(fetchedUser).not.toBeNull();
   expect(fetchedUser?.email).toBe(dummyUserData.email);
   expect(fetchedUser?.fullName).toBe(dummyUserData.fullName);

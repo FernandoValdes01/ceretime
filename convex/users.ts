@@ -17,15 +17,9 @@ const institutionalStatusUnion = v.union(
 const accountStatusUnion = v.union(v.literal("active"), v.literal("inactive"));
 
 /**
- * Handlers internos expuestos para pruebas unitarias de persistencia.
+ * Módulo de funciones internas para la entidad 'users'.
+ * Operan con el esquema oficial de Convex y datos ficticios.
  */
-export const createTestUserHandler = async (ctx: any, args: any) => {
-  return await ctx.db.insert("users", args);
-};
-
-export const getUserByIdHandler = async (ctx: any, args: { id: any }) => {
-  return await ctx.db.get(args.id);
-};
 
 /**
  * Crea un usuario ficticio de prueba para validar persistencia, roles y estados.
@@ -38,7 +32,9 @@ export const createTestUser = internalMutation({
     institutionalStatus: institutionalStatusUnion,
     accountStatus: accountStatusUnion,
   },
-  handler: createTestUserHandler,
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("users", args);
+  },
 });
 
 /**
@@ -46,5 +42,7 @@ export const createTestUser = internalMutation({
  */
 export const getUserById = internalQuery({
   args: { id: v.id("users") },
-  handler: getUserByIdHandler,
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
 });

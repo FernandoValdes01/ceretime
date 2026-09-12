@@ -21,6 +21,7 @@
   },
   "devDependencies": {
     "concurrently": "^10.0.5",
+    "convex-test": "^0.0.58",
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0"
   },
