@@ -6,14 +6,16 @@ import { assignmentRoleUnion } from "./validators";
 /**
  * Escritura guardada de asignaciones (S2).
  *
- * Única vía de escritura de `accompanimentAssignments`. El llamante debe ser
- * un Profesional con cuenta habilitada y vigente: la identidad se resuelve en
- * el servidor y se propaga a esta interna cuando la invoca el futuro flujo
- * público. El recorte por acompañamiento (asignar solo en los propios) llega
- * con el flujo público de RF-39. Rechaza la fila activa duplicada para la
- * misma combinación de acompañamiento, usuario y rol, sosteniendo el
- * invariante del esquema. Las lecturas además deduplican por
- * `accompanimentId` ante filas heredadas. Opera con datos ficticios.
+ * Única vía de escritura de `accompanimentAssignments` junto a `revoke`. El
+ * llamante debe ser un Profesional con cuenta habilitada y vigente: la
+ * identidad se resuelve en el servidor y se propaga a esta interna cuando la
+ * invoca el futuro flujo público. El recorte por acompañamiento (asignar solo
+ * en los propios) llega con el flujo público de RF-39. Rechaza la fila activa
+ * duplicada para la misma combinación de acompañamiento, usuario y rol,
+ * sosteniendo el invariante del esquema: por rol, cada acompañamiento aparece
+ * una sola vez y el listado paginado no puede repetir entre páginas. Las
+ * lecturas además deduplican por `accompanimentId` ante filas escritas a mano
+ * fuera del Backend. Opera con datos ficticios.
  */
 export const assign = internalMutation({
   args: {
@@ -57,5 +59,48 @@ export const assign = internalMutation({
       throw new Error("Ya existe una asignación activa para este acompañamiento y rol");
     }
     return await ctx.db.insert("accompanimentAssignments", { ...args, status: "active" });
+  },
+});
+
+/**
+ * Revoca una asignación existente. Comparte la exigencia de llamante con
+ * `assign` y es idempotente: revocar una fila ya revocada no falla. Completa
+ * la vía de escritura para que ningún flujo necesite inserts directos.
+ */
+export const revoke = internalMutation({
+  args: {
+    accompanimentId: v.id("accompaniments"),
+    userId: v.id("users"),
+    assignedRole: assignmentRoleUnion,
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity === null) throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+    const caller = await ctx.db
+      .query("users")
+      .withIndex("by_token_identifier", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
+      .unique();
+    if (
+      caller === null ||
+      caller.role !== "professional" ||
+      caller.institutionalStatus !== "enabled" ||
+      caller.accountStatus !== "active"
+    ) {
+      throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+    }
+
+    const rows = await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", args.accompanimentId)
+          .eq("userId", args.userId)
+          .eq("status", "active")
+          .eq("assignedRole", args.assignedRole),
+      )
+      .take(1);
+    if (rows.length === 0) return null;
+    await ctx.db.patch(rows[0]._id, { status: "revoked" });
+    return rows[0]._id;
   },
 });

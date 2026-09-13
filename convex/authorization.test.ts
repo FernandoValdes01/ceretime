@@ -83,6 +83,20 @@ async function seedAssignment(
     .mutation(internal.assignments.assign, input);
 }
 
+async function seedRevoke(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    accompanimentId: Id<"accompaniments">;
+    userId: Id<"users">;
+    assignedRole: "professional" | "intern";
+  },
+  caller: { subject: string; email: string },
+) {
+  return await t
+    .withIdentity(identityFor(caller.subject, caller.email))
+    .mutation(internal.assignments.revoke, input);
+}
+
 async function seedNote(
   t: ReturnType<typeof convexTest>,
   accompanimentId: Id<"accompaniments">,
@@ -374,20 +388,34 @@ test("negativos por vigencia y revocación: deshabilitado, inactivo y revocado",
   });
   const accompanimentId = await seedAccompaniment(t, student.id);
   const ownInactiveAccompaniment = await seedAccompaniment(t, inactiveStudent.id);
-  await t.run(async (ctx) => {
-    await ctx.db.insert("accompanimentAssignments", {
+  const caller = { subject: "s2-pro-5", email: "pro5@uct.cl" };
+  await seedAssignment(
+    t,
+    {
       accompanimentId,
       userId: disabledPro.id,
       assignedRole: "professional",
-      status: "active",
-    });
-    await ctx.db.insert("accompanimentAssignments", {
+    },
+    caller,
+  );
+  await seedAssignment(
+    t,
+    {
       accompanimentId,
       userId: revokedPro.id,
       assignedRole: "professional",
-      status: "revoked",
-    });
-  });
+    },
+    caller,
+  );
+  await seedRevoke(
+    t,
+    {
+      accompanimentId,
+      userId: revokedPro.id,
+      assignedRole: "professional",
+    },
+    caller,
+  );
 
   const asDisabled = t.withIdentity(identityFor("s2-pro-4", "pro4@uct.cl"));
   await expect(
@@ -483,14 +511,24 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
     ),
   ).rejects.toThrow("Ya existe una asignación activa");
 
-  await t.run(async (ctx) => {
-    await ctx.db.insert("accompanimentAssignments", {
+  await seedAssignment(
+    t,
+    {
       accompanimentId,
       userId: pro.id,
       assignedRole: "intern",
-      status: "revoked",
-    });
-  });
+    },
+    { subject: "s2-pro-6", email: "pro6@uct.cl" },
+  );
+  await seedRevoke(
+    t,
+    {
+      accompanimentId,
+      userId: pro.id,
+      assignedRole: "intern",
+    },
+    { subject: "s2-pro-6", email: "pro6@uct.cl" },
+  );
   const reassigned = await seedAssignment(
     t,
     {
@@ -501,6 +539,44 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
     { subject: "s2-pro-6", email: "pro6@uct.cl" },
   );
   expect(reassigned).toBeDefined();
+});
+
+test("revocar exige profesional vigente y es idempotente", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "s2-est-16",
+    email: "est16@alu.uct.cl",
+    fullName: "Estudiante Ficticio",
+    role: "student",
+  });
+  const pro = await seedUser(t, {
+    subject: "s2-pro-10",
+    email: "pro10@uct.cl",
+    fullName: "Profesional Ficticio",
+    role: "professional",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  const caller = { subject: "s2-pro-10", email: "pro10@uct.cl" };
+  const input = {
+    accompanimentId,
+    userId: pro.id,
+    assignedRole: "professional" as const,
+  };
+  await seedAssignment(t, input, caller);
+
+  const asStudent = t.withIdentity(identityFor("s2-est-16", "est16@alu.uct.cl"));
+  await expect(asStudent.mutation(internal.assignments.revoke, input)).rejects.toThrow(
+    "No autorizado",
+  );
+
+  await seedRevoke(t, input, caller);
+  const asPro = t.withIdentity(identityFor("s2-pro-10", "pro10@uct.cl"));
+  await expect(
+    asPro.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+  ).rejects.toThrow("No autorizado");
+
+  const second = await seedRevoke(t, input, caller);
+  expect(second).toBeNull();
 });
 
 test("asignar exige profesional vigente: anónimo, estudiante e inhabilitado denegados", async () => {
@@ -544,7 +620,7 @@ test("asignar exige profesional vigente: anónimo, estudiante e inhabilitado den
   );
 });
 
-test("filas activas heredadas duplicadas no repiten el acompañamiento en el listado", async () => {
+test("filas escritas fuera del Backend no repiten el acompañamiento en el listado", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "s2-est-12",
@@ -559,6 +635,8 @@ test("filas activas heredadas duplicadas no repiten el acompañamiento en el lis
     role: "professional",
   });
   const accompanimentId = await seedAccompaniment(t, student.id);
+  // Corrupción simulada: la vía guardada (`assign`) rechazaría la segunda
+  // fila; solo una escritura manual fuera del Backend puede producirla.
   await t.run(async (ctx) => {
     await ctx.db.insert("accompanimentAssignments", {
       accompanimentId,
