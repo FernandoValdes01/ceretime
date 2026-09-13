@@ -14,7 +14,7 @@ function StateMessage({
   children,
 }: {
   title: string;
-  message: string;
+  message?: string;
   children?: React.ReactNode;
 }) {
   return (
@@ -25,18 +25,17 @@ function StateMessage({
       <StudentText
         weight="semibold"
         accessibilityRole="header"
+        accessibilityLiveRegion="polite"
         className="text-student-text text-xl leading-[28px]"
         selectable
       >
         {title}
       </StudentText>
-      <StudentText
-        accessibilityLiveRegion="polite"
-        className="text-student-secondary text-base leading-[26px]"
-        selectable
-      >
-        {message}
-      </StudentText>
+      {message ? (
+        <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
+          {message}
+        </StudentText>
+      ) : null}
       {children}
     </View>
   );
@@ -49,8 +48,8 @@ function RequestCard({ request }: { request: StudentRequest }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Solicitud ${request.id}. ${request.needSummary} Enviada el ${createdAt}`}
-      accessibilityHint="Muestra el detalle de esta solicitud"
+      accessibilityLabel={`Solicitud enviada el ${createdAt}. ${request.needSummary}`}
+      accessibilityHint="Abre el detalle"
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
       onPress={() =>
@@ -66,13 +65,6 @@ function RequestCard({ request }: { request: StudentRequest }) {
       ]}
     >
       <View className="gap-1">
-        <StudentText
-          weight="semibold"
-          className="text-student-primary text-lg leading-[25px]"
-          selectable
-        >
-          {request.id}
-        </StudentText>
         <StudentText className="text-student-secondary text-sm leading-[20px]" selectable>
           Enviada el {createdAt}
         </StudentText>
@@ -85,7 +77,7 @@ function RequestCard({ request }: { request: StudentRequest }) {
         {request.needSummary}
       </StudentText>
       <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
-        Ver detalle de la solicitud
+        Ver detalle
       </StudentText>
     </Pressable>
   );
@@ -95,24 +87,15 @@ export default function StudentRequestsScreen() {
   const { requests } = useStudentAreaContext();
 
   return (
-    <StudentScreen
-      title="Mis solicitudes"
-      description="Revisa las solicitudes de acompañamiento que has enviado a CERETI."
-    >
+    <StudentScreen showIntroduction={false}>
       {requests.status === "loading" ? (
-        <StateMessage
-          title="Cargando solicitudes"
-          message="Estamos preparando tus solicitudes de prueba."
-        >
-          <ActivityIndicator accessibilityLabel="Cargando solicitudes" color="#00695b" />
+        <StateMessage title="Cargando solicitudes…">
+          <ActivityIndicator accessible={false} color="#00695b" />
         </StateMessage>
       ) : null}
 
       {requests.status === "error" ? (
-        <StateMessage
-          title="No pudimos cargar tus solicitudes"
-          message="Ocurrió un problema al consultar tus solicitudes. Puedes intentarlo nuevamente."
-        >
+        <StateMessage title="No pudimos cargar tus solicitudes">
           <StudentAction label="Reintentar" onPress={requests.reload} />
         </StateMessage>
       ) : null}

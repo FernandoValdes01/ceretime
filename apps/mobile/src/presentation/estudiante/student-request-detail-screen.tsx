@@ -27,36 +27,22 @@ export default function StudentRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
   const { requests } = useStudentAreaContext();
   const request = requests.data.find((item) => item.id === requestId);
-  const title =
-    requests.status === "loading"
-      ? "Cargando solicitud"
-      : requests.status === "error"
-        ? "No pudimos cargar el detalle"
-        : request
-          ? "Detalle de solicitud"
-          : "Solicitud no encontrada";
-  const description =
-    requests.status === "loading"
-      ? "Estamos preparando la información de tu solicitud."
-      : requests.status === "error"
-        ? "Ocurrió un problema al consultar esta solicitud. Puedes intentarlo nuevamente."
-        : request
-          ? "Esta es la información que registraste en tu solicitud."
-          : "La solicitud solicitada no está disponible dentro de tus solicitudes.";
 
   return (
-    <StudentScreen title={title} description={description}>
+    <StudentScreen showIntroduction={false}>
       {requests.status === "loading" ? (
         <View
           className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
           style={{ borderCurve: "continuous" }}
         >
           <StudentText
+            weight="semibold"
+            accessibilityRole="header"
             accessibilityLiveRegion="polite"
-            className="text-student-secondary text-base leading-[26px]"
+            className="text-student-text text-xl leading-[28px]"
             selectable
           >
-            Cargando el detalle de tu solicitud.
+            Cargando solicitud…
           </StudentText>
         </View>
       ) : null}
@@ -67,22 +53,40 @@ export default function StudentRequestDetailScreen() {
           style={{ borderCurve: "continuous" }}
         >
           <StudentText
+            weight="semibold"
+            accessibilityRole="header"
             accessibilityLiveRegion="polite"
-            className="text-student-secondary text-base leading-[26px]"
+            className="text-student-text text-xl leading-[28px]"
             selectable
           >
-            No pudimos cargar el detalle de tu solicitud.
+            No pudimos cargar la solicitud
           </StudentText>
           <StudentAction label="Reintentar" onPress={requests.reload} />
         </View>
       ) : null}
 
       {requests.status !== "loading" && requests.status !== "error" && !request ? (
-        <StudentAction
-          label="Volver a mis solicitudes"
-          secondary
-          onPress={() => router.replace("/estudiante/solicitudes")}
-        />
+        <View
+          className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
+          style={{ borderCurve: "continuous" }}
+        >
+          <StudentText
+            weight="semibold"
+            accessibilityRole="header"
+            className="text-student-text text-xl leading-[28px]"
+            selectable
+          >
+            Solicitud no encontrada
+          </StudentText>
+          <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
+            No aparece en tu listado.
+          </StudentText>
+          <StudentAction
+            label="Volver a mis solicitudes"
+            secondary
+            onPress={() => router.replace("/estudiante/solicitudes")}
+          />
+        </View>
       ) : null}
 
       {request ? (
@@ -108,7 +112,7 @@ export default function StudentRequestDetailScreen() {
             value={request.modalityPreference === "online" ? "En línea" : "Presencial"}
           />
           <DetailField
-            label="Canal accesible preferido"
+            label="Medio preferido para recibir información"
             value={request.preferredAccessibleInformationChannel}
           />
         </View>

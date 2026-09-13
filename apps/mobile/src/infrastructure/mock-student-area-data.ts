@@ -10,7 +10,7 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
   },
   requests: [
     {
-      id: "example-request-1",
+      id: "SOL-DEMO-001",
       status: "accepted",
       origin: "student",
       createdAt: "2026-08-10T15:00:00.000Z",
@@ -23,10 +23,10 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
         preferredTimeRange: { from: "10:00", to: "13:00" },
       },
       modalityPreference: "online",
-      preferredAccessibleInformationChannel: "Correo institucional accesible (demo)",
+      preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
     },
     {
-      id: "example-request-2",
+      id: "SOL-DEMO-002",
       status: "underReview",
       origin: "student",
       createdAt: "2026-09-01T11:30:00.000Z",
@@ -41,13 +41,13 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
         preferredWeekdays: [1, 3, 5],
       },
       modalityPreference: "inPerson",
-      preferredAccessibleInformationChannel: "Correo institucional accesible (demo)",
+      preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
     },
   ],
   accompaniments: [
     {
       id: "example-accompaniment-1",
-      requestId: "example-request-1",
+      requestId: "SOL-DEMO-001",
       status: "active",
       createdAt: "2026-08-12T15:00:00.000Z",
     },

@@ -35,7 +35,7 @@ describe("Solicitudes del estudiante", () => {
       </StudentAreaProvider>,
     );
 
-    expect(screen.getByText("Cargando solicitudes")).toBeOnTheScreen();
+    expect(screen.getByText("Cargando solicitudes…")).toBeOnTheScreen();
     await act(async () => resolveRead(await snapshotWith([])));
     expect(await screen.findByText("Aún no tienes solicitudes")).toBeOnTheScreen();
   });
@@ -67,6 +67,11 @@ describe("Solicitudes del estudiante", () => {
     );
 
     expect(await screen.findByText("No pudimos cargar tus solicitudes")).toBeOnTheScreen();
+    expect(
+      screen.queryByText(
+        "Ocurrió un problema al consultar tus solicitudes. Puedes intentarlo nuevamente.",
+      ),
+    ).not.toBeOnTheScreen();
     fireEvent.press(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Aún no tienes solicitudes")).toBeOnTheScreen();
     expect(attempts).toBe(2);
@@ -77,10 +82,15 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
 
-    expect(await screen.findByText("Mis solicitudes")).toBeOnTheScreen();
     const requestCard = await screen.findByRole("button", {
-      name: "Solicitud example-request-1. Organizar apoyos para participar en actividades académicas. Enviada el 10 de agosto de 2026",
+      name: "Solicitud enviada el 10 de agosto de 2026. Organizar apoyos para participar en actividades académicas.",
     });
+    expect(screen.queryByText("Mis solicitudes")).not.toBeOnTheScreen();
+    expect(
+      screen.queryByText("Revisa las solicitudes de acompañamiento que has enviado a CERETI."),
+    ).not.toBeOnTheScreen();
+    expect(screen.queryByText("SOL-DEMO-001")).not.toBeOnTheScreen();
+    expect(screen.getAllByText("Ver detalle")).toHaveLength(2);
     fireEvent(requestCard, "focus");
     expect(requestCard).toHaveStyle({
       outlineColor: "#2563eb",
@@ -91,13 +101,16 @@ describe("Solicitudes del estudiante", () => {
     expect(requestCard).not.toHaveStyle({ outlineWidth: 3 });
     fireEvent.press(requestCard);
 
-    expect(await screen.findByText("Detalle de solicitud")).toBeOnTheScreen();
+    expect(await screen.findByText("SOL-DEMO-001")).toBeOnTheScreen();
+    expect(screen.queryByText("Detalle de solicitud")).not.toBeOnTheScreen();
+    expect(screen.getByText("Medio preferido para recibir información")).toBeOnTheScreen();
+    expect(screen.getByText("Correo institucional con texto accesible")).toBeOnTheScreen();
     expect(
       screen.getByText("Organizar apoyos para participar en actividades académicas."),
     ).toBeOnTheScreen();
     expect(screen.queryByText("Días disponibles")).not.toBeOnTheScreen();
     expect(screen.queryByText("Franja horaria")).not.toBeOnTheScreen();
-    expect(navigation.getPathname()).toBe("/estudiante/solicitudes/example-request-1");
+    expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001");
   });
 
   test("un detalle desconocido no expone datos fuera del snapshot", async () => {
@@ -110,6 +123,7 @@ describe("Solicitudes del estudiante", () => {
     );
 
     expect(await screen.findByText("Solicitud no encontrada")).toBeOnTheScreen();
+    expect(screen.getByText("No aparece en tu listado.")).toBeOnTheScreen();
     expect(
       screen.queryByText("Organizar apoyos para participar en actividades académicas."),
     ).not.toBeOnTheScreen();
@@ -132,7 +146,7 @@ describe("Solicitudes del estudiante", () => {
 
 describe("Adaptador mock de solicitudes", () => {
   test.each([
-    ["success", "example-request-1"],
+    ["success", "SOL-DEMO-001"],
     ["empty", undefined],
   ] as const)("devuelve el escenario %s", async (mode, requestId) => {
     const snapshot = await createMockStudentAreaReader({ mode }).readStudentArea();

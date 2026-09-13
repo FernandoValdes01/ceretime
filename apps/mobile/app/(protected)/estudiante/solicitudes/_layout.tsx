@@ -14,7 +14,7 @@ const defaultReader = createMockStudentAreaReader({
 export default function StudentRequestsLayout() {
   return (
     <StudentAreaProvider reader={defaultReader}>
-      <Stack>
+      <Stack screenOptions={{ headerBackTitle: "Volver" }}>
         <Stack.Screen name="index" options={{ title: "Mis solicitudes" }} />
         <Stack.Screen name="[requestId]" options={{ title: "Detalle de solicitud" }} />
       </Stack>
