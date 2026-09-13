@@ -78,14 +78,25 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
 
     expect(await screen.findByText("Mis solicitudes")).toBeOnTheScreen();
-    fireEvent.press(
-      await screen.findByRole("button", { name: "Abrir solicitud example-request-1" }),
-    );
+    const requestCard = await screen.findByRole("button", {
+      name: "Solicitud example-request-1. Organizar apoyos para participar en actividades académicas. Enviada el 10 de agosto de 2026",
+    });
+    fireEvent(requestCard, "focus");
+    expect(requestCard).toHaveStyle({
+      outlineColor: "#2563eb",
+      outlineStyle: "solid",
+      outlineWidth: 3,
+    });
+    fireEvent(requestCard, "blur");
+    expect(requestCard).not.toHaveStyle({ outlineWidth: 3 });
+    fireEvent.press(requestCard);
 
     expect(await screen.findByText("Detalle de solicitud")).toBeOnTheScreen();
     expect(
       screen.getByText("Organizar apoyos para participar en actividades académicas."),
     ).toBeOnTheScreen();
+    expect(screen.queryByText("Días disponibles")).not.toBeOnTheScreen();
+    expect(screen.queryByText("Franja horaria")).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/example-request-1");
   });
 

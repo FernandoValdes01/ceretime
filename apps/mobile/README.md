@@ -158,7 +158,7 @@ Las pruebas `student-request.test.tsx` y `student-request-demo-mode.test.tsx` ej
 
 ## Listado y detalle de solicitudes: TI4-19
 
-Desde el inicio del Estudiante, abrir **Mis solicitudes**. El listado muestra únicamente la proyección ficticia entregada por `StudentAreaReader`; cada tarjeta abre el detalle de su solicitud. El detalle presenta la referencia, fechas, necesidad, resultado esperado, necesidades de acceso, disponibilidad, modalidad y canal accesible preferido. La representación accesible del estado pertenece a TI4-31 y el acompañamiento resultante a TI4-35.
+Desde el inicio del Estudiante, abrir **Mis solicitudes**. El listado muestra únicamente la proyección ficticia entregada por `StudentAreaReader`; cada tarjeta abre el detalle de su solicitud. El detalle presenta la referencia, fechas, necesidad, resultado esperado, necesidades de acceso, modalidad y canal accesible preferido. La representación accesible del estado pertenece a TI4-31 y el acompañamiento resultante a TI4-35.
 
 La pantalla cubre carga, listado vacío, error con reintento y éxito. Para demostrar los escenarios del adapter mock, reinicia Expo con una de estas configuraciones:
 

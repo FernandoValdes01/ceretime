@@ -3,7 +3,7 @@ import { View } from "react-native";
 
 import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
-import { formatRequestDate, formatWeekdays } from "./student-request-formatters";
+import { formatRequestDate } from "./student-request-formatters";
 import { useStudentAreaContext } from "./student-area-provider";
 
 function DetailField({ label, value }: { label: string; value: string }) {
@@ -101,18 +101,6 @@ export default function StudentRequestDetailScreen() {
               request.accessNeeds.length
                 ? request.accessNeeds.map((need) => need.label).join(", ")
                 : "No registraste necesidades específicas."
-            }
-          />
-          <DetailField
-            label="Días disponibles"
-            value={formatWeekdays(request.generalAvailability.preferredWeekdays)}
-          />
-          <DetailField
-            label="Franja horaria"
-            value={
-              request.generalAvailability.preferredTimeRange
-                ? `${request.generalAvailability.preferredTimeRange.from} a ${request.generalAvailability.preferredTimeRange.to}`
-                : "Sin franja horaria definida."
             }
           />
           <DetailField

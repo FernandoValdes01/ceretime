@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 
 import type { StudentRequest } from "@/application/student-area-models";
@@ -42,21 +43,29 @@ function StateMessage({
 }
 
 function RequestCard({ request }: { request: StudentRequest }) {
+  const createdAt = formatRequestDate(request.createdAt);
+  const [isFocused, setIsFocused] = useState(false);
+
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Abrir solicitud ${request.id}`}
+      accessibilityLabel={`Solicitud ${request.id}. ${request.needSummary} Enviada el ${createdAt}`}
       accessibilityHint="Muestra el detalle de esta solicitud"
+      onFocus={() => setIsFocused(true)}
+      onBlur={() => setIsFocused(false)}
       onPress={() =>
         router.push({
           pathname: "/estudiante/solicitudes/[requestId]",
           params: { requestId: request.id },
         })
       }
-      className="gap-3 rounded-xl border border-student-border bg-student-surface p-5 active:opacity-75 focus:border-student-focus"
-      style={{ borderCurve: "continuous" }}
+      className="gap-3 rounded-xl border border-student-border bg-student-surface p-5 active:opacity-75"
+      style={[
+        { borderCurve: "continuous" },
+        isFocused ? { outlineColor: "#2563eb", outlineStyle: "solid", outlineWidth: 3 } : undefined,
+      ]}
     >
-      <View className="flex-row items-center justify-between gap-3">
+      <View className="gap-1">
         <StudentText
           weight="semibold"
           className="text-student-primary text-lg leading-[25px]"
@@ -65,7 +74,7 @@ function RequestCard({ request }: { request: StudentRequest }) {
           {request.id}
         </StudentText>
         <StudentText className="text-student-secondary text-sm leading-[20px]" selectable>
-          {formatRequestDate(request.createdAt)}
+          Enviada el {createdAt}
         </StudentText>
       </View>
       <StudentText
