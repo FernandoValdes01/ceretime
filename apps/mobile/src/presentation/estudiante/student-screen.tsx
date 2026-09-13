@@ -13,16 +13,14 @@ export function StudentScreen({ title, description, scrollRef, children }: Stude
   return (
     <StudentFonts>
       <SafeAreaView className="flex-1 bg-student-background" edges={["left", "right", "bottom"]}>
-        <View className="items-center border-b border-student-border p-4">
-          <StudentText weight="bold" className="text-student-primary text-2xl leading-[34px]">
-            CERETI
-          </StudentText>
-        </View>
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"
-          contentContainerClassName="grow w-full max-w-[600px] self-center px-4 py-6 gap-8"
+          contentContainerClassName="grow w-full max-w-[600px] self-center p-6 gap-4"
         >
+          <StudentText weight="bold" className="text-student-primary text-sm tracking-[2px]">
+            CERETIME
+          </StudentText>
           <View className="gap-2">
             <StudentText
               weight="semibold"

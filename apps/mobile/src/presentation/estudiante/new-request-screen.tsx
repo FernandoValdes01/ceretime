@@ -1,7 +1,5 @@
-import { Stack } from "expo-router";
 import { useRef } from "react";
 import { KeyboardAvoidingView, ScrollView } from "react-native";
-import { useHeaderHeight } from "expo-router/react-navigation";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
 import { StudentScreen } from "./student-screen";
@@ -19,16 +17,13 @@ export interface NewRequestScreenProps {
 export default function NewRequestScreen({
   submitter = defaultSubmitter,
 }: NewRequestScreenProps = {}) {
-  const headerHeight = useHeaderHeight();
   const scrollRef = useRef<ScrollView>(null);
   return (
     <RoleGuard requiredRole="estudiante">
       <KeyboardAvoidingView
         className="flex-1"
         behavior={process.env.EXPO_OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={headerHeight}
       >
-        <Stack.Screen options={{ title: "Nueva solicitud" }} />
         <StudentScreen
           scrollRef={scrollRef}
           title="Solicitud de acompañamiento"

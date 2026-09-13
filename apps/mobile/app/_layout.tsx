@@ -12,15 +12,15 @@ function RootNavigator() {
   const { role } = useNavigationSession();
 
   return (
-    <Stack>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
       <Stack.Protected guard={role === null}>
         <Stack.Screen name="(public)" options={{ headerShown: false }} />
       </Stack.Protected>
       <Stack.Protected guard={role !== null}>
         <Stack.Screen name="(protected)" options={{ headerShown: false }} />
       </Stack.Protected>
-      <Stack.Screen name="+not-found" options={{ title: "Página no encontrada" }} />
+      <Stack.Screen name="+not-found" />
     </Stack>
   );
 }

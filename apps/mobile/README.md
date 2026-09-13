@@ -17,28 +17,24 @@ Usa un dispositivo o emulador con un cliente de desarrollo compatible con Expo S
 bun run mobile:android
 ```
 
-Para revisar la misma interfaz en navegador:
-
-```sh
-bun run mobile:web
-```
+Para validar la interfaz nativa, ejecuta `ceretime-mobile` y revisa la aplicación en el emulador Android `Medium_Phone`.
 
 La navegación funciona sin backend ni credenciales. El envío simulado confirma por defecto y acepta una variable de entorno opcional para demostrar la recuperación ante errores. La pantalla de acceso permite elegir un rol simulado. La sesión vive únicamente en memoria y se pierde al reiniciar o recargar el proceso de la aplicación. «Cambiar de rol» elimina la sesión y vuelve al selector.
 
 ## Mapa de rutas
 
-| URL                           | Acceso        | Resultado                                                          |
-| ----------------------------- | ------------- | ------------------------------------------------------------------ |
-| `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                    |
-| `/login`                      | Sin sesión    | Selector temporal de roles y prueba sin asignación.                |
-| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud.                               |
-| `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.       |
-| `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos. |
-| `/practicante`                | Practicante   | Redirige según las asignaciones de la sesión.                      |
-| `/practicante/asignaciones`   | Practicante   | Consulta provisional de acompañamientos asignados.                 |
-| `/practicante/sin-asignacion` | Practicante   | Estado de espera cuando no existen acompañamientos asignados.      |
-| `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                     |
-| Cualquier ruta inexistente    | Público       | Página no encontrada con regreso al inicio.                        |
+| URL                           | Acceso        | Resultado                                                                                  |
+| ----------------------------- | ------------- | ------------------------------------------------------------------------------------------ |
+| `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                                            |
+| `/login`                      | Sin sesión    | Selector temporal de roles y prueba sin asignación.                                        |
+| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud.                                                       |
+| `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.                               |
+| `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos.                         |
+| `/practicante`                | Practicante   | Redirige según las asignaciones de la sesión.                                              |
+| `/practicante/asignaciones`   | Practicante   | Consulta provisional de acompañamientos asignados.                                         |
+| `/practicante/sin-asignacion` | Practicante   | Estado de espera cuando no existen acompañamientos asignados. <!-- cspell:disable-line --> |
+| `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                                             |
+| Cualquier ruta inexistente    | Público       | Página no encontrada con regreso al inicio.                                                |
 
 ```text
 app/
@@ -52,7 +48,7 @@ app/
     ├── _layout.tsx             Protección por rol
     ├── estudiante/             _layout.tsx + index.tsx
     ├── profesional/            _layout.tsx + index.tsx
-    ├── practicante/            _layout.tsx + index.tsx + asignaciones.tsx + sin-asignacion.tsx
+    ├── practicante/            rutas de asignaciones del practicante
     └── administrador/         _layout.tsx + index.tsx
 ```
 
@@ -96,7 +92,7 @@ Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el works
 
 1. Abrir la aplicación y comprobar que aparece el selector de roles.
 2. Entrar con cada rol, verificar su inicio y volver mediante «Cambiar de rol».
-3. Entrar como practicante asignado y como practicante sin asignación, y comprobar las rutas `/practicante/asignaciones` y `/practicante/sin-asignacion`.
+3. Entrar como practicante asignado y como practicante sin asignación, y comprobar las rutas `/practicante/asignaciones` y `/practicante/sin-asignacion`. <!-- cspell:disable-line -->
 4. Usar Atrás después de salir y comprobar que no reaparece el contenido protegido.
 5. Abrir un enlace `ceretime://estudiante` sin sesión y comprobar el regreso al acceso. Repetir con los demás roles.
 6. Comprobar etiquetas con lector de pantalla, controles táctiles y texto ampliado sin recortes.
