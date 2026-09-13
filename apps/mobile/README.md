@@ -170,6 +170,8 @@ EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=error bun run mobile:start --clear
 
 Las variables sólo controlan datos ficticios y no contienen secretos. Después de cambiar una variable `EXPO_PUBLIC_`, recarga completamente la aplicación. Un identificador de detalle que no pertenezca al snapshot del estudiante muestra una recuperación controlada y no consulta datos de otro estudiante.
 
+La evidencia nativa del recorrido se registra en [docs/evidence/ti4-19](./docs/evidence/ti4-19/README.md).
+
 ## Referencias
 
 - [Instalación de Expo Router](https://docs.expo.dev/router/installation/).
