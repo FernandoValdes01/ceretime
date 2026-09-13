@@ -19,7 +19,7 @@ function StateMessage({
 }) {
   return (
     <View
-      className="gap-4 rounded-xl border border-student-border bg-student-surface p-5"
+      className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
       style={{ borderCurve: "continuous" }}
     >
       <StudentText
@@ -59,7 +59,7 @@ function RequestCard({ request }: { request: StudentRequest }) {
           params: { requestId: request.id },
         })
       }
-      className="gap-3 rounded-xl border border-student-border bg-student-surface p-5 active:opacity-75"
+      className="gap-3 rounded-xl border border-student-border bg-student-surface p-4 active:opacity-75"
       style={[
         { borderCurve: "continuous" },
         isFocused ? { outlineColor: "#2563eb", outlineStyle: "solid", outlineWidth: 3 } : undefined,

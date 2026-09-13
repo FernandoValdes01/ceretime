@@ -48,7 +48,7 @@ export default function StudentRequestDetailScreen() {
     <StudentScreen title={title} description={description}>
       {requests.status === "loading" ? (
         <View
-          className="gap-4 rounded-xl border border-student-border bg-student-surface p-5"
+          className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
           style={{ borderCurve: "continuous" }}
         >
           <StudentText
@@ -63,7 +63,7 @@ export default function StudentRequestDetailScreen() {
 
       {requests.status === "error" ? (
         <View
-          className="gap-4 rounded-xl border border-student-border bg-student-surface p-5"
+          className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
           style={{ borderCurve: "continuous" }}
         >
           <StudentText
@@ -87,7 +87,7 @@ export default function StudentRequestDetailScreen() {
 
       {request ? (
         <View
-          className="gap-4 rounded-xl border border-student-border bg-student-surface p-5"
+          className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
           style={{ borderCurve: "continuous" }}
         >
           <DetailField label="Referencia" value={request.id} />
