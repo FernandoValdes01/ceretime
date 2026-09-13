@@ -79,6 +79,15 @@ Las pruebas cargan las rutas reales de `app/` con Expo Router. Cubren arranque, 
 
 La evidencia nativa se capturó con `expo run:android` desde Android Studio, en el emulador `Medium_Phone` (`emulator-5554`) con Metro activo. Incluye [error de login](../../docs/evidence/ti4-7-android-studio-login-error.png), [Practicante asignado](../../docs/evidence/ti4-7-android-studio-practicante-asignado.png) y [Practicante sin asignación](../../docs/evidence/ti4-7-android-studio-practicante-sin-asignacion.png).
 
+### Ejecutar desde Android Studio
+
+1. Abre la carpeta `apps/mobile/android` con **Open**; no abras `apps/mobile` ni la raíz del monorepo como proyecto Gradle.
+2. En **File > Settings > Build, Execution, Deployment > Build Tools > Gradle**, selecciona un **Gradle JDK 17** y pulsa **Sync Project with Gradle Files**. JDK 25 puede fallar con `WARNING: A restricted method in java.lang.System has been called` durante la sincronización.
+3. Inicia el emulador `Medium_Phone` desde **Device Manager** y espera a que aparezca como dispositivo conectado.
+4. Desde la raíz del repositorio, inicia Metro en una terminal y déjalo abierto: `bun run --cwd apps/mobile start -- --dev-client --port 8081`.
+5. En Android Studio selecciona la configuración `app`, el dispositivo `Medium_Phone` y pulsa **Run**. La aplicación instalada se llama `ceretime`.
+6. Si aparece una pantalla roja o el aviso de que no encuentra el servidor de desarrollo, confirma que Metro sigue ejecutándose en el puerto 8081 y usa **Reload**. Para ejecutar todo desde terminal, `bun run mobile:android` compila, instala y abre el APK automáticamente.
+
 Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el workspace para evitar instancias diferentes por variantes de peer dependencies. Se usa React Native Testing Library 13 porque el helper `renderRouter` de Expo Router 57 requiere su render síncrono. Un mock desactiva el WebSocket de herramientas de desarrollo de Expo; las rutas y la sesión se ejecutan sin mocks. Las pruebas aisladas de tipografía simulan `expo-font` para comprobar carga y fallo sin perder los valores del formulario.
 
 `export` genera bundles de Android, iOS y web en `dist/`. No genera un APK ni reemplaza la ejecución en dispositivo. La construcción Preview con EAS se mantiene en `eas.json`.
