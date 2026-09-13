@@ -20,6 +20,13 @@ export const createTestUser = internalMutation({
     tokenIdentifier: v.string(),
   },
   handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_token_identifier", (q) => q.eq("tokenIdentifier", args.tokenIdentifier))
+      .unique();
+    if (existing !== null) {
+      throw new Error("Ya existe un perfil para esta identidad");
+    }
     return await ctx.db.insert("users", args);
   },
 });

@@ -139,3 +139,30 @@ test("Vincula el perfil persistido con la identidad autenticada", async () => {
   });
   expect(missingUser).toBeNull();
 });
+
+test("Rechaza perfiles duplicados para la misma identidad", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+
+  // Perfil ficticio con identidad única
+  const profile = {
+    email: "duplicado.ficticio@cereti.cl",
+    fullName: "Duplicado Ficticio",
+    role: "student" as const,
+    institutionalStatus: "enabled" as const,
+    accountStatus: "active" as const,
+    tokenIdentifier: "https://accounts.google.com|duplicado-111",
+  };
+
+  // 1. El primer perfil con esa identidad se persiste
+  const createdId = await t.mutation(internal.users.createTestUser, profile);
+  expect(createdId).toBeDefined();
+
+  // 2. Un segundo perfil con la misma identidad debe ser rechazado
+  await expect(
+    t.mutation(internal.users.createTestUser, {
+      ...profile,
+      email: "otro.ficticio@cereti.cl",
+    }),
+  ).rejects.toThrow("Ya existe un perfil");
+});
