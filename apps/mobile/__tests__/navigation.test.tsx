@@ -4,10 +4,10 @@ import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testi
 
 const appDirectory = path.resolve(__dirname, "../app");
 const roleCases = [
-  ["Estudiante", "/estudiante"],
-  ["Profesional", "/profesional"],
-  ["Practicante", "/practicante"],
-  ["Administrador", "/administrador"],
+  ["Estudiante", "/estudiante", "Inicio de Estudiante"],
+  ["Profesional", "/profesional", "Inicio de Profesional"],
+  ["Practicante", "/practicante/asignaciones", "Acompañamientos asignados"],
+  ["Administrador", "/administrador", "Inicio de Administrador"],
 ] as const;
 
 describe("Navegación principal", () => {
@@ -19,14 +19,14 @@ describe("Navegación principal", () => {
 
   test.each(roleCases)(
     "%s puede entrar y salir sin conservar historial protegido",
-    async (label, href) => {
+    async (label, href, title) => {
       const navigation = renderRouter(appDirectory);
       const loginButton = await screen.findByRole("button", { name: `Entrar como ${label}` });
       await act(async () => {
         fireEvent.press(loginButton);
         await Promise.resolve();
       });
-      await waitFor(() => expect(screen.getByText(`Inicio de ${label}`)).toBeOnTheScreen());
+      await waitFor(() => expect(screen.getByText(title)).toBeOnTheScreen());
       expect(navigation.getPathname()).toBe(href);
 
       await act(async () => {
@@ -50,16 +50,16 @@ describe("Navegación principal", () => {
 
   test.each(roleCases)(
     "%s no puede navegar a las entradas de los otros roles",
-    async (label, href) => {
+    async (label, href, title) => {
       const navigation = renderRouter(appDirectory);
       const loginButton = await screen.findByRole("button", { name: `Entrar como ${label}` });
       await act(async () => {
         fireEvent.press(loginButton);
         await Promise.resolve();
       });
-      await waitFor(() => expect(screen.getByText(`Inicio de ${label}`)).toBeOnTheScreen());
+      await waitFor(() => expect(screen.getByText(title)).toBeOnTheScreen());
 
-      for (const [otherLabel, otherHref] of roleCases) {
+      for (const [, otherHref, otherTitle] of roleCases) {
         if (otherHref === href) continue;
         await act(async () => {
           router.push(otherHref);
@@ -67,7 +67,7 @@ describe("Navegación principal", () => {
         });
         await waitFor(() => expect(navigation.getPathname()).toBe(href));
         expect(screen.getByText("Acceso denegado")).toBeOnTheScreen();
-        expect(screen.queryByText(`Inicio de ${otherLabel}`)).not.toBeOnTheScreen();
+        expect(screen.queryByText(otherTitle)).not.toBeOnTheScreen();
       }
     },
   );

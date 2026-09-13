@@ -30,11 +30,13 @@ La navegación funciona sin backend, variables de entorno ni credenciales. La pa
 | URL                           | Acceso        | Resultado                                                          |
 | ----------------------------- | ------------- | ------------------------------------------------------------------ |
 | `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                    |
-| `/login`                      | Sin sesión    | Selector temporal de los cuatro roles.                             |
+| `/login`                      | Sin sesión    | Selector temporal de roles y prueba sin asignación.                |
 | `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud.                               |
 | `/estudiante/nueva-solicitud` | Estudiante    | Formulario local y validaciones de presentación de TI4-8.          |
 | `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos. |
-| `/practicante`                | Practicante   | Inicio provisional de consulta de acompañamientos asignados.       |
+| `/practicante`                | Practicante   | Redirige según las asignaciones de la sesión.                      |
+| `/practicante/asignaciones`   | Practicante   | Consulta provisional de acompañamientos asignados.                 |
+| `/practicante/sin-asignacion` | Practicante   | Estado de espera cuando no existen acompañamientos asignados.      |
 | `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                     |
 | Cualquier ruta inexistente    | Público       | Página no encontrada con regreso al inicio.                        |
 
@@ -50,17 +52,17 @@ app/
     ├── _layout.tsx             Protección por rol
     ├── estudiante/             _layout.tsx + index.tsx
     ├── profesional/            _layout.tsx + index.tsx
-    ├── practicante/            _layout.tsx + index.tsx
+    ├── practicante/            _layout.tsx + index.tsx + asignaciones.tsx + sin-asignacion.tsx
     └── administrador/         _layout.tsx + index.tsx
 ```
 
-Los grupos entre paréntesis no aparecen en la URL. `Stack.Protected` impide entrar a un grupo sin sesión y a las carpetas de otros roles. Los intentos se redirigen a una ruta permitida. Al eliminar la sesión, Expo Router retira las entradas protegidas del historial.
+Los grupos entre paréntesis no aparecen en la URL. `Stack.Protected` protege las rutas públicas y protegidas según exista una sesión. `RoleGuard` valida el rol dentro de cada sección y las guardas del practicante validan también sus asignaciones. Al eliminar la sesión, Expo Router retira las entradas protegidas del historial.
 
 ## Continuar el desarrollo
 
 - Agrega las pantallas de cada rol dentro de su carpeta. El control del layout superior cubre las rutas nuevas de esa carpeta.
 - Mantén componentes reutilizables y estado de navegación en `src/presentation/`, fuera de `app/`, para que Expo Router no los convierta en rutas.
-- TI4-7 reemplazará el selector y el proveedor de sesión temporal por el flujo de autenticación simulado mediante adapters. La carga, los errores de autenticación, logout mediante adapter y asignaciones del practicante pertenecen a esa tarea.
+- TI4-7 ya integra el selector y el proveedor de sesión simulados. El punto de composición inyecta el adapter y las credenciales de demostración; la presentación sólo depende de contratos y props. La autenticación real reemplazará el adapter en ese punto.
 - Los identificadores de `roles.ts` son locales a la navegación. No definen contratos compartidos con el backend.
 - Esta protección controla la navegación del cliente. La autorización real debe verificarse en el backend cuando se integre la API.
 
@@ -75,6 +77,8 @@ bun run --cwd apps/mobile export
 
 Las pruebas cargan las rutas reales de `app/` con Expo Router. Cubren arranque, entrada y salida de los cuatro roles, eliminación del historial protegido, enlaces directos sin sesión, intentos de acceso entre roles y recuperación de rutas inexistentes.
 
+La evidencia nativa se capturó con `expo run:android` desde Android Studio, en el emulador `Medium_Phone` (`emulator-5554`) con Metro activo. Incluye [error de login](../../docs/evidence/ti4-7-android-studio-login-error.png), [Practicante asignado](../../docs/evidence/ti4-7-android-studio-practicante-asignado.png) y [Practicante sin asignación](../../docs/evidence/ti4-7-android-studio-practicante-sin-asignacion.png).
+
 Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el workspace para evitar instancias diferentes por variantes de peer dependencies. Se usa React Native Testing Library 13 porque el helper `renderRouter` de Expo Router 57 requiere su render síncrono. Un mock desactiva el WebSocket de herramientas de desarrollo de Expo; las rutas y la sesión se ejecutan sin mocks. Las pruebas aisladas de tipografía simulan `expo-font` para comprobar carga y fallo sin perder los valores del formulario.
 
 `export` genera bundles de Android, iOS y web en `dist/`. No genera un APK ni reemplaza la ejecución en dispositivo. La construcción Preview con EAS se mantiene en `eas.json`.
@@ -83,10 +87,11 @@ Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el works
 
 1. Abrir la aplicación y comprobar que aparece el selector de roles.
 2. Entrar con cada rol, verificar su inicio y volver mediante «Cambiar de rol».
-3. Usar Atrás después de salir y comprobar que no reaparece el contenido protegido.
-4. Abrir un enlace `ceretime://estudiante` sin sesión y comprobar el regreso al acceso. Repetir con los demás roles.
-5. Comprobar etiquetas con lector de pantalla, controles táctiles y texto ampliado sin recortes.
-6. Adjuntar al PR capturas o video del recorrido, dispositivo, versión del sistema y commit probado.
+3. Entrar como practicante asignado y como practicante sin asignación, y comprobar las rutas `/practicante/asignaciones` y `/practicante/sin-asignacion`.
+4. Usar Atrás después de salir y comprobar que no reaparece el contenido protegido.
+5. Abrir un enlace `ceretime://estudiante` sin sesión y comprobar el regreso al acceso. Repetir con los demás roles.
+6. Comprobar etiquetas con lector de pantalla, controles táctiles y texto ampliado sin recortes.
+7. Adjuntar al PR capturas o video del recorrido, dispositivo, versión del sistema y commit probado.
 
 La evidencia nativa y la revisión de otro integrante deben completarse antes de integrar y cerrar TI4-6.
 

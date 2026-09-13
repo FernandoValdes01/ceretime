@@ -175,18 +175,22 @@ describe("Formulario de solicitud del estudiante", () => {
   test.each(["Profesional", "Practicante", "Administrador"])(
     "%s no puede acceder al formulario",
     async (role) => {
+      const roleHomeTitle =
+        role === "Practicante" ? "Acompañamientos asignados" : `Inicio de ${role}`;
+      const roleHomePath =
+        role === "Practicante" ? "/practicante/asignaciones" : `/${role.toLowerCase()}`;
       const navigation = renderRouter(appDirectory);
       const loginButton = await screen.findByRole("button", { name: `Entrar como ${role}` });
       await act(async () => {
         fireEvent.press(loginButton);
         await Promise.resolve();
       });
-      await waitFor(() => expect(screen.getByText(`Inicio de ${role}`)).toBeOnTheScreen());
+      await waitFor(() => expect(screen.getByText(roleHomeTitle)).toBeOnTheScreen());
       await act(async () => {
         router.push("/estudiante/nueva-solicitud");
         await Promise.resolve();
       });
-      await waitFor(() => expect(navigation.getPathname()).toBe(`/${role.toLowerCase()}`));
+      await waitFor(() => expect(navigation.getPathname()).toBe(roleHomePath));
       expect(screen.queryByLabelText("¿Qué necesidad quieres abordar? *")).not.toBeOnTheScreen();
     },
   );

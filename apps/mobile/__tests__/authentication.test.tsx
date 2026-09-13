@@ -13,6 +13,14 @@ import {
   NavigationSessionProvider,
   useNavigationSession,
 } from "../src/presentation/navigation/session";
+import { practitionerRoutes } from "../src/presentation/navigation/practitioner-routes";
+
+const loginProps = {
+  unassignedPractitionerCredentials: {
+    email: "practicante-sin-asignacion@cereti.test",
+    password: "cereti-demo",
+  },
+} as const;
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -39,7 +47,11 @@ const fakeSession: AuthSession = {
 
 function SessionContent() {
   const { session } = useNavigationSession();
-  return session ? <RoleHome title="Inicio ficticio" description="Sesión activa." /> : <Login />;
+  return session ? (
+    <RoleHome title="Inicio ficticio" description="Sesión activa." />
+  ) : (
+    <Login {...loginProps} />
+  );
 }
 
 describe("autenticación mobile simulada", () => {
@@ -51,8 +63,8 @@ describe("autenticación mobile simulada", () => {
     };
 
     render(
-      <NavigationSessionProvider authPort={authPort}>
-        <Login />
+      <NavigationSessionProvider authPort={authPort} demoCredentials={mockAuthCredentials}>
+        <Login {...loginProps} />
       </NavigationSessionProvider>,
     );
     fireEvent.changeText(screen.getByLabelText("Correo electrónico"), "usuario@cereti.test");
@@ -75,8 +87,11 @@ describe("autenticación mobile simulada", () => {
 
   test("muestra un error de autenticación y conserva el formulario", async () => {
     render(
-      <NavigationSessionProvider>
-        <Login />
+      <NavigationSessionProvider
+        authPort={createMockAuthenticationPort()}
+        demoCredentials={mockAuthCredentials}
+      >
+        <Login {...loginProps} />
       </NavigationSessionProvider>,
     );
     fireEvent.changeText(screen.getByLabelText("Correo electrónico"), "incorrecto@cereti.test");
@@ -109,7 +124,7 @@ describe("autenticación mobile simulada", () => {
     };
 
     render(
-      <NavigationSessionProvider authPort={authPort}>
+      <NavigationSessionProvider authPort={authPort} demoCredentials={mockAuthCredentials}>
         <SessionContent />
       </NavigationSessionProvider>,
     );
@@ -150,7 +165,7 @@ describe("autenticación mobile simulada", () => {
     };
 
     render(
-      <NavigationSessionProvider authPort={authPort}>
+      <NavigationSessionProvider authPort={authPort} demoCredentials={mockAuthCredentials}>
         <SessionContent />
       </NavigationSessionProvider>,
     );
@@ -185,7 +200,7 @@ describe("autenticación mobile simulada", () => {
 
   test("muestra los dos estados de asignación del practicante", async () => {
     const appDirectory = path.resolve(__dirname, "../app");
-    renderRouter(appDirectory);
+    const navigation = renderRouter(appDirectory);
     await act(async () => {
       fireEvent.press(
         screen.getByRole("button", { name: "Entrar como Practicante sin asignación" }),
@@ -195,10 +210,11 @@ describe("autenticación mobile simulada", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "Acceso restringido: todavía no tienes acompañamientos asignados. Te avisaremos cuando exista uno.",
+          "Todavía no tienes acompañamientos asignados. Te avisaremos cuando exista uno.",
         ),
       ).toBeOnTheScreen(),
     );
+    expect(navigation.getPathname()).toBe(practitionerRoutes.unassigned);
     await act(async () => {
       fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
       await Promise.resolve();
@@ -211,5 +227,6 @@ describe("autenticación mobile simulada", () => {
     await waitFor(() =>
       expect(screen.getByText(/Tienes acompañamientos asignados/)).toBeOnTheScreen(),
     );
+    expect(navigation.getPathname()).toBe(practitionerRoutes.assigned);
   });
 });

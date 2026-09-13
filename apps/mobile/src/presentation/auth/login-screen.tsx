@@ -1,12 +1,16 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { unassignedPractitionerCredentials } from "../../infrastructure/mock-authentication";
+import type { AuthCredentials } from "../../application/auth-models";
 import { Action, Screen } from "../components/screen";
 import { roles } from "../navigation/roles";
 import { useNavigationSession } from "../navigation/session";
 
-export function LoginScreen() {
+export function LoginScreen({
+  unassignedPractitionerCredentials,
+}: {
+  readonly unassignedPractitionerCredentials: AuthCredentials;
+}) {
   const { signIn, selectRole, status, error, clearError } = useNavigationSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

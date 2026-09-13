@@ -9,31 +9,25 @@ import {
 
 import type { AuthCredentials, AuthRole, AuthSession } from "../../application/auth-models";
 import type { AuthPort } from "../../application/auth-port";
-import {
-  createMockAuthenticationPort,
-  mockAuthCredentials,
-} from "../../infrastructure/mock-authentication";
-import type { NavigationRole } from "./roles";
 
 export type SessionStatus = "unauthenticated" | "loading" | "authenticated" | "error";
 
 type NavigationSession = {
   readonly session: AuthSession | null;
-  readonly role: NavigationRole | null;
+  readonly role: AuthRole | null;
   readonly status: SessionStatus;
   readonly error: string | null;
-  readonly accessDeniedRole: NavigationRole | null;
+  readonly accessDeniedRole: AuthRole | null;
   readonly signIn: (credentials: AuthCredentials) => Promise<boolean>;
   readonly signOut: () => Promise<boolean>;
   /** Compatibility helper for the existing role-selector prototype. */
   readonly selectRole: (role: AuthRole) => Promise<boolean>;
   readonly clearError: () => void;
-  readonly recordAccessDenied: (role: NavigationRole) => void;
+  readonly recordAccessDenied: (role: AuthRole) => void;
   readonly dismissAccessDenied: () => void;
 };
 
 const SessionContext = createContext<NavigationSession | null>(null);
-const defaultAuthPort = createMockAuthenticationPort();
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -41,12 +35,16 @@ function errorMessage(error: unknown, fallback: string) {
 
 export function NavigationSessionProvider({
   children,
-  authPort = defaultAuthPort,
-}: PropsWithChildren<{ readonly authPort?: AuthPort }>) {
+  authPort,
+  demoCredentials,
+}: PropsWithChildren<{
+  readonly authPort: AuthPort;
+  readonly demoCredentials: Readonly<Record<AuthRole, AuthCredentials>>;
+}>) {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [status, setStatus] = useState<SessionStatus>("unauthenticated");
   const [error, setError] = useState<string | null>(null);
-  const [accessDeniedRole, setAccessDeniedRole] = useState<NavigationRole | null>(null);
+  const [accessDeniedRole, setAccessDeniedRole] = useState<AuthRole | null>(null);
   const operation = useRef(0);
   const pendingOperation = useRef<"login" | "logout" | null>(null);
 
@@ -105,12 +103,12 @@ export function NavigationSessionProvider({
   }, [authPort, session]);
 
   const selectRole = useCallback(
-    (selectedRole: AuthRole) => signIn(mockAuthCredentials[selectedRole]),
-    [signIn],
+    (selectedRole: AuthRole) => signIn(demoCredentials[selectedRole]),
+    [demoCredentials, signIn],
   );
 
   const clearError = useCallback(() => setError(null), []);
-  const recordAccessDenied = useCallback((deniedRole: NavigationRole) => {
+  const recordAccessDenied = useCallback((deniedRole: AuthRole) => {
     setAccessDeniedRole(deniedRole);
   }, []);
   const dismissAccessDenied = useCallback(() => setAccessDeniedRole(null), []);
