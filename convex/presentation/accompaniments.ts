@@ -215,6 +215,10 @@ export const listMyAccompaniments = query({
         q.eq("userId", profile._id).eq("status", "active").eq("assignedRole", scope.assignedRole),
       )
       .paginate(args.paginationOpts);
+    // Deduplicación defensiva ante filas heredadas previas al invariante. El
+    // cruce de páginas no repite: la vía guardada admite como máximo una fila
+    // activa por tripla, así que por rol cada acompañamiento aparece una sola
+    // vez en este índice.
     const seen = new Map<string, Doc<"accompaniments">>();
     for (const assignment of result.page) {
       const key = assignment.accompanimentId;
