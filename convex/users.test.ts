@@ -21,6 +21,7 @@ test("Persistencia de usuario: crear, consultar y verificar rol/estado en Convex
     role: "student" as const,
     institutionalStatus: "enabled" as const,
     accountStatus: "active" as const,
+    tokenIdentifier: "https://accounts.google.com|ficticio-123",
   };
 
   // 1. Ejecutar la mutación interna real de Convex
@@ -39,6 +40,7 @@ test("Persistencia de usuario: crear, consultar y verificar rol/estado en Convex
   expect(fetchedUser?.role).toBe(dummyUserData.role);
   expect(fetchedUser?.institutionalStatus).toBe(dummyUserData.institutionalStatus);
   expect(fetchedUser?.accountStatus).toBe(dummyUserData.accountStatus);
+  expect(fetchedUser?.tokenIdentifier).toBe(dummyUserData.tokenIdentifier);
 });
 
 test("Consultar un usuario inexistente retorna null", async () => {
@@ -53,6 +55,7 @@ test("Consultar un usuario inexistente retorna null", async () => {
       role: "student",
       institutionalStatus: "enabled",
       accountStatus: "active",
+      tokenIdentifier: "https://accounts.google.com|temporal-456",
     });
     await ctx.db.delete(id);
     return id;
@@ -76,6 +79,7 @@ test("Rechaza roles o estados inválidos al crear un usuario", async () => {
     role: "student" as const,
     institutionalStatus: "enabled" as const,
     accountStatus: "active" as const,
+    tokenIdentifier: "https://accounts.google.com|ficticio-123",
   };
 
   // Un rol fuera del catálogo debe ser rechazado por el validador
@@ -101,4 +105,37 @@ test("Rechaza roles o estados inválidos al crear un usuario", async () => {
       accountStatus: "suspended" as never,
     }),
   ).rejects.toThrow("Validator error");
+});
+
+test("Vincula el perfil persistido con la identidad autenticada", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+
+  // Identificador ficticio con forma de `tokenIdentifier` de Convex Auth
+  const tokenIdentifier = "https://accounts.google.com|ficticio-789";
+
+  // 1. Persistir el perfil asociado a la identidad ficticia
+  const createdId = await t.mutation(internal.users.createTestUser, {
+    email: "vinculado.ficticio@cereti.cl",
+    fullName: "Vinculado Ficticio",
+    role: "student" as const,
+    institutionalStatus: "enabled" as const,
+    accountStatus: "active" as const,
+    tokenIdentifier,
+  });
+  expect(createdId).toBeDefined();
+
+  // 2. Recuperar el mismo perfil mediante su identificador de identidad
+  const linkedUser = await t.query(internal.users.getUserByTokenIdentifier, {
+    tokenIdentifier,
+  });
+  expect(linkedUser).not.toBeNull();
+  expect(linkedUser?._id).toEqual(createdId);
+  expect(linkedUser?.email).toBe("vinculado.ficticio@cereti.cl");
+
+  // 3. Un identificador desconocido no vincula ningún perfil
+  const missingUser = await t.query(internal.users.getUserByTokenIdentifier, {
+    tokenIdentifier: "https://accounts.google.com|inexistente-000",
+  });
+  expect(missingUser).toBeNull();
 });

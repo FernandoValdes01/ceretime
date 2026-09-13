@@ -14,11 +14,16 @@ export default defineSchema({
     role: roleUnion,
     institutionalStatus: institutionalStatusUnion,
     accountStatus: accountStatusUnion,
+    // Clave estable hacia la identidad autenticada
+    // (`ctx.auth.getUserIdentity().tokenIdentifier`); solo ficticia en pruebas.
+    tokenIdentifier: v.string(),
   })
     // Índice para búsquedas rápidas por correo electrónico
     .index("by_email", ["email"])
     // Índice para filtrado de usuarios según su rol
     .index("by_role", ["role"])
     // Índice para consulta según habilitación institucional
-    .index("by_institutional_status", ["institutionalStatus"]),
+    .index("by_institutional_status", ["institutionalStatus"])
+    // Índice para vincular el perfil con la identidad autenticada
+    .index("by_token_identifier", ["tokenIdentifier"]),
 });
