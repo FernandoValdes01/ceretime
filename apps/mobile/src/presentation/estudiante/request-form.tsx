@@ -1,5 +1,13 @@
-import { useRef, useState, type Ref } from "react";
-import { AccessibilityInfo, Keyboard, Platform, Pressable, TextInput, View } from "react-native";
+import { useEffect, useRef, useState, type Ref } from "react";
+import { AccessibilityInfo, Keyboard, Pressable, TextInput, View } from "react-native";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
+import type {
+  AccessNeed,
+  StudentRequestSubmissionReceipt,
+  SubmitStudentRequestCommand,
+} from "@/application/student-area-models";
+import type { StudentRequestSubmitter } from "@/application/student-area-port";
+import { useSubmitStudentRequest } from "@/presentation/hooks/use-submit-student-request";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text, useStudentFont } from "./student-text";
 import {
@@ -9,13 +17,13 @@ import {
   type RequestFormValues,
 } from "./request-form-state";
 
-const accessOptions = [
-  "Comunicación escrita",
-  "Intérprete de lengua de señas",
-  "Sala físicamente accesible",
-  "Reducción de estímulos",
-  "Más tiempo para comunicarme",
-  "Persona de apoyo",
+const accessOptions: readonly AccessNeed[] = [
+  { id: "written-communication", label: "Comunicación escrita" },
+  { id: "sign-language-interpreter", label: "Intérprete de lengua de señas" },
+  { id: "physically-accessible-room", label: "Sala físicamente accesible" },
+  { id: "reduced-stimulation", label: "Reducción de estímulos" },
+  { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
+  { id: "support-person", label: "Persona de apoyo" },
 ];
 const weekdays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 
@@ -25,26 +33,31 @@ function Choice({
   onPress,
   single = false,
   controlRef,
+  disabled = false,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
   single?: boolean;
   controlRef?: Ref<View>;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       ref={controlRef}
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
       accessibilityRole={single ? "radio" : "checkbox"}
       accessibilityLabel={label}
-      accessibilityState={{ checked: selected }}
+      accessibilityState={{ checked: selected, disabled }}
       onPress={onPress}
-      className={`min-h-[52px] flex-row items-center gap-2 p-2 border-2 rounded-lg active:opacity-75 focus:border-student-focus ${selected ? "border-student-primary bg-student-muted" : "border-student-border bg-student-surface"}`}
+      disabled={disabled}
+      className={`min-h-[52px] flex-row items-center gap-2 p-2 border-2 rounded-lg active:opacity-75 focus:border-student-focus ${disabled ? "opacity-60" : ""} ${selected ? "border-student-primary bg-student-muted" : "border-student-border bg-student-surface"}`}
+      style={{ borderCurve: "continuous" }}
     >
       <View
         accessible={false}
         className={`w-6 h-6 border-2 items-center justify-center ${single ? "rounded-full" : "rounded"} ${selected ? "border-student-primary bg-student-primary" : "border-student-outline"}`}
+        style={single ? undefined : { borderCurve: "continuous" }}
       >
         {selected ? (
           <Text accessible={false} className="text-white text-base leading-5">
@@ -59,18 +72,87 @@ function Choice({
 
 function ErrorText({ message }: { message?: string }) {
   return message ? (
-    <Text accessibilityRole="alert" className="text-student-error text-base leading-[26px]">
+    <Text
+      selectable
+      accessibilityRole="alert"
+      className="text-student-error text-base leading-[26px]"
+    >
       {message}
     </Text>
   ) : null;
 }
 
-export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => void }) {
+function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCommand {
+  const availableFrom = values.availableFrom.trim();
+  const availableTo = values.availableTo.trim();
+  const otherAccessNeed = values.otherAccessNeed.trim();
+
+  return {
+    needSummary: values.needSummary.trim(),
+    expectedOutcome: values.expectedOutcome.trim(),
+    accessNeeds: values.accessNeeds.map((need) => ({ ...need })),
+    ...(otherAccessNeed ? { otherAccessNeed } : {}),
+    generalAvailability: {
+      preferredWeekdays: [...values.preferredWeekdays],
+      ...(availableFrom && availableTo
+        ? { preferredTimeRange: { from: availableFrom, to: availableTo } }
+        : {}),
+    },
+    modalityPreference:
+      values.modalityPreference as SubmitStudentRequestCommand["modalityPreference"],
+    preferredAccessibleInformationChannel: values.preferredAccessibleInformationChannel.trim(),
+  };
+}
+
+function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubmissionReceipt }) {
+  return (
+    <Animated.View
+      testID="request-confirmation"
+      entering={FadeIn.duration(200)}
+      exiting={FadeOut.duration(150)}
+      accessibilityLiveRegion="polite"
+      className="gap-5"
+    >
+      <View
+        testID="request-confirmation-card"
+        className="gap-3 p-5 rounded-xl border-2 border-student-success bg-student-surface"
+        style={{ borderCurve: "continuous" }}
+      >
+        <Text
+          weight="semibold"
+          accessibilityRole="header"
+          className="text-student-success text-2xl leading-[34px]"
+        >
+          Solicitud enviada
+        </Text>
+        <Text className="text-student-text text-lg leading-[29px]">
+          Recibimos tu solicitud ficticia. Este envío solo existe en el simulador de la aplicación.
+        </Text>
+      </View>
+      <View className="gap-2 p-4 rounded-xl bg-student-muted" style={{ borderCurve: "continuous" }}>
+        <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
+          Comprobante de prueba
+        </Text>
+        <Text selectable className="text-student-text text-base leading-[26px]">
+          Referencia: {receipt.requestId}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+export interface RequestFormProps {
+  readonly onRevealGroup: (y: number) => void;
+  readonly submitter: StudentRequestSubmitter;
+}
+
+export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
   const fontFamily = useStudentFont();
   const [focusedField, setFocusedField] = useState<keyof RequestFormValues | null>(null);
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
   const [reviewed, setReviewed] = useState(false);
-  const [checked, setChecked] = useState(false);
+  const submission = useSubmitStudentRequest(submitter);
+  const isSubmitting = submission.status === "submitting";
   const inputs = useRef<Partial<Record<keyof RequestFormValues, TextInput | null>>>({});
   const errors: RequestFormErrors = reviewed ? validateRequestForm(values) : {};
   const formTop = useRef(0);
@@ -80,22 +162,20 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
 
   function update<K extends keyof RequestFormValues>(key: K, value: RequestFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
-    setChecked(false);
   }
 
-  function review() {
+  function submit() {
     const nextErrors = validateRequestForm(values);
     setReviewed(true);
     const firstError = Object.keys(nextErrors)[0] as keyof RequestFormValues | undefined;
     if (firstError) {
-      setChecked(false);
       if (firstError === "modalityPreference" || firstError === "preferredWeekdays") {
         Keyboard.dismiss();
         const control = firstError === "modalityPreference" ? modalityControl : weekdayControl;
         requestAnimationFrame(() => {
           onRevealGroup(formTop.current + groupTop.current[firstError]);
           if (control.current) {
-            if (Platform.OS === "web") control.current.focus();
+            if (process.env.EXPO_OS === "web") control.current.focus();
             else AccessibilityInfo.sendAccessibilityEvent(control.current, "focus");
           }
         });
@@ -103,11 +183,23 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
       AccessibilityInfo.announceForAccessibility(`Revisa el formulario. ${nextErrors[firstError]}`);
     } else {
       Keyboard.dismiss();
-      setChecked(true);
-      AccessibilityInfo.announceForAccessibility(
-        "Campos revisados. La solicitud todavía no se ha enviado.",
-      );
+      AccessibilityInfo.announceForAccessibility("Enviando solicitud ficticia.");
+      void submission.submit(toSubmissionCommand(values));
     }
+  }
+
+  useEffect(() => {
+    if (submission.status === "error") {
+      AccessibilityInfo.announceForAccessibility(
+        "No pudimos enviar la solicitud ficticia. Puedes reintentar.",
+      );
+    } else if (submission.status === "success") {
+      AccessibilityInfo.announceForAccessibility("Solicitud ficticia enviada.");
+    }
+  }, [submission.status]);
+
+  if (submission.status === "success" && submission.receipt) {
+    return <RequestConfirmation receipt={submission.receipt} />;
   }
 
   function field(
@@ -144,14 +236,17 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
           onChangeText={(value) => update(key, value)}
           onFocus={() => setFocusedField(key)}
           onBlur={() => setFocusedField(null)}
+          editable={!isSubmitting}
+          accessibilityState={{ disabled: isSubmitting }}
           multiline={multiline}
-          className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${multiline ? "min-h-28" : "min-h-[52px]"} ${focusedField === key ? "border-student-focus" : errors[key] ? "border-student-error" : "border-student-outline"}`}
-          style={{ fontFamily }}
+          className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${isSubmitting ? "opacity-60" : ""} ${multiline ? "min-h-28" : "min-h-[52px]"} ${focusedField === key ? "border-student-focus" : errors[key] ? "border-student-error" : "border-student-outline"}`}
+          style={{ fontFamily, borderCurve: "continuous" }}
           textAlignVertical={multiline ? "top" : "center"}
           autoCapitalize={key.startsWith("available") ? "none" : "sentences"}
         />
         {errors[key] && (
           <Text
+            selectable
             nativeID={`${key}-error`}
             accessibilityRole="alert"
             className="text-student-error text-base leading-[26px]"
@@ -170,19 +265,22 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
         formTop.current = event.nativeEvent.layout.y;
       }}
     >
-      <View className="p-4 gap-2 bg-student-muted rounded-xl">
+      <View className="p-4 gap-2 bg-student-muted rounded-xl" style={{ borderCurve: "continuous" }}>
         <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
           Formulario de prueba
         </Text>
         <Text className="text-student-secondary text-base leading-[26px]">
-          Usa datos ficticios. Puedes revisar los campos, pero todavía no enviar la solicitud. Los
-          cambios se pierden al salir.
+          Usa datos ficticios. El envío se realizará solamente contra un simulador local y los
+          cambios se perderán al salir.
         </Text>
       </View>
       <Text className="text-student-secondary text-base leading-[26px]">
         Los campos marcados con * son obligatorios. No incluyas diagnósticos, RUT ni certificados.
       </Text>
-      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
+      <View
+        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
+      >
         {field(
           "needSummary",
           "¿Qué necesidad quieres abordar? *",
@@ -197,7 +295,10 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
         )}
       </View>
 
-      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
+      <View
+        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
+      >
         <Text
           weight="semibold"
           accessibilityRole="header"
@@ -208,21 +309,25 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
         <Text className="text-student-secondary text-base leading-[26px]">
           Opcional. Selecciona todos los apoyos que necesitas para participar o comunicarte.
         </Text>
-        {accessOptions.map((label) => (
-          <Choice
-            key={label}
-            label={label}
-            selected={values.accessNeeds.includes(label)}
-            onPress={() =>
-              update(
-                "accessNeeds",
-                values.accessNeeds.includes(label)
-                  ? values.accessNeeds.filter((value) => value !== label)
-                  : [...values.accessNeeds, label],
-              )
-            }
-          />
-        ))}
+        {accessOptions.map((option) => {
+          const selected = values.accessNeeds.some((need) => need.id === option.id);
+          return (
+            <Choice
+              key={option.id}
+              label={option.label}
+              selected={selected}
+              disabled={isSubmitting}
+              onPress={() =>
+                update(
+                  "accessNeeds",
+                  selected
+                    ? values.accessNeeds.filter((need) => need.id !== option.id)
+                    : [...values.accessNeeds, option],
+                )
+              }
+            />
+          );
+        })}
         {field(
           "otherAccessNeed",
           "Otra necesidad de acceso",
@@ -233,6 +338,7 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
 
       <View
         className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
         onLayout={(event) => {
           groupTop.current.modalityPreference = event.nativeEvent.layout.y;
         }}
@@ -249,12 +355,14 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
           label="Presencial"
           single
           selected={values.modalityPreference === "inPerson"}
+          disabled={isSubmitting}
           onPress={() => update("modalityPreference", "inPerson")}
         />
         <Choice
           label="En línea"
           single
           selected={values.modalityPreference === "online"}
+          disabled={isSubmitting}
           onPress={() => update("modalityPreference", "online")}
         />
         <ErrorText message={errors.modalityPreference} />
@@ -262,6 +370,7 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
 
       <View
         className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
         onLayout={(event) => {
           groupTop.current.preferredWeekdays = event.nativeEvent.layout.y;
         }}
@@ -279,16 +388,18 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
         <View className="flex-row flex-wrap gap-2">
           {weekdays.map((label, index) => {
             const day = (index + 1) % 7;
+            const selected = values.preferredWeekdays.includes(day);
             return (
               <Choice
                 controlRef={index === 0 ? weekdayControl : undefined}
                 key={label}
                 label={label}
-                selected={values.preferredWeekdays.includes(day)}
+                selected={selected}
+                disabled={isSubmitting}
                 onPress={() =>
                   update(
                     "preferredWeekdays",
-                    values.preferredWeekdays.includes(day)
+                    selected
                       ? values.preferredWeekdays.filter((value) => value !== day)
                       : [...values.preferredWeekdays, day],
                   )
@@ -305,7 +416,10 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
         {field("availableFrom", "Desde", "Formato HH:MM, por ejemplo 09:00.")}
         {field("availableTo", "Hasta", "Formato HH:MM, por ejemplo 13:00.")}
       </View>
-      <View className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface">
+      <View
+        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+        style={{ borderCurve: "continuous" }}
+      >
         {field(
           "preferredAccessibleInformationChannel",
           "¿Cómo prefieres recibir información? *",
@@ -318,19 +432,37 @@ export function RequestForm({ onRevealGroup }: { onRevealGroup: (y: number) => v
         de sesión.
       </Text>
       {reviewed && Object.keys(errors).length > 0 && (
-        <Text accessibilityRole="alert" className="text-student-error text-base leading-[26px]">
+        <Text
+          selectable
+          accessibilityRole="alert"
+          className="text-student-error text-base leading-[26px]"
+        >
           Hay campos por revisar. Corrige los mensajes indicados arriba.
         </Text>
       )}
-      {checked && (
-        <Text
-          accessibilityLiveRegion="polite"
-          className="text-student-success text-lg leading-[29px]"
+      {submission.status === "error" && (
+        <Animated.View
+          testID="submission-error"
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(150)}
+          accessibilityLiveRegion="assertive"
+          className="gap-3 p-4 rounded-xl border-2 border-student-error bg-student-surface"
+          style={{ borderCurve: "continuous" }}
         >
-          Campos revisados. La solicitud todavía no se ha enviado.
-        </Text>
+          <Text selectable weight="semibold" className="text-student-error text-lg leading-[29px]">
+            No pudimos enviar la solicitud ficticia.
+          </Text>
+          <Text selectable className="text-student-secondary text-base leading-[26px]">
+            Tus datos siguen en el formulario. Puedes intentar nuevamente.
+          </Text>
+          <StudentAction label="Reintentar envío" onPress={submit} />
+        </Animated.View>
       )}
-      <StudentAction label="Revisar formulario" onPress={review} />
+      <StudentAction
+        label={submission.status === "submitting" ? "Enviando solicitud…" : "Enviar solicitud"}
+        disabled={submission.status === "submitting"}
+        onPress={submit}
+      />
     </View>
   );
 }

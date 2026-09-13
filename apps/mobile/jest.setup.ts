@@ -1,7 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { StyleSheet } from "react-native-css-interop";
 import { cssToReactNativeRuntime } from "react-native-css-interop/css-to-rn";
+import { setUpTests } from "react-native-reanimated";
 import "react-native-css-interop/dist/runtime/components";
+
+setUpTests();
 
 // El transporte de desarrollo de Expo intenta abrir un WebSocket hacia Metro.
 // Las pruebas del router no necesitan un servidor de desarrollo.

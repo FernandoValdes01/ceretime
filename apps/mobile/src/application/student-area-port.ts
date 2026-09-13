@@ -1,4 +1,8 @@
-import type { StudentAreaSnapshot } from "./student-area-models";
+import type {
+  StudentAreaSnapshot,
+  StudentRequestSubmissionReceipt,
+  SubmitStudentRequestCommand,
+} from "./student-area-models";
 
 /**
  * Small, replaceable application capability for the isolated student-area
@@ -7,4 +11,11 @@ import type { StudentAreaSnapshot } from "./student-area-models";
  */
 export interface StudentAreaReader {
   readStudentArea(): Promise<StudentAreaSnapshot>;
+}
+
+/** Replaceable capability for the provisional student-request submission. */
+export interface StudentRequestSubmitter {
+  submitStudentRequest(
+    command: SubmitStudentRequestCommand,
+  ): Promise<StudentRequestSubmissionReceipt>;
 }
