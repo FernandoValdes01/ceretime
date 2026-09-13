@@ -579,6 +579,59 @@ test("revocar exige profesional vigente y es idempotente", async () => {
   expect(second).toBeNull();
 });
 
+test("revocar cierra todas las filas aunque existan duplicadas fuera del Backend", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "s2-est-17",
+    email: "est17@alu.uct.cl",
+    fullName: "Estudiante Ficticio",
+    role: "student",
+  });
+  const pro = await seedUser(t, {
+    subject: "s2-pro-11",
+    email: "pro11@uct.cl",
+    fullName: "Profesional Ficticio",
+    role: "professional",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  // Corrupción simulada: dos filas activas que la vía guardada jamás crearía.
+  await t.run(async (ctx) => {
+    await ctx.db.insert("accompanimentAssignments", {
+      accompanimentId,
+      userId: pro.id,
+      assignedRole: "professional",
+      status: "active",
+    });
+    await ctx.db.insert("accompanimentAssignments", {
+      accompanimentId,
+      userId: pro.id,
+      assignedRole: "professional",
+      status: "active",
+    });
+  });
+
+  const caller = { subject: "s2-pro-11", email: "pro11@uct.cl" };
+  const revoked = await seedRevoke(
+    t,
+    {
+      accompanimentId,
+      userId: pro.id,
+      assignedRole: "professional",
+    },
+    caller,
+  );
+  expect(revoked).toBe(2);
+
+  const asPro = t.withIdentity(identityFor("s2-pro-11", "pro11@uct.cl"));
+  await expect(
+    asPro.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+  ).rejects.toThrow("No autorizado");
+  const list = await asPro.query(api.presentation.accompaniments.listMyAccompaniments, {
+    paginationOpts: pageOpts(10),
+  });
+  expect(list.page).toHaveLength(0);
+});
+
 test("asignar exige profesional vigente: anónimo, estudiante e inhabilitado denegados", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {

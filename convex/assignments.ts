@@ -64,8 +64,11 @@ export const assign = internalMutation({
 
 /**
  * Revoca una asignación existente. Comparte la exigencia de llamante con
- * `assign` y es idempotente: revocar una fila ya revocada no falla. Completa
- * la vía de escritura para que ningún flujo necesite inserts directos.
+ * `assign` y es idempotente: revocar una fila ya revocada no falla. Revoca
+ * TODAS las filas activas de la tripla en lugar de una sola, para que ninguna
+ * fila escrita fuera del Backend deje acceso activo tras informar éxito.
+ * Completa la vía de escritura para que ningún flujo necesite inserts
+ * directos.
  */
 export const revoke = internalMutation({
   args: {
@@ -89,18 +92,32 @@ export const revoke = internalMutation({
       throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
     }
 
-    const rows = await ctx.db
-      .query("accompanimentAssignments")
-      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
-        q
-          .eq("accompanimentId", args.accompanimentId)
-          .eq("userId", args.userId)
-          .eq("status", "active")
-          .eq("assignedRole", args.assignedRole),
-      )
-      .take(1);
-    if (rows.length === 0) return null;
-    await ctx.db.patch(rows[0]._id, { status: "revoked" });
-    return rows[0]._id;
+    const exactTriple = {
+      accompanimentId: args.accompanimentId,
+      userId: args.userId,
+      assignedRole: args.assignedRole,
+    };
+
+    let revoked = 0;
+    for (let round = 0; round < 10; round++) {
+      const rows = await ctx.db
+        .query("accompanimentAssignments")
+        .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+          q
+            .eq("accompanimentId", exactTriple.accompanimentId)
+            .eq("userId", exactTriple.userId)
+            .eq("status", "active")
+            .eq("assignedRole", exactTriple.assignedRole),
+        )
+        .take(50);
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        await ctx.db.patch(row._id, { status: "revoked" });
+      }
+      revoked += rows.length;
+      if (rows.length < 50) break;
+    }
+    if (revoked === 0) return null;
+    return revoked;
   },
 });
