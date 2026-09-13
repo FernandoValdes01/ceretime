@@ -28,7 +28,7 @@ Se descartan dos alternativas. Ocultar el header nativo obligaría a reconstruir
 | Referencias ficticias | `SOL-DEMO-001` y `SOL-DEMO-002` |
 | Canal preferido | `Correo institucional con texto accesible` |
 
-El botón nativo de regreso expondrá una etiqueta en español a las tecnologías de asistencia.
+En iOS y web, el botón nativo de regreso usará el título `Volver`. En Android, su descripción accesible seguirá el idioma configurado en el sistema operativo.
 
 ## Implementación
 

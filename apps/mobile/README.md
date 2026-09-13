@@ -158,9 +158,9 @@ Las pruebas `student-request.test.tsx` y `student-request-demo-mode.test.tsx` ej
 
 ## Listado y detalle de solicitudes: TI4-19
 
-Desde el inicio del Estudiante, abrir **Mis solicitudes**. El listado muestra únicamente la proyección ficticia entregada por `StudentAreaReader`; cada tarjeta abre el detalle de su solicitud. El detalle presenta la referencia, fechas, necesidad, resultado esperado, necesidades de acceso, modalidad y canal accesible preferido. La representación accesible del estado pertenece a TI4-31 y el acompañamiento resultante a TI4-35.
+Desde el inicio del Estudiante, abre **Mis solicitudes**. El listado muestra sus solicitudes y cada tarjeta abre el detalle correspondiente. El detalle presenta la referencia, las fechas, la necesidad, el resultado esperado, las necesidades de acceso, la modalidad y el medio preferido para recibir información. La representación accesible del estado pertenece a TI4-31 y el acompañamiento resultante a TI4-35.
 
-La pantalla cubre carga, listado vacío, error con reintento y éxito. Para demostrar los escenarios del adapter mock, reinicia Expo con una de estas configuraciones:
+La implementación obtiene una proyección ficticia mediante `StudentAreaReader`. Para comprobar la carga, el listado vacío, el error con reintento y el éxito, reinicia Expo con una de estas configuraciones:
 
 ```sh
 EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=success EXPO_PUBLIC_STUDENT_AREA_DELAY_MS=1200 bun run mobile:start --clear
@@ -168,7 +168,7 @@ EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=empty bun run mobile:start --clear
 EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=error bun run mobile:start --clear
 ```
 
-Las variables sólo controlan datos ficticios y no contienen secretos. Después de cambiar una variable `EXPO_PUBLIC_`, recarga completamente la aplicación. Un identificador de detalle que no pertenezca al snapshot del estudiante muestra una recuperación controlada y no consulta datos de otro estudiante.
+Las variables sólo controlan datos ficticios y no contienen secretos. Después de cambiar una variable `EXPO_PUBLIC_`, recarga completamente la aplicación. Un identificador que no pertenezca a la proyección del estudiante muestra una recuperación controlada y no consulta datos de otro estudiante.
 
 La evidencia nativa del recorrido se registra en [docs/evidence/ti4-19](./docs/evidence/ti4-19/README.md).
 
