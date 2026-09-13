@@ -11,6 +11,7 @@
 import type * as application_authorization_authorize from "../application/authorization/authorize.js";
 import type * as application_session_minimal_identity from "../application/session/minimal_identity.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
+import type * as assignments from "../assignments.js";
 import type * as auth from "../auth.js";
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
 import type * as domain_authorization_permissions from "../domain/authorization/permissions.js";
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   "application/authorization/authorize": typeof application_authorization_authorize;
   "application/session/minimal_identity": typeof application_session_minimal_identity;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
+  assignments: typeof assignments;
   auth: typeof auth;
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
   "domain/authorization/permissions": typeof domain_authorization_permissions;

@@ -85,3 +85,26 @@ export function authorizeInternalNoteRead(input: {
 }): boolean {
   return canReadInternalNote(buildAuthorizationContext(input));
 }
+
+/**
+ * Alcance de listado según el rol, para que Presentación solo adapte.
+ * Estudiante lista lo propio, Profesional y Practicante lo asignado en su
+ * rol, y Administrador no lista nada (sin acceso general).
+ */
+export type ListingScope =
+  | { readonly kind: "owned" }
+  | { readonly kind: "assigned"; readonly assignedRole: "professional" | "intern" }
+  | { readonly kind: "denied" };
+
+export function listingScopeForRole(role: Role): ListingScope {
+  switch (role) {
+    case "student":
+      return { kind: "owned" };
+    case "professional":
+      return { kind: "assigned", assignedRole: "professional" };
+    case "intern":
+      return { kind: "assigned", assignedRole: "intern" };
+    case "admin":
+      return { kind: "denied" };
+  }
+}

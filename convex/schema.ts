@@ -46,15 +46,26 @@ export default defineSchema({
 
   // Tabla 'accompanimentAssignments': asignaciones revocables por
   // acompañamiento. Separa habilitación de cuenta y asignación explícita.
+  // Invariante: como máximo una fila activa por cada combinación de
+  // acompañamiento, usuario y rol; la única vía de escritura es la mutación
+  // interna guardada `internal.assignments.assign`, que rechaza la duplicada.
   accompanimentAssignments: defineTable({
     accompanimentId: v.id("accompaniments"),
     userId: v.id("users"),
     assignedRole: assignmentRoleUnion,
     status: assignmentStatusUnion,
   })
-    .index("by_accompaniment", ["accompanimentId"])
-    .index("by_user", ["userId"])
-    .index("by_accompaniment_and_user", ["accompanimentId", "userId"]),
+    // Listado por alcance: filtra usuario, vigencia y rol en el índice para
+    // no truncar antes de filtrar.
+    .index("by_user_and_status_and_assigned_role", ["userId", "status", "assignedRole"])
+    // Chequeo de presencia exacto: una fila basta para decidir, sin lecturas
+    // ilimitadas.
+    .index("by_accompaniment_and_user_and_status_and_assigned_role", [
+      "accompanimentId",
+      "userId",
+      "status",
+      "assignedRole",
+    ]),
 
   // Tabla 'followUpNotes': notas internas breves. Solo profesionales
   // autorizados del acompañamiento pueden leerlas.

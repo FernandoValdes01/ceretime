@@ -1,8 +1,11 @@
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import {
   AUTHORIZATION_DENIED_MESSAGE,
   authorizeAccompanimentRead,
   authorizeInternalNoteRead,
+  listingScopeForRole,
+  type AuthorizableAssignment,
 } from "../application/authorization/authorize";
 import type { Doc } from "../_generated/dataModel";
 import { query, type QueryCtx } from "../_generated/server";
@@ -10,15 +13,17 @@ import { query, type QueryCtx } from "../_generated/server";
 /**
  * Borde de Presentación: acompañamientos con autorización en Backend (S2).
  *
- * Cada función valida la entrada, resuelve la identidad en el servidor con
- * `ctx.auth.getUserIdentity()`, vincula el perfil por `tokenIdentifier`,
- * exige cuenta habilitada y vigente, y delega la decisión en
- * Aplicación/Dominio. Nunca acepta un `userId` del cliente como prueba.
+ * Adaptador delgado: valida la entrada, resuelve la identidad en el servidor
+ * con `ctx.auth.getUserIdentity()`, vincula el perfil por `tokenIdentifier`,
+ * exige cuenta habilitada y vigente, y delega cada decisión en
+ * Aplicación/Dominio. Nunca acepta un `userId` del cliente como prueba ni
+ * decide accesos por rol directamente.
  *
  * Toda denegación (sin identidad, sin perfil, cuenta inhabilitada, fuera de
  * alcance, acompañamiento inexistente o acceso general de Administrador)
  * responde con el mismo error genérico, sin exponer el motivo ni la
- * existencia del recurso.
+ * existencia del recurso. Los listados se paginan: nunca se truncan en
+ * silencio.
  */
 
 const fullAccompanimentValidator = v.object({
@@ -42,6 +47,12 @@ const accompanimentViewValidator = v.union(
   minimizedAccompanimentValidator,
 );
 
+const internalNoteValidator = v.object({
+  _id: v.id("followUpNotes"),
+  accompanimentId: v.id("accompaniments"),
+  body: v.string(),
+});
+
 function deny(): never {
   throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
 }
@@ -61,6 +72,88 @@ async function requireProfile(ctx: QueryCtx): Promise<Doc<"users">> {
 }
 
 /**
+ * Presencia de asignación activa exacta: una fila basta para decidir, por lo
+ * que la lectura queda acotada a una fila por rol en vez de ilimitada.
+ */
+async function activeAssignmentsFor(
+  ctx: QueryCtx,
+  accompanimentId: Doc<"accompaniments">["_id"],
+  userId: Doc<"users">["_id"],
+): Promise<AuthorizableAssignment[]> {
+  const professional = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q
+        .eq("accompanimentId", accompanimentId)
+        .eq("userId", userId)
+        .eq("status", "active")
+        .eq("assignedRole", "professional"),
+    )
+    .take(1);
+  const intern = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q
+        .eq("accompanimentId", accompanimentId)
+        .eq("userId", userId)
+        .eq("status", "active")
+        .eq("assignedRole", "intern"),
+    )
+    .take(1);
+  return [...professional, ...intern].map((assignment) => ({
+    accompanimentId: assignment.accompanimentId,
+    userId: assignment.userId,
+    assignedRole: assignment.assignedRole,
+    status: assignment.status,
+  }));
+}
+
+function projectView(
+  accompaniment: Doc<"accompaniments">,
+  view: "full" | "minimized",
+):
+  | {
+      _id: Doc<"accompaniments">["_id"];
+      studentId: Doc<"users">["_id"];
+      status: Doc<"accompaniments">["status"];
+      objective: string;
+      accessNeeds: string;
+      view: "full";
+    }
+  | {
+      _id: Doc<"accompaniments">["_id"];
+      status: Doc<"accompaniments">["status"];
+      objective: string;
+      view: "minimized";
+    } {
+  if (view === "minimized") {
+    return {
+      _id: accompaniment._id,
+      status: accompaniment.status,
+      objective: accompaniment.objective,
+      view: "minimized" as const,
+    };
+  }
+  return {
+    _id: accompaniment._id,
+    studentId: accompaniment.studentId,
+    status: accompaniment.status,
+    objective: accompaniment.objective,
+    accessNeeds: accompaniment.accessNeeds,
+    view: "full" as const,
+  };
+}
+
+function toAuthorizableProfile(profile: Doc<"users">) {
+  return {
+    _id: profile._id,
+    role: profile.role,
+    institutionalStatus: profile.institutionalStatus,
+    accountStatus: profile.accountStatus,
+  };
+}
+
+/**
  * Lee un acompañamiento con vista completa o minimizada según el rol.
  * El Administrador siempre recibe denegación, sin acceso general.
  */
@@ -73,180 +166,111 @@ export const getAccompaniment = query({
     const accompaniment = await ctx.db.get(args.accompanimentId);
     if (accompaniment === null) deny();
 
-    const assignments = await ctx.db
-      .query("accompanimentAssignments")
-      .withIndex("by_accompaniment_and_user", (q) =>
-        q.eq("accompanimentId", args.accompanimentId).eq("userId", profile._id),
-      )
-      .collect();
+    const assignments = await activeAssignmentsFor(ctx, args.accompanimentId, profile._id);
 
     const view = authorizeAccompanimentRead({
-      profile: {
-        _id: profile._id,
-        role: profile.role,
-        institutionalStatus: profile.institutionalStatus,
-        accountStatus: profile.accountStatus,
-      },
+      profile: toAuthorizableProfile(profile),
       accompaniment: { _id: accompaniment._id, studentId: accompaniment.studentId },
-      assignments: assignments.map((assignment) => ({
-        accompanimentId: assignment.accompanimentId,
-        userId: assignment.userId,
-        assignedRole: assignment.assignedRole,
-        status: assignment.status,
-      })),
+      assignments,
     });
     if (view === null) deny();
 
-    if (view === "minimized") {
-      return {
-        _id: accompaniment._id,
-        status: accompaniment.status,
-        objective: accompaniment.objective,
-        view: "minimized" as const,
-      };
-    }
-    return {
-      _id: accompaniment._id,
-      studentId: accompaniment.studentId,
-      status: accompaniment.status,
-      objective: accompaniment.objective,
-      accessNeeds: accompaniment.accessNeeds,
-      view: "full" as const,
-    };
+    return projectView(accompaniment, view);
   },
 });
 
 /**
- * Lista solo el alcance autorizado del llamante.
- * Estudiante: propios. Profesional/Practicante: asignados activos.
+ * Lista solo el alcance autorizado del llamante, paginado.
+ * Estudiante: propios. Profesional/Practicante: asignados activos en su rol.
  * Administrador: denegado, sin listado general.
  */
 export const listMyAccompaniments = query({
-  args: {},
-  returns: v.array(accompanimentViewValidator),
-  handler: async (ctx) => {
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(accompanimentViewValidator),
+  handler: async (ctx, args) => {
     const profile = await requireProfile(ctx);
+    const scope = listingScopeForRole(profile.role);
+    if (scope.kind === "denied") deny();
 
-    if (profile.role === "admin") deny();
-
-    if (profile.role === "student") {
-      const owned = await ctx.db
+    if (scope.kind === "owned") {
+      const result = await ctx.db
         .query("accompaniments")
         .withIndex("by_student", (q) => q.eq("studentId", profile._id))
-        .take(50);
-      return owned.map((accompaniment) => ({
-        _id: accompaniment._id,
-        studentId: accompaniment.studentId,
-        status: accompaniment.status,
-        objective: accompaniment.objective,
-        accessNeeds: accompaniment.accessNeeds,
-        view: "full" as const,
-      }));
+        .paginate(args.paginationOpts);
+      const views: Array<ReturnType<typeof projectView>> = [];
+      for (const accompaniment of result.page) {
+        const view = authorizeAccompanimentRead({
+          profile: toAuthorizableProfile(profile),
+          accompaniment: { _id: accompaniment._id, studentId: accompaniment.studentId },
+          assignments: [],
+        });
+        if (view !== null) views.push(projectView(accompaniment, view));
+      }
+      return { ...result, page: views };
     }
 
-    const assignments = await ctx.db
+    const result = await ctx.db
       .query("accompanimentAssignments")
-      .withIndex("by_user", (q) => q.eq("userId", profile._id))
-      .take(50);
-    const activeForRole = assignments.filter(
-      (assignment) =>
-        assignment.status === "active" &&
-        ((profile.role === "professional" && assignment.assignedRole === "professional") ||
-          (profile.role === "intern" && assignment.assignedRole === "intern")),
-    );
-
-    const views: Array<
-      | {
-          _id: Doc<"accompaniments">["_id"];
-          studentId: Doc<"users">["_id"];
-          status: Doc<"accompaniments">["status"];
-          objective: string;
-          accessNeeds: string;
-          view: "full";
-        }
-      | {
-          _id: Doc<"accompaniments">["_id"];
-          status: Doc<"accompaniments">["status"];
-          objective: string;
-          view: "minimized";
-        }
-    > = [];
-    for (const assignment of activeForRole) {
+      .withIndex("by_user_and_status_and_assigned_role", (q) =>
+        q.eq("userId", profile._id).eq("status", "active").eq("assignedRole", scope.assignedRole),
+      )
+      .paginate(args.paginationOpts);
+    const seen = new Map<string, Doc<"accompaniments">>();
+    for (const assignment of result.page) {
+      const key = assignment.accompanimentId;
+      if (seen.has(key)) continue;
       const accompaniment = await ctx.db.get(assignment.accompanimentId);
       if (accompaniment === null) continue;
-      if (profile.role === "intern") {
-        views.push({
-          _id: accompaniment._id,
-          status: accompaniment.status,
-          objective: accompaniment.objective,
-          view: "minimized" as const,
-        });
-      } else {
-        views.push({
-          _id: accompaniment._id,
-          studentId: accompaniment.studentId,
-          status: accompaniment.status,
-          objective: accompaniment.objective,
-          accessNeeds: accompaniment.accessNeeds,
-          view: "full" as const,
-        });
-      }
+      seen.set(key, accompaniment);
     }
-    return views;
+    const views: Array<ReturnType<typeof projectView>> = [];
+    for (const accompaniment of seen.values()) {
+      const assignments = await activeAssignmentsFor(ctx, accompaniment._id, profile._id);
+      const view = authorizeAccompanimentRead({
+        profile: toAuthorizableProfile(profile),
+        accompaniment: { _id: accompaniment._id, studentId: accompaniment.studentId },
+        assignments,
+      });
+      if (view !== null) views.push(projectView(accompaniment, view));
+    }
+    return { ...result, page: views };
   },
 });
 
 /**
- * Lee notas internas breves. Solo Profesional con asignación activa.
- * Estudiante, Practicante y Administrador siempre reciben denegación.
+ * Lee notas internas breves, paginadas. Solo Profesional con asignación
+ * activa. Estudiante, Practicante y Administrador siempre reciben
+ * denegación.
  */
 export const getInternalNotes = query({
-  args: { accompanimentId: v.id("accompaniments") },
-  returns: v.array(
-    v.object({
-      _id: v.id("followUpNotes"),
-      accompanimentId: v.id("accompaniments"),
-      body: v.string(),
-    }),
-  ),
+  args: { accompanimentId: v.id("accompaniments"), paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(internalNoteValidator),
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx);
 
     const accompaniment = await ctx.db.get(args.accompanimentId);
     if (accompaniment === null) deny();
 
-    const assignments = await ctx.db
-      .query("accompanimentAssignments")
-      .withIndex("by_accompaniment_and_user", (q) =>
-        q.eq("accompanimentId", args.accompanimentId).eq("userId", profile._id),
-      )
-      .collect();
+    const assignments = await activeAssignmentsFor(ctx, args.accompanimentId, profile._id);
 
     const allowed = authorizeInternalNoteRead({
-      profile: {
-        _id: profile._id,
-        role: profile.role,
-        institutionalStatus: profile.institutionalStatus,
-        accountStatus: profile.accountStatus,
-      },
+      profile: toAuthorizableProfile(profile),
       accompaniment: { _id: accompaniment._id, studentId: accompaniment.studentId },
-      assignments: assignments.map((assignment) => ({
-        accompanimentId: assignment.accompanimentId,
-        userId: assignment.userId,
-        assignedRole: assignment.assignedRole,
-        status: assignment.status,
-      })),
+      assignments,
     });
     if (!allowed) deny();
 
-    const notes = await ctx.db
+    const result = await ctx.db
       .query("followUpNotes")
       .withIndex("by_accompaniment", (q) => q.eq("accompanimentId", args.accompanimentId))
-      .take(50);
-    return notes.map((note) => ({
-      _id: note._id,
-      accompanimentId: note.accompanimentId,
-      body: note.body,
-    }));
+      .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page.map((note) => ({
+        _id: note._id,
+        accompanimentId: note.accompanimentId,
+        body: note.body,
+      })),
+    };
   },
 });

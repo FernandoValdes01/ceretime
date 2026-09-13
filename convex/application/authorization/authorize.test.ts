@@ -3,6 +3,7 @@ import {
   authorizeAccompanimentRead,
   authorizeInternalNoteRead,
   AUTHORIZATION_DENIED_MESSAGE,
+  listingScopeForRole,
   type AuthorizableAssignment,
   type AuthorizableProfile,
 } from "./authorize";
@@ -74,5 +75,20 @@ describe("authorizeInternalNoteRead", () => {
         assignments: [assignment({ status: "revoked" })],
       }),
     ).toBe(false);
+  });
+});
+
+describe("listingScopeForRole", () => {
+  test("asigna alcance por rol y niega al administrador", () => {
+    expect(listingScopeForRole("student")).toEqual({ kind: "owned" });
+    expect(listingScopeForRole("professional")).toEqual({
+      kind: "assigned",
+      assignedRole: "professional",
+    });
+    expect(listingScopeForRole("intern")).toEqual({
+      kind: "assigned",
+      assignedRole: "intern",
+    });
+    expect(listingScopeForRole("admin")).toEqual({ kind: "denied" });
   });
 });
