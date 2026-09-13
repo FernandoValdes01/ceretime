@@ -19,3 +19,13 @@ export const institutionalStatusUnion = v.union(
 );
 
 export const accountStatusUnion = v.union(v.literal("active"), v.literal("inactive"));
+
+export const accompanimentStatusUnion = v.union(
+  v.literal("active"),
+  v.literal("paused"),
+  v.literal("closed"),
+);
+
+export const assignmentRoleUnion = v.union(v.literal("professional"), v.literal("intern"));
+
+export const assignmentStatusUnion = v.union(v.literal("active"), v.literal("revoked"));
