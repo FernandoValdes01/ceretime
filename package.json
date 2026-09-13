@@ -27,6 +27,7 @@
     "convex-test": "^0.0.58",
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",
+    "vite": "^8.3.0",
     "vitest": "^5.0.0"
   },
   "packageManager": "bun@1.3.14"
