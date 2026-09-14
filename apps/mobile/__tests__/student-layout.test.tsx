@@ -3,14 +3,18 @@ import {
   studentRequestScreenOptions,
 } from "@/presentation/navigation/student-layout";
 
-test("mantiene ocultos los headers del área de estudiante por defecto", () => {
-  expect(studentLayoutScreenOptions).toMatchObject({ headerShown: false });
+test("mantiene visible el header de las pantallas del estudiante", () => {
+  expect(studentLayoutScreenOptions).toMatchObject({
+    headerShown: true,
+    headerTitle: "CERETIME",
+    headerBackVisible: false,
+  });
 });
 
-test("muestra sólo el header nativo de nueva solicitud con retorno y sin título duplicado", () => {
+test("habilita el retorno nativo en nueva solicitud sin título duplicado", () => {
   expect(studentRequestScreenOptions).toMatchObject({
     headerShown: true,
-    headerTitle: "",
+    headerTitle: "CERETIME",
     headerBackTitle: "Volver",
     headerBackButtonDisplayMode: "minimal",
     headerBackVisible: true,

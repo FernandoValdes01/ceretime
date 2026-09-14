@@ -13,13 +13,12 @@ export function Screen({
   scrollRef?: Ref<ScrollView>;
 }>) {
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
+    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
       <ScrollView
         ref={scrollRef}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}
       >
-        <Text style={styles.brand}>CERETIME</Text>
         <Text accessibilityRole="header" style={styles.title}>
           {title}
         </Text>
@@ -67,12 +66,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     padding: 24,
     gap: 16,
-  },
-  brand: {
-    color: "#246259",
-    fontSize: 14,
-    fontWeight: "700",
-    letterSpacing: 2,
   },
   title: { color: "#182C31", fontSize: 30, fontWeight: "700" },
   description: {

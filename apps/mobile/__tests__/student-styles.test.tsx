@@ -46,12 +46,11 @@ test("Tailwind conserva la tipografía y las medidas de los controles nativos", 
   });
 });
 
-test("las pantallas reservan el inset superior para el área segura", () => {
+test("el header nativo reserva el inset superior de las pantallas", () => {
   const studentScreen = render(
     <StudentScreen title="Inicio" description="Prueba de área segura" />,
   );
   expect(studentScreen.UNSAFE_getByType(SafeAreaView).props.edges).toEqual([
-    "top",
     "left",
     "right",
     "bottom",
@@ -59,7 +58,6 @@ test("las pantallas reservan el inset superior para el área segura", () => {
 
   const sharedScreen = render(<Screen title="Inicio" description="Prueba de área segura" />);
   expect(sharedScreen.UNSAFE_getByType(SafeAreaView).props.edges).toEqual([
-    "top",
     "left",
     "right",
     "bottom",

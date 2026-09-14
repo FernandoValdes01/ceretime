@@ -1,19 +1,12 @@
 import { Stack } from "expo-router";
 import type { NativeStackNavigationOptions } from "expo-router";
+import { appHeaderOptions } from "./app-header-options";
 
-export const studentLayoutScreenOptions = {
-  headerShown: false,
-} satisfies NativeStackNavigationOptions;
+export const studentLayoutScreenOptions = appHeaderOptions;
 
 export const studentRequestScreenOptions = {
-  headerShown: true,
-  headerTitle: "",
-  headerBackTitle: "Volver",
-  headerBackButtonDisplayMode: "minimal",
+  ...appHeaderOptions,
   headerBackVisible: true,
-  headerTintColor: "#246259",
-  headerStyle: { backgroundColor: "#F5F7F8" },
-  headerShadowVisible: false,
 } satisfies NativeStackNavigationOptions;
 
 export default function StudentLayout() {
