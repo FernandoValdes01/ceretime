@@ -189,26 +189,43 @@ describe("transitionRequest", () => {
     }
   });
 
+  test("rechaza una fecha que no es un instante válido", () => {
+    for (const occurredAt of [Number.NaN, 0, -1, Number.POSITIVE_INFINITY]) {
+      expect(
+        transitionRequest({ ...actor, occurredAt, from: "received", to: "under_review" }),
+      ).toStrictEqual({ status: "rejected", cause: "occurred_at_invalid" });
+    }
+  });
+
   test("reporta la causa más general cuando hay varias", () => {
-    // Par inválido, sin actor y sin motivo: gana el par.
+    const toAwaiting = { from: "under_review", to: "awaiting_information_or_acceptance" } as const;
+    // Par inválido, sin actor, sin fecha y sin motivo: gana el par.
     expect(
-      transitionRequest({ ...actor, actorId: "", from: "received", to: "accepted" }),
+      transitionRequest({ actorId: "", occurredAt: Number.NaN, from: "received", to: "accepted" }),
     ).toStrictEqual({ status: "rejected", cause: "transition_not_allowed" });
-    // Par válido, sin actor y sin motivo: gana el actor.
+    // Par válido, sin actor, sin fecha y sin motivo: gana el actor.
+    expect(transitionRequest({ ...toAwaiting, actorId: "", occurredAt: Number.NaN })).toStrictEqual(
+      { status: "rejected", cause: "actor_required" },
+    );
+    // Par válido con actor, sin fecha y sin motivo: gana la fecha.
     expect(
-      transitionRequest({
-        ...actor,
-        actorId: "",
-        from: "under_review",
-        to: "awaiting_information_or_acceptance",
-      }),
-    ).toStrictEqual({ status: "rejected", cause: "actor_required" });
+      transitionRequest({ ...toAwaiting, actorId: actor.actorId, occurredAt: Number.NaN }),
+    ).toStrictEqual({ status: "rejected", cause: "occurred_at_invalid" });
+    // Par válido con actor y fecha, sin motivo: queda el motivo.
+    expect(transitionRequest({ ...actor, ...toAwaiting })).toStrictEqual({
+      status: "rejected",
+      cause: "reason_required",
+    });
   });
 
   test("un rechazo no trae registro de cambio y deja el intento intacto", () => {
     const rejected: ReadonlyArray<readonly [RequestTransitionAttempt, TransitionRejectionCause]> = [
       [{ ...actor, from: "received", to: "accepted" }, "transition_not_allowed"],
       [{ ...actor, actorId: " ", from: "received", to: "under_review" }, "actor_required"],
+      [
+        { ...actor, occurredAt: Number.NaN, from: "received", to: "under_review" },
+        "occurred_at_invalid",
+      ],
       [
         { ...actor, from: "under_review", to: "awaiting_information_or_acceptance" },
         "reason_required",

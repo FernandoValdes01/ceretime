@@ -30,12 +30,14 @@ export type RequestTransitionAttempt = {
 /**
  * Los rechazos se devuelven como valor, no como excepción, igual que en
  * `application/session`: la capa pública decide cuánto revela al cliente.
- * Sin actor no hay trazabilidad, por eso su ausencia también rechaza.
+ * Sin actor ni instante válido no hay trazabilidad, por eso ambos rechazan:
+ * `number` admite `NaN`, `Infinity` y negativos, el tipo no protege de eso.
  */
 export const TRANSITION_REJECTION_CAUSES = [
   "transition_not_allowed",
-  "reason_required",
   "actor_required",
+  "occurred_at_invalid",
+  "reason_required",
 ] as const;
 
 export type TransitionRejectionCause = (typeof TRANSITION_REJECTION_CAUSES)[number];
@@ -82,6 +84,10 @@ export function transitionRequest(attempt: RequestTransitionAttempt): RequestTra
 
   const actorId = attempt.actorId.trim();
   if (actorId === "") return { status: "rejected", cause: "actor_required" };
+
+  if (!Number.isFinite(attempt.occurredAt) || attempt.occurredAt <= 0) {
+    return { status: "rejected", cause: "occurred_at_invalid" };
+  }
 
   const reason = attempt.reason?.trim();
   if (transition.requiresReason && !reason) return { status: "rejected", cause: "reason_required" };
