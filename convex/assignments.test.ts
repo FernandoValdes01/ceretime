@@ -202,3 +202,67 @@ test("Migra filas legacy sin trazabilidad", async () => {
   });
   expect(second.migrated).toBe(0);
 });
+
+test("Migra por lotes encadenados sin perder la cola", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, {
+    subject: "ti16-est-13",
+    email: "est13@alu.uct.cl",
+    role: "student",
+  });
+  const proId = await seedUser(t, {
+    subject: "ti16-pro-13",
+    email: "pro13@uct.cl",
+    role: "professional",
+  });
+  const internId = await seedUser(t, {
+    subject: "ti16-int-13",
+    email: "int13@alu.uct.cl",
+    role: "intern",
+  });
+  const accompanimentId = await seedAccompaniment(t, studentId);
+
+  // Tres filas legacy sin trazabilidad, más que el lote de una unidad
+  await t.run(async (ctx) => {
+    for (let round = 0; round < 3; round++) {
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId,
+        userId: internId,
+        assignedRole: "intern",
+        status: "active",
+      });
+    }
+  });
+
+  // 1. El primer lote migra uno y conserva el cursor pendiente
+  const first = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
+    attestedGrantedBy: proId,
+    numItems: 1,
+  });
+  expect(first.migrated).toBe(1);
+  expect(first.done).toBe(false);
+  expect(first.cursor).not.toBeNull();
+
+  // 2. La continuación programada sigue migrando sin volver al inicio
+  await t.finishInProgressScheduledFunctions();
+  const pending = await t.run(async (ctx) => {
+    const rows = await ctx.db.query("accompanimentAssignments").collect();
+    return rows.filter((row) => row.grantedAt === undefined).length;
+  });
+  expect(pending).toBeLessThan(3);
+
+  // 3. Caminar los cursores agota todas las filas
+  let cursor: string | undefined = first.cursor ?? undefined;
+  let total = first.migrated;
+  for (let round = 0; round < 5; round++) {
+    const result = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
+      attestedGrantedBy: proId,
+      numItems: 1,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+    total += result.migrated;
+    if (result.done) break;
+    cursor = result.cursor ?? undefined;
+  }
+  expect(total).toBe(3);
+});

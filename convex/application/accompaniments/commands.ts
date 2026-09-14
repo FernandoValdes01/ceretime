@@ -102,31 +102,25 @@ export async function revokeAccompaniment(
 }
 
 /**
- * Migra filas legacy sin trazabilidad, por páginas acotadas. `grantedAt`
+ * Migra una página acotada de filas legacy sin trazabilidad. `grantedAt`
  * se recupera de la creación real de cada fila; `attestedGrantedBy` lo
  * aporta el operador y solo debe usarse cuando consta externamente quién
  * concedió esas asignaciones. No exige identidad: es herramienta puntual de
- * operador, no un flujo de aplicación.
+ * operador, no un flujo de aplicación. Se avanza con `cursor`
+ * hasta alcanzar `done`; cada página corre en su propia transacción.
  */
 export async function backfillAssignmentTraceabilityUseCase(
   ctx: MutationCtx,
   input: {
     readonly attestedGrantedBy: Id<"users">;
+    readonly cursor: string | null;
     readonly numItems?: number;
   },
-): Promise<{ migrated: number }> {
+): Promise<{ migrated: number; cursor: string | null; done: boolean }> {
   const pageSize = Math.min(Math.max(Math.floor(input.numItems ?? 100), 1), 100);
-  let migrated = 0;
-  let cursor: string | null = null;
-  for (let round = 0; round < 20; round++) {
-    const result = await backfillMissingTraceability(ctx, {
-      attestedGrantedBy: input.attestedGrantedBy,
-      cursor,
-      numItems: pageSize,
-    });
-    migrated += result.migrated;
-    cursor = result.cursor;
-    if (result.done) break;
-  }
-  return { migrated };
+  return await backfillMissingTraceability(ctx, {
+    attestedGrantedBy: input.attestedGrantedBy,
+    cursor: input.cursor,
+    numItems: pageSize,
+  });
 }
