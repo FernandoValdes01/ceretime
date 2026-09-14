@@ -1,6 +1,6 @@
 # Matriz base de permisos — Autorización en Backend (S2)
 
-Fuente: roles provisionales de `docs/especificacion-prototipo.md`, lenguaje de `CONTEXT.md` y requerimientos RF-10, RF-23, RF-38, RF-39, RN-06, RN-08, RN-25, RN-26, RNF-08 y RNF-17. Este archivo es la evidencia de cierre; el modelo ejecutable vive en [`permissions.ts`](./permissions.ts), la coordinación en [`authorize.ts`](../../../application/authorization/authorize.ts) y el enforcement en [`accompaniments.ts`](../../../presentation/accompaniments.ts). Todo opera con datos ficticios.
+Fuente: roles provisionales de `docs/especificacion-prototipo.md`, lenguaje de `CONTEXT.md` y requerimientos RF-10, RF-23, RF-38, RF-39, RN-06, RN-08, RN-25, RN-26, RNF-08 y RNF-17. Este archivo es la evidencia de cierre; el modelo ejecutable vive en [`permissions.ts`](./permissions.ts), la coordinación en [`authorize.ts`](../../application/authorization/authorize.ts) y el enforcement en [`accompaniments.ts`](../../presentation/accompaniments.ts). Todo opera con datos ficticios.
 
 ## Precondiciones comunes a toda operación protegida
 
