@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import type { FunctionReturnType } from "convex/server";
 import { expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -260,28 +261,32 @@ test("listado respeta alcance: estudiante propios, profesional e intern solo asi
   );
 
   const asStudent = t.withIdentity(identityFor("s2-est-4", "est4@alu.uct.cl"));
-  const studentList = await asStudent.query(api.presentation.accompaniments.listMyAccompaniments, {
-    paginationOpts: pageOpts(10),
-  });
+  const studentList = await asStudent.query(
+    api.presentation.accompaniments.listOwnedAccompaniments,
+    { paginationOpts: pageOpts(10) },
+  );
   expect(studentList.page).toHaveLength(1);
   expect(studentList.page[0]?.view).toBe("full");
 
   const asPro = t.withIdentity(identityFor("s2-pro-2", "pro2@uct.cl"));
-  const proList = await asPro.query(api.presentation.accompaniments.listMyAccompaniments, {
-    paginationOpts: pageOpts(10),
+  const proList = await asPro.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+    limit: 10,
   });
-  expect(proList.page).toHaveLength(1);
-  expect(proList.page[0]?.view).toBe("full");
+  expect(proList.items).toHaveLength(1);
+  expect(proList.items[0]?.view).toBe("full");
+  expect(proList.hasMore).toBe(false);
 
   const asIntern = t.withIdentity(identityFor("s2-int-2", "int2@alu.uct.cl"));
-  const internList = await asIntern.query(api.presentation.accompaniments.listMyAccompaniments, {
-    paginationOpts: pageOpts(10),
-  });
-  expect(internList.page).toHaveLength(1);
-  expect(internList.page[0]?.view).toBe("minimized");
+  const internList = await asIntern.query(
+    api.presentation.accompaniments.listAssignedAccompaniments,
+    { limit: 10 },
+  );
+  expect(internList.items).toHaveLength(1);
+  expect(internList.items[0]?.view).toBe("minimized");
+  expect(internList.hasMore).toBe(false);
 });
 
-test("administrador sin acceso general: lectura, listado y notas denegados", async () => {
+test("administrador sin acceso general: lectura, listados y notas denegados", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "s2-est-5",
@@ -302,9 +307,12 @@ test("administrador sin acceso general: lectura, listado y notas denegados", asy
     asAdmin.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
   ).rejects.toThrow("No autorizado");
   await expect(
-    asAdmin.query(api.presentation.accompaniments.listMyAccompaniments, {
+    asAdmin.query(api.presentation.accompaniments.listOwnedAccompaniments, {
       paginationOpts: pageOpts(10),
     }),
+  ).rejects.toThrow("No autorizado");
+  await expect(
+    asAdmin.query(api.presentation.accompaniments.listAssignedAccompaniments, { limit: 10 }),
   ).rejects.toThrow("No autorizado");
   await expect(
     asAdmin.query(api.presentation.accompaniments.getInternalNotes, {
@@ -626,10 +634,11 @@ test("revocar cierra todas las filas aunque existan duplicadas fuera del Backend
   await expect(
     asPro.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
   ).rejects.toThrow("No autorizado");
-  const list = await asPro.query(api.presentation.accompaniments.listMyAccompaniments, {
-    paginationOpts: pageOpts(10),
+  const list = await asPro.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+    limit: 10,
   });
-  expect(list.page).toHaveLength(0);
+  expect(list.items).toHaveLength(0);
+  expect(list.hasMore).toBe(false);
 });
 
 test("asignar exige profesional vigente: anónimo, estudiante e inhabilitado denegados", async () => {
@@ -673,7 +682,7 @@ test("asignar exige profesional vigente: anónimo, estudiante e inhabilitado den
   );
 });
 
-test("filas escritas fuera del Backend no repiten el acompañamiento en el listado", async () => {
+test("duplicadas fuera del Backend no se repiten ni pierden entre páginas", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "s2-est-12",
@@ -687,32 +696,47 @@ test("filas escritas fuera del Backend no repiten el acompañamiento en el lista
     fullName: "Profesional Ficticio",
     role: "professional",
   });
-  const accompanimentId = await seedAccompaniment(t, student.id);
-  // Corrupción simulada: la vía guardada (`assign`) rechazaría la segunda
-  // fila; solo una escritura manual fuera del Backend puede producirla.
+  const accA = await seedAccompaniment(t, student.id);
+  const accB = await seedAccompaniment(t, student.id);
+  const accC = await seedAccompaniment(t, student.id);
+  // Corrupción simulada: la vía guardada (`assign`) rechazaría las filas
+  // repetidas; solo una escritura manual fuera del Backend puede producirlas.
+  // Se intercalan en tiempo para que un paginado por filas las parta.
   await t.run(async (ctx) => {
-    await ctx.db.insert("accompanimentAssignments", {
-      accompanimentId,
-      userId: pro.id,
-      assignedRole: "professional",
-      status: "active",
-    });
-    await ctx.db.insert("accompanimentAssignments", {
-      accompanimentId,
-      userId: pro.id,
-      assignedRole: "professional",
-      status: "active",
-    });
+    const dup = async (accompanimentId: typeof accA) => {
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId,
+        userId: pro.id,
+        assignedRole: "professional",
+        status: "active",
+      });
+    };
+    await dup(accA);
+    await dup(accB);
+    await dup(accA);
+    await dup(accC);
+    await dup(accB);
   });
 
   const asPro = t.withIdentity(identityFor("s2-pro-7", "pro7@uct.cl"));
-  const list = await asPro.query(api.presentation.accompaniments.listMyAccompaniments, {
-    paginationOpts: pageOpts(10),
-  });
-  expect(list.page).toHaveLength(1);
+  const seen: string[] = [];
+  let after: Id<"accompaniments"> | undefined = undefined;
+  let hasMore = true;
+  while (hasMore) {
+    const page: FunctionReturnType<
+      typeof api.presentation.accompaniments.listAssignedAccompaniments
+    > = await asPro.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+      limit: 1,
+      ...(after === undefined ? {} : { after }),
+    });
+    for (const item of page.items) seen.push(item._id);
+    hasMore = page.hasMore;
+    after = page.lastId ?? undefined;
+  }
+  expect(seen.sort()).toEqual([accA, accB, accC].sort());
 });
 
-test("listado de acompañamientos se pagina sin truncar en silencio", async () => {
+test("listado propio se pagina sin truncar en silencio", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "s2-est-13",
@@ -725,17 +749,62 @@ test("listado de acompañamientos se pagina sin truncar en silencio", async () =
   await seedAccompaniment(t, student.id);
 
   const asStudent = t.withIdentity(identityFor("s2-est-13", "est13@alu.uct.cl"));
-  const first = await asStudent.query(api.presentation.accompaniments.listMyAccompaniments, {
+  const first = await asStudent.query(api.presentation.accompaniments.listOwnedAccompaniments, {
     paginationOpts: pageOpts(2),
   });
   expect(first.page).toHaveLength(2);
   expect(first.isDone).toBe(false);
 
-  const second = await asStudent.query(api.presentation.accompaniments.listMyAccompaniments, {
+  const second = await asStudent.query(api.presentation.accompaniments.listOwnedAccompaniments, {
     paginationOpts: { numItems: 2, cursor: first.continueCursor },
   });
   expect(second.page).toHaveLength(1);
   expect(second.isDone).toBe(true);
+});
+
+test("listado asignado se pagina con keyset sin perder ni repetir", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "s2-est-18",
+    email: "est18@alu.uct.cl",
+    fullName: "Estudiante Ficticio",
+    role: "student",
+  });
+  const pro = await seedUser(t, {
+    subject: "s2-pro-12",
+    email: "pro12@uct.cl",
+    fullName: "Profesional Ficticio",
+    role: "professional",
+  });
+  const caller = { subject: "s2-pro-12", email: "pro12@uct.cl" };
+  const expected = [];
+  for (let i = 0; i < 3; i++) {
+    const accompanimentId = await seedAccompaniment(t, student.id);
+    expected.push(accompanimentId);
+    await seedAssignment(
+      t,
+      { accompanimentId, userId: pro.id, assignedRole: "professional" },
+      caller,
+    );
+  }
+
+  const asPro = t.withIdentity(identityFor("s2-pro-12", "pro12@uct.cl"));
+  const first = await asPro.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+    limit: 2,
+  });
+  expect(first.items).toHaveLength(2);
+  expect(first.hasMore).toBe(true);
+  expect(first.lastId).not.toBeNull();
+
+  const second = await asPro.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+    limit: 2,
+    ...(first.lastId === null ? {} : { after: first.lastId }),
+  });
+  expect(second.items).toHaveLength(1);
+  expect(second.hasMore).toBe(false);
+
+  const all = [...first.items, ...second.items].map((item) => item._id).sort();
+  expect(all).toEqual([...expected].sort());
 });
 
 test("notas internas se paginan", async () => {

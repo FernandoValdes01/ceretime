@@ -179,56 +179,95 @@ export const getAccompaniment = query({
   },
 });
 
+const assignedListValidator = v.object({
+  items: v.array(accompanimentViewValidator),
+  hasMore: v.boolean(),
+  lastId: v.union(v.id("accompaniments"), v.null()),
+});
+
 /**
- * Lista solo el alcance autorizado del llamante, paginado.
- * Estudiante: propios. Profesional/Practicante: asignados activos en su rol.
- * Administrador: denegado, sin listado general.
+ * Lista los acompañamientos propios del Estudiante, paginado.
+ * Cualquier otro rol recibe denegación.
  */
-export const listMyAccompaniments = query({
+export const listOwnedAccompaniments = query({
   args: { paginationOpts: paginationOptsValidator },
   returns: paginationResultValidator(accompanimentViewValidator),
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx);
-    const scope = listingScopeForRole(profile.role);
-    if (scope.kind === "denied") deny();
-
-    if (scope.kind === "owned") {
-      const result = await ctx.db
-        .query("accompaniments")
-        .withIndex("by_student", (q) => q.eq("studentId", profile._id))
-        .paginate(args.paginationOpts);
-      const views: Array<ReturnType<typeof projectView>> = [];
-      for (const accompaniment of result.page) {
-        const view = authorizeAccompanimentRead({
-          profile: toAuthorizableProfile(profile),
-          accompaniment: { _id: accompaniment._id, studentId: accompaniment.studentId },
-          assignments: [],
-        });
-        if (view !== null) views.push(projectView(accompaniment, view));
-      }
-      return { ...result, page: views };
-    }
+    if (listingScopeForRole(profile.role).kind !== "owned") deny();
 
     const result = await ctx.db
-      .query("accompanimentAssignments")
-      .withIndex("by_user_and_status_and_assigned_role", (q) =>
-        q.eq("userId", profile._id).eq("status", "active").eq("assignedRole", scope.assignedRole),
-      )
+      .query("accompaniments")
+      .withIndex("by_student", (q) => q.eq("studentId", profile._id))
       .paginate(args.paginationOpts);
-    // Deduplicación defensiva ante filas heredadas previas al invariante. El
-    // cruce de páginas no repite: la vía guardada admite como máximo una fila
-    // activa por tripla, así que por rol cada acompañamiento aparece una sola
-    // vez en este índice.
-    const seen = new Map<string, Doc<"accompaniments">>();
-    for (const assignment of result.page) {
-      const key = assignment.accompanimentId;
-      if (seen.has(key)) continue;
-      const accompaniment = await ctx.db.get(assignment.accompanimentId);
-      if (accompaniment === null) continue;
-      seen.set(key, accompaniment);
-    }
     const views: Array<ReturnType<typeof projectView>> = [];
-    for (const accompaniment of seen.values()) {
+    for (const accompaniment of result.page) {
+      const view = authorizeAccompanimentRead({
+        profile: toAuthorizableProfile(profile),
+        accompaniment: { _id: accompaniment._id, studentId: accompaniment.studentId },
+        assignments: [],
+      });
+      if (view !== null) views.push(projectView(accompaniment, view));
+    }
+    return { ...result, page: views };
+  },
+});
+
+/**
+ * Lista los acompañamientos asignados al Profesional o Practicante con
+ * paginación keyset sobre el acompañamiento. El índice ordena por esa
+ * columna, así que las filas duplicadas quedan adyacentes y el cursor las
+ * excluye enteras: a diferencia de paginar filas y deduplicar por invocación,
+ * ningún duplicado puede repetirse en otra página ni consumir su espacio.
+ * Estudiante y Administrador reciben denegación.
+ */
+export const listAssignedAccompaniments = query({
+  args: {
+    limit: v.number(),
+    after: v.optional(v.id("accompaniments")),
+  },
+  returns: assignedListValidator,
+  handler: async (ctx, args) => {
+    const profile = await requireProfile(ctx);
+    const scope = listingScopeForRole(profile.role);
+    if (scope.kind !== "assigned") deny();
+
+    const limit = Math.min(Math.max(Math.floor(args.limit), 1), 100);
+    const seen = new Map<string, Doc<"accompaniments">>();
+    let cursor: Doc<"accompaniments">["_id"] | undefined = args.after;
+    let exhausted = false;
+    for (let round = 0; round < 10 && seen.size <= limit; round++) {
+      const rows = await ctx.db
+        .query("accompanimentAssignments")
+        .withIndex("by_user_and_status_and_assigned_role_and_accompaniment", (q) => {
+          const ranged = q
+            .eq("userId", profile._id)
+            .eq("status", "active")
+            .eq("assignedRole", scope.assignedRole);
+          return cursor === undefined ? ranged : ranged.gt("accompanimentId", cursor);
+        })
+        .order("asc")
+        .take(51);
+      if (rows.length === 0) {
+        exhausted = true;
+        break;
+      }
+      for (const row of rows) {
+        if (seen.has(row.accompanimentId)) continue;
+        const accompaniment = await ctx.db.get(row.accompanimentId);
+        if (accompaniment === null) continue;
+        seen.set(row.accompanimentId, accompaniment);
+      }
+      cursor = rows[rows.length - 1].accompanimentId;
+      if (rows.length < 51) {
+        exhausted = true;
+        break;
+      }
+    }
+
+    const distinct = [...seen.values()];
+    const views: Array<ReturnType<typeof projectView>> = [];
+    for (const accompaniment of distinct.slice(0, limit)) {
       const assignments = await activeAssignmentsFor(ctx, accompaniment._id, profile._id);
       const view = authorizeAccompanimentRead({
         profile: toAuthorizableProfile(profile),
@@ -237,7 +276,12 @@ export const listMyAccompaniments = query({
       });
       if (view !== null) views.push(projectView(accompaniment, view));
     }
-    return { ...result, page: views };
+    const last = views[views.length - 1];
+    return {
+      items: views,
+      hasMore: distinct.length > limit || !exhausted,
+      lastId: last === undefined ? null : last._id,
+    };
   },
 });
 
