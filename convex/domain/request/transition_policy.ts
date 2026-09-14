@@ -8,6 +8,7 @@
 
 import type { RequestState } from "./state";
 import {
+  ACCEPTANCE_STATE,
   SPRINT_1_REQUEST_TRANSITIONS,
   type RequestStateChange,
   type RequestStateTransition,
@@ -64,4 +65,28 @@ export function findSprint1Transition(
   return SPRINT_1_REQUEST_TRANSITIONS.find(
     (transition) => transition.from === from && transition.to === to,
   );
+}
+
+/**
+ * `change` se construye desde la fila de la tabla y no desde el intento: así el
+ * registro solo puede contener estados de Sprint 1, sin conversiones de tipo.
+ */
+export function transitionRequest(attempt: RequestTransitionAttempt): RequestTransitionResult {
+  const transition = findSprint1Transition(attempt.from, attempt.to);
+  if (transition === undefined) return { status: "rejected", cause: "transition_not_allowed" };
+
+  const reason = attempt.reason?.trim();
+  const change: RequestStateChange = {
+    from: transition.from,
+    to: transition.to,
+    actorId: attempt.actorId,
+    occurredAt: attempt.occurredAt,
+    ...(reason ? { reason } : {}),
+  };
+
+  return {
+    status: "applied",
+    change,
+    opensAccompaniment: transition.to === ACCEPTANCE_STATE,
+  };
 }
