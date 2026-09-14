@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Unificar la presentación de encabezados entre las vistas Mobile de CERETI y el patrón aplicado por la rama `fvaldes2023/ti4-7-auth`, sin reintroducir títulos duplicados en el listado y detalle de solicitudes.
+Unificar la presentación de encabezados entre las vistas Mobile de CERETI y el patrón aplicado en la rama de autenticación Mobile, sin repetir títulos en el listado y detalle de solicitudes.
 
 ## Decisión
 
