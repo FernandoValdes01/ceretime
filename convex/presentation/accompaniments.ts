@@ -235,6 +235,7 @@ export const listAssignedAccompaniments = query({
     const limit = Math.min(Math.max(Math.floor(args.limit), 1), 100);
     const seen = new Map<string, Doc<"accompaniments">>();
     let cursor: Doc<"accompaniments">["_id"] | undefined = args.after;
+    let scanned: Doc<"accompaniments">["_id"] | undefined = undefined;
     let exhausted = false;
     for (let round = 0; round < 10 && seen.size <= limit; round++) {
       const rows = await ctx.db
@@ -259,6 +260,7 @@ export const listAssignedAccompaniments = query({
         seen.set(row.accompanimentId, accompaniment);
       }
       cursor = rows[rows.length - 1].accompanimentId;
+      scanned = cursor;
       if (rows.length < 51) {
         exhausted = true;
         break;
@@ -280,7 +282,10 @@ export const listAssignedAccompaniments = query({
     return {
       items: views,
       hasMore: distinct.length > limit || !exhausted,
-      lastId: last === undefined ? null : last._id,
+      // Cursor de avance independiente de lo devuelto: si todo lo barrido
+      // fueron referencias a acompañamientos borrados, `items` viene vacío
+      // pero el consumidor igual avanza con lo barrido en vez de ciclarse.
+      lastId: last === undefined ? (scanned ?? null) : last._id,
     };
   },
 });

@@ -850,3 +850,60 @@ test("notas internas se paginan", async () => {
   expect(second.page).toHaveLength(1);
   expect(second.isDone).toBe(true);
 });
+
+test("tramo solo con referencias borradas avanza sin ciclarse", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "s2-est-19",
+    email: "est19@alu.uct.cl",
+    fullName: "Estudiante Ficticio",
+    role: "student",
+  });
+  const pro = await seedUser(t, {
+    subject: "s2-pro-13",
+    email: "pro13@uct.cl",
+    fullName: "Profesional Ficticio",
+    role: "professional",
+  });
+  // 600 fantasmas distintos superan el tope de 10 rondas x 51: un solo
+  // llamado no agota el tramo aunque todo apunte a borrados.
+  const ghosts = await t.run(async (ctx) => {
+    const ids = [];
+    for (let i = 0; i < 600; i++) {
+      const accompanimentId = await ctx.db.insert("accompaniments", {
+        studentId: student.id,
+        status: "active",
+        objective: "Fantasma ficticio",
+        accessNeeds: "Fantasma ficticio",
+      });
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId,
+        userId: pro.id,
+        assignedRole: "professional",
+        status: "active",
+      });
+      ids.push(accompanimentId);
+    }
+    return ids;
+  });
+  await t.run(async (ctx) => {
+    for (const id of ghosts) {
+      await ctx.db.delete(id);
+    }
+  });
+
+  const asPro = t.withIdentity(identityFor("s2-pro-13", "pro13@uct.cl"));
+  const first = await asPro.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+    limit: 10,
+  });
+  expect(first.items).toHaveLength(0);
+  expect(first.hasMore).toBe(true);
+  expect(first.lastId).not.toBeNull();
+
+  const second = await asPro.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+    limit: 10,
+    ...(first.lastId === null ? {} : { after: first.lastId }),
+  });
+  expect(second.items).toHaveLength(0);
+  expect(second.hasMore).toBe(false);
+});
