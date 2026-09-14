@@ -154,3 +154,51 @@ test("Revocar registra quién revoca y cuándo", async () => {
   expect(row?.revokedBy).toEqual(proId);
   expect(row?.revokedAt).toBeDefined();
 });
+
+test("Migra filas legacy sin trazabilidad", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, {
+    subject: "ti16-est-12",
+    email: "est12@alu.uct.cl",
+    role: "student",
+  });
+  const proId = await seedUser(t, {
+    subject: "ti16-pro-12",
+    email: "pro12@uct.cl",
+    role: "professional",
+  });
+  const internId = await seedUser(t, {
+    subject: "ti16-int-12",
+    email: "int12@alu.uct.cl",
+    role: "intern",
+  });
+  const accompanimentId = await seedAccompaniment(t, studentId);
+
+  // Fila creada con el esquema anterior, sin campos de trazabilidad
+  const legacyId = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompanimentAssignments", {
+      accompanimentId,
+      userId: internId,
+      assignedRole: "intern",
+      status: "active",
+    });
+  });
+
+  // 1. La migración completa fecha real de creación y responsable acreditado
+  const first = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
+    attestedGrantedBy: proId,
+  });
+  expect(first.migrated).toBe(1);
+
+  const migrated = await t.run(async (ctx) => ctx.db.get(legacyId));
+  expect(migrated).not.toBeNull();
+  expect(migrated?.status).toBe("active");
+  expect(migrated?.grantedBy).toEqual(proId);
+  expect(migrated?.grantedAt).toBe(migrated?._creationTime);
+
+  // 2. Repetir la migración no cambia nada
+  const second = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
+    attestedGrantedBy: proId,
+  });
+  expect(second.migrated).toBe(0);
+});

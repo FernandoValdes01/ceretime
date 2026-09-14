@@ -1,8 +1,9 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import type { Doc } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import {
+  backfillMissingTraceability,
   findExistingActiveAssignment,
   findProfileByTokenIdentifier,
   getAccompanimentById,
@@ -98,4 +99,34 @@ export async function revokeAccompaniment(
   }
   if (revoked === 0) return null;
   return revoked;
+}
+
+/**
+ * Migra filas legacy sin trazabilidad, por páginas acotadas. `grantedAt`
+ * se recupera de la creación real de cada fila; `attestedGrantedBy` lo
+ * aporta el operador y solo debe usarse cuando consta externamente quién
+ * concedió esas asignaciones. No exige identidad: es herramienta puntual de
+ * operador, no un flujo de aplicación.
+ */
+export async function backfillAssignmentTraceabilityUseCase(
+  ctx: MutationCtx,
+  input: {
+    readonly attestedGrantedBy: Id<"users">;
+    readonly numItems?: number;
+  },
+): Promise<{ migrated: number }> {
+  const pageSize = Math.min(Math.max(Math.floor(input.numItems ?? 100), 1), 100);
+  let migrated = 0;
+  let cursor: string | null = null;
+  for (let round = 0; round < 20; round++) {
+    const result = await backfillMissingTraceability(ctx, {
+      attestedGrantedBy: input.attestedGrantedBy,
+      cursor,
+      numItems: pageSize,
+    });
+    migrated += result.migrated;
+    cursor = result.cursor;
+    if (result.done) break;
+  }
+  return { migrated };
 }

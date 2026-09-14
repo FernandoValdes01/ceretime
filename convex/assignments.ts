@@ -1,5 +1,9 @@
 import { v } from "convex/values";
-import { assignAccompaniment, revokeAccompaniment } from "./application/accompaniments/commands";
+import {
+  assignAccompaniment,
+  backfillAssignmentTraceabilityUseCase,
+  revokeAccompaniment,
+} from "./application/accompaniments/commands";
 import { internalMutation } from "./_generated/server";
 import { assignmentRoleUnion } from "./validators";
 
@@ -43,5 +47,25 @@ export const revoke = internalMutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await revokeAccompaniment(ctx, identity, args);
+  },
+});
+
+/**
+ * Migración puntual de trazabilidad (TI2-16).
+ *
+ * Repara filas creadas con el esquema anterior, sin `grantedBy` ni
+ * `grantedAt`, para que el esquema actual las siga leyendo. `grantedAt` se
+ * recupera de la creación real de cada fila; `attestedGrantedBy` lo aporta
+ * el operador y solo debe usarse cuando consta externamente quién concedió
+ * esas asignaciones. Herramienta de operador, sin identidad ni autorización:
+ * no forma parte de ningún flujo de aplicación. Opera con datos ficticios.
+ */
+export const backfillAssignmentTraceability = internalMutation({
+  args: {
+    attestedGrantedBy: v.id("users"),
+    numItems: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    return await backfillAssignmentTraceabilityUseCase(ctx, args);
   },
 });

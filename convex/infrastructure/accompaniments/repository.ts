@@ -194,3 +194,41 @@ export async function revokeAssignmentRow(
     revokedAt: Date.now(),
   });
 }
+
+/**
+ * Repara una página de filas legacy sin trazabilidad: completa `grantedAt`
+ * con la creación real de la fila y `grantedBy` con el responsable que el
+ * operador acredita para esa migración. Retorna cuántas filas reparó y el
+ * cursor para continuar. Solo persistencia, sin decisiones de autorización.
+ */
+export async function backfillMissingTraceability(
+  ctx: MutationCtx,
+  input: {
+    readonly attestedGrantedBy: Id<"users">;
+    readonly cursor: string | null;
+    readonly numItems: number;
+  },
+): Promise<{ migrated: number; cursor: string | null; done: boolean }> {
+  const page = await ctx.db
+    .query("accompanimentAssignments")
+    .order("asc")
+    .paginate({ cursor: input.cursor, numItems: input.numItems });
+  let migrated = 0;
+  for (const row of page.page) {
+    const patch: {
+      grantedBy?: Id<"users">;
+      grantedAt?: number;
+    } = {};
+    if (row.grantedBy === undefined) patch.grantedBy = input.attestedGrantedBy;
+    if (row.grantedAt === undefined) patch.grantedAt = row._creationTime;
+    if (patch.grantedBy !== undefined || patch.grantedAt !== undefined) {
+      await ctx.db.patch(row._id, patch);
+      migrated += 1;
+    }
+  }
+  return {
+    migrated,
+    cursor: page.continueCursor,
+    done: page.isDone,
+  };
+}
