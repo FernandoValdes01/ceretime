@@ -6,6 +6,7 @@ import {
   assignmentRoleUnion,
   assignmentStatusUnion,
   institutionalStatusUnion,
+  requestStatusUnion,
   roleUnion,
 } from "./validators";
 
@@ -37,12 +38,16 @@ export default defineSchema({
 
   // Tabla 'accompaniments': acompañamiento mínimo para probar la matriz.
   // `accessNeeds` es sensible (Ley 21.719) y se minimiza para Practicante.
+  // `requestId` traza la solicitud aceptada que lo originó, si se conoce.
   accompaniments: defineTable({
     studentId: v.id("users"),
     status: accompanimentStatusUnion,
     objective: v.string(),
     accessNeeds: v.string(),
-  }).index("by_student", ["studentId"]),
+    requestId: v.optional(v.id("requests")),
+  })
+    .index("by_student", ["studentId"])
+    .index("by_request", ["requestId"]),
 
   // Tabla 'accompanimentAssignments': asignaciones revocables por
   // acompañamiento. Separa habilitación de cuenta y asignación explícita.
@@ -55,6 +60,12 @@ export default defineSchema({
     userId: v.id("users"),
     assignedRole: assignmentRoleUnion,
     status: assignmentStatusUnion,
+    // Trazabilidad de la vigencia: quién concede y cuándo, y quién revoca
+    // y cuándo. Solo persistencia, sin reglas de autorización.
+    grantedBy: v.id("users"),
+    grantedAt: v.number(),
+    revokedBy: v.optional(v.id("users")),
+    revokedAt: v.optional(v.number()),
   })
     // Paginación keyset del listado asignado: ordena por acompañamiento para
     // que las filas duplicadas queden adyacentes y el cursor las excluya
@@ -81,4 +92,18 @@ export default defineSchema({
     authorId: v.id("users"),
     body: v.string(),
   }).index("by_accompaniment", ["accompanimentId"]),
+
+  // Tabla 'requests': solicitudes de acompañamiento. El estado usa los
+  // literales de Sprint 1 del dominio (TI2-7); `createdAt` es la fecha de
+  // creación como número. Solo persistencia: las transiciones las aplica TI2-21.
+  requests: defineTable({
+    studentId: v.id("users"),
+    status: requestStatusUnion,
+    accessNeeds: v.string(),
+    createdAt: v.number(),
+  })
+    // Solicitudes propias del estudiante.
+    .index("by_student", ["studentId"])
+    // Solicitudes según su estado de revisión.
+    .index("by_status", ["status"]),
 });

@@ -58,7 +58,7 @@ export async function assignAccompaniment(
   identity: UserIdentity | null,
   triple: AssignmentTriple,
 ) {
-  await requireProfessionalCaller(ctx, identity);
+  const caller = await requireProfessionalCaller(ctx, identity);
 
   const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
   const target = await getUserById(ctx, triple.userId);
@@ -70,7 +70,7 @@ export async function assignAccompaniment(
   if (existing !== null) {
     throw new Error("Ya existe una asignación activa para este acompañamiento y rol");
   }
-  return await insertActiveAssignment(ctx, triple);
+  return await insertActiveAssignment(ctx, triple, caller._id);
 }
 
 /**
@@ -84,14 +84,14 @@ export async function revokeAccompaniment(
   identity: UserIdentity | null,
   triple: AssignmentTriple,
 ): Promise<number | null> {
-  await requireProfessionalCaller(ctx, identity);
+  const caller = await requireProfessionalCaller(ctx, identity);
 
   let revoked = 0;
   for (let round = 0; round < 10; round++) {
     const rows = await takeActiveTripleRows(ctx, triple, 50);
     if (rows.length === 0) break;
     for (const row of rows) {
-      await revokeAssignmentRow(ctx, row._id);
+      await revokeAssignmentRow(ctx, row._id, caller._id);
     }
     revoked += rows.length;
     if (rows.length < 50) break;
