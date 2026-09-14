@@ -19,7 +19,6 @@ export function Screen({
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}
       >
-        <Text style={styles.brand}>CERETIME</Text>
         <Text accessibilityRole="header" style={styles.title}>
           {title}
         </Text>
@@ -30,14 +29,28 @@ export function Screen({
   );
 }
 
-export function Action({ label, onPress }: { label: string; onPress: () => void }) {
+export function Action({
+  label,
+  onPress,
+  disabled = false,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       // Este botón conserva el callback de StyleSheet, sin conversión de clases.
       cssInterop={false}
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.button,
+        pressed && styles.pressed,
+        disabled && styles.disabled,
+      ]}
     >
       <Text style={styles.buttonLabel}>{label}</Text>
     </Pressable>
@@ -53,12 +66,6 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     padding: 24,
     gap: 16,
-  },
-  brand: {
-    color: "#246259",
-    fontSize: 14,
-    fontWeight: "700",
-    letterSpacing: 2,
   },
   title: { color: "#182C31", fontSize: 30, fontWeight: "700" },
   description: {
@@ -77,6 +84,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#246259",
   },
   pressed: { backgroundColor: "#17483F" },
+  disabled: { opacity: 0.55 },
   buttonLabel: {
     color: "#FFFFFF",
     fontSize: 17,

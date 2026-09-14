@@ -1,9 +1,6 @@
 import { Stack } from "expo-router";
+import { appHeaderOptions } from "../../src/presentation/navigation/app-header-options";
 
 export default function PublicLayout() {
-  return (
-    <Stack>
-      <Stack.Screen name="login" options={{ title: "Acceso de prueba" }} />
-    </Stack>
-  );
+  return <Stack screenOptions={appHeaderOptions} />;
 }
