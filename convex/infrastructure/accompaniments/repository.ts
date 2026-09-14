@@ -150,9 +150,18 @@ export async function findExistingActiveAssignment(
   return rows[0] ?? null;
 }
 
-/** Crea la fila activa de la tripla. */
-export async function insertActiveAssignment(ctx: MutationCtx, triple: AssignmentTriple) {
-  return await ctx.db.insert("accompanimentAssignments", { ...triple, status: "active" });
+/** Crea la fila activa de la tripla, registrando quién concede y cuándo. */
+export async function insertActiveAssignment(
+  ctx: MutationCtx,
+  triple: AssignmentTriple,
+  grantedBy: Id<"users">,
+) {
+  return await ctx.db.insert("accompanimentAssignments", {
+    ...triple,
+    status: "active",
+    grantedBy,
+    grantedAt: Date.now(),
+  });
 }
 
 /** Lote de filas activas de la tripla para revocación. */
@@ -173,10 +182,53 @@ export async function takeActiveTripleRows(
     .take(take);
 }
 
-/** Marca una fila de asignación como revocada. */
+/** Marca una fila de asignación como revocada, registrando quién revoca y cuándo. */
 export async function revokeAssignmentRow(
   ctx: MutationCtx,
   assignmentId: Id<"accompanimentAssignments">,
+  revokedBy: Id<"users">,
 ) {
-  await ctx.db.patch(assignmentId, { status: "revoked" });
+  await ctx.db.patch(assignmentId, {
+    status: "revoked",
+    revokedBy,
+    revokedAt: Date.now(),
+  });
+}
+
+/**
+ * Repara una página de filas legacy sin trazabilidad: completa `grantedAt`
+ * con la creación real de la fila y `grantedBy` con el responsable que el
+ * operador acredita para esa migración. Retorna cuántas filas reparó y el
+ * cursor para continuar. Solo persistencia, sin decisiones de autorización.
+ */
+export async function backfillMissingTraceability(
+  ctx: MutationCtx,
+  input: {
+    readonly attestedGrantedBy: Id<"users">;
+    readonly cursor: string | null;
+    readonly numItems: number;
+  },
+): Promise<{ migrated: number; cursor: string | null; done: boolean }> {
+  const page = await ctx.db
+    .query("accompanimentAssignments")
+    .order("asc")
+    .paginate({ cursor: input.cursor, numItems: input.numItems });
+  let migrated = 0;
+  for (const row of page.page) {
+    const patch: {
+      grantedBy?: Id<"users">;
+      grantedAt?: number;
+    } = {};
+    if (row.grantedBy === undefined) patch.grantedBy = input.attestedGrantedBy;
+    if (row.grantedAt === undefined) patch.grantedAt = row._creationTime;
+    if (patch.grantedBy !== undefined || patch.grantedAt !== undefined) {
+      await ctx.db.patch(row._id, patch);
+      migrated += 1;
+    }
+  }
+  return {
+    migrated,
+    cursor: page.continueCursor,
+    done: page.isDone,
+  };
 }

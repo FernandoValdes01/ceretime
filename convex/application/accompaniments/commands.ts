@@ -1,8 +1,9 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import type { Doc } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import {
+  backfillMissingTraceability,
   findExistingActiveAssignment,
   findProfileByTokenIdentifier,
   getAccompanimentById,
@@ -58,7 +59,7 @@ export async function assignAccompaniment(
   identity: UserIdentity | null,
   triple: AssignmentTriple,
 ) {
-  await requireProfessionalCaller(ctx, identity);
+  const caller = await requireProfessionalCaller(ctx, identity);
 
   const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
   const target = await getUserById(ctx, triple.userId);
@@ -70,7 +71,7 @@ export async function assignAccompaniment(
   if (existing !== null) {
     throw new Error("Ya existe una asignación activa para este acompañamiento y rol");
   }
-  return await insertActiveAssignment(ctx, triple);
+  return await insertActiveAssignment(ctx, triple, caller._id);
 }
 
 /**
@@ -84,18 +85,42 @@ export async function revokeAccompaniment(
   identity: UserIdentity | null,
   triple: AssignmentTriple,
 ): Promise<number | null> {
-  await requireProfessionalCaller(ctx, identity);
+  const caller = await requireProfessionalCaller(ctx, identity);
 
   let revoked = 0;
   for (let round = 0; round < 10; round++) {
     const rows = await takeActiveTripleRows(ctx, triple, 50);
     if (rows.length === 0) break;
     for (const row of rows) {
-      await revokeAssignmentRow(ctx, row._id);
+      await revokeAssignmentRow(ctx, row._id, caller._id);
     }
     revoked += rows.length;
     if (rows.length < 50) break;
   }
   if (revoked === 0) return null;
   return revoked;
+}
+
+/**
+ * Migra una página acotada de filas legacy sin trazabilidad. `grantedAt`
+ * se recupera de la creación real de cada fila; `attestedGrantedBy` lo
+ * aporta el operador y solo debe usarse cuando consta externamente quién
+ * concedió esas asignaciones. No exige identidad: es herramienta puntual de
+ * operador, no un flujo de aplicación. Se avanza con `cursor`
+ * hasta alcanzar `done`; cada página corre en su propia transacción.
+ */
+export async function backfillAssignmentTraceabilityUseCase(
+  ctx: MutationCtx,
+  input: {
+    readonly attestedGrantedBy: Id<"users">;
+    readonly cursor: string | null;
+    readonly numItems?: number;
+  },
+): Promise<{ migrated: number; cursor: string | null; done: boolean }> {
+  const pageSize = Math.min(Math.max(Math.floor(input.numItems ?? 100), 1), 100);
+  return await backfillMissingTraceability(ctx, {
+    attestedGrantedBy: input.attestedGrantedBy,
+    cursor: input.cursor,
+    numItems: pageSize,
+  });
 }

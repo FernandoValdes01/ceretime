@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 
 /**
  * Validadores compartidos de identidad y roles.
@@ -29,3 +30,11 @@ export const accompanimentStatusUnion = v.union(
 export const assignmentRoleUnion = v.union(v.literal("professional"), v.literal("intern"));
 
 export const assignmentStatusUnion = v.union(v.literal("active"), v.literal("revoked"));
+
+/**
+ * Estados de solicitud habilitados en Sprint 1, derivados de los literales
+ * del dominio (TI2-7) para que el esquema no defina nombres por su cuenta.
+ */
+const requestStatusLiterals = SPRINT_1_REQUEST_STATES.map((state) => v.literal(state));
+
+export const requestStatusUnion = v.union(...requestStatusLiterals);

@@ -1,5 +1,10 @@
 import { v } from "convex/values";
-import { assignAccompaniment, revokeAccompaniment } from "./application/accompaniments/commands";
+import {
+  assignAccompaniment,
+  backfillAssignmentTraceabilityUseCase,
+  revokeAccompaniment,
+} from "./application/accompaniments/commands";
+import { internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
 import { assignmentRoleUnion } from "./validators";
 
@@ -43,5 +48,40 @@ export const revoke = internalMutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await revokeAccompaniment(ctx, identity, args);
+  },
+});
+
+/**
+ * Migración puntual de trazabilidad (TI2-16).
+ *
+ * Repara filas creadas con el esquema anterior, sin `grantedBy` ni
+ * `grantedAt`, para que el esquema actual las siga leyendo. `grantedAt` se
+ * recupera de la creación real de cada fila; `attestedGrantedBy` lo aporta
+ * el operador y solo debe usarse cuando consta externamente quién concedió
+ * esas asignaciones. Procesa un lote por transacción y programa la
+ * continuación con el `cursor` hasta agotar las filas. Herramienta de
+ * operador, sin identidad ni autorización: no forma parte de ningún flujo de
+ * aplicación. Opera con datos ficticios.
+ */
+export const backfillAssignmentTraceability = internalMutation({
+  args: {
+    attestedGrantedBy: v.id("users"),
+    numItems: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const result = await backfillAssignmentTraceabilityUseCase(ctx, {
+      attestedGrantedBy: args.attestedGrantedBy,
+      cursor: args.cursor ?? null,
+      numItems: args.numItems,
+    });
+    if (!result.done) {
+      await ctx.scheduler.runAfter(0, internal.assignments.backfillAssignmentTraceability, {
+        attestedGrantedBy: args.attestedGrantedBy,
+        ...(args.numItems === undefined ? {} : { numItems: args.numItems }),
+        ...(result.cursor === null ? {} : { cursor: result.cursor }),
+      });
+    }
+    return result;
   },
 });
