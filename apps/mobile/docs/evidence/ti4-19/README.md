@@ -1,6 +1,6 @@
 # Evidencia nativa de TI4-19
 
-Recorrido ejecutado el 13 de septiembre de 2026 sobre el commit de implementación `a9f959e0be1c5c257e0a5b8d005c9135a9f4f722`, sin cambios locales de código, en el AVD `Pixel_5_Liviano` con Android 15, API 35, y una compilación de desarrollo de Expo. Los escenarios se activaron únicamente mediante `EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE` y `EXPO_PUBLIC_STUDENT_AREA_DELAY_MS`.
+Recorrido ejecutado el 14 de septiembre de 2026 sobre el commit de implementación `686a912`, en el AVD `Pixel_5_Liviano` con Android 15, API 35, y una compilación de desarrollo de Expo. Los escenarios se activaron únicamente mediante `EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE` y `EXPO_PUBLIC_STUDENT_AREA_DELAY_MS`.
 
 ## Carga
 
@@ -34,4 +34,4 @@ Con el modo `error`, el listado presentó un único mensaje de error y la acció
 
 ## Resultado
 
-El recorrido Listado → Detalle y los estados de carga, vacío, error y éxito quedaron aprobados en el emulador. La jerarquía nativa mostró una sola aparición de `Mis solicitudes` y una sola de `Detalle de solicitud`; no aparecieron títulos internos duplicados. La comprobación automatizada complementaria cubre el reintento, la recuperación ante identificadores desconocidos y la protección de rutas por rol. El commit posterior que incorpora este registro modifica solo documentación y evidencia.
+El recorrido Listado → Detalle y los estados de carga, vacío, error y éxito quedaron aprobados en el emulador. El header nativo compartido mostró `CERETIME` en las vistas generales y un único título de ruta en listado y detalle, sin marcas internas duplicadas. La jerarquía nativa mostró una sola aparición de `Mis solicitudes` y una sola de `Detalle de solicitud`. La comprobación automatizada complementaria cubre el reintento, la recuperación ante identificadores desconocidos y la protección de rutas por rol.
