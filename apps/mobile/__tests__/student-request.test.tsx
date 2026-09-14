@@ -71,7 +71,10 @@ describe("Formulario de solicitud del estudiante", () => {
   test("recorre Inicio → Nueva solicitud → Inicio", async () => {
     const navigation = await openForm();
     expect(navigation.getPathname()).toBe("/estudiante/nueva-solicitud");
-    await act(async () => router.back());
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Volver al inicio" }));
+      await Promise.resolve();
+    });
     expect(await screen.findByText("Inicio de Estudiante")).toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante");
   });

@@ -12,7 +12,10 @@ export interface StudentScreenProps extends PropsWithChildren {
 export function StudentScreen({ title, description, scrollRef, children }: StudentScreenProps) {
   return (
     <StudentFonts>
-      <SafeAreaView className="flex-1 bg-student-background" edges={["left", "right", "bottom"]}>
+      <SafeAreaView
+        className="flex-1 bg-student-background"
+        edges={["top", "left", "right", "bottom"]}
+      >
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"
