@@ -253,16 +253,21 @@ test("Migra por lotes encadenados sin perder la cola", async () => {
 
   // 3. Caminar los cursores agota todas las filas
   let cursor: string | undefined = first.cursor ?? undefined;
-  let total = first.migrated;
   for (let round = 0; round < 5; round++) {
     const result = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
       attestedGrantedBy: proId,
       numItems: 1,
       ...(cursor === undefined ? {} : { cursor }),
     });
-    total += result.migrated;
     if (result.done) break;
     cursor = result.cursor ?? undefined;
   }
-  expect(total).toBe(3);
+
+  // 4. Estado final: las tres filas quedan reparadas, las migre el lote
+  // manual o la continuación programada
+  const repaired = await t.run(async (ctx) => {
+    const rows = await ctx.db.query("accompanimentAssignments").collect();
+    return rows.filter((row) => row.grantedAt !== undefined && row.grantedBy !== undefined).length;
+  });
+  expect(repaired).toBe(3);
 });
