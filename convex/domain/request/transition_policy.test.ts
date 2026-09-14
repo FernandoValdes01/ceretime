@@ -1,8 +1,10 @@
 import { describe, expect, test } from "vitest";
+import { FUTURE_REQUEST_STATES, REQUEST_STATES, SPRINT_1_REQUEST_STATES } from "./state";
 import {
   findSprint1Transition,
   transitionRequest,
   type RequestTransitionAttempt,
+  type TransitionRejectionCause,
 } from "./transition_policy";
 import { SPRINT_1_REQUEST_TRANSITIONS } from "./transitions";
 
@@ -14,6 +16,13 @@ describe("findSprint1Transition", () => {
     for (const row of SPRINT_1_REQUEST_TRANSITIONS) {
       expect(findSprint1Transition(row.from, row.to)).toBe(row);
     }
+  });
+
+  test("devuelve undefined para cualquier par ausente", () => {
+    expect(findSprint1Transition("received", "accepted")).toBeUndefined();
+    expect(findSprint1Transition("accepted", "under_review")).toBeUndefined();
+    expect(findSprint1Transition("received", "received")).toBeUndefined();
+    expect(findSprint1Transition("under_review", "cancelled")).toBeUndefined();
   });
 });
 
@@ -94,5 +103,124 @@ describe("transitionRequest", () => {
     const copy = { ...attempt };
     transitionRequest(attempt);
     expect(attempt).toStrictEqual(copy);
+  });
+
+  test("aplica únicamente los pares de la tabla y rechaza cualquier otro", () => {
+    const applied: string[] = [];
+    const causes = new Set<string>();
+    for (const from of REQUEST_STATES) {
+      for (const to of REQUEST_STATES) {
+        const result = transitionRequest({ ...actor, from, to, reason: "motivo" });
+        if (result.status === "applied") applied.push(`${from} -> ${to}`);
+        else causes.add(result.cause);
+      }
+    }
+    const declared = SPRINT_1_REQUEST_TRANSITIONS.map((row) => `${row.from} -> ${row.to}`);
+    expect(applied.sort()).toEqual([...declared].sort());
+    expect(REQUEST_STATES.length ** 2 - applied.length).toBe(45);
+    expect(causes).toEqual(new Set(["transition_not_allowed"]));
+  });
+
+  test("rechaza saltos, retrocesos y permanencias, incluida aceptar dos veces", () => {
+    const pairs = [
+      ["received", "accepted"],
+      ["received", "awaiting_information_or_acceptance"],
+      ["under_review", "received"],
+      ["accepted", "under_review"],
+      ["awaiting_information_or_acceptance", "under_review"],
+      ["received", "received"],
+      ["accepted", "accepted"],
+    ] as const;
+    for (const [from, to] of pairs) {
+      expect(transitionRequest({ ...actor, from, to, reason: "motivo" })).toStrictEqual({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      });
+    }
+  });
+
+  test.each(FUTURE_REQUEST_STATES)(
+    "rechaza %s como destino desde todo estado de Sprint 1",
+    (future) => {
+      for (const from of SPRINT_1_REQUEST_STATES) {
+        expect(transitionRequest({ ...actor, from, to: future, reason: "motivo" })).toStrictEqual({
+          status: "rejected",
+          cause: "transition_not_allowed",
+        });
+      }
+    },
+  );
+
+  test.each(FUTURE_REQUEST_STATES)("rechaza %s como origen hacia cualquier estado", (future) => {
+    for (const to of REQUEST_STATES) {
+      expect(transitionRequest({ ...actor, from: future, to, reason: "motivo" })).toStrictEqual({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      });
+    }
+  });
+
+  test("exige motivo solo en el paso a espera", () => {
+    const toAwaiting = {
+      ...actor,
+      from: "under_review",
+      to: "awaiting_information_or_acceptance",
+    } as const;
+    expect(transitionRequest(toAwaiting)).toStrictEqual({
+      status: "rejected",
+      cause: "reason_required",
+    });
+    expect(transitionRequest({ ...toAwaiting, reason: "   " })).toStrictEqual({
+      status: "rejected",
+      cause: "reason_required",
+    });
+    expect(transitionRequest({ ...actor, from: "under_review", to: "accepted" })).toMatchObject({
+      status: "applied",
+    });
+  });
+
+  test("exige actor en toda transición", () => {
+    for (const row of SPRINT_1_REQUEST_TRANSITIONS) {
+      for (const actorId of ["", "   "]) {
+        expect(
+          transitionRequest({ ...actor, actorId, from: row.from, to: row.to, reason: "motivo" }),
+        ).toStrictEqual({ status: "rejected", cause: "actor_required" });
+      }
+    }
+  });
+
+  test("reporta la causa más general cuando hay varias", () => {
+    // Par inválido, sin actor y sin motivo: gana el par.
+    expect(
+      transitionRequest({ ...actor, actorId: "", from: "received", to: "accepted" }),
+    ).toStrictEqual({ status: "rejected", cause: "transition_not_allowed" });
+    // Par válido, sin actor y sin motivo: gana el actor.
+    expect(
+      transitionRequest({
+        ...actor,
+        actorId: "",
+        from: "under_review",
+        to: "awaiting_information_or_acceptance",
+      }),
+    ).toStrictEqual({ status: "rejected", cause: "actor_required" });
+  });
+
+  test("un rechazo no trae registro de cambio y deja el intento intacto", () => {
+    const rejected: ReadonlyArray<readonly [RequestTransitionAttempt, TransitionRejectionCause]> = [
+      [{ ...actor, from: "received", to: "accepted" }, "transition_not_allowed"],
+      [{ ...actor, actorId: " ", from: "received", to: "under_review" }, "actor_required"],
+      [
+        { ...actor, from: "under_review", to: "awaiting_information_or_acceptance" },
+        "reason_required",
+      ],
+    ];
+    for (const [attempt, cause] of rejected) {
+      Object.freeze(attempt);
+      const copy = { ...attempt };
+      const result = transitionRequest(attempt);
+      expect(result).toStrictEqual({ status: "rejected", cause });
+      expect(result).not.toHaveProperty("change");
+      expect(attempt).toStrictEqual(copy);
+    }
   });
 });
