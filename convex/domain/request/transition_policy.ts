@@ -68,6 +68,11 @@ export function findSprint1Transition(
 }
 
 /**
+ * Todo rechazo retorna antes de construir `change`: un intento inválido no deja
+ * registro porque el registro nunca llega a existir. Las causas se evalúan de
+ * la más general a la más específica, así la que se reporta es la primera que
+ * el llamador tiene que resolver.
+ *
  * `change` se construye desde la fila de la tabla y no desde el intento: así el
  * registro solo puede contener estados de Sprint 1, sin conversiones de tipo.
  */
@@ -75,11 +80,16 @@ export function transitionRequest(attempt: RequestTransitionAttempt): RequestTra
   const transition = findSprint1Transition(attempt.from, attempt.to);
   if (transition === undefined) return { status: "rejected", cause: "transition_not_allowed" };
 
+  const actorId = attempt.actorId.trim();
+  if (actorId === "") return { status: "rejected", cause: "actor_required" };
+
   const reason = attempt.reason?.trim();
+  if (transition.requiresReason && !reason) return { status: "rejected", cause: "reason_required" };
+
   const change: RequestStateChange = {
     from: transition.from,
     to: transition.to,
-    actorId: attempt.actorId,
+    actorId,
     occurredAt: attempt.occurredAt,
     ...(reason ? { reason } : {}),
   };
