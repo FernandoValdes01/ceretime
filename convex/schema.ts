@@ -25,6 +25,12 @@ export default defineSchema({
     // Clave estable hacia la identidad autenticada
     // (`ctx.auth.getUserIdentity().tokenIdentifier`); solo ficticia en pruebas.
     tokenIdentifier: v.string(),
+    // Auditoría de habilitación institucional (TI2-11): actor administrador y
+    // fecha de la habilitación. Solo la fija la vía guardada de cuentas; el
+    // arranque administrativo inicial deja `enabledBy` ausente y documenta el
+    // procedimiento por entorno en `domain/accounts/enablement.md`.
+    enabledBy: v.optional(v.id("users")),
+    enabledAt: v.optional(v.number()),
   })
     // Índice para búsquedas rápidas por correo electrónico
     .index("by_email", ["email"])
