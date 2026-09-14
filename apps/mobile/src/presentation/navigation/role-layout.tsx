@@ -1,10 +1,11 @@
 import { Stack } from "expo-router";
 import type { PropsWithChildren } from "react";
+import { appHeaderOptions } from "./app-header-options";
 
 export default function RoleLayout({ children }: PropsWithChildren) {
   return (
-    <Stack>
-      <Stack.Screen name="index" options={{ title: "Inicio", headerBackVisible: false }} />
+    <Stack screenOptions={appHeaderOptions}>
+      <Stack.Screen name="index" />
       {children}
     </Stack>
   );

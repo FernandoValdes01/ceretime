@@ -6,6 +6,7 @@ import {
   NavigationSessionProvider,
   useNavigationSession,
 } from "../src/presentation/navigation/session";
+import { appHeaderOptions } from "../src/presentation/navigation/app-header-options";
 
 function RootNavigator() {
   const { role } = useNavigationSession();
@@ -19,7 +20,7 @@ function RootNavigator() {
       <Stack.Protected guard={role !== null}>
         <Stack.Screen name="(protected)" options={{ headerShown: false }} />
       </Stack.Protected>
-      <Stack.Screen name="+not-found" options={{ title: "Página no encontrada" }} />
+      <Stack.Screen name="+not-found" options={appHeaderOptions} />
     </Stack>
   );
 }

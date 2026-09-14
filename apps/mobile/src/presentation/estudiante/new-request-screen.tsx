@@ -1,4 +1,3 @@
-import { Stack } from "expo-router";
 import { useRef } from "react";
 import { KeyboardAvoidingView, ScrollView } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -26,7 +25,6 @@ export default function NewRequestScreen({
       behavior={process.env.EXPO_OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={headerHeight}
     >
-      <Stack.Screen options={{ title: "Nueva solicitud" }} />
       <StudentScreen
         scrollRef={scrollRef}
         title="Solicitud de acompañamiento"
