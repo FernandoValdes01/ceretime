@@ -192,7 +192,7 @@ test("habilitar exige administrador vigente: otros roles y anónimo denegados", 
   );
 });
 
-test("validación del objetivo: correo, vigencia, rol y estado pendiente", async () => {
+test("validación del objetivo: todo rechazo responde No autorizado", async () => {
   const t = convexTest(schema, modules);
   await seedUser(t, {
     subject: "ti2-11-adm-5",
@@ -211,7 +211,7 @@ test("validación del objetivo: correo, vigencia, rol y estado pendiente", async
   });
   await expect(
     asAdmin.mutation(internal.accounts.enableIntern, { userId: external.id }),
-  ).rejects.toThrow("institucional");
+  ).rejects.toThrow("No autorizado");
 
   const inactive = await seedUser(t, {
     subject: "ti2-11-int-6",
@@ -223,7 +223,7 @@ test("validación del objetivo: correo, vigencia, rol y estado pendiente", async
   });
   await expect(
     asAdmin.mutation(internal.accounts.enableIntern, { userId: inactive.id }),
-  ).rejects.toThrow("vigente");
+  ).rejects.toThrow("No autorizado");
 
   const notIntern = await seedUser(t, {
     subject: "ti2-11-est-3",
@@ -234,7 +234,7 @@ test("validación del objetivo: correo, vigencia, rol y estado pendiente", async
   });
   await expect(
     asAdmin.mutation(internal.accounts.enableIntern, { userId: notIntern.id }),
-  ).rejects.toThrow("Practicante");
+  ).rejects.toThrow("No autorizado");
 
   const disabled = await seedUser(t, {
     subject: "ti2-11-int-7",
@@ -245,7 +245,7 @@ test("validación del objetivo: correo, vigencia, rol y estado pendiente", async
   });
   await expect(
     asAdmin.mutation(internal.accounts.enableIntern, { userId: disabled.id }),
-  ).rejects.toThrow("pendientes");
+  ).rejects.toThrow("No autorizado");
 
   const already = await seedUser(t, {
     subject: "ti2-11-int-8",
@@ -256,7 +256,7 @@ test("validación del objetivo: correo, vigencia, rol y estado pendiente", async
   });
   await expect(
     asAdmin.mutation(internal.accounts.enableIntern, { userId: already.id }),
-  ).rejects.toThrow("ya está habilitada");
+  ).rejects.toThrow("No autorizado");
 });
 
 test("recurso inexistente responde igual que denegado", async () => {
@@ -381,7 +381,7 @@ test("la habilitación jamás cambia el rol ni crea administradores", async () =
   // promoción a administrador desde la habilitación de practicantes.
   await expect(
     asAdmin.mutation(internal.accounts.enableIntern, { userId: otherAdmin.id }),
-  ).rejects.toThrow("Practicante");
+  ).rejects.toThrow("No autorizado");
 
   // La vía guardada exige permiso incluso sin identidad.
   await expect(t.mutation(internal.accounts.enableIntern, { userId: intern.id })).rejects.toThrow(

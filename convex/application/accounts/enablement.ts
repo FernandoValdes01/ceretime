@@ -49,10 +49,11 @@ async function requireAdminCaller(ctx: MutationCtx, identity: UserIdentity | nul
  * Habilita la cuenta de un Practicante pendiente.
  *
  * Registra el actor administrador y la fecha de la operación en el propio
- * documento (`enabledBy`, `enabledAt`). Toda falta de permiso, ausencia de
- * identidad o de perfil responde el mismo error genérico, sin exponer el
- * motivo ni la existencia del recurso; tras superar esa puerta, el
- * Administrador recibe errores específicos de validación para operar.
+ * documento (`enabledBy`, `enabledAt`). Toda denegación (sin identidad, sin
+ * perfil, llamante no administrador o no vigente, objetivo inexistente, rol
+ * no practicante, correo no institucional, cuenta no vigente o estado no
+ * pendiente) responde el mismo error genérico, sin exponer el motivo ni la
+ * existencia del recurso.
  */
 export async function enableInternAccount(
   ctx: MutationCtx,
@@ -77,22 +78,7 @@ export async function enableInternAccount(
       accountStatus: target.accountStatus,
     },
   });
-  if (!check.ok) {
-    if (check.reason === "caller-not-admin" || check.reason === "caller-not-active") deny();
-    if (check.reason === "target-not-intern") {
-      throw new Error("Solo las cuentas de Practicante se habilitan por esta vía");
-    }
-    if (check.reason === "target-email-not-institutional") {
-      throw new Error("El correo debe pertenecer a un dominio institucional");
-    }
-    if (check.reason === "target-account-not-active") {
-      throw new Error("La cuenta debe estar vigente para habilitarla");
-    }
-    if (check.reason === "target-already-enabled") {
-      throw new Error("La cuenta ya está habilitada");
-    }
-    throw new Error("Solo las cuentas pendientes se habilitan por esta vía");
-  }
+  if (!check.ok) deny();
 
   await patchEnablement(ctx, {
     userId: target._id,

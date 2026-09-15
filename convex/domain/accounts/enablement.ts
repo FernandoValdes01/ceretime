@@ -113,11 +113,19 @@ export type BootstrapCheck =
  *
  * El arranque solo crea el primer Administrador del entorno con correo
  * institucional `@uct.cl` (personal); nunca crea Practicantes ni otros roles
- * y nunca se ejecuta cuando ya existe una cuenta administrativa.
+ * y nunca se ejecuta cuando ya existe una cuenta administrativa. Además de
+ * comprobar el sufijo, exige una estructura mínima (parte local no vacía y un
+ * solo `@`): el arranque es de un solo uso y un correo malformado como
+ * `@uct.cl` o `usuario@@uct.cl` dejaría la cuenta inicial corrupta e
+ * incorregible por esta vía.
  */
 export function validateBootstrapCandidate(candidate: BootstrapCandidate): BootstrapCheck {
   if (candidate.role !== "admin") return { ok: false, reason: "bootstrap-role-not-admin" };
   const normalized = normalizeEmail(candidate.email);
+  const at = normalized.indexOf("@");
+  if (at <= 0 || normalized.indexOf("@", at + 1) !== -1) {
+    return { ok: false, reason: "bootstrap-email-not-institutional" };
+  }
   if (!normalized.endsWith("@uct.cl")) {
     return { ok: false, reason: "bootstrap-email-not-institutional" };
   }

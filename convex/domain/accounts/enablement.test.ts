@@ -119,4 +119,13 @@ describe("validateBootstrapCandidate", () => {
       reason: "bootstrap-role-not-admin",
     });
   });
+
+  test("rechaza correos malformados aunque terminen con el sufijo", () => {
+    for (const email of ["@uct.cl", "usuario@@uct.cl", "sin-arroba", "", "  @uct.cl  "]) {
+      expect(validateBootstrapCandidate({ email, role: "admin" })).toEqual({
+        ok: false,
+        reason: "bootstrap-email-not-institutional",
+      });
+    }
+  });
 });

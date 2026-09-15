@@ -8,7 +8,7 @@ Solo el Administrador con cuenta habilitada (`institutionalStatus === "enabled"`
 
 ## Validación del objetivo
 
-El objetivo debe tener rol `intern`, correo institucional normalizado (`@alu.uct.cl` o `@uct.cl` según `domain/auth/institutional_domain.ts`), cuenta vigente (`accountStatus === "active"`) y estado pendiente (`institutionalStatus === "pending"`); la operación lo deja en `enabled` sin cambiar el rol, rechaza la cuenta ya habilitada para no sobrescribir la auditoría y rechaza cualquier otro rol, correo externo, cuenta inactiva o estado distinto con errores específicos tras la puerta administrativa, mientras toda falta de permiso responde el mismo error genérico `No autorizado`.
+El objetivo debe tener rol `intern`, correo institucional normalizado (`@alu.uct.cl` o `@uct.cl` según `domain/auth/institutional_domain.ts`), cuenta vigente (`accountStatus === "active"`) y estado pendiente (`institutionalStatus === "pending"`); la operación lo deja en `enabled` sin cambiar el rol y rechaza la cuenta ya habilitada para no sobrescribir la auditoría. Toda denegación de esta vía (permiso, existencia, rol, correo, vigencia o estado) responde el mismo error genérico `No autorizado`, sin exponer el motivo.
 
 ## Auditoría y separación de decisiones
 
@@ -28,4 +28,4 @@ Las semillas de desarrollo son solo `internal.users.createTestUser` y los insert
 
 ## Casos cubiertos por pruebas
 
-Positivos: el Administrador habilita al Practicante pendiente y deja actor y fecha; la cuenta habilitada sigue sin leer acompañamientos sin asignación; el arranque crea al primer Administrador habilitado. Negativos: estudiante, profesional, practicante, anónimo y administrador inhabilitado reciben `No autorizado`; correo externo, cuenta inactiva, rol no practicante, estado no pendiente y cuenta ya habilitada se rechazan; recurso inexistente responde igual que denegado; segundo arranque, arranque con correo no `@uct.cl` y arranque con identidad duplicada se rechazan; la superficie pública no expone creación ni promoción de Administradores.
+Positivos: el Administrador habilita al Practicante pendiente y deja actor y fecha; la cuenta habilitada sigue sin leer acompañamientos sin asignación; el arranque crea al primer Administrador habilitado. Negativos: estudiante, profesional, practicante, anónimo y administrador inhabilitado reciben `No autorizado`; correo externo, cuenta inactiva, rol no practicante, estado no pendiente, cuenta ya habilitada y recurso inexistente también responden `No autorizado`; segundo arranque, arranque con correo no `@uct.cl` o malformado y arranque con identidad duplicada se rechazan; la superficie pública no expone creación ni promoción de Administradores.
