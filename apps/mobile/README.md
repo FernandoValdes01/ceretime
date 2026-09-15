@@ -158,7 +158,7 @@ Las pruebas `student-request.test.tsx` y `student-request-demo-mode.test.tsx` ej
 
 ## Listado y detalle de solicitudes: TI4-19
 
-Desde el inicio del Estudiante, abre **Mis solicitudes**. El listado muestra sus solicitudes y cada tarjeta abre el detalle correspondiente. El detalle presenta la referencia, las fechas, la necesidad, el resultado esperado, las necesidades de acceso, la modalidad y el medio preferido para recibir información. La representación accesible del estado pertenece a TI4-31 y el acompañamiento resultante a TI4-35.
+Desde el inicio del Estudiante, abre **Mis solicitudes**. El listado muestra sus solicitudes y cada tarjeta abre el detalle correspondiente. El detalle presenta la referencia, el estado, las fechas, la necesidad, el resultado esperado, las necesidades de acceso, la modalidad y el medio preferido para recibir información. El acompañamiento resultante pertenece a TI4-35.
 
 La implementación obtiene una proyección ficticia mediante `StudentAreaReader`. Para comprobar la carga, el listado vacío, el error con reintento y el éxito, reinicia Expo con una de estas configuraciones:
 
@@ -171,6 +171,12 @@ EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=error bun run mobile:start --clear
 Las variables sólo controlan datos ficticios y no contienen secretos. Después de cambiar una variable `EXPO_PUBLIC_`, recarga completamente la aplicación. Un identificador que no pertenezca a la proyección del estudiante muestra una recuperación controlada y no consulta datos de otro estudiante.
 
 La evidencia nativa del recorrido se registra en [docs/evidence/ti4-19](./docs/evidence/ti4-19/README.md).
+
+## Estado accesible de la solicitud: TI4-31
+
+El detalle representa cada estado con una etiqueta en español y un símbolo propio. El símbolo no reemplaza al texto ni depende del color para distinguir el estado. TalkBack recibe el campo y el valor en un único anuncio, por ejemplo, `Estado de la solicitud: Aceptada`; el rótulo y el símbolo visibles no agregan focos separados.
+
+La evidencia nativa se registra en [docs/evidence/ti4-31](./docs/evidence/ti4-31/README.md).
 
 ## Referencias
 

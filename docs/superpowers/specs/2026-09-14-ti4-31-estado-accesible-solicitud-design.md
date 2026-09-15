@@ -22,7 +22,7 @@ Un módulo de presentación convertirá cada `StudentRequestStatus` en una etiqu
 
 `StudentRequestDetailScreen` entregará `request.status` al componente dentro de la tarjeta existente. No cambiará la lectura de datos ni el puerto `StudentAreaReader`: el flujo seguirá siendo adaptador ficticio, proveedor del área de estudiante, solicitud encontrada en el snapshot y representación del estado.
 
-El contenedor accesible expondrá una sola descripción comprensible, con el formato `Estado de la solicitud: <etiqueta>`, para evitar que TalkBack anuncie por separado elementos decorativos. El icono no añadirá ruido al recorrido de foco.
+El valor textual expondrá una sola descripción comprensible, con el formato `Estado de la solicitud: <etiqueta>`, para evitar que TalkBack anuncie por separado el rótulo y los elementos decorativos. El icono y el rótulo no añadirán focos adicionales.
 
 ## Pruebas y evidencia
 
