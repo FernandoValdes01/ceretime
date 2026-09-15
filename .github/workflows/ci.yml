@@ -41,6 +41,9 @@ jobs:
       - name: Comprobar formato con Oxfmt
         run: bun run format:check
 
+      - name: Probar publicación de resultados de CI
+        run: bun test ./.github/ci-publication.test.ts
+
   mobile:
     name: Validación Mobile
     runs-on: ubuntu-latest
@@ -141,9 +144,9 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ci-build-${{ matrix.component }}-${{ github.run_id }}
+          name: ci-build-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: apps/${{ matrix.component }}/dist
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 7
 
       - name: Publicar resumen en el check
@@ -205,6 +208,10 @@ jobs:
               core.setFailed('La rama del workflow no coincide con la rama de la PR indicada.');
               return;
             }
+            if (pullRequest.head.sha !== context.sha) {
+              core.setFailed('El commit del run no coincide con el head actual de la PR. Ejecuta el workflow sobre el nuevo commit.');
+              return;
+            }
 
             const marker = '<!-- ceretime-ci-build-result -->';
             const body = [
@@ -213,11 +220,13 @@ jobs:
               '',
               `Estado: **${process.env.RUN_RESULT}**`,
               '',
+              `Commit validado: ${context.sha}`,
+              '',
               `[Ver logs, resumen y artefactos del run](${process.env.RUN_URL})`,
               '',
               'El comentario se actualiza en cada ejecución manual asociada a esta PR.',
             ].join('\n');
-            const { data: comments } = await github.rest.issues.listComments({
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
               repo,
               issue_number: prNumber,
