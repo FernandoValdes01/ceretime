@@ -4,6 +4,17 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      run_builds:
+        description: Ejecutar los builds reales preparados para TI4-34
+        required: true
+        type: boolean
+        default: false
+      pr_number:
+        description: Número de PR al que se publicará el resultado, si corresponde
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -29,6 +40,9 @@ jobs:
 
       - name: Comprobar formato con Oxfmt
         run: bun run format:check
+
+      - name: Probar publicación de resultados de CI
+        run: bun test ./.github/ci-publication.test.ts
 
   mobile:
     name: Validación Mobile
@@ -95,3 +109,144 @@ jobs:
 
       - name: Ejecutar pruebas del backend
         run: bun run test:convex
+
+  builds:
+    name: Build ${{ matrix.component }} (TI4-34)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_builds }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - web
+          - mobile
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+
+      - name: Construir Web
+        if: ${{ matrix.component == 'web' }}
+        run: bun run --cwd apps/web build
+
+      - name: Exportar Mobile
+        if: ${{ matrix.component == 'mobile' }}
+        run: bun run --cwd apps/mobile export
+
+      - name: Publicar resultado del build
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-build-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: apps/${{ matrix.component }}/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publicar resumen en el check
+        if: ${{ always() }}
+        env:
+          COMPONENT: ${{ matrix.component }}
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          case "$COMPONENT" in
+            web) command='bun run --cwd apps/web build' ;;
+            mobile) command='bun run --cwd apps/mobile export' ;;
+          esac
+
+          {
+            echo "## Build $COMPONENT"
+            echo
+            echo "Resultado: **$JOB_STATUS**"
+            echo
+            echo "Comando: \`$command\`"
+            echo
+            echo "[Ver logs y artefactos del run]($RUN_URL)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-pr-result:
+    name: Publicar resultado en PR
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.run_builds && inputs.pr_number != '' }}
+    needs: builds
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Validar PR y publicar comentario
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          RUN_RESULT: ${{ needs.builds.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WORKFLOW_REF: ${{ github.ref }}
+        with:
+          script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            if (!Number.isInteger(prNumber) || prNumber < 1) {
+              core.setFailed('pr_number debe ser un número entero positivo.');
+              return;
+            }
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+            const repository = `${owner}/${repo}`;
+            const expectedRef = `refs/heads/${pullRequest.head.ref}`;
+            if (pullRequest.head.repo?.full_name !== repository || process.env.WORKFLOW_REF !== expectedRef) {
+              core.setFailed('La rama del workflow no coincide con la rama de la PR indicada.');
+              return;
+            }
+            if (pullRequest.head.sha !== context.sha) {
+              core.setFailed('El commit del run no coincide con el head actual de la PR. Ejecuta el workflow sobre el nuevo commit.');
+              return;
+            }
+
+            const marker = '<!-- ceretime-ci-build-result -->';
+            const body = [
+              marker,
+              '## Resultado de builds preparados para TI4-34',
+              '',
+              `Estado: **${process.env.RUN_RESULT}**`,
+              '',
+              `Commit validado: ${context.sha}`,
+              '',
+              `[Ver logs, resumen y artefactos del run](${process.env.RUN_URL})`,
+              '',
+              'El comentario se actualiza en cada ejecución manual asociada a esta PR.',
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const previous = comments.find(
+              (comment) => comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
