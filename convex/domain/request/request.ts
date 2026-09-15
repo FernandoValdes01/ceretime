@@ -9,7 +9,7 @@
  * en el schema (TI2-23 la definirá). Agregar el campo cuando esa tabla exista.
  */
 import type { Id } from "../../_generated/dataModel";
-import type { RequestState } from "./state";
+import type { Sprint1RequestState } from "./state";
 
 /**
  * Solicitud de acompañamiento mínima de Sprint 1. No incluye agenda,
@@ -17,6 +17,6 @@ import type { RequestState } from "./state";
  */
 export interface AccompanimentRequest {
   studentId: Id<"users">;
-  state: RequestState;
+  state: Sprint1RequestState;
   createdAt: number;
 }
