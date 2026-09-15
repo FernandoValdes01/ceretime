@@ -63,9 +63,9 @@ compilador, no de la disciplina de quien edite el archivo.
 
 ## Qué queda para otros issues
 
-| Issue  | Qué le corresponde                                                                                     |
-| ------ | ------------------------------------------------------------------------------------------------------ |
-| TI2-21 | La función que aplica una transición, rechaza las inválidas y exige motivo.                            |
-| TI2-16 | La persistencia: tabla de solicitudes y validadores de Convex derivados de estos literales.            |
-| TI2-8  | Los contratos compartidos, incluida la entidad de solicitud y el mapa de estado a etiqueta en español. |
-| TI2-22 | Las pruebas de caminos válidos e inválidos, y la validación del diagrama.                              |
+| Issue  | Qué le corresponde                                                                                                                                            |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TI2-21 | La función que aplica una transición, rechaza las inválidas y exige motivo.                                                                                   |
+| TI2-16 | La persistencia: tabla de solicitudes y validadores de Convex derivados de estos literales.                                                                   |
+| TI2-8  | Los contratos compartidos, incluida la entidad de solicitud y el mapa de estado a etiqueta en español.                                                        |
+| TI2-22 | El diagrama y comprobar la apertura única del acompañamiento contra el caso de uso de TI2-24. Las pruebas de caminos válidos e inválidos entraron con TI2-21. |
