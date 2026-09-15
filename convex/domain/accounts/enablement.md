@@ -12,7 +12,7 @@ El objetivo debe tener rol `intern`, correo institucional normalizado (`@alu.uct
 
 ## Auditoría y separación de decisiones
 
-Cada habilitación registra actor (`enabledBy` con el `_id` del Administrador) y fecha (`enabledAt` en milisegundos) en el propio documento de `users`; habilitar no concede acompañamientos, una cuenta habilitada sin asignación activa sigue sin leer nada y la asignación posterior la realiza un Profesional autorizado por la vía guardada de `internal.assignments`.
+Cada habilitación registra actor (`enabledBy` con el `_id` del Administrador) y fecha (`enabledAt`) en el propio documento de `users`; habilitar no concede acompañamientos, una cuenta habilitada sin asignación activa sigue sin leer nada y la asignación posterior la realiza un Profesional autorizado por la vía guardada de `internal.assignments`.
 
 ## Ausencia de auto-escalamiento
 
@@ -24,8 +24,8 @@ El arranque crea una sola vez la cuenta administrativa inicial con `internal.acc
 
 ## Garantías contra semillas en producción
 
-Las semillas de desarrollo son solo `internal.users.createTestUser` y los insert directos de las pruebas con `convex-test`; no existe guion automático que las ejecute al desplegar, el arranque falla con `Ya existe una cuenta administrativa` cuando ya hay un Administrador, el arranque exige correo `@uct.cl` y rechaza cualquier otro rol, y toda demostración usa datos ficticios sin reutilizar correos, nombres ni identificadores de producción.
+Las semillas de desarrollo son solo `internal.users.createTestUser` y los insert directos de las pruebas con `convex-test`; no existe guion automático que las ejecute al desplegar, el arranque falla con `Ya existe una cuenta administrativa` cuando ya hay un Administrador, el arranque exige correo `@uct.cl` con estructura válida y rechaza cualquier otro rol, y toda demostración usa datos ficticios sin reutilizar correos, nombres ni identificadores de producción.
 
 ## Casos cubiertos por pruebas
 
-Positivos: el Administrador habilita al Practicante pendiente y deja actor y fecha; la cuenta habilitada sigue sin leer acompañamientos sin asignación; el arranque crea al primer Administrador habilitado. Negativos: estudiante, profesional, practicante, anónimo y administrador inhabilitado reciben `No autorizado`; correo externo, cuenta inactiva, rol no practicante, estado no pendiente, cuenta ya habilitada y recurso inexistente también responden `No autorizado`; segundo arranque, arranque con correo no `@uct.cl` o malformado y arranque con identidad duplicada se rechazan; la superficie pública no expone creación ni promoción de Administradores.
+Positivos: el Administrador habilita al Practicante pendiente y deja actor y fecha; la cuenta habilitada sigue sin leer acompañamientos sin asignación; el arranque crea al primer Administrador habilitado. Negativos: estudiante, profesional, practicante, anónimo y administrador inhabilitado reciben `No autorizado`; correo externo, cuenta inactiva, rol no practicante, estado no pendiente, cuenta ya habilitada y recurso inexistente también responden `No autorizado`; segundo arranque, arranque con correo no `@uct.cl` o inválido y arranque con identidad duplicada se rechazan; la superficie pública no expone creación ni promoción de Administradores.

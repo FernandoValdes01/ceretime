@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { env, internalMutation, internalQuery } from "./_generated/server";
 import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "./validators";
 
 /**
@@ -9,6 +9,12 @@ import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "./valid
 
 /**
  * Crea un usuario ficticio de prueba para validar persistencia, roles y estados.
+ *
+ * Solo opera cuando el operador habilita las semillas en el entorno
+ * (`TEST_SEEDS_ENABLED === "true"`, variable de servidor no controlable por
+ * el cliente): en producción la variable permanece ausente y la llamada se
+ * rechaza. Además, jamás crea administradores: la única vía de creación
+ * administrativa es el arranque controlado `internal.accounts.ensureBootstrapAdmin`.
  */
 export const createTestUser = internalMutation({
   args: {
@@ -20,6 +26,12 @@ export const createTestUser = internalMutation({
     tokenIdentifier: v.string(),
   },
   handler: async (ctx, args) => {
+    if (env.TEST_SEEDS_ENABLED !== "true") {
+      throw new Error("Las semillas de prueba no están habilitadas en este entorno");
+    }
+    if (args.role === "admin") {
+      throw new Error("Las semillas de prueba no pueden crear administradores");
+    }
     const existing = await ctx.db
       .query("users")
       .withIndex("by_token_identifier", (q) => q.eq("tokenIdentifier", args.tokenIdentifier))

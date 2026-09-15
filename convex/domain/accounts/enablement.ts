@@ -44,7 +44,7 @@ export type EnablementCheck =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: EnablementRejectionReason };
 
-/** Verdadero solo cuando el llamante es Administrador con cuenta vigente. */
+/** Verdadero solo cuando el actor es Administrador con cuenta vigente. */
 export function canEnableAsAdmin(caller: EnablementCaller): boolean {
   return (
     caller.role === "admin" &&
@@ -80,9 +80,9 @@ export function validateEnablementTarget(target: EnablementTarget): EnablementCh
 }
 
 /**
- * Decisión completa de habilitación: llamante y objetivo.
+ * Decisión completa de habilitación: actor y objetivo.
  *
- * El orden revela primero la falta de permiso del llamante, sin distinguir
+ * El orden revela primero la falta de permiso del actor, sin distinguir
  * el estado del objetivo ante quien no administra.
  */
 export function checkEnablement(input: {
@@ -113,20 +113,16 @@ export type BootstrapCheck =
  *
  * El arranque solo crea el primer Administrador del entorno con correo
  * institucional `@uct.cl` (personal); nunca crea Practicantes ni otros roles
- * y nunca se ejecuta cuando ya existe una cuenta administrativa. Además de
- * comprobar el sufijo, exige una estructura mínima (parte local no vacía y un
- * solo `@`): el arranque es de un solo uso y un correo malformado como
- * `@uct.cl` o `usuario@@uct.cl` dejaría la cuenta inicial corrupta e
- * incorregible por esta vía.
+ * y nunca se ejecuta cuando ya existe una cuenta administrativa. La estructura
+ * mínima del correo (parte local no vacía y un solo `@`) la garantiza
+ * `isInstitutionalEmail`: el arranque es de un solo uso y un correo
+ * inválido como `@uct.cl` o `usuario@@uct.cl` dejaría la cuenta inicial
+ * corrupta e incorregible por esta vía.
  */
 export function validateBootstrapCandidate(candidate: BootstrapCandidate): BootstrapCheck {
   if (candidate.role !== "admin") return { ok: false, reason: "bootstrap-role-not-admin" };
   const normalized = normalizeEmail(candidate.email);
-  const at = normalized.indexOf("@");
-  if (at <= 0 || normalized.indexOf("@", at + 1) !== -1) {
-    return { ok: false, reason: "bootstrap-email-not-institutional" };
-  }
-  if (!normalized.endsWith("@uct.cl")) {
+  if (!isInstitutionalEmail(normalized) || !normalized.endsWith("@uct.cl")) {
     return { ok: false, reason: "bootstrap-email-not-institutional" };
   }
   return { ok: true };

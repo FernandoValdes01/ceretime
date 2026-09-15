@@ -11,7 +11,7 @@ import { internalMutation } from "./_generated/server";
  * Borde interno: valida la entrada, resuelve la identidad en el servidor y
  * delega en Aplicación, que persiste con Infraestructura. No existe función
  * pública para crear o promover Administradores: la habilitación de
- * Practicantes exige llamante Administrador vigente y el arranque inicial es
+ * Practicantes solo la realiza un Administrador vigente y el arranque inicial es
  * la única vía de creación administrativa, una sola vez por entorno. Opera
  * con datos ficticios.
  */

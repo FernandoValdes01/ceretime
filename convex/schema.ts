@@ -62,7 +62,7 @@ export default defineSchema({
     assignedRole: assignmentRoleUnion,
     status: assignmentStatusUnion,
   })
-    // Paginación keyset del listado asignado: ordena por acompañamiento para
+    // Paginado keyset del listado asignado: ordena por acompañamiento para
     // que las filas duplicadas queden adyacentes y el cursor las excluya
     // enteras.
     .index("by_user_and_status_and_assigned_role_and_accompaniment", [

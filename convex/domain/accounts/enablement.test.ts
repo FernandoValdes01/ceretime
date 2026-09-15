@@ -86,7 +86,7 @@ describe("validateEnablementTarget", () => {
 });
 
 describe("checkEnablement", () => {
-  test("prioriza el permiso del llamante sobre el estado del objetivo", () => {
+  test("prioriza el permiso del actor sobre el estado del objetivo", () => {
     expect(checkEnablement({ caller: caller({ role: "student" }), target: target({}) })).toEqual({
       ok: false,
       reason: "caller-not-admin",
@@ -120,7 +120,7 @@ describe("validateBootstrapCandidate", () => {
     });
   });
 
-  test("rechaza correos malformados aunque terminen con el sufijo", () => {
+  test("rechaza correos inválidos aunque terminen con el sufijo", () => {
     for (const email of ["@uct.cl", "usuario@@uct.cl", "sin-arroba", "", "  @uct.cl  "]) {
       expect(validateBootstrapCandidate({ email, role: "admin" })).toEqual({
         ok: false,

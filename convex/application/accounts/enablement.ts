@@ -18,7 +18,7 @@ import {
  * (TI2-11).
  *
  * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
- * `ctx.auth.getUserIdentity()`, exige llamante Administrador con cuenta
+ * `ctx.auth.getUserIdentity()`, exige un Administrador con cuenta
  * habilitada y vigente, valida el objetivo en Dominio y persiste con
  * Infraestructura. La habilitación de la cuenta y la asignación de un
  * acompañamiento son decisiones distintas: habilitar solo deja la cuenta en
@@ -30,7 +30,7 @@ function deny(): never {
   throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
 }
 
-/** Llamante Administrador con cuenta habilitada y vigente. */
+/** Actor con rol Administrador y cuenta habilitada y vigente. */
 async function requireAdminCaller(ctx: MutationCtx, identity: UserIdentity | null) {
   if (identity === null) deny();
   const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
@@ -50,7 +50,7 @@ async function requireAdminCaller(ctx: MutationCtx, identity: UserIdentity | nul
  *
  * Registra el actor administrador y la fecha de la operación en el propio
  * documento (`enabledBy`, `enabledAt`). Toda denegación (sin identidad, sin
- * perfil, llamante no administrador o no vigente, objetivo inexistente, rol
+ * perfil, actor no administrador o no vigente, objetivo inexistente, rol
  * no practicante, correo no institucional, cuenta no vigente o estado no
  * pendiente) responde el mismo error genérico, sin exponer el motivo ni la
  * existencia del recurso.
