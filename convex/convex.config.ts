@@ -12,6 +12,10 @@ const app = defineApp({
     GOOGLE_CLIENT_ID: v.string(),
     GOOGLE_CLIENT_SECRET: v.string(),
     BETTER_AUTH_TRUSTED_ORIGINS: v.optional(v.string()),
+    // Interruptor de semillas de desarrollo (TI2-11): solo el operador lo
+    // activa por entorno con `convex env set`; el cliente nunca puede
+    // controlarlo. En producción permanece ausente y `createTestUser` rechaza.
+    TEST_SEEDS_ENABLED: v.optional(v.string()),
   },
 });
 // Cast acotado a este borde: Bun aísla `convex` por workspace y el `tsc`
