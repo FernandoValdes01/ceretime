@@ -52,20 +52,17 @@ export default defineSchema({
   // Tabla 'accompanimentAssignments': asignaciones revocables por
   // acompañamiento. Separa habilitación de cuenta y asignación explícita.
   // Invariante: como máximo una fila activa por cada combinación de
-  // acompañamiento, usuario y rol; las vías de escritura son las mutaciones
-  // internas guardadas `internal.assignments.assign` y
-  // `internal.assignments.revoke`, más la migración puntual
-  // `internal.assignments.backfillAssignmentTraceability`.
+  // acompañamiento, usuario y rol; la única vía de escritura son las
+  // mutaciones internas guardadas `internal.assignments.assign` y
+  // `internal.assignments.revoke`. La migración formal de filas legacy
+  // corresponde a TI2-17.
   accompanimentAssignments: defineTable({
     accompanimentId: v.id("accompaniments"),
     userId: v.id("users"),
     assignedRole: assignmentRoleUnion,
     status: assignmentStatusUnion,
     // Trazabilidad de la vigencia: quién concede y cuándo, y quién revoca
-    // y cuándo. Son opcionales para no invalidar filas creadas con el
-    // esquema anterior: las escrituras nuevas siempre los completan y las
-    // filas legacy se reparan con `backfillAssignmentTraceability`.
-    // Solo persistencia, sin reglas de autorización.
+    // y cuándo. Solo persistencia, sin reglas de autorización.
     grantedBy: v.optional(v.id("users")),
     grantedAt: v.optional(v.number()),
     revokedBy: v.optional(v.id("users")),

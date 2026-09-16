@@ -155,119 +155,91 @@ test("Revocar registra quién revoca y cuándo", async () => {
   expect(row?.revokedAt).toBeDefined();
 });
 
-test("Migra filas legacy sin trazabilidad", async () => {
+test("Asignar exige que el rol del usuario coincida con el rol asignado", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedUser(t, {
-    subject: "ti16-est-12",
-    email: "est12@alu.uct.cl",
+    subject: "ti16-est-14",
+    email: "est14@alu.uct.cl",
     role: "student",
   });
   const proId = await seedUser(t, {
-    subject: "ti16-pro-12",
-    email: "pro12@uct.cl",
+    subject: "ti16-pro-14",
+    email: "pro14@uct.cl",
     role: "professional",
   });
   const internId = await seedUser(t, {
-    subject: "ti16-int-12",
-    email: "int12@alu.uct.cl",
+    subject: "ti16-int-14",
+    email: "int14@alu.uct.cl",
     role: "intern",
   });
   const accompanimentId = await seedAccompaniment(t, studentId);
+  const asPro = t.withIdentity(identityFor("ti16-pro-14", "pro14@uct.cl"));
 
-  // Fila creada con el esquema anterior, sin campos de trazabilidad
-  const legacyId = await t.run(async (ctx) => {
-    return await ctx.db.insert("accompanimentAssignments", {
+  // Un estudiante no puede quedar registrado como Practicante
+  await expect(
+    asPro.mutation(internal.assignments.assign, {
+      accompanimentId,
+      userId: studentId,
+      assignedRole: "intern",
+    }),
+  ).rejects.toThrow("no coincide");
+
+  // Un Practicante no puede quedar registrado como Profesional
+  await expect(
+    asPro.mutation(internal.assignments.assign, {
       accompanimentId,
       userId: internId,
-      assignedRole: "intern",
-      status: "active",
-    });
-  });
+      assignedRole: "professional",
+    }),
+  ).rejects.toThrow("no coincide");
 
-  // 1. La migración completa fecha real de creación y responsable acreditado
-  const first = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
-    attestedGrantedBy: proId,
+  // Un Profesional sí puede quedar registrado como Practicante
+  const proAsInternId = await asPro.mutation(internal.assignments.assign, {
+    accompanimentId,
+    userId: proId,
+    assignedRole: "intern",
   });
-  expect(first.migrated).toBe(1);
-
-  const migrated = await t.run(async (ctx) => ctx.db.get(legacyId));
-  expect(migrated).not.toBeNull();
-  expect(migrated?.status).toBe("active");
-  expect(migrated?.grantedBy).toEqual(proId);
-  expect(migrated?.grantedAt).toBe(migrated?._creationTime);
-
-  // 2. Repetir la migración no cambia nada
-  const second = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
-    attestedGrantedBy: proId,
-  });
-  expect(second.migrated).toBe(0);
+  expect(proAsInternId).toBeDefined();
 });
 
-test("Migra por lotes encadenados sin perder la cola", async () => {
+test("Revocar falla si no alcanza a cerrar todas las filas activas", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedUser(t, {
-    subject: "ti16-est-13",
-    email: "est13@alu.uct.cl",
+    subject: "ti16-est-15",
+    email: "est15@alu.uct.cl",
     role: "student",
   });
   const proId = await seedUser(t, {
-    subject: "ti16-pro-13",
-    email: "pro13@uct.cl",
+    subject: "ti16-pro-15",
+    email: "pro15@uct.cl",
     role: "professional",
   });
   const internId = await seedUser(t, {
-    subject: "ti16-int-13",
-    email: "int13@alu.uct.cl",
+    subject: "ti16-int-15",
+    email: "int15@alu.uct.cl",
     role: "intern",
   });
   const accompanimentId = await seedAccompaniment(t, studentId);
+  const input = {
+    accompanimentId,
+    userId: internId,
+    assignedRole: "intern" as const,
+  };
 
-  // Tres filas legacy sin trazabilidad, más que el lote de una unidad
+  // Más filas activas que el tope de 10 lotes de 50
   await t.run(async (ctx) => {
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < 501; round++) {
       await ctx.db.insert("accompanimentAssignments", {
         accompanimentId,
         userId: internId,
         assignedRole: "intern",
         status: "active",
+        grantedBy: proId,
+        grantedAt: 1,
       });
     }
   });
 
-  // 1. El primer lote migra uno y conserva el cursor pendiente
-  const first = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
-    attestedGrantedBy: proId,
-    numItems: 1,
-  });
-  expect(first.migrated).toBe(1);
-  expect(first.done).toBe(false);
-  expect(first.cursor).not.toBeNull();
-
-  // 2. La continuación programada sigue migrando sin volver al inicio
-  await t.finishInProgressScheduledFunctions();
-  const pending = await t.run(async (ctx) => {
-    const rows = await ctx.db.query("accompanimentAssignments").collect();
-    return rows.filter((row) => row.grantedAt === undefined).length;
-  });
-  expect(pending).toBeLessThan(3);
-
-  // 3. Caminar los cursores agota todas las filas
-  let cursor: string | undefined = first.cursor ?? undefined;
-  for (let round = 0; round < 5; round++) {
-    const result = await t.mutation(internal.assignments.backfillAssignmentTraceability, {
-      attestedGrantedBy: proId,
-      numItems: 1,
-      ...(cursor === undefined ? {} : { cursor }),
-    });
-    if (result.done) break;
-    cursor = result.cursor ?? undefined;
-  }
-
-  // 4. Estado final: las tres filas quedan reparadas, las migre el lote
-  // manual o la continuación programada
-  const repaired = await t.run(async (ctx) => {
-    const rows = await ctx.db.query("accompanimentAssignments").collect();
-    return rows.filter((row) => row.grantedAt !== undefined && row.grantedBy !== undefined).length;
-  });
-  expect(repaired).toBe(3);
+  const asPro = t.withIdentity(identityFor("ti16-pro-15", "pro15@uct.cl"));
+  await expect(asPro.mutation(internal.assignments.revoke, input)).rejects.toThrow("sin revocar");
 });

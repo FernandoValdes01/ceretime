@@ -1,9 +1,8 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import type { Doc, Id } from "../../_generated/dataModel";
+import type { Doc } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import {
-  backfillMissingTraceability,
   findExistingActiveAssignment,
   findProfileByTokenIdentifier,
   getAccompanimentById,
@@ -66,6 +65,14 @@ export async function assignAccompaniment(
   if (accompaniment === null || target === null) {
     throw new Error("El acompañamiento y el usuario deben existir");
   }
+  // Coherencia rol-asignación: un Estudiante nunca es asignable y un
+  // Practicante no puede quedar registrado como Profesional.
+  if (
+    target.role === "student" ||
+    (target.role === "intern" && triple.assignedRole === "professional")
+  ) {
+    throw new Error("El rol del usuario no coincide con el rol asignado");
+  }
 
   const existing = await findExistingActiveAssignment(ctx, triple);
   if (existing !== null) {
@@ -78,7 +85,8 @@ export async function assignAccompaniment(
  * Revoca una asignación existente. Es idempotente: revocar una fila ya
  * revocada no falla. Revoca TODAS las filas activas de la tripla en lugar
  * de una sola, para que ninguna fila escrita fuera del Backend deje acceso
- * activo tras informar éxito.
+ * activo tras informar éxito. Si tras los lotes acotados quedan filas
+ * activas, falla en vez de informar un éxito parcial.
  */
 export async function revokeAccompaniment(
   ctx: MutationCtx,
@@ -98,29 +106,9 @@ export async function revokeAccompaniment(
     if (rows.length < 50) break;
   }
   if (revoked === 0) return null;
+  const remaining = await takeActiveTripleRows(ctx, triple, 1);
+  if (remaining.length > 0) {
+    throw new Error("Quedaron asignaciones activas sin revocar");
+  }
   return revoked;
-}
-
-/**
- * Migra una página acotada de filas legacy sin trazabilidad. `grantedAt`
- * se recupera de la creación real de cada fila; `attestedGrantedBy` lo
- * aporta el operador y solo debe usarse cuando consta externamente quién
- * concedió esas asignaciones. No exige identidad: es herramienta puntual de
- * operador, no un flujo de aplicación. Se avanza con `cursor`
- * hasta alcanzar `done`; cada página corre en su propia transacción.
- */
-export async function backfillAssignmentTraceabilityUseCase(
-  ctx: MutationCtx,
-  input: {
-    readonly attestedGrantedBy: Id<"users">;
-    readonly cursor: string | null;
-    readonly numItems?: number;
-  },
-): Promise<{ migrated: number; cursor: string | null; done: boolean }> {
-  const pageSize = Math.min(Math.max(Math.floor(input.numItems ?? 100), 1), 100);
-  return await backfillMissingTraceability(ctx, {
-    attestedGrantedBy: input.attestedGrantedBy,
-    cursor: input.cursor,
-    numItems: pageSize,
-  });
 }
