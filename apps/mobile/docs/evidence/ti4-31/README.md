@@ -8,13 +8,13 @@ El detalle de `SOL-DEMO-001` mostró el estado `Aceptada` junto al símbolo ✓.
 
 ![Estado aceptado con el foco de TalkBack](./estado-aceptada-talkback.png)
 
+El [video del recorrido visual con TalkBack](./ti4-31-talkback-focus.mp4) muestra el cambio de foco entre el estado y los campos del detalle. La grabación de pantalla de Android no captura audio, por lo que el anuncio hablado queda registrado en la sección siguiente.
+
 ## Verificación con TalkBack
 
 TalkBack permaneció habilitado con exploración táctil y salida hablada mediante Google TTS. Al tocar `Aceptada`, Android enfocó un único nodo con la descripción `Estado de la solicitud: Aceptada` y solicitó la síntesis de voz. La jerarquía nativa impidió que el rótulo `Estado de la solicitud` y el símbolo ✓ recibieran foco, por lo que no se repitieron ni interrumpieron el anuncio.
 
 Resultado manual: aprobado. El estudiante puede reconocer el estado por texto y símbolo, y TalkBack comunica juntos el nombre del campo y su valor.
-
-El extracto de la jerarquía nativa confirma los atributos de foco y descripción en [accessibility-hierarchy.txt](./accessibility-hierarchy.txt).
 
 ## Verificación automatizada
 
