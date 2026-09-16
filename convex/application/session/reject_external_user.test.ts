@@ -6,6 +6,8 @@ describe("rejectExternalUser", () => {
     await expect(rejectExternalUser("a@gmail.com")).resolves.toBe(false);
     await expect(rejectExternalUser("a@uct.cl.evil.com")).resolves.toBe(false);
     await expect(rejectExternalUser(null)).resolves.toBe(false);
+    await expect(rejectExternalUser(undefined)).resolves.toBe(false);
+    await expect(rejectExternalUser("")).resolves.toBe(false);
   });
 
   test("permite ambos dominios institucionales", async () => {

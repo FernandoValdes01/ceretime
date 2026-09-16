@@ -57,3 +57,20 @@ export const GENERIC_AUTH_MESSAGES = {
   misconfigured:
     "Falta la configuración del entorno local. Revisa las variables VITE_CONVEX_URL y VITE_CONVEX_SITE_URL.",
 } as const;
+
+/**
+ * Aviso seguro para retornos de autenticación con error (TI2-14).
+ *
+ * Puro y sin dependencias del DOM: recibe el `search` (`?auth=error`,
+ * `?error=...`) y devuelve solo el mensaje genérico cuando hay un fallo de
+ * callback o del proveedor. Nunca devuelve el valor del parámetro, por lo que
+ * un callback inválido no filtra información sensible. La limpieza de la URL
+ * queda en Presentación.
+ */
+export function readAuthErrorNotice(search: string): string | null {
+  if (!search) return null;
+  const params = new URLSearchParams(search);
+  if (params.get("auth") === "error") return GENERIC_AUTH_MESSAGES.signInError;
+  if (params.has("error")) return GENERIC_AUTH_MESSAGES.signInError;
+  return null;
+}

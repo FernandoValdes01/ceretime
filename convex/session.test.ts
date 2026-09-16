@@ -65,3 +65,18 @@ test("sin identidad responde no autenticado", async () => {
   const state = await t.query(api.presentation.session.getSessionState, {});
   expect(state).toEqual({ status: "unauthenticated" });
 });
+
+test("cuenta no autorizada y sesión ausente responden idéntico sin filtrar motivo (TI2-14)", async () => {
+  const t = convexTest(schema, modules);
+  const externa = t.withIdentity({
+    subject: "ext-999",
+    issuer: "https://accounts.google.com",
+    email: "intruso@gmail.com",
+    name: "Intruso",
+  });
+  const externaState = await externa.query(api.presentation.session.getSessionState, {});
+  const anonimaState = await t.query(api.presentation.session.getSessionState, {});
+  expect(externaState).toEqual(anonimaState);
+  expect(externaState).toEqual({ status: "unauthenticated" });
+  expect(externaState).not.toHaveProperty("email");
+});
