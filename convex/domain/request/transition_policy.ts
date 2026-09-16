@@ -48,9 +48,11 @@ export type RequestTransitionResult =
       /** Entrada del registro append-only; la persiste la capa de aplicación. */
       readonly change: RequestStateChange;
       /**
-       * Verdadero solo al llegar a `accepted`. Como ninguna transición de
-       * Sprint 1 sale de ese estado, se emite una sola vez por solicitud: es la
-       * señal con la que TI2-24 abre exactamente un acompañamiento.
+       * Verdadero cuando este intento llega a `accepted`. No garantiza unicidad:
+       * la política no conoce la solicitud ni su historial, así que repetir un
+       * intento válido la vuelve a emitir. La apertura única (TI2-24) exige leer
+       * y actualizar el estado persistido de forma atómica; con el `from` real,
+       * el segundo intento no tiene transición desde `accepted` y se rechaza.
        */
       readonly opensAccompaniment: boolean;
     }
