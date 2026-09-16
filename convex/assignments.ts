@@ -9,7 +9,9 @@ import { assignmentRoleUnion } from "./validators";
  * Borde interno: valida la entrada, resuelve la identidad en el servidor y
  * delega en Aplicación, que persiste con Infraestructura. Única vía de
  * escritura de `accompanimentAssignments` junto a `revoke`. El llamante debe
- * ser un Profesional con cuenta habilitada y vigente; el recorte por
+ * ser un Profesional con cuenta habilitada y vigente y no puede asignarse
+ * acceso a sí mismo: la asignación siempre la otorga otro profesional
+ * autorizado. El recorte por
  * acompañamiento (asignar solo en los propios) llega con el flujo público
  * de RF-39. Las lecturas además deduplican por `accompanimentId` ante filas
  * escritas a mano fuera del Backend. Opera con datos ficticios.
