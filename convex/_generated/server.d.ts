@@ -35,6 +35,7 @@ type Env = {
   readonly GOOGLE_CLIENT_ID: string;
   readonly GOOGLE_CLIENT_SECRET: string;
   readonly SITE_URL: string;
+  readonly TEST_SEEDS_ENABLED: string | undefined;
 };
 
 /**
