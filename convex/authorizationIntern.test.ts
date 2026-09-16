@@ -380,6 +380,15 @@ test("nadie puede asignarse acceso a sí mismo", async () => {
       assignedRole: "professional",
     }),
   ).rejects.toThrow("No autorizado");
+  // El bloqueo por asignarse a sí mismo precede a la validación de rol:
+  // responde el mismo error genérico y no el de coherencia de rol.
+  await expect(
+    asPro.mutation(internal.assignments.assign, {
+      accompanimentId,
+      userId: pro.id,
+      assignedRole: "intern",
+    }),
+  ).rejects.toThrow("No autorizado");
 
   const asAdmin = t.withIdentity(identityFor("ti18-adm-9", "adm9@uct.cl"));
   await expect(
