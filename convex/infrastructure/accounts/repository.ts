@@ -33,10 +33,7 @@ export async function getUserById(
 }
 
 /** Primer perfil con ese correo, o `null` si no existe. */
-export async function findUserByEmail(
-  ctx: DbReader,
-  email: string,
-): Promise<Doc<"users"> | null> {
+export async function findUserByEmail(ctx: DbReader, email: string): Promise<Doc<"users"> | null> {
   const rows = await ctx.db
     .query("users")
     .withIndex("by_email", (q) => q.eq("email", email))

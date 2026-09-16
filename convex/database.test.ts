@@ -124,9 +124,7 @@ test("índices por identidad: correo, token, rol y habilitación responden lo se
   const byToken = await t.run(async (ctx) => {
     return await ctx.db
       .query("users")
-      .withIndex("by_token_identifier", (q) =>
-        q.eq("tokenIdentifier", `${ISSUER}|ti17-int-1`),
-      )
+      .withIndex("by_token_identifier", (q) => q.eq("tokenIdentifier", `${ISSUER}|ti17-int-1`))
       .unique();
   });
   expect(byToken?._id).toEqual(internId);
@@ -495,10 +493,9 @@ test("practicante no recupera recursos fuera de sus asignaciones", async () => {
       paginationOpts: { numItems: 10, cursor: null },
     }),
   ).rejects.toThrow("No autorizado");
-  const list = await asIntern.query(
-    api.presentation.accompaniments.listAssignedAccompaniments,
-    { limit: 10 },
-  );
+  const list = await asIntern.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+    limit: 10,
+  });
   expect(list.items.map((item) => item._id)).toEqual([accA]);
 });
 
