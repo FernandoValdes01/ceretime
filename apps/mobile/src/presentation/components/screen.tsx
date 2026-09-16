@@ -69,6 +69,7 @@ const styles = StyleSheet.create({
   },
   button: {
     minHeight: 52,
+    minWidth: 44,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
