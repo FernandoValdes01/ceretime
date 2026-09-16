@@ -11,7 +11,7 @@ bun install --frozen-lockfile
 bun run mobile:start
 ```
 
-Usa un dispositivo o emulador con un cliente de desarrollo compatible con Expo SDK 57. Para generar, abrir y validar el cliente local Android, con Android SDK instalado:
+Usa un dispositivo o emulador con un cliente de desarrollo compatible con Expo SDK 57. Para generar y abrir el cliente local Android, con Android SDK instalado:
 
 ```sh
 bun run mobile:android
