@@ -17,7 +17,7 @@ Usa un dispositivo o emulador con un cliente de desarrollo compatible con Expo S
 bun run mobile:android
 ```
 
-Para validar la interfaz nativa, ejecuta `ceretime-mobile` y revisa la aplicación en el emulador Android `Medium_Phone`.
+Para validar la interfaz nativa, ejecuta `bun run mobile:android` y revisa la aplicación en el emulador Android `Medium_Phone`.
 
 La navegación funciona sin backend ni credenciales. El envío simulado confirma por defecto y acepta una variable de entorno opcional para demostrar la recuperación ante errores. La pantalla de acceso permite elegir un rol simulado. La sesión vive únicamente en memoria y se pierde al reiniciar o recargar el proceso de la aplicación. «Cambiar de rol» elimina la sesión y vuelve al selector.
 

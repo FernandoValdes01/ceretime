@@ -136,6 +136,6 @@ const styles = StyleSheet.create({
   demoSection: { gap: 12, marginTop: 8 },
   demoTitle: { color: "#182C31", fontSize: 20, fontWeight: "700" },
   demoDescription: { color: "#42565B", fontSize: 16, lineHeight: 23 },
-  unassignedLink: { alignItems: "center", padding: 8 },
+  unassignedLink: { minHeight: 44, alignItems: "center", padding: 8 },
   unassignedText: { color: "#246259", fontSize: 16, textDecorationLine: "underline" },
 });

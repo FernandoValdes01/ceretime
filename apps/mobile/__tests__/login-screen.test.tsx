@@ -37,6 +37,11 @@ test("usa las credenciales del practicante recibidas por props", async () => {
       <LoginScreen unassignedPractitionerCredentials={unassignedCredentials} />
     </NavigationSessionProvider>,
   );
+  expect(
+    screen.getByRole("button", { name: "Entrar como Practicante sin asignación" }),
+  ).toHaveStyle({
+    minHeight: 44,
+  });
 
   await act(async () => {
     fireEvent.press(screen.getByRole("button", { name: "Entrar como Practicante sin asignación" }));
