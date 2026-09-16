@@ -58,44 +58,54 @@ export async function assignAccompaniment(
   identity: UserIdentity | null,
   triple: AssignmentTriple,
 ) {
-  await requireProfessionalCaller(ctx, identity);
+  const caller = await requireProfessionalCaller(ctx, identity);
 
   const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
   const target = await getUserById(ctx, triple.userId);
   if (accompaniment === null || target === null) {
     throw new Error("El acompañamiento y el usuario deben existir");
   }
+  // Coherencia rol-asignación: el rol del perfil debe coincidir con el rol
+  // asignado; una fila que no coincide no otorga ningún acceso efectivo.
+  if (target.role !== triple.assignedRole) {
+    throw new Error("El rol del usuario no coincide con el rol asignado");
+  }
 
   const existing = await findExistingActiveAssignment(ctx, triple);
   if (existing !== null) {
     throw new Error("Ya existe una asignación activa para este acompañamiento y rol");
   }
-  return await insertActiveAssignment(ctx, triple);
+  return await insertActiveAssignment(ctx, triple, caller._id);
 }
 
 /**
  * Revoca una asignación existente. Es idempotente: revocar una fila ya
  * revocada no falla. Revoca TODAS las filas activas de la tripla en lugar
  * de una sola, para que ninguna fila escrita fuera del Backend deje acceso
- * activo tras informar éxito.
+ * activo tras informar éxito. Si tras los lotes acotados quedan filas
+ * activas, falla en vez de informar un éxito parcial.
  */
 export async function revokeAccompaniment(
   ctx: MutationCtx,
   identity: UserIdentity | null,
   triple: AssignmentTriple,
 ): Promise<number | null> {
-  await requireProfessionalCaller(ctx, identity);
+  const caller = await requireProfessionalCaller(ctx, identity);
 
   let revoked = 0;
   for (let round = 0; round < 10; round++) {
     const rows = await takeActiveTripleRows(ctx, triple, 50);
     if (rows.length === 0) break;
     for (const row of rows) {
-      await revokeAssignmentRow(ctx, row._id);
+      await revokeAssignmentRow(ctx, row._id, caller._id);
     }
     revoked += rows.length;
     if (rows.length < 50) break;
   }
   if (revoked === 0) return null;
+  const remaining = await takeActiveTripleRows(ctx, triple, 1);
+  if (remaining.length > 0) {
+    throw new Error("Quedaron asignaciones activas sin revocar");
+  }
   return revoked;
 }
