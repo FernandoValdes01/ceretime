@@ -14,6 +14,7 @@ export default function StudentLayout() {
     <Stack screenOptions={studentLayoutScreenOptions}>
       <Stack.Screen name="index" />
       <Stack.Screen name="nueva-solicitud" options={studentRequestScreenOptions} />
+      <Stack.Screen name="solicitudes" options={{ headerShown: false }} />
     </Stack>
   );
 }

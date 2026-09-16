@@ -7,5 +7,7 @@ test("expone un header nativo común para todas las vistas", () => {
     headerBackTitle: "Volver",
     headerBackButtonDisplayMode: "minimal",
     headerBackVisible: false,
+    headerTintColor: "#246259",
+    headerShadowVisible: false,
   });
 });
