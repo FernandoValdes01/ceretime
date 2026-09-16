@@ -12,7 +12,7 @@ Cada índice declarado tiene una consulta que lo usa y una prueba que lo demuest
 
 ## Unicidad e integridad
 
-El identificador de identidad (`tokenIdentifier`) y el correo son únicos: las semillas guardadas y el arranque rechazan el duplicado con `Ya existe un perfil para esta identidad` y `Ya existe un perfil con este correo`. Cada asignación activa es única por acompañamiento, usuario y rol: la vía guardada rechaza el duplicado con `Ya existe una asignación activa` y el rol del perfil debe coincidir con el rol asignado. La escritura guardada exige que el acompañamiento y el usuario existan; una solicitud aceptada origina su acompañamiento mediante `requestId` (TI2-24), que aquí solo se persiste y se consulta. No se agregan entidades funcionales fuera del modelo mínimo.
+El identificador de identidad (`tokenIdentifier`) y el correo son únicos: las semillas guardadas y el arranque normalizan el correo antes de buscar e insertar, por lo que diferencias de mayúsculas o espacios no crean duplicados lógicos, y rechazan el duplicado con `Ya existe un perfil para esta identidad` y `Ya existe un perfil con este correo`. Cada asignación activa es única por acompañamiento, usuario y rol: la vía guardada rechaza el duplicado con `Ya existe una asignación activa` y el rol del perfil debe coincidir con el rol asignado. La escritura guardada exige que el acompañamiento y el usuario existan; una solicitud aceptada origina su acompañamiento mediante `requestId` (TI2-24), que aquí solo se persiste y se consulta. No se agregan entidades funcionales fuera del modelo mínimo.
 
 ## Trazabilidad mínima de Sprint 1
 
@@ -24,9 +24,7 @@ La habilitación sola no concede nada: las consultas de persistencia acotadas po
 
 ## Auditoría de filas legacy
 
-El operador ejecuta `bunx convex run migrations:auditAssignmentTraceability '{"limit":200}'` con el selector del entorno objetivo (`--deployment <nombre>` fuera de producción y `--prod` en producción, nunca sin selector contra producción) y repite hasta que `hasMore` sea falso. Un resultado con `missingGrant` o `missingRevoke` en cero deja el entorno apto; cada identificador de `sampleLegacyIds` se revisa a mano porque corresponde a una fila escrita fuera de la vía guardada. Esta auditoría cubre solo la trazabilidad mínima de Sprint 1 y no es un módulo general de auditoría, estadísticas ni reportes.
-
-Nota de alcance: a escala de Sprint 1 (tablas muy por debajo de `limit`) una sola pasada basta y `hasMore` en falso cierra el barrido. Repetir la misma llamada sin cursor reescanea las primeras filas en vez de avanzar, por lo que ante tablas mayores que `limit` el barrido completo con cursor (`.paginate()` con `continueCursor`/`isDone`) queda como seguimiento pendiente.
+El operador ejecuta `bunx convex run migrations:auditAssignmentTraceability '{"paginationOpts":{"numItems":200,"cursor":null}}'` con el selector del entorno objetivo (`--deployment <nombre>` fuera de producción y `--prod` en producción, nunca sin selector contra producción) y repite con el `continueCursor` devuelto hasta que `isDone` sea verdadero, sumando los conteos de cada página. Un barrido completo con `missingGrant` y `missingRevoke` en cero deja el entorno apto; cada identificador de `sampleLegacyIds` se revisa a mano porque corresponde a una fila escrita fuera de la vía guardada. Esta auditoría cubre solo la trazabilidad mínima de Sprint 1 y no es un módulo general de auditoría, estadísticas ni reportes.
 
 ## Casos cubiertos por pruebas
 

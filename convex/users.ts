@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { env, internalMutation, internalQuery } from "./_generated/server";
+import { normalizeEmail } from "./domain/auth/institutional_domain";
 import { findUserByEmail } from "./infrastructure/accounts/repository";
 import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "./validators";
 
@@ -40,13 +41,16 @@ export const createTestUser = internalMutation({
     if (existing !== null) {
       throw new Error("Ya existe un perfil para esta identidad");
     }
-    // Unicidad de correo (TI2-17): dos perfiles con el mismo correo
-    // romperían la búsqueda por identidad en `by_email`.
-    const emailTaken = await findUserByEmail(ctx, args.email);
+    // Unicidad de correo (TI2-17): se normaliza antes de buscar e insertar
+    // para que diferencias de mayúsculas o espacios no creen duplicados
+    // lógicos; dos perfiles con el mismo correo romperían la búsqueda por
+    // identidad en `by_email`.
+    const email = normalizeEmail(args.email);
+    const emailTaken = await findUserByEmail(ctx, email);
     if (emailTaken !== null) {
       throw new Error("Ya existe un perfil con este correo");
     }
-    return await ctx.db.insert("users", args);
+    return await ctx.db.insert("users", { ...args, email });
   },
 });
 

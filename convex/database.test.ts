@@ -171,6 +171,38 @@ test("unicidad de identidad: correo e identificador duplicados se rechazan", asy
       tokenIdentifier: `${ISSUER}|ti17-duplicado-2`,
     }),
   ).rejects.toThrow("Ya existe un perfil con este correo");
+
+  await expect(
+    t.mutation(internal.users.createTestUser, {
+      ...profile,
+      email: "Duplicado@alu.uct.cl",
+      tokenIdentifier: `${ISSUER}|ti17-duplicado-3`,
+    }),
+  ).rejects.toThrow("Ya existe un perfil con este correo");
+
+  await expect(
+    t.mutation(internal.users.createTestUser, {
+      ...profile,
+      email: "  duplicado@alu.uct.cl  ",
+      tokenIdentifier: `${ISSUER}|ti17-duplicado-4`,
+    }),
+  ).rejects.toThrow("Ya existe un perfil con este correo");
+});
+
+test("la semilla normaliza el correo antes de guardarlo", async () => {
+  const t = convexTest(schema, modules);
+  const createdId = await t.mutation(internal.users.createTestUser, {
+    email: "  Mezclado@alu.uct.cl  ",
+    fullName: "Ficticio",
+    role: "student" as const,
+    institutionalStatus: "enabled" as const,
+    accountStatus: "active" as const,
+    tokenIdentifier: `${ISSUER}|ti17-mezclado-1`,
+  });
+  const stored = await t.run(async (ctx) => {
+    return await ctx.db.get(createdId);
+  });
+  expect(stored?.email).toBe("mezclado@alu.uct.cl");
 });
 
 test("el arranque rechaza el correo de un perfil existente", async () => {
@@ -400,11 +432,13 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   expect(revoked[0]?.revokedBy).toEqual(proId);
   expect(typeof revoked[0]?.revokedAt).toBe("number");
 
-  const audit = await t.query(internal.migrations.auditAssignmentTraceability, {});
+  const audit = await t.query(internal.migrations.auditAssignmentTraceability, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
   expect(audit.scanned).toBe(1);
   expect(audit.missingGrant).toBe(0);
   expect(audit.missingRevoke).toBe(0);
-  expect(audit.hasMore).toBe(false);
+  expect(audit.isDone).toBe(true);
 });
 
 test("practicante no recupera recursos fuera de sus asignaciones", async () => {
@@ -542,14 +576,20 @@ test("la auditoría detecta filas legacy y aprueba la vía guardada", async () =
     assignedRole: "professional",
   });
 
-  const audit = await t.query(internal.migrations.auditAssignmentTraceability, {});
-  expect(audit.scanned).toBe(3);
-  expect(audit.missingGrant).toBe(2);
-  expect(audit.missingRevoke).toBe(1);
-  expect(audit.sampleLegacyIds).toHaveLength(2);
-  expect(audit.hasMore).toBe(false);
+  const first = await t.query(internal.migrations.auditAssignmentTraceability, {
+    paginationOpts: { numItems: 2, cursor: null },
+  });
+  expect(first.scanned).toBe(2);
+  expect(first.missingGrant).toBe(2);
+  expect(first.missingRevoke).toBe(1);
+  expect(first.sampleLegacyIds).toHaveLength(2);
+  expect(first.isDone).toBe(false);
 
-  const paged = await t.query(internal.migrations.auditAssignmentTraceability, { limit: 2 });
-  expect(paged.scanned).toBe(2);
-  expect(paged.hasMore).toBe(true);
+  const second = await t.query(internal.migrations.auditAssignmentTraceability, {
+    paginationOpts: { numItems: 2, cursor: first.continueCursor },
+  });
+  expect(second.scanned).toBe(1);
+  expect(second.missingGrant).toBe(0);
+  expect(second.missingRevoke).toBe(0);
+  expect(second.isDone).toBe(true);
 });

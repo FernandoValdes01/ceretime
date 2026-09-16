@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { internalQuery } from "./_generated/server";
 
 /**
@@ -12,27 +12,24 @@ import { internalQuery } from "./_generated/server";
  * vía guardada (`internal.assignments.assign` y `internal.assignments.revoke`).
  *
  * Alcance: trazabilidad mínima de Sprint 1, no un módulo general de
- * auditoría. El barrido es acotado (`limit`, tope de 1000) y el operador lo
- * repite hasta que `hasMore` sea falso. Se ejecuta con
- * `bunx convex run migrations:auditAssignmentTraceability '{}'` sobre el
- * entorno elegido. Opera con datos ficticios fuera de producción.
+ * auditoría. El barrido es paginado: el operador repite la llamada con el
+ * `continueCursor` devuelto hasta que `isDone` sea verdadero y suma los
+ * conteos de cada página. Se ejecuta con
+ * `bunx convex run migrations:auditAssignmentTraceability '{"paginationOpts":{"numItems":200,"cursor":null}}'`
+ * sobre el entorno elegido. Opera con datos ficticios fuera de producción.
  */
 
-const AUDIT_DEFAULT_LIMIT = 200;
-const AUDIT_MAX_LIMIT = 1000;
 const AUDIT_SAMPLE_SIZE = 10;
 
 export const auditAssignmentTraceability = internalQuery({
-  args: { limit: v.optional(v.number()) },
+  args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, args) => {
-    const requested = args.limit ?? AUDIT_DEFAULT_LIMIT;
-    const limit = Math.min(Math.max(Math.floor(requested), 1), AUDIT_MAX_LIMIT);
-    const rows = await ctx.db.query("accompanimentAssignments").take(limit);
+    const result = await ctx.db.query("accompanimentAssignments").paginate(args.paginationOpts);
 
     let missingGrant = 0;
     let missingRevoke = 0;
     const sampleLegacyIds = [];
-    for (const row of rows) {
+    for (const row of result.page) {
       const grantMissing = row.grantedBy === undefined || row.grantedAt === undefined;
       const revokeMissing =
         row.status === "revoked" && (row.revokedBy === undefined || row.revokedAt === undefined);
@@ -43,10 +40,11 @@ export const auditAssignmentTraceability = internalQuery({
       }
     }
     return {
-      scanned: rows.length,
+      scanned: result.page.length,
       missingGrant,
       missingRevoke,
-      hasMore: rows.length === limit,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
       sampleLegacyIds,
     };
   },
