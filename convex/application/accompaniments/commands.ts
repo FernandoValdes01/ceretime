@@ -65,12 +65,9 @@ export async function assignAccompaniment(
   if (accompaniment === null || target === null) {
     throw new Error("El acompañamiento y el usuario deben existir");
   }
-  // Coherencia rol-asignación: un Estudiante nunca es asignable y un
-  // Practicante no puede quedar registrado como Profesional.
-  if (
-    target.role === "student" ||
-    (target.role === "intern" && triple.assignedRole === "professional")
-  ) {
+  // Coherencia rol-asignación: el rol del perfil debe coincidir con el rol
+  // asignado; una fila que no coincide no otorga ningún acceso efectivo.
+  if (target.role !== triple.assignedRole) {
     throw new Error("El rol del usuario no coincide con el rol asignado");
   }
 

@@ -193,13 +193,14 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
     }),
   ).rejects.toThrow("no coincide");
 
-  // Un Profesional sí puede quedar registrado como Practicante
-  const proAsInternId = await asPro.mutation(internal.assignments.assign, {
-    accompanimentId,
-    userId: proId,
-    assignedRole: "intern",
-  });
-  expect(proAsInternId).toBeDefined();
+  // Un Profesional no puede quedar registrado como Practicante
+  await expect(
+    asPro.mutation(internal.assignments.assign, {
+      accompanimentId,
+      userId: proId,
+      assignedRole: "intern",
+    }),
+  ).rejects.toThrow("no coincide");
 });
 
 test("Revocar falla si no alcanza a cerrar todas las filas activas", async () => {
