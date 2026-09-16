@@ -29,14 +29,28 @@ export function Screen({
   );
 }
 
-export function Action({ label, onPress }: { label: string; onPress: () => void }) {
+export function Action({
+  label,
+  onPress,
+  disabled = false,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
   return (
     <Pressable
       // Este botón conserva el callback de StyleSheet, sin conversión de clases.
       cssInterop={false}
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.button,
+        pressed && styles.pressed,
+        disabled && styles.disabled,
+      ]}
     >
       <Text style={styles.buttonLabel}>{label}</Text>
     </Pressable>
@@ -62,6 +76,7 @@ const styles = StyleSheet.create({
   },
   button: {
     minHeight: 52,
+    minWidth: 44,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
@@ -70,6 +85,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#246259",
   },
   pressed: { backgroundColor: "#17483F" },
+  disabled: { opacity: 0.55 },
   buttonLabel: {
     color: "#FFFFFF",
     fontSize: 17,

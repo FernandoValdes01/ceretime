@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
-import { Action } from "@/presentation/components/screen";
+import { Action, Screen } from "@/presentation/components/screen";
 import { RequestForm } from "@/presentation/estudiante/request-form";
 import { StudentScreen, StudentAction } from "@/presentation/estudiante/student-screen";
 
@@ -10,6 +11,7 @@ test("la integración conserva los estilos de las acciones anteriores", () => {
   render(<Action label="Entrar como Estudiante" onPress={() => {}} />);
   expect(screen.getByRole("button", { name: "Entrar como Estudiante" })).toHaveStyle({
     minHeight: 52,
+    minWidth: 44,
     paddingVertical: 14,
     backgroundColor: "#246259",
   });
@@ -43,6 +45,24 @@ test("Tailwind conserva la tipografía y las medidas de los controles nativos", 
     borderCurve: "continuous",
     backgroundColor: "#00695b",
   });
+});
+
+test("el header nativo reserva el inset superior de las pantallas", () => {
+  const studentScreen = render(
+    <StudentScreen title="Inicio" description="Prueba de área segura" />,
+  );
+  expect(studentScreen.UNSAFE_getByType(SafeAreaView).props.edges).toEqual([
+    "left",
+    "right",
+    "bottom",
+  ]);
+
+  const sharedScreen = render(<Screen title="Inicio" description="Prueba de área segura" />);
+  expect(sharedScreen.UNSAFE_getByType(SafeAreaView).props.edges).toEqual([
+    "left",
+    "right",
+    "bottom",
+  ]);
 });
 
 test("Tailwind distingue selección, foco y pulsación sin perder la selección", () => {

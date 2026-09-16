@@ -2,6 +2,7 @@ import "../global.css";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 
+import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import {
   NavigationSessionProvider,
   useNavigationSession,
@@ -12,8 +13,8 @@ function RootNavigator() {
   const { role } = useNavigationSession();
 
   return (
-    <Stack>
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" />
       <Stack.Protected guard={role === null}>
         <Stack.Screen name="(public)" options={{ headerShown: false }} />
       </Stack.Protected>
@@ -27,7 +28,10 @@ function RootNavigator() {
 
 export default function RootLayout() {
   return (
-    <NavigationSessionProvider>
+    <NavigationSessionProvider
+      authPort={mobileDependencies.authPort}
+      demoCredentials={mobileDependencies.demoCredentials}
+    >
       <StatusBar style="dark" />
       <RootNavigator />
     </NavigationSessionProvider>

@@ -1,0 +1,8 @@
+{
+  // Verificación estática de las pruebas de Convex (`vitest`).
+  // Separado de `tsconfig.json` porque esos archivos usan el runner de
+  // Vitest y sus tipos no pertenecen al runtime que despliega Convex.
+  "extends": "./tsconfig.json",
+  "include": ["./**/*.test.ts", "./**/*.test.tsx"],
+  "exclude": ["./_generated"]
+}
