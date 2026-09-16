@@ -1,10 +1,11 @@
 import { appHeaderOptions } from "@/presentation/navigation/app-header-options";
 
-test("usa un header nativo común para las vistas mobile", () => {
+test("expone un header nativo común para todas las vistas", () => {
   expect(appHeaderOptions).toMatchObject({
     headerShown: true,
     headerTitle: "CERETIME",
     headerBackTitle: "Volver",
+    headerBackButtonDisplayMode: "minimal",
     headerBackVisible: false,
     headerTintColor: "#246259",
     headerShadowVisible: false,

@@ -24,9 +24,19 @@ const successfulSubmitter: StudentRequestSubmitter = {
 
 async function openForm() {
   const navigation = renderRouter(appDirectory);
-  fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
-  fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
-  await screen.findByRole("header", { name: "Solicitud de acompañamiento" });
+  const loginButton = await screen.findByRole("button", { name: "Entrar como Estudiante" });
+  await act(async () => {
+    fireEvent.press(loginButton);
+    await Promise.resolve();
+  });
+  await waitFor(() => expect(screen.getByText("Inicio de Estudiante")).toBeOnTheScreen());
+  await act(async () => {
+    fireEvent.press(screen.getByRole("button", { name: "Nueva solicitud" }));
+    await Promise.resolve();
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("header", { name: "Solicitud de acompañamiento" })).toBeOnTheScreen(),
+  );
   return navigation;
 }
 
@@ -58,7 +68,7 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
     expect(revealGroup).toHaveBeenCalledTimes(2);
   });
-  test("recorre Inicio → Nueva solicitud → Inicio", async () => {
+  test("el stack conserva el retorno desde Nueva solicitud", async () => {
     const navigation = await openForm();
     expect(navigation.getPathname()).toBe("/estudiante/nueva-solicitud");
     await act(async () => router.back());
@@ -204,12 +214,23 @@ describe("Formulario de solicitud del estudiante", () => {
     await openForm();
     fillRequiredStudentRequestFields();
     await act(async () => router.back());
-    fireEvent.press(await screen.findByRole("button", { name: "Cambiar de rol" }));
-    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
-    fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
-    expect(await screen.findByLabelText("¿Qué necesidad quieres abordar? *")).toHaveProp(
-      "value",
-      "",
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByText("Explora la aplicación")).toBeOnTheScreen());
+    const loginButton = await screen.findByRole("button", { name: "Entrar como Estudiante" });
+    await act(async () => {
+      fireEvent.press(loginButton);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByText("Inicio de Estudiante")).toBeOnTheScreen());
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Nueva solicitud" }));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText("¿Qué necesidad quieres abordar? *")).toHaveProp("value", ""),
     );
   });
 
@@ -224,11 +245,22 @@ describe("Formulario de solicitud del estudiante", () => {
   test.each(["Profesional", "Practicante", "Administrador"])(
     "%s no puede acceder al formulario",
     async (role) => {
+      const roleHomeTitle =
+        role === "Practicante" ? "Acompañamientos asignados" : `Inicio de ${role}`;
+      const roleHomePath =
+        role === "Practicante" ? "/practicante/asignaciones" : `/${role.toLowerCase()}`;
       const navigation = renderRouter(appDirectory);
-      fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${role}` }));
-      await screen.findByText(`Inicio de ${role}`);
-      await act(async () => router.push("/estudiante/nueva-solicitud"));
-      await waitFor(() => expect(navigation.getPathname()).toBe(`/${role.toLowerCase()}`));
+      const loginButton = await screen.findByRole("button", { name: `Entrar como ${role}` });
+      await act(async () => {
+        fireEvent.press(loginButton);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(screen.getByText(roleHomeTitle)).toBeOnTheScreen());
+      await act(async () => {
+        router.push("/estudiante/nueva-solicitud");
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(navigation.getPathname()).toBe(roleHomePath));
       expect(screen.queryByLabelText("¿Qué necesidad quieres abordar? *")).not.toBeOnTheScreen();
     },
   );

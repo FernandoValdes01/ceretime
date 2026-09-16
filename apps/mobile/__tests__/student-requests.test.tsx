@@ -131,14 +131,18 @@ describe("Solicitudes del estudiante", () => {
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes");
   });
 
-  test.each(["Profesional", "Practicante", "Administrador"])(
+  test.each([
+    ["Profesional", "/profesional", "Inicio de Profesional"],
+    ["Practicante", "/practicante/asignaciones", "Acompañamientos asignados"],
+    ["Administrador", "/administrador", "Inicio de Administrador"],
+  ] as const)(
     "%s no puede acceder a las solicitudes del estudiante",
-    async (role) => {
+    async (role, expectedPath, expectedTitle) => {
       const navigation = renderRouter(appDirectory);
       fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${role}` }));
-      await screen.findByText(`Inicio de ${role}`);
+      await screen.findByText(expectedTitle);
       await act(async () => router.push("/estudiante/solicitudes"));
-      await waitFor(() => expect(navigation.getPathname()).toBe(`/${role.toLowerCase()}`));
+      await waitFor(() => expect(navigation.getPathname()).toBe(expectedPath));
       expect(screen.queryByText("Mis solicitudes")).not.toBeOnTheScreen();
     },
   );
