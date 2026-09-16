@@ -26,6 +26,8 @@ La habilitación sola no concede nada: las consultas de persistencia acotadas po
 
 El operador ejecuta `bunx convex run migrations:auditAssignmentTraceability '{"limit":200}'` con el selector del entorno objetivo (`--deployment <nombre>` fuera de producción y `--prod` en producción, nunca sin selector contra producción) y repite hasta que `hasMore` sea falso. Un resultado con `missingGrant` o `missingRevoke` en cero deja el entorno apto; cada identificador de `sampleLegacyIds` se revisa a mano porque corresponde a una fila escrita fuera de la vía guardada. Esta auditoría cubre solo la trazabilidad mínima de Sprint 1 y no es un módulo general de auditoría, estadísticas ni reportes.
 
+Nota de alcance: a escala de Sprint 1 (tablas muy por debajo de `limit`) una sola pasada basta y `hasMore` en falso cierra el barrido. Repetir la misma llamada sin cursor reescanea las primeras filas en vez de avanzar, por lo que ante tablas mayores que `limit` el barrido completo con cursor (`.paginate()` con `continueCursor`/`isDone`) queda como seguimiento pendiente.
+
 ## Casos cubiertos por pruebas
 
 Positivos: cada índice responde lo sembrado; la cadena completa (arranque, habilitación, solicitud, acompañamiento vinculado, asignación y revocación) deja todo su rastro; el Practicante lee minimizado lo asignado; la auditoría aprueba la vía guardada. Negativos: correo o identidad duplicados y arranque con correo existente se rechazan; asignar con acompañamiento o usuario inexistente se rechaza; el Practicante no lee lo ajeno ni notas internas por persistencia ni por borde; la auditoría detecta filas activas sin concesión y revocadas sin revocación, con muestra acotada y paginado del barrido.
