@@ -14,6 +14,8 @@ TalkBack permaneció habilitado con exploración táctil y salida hablada median
 
 Resultado manual: aprobado. El estudiante puede reconocer el estado por texto y símbolo, y TalkBack comunica juntos el nombre del campo y su valor.
 
+El extracto de la jerarquía nativa confirma los atributos de foco y descripción en [accessibility-hierarchy.txt](./accessibility-hierarchy.txt).
+
 ## Verificación automatizada
 
 | Comando                               | Resultado                                      |
