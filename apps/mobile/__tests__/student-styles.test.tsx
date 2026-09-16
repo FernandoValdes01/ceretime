@@ -11,6 +11,7 @@ test("la integración conserva los estilos de las acciones anteriores", () => {
   render(<Action label="Entrar como Estudiante" onPress={() => {}} />);
   expect(screen.getByRole("button", { name: "Entrar como Estudiante" })).toHaveStyle({
     minHeight: 52,
+    minWidth: 44,
     paddingVertical: 14,
     backgroundColor: "#246259",
   });
