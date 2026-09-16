@@ -8,17 +8,24 @@ import {
   POPULATION_LOGINS,
   getLoginRequest,
   readAuthErrorNotice,
+  removeAuthErrorParams,
   type InstitutionalPopulation,
 } from "../../application/session/institutional-login";
 import { authClient } from "../../infrastructure/auth/auth-client";
 import { isBackendConfigured } from "../../infrastructure/convex/convex-client";
 import "./auth.css";
 
-/** Lee el aviso inicial de error una sola vez al montar (TI2-14). Limpia la URL sin exponer el motivo. */
+/** Lee el aviso inicial de error una sola vez al montar (TI2-14). Retira solo los parámetros de auth sin exponer el motivo ni borrar el resto de la URL. */
 function readInitialNotice(): string | null {
   const notice = readAuthErrorNotice(window.location.search);
   if (notice !== null) {
-    window.history.replaceState(null, "", window.location.pathname);
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname +
+        removeAuthErrorParams(window.location.search) +
+        window.location.hash,
+    );
   }
   return notice;
 }
@@ -86,8 +93,14 @@ export function AuthScreen() {
     try {
       // Invalida la sesión en Better Auth; la verdad autoritativa vuelve a ser
       // `unauthenticated` en `getSessionState` y la pantalla retorna al acceso.
-      await authClient.signOut();
-      setPendingPopulation(null);
+      // El cliente resuelve `{data, error}` sin lanzar ante un fallo de API,
+      // por lo que un rechazo debe leerse en el resultado y no solo en `catch`.
+      const result = await authClient.signOut();
+      if (result?.error) {
+        setNotice(GENERIC_AUTH_MESSAGES.signOutError);
+      } else {
+        setPendingPopulation(null);
+      }
     } catch {
       setNotice(GENERIC_AUTH_MESSAGES.signOutError);
     } finally {

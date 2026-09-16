@@ -74,3 +74,22 @@ export function readAuthErrorNotice(search: string): string | null {
   if (params.has("error")) return GENERIC_AUTH_MESSAGES.signInError;
   return null;
 }
+
+/**
+ * Limpieza quirúrgica de la URL tras un retorno con error (TI2-14).
+ *
+ * Pura y sin dependencias del DOM: recibe el `search` y devuelve el resto de
+ * parámetros (con `?` inicial o cadena vacía). Solo retira `auth`, `error` y
+ * `error_description`: el proveedor los agrega a nuestro `errorCallbackURL`
+ * (`/?auth=error&error=...&error_description=...`) y `error_description`
+ * puede traer detalles que no deben persistir en la URL; el resto del estado
+ * de navegación se conserva intacto.
+ */
+export function removeAuthErrorParams(search: string): string {
+  const params = new URLSearchParams(search);
+  params.delete("auth");
+  params.delete("error");
+  params.delete("error_description");
+  const rest = params.toString();
+  return rest ? `?${rest}` : "";
+}
