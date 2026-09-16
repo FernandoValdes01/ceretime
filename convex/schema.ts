@@ -60,8 +60,9 @@ export default defineSchema({
   // Invariante: como máximo una fila activa por cada combinación de
   // acompañamiento, usuario y rol; la única vía de escritura son las
   // mutaciones internas guardadas `internal.assignments.assign` y
-  // `internal.assignments.revoke`. La migración formal de filas legacy
-  // corresponde a TI2-17.
+  // `internal.assignments.revoke`. La auditoría de filas legacy sin
+  // trazabilidad vive en `migrations.auditAssignmentTraceability` (TI2-17):
+  // se detectan sin inventar actor ni fecha, en vez de rellenarlas.
   accompanimentAssignments: defineTable({
     accompanimentId: v.id("accompaniments"),
     userId: v.id("users"),
@@ -112,5 +113,8 @@ export default defineSchema({
     // Solicitudes propias del estudiante.
     .index("by_student", ["studentId"])
     // Solicitudes según su estado de revisión.
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    // Solicitudes propias en un estado dado: pertenencia y estado en una
+    // sola lectura para Sprint 1, sin filtrar en memoria.
+    .index("by_student_and_status", ["studentId", "status"]),
 });

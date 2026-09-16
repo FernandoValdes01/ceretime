@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { env, internalMutation, internalQuery } from "./_generated/server";
+import { findUserByEmail } from "./infrastructure/accounts/repository";
 import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "./validators";
 
 /**
@@ -38,6 +39,12 @@ export const createTestUser = internalMutation({
       .unique();
     if (existing !== null) {
       throw new Error("Ya existe un perfil para esta identidad");
+    }
+    // Unicidad de correo (TI2-17): dos perfiles con el mismo correo
+    // romperían la búsqueda por identidad en `by_email`.
+    const emailTaken = await findUserByEmail(ctx, args.email);
+    if (emailTaken !== null) {
+      throw new Error("Ya existe un perfil con este correo");
     }
     return await ctx.db.insert("users", args);
   },
