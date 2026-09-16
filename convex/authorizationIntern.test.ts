@@ -302,11 +302,7 @@ test("cuenta no habilitada o no vigente no lee aunque tenga asignación", async 
   const accompanimentId = await seedAccompaniment(t, student.id);
   const caller = { subject: "ti18-pro-5", email: "pro5@uct.cl" };
   for (const target of [disabled, pending, inactive]) {
-    await seedAssignment(
-      t,
-      { accompanimentId, userId: target.id, assignedRole: "intern" },
-      caller,
-    );
+    await seedAssignment(t, { accompanimentId, userId: target.id, assignedRole: "intern" }, caller);
   }
 
   for (const callerIdentity of [
