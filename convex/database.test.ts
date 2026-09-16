@@ -133,7 +133,7 @@ test("índices por identidad: correo, token, rol y habilitación responden lo se
     return await ctx.db
       .query("users")
       .withIndex("by_institutional_status", (q) => q.eq("institutionalStatus", "pending"))
-      .collect();
+      .take(10);
   });
   expect(pending.map((user) => user._id)).toEqual([internId]);
 
@@ -141,7 +141,7 @@ test("índices por identidad: correo, token, rol y habilitación responden lo se
     return await ctx.db
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "admin"))
-      .collect();
+      .take(10);
   });
   expect(admins.map((user) => user._id)).toEqual([adminId]);
 });
@@ -242,7 +242,7 @@ test("índices por pertenencia: solicitudes propias, por estado y por ambas", as
     return await ctx.db
       .query("requests")
       .withIndex("by_student", (q) => q.eq("studentId", studentA))
-      .collect();
+      .take(10);
   });
   expect(ownA.map((request) => request._id).sort()).toEqual([aReceived, aReview].sort());
 
@@ -250,7 +250,7 @@ test("índices por pertenencia: solicitudes propias, por estado y por ambas", as
     return await ctx.db
       .query("requests")
       .withIndex("by_status", (q) => q.eq("status", "received"))
-      .collect();
+      .take(10);
   });
   expect(received.map((request) => request._id).sort()).toEqual([aReceived, bReceived].sort());
 
@@ -260,7 +260,7 @@ test("índices por pertenencia: solicitudes propias, por estado y por ambas", as
       .withIndex("by_student_and_status", (q) =>
         q.eq("studentId", studentA).eq("status", "received"),
       )
-      .collect();
+      .take(10);
   });
   expect(ownReceived.map((request) => request._id)).toEqual([aReceived]);
 });
@@ -280,7 +280,7 @@ test("trazabilidad solicitud-acompañamiento: by_request solo devuelve el vincul
     return await ctx.db
       .query("accompaniments")
       .withIndex("by_request", (q) => q.eq("requestId", requestId))
-      .collect();
+      .take(10);
   });
   expect(found.map((accompaniment) => accompaniment._id)).toEqual([linked]);
 
