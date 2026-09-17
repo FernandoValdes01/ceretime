@@ -11,6 +11,17 @@ TI4-27 prepara la ejecución reproducible de los builds reales que TI4-34 debe v
 
 El inventario no incluye `eas build`: `apps/mobile` documenta que `export` genera los bundles JavaScript para Android, iOS y Web, mientras que EAS queda reservado para una construcción Preview posterior.
 
+## Qué hacen los checks que aparecen como `skipped`
+
+Estos dos jobs forman parte de la preparación de TI4-27 y no sustituyen las validaciones que ya se ejecutan automáticamente en una Pull Request.
+
+| Job | Qué hace | Cuándo se ejecuta |
+| --- | --- | --- |
+| `builds` | Ejecuta en paralelo el build real de Web y el export de Mobile, publica sus carpetas `dist/` como artefactos y deja un resumen del resultado. | Solo mediante **Run workflow**, con `run_builds` activado. |
+| `publish-pr-result` | Publica o actualiza un comentario en la PR con el estado, el commit validado y el enlace al run. No ejecuta builds ni pruebas. | Solo después de `builds`, con `run_builds` activado y `pr_number` informado. |
+
+En una ejecución normal de `pull_request`, las condiciones de ambos jobs son falsas porque esperan el evento manual `workflow_dispatch`. Por eso GitHub los muestra como `skipped`; no significa que los builds hayan pasado. La validación Web existente sí se ejecuta en su job normal, pero la matriz adicional de Web y Mobile queda reservada para la ejecución controlada de TI4-34. Cuando GitHub omite la matriz completa, puede mostrar literalmente `Build ${{ matrix.component }} (TI4-34)` porque no llega a expandir `matrix.component`.
+
 ## Ejecución controlada
 
 Una vez integrada esta preparación en `main`, confirma que la rama candidata de la PR contiene el workflow integrado y actualizado; de lo contrario, la ejecución no tendrá esta matriz ni la publicación. Desde la pestaña **Actions**, selecciona el workflow **CI**, esa rama head y **Run workflow**. Activa `run_builds` únicamente cuando TI4-34 autorice la ejecución de los builds reales. Para publicar el resultado en la conversación de la PR, indica también su número en `pr_number`.
