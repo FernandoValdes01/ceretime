@@ -16,19 +16,25 @@ async function publish({
 } = {}) {
   const failures: string[] = [];
   const writes: any[] = [];
+  const paginationRequests: any[] = [];
+  const listComments = () => {};
   const github = {
     rest: {
       pulls: {
         get: async () => ({ data: { head: { sha, ref, repo: { full_name: repository } } } }),
       },
       issues: {
-        listComments: () => {},
+        listComments,
         createComment: async (args: any) => writes.push({ operation: "create", ...args }),
         updateComment: async (args: any) => writes.push({ operation: "update", ...args }),
       },
     },
-    paginate: async () =>
-      previous ? [{ id: 9, user: { type: "Bot" }, body: "<!-- ceretime-ci-build-result -->" }] : [],
+    paginate: async (method: unknown, args: unknown) => {
+      paginationRequests.push({ method, args });
+      return previous
+        ? [{ id: 9, user: { type: "Bot" }, body: "<!-- ceretime-ci-build-result -->" }]
+        : [];
+    },
   };
   await new AsyncFunction("core", "github", "context", "process", publication)(
     { setFailed: (message: string) => failures.push(message) },
@@ -43,24 +49,43 @@ async function publish({
       },
     },
   );
-  return { failures, writes };
+  return { failures, writes, paginationRequests, listComments };
 }
 
 test("creates evidence for the validated commit", async () => {
-  const { failures, writes } = await publish();
+  const { failures, writes, paginationRequests, listComments } = await publish();
   expect(failures).toHaveLength(0);
   expect(writes).toHaveLength(1);
   expect(writes[0].operation).toBe("create");
   expect(writes[0].body).toContain("Commit validado: current");
+  expect(paginationRequests).toHaveLength(1);
+  expect(paginationRequests[0].args).toEqual({
+    owner: "owner",
+    repo: "repo",
+    issue_number: 18,
+    per_page: 100,
+  });
+  expect(paginationRequests[0].method).toBe(listComments);
 });
 
 test("updates existing evidence with a failed build", async () => {
-  const { failures, writes } = await publish({ previous: true, result: "failure" });
+  const { failures, writes, paginationRequests, listComments } = await publish({
+    previous: true,
+    result: "failure",
+  });
   expect(failures).toHaveLength(0);
   expect(writes).toHaveLength(1);
   expect(writes[0].operation).toBe("update");
   expect(writes[0].comment_id).toBe(9);
   expect(writes[0].body).toContain("Estado: **failure**");
+  expect(paginationRequests).toHaveLength(1);
+  expect(paginationRequests[0].args).toEqual({
+    owner: "owner",
+    repo: "repo",
+    issue_number: 18,
+    per_page: 100,
+  });
+  expect(paginationRequests[0].method).toBe(listComments);
 });
 
 for (const scenario of [
@@ -77,9 +102,10 @@ for (const scenario of [
 }
 
 test("requires artifacts and keeps each attempt separate", () => {
-  const upload = workflow.jobs.builds.steps.find(
-    (step: any) => step.uses === "actions/upload-artifact@v4",
+  const upload = workflow.jobs.builds.steps.find((step: any) =>
+    step.uses?.startsWith("actions/upload-artifact@"),
   );
+  expect(upload.uses).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
   expect(upload.with["if-no-files-found"]).toBe("error");
   expect(upload.with.name).toContain("github.run_attempt");
 });

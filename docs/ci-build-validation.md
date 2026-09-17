@@ -13,7 +13,7 @@ El inventario no incluye `eas build`: `apps/mobile` documenta que `export` gener
 
 ## Ejecución controlada
 
-Una vez integrada esta preparación en `main`, desde la pestaña **Actions**, selecciona el workflow **CI**, la rama head de la PR que quieres validar y **Run workflow**. Activa `run_builds` únicamente cuando TI4-34 autorice la ejecución de los builds reales. Para publicar el resultado en la conversación de la PR, indica también su número en `pr_number`.
+Una vez integrada esta preparación en `main`, confirma que la rama candidata de la PR contiene el workflow integrado y actualizado; de lo contrario, la ejecución no tendrá esta matriz ni la publicación. Desde la pestaña **Actions**, selecciona el workflow **CI**, esa rama head y **Run workflow**. Activa `run_builds` únicamente cuando TI4-34 autorice la ejecución de los builds reales. Para publicar el resultado en la conversación de la PR, indica también su número en `pr_number`.
 
 La matriz ejecuta Web y Mobile en trabajos independientes con `fail-fast: false`. Cada comando usa el script declarado por su paquete y un código de salida distinto de cero deja fallar el trabajo. El job publica la carpeta `dist/` disponible como artefacto del run incluso si el build falla parcialmente y escribe un resumen con el estado, el comando y un enlace al run en el check de GitHub. Si no hay archivos para publicar, el trabajo falla. Cada intento usa un nombre de artefacto distinto para permitir repetir la ejecución.
 
