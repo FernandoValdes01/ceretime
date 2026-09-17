@@ -20,7 +20,10 @@ import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
  * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
  * `ctx.auth.getUserIdentity()`, exige llamante Profesional con cuenta
  * habilitada y vigente, y persiste con Infraestructura. Única vía de
- * escritura de `accompanimentAssignments` junto a `revoke`. El recorte por
+ * escritura de `accompanimentAssignments` junto a `revoke`. Nadie puede
+ * asignarse acceso a sí mismo: la asignación siempre la otorga otro
+ * profesional autorizado, así que un Practicante jamás puede darse acceso
+ * a un acompañamiento por sí mismo. El recorte por
  * acompañamiento (asignar solo en los propios) llega con el flujo público
  * de RF-39. Opera con datos ficticios.
  */
@@ -48,7 +51,9 @@ async function requireProfessionalCaller(
 }
 
 /**
- * Crea la fila activa de la tripla. Rechaza la fila activa duplicada para
+ * Crea la fila activa de la tripla. Rechaza que el llamante se asigne
+ * acceso a sí mismo con el mismo error genérico de autorización, sin
+ * exponer el motivo. Rechaza además la fila activa duplicada para
  * la misma combinación de acompañamiento, usuario y rol, sosteniendo el
  * invariante del esquema: por rol, cada acompañamiento aparece una sola vez
  * y el listado paginado no puede repetir entre páginas.
@@ -59,6 +64,7 @@ export async function assignAccompaniment(
   triple: AssignmentTriple,
 ) {
   const caller = await requireProfessionalCaller(ctx, identity);
+  if (caller._id === triple.userId) deny();
 
   const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
   const target = await getUserById(ctx, triple.userId);

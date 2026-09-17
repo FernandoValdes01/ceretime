@@ -147,6 +147,12 @@ test("profesional asignado lee completo y lee notas internas", async () => {
     fullName: "Profesional Ficticio",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "s2-pro-0b",
+    email: "pro0b@uct.cl",
+    fullName: "Profesional Asignador",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
   await seedAssignment(
     t,
@@ -155,7 +161,7 @@ test("profesional asignado lee completo y lee notas internas", async () => {
       userId: pro.id,
       assignedRole: "professional",
     },
-    { subject: "s2-pro-1", email: "pro1@uct.cl" },
+    { subject: "s2-pro-0b", email: "pro0b@uct.cl" },
   );
   await seedNote(t, accompanimentId, pro.id);
 
@@ -240,6 +246,12 @@ test("listado respeta alcance: estudiante propios, profesional e intern solo asi
     fullName: "Practicante Ficticio",
     role: "intern",
   });
+  await seedUser(t, {
+    subject: "s2-pro-2b",
+    email: "pro2b@uct.cl",
+    fullName: "Profesional Asignador",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
   await seedAssignment(
     t,
@@ -248,7 +260,7 @@ test("listado respeta alcance: estudiante propios, profesional e intern solo asi
       userId: pro.id,
       assignedRole: "professional",
     },
-    { subject: "s2-pro-2", email: "pro2@uct.cl" },
+    { subject: "s2-pro-2b", email: "pro2b@uct.cl" },
   );
   await seedAssignment(
     t,
@@ -257,7 +269,7 @@ test("listado respeta alcance: estudiante propios, profesional e intern solo asi
       userId: intern.id,
       assignedRole: "intern",
     },
-    { subject: "s2-pro-2", email: "pro2@uct.cl" },
+    { subject: "s2-pro-2b", email: "pro2b@uct.cl" },
   );
 
   const asStudent = t.withIdentity(identityFor("s2-est-4", "est4@alu.uct.cl"));
@@ -394,9 +406,15 @@ test("negativos por vigencia y revocación: deshabilitado, inactivo y revocado",
     fullName: "Profesional Revocado",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "s2-pro-5b",
+    email: "pro5b@uct.cl",
+    fullName: "Profesional Asignador",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
   const ownInactiveAccompaniment = await seedAccompaniment(t, inactiveStudent.id);
-  const caller = { subject: "s2-pro-5", email: "pro5@uct.cl" };
+  const caller = { subject: "s2-pro-5b", email: "pro5b@uct.cl" };
   await seedAssignment(
     t,
     {
@@ -502,6 +520,12 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
     fullName: "Practicante Ficticio",
     role: "intern",
   });
+  await seedUser(t, {
+    subject: "s2-pro-6b",
+    email: "pro6b@uct.cl",
+    fullName: "Profesional Asignador",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
 
   await seedAssignment(
@@ -511,7 +535,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
       userId: pro.id,
       assignedRole: "professional",
     },
-    { subject: "s2-pro-6", email: "pro6@uct.cl" },
+    { subject: "s2-pro-6b", email: "pro6b@uct.cl" },
   );
   await expect(
     seedAssignment(
@@ -521,7 +545,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
         userId: pro.id,
         assignedRole: "professional",
       },
-      { subject: "s2-pro-6", email: "pro6@uct.cl" },
+      { subject: "s2-pro-6b", email: "pro6b@uct.cl" },
     ),
   ).rejects.toThrow("Ya existe una asignación activa");
 
@@ -532,7 +556,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
       userId: intern.id,
       assignedRole: "intern",
     },
-    { subject: "s2-pro-6", email: "pro6@uct.cl" },
+    { subject: "s2-pro-6b", email: "pro6b@uct.cl" },
   );
   await seedRevoke(
     t,
@@ -541,7 +565,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
       userId: intern.id,
       assignedRole: "intern",
     },
-    { subject: "s2-pro-6", email: "pro6@uct.cl" },
+    { subject: "s2-pro-6b", email: "pro6b@uct.cl" },
   );
   const reassigned = await seedAssignment(
     t,
@@ -550,7 +574,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
       userId: intern.id,
       assignedRole: "intern",
     },
-    { subject: "s2-pro-6", email: "pro6@uct.cl" },
+    { subject: "s2-pro-6b", email: "pro6b@uct.cl" },
   );
   expect(reassigned).toBeDefined();
 });
@@ -569,8 +593,14 @@ test("revocar exige profesional vigente y es idempotente", async () => {
     fullName: "Profesional Ficticio",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "s2-pro-10b",
+    email: "pro10b@uct.cl",
+    fullName: "Profesional Asignador",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
-  const caller = { subject: "s2-pro-10", email: "pro10@uct.cl" };
+  const caller = { subject: "s2-pro-10b", email: "pro10b@uct.cl" };
   const input = {
     accompanimentId,
     userId: pro.id,
@@ -788,7 +818,13 @@ test("listado asignado se pagina con keyset sin perder ni repetir", async () => 
     fullName: "Profesional Ficticio",
     role: "professional",
   });
-  const caller = { subject: "s2-pro-12", email: "pro12@uct.cl" };
+  const caller = { subject: "s2-pro-12b", email: "pro12b@uct.cl" };
+  await seedUser(t, {
+    subject: "s2-pro-12b",
+    email: "pro12b@uct.cl",
+    fullName: "Profesional Asignador",
+    role: "professional",
+  });
   const expected = [];
   for (let i = 0; i < 3; i++) {
     const accompanimentId = await seedAccompaniment(t, student.id);
@@ -833,6 +869,12 @@ test("notas internas se paginan", async () => {
     fullName: "Profesional Ficticio",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "s2-pro-8b",
+    email: "pro8b@uct.cl",
+    fullName: "Profesional Asignador",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
   await seedAssignment(
     t,
@@ -841,7 +883,7 @@ test("notas internas se paginan", async () => {
       userId: pro.id,
       assignedRole: "professional",
     },
-    { subject: "s2-pro-8", email: "pro8@uct.cl" },
+    { subject: "s2-pro-8b", email: "pro8b@uct.cl" },
   );
   await seedNote(t, accompanimentId, pro.id);
   await seedNote(t, accompanimentId, pro.id);
