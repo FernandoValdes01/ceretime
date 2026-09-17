@@ -8,9 +8,10 @@
  *
  * Trazabilidad mínima: la fila registra quién concedió (`grantedBy`), cuándo
  * (`grantedAt`) y, si se revoca, quién y cuándo (fecha de revocación), sin
- * borrar el historial. La vigencia del acceso es el intervalo entre
- * `grantedAt` y `revokedAt`: mientras `status` sea `"active"` no hay fecha
- * de revocación.
+ * borrar el historial. Los cuatro campos son opcionales porque el schema los
+ * declara así: las filas legacy (anteriores a TI2-16) no los tienen y las
+ * filas activas nuevas todavía no tienen fecha de revocación. La vigencia
+ * del acceso la decide `status`, no la presencia de estos campos.
  */
 
 /** Rol con el que una persona queda asignada al acompañamiento. */
@@ -25,8 +26,11 @@ export type AssignmentStatus = (typeof ASSIGNMENT_STATUS_VALUES)[number];
 
 /**
  * Fila de asignación con trazabilidad, no una entidad que se borra.
- * `grantedBy` es el perfil del Profesional que concedió; `revokedBy` y
- * `revokedAt` son `null` mientras la asignación esté activa.
+ * `grantedBy` es el perfil del Profesional que concedió. Los cuatro campos
+ * de trazabilidad son opcionales como en el schema: una fila legacy válida
+ * puede no traer ninguno, y una fila activa nueva no trae fecha de
+ * revocación. `revokedBy`/`revokedAt` aceptan `null` explícito además de
+ * ausencia, porque ambas formas significan "sin revocar".
  */
 export interface PractitionerAssignment {
   _id: string;
@@ -34,10 +38,10 @@ export interface PractitionerAssignment {
   userId: string;
   assignedRole: AssignmentRole;
   status: AssignmentStatus;
-  grantedBy: string;
-  grantedAt: number;
-  revokedBy: string | null;
-  revokedAt: number | null;
+  grantedBy?: string;
+  grantedAt?: number;
+  revokedBy?: string | null;
+  revokedAt?: number | null;
 }
 
 /**
@@ -50,7 +54,8 @@ export interface AssignmentReadPermission {
   userId: string;
   role: AssignmentRole;
   view: "full" | "minimized";
-  grantedAt: number;
+  /** Ausente cuando la fila legacy no registra fecha de concesión. */
+  grantedAt?: number;
 }
 
 /** Vista que concede cada rol asignado (`practitioner-assignment.ts`). */

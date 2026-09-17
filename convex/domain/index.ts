@@ -17,12 +17,13 @@ export type {
 } from "./identity/roles";
 
 // Solicitud de acompañamiento y sus estados.
+export { toStoredAccompanimentRequest } from "./request/request";
 export type {
   AccessNeed,
-  AccompanimentRequest,
   AccompanimentRequestContent,
   GeneralAvailability,
   ModalityPreference,
+  StoredAccompanimentRequest,
 } from "./request/request";
 export {
   FUTURE_REQUEST_STATES,
@@ -38,10 +39,12 @@ export type { FutureRequestState, RequestState, Sprint1RequestState } from "./re
 export {
   ACCOMPANIMENT_STATUS_VALUES,
   ACCOMPANIMENT_VIEW_VALUES,
+  toAccompanimentProjection,
 } from "./accompaniment/accompaniment";
 export type {
   Accompaniment,
   AccompanimentProjection,
+  AccompanimentRow,
   AccompanimentStatus,
   AccompanimentView,
   MinimizedAccompaniment,

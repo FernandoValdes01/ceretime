@@ -53,4 +53,41 @@ describe("toAssignmentReadPermission", () => {
   test("la vista por rol cubre todos los roles asignables", () => {
     expect(ASSIGNMENT_VIEW_BY_ROLE).toEqual({ professional: "full", intern: "minimized" });
   });
+
+  test("una fila legacy sin trazabilidad también concede lectura si está activa", () => {
+    const legacy: PractitionerAssignment = {
+      _id: "assignment-id",
+      accompanimentId: "accompaniment-id",
+      userId: "user-id",
+      assignedRole: "professional",
+      status: "active",
+    };
+    expect(toAssignmentReadPermission(legacy)).toEqual({
+      accompanimentId: "accompaniment-id",
+      userId: "user-id",
+      role: "professional",
+      view: "full",
+      grantedAt: undefined,
+    });
+  });
+
+  test("una asignación nueva completa conserva toda la trazabilidad", () => {
+    const fresh: PractitionerAssignment = {
+      _id: "assignment-id",
+      accompanimentId: "accompaniment-id",
+      userId: "user-id",
+      assignedRole: "intern",
+      status: "active",
+      grantedBy: "grantor-id",
+      grantedAt: 1000,
+    };
+    const permission = toAssignmentReadPermission(fresh);
+    expect(permission).toMatchObject({
+      accompanimentId: "accompaniment-id",
+      userId: "user-id",
+      role: "intern",
+      view: "minimized",
+      grantedAt: 1000,
+    });
+  });
 });

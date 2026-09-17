@@ -2,16 +2,17 @@
  * Estados de la solicitud de acompañamiento (TI2-7).
  *
  * Dominio puro: no importa Convex ni frameworks, para poder probarse sin
- * levantar el backend. Los literales usan camelCase, el mismo vocabulario
- * que el flujo de Mobile (`apps/mobile/src/application/student-area-models.ts`),
- * para que Web y Mobile compartan la respuesta sin conversión manual.
+ * levantar el backend. Los literales se mantienen en snake_case porque son
+ * los valores persistidos: la columna `status` de la tabla `requests` y las
+ * transiciones de TI2-21 ya operan con ellos. Cambiar el vocabulario
+ * persistido exigiría una migración con compatibilidad de lectura.
  */
 
 /** Estados con operación habilitada en Sprint 1, en orden de flujo. */
 export const SPRINT_1_REQUEST_STATES = [
   "received",
-  "underReview",
-  "awaitingInformationOrAcceptance",
+  "under_review",
+  "awaiting_information_or_acceptance",
   "accepted",
 ] as const;
 
@@ -22,7 +23,7 @@ export const SPRINT_1_REQUEST_STATES = [
  */
 export const FUTURE_REQUEST_STATES = [
   "referred",
-  "closedWithoutAccompaniment",
+  "closed_without_accompaniment",
   "cancelled",
 ] as const;
 
@@ -41,11 +42,11 @@ export const INITIAL_REQUEST_STATE: Sprint1RequestState = "received";
  */
 export const REQUEST_STATE_LABELS: Record<RequestState, string> = {
   received: "Recibida",
-  underReview: "En revisión",
-  awaitingInformationOrAcceptance: "Esperando información o aceptación",
+  under_review: "En revisión",
+  awaiting_information_or_acceptance: "Esperando información o aceptación",
   accepted: "Aceptada",
   referred: "Derivada",
-  closedWithoutAccompaniment: "Cerrada sin acompañamiento",
+  closed_without_accompaniment: "Cerrada sin acompañamiento",
   cancelled: "Cancelada",
 };
 

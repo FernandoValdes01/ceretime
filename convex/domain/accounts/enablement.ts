@@ -1,4 +1,5 @@
 import { isInstitutionalEmail, normalizeEmail } from "../auth/institutional_domain";
+import type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
 
 /**
  * Dominio puro de habilitación institucional de Practicantes (TI2-11).
@@ -8,15 +9,16 @@ import { isInstitutionalEmail, normalizeEmail } from "../auth/institutional_doma
  * decisiones distintas (CONTEXT.md): habilitar no concede acceso a ningún
  * acompañamiento, solo deja la cuenta en condiciones de operar.
  *
- * Roles provisionales: `student`, `professional`, `intern` y `admin`. Los
- * literales deben mantenerse en sincronía con `convex/validators.ts`.
+ * Los literales de rol y estado viven una sola vez en
+ * `convex/domain/identity/roles` (TI2-8): estos alias conservan los nombres
+ * de TI2-11 sin duplicar la definición.
  */
 
-export type EnablementRole = "student" | "professional" | "intern" | "admin";
+export type EnablementRole = Role;
 
-export type EnablementInstitutionalStatus = "enabled" | "disabled" | "pending";
+export type EnablementInstitutionalStatus = InstitutionalStatus;
 
-export type EnablementAccountStatus = "active" | "inactive";
+export type EnablementAccountStatus = AccountStatus;
 
 export type EnablementCaller = {
   readonly role: EnablementRole;

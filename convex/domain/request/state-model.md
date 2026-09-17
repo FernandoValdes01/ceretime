@@ -12,27 +12,27 @@ stateDiagram-v2
 
     [*] --> received
 
-    received --> underReview
-    underReview --> awaitingInformationOrAcceptance : exige motivo
-    underReview --> accepted
-    awaitingInformationOrAcceptance --> accepted
+    received --> under_review
+    under_review --> awaiting_information_or_acceptance : exige motivo
+    under_review --> accepted
+    awaiting_information_or_acceptance --> accepted
 
     accepted --> [*] : abre exactamente un acompañamiento
 
     classDef sprint1 fill:#dbeafe,stroke:#1d4ed8,color:#1e3a8a
-    class received,underReview,awaitingInformationOrAcceptance,accepted sprint1
+    class received,under_review,awaiting_information_or_acceptance,accepted sprint1
 ```
 
 Las cuatro transiciones del diagrama son exactamente las de
 `SPRINT_1_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido,
 incluidos los saltos hacia adelante y los retrocesos.
 
-| Estado                            | Etiqueta en interfaz               | Rol que lo provoca                                          |
-| --------------------------------- | ---------------------------------- | ----------------------------------------------------------- |
-| `received`                        | Recibida                           | Estudiante, o personal autorizado desde canal institucional |
-| `underReview`                     | En revisión                        | Profesional de CERETI                                       |
-| `awaitingInformationOrAcceptance` | Esperando información o aceptación | Profesional de CERETI                                       |
-| `accepted`                        | Aceptada                           | Profesional de CERETI                                       |
+| Estado                               | Etiqueta en interfaz               | Rol que lo provoca                                          |
+| ------------------------------------ | ---------------------------------- | ----------------------------------------------------------- |
+| `received`                           | Recibida                           | Estudiante, o personal autorizado desde canal institucional |
+| `under_review`                       | En revisión                        | Profesional de CERETI                                       |
+| `awaiting_information_or_acceptance` | Esperando información o aceptación | Profesional de CERETI                                       |
+| `accepted`                           | Aceptada                           | Profesional de CERETI                                       |
 
 `received` es el estado inicial. La revisión es humana: no hay aceptación
 automática, según RN-23 del documento de requerimientos.
@@ -43,11 +43,11 @@ Estos estados existen en el tipo `RequestState` para que el dominio quede
 consistente y nadie invente nombres alternativos. Ninguna operación pública los
 alcanza en este Cycle.
 
-| Estado                       | Etiqueta en interfaz       | Por qué queda fuera de Sprint 1                                                                                                   |
-| ---------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `referred`                   | Derivada                   | Requiere contacto de CERETI y aceptación del estudiante antes de abrir acompañamiento (RN-24). Flujo completo en Cycle posterior. |
-| `closedWithoutAccompaniment` | Cerrada sin acompañamiento | Fuera de alcance declarado en TI2-7 y TI2-21.                                                                                     |
-| `cancelled`                  | Cancelada                  | Fuera de alcance declarado en TI2-7 y TI2-21.                                                                                     |
+| Estado                         | Etiqueta en interfaz       | Por qué queda fuera de Sprint 1                                                                                                   |
+| ------------------------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `referred`                     | Derivada                   | Requiere contacto de CERETI y aceptación del estudiante antes de abrir acompañamiento (RN-24). Flujo completo en Cycle posterior. |
+| `closed_without_accompaniment` | Cerrada sin acompañamiento | Fuera de alcance declarado en TI2-7 y TI2-21.                                                                                     |
+| `cancelled`                    | Cancelada                  | Fuera de alcance declarado en TI2-7 y TI2-21.                                                                                     |
 
 Sus transiciones de origen **no se modelan todavía**. El documento de
 requerimientos marca los estados completos y sus excepciones como pendientes, y
@@ -58,7 +58,7 @@ proyecto no ha tomado.
 
 `SPRINT_1_REQUEST_TRANSITIONS` tipa `from` y `to` como `Sprint1RequestState`,
 no como `RequestState`. Agregar una transición hacia `referred`,
-`closedWithoutAccompaniment` o `cancelled` no compila. La garantía es del
+`closed_without_accompaniment` o `cancelled` no compila. La garantía es del
 compilador, no de la disciplina de quien edite el archivo.
 
 ## Qué queda para otros issues

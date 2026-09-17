@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { REQUEST_STATE_LABELS } from "./state";
-import type { AccompanimentRequestContent } from "./request";
+import { SPRINT_1_REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
+import { toStoredAccompanimentRequest, type AccompanimentRequestContent } from "./request";
 
 describe("AccompanimentRequestContent (TI2-8)", () => {
   test("describe la solicitud de Sprint 1 completa", () => {
@@ -33,16 +33,50 @@ type MobileSubmitPayload = {
   readonly preferredAccessibleInformationChannel: string;
 };
 
+describe("toStoredAccompanimentRequest (TI2-8)", () => {
+  test("adapta una fila existente con cada estado de Sprint 1", () => {
+    for (const status of SPRINT_1_REQUEST_STATES) {
+      expect(
+        toStoredAccompanimentRequest({
+          _id: "request-id",
+          studentId: "student-id",
+          status,
+          accessNeeds: "Necesidad ficticia",
+          createdAt: 1000,
+        }),
+      ).toEqual({
+        _id: "request-id",
+        studentId: "student-id",
+        status,
+        accessNeeds: "Necesidad ficticia",
+        createdAt: 1000,
+      });
+    }
+  });
+
+  test("rechaza una fila con estado desconocido en vez de propagarla", () => {
+    expect(() =>
+      toStoredAccompanimentRequest({
+        _id: "request-id",
+        studentId: "student-id",
+        status: "under_review_typo",
+        accessNeeds: "Necesidad ficticia",
+        createdAt: 1000,
+      }),
+    ).toThrow("Estado de solicitud desconocido");
+  });
+});
+
 describe("REQUEST_STATE_LABELS (TI2-8)", () => {
   test("traduce todos los estados al español para Web y Mobile", () => {
     expect(REQUEST_STATE_LABELS.received).toBe("Recibida");
-    expect(REQUEST_STATE_LABELS.underReview).toBe("En revisión");
-    expect(REQUEST_STATE_LABELS.awaitingInformationOrAcceptance).toBe(
+    expect(REQUEST_STATE_LABELS.under_review).toBe("En revisión");
+    expect(REQUEST_STATE_LABELS.awaiting_information_or_acceptance).toBe(
       "Esperando información o aceptación",
     );
     expect(REQUEST_STATE_LABELS.accepted).toBe("Aceptada");
     expect(REQUEST_STATE_LABELS.referred).toBe("Derivada");
-    expect(REQUEST_STATE_LABELS.closedWithoutAccompaniment).toBe("Cerrada sin acompañamiento");
+    expect(REQUEST_STATE_LABELS.closed_without_accompaniment).toBe("Cerrada sin acompañamiento");
     expect(REQUEST_STATE_LABELS.cancelled).toBe("Cancelada");
   });
 });

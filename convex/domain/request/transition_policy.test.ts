@@ -20,9 +20,9 @@ describe("findSprint1Transition", () => {
 
   test("devuelve undefined para cualquier par ausente", () => {
     expect(findSprint1Transition("received", "accepted")).toBeUndefined();
-    expect(findSprint1Transition("accepted", "underReview")).toBeUndefined();
+    expect(findSprint1Transition("accepted", "under_review")).toBeUndefined();
     expect(findSprint1Transition("received", "received")).toBeUndefined();
-    expect(findSprint1Transition("underReview", "cancelled")).toBeUndefined();
+    expect(findSprint1Transition("under_review", "cancelled")).toBeUndefined();
   });
 });
 
@@ -40,15 +40,15 @@ describe("transitionRequest", () => {
   test("conserva el motivo recortado en el paso a espera", () => {
     const result = transitionRequest({
       ...actor,
-      from: "underReview",
-      to: "awaitingInformationOrAcceptance",
+      from: "under_review",
+      to: "awaiting_information_or_acceptance",
       reason: "  falta el certificado de matrícula  ",
     });
     expect(result).toEqual({
       status: "applied",
       change: {
-        from: "underReview",
-        to: "awaitingInformationOrAcceptance",
+        from: "under_review",
+        to: "awaiting_information_or_acceptance",
         ...actor,
         reason: "falta el certificado de matrícula",
       },
@@ -60,17 +60,17 @@ describe("transitionRequest", () => {
     const result = transitionRequest({
       ...actor,
       from: "received",
-      to: "underReview",
+      to: "under_review",
       reason: "llegó por correo institucional",
     });
     expect(result).toMatchObject({ change: { reason: "llegó por correo institucional" } });
   });
 
   test("no agrega la clave reason cuando no llega motivo", () => {
-    const result = transitionRequest({ ...actor, from: "received", to: "underReview" });
+    const result = transitionRequest({ ...actor, from: "received", to: "under_review" });
     expect(result).toStrictEqual({
       status: "applied",
-      change: { from: "received", to: "underReview", ...actor },
+      change: { from: "received", to: "under_review", ...actor },
       opensAccompaniment: false,
     });
   });
@@ -80,7 +80,7 @@ describe("transitionRequest", () => {
       ...actor,
       actorId: "  profesional-ficticio-1  ",
       from: "received",
-      to: "underReview",
+      to: "under_review",
     });
     expect(result).toMatchObject({ change: { actorId: "profesional-ficticio-1" } });
   });
@@ -96,7 +96,7 @@ describe("transitionRequest", () => {
     const attempt: RequestTransitionAttempt = {
       ...actor,
       from: "received",
-      to: "underReview",
+      to: "under_review",
       reason: "  motivo  ",
     };
     Object.freeze(attempt);
@@ -124,10 +124,10 @@ describe("transitionRequest", () => {
   test("rechaza saltos, retrocesos y permanencias, incluida aceptar dos veces", () => {
     const pairs = [
       ["received", "accepted"],
-      ["received", "awaitingInformationOrAcceptance"],
-      ["underReview", "received"],
-      ["accepted", "underReview"],
-      ["awaitingInformationOrAcceptance", "underReview"],
+      ["received", "awaiting_information_or_acceptance"],
+      ["under_review", "received"],
+      ["accepted", "under_review"],
+      ["awaiting_information_or_acceptance", "under_review"],
       ["received", "received"],
       ["accepted", "accepted"],
     ] as const;
@@ -163,8 +163,8 @@ describe("transitionRequest", () => {
   test("exige motivo solo en el paso a espera", () => {
     const toAwaiting = {
       ...actor,
-      from: "underReview",
-      to: "awaitingInformationOrAcceptance",
+      from: "under_review",
+      to: "awaiting_information_or_acceptance",
     } as const;
     expect(transitionRequest(toAwaiting)).toStrictEqual({
       status: "rejected",
@@ -174,7 +174,7 @@ describe("transitionRequest", () => {
       status: "rejected",
       cause: "reason_required",
     });
-    expect(transitionRequest({ ...actor, from: "underReview", to: "accepted" })).toMatchObject({
+    expect(transitionRequest({ ...actor, from: "under_review", to: "accepted" })).toMatchObject({
       status: "applied",
     });
   });
@@ -192,13 +192,13 @@ describe("transitionRequest", () => {
   test("rechaza una fecha que no es un instante válido", () => {
     for (const occurredAt of [Number.NaN, 0, -1, Number.POSITIVE_INFINITY]) {
       expect(
-        transitionRequest({ ...actor, occurredAt, from: "received", to: "underReview" }),
+        transitionRequest({ ...actor, occurredAt, from: "received", to: "under_review" }),
       ).toStrictEqual({ status: "rejected", cause: "occurred_at_invalid" });
     }
   });
 
   test("reporta la causa más general cuando hay varias", () => {
-    const toAwaiting = { from: "underReview", to: "awaitingInformationOrAcceptance" } as const;
+    const toAwaiting = { from: "under_review", to: "awaiting_information_or_acceptance" } as const;
     // Par inválido, sin actor, sin fecha y sin motivo: gana el par.
     expect(
       transitionRequest({ actorId: "", occurredAt: Number.NaN, from: "received", to: "accepted" }),
@@ -221,12 +221,15 @@ describe("transitionRequest", () => {
   test("un rechazo no trae registro de cambio y deja el intento intacto", () => {
     const rejected: ReadonlyArray<readonly [RequestTransitionAttempt, TransitionRejectionCause]> = [
       [{ ...actor, from: "received", to: "accepted" }, "transition_not_allowed"],
-      [{ ...actor, actorId: " ", from: "received", to: "underReview" }, "actor_required"],
+      [{ ...actor, actorId: " ", from: "received", to: "under_review" }, "actor_required"],
       [
-        { ...actor, occurredAt: Number.NaN, from: "received", to: "underReview" },
+        { ...actor, occurredAt: Number.NaN, from: "received", to: "under_review" },
         "occurred_at_invalid",
       ],
-      [{ ...actor, from: "underReview", to: "awaitingInformationOrAcceptance" }, "reason_required"],
+      [
+        { ...actor, from: "under_review", to: "awaiting_information_or_acceptance" },
+        "reason_required",
+      ],
     ];
     for (const [attempt, cause] of rejected) {
       Object.freeze(attempt);
