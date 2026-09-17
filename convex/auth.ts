@@ -38,6 +38,11 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     // registrarse exacto en Google Cloud Console.
     baseURL: env.CONVEX_SITE_URL,
     trustedOrigins: resolveTrustedOrigins(env.SITE_URL),
+    // Página de error controlada (TI2-14): los callbacks inválidos que no
+    // conservan estado de flujo regresan a la SPA con el marcador
+    // `?auth=error` en vez de la página predeterminada de Better Auth. El
+    // proveedor agrega `&error=...`, que la Web traduce a un mensaje genérico.
+    onAPIError: { errorURL: `${env.SITE_URL}/?auth=error` },
     database: authComponent.adapter(ctx),
     // Rechazo real en el backend: una cuenta Google fuera de `@alu.uct.cl` y
     // `@uct.cl` no crea usuario ni sesión (retornar `false` cancela la

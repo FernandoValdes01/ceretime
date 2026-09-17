@@ -7,10 +7,9 @@ import {
   GENERIC_AUTH_MESSAGES,
   POPULATION_LOGINS,
   getLoginRequest,
-  readAuthErrorNotice,
-  removeAuthErrorParams,
   type InstitutionalPopulation,
 } from "../../application/session/institutional-login";
+import { readAuthErrorNotice, removeAuthErrorParams } from "./auth-error";
 import { authClient } from "../../infrastructure/auth/auth-client";
 import { isBackendConfigured } from "../../infrastructure/convex/convex-client";
 import "./auth.css";
@@ -95,8 +94,8 @@ export function AuthScreen() {
       // `unauthenticated` en `getSessionState` y la pantalla retorna al acceso.
       // El cliente resuelve `{data, error}` sin lanzar ante un fallo de API,
       // por lo que un rechazo debe leerse en el resultado y no solo en `catch`.
-      const result = await authClient.signOut();
-      if (result?.error) {
+      const signOutResult = await authClient.signOut();
+      if (signOutResult?.error) {
         setNotice(GENERIC_AUTH_MESSAGES.signOutError);
       } else {
         setPendingPopulation(null);

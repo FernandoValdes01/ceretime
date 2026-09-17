@@ -57,39 +57,3 @@ export const GENERIC_AUTH_MESSAGES = {
   misconfigured:
     "Falta la configuración del entorno local. Revisa las variables VITE_CONVEX_URL y VITE_CONVEX_SITE_URL.",
 } as const;
-
-/**
- * Aviso seguro para retornos de autenticación con error (TI2-14).
- *
- * Puro y sin dependencias del DOM: recibe el `search` (`?auth=error`,
- * `?error=...`) y devuelve solo el mensaje genérico cuando hay un fallo de
- * callback o del proveedor. Nunca devuelve el valor del parámetro, por lo que
- * un callback inválido no filtra información sensible. La limpieza de la URL
- * queda en Presentación.
- */
-export function readAuthErrorNotice(search: string): string | null {
-  if (!search) return null;
-  const params = new URLSearchParams(search);
-  if (params.get("auth") === "error") return GENERIC_AUTH_MESSAGES.signInError;
-  if (params.has("error")) return GENERIC_AUTH_MESSAGES.signInError;
-  return null;
-}
-
-/**
- * Limpieza quirúrgica de la URL tras un retorno con error (TI2-14).
- *
- * Pura y sin dependencias del DOM: recibe el `search` y devuelve el resto de
- * parámetros (con `?` inicial o cadena vacía). Solo retira `auth`, `error` y
- * `error_description`: el proveedor los agrega a nuestro `errorCallbackURL`
- * (`/?auth=error&error=...&error_description=...`) y `error_description`
- * puede traer detalles que no deben persistir en la URL; el resto del estado
- * de navegación se conserva intacto.
- */
-export function removeAuthErrorParams(search: string): string {
-  const params = new URLSearchParams(search);
-  params.delete("auth");
-  params.delete("error");
-  params.delete("error_description");
-  const rest = params.toString();
-  return rest ? `?${rest}` : "";
-}

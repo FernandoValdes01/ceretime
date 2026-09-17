@@ -75,8 +75,8 @@ test("cuenta no autorizada y sesión ausente responden idéntico sin filtrar mot
     name: "Intruso",
   });
   const externaState = await externa.query(api.presentation.session.getSessionState, {});
-  const anonimaState = await t.query(api.presentation.session.getSessionState, {});
-  expect(externaState).toEqual(anonimaState);
+  const anonymousState = await t.query(api.presentation.session.getSessionState, {});
+  expect(externaState).toEqual(anonymousState);
   expect(externaState).toEqual({ status: "unauthenticated" });
   expect(externaState).not.toHaveProperty("email");
 });
