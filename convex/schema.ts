@@ -50,11 +50,18 @@ export default defineSchema({
   // acompañamiento, usuario y rol; la única vía de escritura son las
   // mutaciones internas guardadas `internal.assignments.assign` y
   // `internal.assignments.revoke`.
+  // Trazabilidad (TI2-8, TI2-16): la fila registra quién concedió
+  // (`grantedBy`) y cuándo (`grantedAt`), y la revocación se modela como un
+  // cambio de `status` con `revokedBy`/`revokedAt`, sin borrar el historial.
   accompanimentAssignments: defineTable({
     accompanimentId: v.id("accompaniments"),
     userId: v.id("users"),
     assignedRole: assignmentRoleUnion,
     status: assignmentStatusUnion,
+    grantedBy: v.id("users"),
+    grantedAt: v.number(),
+    revokedBy: v.union(v.id("users"), v.null()),
+    revokedAt: v.union(v.number(), v.null()),
   })
     // Paginación keyset del listado asignado: ordena por acompañamiento para
     // que las filas duplicadas queden adyacentes y el cursor las excluya

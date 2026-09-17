@@ -609,12 +609,20 @@ test("revocar cierra todas las filas aunque existan duplicadas fuera del Backend
       userId: pro.id,
       assignedRole: "professional",
       status: "active",
+      grantedBy: pro.id,
+      grantedAt: 1000,
+      revokedBy: null,
+      revokedAt: null,
     });
     await ctx.db.insert("accompanimentAssignments", {
       accompanimentId,
       userId: pro.id,
       assignedRole: "professional",
       status: "active",
+      grantedBy: pro.id,
+      grantedAt: 1001,
+      revokedBy: null,
+      revokedAt: null,
     });
   });
 
@@ -709,6 +717,10 @@ test("duplicadas fuera del Backend no se repiten ni pierden entre páginas", asy
         userId: pro.id,
         assignedRole: "professional",
         status: "active",
+        grantedBy: pro.id,
+        grantedAt: 1000,
+        revokedBy: null,
+        revokedAt: null,
       });
     };
     await dup(accA);
@@ -881,6 +893,10 @@ test("tramo solo con referencias borradas avanza sin ciclarse", async () => {
         userId: pro.id,
         assignedRole: "professional",
         status: "active",
+        grantedBy: pro.id,
+        grantedAt: 1000,
+        revokedBy: null,
+        revokedAt: null,
       });
       ids.push(accompanimentId);
     }

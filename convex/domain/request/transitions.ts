@@ -22,15 +22,15 @@ export type RequestStateTransition = {
  * acá una transición hacia un estado de Cycle futuro no compila.
  */
 export const SPRINT_1_REQUEST_TRANSITIONS = [
-  { from: "received", to: "under_review", requiresReason: false },
+  { from: "received", to: "underReview", requiresReason: false },
   {
-    from: "under_review",
-    to: "awaiting_information_or_acceptance",
+    from: "underReview",
+    to: "awaitingInformationOrAcceptance",
     requiresReason: true,
   },
-  { from: "under_review", to: "accepted", requiresReason: false },
+  { from: "underReview", to: "accepted", requiresReason: false },
   {
-    from: "awaiting_information_or_acceptance",
+    from: "awaitingInformationOrAcceptance",
     to: "accepted",
     requiresReason: false,
   },

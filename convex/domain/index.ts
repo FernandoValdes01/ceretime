@@ -2,10 +2,12 @@
  * Barrel de contratos compartidos de dominio (TI2-8).
  *
  * Punto único de importación para Web y Mobile: evita que cada consumidor
- * navegue archivo por archivo dentro de `convex/domain`.
+ * navegue archivo por archivo dentro de `convex/domain`. Todos los contratos
+ * son puros: no dependen de Convex ni de `convex/_generated`.
  */
 
 // Identidad, roles y habilitación institucional.
+export { ACCOUNT_STATUS_VALUES, INSTITUTIONAL_STATUS_VALUES, ROLE_VALUES } from "./identity/roles";
 export type {
   AccountEnablement,
   AccountStatus,
@@ -15,19 +17,45 @@ export type {
 } from "./identity/roles";
 
 // Solicitud de acompañamiento y sus estados.
-export type { AccompanimentRequest } from "./request/request";
+export type {
+  AccessNeed,
+  AccompanimentRequest,
+  AccompanimentRequestContent,
+  GeneralAvailability,
+  ModalityPreference,
+} from "./request/request";
 export {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
   isSprint1RequestState,
   REQUEST_STATES,
+  REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
 } from "./request/state";
 export type { FutureRequestState, RequestState, Sprint1RequestState } from "./request/state";
 
-// Acompañamiento y asignaciones de acceso.
-export type { Accompaniment, AccompanimentStatus } from "./accompaniment/accompaniment";
+// Acompañamiento y sus vistas de lectura.
+export {
+  ACCOMPANIMENT_STATUS_VALUES,
+  ACCOMPANIMENT_VIEW_VALUES,
+} from "./accompaniment/accompaniment";
 export type {
+  Accompaniment,
+  AccompanimentProjection,
+  AccompanimentStatus,
+  AccompanimentView,
+  MinimizedAccompaniment,
+} from "./accompaniment/accompaniment";
+
+// Asignaciones de acceso y sus permisos de lectura.
+export {
+  ASSIGNMENT_ROLE_VALUES,
+  ASSIGNMENT_STATUS_VALUES,
+  ASSIGNMENT_VIEW_BY_ROLE,
+} from "./accompaniment/practitioner-assignment";
+export { toAssignmentReadPermission } from "./accompaniment/practitioner-assignment";
+export type {
+  AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
   PractitionerAssignment,

@@ -1,20 +1,26 @@
 /**
  * Identidad, roles y habilitación institucional (TI2-8).
  *
- * Deriva los tipos desde los validadores de Convex (`convex/validators.ts`)
- * para no duplicar los literales de rol en una segunda fuente de verdad.
+ * Dominio puro: no importa Convex ni `convex/_generated`, para que Web y
+ * Mobile puedan consumirlo sin levantar el backend. Esta es la única fuente
+ * de los literales de rol y estado; `convex/validators.ts` los convierte a
+ * validadores en el borde que conecta con la base de datos y la API.
  */
-import type { Infer } from "convex/values";
-import type { accountStatusUnion, institutionalStatusUnion, roleUnion } from "../../validators";
 
 /** Los cuatro roles institucionales de Sprint 1. */
-export type Role = Infer<typeof roleUnion>;
+export const ROLE_VALUES = ["student", "professional", "intern", "admin"] as const;
+
+export type Role = (typeof ROLE_VALUES)[number];
 
 /** Estado de habilitación institucional (ej. matrícula o contrato vigente). */
-export type InstitutionalStatus = Infer<typeof institutionalStatusUnion>;
+export const INSTITUTIONAL_STATUS_VALUES = ["enabled", "disabled", "pending"] as const;
+
+export type InstitutionalStatus = (typeof INSTITUTIONAL_STATUS_VALUES)[number];
 
 /** Estado de la cuenta dentro de la plataforma. */
-export type AccountStatus = Infer<typeof accountStatusUnion>;
+export const ACCOUNT_STATUS_VALUES = ["active", "inactive"] as const;
+
+export type AccountStatus = (typeof ACCOUNT_STATUS_VALUES)[number];
 
 /**
  * Habilitación institucional mínima requerida para operar en la plataforma.
