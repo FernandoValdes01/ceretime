@@ -102,6 +102,8 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(requestCard);
 
     expect(await screen.findByText("SOL-DEMO-001")).toBeOnTheScreen();
+    expect(screen.getByText("Aceptada")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Estado de la solicitud: Aceptada")).toBeOnTheScreen();
     expect(screen.queryByText("Detalle de solicitud")).not.toBeOnTheScreen();
     expect(screen.getByText("Medio preferido para recibir información")).toBeOnTheScreen();
     expect(screen.getByText("Correo institucional con texto accesible")).toBeOnTheScreen();

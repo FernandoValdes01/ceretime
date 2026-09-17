@@ -182,6 +182,12 @@ Las variables sólo controlan datos ficticios y no contienen secretos. Después 
 
 La evidencia nativa del recorrido se registra en [docs/evidence/ti4-19](./docs/evidence/ti4-19/README.md).
 
+## Estado accesible de la solicitud: TI4-31
+
+El detalle representa cada estado con una etiqueta en español y un símbolo propio. El símbolo no reemplaza al texto ni depende del color para distinguir el estado. TalkBack recibe el campo y el valor en un único anuncio, por ejemplo, `Estado de la solicitud: Aceptada`; el rótulo y el símbolo visibles no agregan focos separados.
+
+La evidencia nativa se registra en [docs/evidence/ti4-31](./docs/evidence/ti4-31/README.md).
+
 ## Referencias
 
 - [Instalación de Expo Router](https://docs.expo.dev/router/installation/).

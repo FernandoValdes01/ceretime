@@ -4,6 +4,7 @@ import { View } from "react-native";
 import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
 import { formatRequestDate } from "./student-request-formatters";
+import { StudentRequestStatusIndicator } from "./student-request-status-indicator";
 import { useStudentAreaContext } from "./student-area-provider";
 
 function DetailField({ label, value }: { label: string; value: string }) {
@@ -95,6 +96,7 @@ export default function StudentRequestDetailScreen() {
           style={{ borderCurve: "continuous" }}
         >
           <DetailField label="Referencia" value={request.id} />
+          <StudentRequestStatusIndicator status={request.status} />
           <DetailField label="Fecha de envío" value={formatRequestDate(request.createdAt)} />
           <DetailField label="Última actualización" value={formatRequestDate(request.updatedAt)} />
           <DetailField label="Necesidad" value={request.needSummary} />
