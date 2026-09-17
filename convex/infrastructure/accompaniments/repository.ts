@@ -150,20 +150,17 @@ export async function findExistingActiveAssignment(
   return rows[0] ?? null;
 }
 
-/** Crea la fila activa de la tripla con su trazabilidad. */
+/** Crea la fila activa de la tripla, registrando quién concede y cuándo. */
 export async function insertActiveAssignment(
   ctx: MutationCtx,
   triple: AssignmentTriple,
   grantedBy: Id<"users">,
 ) {
-  const grantedAt = Date.now();
   return await ctx.db.insert("accompanimentAssignments", {
     ...triple,
     status: "active",
     grantedBy,
-    grantedAt,
-    revokedBy: null,
-    revokedAt: null,
+    grantedAt: Date.now(),
   });
 }
 
@@ -185,7 +182,7 @@ export async function takeActiveTripleRows(
     .take(take);
 }
 
-/** Marca una fila de asignación como revocada, conservando el historial. */
+/** Marca una fila de asignación como revocada, registrando quién revoca y cuándo. */
 export async function revokeAssignmentRow(
   ctx: MutationCtx,
   assignmentId: Id<"accompanimentAssignments">,

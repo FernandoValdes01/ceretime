@@ -1,10 +1,16 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+
+// Las semillas solo operan con el interruptor de entorno activado (como en
+// desarrollo). El rechazo con el interruptor apagado (como en producción) se
+// prueba en `users.seeds-guard.test.ts`, aislado por archivo para no heredar
+// esta marca.
+vi.stubEnv("TEST_SEEDS_ENABLED", "true");
 
 /**
  * Prueba de integración para la entidad 'users' utilizando 'convex-test'

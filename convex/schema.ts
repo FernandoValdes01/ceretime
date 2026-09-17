@@ -6,6 +6,7 @@ import {
   assignmentRoleUnion,
   assignmentStatusUnion,
   institutionalStatusUnion,
+  requestStatusUnion,
   roleUnion,
 } from "./validators";
 
@@ -25,6 +26,12 @@ export default defineSchema({
     // Clave estable hacia la identidad autenticada
     // (`ctx.auth.getUserIdentity().tokenIdentifier`); solo ficticia en pruebas.
     tokenIdentifier: v.string(),
+    // Auditoría de habilitación institucional (TI2-11): actor administrador y
+    // fecha de la habilitación. Solo la fija la vía guardada de cuentas; el
+    // arranque administrativo inicial deja `enabledBy` ausente y documenta el
+    // procedimiento por entorno en `domain/accounts/enablement.md`.
+    enabledBy: v.optional(v.id("users")),
+    enabledAt: v.optional(v.number()),
   })
     // Índice para búsquedas rápidas por correo electrónico
     .index("by_email", ["email"])
@@ -37,33 +44,37 @@ export default defineSchema({
 
   // Tabla 'accompaniments': acompañamiento mínimo para probar la matriz.
   // `accessNeeds` es sensible (Ley 21.719) y se minimiza para Practicante.
+  // `requestId` traza la solicitud aceptada que lo originó, si se conoce.
   accompaniments: defineTable({
     studentId: v.id("users"),
     status: accompanimentStatusUnion,
     objective: v.string(),
     accessNeeds: v.string(),
-  }).index("by_student", ["studentId"]),
+    requestId: v.optional(v.id("requests")),
+  })
+    .index("by_student", ["studentId"])
+    .index("by_request", ["requestId"]),
 
   // Tabla 'accompanimentAssignments': asignaciones revocables por
   // acompañamiento. Separa habilitación de cuenta y asignación explícita.
   // Invariante: como máximo una fila activa por cada combinación de
   // acompañamiento, usuario y rol; la única vía de escritura son las
   // mutaciones internas guardadas `internal.assignments.assign` y
-  // `internal.assignments.revoke`.
-  // Trazabilidad (TI2-8, TI2-16): la fila registra quién concedió
-  // (`grantedBy`) y cuándo (`grantedAt`), y la revocación se modela como un
-  // cambio de `status` con `revokedBy`/`revokedAt`, sin borrar el historial.
+  // `internal.assignments.revoke`. La migración formal de filas legacy
+  // corresponde a TI2-17.
   accompanimentAssignments: defineTable({
     accompanimentId: v.id("accompaniments"),
     userId: v.id("users"),
     assignedRole: assignmentRoleUnion,
     status: assignmentStatusUnion,
-    grantedBy: v.id("users"),
-    grantedAt: v.number(),
-    revokedBy: v.union(v.id("users"), v.null()),
-    revokedAt: v.union(v.number(), v.null()),
+    // Trazabilidad de la vigencia: quién concede y cuándo, y quién revoca
+    // y cuándo. Solo persistencia, sin reglas de autorización.
+    grantedBy: v.optional(v.id("users")),
+    grantedAt: v.optional(v.number()),
+    revokedBy: v.optional(v.id("users")),
+    revokedAt: v.optional(v.number()),
   })
-    // Paginación keyset del listado asignado: ordena por acompañamiento para
+    // Paginado keyset del listado asignado: ordena por acompañamiento para
     // que las filas duplicadas queden adyacentes y el cursor las excluya
     // enteras.
     .index("by_user_and_status_and_assigned_role_and_accompaniment", [
@@ -88,4 +99,18 @@ export default defineSchema({
     authorId: v.id("users"),
     body: v.string(),
   }).index("by_accompaniment", ["accompanimentId"]),
+
+  // Tabla 'requests': solicitudes de acompañamiento. El estado usa los
+  // literales de Sprint 1 del dominio (TI2-7); `createdAt` es la fecha de
+  // creación como número. Solo persistencia: las transiciones las aplica TI2-21.
+  requests: defineTable({
+    studentId: v.id("users"),
+    status: requestStatusUnion,
+    accessNeeds: v.string(),
+    createdAt: v.number(),
+  })
+    // Solicitudes propias del estudiante.
+    .index("by_student", ["studentId"])
+    // Solicitudes según su estado de revisión.
+    .index("by_status", ["status"]),
 });

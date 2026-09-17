@@ -4,6 +4,7 @@ import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
 } from "./domain/accompaniment/practitioner-assignment";
+import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,
@@ -41,3 +42,11 @@ export const assignmentRoleUnion = v.union(
 export const assignmentStatusUnion = v.union(
   ...ASSIGNMENT_STATUS_VALUES.map((value) => v.literal(value)),
 );
+
+/**
+ * Estados de solicitud habilitados en Sprint 1, derivados de los literales
+ * del dominio (TI2-7) para que el esquema no defina nombres por su cuenta.
+ */
+const requestStatusLiterals = SPRINT_1_REQUEST_STATES.map((state) => v.literal(state));
+
+export const requestStatusUnion = v.union(...requestStatusLiterals);

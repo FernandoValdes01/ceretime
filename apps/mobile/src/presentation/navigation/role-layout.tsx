@@ -1,9 +1,6 @@
 import { Stack } from "expo-router";
+import { appHeaderOptions } from "./app-header-options";
 
 export default function RoleLayout() {
-  return (
-    <Stack>
-      <Stack.Screen name="index" options={{ title: "Inicio", headerBackVisible: false }} />
-    </Stack>
-  );
+  return <Stack screenOptions={appHeaderOptions} />;
 }

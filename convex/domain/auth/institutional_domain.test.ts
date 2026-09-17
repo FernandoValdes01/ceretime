@@ -29,6 +29,14 @@ describe("isInstitutionalEmail", () => {
     expect(isInstitutionalEmail("")).toBe(false);
     expect(isInstitutionalEmail(null)).toBe(false);
   });
+
+  test("rechaza correos inválidos aunque terminen con el sufijo", () => {
+    expect(isInstitutionalEmail("@uct.cl")).toBe(false);
+    expect(isInstitutionalEmail("@alu.uct.cl")).toBe(false);
+    expect(isInstitutionalEmail("usuario@@uct.cl")).toBe(false);
+    expect(isInstitutionalEmail("usuario@@alu.uct.cl")).toBe(false);
+    expect(isInstitutionalEmail("sin-arroba")).toBe(false);
+  });
 });
 
 describe("getInstitutionalPopulation", () => {

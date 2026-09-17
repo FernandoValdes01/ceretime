@@ -65,6 +65,11 @@ export async function assignAccompaniment(
   if (accompaniment === null || target === null) {
     throw new Error("El acompañamiento y el usuario deben existir");
   }
+  // Coherencia rol-asignación: el rol del perfil debe coincidir con el rol
+  // asignado; una fila que no coincide no otorga ningún acceso efectivo.
+  if (target.role !== triple.assignedRole) {
+    throw new Error("El rol del usuario no coincide con el rol asignado");
+  }
 
   const existing = await findExistingActiveAssignment(ctx, triple);
   if (existing !== null) {
@@ -77,7 +82,8 @@ export async function assignAccompaniment(
  * Revoca una asignación existente. Es idempotente: revocar una fila ya
  * revocada no falla. Revoca TODAS las filas activas de la tripla en lugar
  * de una sola, para que ninguna fila escrita fuera del Backend deje acceso
- * activo tras informar éxito.
+ * activo tras informar éxito. Si tras los lotes acotados quedan filas
+ * activas, falla en vez de informar un éxito parcial.
  */
 export async function revokeAccompaniment(
   ctx: MutationCtx,
@@ -97,5 +103,9 @@ export async function revokeAccompaniment(
     if (rows.length < 50) break;
   }
   if (revoked === 0) return null;
+  const remaining = await takeActiveTripleRows(ctx, triple, 1);
+  if (remaining.length > 0) {
+    throw new Error("Quedaron asignaciones activas sin revocar");
+  }
   return revoked;
 }

@@ -496,6 +496,12 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
     fullName: "Profesional Ficticio",
     role: "professional",
   });
+  const intern = await seedUser(t, {
+    subject: "s2-int-6",
+    email: "int6@alu.uct.cl",
+    fullName: "Practicante Ficticio",
+    role: "intern",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
 
   await seedAssignment(
@@ -523,7 +529,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
     t,
     {
       accompanimentId,
-      userId: pro.id,
+      userId: intern.id,
       assignedRole: "intern",
     },
     { subject: "s2-pro-6", email: "pro6@uct.cl" },
@@ -532,7 +538,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
     t,
     {
       accompanimentId,
-      userId: pro.id,
+      userId: intern.id,
       assignedRole: "intern",
     },
     { subject: "s2-pro-6", email: "pro6@uct.cl" },
@@ -541,7 +547,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
     t,
     {
       accompanimentId,
-      userId: pro.id,
+      userId: intern.id,
       assignedRole: "intern",
     },
     { subject: "s2-pro-6", email: "pro6@uct.cl" },
@@ -610,9 +616,7 @@ test("revocar cierra todas las filas aunque existan duplicadas fuera del Backend
       assignedRole: "professional",
       status: "active",
       grantedBy: pro.id,
-      grantedAt: 1000,
-      revokedBy: null,
-      revokedAt: null,
+      grantedAt: 1,
     });
     await ctx.db.insert("accompanimentAssignments", {
       accompanimentId,
@@ -620,9 +624,7 @@ test("revocar cierra todas las filas aunque existan duplicadas fuera del Backend
       assignedRole: "professional",
       status: "active",
       grantedBy: pro.id,
-      grantedAt: 1001,
-      revokedBy: null,
-      revokedAt: null,
+      grantedAt: 1,
     });
   });
 
@@ -718,9 +720,7 @@ test("duplicadas fuera del Backend no se repiten ni pierden entre páginas", asy
         assignedRole: "professional",
         status: "active",
         grantedBy: pro.id,
-        grantedAt: 1000,
-        revokedBy: null,
-        revokedAt: null,
+        grantedAt: 1,
       });
     };
     await dup(accA);
@@ -894,9 +894,7 @@ test("tramo solo con referencias borradas avanza sin ciclarse", async () => {
         assignedRole: "professional",
         status: "active",
         grantedBy: pro.id,
-        grantedAt: 1000,
-        revokedBy: null,
-        revokedAt: null,
+        grantedAt: 1,
       });
       ids.push(accompanimentId);
     }

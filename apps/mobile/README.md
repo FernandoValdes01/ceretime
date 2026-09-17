@@ -11,32 +11,32 @@ bun install --frozen-lockfile
 bun run mobile:start
 ```
 
-Usa un dispositivo o emulador con un cliente de desarrollo compatible con Expo SDK 57. Para generar y abrir el cliente local Android, con Android SDK instalado:
+Usa un dispositivo o emulador con un cliente de desarrollo compatible con Expo SDK 57. Para generar, abrir y validar el cliente local Android, con Android SDK instalado:
 
 ```sh
 bun run mobile:android
 ```
 
-Para revisar la misma interfaz en navegador:
-
-```sh
-bun run mobile:web
-```
+Para validar la interfaz nativa, ejecuta `bun run mobile:android` y revisa la aplicación en el emulador Android `Medium_Phone`.
 
 La navegación funciona sin backend ni credenciales. El envío simulado confirma por defecto y acepta una variable de entorno opcional para demostrar la recuperación ante errores. La pantalla de acceso permite elegir un rol simulado. La sesión vive únicamente en memoria y se pierde al reiniciar o recargar el proceso de la aplicación. «Cambiar de rol» elimina la sesión y vuelve al selector.
 
 ## Mapa de rutas
 
-| URL                           | Acceso        | Resultado                                                          |
-| ----------------------------- | ------------- | ------------------------------------------------------------------ |
-| `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                    |
-| `/login`                      | Sin sesión    | Selector temporal de los cuatro roles.                             |
-| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud.                               |
-| `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.       |
-| `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos. |
-| `/practicante`                | Practicante   | Inicio provisional de consulta de acompañamientos asignados.       |
-| `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                     |
-| Cualquier ruta inexistente    | Público       | Página no encontrada con regreso al inicio.                        |
+| URL                           | Acceso        | Resultado                                                                                  |
+| ----------------------------- | ------------- | ------------------------------------------------------------------------------------------ |
+| `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                                            |
+| `/login`                      | Sin sesión    | Selector temporal de roles y prueba sin asignación.                                        |
+| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud y Mis solicitudes.                                     |
+| `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.                               |
+| `/estudiante/solicitudes`     | Estudiante    | Listado ficticio de solicitudes propias y estados de carga.                                |
+| `/estudiante/solicitudes/:id` | Estudiante    | Detalle de una solicitud propia.                                                           |
+| `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos.                         |
+| `/practicante`                | Practicante   | Redirige según las asignaciones de la sesión.                                              |
+| `/practicante/asignaciones`   | Practicante   | Consulta provisional de acompañamientos asignados.                                         |
+| `/practicante/sin-asignacion` | Practicante   | Estado de espera cuando no existen acompañamientos asignados. <!-- cspell:disable-line --> |
+| `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                                             |
+| Cualquier ruta inexistente    | Público       | Página no encontrada con regreso al inicio.                                                |
 
 ```text
 app/
@@ -49,18 +49,19 @@ app/
 └── (protected)/
     ├── _layout.tsx             Protección por rol
     ├── estudiante/             _layout.tsx + index.tsx
+    │   └── solicitudes/         index.tsx + [requestId].tsx
     ├── profesional/            _layout.tsx + index.tsx
-    ├── practicante/            _layout.tsx + index.tsx
+    ├── practicante/            rutas de asignaciones del practicante
     └── administrador/         _layout.tsx + index.tsx
 ```
 
-Los grupos entre paréntesis no aparecen en la URL. `Stack.Protected` impide entrar a un grupo sin sesión y a las carpetas de otros roles. Los intentos se redirigen a una ruta permitida. Al eliminar la sesión, Expo Router retira las entradas protegidas del historial.
+Los grupos entre paréntesis no aparecen en la URL. `Stack.Protected` protege las rutas públicas y protegidas según exista una sesión. `RoleGuard` valida el rol dentro de cada sección y las guardas del practicante validan también sus asignaciones. Al eliminar la sesión, Expo Router retira las entradas protegidas del historial.
 
 ## Continuar el desarrollo
 
 - Agrega las pantallas de cada rol dentro de su carpeta. El control del layout superior cubre las rutas nuevas de esa carpeta.
 - Mantén componentes reutilizables y estado de navegación en `src/presentation/`, fuera de `app/`, para que Expo Router no los convierta en rutas.
-- TI4-7 reemplazará el selector y el proveedor de sesión temporal por el flujo de autenticación simulado mediante adapters. La carga, los errores de autenticación, logout mediante adapter y asignaciones del practicante pertenecen a esa tarea.
+- TI4-7 ya integra el selector y el proveedor de sesión simulados. El punto de composición inyecta el adapter y las credenciales de demostración; la presentación sólo depende de contratos y props. La autenticación real reemplazará el adapter en ese punto.
 - Los identificadores de `roles.ts` son locales a la navegación. No definen contratos compartidos con el backend.
 - Esta protección controla la navegación del cliente. La autorización real debe verificarse en el backend cuando se integre la API.
 
@@ -75,6 +76,17 @@ bun run --cwd apps/mobile export
 
 Las pruebas cargan las rutas reales de `app/` con Expo Router. Cubren arranque, entrada y salida de los cuatro roles, eliminación del historial protegido, enlaces directos sin sesión, intentos de acceso entre roles y recuperación de rutas inexistentes.
 
+La evidencia nativa se capturó con `expo run:android` desde Android Studio, en el emulador `Medium_Phone` (`emulator-5554`) con Metro activo. Incluye [error de login](../../docs/evidence/ti4-7-android-studio-login-error.png), [Practicante asignado](../../docs/evidence/ti4-7-android-studio-practicante-asignado.png) y [Practicante sin asignación](../../docs/evidence/ti4-7-android-studio-practicante-sin-asignacion.png).
+
+### Ejecutar desde Android Studio
+
+1. Abre la carpeta `apps/mobile/android` con **Open**; no abras `apps/mobile` ni la raíz del monorepo como proyecto Gradle.
+2. En **File > Settings > Build, Execution, Deployment > Build Tools > Gradle**, selecciona un **Gradle JDK 17** y pulsa **Sync Project with Gradle Files**. JDK 25 puede fallar con `WARNING: A restricted method in java.lang.System has been called` durante la sincronización.
+3. Inicia el emulador `Medium_Phone` desde **Device Manager** y espera a que aparezca como dispositivo conectado.
+4. Desde la raíz del repositorio, inicia Metro en una terminal y déjalo abierto: `bun run --cwd apps/mobile start -- --dev-client --port 8081`.
+5. En Android Studio selecciona la configuración `app`, el dispositivo `Medium_Phone` y pulsa **Run**. La aplicación instalada se llama `ceretime`.
+6. Si aparece una pantalla roja o el aviso de que no encuentra el servidor de desarrollo, confirma que Metro sigue ejecutándose en el puerto 8081 y usa **Reload**. Para ejecutar todo desde terminal, `bun run mobile:android` compila, instala y abre el APK automáticamente.
+
 Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el workspace para evitar instancias diferentes por variantes de peer dependencies. Se usa React Native Testing Library 13 porque el helper `renderRouter` de Expo Router 57 requiere su render síncrono. Un mock desactiva el WebSocket de herramientas de desarrollo de Expo; las rutas y la sesión se ejecutan sin mocks. Las pruebas aisladas de tipografía simulan `expo-font` para comprobar carga y fallo sin perder los valores del formulario.
 
 `export` genera bundles de Android, iOS y web en `dist/`. No genera un APK ni reemplaza la ejecución en dispositivo. La construcción Preview con EAS se mantiene en `eas.json`.
@@ -83,10 +95,11 @@ Jest transforma las dependencias dentro de `.bun` y resuelve Expo desde el works
 
 1. Abrir la aplicación y comprobar que aparece el selector de roles.
 2. Entrar con cada rol, verificar su inicio y volver mediante «Cambiar de rol».
-3. Usar Atrás después de salir y comprobar que no reaparece el contenido protegido.
-4. Abrir un enlace `ceretime://estudiante` sin sesión y comprobar el regreso al acceso. Repetir con los demás roles.
-5. Comprobar etiquetas con lector de pantalla, controles táctiles y texto ampliado sin recortes.
-6. Adjuntar al PR capturas o video del recorrido, dispositivo, versión del sistema y commit probado.
+3. Entrar como practicante asignado y como practicante sin asignación, y comprobar las rutas `/practicante/asignaciones` y `/practicante/sin-asignacion`. <!-- cspell:disable-line -->
+4. Usar Atrás después de salir y comprobar que no reaparece el contenido protegido.
+5. Abrir un enlace `ceretime://estudiante` sin sesión y comprobar el regreso al acceso. Repetir con los demás roles.
+6. Comprobar etiquetas con lector de pantalla, controles táctiles y texto ampliado sin recortes.
+7. Adjuntar al PR capturas o video del recorrido, dispositivo, versión del sistema y commit probado.
 
 La evidencia nativa y la revisión de otro integrante deben completarse antes de integrar y cerrar TI4-6.
 
@@ -152,6 +165,22 @@ Para verificar el formulario:
 8. En dispositivo, comprobar teclado, desplazamiento, etiquetas accesibles y texto ampliado. Adjuntar evidencia al PR identificando el commit probado.
 
 Las pruebas `student-request.test.tsx` y `student-request-demo-mode.test.tsx` ejercitan las rutas reales, el contrato con tipos, el adaptador configurable y la prevención de doble envío. También deben seguir pasando las pruebas de navegación de TI4-6.
+
+## Listado y detalle de solicitudes: TI4-19
+
+Desde el inicio del Estudiante, abre **Mis solicitudes**. El listado muestra sus solicitudes y cada tarjeta abre el detalle correspondiente. El detalle presenta la referencia, las fechas, la necesidad, el resultado esperado, las necesidades de acceso, la modalidad y el medio preferido para recibir información. La representación accesible del estado pertenece a TI4-31 y el acompañamiento resultante a TI4-35.
+
+La implementación obtiene una proyección ficticia mediante `StudentAreaReader`. Para comprobar la carga, el listado vacío, el error con reintento y el éxito, reinicia Expo con una de estas configuraciones:
+
+```sh
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=success EXPO_PUBLIC_STUDENT_AREA_DELAY_MS=1200 bun run mobile:start --clear
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=empty bun run mobile:start --clear
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=error bun run mobile:start --clear
+```
+
+Las variables sólo controlan datos ficticios y no contienen secretos. Después de cambiar una variable `EXPO_PUBLIC_`, recarga completamente la aplicación. Un identificador que no pertenezca a la proyección del estudiante muestra una recuperación controlada y no consulta datos de otro estudiante.
+
+La evidencia nativa del recorrido se registra en [docs/evidence/ti4-19](./docs/evidence/ti4-19/README.md).
 
 ## Referencias
 

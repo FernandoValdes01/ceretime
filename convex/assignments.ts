@@ -31,6 +31,7 @@ export const assign = internalMutation({
  * `assign` y es idempotente: revocar una fila ya revocada no falla. Revoca
  * TODAS las filas activas de la tripla en lugar de una sola, para que ninguna
  * fila escrita fuera del Backend deje acceso activo tras informar éxito.
+ * Si no alcanza a cerrarlas todas, falla en vez de informar éxito parcial.
  * Completa la vía de escritura para que ningún flujo necesite inserts
  * directos.
  */

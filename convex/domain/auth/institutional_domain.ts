@@ -18,9 +18,17 @@ export function normalizeEmail(email: unknown): string {
   return typeof email === "string" ? email.trim().toLowerCase() : "";
 }
 
-/** Verdadero solo si el correo pertenece a un dominio institucional. */
+/**
+ * Verdadero solo si el correo pertenece a un dominio institucional.
+ *
+ * Además del sufijo, exige una estructura mínima (parte local no vacía y un
+ * solo `@`): un `endsWith` aislado aceptaría valores inválidos como
+ * `@uct.cl` o `usuario@@uct.cl`.
+ */
 export function isInstitutionalEmail(email: unknown): boolean {
   const normalized = normalizeEmail(email);
+  const at = normalized.indexOf("@");
+  if (at <= 0 || normalized.indexOf("@", at + 1) !== -1) return false;
   return INSTITUTIONAL_EMAIL_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
 }
 
