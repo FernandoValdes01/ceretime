@@ -3,7 +3,8 @@ import { expect, test } from "bun:test";
 const workflow = Bun.YAML.parse(
   await Bun.file(`${import.meta.dir}/workflows/ci.yml`).text(),
 ) as any;
-const publication = workflow.jobs["publish-pr-result"].steps[0].with.script;
+const publicationStep = workflow.jobs["publish-pr-result"].steps[0];
+const publication = publicationStep.with.script;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 async function publish({
@@ -108,4 +109,16 @@ test("requires artifacts and keeps each attempt separate", () => {
   expect(upload.uses).toMatch(/^actions\/upload-artifact@[0-9a-f]{40}$/);
   expect(upload.with["if-no-files-found"]).toBe("error");
   expect(upload.with.name).toContain("github.run_attempt");
+});
+
+test("serializes manual builds and wires publication inputs", () => {
+  expect(workflow.concurrency.group).toContain("github.ref");
+  expect(workflow.concurrency["cancel-in-progress"]).toContain("workflow_dispatch");
+  expect(workflow.concurrency["cancel-in-progress"]).toContain("inputs.run_builds");
+  expect(publicationStep.env).toEqual({
+    PR_NUMBER: "${{ inputs.pr_number }}",
+    RUN_RESULT: "${{ needs.builds.result }}",
+    RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+    WORKFLOW_REF: "${{ github.ref }}",
+  });
 });
