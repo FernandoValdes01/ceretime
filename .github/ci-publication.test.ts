@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 
 const workflow = Bun.YAML.parse(
+  await Bun.file(`${import.meta.dir}/workflows/build-validation.yml`).text(),
+) as any;
+const pullRequestWorkflow = Bun.YAML.parse(
   await Bun.file(`${import.meta.dir}/workflows/ci.yml`).text(),
 ) as any;
 const publicationStep = workflow.jobs["publish-pr-result"].steps[0];
@@ -113,12 +116,27 @@ test("requires artifacts and keeps each attempt separate", () => {
 
 test("serializes manual builds and wires publication inputs", () => {
   expect(workflow.concurrency.group).toContain("github.ref");
-  expect(workflow.concurrency["cancel-in-progress"]).toContain("workflow_dispatch");
-  expect(workflow.concurrency["cancel-in-progress"]).toContain("inputs.run_builds");
+  expect(workflow.concurrency["cancel-in-progress"]).toBe(true);
+  expect(workflow.on.workflow_dispatch.inputs.pr_number).toMatchObject({
+    required: true,
+    type: "string",
+  });
+  expect(workflow.jobs.builds.if).toBeUndefined();
+  expect(
+    workflow.jobs.builds.steps.filter((step: any) => step.if && step.if !== "${{ always() }}"),
+  ).toHaveLength(0);
+  expect(workflow.jobs["publish-pr-result"].if).toContain("always()");
   expect(publicationStep.env).toEqual({
     PR_NUMBER: "${{ inputs.pr_number }}",
     RUN_RESULT: "${{ needs.builds.result }}",
     RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
     WORKFLOW_REF: "${{ github.ref }}",
   });
+});
+
+test("keeps manual builds out of pull request CI", () => {
+  expect(pullRequestWorkflow.on.pull_request).toBeDefined();
+  expect(pullRequestWorkflow.on.workflow_dispatch).toBeUndefined();
+  expect(pullRequestWorkflow.jobs.builds).toBeUndefined();
+  expect(pullRequestWorkflow.jobs["publish-pr-result"]).toBeUndefined();
 });
