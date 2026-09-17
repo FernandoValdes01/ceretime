@@ -437,6 +437,7 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   });
   expect(audit.scanned).toBe(1);
   expect(audit.missingGrant).toBe(0);
+  expect(audit.activeMissingGrant).toBe(0);
   expect(audit.missingRevoke).toBe(0);
   expect(audit.isDone).toBe(true);
 });
@@ -581,6 +582,7 @@ test("la auditoría detecta filas legacy y aprueba la vía guardada", async () =
   });
   expect(first.scanned).toBe(2);
   expect(first.missingGrant).toBe(2);
+  expect(first.activeMissingGrant).toBe(1);
   expect(first.missingRevoke).toBe(1);
   expect(first.sampleLegacyIds).toHaveLength(2);
   expect(first.isDone).toBe(false);
@@ -590,6 +592,206 @@ test("la auditoría detecta filas legacy y aprueba la vía guardada", async () =
   });
   expect(second.scanned).toBe(1);
   expect(second.missingGrant).toBe(0);
+  expect(second.activeMissingGrant).toBe(0);
   expect(second.missingRevoke).toBe(0);
+  expect(second.isDone).toBe(true);
+});
+
+test("la migración exige administrador vigente", async () => {
+  const t = convexTest(schema, modules);
+  await seedUser(t, {
+    subject: "ti17-mig-est",
+    email: "migest@alu.uct.cl",
+    role: "student",
+  });
+  await seedUser(t, {
+    subject: "ti17-mig-pro",
+    email: "migpro@uct.cl",
+    role: "professional",
+  });
+  const input = { paginationOpts: { numItems: 10, cursor: null } };
+
+  await expect(t.mutation(internal.migrations.migrateLegacyAssignments, input)).rejects.toThrow(
+    "No autorizado",
+  );
+
+  const asStudent = t.withIdentity(identityFor("ti17-mig-est", "migest@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(internal.migrations.migrateLegacyAssignments, input),
+  ).rejects.toThrow("No autorizado");
+
+  const asPro = t.withIdentity(identityFor("ti17-mig-pro", "migpro@uct.cl"));
+  await expect(asPro.mutation(internal.migrations.migrateLegacyAssignments, input)).rejects.toThrow(
+    "No autorizado",
+  );
+});
+
+test("la migración revoca activas legacy sin inventar concesión", async () => {
+  const t = convexTest(schema, modules);
+  const adminId = await t.mutation(internal.accounts.ensureBootstrapAdmin, {
+    email: "migadmin@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti17-mig-adm`,
+  });
+  const proId = await seedUser(t, {
+    subject: "ti17-mig-pro-2",
+    email: "migpro2@uct.cl",
+    role: "professional",
+  });
+  const internId = await seedUser(t, {
+    subject: "ti17-mig-int",
+    email: "migint@alu.uct.cl",
+    role: "intern",
+  });
+  const student = await seedUser(t, {
+    subject: "ti17-mig-est-2",
+    email: "migest2@alu.uct.cl",
+    role: "student",
+  });
+  const legacyActive = await seedAccompaniment(t, student);
+  const legacyRevoked = await seedAccompaniment(t, student);
+  const guarded = await seedAccompaniment(t, student);
+  await t.run(async (ctx) => {
+    await ctx.db.insert("accompanimentAssignments", {
+      accompanimentId: legacyActive,
+      userId: internId,
+      assignedRole: "intern",
+      status: "active",
+    });
+    await ctx.db.insert("accompanimentAssignments", {
+      accompanimentId: legacyRevoked,
+      userId: internId,
+      assignedRole: "intern",
+      status: "revoked",
+    });
+  });
+  const asPro = t.withIdentity(identityFor("ti17-mig-pro-2", "migpro2@uct.cl"));
+  await asPro.mutation(internal.assignments.assign, {
+    accompanimentId: guarded,
+    userId: proId,
+    assignedRole: "professional",
+  });
+
+  const asAdmin = t.withIdentity(identityFor("ti17-mig-adm", "migadmin@uct.cl"));
+  const migrated = await asAdmin.mutation(internal.migrations.migrateLegacyAssignments, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(migrated.scanned).toBe(3);
+  expect(migrated.revoked).toBe(1);
+  expect(migrated.revokedIds).toHaveLength(1);
+  expect(migrated.isDone).toBe(true);
+
+  // La fila migrada conserva la brecha de concesión como evidencia y registra
+  // la revocación real del operador.
+  const quarantined = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", legacyActive)
+          .eq("userId", internId)
+          .eq("status", "revoked")
+          .eq("assignedRole", "intern"),
+      )
+      .take(10);
+  });
+  expect(quarantined).toHaveLength(1);
+  expect(quarantined[0]?.grantedBy).toBeUndefined();
+  expect(quarantined[0]?.revokedBy).toEqual(adminId);
+  expect(typeof quarantined[0]?.revokedAt).toBe("number");
+
+  // La vía guardada y la ya revocada quedan intactas.
+  const kept = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", guarded)
+          .eq("userId", proId)
+          .eq("status", "active")
+          .eq("assignedRole", "professional"),
+      )
+      .take(10);
+  });
+  expect(kept).toHaveLength(1);
+  expect(kept[0]?.grantedBy).toEqual(proId);
+  expect(kept[0]?.revokedBy).toBeUndefined();
+
+  const untouched = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", legacyRevoked)
+          .eq("userId", internId)
+          .eq("status", "revoked")
+          .eq("assignedRole", "intern"),
+      )
+      .take(10);
+  });
+  expect(untouched).toHaveLength(1);
+  expect(untouched[0]?.revokedBy).toBeUndefined();
+
+  // Sin acceso para el practicante y sin activas pendientes en la auditoría.
+  const asIntern = t.withIdentity(identityFor("ti17-mig-int", "migint@alu.uct.cl"));
+  await expect(
+    asIntern.query(api.presentation.accompaniments.getAccompaniment, {
+      accompanimentId: legacyActive,
+    }),
+  ).rejects.toThrow("No autorizado");
+
+  const audit = await t.query(internal.migrations.auditAssignmentTraceability, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(audit.activeMissingGrant).toBe(0);
+  expect(audit.missingGrant).toBe(2);
+  expect(audit.isDone).toBe(true);
+});
+
+test("la migración avanza por páginas hasta agotar las filas", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.accounts.ensureBootstrapAdmin, {
+    email: "migpaginado@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti17-mig-paginado`,
+  });
+  const internId = await seedUser(t, {
+    subject: "ti17-mig-pag-int",
+    email: "migpagint@alu.uct.cl",
+    role: "intern",
+  });
+  const student = await seedUser(t, {
+    subject: "ti17-mig-pag-est",
+    email: "migpagest@alu.uct.cl",
+    role: "student",
+  });
+  const accompaniments: Id<"accompaniments">[] = [];
+  for (let round = 0; round < 3; round++) {
+    accompaniments.push(await seedAccompaniment(t, student));
+  }
+  await t.run(async (ctx) => {
+    for (const accompanimentId of accompaniments) {
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId,
+        userId: internId,
+        assignedRole: "intern",
+        status: "active",
+      });
+    }
+  });
+
+  const asAdmin = t.withIdentity(identityFor("ti17-mig-paginado", "migpaginado@uct.cl"));
+  const first = await asAdmin.mutation(internal.migrations.migrateLegacyAssignments, {
+    paginationOpts: { numItems: 2, cursor: null },
+  });
+  expect(first.scanned).toBe(2);
+  expect(first.revoked).toBe(2);
+  expect(first.isDone).toBe(false);
+
+  const second = await asAdmin.mutation(internal.migrations.migrateLegacyAssignments, {
+    paginationOpts: { numItems: 2, cursor: first.continueCursor },
+  });
+  expect(second.scanned).toBe(1);
+  expect(second.revoked).toBe(1);
   expect(second.isDone).toBe(true);
 });

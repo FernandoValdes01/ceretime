@@ -60,9 +60,10 @@ export default defineSchema({
   // Invariante: como máximo una fila activa por cada combinación de
   // acompañamiento, usuario y rol; la única vía de escritura son las
   // mutaciones internas guardadas `internal.assignments.assign` y
-  // `internal.assignments.revoke`. La auditoría de filas legacy sin
-  // trazabilidad vive en `migrations.auditAssignmentTraceability` (TI2-17):
-  // se detectan sin inventar actor ni fecha, en vez de rellenarlas.
+  // `internal.assignments.revoke`. La trazabilidad de filas legacy vive en
+  // `migrations` (TI2-17): la auditoría las detecta sin inventar actor ni
+  // fecha y la migración revoca las activas sin concesión con la revocación
+  // real del operador.
   accompanimentAssignments: defineTable({
     accompanimentId: v.id("accompaniments"),
     userId: v.id("users"),
