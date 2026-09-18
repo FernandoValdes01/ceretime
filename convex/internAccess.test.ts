@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
 import { expect, test } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
@@ -278,6 +278,22 @@ test("retirar exige practicante habilitado y no toca filas de cuentas no vigente
     expect(row?.status).toBe("active");
     expect(row?.revokedBy).toBeUndefined();
     expect(row?.revokedAt).toBeUndefined();
+  }
+
+  // Contención: aunque la fila legacy siga activa, la cuenta no vigente no
+  // lee nada, así que no hay acceso efectivo que revocar.
+  for (const callerIdentity of [
+    { subject: "ti28-int-10", email: "int10@alu.uct.cl" },
+    { subject: "ti28-int-11", email: "int11@alu.uct.cl" },
+    { subject: "ti28-int-12", email: "int12@alu.uct.cl" },
+  ]) {
+    const asIntern = t.withIdentity(identityFor(callerIdentity.subject, callerIdentity.email));
+    const message = await denyMessage(
+      asIntern.query(api.presentation.accompaniments.getAccompaniment, {
+        accompanimentId,
+      }),
+    );
+    expect(message).toContain("No autorizado");
   }
 });
 
