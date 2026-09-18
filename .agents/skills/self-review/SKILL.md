@@ -27,6 +27,7 @@ La skill puede ejecutarse con un modelo pequeño, pero no debe reducir la revisi
 
 - Lee la rama actual: el `TEAM-nnn` en su nombre es tu issue (ej. `ti4-8` en `jmunoz/ti4-8-formulario-estudiante`).
 - Resuelve tu PR desde la rama con `gh pr view --json number,title,url,headRefOid,baseRefName`. Si aún no existe PR, detente y pide abrirla primero.
+- Compara el resultado de `git rev-parse HEAD` con `headRefOid`. Si no coinciden, detente y actualiza la rama local antes de leer el diff; el veredicto solo puede cubrir el commit que está publicado en la PR.
 - Lee la issue: descripción, criterios de aceptación, fuera de alcance, dependencias y evidencia de cierre.
 - Lee la descripción de la PR, los commits, las conversaciones pendientes y las revisiones automáticas. Usa esa información como evidencia que debes contrastar, no como una aprobación ni como la fuente única de verdad.
 - Calcula el diff contra el merge-base con la rama base de la PR y conserva ese commit durante toda la revisión:
@@ -140,7 +141,7 @@ Incluye al final del comentario una marca de control para que `review-ti2-pr` pu
 <!-- cereti:self-review head=<head_sha> result=<Lista|Lista con observaciones|Falta> -->
 ```
 
-Reemplaza `<head_sha>` por el SHA exacto de `headRefOid` y `<result>` por el resultado publicado. Si el `head` cambia después de la revisión, vuelve a ejecutar la skill y publica una marca nueva; no reutilices una `self-review` anterior.
+Reemplaza `<head_sha>` por el SHA exacto de `headRefOid` y `<result>` por el resultado publicado. Justo antes de publicar, vuelve a consultar `headRefOid` y compáralo con `git rev-parse HEAD`; si difieren, detente, actualiza la rama y repite la revisión. Si el `head` cambia después de la revisión, vuelve a ejecutar la skill y publica una marca nueva; no reutilices una `self-review` anterior.
 
 ```md
 ## Review by <modelo> on <herramienta>
