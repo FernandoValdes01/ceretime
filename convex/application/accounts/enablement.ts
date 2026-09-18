@@ -8,6 +8,7 @@ import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import {
   findExistingAdmin,
   findProfileByTokenIdentifier,
+  findUserByEmail,
   getUserById,
   insertBootstrapAdmin,
   patchEnablement,
@@ -128,6 +129,13 @@ export async function ensureBootstrapAdmin(
   const duplicate = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
   if (duplicate !== null) {
     throw new Error("Ya existe un perfil para esta identidad");
+  }
+
+  // Unicidad de correo (TI2-17): el arranque tampoco puede duplicar el
+  // correo de un perfil existente.
+  const emailTaken = await findUserByEmail(ctx, email);
+  if (emailTaken !== null) {
+    throw new Error("Ya existe un perfil con este correo");
   }
 
   return await insertBootstrapAdmin(ctx, {
