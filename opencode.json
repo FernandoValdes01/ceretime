@@ -19,8 +19,6 @@
       "permission": {
         "skill": {
           "building-native-ui": "deny",
-          "native-data-fetching": "deny",
-          "react-native-best-practices": "deny",
           "shadcn": "allow",
           "web-design-guidelines": "allow"
         }
@@ -32,8 +30,6 @@
       "permission": {
         "skill": {
           "building-native-ui": "allow",
-          "native-data-fetching": "allow",
-          "react-native-best-practices": "allow",
           "shadcn": "deny",
           "web-design-guidelines": "deny"
         }

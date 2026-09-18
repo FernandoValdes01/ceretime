@@ -47,7 +47,7 @@ Responde cada punto con pasa o no pasa, citando archivo y línea o criterio:
 
 Ejecuta esta selección después de tener el diff completo; no cargues todas las skills por defecto. Si una condición coincide, lee y aplica únicamente la skill indicada, respetando sus límites. Las skills específicas de mobile viven bajo `apps/mobile/.agents/skills` y las de web bajo `apps/web/.agents/skills`; usa cada una desde su alcance, nunca las reinstales en la raíz.
 
-- **Mobile:** si el diff toca `apps/mobile/**`, usa `building-native-ui` para UI, navegación o animaciones; `native-data-fetching` para Convex, sincronización, caché, reconexión u offline; y `react-native-best-practices` solo si existe evidencia medible de rendimiento.
+- **Mobile:** si el diff toca `apps/mobile/**`, usa `building-native-ui` para UI, navegación o animaciones; revisa Convex, sincronización, caché, reconexión, offline y rendimiento directamente según la superficie afectada y la evidencia del diff.
 - **Web:** si hay UI nueva o rediseñada en `apps/web/**`, usa `frontend-design`; si corresponde una auditoría de accesibilidad, UX o interfaz existente, usa `web-design-guidelines`; usa `shadcn` solo si el diff toca `components.json`, componentes shadcn, registries, presets o composición basada en ellos.
 - **Backend o contratos compartidos:** si el diff toca `convex/**`, contratos compartidos o una integración que pueda afectar web y mobile, usa `blast-radius` antes del veredicto.
 - **Dominio:** si cambia terminología, estados, invariantes, entidades o una decisión arquitectónica, consulta `domain-modeling` y verifica el glosario o ADR correspondiente.
