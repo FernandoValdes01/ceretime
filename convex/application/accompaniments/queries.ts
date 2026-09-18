@@ -17,6 +17,11 @@ import {
   listingScopeForRole,
   type AuthorizableAssignment,
 } from "../authorization/authorize";
+import {
+  toAccompanimentProjection,
+  type AccompanimentProjection,
+  type AccompanimentView,
+} from "../../domain/accompaniment/accompaniment";
 
 /**
  * Casos de uso de lectura de acompañamientos (S2).
@@ -57,42 +62,18 @@ function toAuthorizableAssignments(
   }));
 }
 
-export type AccompanimentViewResult =
-  | {
-      readonly _id: Id<"accompaniments">;
-      readonly studentId: Id<"users">;
-      readonly status: Doc<"accompaniments">["status"];
-      readonly objective: string;
-      readonly accessNeeds: string;
-      readonly view: "full";
-    }
-  | {
-      readonly _id: Id<"accompaniments">;
-      readonly status: Doc<"accompaniments">["status"];
-      readonly objective: string;
-      readonly view: "minimized";
-    };
+/**
+ * Vista de acompañamiento con `Id` de Convex: la proyección del dominio
+ * (`convex/domain`) instanciada con los identificadores tipados. La forma
+ * vive una sola vez en el dominio; acá solo se fija el tipo de id.
+ */
+export type AccompanimentViewResult = AccompanimentProjection<Id<"accompaniments">, Id<"users">>;
 
 function projectView(
   accompaniment: Doc<"accompaniments">,
-  view: "full" | "minimized",
+  view: AccompanimentView,
 ): AccompanimentViewResult {
-  if (view === "minimized") {
-    return {
-      _id: accompaniment._id,
-      status: accompaniment.status,
-      objective: accompaniment.objective,
-      view: "minimized" as const,
-    };
-  }
-  return {
-    _id: accompaniment._id,
-    studentId: accompaniment.studentId,
-    status: accompaniment.status,
-    objective: accompaniment.objective,
-    accessNeeds: accompaniment.accessNeeds,
-    view: "full" as const,
-  };
+  return toAccompanimentProjection(accompaniment, view);
 }
 
 /**

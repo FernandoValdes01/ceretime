@@ -9,24 +9,30 @@ import {
   getLoginRequest,
   type InstitutionalPopulation,
 } from "../../application/session/institutional-login";
+import { readAuthErrorNotice, removeAuthErrorParams } from "./auth-error";
 import { authClient } from "../../infrastructure/auth/auth-client";
 import { isBackendConfigured } from "../../infrastructure/convex/convex-client";
 import "./auth.css";
 
-/** Lee `?auth=error` una sola vez al montar, sin efectos. */
+/** Lee el aviso inicial de error una sola vez al montar (TI2-14). Retira solo los parámetros de auth sin exponer el motivo ni borrar el resto de la URL. */
 function readInitialNotice(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("auth") === "error") {
-    window.history.replaceState(null, "", window.location.pathname);
-    return GENERIC_AUTH_MESSAGES.signInError;
+  const notice = readAuthErrorNotice(window.location.search);
+  if (notice !== null) {
+    window.history.replaceState(
+      null,
+      "",
+      window.location.pathname +
+        removeAuthErrorParams(window.location.search) +
+        window.location.hash,
+    );
   }
-  return null;
+  return notice;
 }
 
 /**
- * Presentación: acceso institucional y estado de sesión (TI2-3).
+ * Presentación: acceso institucional, cierre de sesión y estado de sesión (TI2-3, TI2-14).
  *
- * Solo proveedor, callback y manejo de sesión. Sin roles ni reglas de
+ * Solo proveedor, callback, logout y manejo de sesión. Sin roles ni reglas de
  * negocio: la pantalla no decide portales ni permisos. Los mensajes son
  * genéricos y fuera de sesión no se nombra la unidad ni el tipo de apoyo.
  */
@@ -35,6 +41,7 @@ export function AuthScreen() {
   const serverState = useQuery(api.presentation.session.getSessionState);
   const [notice, setNotice] = useState<string | null>(readInitialNotice);
   const [pendingPopulation, setPendingPopulation] = useState<InstitutionalPopulation | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [prevServerStatus, setPrevServerStatus] = useState<
     "authenticated" | "unauthenticated" | undefined
   >(undefined);
@@ -79,15 +86,31 @@ export function AuthScreen() {
   }
 
   async function handleSignOut() {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
     setNotice(null);
     try {
-      await authClient.signOut();
+      // Invalida la sesión en Better Auth; la verdad autoritativa vuelve a ser
+      // `unauthenticated` en `getSessionState` y la pantalla retorna al acceso.
+      // El cliente resuelve `{data, error}` sin lanzar ante un fallo de API,
+      // por lo que un rechazo debe leerse en el resultado y no solo en `catch`.
+      const signOutResult = await authClient.signOut();
+      if (signOutResult?.error) {
+        setNotice(GENERIC_AUTH_MESSAGES.signOutError);
+      } else {
+        setPendingPopulation(null);
+      }
     } catch {
       setNotice(GENERIC_AUTH_MESSAGES.signOutError);
+    } finally {
+      setIsSigningOut(false);
     }
   }
 
-  const sessionErrorNotice = clientSession.error ? GENERIC_AUTH_MESSAGES.signInError : notice;
+  // El aviso explícito (expiración o error de callback) manda sobre el error
+  // genérico del cliente para no ocultar la recuperación fallida ni filtrar motivos.
+  const sessionErrorNotice =
+    notice ?? (clientSession.error ? GENERIC_AUTH_MESSAGES.signInError : null);
 
   if (!isBackendConfigured) {
     return (
@@ -125,9 +148,11 @@ export function AuthScreen() {
         <button
           type="button"
           className="auth-button auth-button--primary auth-button--block"
+          disabled={isSigningOut}
+          aria-busy={isSigningOut}
           onClick={() => void handleSignOut()}
         >
-          Cerrar sesión
+          {isSigningOut ? GENERIC_AUTH_MESSAGES.loading : "Cerrar sesión"}
         </button>
       </section>
     );

@@ -27,8 +27,10 @@ La navegación funciona sin backend ni credenciales. El envío simulado confirma
 | ----------------------------- | ------------- | ------------------------------------------------------------------------------------------ |
 | `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                                            |
 | `/login`                      | Sin sesión    | Selector temporal de roles y prueba sin asignación.                                        |
-| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud.                                                       |
+| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud y Mis solicitudes.                                     |
 | `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.                               |
+| `/estudiante/solicitudes`     | Estudiante    | Listado ficticio de solicitudes propias y estados de carga.                                |
+| `/estudiante/solicitudes/:id` | Estudiante    | Detalle de una solicitud propia.                                                           |
 | `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos.                         |
 | `/practicante`                | Practicante   | Redirige según las asignaciones de la sesión.                                              |
 | `/practicante/asignaciones`   | Practicante   | Consulta provisional de acompañamientos asignados.                                         |
@@ -47,6 +49,7 @@ app/
 └── (protected)/
     ├── _layout.tsx             Protección por rol
     ├── estudiante/             _layout.tsx + index.tsx
+    │   └── solicitudes/         index.tsx + [requestId].tsx
     ├── profesional/            _layout.tsx + index.tsx
     ├── practicante/            rutas de asignaciones del practicante
     └── administrador/         _layout.tsx + index.tsx
@@ -162,6 +165,28 @@ Para verificar el formulario:
 8. En dispositivo, comprobar teclado, desplazamiento, etiquetas accesibles y texto ampliado. Adjuntar evidencia al PR identificando el commit probado.
 
 Las pruebas `student-request.test.tsx` y `student-request-demo-mode.test.tsx` ejercitan las rutas reales, el contrato con tipos, el adaptador configurable y la prevención de doble envío. También deben seguir pasando las pruebas de navegación de TI4-6.
+
+## Listado y detalle de solicitudes: TI4-19
+
+Desde el inicio del Estudiante, abre **Mis solicitudes**. El listado muestra sus solicitudes y cada tarjeta abre el detalle correspondiente. El detalle presenta la referencia, las fechas, la necesidad, el resultado esperado, las necesidades de acceso, la modalidad y el medio preferido para recibir información. La representación accesible del estado pertenece a TI4-31 y el acompañamiento resultante a TI4-35.
+
+La implementación obtiene una proyección ficticia mediante `StudentAreaReader`. Para comprobar la carga, el listado vacío, el error con reintento y el éxito, reinicia Expo con una de estas configuraciones:
+
+```sh
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=success EXPO_PUBLIC_STUDENT_AREA_DELAY_MS=1200 bun run mobile:start --clear
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=empty bun run mobile:start --clear
+EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE=error bun run mobile:start --clear
+```
+
+Las variables sólo controlan datos ficticios y no contienen secretos. Después de cambiar una variable `EXPO_PUBLIC_`, recarga completamente la aplicación. Un identificador que no pertenezca a la proyección del estudiante muestra una recuperación controlada y no consulta datos de otro estudiante.
+
+La evidencia nativa del recorrido se registra en [docs/evidence/ti4-19](./docs/evidence/ti4-19/README.md).
+
+## Estado accesible de la solicitud: TI4-31
+
+El detalle representa cada estado con una etiqueta en español y un símbolo propio. El símbolo no reemplaza al texto ni depende del color para distinguir el estado. TalkBack recibe el campo y el valor en un único anuncio, por ejemplo, `Estado de la solicitud: Aceptada`; el rótulo y el símbolo visibles no agregan focos separados.
+
+La evidencia nativa se registra en [docs/evidence/ti4-31](./docs/evidence/ti4-31/README.md).
 
 ## Referencias
 

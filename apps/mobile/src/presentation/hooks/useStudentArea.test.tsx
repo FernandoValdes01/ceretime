@@ -178,7 +178,7 @@ test("consumes the actual infrastructure mock reader when mounted", async () => 
   const state = mounted.getState();
   expect(state.status).toBe("success");
   expect(state.identity.data?.id).toBe("example-student-1");
-  expect(state.requests.data[0]?.id).toBe("example-request-1");
+  expect(state.requests.data[0]?.id).toBe("SOL-DEMO-001");
   expect(state.accompaniments.data[0]?.id).toBe("example-accompaniment-1");
   act(() => mounted.renderer.unmount());
 });

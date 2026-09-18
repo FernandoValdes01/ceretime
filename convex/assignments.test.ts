@@ -162,7 +162,7 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
     email: "est14@alu.uct.cl",
     role: "student",
   });
-  const proId = await seedUser(t, {
+  await seedUser(t, {
     subject: "ti16-pro-14",
     email: "pro14@uct.cl",
     role: "professional",
@@ -171,6 +171,11 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
     subject: "ti16-int-14",
     email: "int14@alu.uct.cl",
     role: "intern",
+  });
+  const otherProId = await seedUser(t, {
+    subject: "ti16-pro-14b",
+    email: "pro14b@uct.cl",
+    role: "professional",
   });
   const accompanimentId = await seedAccompaniment(t, studentId);
   const asPro = t.withIdentity(identityFor("ti16-pro-14", "pro14@uct.cl"));
@@ -197,7 +202,7 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
   await expect(
     asPro.mutation(internal.assignments.assign, {
       accompanimentId,
-      userId: proId,
+      userId: otherProId,
       assignedRole: "intern",
     }),
   ).rejects.toThrow("no coincide");
