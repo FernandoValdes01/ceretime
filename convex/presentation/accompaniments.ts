@@ -7,6 +7,7 @@ import {
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
 import { query } from "../_generated/server";
+import { accompanimentStatusUnion } from "../validators";
 
 /**
  * Borde de Presentación: acompañamientos con autorización en Backend (S2).
@@ -26,7 +27,7 @@ import { query } from "../_generated/server";
 const fullAccompanimentValidator = v.object({
   _id: v.id("accompaniments"),
   studentId: v.id("users"),
-  status: v.union(v.literal("active"), v.literal("paused"), v.literal("closed")),
+  status: accompanimentStatusUnion,
   objective: v.string(),
   accessNeeds: v.string(),
   view: v.literal("full"),
@@ -34,7 +35,7 @@ const fullAccompanimentValidator = v.object({
 
 const minimizedAccompanimentValidator = v.object({
   _id: v.id("accompaniments"),
-  status: v.union(v.literal("active"), v.literal("paused"), v.literal("closed")),
+  status: accompanimentStatusUnion,
   objective: v.string(),
   view: v.literal("minimized"),
 });

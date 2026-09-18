@@ -1,35 +1,47 @@
 import { v } from "convex/values";
+import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniment/accompaniment";
+import {
+  ASSIGNMENT_ROLE_VALUES,
+  ASSIGNMENT_STATUS_VALUES,
+} from "./domain/accompaniment/practitioner-assignment";
 import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
+import {
+  ACCOUNT_STATUS_VALUES,
+  INSTITUTIONAL_STATUS_VALUES,
+  ROLE_VALUES,
+} from "./domain/identity/roles";
 
 /**
  * Validadores compartidos de identidad y roles.
- * Centralizan los literales aceptados para no duplicarlos entre el esquema y las funciones.
+ *
+ * Borde que conecta con la base de datos y la API: convierten a validadores de
+ * Convex los literales cuyo contrato singular vive en `convex/domain`. No son
+ * una segunda fuente de verdad; si cambia un literal, cambia solo en el
+ * dominio y este archivo lo refleja.
+ *
  * Operan exclusivamente con DATOS FICTICIOS durante desarrollo y pruebas.
  */
-export const roleUnion = v.union(
-  v.literal("student"),
-  v.literal("professional"),
-  v.literal("intern"),
-  v.literal("admin"),
-);
+export const roleUnion = v.union(...ROLE_VALUES.map((value) => v.literal(value)));
 
 export const institutionalStatusUnion = v.union(
-  v.literal("enabled"),
-  v.literal("disabled"),
-  v.literal("pending"),
+  ...INSTITUTIONAL_STATUS_VALUES.map((value) => v.literal(value)),
 );
 
-export const accountStatusUnion = v.union(v.literal("active"), v.literal("inactive"));
+export const accountStatusUnion = v.union(
+  ...ACCOUNT_STATUS_VALUES.map((value) => v.literal(value)),
+);
 
 export const accompanimentStatusUnion = v.union(
-  v.literal("active"),
-  v.literal("paused"),
-  v.literal("closed"),
+  ...ACCOMPANIMENT_STATUS_VALUES.map((value) => v.literal(value)),
 );
 
-export const assignmentRoleUnion = v.union(v.literal("professional"), v.literal("intern"));
+export const assignmentRoleUnion = v.union(
+  ...ASSIGNMENT_ROLE_VALUES.map((value) => v.literal(value)),
+);
 
-export const assignmentStatusUnion = v.union(v.literal("active"), v.literal("revoked"));
+export const assignmentStatusUnion = v.union(
+  ...ASSIGNMENT_STATUS_VALUES.map((value) => v.literal(value)),
+);
 
 /**
  * Estados de solicitud habilitados en Sprint 1, derivados de los literales

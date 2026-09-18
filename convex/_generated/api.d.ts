@@ -27,6 +27,7 @@ import type * as domain_request_transitions from "../domain/request/transitions.
 import type * as http from "../http.js";
 import type * as infrastructure_accompaniments_repository from "../infrastructure/accompaniments/repository.js";
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
+import type * as migrations from "../migrations.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as requests from "../requests.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "infrastructure/accompaniments/repository": typeof infrastructure_accompaniments_repository;
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
+  migrations: typeof migrations;
   "presentation/accompaniments": typeof presentation_accompaniments;
   "presentation/session": typeof presentation_session;
   requests: typeof requests;

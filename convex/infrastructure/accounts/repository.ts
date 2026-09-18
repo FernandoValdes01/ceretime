@@ -32,6 +32,15 @@ export async function getUserById(
   return await ctx.db.get(userId);
 }
 
+/** Primer perfil con ese correo, o `null` si no existe. */
+export async function findUserByEmail(ctx: DbReader, email: string): Promise<Doc<"users"> | null> {
+  const rows = await ctx.db
+    .query("users")
+    .withIndex("by_email", (q) => q.eq("email", email))
+    .take(1);
+  return rows[0] ?? null;
+}
+
 /** Primera cuenta administrativa existente, o `null` cuando no hay ninguna. */
 export async function findExistingAdmin(ctx: DbReader): Promise<Doc<"users"> | null> {
   const rows = await ctx.db
