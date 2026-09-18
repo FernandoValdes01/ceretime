@@ -4,9 +4,8 @@
  * Dominio puro: no importa Convex, React ni variables de entorno, para poder
  * probarse sin levantar el backend (RNF-19).
  *
- * Roles provisionales del prototipo: `student` (Estudiante), `professional`
- * (Profesional de CERETI), `intern` (Practicante) y `admin` (Administrador).
- * Los literales deben mantenerse en sincronía con `convex/validators.ts`.
+ * Los literales de rol y estado viven en `../identity/roles` y la vista de
+ * lectura en `../accompaniment/accompaniment`; este módulo no los duplica.
  *
  * Fuentes: `docs/especificacion-prototipo.md` (tabla de accesos mínimos),
  * `CONTEXT.md` (Practicante con acceso restringido y minimizado,
@@ -14,22 +13,16 @@
  * RF-38, RF-39, RN-06, RN-08, RN-25, RN-26, RNF-08, RNF-17.
  */
 
-/** Roles provisionales aceptados en el prototipo. */
-export const ROLES = ["student", "professional", "intern", "admin"] as const;
+import type { AccompanimentView } from "../accompaniment/accompaniment";
+import type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
 
-export type Role = (typeof ROLES)[number];
+export type { AccompanimentView } from "../accompaniment/accompaniment";
+export type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
 
 /** Casos de uso cubiertos por la matriz base S2. */
 export const AUTHORIZATION_ACTIONS = ["accompaniment:read", "internalNote:read"] as const;
 
 export type AuthorizationAction = (typeof AUTHORIZATION_ACTIONS)[number];
-
-/** Vista de acompañamiento: completa o minimizada para Practicante. */
-export type AccompanimentView = "full" | "minimized";
-
-export type InstitutionalStatus = "enabled" | "disabled" | "pending";
-
-export type AccountStatus = "active" | "inactive";
 
 /**
  * Contexto mínimo para decidir. `isOwner` es verdadero cuando el
