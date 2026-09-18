@@ -626,6 +626,28 @@ test("la migración exige administrador vigente", async () => {
   );
 });
 
+test("la migración acepta la identidad mínima del CLI (subject, issuer y tokenIdentifier)", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.accounts.ensureBootstrapAdmin, {
+    email: "migcli@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti17-mig-cli`,
+  });
+
+  // Misma forma que `--identity` del CLI: basta el tokenIdentifier vinculado.
+  const asCliAdmin = t.withIdentity({
+    subject: "ti17-mig-cli",
+    issuer: ISSUER,
+    tokenIdentifier: `${ISSUER}|ti17-mig-cli`,
+  });
+  const migrated = await asCliAdmin.mutation(internal.migrations.migrateLegacyAssignments, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(migrated.scanned).toBe(0);
+  expect(migrated.revoked).toBe(0);
+  expect(migrated.isDone).toBe(true);
+});
+
 test("la migración revoca activas legacy sin inventar concesión", async () => {
   const t = convexTest(schema, modules);
   const adminId = await t.mutation(internal.accounts.ensureBootstrapAdmin, {
