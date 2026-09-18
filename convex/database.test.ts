@@ -546,6 +546,11 @@ test("la auditoría detecta filas legacy y aprueba la vía guardada", async () =
     email: "auditpro@uct.cl",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti17-audit-otorga",
+    email: "auditotorga@uct.cl",
+    role: "professional",
+  });
   const internId = await seedUser(t, {
     subject: "ti17-audit-int",
     email: "auditint@alu.uct.cl",
@@ -570,7 +575,7 @@ test("la auditoría detecta filas legacy y aprueba la vía guardada", async () =
     });
   });
 
-  const asPro = t.withIdentity(identityFor("ti17-audit-pro", "auditpro@uct.cl"));
+  const asPro = t.withIdentity(identityFor("ti17-audit-otorga", "auditotorga@uct.cl"));
   await asPro.mutation(internal.assignments.assign, {
     accompanimentId: guarded,
     userId: proId,
@@ -660,6 +665,11 @@ test("la migración revoca activas legacy sin inventar concesión", async () => 
     email: "migpro2@uct.cl",
     role: "professional",
   });
+  const granterId = await seedUser(t, {
+    subject: "ti17-mig-otorga",
+    email: "migotorga@uct.cl",
+    role: "professional",
+  });
   const internId = await seedUser(t, {
     subject: "ti17-mig-int",
     email: "migint@alu.uct.cl",
@@ -687,7 +697,7 @@ test("la migración revoca activas legacy sin inventar concesión", async () => 
       status: "revoked",
     });
   });
-  const asPro = t.withIdentity(identityFor("ti17-mig-pro-2", "migpro2@uct.cl"));
+  const asPro = t.withIdentity(identityFor("ti17-mig-otorga", "migotorga@uct.cl"));
   await asPro.mutation(internal.assignments.assign, {
     accompanimentId: guarded,
     userId: proId,
@@ -736,7 +746,7 @@ test("la migración revoca activas legacy sin inventar concesión", async () => 
       .take(10);
   });
   expect(kept).toHaveLength(1);
-  expect(kept[0]?.grantedBy).toEqual(proId);
+  expect(kept[0]?.grantedBy).toEqual(granterId);
   expect(kept[0]?.revokedBy).toBeUndefined();
 
   const untouched = await t.run(async (ctx) => {
