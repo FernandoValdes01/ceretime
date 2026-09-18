@@ -26,6 +26,7 @@ import type * as http from "../http.js";
 import type * as infrastructure_accompaniments_repository from "../infrastructure/accompaniments/repository.js";
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
+import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as requests from "../requests.js";
 import type * as users from "../users.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/accompaniments/repository": typeof infrastructure_accompaniments_repository;
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "presentation/accompaniments": typeof presentation_accompaniments;
+  "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   requests: typeof requests;
   users: typeof users;

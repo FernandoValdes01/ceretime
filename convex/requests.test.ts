@@ -1,13 +1,24 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
 const ISSUER = "https://accounts.google.com";
+
+/** Identidad simulada con `tokenIdentifier` explícito. */
+function identityFor(subject: string, email: string) {
+  return {
+    subject,
+    issuer: ISSUER,
+    tokenIdentifier: `${ISSUER}|${subject}`,
+    email,
+    name: "Ficticio",
+  };
+}
 
 /** Estudiante ficticio persistido para asociar solicitudes. */
 async function seedStudent(t: ReturnType<typeof convexTest>, subject: string) {
@@ -106,4 +117,50 @@ test("El estado persiste exactamente los literales de Sprint 1 del dominio", asy
       accessNeeds: "Necesidad de acceso ficticia",
     }),
   ).rejects.toThrow("Validator error");
+});
+
+test("Estudiante registra su solicitud y recibe la entidad pública", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti9-est-1");
+
+  // La solicitud se registra en estado recibido a nombre del propio Estudiante
+  const asStudent = t.withIdentity(identityFor("ti9-est-1", "ti9-est-1@alu.uct.cl"));
+  const created = await asStudent.mutation(api.presentation.requests.createRequest, {
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+  expect(created.status).toBe("received");
+  expect(created.accessNeeds).toBe("Necesidad de acceso ficticia");
+  expect(created.studentId).toBeDefined();
+  expect(created.createdAt).toBeDefined();
+});
+
+test("Sin identidad o sin rol Estudiante se deniega el registro", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+
+  // Sin identidad no se registra nada
+  await expect(
+    t.mutation(api.presentation.requests.createRequest, {
+      accessNeeds: "Necesidad de acceso ficticia",
+    }),
+  ).rejects.toThrow("No autorizado");
+
+  // Un Profesional no registra solicitudes de Estudiante
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-1@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-1`,
+    });
+  });
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-1", "ti9-pro-1@uct.cl"));
+  await expect(
+    asProfessional.mutation(api.presentation.requests.createRequest, {
+      accessNeeds: "Necesidad de acceso ficticia",
+    }),
+  ).rejects.toThrow("No autorizado");
 });
