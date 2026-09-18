@@ -34,8 +34,8 @@ export const assign = internalMutation({
 /**
  * Revoca una asignación existente. Comparte la exigencia de llamante con
  * `assign` y es idempotente: revocar una fila ya revocada no falla. El retiro
- * o la revocación de Practicante solo la realiza un Profesional autorizado
- * sobre el mismo acompañamiento; el acompañamiento inexistente o no
+ * o la revocación de Practicante habilitado solo la realiza un Profesional
+ * autorizado sobre el mismo acompañamiento; el acompañamiento inexistente o no
  * autorizado responde el mismo error genérico. Revoca TODAS las filas
  * activas de la tripla en lugar de una sola, para que ninguna fila escrita
  * fuera del Backend deje acceso activo tras informar éxito. Si no alcanza a

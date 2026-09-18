@@ -128,13 +128,13 @@ export async function assignAccompaniment(
 /**
  * Revoca una asignación existente. Es idempotente: revocar una fila ya
  * revocada no falla. Solo un Profesional autorizado sobre el mismo
- * acompañamiento puede retirar o revocar acceso de Practicante; el
- * acompañamiento inexistente o no autorizado responde el mismo error
- * genérico. Revoca TODAS las filas activas de la tripla en lugar de una
- * sola, para que ninguna fila escrita fuera del Backend deje acceso activo
- * tras informar éxito. Si tras los lotes acotados quedan filas activas,
- * falla en vez de informar un éxito parcial. Registra actor
- * (`revokedBy`) y fecha (`revokedAt`); la vigencia termina con
+ * acompañamiento puede retirar o revocar acceso de un Practicante con cuenta
+ * habilitada y vigente; el acompañamiento inexistente o no autorizado
+ * responde el mismo error genérico. Revoca TODAS las filas activas de la
+ * tripla en lugar de una sola, para que ninguna fila escrita fuera del
+ * Backend deje acceso activo tras informar éxito. Si tras los lotes acotados
+ * quedan filas activas, falla en vez de informar un éxito parcial. Registra
+ * actor (`revokedBy`) y fecha (`revokedAt`); la vigencia termina con
  * `status === "revoked"`.
  */
 export async function revokeAccompaniment(
@@ -148,6 +148,8 @@ export async function revokeAccompaniment(
   if (accompaniment === null) deny();
 
   if (triple.assignedRole === "intern") {
+    const target = await getUserById(ctx, triple.userId);
+    if (target === null) deny();
     const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
       accompanimentId: triple.accompanimentId,
       userId: caller._id,
@@ -159,8 +161,18 @@ export async function revokeAccompaniment(
         accountStatus: caller.accountStatus,
         hasActiveProfessionalAssignment: callerAssigned,
       },
+      target: {
+        role: target.role,
+        institutionalStatus: target.institutionalStatus,
+        accountStatus: target.accountStatus,
+      },
     });
-    if (!check.ok) deny();
+    if (!check.ok) {
+      if (check.reason === "target-not-intern") {
+        throw new Error("El rol del usuario no coincide con el rol asignado");
+      }
+      deny();
+    }
   }
 
   let revoked = 0;

@@ -213,6 +213,74 @@ test("profesional autorizado retira el acceso y la revocación queda auditada", 
   expect(second).toBeNull();
 });
 
+test("retirar exige practicante habilitado y no toca filas de cuentas no vigentes", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, {
+    subject: "ti28-est-8",
+    email: "est8@alu.uct.cl",
+    role: "student",
+  });
+  const proId = await seedUser(t, {
+    subject: "ti28-pro-8",
+    email: "pro8@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti28-pro-8b",
+    email: "pro8b@uct.cl",
+    role: "professional",
+  });
+  const disabledId = await seedUser(t, {
+    subject: "ti28-int-10",
+    email: "int10@alu.uct.cl",
+    role: "intern",
+    institutionalStatus: "disabled",
+  });
+  const pendingId = await seedUser(t, {
+    subject: "ti28-int-11",
+    email: "int11@alu.uct.cl",
+    role: "intern",
+    institutionalStatus: "pending",
+  });
+  const inactiveId = await seedUser(t, {
+    subject: "ti28-int-12",
+    email: "int12@alu.uct.cl",
+    role: "intern",
+    accountStatus: "inactive",
+  });
+  const accompanimentId = await seedAccompaniment(t, studentId);
+  await authorizeProfessional(
+    t,
+    { accompanimentId, professionalId: proId },
+    { subject: "ti28-pro-8b", email: "pro8b@uct.cl" },
+  );
+  // Filas legacy sobre cuentas no vigentes: la lectura ya las deniega por
+  // vigencia y el retiro no debe tocarlas.
+  await t.run(async (ctx) => {
+    for (const userId of [disabledId, pendingId, inactiveId]) {
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId,
+        userId,
+        assignedRole: "intern",
+        status: "active",
+        grantedBy: proId,
+        grantedAt: 1,
+      });
+    }
+  });
+
+  const asPro = t.withIdentity(identityFor("ti28-pro-8", "pro8@uct.cl"));
+  for (const userId of [disabledId, pendingId, inactiveId]) {
+    const input = { accompanimentId, userId, assignedRole: "intern" as const };
+    const message = await denyMessage(asPro.mutation(internal.assignments.revoke, input));
+    expect(message).toContain("No autorizado");
+    const row = await findAssignmentRow(t, input);
+    expect(row?.status).toBe("active");
+    expect(row?.revokedBy).toBeUndefined();
+    expect(row?.revokedAt).toBeUndefined();
+  }
+});
+
 test("practicante sin cuenta habilitada no recibe acceso", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedUser(t, {
