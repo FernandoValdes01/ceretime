@@ -17,13 +17,13 @@ export type {
 } from "./identity/roles";
 
 // Solicitud de acompañamiento y sus estados.
-export { toStoredAccompanimentRequest } from "./request/request";
+export { toAccompanimentRequest } from "./request/request";
 export type {
   AccessNeed,
+  AccompanimentRequest,
   AccompanimentRequestContent,
   GeneralAvailability,
   ModalityPreference,
-  StoredAccompanimentRequest,
 } from "./request/request";
 export {
   FUTURE_REQUEST_STATES,

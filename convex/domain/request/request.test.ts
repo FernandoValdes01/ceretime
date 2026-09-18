@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { SPRINT_1_REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
-import { toStoredAccompanimentRequest, type AccompanimentRequestContent } from "./request";
+import { toAccompanimentRequest, type AccompanimentRequestContent } from "./request";
+import type { AccompanimentRequest as BarrelAccompanimentRequest } from "../index";
 
 describe("AccompanimentRequestContent (TI2-8)", () => {
   test("describe la solicitud de Sprint 1 completa", () => {
@@ -33,11 +34,11 @@ type MobileSubmitPayload = {
   readonly preferredAccessibleInformationChannel: string;
 };
 
-describe("toStoredAccompanimentRequest (TI2-8)", () => {
+describe("toAccompanimentRequest (TI2-8)", () => {
   test("adapta una fila existente con cada estado de Sprint 1", () => {
     for (const status of SPRINT_1_REQUEST_STATES) {
       expect(
-        toStoredAccompanimentRequest({
+        toAccompanimentRequest({
           _id: "request-id",
           studentId: "student-id",
           status,
@@ -56,7 +57,7 @@ describe("toStoredAccompanimentRequest (TI2-8)", () => {
 
   test("rechaza una fila con estado desconocido en vez de propagarla", () => {
     expect(() =>
-      toStoredAccompanimentRequest({
+      toAccompanimentRequest({
         _id: "request-id",
         studentId: "student-id",
         status: "under_review_typo",
@@ -64,6 +65,17 @@ describe("toStoredAccompanimentRequest (TI2-8)", () => {
         createdAt: 1000,
       }),
     ).toThrow("Estado de solicitud desconocido");
+  });
+
+  test("la entidad publica se importa desde el barrel", () => {
+    const entity: BarrelAccompanimentRequest = {
+      _id: "request-id",
+      studentId: "student-id",
+      status: "received",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: 1000,
+    };
+    expect(entity.status).toBe("received");
   });
 });
 
