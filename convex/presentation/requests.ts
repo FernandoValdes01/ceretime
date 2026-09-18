@@ -1,6 +1,8 @@
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 import { registerRequest } from "../application/requests/commands";
-import { mutation } from "../_generated/server";
+import { listOwnRequestsUseCase } from "../application/requests/queries";
+import { mutation, query } from "../_generated/server";
 import { requestStatusUnion } from "../validators";
 
 /**
@@ -33,5 +35,18 @@ export const createRequest = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await registerRequest(ctx, identity, args);
+  },
+});
+
+/**
+ * Lista las solicitudes propias del Estudiante, paginado.
+ * Cualquier otro rol recibe denegación.
+ */
+export const listOwnRequests = query({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(requestValidator),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await listOwnRequestsUseCase(ctx, identity, args);
   },
 });

@@ -164,3 +164,63 @@ test("Sin identidad o sin rol Estudiante se deniega el registro", async () => {
     }),
   ).rejects.toThrow("No autorizado");
 });
+
+test("Estudiante lista solo sus solicitudes propias", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti9-est-2");
+  await seedStudent(t, "ti9-est-3");
+
+  // Cada estudiante registra su propia solicitud
+  const asFirst = t.withIdentity(identityFor("ti9-est-2", "ti9-est-2@alu.uct.cl"));
+  await asFirst.mutation(api.presentation.requests.createRequest, {
+    accessNeeds: "Primera ficticia",
+  });
+  const asSecond = t.withIdentity(identityFor("ti9-est-3", "ti9-est-3@alu.uct.cl"));
+  await asSecond.mutation(api.presentation.requests.createRequest, {
+    accessNeeds: "Segunda ficticia",
+  });
+
+  // Cada uno ve solo la suya
+  const firstPage = await asFirst.query(api.presentation.requests.listOwnRequests, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(firstPage.page).toHaveLength(1);
+  expect(firstPage.page[0]?.accessNeeds).toBe("Primera ficticia");
+
+  const secondPage = await asSecond.query(api.presentation.requests.listOwnRequests, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(secondPage.page).toHaveLength(1);
+  expect(secondPage.page[0]?.accessNeeds).toBe("Segunda ficticia");
+});
+
+test("Sin identidad o sin rol Estudiante se deniega el listado propio", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+
+  // Sin identidad no se lista nada
+  await expect(
+    t.query(api.presentation.requests.listOwnRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
+  ).rejects.toThrow("No autorizado");
+
+  // Un Profesional no lista solicitudes propias
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-2@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-2`,
+    });
+  });
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-2", "ti9-pro-2@uct.cl"));
+  await expect(
+    asProfessional.query(api.presentation.requests.listOwnRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
+  ).rejects.toThrow("No autorizado");
+});

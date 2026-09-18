@@ -1,4 +1,5 @@
-import type { Doc, Id } from "../../_generated/dataModel";
+import type { PaginationOptions } from "convex/server";
+import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 
 /**
@@ -30,13 +31,14 @@ export async function insertReceivedRequest(
   });
 }
 
-/** Solicitudes propias del estudiante. */
+/** Solicitudes propias del estudiante, paginadas. */
 export async function listOwnedRequests(
   ctx: DbReader,
   studentId: Id<"users">,
-): Promise<Doc<"requests">[]> {
+  paginationOpts: PaginationOptions,
+) {
   return await ctx.db
     .query("requests")
     .withIndex("by_student", (q) => q.eq("studentId", studentId))
-    .collect();
+    .paginate(paginationOpts);
 }
