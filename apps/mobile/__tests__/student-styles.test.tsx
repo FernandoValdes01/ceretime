@@ -52,6 +52,7 @@ test("el header nativo reserva el inset superior de las pantallas", () => {
     <StudentScreen title="Inicio" description="Prueba de área segura" />,
   );
   expect(studentScreen.UNSAFE_getByType(SafeAreaView).props.edges).toEqual([
+    "top",
     "left",
     "right",
     "bottom",

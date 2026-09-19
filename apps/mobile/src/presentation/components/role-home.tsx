@@ -30,11 +30,11 @@ export function RoleHome({
   description,
   children,
 }: PropsWithChildren<{ title: string; description: string }>) {
-  const { signOut, accessDeniedRole, dismissAccessDenied, status, error } = useNavigationSession();
+  const { accessDeniedRole, dismissAccessDenied, status, error } = useNavigationSession();
   const isSigningOut = status === "loading";
 
   return (
-    <Screen title={title} description={description}>
+    <Screen title={title} description={description} showAppHeader>
       {accessDeniedRole ? (
         <AccessDeniedNotice role={accessDeniedRole} onDismiss={dismissAccessDenied} />
       ) : null}
@@ -54,17 +54,6 @@ export function RoleHome({
           {error}
         </Text>
       ) : null}
-      <Action
-        disabled={isSigningOut}
-        label={
-          isSigningOut
-            ? "Cerrando sesión…"
-            : error
-              ? "Reintentar cierre de sesión"
-              : "Cambiar de rol"
-        }
-        onPress={() => void signOut()}
-      />
     </Screen>
   );
 }

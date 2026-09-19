@@ -1,6 +1,8 @@
 import { type PropsWithChildren, type Ref } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppHeader } from "../components/app-header";
+import { AppIcon } from "../components/app-icon";
 import { StudentFonts, StudentText } from "./student-text";
 
 type StudentScreenIntroductionProps =
@@ -18,13 +20,23 @@ type StudentScreenIntroductionProps =
 export type StudentScreenProps = PropsWithChildren<
   StudentScreenIntroductionProps & {
     readonly scrollRef?: Ref<ScrollView>;
+    readonly onBack?: () => void;
   }
 >;
 
-export function StudentScreen({ scrollRef, children, ...introduction }: StudentScreenProps) {
+export function StudentScreen({
+  scrollRef,
+  onBack,
+  children,
+  ...introduction
+}: StudentScreenProps) {
   return (
     <StudentFonts>
-      <SafeAreaView className="flex-1 bg-student-background" edges={["left", "right", "bottom"]}>
+      <SafeAreaView
+        className="flex-1 bg-student-background"
+        edges={["top", "left", "right", "bottom"]}
+      >
+        <AppHeader onBack={onBack} />
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"
@@ -94,12 +106,13 @@ export function StudentAction({
         ) : null}
       </View>
       {description ? (
-        <StudentText
+        <AppIcon
+          name="chevronRight"
+          size={28}
+          color={secondary ? "#0A7C70" : "#FFFFFF"}
           accessible={false}
-          className={`${secondary ? "text-student-primary" : "text-white"} text-[32px] ml-auto`}
-        >
-          ›
-        </StudentText>
+          testID="student-action-chevron-right"
+        />
       ) : null}
     </Pressable>
   );

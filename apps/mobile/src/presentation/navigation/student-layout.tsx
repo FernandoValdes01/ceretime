@@ -1,6 +1,6 @@
-import { Stack } from "expo-router";
 import type { NativeStackNavigationOptions } from "expo-router";
 import { appHeaderOptions } from "./app-header-options";
+import { RoleTabIcon, roleTabScreenOptions, Tabs } from "./role-tabs";
 
 export const studentLayoutScreenOptions = appHeaderOptions;
 
@@ -11,10 +11,29 @@ export const studentRequestScreenOptions = {
 
 export default function StudentLayout() {
   return (
-    <Stack screenOptions={studentLayoutScreenOptions}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="nueva-solicitud" options={studentRequestScreenOptions} />
-      <Stack.Screen name="solicitudes" options={{ headerShown: false }} />
-    </Stack>
+    <Tabs screenOptions={roleTabScreenOptions}>
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "Inicio",
+          tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="house" />,
+        }}
+      />
+      <Tabs.Screen
+        name="solicitudes"
+        options={{
+          title: "Solicitudes",
+          tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="clipboardList" />,
+        }}
+      />
+      <Tabs.Screen
+        name="perfil"
+        options={{
+          title: "Perfil",
+          tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="user" />,
+        }}
+      />
+      <Tabs.Screen name="nueva-solicitud" options={{ href: null }} />
+    </Tabs>
   );
 }

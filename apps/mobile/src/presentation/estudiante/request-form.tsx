@@ -10,6 +10,7 @@ import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import { useSubmitStudentRequest } from "@/presentation/hooks/use-submit-student-request";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text, useStudentFont } from "./student-text";
+import { AppIcon } from "../components/app-icon";
 import {
   initialRequestValues,
   validateRequestForm,
@@ -59,11 +60,7 @@ function Choice({
         className={`w-6 h-6 border-2 items-center justify-center ${single ? "rounded-full" : "rounded"} ${selected ? "border-student-primary bg-student-primary" : "border-student-outline"}`}
         style={single ? undefined : { borderCurve: "continuous" }}
       >
-        {selected ? (
-          <Text accessible={false} className="text-white text-base leading-5">
-            ✓
-          </Text>
-        ) : null}
+        {selected ? <AppIcon accessible={false} name="check" color="#FFFFFF" size={16} /> : null}
       </View>
       <Text className="text-student-text text-base leading-[26px] shrink">{label}</Text>
     </Pressable>

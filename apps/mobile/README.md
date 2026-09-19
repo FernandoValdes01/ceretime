@@ -19,7 +19,7 @@ bun run mobile:android
 
 Para validar la interfaz nativa, ejecuta `bun run mobile:android` y revisa la aplicación en el emulador Android `Medium_Phone`.
 
-La navegación funciona sin backend ni credenciales. El envío simulado confirma por defecto y acepta una variable de entorno opcional para demostrar la recuperación ante errores. La pantalla de acceso permite elegir un rol simulado. La sesión vive únicamente en memoria y se pierde al reiniciar o recargar el proceso de la aplicación. «Cambiar de rol» elimina la sesión y vuelve al selector.
+La navegación funciona sin backend ni inicio de sesión institucional. El envío simulado confirma por defecto y acepta una variable de entorno opcional para demostrar la recuperación ante errores. La pantalla de acceso permite elegir un rol simulado directamente. La sesión vive únicamente en memoria y se pierde al reiniciar o recargar el proceso de la aplicación. El icono de salida del encabezado cierra la sesión y vuelve al selector.
 
 ## Mapa de rutas
 
@@ -31,7 +31,7 @@ La navegación funciona sin backend ni credenciales. El envío simulado confirma
 | `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.                               |
 | `/estudiante/solicitudes`     | Estudiante    | Listado ficticio de solicitudes propias y estados de carga.                                |
 | `/estudiante/solicitudes/:id` | Estudiante    | Detalle de una solicitud propia.                                                           |
-| `/profesional`                | Profesional   | Inicio provisional para revisión de solicitudes y acompañamientos.                         |
+| `/profesional`                | Profesional   | Agenda profesional con timeline, detalle de actividades y navegación inferior.             |
 | `/practicante`                | Practicante   | Redirige según las asignaciones de la sesión.                                              |
 | `/practicante/asignaciones`   | Practicante   | Consulta provisional de acompañamientos asignados.                                         |
 | `/practicante/sin-asignacion` | Practicante   | Estado de espera cuando no existen acompañamientos asignados. <!-- cspell:disable-line --> |
@@ -50,7 +50,8 @@ app/
     ├── _layout.tsx             Protección por rol
     ├── estudiante/             _layout.tsx + index.tsx
     │   └── solicitudes/         index.tsx + [requestId].tsx
-    ├── profesional/            _layout.tsx + index.tsx
+    ├── profesional/            _layout.tsx + tabs de inicio, agenda, estudiantes y perfil
+    │   └── (agenda)/           index.tsx + [eventId].tsx
     ├── practicante/            rutas de asignaciones del practicante
     └── administrador/         _layout.tsx + index.tsx
 ```
@@ -61,7 +62,7 @@ Los grupos entre paréntesis no aparecen en la URL. `Stack.Protected` protege la
 
 - Agrega las pantallas de cada rol dentro de su carpeta. El control del layout superior cubre las rutas nuevas de esa carpeta.
 - Mantén componentes reutilizables y estado de navegación en `src/presentation/`, fuera de `app/`, para que Expo Router no los convierta en rutas.
-- TI4-7 ya integra el selector y el proveedor de sesión simulados. El punto de composición inyecta el adapter y las credenciales de demostración; la presentación sólo depende de contratos y props. La autenticación real reemplazará el adapter en ese punto.
+- TI4-7 ya integra el selector y el proveedor de sesión simulados. El punto de composición inyecta el adapter y los perfiles de demostración; la autenticación institucional reemplazará el adapter en ese punto.
 - Los identificadores de `roles.ts` son locales a la navegación. No definen contratos compartidos con el backend.
 - Esta protección controla la navegación del cliente. La autorización real debe verificarse en el backend cuando se integre la API.
 
@@ -130,11 +131,7 @@ EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE=fail-once bun run mobile:start --clear
 
 El primer intento falla y el reintento confirma la solicitud. La variable es pública y solo selecciona el comportamiento del adaptador ficticio; no contiene secretos. Expo inserta las variables `EXPO_PUBLIC_` en el bundle, por lo que debes recargar completamente la aplicación después de cambiarla. También puedes copiar `apps/mobile/.env.example` a `apps/mobile/.env.local`, seleccionar `success` o `fail-once` y ejecutar `bun run mobile:start --clear`.
 
-La presentación toma como referencia **Inicio - Portal Estudiante (Móvil)** del
-[proyecto de Stitch](https://stitch.withgoogle.com/projects/9057834843157775417),
-pantalla `8eba1da09323417bac7d8f939c65ea79`. No hay una vista específica de Nueva
-solicitud: se adaptan la tipografía Fira Sans, los colores y las superficies al
-formulario de TI4-8, sin incorporar agendas, perfiles ni datos de los mockups.
+La presentación toma como referencia **Inicio - Portal Estudiante (Móvil)** del [proyecto de Stitch](https://stitch.withgoogle.com/projects/9057834843157775417), pantalla `8eba1da09323417bac7d8f939c65ea79`. No hay una vista específica de Nueva solicitud: el flujo de estudiante adapta la tipografía Fira Sans, los colores y las superficies al formulario de TI4-8, sin incorporar agendas, perfiles ni datos de los mockups de otros roles.
 Los tokens utilizados viven en `tailwind.config.js` y sólo se aplican al flujo del
 estudiante. Se usa el primario `#00695b` del HTML mobile; los controles conservan
 etiquetas de al menos 16 puntos, estados de foco y áreas táctiles de 52 puntos.
