@@ -52,6 +52,6 @@ export const fictionalProfessionalRequests: readonly ProfessionalRequest[] = [
     },
     modalityPreference: "online",
     preferredAccessibleInformationChannel: "Mensaje escrito dentro de la plataforma",
-    availableActions: [],
+    availableActions: ["accept"],
   },
 ];

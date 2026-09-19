@@ -25,6 +25,7 @@ export default function ProfessionalLayout() {
               tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="clipboardList" />,
             }}
           />
+          <Tabs.Screen name="estudiantes/[requestId]" options={{ href: null }} />
           <Tabs.Screen
             name="perfil"
             options={{
