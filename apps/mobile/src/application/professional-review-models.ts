@@ -1,12 +1,13 @@
 import type {
   AccessNeed,
+  Accompaniment,
   GeneralAvailability,
   IsoDateTime,
   ModalityPreference,
   StudentRequestStatus,
 } from "./student-area-models";
 
-export type ProfessionalRequestAction = "startReview" | "requestInformation";
+export type ProfessionalRequestAction = "startReview" | "requestInformation" | "accept";
 
 export interface ProfessionalRequest {
   readonly id: string;
@@ -21,6 +22,7 @@ export interface ProfessionalRequest {
   readonly modalityPreference: ModalityPreference;
   readonly preferredAccessibleInformationChannel: string;
   readonly availableActions: readonly ProfessionalRequestAction[];
+  readonly accompaniment?: Accompaniment;
 }
 
 export interface ProfessionalRequestActionReceipt {

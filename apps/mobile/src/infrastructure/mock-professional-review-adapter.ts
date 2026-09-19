@@ -46,6 +46,26 @@ function updateRequest(
     };
   }
 
+  if (action === "accept" && request.status === "awaitingInformationOrAcceptance") {
+    const updatedRequest: ProfessionalRequest = {
+      ...request,
+      status: "accepted",
+      updatedAt: "2026-09-18T09:00:00.000Z",
+      availableActions: [],
+      accompaniment: {
+        id: `ACO-${request.id}`,
+        requestId: request.id,
+        status: "active",
+        createdAt: "2026-09-18T09:00:00.000Z",
+      },
+    };
+    return {
+      action,
+      request: updatedRequest,
+      message: "La solicitud fue aceptada y abrió un acompañamiento.",
+    };
+  }
+
   throw new Error("Esta acción no está disponible para la solicitud seleccionada.");
 }
 

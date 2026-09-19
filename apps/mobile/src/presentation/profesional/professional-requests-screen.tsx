@@ -1,10 +1,8 @@
+import { router } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type {
-  ProfessionalRequest,
-  ProfessionalRequestAction,
-} from "@/application/professional-review-models";
+import type { ProfessionalRequest } from "@/application/professional-review-models";
 import type { StudentRequestStatus } from "@/application/student-area-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
@@ -13,16 +11,6 @@ import { getStudentRequestStatusPresentation } from "@/presentation/estudiante/s
 import { RoleGuard } from "@/presentation/navigation/role-guard";
 import { useProfessionalReviewContext } from "./professional-review-provider";
 import { ProfessionalHeader } from "./professional-header";
-
-const actionLabels: Record<ProfessionalRequestAction, string> = {
-  startReview: "Poner en revisión",
-  requestInformation: "Esperar información",
-};
-
-const actionHints: Record<ProfessionalRequestAction, string> = {
-  startReview: "Marca esta solicitud como en revisión",
-  requestInformation: "Indica que necesitas información para continuar",
-};
 
 const noActionMessages = {
   received: "No hay acciones disponibles para esta solicitud.",
@@ -96,24 +84,11 @@ function StatusBadge({ status }: Pick<ProfessionalRequest, "status">) {
 
 function RequestCard({
   request,
-  onAction,
-  getActionState,
-  getRequestFeedback,
+  onOpen,
 }: {
   readonly request: ProfessionalRequest;
-  readonly onAction: (requestId: string, action: ProfessionalRequestAction) => Promise<void>;
-  readonly getActionState: (
-    requestId: string,
-    action: ProfessionalRequestAction,
-  ) => { readonly status: string; readonly message: string | null; readonly error: unknown | null };
-  readonly getRequestFeedback: (requestId: string) => {
-    readonly status: string;
-    readonly message: string | null;
-    readonly error: unknown | null;
-  };
+  readonly onOpen: () => void;
 }) {
-  const feedback = getRequestFeedback(request.id);
-
   return (
     <View style={styles.requestCard}>
       <View style={styles.cardTopRow}>
@@ -140,85 +115,19 @@ function RequestCard({
         {request.needSummary}
       </StudentText>
       <StudentText style={styles.requestDescription}>{request.expectedOutcome}</StudentText>
-      {feedback.status === "success" && feedback.message ? (
-        <View style={styles.feedbackRow} accessibilityLiveRegion="polite">
-          <AppIcon
-            accessible={false}
-            color="#087D70"
-            name="circleCheck"
-            size={16}
-            strokeWidth={2.2}
-          />
-          <StudentText style={styles.successText}>{feedback.message}</StudentText>
-        </View>
-      ) : null}
-      {request.availableActions.length > 0 ? (
-        <View style={styles.actionsSection}>
-          {request.availableActions.map((action) => {
-            const state = getActionState(request.id, action);
-            const isLoading = state.status === "loading";
-            return (
-              <View key={action} style={styles.actionBlock}>
-                <Pressable
-                  accessibilityHint={actionHints[action]}
-                  accessibilityRole="button"
-                  accessibilityState={{ busy: isLoading, disabled: isLoading }}
-                  disabled={isLoading}
-                  onPress={() => void onAction(request.id, action)}
-                  style={({ pressed }) => [
-                    styles.actionButton,
-                    pressed && styles.buttonPressed,
-                    isLoading && styles.actionButtonLoading,
-                  ]}
-                >
-                  {isLoading ? (
-                    <ActivityIndicator accessible={false} color="#FFFFFF" size="small" />
-                  ) : (
-                    <StudentText weight="semibold" style={styles.actionButtonText}>
-                      {actionLabels[action]}
-                    </StudentText>
-                  )}
-                </Pressable>
-                {state.status === "success" &&
-                state.message &&
-                request.availableActions.length > 0 ? (
-                  <View style={styles.feedbackRow} accessibilityLiveRegion="polite">
-                    <AppIcon
-                      accessible={false}
-                      color="#087D70"
-                      name="circleCheck"
-                      size={16}
-                      strokeWidth={2.2}
-                    />
-                    <StudentText style={styles.successText}>{state.message}</StudentText>
-                  </View>
-                ) : null}
-                {state.status === "error" ? (
-                  <StudentText accessibilityRole="alert" style={styles.errorText}>
-                    {state.error instanceof Error
-                      ? state.error.message
-                      : "No pudimos actualizar la solicitud."}
-                  </StudentText>
-                ) : null}
-              </View>
-            );
-          })}
-        </View>
-      ) : (
-        <View style={styles.noActionRow}>
-          <AppIcon accessible={false} color="#687A7D" name="clock" size={17} strokeWidth={2} />
-          <StudentText style={styles.noActionText}>
-            {getNoActionMessage(request.status)}
-          </StudentText>
-        </View>
-      )}
+      <Pressable
+        accessibilityHint="Abre el detalle de la solicitud"
+        accessibilityLabel={`Solicitud de ${request.studentName}: ${request.needSummary}`}
+        accessibilityRole="button"
+        onPress={onOpen}
+        style={styles.cardInteraction}
+      />
     </View>
   );
 }
 
 export function ProfessionalRequestsScreen() {
-  const { status, requests, error, reload, performAction, getActionState, getRequestFeedback } =
-    useProfessionalReviewContext();
+  const { status, requests, error, reload } = useProfessionalReviewContext();
 
   return (
     <RoleGuard requiredRole="profesional">
@@ -266,9 +175,12 @@ export function ProfessionalRequestsScreen() {
                   <RequestCard
                     key={request.id}
                     request={request}
-                    onAction={performAction}
-                    getActionState={getActionState}
-                    getRequestFeedback={getRequestFeedback}
+                    onOpen={() =>
+                      router.push({
+                        pathname: "/profesional/estudiantes/[requestId]",
+                        params: { requestId: request.id },
+                      })
+                    }
                   />
                 ))}
               </View>
@@ -290,8 +202,9 @@ const styles = StyleSheet.create({
   requestList: { gap: 12 },
   sectionTitle: { color: "#182C31", fontSize: 18, lineHeight: 24, marginBottom: 2 },
   requestCard: {
+    position: "relative",
     padding: 16,
-    gap: 12,
+    gap: 10,
     borderWidth: 1,
     borderColor: "#C9D9D6",
     borderRadius: 16,
@@ -330,24 +243,15 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: "#E2E9E7" },
   requestTitle: { color: "#182C31", fontSize: 17, lineHeight: 23 },
   requestDescription: { color: "#42565B", fontSize: 14, lineHeight: 21 },
-  actionsSection: { gap: 8, paddingTop: 2 },
-  actionBlock: { gap: 8 },
-  actionButton: {
-    minHeight: 46,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: "#087D70",
+  cardInteraction: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 16,
   },
-  actionButtonLoading: { opacity: 0.8 },
-  actionButtonText: { color: "#FFFFFF", fontSize: 15, lineHeight: 20 },
   buttonPressed: { opacity: 0.78 },
-  feedbackRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  successText: { flex: 1, color: "#087D70", fontSize: 13, lineHeight: 18 },
-  errorText: { color: "#A33A2B", fontSize: 13, lineHeight: 18 },
-  noActionRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, paddingTop: 2 },
-  noActionText: { flex: 1, color: "#687A7D", fontSize: 13, lineHeight: 19 },
   stateCard: {
     alignItems: "flex-start",
     gap: 10,
