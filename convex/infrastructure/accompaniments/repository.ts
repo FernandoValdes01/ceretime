@@ -150,6 +150,31 @@ export async function findExistingActiveAssignment(
   return rows[0] ?? null;
 }
 
+/**
+ * Verdadero cuando el usuario tiene asignación profesional activa sobre el
+ * acompañamiento (TI2-28). Chequeo de presencia exacto: una fila basta para
+ * decidir, sin lecturas ilimitadas.
+ */
+export async function hasActiveProfessionalAssignment(
+  ctx: MutationCtx,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly userId: Id<"users">;
+  },
+): Promise<boolean> {
+  const rows = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q
+        .eq("accompanimentId", input.accompanimentId)
+        .eq("userId", input.userId)
+        .eq("status", "active")
+        .eq("assignedRole", "professional"),
+    )
+    .take(1);
+  return rows.length > 0;
+}
+
 /** Crea la fila activa de la tripla, registrando quién concede y cuándo. */
 export async function insertActiveAssignment(
   ctx: MutationCtx,

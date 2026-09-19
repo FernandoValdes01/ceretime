@@ -17,6 +17,7 @@ import type * as application_session_minimal_identity from "../application/sessi
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
 import type * as assignments from "../assignments.js";
 import type * as auth from "../auth.js";
+import type * as domain_accompaniments_intern_access from "../domain/accompaniments/intern_access.js";
 import type * as domain_accounts_enablement from "../domain/accounts/enablement.js";
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
 import type * as domain_authorization_permissions from "../domain/authorization/permissions.js";
@@ -49,6 +50,7 @@ declare const fullApi: ApiFromModules<{
   "application/session/reject_external_user": typeof application_session_reject_external_user;
   assignments: typeof assignments;
   auth: typeof auth;
+  "domain/accompaniments/intern_access": typeof domain_accompaniments_intern_access;
   "domain/accounts/enablement": typeof domain_accounts_enablement;
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
   "domain/authorization/permissions": typeof domain_authorization_permissions;

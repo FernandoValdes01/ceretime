@@ -292,9 +292,14 @@ test("trazabilidad solicitud-acompañamiento: by_request solo devuelve el vincul
 
 test("integridad de asignaciones: el acompañamiento y el usuario deben existir", async () => {
   const t = convexTest(schema, modules);
-  await seedUser(t, {
+  const proId = await seedUser(t, {
     subject: "ti17-miss-pro",
     email: "misspro@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti17-miss-boot",
+    email: "missboot@uct.cl",
     role: "professional",
   });
   const intern = await seedUser(t, {
@@ -331,21 +336,57 @@ test("integridad de asignaciones: el acompañamiento y el usuario deben existir"
   });
   const accompaniment = await seedAccompaniment(t, student);
 
+  // El llamante está autorizado sobre el acompañamiento existente, así la
+  // denegación prueba el recurso inexistente y no la falta de alcance.
+  const asBootstrap = t.withIdentity(identityFor("ti17-miss-boot", "missboot@uct.cl"));
+  await asBootstrap.mutation(internal.assignments.assign, {
+    accompanimentId: accompaniment,
+    userId: proId,
+    assignedRole: "professional",
+  });
   const asPro = t.withIdentity(identityFor("ti17-miss-pro", "misspro@uct.cl"));
+  // TI2-28: el recurso inexistente se deniega con el mismo error genérico,
+  // sin revelar existencia, y no se crea ninguna fila.
   await expect(
     asPro.mutation(internal.assignments.assign, {
       accompanimentId: missingAccompaniment,
       userId: intern,
       assignedRole: "intern",
     }),
-  ).rejects.toThrow("deben existir");
+  ).rejects.toThrow("No autorizado");
   await expect(
     asPro.mutation(internal.assignments.assign, {
       accompanimentId: accompaniment,
       userId: missingUser,
       assignedRole: "intern",
     }),
-  ).rejects.toThrow("deben existir");
+  ).rejects.toThrow("No autorizado");
+  const orphanByAccompaniment = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", missingAccompaniment)
+          .eq("userId", intern)
+          .eq("status", "active")
+          .eq("assignedRole", "intern"),
+      )
+      .take(1);
+  });
+  expect(orphanByAccompaniment).toHaveLength(0);
+  const orphanByUser = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", accompaniment)
+          .eq("userId", missingUser)
+          .eq("status", "active")
+          .eq("assignedRole", "intern"),
+      )
+      .take(1);
+  });
+  expect(orphanByUser).toHaveLength(0);
 });
 
 test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamiento, asignación y revocación", async () => {
@@ -364,6 +405,11 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   const proId = await seedUser(t, {
     subject: "ti17-traza-pro",
     email: "trazapro@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti17-traza-boot",
+    email: "trazaboot@uct.cl",
     role: "professional",
   });
   const studentId = await seedUser(t, {
@@ -391,6 +437,14 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
 
   const accompanimentId = await seedAccompaniment(t, studentId, requestId);
 
+  // TI2-28: la concesión a Practicante exige profesional autorizado sobre el
+  // acompañamiento; esta fila profesional suma una unidad al barrido.
+  const asBootstrap = t.withIdentity(identityFor("ti17-traza-boot", "trazaboot@uct.cl"));
+  await asBootstrap.mutation(internal.assignments.assign, {
+    accompanimentId,
+    userId: proId,
+    assignedRole: "professional",
+  });
   const asPro = t.withIdentity(identityFor("ti17-traza-pro", "trazapro@uct.cl"));
   const input = {
     accompanimentId,
@@ -435,7 +489,7 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   const audit = await t.query(internal.migrations.auditAssignmentTraceability, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(audit.scanned).toBe(1);
+  expect(audit.scanned).toBe(2);
   expect(audit.missingGrant).toBe(0);
   expect(audit.activeMissingGrant).toBe(0);
   expect(audit.missingRevoke).toBe(0);
@@ -459,6 +513,11 @@ test("practicante no recupera recursos fuera de sus asignaciones", async () => {
     email: "isopro@uct.cl",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti17-iso-boot",
+    email: "isoboot@uct.cl",
+    role: "professional",
+  });
   const internId = await seedUser(t, {
     subject: "ti17-iso-int",
     email: "isoint@alu.uct.cl",
@@ -480,6 +539,14 @@ test("practicante no recupera recursos fuera de sus asignaciones", async () => {
   });
 
   const asPro = t.withIdentity(identityFor("ti17-iso-pro", "isopro@uct.cl"));
+  // TI2-28: solo un profesional autorizado sobre accA puede conceder al
+  // Practicante; la fila profesional no afecta las consultas por rol intern.
+  const asBootstrap = t.withIdentity(identityFor("ti17-iso-boot", "isoboot@uct.cl"));
+  await asBootstrap.mutation(internal.assignments.assign, {
+    accompanimentId: accA,
+    userId: proId,
+    assignedRole: "professional",
+  });
   await asPro.mutation(internal.assignments.assign, {
     accompanimentId: accA,
     userId: internId,
