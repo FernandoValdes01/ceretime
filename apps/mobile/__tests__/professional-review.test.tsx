@@ -11,6 +11,7 @@ import {
   useProfessionalReview,
   type ProfessionalReviewState,
 } from "../src/presentation/hooks/use-professional-review";
+import { formatAvailability } from "../src/presentation/profesional/professional-request-detail-screen";
 import { getNoActionMessage } from "../src/presentation/profesional/professional-requests-screen";
 
 const appDirectory = path.resolve(__dirname, "../app");
@@ -112,6 +113,15 @@ describe("adaptador de revisión profesional", () => {
 });
 
 describe("hook y vista de revisión profesional", () => {
+  test("presenta los días y el rango horario de disponibilidad", () => {
+    expect(
+      formatAvailability({
+        preferredWeekdays: [2, 4],
+        preferredTimeRange: { from: "10:00", to: "13:00" },
+      }),
+    ).toBe("Martes, Jueves · 10:00 a 13:00");
+  });
+
   test("expone carga, vacío y feedback de acción", async () => {
     let resolveRead!: (requests: readonly ProfessionalRequest[]) => void;
     const pendingRead = new Promise<readonly ProfessionalRequest[]>((resolve) => {
@@ -187,7 +197,7 @@ describe("hook y vista de revisión profesional", () => {
 
     expect(
       screen.getByRole("button", {
-        name: "Solicitud de Tomás Herrera: Explorar apoyos para continuar su participación académica.",
+        name: "Solicitud de Tomás Herrera. Estado: Esperando información o aceptación. Explorar apoyos para continuar su participación académica.",
       }),
     ).toBeOnTheScreen();
     expect(screen.queryByText("Ver detalle")).not.toBeOnTheScreen();
@@ -196,7 +206,7 @@ describe("hook y vista de revisión profesional", () => {
 
     fireEvent.press(
       screen.getByRole("button", {
-        name: "Solicitud de Tomás Herrera: Explorar apoyos para continuar su participación académica.",
+        name: "Solicitud de Tomás Herrera. Estado: Esperando información o aceptación. Explorar apoyos para continuar su participación académica.",
       }),
     );
     expect(await screen.findByRole("header", { name: "Detalle de solicitud" })).toBeOnTheScreen();
@@ -207,6 +217,10 @@ describe("hook y vista de revisión profesional", () => {
     expect(await screen.findByText("Acompañamiento abierto")).toBeOnTheScreen();
     expect(screen.getByText("ACO-SOL-PRO-003")).toBeOnTheScreen();
     expect(screen.getByLabelText("Estado: Aceptada")).toBeOnTheScreen();
+    expect(screen.getByTestId("professional-accompaniment-card")).toHaveProp(
+      "accessibilityLiveRegion",
+      "polite",
+    );
   });
 
   test.each([

@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -63,11 +64,7 @@ function StatusBadge({ status }: Pick<ProfessionalRequest, "status">) {
   const presentation = getStudentRequestStatusPresentation(status);
 
   return (
-    <View
-      style={styles.statusBadge}
-      accessible
-      accessibilityLabel={`Estado: ${presentation.label}`}
-    >
+    <View style={styles.statusBadge} accessible={false}>
       <AppIcon
         accessible={false}
         color="#087D70"
@@ -89,8 +86,19 @@ function RequestCard({
   readonly request: ProfessionalRequest;
   readonly onOpen: () => void;
 }) {
+  const [isPressed, setIsPressed] = useState(false);
+  const presentation = getStudentRequestStatusPresentation(request.status);
+
   return (
-    <View style={styles.requestCard}>
+    <Pressable
+      accessibilityHint="Abre el detalle de la solicitud"
+      accessibilityLabel={`Solicitud de ${request.studentName}. Estado: ${presentation.label}. ${request.needSummary}`}
+      accessibilityRole="button"
+      onPress={onOpen}
+      onPressIn={() => setIsPressed(true)}
+      onPressOut={() => setIsPressed(false)}
+      style={[styles.requestCard, isPressed && styles.buttonPressed]}
+    >
       <View style={styles.cardTopRow}>
         <View style={styles.cardIdentity}>
           <View style={styles.studentAvatar}>
@@ -115,14 +123,7 @@ function RequestCard({
         {request.needSummary}
       </StudentText>
       <StudentText style={styles.requestDescription}>{request.expectedOutcome}</StudentText>
-      <Pressable
-        accessibilityHint="Abre el detalle de la solicitud"
-        accessibilityLabel={`Solicitud de ${request.studentName}: ${request.needSummary}`}
-        accessibilityRole="button"
-        onPress={onOpen}
-        style={styles.cardInteraction}
-      />
-    </View>
+    </Pressable>
   );
 }
 
@@ -243,14 +244,6 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: "#E2E9E7" },
   requestTitle: { color: "#182C31", fontSize: 17, lineHeight: 23 },
   requestDescription: { color: "#42565B", fontSize: 14, lineHeight: 21 },
-  cardInteraction: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    borderRadius: 16,
-  },
   buttonPressed: { opacity: 0.78 },
   stateCard: {
     alignItems: "flex-start",

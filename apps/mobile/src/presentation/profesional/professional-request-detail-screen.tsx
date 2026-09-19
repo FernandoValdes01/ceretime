@@ -6,6 +6,7 @@ import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
 } from "@/application/professional-review-models";
+import type { GeneralAvailability } from "@/application/student-area-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
@@ -166,7 +167,7 @@ function RequestDetail({
         />
         <DetailRow
           label="Disponibilidad general"
-          value={formatAvailability(request.generalAvailability.preferredWeekdays)}
+          value={formatAvailability(request.generalAvailability)}
         />
         <DetailRow
           label="Modalidad preferida"
@@ -232,7 +233,11 @@ function AccompanimentCard({ request }: { readonly request: ProfessionalRequest 
   if (!accompaniment) return null;
 
   return (
-    <View style={styles.accompanimentCard}>
+    <View
+      testID="professional-accompaniment-card"
+      accessibilityLiveRegion="polite"
+      style={styles.accompanimentCard}
+    >
       <View style={styles.accompanimentHeading}>
         <View style={styles.successIcon}>
           <AppIcon
@@ -276,9 +281,28 @@ function findRequest(requests: readonly ProfessionalRequest[], requestId: string
   return requests.find((candidate) => candidate.id === requestId);
 }
 
-function formatAvailability(preferredWeekdays: readonly number[]) {
-  if (preferredWeekdays.length === 0) return "Sin días preferidos registrados.";
-  return `${preferredWeekdays.length} ${preferredWeekdays.length === 1 ? "día preferido" : "días preferidos"}`;
+export function formatAvailability({
+  preferredWeekdays,
+  preferredTimeRange,
+}: GeneralAvailability): string {
+  const weekdayLabels = [
+    "",
+    "Lunes",
+    "Martes",
+    "Miércoles",
+    "Jueves",
+    "Viernes",
+    "Sábado",
+    "Domingo",
+  ];
+  const days = preferredWeekdays
+    .map((weekday) => weekdayLabels[weekday] ?? `Día ${weekday}`)
+    .filter(Boolean)
+    .join(", ");
+  const daySummary = days || "Sin días preferidos registrados";
+
+  if (!preferredTimeRange) return daySummary;
+  return `${daySummary} · ${preferredTimeRange.from} a ${preferredTimeRange.to}`;
 }
 
 const styles = StyleSheet.create({
