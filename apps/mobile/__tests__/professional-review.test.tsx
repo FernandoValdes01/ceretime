@@ -28,7 +28,9 @@ function mountReview(port: ProfessionalReviewPort): {
   readonly getState: () => ProfessionalReviewState;
 } {
   function Probe() {
-    return React.createElement(ProbeOutput, { value: useProfessionalReview(port) });
+    return React.createElement(ProbeOutput, {
+      value: useProfessionalReview(port),
+    });
   }
 
   let renderer!: ReactTestRenderer;
@@ -80,8 +82,12 @@ describe("adaptador de revisión profesional", () => {
   });
 
   it("permite simular errores de carga y de acción", async () => {
-    const readErrorAdapter = createMockProfessionalReviewAdapter({ readMode: "error" });
-    const actionErrorAdapter = createMockProfessionalReviewAdapter({ actionMode: "error" });
+    const readErrorAdapter = createMockProfessionalReviewAdapter({
+      readMode: "error",
+    });
+    const actionErrorAdapter = createMockProfessionalReviewAdapter({
+      actionMode: "error",
+    });
 
     await expect(readErrorAdapter.readProfessionalRequests()).rejects.toThrow(
       "No pudimos cargar las solicitudes",
@@ -164,6 +170,8 @@ describe("hook y vista de revisión profesional", () => {
     });
 
     expect(await screen.findByText("Solicitudes asignadas")).toBeOnTheScreen();
+    expect(screen.queryByText("Acciones disponibles")).not.toBeOnTheScreen();
+
     expect(screen.getByRole("button", { name: "Poner en revisión" })).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Esperar información" })).toBeOnTheScreen();
     expect(

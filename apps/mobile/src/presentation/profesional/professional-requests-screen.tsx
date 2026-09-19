@@ -154,9 +154,6 @@ function RequestCard({
       ) : null}
       {request.availableActions.length > 0 ? (
         <View style={styles.actionsSection}>
-          <StudentText weight="semibold" style={styles.actionsLabel}>
-            Próxima acción
-          </StudentText>
           {request.availableActions.map((action) => {
             const state = getActionState(request.id, action);
             const isLoading = state.status === "loading";
@@ -334,13 +331,6 @@ const styles = StyleSheet.create({
   requestTitle: { color: "#182C31", fontSize: 17, lineHeight: 23 },
   requestDescription: { color: "#42565B", fontSize: 14, lineHeight: 21 },
   actionsSection: { gap: 8, paddingTop: 2 },
-  actionsLabel: {
-    color: "#687A7D",
-    fontSize: 12,
-    lineHeight: 17,
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-  },
   actionBlock: { gap: 8 },
   actionButton: {
     minHeight: 46,
