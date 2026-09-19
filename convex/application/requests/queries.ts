@@ -1,11 +1,8 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
-import { ConvexError } from "convex/values";
 import { toAccompanimentRequest } from "../../domain/request/request";
-import type { Doc } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
-import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
-import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import { listOwnedRequests } from "../../infrastructure/requests/repository";
+import { requireActiveStudent } from "./identity";
 
 /**
  * Casos de uso de lectura de solicitudes (TI2-9).
@@ -16,28 +13,6 @@ import { listOwnedRequests } from "../../infrastructure/requests/repository";
  * propios: el `studentId` siempre sale del perfil del servidor, nunca del
  * cliente. Opera con datos ficticios.
  */
-
-function deny(): never {
-  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
-}
-
-/** Estudiante con cuenta habilitada y vigente. */
-async function requireActiveStudent(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-): Promise<Doc<"users">> {
-  if (identity === null) deny();
-  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
-  if (
-    caller === null ||
-    caller.role !== "student" ||
-    caller.institutionalStatus !== "enabled" ||
-    caller.accountStatus !== "active"
-  ) {
-    deny();
-  }
-  return caller;
-}
 
 /**
  * Lista las solicitudes propias del Estudiante, paginado. Cualquier otro

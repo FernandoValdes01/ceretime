@@ -2,11 +2,11 @@ import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import { toAccompanimentRequest } from "../../domain/request/request";
 import { transitionRequest } from "../../domain/request/transition_policy";
-import type { Doc, Id } from "../../_generated/dataModel";
+import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
-import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import { insertReceivedRequest } from "../../infrastructure/requests/repository";
+import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
 /**
  * Casos de uso de escritura de solicitudes (TI2-9).
@@ -20,24 +20,6 @@ import { insertReceivedRequest } from "../../infrastructure/requests/repository"
 
 function deny(): never {
   throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
-}
-
-/** Estudiante con cuenta habilitada y vigente. */
-async function requireActiveStudent(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-): Promise<Doc<"users">> {
-  if (identity === null) deny();
-  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
-  if (
-    caller === null ||
-    caller.role !== "student" ||
-    caller.institutionalStatus !== "enabled" ||
-    caller.accountStatus !== "active"
-  ) {
-    deny();
-  }
-  return caller;
 }
 
 /**
@@ -64,24 +46,6 @@ export async function registerRequest(
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   });
-}
-
-/** Profesional con cuenta habilitada y vigente. */
-async function requireActiveProfessional(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-): Promise<Doc<"users">> {
-  if (identity === null) deny();
-  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
-  if (
-    caller === null ||
-    caller.role !== "professional" ||
-    caller.institutionalStatus !== "enabled" ||
-    caller.accountStatus !== "active"
-  ) {
-    deny();
-  }
-  return caller;
 }
 
 /**
