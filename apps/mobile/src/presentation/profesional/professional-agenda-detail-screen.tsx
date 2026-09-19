@@ -16,9 +16,7 @@ export function ProfessionalAgendaDetailScreen() {
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         <ProfessionalHeader onBack={() => router.back()} />
         <View style={styles.content}>
-          {status === "loading" ? (
-            <StudentText style={styles.message}>Cargando actividad…</StudentText>
-          ) : status === "error" ? (
+          {status === "error" ? (
             <View style={styles.stateCard}>
               <StudentText accessibilityRole="header" weight="semibold" style={styles.stateTitle}>
                 No pudimos cargar la actividad
@@ -54,7 +52,7 @@ export function ProfessionalAgendaDetailScreen() {
               <DetailRow label="Lugar" value={event.location} />
               <StudentText style={styles.summary}>{event.summary}</StudentText>
             </View>
-          ) : (
+          ) : status === "loading" ? null : (
             <StudentText style={styles.message}>No encontramos esta actividad.</StudentText>
           )}
         </View>

@@ -13,7 +13,7 @@ export interface MockProfessionalAgendaReaderOptions {
 
 /** Adapter local y reemplazable; no realiza llamadas de red ni persiste datos. */
 export function createMockProfessionalAgendaReader({
-  delayMs = 350,
+  delayMs = 0,
   mode = "success",
 }: MockProfessionalAgendaReaderOptions = {}): ProfessionalAgendaReader {
   return {

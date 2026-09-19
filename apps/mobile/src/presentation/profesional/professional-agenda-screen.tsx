@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useMemo } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type {
@@ -151,11 +151,6 @@ export function ProfessionalAgendaScreen() {
         >
           {accessDeniedRole ? (
             <AccessDeniedNotice role={accessDeniedRole} onDismiss={dismissAccessDenied} />
-          ) : null}
-          {status === "loading" ? (
-            <AgendaState title="Cargando agenda…">
-              <ActivityIndicator accessible={false} color="#078B7B" />
-            </AgendaState>
           ) : null}
           {status === "error" ? (
             <AgendaState
