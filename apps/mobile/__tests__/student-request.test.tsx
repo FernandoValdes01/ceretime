@@ -215,7 +215,7 @@ describe("Formulario de solicitud del estudiante", () => {
     fillRequiredStudentRequestFields();
     await act(async () => router.back());
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
+      fireEvent.press(screen.getByRole("button", { name: "Cerrar sesión" }));
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.getByText("Explora la aplicación")).toBeOnTheScreen());
@@ -246,7 +246,11 @@ describe("Formulario de solicitud del estudiante", () => {
     "%s no puede acceder al formulario",
     async (role) => {
       const roleHomeTitle =
-        role === "Practicante" ? "Acompañamientos asignados" : `Inicio de ${role}`;
+        role === "Practicante"
+          ? "Acompañamientos asignados"
+          : role === "Profesional"
+            ? "Jueves, 24 de Octubre"
+            : `Inicio de ${role}`;
       const roleHomePath =
         role === "Practicante" ? "/practicante/asignaciones" : `/${role.toLowerCase()}`;
       const navigation = renderRouter(appDirectory);

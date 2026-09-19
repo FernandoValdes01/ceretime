@@ -1,19 +1,28 @@
 import type { PropsWithChildren, Ref } from "react";
 import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppHeader } from "./app-header";
 
 export function Screen({
   title,
   description,
   children,
   scrollRef,
+  showAppHeader = false,
+  headerTitle = "CERETI",
 }: PropsWithChildren<{
   title: string;
   description: string;
   scrollRef?: Ref<ScrollView>;
+  showAppHeader?: boolean;
+  headerTitle?: string;
 }>) {
   return (
-    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={showAppHeader ? ["top", "left", "right", "bottom"] : ["left", "right", "bottom"]}
+    >
+      {showAppHeader ? <AppHeader title={headerTitle} /> : null}
       <ScrollView
         ref={scrollRef}
         keyboardShouldPersistTaps="handled"
@@ -58,7 +67,7 @@ export function Action({
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F5F7F8" },
+  safeArea: { flex: 1, backgroundColor: "#F7FAF9" },
   content: {
     flexGrow: 1,
     width: "100%",

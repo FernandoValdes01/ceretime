@@ -134,7 +134,7 @@ describe("Solicitudes del estudiante", () => {
   });
 
   test.each([
-    ["Profesional", "/profesional", "Inicio de Profesional"],
+    ["Profesional", "/profesional", "Jueves, 24 de Octubre"],
     ["Practicante", "/practicante/asignaciones", "Acompañamientos asignados"],
     ["Administrador", "/administrador", "Inicio de Administrador"],
   ] as const)(

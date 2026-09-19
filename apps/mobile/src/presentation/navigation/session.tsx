@@ -141,3 +141,7 @@ export function useNavigationSession() {
   }
   return session;
 }
+
+export function useOptionalNavigationSession() {
+  return useContext(SessionContext);
+}

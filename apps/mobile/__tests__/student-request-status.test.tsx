@@ -6,27 +6,40 @@ import {
   StudentRequestStatusIndicator,
 } from "@/presentation/estudiante/student-request-status-indicator";
 
+jest.mock("lucide-react-native", () => {
+  const React = require("react") as typeof import("react");
+  const { View } = require("react-native") as typeof import("react-native");
+  const MockIcon = (props: Record<string, unknown>) => React.createElement(View, props);
+
+  return new Proxy(
+    {},
+    {
+      get: () => MockIcon,
+    },
+  );
+});
+
 const statusCases = [
-  ["received", "Recibida", "↓"],
-  ["underReview", "En revisión", "◷"],
-  ["awaitingInformationOrAcceptance", "Esperando información o aceptación", "!"],
-  ["accepted", "Aceptada", "✓"],
-  ["referred", "Derivada", "→"],
-  ["closedWithoutAccompaniment", "Cerrada sin acompañamiento", "×"],
-  ["cancelled", "Cancelada", "−"],
+  ["received", "Recibida", "arrowDown"],
+  ["underReview", "En revisión", "clock"],
+  ["awaitingInformationOrAcceptance", "Esperando información o aceptación", "alert"],
+  ["accepted", "Aceptada", "circleCheck"],
+  ["referred", "Derivada", "arrowRight"],
+  ["closedWithoutAccompaniment", "Cerrada sin acompañamiento", "circleX"],
+  ["cancelled", "Cancelada", "minus"],
 ] as const satisfies readonly (readonly [StudentRequestStatus, string, string])[];
 
 describe("Estado accesible de la solicitud", () => {
-  test.each(statusCases)("presenta %s como texto y señal gráfica", (status, label, symbol) => {
+  test.each(statusCases)("presenta %s como texto y señal gráfica", (status, label, icon) => {
     render(<StudentRequestStatusIndicator status={status} />);
 
     expect(screen.getByText("Estado de la solicitud")).toHaveProp("accessible", false);
     expect(screen.getByText("Estado de la solicitud")).toHaveProp("selectable", false);
     expect(screen.getByText(label)).toHaveProp("selectable", true);
-    expect(screen.getByText(symbol, { includeHiddenElements: true })).toHaveProp(
-      "accessible",
-      false,
-    );
+    expect(getStudentRequestStatusPresentation(status).icon).toBe(icon);
+    expect(
+      screen.getByTestId(`student-request-status-icon-${icon}`, { includeHiddenElements: true }),
+    ).toHaveProp("accessible", false);
     expect(screen.getByLabelText(`Estado de la solicitud: ${label}`)).toHaveProp(
       "accessibilityRole",
       "text",
@@ -34,10 +47,8 @@ describe("Estado accesible de la solicitud", () => {
   });
 
   test("cada estado usa una señal gráfica distinta", () => {
-    const symbols = statusCases.map(
-      ([status]) => getStudentRequestStatusPresentation(status).symbol,
-    );
+    const icons = statusCases.map(([status]) => getStudentRequestStatusPresentation(status).icon);
 
-    expect(new Set(symbols).size).toBe(statusCases.length);
+    expect(new Set(icons).size).toBe(statusCases.length);
   });
 });

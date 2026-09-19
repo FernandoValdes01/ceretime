@@ -22,6 +22,7 @@
     "expo-router": "~57.0.19",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.3",
+    "lucide-react-native": "^1.47.0",
     "nativewind": "^4.2.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -30,6 +31,7 @@
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
     "react-native-worklets": "0.10.1"
   },
@@ -50,6 +52,8 @@
   "jest": {
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1",
+      "^lucide-react-native$": "<rootDir>/test-mocks/lucide-react-native.tsx",
+      "^lucide-react-native/icons/.*$": "<rootDir>/test-mocks/lucide-react-native.tsx",
       "^expo($|/.*)": "<rootDir>/node_modules/expo$1"
     },
     "preset": "jest-expo",
