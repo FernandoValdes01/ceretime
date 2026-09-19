@@ -253,7 +253,7 @@ test("Profesional pide información adicional en solicitud en revisión", async 
   );
   expect(updated.status).toBe("awaiting_information_or_acceptance");
 
-  // Sin motivo se rechaza sin modificar nada, aun en estado válido
+  // Sin motivo se rechaza indicando qué corregir, sin modificar nada
   const pendingId = await t.mutation(internal.requests.createTestRequest, {
     studentId,
     status: "under_review",
@@ -264,7 +264,7 @@ test("Profesional pide información adicional en solicitud en revisión", async 
       requestId: pendingId,
       reason: "  ",
     }),
-  ).rejects.toThrow("no admite");
+  ).rejects.toThrow("motivo");
   const untouched = await t.query(internal.requests.getRequestById, { id: pendingId });
   expect(untouched?.status).toBe("under_review");
 });

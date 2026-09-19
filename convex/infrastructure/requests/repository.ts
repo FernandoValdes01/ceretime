@@ -1,5 +1,5 @@
 import type { PaginationOptions } from "convex/server";
-import type { Id } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 
 /**
@@ -29,6 +29,23 @@ export async function insertReceivedRequest(
     accessNeeds: input.accessNeeds,
     createdAt: Date.now(),
   });
+}
+
+/** Solicitud por id, o `null` si no existe. */
+export async function getRequestById(
+  ctx: DbReader,
+  requestId: Id<"requests">,
+): Promise<Doc<"requests"> | null> {
+  return await ctx.db.get(requestId);
+}
+
+/** Actualiza el estado de una solicitud. */
+export async function setRequestStatus(
+  ctx: MutationCtx,
+  requestId: Id<"requests">,
+  status: Doc<"requests">["status"],
+): Promise<void> {
+  await ctx.db.patch(requestId, { status });
 }
 
 /** Solicitudes propias del estudiante, paginadas. */

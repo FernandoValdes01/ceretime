@@ -5,7 +5,11 @@ import { transitionRequest } from "../../domain/request/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
-import { insertReceivedRequest } from "../../infrastructure/requests/repository";
+import {
+  getRequestById,
+  insertReceivedRequest,
+  setRequestStatus,
+} from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
 /**
@@ -37,7 +41,7 @@ export async function registerRequest(
     studentId: student._id,
     accessNeeds: input.accessNeeds,
   });
-  const row = await ctx.db.get(requestId);
+  const row = await getRequestById(ctx, requestId);
   if (row === null) deny();
   return toAccompanimentRequest({
     _id: row._id,
@@ -62,7 +66,7 @@ export async function requestAdditionalInformation(
   input: { readonly requestId: Id<"requests">; readonly reason: string },
 ) {
   const professional = await requireActiveProfessional(ctx, identity);
-  const row = await ctx.db.get(input.requestId);
+  const row = await getRequestById(ctx, input.requestId);
   if (row === null) deny();
   const result = transitionRequest({
     from: row.status,
@@ -72,9 +76,12 @@ export async function requestAdditionalInformation(
     reason: input.reason,
   });
   if (result.status === "rejected") {
+    if (result.cause === "reason_required") {
+      throw new Error("Se requiere el motivo para pedir información adicional");
+    }
     throw new Error("La solicitud no admite pedir información adicional en su estado actual");
   }
-  await ctx.db.patch(input.requestId, { status: result.change.to });
+  await setRequestStatus(ctx, input.requestId, result.change.to);
   return toAccompanimentRequest({
     _id: row._id,
     studentId: row.studentId,
