@@ -96,6 +96,21 @@ describe("checkRevokeInternAccess", () => {
     });
   });
 
+  test("acepta el retiro aunque la cuenta haya perdido vigencia", () => {
+    expect(
+      checkRevokeInternAccess({
+        caller: caller({}),
+        target: target({ institutionalStatus: "disabled" }),
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      checkRevokeInternAccess({
+        caller: caller({}),
+        target: target({ accountStatus: "inactive" }),
+      }),
+    ).toEqual({ ok: true });
+  });
+
   test("rechaza al llamante no autorizado", () => {
     expect(
       checkRevokeInternAccess({ caller: caller({ role: "admin" }), target: target({}) }),
@@ -120,27 +135,12 @@ describe("checkRevokeInternAccess", () => {
     ).toEqual({ ok: false, reason: "caller-not-assigned" });
   });
 
-  test("rechaza al objetivo que no es practicante habilitado", () => {
+  test("rechaza al objetivo que no es practicante", () => {
     expect(
       checkRevokeInternAccess({ caller: caller({}), target: target({ role: "student" }) }),
     ).toEqual({ ok: false, reason: "target-not-intern" });
     expect(
-      checkRevokeInternAccess({
-        caller: caller({}),
-        target: target({ institutionalStatus: "disabled" }),
-      }),
-    ).toEqual({ ok: false, reason: "target-not-enabled" });
-    expect(
-      checkRevokeInternAccess({
-        caller: caller({}),
-        target: target({ institutionalStatus: "pending" }),
-      }),
-    ).toEqual({ ok: false, reason: "target-not-enabled" });
-    expect(
-      checkRevokeInternAccess({
-        caller: caller({}),
-        target: target({ accountStatus: "inactive" }),
-      }),
-    ).toEqual({ ok: false, reason: "target-not-enabled" });
+      checkRevokeInternAccess({ caller: caller({}), target: target({ role: "professional" }) }),
+    ).toEqual({ ok: false, reason: "target-not-intern" });
   });
 });

@@ -31,8 +31,9 @@ import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
  * a un acompañamiento por sí mismo.
  *
  * Concesión a Practicante (TI2-28): solo un Profesional autorizado sobre el
- * mismo acompañamiento (con asignación profesional activa) puede conceder,
- * retirar o revocar acceso a un Practicante con cuenta habilitada y vigente.
+ * mismo acompañamiento (con asignación profesional activa) puede conceder
+ * acceso a un Practicante con cuenta habilitada y vigente, y retirar o
+ * revocar asignaciones existentes aunque la cuenta haya perdido vigencia.
  * El Administrador solo habilita la cuenta (TI2-11) y jamás concede
  * acompañamientos. La asignación entre profesionales sigue en arranque
  * (cualquier profesional vigente puede otorgarla); su recorte por
@@ -128,13 +129,14 @@ export async function assignAccompaniment(
 /**
  * Revoca una asignación existente. Es idempotente: revocar una fila ya
  * revocada no falla. Solo un Profesional autorizado sobre el mismo
- * acompañamiento puede retirar o revocar acceso de un Practicante con cuenta
- * habilitada y vigente; el acompañamiento inexistente o no autorizado
- * responde el mismo error genérico. Revoca TODAS las filas activas de la
- * tripla en lugar de una sola, para que ninguna fila escrita fuera del
- * Backend deje acceso activo tras informar éxito. Si tras los lotes acotados
- * quedan filas activas, falla en vez de informar un éxito parcial. Registra
- * actor (`revokedBy`) y fecha (`revokedAt`); la vigencia termina con
+ * acompañamiento puede retirar o revocar la asignación de Practicante,
+ * aunque el objetivo haya perdido habilitación o vigencia; el
+ * acompañamiento inexistente o no autorizado responde el mismo error
+ * genérico. Revoca TODAS las filas activas de la tripla en lugar de una
+ * sola, para que ninguna fila escrita fuera del Backend deje acceso activo
+ * tras informar éxito. Si tras los lotes acotados quedan filas activas,
+ * falla en vez de informar un éxito parcial. Registra actor
+ * (`revokedBy`) y fecha (`revokedAt`); la vigencia termina con
  * `status === "revoked"`.
  */
 export async function revokeAccompaniment(

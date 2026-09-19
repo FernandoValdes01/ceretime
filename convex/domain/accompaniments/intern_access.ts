@@ -51,8 +51,7 @@ export type InternRevokeRejectionReason =
   | "caller-not-professional"
   | "caller-not-active"
   | "caller-not-assigned"
-  | "target-not-intern"
-  | "target-not-enabled";
+  | "target-not-intern";
 
 export type InternRevokeCheck =
   | { readonly ok: true }
@@ -114,10 +113,11 @@ export function checkGrantInternAccess(input: {
 /**
  * Decisión de retiro o revocación de acceso de un Practicante.
  *
- * Exige el mismo llamante autorizado que la concesión y que el objetivo sea
- * un Practicante con cuenta habilitada y vigente (TI2-28: la operación es
- * sobre un Practicante ya habilitado). Una fila legacy sobre una cuenta no
- * habilitada no se toca por esta vía; la lectura ya la deniega por vigencia.
+ * Exige el llamante autorizado (profesional vigente con asignación activa)
+ * y que el objetivo tenga rol Practicante, pero no exige que la cuenta siga
+ * habilitada y vigente: el retiro es limpieza y debe cerrar la asignación
+ * existente aunque la cuenta haya perdido habilitación o vigencia después de
+ * la concesión. La concesión sí exige objetivo habilitado.
  */
 export function checkRevokeInternAccess(input: {
   readonly caller: InternAccessCaller;
@@ -139,14 +139,6 @@ export function checkRevokeInternAccess(input: {
   }
   if (input.target.role !== "intern") {
     return { ok: false, reason: "target-not-intern" };
-  }
-  if (
-    !isProfileActive({
-      institutionalStatus: input.target.institutionalStatus,
-      accountStatus: input.target.accountStatus,
-    })
-  ) {
-    return { ok: false, reason: "target-not-enabled" };
   }
   return { ok: true };
 }

@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
 import { expect, test } from "vitest";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
@@ -213,7 +213,7 @@ test("profesional autorizado retira el acceso y la revocación queda auditada", 
   expect(second).toBeNull();
 });
 
-test("retirar exige practicante habilitado y no toca filas de cuentas no vigentes", async () => {
+test("retirar cierra la fila aunque la cuenta haya perdido vigencia", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedUser(t, {
     subject: "ti28-est-8",
@@ -234,19 +234,16 @@ test("retirar exige practicante habilitado y no toca filas de cuentas no vigente
     subject: "ti28-int-10",
     email: "int10@alu.uct.cl",
     role: "intern",
-    institutionalStatus: "disabled",
   });
   const pendingId = await seedUser(t, {
     subject: "ti28-int-11",
     email: "int11@alu.uct.cl",
     role: "intern",
-    institutionalStatus: "pending",
   });
   const inactiveId = await seedUser(t, {
     subject: "ti28-int-12",
     email: "int12@alu.uct.cl",
     role: "intern",
-    accountStatus: "inactive",
   });
   const accompanimentId = await seedAccompaniment(t, studentId);
   await authorizeProfessional(
@@ -254,46 +251,34 @@ test("retirar exige practicante habilitado y no toca filas de cuentas no vigente
     { accompanimentId, professionalId: proId },
     { subject: "ti28-pro-8b", email: "pro8b@uct.cl" },
   );
-  // Filas legacy sobre cuentas no vigentes: la lectura ya las deniega por
-  // vigencia y el retiro no debe tocarlas.
-  await t.run(async (ctx) => {
-    for (const userId of [disabledId, pendingId, inactiveId]) {
-      await ctx.db.insert("accompanimentAssignments", {
-        accompanimentId,
-        userId,
-        assignedRole: "intern",
-        status: "active",
-        grantedBy: proId,
-        grantedAt: 1,
-      });
-    }
-  });
 
   const asPro = t.withIdentity(identityFor("ti28-pro-8", "pro8@uct.cl"));
-  for (const userId of [disabledId, pendingId, inactiveId]) {
-    const input = { accompanimentId, userId, assignedRole: "intern" as const };
-    const message = await denyMessage(asPro.mutation(internal.assignments.revoke, input));
-    expect(message).toContain("No autorizado");
-    const row = await findAssignmentRow(t, input);
-    expect(row?.status).toBe("active");
-    expect(row?.revokedBy).toBeUndefined();
-    expect(row?.revokedAt).toBeUndefined();
+  const cases = [{ userId: disabledId }, { userId: pendingId }, { userId: inactiveId }];
+  for (const tracked of cases) {
+    await asPro.mutation(internal.assignments.assign, {
+      accompanimentId,
+      userId: tracked.userId,
+      assignedRole: "intern",
+    });
   }
+  // Las cuentas pierden vigencia después de la concesión.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(disabledId, { institutionalStatus: "disabled" });
+    await ctx.db.patch(pendingId, { institutionalStatus: "pending" });
+    await ctx.db.patch(inactiveId, { accountStatus: "inactive" });
+  });
 
-  // Contención: aunque la fila legacy siga activa, la cuenta no vigente no
-  // lee nada, así que no hay acceso efectivo que revocar.
-  for (const callerIdentity of [
-    { subject: "ti28-int-10", email: "int10@alu.uct.cl" },
-    { subject: "ti28-int-11", email: "int11@alu.uct.cl" },
-    { subject: "ti28-int-12", email: "int12@alu.uct.cl" },
-  ]) {
-    const asIntern = t.withIdentity(identityFor(callerIdentity.subject, callerIdentity.email));
-    const message = await denyMessage(
-      asIntern.query(api.presentation.accompaniments.getAccompaniment, {
-        accompanimentId,
-      }),
-    );
-    expect(message).toContain("No autorizado");
+  // El retiro cierra cada fila y registra actor y fecha aunque el objetivo
+  // ya no esté habilitado.
+  for (const tracked of cases) {
+    const input = { accompanimentId, userId: tracked.userId, assignedRole: "intern" as const };
+    const revoked = await asPro.mutation(internal.assignments.revoke, input);
+    expect(revoked).toBe(1);
+    const row = await findAssignmentRow(t, input);
+    expect(row?.status).toBe("revoked");
+    expect(row?.grantedBy).toEqual(proId);
+    expect(row?.revokedBy).toEqual(proId);
+    expect(typeof row?.revokedAt).toBe("number");
   }
 });
 
