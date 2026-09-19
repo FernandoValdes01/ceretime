@@ -7,7 +7,7 @@ import { RoleGuard } from "../../../src/presentation/navigation/role-guard";
 import { useNavigationSession } from "../../../src/presentation/navigation/session";
 
 export default function StudentHome() {
-  const { signOut, accessDeniedRole, dismissAccessDenied, status, error } = useNavigationSession();
+  const { accessDeniedRole, dismissAccessDenied, status, error } = useNavigationSession();
   const isSigningOut = status === "loading";
 
   return (
@@ -45,18 +45,6 @@ export default function StudentHome() {
             {error}
           </StudentText>
         ) : null}
-        <StudentAction
-          disabled={isSigningOut}
-          label={
-            isSigningOut
-              ? "Cerrando sesión…"
-              : error
-                ? "Reintentar cierre de sesión"
-                : "Cambiar de rol"
-          }
-          onPress={() => void signOut()}
-          secondary
-        />
       </StudentScreen>
     </RoleGuard>
   );

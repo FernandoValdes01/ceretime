@@ -22,7 +22,7 @@ const fakeSession: AuthSession = {
   },
 };
 
-test("usa las credenciales del practicante recibidas por props", async () => {
+test("permite explorar el rol de practicante sin exponer credenciales", async () => {
   const unassignedCredentials: AuthCredentials = {
     email: "practicante-sin-asignacion@demo.test",
     password: "demo",
@@ -40,8 +40,10 @@ test("usa las credenciales del practicante recibidas por props", async () => {
   expect(
     screen.getByRole("button", { name: "Entrar como Practicante sin asignación" }),
   ).toHaveStyle({
-    minHeight: 44,
+    minHeight: 52,
   });
+  expect(screen.queryByLabelText("Correo electrónico")).not.toBeOnTheScreen();
+  expect(screen.queryByLabelText("Contraseña")).not.toBeOnTheScreen();
 
   await act(async () => {
     fireEvent.press(screen.getByRole("button", { name: "Entrar como Practicante sin asignación" }));

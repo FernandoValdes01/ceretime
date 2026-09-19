@@ -55,7 +55,7 @@ function SessionContent() {
 }
 
 describe("autenticación mobile simulada", () => {
-  test("expone loading mientras el adapter valida las credenciales", async () => {
+  test("expone loading mientras prepara el rol seleccionado", async () => {
     const result = deferred<AuthSession>();
     const authPort: AuthPort = {
       login: jest.fn(() => result.promise),
@@ -67,25 +67,20 @@ describe("autenticación mobile simulada", () => {
         <Login {...loginProps} />
       </NavigationSessionProvider>,
     );
-    fireEvent.changeText(screen.getByLabelText("Correo electrónico"), "usuario@cereti.test");
-    fireEvent.changeText(screen.getByLabelText("Contraseña"), "clave-ficticia");
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Iniciar sesión" }));
+      fireEvent.press(screen.getByRole("button", { name: "Entrar como Estudiante" }));
       await Promise.resolve();
     });
-    expect(screen.getByText("Validando acceso…")).toBeOnTheScreen();
-    fireEvent.changeText(screen.getByLabelText("Correo electrónico"), "otro@cereti.test");
-    fireEvent.changeText(screen.getByLabelText("Contraseña"), "otra-clave");
-    fireEvent(screen.getByLabelText("Contraseña"), "submitEditing");
+    expect(screen.getByText("Preparando la experiencia…")).toBeOnTheScreen();
     expect(authPort.login).toHaveBeenCalledTimes(1);
     await act(async () => {
       result.resolve(fakeSession);
       await result.promise;
     });
-    expect(screen.queryByText("Validando acceso…")).not.toBeOnTheScreen();
+    expect(screen.queryByText("Preparando la experiencia…")).not.toBeOnTheScreen();
   });
 
-  test("muestra un error de autenticación y conserva el formulario", async () => {
+  test("no muestra campos de credenciales en el selector de roles", async () => {
     render(
       <NavigationSessionProvider
         authPort={createMockAuthenticationPort()}
@@ -94,14 +89,9 @@ describe("autenticación mobile simulada", () => {
         <Login {...loginProps} />
       </NavigationSessionProvider>,
     );
-    fireEvent.changeText(screen.getByLabelText("Correo electrónico"), "incorrecto@cereti.test");
-    fireEvent.changeText(screen.getByLabelText("Contraseña"), "clave-incorrecta");
-    await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Iniciar sesión" }));
-      await Promise.resolve();
-    });
-    expect(screen.getByRole("alert")).toHaveTextContent("Correo o contraseña incorrectos.");
-    expect(screen.getByDisplayValue("incorrecto@cereti.test")).toBeOnTheScreen();
+    expect(screen.queryByLabelText("Correo electrónico")).not.toBeOnTheScreen();
+    expect(screen.queryByLabelText("Contraseña")).not.toBeOnTheScreen();
+    expect(screen.getByText("Elige un rol")).toBeOnTheScreen();
   });
 
   test.each([
@@ -128,15 +118,13 @@ describe("autenticación mobile simulada", () => {
         <SessionContent />
       </NavigationSessionProvider>,
     );
-    fireEvent.changeText(screen.getByLabelText("Correo electrónico"), fakeSession.user.email);
-    fireEvent.changeText(screen.getByLabelText("Contraseña"), "clave-ficticia");
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Iniciar sesión" }));
+      fireEvent.press(screen.getByRole("button", { name: "Entrar como Estudiante" }));
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.getByText("Inicio ficticio")).toBeOnTheScreen());
 
-    const logoutButton = screen.getByRole("button", { name: "Cambiar de rol" });
+    const logoutButton = screen.getByRole("button", { name: "Cerrar sesión" });
     await act(async () => {
       fireEvent.press(logoutButton);
       fireEvent.press(logoutButton);
@@ -151,7 +139,7 @@ describe("autenticación mobile simulada", () => {
       logoutResult.resolve(undefined);
       await logoutResult.promise;
     });
-    expect(await screen.findByText("Inicia sesión")).toBeOnTheScreen();
+    expect(await screen.findByText("Elige un rol")).toBeOnTheScreen();
   });
 
   test("conserva la sesión, muestra el error y permite reintentar el logout", async () => {
@@ -169,24 +157,22 @@ describe("autenticación mobile simulada", () => {
         <SessionContent />
       </NavigationSessionProvider>,
     );
-    fireEvent.changeText(screen.getByLabelText("Correo electrónico"), fakeSession.user.email);
-    fireEvent.changeText(screen.getByLabelText("Contraseña"), "clave-ficticia");
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Iniciar sesión" }));
+      fireEvent.press(screen.getByRole("button", { name: "Entrar como Estudiante" }));
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.getByText("Inicio ficticio")).toBeOnTheScreen());
 
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
+      fireEvent.press(screen.getByRole("button", { name: "Cerrar sesión" }));
       await Promise.resolve();
     });
     expect(screen.getByText("Inicio ficticio")).toBeOnTheScreen();
     expect(screen.getByRole("alert")).toHaveTextContent("No se pudo cerrar sesión.");
-    expect(screen.getByRole("button", { name: "Reintentar cierre de sesión" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeEnabled();
 
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Reintentar cierre de sesión" }));
+      fireEvent.press(screen.getByRole("button", { name: "Cerrar sesión" }));
       await Promise.resolve();
     });
     expect(authPort.logout).toHaveBeenCalledTimes(2);
@@ -195,7 +181,7 @@ describe("autenticación mobile simulada", () => {
       retryResult.resolve(undefined);
       await retryResult.promise;
     });
-    expect(await screen.findByText("Inicia sesión")).toBeOnTheScreen();
+    expect(await screen.findByText("Elige un rol")).toBeOnTheScreen();
   });
 
   test("muestra los dos estados de asignación del practicante", async () => {
@@ -216,10 +202,10 @@ describe("autenticación mobile simulada", () => {
     );
     expect(navigation.getPathname()).toBe(practitionerRoutes.unassigned);
     await act(async () => {
-      fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
+      fireEvent.press(screen.getByRole("button", { name: "Cerrar sesión" }));
       await Promise.resolve();
     });
-    await waitFor(() => expect(screen.getByText("Inicia sesión")).toBeOnTheScreen());
+    await waitFor(() => expect(screen.getByText("Elige un rol")).toBeOnTheScreen());
     await act(async () => {
       fireEvent.press(await screen.findByRole("button", { name: "Entrar como Practicante" }));
       await Promise.resolve();

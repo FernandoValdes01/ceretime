@@ -1,6 +1,7 @@
 import "../global.css";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { LogBox } from "react-native";
 
 import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import {
@@ -8,6 +9,8 @@ import {
   useNavigationSession,
 } from "../src/presentation/navigation/session";
 import { appHeaderOptions } from "../src/presentation/navigation/app-header-options";
+
+LogBox.ignoreLogs(["[Reanimated] Reduced motion setting is enabled on this device."]);
 
 function RootNavigator() {
   const { role } = useNavigationSession();

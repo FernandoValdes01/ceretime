@@ -1,24 +1,25 @@
 import { View } from "react-native";
 
 import type { StudentRequestStatus } from "@/application/student-area-models";
+import { AppIcon, type AppIconName } from "../components/app-icon";
 import { StudentText } from "./student-text";
 
 interface StudentRequestStatusPresentation {
   readonly label: string;
-  readonly symbol: string;
+  readonly icon: AppIconName;
 }
 
 const STATUS_PRESENTATIONS = {
-  received: { label: "Recibida", symbol: "↓" },
-  underReview: { label: "En revisión", symbol: "◷" },
+  received: { label: "Recibida", icon: "arrowDown" },
+  underReview: { label: "En revisión", icon: "clock" },
   awaitingInformationOrAcceptance: {
     label: "Esperando información o aceptación",
-    symbol: "!",
+    icon: "alert",
   },
-  accepted: { label: "Aceptada", symbol: "✓" },
-  referred: { label: "Derivada", symbol: "→" },
-  closedWithoutAccompaniment: { label: "Cerrada sin acompañamiento", symbol: "×" },
-  cancelled: { label: "Cancelada", symbol: "−" },
+  accepted: { label: "Aceptada", icon: "circleCheck" },
+  referred: { label: "Derivada", icon: "arrowRight" },
+  closedWithoutAccompaniment: { label: "Cerrada sin acompañamiento", icon: "circleX" },
+  cancelled: { label: "Cancelada", icon: "minus" },
 } satisfies Record<StudentRequestStatus, StudentRequestStatusPresentation>;
 
 export function getStudentRequestStatusPresentation(
@@ -38,13 +39,13 @@ export function StudentRequestStatusIndicator({ status }: { status: StudentReque
         importantForAccessibility="no-hide-descendants"
         className="h-10 w-10 items-center justify-center rounded-full border border-student-outline bg-student-muted"
       >
-        <StudentText
+        <AppIcon
+          name={presentation.icon}
+          testID={`student-request-status-icon-${presentation.icon}`}
           accessible={false}
-          weight="semibold"
-          className="text-student-primary text-xl leading-[28px]"
-        >
-          {presentation.symbol}
-        </StudentText>
+          color="#0A7C70"
+          size={22}
+        />
       </View>
       <View className="flex-1 gap-1">
         <StudentText

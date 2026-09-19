@@ -5,7 +5,7 @@ import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testi
 const appDirectory = path.resolve(__dirname, "../app");
 const roleCases = [
   ["Estudiante", "/estudiante", "Inicio de Estudiante"],
-  ["Profesional", "/profesional", "Inicio de Profesional"],
+  ["Profesional", "/profesional", "Jueves, 24 de Octubre"],
   ["Practicante", "/practicante/asignaciones", "Acompañamientos asignados"],
   ["Administrador", "/administrador", "Inicio de Administrador"],
 ] as const;
@@ -30,7 +30,7 @@ describe("Navegación principal", () => {
       expect(navigation.getPathname()).toBe(href);
 
       await act(async () => {
-        fireEvent.press(screen.getByRole("button", { name: "Cambiar de rol" }));
+        fireEvent.press(screen.getByRole("button", { name: "Cerrar sesión" }));
         await Promise.resolve();
       });
       await waitFor(() => expect(screen.getByText("Explora la aplicación")).toBeOnTheScreen());

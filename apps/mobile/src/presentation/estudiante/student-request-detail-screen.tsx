@@ -30,7 +30,7 @@ export default function StudentRequestDetailScreen() {
   const request = requests.data.find((item) => item.id === requestId);
 
   return (
-    <StudentScreen showIntroduction={false}>
+    <StudentScreen onBack={router.back} showIntroduction={false}>
       {requests.status === "loading" ? (
         <View
           className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
