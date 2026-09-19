@@ -5,6 +5,7 @@ import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
 } from "@/application/professional-review-models";
+import type { StudentRequestStatus } from "@/application/student-area-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
@@ -22,6 +23,20 @@ const actionHints: Record<ProfessionalRequestAction, string> = {
   startReview: "Marca esta solicitud como en revisión",
   requestInformation: "Indica que necesitas información para continuar",
 };
+
+const noActionMessages = {
+  received: "No hay acciones disponibles para esta solicitud.",
+  underReview: "No hay acciones disponibles para esta solicitud.",
+  awaitingInformationOrAcceptance: "Esperando información o aceptación del estudiante.",
+  accepted: "Solicitud aceptada; el acompañamiento puede continuar.",
+  referred: "Solicitud derivada; queda pendiente del contacto y aceptación del estudiante.",
+  closedWithoutAccompaniment: "Solicitud cerrada sin acompañamiento.",
+  cancelled: "Solicitud cancelada.",
+} satisfies Record<StudentRequestStatus, string>;
+
+export function getNoActionMessage(status: StudentRequestStatus): string {
+  return noActionMessages[status];
+}
 
 function ReviewState({
   title,
@@ -196,7 +211,7 @@ function RequestCard({
         <View style={styles.noActionRow}>
           <AppIcon accessible={false} color="#687A7D" name="clock" size={17} strokeWidth={2} />
           <StudentText style={styles.noActionText}>
-            Esperando información o aceptación del estudiante.
+            {getNoActionMessage(request.status)}
           </StudentText>
         </View>
       )}
