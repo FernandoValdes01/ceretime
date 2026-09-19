@@ -1,6 +1,9 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
-import { registerRequest } from "../application/requests/commands";
+import {
+  registerRequest,
+  requestAdditionalInformation as requestAdditionalInformationUseCase,
+} from "../application/requests/commands";
 import { listOwnRequestsUseCase } from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
 import { requestStatusUnion } from "../validators";
@@ -48,5 +51,18 @@ export const listOwnRequests = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await listOwnRequestsUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Pide información adicional al Estudiante sobre una solicitud en revisión.
+ * Solo un Profesional con cuenta vigente; el motivo es obligatorio.
+ */
+export const requestAdditionalInformation = mutation({
+  args: { requestId: v.id("requests"), reason: v.string() },
+  returns: requestValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await requestAdditionalInformationUseCase(ctx, identity, args);
   },
 });

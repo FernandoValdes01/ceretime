@@ -1,7 +1,8 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import { toAccompanimentRequest } from "../../domain/request/request";
-import type { Doc } from "../../_generated/dataModel";
+import { transitionRequest } from "../../domain/request/transition_policy";
+import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
@@ -60,6 +61,60 @@ export async function registerRequest(
     _id: row._id,
     studentId: row.studentId,
     status: row.status,
+    accessNeeds: row.accessNeeds,
+    createdAt: row.createdAt,
+  });
+}
+
+/** Profesional con cuenta habilitada y vigente. */
+async function requireActiveProfessional(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+): Promise<Doc<"users">> {
+  if (identity === null) deny();
+  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
+  if (
+    caller === null ||
+    caller.role !== "professional" ||
+    caller.institutionalStatus !== "enabled" ||
+    caller.accountStatus !== "active"
+  ) {
+    deny();
+  }
+  return caller;
+}
+
+/**
+ * Pide información adicional al Estudiante: mueve la solicitud a
+ * `awaiting_information_or_acceptance` aplicando la política de TI2-21. Solo
+ * un Profesional con cuenta vigente; cualquier otro caso recibe denegación
+ * genérica. Si el estado actual no admite el paso o falta el motivo, se
+ * rechaza sin modificar nada. El registro histórico del cambio es alcance
+ * de TI2-21/TI2-24: aquí solo persiste el estado resultante.
+ */
+export async function requestAdditionalInformation(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  input: { readonly requestId: Id<"requests">; readonly reason: string },
+) {
+  const professional = await requireActiveProfessional(ctx, identity);
+  const row = await ctx.db.get(input.requestId);
+  if (row === null) deny();
+  const result = transitionRequest({
+    from: row.status,
+    to: "awaiting_information_or_acceptance",
+    actorId: professional._id,
+    occurredAt: Date.now(),
+    reason: input.reason,
+  });
+  if (result.status === "rejected") {
+    throw new Error("La solicitud no admite pedir información adicional en su estado actual");
+  }
+  await ctx.db.patch(input.requestId, { status: result.change.to });
+  return toAccompanimentRequest({
+    _id: row._id,
+    studentId: row.studentId,
+    status: result.change.to,
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   });

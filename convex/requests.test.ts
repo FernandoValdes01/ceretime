@@ -224,3 +224,75 @@ test("Sin identidad o sin rol Estudiante se deniega el listado propio", async ()
     }),
   ).rejects.toThrow("No autorizado");
 });
+
+test("Profesional pide información adicional en solicitud en revisión", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-4");
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-3@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-3`,
+    });
+  });
+  const requestId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "under_review",
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+
+  // El Profesional mueve la solicitud a espera de información con motivo
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-3", "ti9-pro-3@uct.cl"));
+  const updated = await asProfessional.mutation(
+    api.presentation.requests.requestAdditionalInformation,
+    { requestId, reason: "Falta el horario disponible" },
+  );
+  expect(updated.status).toBe("awaiting_information_or_acceptance");
+
+  // Sin motivo se rechaza sin modificar nada, aun en estado válido
+  const pendingId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "under_review",
+    accessNeeds: "Otra necesidad ficticia",
+  });
+  await expect(
+    asProfessional.mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId: pendingId,
+      reason: "  ",
+    }),
+  ).rejects.toThrow("no admite");
+  const untouched = await t.query(internal.requests.getRequestById, { id: pendingId });
+  expect(untouched?.status).toBe("under_review");
+});
+
+test("Pedir información se deniega sin Profesional vigente o en estado inválido", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-5");
+  const receivedId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+
+  // Sin identidad no se opera
+  await expect(
+    t.mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId: receivedId,
+      reason: "Falta el horario disponible",
+    }),
+  ).rejects.toThrow("No autorizado");
+
+  // Un Estudiante no pide información adicional
+  const asStudent = t.withIdentity(identityFor("ti9-est-5", "ti9-est-5@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId: receivedId,
+      reason: "Falta el horario disponible",
+    }),
+  ).rejects.toThrow("No autorizado");
+});
