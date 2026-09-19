@@ -1,10 +1,5 @@
-import { ProfessionalPlaceholderScreen } from "../../../src/presentation/profesional/professional-placeholder-screen";
+import { ProfessionalRequestsScreen } from "../../../src/presentation/profesional/professional-requests-screen";
 
 export default function ProfessionalStudentsRoute() {
-  return (
-    <ProfessionalPlaceholderScreen
-      title="Estudiantes"
-      description="Aquí encontrarás los estudiantes asociados a tus acompañamientos."
-    />
-  );
+  return <ProfessionalRequestsScreen />;
 }
