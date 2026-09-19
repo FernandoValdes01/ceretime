@@ -20,17 +20,23 @@ type StudentScreenIntroductionProps =
 export type StudentScreenProps = PropsWithChildren<
   StudentScreenIntroductionProps & {
     readonly scrollRef?: Ref<ScrollView>;
+    readonly onBack?: () => void;
   }
 >;
 
-export function StudentScreen({ scrollRef, children, ...introduction }: StudentScreenProps) {
+export function StudentScreen({
+  scrollRef,
+  onBack,
+  children,
+  ...introduction
+}: StudentScreenProps) {
   return (
     <StudentFonts>
       <SafeAreaView
         className="flex-1 bg-student-background"
         edges={["top", "left", "right", "bottom"]}
       >
-        <AppHeader />
+        <AppHeader onBack={onBack} />
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"

@@ -1,5 +1,8 @@
 import type { ProfessionalAgendaReader } from "../application/professional-agenda-port";
-import { fictionalProfessionalAgenda } from "./mock-professional-agenda-data";
+import {
+  createFictionalProfessionalAgenda,
+  fictionalProfessionalAgenda,
+} from "./mock-professional-agenda-data";
 
 export type MockProfessionalAgendaMode = "success" | "empty" | "error";
 
@@ -14,7 +17,7 @@ export function createMockProfessionalAgendaReader({
   mode = "success",
 }: MockProfessionalAgendaReaderOptions = {}): ProfessionalAgendaReader {
   return {
-    async readProfessionalAgenda() {
+    async readProfessionalAgenda(dayOffset = 0) {
       if (delayMs > 0) {
         await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
       }
@@ -24,10 +27,12 @@ export function createMockProfessionalAgendaReader({
       }
 
       if (mode === "empty") {
-        return { ...fictionalProfessionalAgenda, events: [] };
+        return { ...createFictionalProfessionalAgenda(dayOffset), events: [] };
       }
 
-      return fictionalProfessionalAgenda;
+      return dayOffset === 0
+        ? fictionalProfessionalAgenda
+        : createFictionalProfessionalAgenda(dayOffset);
     },
   };
 }

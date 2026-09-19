@@ -109,7 +109,6 @@ function Timeline({ events }: { readonly events: readonly ProfessionalAgendaEven
               <StudentText weight="semibold" style={styles.timeText}>
                 {event.startTime}
               </StudentText>
-              <StudentText style={styles.amText}>AM</StudentText>
             </View>
             <View style={styles.markerColumn}>
               <View style={[styles.marker, { backgroundColor: eventColors[event.color] }]} />
@@ -136,7 +135,8 @@ function Timeline({ events }: { readonly events: readonly ProfessionalAgendaEven
 }
 
 export function ProfessionalAgendaScreen() {
-  const { status, data, events, error, reload } = useProfessionalAgendaContext();
+  const { status, data, events, error, reload, goToPreviousDay, goToNextDay } =
+    useProfessionalAgendaContext();
   const { accessDeniedRole, dismissAccessDenied } = useNavigationSession();
 
   return (
@@ -177,6 +177,7 @@ export function ProfessionalAgendaScreen() {
             accessibilityLabel="Día anterior"
             accessibilityRole="button"
             hitSlop={10}
+            onPress={goToPreviousDay}
             style={styles.dayArrow}
           >
             <AppIcon
@@ -199,6 +200,7 @@ export function ProfessionalAgendaScreen() {
             accessibilityLabel="Día siguiente"
             accessibilityRole="button"
             hitSlop={10}
+            onPress={goToNextDay}
             style={styles.dayArrow}
           >
             <AppIcon
@@ -245,7 +247,6 @@ const styles = StyleSheet.create({
   timelineRow: { minHeight: 116, flexDirection: "row" },
   timeColumn: { width: 54, paddingTop: 4, alignItems: "flex-end" },
   timeText: { color: "#182C31", fontSize: 15, lineHeight: 20, fontVariant: ["tabular-nums"] },
-  amText: { color: "#7B8A8A", fontSize: 11, lineHeight: 15 },
   markerColumn: { width: 37, alignItems: "center", paddingTop: 8 },
   marker: { width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: "#FFFFFF" },
   cardColumn: { flex: 1, paddingLeft: 8 },

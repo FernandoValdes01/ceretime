@@ -41,3 +41,25 @@ export const fictionalProfessionalAgenda: ProfessionalAgendaDay = {
     },
   ],
 };
+
+const adjacentDayLabels: Record<number, { weekdayLabel: string; dateLabel: string }> = {
+  [-1]: { weekdayLabel: "Ayer", dateLabel: "Miércoles, 23 de Octubre" },
+  [1]: { weekdayLabel: "Mañana", dateLabel: "Viernes, 25 de Octubre" },
+};
+
+export function createFictionalProfessionalAgenda(dayOffset: number): ProfessionalAgendaDay {
+  const labels = adjacentDayLabels[dayOffset] ?? {
+    weekdayLabel: dayOffset < 0 ? "Día anterior" : "Día siguiente",
+    dateLabel: dayOffset < 0 ? "Día anterior" : "Día siguiente",
+  };
+
+  return {
+    ...fictionalProfessionalAgenda,
+    id: `agenda-demo-${dayOffset}`,
+    ...labels,
+    events: fictionalProfessionalAgenda.events.map((event) => ({
+      ...event,
+      id: `${event.id}-${dayOffset}`,
+    })),
+  };
+}
