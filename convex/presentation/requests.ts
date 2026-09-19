@@ -4,7 +4,10 @@ import {
   registerRequest,
   requestAdditionalInformation as requestAdditionalInformationUseCase,
 } from "../application/requests/commands";
-import { listOwnRequestsUseCase } from "../application/requests/queries";
+import {
+  listAuthorizedRequestsUseCase,
+  listOwnRequestsUseCase,
+} from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
 import { requestStatusUnion } from "../validators";
 
@@ -51,6 +54,20 @@ export const listOwnRequests = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await listOwnRequestsUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Lista todas las solicitudes de estudiantes para el Profesional, paginado.
+ * Definición de alcance (TI2-9): todo Profesional vigente ve todas, vista
+ * completa. Cualquier otro rol recibe denegación.
+ */
+export const listAuthorizedRequests = query({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(requestValidator),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await listAuthorizedRequestsUseCase(ctx, identity, args);
   },
 });
 
