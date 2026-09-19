@@ -52,8 +52,8 @@
   "jest": {
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1",
-      "^lucide-react-native$": "<rootDir>/test-mocks/lucide-react-native.tsx",
-      "^lucide-react-native/icons/.*$": "<rootDir>/test-mocks/lucide-react-native.tsx",
+      "^lucide-react-native$": "<rootDir>/__mocks__/lucide-react-native.tsx",
+      "^lucide-react-native/icons/.*$": "<rootDir>/__mocks__/lucide-react-native.tsx",
       "^expo($|/.*)": "<rootDir>/node_modules/expo$1"
     },
     "preset": "jest-expo",

@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
@@ -8,7 +8,7 @@ import { ProfessionalHeader } from "./professional-header";
 
 export function ProfessionalAgendaDetailScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
-  const { status, findEvent } = useProfessionalAgendaContext();
+  const { status, findEvent, error, reload } = useProfessionalAgendaContext();
   const event = typeof eventId === "string" ? findEvent(eventId) : null;
 
   return (
@@ -18,6 +18,25 @@ export function ProfessionalAgendaDetailScreen() {
         <View style={styles.content}>
           {status === "loading" ? (
             <StudentText style={styles.message}>Cargando actividad…</StudentText>
+          ) : status === "error" ? (
+            <View style={styles.stateCard}>
+              <StudentText accessibilityRole="header" weight="semibold" style={styles.stateTitle}>
+                No pudimos cargar la actividad
+              </StudentText>
+              <StudentText style={styles.stateMessage}>
+                {error instanceof Error ? error.message : "Intenta nuevamente."}
+              </StudentText>
+              <Pressable
+                accessibilityLabel="Reintentar carga de actividad"
+                accessibilityRole="button"
+                onPress={reload}
+                style={styles.retryButton}
+              >
+                <StudentText weight="semibold" style={styles.retryText}>
+                  Reintentar
+                </StudentText>
+              </Pressable>
+            </View>
           ) : event ? (
             <View style={styles.detailCard}>
               <StudentText weight="bold" style={styles.name}>
@@ -73,4 +92,23 @@ const styles = StyleSheet.create({
   value: { color: "#182C31", fontSize: 16 },
   summary: { color: "#42565B", fontSize: 16, lineHeight: 24 },
   message: { color: "#5B6C6E", fontSize: 17, textAlign: "center" },
+  stateCard: {
+    padding: 20,
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#D5E0DE",
+    borderRadius: 14,
+    backgroundColor: "#FFFFFF",
+  },
+  stateTitle: { color: "#182C31", fontSize: 19, textAlign: "center" },
+  stateMessage: { color: "#5B6C6E", fontSize: 15, lineHeight: 22, textAlign: "center" },
+  retryButton: {
+    minHeight: 44,
+    paddingHorizontal: 18,
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: "#078B7B",
+  },
+  retryText: { color: "#FFFFFF", fontSize: 15 },
 });
