@@ -11,3 +11,5 @@ bun run mobile:android
 ```
 
 No uses `expo-web`, `expo start --web`, `npm run web` ni una vista previa en navegador como sustituto del emulador Android.
+
+No inicies ni reinicies Expo, Metro ni ningún servidor de desarrollo para validar la aplicación salvo que Vicente lo solicite explícitamente; si no hay un servidor activo, informa el bloqueo y espera autorización.
