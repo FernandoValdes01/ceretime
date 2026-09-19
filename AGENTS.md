@@ -50,6 +50,10 @@ La fuente de verdad operativa de cada issue es Linear: la issue vigente manda so
 
 - Antes de finalizar cualquier cambio, ejecuta desde la raíz `bun run lint` y `bun run format:check`; si el formato falla, corrígelo con `bun run format` y vuelve a ejecutar ambos checks.
 
+## Commits
+
+- Cuando corrijas hallazgos de una revisión automática o humana, el mensaje del commit debe describir la corrección concreta realizada. No uses mensajes genéricos como «fixes del Greptile» ni atribuyas el cambio al revisor.
+
 # Issues y Pull Requests
 
 Cada miembro se identifica solo con el issue ID en el nombre de su rama (`usuario/TEAM-nnn-slug`); el detalle operativo vive en `docs/agents/issue-tracker.md` y `docs/agents/pull-requests.md`. Por defecto se usa el `gitBranchName` que sugiere Linear.
