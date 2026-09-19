@@ -50,10 +50,6 @@ La fuente de verdad operativa de cada issue es Linear: la issue vigente manda so
 
 - Antes de finalizar cualquier cambio, ejecuta desde la raíz `bun run lint` y `bun run format:check`; si el formato falla, corrígelo con `bun run format` y vuelve a ejecutar ambos checks.
 
-## Servidores de desarrollo
-
-- No inicies, reinicies ni dejes corriendo servidores de desarrollo, Metro, Expo, web, Convex u otros procesos equivalentes salvo que Vicente lo solicite explícitamente; si necesitas verificar una aplicación, usa un servidor que ya esté activo o pide autorización antes de levantar uno.
-
 # Issues y Pull Requests
 
 Cada miembro se identifica solo con el issue ID en el nombre de su rama (`usuario/TEAM-nnn-slug`); el detalle operativo vive en `docs/agents/issue-tracker.md` y `docs/agents/pull-requests.md`. Por defecto se usa el `gitBranchName` que sugiere Linear.
