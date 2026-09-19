@@ -9,14 +9,8 @@ export default function ProfessionalLayout() {
   return (
     <ProfessionalReviewProvider port={mobileDependencies.professionalReviewPort}>
       <ProfessionalAgendaProvider reader={mobileDependencies.professionalAgendaReader}>
-        <Tabs screenOptions={roleTabScreenOptions}>
-          <Tabs.Screen
-            name="inicio"
-            options={{
-              title: "Inicio",
-              tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="house" />,
-            }}
-          />
+        <Tabs initialRouteName="(agenda)" screenOptions={roleTabScreenOptions}>
+          <Tabs.Screen name="inicio" options={{ href: null }} />
           <Tabs.Screen
             name="(agenda)"
             options={{
