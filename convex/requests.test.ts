@@ -225,62 +225,6 @@ test("Sin identidad o sin rol Estudiante se deniega el listado propio", async ()
   ).rejects.toThrow("No autorizado");
 });
 
-test("Profesional lista todas las solicitudes de estudiantes", async () => {
-  // Instancia el entorno de prueba con el esquema y funciones reales
-  const t = convexTest(schema, modules);
-  await seedStudent(t, "ti9-est-6");
-  await seedStudent(t, "ti9-est-7");
-  await t.run(async (ctx) => {
-    return await ctx.db.insert("users", {
-      email: "ti9-pro-4@uct.cl",
-      fullName: "Profesional Ficticio",
-      role: "professional",
-      institutionalStatus: "enabled",
-      accountStatus: "active",
-      tokenIdentifier: `${ISSUER}|ti9-pro-4`,
-    });
-  });
-
-  // Dos estudiantes registran una solicitud cada uno
-  const asFirst = t.withIdentity(identityFor("ti9-est-6", "ti9-est-6@alu.uct.cl"));
-  await asFirst.mutation(api.presentation.requests.createRequest, {
-    accessNeeds: "Primera ficticia",
-  });
-  const asSecond = t.withIdentity(identityFor("ti9-est-7", "ti9-est-7@alu.uct.cl"));
-  await asSecond.mutation(api.presentation.requests.createRequest, {
-    accessNeeds: "Segunda ficticia",
-  });
-
-  // El Profesional vigente las ve todas, vista completa
-  const asProfessional = t.withIdentity(identityFor("ti9-pro-4", "ti9-pro-4@uct.cl"));
-  const page = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
-    paginationOpts: { numItems: 10, cursor: null },
-  });
-  expect(page.page).toHaveLength(2);
-  expect(page.page[0]?.accessNeeds).toBeDefined();
-});
-
-test("Sin rol Profesional se deniega el listado autorizado", async () => {
-  // Instancia el entorno de prueba con el esquema y funciones reales
-  const t = convexTest(schema, modules);
-  await seedStudent(t, "ti9-est-8");
-
-  // Sin identidad no se lista nada
-  await expect(
-    t.query(api.presentation.requests.listAuthorizedRequests, {
-      paginationOpts: { numItems: 10, cursor: null },
-    }),
-  ).rejects.toThrow("No autorizado");
-
-  // Un Estudiante no lista el conjunto autorizado
-  const asStudent = t.withIdentity(identityFor("ti9-est-8", "ti9-est-8@alu.uct.cl"));
-  await expect(
-    asStudent.query(api.presentation.requests.listAuthorizedRequests, {
-      paginationOpts: { numItems: 10, cursor: null },
-    }),
-  ).rejects.toThrow("No autorizado");
-});
-
 test("Profesional pide información adicional en solicitud en revisión", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);

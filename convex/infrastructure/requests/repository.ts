@@ -59,8 +59,3 @@ export async function listOwnedRequests(
     .withIndex("by_student", (q) => q.eq("studentId", studentId))
     .paginate(paginationOpts);
 }
-
-/** Todas las solicitudes en orden de creación, paginadas. */
-export async function listAllRequests(ctx: DbReader, paginationOpts: PaginationOptions) {
-  return await ctx.db.query("requests").order("asc").paginate(paginationOpts);
-}
