@@ -122,13 +122,24 @@ test("practicante habilitado con asignación explícita lee minimizado sin datos
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const assigner = await seedUser(t, {
     subject: "ti18-pro-1",
     email: "pro1@uct.cl",
     fullName: "Profesional Asignador",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti18-pro-1b",
+    email: "pro1b@uct.cl",
+    fullName: "Profesional Bootstrap",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    { accompanimentId, userId: assigner.id, assignedRole: "professional" },
+    { subject: "ti18-pro-1b", email: "pro1b@uct.cl" },
+  );
   await seedAssignment(
     t,
     { accompanimentId, userId: intern.id, assignedRole: "intern" },
@@ -165,14 +176,25 @@ test("practicante solo lista lo asignado y no descubre el resto", async () => {
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const assigner = await seedUser(t, {
     subject: "ti18-pro-2",
     email: "pro2@uct.cl",
     fullName: "Profesional Asignador",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti18-pro-2b",
+    email: "pro2b@uct.cl",
+    fullName: "Profesional Bootstrap",
+    role: "professional",
+  });
   const assignedId = await seedAccompaniment(t, student.id);
   const otherId = await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    { accompanimentId: assignedId, userId: assigner.id, assignedRole: "professional" },
+    { subject: "ti18-pro-2b", email: "pro2b@uct.cl" },
+  );
   await seedAssignment(
     t,
     { accompanimentId: assignedId, userId: intern.id, assignedRole: "intern" },
@@ -241,15 +263,26 @@ test("asignación revocada deja de autorizar al practicante", async () => {
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const assigner = await seedUser(t, {
     subject: "ti18-pro-4",
     email: "pro4@uct.cl",
     fullName: "Profesional Asignador",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti18-pro-4b",
+    email: "pro4b@uct.cl",
+    fullName: "Profesional Bootstrap",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
   const input = { accompanimentId, userId: intern.id, assignedRole: "intern" as const };
   const caller = { subject: "ti18-pro-4", email: "pro4@uct.cl" };
+  await seedAssignment(
+    t,
+    { accompanimentId, userId: assigner.id, assignedRole: "professional" },
+    { subject: "ti18-pro-4b", email: "pro4b@uct.cl" },
+  );
   await seedAssignment(t, input, caller);
   await seedRevoke(t, input, caller);
 
@@ -300,10 +333,20 @@ test("cuenta no habilitada o no vigente no lee aunque tenga asignación", async 
     role: "professional",
   });
   const accompanimentId = await seedAccompaniment(t, student.id);
-  const caller = { subject: "ti18-pro-5", email: "pro5@uct.cl" };
-  for (const target of [disabled, pending, inactive]) {
-    await seedAssignment(t, { accompanimentId, userId: target.id, assignedRole: "intern" }, caller);
-  }
+  // Asignación directa fuera de la vía guardada para probar lectura con
+  // cuenta no habilitada: la vía guardada (TI2-28) ya rechaza conceder a
+  // quien no está habilitado, pero la lectura debe seguir denegando aunque
+  // exista una fila legacy.
+  await t.run(async (ctx) => {
+    for (const target of [disabled, pending, inactive]) {
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId,
+        userId: target.id,
+        assignedRole: "intern",
+        status: "active",
+      });
+    }
+  });
 
   for (const callerIdentity of [
     { subject: "ti18-int-5", email: "int5@alu.uct.cl" },

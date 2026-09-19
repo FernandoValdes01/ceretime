@@ -80,8 +80,9 @@ async function findAssignmentRow(
 }
 
 /**
- * Trazabilidad de asignaciones (TI2-16): quién concede y cuándo, quién
- * revoca y cuándo. Solo persistencia con datos ficticios.
+ * Trazabilidad de asignaciones (TI2-16, TI2-28): quién concede y cuándo,
+ * quién revoca y cuándo. Solo persistencia con datos ficticios. La concesión
+ * a Practicante exige profesional autorizado sobre el acompañamiento.
  */
 test("Asignar registra quién concede y cuándo", async () => {
   const t = convexTest(schema, modules);
@@ -93,6 +94,11 @@ test("Asignar registra quién concede y cuándo", async () => {
   const proId = await seedUser(t, {
     subject: "ti16-pro-10",
     email: "pro10@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti16-pro-10b",
+    email: "pro10b@uct.cl",
     role: "professional",
   });
   const internId = await seedUser(t, {
@@ -107,6 +113,12 @@ test("Asignar registra quién concede y cuándo", async () => {
     assignedRole: "intern" as const,
   };
 
+  const asBootstrap = t.withIdentity(identityFor("ti16-pro-10b", "pro10b@uct.cl"));
+  await asBootstrap.mutation(internal.assignments.assign, {
+    accompanimentId,
+    userId: proId,
+    assignedRole: "professional",
+  });
   const asPro = t.withIdentity(identityFor("ti16-pro-10", "pro10@uct.cl"));
   await asPro.mutation(internal.assignments.assign, input);
 
@@ -131,6 +143,11 @@ test("Revocar registra quién revoca y cuándo", async () => {
     email: "pro11@uct.cl",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti16-pro-11b",
+    email: "pro11b@uct.cl",
+    role: "professional",
+  });
   const internId = await seedUser(t, {
     subject: "ti16-int-11",
     email: "int11@alu.uct.cl",
@@ -143,6 +160,12 @@ test("Revocar registra quién revoca y cuándo", async () => {
     assignedRole: "intern" as const,
   };
 
+  const asBootstrap = t.withIdentity(identityFor("ti16-pro-11b", "pro11b@uct.cl"));
+  await asBootstrap.mutation(internal.assignments.assign, {
+    accompanimentId,
+    userId: proId,
+    assignedRole: "professional",
+  });
   const asPro = t.withIdentity(identityFor("ti16-pro-11", "pro11@uct.cl"));
   await asPro.mutation(internal.assignments.assign, input);
   await asPro.mutation(internal.assignments.revoke, input);
@@ -162,7 +185,7 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
     email: "est14@alu.uct.cl",
     role: "student",
   });
-  await seedUser(t, {
+  const proId = await seedUser(t, {
     subject: "ti16-pro-14",
     email: "pro14@uct.cl",
     role: "professional",
@@ -177,7 +200,18 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
     email: "pro14b@uct.cl",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti16-pro-14c",
+    email: "pro14c@uct.cl",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, studentId);
+  const asBootstrap = t.withIdentity(identityFor("ti16-pro-14c", "pro14c@uct.cl"));
+  await asBootstrap.mutation(internal.assignments.assign, {
+    accompanimentId,
+    userId: proId,
+    assignedRole: "professional",
+  });
   const asPro = t.withIdentity(identityFor("ti16-pro-14", "pro14@uct.cl"));
 
   // Un estudiante no puede quedar registrado como Practicante
@@ -234,6 +268,14 @@ test("Revocar falla si no alcanza a cerrar todas las filas activas", async () =>
 
   // Más filas activas que el tope de 10 lotes de 50
   await t.run(async (ctx) => {
+    await ctx.db.insert("accompanimentAssignments", {
+      accompanimentId,
+      userId: proId,
+      assignedRole: "professional",
+      status: "active",
+      grantedBy: proId,
+      grantedAt: 1,
+    });
     for (let round = 0; round < 501; round++) {
       await ctx.db.insert("accompanimentAssignments", {
         accompanimentId,
