@@ -20,8 +20,8 @@ import { requestStatusUnion } from "../validators";
  */
 
 const requestValidator = v.object({
-  _id: v.string(),
-  studentId: v.string(),
+  _id: v.id("requests"),
+  studentId: v.id("users"),
   status: requestStatusUnion,
   accessNeeds: v.string(),
   createdAt: v.number(),
