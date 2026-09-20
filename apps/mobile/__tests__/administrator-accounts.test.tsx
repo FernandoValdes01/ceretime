@@ -63,17 +63,27 @@ describe("habilitación administrativa de cuentas", () => {
     );
   });
 
-  test("conserva pendiente una cuenta cuando ocurre un error controlado", async () => {
+  test("rechaza habilitar una cuenta que ya está habilitada", async () => {
+    const adapter = createMockAdministratorAccountsAdapter();
+
+    await adapter.enablePractitionerAccount("practitioner-account-1");
+
+    await expect(adapter.enablePractitionerAccount("practitioner-account-1")).rejects.toThrow(
+      "La cuenta institucional ya está habilitada.",
+    );
+  });
+
+  test("conserva pendiente una cuenta no institucional", async () => {
     const adapter = createMockAdministratorAccountsAdapter();
 
     await expect(adapter.enablePractitionerAccount("practitioner-account-2")).rejects.toThrow(
-      "No pudimos habilitar la cuenta institucional. Intenta nuevamente.",
+      "Solo puedes habilitar cuentas institucionales @alu.uct.cl.",
     );
 
     const accounts = await adapter.readPractitionerAccounts();
     expect(accounts[1]).toMatchObject({
       id: "practitioner-account-2",
-      email: "matias.vera@alu.uct.cl",
+      email: "matias.vera@example.com",
       status: "pending",
     });
   });
@@ -196,7 +206,7 @@ describe("flujo administrativo", () => {
     fireEvent.press(enableButton);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "No pudimos habilitar la cuenta institucional. Intenta nuevamente.",
+      "Solo puedes habilitar cuentas institucionales @alu.uct.cl.",
     );
     expect(screen.getByLabelText("Estado: Pendiente")).toBeOnTheScreen();
     expect(enableButton).toBeEnabled();

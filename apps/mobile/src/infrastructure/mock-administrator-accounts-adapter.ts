@@ -11,10 +11,14 @@ const fictionalPractitionerAccounts: readonly PractitionerAccount[] = [
   {
     id: "practitioner-account-2",
     displayName: "Matías Vera",
-    email: "matias.vera@alu.uct.cl",
+    email: "matias.vera@example.com",
     status: "pending",
   },
 ];
+
+function hasInstitutionalPractitionerEmail(email: string): boolean {
+  return /^[^@\s]+@alu\.uct\.cl$/i.test(email);
+}
 
 export function createMockAdministratorAccountsAdapter(): AdministratorAccountsPort {
   let accounts = fictionalPractitionerAccounts.map((account) => ({ ...account }));
@@ -28,8 +32,11 @@ export function createMockAdministratorAccountsAdapter(): AdministratorAccountsP
       if (!account) {
         throw new Error("No encontramos la cuenta institucional seleccionada.");
       }
-      if (accountId === "practitioner-account-2") {
-        throw new Error("No pudimos habilitar la cuenta institucional. Intenta nuevamente.");
+      if (account.status !== "pending") {
+        throw new Error("La cuenta institucional ya está habilitada.");
+      }
+      if (!hasInstitutionalPractitionerEmail(account.email)) {
+        throw new Error("Solo puedes habilitar cuentas institucionales @alu.uct.cl.");
       }
 
       const enabledAccount: PractitionerAccount = { ...account, status: "enabled" };
