@@ -79,6 +79,7 @@ function AccountCard({
 
       {!isEnabled ? (
         <Pressable
+          cssInterop={false}
           accessibilityHint="Habilita el acceso institucional, sin asignar acompañamientos"
           accessibilityLabel={`Habilitar cuenta de ${account.displayName}`}
           accessibilityRole="button"
@@ -145,6 +146,7 @@ export function AdministratorUsersScreen() {
                   {messageFrom(error, "Intenta nuevamente.")}
                 </StudentText>
                 <Pressable
+                  cssInterop={false}
                   accessibilityRole="button"
                   onPress={reload}
                   style={({ pressed }) => [styles.retryButton, pressed && styles.buttonPressed]}

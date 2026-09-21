@@ -27,6 +27,7 @@ export function AdministratorHomeScreen() {
               Gestiona la habilitación institucional de cuentas de Practicantes.
             </StudentText>
             <Pressable
+              cssInterop={false}
               accessibilityHint="Abre la lista de cuentas institucionales"
               accessibilityRole="button"
               accessibilityLabel="Abrir habilitación de cuentas"

@@ -10,6 +10,12 @@ const fictionalPractitionerAccounts: readonly PractitionerAccount[] = [
   },
   {
     id: "practitioner-account-2",
+    displayName: "Alex Rojas",
+    email: "alex.rojas@uct.cl",
+    status: "pending",
+  },
+  {
+    id: "practitioner-account-3",
     displayName: "Matías Vera",
     email: "matias.vera@example.com",
     status: "pending",
@@ -17,7 +23,7 @@ const fictionalPractitionerAccounts: readonly PractitionerAccount[] = [
 ];
 
 function hasInstitutionalPractitionerEmail(email: string): boolean {
-  return /^[^@\s]+@alu\.uct\.cl$/i.test(email);
+  return /^[^@\s]+@(?:alu\.)?uct\.cl$/i.test(email);
 }
 
 export function createMockAdministratorAccountsAdapter(): AdministratorAccountsPort {
@@ -36,7 +42,7 @@ export function createMockAdministratorAccountsAdapter(): AdministratorAccountsP
         throw new Error("La cuenta institucional ya está habilitada.");
       }
       if (!hasInstitutionalPractitionerEmail(account.email)) {
-        throw new Error("Solo puedes habilitar cuentas institucionales @alu.uct.cl.");
+        throw new Error("Solo puedes habilitar cuentas institucionales @alu.uct.cl o @uct.cl.");
       }
 
       const enabledAccount: PractitionerAccount = { ...account, status: "enabled" };
