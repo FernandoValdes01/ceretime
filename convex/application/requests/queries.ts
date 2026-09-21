@@ -76,7 +76,7 @@ export async function listAuthorizedRequestsUseCase(
   const seen = new Set<string>();
   const items: AuthorizedRequestItem[] = [];
   let exhausted = false;
-  for (let round = 0; round < 10 && items.length < limit; round++) {
+  scan: for (let round = 0; round < 10 && items.length < limit; round++) {
     const rows = await queryAssignedRowsAfter(ctx, {
       userId: professional._id,
       assignedRole: "professional",
@@ -87,7 +87,9 @@ export async function listAuthorizedRequestsUseCase(
       exhausted = true;
       break;
     }
+    const lastWindow = rows.length < 51;
     for (const row of rows) {
+      cursor = row.accompanimentId;
       if (seen.has(row.accompanimentId)) continue;
       seen.add(row.accompanimentId);
       const accompaniment = await getAccompanimentById(ctx, row.accompanimentId);
@@ -103,10 +105,9 @@ export async function listAuthorizedRequestsUseCase(
           createdAt: request.createdAt,
         }),
       );
-      if (items.length >= limit) break;
+      if (items.length >= limit) break scan;
     }
-    cursor = rows[rows.length - 1].accompanimentId;
-    if (rows.length < 51) {
+    if (lastWindow) {
       exhausted = true;
       break;
     }

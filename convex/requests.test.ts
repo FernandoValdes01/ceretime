@@ -1,7 +1,9 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import type { FunctionReturnType } from "convex/server";
 import { expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import schema from "./schema";
 
@@ -377,6 +379,73 @@ test("Profesional no ve duplicadas aunque existan filas repetidas", async () => 
   });
   expect(second.page).toHaveLength(0);
   expect(second.isDone).toBe(true);
+});
+
+test("Profesional no pierde solicitudes cuando la página se llena antes", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-12");
+  const expected: Id<"requests">[] = [];
+  for (const tag of ["a", "b", "c"]) {
+    const requestId = await t.mutation(internal.requests.createTestRequest, {
+      studentId,
+      status: "accepted",
+      accessNeeds: `Vinculada ${tag} ficticia`,
+    });
+    expected.push(requestId);
+  }
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-9@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-9`,
+    });
+  });
+  const targetId = await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-10@uct.cl",
+      fullName: "Profesional Asignado",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-10`,
+    });
+  });
+  const asGranter = t.withIdentity(identityFor("ti9-pro-9", "ti9-pro-9@uct.cl"));
+  for (const requestId of expected) {
+    const accompanimentId = await t.run(async (ctx) => {
+      return await ctx.db.insert("accompaniments", {
+        studentId,
+        status: "active",
+        objective: "Objetivo ficticio",
+        accessNeeds: "Necesidad de acceso ficticia",
+        requestId,
+      });
+    });
+    await asGranter.mutation(internal.assignments.assign, {
+      accompanimentId,
+      userId: targetId,
+      assignedRole: "professional",
+    });
+  }
+
+  // Caminar de a una trae las tres sin omitir ninguna
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-10", "ti9-pro-10@uct.cl"));
+  const seen: string[] = [];
+  let cursor: string | null = null;
+  for (let round = 0; round < 5; round++) {
+    const page: FunctionReturnType<typeof api.presentation.requests.listAuthorizedRequests> =
+      await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+        paginationOpts: { numItems: 1, cursor },
+      });
+    for (const item of page.page) seen.push(item._id);
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
+  expect(seen.sort()).toEqual(expected.sort());
 });
 
 test("Profesional pide información adicional en solicitud en revisión", async () => {
