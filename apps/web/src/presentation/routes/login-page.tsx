@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-login.ts";
+import { isBackendConfigured } from "../../infrastructure/convex/convex-client.ts";
 import { AuthScreen } from "../auth/AuthScreen.tsx";
 import type { WebSessionState } from "../session/session-state.ts";
 import { useNavigateToPath } from "./navigation.ts";
@@ -44,6 +45,11 @@ export function LoginPage({ session }: { session: WebSessionState }) {
     }
   }, [target, navigateToPath]);
 
+  // Sin backend la sesión nunca resuelve: se muestra el acceso, que ya
+  // contiene el estado explícito de configuración faltante.
+  if (!isBackendConfigured) {
+    return <AuthScreen />;
+  }
   if (session === undefined || target !== null) {
     return <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>;
   }

@@ -6,6 +6,7 @@ import { createAppRouter } from "./router.tsx";
 import type { WebSessionState } from "../session/session-state.ts";
 
 let mockedSession: WebSessionState;
+let mockedBackendConfigured = true;
 
 vi.mock("convex/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("convex/react")>();
@@ -19,7 +20,9 @@ vi.mock("../../infrastructure/auth/auth-client", () => ({
 vi.mock("../../infrastructure/convex/convex-client", () => ({
   convexUrl: "https://test.convex.cloud",
   convexSiteUrl: "https://test.convex.site",
-  isBackendConfigured: true,
+  get isBackendConfigured() {
+    return mockedBackendConfigured;
+  },
   convexClient: {},
 }));
 
@@ -44,6 +47,7 @@ beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
   sessionStorage.clear();
   mockedSession = undefined;
+  mockedBackendConfigured = true;
 });
 
 afterEach(() => {
@@ -101,17 +105,17 @@ describe("guard del portal del Estudiante (TI2-6)", () => {
 });
 
 describe("retorno post-login (TI2-6)", () => {
-  test("el acceso autenticado navega a la ruta conservada una sola vez", async () => {
+  test("el retorno OAuth en / navega a la ruta conservada una sola vez", async () => {
     mockedSession = SIN_SESION;
     const first = renderAt("/login?redirect=/estudiante");
 
     const accessHeading = await screen.findByRole("heading", { name: "Acceso institucional" });
     expect(accessHeading).toBeDefined();
 
-    // Recarga post-OAuth con sesión: montaje fresco como tras el callback.
+    // El callback OAuth real vuelve a `/`: el índice consume el retorno.
     first.unmount();
     mockedSession = ESTUDIANTE;
-    const { router } = renderAt("/login?redirect=/estudiante");
+    const { router } = renderAt("/");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/estudiante"));
     const portalHeading = await screen.findByRole("heading", { name: "Portal del Estudiante" });
@@ -125,6 +129,25 @@ describe("retorno post-login (TI2-6)", () => {
 
     const sessionHeading = await screen.findByRole("heading", { name: "Sesión iniciada" });
     expect(sessionHeading).toBeDefined();
+  });
+});
+
+describe("sin backend configurado (TI2-6)", () => {
+  test("las rutas muestran el acceso con su estado explícito, sin cargar infinito", async () => {
+    mockedBackendConfigured = false;
+    mockedSession = undefined;
+
+    const index = renderAt("/");
+    const indexHeading = await screen.findByRole("heading", { name: "Acceso institucional" });
+    expect(indexHeading).toBeDefined();
+    expect(index.router.state.location.pathname).toBe("/");
+    index.unmount();
+
+    const portal = renderAt("/estudiante");
+    const portalHeading = await screen.findByRole("heading", { name: "Acceso institucional" });
+    expect(portalHeading).toBeDefined();
+    expect(portal.router.state.location.pathname).toBe("/estudiante");
+    expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
   });
 });
 

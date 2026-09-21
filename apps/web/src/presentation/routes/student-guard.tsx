@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-login.ts";
+import { isBackendConfigured } from "../../infrastructure/convex/convex-client.ts";
+import { AuthScreen } from "../auth/AuthScreen.tsx";
 import type { WebSessionState } from "../session/session-state.ts";
 
 /**
@@ -42,6 +44,12 @@ export function RequireStudent({
     }
   }, [session, returnHref, navigate]);
 
+  // Sin backend la sesión nunca resuelve: se muestra el acceso con su
+  // estado explícito en vez de un "Cargando…" indefinido. No expone
+  // contenido protegido porque el portal nunca llega a renderizarse.
+  if (!isBackendConfigured) {
+    return <AuthScreen />;
+  }
   if (session === undefined) {
     return <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>;
   }
