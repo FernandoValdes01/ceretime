@@ -38,6 +38,8 @@ cp apps/web/.env.example apps/web/.env.local
 
 Oxlint y Oxfmt se configuran en la raíz. Oxfmt también comprueba los archivos de configuración y documentación compatibles de la raíz, junto con `apps/`, `convex/`, `packages/` y `.github/` cuando esas carpetas existan. Las salidas generadas, dependencias y builds quedan excluidas. Estas comprobaciones no reemplazan typecheck, pruebas ni builds.
 
+La configuración manual para exigir estos checks y mantener las PR actualizadas con `main` está en [docs/ci-protections.md](docs/ci-protections.md).
+
 Desde la raíz del monorepo:
 
 ```sh
