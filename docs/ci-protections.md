@@ -1,0 +1,22 @@
+# Protecciones de CI para `main`
+
+El workflow `.github/workflows/ci.yml` ejecuta la misma validación en dos momentos: cuando una Pull Request apunta a `main` y después de cada `push` a `main`, incluido un merge. El push confirma el estado integrado; las reglas del repositorio deben impedir que una PR llegue a ese estado sin pasar antes por la CI.
+
+## Configuración manual en GitHub
+
+El repositorio usa el Ruleset activo `protectedmain`, aplicado a la rama predeterminada. En GitHub, abre `Settings > Rules > Rulesets > protectedmain > Edit` y conserva sus reglas actuales. En particular, no desactives la protección contra eliminación, la protección contra force push, la revisión requerida, el descarte de aprobaciones obsoletas, la aprobación del último push ni el uso exclusivo de `Squash and merge`.
+
+En el mismo Ruleset, dentro de las reglas de la rama, activa `Require status checks before merging`. En `Additional settings`, agrega estos cuatro checks. GitHub los muestra con estos nombres en los runs de Actions:
+
+- `Lint y formato`
+- `Validación Mobile`
+- `Validación Web`
+- `Verificación Backend`
+
+Activa también `Require branches to be up to date before merging`. En la API de Rulesets esta opción corresponde a `strict_required_status_checks_policy: true`. Guarda el Ruleset con enforcement `Active` y sin bypass actors para conservar el bloqueo efectivo.
+
+La configuración requerida no se puede expresar en `ci.yml`: un workflow puede publicar checks, pero no puede obligar al repositorio a exigirlos ni imponer que una rama se actualice con `main`. La opción de actualización estricta evita que una PR conserve como válidos los checks ejecutados antes de un cambio incompatible en `main`; al actualizar la rama, GitHub crea una nueva ejecución de `pull_request` sobre el estado que se integrará.
+
+## Comprobación posterior
+
+Abre una PR de prueba hacia `main` y confirma que aparecen `Lint y formato`, `Validación Mobile`, `Validación Web` y `Verificación Backend` como checks requeridos. Luego cambia `main` con otra PR y verifica que la primera PR queda desactualizada y no puede integrarse hasta actualizarse y repetir la CI. Finalmente confirma que el workflow también aparece en `Actions` para el commit integrado de `main`.

@@ -193,13 +193,28 @@ test("practicante asignado lee minimizado y no lee notas internas", async () => 
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const assigner = await seedUser(t, {
     subject: "s2-pro-0",
     email: "pro0@uct.cl",
     fullName: "Profesional Asignador",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "s2-pro-0c",
+    email: "pro0c@uct.cl",
+    fullName: "Profesional Bootstrap",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    {
+      accompanimentId,
+      userId: assigner.id,
+      assignedRole: "professional",
+    },
+    { subject: "s2-pro-0c", email: "pro0c@uct.cl" },
+  );
   await seedAssignment(
     t,
     {
@@ -269,7 +284,7 @@ test("listado respeta alcance: estudiante propios, profesional e intern solo asi
       userId: intern.id,
       assignedRole: "intern",
     },
-    { subject: "s2-pro-2b", email: "pro2b@uct.cl" },
+    { subject: "s2-pro-2", email: "pro2@uct.cl" },
   );
 
   const asStudent = t.withIdentity(identityFor("s2-est-4", "est4@alu.uct.cl"));
@@ -556,7 +571,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
       userId: intern.id,
       assignedRole: "intern",
     },
-    { subject: "s2-pro-6b", email: "pro6b@uct.cl" },
+    { subject: "s2-pro-6", email: "pro6@uct.cl" },
   );
   await seedRevoke(
     t,
@@ -565,7 +580,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
       userId: intern.id,
       assignedRole: "intern",
     },
-    { subject: "s2-pro-6b", email: "pro6b@uct.cl" },
+    { subject: "s2-pro-6", email: "pro6@uct.cl" },
   );
   const reassigned = await seedAssignment(
     t,
@@ -574,7 +589,7 @@ test("asignación activa duplicada se rechaza y la revocada permite reasignar", 
       userId: intern.id,
       assignedRole: "intern",
     },
-    { subject: "s2-pro-6b", email: "pro6b@uct.cl" },
+    { subject: "s2-pro-6", email: "pro6@uct.cl" },
   );
   expect(reassigned).toBeDefined();
 });
