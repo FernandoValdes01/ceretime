@@ -144,10 +144,13 @@ test("keeps manual builds out of pull request CI", () => {
 test("runs integrated CI for pull requests and pushes to main", () => {
   expect(pullRequestWorkflow.on.pull_request.branches).toEqual(["main"]);
   expect(pullRequestWorkflow.on.push.branches).toEqual(["main"]);
-  expect(Object.values(pullRequestWorkflow.jobs).map((job: any) => job.name)).toEqual([
-    "Lint y formato",
-    "Validación Mobile",
-    "Validación Web",
-    "Verificación Backend",
-  ]);
+  const jobNames = Object.fromEntries(
+    Object.entries(pullRequestWorkflow.jobs).map(([id, job]: [string, any]) => [id, job.name]),
+  );
+  expect(jobNames).toEqual({
+    "lint-and-format": "Lint y formato",
+    mobile: "Validación Mobile",
+    web: "Validación Web",
+    backend: "Verificación Backend",
+  });
 });
