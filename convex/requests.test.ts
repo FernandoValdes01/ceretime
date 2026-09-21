@@ -225,6 +225,82 @@ test("Sin identidad o sin rol Estudiante se deniega el listado propio", async ()
   ).rejects.toThrow("No autorizado");
 });
 
+test("Profesional lista solo solicitudes de acompañamientos asignados", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-9");
+  const linkedId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "accepted",
+    accessNeeds: "Vinculada ficticia",
+  });
+  const looseId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Suelta ficticia",
+  });
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-5@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-5`,
+    });
+  });
+  const targetId = await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-6@uct.cl",
+      fullName: "Profesional Asignado",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-6`,
+    });
+  });
+  const accompanimentId = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Necesidad de acceso ficticia",
+      requestId: linkedId,
+    });
+  });
+  const asGranter = t.withIdentity(identityFor("ti9-pro-5", "ti9-pro-5@uct.cl"));
+  await asGranter.mutation(internal.assignments.assign, {
+    accompanimentId,
+    userId: targetId,
+    assignedRole: "professional",
+  });
+
+  // Ve la vinculada y no la suelta
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-6", "ti9-pro-6@uct.cl"));
+  const page = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+    limit: 10,
+  });
+  expect(page.items.map((item) => item._id).sort()).toEqual([linkedId].sort());
+  expect(page.items.find((item) => item._id === looseId)).toBeUndefined();
+});
+
+test("Sin rol Profesional se deniega el listado autorizado", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti9-est-10");
+
+  // Sin identidad no se lista nada
+  await expect(
+    t.query(api.presentation.requests.listAuthorizedRequests, { limit: 10 }),
+  ).rejects.toThrow("No autorizado");
+
+  // Un Estudiante no lista el conjunto autorizado
+  const asStudent = t.withIdentity(identityFor("ti9-est-10", "ti9-est-10@alu.uct.cl"));
+  await expect(
+    asStudent.query(api.presentation.requests.listAuthorizedRequests, { limit: 10 }),
+  ).rejects.toThrow("No autorizado");
+});
+
 test("Profesional pide información adicional en solicitud en revisión", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);

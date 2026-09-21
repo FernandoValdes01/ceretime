@@ -4,7 +4,10 @@ import {
   registerRequest,
   requestAdditionalInformation as requestAdditionalInformationUseCase,
 } from "../application/requests/commands";
-import { listOwnRequestsUseCase } from "../application/requests/queries";
+import {
+  listAuthorizedRequestsUseCase,
+  listOwnRequestsUseCase,
+} from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
 import { requestStatusUnion } from "../validators";
 
@@ -51,6 +54,28 @@ export const listOwnRequests = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await listOwnRequestsUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Lista las solicitudes vinculadas a los acompañamientos con asignación
+ * profesional activa de quien llama. Sin asignación no hay acceso: las
+ * solicitudes nuevas sin acompañamiento no aparecen. Cualquier otro rol
+ * recibe denegación.
+ */
+export const listAuthorizedRequests = query({
+  args: {
+    limit: v.number(),
+    after: v.optional(v.id("accompaniments")),
+  },
+  returns: v.object({
+    items: v.array(requestValidator),
+    hasMore: v.boolean(),
+    lastId: v.union(v.id("accompaniments"), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await listAuthorizedRequestsUseCase(ctx, identity, args);
   },
 });
 

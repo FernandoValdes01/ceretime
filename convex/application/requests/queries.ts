@@ -1,8 +1,13 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { toAccompanimentRequest } from "../../domain/request/request";
+import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
-import { listOwnedRequests } from "../../infrastructure/requests/repository";
-import { requireActiveStudent } from "./identity";
+import { getRequestById, listOwnedRequests } from "../../infrastructure/requests/repository";
+import {
+  getAccompanimentById,
+  queryAssignedRowsAfter,
+} from "../../infrastructure/accompaniments/repository";
+import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
 /**
  * Casos de uso de lectura de solicitudes (TI2-9).
@@ -36,5 +41,63 @@ export async function listOwnRequestsUseCase(
         createdAt: row.createdAt,
       }),
     ),
+  };
+}
+
+export type AuthorizedRequestItem = {
+  readonly _id: Id<"requests">;
+  readonly studentId: Id<"users">;
+  readonly status: Doc<"requests">["status"];
+  readonly accessNeeds: string;
+  readonly createdAt: number;
+};
+
+export type AuthorizedRequestListResult = {
+  readonly items: AuthorizedRequestItem[];
+  readonly hasMore: boolean;
+  readonly lastId: Id<"accompaniments"> | null;
+};
+
+/**
+ * Lista las solicitudes vinculadas a los acompañamientos con asignación
+ * profesional activa de quien llama, paginado por acompañamiento.
+ * Definición de alcance (TI2-9): el Profesional solo ve las solicitudes que
+ * originaron acompañamientos asignados a él. Sin asignación no hay acceso:
+ * las solicitudes nuevas sin acompañamiento no aparecen. Cualquier otro rol
+ * recibe denegación genérica.
+ */
+export async function listAuthorizedRequestsUseCase(
+  ctx: QueryCtx,
+  identity: UserIdentity | null,
+  args: { readonly limit: number; readonly after?: Id<"accompaniments"> },
+): Promise<AuthorizedRequestListResult> {
+  const professional = await requireActiveProfessional(ctx, identity);
+  const limit = Math.min(Math.max(Math.floor(args.limit), 1), 100);
+  const rows = await queryAssignedRowsAfter(ctx, {
+    userId: professional._id,
+    assignedRole: "professional",
+    cursor: args.after,
+    take: limit,
+  });
+  const items: AuthorizedRequestItem[] = [];
+  for (const row of rows) {
+    const accompaniment = await getAccompanimentById(ctx, row.accompanimentId);
+    if (accompaniment?.requestId === undefined) continue;
+    const request = await getRequestById(ctx, accompaniment.requestId);
+    if (request === null) continue;
+    items.push(
+      toAccompanimentRequest({
+        _id: request._id,
+        studentId: request.studentId,
+        status: request.status,
+        accessNeeds: request.accessNeeds,
+        createdAt: request.createdAt,
+      }),
+    );
+  }
+  return {
+    items,
+    hasMore: rows.length === limit,
+    lastId: rows.length === 0 ? null : rows[rows.length - 1].accompanimentId,
   };
 }
