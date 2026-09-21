@@ -305,6 +305,80 @@ test("Sin rol Profesional se deniega el listado autorizado", async () => {
   ).rejects.toThrow("No autorizado");
 });
 
+test("Profesional no ve duplicadas aunque existan filas repetidas", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-11");
+  const linkedId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "accepted",
+    accessNeeds: "Vinculada ficticia",
+  });
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-7@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-7`,
+    });
+  });
+  const targetId = await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-8@uct.cl",
+      fullName: "Profesional Asignado",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-8`,
+    });
+  });
+  const accompanimentId = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Necesidad de acceso ficticia",
+      requestId: linkedId,
+    });
+  });
+  const asGranter = t.withIdentity(identityFor("ti9-pro-7", "ti9-pro-7@uct.cl"));
+  await asGranter.mutation(internal.assignments.assign, {
+    accompanimentId,
+    userId: targetId,
+    assignedRole: "professional",
+  });
+  // Fila repetida escrita fuera de la vía protegida
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("accompanimentAssignments", {
+      accompanimentId,
+      userId: targetId,
+      assignedRole: "professional",
+      status: "active",
+      grantedBy: targetId,
+      grantedAt: 1,
+    });
+  });
+
+  // Una sola vez en página completa y sin repetirse entre páginas
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-8", "ti9-pro-8@uct.cl"));
+  const full = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(full.page.map((item) => item._id)).toEqual([linkedId]);
+
+  const first = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+    paginationOpts: { numItems: 1, cursor: null },
+  });
+  expect(first.page.map((item) => item._id)).toEqual([linkedId]);
+  const second = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+    paginationOpts: { numItems: 1, cursor: first.continueCursor },
+  });
+  expect(second.page).toHaveLength(0);
+  expect(second.isDone).toBe(true);
+});
+
 test("Profesional pide información adicional en solicitud en revisión", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);

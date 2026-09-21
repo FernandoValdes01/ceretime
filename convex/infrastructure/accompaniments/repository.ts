@@ -87,21 +87,6 @@ export async function paginateOwnedAccompaniments(
     .paginate(paginationOpts);
 }
 
-/** Filas de asignación profesional activa del usuario, paginadas. */
-export async function paginateActiveProfessionalAssignments(
-  ctx: DbReader,
-  userId: Id<"users">,
-  paginationOpts: PaginationOptions,
-) {
-  return await ctx.db
-    .query("accompanimentAssignments")
-    .withIndex("by_user_and_status_and_assigned_role_and_accompaniment", (q) =>
-      q.eq("userId", userId).eq("status", "active").eq("assignedRole", "professional"),
-    )
-    .order("asc")
-    .paginate(paginationOpts);
-}
-
 /**
  * Ventana del listado asignado con paginación keyset sobre el
  * acompañamiento. El índice ordena por esa columna, así que las filas

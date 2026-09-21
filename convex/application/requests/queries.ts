@@ -5,7 +5,7 @@ import type { QueryCtx } from "../../_generated/server";
 import { getRequestById, listOwnedRequests } from "../../infrastructure/requests/repository";
 import {
   getAccompanimentById,
-  paginateActiveProfessionalAssignments,
+  queryAssignedRowsAfter,
 } from "../../infrastructure/accompaniments/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
@@ -59,6 +59,11 @@ export type AuthorizedRequestItem = {
  * acompañamientos asignados a él. Sin asignación no hay acceso: las
  * solicitudes nuevas sin acompañamiento no aparecen. Cualquier otro rol
  * recibe denegación genérica.
+ *
+ * Las filas duplicadas (legacy o escritas fuera de la vía protegida) se
+ * filtran por acompañamiento dentro y entre páginas: el cursor avanza
+ * por filas y el conjunto `seen` excluye repetidos, como el listado
+ * asignado de acompañamientos.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
@@ -66,26 +71,49 @@ export async function listAuthorizedRequestsUseCase(
   args: { readonly paginationOpts: PaginationOptions },
 ) {
   const professional = await requireActiveProfessional(ctx, identity);
-  const result = await paginateActiveProfessionalAssignments(
-    ctx,
-    professional._id,
-    args.paginationOpts,
-  );
+  const limit = Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), 100);
+  let cursor = (args.paginationOpts.cursor ?? undefined) as Id<"accompaniments"> | undefined;
+  const seen = new Set<string>();
   const items: AuthorizedRequestItem[] = [];
-  for (const row of result.page) {
-    const accompaniment = await getAccompanimentById(ctx, row.accompanimentId);
-    if (accompaniment?.requestId === undefined) continue;
-    const request = await getRequestById(ctx, accompaniment.requestId);
-    if (request === null) continue;
-    items.push(
-      toAccompanimentRequest({
-        _id: request._id,
-        studentId: request.studentId,
-        status: request.status,
-        accessNeeds: request.accessNeeds,
-        createdAt: request.createdAt,
-      }),
-    );
+  let exhausted = false;
+  for (let round = 0; round < 10 && items.length < limit; round++) {
+    const rows = await queryAssignedRowsAfter(ctx, {
+      userId: professional._id,
+      assignedRole: "professional",
+      cursor,
+      take: 51,
+    });
+    if (rows.length === 0) {
+      exhausted = true;
+      break;
+    }
+    for (const row of rows) {
+      if (seen.has(row.accompanimentId)) continue;
+      seen.add(row.accompanimentId);
+      const accompaniment = await getAccompanimentById(ctx, row.accompanimentId);
+      if (accompaniment?.requestId === undefined) continue;
+      const request = await getRequestById(ctx, accompaniment.requestId);
+      if (request === null) continue;
+      items.push(
+        toAccompanimentRequest({
+          _id: request._id,
+          studentId: request.studentId,
+          status: request.status,
+          accessNeeds: request.accessNeeds,
+          createdAt: request.createdAt,
+        }),
+      );
+      if (items.length >= limit) break;
+    }
+    cursor = rows[rows.length - 1].accompanimentId;
+    if (rows.length < 51) {
+      exhausted = true;
+      break;
+    }
   }
-  return { ...result, page: items };
+  return {
+    page: items,
+    isDone: exhausted,
+    continueCursor: cursor ?? "",
+  };
 }
