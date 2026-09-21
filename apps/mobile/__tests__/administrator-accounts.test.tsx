@@ -1,11 +1,19 @@
 import type { PractitionerAccount } from "@/application/administrator-account-models";
 import type { AdministratorAccountsPort } from "@/application/administrator-accounts-port";
+import { mobileDependencies } from "@/composition/mobile-dependencies";
 import { createMockAdministratorAccountsAdapter } from "@/infrastructure/mock-administrator-accounts-adapter";
 import {
   useAdministratorAccounts,
   type AdministratorAccountsState,
 } from "@/presentation/hooks/use-administrator-accounts";
-import { fireEvent, renderRouter, screen } from "expo-router/testing-library";
+import { router } from "expo-router";
+import {
+  act as routerAct,
+  fireEvent,
+  renderRouter,
+  screen,
+  waitFor,
+} from "expo-router/testing-library";
 import path from "node:path";
 import React from "react";
 import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
@@ -160,6 +168,31 @@ describe("habilitación administrativa de cuentas", () => {
 });
 
 describe("flujo administrativo", () => {
+  test("no consulta cuentas si otro rol intenta abrir la administración", async () => {
+    const readAccounts = jest.spyOn(
+      mobileDependencies.administratorAccountsPort,
+      "readPractitionerAccounts",
+    );
+
+    try {
+      const navigation = renderRouter(appDirectory);
+      fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
+      await screen.findByText("Inicio de Estudiante");
+      readAccounts.mockClear();
+
+      await routerAct(async () => {
+        router.push("/administrador/usuarios");
+        await Promise.resolve();
+      });
+
+      await waitFor(() => expect(navigation.getPathname()).toBe("/estudiante"));
+      expect(screen.getByText("Acceso denegado")).toBeOnTheScreen();
+      expect(readAccounts).not.toHaveBeenCalled();
+    } finally {
+      readAccounts.mockRestore();
+    }
+  });
+
   test("recorre Inicio hacia la habilitación de cuentas", async () => {
     const navigation = renderRouter(appDirectory);
 
