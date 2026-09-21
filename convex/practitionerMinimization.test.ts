@@ -122,16 +122,33 @@ test("lista solo lo asignado con vista minimizada y claves exactas", async () =>
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const granter = await seedUser(t, {
     subject: "ti25-pro-1",
     email: "pro1@uct.cl",
     fullName: "Profesional que concede",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti25-pro-1b",
+    email: "pro1b@uct.cl",
+    fullName: "Profesional que autoriza",
+    role: "professional",
+  });
   const caller = { subject: "ti25-pro-1", email: "pro1@uct.cl" };
+  const bootstrap = { subject: "ti25-pro-1b", email: "pro1b@uct.cl" };
   const assignedA = await seedAccompaniment(t, student.id);
   const assignedB = await seedAccompaniment(t, student.id);
   await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    { accompanimentId: assignedA, userId: granter.id, assignedRole: "professional" },
+    bootstrap,
+  );
+  await seedAssignment(
+    t,
+    { accompanimentId: assignedB, userId: granter.id, assignedRole: "professional" },
+    bootstrap,
+  );
   await seedAssignment(
     t,
     { accompanimentId: assignedA, userId: intern.id, assignedRole: "intern" },
@@ -173,16 +190,33 @@ test("listado asignado se pagina sin descubrir el resto", async () => {
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const granter = await seedUser(t, {
     subject: "ti25-pro-2",
     email: "pro2@uct.cl",
     fullName: "Profesional que concede",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti25-pro-2b",
+    email: "pro2b@uct.cl",
+    fullName: "Profesional que autoriza",
+    role: "professional",
+  });
   const caller = { subject: "ti25-pro-2", email: "pro2@uct.cl" };
+  const bootstrap = { subject: "ti25-pro-2b", email: "pro2b@uct.cl" };
   const assignedA = await seedAccompaniment(t, student.id);
   const assignedB = await seedAccompaniment(t, student.id);
   await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    { accompanimentId: assignedA, userId: granter.id, assignedRole: "professional" },
+    bootstrap,
+  );
+  await seedAssignment(
+    t,
+    { accompanimentId: assignedB, userId: granter.id, assignedRole: "professional" },
+    bootstrap,
+  );
   await seedAssignment(
     t,
     { accompanimentId: assignedA, userId: intern.id, assignedRole: "intern" },
@@ -229,13 +263,24 @@ test("detalle asignado minimiza con claves exactas", async () => {
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const granter3 = await seedUser(t, {
     subject: "ti25-pro-3",
     email: "pro3@uct.cl",
     fullName: "Profesional que concede",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti25-pro-3b",
+    email: "pro3b@uct.cl",
+    fullName: "Profesional que autoriza",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    { accompanimentId, userId: granter3.id, assignedRole: "professional" },
+    { subject: "ti25-pro-3b", email: "pro3b@uct.cl" },
+  );
   await seedAssignment(
     t,
     { accompanimentId, userId: intern.id, assignedRole: "intern" },
@@ -270,14 +315,25 @@ test("acceso directo por ID no asignado se rechaza sin filtrar", async () => {
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const granter4 = await seedUser(t, {
     subject: "ti25-pro-4",
     email: "pro4@uct.cl",
     fullName: "Profesional que concede",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti25-pro-4b",
+    email: "pro4b@uct.cl",
+    fullName: "Profesional que autoriza",
+    role: "professional",
+  });
   const assignedId = await seedAccompaniment(t, student.id);
   const otherId = await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    { accompanimentId: assignedId, userId: granter4.id, assignedRole: "professional" },
+    { subject: "ti25-pro-4b", email: "pro4b@uct.cl" },
+  );
   await seedAssignment(
     t,
     { accompanimentId: assignedId, userId: intern.id, assignedRole: "intern" },
@@ -319,13 +375,24 @@ test("vía propia y notas internas denegadas para practicante", async () => {
     fullName: "Practicante Ficticio",
     role: "intern",
   });
-  await seedUser(t, {
+  const granter5 = await seedUser(t, {
     subject: "ti25-pro-5",
     email: "pro5@uct.cl",
     fullName: "Profesional que concede",
     role: "professional",
   });
+  await seedUser(t, {
+    subject: "ti25-pro-5b",
+    email: "pro5b@uct.cl",
+    fullName: "Profesional que autoriza",
+    role: "professional",
+  });
   const accompanimentId = await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    { accompanimentId, userId: granter5.id, assignedRole: "professional" },
+    { subject: "ti25-pro-5b", email: "pro5b@uct.cl" },
+  );
   await seedAssignment(
     t,
     { accompanimentId, userId: intern.id, assignedRole: "intern" },
