@@ -278,10 +278,10 @@ test("Profesional lista solo solicitudes de acompañamientos asignados", async (
   // Ve la vinculada y no la suelta
   const asProfessional = t.withIdentity(identityFor("ti9-pro-6", "ti9-pro-6@uct.cl"));
   const page = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
-    limit: 10,
+    paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(page.items.map((item) => item._id).sort()).toEqual([linkedId].sort());
-  expect(page.items.find((item) => item._id === looseId)).toBeUndefined();
+  expect(page.page.map((item) => item._id).sort()).toEqual([linkedId].sort());
+  expect(page.page.find((item) => item._id === looseId)).toBeUndefined();
 });
 
 test("Sin rol Profesional se deniega el listado autorizado", async () => {
@@ -291,13 +291,17 @@ test("Sin rol Profesional se deniega el listado autorizado", async () => {
 
   // Sin identidad no se lista nada
   await expect(
-    t.query(api.presentation.requests.listAuthorizedRequests, { limit: 10 }),
+    t.query(api.presentation.requests.listAuthorizedRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
   ).rejects.toThrow("No autorizado");
 
   // Un Estudiante no lista el conjunto autorizado
   const asStudent = t.withIdentity(identityFor("ti9-est-10", "ti9-est-10@alu.uct.cl"));
   await expect(
-    asStudent.query(api.presentation.requests.listAuthorizedRequests, { limit: 10 }),
+    asStudent.query(api.presentation.requests.listAuthorizedRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
   ).rejects.toThrow("No autorizado");
 });
 

@@ -5,7 +5,7 @@ import type { QueryCtx } from "../../_generated/server";
 import { getRequestById, listOwnedRequests } from "../../infrastructure/requests/repository";
 import {
   getAccompanimentById,
-  queryAssignedRowsAfter,
+  paginateActiveProfessionalAssignments,
 } from "../../infrastructure/accompaniments/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
@@ -52,35 +52,27 @@ export type AuthorizedRequestItem = {
   readonly createdAt: number;
 };
 
-export type AuthorizedRequestListResult = {
-  readonly items: AuthorizedRequestItem[];
-  readonly hasMore: boolean;
-  readonly lastId: Id<"accompaniments"> | null;
-};
-
 /**
  * Lista las solicitudes vinculadas a los acompañamientos con asignación
- * profesional activa de quien llama, paginado por acompañamiento.
- * Definición de alcance (TI2-9): el Profesional solo ve las solicitudes que
- * originaron acompañamientos asignados a él. Sin asignación no hay acceso:
- * las solicitudes nuevas sin acompañamiento no aparecen. Cualquier otro rol
+ * profesional activa de quien llama, paginado. Definición de alcance
+ * (TI2-9): el Profesional solo ve las solicitudes que originaron
+ * acompañamientos asignados a él. Sin asignación no hay acceso: las
+ * solicitudes nuevas sin acompañamiento no aparecen. Cualquier otro rol
  * recibe denegación genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
   identity: UserIdentity | null,
-  args: { readonly limit: number; readonly after?: Id<"accompaniments"> },
-): Promise<AuthorizedRequestListResult> {
+  args: { readonly paginationOpts: PaginationOptions },
+) {
   const professional = await requireActiveProfessional(ctx, identity);
-  const limit = Math.min(Math.max(Math.floor(args.limit), 1), 100);
-  const rows = await queryAssignedRowsAfter(ctx, {
-    userId: professional._id,
-    assignedRole: "professional",
-    cursor: args.after,
-    take: limit,
-  });
+  const result = await paginateActiveProfessionalAssignments(
+    ctx,
+    professional._id,
+    args.paginationOpts,
+  );
   const items: AuthorizedRequestItem[] = [];
-  for (const row of rows) {
+  for (const row of result.page) {
     const accompaniment = await getAccompanimentById(ctx, row.accompanimentId);
     if (accompaniment?.requestId === undefined) continue;
     const request = await getRequestById(ctx, accompaniment.requestId);
@@ -95,9 +87,5 @@ export async function listAuthorizedRequestsUseCase(
       }),
     );
   }
-  return {
-    items,
-    hasMore: rows.length === limit,
-    lastId: rows.length === 0 ? null : rows[rows.length - 1].accompanimentId,
-  };
+  return { ...result, page: items };
 }

@@ -59,20 +59,12 @@ export const listOwnRequests = query({
 
 /**
  * Lista las solicitudes vinculadas a los acompañamientos con asignación
- * profesional activa de quien llama. Sin asignación no hay acceso: las
- * solicitudes nuevas sin acompañamiento no aparecen. Cualquier otro rol
- * recibe denegación.
+ * profesional activa de quien llama, paginado. Sin asignación no hay
+ * acceso. Cualquier otro rol recibe denegación.
  */
 export const listAuthorizedRequests = query({
-  args: {
-    limit: v.number(),
-    after: v.optional(v.id("accompaniments")),
-  },
-  returns: v.object({
-    items: v.array(requestValidator),
-    hasMore: v.boolean(),
-    lastId: v.union(v.id("accompaniments"), v.null()),
-  }),
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(requestValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await listAuthorizedRequestsUseCase(ctx, identity, args);
