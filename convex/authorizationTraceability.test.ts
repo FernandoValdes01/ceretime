@@ -161,9 +161,10 @@ test("habilitación registra actor, fecha y recurso sin cambiar el rol", async (
   expect(stored?.enabledBy).toEqual(adminId);
   expect(typeof stored?.enabledAt).toBe("number");
 
-  await expect(
+  const duplicate = await denyMessage(
     asAdmin.mutation(internal.accounts.enableIntern, { userId: internId }),
-  ).rejects.toThrow(DENIED);
+  );
+  expect(duplicate).toBe(DENIED);
 });
 
 test("concesión y revocación registran actor, fecha y recurso", async () => {
@@ -342,37 +343,49 @@ test("administrador no obtiene acceso irrestricto a acompañamientos", async () 
   const asAdmin = t.withIdentity(identityFor("ti19-adm-4", "adm4@uct.cl"));
   await asAdmin.mutation(internal.accounts.enableIntern, { userId: internId });
 
-  await expect(
-    asAdmin.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
-  ).rejects.toThrow(DENIED);
-  await expect(
-    asAdmin.query(api.presentation.accompaniments.listOwnedAccompaniments, {
-      paginationOpts: pageOpts(10),
-    }),
-  ).rejects.toThrow(DENIED);
-  await expect(
-    asAdmin.query(api.presentation.accompaniments.listAssignedAccompaniments, { limit: 10 }),
-  ).rejects.toThrow(DENIED);
-  await expect(
-    asAdmin.query(api.presentation.accompaniments.getInternalNotes, {
-      accompanimentId,
-      paginationOpts: pageOpts(10),
-    }),
-  ).rejects.toThrow(DENIED);
-  await expect(
-    asAdmin.mutation(internal.assignments.assign, {
-      accompanimentId,
-      userId: internId,
-      assignedRole: "intern",
-    }),
-  ).rejects.toThrow(DENIED);
-  await expect(
-    asAdmin.mutation(internal.assignments.revoke, {
-      accompanimentId,
-      userId: internId,
-      assignedRole: "intern",
-    }),
-  ).rejects.toThrow(DENIED);
+  expect(
+    await denyMessage(
+      asAdmin.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+    ),
+  ).toBe(DENIED);
+  expect(
+    await denyMessage(
+      asAdmin.query(api.presentation.accompaniments.listOwnedAccompaniments, {
+        paginationOpts: pageOpts(10),
+      }),
+    ),
+  ).toBe(DENIED);
+  expect(
+    await denyMessage(
+      asAdmin.query(api.presentation.accompaniments.listAssignedAccompaniments, { limit: 10 }),
+    ),
+  ).toBe(DENIED);
+  expect(
+    await denyMessage(
+      asAdmin.query(api.presentation.accompaniments.getInternalNotes, {
+        accompanimentId,
+        paginationOpts: pageOpts(10),
+      }),
+    ),
+  ).toBe(DENIED);
+  expect(
+    await denyMessage(
+      asAdmin.mutation(internal.assignments.assign, {
+        accompanimentId,
+        userId: internId,
+        assignedRole: "intern",
+      }),
+    ),
+  ).toBe(DENIED);
+  expect(
+    await denyMessage(
+      asAdmin.mutation(internal.assignments.revoke, {
+        accompanimentId,
+        userId: internId,
+        assignedRole: "intern",
+      }),
+    ),
+  ).toBe(DENIED);
 });
 
 test("asignación propia de practicante queda rechazada", async () => {
@@ -499,21 +512,25 @@ test("acceso posterior a revocación queda rechazado", async () => {
 
   await asGranter.mutation(internal.assignments.revoke, input);
 
-  await expect(
-    asIntern.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
-  ).rejects.toThrow(DENIED);
+  expect(
+    await denyMessage(
+      asIntern.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+    ),
+  ).toBe(DENIED);
   const listedAfter = await asIntern.query(
     api.presentation.accompaniments.listAssignedAccompaniments,
     { limit: 10 },
   );
   expect(listedAfter.items).toHaveLength(0);
   expect(listedAfter.hasMore).toBe(false);
-  await expect(
-    asIntern.query(api.presentation.accompaniments.getInternalNotes, {
-      accompanimentId,
-      paginationOpts: pageOpts(10),
-    }),
-  ).rejects.toThrow(DENIED);
+  expect(
+    await denyMessage(
+      asIntern.query(api.presentation.accompaniments.getInternalNotes, {
+        accompanimentId,
+        paginationOpts: pageOpts(10),
+      }),
+    ),
+  ).toBe(DENIED);
 });
 
 test("trazabilidad mínima no expone datos innecesarios", async () => {
