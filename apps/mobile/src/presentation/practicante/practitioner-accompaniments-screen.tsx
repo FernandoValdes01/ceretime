@@ -109,7 +109,7 @@ export function PractitionerAccompanimentsContent({
   );
 }
 
-export default function PractitionerAccompanimentsScreen() {
+function AssignedPractitionerAccompaniments() {
   const { session } = useNavigationSession();
   const state = usePractitionerAccompaniments(
     mobileDependencies.practitionerAccompanimentReader,
@@ -117,13 +117,19 @@ export default function PractitionerAccompanimentsScreen() {
   );
 
   return (
+    <RoleHome
+      title="Acompañamientos asignados"
+      description="Consulta sólo los acompañamientos que un profesional te asignó. Esta sección es de sólo lectura."
+    >
+      <PractitionerAccompanimentsContent {...state} />
+    </RoleHome>
+  );
+}
+
+export default function PractitionerAccompanimentsScreen() {
+  return (
     <PractitionerAssignmentGuard state="assigned">
-      <RoleHome
-        title="Acompañamientos asignados"
-        description="Consulta sólo los acompañamientos que un profesional te asignó. Esta sección es de sólo lectura."
-      >
-        <PractitionerAccompanimentsContent {...state} />
-      </RoleHome>
+      <AssignedPractitionerAccompaniments />
     </PractitionerAssignmentGuard>
   );
 }

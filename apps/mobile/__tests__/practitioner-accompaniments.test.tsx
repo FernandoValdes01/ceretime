@@ -1,10 +1,13 @@
 import path from "node:path";
+import { router } from "expo-router";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { renderRouter } from "expo-router/testing-library";
 
 import type { PractitionerAccompaniment } from "../src/application/practitioner-accompaniment-models";
+import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { createMockPractitionerAccompanimentReader } from "../src/infrastructure/mock-practitioner-accompaniment-reader";
 import { PractitionerAccompanimentsContent } from "../src/presentation/practicante/practitioner-accompaniments-screen";
+import { practitionerRoutes } from "../src/presentation/navigation/practitioner-routes";
 
 const appDirectory = path.resolve(__dirname, "../app");
 
@@ -106,5 +109,34 @@ describe("pantalla de acompañamientos del Practicante", () => {
     await waitFor(() => expect(screen.getByText("Acceso denegado")).toBeOnTheScreen());
     expect(navigation.getPathname()).toBe("/practicante/sin-asignacion");
     expect(screen.queryByText(accompaniment.objective)).not.toBeOnTheScreen();
+  });
+
+  test("no consulta acompañamientos al abrir directamente la ruta sin asignación", async () => {
+    const readAssignedAccompaniments = jest.spyOn(
+      mobileDependencies.practitionerAccompanimentReader,
+      "readAssignedAccompaniments",
+    );
+    const navigation = renderRouter(appDirectory);
+
+    try {
+      await act(async () => {
+        fireEvent.press(
+          screen.getByRole("button", { name: "Entrar como Practicante sin asignación" }),
+        );
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(navigation.getPathname()).toBe(practitionerRoutes.unassigned));
+      readAssignedAccompaniments.mockClear();
+
+      await act(async () => {
+        router.push(practitionerRoutes.assigned);
+        await Promise.resolve();
+      });
+
+      await waitFor(() => expect(navigation.getPathname()).toBe(practitionerRoutes.unassigned));
+      expect(readAssignedAccompaniments).not.toHaveBeenCalled();
+    } finally {
+      readAssignedAccompaniments.mockRestore();
+    }
   });
 });
