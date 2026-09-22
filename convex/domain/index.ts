@@ -1,12 +1,12 @@
-/**
+﻿/**
  * Barrel de contratos compartidos de dominio (TI2-8).
  *
- * Punto único de importación para Web y Mobile: evita que cada consumidor
+ * Punto Ãºnico de importaciÃ³n para Web y Mobile: evita que cada consumidor
  * navegue archivo por archivo dentro de `convex/domain`. Todos los contratos
  * son puros: no dependen de Convex ni de `convex/_generated`.
  */
 
-// Identidad, roles y habilitación institucional.
+// Identidad, roles y habilitaciÃ³n institucional.
 export { ACCOUNT_STATUS_VALUES, INSTITUTIONAL_STATUS_VALUES, ROLE_VALUES } from "./identity/roles";
 export type {
   AccountEnablement,
@@ -16,7 +16,7 @@ export type {
   Role,
 } from "./identity/roles";
 
-// Solicitud de acompañamiento y sus estados.
+// Solicitud de acompaÃ±amiento y sus estados.
 export { toAccompanimentRequest } from "./request/request";
 export type {
   AccessNeed,
@@ -35,7 +35,7 @@ export {
 } from "./request/state";
 export type { FutureRequestState, RequestState, Sprint1RequestState } from "./request/state";
 
-// Acompañamiento y sus vistas de lectura.
+// AcompaÃ±amiento y sus vistas de lectura.
 export {
   ACCOMPANIMENT_STATUS_VALUES,
   ACCOMPANIMENT_VIEW_VALUES,
@@ -55,14 +55,16 @@ export {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
   ASSIGNMENT_VIEW_BY_ROLE,
-} from "./accompaniment/practitioner-assignment";
-export { toAssignmentReadPermission } from "./accompaniment/practitioner-assignment";
+} from "./accompaniment/practitioner_assignment";
+export { toAssignmentReadPermission } from "./accompaniment/practitioner_assignment";
 export type {
   AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
   PractitionerAssignment,
-} from "./accompaniment/practitioner-assignment";
+} from "./accompaniment/practitioner_assignment";
 
-// Errores públicos y estados de respuesta.
-export type { ApiResult, PublicApiError } from "./errors/api-error";
+// Errores pÃºblicos y estados de respuesta.
+export type { ApiResult, PublicApiError } from "./errors/api_error";
+
+

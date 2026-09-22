@@ -1,9 +1,9 @@
-import { describe, expect, test } from "vitest";
+﻿import { describe, expect, test } from "vitest";
 import {
   ASSIGNMENT_VIEW_BY_ROLE,
   toAssignmentReadPermission,
   type PractitionerAssignment,
-} from "./practitioner-assignment";
+} from "./practitioner_assignment";
 
 function activeAssignment(overrides: Partial<PractitionerAssignment> = {}): PractitionerAssignment {
   return {
@@ -21,7 +21,7 @@ function activeAssignment(overrides: Partial<PractitionerAssignment> = {}): Prac
 }
 
 describe("toAssignmentReadPermission", () => {
-  test("concede lectura completa al Profesional mientras esté activa", () => {
+  test("concede lectura completa al Profesional mientras estÃ© activa", () => {
     expect(toAssignmentReadPermission(activeAssignment())).toEqual({
       accompanimentId: "accompaniment-id",
       userId: "user-id",
@@ -54,7 +54,7 @@ describe("toAssignmentReadPermission", () => {
     expect(ASSIGNMENT_VIEW_BY_ROLE).toEqual({ professional: "full", intern: "minimized" });
   });
 
-  test("una fila legacy sin trazabilidad también concede lectura si está activa", () => {
+  test("una fila legacy sin trazabilidad tambiÃ©n concede lectura si estÃ¡ activa", () => {
     const legacy: PractitionerAssignment = {
       _id: "assignment-id",
       accompanimentId: "accompaniment-id",
@@ -71,7 +71,7 @@ describe("toAssignmentReadPermission", () => {
     });
   });
 
-  test("una asignación nueva completa conserva toda la trazabilidad", () => {
+  test("una asignaciÃ³n nueva completa conserva toda la trazabilidad", () => {
     const fresh: PractitionerAssignment = {
       _id: "assignment-id",
       accompanimentId: "accompaniment-id",
@@ -91,3 +91,4 @@ describe("toAssignmentReadPermission", () => {
     });
   });
 });
+
