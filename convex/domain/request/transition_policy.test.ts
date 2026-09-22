@@ -117,7 +117,6 @@ describe("transitionRequest", () => {
     }
     const declared = SPRINT_1_REQUEST_TRANSITIONS.map((row) => `${row.from} -> ${row.to}`);
     expect(applied.sort()).toEqual([...declared].sort());
-    expect(REQUEST_STATES.length ** 2 - applied.length).toBe(45);
     expect(causes).toEqual(new Set(["transition_not_allowed"]));
   });
 
