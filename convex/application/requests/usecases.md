@@ -16,7 +16,7 @@ Toda denegación responde el error genérico, sin motivo ni existencia del recur
 ## Alcance explícito
 
 - El listado del Profesional solo muestra solicitudes vinculadas a acompañamientos con asignación profesional activa; sin asignación no hay acceso.
-- Solo persiste el estado resultante de la transición; el registro histórico del cambio (actor, fecha, motivo) es alcance de TI2-21/TI2-24.
+- Persiste el estado resultante y el registro del cambio (motivo, actor y fecha) en la misma transacción, en la bitácora `requestTransitions`.
 - Se guarda el texto de necesidades de acceso; convertir el contenido estructurado a la forma persistida es alcance de TI2-23.
 
 ## Validación

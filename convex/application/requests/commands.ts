@@ -8,6 +8,7 @@ import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import {
   getRequestById,
   insertReceivedRequest,
+  logRequestTransition,
   setRequestStatus,
 } from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
@@ -57,8 +58,8 @@ export async function registerRequest(
  * `awaiting_information_or_acceptance` aplicando la política de TI2-21. Solo
  * un Profesional con cuenta vigente; cualquier otro caso recibe denegación
  * genérica. Si el estado actual no admite el paso o falta el motivo, se
- * rechaza sin modificar nada. El registro histórico del cambio es alcance
- * de TI2-21/TI2-24: aquí solo persiste el estado resultante.
+ * rechaza sin modificar nada. Persiste el estado y el registro del cambio
+ * (motivo, actor y fecha) en la misma transacción.
  */
 export async function requestAdditionalInformation(
   ctx: MutationCtx,
@@ -82,6 +83,14 @@ export async function requestAdditionalInformation(
     throw new Error("La solicitud no admite pedir información adicional en su estado actual");
   }
   await setRequestStatus(ctx, input.requestId, result.change.to);
+  await logRequestTransition(ctx, {
+    requestId: input.requestId,
+    from: result.change.from,
+    to: result.change.to,
+    actorId: professional._id,
+    ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
+    occurredAt: result.change.occurredAt,
+  });
   return toAccompanimentRequest({
     _id: row._id,
     studentId: row.studentId,

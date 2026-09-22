@@ -452,7 +452,7 @@ test("Profesional pide información adicional en solicitud en revisión", async 
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-4");
-  await t.run(async (ctx) => {
+  const proId = await t.run(async (ctx) => {
     return await ctx.db.insert("users", {
       email: "ti9-pro-3@uct.cl",
       fullName: "Profesional Ficticio",
@@ -475,6 +475,20 @@ test("Profesional pide información adicional en solicitud en revisión", async 
     { requestId, reason: "Falta el horario disponible" },
   );
   expect(updated.status).toBe("awaiting_information_or_acceptance");
+
+  // El cambio queda registrado con motivo, actor y fecha
+  const logged = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("requestTransitions")
+      .withIndex("by_request", (q) => q.eq("requestId", requestId))
+      .collect();
+  });
+  expect(logged).toHaveLength(1);
+  expect(logged[0]?.from).toBe("under_review");
+  expect(logged[0]?.to).toBe("awaiting_information_or_acceptance");
+  expect(logged[0]?.reason).toBe("Falta el horario disponible");
+  expect(logged[0]?.actorId).toEqual(proId);
+  expect(logged[0]?.occurredAt).toBeDefined();
 
   // Sin motivo se rechaza indicando qué corregir, sin modificar nada
   const pendingId = await t.mutation(internal.requests.createTestRequest, {

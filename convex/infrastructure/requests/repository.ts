@@ -48,6 +48,28 @@ export async function setRequestStatus(
   await ctx.db.patch(requestId, { status });
 }
 
+/** Registra el cambio de estado con motivo, actor y fecha. */
+export async function logRequestTransition(
+  ctx: MutationCtx,
+  input: {
+    readonly requestId: Id<"requests">;
+    readonly from: Doc<"requests">["status"];
+    readonly to: Doc<"requests">["status"];
+    readonly actorId: Id<"users">;
+    readonly reason?: string;
+    readonly occurredAt: number;
+  },
+): Promise<void> {
+  await ctx.db.insert("requestTransitions", {
+    requestId: input.requestId,
+    from: input.from,
+    to: input.to,
+    actorId: input.actorId,
+    ...(input.reason === undefined ? {} : { reason: input.reason }),
+    occurredAt: input.occurredAt,
+  });
+}
+
 /** Solicitudes propias del estudiante, paginadas. */
 export async function listOwnedRequests(
   ctx: DbReader,

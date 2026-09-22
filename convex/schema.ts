@@ -118,4 +118,16 @@ export default defineSchema({
     // Solicitudes propias en un estado dado: pertenencia y estado en una
     // sola lectura para Sprint 1, sin filtrar en memoria.
     .index("by_student_and_status", ["studentId", "status"]),
+
+  // Tabla 'requestTransitions': bitácora append-only de cambios de estado.
+  // Cada transición guarda motivo, actor y fecha junto al estado resultante,
+  // en la misma transacción. Solo se escribe, nunca se modifica.
+  requestTransitions: defineTable({
+    requestId: v.id("requests"),
+    from: requestStatusUnion,
+    to: requestStatusUnion,
+    actorId: v.id("users"),
+    reason: v.optional(v.string()),
+    occurredAt: v.number(),
+  }).index("by_request", ["requestId"]),
 });
