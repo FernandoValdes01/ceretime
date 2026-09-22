@@ -3,7 +3,6 @@ import { convexTest } from "convex-test";
 import type { FunctionReturnType } from "convex/server";
 import { expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
 import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import schema from "./schema";
 
@@ -227,63 +226,40 @@ test("Sin identidad o sin rol Estudiante se deniega el listado propio", async ()
   ).rejects.toThrow("No autorizado");
 });
 
-test("Profesional lista solo solicitudes de acompañamientos asignados", async () => {
+test("Profesional lista solo solicitudes tomadas", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-9");
-  const linkedId = await t.mutation(internal.requests.createTestRequest, {
+  const takenId = await t.mutation(internal.requests.createTestRequest, {
     studentId,
-    status: "accepted",
-    accessNeeds: "Vinculada ficticia",
+    status: "received",
+    accessNeeds: "Tomada ficticia",
   });
-  const looseId = await t.mutation(internal.requests.createTestRequest, {
+  await t.mutation(internal.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Suelta ficticia",
   });
   await t.run(async (ctx) => {
     return await ctx.db.insert("users", {
-      email: "ti9-pro-5@uct.cl",
-      fullName: "Profesional Ficticio",
-      role: "professional",
-      institutionalStatus: "enabled",
-      accountStatus: "active",
-      tokenIdentifier: `${ISSUER}|ti9-pro-5`,
-    });
-  });
-  const targetId = await t.run(async (ctx) => {
-    return await ctx.db.insert("users", {
       email: "ti9-pro-6@uct.cl",
-      fullName: "Profesional Asignado",
+      fullName: "Profesional Ficticio",
       role: "professional",
       institutionalStatus: "enabled",
       accountStatus: "active",
       tokenIdentifier: `${ISSUER}|ti9-pro-6`,
     });
   });
-  const accompanimentId = await t.run(async (ctx) => {
-    return await ctx.db.insert("accompaniments", {
-      studentId,
-      status: "active",
-      objective: "Objetivo ficticio",
-      accessNeeds: "Necesidad de acceso ficticia",
-      requestId: linkedId,
-    });
-  });
-  const asGranter = t.withIdentity(identityFor("ti9-pro-5", "ti9-pro-5@uct.cl"));
-  await asGranter.mutation(internal.assignments.assign, {
-    accompanimentId,
-    userId: targetId,
-    assignedRole: "professional",
-  });
 
-  // Ve la vinculada y no la suelta
+  // Toma una y lista: ve la tomada y no la suelta
   const asProfessional = t.withIdentity(identityFor("ti9-pro-6", "ti9-pro-6@uct.cl"));
+  await asProfessional.mutation(api.presentation.requests.takeRequest, {
+    requestId: takenId,
+  });
   const page = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(page.page.map((item) => item._id).sort()).toEqual([linkedId].sort());
-  expect(page.page.find((item) => item._id === looseId)).toBeUndefined();
+  expect(page.page.map((item) => item._id)).toEqual([takenId]);
 });
 
 test("Sin rol Profesional se deniega el listado autorizado", async () => {
@@ -307,93 +283,74 @@ test("Sin rol Profesional se deniega el listado autorizado", async () => {
   ).rejects.toThrow("No autorizado");
 });
 
-test("Profesional no ve duplicadas aunque existan filas repetidas", async () => {
+test("Profesional no ve duplicadas en la misma página aunque haya tomas repetidas", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-11");
-  const linkedId = await t.mutation(internal.requests.createTestRequest, {
+  const takenId = await t.mutation(internal.requests.createTestRequest, {
     studentId,
-    status: "accepted",
-    accessNeeds: "Vinculada ficticia",
+    status: "received",
+    accessNeeds: "Tomada ficticia",
   });
-  await t.run(async (ctx) => {
-    return await ctx.db.insert("users", {
-      email: "ti9-pro-7@uct.cl",
-      fullName: "Profesional Ficticio",
-      role: "professional",
-      institutionalStatus: "enabled",
-      accountStatus: "active",
-      tokenIdentifier: `${ISSUER}|ti9-pro-7`,
-    });
-  });
-  const targetId = await t.run(async (ctx) => {
+  const proId = await t.run(async (ctx) => {
     return await ctx.db.insert("users", {
       email: "ti9-pro-8@uct.cl",
-      fullName: "Profesional Asignado",
+      fullName: "Profesional Ficticio",
       role: "professional",
       institutionalStatus: "enabled",
       accountStatus: "active",
       tokenIdentifier: `${ISSUER}|ti9-pro-8`,
     });
   });
-  const accompanimentId = await t.run(async (ctx) => {
-    return await ctx.db.insert("accompaniments", {
-      studentId,
-      status: "active",
-      objective: "Objetivo ficticio",
-      accessNeeds: "Necesidad de acceso ficticia",
-      requestId: linkedId,
-    });
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-8", "ti9-pro-8@uct.cl"));
+  await asProfessional.mutation(api.presentation.requests.takeRequest, {
+    requestId: takenId,
   });
-  const asGranter = t.withIdentity(identityFor("ti9-pro-7", "ti9-pro-7@uct.cl"));
-  await asGranter.mutation(internal.assignments.assign, {
-    accompanimentId,
-    userId: targetId,
-    assignedRole: "professional",
-  });
-  // Fila repetida escrita fuera de la vía protegida
+  // Toma repetida escrita fuera de la vía protegida
   await t.run(async (ctx) => {
-    return await ctx.db.insert("accompanimentAssignments", {
-      accompanimentId,
-      userId: targetId,
-      assignedRole: "professional",
-      status: "active",
-      grantedBy: targetId,
+    return await ctx.db.insert("requestAssignments", {
+      requestId: takenId,
+      userId: proId,
+      grantedBy: proId,
       grantedAt: 1,
+      status: "active",
     });
   });
 
-  // Una sola vez en página completa y sin repetirse entre páginas
-  const asProfessional = t.withIdentity(identityFor("ti9-pro-8", "ti9-pro-8@uct.cl"));
+  // Una sola vez en página completa; la vía guardada impide crear
+  // repetidas, así que solo filas legacy escritas a mano pueden duplicar
   const full = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(full.page.map((item) => item._id)).toEqual([linkedId]);
+  expect(full.page.map((item) => item._id)).toEqual([takenId]);
 
   const first = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
     paginationOpts: { numItems: 1, cursor: null },
   });
-  expect(first.page.map((item) => item._id)).toEqual([linkedId]);
-  const second = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
-    paginationOpts: { numItems: 1, cursor: first.continueCursor },
-  });
-  expect(second.page).toHaveLength(0);
-  expect(second.isDone).toBe(true);
+  expect(first.page.map((item) => item._id)).toEqual([takenId]);
+
+  // Caminar termina y nunca filtra solicitudes ajenas
+  let cursor: string | null = first.continueCursor;
+  for (let round = 0; round < 5; round++) {
+    const page: FunctionReturnType<typeof api.presentation.requests.listAuthorizedRequests> =
+      await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+        paginationOpts: { numItems: 1, cursor },
+      });
+    for (const item of page.page) expect(item._id).toEqual(takenId);
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
 });
 
-test("Profesional no pierde solicitudes cuando la página se llena antes", async () => {
+test("Profesional toma una solicitud y la retoma se rechaza", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-12");
-  const expected: Id<"requests">[] = [];
-  for (const tag of ["a", "b", "c"]) {
-    const requestId = await t.mutation(internal.requests.createTestRequest, {
-      studentId,
-      status: "accepted",
-      accessNeeds: `Vinculada ${tag} ficticia`,
-    });
-    expected.push(requestId);
-  }
+  const requestId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Tomada ficticia",
+  });
   await t.run(async (ctx) => {
     return await ctx.db.insert("users", {
       email: "ti9-pro-9@uct.cl",
@@ -404,48 +361,22 @@ test("Profesional no pierde solicitudes cuando la página se llena antes", async
       tokenIdentifier: `${ISSUER}|ti9-pro-9`,
     });
   });
-  const targetId = await t.run(async (ctx) => {
-    return await ctx.db.insert("users", {
-      email: "ti9-pro-10@uct.cl",
-      fullName: "Profesional Asignado",
-      role: "professional",
-      institutionalStatus: "enabled",
-      accountStatus: "active",
-      tokenIdentifier: `${ISSUER}|ti9-pro-10`,
-    });
-  });
-  const asGranter = t.withIdentity(identityFor("ti9-pro-9", "ti9-pro-9@uct.cl"));
-  for (const requestId of expected) {
-    const accompanimentId = await t.run(async (ctx) => {
-      return await ctx.db.insert("accompaniments", {
-        studentId,
-        status: "active",
-        objective: "Objetivo ficticio",
-        accessNeeds: "Necesidad de acceso ficticia",
-        requestId,
-      });
-    });
-    await asGranter.mutation(internal.assignments.assign, {
-      accompanimentId,
-      userId: targetId,
-      assignedRole: "professional",
-    });
-  }
 
-  // Caminar de a una trae las tres sin omitir ninguna
-  const asProfessional = t.withIdentity(identityFor("ti9-pro-10", "ti9-pro-10@uct.cl"));
-  const seen: string[] = [];
-  let cursor: string | null = null;
-  for (let round = 0; round < 5; round++) {
-    const page: FunctionReturnType<typeof api.presentation.requests.listAuthorizedRequests> =
-      await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
-        paginationOpts: { numItems: 1, cursor },
-      });
-    for (const item of page.page) seen.push(item._id);
-    if (page.isDone) break;
-    cursor = page.continueCursor;
-  }
-  expect(seen.sort()).toEqual(expected.sort());
+  // Toma una vez y la retoma se rechaza
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-9", "ti9-pro-9@uct.cl"));
+  const taken = await asProfessional.mutation(api.presentation.requests.takeRequest, {
+    requestId,
+  });
+  expect(taken._id).toEqual(requestId);
+  await expect(
+    asProfessional.mutation(api.presentation.requests.takeRequest, { requestId }),
+  ).rejects.toThrow("Ya tomaste");
+
+  // Sin rol Profesional no se toma
+  const asStudent = t.withIdentity(identityFor("ti9-est-12", "ti9-est-12@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(api.presentation.requests.takeRequest, { requestId }),
+  ).rejects.toThrow("No autorizado");
 });
 
 test("Profesional pide información adicional en solicitud en revisión", async () => {
@@ -468,8 +399,9 @@ test("Profesional pide información adicional en solicitud en revisión", async 
     accessNeeds: "Necesidad de acceso ficticia",
   });
 
-  // El Profesional mueve la solicitud a espera de información con motivo
+  // El Profesional toma la solicitud y la mueve a espera de información
   const asProfessional = t.withIdentity(identityFor("ti9-pro-3", "ti9-pro-3@uct.cl"));
+  await asProfessional.mutation(api.presentation.requests.takeRequest, { requestId });
   const updated = await asProfessional.mutation(
     api.presentation.requests.requestAdditionalInformation,
     { requestId, reason: "Falta el horario disponible" },
@@ -495,6 +427,9 @@ test("Profesional pide información adicional en solicitud en revisión", async 
     studentId,
     status: "under_review",
     accessNeeds: "Otra necesidad ficticia",
+  });
+  await asProfessional.mutation(api.presentation.requests.takeRequest, {
+    requestId: pendingId,
   });
   await expect(
     asProfessional.mutation(api.presentation.requests.requestAdditionalInformation, {
@@ -532,4 +467,36 @@ test("Pedir información se deniega sin Profesional vigente o en estado inválid
       reason: "Falta el horario disponible",
     }),
   ).rejects.toThrow("No autorizado");
+});
+
+test("Otro Profesional sin toma recibe denegación sin modificar estado", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-13");
+  const requestId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "under_review",
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-11@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-11`,
+    });
+  });
+
+  // Profesional vigente pero sin toma explícita: denegado sin cambios
+  const asStranger = t.withIdentity(identityFor("ti9-pro-11", "ti9-pro-11@uct.cl"));
+  await expect(
+    asStranger.mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId,
+      reason: "Falta el horario disponible",
+    }),
+  ).rejects.toThrow("No autorizado");
+  const untouched = await t.query(internal.requests.getRequestById, { id: requestId });
+  expect(untouched?.status).toBe("under_review");
 });

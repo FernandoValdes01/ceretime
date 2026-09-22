@@ -6,7 +6,9 @@ import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import {
+  findActiveTake,
   getRequestById,
+  insertActiveTake,
   insertReceivedRequest,
   logRequestTransition,
   setRequestStatus,
@@ -57,9 +59,10 @@ export async function registerRequest(
  * Pide información adicional al Estudiante: mueve la solicitud a
  * `awaiting_information_or_acceptance` aplicando la política de TI2-21. Solo
  * un Profesional con cuenta vigente; cualquier otro caso recibe denegación
- * genérica. Si el estado actual no admite el paso o falta el motivo, se
- * rechaza sin modificar nada. Persiste el estado y el registro del cambio
- * (motivo, actor y fecha) en la misma transacción.
+ * genérica. Exige toma activa previa: sin relación explícita con la
+ * solicitud no se opera. Si el estado actual no admite el paso o falta el
+ * motivo, se rechaza sin modificar nada. Persiste el estado y el registro
+ * del cambio (motivo, actor y fecha) en la misma transacción.
  */
 export async function requestAdditionalInformation(
   ctx: MutationCtx,
@@ -69,6 +72,8 @@ export async function requestAdditionalInformation(
   const professional = await requireActiveProfessional(ctx, identity);
   const row = await getRequestById(ctx, input.requestId);
   if (row === null) deny();
+  const take = await findActiveTake(ctx, input.requestId, professional._id);
+  if (take === null) deny();
   const result = transitionRequest({
     from: row.status,
     to: "awaiting_information_or_acceptance",
@@ -95,6 +100,38 @@ export async function requestAdditionalInformation(
     _id: row._id,
     studentId: row.studentId,
     status: result.change.to,
+    accessNeeds: row.accessNeeds,
+    createdAt: row.createdAt,
+  });
+}
+
+/**
+ * Toma una solicitud para revisión: crea la relación explícita entre el
+ * Profesional y la solicitud, auditando quién y cuándo. Solo el propio
+ * Profesional con cuenta vigente puede tomar para sí; una toma activa
+ * existente se rechaza. Sin esta toma no se puede operar la solicitud.
+ */
+export async function takeRequest(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  input: { readonly requestId: Id<"requests"> },
+) {
+  const professional = await requireActiveProfessional(ctx, identity);
+  const row = await getRequestById(ctx, input.requestId);
+  if (row === null) deny();
+  const existing = await findActiveTake(ctx, input.requestId, professional._id);
+  if (existing !== null) {
+    throw new Error("Ya tomaste esta solicitud");
+  }
+  await insertActiveTake(ctx, {
+    requestId: input.requestId,
+    userId: professional._id,
+    grantedBy: professional._id,
+  });
+  return toAccompanimentRequest({
+    _id: row._id,
+    studentId: row.studentId,
+    status: row.status,
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   });

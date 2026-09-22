@@ -130,4 +130,20 @@ export default defineSchema({
     reason: v.optional(v.string()),
     occurredAt: v.number(),
   }).index("by_request", ["requestId"]),
+
+  // Tabla 'requestAssignments': tomas de solicitudes por Profesionales.
+  // Relación explícita que autoriza a operar una solicitud: como máximo una
+  // fila activa por solicitud y usuario. Solo el propio Profesional toma
+  // (nadie asigna a otro); queda auditado quién y cuándo.
+  requestAssignments: defineTable({
+    requestId: v.id("requests"),
+    userId: v.id("users"),
+    grantedBy: v.id("users"),
+    grantedAt: v.number(),
+    status: assignmentStatusUnion,
+    revokedBy: v.optional(v.id("users")),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_request_and_user_and_status", ["requestId", "userId", "status"])
+    .index("by_user_and_status", ["userId", "status"]),
 });

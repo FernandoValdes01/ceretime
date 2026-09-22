@@ -3,9 +3,11 @@ import { v } from "convex/values";
 import {
   registerRequest,
   requestAdditionalInformation as requestAdditionalInformationUseCase,
+  takeRequest as takeRequestUseCase,
 } from "../application/requests/commands";
 import {
   listAuthorizedRequestsUseCase,
+  listOpenRequestsUseCase,
   listOwnRequestsUseCase,
 } from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
@@ -27,6 +29,13 @@ const requestValidator = v.object({
   studentId: v.id("users"),
   status: requestStatusUnion,
   accessNeeds: v.string(),
+  createdAt: v.number(),
+});
+
+const minimizedRequestValidator = v.object({
+  _id: v.id("requests"),
+  studentId: v.id("users"),
+  status: requestStatusUnion,
   createdAt: v.number(),
 });
 
@@ -58,9 +67,8 @@ export const listOwnRequests = query({
 });
 
 /**
- * Lista las solicitudes vinculadas a los acompañamientos con asignación
- * profesional activa de quien llama, paginado. Sin asignación no hay
- * acceso. Cualquier otro rol recibe denegación.
+ * Lista las solicitudes tomadas por el Profesional, paginado. Sin toma
+ * activa no hay acceso. Cualquier otro rol recibe denegación.
  */
 export const listAuthorizedRequests = query({
   args: { paginationOpts: paginationOptsValidator },
@@ -68,6 +76,33 @@ export const listAuthorizedRequests = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await listAuthorizedRequestsUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Bandeja de triage para el Profesional, paginado y con vista minimizada
+ * (sin `accessNeeds`). Solo descubrir, no autoriza a operar. Cualquier otro
+ * rol recibe denegación.
+ */
+export const listOpenRequests = query({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(minimizedRequestValidator),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await listOpenRequestsUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Toma una solicitud para revisión. Solo el propio Profesional con cuenta
+ * vigente; una toma activa existente se rechaza.
+ */
+export const takeRequest = mutation({
+  args: { requestId: v.id("requests") },
+  returns: requestValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await takeRequestUseCase(ctx, identity, args);
   },
 });
 

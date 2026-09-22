@@ -2,11 +2,12 @@ import type { PaginationOptions, UserIdentity } from "convex/server";
 import { toAccompanimentRequest } from "../../domain/request/request";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
-import { getRequestById, listOwnedRequests } from "../../infrastructure/requests/repository";
 import {
-  getAccompanimentById,
-  queryAssignedRowsAfter,
-} from "../../infrastructure/accompaniments/repository";
+  getRequestById,
+  listActiveTakes,
+  listAllRequests,
+  listOwnedRequests,
+} from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
 /**
@@ -53,17 +54,9 @@ export type AuthorizedRequestItem = {
 };
 
 /**
- * Lista las solicitudes vinculadas a los acompañamientos con asignación
- * profesional activa de quien llama, paginado. Definición de alcance
- * (TI2-9): el Profesional solo ve las solicitudes que originaron
- * acompañamientos asignados a él. Sin asignación no hay acceso: las
- * solicitudes nuevas sin acompañamiento no aparecen. Cualquier otro rol
- * recibe denegación genérica.
- *
- * Las filas duplicadas (legacy o escritas fuera de la vía protegida) se
- * filtran por acompañamiento dentro y entre páginas: el cursor avanza
- * por filas y el conjunto `seen` excluye repetidos, como el listado
- * asignado de acompañamientos.
+ * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
+ * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa a
+ * su nombre. Cualquier otro rol recibe denegación genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
@@ -71,50 +64,47 @@ export async function listAuthorizedRequestsUseCase(
   args: { readonly paginationOpts: PaginationOptions },
 ) {
   const professional = await requireActiveProfessional(ctx, identity);
-  const limit = Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), 100);
-  let cursor = (args.paginationOpts.cursor ?? undefined) as Id<"accompaniments"> | undefined;
-  const seen = new Set<string>();
+  const result = await listActiveTakes(ctx, professional._id, args.paginationOpts);
   const items: AuthorizedRequestItem[] = [];
-  let exhausted = false;
-  scan: for (let round = 0; round < 10 && items.length < limit; round++) {
-    const rows = await queryAssignedRowsAfter(ctx, {
-      userId: professional._id,
-      assignedRole: "professional",
-      cursor,
-      take: 51,
-    });
-    if (rows.length === 0) {
-      exhausted = true;
-      break;
-    }
-    const lastWindow = rows.length < 51;
-    for (const row of rows) {
-      cursor = row.accompanimentId;
-      if (seen.has(row.accompanimentId)) continue;
-      seen.add(row.accompanimentId);
-      const accompaniment = await getAccompanimentById(ctx, row.accompanimentId);
-      if (accompaniment?.requestId === undefined) continue;
-      const request = await getRequestById(ctx, accompaniment.requestId);
-      if (request === null) continue;
-      items.push(
-        toAccompanimentRequest({
-          _id: request._id,
-          studentId: request.studentId,
-          status: request.status,
-          accessNeeds: request.accessNeeds,
-          createdAt: request.createdAt,
-        }),
-      );
-      if (items.length >= limit) break scan;
-    }
-    if (lastWindow) {
-      exhausted = true;
-      break;
-    }
+  const seen = new Set<string>();
+  for (const take of result.page) {
+    if (seen.has(take.requestId)) continue;
+    seen.add(take.requestId);
+    const request = await getRequestById(ctx, take.requestId);
+    if (request === null) continue;
+    items.push(
+      toAccompanimentRequest({
+        _id: request._id,
+        studentId: request.studentId,
+        status: request.status,
+        accessNeeds: request.accessNeeds,
+        createdAt: request.createdAt,
+      }),
+    );
   }
+  return { ...result, page: items };
+}
+
+/**
+ * Bandeja de triage para el Profesional, paginado y con vista minimizada:
+ * expone `_id`, `studentId`, `status` y `createdAt`, nunca `accessNeeds`.
+ * Solo descubrir, no autoriza a operar: cada solicitud requiere su toma.
+ * Cualquier otro rol recibe denegación genérica.
+ */
+export async function listOpenRequestsUseCase(
+  ctx: QueryCtx,
+  identity: UserIdentity | null,
+  args: { readonly paginationOpts: PaginationOptions },
+) {
+  await requireActiveProfessional(ctx, identity);
+  const result = await listAllRequests(ctx, args.paginationOpts);
   return {
-    page: items,
-    isDone: exhausted,
-    continueCursor: cursor ?? "",
+    ...result,
+    page: result.page.map((row) => ({
+      _id: row._id,
+      studentId: row.studentId,
+      status: row.status,
+      createdAt: row.createdAt,
+    })),
   };
 }
