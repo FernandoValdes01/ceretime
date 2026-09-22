@@ -24,20 +24,19 @@ import { requestStatusUnion } from "../validators";
  * motivo. Opera con datos ficticios.
  */
 
-const requestValidator = v.object({
+const requestBaseFields = {
   _id: v.id("requests"),
   studentId: v.id("users"),
   status: requestStatusUnion,
-  accessNeeds: v.string(),
   createdAt: v.number(),
+};
+
+const requestValidator = v.object({
+  ...requestBaseFields,
+  accessNeeds: v.string(),
 });
 
-const minimizedRequestValidator = v.object({
-  _id: v.id("requests"),
-  studentId: v.id("users"),
-  status: requestStatusUnion,
-  createdAt: v.number(),
-});
+const minimizedRequestValidator = v.object(requestBaseFields);
 
 /**
  * Registra la solicitud del Estudiante en estado `received`. Solo una
