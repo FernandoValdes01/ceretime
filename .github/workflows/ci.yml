@@ -58,7 +58,7 @@ jobs:
         run: bun run --cwd apps/mobile test
 
   web:
-    name: Validaci�n Web
+    name: Validación Web
     runs-on: ubuntu-latest
     steps:
       - name: Descargar el repositorio
