@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import type { FunctionReturnType } from "convex/server";
 import { expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import schema from "./schema";
 
@@ -377,6 +378,81 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
   await expect(
     asStudent.mutation(api.presentation.requests.takeRequest, { requestId }),
   ).rejects.toThrow("No autorizado");
+});
+
+test("Tomar una solicitud recibida inicia su revisión con registro", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-14");
+  const requestId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Tomada ficticia",
+  });
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-12@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-12`,
+    });
+  });
+
+  // La toma mueve a en revisión y lo registra sin motivo
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-12", "ti9-pro-12@uct.cl"));
+  const taken = await asProfessional.mutation(api.presentation.requests.takeRequest, {
+    requestId,
+  });
+  expect(taken.status).toBe("under_review");
+  const logged = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("requestTransitions")
+      .withIndex("by_request", (q) => q.eq("requestId", requestId))
+      .collect();
+  });
+  expect(logged).toHaveLength(1);
+  expect(logged[0]?.from).toBe("received");
+  expect(logged[0]?.to).toBe("under_review");
+  expect(logged[0]?.reason).toBeUndefined();
+});
+
+test("Flujo público completo: registrar, tomar y pedir información", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti9-est-15");
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-13@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-13`,
+    });
+  });
+
+  // 1. El Estudiante registra y queda recibida
+  const asStudent = t.withIdentity(identityFor("ti9-est-15", "ti9-est-15@alu.uct.cl"));
+  const created = await asStudent.mutation(api.presentation.requests.createRequest, {
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+  expect(created.status).toBe("received");
+
+  // 2. El Profesional toma e inicia la revisión
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-13", "ti9-pro-13@uct.cl"));
+  const taken = await asProfessional.mutation(api.presentation.requests.takeRequest, {
+    requestId: created._id as Id<"requests">,
+  });
+  expect(taken.status).toBe("under_review");
+
+  // 3. El Profesional pide información adicional con motivo
+  const updated = await asProfessional.mutation(
+    api.presentation.requests.requestAdditionalInformation,
+    { requestId: created._id as Id<"requests">, reason: "Falta el horario disponible" },
+  );
+  expect(updated.status).toBe("awaiting_information_or_acceptance");
 });
 
 test("Profesional pide información adicional en solicitud en revisión", async () => {

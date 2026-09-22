@@ -109,7 +109,10 @@ export async function requestAdditionalInformation(
  * Toma una solicitud para revisión: crea la relación explícita entre el
  * Profesional y la solicitud, auditando quién y cuándo. Solo el propio
  * Profesional con cuenta vigente puede tomar para sí; una toma activa
- * existente se rechaza. Sin esta toma no se puede operar la solicitud.
+ * existente se rechaza. Si la solicitud está recibida, la toma inicia la
+ * revisión (`received` → `under_review`) para que el flujo público no quede
+ * bloqueado: `createRequest` siempre crea en `received` y ninguna otra
+ * mutación pública avanza ese paso.
  */
 export async function takeRequest(
   ctx: MutationCtx,
@@ -128,10 +131,36 @@ export async function takeRequest(
     userId: professional._id,
     grantedBy: professional._id,
   });
+  if (row.status !== "received") {
+    return toAccompanimentRequest({
+      _id: row._id,
+      studentId: row.studentId,
+      status: row.status,
+      accessNeeds: row.accessNeeds,
+      createdAt: row.createdAt,
+    });
+  }
+  const result = transitionRequest({
+    from: row.status,
+    to: "under_review",
+    actorId: professional._id,
+    occurredAt: Date.now(),
+  });
+  if (result.status === "rejected") {
+    throw new Error("La solicitud no admite iniciar la revisión en su estado actual");
+  }
+  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await logRequestTransition(ctx, {
+    requestId: input.requestId,
+    from: result.change.from,
+    to: result.change.to,
+    actorId: professional._id,
+    occurredAt: result.change.occurredAt,
+  });
   return toAccompanimentRequest({
     _id: row._id,
     studentId: row.studentId,
-    status: row.status,
+    status: result.change.to,
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   });
