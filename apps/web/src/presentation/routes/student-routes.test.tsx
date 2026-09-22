@@ -8,10 +8,9 @@ import type { WebSessionState } from "../session/session-state.ts";
 let mockedSession: WebSessionState;
 let mockedBackendConfigured = true;
 
-vi.mock("convex/react", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("convex/react")>();
-  return { ...actual, useQuery: () => mockedSession };
-});
+vi.mock("convex/react", () => ({
+  useQuery: () => mockedSession,
+}));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
   authClient: { useSession: () => ({ isPending: false }) },
