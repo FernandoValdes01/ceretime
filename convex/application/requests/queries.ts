@@ -56,7 +56,11 @@ export type AuthorizedRequestItem = {
 /**
  * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
  * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa a
- * su nombre. Cualquier otro rol recibe denegación genérica.
+ * su nombre. La vía guardada impide tomas activas repetidas, así que cada
+ * solicitud aparece una sola vez; las filas duplicadas solo pueden venir de
+ * escrituras manuales fuera del Backend y se filtran dentro de cada página.
+ * Sanear esas filas legacy corresponde a la migración de TI2-17. Cualquier
+ * otro rol recibe denegación genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,

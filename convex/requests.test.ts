@@ -343,6 +343,55 @@ test("Profesional no ve duplicadas en la misma página aunque haya tomas repetid
   }
 });
 
+test("Caminar tomas guardadas no repite ninguna solicitud", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-18");
+  const expected: Id<"requests">[] = [];
+  for (const tag of ["a", "b", "c"]) {
+    expected.push(
+      await t.mutation(internal.requests.createTestRequest, {
+        studentId,
+        status: "received",
+        accessNeeds: `Tomada ${tag} ficticia`,
+      }),
+    );
+  }
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-16@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-16`,
+    });
+  });
+
+  // Tres tomas por la vía guardada (la única que crea filas)
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-16", "ti9-pro-16@uct.cl"));
+  for (const requestId of expected) {
+    await asProfessional.mutation(api.presentation.requests.takeRequest, {
+      requestId,
+    });
+  }
+
+  // Caminar de a una trae las tres, únicas y completas
+  const seen: string[] = [];
+  let cursor: string | null = null;
+  for (let round = 0; round < 5; round++) {
+    const page: FunctionReturnType<typeof api.presentation.requests.listAuthorizedRequests> =
+      await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+        paginationOpts: { numItems: 1, cursor },
+      });
+    for (const item of page.page) seen.push(item._id);
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
+  expect(seen.sort()).toEqual(expected.sort());
+  expect(new Set(seen).size).toBe(seen.length);
+});
+
 test("Profesional toma una solicitud y la retoma se rechaza", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
