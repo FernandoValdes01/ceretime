@@ -27,6 +27,8 @@ Las cuatro transiciones del diagrama son exactamente las de
 `SPRINT_1_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido,
 incluidos los saltos hacia adelante y los retrocesos.
 
+[`state-model.test.ts`](./state-model.test.ts) lee este archivo y falla si el diagrama o las tablas dejan de coincidir con `state.ts` y `transitions.ts`; si editas cualquiera de ellos, corre `bunx vitest run convex/domain/request`.
+
 | Estado                               | Etiqueta en interfaz               | Rol que lo provoca                                          |
 | ------------------------------------ | ---------------------------------- | ----------------------------------------------------------- |
 | `received`                           | Recibida                           | Estudiante, o personal autorizado desde canal institucional |
