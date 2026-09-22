@@ -31,7 +31,7 @@ describe("resolveReturnTarget", () => {
     expect(resolveReturnTarget(null)).toBe(null);
   });
 
-  test("rechaza el indice, el acceso y el denegado para evitar bucles", () => {
+  test("rechaza el índice, el acceso y el denegado para evitar bucles", () => {
     expect(resolveReturnTarget("/")).toBe(null);
     expect(resolveReturnTarget("/login")).toBe(null);
     expect(resolveReturnTarget("/login?redirect=/estudiante")).toBe(null);
@@ -49,7 +49,7 @@ describe("persistencia del retorno", () => {
     expect(sessionStorage.getItem(STORAGE_KEY)).toBe(null);
   });
 
-  test("un valor invalido limpia el retorno anterior", () => {
+  test("un valor inválido limpia el retorno anterior", () => {
     persistReturnTarget("/estudiante");
     persistReturnTarget("/login");
     expect(peekReturnTarget()).toBe(null);

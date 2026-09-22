@@ -57,7 +57,7 @@ jobs:
       - name: Ejecutar pruebas de Mobile
         run: bun run --cwd apps/mobile test
 
-web:
+  web:
     name: Validaci�n Web
     runs-on: ubuntu-latest
     steps:
