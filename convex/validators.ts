@@ -50,4 +50,3 @@ export const assignmentStatusUnion = v.union(
 const requestStatusLiterals = SPRINT_1_REQUEST_STATES.map((state) => v.literal(state));
 
 export const requestStatusUnion = v.union(...requestStatusLiterals);
-

@@ -66,5 +66,3 @@ export type {
 
 // Errores pÃºblicos y estados de respuesta.
 export type { ApiResult, PublicApiError } from "./errors/api_error";
-
-
