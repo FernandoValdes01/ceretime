@@ -12,7 +12,19 @@ export function useNavigateToPath() {
   const router = useRouter();
   return useCallback(
     (target: string) => {
-      void router.navigate({ to: target as "/", replace: true });
+      const url = new URL(target, "https://ceretime.invalid");
+      const search = url.search
+        ? Object.fromEntries(new URLSearchParams(url.search).entries())
+        : undefined;
+      void router.navigate({
+        // `to` solo lleva el pathname; la query va en `search` para que
+        // TanStack no la trate como parte de la ruta y no caiga en
+        // NotFoundRedirect. El target ya viene sanitizado por
+        // `resolveReturnTarget`.
+        to: url.pathname as "/",
+        search: search as never,
+        replace: true,
+      });
     },
     [router],
   );

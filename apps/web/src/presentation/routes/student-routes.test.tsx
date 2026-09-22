@@ -122,6 +122,22 @@ describe("retorno post-login (TI2-6)", () => {
     expect(sessionStorage.getItem("ceretime:post-login-redirect")).toBe(null);
   });
 
+  test("el retorno OAuth conserva la query del destino", async () => {
+    mockedSession = SIN_SESION;
+    const first = renderAt("/login?redirect=/estudiante?tab=solicitudes");
+
+    const accessHeading = await screen.findByRole("heading", { name: "Acceso institucional" });
+    expect(accessHeading).toBeDefined();
+
+    first.unmount();
+    mockedSession = ESTUDIANTE;
+    const { router } = renderAt("/");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/estudiante"));
+    expect(router.state.location.search).toMatchObject({ tab: "solicitudes" });
+    expect(sessionStorage.getItem("ceretime:post-login-redirect")).toBe(null);
+  });
+
   test("la sesión ya iniciada sin retorno muestra su estado con cierre", async () => {
     mockedSession = ESTUDIANTE;
     renderAt("/login");
