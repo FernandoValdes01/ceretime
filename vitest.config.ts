@@ -2,7 +2,8 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    environment: "jsdom",
+    environment: "edge-runtime",
+    environmentMatchGlobs: [["apps/web/**", "jsdom"]],
     deps: {
       inline: [/^react$/, /^react-dom$/, /^@tanstack\/react-router/],
     },
