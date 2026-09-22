@@ -106,10 +106,10 @@ export async function requestAdditionalInformation(
 }
 
 /**
- * Toma una solicitud para revisión: crea la relación explícita entre el
- * Profesional y la solicitud, auditando quién y cuándo. Solo el propio
- * Profesional con cuenta vigente puede tomar para sí; una toma activa
- * existente se rechaza. Si la solicitud está recibida, la toma inicia la
+ * Toma una solicitud recibida para revisión: crea la relación explícita
+ * entre el Profesional y la solicitud, auditando quién y cuándo. Solo el
+ * propio Profesional con cuenta vigente puede tomar para sí, solo en estado
+ * `received` y sin otra toma activa; si no, se rechaza. Tomar inicia la
  * revisión (`received` → `under_review`) para que el flujo público no quede
  * bloqueado: `createRequest` siempre crea en `received` y ninguna otra
  * mutación pública avanza ese paso.
@@ -122,6 +122,9 @@ export async function takeRequest(
   const professional = await requireActiveProfessional(ctx, identity);
   const row = await getRequestById(ctx, input.requestId);
   if (row === null) deny();
+  if (row.status !== "received") {
+    throw new Error("Solo se pueden tomar solicitudes recibidas");
+  }
   const existing = await findActiveTake(ctx, input.requestId, professional._id);
   if (existing !== null) {
     throw new Error("Ya tomaste esta solicitud");

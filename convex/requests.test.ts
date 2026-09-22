@@ -363,20 +363,126 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
     });
   });
 
-  // Toma una vez y la retoma se rechaza
+  // Toma una vez y la retoma se rechaza por estado
   const asProfessional = t.withIdentity(identityFor("ti9-pro-9", "ti9-pro-9@uct.cl"));
   const taken = await asProfessional.mutation(api.presentation.requests.takeRequest, {
     requestId,
   });
   expect(taken._id).toEqual(requestId);
+  expect(taken.status).toBe("under_review");
   await expect(
     asProfessional.mutation(api.presentation.requests.takeRequest, { requestId }),
+  ).rejects.toThrow("recibidas");
+
+  // Una toma activa sobre una recibida también se rechaza como duplicada
+  const freshId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Otra tomada ficticia",
+  });
+  const proId = await t.run(async (ctx) => {
+    const profile = await ctx.db
+      .query("users")
+      .withIndex("by_token_identifier", (q) => q.eq("tokenIdentifier", `${ISSUER}|ti9-pro-9`))
+      .unique();
+    if (profile === null) throw new Error("Perfil ficticio ausente");
+    return profile._id;
+  });
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("requestAssignments", {
+      requestId: freshId,
+      userId: proId,
+      grantedBy: proId,
+      grantedAt: 1,
+      status: "active",
+    });
+  });
+  await expect(
+    asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: freshId }),
   ).rejects.toThrow("Ya tomaste");
 
   // Sin rol Profesional no se toma
   const asStudent = t.withIdentity(identityFor("ti9-est-12", "ti9-est-12@alu.uct.cl"));
   await expect(
     asStudent.mutation(api.presentation.requests.takeRequest, { requestId }),
+  ).rejects.toThrow("No autorizado");
+});
+
+test("Tomar exige solicitud recibida sin otra toma activa", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-16");
+  const reviewingId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "under_review",
+    accessNeeds: "En revisión ficticia",
+  });
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-14@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-14`,
+    });
+  });
+
+  // Fuera de recibida no se toma, aunque no exista toma previa
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-14", "ti9-pro-14@uct.cl"));
+  await expect(
+    asProfessional.mutation(api.presentation.requests.takeRequest, {
+      requestId: reviewingId,
+    }),
+  ).rejects.toThrow("recibidas");
+});
+
+test("Bandeja muestra solo recibidas sin datos sensibles", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-17");
+  const receivedId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Recibida ficticia",
+  });
+  await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "under_review",
+    accessNeeds: "En revisión ficticia",
+  });
+  await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "accepted",
+    accessNeeds: "Aceptada ficticia",
+  });
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-15@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-15`,
+    });
+  });
+
+  // Solo la recibida aparece y sin accessNeeds
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-15", "ti9-pro-15@uct.cl"));
+  const page = await asProfessional.query(api.presentation.requests.listOpenRequests, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(page.page.map((item) => item._id)).toEqual([receivedId]);
+  for (const item of page.page) {
+    expect(item).not.toHaveProperty("accessNeeds");
+  }
+
+  // Sin rol Profesional no se descubre nada
+  const asStudent = t.withIdentity(identityFor("ti9-est-17", "ti9-est-17@alu.uct.cl"));
+  await expect(
+    asStudent.query(api.presentation.requests.listOpenRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
   ).rejects.toThrow("No autorizado");
 });
 
@@ -471,11 +577,11 @@ test("Profesional pide información adicional en solicitud en revisión", async 
   });
   const requestId = await t.mutation(internal.requests.createTestRequest, {
     studentId,
-    status: "under_review",
+    status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
   });
 
-  // El Profesional toma la solicitud y la mueve a espera de información
+  // El Profesional toma (inicia revisión) y pide información con motivo
   const asProfessional = t.withIdentity(identityFor("ti9-pro-3", "ti9-pro-3@uct.cl"));
   await asProfessional.mutation(api.presentation.requests.takeRequest, { requestId });
   const updated = await asProfessional.mutation(
@@ -484,24 +590,23 @@ test("Profesional pide información adicional en solicitud en revisión", async 
   );
   expect(updated.status).toBe("awaiting_information_or_acceptance");
 
-  // El cambio queda registrado con motivo, actor y fecha
+  // El cambio de información queda registrado con motivo, actor y fecha
   const logged = await t.run(async (ctx) => {
     return await ctx.db
       .query("requestTransitions")
       .withIndex("by_request", (q) => q.eq("requestId", requestId))
       .collect();
   });
-  expect(logged).toHaveLength(1);
-  expect(logged[0]?.from).toBe("under_review");
-  expect(logged[0]?.to).toBe("awaiting_information_or_acceptance");
-  expect(logged[0]?.reason).toBe("Falta el horario disponible");
-  expect(logged[0]?.actorId).toEqual(proId);
-  expect(logged[0]?.occurredAt).toBeDefined();
+  const infoChange = logged.find((row) => row.to === "awaiting_information_or_acceptance");
+  expect(infoChange?.from).toBe("under_review");
+  expect(infoChange?.reason).toBe("Falta el horario disponible");
+  expect(infoChange?.actorId).toEqual(proId);
+  expect(infoChange?.occurredAt).toBeDefined();
 
   // Sin motivo se rechaza indicando qué corregir, sin modificar nada
   const pendingId = await t.mutation(internal.requests.createTestRequest, {
     studentId,
-    status: "under_review",
+    status: "received",
     accessNeeds: "Otra necesidad ficticia",
   });
   await asProfessional.mutation(api.presentation.requests.takeRequest, {

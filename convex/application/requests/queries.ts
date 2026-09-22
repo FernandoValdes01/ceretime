@@ -5,8 +5,8 @@ import type { QueryCtx } from "../../_generated/server";
 import {
   getRequestById,
   listActiveTakes,
-  listAllRequests,
   listOwnedRequests,
+  listRequestsByStatus,
 } from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
@@ -87,9 +87,10 @@ export async function listAuthorizedRequestsUseCase(
 
 /**
  * Bandeja de triage para el Profesional, paginado y con vista minimizada:
- * expone `_id`, `studentId`, `status` y `createdAt`, nunca `accessNeeds`.
- * Solo descubrir, no autoriza a operar: cada solicitud requiere su toma.
- * Cualquier otro rol recibe denegación genérica.
+ * solo solicitudes `received` (abiertas, sin tomar), con `_id`,
+ * `studentId`, `status` y `createdAt`, nunca `accessNeeds`. Solo descubrir,
+ * no autoriza a operar: cada solicitud requiere su toma. Cualquier otro rol
+ * recibe denegación genérica.
  */
 export async function listOpenRequestsUseCase(
   ctx: QueryCtx,
@@ -97,7 +98,7 @@ export async function listOpenRequestsUseCase(
   args: { readonly paginationOpts: PaginationOptions },
 ) {
   await requireActiveProfessional(ctx, identity);
-  const result = await listAllRequests(ctx, args.paginationOpts);
+  const result = await listRequestsByStatus(ctx, "received", args.paginationOpts);
   return {
     ...result,
     page: result.page.map((row) => ({

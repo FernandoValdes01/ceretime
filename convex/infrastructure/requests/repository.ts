@@ -82,9 +82,16 @@ export async function listOwnedRequests(
     .paginate(paginationOpts);
 }
 
-/** Todas las solicitudes en orden de creación, paginadas. */
-export async function listAllRequests(ctx: DbReader, paginationOpts: PaginationOptions) {
-  return await ctx.db.query("requests").order("asc").paginate(paginationOpts);
+/** Solicitudes en un estado dado, paginadas. */
+export async function listRequestsByStatus(
+  ctx: DbReader,
+  status: Doc<"requests">["status"],
+  paginationOpts: PaginationOptions,
+) {
+  return await ctx.db
+    .query("requests")
+    .withIndex("by_status", (q) => q.eq("status", status))
+    .paginate(paginationOpts);
 }
 
 /** Tomas activas del usuario, paginadas. */

@@ -9,8 +9,8 @@ Evidencia de cierre de TI2-9: endpoints públicos de solicitudes para Estudiante
 | `presentation/requests.createRequest`                | Estudiante vigente  | Registra en `received` y devuelve la entidad pública canónica (TI2-8)                                               |
 | `presentation/requests.listOwnRequests`              | Estudiante vigente  | Lista solo sus solicitudes, paginado                                                                                |
 | `presentation/requests.listAuthorizedRequests`       | Profesional vigente | Lista solicitudes tomadas por él, paginado                                                                          |
-| `presentation/requests.listOpenRequests`             | Profesional vigente | Bandeja de triage minimizada (sin `accessNeeds`), paginado                                                          |
-| `presentation/requests.takeRequest`                  | Profesional vigente | Toma una solicitud para sí e inicia su revisión; la retoma se rechaza                                               |
+| `presentation/requests.listOpenRequests`             | Profesional vigente | Bandeja de triage: solo `received`, minimizada (sin `accessNeeds`), paginado                                        |
+| `presentation/requests.takeRequest`                  | Profesional vigente | Toma una `received` para sí e inicia su revisión; fuera de recibida o con toma activa se rechaza                    |
 | `presentation/requests.requestAdditionalInformation` | Profesional vigente | Mueve `under_review` a `awaiting_information_or_acceptance` con motivo obligatorio, aplicando la política de TI2-21 |
 
 Toda denegación responde el error genérico, sin motivo ni existencia del recurso. El `studentId` siempre sale del perfil del servidor, nunca del cliente.
