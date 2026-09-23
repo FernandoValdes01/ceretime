@@ -65,7 +65,7 @@ bun run --cwd apps/mobile export
 
 El primer export debe terminar con código 1 y el error `Unable to resolve module lucide-react-native/icons/arrow-down`; el segundo debe terminar con código 0. Esta secuencia se comprobó localmente el 23/09/2026.
 
-Después de `bun install --frozen-lockfile`, el mismo export terminó con código 0. Metro generó bundles para Web, Android e iOS y la carpeta `apps/mobile/dist/`. La instalación añadió 15 paquetes locales sin modificar el lockfile. No quedan bloqueos de build conocidos para el Preview sobre el commit validado. El [run manual de Web y Mobile](https://github.com/FernandoValdes01/ceretime/actions/runs/35888917283) también terminó en `success`, publicó artefactos de ambos componentes y dejó un [comentario en la PR](https://github.com/FernandoValdes01/ceretime/pull/43#issuecomment-5798623941) con el SHA validado.
+Después de `bun install --frozen-lockfile`, el mismo export terminó con código 0. Metro generó bundles para Web, Android e iOS y la carpeta `apps/mobile/dist/`. La instalación añadió 15 paquetes locales sin modificar el lockfile. No quedan bloqueos de build conocidos para el Preview sobre el commit validado. El [comentario de evidencia en la PR](https://github.com/FernandoValdes01/ceretime/pull/43#issuecomment-5798623941) conserva el enlace al run manual más reciente de Web y Mobile, los artefactos publicados y el SHA validado; se actualiza en cada ejecución.
 
 ## Pruebas de la preparación
 

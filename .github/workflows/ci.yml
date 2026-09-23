@@ -4,6 +4,11 @@ on:
   pull_request:
     branches:
       - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
   push:
     branches:
       - main
@@ -38,6 +43,67 @@ jobs:
 
       - name: Probar lectura de la nota de Greptile
         run: bun test ./.github/greptile-score.test.ts
+
+  greptile_score:
+    name: Greptile 5/5
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    concurrency:
+      group: greptile-score-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    permissions:
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Esperar y validar la nota del commit actual
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const pullNumber = context.payload.pull_request?.number;
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            const headSha = pullRequest.head.sha.toLowerCase();
+            const deadline = Date.now() + 10 * 60 * 1000;
+            let summary;
+            let score;
+            let reviewedSha;
+
+            do {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pullNumber,
+                per_page: 100,
+              });
+              summary = comments
+                .filter((comment) =>
+                  comment.user?.login === 'greptile-apps[bot]' &&
+                  comment.user?.type === 'Bot' &&
+                  comment.body?.includes('<!-- greptile_summary -->'),
+                )
+                .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))[0];
+              const body = summary?.body ?? '';
+              score = body.match(/Confidence Score:\s*([0-5])\/5\b/)?.[1];
+              reviewedSha = body.match(/Last reviewed commit:[\s\S]*?\/commit\/([0-9a-f]{40})\b/i)?.[1]?.toLowerCase();
+
+              if (reviewedSha === headSha || Date.now() >= deadline) {
+                break;
+              }
+
+              await new Promise((resolve) => setTimeout(resolve, 20_000));
+            } while (Date.now() < deadline);
+
+            if (reviewedSha !== headSha) {
+              core.setFailed('Falta la revisión de Greptile para el commit actual.');
+            } else if (score !== '5') {
+              core.setFailed(`Greptile asignó ${score ?? 'una nota inválida'}/5; se exige 5/5.`);
+            } else {
+              core.info('Greptile asignó 5/5 al commit actual.');
+            }
 
   mobile:
     name: Validación Mobile

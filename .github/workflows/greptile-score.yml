@@ -8,10 +8,12 @@ on:
       - opened
       - reopened
       - synchronize
+      - ready_for_review
   issue_comment:
     types:
       - created
       - edited
+      - deleted
 
 permissions:
   contents: read
