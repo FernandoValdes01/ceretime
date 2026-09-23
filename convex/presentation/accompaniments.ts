@@ -33,6 +33,9 @@ const fullAccompanimentValidator = v.object({
   view: v.literal("full"),
 });
 
+/** Vista completa reutilizable: la apertura por aceptación (TI2-24) la devuelve. */
+export const acceptedAccompanimentValidator = fullAccompanimentValidator;
+
 const minimizedAccompanimentValidator = v.object({
   _id: v.id("accompaniments"),
   status: accompanimentStatusUnion,

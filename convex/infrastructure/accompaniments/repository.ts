@@ -35,6 +35,39 @@ export async function getAccompanimentById(
   return await ctx.db.get(accompanimentId);
 }
 
+/**
+ * Acompañamiento abierto desde la solicitud, o `null` si aún no se aceptó.
+ * La vía guardada crea como máximo uno por solicitud; basta una fila para
+ * decidir sin lecturas ilimitadas.
+ */
+export async function findAccompanimentByRequest(
+  ctx: DbReader,
+  requestId: Id<"requests">,
+): Promise<Doc<"accompaniments"> | null> {
+  const rows = await ctx.db
+    .query("accompaniments")
+    .withIndex("by_request", (q) => q.eq("requestId", requestId))
+    .take(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Abre el acompañamiento en estado `active` vinculado a su solicitud de
+ * origen. Solo persistencia: la unicidad la garantiza la vía guardada de
+ * aceptación (TI2-24) al comprobar y crear en la misma transacción.
+ */
+export async function insertAccompaniment(
+  ctx: MutationCtx,
+  input: {
+    readonly studentId: Id<"users">;
+    readonly objective: string;
+    readonly accessNeeds: string;
+    readonly requestId: Id<"requests">;
+  },
+) {
+  return await ctx.db.insert("accompaniments", { ...input, status: "active" });
+}
+
 /** Usuario por id, o `null` si no existe. */
 export async function getUserById(
   ctx: DbReader,
