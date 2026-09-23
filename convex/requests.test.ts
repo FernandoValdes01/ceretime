@@ -361,6 +361,54 @@ test("Fila manual sin puntero aparece por la fuente legacy", async () => {
   expect(found.page.map((item) => item._id)).toEqual([requestId]);
 });
 
+test("Legacy duplicadas en páginas distintas salen una sola vez", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-20");
+  const requestId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Duplicada ficticia",
+  });
+  const proId = await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-18@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-18`,
+    });
+  });
+  // Dos filas legacy activas para la misma solicitud
+  for (let round = 0; round < 2; round++) {
+    await t.run(async (ctx) => {
+      return await ctx.db.insert("requestAssignments", {
+        requestId,
+        userId: proId,
+        grantedBy: proId,
+        grantedAt: 1,
+        status: "active",
+      });
+    });
+  }
+
+  // Caminar de a una emite la solicitud una sola vez en total
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-18", "ti9-pro-18@uct.cl"));
+  const seen: string[] = [];
+  let cursor: string | null = null;
+  for (let round = 0; round < 5; round++) {
+    const page: FunctionReturnType<typeof api.presentation.requests.listAuthorizedRequests> =
+      await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+        paginationOpts: { numItems: 1, cursor },
+      });
+    for (const item of page.page) seen.push(item._id);
+    if (page.isDone) break;
+    cursor = page.continueCursor;
+  }
+  expect(seen).toEqual([requestId]);
+});
+
 test("Caminar tomas guardadas no repite ninguna solicitud", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
