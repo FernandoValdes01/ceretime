@@ -1,6 +1,7 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 import {
+  acceptRequest as acceptRequestUseCase,
   registerRequest,
   requestAdditionalInformation as requestAdditionalInformationUseCase,
   takeRequest as takeRequestUseCase,
@@ -12,6 +13,7 @@ import {
 } from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
 import { requestStatusUnion } from "../validators";
+import { acceptedAccompanimentValidator } from "./accompaniments";
 
 /**
  * Borde de Presentación: solicitudes del Estudiante (TI2-9).
@@ -115,5 +117,19 @@ export const requestAdditionalInformation = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await requestAdditionalInformationUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Acepta la solicitud y abre exactamente un acompañamiento (TI2-24).
+ * Solo el Profesional con toma activa y cuenta vigente; el objetivo es
+ * obligatorio. Repetir la aceptación se rechaza sin duplicar.
+ */
+export const acceptRequest = mutation({
+  args: { requestId: v.id("requests"), objective: v.string() },
+  returns: acceptedAccompanimentValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await acceptRequestUseCase(ctx, identity, args);
   },
 });
