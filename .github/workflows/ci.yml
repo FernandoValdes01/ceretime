@@ -100,9 +100,12 @@ jobs:
             if (reviewedSha !== headSha) {
               core.setFailed('Falta la revisión de Greptile para el commit actual.');
             } else if (score !== '5') {
-              core.setFailed(`Greptile asignó ${score ?? 'una nota inválida'}/5; se exige 5/5.`);
+              const message = score
+                ? `Oye, Greptile dice ${score}/5; no puedes mergear así.`
+                : 'Greptile no publicó una nota válida para el commit actual; no puedes mergear así.';
+              core.setFailed(message);
             } else {
-              core.info('Greptile asignó 5/5 al commit actual.');
+              core.info('Greptile dice 5/5 para el commit actual; puedes mergear.');
             }
 
   mobile:
