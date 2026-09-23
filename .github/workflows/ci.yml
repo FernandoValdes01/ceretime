@@ -36,9 +36,6 @@ jobs:
       - name: Probar publicación de resultados de CI
         run: bun test ./.github/ci-publication.test.ts
 
-      - name: Probar lectura de la nota de Greptile
-        run: bun test ./.github/greptile-score.test.ts
-
   mobile:
     name: Validación Mobile
     runs-on: ubuntu-latest

@@ -17,12 +17,6 @@ Activa también `Require branches to be up to date before merging`. En la API de
 
 La configuración requerida no se puede expresar en `ci.yml`: un workflow puede publicar checks, pero no puede obligar al repositorio a exigirlos ni imponer que una rama se actualice con `main`. La opción de actualización estricta evita que una PR conserve como válidos los checks ejecutados antes de un cambio incompatible en `main`; al actualizar la rama, GitHub crea una nueva ejecución de `pull_request` sobre el estado que se integrará.
 
-## Nota de Greptile
-
-El workflow `.github/workflows/greptile-score.yml` crea el status `Greptile 5/5` sobre el commit actual de cada PR hacia `main`. Lee el comentario de `greptile-apps[bot]` que contiene `<!-- greptile_summary -->`, exige `Confidence Score: 5/5` y comprueba que `Last reviewed commit` apunte al SHA actual. Publica `failure` cuando la nota es 4/5, falta el comentario o la revisión corresponde a un commit anterior. Los eventos de PR y los comentarios creados o editados por Greptile actualizan el status sin ejecutar código de la rama de la PR.
-
-Cuando el workflow ya esté integrado en `main` y se haya comprobado en una PR de prueba, agrega `Greptile 5/5` al mismo Ruleset como status requerido. El check propio `Greptile Review` puede seguir en verde con una nota 4/5; por eso no lo uses como sustituto de este status. No agregues el nuevo status como requisito antes de integrar el workflow: una PR sin el publicador activo quedaría bloqueada sin posibilidad de obtenerlo.
-
 ## Comprobación posterior
 
 Abre una PR de prueba hacia `main` y confirma que aparecen `Lint y formato`, `Validación Mobile`, `Validación Web` y `Verificación Backend` como checks requeridos. Luego cambia `main` con otra PR y verifica que la primera PR queda desactualizada y no puede integrarse hasta actualizarse y repetir la CI. Finalmente confirma que el workflow también aparece en `Actions` para el commit integrado de `main`.
