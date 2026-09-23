@@ -19,6 +19,19 @@ export const ACCOMPANIMENT_STATUS_VALUES = ["active", "paused", "closed"] as con
 
 export type AccompanimentStatus = (typeof ACCOMPANIMENT_STATUS_VALUES)[number];
 
+/**
+ * Objetivo con que se abre el acompañamiento (TI2-24).
+ *
+ * Dominio puro: recorta el texto del profesional y rechaza el vacío, sin
+ * persistir nada. La solicitud no trae objetivo, así que quien acepta lo
+ * aporta; convertir el contenido estructurado a la forma persistida es
+ * alcance de TI2-23.
+ */
+export function toOpeningObjective(raw: string): string | null {
+  const objective = raw.trim();
+  return objective === "" ? null : objective;
+}
+
 /** Vista de lectura de un acompañamiento: completa o minimizada. */
 export const ACCOMPANIMENT_VIEW_VALUES = ["full", "minimized"] as const;
 
