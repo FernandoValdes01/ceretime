@@ -6,9 +6,17 @@ El workflow `.github/workflows/ci.yml` ejecuta la validación cuando una Pull Re
 
 El repositorio usa el Ruleset activo `protectedmain`, aplicado a la rama predeterminada. Conserva sus reglas de protección contra eliminación y force push, la revisión requerida, el descarte de aprobaciones obsoletas, la aprobación del último push y el uso exclusivo de `Squash and merge`.
 
-Como excepción autorizada para probar TI4-34 antes de integrar el publicador de status, `protectedmain` exige ahora `Greptile 5/5` en todas las PR hacia `main`. Esta regla está asociada al check de GitHub Actions y no tiene bypass actors. Los jobs `Lint y formato`, `Validación Mobile`, `Validación Web` y `Verificación Backend` siguen ejecutándose, pero esta excepción no los agrega como requisitos.
+Como excepción autorizada para probar TI4-34 antes de integrar el publicador de status, `protectedmain` exige ahora estos cinco checks en todas las PR hacia `main`:
 
-Los status requeridos se configuran en `Settings > Rules > Rulesets > protectedmain > Edit`, dentro de `Require status checks before merging`. Un workflow puede publicar checks, pero no puede obligar al repositorio a exigirlos.
+- `Lint y formato`
+- `Greptile 5/5`
+- `Validación Mobile`
+- `Validación Web`
+- `Verificación Backend`
+
+La regla está asociada a GitHub Actions y no tiene bypass actors.
+
+La protección estricta exige que la PR esté actualizada con `main` antes de integrarse. En la API de Rulesets esta opción corresponde a `strict_required_status_checks_policy: true`. Un workflow puede publicar checks, pero no puede obligar al repositorio a exigirlos.
 
 ## Nota de Greptile
 
@@ -20,4 +28,4 @@ El check propio `Greptile Review` puede quedar verde con una nota 4/5; no lo use
 
 ## Comprobación posterior
 
-En una PR hacia `main`, confirma que `Greptile 5/5` aparece como check requerido y que un resultado fallido bloquea el merge. Después de integrar el publicador, comprueba que las notas y la eliminación del comentario actualizan el status del SHA correspondiente.
+En una PR hacia `main`, confirma que los cinco checks aparecen como requisitos y que cualquier resultado fallido bloquea el merge. Actualiza la rama cuando `main` avance y confirma que la CI vuelve a ejecutarse sobre el estado que se integrará. Después de integrar el publicador, comprueba que las notas y la eliminación del comentario actualizan el status del SHA correspondiente.
