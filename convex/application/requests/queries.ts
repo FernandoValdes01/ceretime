@@ -10,28 +10,28 @@ import {
 } from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
-/** Posición del barrido y solicitudes ya emitidas dentro del cursor. */
+/** Posición del barrido y última solicitud emitida dentro del cursor (O(1)). */
 type AuthorizedTakesCursor = {
   readonly pos: string | null;
-  readonly seen: readonly string[];
+  readonly last: string | null;
 };
 
-/** Lee el cursor con estado; un cursor ajeno reinicia desde el inicio. */
+/** Lee el cursor con estado; un cursor ajeno o del formato anterior reinicia desde el inicio. */
 function decodeTakesCursor(cursor: string | null): AuthorizedTakesCursor {
-  if (cursor === null) return { pos: null, seen: [] };
+  if (cursor === null) return { pos: null, last: null };
   try {
     const parsed: unknown = JSON.parse(cursor);
-    if (typeof parsed !== "object" || parsed === null) return { pos: null, seen: [] };
+    if (typeof parsed !== "object" || parsed === null) return { pos: null, last: null };
     const record = parsed as Record<string, unknown>;
-    const seen = Array.isArray(record.seen)
-      ? record.seen.filter((id): id is string => typeof id === "string")
-      : [];
+    if (typeof record.last !== "string" && record.last !== null) {
+      return { pos: null, last: null };
+    }
     return {
       pos: typeof record.pos === "string" ? record.pos : null,
-      seen,
+      last: typeof record.last === "string" ? record.last : null,
     };
   } catch {
-    return { pos: null, seen: [] };
+    return { pos: null, last: null };
   }
 }
 
@@ -87,12 +87,10 @@ export type AuthorizedRequestItem = {
  * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
  * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa a
  * su nombre, vengan de la vía guardada o de filas legacy escritas a mano.
- * Un único `.paginate()` por llamada (límite de Convex) sobre las tomas y
- * conjunto `seen` que viaja en el cursor: ninguna solicitud se repite ni se
- * pierde entre páginas. El conjunto no tiene tope a propósito: recortarlo
- * haría volver los repetidos y su tamaño realista (tomas del profesional)
- * cabe de sobra en un argumento. Cualquier otro rol recibe denegación
- * genérica.
+ * Un único `.paginate()` por llamada (límite de Convex) sobre las tomas
+ * ordenadas por solicitud: las filas duplicadas quedan adyacentes y el
+ * cursor solo guarda la posición y la última solicitud emitida (O(1)), sin
+ * historial lineal. Cualquier otro rol recibe denegación genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
@@ -102,17 +100,19 @@ export async function listAuthorizedRequestsUseCase(
   const professional = await requireActiveProfessional(ctx, identity);
   const limit = Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), 100);
   const cursor = decodeTakesCursor(args.paginationOpts.cursor);
-  const seen = new Set<string>(cursor.seen);
   const page = await listActiveTakes(ctx, professional._id, {
     numItems: limit,
     cursor: cursor.pos,
   });
   const items: AuthorizedRequestItem[] = [];
+  const seenInPage = new Set<string>();
+  let last = cursor.last;
   for (const take of page.page) {
-    if (seen.has(take.requestId)) continue;
-    seen.add(take.requestId);
+    if (take.requestId === last || seenInPage.has(take.requestId)) continue;
+    seenInPage.add(take.requestId);
     const request = await getRequestById(ctx, take.requestId);
     if (request === null) continue;
+    last = take.requestId;
     items.push(
       toAccompanimentRequest({
         _id: request._id,
@@ -126,7 +126,7 @@ export async function listAuthorizedRequestsUseCase(
   return {
     page: items,
     isDone: page.isDone,
-    continueCursor: encodeTakesCursor({ pos: page.continueCursor, seen: [...seen] }),
+    continueCursor: encodeTakesCursor({ pos: page.continueCursor, last }),
   };
 }
 

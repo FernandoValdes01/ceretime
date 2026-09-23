@@ -106,7 +106,7 @@ export async function listTakenRequests(
     .paginate(paginationOpts);
 }
 
-/** Tomas activas del usuario, paginadas. */
+/** Tomas activas del usuario, paginadas por solicitud para duplicadas adyacentes. */
 export async function listActiveTakes(
   ctx: DbReader,
   userId: Id<"users">,
@@ -114,7 +114,9 @@ export async function listActiveTakes(
 ) {
   return await ctx.db
     .query("requestAssignments")
-    .withIndex("by_user_and_status", (q) => q.eq("userId", userId).eq("status", "active"))
+    .withIndex("by_user_and_status_and_request", (q) =>
+      q.eq("userId", userId).eq("status", "active"),
+    )
     .order("asc")
     .paginate(paginationOpts);
 }

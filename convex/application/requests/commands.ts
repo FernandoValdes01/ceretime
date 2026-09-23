@@ -136,15 +136,6 @@ export async function takeRequest(
     grantedBy: professional._id,
   });
   await markRequestTaken(ctx, input.requestId, professional._id);
-  if (row.status !== "received") {
-    return toAccompanimentRequest({
-      _id: row._id,
-      studentId: row.studentId,
-      status: row.status,
-      accessNeeds: row.accessNeeds,
-      createdAt: row.createdAt,
-    });
-  }
   const result = transitionRequest({
     from: row.status,
     to: "under_review",

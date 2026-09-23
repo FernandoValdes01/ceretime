@@ -152,5 +152,9 @@ export default defineSchema({
     revokedAt: v.optional(v.number()),
   })
     .index("by_request_and_user_and_status", ["requestId", "userId", "status"])
-    .index("by_user_and_status", ["userId", "status"]),
+    .index("by_user_and_status", ["userId", "status"])
+    // Barrido autorizado con duplicadas adyacentes: ordena por solicitud
+    // para que las filas de la misma solicitud queden contiguas y el cursor
+    // solo recuerde la última emitida (O(1)), sin historial lineal.
+    .index("by_user_and_status_and_request", ["userId", "status", "requestId"]),
 });
