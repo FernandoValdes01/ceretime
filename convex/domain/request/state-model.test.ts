@@ -1,4 +1,3 @@
-/// <reference types="vite/client" />
 import { describe, expect, test } from "vitest";
 import stateModel from "./state-model.md?raw";
 import {
@@ -32,13 +31,35 @@ function sectionLines(title: string): string[] {
   return lines.slice(start, end === -1 ? undefined : end);
 }
 
-/** Celdas de la fila de tabla que empieza con el estado, sin los bordes. */
-function tableRow(state: string): string[] | undefined {
-  const row = lines.find((line) => line.startsWith(`| \`${state}\``));
-  return row
-    ?.split("|")
-    .slice(1, -1)
-    .map((cell) => cell.trim());
+const STATE_TABLE_SECTIONS = ["Implementado en Sprint 1", "Declarado, no habilitado"];
+
+type StateRow = { readonly state: string; readonly cells: readonly string[] };
+
+/**
+ * Filas de estado de la tabla de una sección, en el orden escrito y con las
+ * repeticiones que haya. Se devuelven todas, y no la primera que coincide,
+ * porque comparar la lista completa es lo único que delata una fila duplicada
+ * o una fila de un estado que el modelo no declara.
+ */
+function stateRows(title: string): StateRow[] {
+  return sectionLines(title)
+    .filter((line) => line.startsWith("| `"))
+    .map((line) => {
+      const cells = line
+        .split("|")
+        .slice(1, -1)
+        .map((cell) => cell.trim());
+      return { state: cells[0]?.slice(1, -1) ?? "", cells };
+    });
+}
+
+/** Etiqueta que las tablas del documento muestran para un estado. */
+function labelInTables(state: string): string | undefined {
+  for (const title of STATE_TABLE_SECTIONS) {
+    const row = stateRows(title).find((candidate) => candidate.state === state);
+    if (row) return row.cells[1];
+  }
+  return undefined;
 }
 
 type Edge = { readonly from: string; readonly to: string; readonly label: string | undefined };
@@ -95,17 +116,19 @@ describe("diagrama de state-model.md", () => {
 });
 
 describe("tablas de state-model.md", () => {
+  test("«Implementado en Sprint 1» tiene una fila por estado con operación, sin repetir ni sobrar", () => {
+    expect(stateRows("Implementado en Sprint 1").map((row) => row.state)).toEqual([
+      ...SPRINT_1_REQUEST_STATES,
+    ]);
+  });
+
+  test("«Declarado, no habilitado» tiene una fila por estado declarado, sin repetir ni sobrar", () => {
+    expect(stateRows("Declarado, no habilitado").map((row) => row.state)).toEqual([
+      ...FUTURE_REQUEST_STATES,
+    ]);
+  });
+
   test.each(REQUEST_STATES)("muestra para %s la etiqueta de REQUEST_STATE_LABELS", (state) => {
-    expect(tableRow(state)?.[1]).toBe(REQUEST_STATE_LABELS[state]);
-  });
-
-  test.each(SPRINT_1_REQUEST_STATES)("lista %s bajo «Implementado en Sprint 1»", (state) => {
-    const rows = sectionLines("Implementado en Sprint 1");
-    expect(rows.some((line) => line.startsWith(`| \`${state}\``))).toBe(true);
-  });
-
-  test.each(FUTURE_REQUEST_STATES)("lista %s bajo «Declarado, no habilitado»", (state) => {
-    const rows = sectionLines("Declarado, no habilitado");
-    expect(rows.some((line) => line.startsWith(`| \`${state}\``))).toBe(true);
+    expect(labelInTables(state)).toBe(REQUEST_STATE_LABELS[state]);
   });
 });
