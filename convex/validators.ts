@@ -3,7 +3,7 @@ import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniment/accompanimen
 import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
-} from "./domain/accompaniment/practitioner-assignment";
+} from "./domain/accompaniment/practitioner_assignment";
 import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import {
   ACCOUNT_STATUS_VALUES,
