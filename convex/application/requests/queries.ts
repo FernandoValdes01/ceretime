@@ -10,42 +10,6 @@ import {
 } from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
-/** Tope de identificadores recordados en el cursor entre páginas. */
-const MAX_TAKES_CURSOR_SEEN = 500;
-
-/** Posición del barrido y solicitudes ya emitidas dentro del cursor. */
-type AuthorizedTakesCursor = {
-  readonly pos: string | null;
-  readonly seen: readonly string[];
-};
-
-/** Lee el cursor con estado; un cursor ajeno reinicia desde el inicio. */
-function decodeTakesCursor(cursor: string | null): AuthorizedTakesCursor {
-  if (cursor === null) return { pos: null, seen: [] };
-  try {
-    const parsed: unknown = JSON.parse(cursor);
-    if (typeof parsed !== "object" || parsed === null) return { pos: null, seen: [] };
-    const record = parsed as Record<string, unknown>;
-    const seen = Array.isArray(record.seen)
-      ? record.seen.filter((id): id is string => typeof id === "string")
-      : [];
-    return {
-      pos: typeof record.pos === "string" ? record.pos : null,
-      seen,
-    };
-  } catch {
-    return { pos: null, seen: [] };
-  }
-}
-
-/** Guarda la posición y lo emitido para la página siguiente. */
-function encodeTakesCursor(cursor: AuthorizedTakesCursor): string {
-  return JSON.stringify({
-    pos: cursor.pos,
-    seen: cursor.seen.slice(-MAX_TAKES_CURSOR_SEEN),
-  });
-}
-
 /**
  * Casos de uso de lectura de solicitudes (TI2-9).
  *
@@ -93,10 +57,11 @@ export type AuthorizedRequestItem = {
  * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
  * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa a
  * su nombre, vengan de la vía guardada o de filas legacy escritas a mano.
- * Barre las tomas con un único `.paginate()` por llamada y filtra repetidos
- * por solicitud con el conjunto `seen` que viaja en el cursor: ninguna se
- * repite ni se pierde entre páginas. Cualquier otro rol recibe
- * denegación genérica.
+ * Un único `.paginate()` por llamada (límite de Convex) sobre las tomas y
+ * filtro de repetidos dentro de la página: la vía guardada impide
+ * repetidas, así que solo grupos legacy partidos justo en el borde podrían
+ * repetirse, y sanearlos corresponde a la migración de TI2-17. Cualquier
+ * otro rol recibe denegación genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
@@ -104,43 +69,25 @@ export async function listAuthorizedRequestsUseCase(
   args: { readonly paginationOpts: PaginationOptions },
 ) {
   const professional = await requireActiveProfessional(ctx, identity);
-  const limit = Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), 100);
-  const cursor = decodeTakesCursor(args.paginationOpts.cursor);
-  const seen = new Set<string>(cursor.seen);
+  const result = await listActiveTakes(ctx, professional._id, args.paginationOpts);
+  const seen = new Set<string>();
   const items: AuthorizedRequestItem[] = [];
-  let pos: string | null = cursor.pos;
-  let exhausted = false;
-  for (let round = 0; round < 10 && items.length < limit; round++) {
-    const page = await listActiveTakes(ctx, professional._id, {
-      numItems: limit - items.length,
-      cursor: pos,
-    });
-    for (const take of page.page) {
-      if (seen.has(take.requestId)) continue;
-      seen.add(take.requestId);
-      const request = await getRequestById(ctx, take.requestId);
-      if (request === null) continue;
-      items.push(
-        toAccompanimentRequest({
-          _id: request._id,
-          studentId: request.studentId,
-          status: request.status,
-          accessNeeds: request.accessNeeds,
-          createdAt: request.createdAt,
-        }),
-      );
-    }
-    pos = page.continueCursor;
-    if (page.isDone) {
-      exhausted = true;
-      break;
-    }
+  for (const take of result.page) {
+    if (seen.has(take.requestId)) continue;
+    seen.add(take.requestId);
+    const request = await getRequestById(ctx, take.requestId);
+    if (request === null) continue;
+    items.push(
+      toAccompanimentRequest({
+        _id: request._id,
+        studentId: request.studentId,
+        status: request.status,
+        accessNeeds: request.accessNeeds,
+        createdAt: request.createdAt,
+      }),
+    );
   }
-  return {
-    page: items,
-    isDone: exhausted,
-    continueCursor: encodeTakesCursor({ pos, seen: [...seen] }),
-  };
+  return { ...result, page: items };
 }
 
 /**
