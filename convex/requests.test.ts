@@ -284,7 +284,7 @@ test("Sin rol Profesional se deniega el listado autorizado", async () => {
   ).rejects.toThrow("No autorizado");
 });
 
-test("Solo aparecen solicitudes tomadas por la vía guardada", async () => {
+test("Fila repetida manual no duplica en el listado", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-11");
@@ -325,7 +325,7 @@ test("Solo aparecen solicitudes tomadas por la vía guardada", async () => {
   expect(full.page.map((item) => item._id)).toEqual([takenId]);
 });
 
-test("Fila manual sin puntero no aparece en el listado", async () => {
+test("Fila manual sin puntero aparece por la fuente legacy", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-19");
@@ -344,7 +344,7 @@ test("Fila manual sin puntero no aparece en el listado", async () => {
       tokenIdentifier: `${ISSUER}|ti9-pro-17`,
     });
   });
-  // Fila manual sin puntero: invisible aunque exista
+  // Fila manual sin puntero: visible por la fuente legacy
   await t.run(async (ctx) => {
     return await ctx.db.insert("requestAssignments", {
       requestId,
@@ -355,10 +355,10 @@ test("Fila manual sin puntero no aparece en el listado", async () => {
     });
   });
   const asProfessional = t.withIdentity(identityFor("ti9-pro-17", "ti9-pro-17@uct.cl"));
-  const empty = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+  const found = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(empty.page).toHaveLength(0);
+  expect(found.page.map((item) => item._id)).toEqual([requestId]);
 });
 
 test("Caminar tomas guardadas no repite ninguna solicitud", async () => {

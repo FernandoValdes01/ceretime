@@ -1,12 +1,50 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { toAccompanimentRequest } from "../../domain/request/request";
+import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
 import {
+  getRequestById,
+  listActiveTakes,
   listOwnedRequests,
   listRequestsByStatus,
-  listTakenRequests,
 } from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
+
+/** Tope de identificadores recordados en el cursor entre páginas. */
+const MAX_TAKES_CURSOR_SEEN = 500;
+
+/** Posición del barrido y solicitudes ya emitidas dentro del cursor. */
+type AuthorizedTakesCursor = {
+  readonly pos: string | null;
+  readonly seen: readonly string[];
+};
+
+/** Lee el cursor con estado; un cursor ajeno reinicia desde el inicio. */
+function decodeTakesCursor(cursor: string | null): AuthorizedTakesCursor {
+  if (cursor === null) return { pos: null, seen: [] };
+  try {
+    const parsed: unknown = JSON.parse(cursor);
+    if (typeof parsed !== "object" || parsed === null) return { pos: null, seen: [] };
+    const record = parsed as Record<string, unknown>;
+    const seen = Array.isArray(record.seen)
+      ? record.seen.filter((id): id is string => typeof id === "string")
+      : [];
+    return {
+      pos: typeof record.pos === "string" ? record.pos : null,
+      seen,
+    };
+  } catch {
+    return { pos: null, seen: [] };
+  }
+}
+
+/** Guarda la posición y lo emitido para la página siguiente. */
+function encodeTakesCursor(cursor: AuthorizedTakesCursor): string {
+  return JSON.stringify({
+    pos: cursor.pos,
+    seen: cursor.seen.slice(-MAX_TAKES_CURSOR_SEEN),
+  });
+}
 
 /**
  * Casos de uso de lectura de solicitudes (TI2-9).
@@ -43,14 +81,22 @@ export async function listOwnRequestsUseCase(
   };
 }
 
+export type AuthorizedRequestItem = {
+  readonly _id: Id<"requests">;
+  readonly studentId: Id<"users">;
+  readonly status: Doc<"requests">["status"];
+  readonly accessNeeds: string;
+  readonly createdAt: number;
+};
+
 /**
  * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
  * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa a
- * su nombre. Pagina directo sobre las solicitudes por el puntero `takenBy`,
- * que `takeRequest` fija en la misma transacción que la toma: por la vía
- * guardada es imposible que fila y puntero diverjan. Las filas manuales sin
- * puntero quedan fuera hasta que la migración de TI2-17 las sanee.
- * Cualquier otro rol recibe denegación genérica.
+ * su nombre, vengan de la vía guardada o de filas legacy escritas a mano.
+ * Barre las tomas con un único `.paginate()` por llamada y filtra repetidos
+ * por solicitud con el conjunto `seen` que viaja en el cursor: ninguna se
+ * repite ni se pierde entre páginas. Cualquier otro rol recibe
+ * denegación genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
@@ -58,18 +104,42 @@ export async function listAuthorizedRequestsUseCase(
   args: { readonly paginationOpts: PaginationOptions },
 ) {
   const professional = await requireActiveProfessional(ctx, identity);
-  const result = await listTakenRequests(ctx, professional._id, args.paginationOpts);
+  const limit = Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), 100);
+  const cursor = decodeTakesCursor(args.paginationOpts.cursor);
+  const seen = new Set<string>(cursor.seen);
+  const items: AuthorizedRequestItem[] = [];
+  let pos: string | null = cursor.pos;
+  let exhausted = false;
+  for (let round = 0; round < 10 && items.length < limit; round++) {
+    const page = await listActiveTakes(ctx, professional._id, {
+      numItems: limit - items.length,
+      cursor: pos,
+    });
+    for (const take of page.page) {
+      if (seen.has(take.requestId)) continue;
+      seen.add(take.requestId);
+      const request = await getRequestById(ctx, take.requestId);
+      if (request === null) continue;
+      items.push(
+        toAccompanimentRequest({
+          _id: request._id,
+          studentId: request.studentId,
+          status: request.status,
+          accessNeeds: request.accessNeeds,
+          createdAt: request.createdAt,
+        }),
+      );
+    }
+    pos = page.continueCursor;
+    if (page.isDone) {
+      exhausted = true;
+      break;
+    }
+  }
   return {
-    ...result,
-    page: result.page.map((row) =>
-      toAccompanimentRequest({
-        _id: row._id,
-        studentId: row.studentId,
-        status: row.status,
-        accessNeeds: row.accessNeeds,
-        createdAt: row.createdAt,
-      }),
-    ),
+    page: items,
+    isDone: exhausted,
+    continueCursor: encodeTakesCursor({ pos, seen: [...seen] }),
   };
 }
 

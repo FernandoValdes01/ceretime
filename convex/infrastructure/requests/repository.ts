@@ -106,6 +106,19 @@ export async function listTakenRequests(
     .paginate(paginationOpts);
 }
 
+/** Tomas activas del usuario, paginadas. */
+export async function listActiveTakes(
+  ctx: DbReader,
+  userId: Id<"users">,
+  paginationOpts: PaginationOptions,
+) {
+  return await ctx.db
+    .query("requestAssignments")
+    .withIndex("by_user_and_status", (q) => q.eq("userId", userId).eq("status", "active"))
+    .order("asc")
+    .paginate(paginationOpts);
+}
+
 /** Toma activa exacta de la solicitud por el usuario, si existe. */
 export async function findActiveTake(
   ctx: DbReader,
