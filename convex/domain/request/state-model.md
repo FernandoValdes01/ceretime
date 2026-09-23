@@ -51,7 +51,7 @@ Hay cuatro causas de rechazo. Se evalúan de la más general a la más específi
 | `occurred_at_invalid`    | El instante no es un número finito y positivo                                                                                 |
 | `reason_required`        | La fila exige motivo y no llegó, o llegó en blanco                                                                            |
 
-Un intento rechazado no deja registro, y no por disciplina: la política retorna antes de construir la entrada, así que la entrada nunca llega a existir. Un intento aplicado sí la devuelve, con origen, destino, actor sin espacios sobrantes, instante y el motivo cuando lo hubo. La entrada se arma desde la fila de la tabla y no desde el intento, así solo puede contener estados de Sprint 1.
+Un intento rechazado no deja entrada en el historial, y no por disciplina: la política retorna antes de construirla, así que nunca llega a existir. Un intento aplicado sí la devuelve, con origen, destino, actor sin espacios sobrantes, instante y el motivo cuando lo hubo. La entrada se arma desde la fila de la tabla y no desde el intento, así solo puede contener estados de Sprint 1.
 
 ## Apertura del acompañamiento
 
@@ -87,15 +87,19 @@ bunx vitest run convex/domain/request
 
 Positivos: las cuatro transiciones declaradas se aplican y devuelven actor, origen, destino, instante y el motivo cuando llega; el paso a espera acepta un motivo con texto y lo conserva; llegar a la aceptación marca que corresponde abrir el acompañamiento; el estado inicial es `received` y queda reconocido como estado con operación; los cuatro estados de Sprint 1 y los tres declarados para después tienen etiqueta visible y una sola definición; el diagrama dibuja exactamente las transiciones de la tabla, marca "exige motivo" donde la tabla lo exige, entra por el estado inicial y sale por la aceptación; la tabla no repite filas, no deja la solicitud donde ya estaba, alcanza todos los estados desde el inicial y lleva a la aceptación desde cualquiera de ellos.
 
-Negativos: todo par ausente de la tabla se rechaza sin tocar el estado, incluidos los saltos, los retrocesos, quedarse en el mismo estado y aceptar dos veces, tanto con el par escrito a mano como partiendo del estado que dejó la primera aceptación; el paso a espera sin motivo, o con un motivo en blanco, se rechaza; el actor vacío o solo con espacios se rechaza; un instante que no es un número finito y positivo se rechaza; un rechazo no trae entrada de registro y deja el intento intacto, y cada causa declarada tiene un intento que la provoca; los tres estados declarados para Cycles futuros no quedan habilitados, no aparecen dibujados y no tienen fila en la tabla de Sprint 1; de la aceptación no sale ninguna transición.
+Negativos: todo par ausente de la tabla se rechaza sin tocar el estado, incluidos los saltos, los retrocesos, quedarse en el mismo estado y aceptar dos veces, tanto con el par escrito a mano como partiendo del estado que dejó la primera aceptación; el paso a espera sin motivo, o con un motivo en blanco, se rechaza; el actor vacío o solo con espacios se rechaza; un instante que no es un número finito y positivo se rechaza; un rechazo no trae entrada de historial y deja el intento intacto, y cada causa declarada tiene un intento que la provoca; los tres estados declarados para Cycles futuros no quedan habilitados, no aparecen dibujados y no tienen fila en la tabla de Sprint 1; de la aceptación no sale ninguna transición.
 
-Lo que estas pruebas no cubren, porque vive fuera del dominio: quién está autorizado a intentar una transición, la persistencia del estado y del registro, y la unicidad del acompañamiento.
+Lo que estas pruebas no cubren, porque vive fuera del dominio: quién está autorizado a intentar una transición, la persistencia del estado y de su historial, el evento de auditoría y la unicidad del acompañamiento.
 
-## Auditoría y datos
+## Historial de cambios y auditoría
 
-Cada transición aplicada produce una entrada con actor, origen, destino, instante y motivo, destinada al registro append-only que exige RD-03: auditoría desde las interfaces normales, con actor, fecha, acción, recurso y resultado, y sin contenido sensible. El dominio devuelve la entrada y nada más: la tabla que la guarda no existe todavía y no se crea en este issue.
+Una transición aplicada deja dos rastros distintos, y no deben confundirse.
 
-El motivo es texto para el estudiante y explica qué información falta. No lleva diagnósticos ni etiquetas clínicas, por la Ley 21.719. Todo lo que se prueba acá opera con datos ficticios.
+El **historial de cambios de estado** es parte de la solicitud. Cada transición aplicada produce una entrada con origen, destino, actor, instante y, cuando lo hubo, el motivo; la capa de aplicación la guarda en `requestTransitions`, junto al estado resultante y en la misma transacción, como hacen los casos de uso de TI2-9. El motivo se conserva ahí porque es lo que le explica al estudiante qué información falta, y queda protegido por el mismo control de acceso que la solicitud.
+
+El **evento de auditoría** es lo que exige RD-03: registra solo actor, fecha, acción, recurso y resultado, sin contenido sensible, como piden también RF-31, RN-19 y RNF-11. **El motivo no se copia a la bitácora de auditoría**: es texto libre y puede traer necesidades de acceso u otros datos sensibles. El evento de auditoría de las transiciones de solicitud todavía no tiene tabla y no se crea en este issue.
+
+Quien escribe el motivo no debe incluir diagnósticos ni etiquetas clínicas, por la Ley 21.719. Como el sistema no puede garantizar qué texto recibe, el motivo se trata como potencialmente sensible. Todo lo que se prueba acá opera con datos ficticios.
 
 ## Qué queda para otros issues
 
