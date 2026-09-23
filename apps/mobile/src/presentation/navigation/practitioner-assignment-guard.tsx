@@ -2,7 +2,7 @@ import { Redirect } from "expo-router";
 import { type PropsWithChildren } from "react";
 
 import { useNavigationSession } from "./session";
-import { practitionerRoutes } from "./practitioner-routes";
+import { hasValidPractitionerAssignments, practitionerRoutes } from "./practitioner-routes";
 import { RoleGuard } from "./role-guard";
 
 type PractitionerAssignmentState = "assigned" | "unassigned";
@@ -12,7 +12,9 @@ export function PractitionerAssignmentGuard({
   children,
 }: PropsWithChildren<{ readonly state: PractitionerAssignmentState }>) {
   const { session } = useNavigationSession();
-  const hasAssignments = (session?.user.assignedAccompaniments.length ?? 0) > 0;
+  const hasAssignments = hasValidPractitionerAssignments(
+    session?.user.assignedAccompaniments ?? [],
+  );
   const expectedAssignments = state === "assigned";
   const destination = hasAssignments ? practitionerRoutes.assigned : practitionerRoutes.unassigned;
 
