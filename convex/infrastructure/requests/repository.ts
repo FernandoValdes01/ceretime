@@ -95,15 +95,14 @@ export async function listRequestsByStatus(
 }
 
 /** Tomas activas del usuario, paginadas. */
-export async function listActiveTakes(
+export async function listTakenRequests(
   ctx: DbReader,
   userId: Id<"users">,
   paginationOpts: PaginationOptions,
 ) {
   return await ctx.db
-    .query("requestAssignments")
-    .withIndex("by_user_and_status", (q) => q.eq("userId", userId).eq("status", "active"))
-    .order("asc")
+    .query("requests")
+    .withIndex("by_takenBy", (q) => q.eq("takenBy", userId))
     .paginate(paginationOpts);
 }
 
@@ -138,4 +137,13 @@ export async function insertActiveTake(
     grantedAt: Date.now(),
     status: "active",
   });
+}
+
+/** Marca la solicitud como tomada por el usuario. */
+export async function markRequestTaken(
+  ctx: MutationCtx,
+  requestId: Id<"requests">,
+  userId: Id<"users">,
+): Promise<void> {
+  await ctx.db.patch(requestId, { takenBy: userId });
 }

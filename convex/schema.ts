@@ -110,6 +110,10 @@ export default defineSchema({
     status: requestStatusUnion,
     accessNeeds: v.string(),
     createdAt: v.number(),
+    // Profesional que la tomó para revisión, si alguien la tomó. Puntero de
+    // lectura para el listado autorizado: cada solicitud aparece una sola
+    // vez por construcción. Lo fija `takeRequest` junto a la toma.
+    takenBy: v.optional(v.id("users")),
   })
     // Solicitudes propias del estudiante.
     .index("by_student", ["studentId"])
@@ -117,7 +121,10 @@ export default defineSchema({
     .index("by_status", ["status"])
     // Solicitudes propias en un estado dado: pertenencia y estado en una
     // sola lectura para Sprint 1, sin filtrar en memoria.
-    .index("by_student_and_status", ["studentId", "status"]),
+    .index("by_student_and_status", ["studentId", "status"])
+    // Solicitudes tomadas por cada profesional: base del listado
+    // autorizado, una fila por solicitud.
+    .index("by_takenBy", ["takenBy"]),
 
   // Tabla 'requestTransitions': bitácora append-only de cambios de estado.
   // Cada transición guarda motivo, actor y fecha junto al estado resultante,

@@ -284,7 +284,7 @@ test("Sin rol Profesional se deniega el listado autorizado", async () => {
   ).rejects.toThrow("No autorizado");
 });
 
-test("Profesional no ve duplicadas en la misma página aunque haya tomas repetidas", async () => {
+test("Solo aparecen solicitudes tomadas por la vía guardada", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-11");
@@ -304,10 +304,12 @@ test("Profesional no ve duplicadas en la misma página aunque haya tomas repetid
     });
   });
   const asProfessional = t.withIdentity(identityFor("ti9-pro-8", "ti9-pro-8@uct.cl"));
+  // Tras la toma guardada aparece una sola vez
   await asProfessional.mutation(api.presentation.requests.takeRequest, {
     requestId: takenId,
   });
-  // Toma repetida escrita fuera de la vía protegida
+
+  // Toma repetida escrita fuera de la vía protegida: no fija el puntero
   await t.run(async (ctx) => {
     return await ctx.db.insert("requestAssignments", {
       requestId: takenId,
@@ -317,30 +319,46 @@ test("Profesional no ve duplicadas en la misma página aunque haya tomas repetid
       status: "active",
     });
   });
-
-  // Una sola vez en página completa; la vía guardada impide crear
-  // repetidas, así que solo filas legacy escritas a mano pueden duplicar
   const full = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
     paginationOpts: { numItems: 10, cursor: null },
   });
   expect(full.page.map((item) => item._id)).toEqual([takenId]);
+});
 
-  const first = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
-    paginationOpts: { numItems: 1, cursor: null },
+test("Fila manual sin puntero no aparece en el listado", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti9-est-19");
+  const requestId = await t.mutation(internal.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Suelta ficticia",
   });
-  expect(first.page.map((item) => item._id)).toEqual([takenId]);
-
-  // Caminar termina y nunca filtra solicitudes ajenas
-  let cursor: string | null = first.continueCursor;
-  for (let round = 0; round < 5; round++) {
-    const page: FunctionReturnType<typeof api.presentation.requests.listAuthorizedRequests> =
-      await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
-        paginationOpts: { numItems: 1, cursor },
-      });
-    for (const item of page.page) expect(item._id).toEqual(takenId);
-    if (page.isDone) break;
-    cursor = page.continueCursor;
-  }
+  const proId = await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti9-pro-17@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti9-pro-17`,
+    });
+  });
+  // Fila manual sin puntero: invisible aunque exista
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("requestAssignments", {
+      requestId,
+      userId: proId,
+      grantedBy: proId,
+      grantedAt: 1,
+      status: "active",
+    });
+  });
+  const asProfessional = t.withIdentity(identityFor("ti9-pro-17", "ti9-pro-17@uct.cl"));
+  const empty = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(empty.page).toHaveLength(0);
 });
 
 test("Caminar tomas guardadas no repite ninguna solicitud", async () => {

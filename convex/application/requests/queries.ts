@@ -1,12 +1,10 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { toAccompanimentRequest } from "../../domain/request/request";
-import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
 import {
-  getRequestById,
-  listActiveTakes,
   listOwnedRequests,
   listRequestsByStatus,
+  listTakenRequests,
 } from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
@@ -45,22 +43,12 @@ export async function listOwnRequestsUseCase(
   };
 }
 
-export type AuthorizedRequestItem = {
-  readonly _id: Id<"requests">;
-  readonly studentId: Id<"users">;
-  readonly status: Doc<"requests">["status"];
-  readonly accessNeeds: string;
-  readonly createdAt: number;
-};
-
 /**
  * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
  * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa a
- * su nombre. La vía guardada impide tomas activas repetidas, así que cada
- * solicitud aparece una sola vez; las filas duplicadas solo pueden venir de
- * escrituras manuales fuera del Backend y se filtran dentro de cada página.
- * Sanear esas filas legacy corresponde a la migración de TI2-17. Cualquier
- * otro rol recibe denegación genérica.
+ * su nombre. Pagina directo sobre las solicitudes por el puntero `takenBy`,
+ * así que cada solicitud aparece una sola vez por construcción, en todas
+ * las páginas. Cualquier otro rol recibe denegación genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
@@ -68,25 +56,19 @@ export async function listAuthorizedRequestsUseCase(
   args: { readonly paginationOpts: PaginationOptions },
 ) {
   const professional = await requireActiveProfessional(ctx, identity);
-  const result = await listActiveTakes(ctx, professional._id, args.paginationOpts);
-  const items: AuthorizedRequestItem[] = [];
-  const seen = new Set<string>();
-  for (const take of result.page) {
-    if (seen.has(take.requestId)) continue;
-    seen.add(take.requestId);
-    const request = await getRequestById(ctx, take.requestId);
-    if (request === null) continue;
-    items.push(
+  const result = await listTakenRequests(ctx, professional._id, args.paginationOpts);
+  return {
+    ...result,
+    page: result.page.map((row) =>
       toAccompanimentRequest({
-        _id: request._id,
-        studentId: request.studentId,
-        status: request.status,
-        accessNeeds: request.accessNeeds,
-        createdAt: request.createdAt,
+        _id: row._id,
+        studentId: row.studentId,
+        status: row.status,
+        accessNeeds: row.accessNeeds,
+        createdAt: row.createdAt,
       }),
-    );
-  }
-  return { ...result, page: items };
+    ),
+  };
 }
 
 /**

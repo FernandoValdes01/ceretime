@@ -11,6 +11,7 @@ import {
   insertActiveTake,
   insertReceivedRequest,
   logRequestTransition,
+  markRequestTaken,
   setRequestStatus,
 } from "../../infrastructure/requests/repository";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
@@ -134,6 +135,7 @@ export async function takeRequest(
     userId: professional._id,
     grantedBy: professional._id,
   });
+  await markRequestTaken(ctx, input.requestId, professional._id);
   if (row.status !== "received") {
     return toAccompanimentRequest({
       _id: row._id,
