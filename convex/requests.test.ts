@@ -437,6 +437,19 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
   });
   expect(taken._id).toEqual(requestId);
   expect(taken.status).toBe("under_review");
+
+  // La toma fija el puntero en la misma transacción: fila y listado
+  // no pueden divergir por la vía guardada
+  const pointed = await t.query(internal.requests.getRequestById, { id: requestId });
+  const proId = await t.run(async (ctx) => {
+    const profile = await ctx.db
+      .query("users")
+      .withIndex("by_token_identifier", (q) => q.eq("tokenIdentifier", `${ISSUER}|ti9-pro-9`))
+      .unique();
+    if (profile === null) throw new Error("Perfil ficticio ausente");
+    return profile._id;
+  });
+  expect(pointed?.takenBy).toEqual(proId);
   await expect(
     asProfessional.mutation(api.presentation.requests.takeRequest, { requestId }),
   ).rejects.toThrow("recibidas");
@@ -446,14 +459,6 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
     studentId,
     status: "received",
     accessNeeds: "Otra tomada ficticia",
-  });
-  const proId = await t.run(async (ctx) => {
-    const profile = await ctx.db
-      .query("users")
-      .withIndex("by_token_identifier", (q) => q.eq("tokenIdentifier", `${ISSUER}|ti9-pro-9`))
-      .unique();
-    if (profile === null) throw new Error("Perfil ficticio ausente");
-    return profile._id;
   });
   await t.run(async (ctx) => {
     return await ctx.db.insert("requestAssignments", {

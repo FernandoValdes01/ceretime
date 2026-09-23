@@ -47,8 +47,10 @@ export async function listOwnRequestsUseCase(
  * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
  * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa a
  * su nombre. Pagina directo sobre las solicitudes por el puntero `takenBy`,
- * así que cada solicitud aparece una sola vez por construcción, en todas
- * las páginas. Cualquier otro rol recibe denegación genérica.
+ * que `takeRequest` fija en la misma transacción que la toma: por la vía
+ * guardada es imposible que fila y puntero diverjan. Las filas manuales sin
+ * puntero quedan fuera hasta que la migración de TI2-17 las sanee.
+ * Cualquier otro rol recibe denegación genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
