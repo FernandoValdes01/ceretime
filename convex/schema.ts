@@ -110,6 +110,10 @@ export default defineSchema({
     status: requestStatusUnion,
     accessNeeds: v.string(),
     createdAt: v.number(),
+    // Profesional que la tomó para revisión, si alguien la tomó. Puntero de
+    // lectura para el listado autorizado: cada solicitud aparece una sola
+    // vez por construcción. Lo fija `takeRequest` junto a la toma.
+    takenBy: v.optional(v.id("users")),
   })
     // Solicitudes propias del estudiante.
     .index("by_student", ["studentId"])
@@ -117,5 +121,40 @@ export default defineSchema({
     .index("by_status", ["status"])
     // Solicitudes propias en un estado dado: pertenencia y estado en una
     // sola lectura para Sprint 1, sin filtrar en memoria.
-    .index("by_student_and_status", ["studentId", "status"]),
+    .index("by_student_and_status", ["studentId", "status"])
+    // Solicitudes tomadas por cada profesional: base del listado
+    // autorizado, una fila por solicitud.
+    .index("by_takenBy", ["takenBy"]),
+
+  // Tabla 'requestTransitions': bitácora append-only de cambios de estado.
+  // Cada transición guarda motivo, actor y fecha junto al estado resultante,
+  // en la misma transacción. Solo se escribe, nunca se modifica.
+  requestTransitions: defineTable({
+    requestId: v.id("requests"),
+    from: requestStatusUnion,
+    to: requestStatusUnion,
+    actorId: v.id("users"),
+    reason: v.optional(v.string()),
+    occurredAt: v.number(),
+  }).index("by_request", ["requestId"]),
+
+  // Tabla 'requestAssignments': tomas de solicitudes por Profesionales.
+  // Relación explícita que autoriza a operar una solicitud: como máximo una
+  // fila activa por solicitud y usuario. Solo el propio Profesional toma
+  // (nadie asigna a otro); queda auditado quién y cuándo.
+  requestAssignments: defineTable({
+    requestId: v.id("requests"),
+    userId: v.id("users"),
+    grantedBy: v.id("users"),
+    grantedAt: v.number(),
+    status: assignmentStatusUnion,
+    revokedBy: v.optional(v.id("users")),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_request_and_user_and_status", ["requestId", "userId", "status"])
+    .index("by_user_and_status", ["userId", "status"])
+    // Barrido autorizado con duplicadas adyacentes: ordena por solicitud
+    // para que las filas de la misma solicitud queden contiguas y el cursor
+    // solo recuerde la última emitida (O(1)), sin historial lineal.
+    .index("by_user_and_status_and_request", ["userId", "status", "requestId"]),
 });

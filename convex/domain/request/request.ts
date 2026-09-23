@@ -75,16 +75,19 @@ export interface AccompanimentRequest {
  * Valida una fila persistida de `requests` y devuelve la entidad pública.
  * Rechaza un `status` que no sea un estado de Sprint 1 en vez de propagar
  * un literal desconocido: una fila con estado inválido es corrupción, no
- * una solicitud. No transforma `AccompanimentRequestContent`: serializar el
- * DTO de creación a la forma persistida es alcance de TI2-23.
+ * una solicitud. El identificador es genérico para no importar
+ * `convex/_generated`: con `string` devuelve la entidad canónica y con un
+ * `Id` de Convex preserva el tipo para los validadores de la API.
+ * No transforma `AccompanimentRequestContent`: convertir el DTO de creación
+ * a la forma persistida es alcance de TI2-23.
  */
-export function toAccompanimentRequest(row: {
-  readonly _id: string;
-  readonly studentId: string;
+export function toAccompanimentRequest<RowId extends string, StudentId extends string>(row: {
+  readonly _id: RowId;
+  readonly studentId: StudentId;
   readonly status: string;
   readonly accessNeeds: string;
   readonly createdAt: number;
-}): AccompanimentRequest {
+}): AccompanimentRequest & { readonly _id: RowId; readonly studentId: StudentId } {
   if (!(SPRINT_1_REQUEST_STATES as readonly string[]).includes(row.status)) {
     throw new Error(`Estado de solicitud desconocido en la fila ${row._id}: ${row.status}`);
   }
