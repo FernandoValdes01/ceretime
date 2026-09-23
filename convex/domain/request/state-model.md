@@ -23,7 +23,7 @@ stateDiagram-v2
 
 Las cuatro transiciones del diagrama son exactamente las de `SPRINT_1_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido, incluidos los saltos hacia adelante y los retrocesos.
 
-[`state-model.test.ts`](./state-model.test.ts) lee este archivo y falla si el diagrama o las tablas dejan de coincidir con `state.ts` y `transitions.ts`; si editas cualquiera de ellos, corre `bunx vitest run convex/domain/request`.
+[`state_model.test.ts`](./state_model.test.ts) lee este archivo y falla si el diagrama o las tablas dejan de coincidir con `state.ts` y `transitions.ts`; si editas cualquiera de ellos, corre `bunx vitest run convex/domain/request`.
 
 | Estado                               | Etiqueta en interfaz               | Rol que lo provoca                                          |
 | ------------------------------------ | ---------------------------------- | ----------------------------------------------------------- |
@@ -79,7 +79,7 @@ Sus transiciones de origen **no se modelan todavía**. El documento de requerimi
 
 ## Casos cubiertos por pruebas
 
-Las pruebas del dominio de la solicitud viven en [`state.test.ts`](./state.test.ts), [`transitions.test.ts`](./transitions.test.ts), [`transition_policy.test.ts`](./transition_policy.test.ts), [`state-model.test.ts`](./state-model.test.ts) y [`request.test.ts`](./request.test.ts). `bun run test:convex` las corre junto al resto del backend; para correr solo estas:
+Las pruebas del dominio de la solicitud viven en [`state.test.ts`](./state.test.ts), [`transitions.test.ts`](./transitions.test.ts), [`transition_policy.test.ts`](./transition_policy.test.ts), [`state_model.test.ts`](./state_model.test.ts) y [`request.test.ts`](./request.test.ts). `bun run test:convex` las corre junto al resto del backend; para correr solo estas:
 
 ```bash
 bunx vitest run convex/domain/request
