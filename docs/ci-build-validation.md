@@ -42,6 +42,14 @@ bun run --cwd apps/mobile export
 
 TI4-27 no declara resultados de ejecución. La evidencia de los builds y cualquier bloqueo corresponde al run de TI4-34.
 
+## Resultados de TI4-34, 23/09/2026
+
+En la rama de TI4-34, `bun run --cwd apps/web build` terminó con código 0. TypeScript compiló y Vite generó `apps/web/dist/` con 340 módulos transformados.
+
+El primer `bun run --cwd apps/mobile export` terminó con código 1 durante el bundle iOS: Metro no encontró `lucide-react-native/icons/arrow-down`, importado por `apps/mobile/src/presentation/components/app-icon.tsx`. La instalación local tenía `node_modules` de raíz, pero faltaba `apps/mobile/node_modules/lucide-react-native`. Para reproducir ese estado, ejecuta el export antes de completar la instalación de dependencias en un entorno que tenga esa dependencia ausente; el error aparece en el mismo import. No se detectó un fallo del código Mobile.
+
+Después de `bun install --frozen-lockfile`, el mismo export terminó con código 0. Metro generó bundles para Web, Android e iOS y la carpeta `apps/mobile/dist/`. La instalación añadió 15 paquetes locales sin modificar el lockfile. No quedan bloqueos de build conocidos para el Preview sobre este commit. El run del workflow manual asociado a la PR complementará esta evidencia local con los resultados del runner de GitHub.
+
 ## Pruebas de la preparación
 
 `bun test ./.github/ci-publication.test.ts` ejecuta el script de publicación del workflow con respuestas simuladas de GitHub. Comprueba creación y actualización del comentario, publicación de fallos y rechazo de otra rama, repositorio, número inválido o commit desactualizado. Estas pruebas corren en CI sin ejecutar los builds adicionales ni escribir en GitHub.
