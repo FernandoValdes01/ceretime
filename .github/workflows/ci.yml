@@ -48,7 +48,7 @@ jobs:
     name: Greptile 5/5
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 360
     concurrency:
       group: greptile-score-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
@@ -67,7 +67,8 @@ jobs:
               pull_number: pullNumber,
             });
             const headSha = pullRequest.head.sha.toLowerCase();
-            const deadline = Date.now() + 10 * 60 * 1000;
+            const reviewWaitMs = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
+            const deadline = Date.now() + reviewWaitMs;
             let summary;
             let score;
             let reviewedSha;
@@ -94,7 +95,7 @@ jobs:
                 break;
               }
 
-              await new Promise((resolve) => setTimeout(resolve, 20_000));
+              await new Promise((resolve) => setTimeout(resolve, 60_000));
             } while (Date.now() < deadline);
 
             if (reviewedSha !== headSha) {

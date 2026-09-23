@@ -179,7 +179,7 @@ test("el check de CI está disponible en PR listas y solo lee GitHub", () => {
   expect(gate.if).toContain("pull_request.draft == false");
   expect(gate.permissions).toEqual({ issues: "read", "pull-requests": "read" });
   expect(gate.timeout).toBeUndefined();
-  expect(gate["timeout-minutes"]).toBe(12);
+  expect(gate["timeout-minutes"]).toBe(360);
 });
 
 test("el CI activo falla cuando la revisión actual de Greptile es 4/5", async () => {
@@ -192,6 +192,16 @@ test("el CI activo falla cuando la revisión actual de Greptile es 4/5", async (
 
 test("el CI activo acepta 5/5 para el SHA actual", async () => {
   expect(await checkCiGate([[summary("5/5")]])).toEqual({
+    failures: [],
+    infos: ["Greptile dice 5/5 para el commit actual; puedes mergear."],
+  });
+});
+
+test("el CI activo acepta una revisión actual que llega después de diez minutos", async () => {
+  const staleReview = [summary("5/5", oldSha)];
+  const snapshots = [...Array.from({ length: 11 }, () => staleReview), [summary("5/5")]];
+
+  expect(await checkCiGate(snapshots)).toEqual({
     failures: [],
     infos: ["Greptile dice 5/5 para el commit actual; puedes mergear."],
   });
