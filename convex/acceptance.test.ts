@@ -60,13 +60,20 @@ async function registerOwnRequest(
   });
 }
 
-/** Cuenta acompañamientos abiertos desde la solicitud. */
+/**
+ * Cuenta acompañamientos abiertos desde la solicitud.
+ *
+ * Solo ayuda de prueba con datos mínimos: filtra en memoria porque el `ctx`
+ * de convex-test no resuelve a nivel de tipos el índice `by_request` sobre
+ * el campo opcional `requestId`. La vía guardada de producción sí usa el
+ * índice (`findAccompanimentByRequest` en Infraestructura).
+ */
 async function countAccompanimentsFor(t: ReturnType<typeof convexTest>, requestId: Id<"requests">) {
   return await t.run(async (ctx) => {
     return (
       await ctx.db
         .query("accompaniments")
-        .withIndex("by_request", (q) => q.eq("requestId", requestId))
+        .filter((q) => q.eq(q.field("requestId"), requestId))
         .collect()
     ).length;
   });
