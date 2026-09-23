@@ -1,12 +1,13 @@
-import { describe, expect, test } from "vitest";
+import { assert, describe, expect, test } from "vitest";
 import { FUTURE_REQUEST_STATES, REQUEST_STATES, SPRINT_1_REQUEST_STATES } from "./state";
 import {
   findSprint1Transition,
+  TRANSITION_REJECTION_CAUSES,
   transitionRequest,
   type RequestTransitionAttempt,
   type TransitionRejectionCause,
 } from "./transition_policy";
-import { SPRINT_1_REQUEST_TRANSITIONS } from "./transitions";
+import { ACCEPTANCE_STATE, SPRINT_1_REQUEST_TRANSITIONS } from "./transitions";
 
 /** Datos ficticios: el actor no corresponde a ninguna persona real. */
 const actor = { actorId: "profesional-ficticio-1", occurredAt: 1_700_000_000_000 };
@@ -138,6 +139,23 @@ describe("transitionRequest", () => {
     }
   });
 
+  /**
+   * El par `accepted -> accepted` de arriba está escrito a mano. Aquí el segundo
+   * intento parte del estado que dejó el primero, que es lo que TI2-24 tendrá
+   * que hacer al leer el estado persistido.
+   */
+  test.each(SPRINT_1_REQUEST_TRANSITIONS.filter((row) => row.to === ACCEPTANCE_STATE))(
+    "tras aceptar desde $from, el segundo intento parte del estado real y se rechaza",
+    (row) => {
+      const first = transitionRequest({ ...actor, from: row.from, to: row.to });
+      assert(first.status === "applied");
+      expect(first.opensAccompaniment).toBe(true);
+
+      const second = transitionRequest({ ...actor, from: first.change.to, to: ACCEPTANCE_STATE });
+      expect(second).toStrictEqual({ status: "rejected", cause: "transition_not_allowed" });
+    },
+  );
+
   test.each(FUTURE_REQUEST_STATES)(
     "rechaza %s como destino desde todo estado de Sprint 1",
     (future) => {
@@ -177,6 +195,17 @@ describe("transitionRequest", () => {
       status: "applied",
     });
   });
+
+  test.each(SPRINT_1_REQUEST_TRANSITIONS)(
+    "sin motivo, $from -> $to responde lo que la tabla declara",
+    (row) => {
+      expect(transitionRequest({ ...actor, from: row.from, to: row.to })).toMatchObject(
+        row.requiresReason
+          ? { status: "rejected", cause: "reason_required" }
+          : { status: "applied" },
+      );
+    },
+  );
 
   test("exige actor en toda transición", () => {
     for (const row of SPRINT_1_REQUEST_TRANSITIONS) {
@@ -230,6 +259,8 @@ describe("transitionRequest", () => {
         "reason_required",
       ],
     ];
+    // Un intento por causa exportada: una causa nueva sin su intento hace fallar esto.
+    expect(rejected.map(([, cause]) => cause)).toEqual([...TRANSITION_REJECTION_CAUSES]);
     for (const [attempt, cause] of rejected) {
       Object.freeze(attempt);
       const copy = { ...attempt };
