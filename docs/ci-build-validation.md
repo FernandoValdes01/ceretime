@@ -46,9 +46,26 @@ TI4-27 no declara resultados de ejecución. La evidencia de los builds y cualqui
 
 En la rama de TI4-34, `bun run --cwd apps/web build` terminó con código 0. TypeScript compiló y Vite generó `apps/web/dist/` con 340 módulos transformados.
 
-El primer `bun run --cwd apps/mobile export` terminó con código 1 durante el bundle iOS: Metro no encontró `lucide-react-native/icons/arrow-down`, importado por `apps/mobile/src/presentation/components/app-icon.tsx`. La instalación local tenía `node_modules` de raíz, pero faltaba `apps/mobile/node_modules/lucide-react-native`. Para reproducir ese estado, ejecuta el export antes de completar la instalación de dependencias en un entorno que tenga esa dependencia ausente; el error aparece en el mismo import. No se detectó un fallo del código Mobile.
+El primer `bun run --cwd apps/mobile export` terminó con código 1 durante el bundle iOS: Metro no encontró `lucide-react-native/icons/arrow-down`, importado por `apps/mobile/src/presentation/components/app-icon.tsx`. La instalación local tenía `node_modules` de raíz, pero faltaba `apps/mobile/node_modules/lucide-react-native`. No se detectó un fallo del código Mobile.
 
-Después de `bun install --frozen-lockfile`, el mismo export terminó con código 0. Metro generó bundles para Web, Android e iOS y la carpeta `apps/mobile/dist/`. La instalación añadió 15 paquetes locales sin modificar el lockfile. No quedan bloqueos de build conocidos para el Preview sobre este commit. El run del workflow manual asociado a la PR complementará esta evidencia local con los resultados del runner de GitHub.
+Para reproducir el mismo error desde la raíz, instala primero todas las dependencias y retira temporalmente solo el enlace local de `lucide-react-native`. Ejecuta estos comandos en Bash; el bloque entre paréntesis restaura el enlace aunque falle el export:
+
+```sh
+bun install --frozen-lockfile
+(
+  module_link=apps/mobile/node_modules/lucide-react-native
+  backup_link=apps/mobile/node_modules/.lucide-react-native-ti4-34-repro
+  test ! -e "$backup_link" && test ! -L "$backup_link" || exit 1
+  mv "$module_link" "$backup_link"
+  trap 'mv "$backup_link" "$module_link"' EXIT
+  bun run --cwd apps/mobile export
+)
+bun run --cwd apps/mobile export
+```
+
+El primer export debe terminar con código 1 y el error `Unable to resolve module lucide-react-native/icons/arrow-down`; el segundo debe terminar con código 0. Esta secuencia se comprobó localmente el 23/09/2026.
+
+Después de `bun install --frozen-lockfile`, el mismo export terminó con código 0. Metro generó bundles para Web, Android e iOS y la carpeta `apps/mobile/dist/`. La instalación añadió 15 paquetes locales sin modificar el lockfile. No quedan bloqueos de build conocidos para el Preview sobre el commit validado. El [run manual de Web y Mobile](https://github.com/FernandoValdes01/ceretime/actions/runs/35888917283) también terminó en `success`, publicó artefactos de ambos componentes y dejó un [comentario en la PR](https://github.com/FernandoValdes01/ceretime/pull/43#issuecomment-5798623941) con el SHA validado.
 
 ## Pruebas de la preparación
 
