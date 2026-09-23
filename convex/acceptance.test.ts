@@ -65,8 +65,10 @@ async function registerOwnRequest(
  *
  * Solo ayuda de prueba con datos mínimos: filtra en memoria porque el `ctx`
  * de convex-test no resuelve a nivel de tipos el índice `by_request` sobre
- * el campo opcional `requestId`. La vía guardada de producción sí usa el
- * índice (`findAccompanimentByRequest` en Infraestructura).
+ * el campo opcional `requestId`. Lee como máximo dos filas (`take(2)` en vez
+ * de `collect()`): basta para afirmar 0 o 1 y un duplicado se detecta como
+ * distinto de lo esperado. La vía guardada de producción sí usa el índice
+ * (`findAccompanimentByRequest` en Infraestructura).
  */
 async function countAccompanimentsFor(t: ReturnType<typeof convexTest>, requestId: Id<"requests">) {
   return await t.run(async (ctx) => {
@@ -74,7 +76,7 @@ async function countAccompanimentsFor(t: ReturnType<typeof convexTest>, requestI
       await ctx.db
         .query("accompaniments")
         .filter((q) => q.eq(q.field("requestId"), requestId))
-        .collect()
+        .take(2)
     ).length;
   });
 }
