@@ -89,7 +89,10 @@ export type AuthorizedRequestItem = {
  * su nombre, vengan de la vía guardada o de filas legacy escritas a mano.
  * Un único `.paginate()` por llamada (límite de Convex) sobre las tomas y
  * conjunto `seen` que viaja en el cursor: ninguna solicitud se repite ni se
- * pierde entre páginas. Cualquier otro rol recibe denegación genérica.
+ * pierde entre páginas. El conjunto no tiene tope a propósito: recortarlo
+ * haría volver los repetidos y su tamaño realista (tomas del profesional)
+ * cabe de sobra en un argumento. Cualquier otro rol recibe denegación
+ * genérica.
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
