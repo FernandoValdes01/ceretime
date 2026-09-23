@@ -33,7 +33,8 @@ function deny(): never {
 /**
  * Registra la solicitud del Estudiante en estado `received`. Solo el propio
  * Estudiante con cuenta vigente puede registrar; cualquier otro caso recibe
- * denegación genérica, sin motivo ni existencia del recurso.
+ * denegación genérica, sin motivo ni existencia del recurso. La necesidad de
+ * acceso se valida como texto no vacío de hasta 2000 caracteres.
  */
 export async function registerRequest(
   ctx: MutationCtx,
@@ -41,9 +42,16 @@ export async function registerRequest(
   input: { readonly accessNeeds: string },
 ) {
   const student = await requireActiveStudent(ctx, identity);
+  const accessNeeds = input.accessNeeds.trim();
+  if (accessNeeds.length === 0) {
+    throw new Error("Se requiere describir la necesidad de acceso");
+  }
+  if (accessNeeds.length > 2000) {
+    throw new Error("La necesidad de acceso supera el máximo permitido");
+  }
   const requestId = await insertReceivedRequest(ctx, {
     studentId: student._id,
-    accessNeeds: input.accessNeeds,
+    accessNeeds,
   });
   const row = await getRequestById(ctx, requestId);
   if (row === null) deny();

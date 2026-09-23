@@ -162,6 +162,7 @@ export async function listAssignedAccompanimentsUseCase(
   const profile = await requireAuthorizedProfile(ctx, identity);
   const scope = listingScopeForRole(profile.role);
   if (scope.kind !== "assigned") deny();
+  if (!Number.isFinite(args.limit)) deny();
 
   const limit = Math.min(Math.max(Math.floor(args.limit), 1), 100);
   const seen = new Map<string, Doc<"accompaniments">>();
