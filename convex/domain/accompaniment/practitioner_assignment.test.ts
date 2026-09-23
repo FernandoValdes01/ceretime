@@ -3,7 +3,7 @@ import {
   ASSIGNMENT_VIEW_BY_ROLE,
   toAssignmentReadPermission,
   type PractitionerAssignment,
-} from "./practitioner-assignment";
+} from "./practitioner_assignment";
 
 function activeAssignment(overrides: Partial<PractitionerAssignment> = {}): PractitionerAssignment {
   return {

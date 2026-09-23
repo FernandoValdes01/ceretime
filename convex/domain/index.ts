@@ -55,14 +55,14 @@ export {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
   ASSIGNMENT_VIEW_BY_ROLE,
-} from "./accompaniment/practitioner-assignment";
-export { toAssignmentReadPermission } from "./accompaniment/practitioner-assignment";
+} from "./accompaniment/practitioner_assignment";
+export { toAssignmentReadPermission } from "./accompaniment/practitioner_assignment";
 export type {
   AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
   PractitionerAssignment,
-} from "./accompaniment/practitioner-assignment";
+} from "./accompaniment/practitioner_assignment";
 
 // Errores públicos y estados de respuesta.
-export type { ApiResult, PublicApiError } from "./errors/api-error";
+export type { ApiResult, PublicApiError } from "./errors/api_error";
