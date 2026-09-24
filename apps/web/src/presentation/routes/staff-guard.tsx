@@ -41,11 +41,17 @@ export function RequireStaffRole({
       (role.status === "authenticated" && !allowedRoles.includes(role.role)));
 
   useEffect(() => {
-    if (session === undefined || role === undefined) {
+    if (session === undefined) {
       return;
     }
+    // La redirección por falta de sesión no espera al rol: si la consulta
+    // del rol no responde, quedarse esperando dejaría un "Cargando…"
+    // indefinido en vez de llegar al acceso.
     if (session.status === "unauthenticated") {
       void navigate({ to: "/login", search: { redirect: returnHref }, replace: true });
+      return;
+    }
+    if (role === undefined) {
       return;
     }
     if (denied) {
@@ -59,7 +65,15 @@ export function RequireStaffRole({
   if (!isBackendConfigured) {
     return <AuthScreen />;
   }
-  if (session === undefined || role === undefined || denied) {
+  // El portal se oculta desde el primer render sin sesión, aunque el rol
+  // todavía conserve un valor anterior: tras perder la sesión no se vuelve
+  // a mostrar contenido protegido mientras se navega al acceso.
+  if (
+    session === undefined ||
+    session.status === "unauthenticated" ||
+    role === undefined ||
+    denied
+  ) {
     return <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>;
   }
   return <>{children}</>;

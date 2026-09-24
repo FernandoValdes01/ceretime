@@ -18,3 +18,8 @@
   min-height: 44px;
   padding: 0.625rem 0.75rem;
 }
+
+.staff-portal__header a:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}

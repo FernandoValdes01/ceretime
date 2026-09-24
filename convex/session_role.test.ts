@@ -20,15 +20,23 @@ function identityFor(subject: string, email: string) {
   };
 }
 
-/** Perfil ficticio persistido con el rol indicado. */
-async function seedUser(t: ReturnType<typeof convexTest>, subject: string, role: Role) {
+/** Perfil ficticio persistido con el rol y la vigencia indicados. */
+async function seedUser(
+  t: ReturnType<typeof convexTest>,
+  subject: string,
+  role: Role,
+  vigencia: {
+    institutionalStatus?: "enabled" | "disabled";
+    accountStatus?: "active" | "inactive";
+  } = {},
+) {
   return await t.run(async (ctx) => {
     return await ctx.db.insert("users", {
       email: `${subject}@uct.cl`,
       fullName: "Personal Ficticio",
       role,
-      institutionalStatus: "enabled",
-      accountStatus: "active",
+      institutionalStatus: vigencia.institutionalStatus ?? "enabled",
+      accountStatus: vigencia.accountStatus ?? "active",
       tokenIdentifier: `${ISSUER}|${subject}`,
     });
   });
@@ -63,4 +71,21 @@ test("sin identidad responde no autenticado", async () => {
   const t = convexTest(schema, modules);
   const state = await t.query(api.presentation.session.getSessionRole, {});
   expect(state).toEqual({ status: "unauthenticated" });
+});
+
+test("perfil inhabilitado responde no autenticado aunque tenga rol", async () => {
+  const t = convexTest(schema, modules);
+  await seedUser(t, "ti20-deshabilitado", "professional", { institutionalStatus: "disabled" });
+  const deshabilitado = t.withIdentity(
+    identityFor("ti20-deshabilitado", "ti20-deshabilitado@uct.cl"),
+  );
+  expect(await deshabilitado.query(api.presentation.session.getSessionRole, {})).toEqual({
+    status: "unauthenticated",
+  });
+
+  await seedUser(t, "ti20-inactivo", "admin", { accountStatus: "inactive" });
+  const inactivo = t.withIdentity(identityFor("ti20-inactivo", "ti20-inactivo@uct.cl"));
+  expect(await inactivo.query(api.presentation.session.getSessionRole, {})).toEqual({
+    status: "unauthenticated",
+  });
 });

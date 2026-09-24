@@ -24,6 +24,9 @@ export function IndexPage({ session, role }: { session: WebSessionState; role: W
     }
     if (session.population !== "estudiante") {
       // Espera el rol antes de derivar: sin perfil no hay portal conocido.
+      // También consume el retorno del personal: una subruta o búsqueda
+      // válida no debe perderse ni quedar almacenada para otra visita. El
+      // guard del destino comprueba el rol.
       if (role === undefined) {
         return;
       }
@@ -31,7 +34,7 @@ export function IndexPage({ session, role }: { session: WebSessionState; role: W
         role.status === "authenticated"
           ? (staffHomeForRole(role.role) ?? "/denegado")
           : "/denegado";
-      navigateToPath(home);
+      navigateToPath(consumeReturnTarget() ?? home);
       return;
     }
     navigateToPath(consumeReturnTarget() ?? "/estudiante");
