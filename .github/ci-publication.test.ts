@@ -151,7 +151,7 @@ test("runs integrated CI for pull requests and pushes to main", () => {
   expect(jobNames).toEqual(
     [
       "Lint y formato",
-      "Greptile 5/5",
+      "Veredicto de Greptile",
       "Validación Mobile",
       "Validación Web",
       "Verificación Backend",

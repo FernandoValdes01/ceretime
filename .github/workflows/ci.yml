@@ -45,16 +45,17 @@ jobs:
         run: bun test ./.github/greptile-score.test.ts
 
   greptile_score:
-    name: Greptile 5/5
+    name: Veredicto de Greptile
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 20
     concurrency:
       group: greptile-score-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     permissions:
       issues: read
       pull-requests: read
+      statuses: write
     steps:
       - name: Esperar y validar la nota del commit actual
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
@@ -67,7 +68,7 @@ jobs:
               pull_number: pullNumber,
             });
             const headSha = pullRequest.head.sha.toLowerCase();
-            const reviewWaitMs = 5 * 60 * 60 * 1000 + 50 * 60 * 1000;
+            const reviewWaitMs = 15 * 60 * 1000;
             const deadline = Date.now() + reviewWaitMs;
             let summary;
             let score;
@@ -95,8 +96,26 @@ jobs:
                 break;
               }
 
-              await new Promise((resolve) => setTimeout(resolve, 60_000));
+              await new Promise((resolve) => setTimeout(resolve, 30_000));
             } while (Date.now() < deadline);
+
+            const currentReview = reviewedSha === headSha;
+            const passed = currentReview && score === '5';
+            const description = !currentReview
+              ? 'Falta la revisión de Greptile para el commit actual.'
+              : score
+                ? `Greptile asignó ${score}/5; se exige 5/5.`
+                : 'La revisión de Greptile no contiene una nota válida.';
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: headSha,
+              context: 'Greptile 5/5',
+              state: passed ? 'success' : 'failure',
+              description,
+              target_url: summary?.html_url ?? pullRequest.html_url,
+            });
 
             if (reviewedSha !== headSha) {
               core.setFailed('Falta la revisión de Greptile para el commit actual.');

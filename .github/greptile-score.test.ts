@@ -60,6 +60,7 @@ async function check(comments: object[], eventName = "pull_request_target", head
 async function checkCiGate(commentSnapshots: object[][], headSha = sha) {
   const failures: string[] = [];
   const infos: string[] = [];
+  const statuses: any[] = [];
   let now = 0;
   let commentRead = 0;
   const FakeDate = class extends Date {
@@ -81,6 +82,7 @@ async function checkCiGate(commentSnapshots: object[][], headSha = sha) {
         }),
       },
       issues: { listComments: () => {} },
+      repos: { createCommitStatus: async (status: any) => statuses.push(status) },
     },
     paginate: async () => {
       const index = Math.min(commentRead, commentSnapshots.length - 1);
@@ -108,7 +110,16 @@ async function checkCiGate(commentSnapshots: object[][], headSha = sha) {
     FakeDate,
     fakeSetTimeout,
   );
-  return { failures, infos };
+  return { failures, infos, statuses };
+}
+
+function expectGateStatus(result: Awaited<ReturnType<typeof checkCiGate>>, state: string) {
+  expect(result.statuses).toHaveLength(1);
+  expect(result.statuses[0]).toMatchObject({
+    sha,
+    context: "Greptile 5/5",
+    state,
+  });
 }
 
 test("aprueba solo 5/5 para el commit actual", async () => {
@@ -172,51 +183,56 @@ test("no ejecuta código de la PR ni comparte permisos de escritura con otros jo
   expect(workflow.jobs.score.steps[0].uses).toMatch(/^actions\/github-script@[0-9a-f]{40}$/);
 });
 
-test("el check de CI está disponible en PR listas y solo lee GitHub", () => {
+test("el gate informa el resultado y publica el único status requerido", () => {
   const gate = ciWorkflow.jobs.greptile_score;
   expect(ciWorkflow.on.pull_request.types).toContain("ready_for_review");
-  expect(gate.name).toBe("Greptile 5/5");
+  expect(gate.name).toBe("Veredicto de Greptile");
+  expect(gate.name).not.toBe("Greptile 5/5");
   expect(gate.if).toContain("pull_request.draft == false");
-  expect(gate.permissions).toEqual({ issues: "read", "pull-requests": "read" });
+  expect(gate.permissions).toEqual({
+    issues: "read",
+    "pull-requests": "read",
+    statuses: "write",
+  });
   expect(gate.timeout).toBeUndefined();
-  expect(gate["timeout-minutes"]).toBe(360);
+  expect(gate["timeout-minutes"]).toBe(20);
 });
 
 test("el CI activo falla cuando la revisión actual de Greptile es 4/5", async () => {
   expect(gateScript).not.toBe("");
-  expect(await checkCiGate([[summary("4/5")]])).toEqual({
-    failures: ["Oye, Greptile dice 4/5; no puedes mergear así."],
-    infos: [],
-  });
+  const result = await checkCiGate([[summary("4/5")]]);
+  expect(result.failures).toEqual(["Oye, Greptile dice 4/5; no puedes mergear así."]);
+  expect(result.infos).toEqual([]);
+  expectGateStatus(result, "failure");
 });
 
 test("el CI activo acepta 5/5 para el SHA actual", async () => {
-  expect(await checkCiGate([[summary("5/5")]])).toEqual({
-    failures: [],
-    infos: ["Greptile dice 5/5 para el commit actual; puedes mergear."],
-  });
+  const result = await checkCiGate([[summary("5/5")]]);
+  expect(result.failures).toEqual([]);
+  expect(result.infos).toEqual(["Greptile dice 5/5 para el commit actual; puedes mergear."]);
+  expectGateStatus(result, "success");
 });
 
 test("el CI activo acepta una revisión actual que llega después de diez minutos", async () => {
   const staleReview = [summary("5/5", oldSha)];
-  const snapshots = [...Array.from({ length: 11 }, () => staleReview), [summary("5/5")]];
+  const snapshots = [...Array.from({ length: 21 }, () => staleReview), [summary("5/5")]];
 
-  expect(await checkCiGate(snapshots)).toEqual({
-    failures: [],
-    infos: ["Greptile dice 5/5 para el commit actual; puedes mergear."],
-  });
+  const result = await checkCiGate(snapshots);
+  expect(result.failures).toEqual([]);
+  expect(result.infos).toEqual(["Greptile dice 5/5 para el commit actual; puedes mergear."]);
+  expectGateStatus(result, "success");
 });
 
 test("el CI activo espera la revisión actual y rechaza la nota 4/5", async () => {
-  expect(await checkCiGate([[summary("5/5", oldSha)], [summary("4/5")]])).toEqual({
-    failures: ["Oye, Greptile dice 4/5; no puedes mergear así."],
-    infos: [],
-  });
+  const result = await checkCiGate([[summary("5/5", oldSha)], [summary("4/5")]]);
+  expect(result.failures).toEqual(["Oye, Greptile dice 4/5; no puedes mergear así."]);
+  expect(result.infos).toEqual([]);
+  expectGateStatus(result, "failure");
 });
 
 test("el CI activo falla si no llega revisión para el SHA actual", async () => {
-  expect(await checkCiGate([[summary("5/5", oldSha)]])).toEqual({
-    failures: ["Falta la revisión de Greptile para el commit actual."],
-    infos: [],
-  });
+  const result = await checkCiGate([[summary("5/5", oldSha)]]);
+  expect(result.failures).toEqual(["Falta la revisión de Greptile para el commit actual."]);
+  expect(result.infos).toEqual([]);
+  expectGateStatus(result, "failure");
 });
