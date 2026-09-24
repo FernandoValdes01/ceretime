@@ -149,12 +149,6 @@ test("runs integrated CI for pull requests and pushes to main", () => {
     .map((job: any) => job.name)
     .sort();
   expect(jobNames).toEqual(
-    [
-      "Lint y formato",
-      "Greptile 5/5",
-      "Validación Mobile",
-      "Validación Web",
-      "Verificación Backend",
-    ].sort(),
+    ["Lint y formato", "Validación Mobile", "Validación Web", "Verificación Backend"].sort(),
   );
 });
