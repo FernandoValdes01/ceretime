@@ -14,3 +14,21 @@ export function useSessionState() {
 
 /** Forma del estado de sesión para props y pruebas de guards. */
 export type WebSessionState = ReturnType<typeof useSessionState>;
+
+/**
+ * Rol propio para navegación web (TI2-20): `undefined` mientras carga,
+ * autenticado con rol o no autenticado (sin identidad o sin perfil) después.
+ * Solo elige portal; no autoriza nada por sí mismo.
+ */
+export function useSessionRole() {
+  return useQuery(api.presentation.session.getSessionRole);
+}
+
+/** Forma del rol de sesión para props y pruebas de guards. */
+export type WebSessionRole = ReturnType<typeof useSessionRole>;
+
+/** Roles institucionales que el Backend puede reportar. */
+export type StaffRole = Extract<
+  Exclude<WebSessionRole, undefined>,
+  { status: "authenticated" }
+>["role"];

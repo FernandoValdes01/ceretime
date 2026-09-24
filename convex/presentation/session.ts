@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 import { toMinimalIdentity } from "../application/session/minimal_identity";
+import { resolveSessionRole } from "../application/session/portal_role";
+import { roleUnion } from "../validators";
 import { query } from "../_generated/server";
 
 /**
@@ -38,5 +40,25 @@ export const getSessionState = query({
       name: minimal.name,
       population: minimal.population,
     };
+  },
+});
+
+/**
+ * Borde de Presentación: rol propio para navegación Web (TI2-20).
+ *
+ * Adaptador delgado: resuelve la identidad en el servidor y delega en
+ * Aplicación. Devuelve solo el rol del propio perfil para que la Web elija
+ * portal; sin identidad o sin perfil responde `unauthenticated`, que los
+ * guards tratan como denegado. No autoriza nada por sí mismo.
+ */
+export const getSessionRole = query({
+  args: {},
+  returns: v.union(
+    v.object({ status: v.literal("authenticated"), role: roleUnion }),
+    v.object({ status: v.literal("unauthenticated") }),
+  ),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await resolveSessionRole(ctx, identity);
   },
 });
