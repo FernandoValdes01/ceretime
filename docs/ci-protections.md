@@ -1,12 +1,12 @@
 # Protecciones de CI para `main`
 
-El workflow `.github/workflows/ci.yml` ejecuta la validación cuando una Pull Request apunta a `main` y después de cada `push` a `main`, incluido un merge. El Ruleset del repositorio impide integrar cambios sin los requisitos activos.
+El workflow `.github/workflows/ci.yml` ejecuta la validación cuando una Pull Request apunta a `main` y después de cada `push` a `main`, incluido un merge.
 
 ## Configuración en GitHub
 
-El repositorio usa el Ruleset activo `protectedmain`, aplicado a la rama predeterminada. Conserva sus reglas de protección contra eliminación y force push, la revisión requerida, el descarte de aprobaciones obsoletas, la aprobación del último push y el uso exclusivo de `Squash and merge`.
+El repositorio usa el Ruleset activo `protectedmain`, aplicado a la rama predeterminada, con protección contra eliminación y force push, revisión requerida, descarte de aprobaciones obsoletas, aprobación del último push y uso exclusivo de `Squash and merge`.
 
-Como excepción autorizada para probar TI4-34 antes de integrar el publicador de status, `protectedmain` exige ahora estos cinco checks en todas las PR hacia `main`:
+Por autorización explícita para probar TI4-34, el Ruleset exige ahora estos cinco checks en todas las PR hacia `main`:
 
 - `Lint y formato`
 - `Greptile 5/5`
@@ -14,18 +14,22 @@ Como excepción autorizada para probar TI4-34 antes de integrar el publicador de
 - `Validación Web`
 - `Verificación Backend`
 
-La regla exige checks de GitHub Actions y no tiene bypass actors. `strict_required_status_checks_policy` está en `true`, así que las PR deben estar actualizadas con `main` antes de integrarse.
-
-Un workflow puede publicar checks, pero no puede obligar al repositorio a exigirlos.
+La regla exige checks publicados por GitHub Actions, no tiene bypass actors y mantiene `strict_required_status_checks_policy` en `true`.
 
 ## Nota de Greptile
 
-El job `Veredicto de Greptile` de `.github/workflows/ci.yml` consulta el comentario de `greptile-apps[bot]` durante la CI de cada PR lista para revisión. Espera hasta 15 minutos por una revisión del SHA actual y publica el status requerido `Greptile 5/5`. Falla si la nota no es 5/5, está mal formada o no llega una revisión vigente. Con una nota 4/5, GitHub muestra `Oye, Greptile dice 4/5; no puedes mergear así.`; con 5/5, el status pasa.
+El job `Greptile 5/5` de `.github/workflows/ci.yml` consulta cada 30 segundos el comentario de `greptile-apps[bot]` hasta 15 minutos para validar `Confidence Score: 5/5` y `Last reviewed commit` contra el SHA actual de la PR. Con 4/5 muestra `Oye, Greptile dice 4/5; no puedes mergear así.`; con 5/5 informa que la revisión del SHA actual pasó; si no llega una revisión vigente, falla.
 
-El Ruleset activo exige el status de commit `Greptile 5/5`. El job de CI que deja el veredicto legible se llama `Veredicto de Greptile`, así que un fallo de ese check no duplica el requisito y el publicador puede actualizar el status cuando llega una revisión tardía. `.github/workflows/greptile-score.yml` aún no está integrado en `main`; después de integrarse, leerá el comentario marcado con `<!-- greptile_summary -->`, exigirá `Confidence Score: 5/5` y comprobará que `Last reviewed commit` apunte al SHA actual. Los eventos de PR y los comentarios creados, editados o eliminados por Greptile actualizarán ese status sin ejecutar código de la rama de la PR. En esta PR de habilitación, GitHub no activa el listener de comentarios hasta que ese workflow llegue a `main`; si la revisión aparece después de los 15 minutos de espera, hay que volver a ejecutar el job desde Actions.
+Ese job tiene permisos de solo lectura y no publica statuses. El status requerido `Greptile 5/5` lo publica `.github/workflows/greptile-score.yml`, que usa `pull_request_target`, `issue_comment` y `workflow_run` desde el workflow confiable en `main`; nunca descarga ni ejecuta código de la rama de la PR.
 
-El check propio `Greptile Review` puede quedar verde con una nota 4/5; no lo uses como sustituto de `Greptile 5/5`. Después de integrar el publicador, verifica que ambos caminos mantengan el requisito en verde con 5/5 y en error con 4/5, una revisión ausente o una revisión eliminada.
+El check run y el commit status comparten el contexto `Greptile 5/5`. GitHub exige que ambos pasen cuando los dos existen; una vez integrado el publicador confiable, el check run editable de la PR no puede sustituir un commit status fallido.
+
+El publicador valida la nota más reciente de Greptile, exige que el SHA revisado sea el actual y publica `failure` para una nota menor a 5/5, una nota inválida, una revisión antigua o la ausencia del comentario. Los comentarios creados, editados o eliminados actualizan el status; luego el workflow ejecuta otra vez el gate si el check terminado ya no coincide. Al terminar una ejecución de CI, `workflow_run` vuelve a comparar status y check run para corregir una carrera con una nota tardía, con un máximo de tres intentos por ejecución.
+
+Durante esta PR de habilitación, GitHub todavía no ejecuta los listeners `issue_comment` ni `workflow_run` porque el workflow aún no está en `main`; por autorización explícita, el check run de esta PR prueba el mismo contexto requerido mientras espera la nota. Después de integrar el workflow, el status confiable y el check run deberán pasar para el mismo SHA cuando ambos estén presentes.
+
+El check propio `Greptile Review` puede quedar verde con 4/5 y no sustituye `Greptile 5/5`. La CI reproduce la salida de error para 4/5 y confirma el caso positivo 5/5 con pruebas automatizadas sobre comentarios reales y simulados.
 
 ## Comprobación posterior
 
-En una PR hacia `main`, confirma que los cinco checks aparecen como requisitos y que cualquier resultado fallido bloquea el merge. Actualiza la rama cuando `main` avance y confirma que la CI vuelve a ejecutarse sobre el estado que se integrará. Después de integrar el publicador, comprueba que las notas y la eliminación del comentario actualizan el status del SHA correspondiente.
+En una PR hacia `main`, confirma que los cinco checks aparecen como requisitos y que un fallo en cualquiera impide integrar. Comprueba que `Greptile 5/5` refleja el mismo SHA que la PR en el check run y el commit status, y que una nota tardía, editada o eliminada vuelve a reconciliar ambos resultados. Actualiza la rama cuando `main` avance para que la CI valide el estado que se integrará.
