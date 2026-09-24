@@ -1,0 +1,201 @@
+name: Nota de Greptile
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  issue_comment:
+    types:
+      - created
+      - edited
+      - deleted
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  score:
+    name: Publicar nota de Greptile
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request &&
+      github.event.comment.user.login == 'greptile-apps[bot]' &&
+      github.event.comment.user.type == 'Bot')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      issues: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Validar y publicar la nota vigente
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const eventName = context.eventName;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const triggeringRun = context.payload.workflow_run;
+            let pullNumber = context.payload.pull_request?.number ?? context.payload.issue?.number;
+
+            if (eventName === 'workflow_run') {
+              if (triggeringRun?.event !== 'pull_request' || triggeringRun?.name !== 'CI') {
+                return;
+              }
+              const associatedPull = triggeringRun.pull_requests?.find((pull) =>
+                pull.base?.ref === 'main' && pull.head?.sha === triggeringRun.head_sha,
+              );
+              pullNumber = associatedPull?.number;
+              if (!pullNumber && triggeringRun.head_branch && triggeringRun.head_repository?.full_name) {
+                const [headOwner] = triggeringRun.head_repository.full_name.split('/');
+                const pullRequests = await github.paginate(github.rest.pulls.list, {
+                  owner,
+                  repo,
+                  state: 'open',
+                  base: 'main',
+                  head: `${headOwner}:${triggeringRun.head_branch}`,
+                  per_page: 100,
+                });
+                pullNumber = pullRequests.find((pull) =>
+                  pull.head?.sha?.toLowerCase() === triggeringRun.head_sha.toLowerCase() &&
+                  pull.head?.repo?.full_name?.toLowerCase() === triggeringRun.head_repository.full_name.toLowerCase(),
+                )?.number;
+              }
+              if (!pullNumber) {
+                return;
+              }
+            }
+
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber,
+            });
+            if (pullRequest.base.ref !== 'main' || pullRequest.state !== 'open') {
+              return;
+            }
+
+            const headSha = pullRequest.head.sha.toLowerCase();
+            if (eventName === 'workflow_run' && triggeringRun.head_sha.toLowerCase() !== headSha) {
+              return;
+            }
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pullNumber,
+              per_page: 100,
+            });
+            const summary = comments
+              .filter((comment) =>
+                comment.user?.login === 'greptile-apps[bot]' &&
+                comment.user?.type === 'Bot' &&
+                comment.body?.includes('<!-- greptile_summary -->'),
+              )
+              .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id)[0];
+            const body = summary?.body ?? '';
+            const score = body.match(/Confidence Score:\s*([0-5])\/5\b/)?.[1];
+            const reviewedSha = body.match(/Last reviewed commit:[\s\S]*?\/commit\/([0-9a-f]{40})\b/i)?.[1]?.toLowerCase();
+            const current = reviewedSha === headSha;
+            const passed = current && score === '5';
+            const description = !summary
+              ? 'Falta la revisión de Greptile para este commit.'
+              : !current
+                ? 'La revisión de Greptile no corresponde al commit actual.'
+                : score
+                  ? `Greptile asignó ${score}/5; se exige 5/5.`
+                  : 'La revisión de Greptile no contiene una nota válida.';
+
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: pullRequest.head.sha,
+              context: 'Greptile 5/5',
+              state: passed ? 'success' : 'failure',
+              description,
+              target_url: summary?.html_url ?? pullRequest.html_url,
+            });
+            core.info(description);
+
+            if (pullRequest.draft) {
+              return;
+            }
+
+            let runs;
+            if (eventName === 'workflow_run') {
+              runs = [triggeringRun];
+            } else {
+              ({ data: { workflow_runs: runs } } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner,
+                repo,
+                event: 'pull_request',
+                head_sha: headSha,
+                per_page: 100,
+              }));
+            }
+
+            const matchingRuns = (runs ?? [])
+              .filter((run) => {
+                if (
+                  run.name !== 'CI' ||
+                  run.event !== 'pull_request' ||
+                  run.head_sha?.toLowerCase() !== headSha
+                ) {
+                  return false;
+                }
+
+                if (run.pull_requests?.some((pull) => pull.number === pullNumber)) {
+                  return true;
+                }
+
+                const headRepository = pullRequest.head.repo?.full_name?.toLowerCase();
+                return !run.pull_requests?.length &&
+                  run.head_branch === pullRequest.head.ref &&
+                  run.head_repository?.full_name?.toLowerCase() === headRepository;
+              })
+              .sort((a, b) => b.run_number - a.run_number);
+
+            for (const run of matchingRuns) {
+              const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
+                owner,
+                repo,
+                run_id: run.id,
+                per_page: 100,
+              });
+              const gate = jobs.jobs.find((job) => job.name === 'Greptile 5/5');
+              if (!gate || gate.status !== 'completed') {
+                continue;
+              }
+
+              const gateMatches = passed ? gate.conclusion === 'success' : gate.conclusion === 'failure';
+              if (gateMatches) {
+                core.info(`El check Greptile 5/5 ya coincide con la nota vigente en ${headSha}.`);
+                return;
+              }
+
+              const maxAttempts = 3;
+              if ((run.run_attempt ?? 1) >= maxAttempts) {
+                core.warning(`Greptile 5/5 sigue distinto tras ${maxAttempts} intentos en ${headSha}; requiere revisión manual.`);
+                return;
+              }
+
+              await github.rest.actions.reRunJobForWorkflowRun({
+                owner,
+                repo,
+                job_id: gate.id,
+              });
+              core.info(`Se ejecuta otra vez Greptile 5/5 para reconciliar el SHA ${headSha}.`);
+              return;
+            }
+
+            core.info(`No hay un check Greptile 5/5 terminado para reconciliar en ${headSha}.`);
