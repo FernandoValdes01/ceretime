@@ -141,7 +141,7 @@ test("keeps manual builds out of pull request CI", () => {
   expect(pullRequestWorkflow.jobs["publish-pr-result"]).toBeUndefined();
 });
 
-test("runs integrated CI for pull requests and pushes to main", () => {
+test("runs four integrated CI jobs for pull requests and pushes to main", () => {
   expect(pullRequestWorkflow.on.pull_request.branches).toEqual(["main"]);
   expect(pullRequestWorkflow.on.pull_request.types).toContain("ready_for_review");
   expect(pullRequestWorkflow.on.push.branches).toEqual(["main"]);
@@ -149,12 +149,6 @@ test("runs integrated CI for pull requests and pushes to main", () => {
     .map((job: any) => job.name)
     .sort();
   expect(jobNames).toEqual(
-    [
-      "Lint y formato",
-      "Greptile 5/5",
-      "Validación Mobile",
-      "Validación Web",
-      "Verificación Backend",
-    ].sort(),
+    ["Lint y formato", "Validación Mobile", "Validación Web", "Verificación Backend"].sort(),
   );
 });
