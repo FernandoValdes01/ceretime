@@ -148,6 +148,9 @@ jobs:
       - name: Ejecutar lint existente de Web
         run: bun run --cwd apps/web lint
 
+      - name: Ejecutar pruebas de Web
+        run: bun run test:web
+
       - name: Construir Web
         run: bun run --cwd apps/web build
 
