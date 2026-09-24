@@ -65,7 +65,9 @@ bun run --cwd apps/mobile export
 
 El primer export debe terminar con código 1 y el error `Unable to resolve module lucide-react-native/icons/arrow-down`; el segundo debe terminar con código 0. Esta secuencia se comprobó localmente el 23/09/2026.
 
-Después de `bun install --frozen-lockfile`, el mismo export terminó con código 0. Metro generó bundles para Web, Android e iOS y la carpeta `apps/mobile/dist/`. La instalación añadió 15 paquetes locales sin modificar el lockfile. No quedan bloqueos de build conocidos para el Preview sobre el commit validado. El [comentario de evidencia en la PR](https://github.com/FernandoValdes01/ceretime/pull/43#issuecomment-5798623941) conserva el enlace al run manual más reciente de Web y Mobile, los artefactos publicados y el SHA validado; se actualiza en cada ejecución.
+Después de `bun install --frozen-lockfile`, el mismo export terminó con código 0. Metro generó bundles para Web, Android e iOS y la carpeta `apps/mobile/dist/`. La instalación añadió 15 paquetes locales sin modificar el lockfile. En ese momento, el [run manual de builds](https://github.com/FernandoValdes01/ceretime/actions/runs/35895117228) validó el commit `f8f889435597b365ddbc178d54e40bfda0c42dbf` y publicó sus artefactos en la PR.
+
+La revalidación del commit de código `50ecb51c03ccd48af42b9e47317caa4b6e18dc55` terminó correctamente en el [run manual 35940121507](https://github.com/FernandoValdes01/ceretime/actions/runs/35940121507): Web generó `apps/web/dist/` y Mobile generó bundles para Web, Android e iOS en `apps/mobile/dist/`. Los artefactos publicados son `ci-build-web-35940121507-1` y `ci-build-mobile-35940121507-1`. El [comentario de evidencia en la PR](https://github.com/FernandoValdes01/ceretime/pull/43#issuecomment-5798623941) se actualizó con este run y SHA. No quedan bloqueos de build conocidos para el Preview sobre el commit validado.
 
 ## Pruebas de la preparación
 
