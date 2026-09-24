@@ -80,3 +80,37 @@ test("cuenta no autorizada y sesión ausente responden idéntico sin filtrar mot
   expect(externaState).toEqual({ status: "unauthenticated" });
   expect(externaState).not.toHaveProperty("email");
 });
+
+test("sesión expirada responde igual que sesión ausente sin filtrar motivo (TI2-15)", async () => {
+  const t = convexTest(schema, modules);
+  const authed = t.withIdentity({
+    subject: "alu-expirada",
+    issuer: "https://accounts.google.com",
+    email: "expirada@alu.uct.cl",
+    name: "Expirada",
+  });
+  const before = await authed.query(api.presentation.session.getSessionState, {});
+  expect(before.status).toBe("authenticated");
+  const expired = await t.query(api.presentation.session.getSessionState, {});
+  const neverAuthed = await t.query(api.presentation.session.getSessionState, {});
+  expect(expired).toEqual({ status: "unauthenticated" });
+  expect(expired).toEqual(neverAuthed);
+  expect(expired).not.toHaveProperty("email");
+});
+
+test("estado posterior al cierre responde no autenticado sin datos mínimos (TI2-15)", async () => {
+  const t = convexTest(schema, modules);
+  const authed = t.withIdentity({
+    subject: "alu-cierre",
+    issuer: "https://accounts.google.com",
+    email: "cierre@alu.uct.cl",
+    name: "Cierre",
+  });
+  const signedIn = await authed.query(api.presentation.session.getSessionState, {});
+  expect(signedIn.status).toBe("authenticated");
+  const signedOut = await t.query(api.presentation.session.getSessionState, {});
+  expect(signedOut).toEqual({ status: "unauthenticated" });
+  expect(signedOut).not.toHaveProperty("email");
+  expect(signedOut).not.toHaveProperty("name");
+  expect(signedOut).not.toHaveProperty("population");
+});
