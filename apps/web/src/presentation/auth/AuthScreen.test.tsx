@@ -48,7 +48,15 @@ afterEach(() => {
 });
 
 describe("cierre de sesión (TI2-15)", () => {
-  test("vuelve al acceso cuando el servidor deja de reconocer la sesión", async () => {
+  test("vuelve al acceso cuando el cierre invalida la sesión observada", async () => {
+    // El mock simula la invalidación de Better Auth: el propio `signOut`
+    // deja de exponer la sesión y el test solo comprueba que la pantalla
+    // reacciona a ese estado (el `rerender` suple la reactividad de Convex,
+    // que el mock estático no empuja solo).
+    signOutMock.mockImplementation(async () => {
+      mockedServerState = { status: "unauthenticated" };
+      return {};
+    });
     mockedServerState = SESION_ESTUDIANTE;
     const view = render(<AuthScreen />);
     await screen.findByRole("heading", { name: "Sesión iniciada" });
@@ -56,7 +64,6 @@ describe("cierre de sesión (TI2-15)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
     await waitFor(() => expect(signOutMock).toHaveBeenCalledTimes(1));
 
-    mockedServerState = { status: "unauthenticated" };
     view.rerender(<AuthScreen />);
     await screen.findByRole("heading", { name: "Acceso institucional" });
   });

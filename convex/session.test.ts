@@ -81,16 +81,11 @@ test("cuenta no autorizada y sesión ausente responden idéntico sin filtrar mot
   expect(externaState).not.toHaveProperty("email");
 });
 
-test("sesión expirada responde igual que sesión ausente sin filtrar motivo (TI2-15)", async () => {
+test("expiración (identidad ausente) responde no autenticado sin filtrar motivo (TI2-15)", async () => {
+  // Convex expone la expiración como identidad nula: no hay transición que
+  // invalidar dentro de convex-test, por lo que se fija el contrato del
+  // estado anónimo que una sesión expirada debe observar.
   const t = convexTest(schema, modules);
-  const authed = t.withIdentity({
-    subject: "alu-expirada",
-    issuer: "https://accounts.google.com",
-    email: "expirada@alu.uct.cl",
-    name: "Expirada",
-  });
-  const before = await authed.query(api.presentation.session.getSessionState, {});
-  expect(before.status).toBe("authenticated");
   const expired = await t.query(api.presentation.session.getSessionState, {});
   const neverAuthed = await t.query(api.presentation.session.getSessionState, {});
   expect(expired).toEqual({ status: "unauthenticated" });
@@ -98,16 +93,10 @@ test("sesión expirada responde igual que sesión ausente sin filtrar motivo (TI
   expect(expired).not.toHaveProperty("email");
 });
 
-test("estado posterior al cierre responde no autenticado sin datos mínimos (TI2-15)", async () => {
+test("cierre (identidad ausente) responde no autenticado sin datos mínimos (TI2-15)", async () => {
+  // Igual que la expiración: tras `signOut`, Better Auth invalida la sesión
+  // fuera de este código y el backend solo vuelve a ver identidad nula.
   const t = convexTest(schema, modules);
-  const authed = t.withIdentity({
-    subject: "alu-cierre",
-    issuer: "https://accounts.google.com",
-    email: "cierre@alu.uct.cl",
-    name: "Cierre",
-  });
-  const signedIn = await authed.query(api.presentation.session.getSessionState, {});
-  expect(signedIn.status).toBe("authenticated");
   const signedOut = await t.query(api.presentation.session.getSessionState, {});
   expect(signedOut).toEqual({ status: "unauthenticated" });
   expect(signedOut).not.toHaveProperty("email");
