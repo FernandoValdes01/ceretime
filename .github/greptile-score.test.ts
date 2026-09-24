@@ -6,6 +6,7 @@ const workflow = Bun.YAML.parse(
 const ciWorkflow = Bun.YAML.parse(
   await Bun.file(`${import.meta.dir}/workflows/ci.yml`).text(),
 ) as any;
+const resolveScript = workflow.jobs.resolve_pr.steps[0].with.script;
 const script = workflow.jobs.score.steps[0].with.script;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const sha = "a".repeat(40);
@@ -24,10 +25,9 @@ function summary(score: string, reviewedSha = sha, updatedAt = "2026-09-23T00:00
 async function check(
   comments: object[],
   eventName = "issue_comment",
-  options: { headSha?: string; runSha?: string; runName?: string; associatedPull?: boolean } = {},
+  options: { headSha?: string; runSha?: string } = {},
 ) {
   const statuses: any[] = [];
-  const pullListQueries: any[] = [];
   const headSha = options.headSha ?? sha;
   const pullRequest = {
     number: 1,
@@ -41,30 +41,16 @@ async function check(
     html_url: "https://github.com/owner/repo/pull/1",
   };
   const run = {
-    id: 50,
-    name: options.runName ?? "CI",
-    event: "pull_request",
     head_sha: options.runSha ?? headSha,
-    head_branch: "feature/ti4-34",
-    head_repository: { full_name: "owner/repo" },
-    pull_requests:
-      options.associatedPull === false
-        ? undefined
-        : [{ number: 1, base: { ref: "main" }, head: { sha: options.runSha ?? headSha } }],
-  };
-  const listPullRequests = async (args: any) => {
-    pullListQueries.push(args);
-    return { data: [pullRequest] };
   };
   const listComments = () => {};
   const github = {
     rest: {
-      pulls: { get: async () => ({ data: pullRequest }), list: listPullRequests },
+      pulls: { get: async () => ({ data: pullRequest }) },
       issues: { listComments },
       repos: { createCommitStatus: async (args: any) => statuses.push(args) },
     },
-    paginate: async (method: unknown, args: any) =>
-      method === listPullRequests ? (await listPullRequests(args)).data : comments,
+    paginate: async () => comments,
   };
   const context = {
     eventName,
@@ -77,7 +63,35 @@ async function check(
   await new AsyncFunction("github", "context", "core", script)(github, context, {
     info: () => {},
   });
-  return { statuses, pullListQueries };
+  return { statuses };
+}
+
+async function resolvePullNumber(eventName: string, payload: any) {
+  const outputs: Record<string, string> = {};
+  const pullListQueries: any[] = [];
+  const listPullRequests = async (args: any) => {
+    pullListQueries.push(args);
+    return {
+      data: [
+        {
+          number: 1,
+          head: {
+            sha,
+            ref: "feature/ti4-34",
+            repo: { full_name: "owner/repo" },
+          },
+        },
+      ],
+    };
+  };
+  const github = {
+    rest: { pulls: { list: listPullRequests } },
+    paginate: async (_method: unknown, args: any) => (await listPullRequests(args)).data,
+  };
+  const context = { eventName, repo: { owner: "owner", repo: "repo" }, payload };
+  const core = { setOutput: (name: string, value: string) => (outputs[name] = value) };
+  await new AsyncFunction("github", "context", "core", resolveScript)(github, context, core);
+  return { outputs, pullListQueries };
 }
 
 test("el check requerido se actualiza desde un workflow confiable", () => {
@@ -89,8 +103,52 @@ test("el check requerido se actualiza desde un workflow confiable", () => {
     "pull-requests": "read",
     statuses: "write",
   });
+  expect(workflow.jobs.score.concurrency.group).toBe(
+    "greptile-score-${{ needs.resolve_pr.outputs.pull_number }}",
+  );
+  expect(workflow.jobs.score.concurrency["cancel-in-progress"]).toBe(false);
   expect(workflow.jobs.score.steps[0].uses).toMatch(/^actions\/github-script@[0-9a-f]{40}$/);
   expect(ciWorkflow.jobs.greptile_score).toBeUndefined();
+});
+
+test("ordena por PR y resuelve su número desde ambos eventos", async () => {
+  const issueComment = await resolvePullNumber("issue_comment", {
+    issue: { number: 18, pull_request: {} },
+  });
+  expect(issueComment.outputs.pull_number).toBe("18");
+
+  const workflowRun = await resolvePullNumber("workflow_run", {
+    workflow_run: {
+      name: "CI",
+      event: "pull_request",
+      head_sha: sha,
+      pull_requests: [{ number: 19, base: { ref: "main" }, head: { sha: oldSha } }],
+    },
+  });
+  expect(workflowRun.outputs.pull_number).toBe("19");
+});
+
+test("busca la PR por rama cuando el run de CI no incluye su asociación", async () => {
+  const result = await resolvePullNumber("workflow_run", {
+    workflow_run: {
+      name: "CI",
+      event: "pull_request",
+      head_sha: oldSha,
+      head_branch: "feature/ti4-34",
+      head_repository: { full_name: "owner/repo" },
+    },
+  });
+  expect(result.outputs.pull_number).toBe("1");
+  expect(result.pullListQueries).toEqual([
+    {
+      owner: "owner",
+      repo: "repo",
+      state: "open",
+      base: "main",
+      head: "owner:feature/ti4-34",
+      per_page: 100,
+    },
+  ]);
 });
 
 test("acepta 5/5 para el SHA actual", async () => {
@@ -142,29 +200,18 @@ test("los comentarios editados y eliminados vuelven a evaluar la nota vigente", 
   expect((await check(remaining, "issue_comment")).statuses[0].state).toBe("failure");
 });
 
-test("workflow_run encuentra la PR aunque GitHub no la asocie al run", async () => {
-  const result = await check([summary("5/5")], "workflow_run", { associatedPull: false });
-  expect(result.pullListQueries).toEqual([
-    {
-      owner: "owner",
-      repo: "repo",
-      state: "open",
-      base: "main",
-      head: "owner:feature/ti4-34",
-      per_page: 100,
-    },
-  ]);
-  expect(result.statuses[0].state).toBe("success");
-});
-
-test("ignora ejecuciones de CI que ya no corresponden al SHA actual", async () => {
+test("valida el SHA actual aunque CI haya terminado en un commit anterior", async () => {
   const { statuses } = await check([summary("5/5")], "workflow_run", { runSha: oldSha });
-  expect(statuses).toHaveLength(0);
+  expect(statuses[0]).toMatchObject({ sha, state: "success" });
 });
 
 test("ignora runs que no pertenecen a CI de una pull request", async () => {
-  const { statuses } = await check([summary("5/5")], "workflow_run", {
-    runName: "Validación de builds",
+  const result = await resolvePullNumber("workflow_run", {
+    workflow_run: {
+      name: "Validación de builds",
+      event: "pull_request",
+      head_sha: sha,
+    },
   });
-  expect(statuses).toHaveLength(0);
+  expect(result.outputs.pull_number).toBeUndefined();
 });

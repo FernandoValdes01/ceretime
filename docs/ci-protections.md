@@ -22,7 +22,7 @@ El status requerido `Greptile 5/5` lo publica `.github/workflows/greptile-score.
 
 Al terminar CI, el workflow valida el resumen más reciente de `greptile-apps[bot]`, exige `Confidence Score: 5/5` y compara `Last reviewed commit` con el SHA actual de la PR. Si Greptile da 4/5, publica un status fallido con el mensaje `Hay cambios pendientes de Greptile (4/5).` y GitHub marca `Greptile 5/5` con una X.
 
-Los comentarios creados, editados o eliminados por Greptile vuelven a evaluar el status vigente. Así, una revisión que llega después de CI o un cambio posterior en la nota actualiza el mismo status para el SHA de la PR. Una nota inválida, una revisión de otro SHA o la ausencia de una revisión actual mantienen el status fallido.
+Los comentarios creados, editados o eliminados por Greptile vuelven a evaluar el status vigente. El workflow procesa las publicaciones en orden por PR y vuelve a leer el SHA y el resumen vigentes antes de publicar, para que un evento concurrente no sobrescriba una nota más reciente. Así, una revisión que llega después de CI o un cambio posterior en la nota actualiza el mismo status para el SHA de la PR. Una nota inválida, una revisión de otro SHA o la ausencia de una revisión actual mantienen el status fallido.
 
 El check externo `Greptile Review` puede quedar verde con 4/5 y no sustituye el status requerido `Greptile 5/5`.
 

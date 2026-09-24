@@ -16,13 +16,62 @@ permissions:
   contents: read
 
 jobs:
-  score:
-    name: Actualizar check requerido
+  resolve_pr:
+    name: Resolver PR para el status
     if: >-
       github.event_name != 'issue_comment' ||
       (github.event.issue.pull_request &&
       github.event.comment.user.login == 'greptile-apps[bot]' &&
       github.event.comment.user.type == 'Bot')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      pull_number: ${{ steps.resolve.outputs.pull_number }}
+    steps:
+      - name: Identificar la PR afectada
+        id: resolve
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            if (context.eventName === 'issue_comment') {
+              core.setOutput('pull_number', String(context.payload.issue.number));
+              return;
+            }
+
+            const run = context.payload.workflow_run;
+            if (run?.event !== 'pull_request' || run?.name !== 'CI') {
+              return;
+            }
+
+            let pullNumber = run.pull_requests?.find((pull) => pull.base?.ref === 'main')?.number;
+            if (!pullNumber && run.head_branch && run.head_repository?.full_name) {
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+              const [headOwner] = run.head_repository.full_name.split('/');
+              const pullRequests = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: 'open',
+                base: 'main',
+                head: `${headOwner}:${run.head_branch}`,
+                per_page: 100,
+              });
+              pullNumber = pullRequests.find((pull) =>
+                pull.head?.repo?.full_name?.toLowerCase() === run.head_repository.full_name.toLowerCase(),
+              )?.number;
+            }
+            if (pullNumber) {
+              core.setOutput('pull_number', String(pullNumber));
+            }
+
+  score:
+    name: Actualizar status Greptile 5/5
+    needs: resolve_pr
+    if: needs.resolve_pr.outputs.pull_number != ''
+    concurrency:
+      group: greptile-score-${{ needs.resolve_pr.outputs.pull_number }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       issues: read
@@ -33,44 +82,9 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
-            const eventName = context.eventName;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const triggeringRun = context.payload.workflow_run;
-            let pullNumber = context.payload.issue?.number;
-
-            if (eventName === 'workflow_run') {
-              if (triggeringRun?.event !== 'pull_request' || triggeringRun?.name !== 'CI') {
-                return;
-              }
-              const associatedPull = triggeringRun.pull_requests?.find((pull) =>
-                pull.base?.ref === 'main' && pull.head?.sha === triggeringRun.head_sha,
-              );
-              pullNumber = associatedPull?.number;
-              if (!pullNumber && triggeringRun.head_branch && triggeringRun.head_repository?.full_name) {
-                const [headOwner] = triggeringRun.head_repository.full_name.split('/');
-                const pullRequests = await github.paginate(github.rest.pulls.list, {
-                  owner,
-                  repo,
-                  state: 'open',
-                  base: 'main',
-                  head: `${headOwner}:${triggeringRun.head_branch}`,
-                  per_page: 100,
-                });
-                pullNumber = pullRequests.find((pull) =>
-                  pull.head?.sha?.toLowerCase() === triggeringRun.head_sha.toLowerCase() &&
-                  pull.head?.repo?.full_name?.toLowerCase() === triggeringRun.head_repository.full_name.toLowerCase(),
-                )?.number;
-              }
-              if (!pullNumber) {
-                return;
-              }
-            }
-
-            if (!pullNumber) {
-              return;
-            }
-
+            const pullNumber = Number('${{ needs.resolve_pr.outputs.pull_number }}');
             const { data: pullRequest } = await github.rest.pulls.get({
               owner,
               repo,
@@ -81,9 +95,6 @@ jobs:
             }
 
             const headSha = pullRequest.head.sha.toLowerCase();
-            if (eventName === 'workflow_run' && triggeringRun.head_sha.toLowerCase() !== headSha) {
-              return;
-            }
 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
