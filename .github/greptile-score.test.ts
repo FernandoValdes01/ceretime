@@ -29,16 +29,22 @@ async function check(
   headSha = sha,
   gateConclusion = "failure",
   runAttempt = 1,
+  includePullRequestAssociation = true,
 ) {
   const statuses: any[] = [];
   const reruns: any[] = [];
   const jobQueries: any[] = [];
+  const pullListQueries: any[] = [];
   const pullRequest = {
     number: 1,
     base: { ref: "main" },
     state: "open",
     draft: false,
-    head: { sha: headSha },
+    head: {
+      sha: headSha,
+      ref: "feature/ti4-34",
+      repo: { full_name: "owner/repo" },
+    },
     html_url: "https://github.com/owner/repo/pull/1",
   };
   const run = {
@@ -46,13 +52,21 @@ async function check(
     name: "CI",
     event: "pull_request",
     head_sha: headSha,
+    head_branch: "feature/ti4-34",
+    head_repository: { full_name: "owner/repo" },
     run_number: 3,
     run_attempt: runAttempt,
-    pull_requests: [{ number: 1, base: { ref: "main" }, head: { sha: headSha } }],
+    pull_requests: includePullRequestAssociation
+      ? [{ number: 1, base: { ref: "main" }, head: { sha: headSha } }]
+      : undefined,
+  };
+  const listPullRequests = async (args: any) => {
+    pullListQueries.push(args);
+    return { data: [pullRequest] };
   };
   const github = {
     rest: {
-      pulls: { get: async () => ({ data: pullRequest }) },
+      pulls: { get: async () => ({ data: pullRequest }), list: listPullRequests },
       issues: { listComments: () => {} },
       repos: { createCommitStatus: async (args: any) => statuses.push(args) },
       actions: {
@@ -75,7 +89,8 @@ async function check(
         reRunJobForWorkflowRun: async (args: any) => reruns.push(args),
       },
     },
-    paginate: async () => comments,
+    paginate: async (method: unknown, args: any) =>
+      method === listPullRequests ? (await listPullRequests(args)).data : comments,
   };
   const context = {
     eventName,
@@ -94,7 +109,7 @@ async function check(
     info: () => {},
     warning: () => {},
   });
-  return { statuses, reruns, jobQueries };
+  return { statuses, reruns, jobQueries, pullListQueries };
 }
 
 async function checkCiGate(commentSnapshots: object[][], headSha = sha) {
@@ -233,6 +248,26 @@ test("la nota tardía vuelve a ejecutar el gate sobre el mismo SHA", async () =>
   const result = await check([summary("5/5")], "issue_comment", sha, "failure");
   expect(result.reruns).toEqual([{ owner: "owner", repo: "repo", job_id: 99 }]);
   expect(result.jobQueries).toEqual([{ owner: "owner", repo: "repo", run_id: 50, per_page: 100 }]);
+});
+
+test("reconcilia el gate cuando GitHub omite pull_requests en el run", async () => {
+  const result = await check([summary("5/5")], "issue_comment", sha, "failure", 1, false);
+  expect(result.reruns).toEqual([{ owner: "owner", repo: "repo", job_id: 99 }]);
+});
+
+test("workflow_run busca la PR por repo y rama si GitHub omite pull_requests", async () => {
+  const result = await check([summary("5/5")], "workflow_run", sha, "failure", 1, false);
+  expect(result.pullListQueries).toEqual([
+    {
+      owner: "owner",
+      repo: "repo",
+      state: "open",
+      base: "main",
+      head: "owner:feature/ti4-34",
+      per_page: 100,
+    },
+  ]);
+  expect(result.reruns).toEqual([{ owner: "owner", repo: "repo", job_id: 99 }]);
 });
 
 test("workflow_run repara un gate que terminó con un resultado viejo", async () => {

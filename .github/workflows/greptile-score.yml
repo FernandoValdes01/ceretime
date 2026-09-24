@@ -52,9 +52,25 @@ jobs:
               if (triggeringRun?.event !== 'pull_request' || triggeringRun?.name !== 'CI') {
                 return;
               }
-              pullNumber = triggeringRun.pull_requests?.find((pull) =>
+              const associatedPull = triggeringRun.pull_requests?.find((pull) =>
                 pull.base?.ref === 'main' && pull.head?.sha === triggeringRun.head_sha,
-              )?.number;
+              );
+              pullNumber = associatedPull?.number;
+              if (!pullNumber && triggeringRun.head_branch && triggeringRun.head_repository?.full_name) {
+                const [headOwner] = triggeringRun.head_repository.full_name.split('/');
+                const pullRequests = await github.paginate(github.rest.pulls.list, {
+                  owner,
+                  repo,
+                  state: 'open',
+                  base: 'main',
+                  head: `${headOwner}:${triggeringRun.head_branch}`,
+                  per_page: 100,
+                });
+                pullNumber = pullRequests.find((pull) =>
+                  pull.head?.sha?.toLowerCase() === triggeringRun.head_sha.toLowerCase() &&
+                  pull.head?.repo?.full_name?.toLowerCase() === triggeringRun.head_repository.full_name.toLowerCase(),
+                )?.number;
+              }
               if (!pullNumber) {
                 return;
               }
@@ -129,12 +145,24 @@ jobs:
             }
 
             const matchingRuns = (runs ?? [])
-              .filter((run) =>
-                run.name === 'CI' &&
-                run.event === 'pull_request' &&
-                run.head_sha?.toLowerCase() === headSha &&
-                run.pull_requests?.some((pull) => pull.number === pullNumber),
-              )
+              .filter((run) => {
+                if (
+                  run.name !== 'CI' ||
+                  run.event !== 'pull_request' ||
+                  run.head_sha?.toLowerCase() !== headSha
+                ) {
+                  return false;
+                }
+
+                if (run.pull_requests?.some((pull) => pull.number === pullNumber)) {
+                  return true;
+                }
+
+                const headRepository = pullRequest.head.repo?.full_name?.toLowerCase();
+                return !run.pull_requests?.length &&
+                  run.head_branch === pullRequest.head.ref &&
+                  run.head_repository?.full_name?.toLowerCase() === headRepository;
+              })
               .sort((a, b) => b.run_number - a.run_number);
 
             for (const run of matchingRuns) {
