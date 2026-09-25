@@ -46,7 +46,7 @@ Para reproducir desde la raíz: `bun run test:convex`, `bun run test:web`, `bun 
 
 El vínculo entre `signOut` y el estado observado por Convex solo se verifica contra el flujo real con cuentas ficticias, fuera del alcance automatizable en CI: requiere el deployment de desarrollo, sus variables y un navegador.
 
-Requisitos: `bunx convex dev` vinculado al proyecto compartido, secretos del backend configurados con `convex env set` (`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SITE_URL=http://localhost:5173`), `.env.local` en `apps/web` con `VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL` y `VITE_SITE_URL=http://localhost:5173`, y dos cuentas ficticias (una `@alu.uct.cl` y una externa).
+Requisitos: `bunx convex dev` vinculado al proyecto compartido, secretos del backend configurados con `convex env set` (`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SITE_URL=http://localhost:5173`), `.env.local` en `apps/web` con `VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL` y `VITE_SITE_URL=http://localhost:5173`, aplicación levantada con `bun run dev:web` desde la raíz (Convex más SPA en `http://localhost:5173`; ver README raíz) y dos cuentas ficticias (una `@alu.uct.cl` y una externa).
 
 Pasos: 1) ingresar con la cuenta `@alu.uct.cl` y comprobar “Sesión iniciada” con `getSessionState` en `authenticated`; 2) pulsar `Cerrar sesión` y comprobar el retorno al acceso institucional con la query en `{"status":"unauthenticated"}`; 3) ingresar con la cuenta externa y comprobar el mensaje genérico sin detalles; 4) con la sesión iniciada en dos pestañas, cerrar en una y comprobar en la otra el aviso “Tu sesión terminó. Vuelve a ingresar.”.
 
