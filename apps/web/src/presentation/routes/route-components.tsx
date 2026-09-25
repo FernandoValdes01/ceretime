@@ -42,7 +42,7 @@ export function LoginRouteComponent() {
 
 export function StudentLayoutRouteComponent() {
   return (
-    <RequireStudent session={useSessionState()}>
+    <RequireStudent session={useSessionState()} pair={useSessionAndRole()}>
       <StudentLayout />
     </RequireStudent>
   );

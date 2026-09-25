@@ -31,21 +31,27 @@ export function IndexPage({
     if (session.status === "unauthenticated") {
       return;
     }
-    if (session.population !== "estudiante") {
-      // Espera la confirmación antes de derivar: con el par de otra sesión
-      // aún en memoria se navegaría al portal anterior. También consume el
-      // retorno del personal: una subruta o búsqueda válida no debe perderse
-      // ni quedar almacenada para otra visita. El guard del destino
-      // comprueba el rol.
-      if (!isPairCurrent(session, pair)) {
+    // Espera la confirmación antes de derivar a cualquier portal: con el
+    // par de otra sesión aún en memoria se consumiría el retorno en vano y
+    // se navegaría al portal anterior.
+    if (!isPairCurrent(session, pair)) {
+      return;
+    }
+    // Deriva por rol del perfil: el personal va a su portal aunque su
+    // correo sea de estudiante; la población sola no decide. Sin perfil se
+    // mantiene la regla por población de TI2-6.
+    const role = pair.role;
+    if (role.status === "authenticated" && role.role !== "student") {
+      const home = staffHomeForRole(role.role);
+      if (home === null) {
+        navigateToPath("/denegado");
         return;
       }
-      const role = pair.role;
-      const home =
-        role.status === "authenticated"
-          ? (staffHomeForRole(role.role) ?? "/denegado")
-          : "/denegado";
       navigateToPath(consumeReturnTarget() ?? home);
+      return;
+    }
+    if (session.population !== "estudiante") {
+      navigateToPath("/denegado");
       return;
     }
     navigateToPath(consumeReturnTarget() ?? "/estudiante");

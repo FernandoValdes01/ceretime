@@ -389,3 +389,37 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
     expect(screen.queryByRole("heading", { name: "Portal del Profesional" })).toBeNull();
   });
 });
+
+describe("par inconsistente rol staff y correo estudiante (TI2-20)", () => {
+  const SESION_ESTUDIANTE: SesionFija = {
+    status: "authenticated",
+    email: "estudiante@alu.uct.cl",
+    name: "Estudiante Ficticio",
+    population: "estudiante",
+  };
+
+  test("el índice deriva por rol aunque la población difiera", async () => {
+    sessionMocks.setSession(SESION_ESTUDIANTE);
+    sessionMocks.setPair({
+      session: SESION_ESTUDIANTE,
+      role: rolDe("professional", "estudiante@alu.uct.cl"),
+    });
+    const { router } = renderAt("/");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/profesional"));
+    const portalHeading = await screen.findByRole("heading", { name: "Portal del Profesional" });
+    expect(portalHeading).toBeDefined();
+  });
+
+  test("el acceso directo a /estudiante deniega el rol staff sin exponer contenido", async () => {
+    sessionMocks.setSession(SESION_ESTUDIANTE);
+    sessionMocks.setPair({
+      session: SESION_ESTUDIANTE,
+      role: rolDe("professional", "estudiante@alu.uct.cl"),
+    });
+    const { router } = renderAt("/estudiante");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
+  });
+});
