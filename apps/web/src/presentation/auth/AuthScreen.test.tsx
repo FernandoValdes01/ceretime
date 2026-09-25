@@ -68,6 +68,21 @@ describe("cierre de sesión (TI2-15)", () => {
     await screen.findByRole("heading", { name: "Acceso institucional" });
   });
 
+  test("no sale de la sesión solo por llamar a signOut: sigue el estado observado", async () => {
+    // Fija el vínculo que el mock no puede probar por sí solo: la promesa
+    // de `signOut` no mueve la pantalla; solo el estado observado por
+    // `useQuery` la retorna al acceso (una navegación optimista fallaría aquí).
+    mockedServerState = SESION_ESTUDIANTE;
+    render(<AuthScreen />);
+    await screen.findByRole("heading", { name: "Sesión iniciada" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
+    await waitFor(() => expect(signOutMock).toHaveBeenCalledTimes(1));
+
+    expect(await screen.findByRole("heading", { name: "Sesión iniciada" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Acceso institucional" })).toBeNull();
+  });
+
   test("muestra el mensaje genérico cuando el cierre responde error", async () => {
     mockedServerState = SESION_ESTUDIANTE;
     signOutMock.mockResolvedValue({ error: { message: "falla interna" } });
