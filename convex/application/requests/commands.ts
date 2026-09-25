@@ -1,10 +1,17 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
+import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniment/accompaniment";
 import { ACCESS_NEEDS_MAX_LENGTH, toAccompanimentRequest } from "../../domain/request/request";
 import { transitionRequest } from "../../domain/request/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
+import {
+  findAccompanimentByRequest,
+  getAccompanimentById,
+  insertAccompaniment,
+  insertActiveAssignment,
+} from "../../infrastructure/accompaniments/repository";
 import {
   findActiveTake,
   getRequestById,
@@ -171,4 +178,83 @@ export async function takeRequest(
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   });
+}
+
+/**
+ * Acepta la solicitud y abre exactamente un acompañamiento (TI2-24).
+ *
+ * Solo un Profesional con cuenta vigente y con toma activa sobre la
+ * solicitud; cualquier otro caso recibe denegación genérica. La transición
+ * válida es `under_review` o `awaiting_information_or_acceptance` hacia
+ * `accepted` según la política de TI2-21; otro estado se rechaza sin
+ * modificar nada. El objetivo lo aporta quien acepta y es obligatorio.
+ *
+ * Todo ocurre en la misma transacción: estado, bitácora (actor y fecha),
+ * acompañamiento (estudiante, necesidades de acceso y vínculo a la solicitud
+ * de origen) y asignación inicial del Profesional responsable. Repetir la
+ * aceptación —incluso en concurrencia, que Convex serializa— encuentra el
+ * acompañamiento ya creado y se rechaza sin duplicar. La asignación inicial
+ * la otorga el propio acto de aceptación; la regla de no auto-otorgarse de
+ * TI2-28 rige las concesiones posteriores a terceros, no la apertura.
+ */
+export async function acceptRequest(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  input: { readonly requestId: Id<"requests">; readonly objective: string },
+): Promise<Accompaniment<Id<"accompaniments">, Id<"users">>> {
+  const professional = await requireActiveProfessional(ctx, identity);
+  const row = await getRequestById(ctx, input.requestId);
+  if (row === null) deny();
+  const take = await findActiveTake(ctx, input.requestId, professional._id);
+  if (take === null) deny();
+  const existing = await findAccompanimentByRequest(ctx, input.requestId);
+  if (existing !== null) {
+    throw new Error("La solicitud ya fue aceptada");
+  }
+  const result = transitionRequest({
+    from: row.status,
+    to: "accepted",
+    actorId: professional._id,
+    occurredAt: Date.now(),
+  });
+  if (result.status === "rejected") {
+    throw new Error("La solicitud no admite la aceptación en su estado actual");
+  }
+  const objective = toOpeningObjective(input.objective);
+  if (objective === null) {
+    throw new Error("Se requiere el objetivo para abrir el acompañamiento");
+  }
+  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await logRequestTransition(ctx, {
+    requestId: input.requestId,
+    from: result.change.from,
+    to: result.change.to,
+    actorId: professional._id,
+    occurredAt: result.change.occurredAt,
+  });
+  const accompanimentId = await insertAccompaniment(ctx, {
+    studentId: row.studentId,
+    objective,
+    accessNeeds: row.accessNeeds,
+    requestId: input.requestId,
+  });
+  await insertActiveAssignment(
+    ctx,
+    {
+      accompanimentId,
+      userId: professional._id,
+      assignedRole: "professional",
+    },
+    professional._id,
+  );
+  const opened = await getAccompanimentById(ctx, accompanimentId);
+  if (opened === null) deny();
+  return {
+    _id: opened._id,
+    studentId: opened.studentId,
+    status: opened.status,
+    objective: opened.objective,
+    accessNeeds: opened.accessNeeds,
+    view: "full" as const,
+  };
 }

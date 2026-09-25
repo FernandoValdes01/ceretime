@@ -4,6 +4,11 @@ on:
   pull_request:
     branches:
       - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
   push:
     branches:
       - main
@@ -35,6 +40,9 @@ jobs:
 
       - name: Probar publicación de resultados de CI
         run: bun test ./.github/ci-publication.test.ts
+
+      - name: Probar el gate de Greptile
+        run: bun test ./.github/greptile-score.test.ts
 
   mobile:
     name: Validación Mobile
@@ -74,6 +82,9 @@ jobs:
 
       - name: Ejecutar lint existente de Web
         run: bun run --cwd apps/web lint
+
+      - name: Ejecutar pruebas de Web
+        run: bun run test:web
 
       - name: Construir Web
         run: bun run --cwd apps/web build

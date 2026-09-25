@@ -45,7 +45,10 @@ export type TransitionRejectionCause = (typeof TRANSITION_REJECTION_CAUSES)[numb
 export type RequestTransitionResult =
   | {
       readonly status: "applied";
-      /** Entrada del registro append-only; la persiste la capa de aplicación. */
+      /**
+       * Entrada del historial de la solicitud, no de la bitácora de auditoría:
+       * trae el motivo. La persiste la capa de aplicación.
+       */
       readonly change: RequestStateChange;
       /**
        * Verdadero cuando este intento llega a `accepted`. No garantiza unicidad:
@@ -73,12 +76,12 @@ export function findSprint1Transition(
 
 /**
  * Todo rechazo retorna antes de construir `change`: un intento inválido no deja
- * registro porque el registro nunca llega a existir. Las causas se evalúan de
- * la más general a la más específica, así la que se reporta es la primera que
- * el llamador tiene que resolver.
+ * entrada en el historial porque la entrada nunca llega a existir. Las causas
+ * se evalúan de la más general a la más específica, así la que se reporta es la
+ * primera que el llamador tiene que resolver.
  *
- * `change` se construye desde la fila de la tabla y no desde el intento: así el
- * registro solo puede contener estados de Sprint 1, sin conversiones de tipo.
+ * `change` se construye desde la fila de la tabla y no desde el intento: así la
+ * entrada solo puede contener estados de Sprint 1, sin conversiones de tipo.
  */
 export function transitionRequest(attempt: RequestTransitionAttempt): RequestTransitionResult {
   const transition = findSprint1Transition(attempt.from, attempt.to);

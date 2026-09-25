@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Barrel de contratos compartidos de dominio (TI2-8).
  *
  * Punto único de importación para Web y Mobile: evita que cada consumidor

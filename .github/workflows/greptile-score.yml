@@ -1,0 +1,136 @@
+name: Sincronizar check de Greptile
+
+on:
+  issue_comment:
+    types:
+      - created
+      - edited
+      - deleted
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  resolve_pr:
+    name: Resolver PR para el status
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request &&
+      github.event.comment.user.login == 'greptile-apps[bot]' &&
+      github.event.comment.user.type == 'Bot')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      pull_number: ${{ steps.resolve.outputs.pull_number }}
+    steps:
+      - name: Identificar la PR afectada
+        id: resolve
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            if (context.eventName === 'issue_comment') {
+              core.setOutput('pull_number', String(context.payload.issue.number));
+              return;
+            }
+
+            const run = context.payload.workflow_run;
+            if (run?.event !== 'pull_request' || run?.name !== 'CI') {
+              return;
+            }
+
+            let pullNumber = run.pull_requests?.find((pull) => pull.base?.ref === 'main')?.number;
+            if (!pullNumber && run.head_branch && run.head_repository?.full_name) {
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+              const [headOwner] = run.head_repository.full_name.split('/');
+              const pullRequests = await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: 'open',
+                base: 'main',
+                head: `${headOwner}:${run.head_branch}`,
+                per_page: 100,
+              });
+              pullNumber = pullRequests.find((pull) =>
+                pull.head?.repo?.full_name?.toLowerCase() === run.head_repository.full_name.toLowerCase(),
+              )?.number;
+            }
+            if (pullNumber) {
+              core.setOutput('pull_number', String(pullNumber));
+            }
+
+  score:
+    name: Actualizar status Greptile 5/5
+    needs: resolve_pr
+    if: needs.resolve_pr.outputs.pull_number != ''
+    concurrency:
+      group: greptile-score-${{ needs.resolve_pr.outputs.pull_number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Validar la nota vigente para el commit actual
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pullNumber = Number('${{ needs.resolve_pr.outputs.pull_number }}');
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber,
+            });
+            if (pullRequest.base.ref !== 'main' || pullRequest.state !== 'open') {
+              return;
+            }
+
+            const headSha = pullRequest.head.sha.toLowerCase();
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pullNumber,
+              per_page: 100,
+            });
+            const summary = comments
+              .filter((comment) =>
+                comment.user?.login === 'greptile-apps[bot]' &&
+                comment.user?.type === 'Bot' &&
+                comment.body?.includes('<!-- greptile_summary -->'),
+              )
+              .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at) || b.id - a.id)[0];
+            const body = summary?.body ?? '';
+            const score = body.match(/Confidence Score:\s*([0-5])\/5\b/)?.[1];
+            const reviewedSha = body.match(/Last reviewed commit:[\s\S]*?\/commit\/([0-9a-f]{40})\b/i)?.[1]?.toLowerCase();
+            const current = reviewedSha === headSha;
+            const passed = current && score === '5';
+            const description = !summary
+              ? 'Falta la revisión de Greptile para este commit.'
+              : !current
+                ? 'La revisión de Greptile no corresponde al commit actual.'
+                : score === undefined
+                  ? 'Greptile no publicó una nota válida para el commit actual.'
+                  : score === '5'
+                    ? 'Greptile 5/5 para el commit actual.'
+                    : `Hay cambios pendientes de Greptile (${score}/5).`;
+
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: pullRequest.head.sha,
+              context: 'Greptile 5/5',
+              state: passed ? 'success' : 'failure',
+              description,
+              target_url: summary?.html_url ?? pullRequest.html_url,
+            });
+            core.info(description);
