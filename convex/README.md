@@ -50,9 +50,9 @@ Requisitos: `bunx convex dev` vinculado al proyecto compartido, secretos del bac
 
 Pasos: 1) ingresar con la cuenta `@alu.uct.cl` y comprobar “Sesión iniciada” con `getSessionState` en `authenticated`; 2) pulsar `Cerrar sesión` y comprobar el retorno al acceso institucional con la query en `{"status":"unauthenticated"}`; 3) ingresar con la cuenta externa y comprobar el mensaje genérico sin detalles; 4) con la sesión iniciada en dos pestañas, cerrar en una y comprobar en la otra el aviso “Tu sesión terminó. Vuelve a ingresar.”.
 
-| Paso | Fecha | Entorno | Responsable | Resultado |
-| --- | --- | --- | --- | --- |
-| 1 | pendiente | desarrollo local | por asignar | por registrar |
-| 2 | pendiente | desarrollo local | por asignar | por registrar |
-| 3 | pendiente | desarrollo local | por asignar | por registrar |
-| 4 | pendiente | desarrollo local | por asignar | por registrar |
+| Paso | Fecha     | Entorno          | Responsable | Resultado     |
+| ---- | --------- | ---------------- | ----------- | ------------- |
+| 1    | pendiente | desarrollo local | por asignar | por registrar |
+| 2    | pendiente | desarrollo local | por asignar | por registrar |
+| 3    | pendiente | desarrollo local | por asignar | por registrar |
+| 4    | pendiente | desarrollo local | por asignar | por registrar |
