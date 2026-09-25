@@ -9,12 +9,15 @@ import { findProfileByTokenIdentifier } from "../../infrastructure/accounts/repo
  * Devuelve el rol del perfil vinculado a la identidad cuando la cuenta
  * puede operar (habilitación institucional vigente y cuenta activa, como
  * exige `requireAuthorizedProfile`); sin identidad, sin perfil o sin
- * vigencia responde no autenticado. Solo lectura del propio perfil: no
- * decide permisos ni expone datos de terceros. La autorización efectiva
- * sigue en cada función guardada del Backend.
+ * vigencia responde no autenticado. Incluye el correo del perfil para que
+ * la Web vincule sesión y rol al mismo principal: al cambiar de cuenta
+ * ambas consultas se actualizan en momentos distintos y el rol anterior no
+ * debe abrir su portal. Solo lectura del propio perfil: no decide permisos
+ * ni expone datos de terceros. La autorización efectiva sigue en cada
+ * función guardada del Backend.
  */
 export type SessionRole =
-  | { readonly status: "authenticated"; readonly role: Role }
+  | { readonly status: "authenticated"; readonly role: Role; readonly email: string }
   | { readonly status: "unauthenticated" };
 
 export async function resolveSessionRole(
@@ -30,5 +33,5 @@ export async function resolveSessionRole(
   ) {
     return { status: "unauthenticated" };
   }
-  return { status: "authenticated", role: profile.role };
+  return { status: "authenticated", role: profile.role, email: profile.email };
 }

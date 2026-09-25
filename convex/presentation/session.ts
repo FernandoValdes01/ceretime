@@ -54,7 +54,7 @@ export const getSessionState = query({
 export const getSessionRole = query({
   args: {},
   returns: v.union(
-    v.object({ status: v.literal("authenticated"), role: roleUnion }),
+    v.object({ status: v.literal("authenticated"), role: roleUnion, email: v.string() }),
     v.object({ status: v.literal("unauthenticated") }),
   ),
   handler: async (ctx) => {

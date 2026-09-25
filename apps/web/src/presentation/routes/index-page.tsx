@@ -23,11 +23,15 @@ export function IndexPage({ session, role }: { session: WebSessionState; role: W
       return;
     }
     if (session.population !== "estudiante") {
-      // Espera el rol antes de derivar: sin perfil no hay portal conocido.
-      // También consume el retorno del personal: una subruta o búsqueda
-      // válida no debe perderse ni quedar almacenada para otra visita. El
-      // guard del destino comprueba el rol.
+      // Espera el rol vinculado al mismo principal antes de derivar: sin
+      // perfil no hay portal conocido y un rol desfasado de otra cuenta no
+      // sirve. También consume el retorno del personal: una subruta o
+      // búsqueda válida no debe perderse ni quedar almacenada para otra
+      // visita. El guard del destino comprueba el rol.
       if (role === undefined) {
+        return;
+      }
+      if (role.status === "authenticated" && session.email !== role.email) {
         return;
       }
       const home =

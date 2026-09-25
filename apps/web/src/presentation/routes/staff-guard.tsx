@@ -14,6 +14,10 @@ import type { StaffRole, WebSessionRole, WebSessionState } from "../session/sess
  * la autorización del Backend: cada lectura real la comprueba Convex aunque
  * la interfaz deje pasar.
  *
+ * Sesión y rol se vinculan al mismo principal (correo) antes de renderizar
+ * los hijos: al cambiar de cuenta ambas consultas se actualizan en momentos
+ * distintos y el rol anterior no debe abrir su portal durante ese intervalo.
+ *
  * La redirección es imperativa en efecto con dependencias estables, y la
  * ruta de retorno se captura una sola vez al montar (mismo motivo que en
  * `student-guard.tsx`: releer la ubicación optimista reiniciaría el ciclo).
@@ -36,9 +40,14 @@ export function RequireStaffRole({
   const [returnHref] = useState(href);
 
   const denied =
+    session !== undefined &&
     role !== undefined &&
-    (role.status === "unauthenticated" ||
-      (role.status === "authenticated" && !allowedRoles.includes(role.role)));
+    (session.status === "unauthenticated" ||
+      role.status === "unauthenticated" ||
+      (role.status === "authenticated" &&
+        session.status === "authenticated" &&
+        session.email === role.email &&
+        !allowedRoles.includes(role.role)));
 
   useEffect(() => {
     if (session === undefined) {
@@ -54,10 +63,20 @@ export function RequireStaffRole({
     if (role === undefined) {
       return;
     }
-    if (denied) {
+    if (role.status === "unauthenticated") {
+      void navigate({ to: "/denegado", replace: true });
+      return;
+    }
+    // Sin vínculo con el principal se espera sin navegar: el rol puede
+    // estar desfasado tras un cambio de cuenta y denegar acá expulsaría a
+    // una sesión legítima antes de que su rol llegue.
+    if (session.email !== role.email) {
+      return;
+    }
+    if (!allowedRoles.includes(role.role)) {
       void navigate({ to: "/denegado", replace: true });
     }
-  }, [session, role, denied, returnHref, navigate]);
+  }, [session, role, allowedRoles, returnHref, navigate]);
 
   // Sin backend la sesión nunca resuelve: se muestra el acceso con su
   // estado explícito en vez de un "Cargando…" indefinido. No expone
@@ -65,13 +84,16 @@ export function RequireStaffRole({
   if (!isBackendConfigured) {
     return <AuthScreen />;
   }
-  // El portal se oculta desde el primer render sin sesión, aunque el rol
-  // todavía conserve un valor anterior: tras perder la sesión no se vuelve
-  // a mostrar contenido protegido mientras se navega al acceso.
+  // El portal se oculta desde el primer render sin sesión o sin vínculo,
+  // aunque el rol todavía conserve un valor anterior: tras perder la sesión
+  // o al cambiar de cuenta no se vuelve a mostrar contenido protegido
+  // mientras se navega al acceso o se espera al rol vigente.
   if (
     session === undefined ||
     session.status === "unauthenticated" ||
     role === undefined ||
+    role.status === "unauthenticated" ||
+    session.email !== role.email ||
     denied
   ) {
     return <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>;

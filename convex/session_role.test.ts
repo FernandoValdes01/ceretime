@@ -56,7 +56,7 @@ test("cada rol recibe su portal", async () => {
     await seedUser(t, `ti20-${role}`, role);
     const caller = t.withIdentity(identityFor(`ti20-${role}`, `ti20-${role}@uct.cl`));
     const state = await caller.query(api.presentation.session.getSessionRole, {});
-    expect(state).toEqual({ status: "authenticated", role });
+    expect(state).toEqual({ status: "authenticated", role, email: `ti20-${role}@uct.cl` });
   }
 });
 
