@@ -143,6 +143,7 @@ test("keeps manual builds out of pull request CI", () => {
 
 test("runs integrated CI for pull requests and pushes to main", () => {
   expect(pullRequestWorkflow.on.pull_request.branches).toEqual(["main"]);
+  expect(pullRequestWorkflow.on.pull_request.types).toContain("ready_for_review");
   expect(pullRequestWorkflow.on.push.branches).toEqual(["main"]);
   const jobNames = Object.values(pullRequestWorkflow.jobs)
     .map((job: any) => job.name)
