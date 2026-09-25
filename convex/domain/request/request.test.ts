@@ -24,12 +24,17 @@ describe("AccompanimentRequestContent (TI2-8)", () => {
     );
   });
 
-  test("un payload de Mobile se tipa sin conversión manual", () => {
+  test("el espejo manual del payload de Mobile se tipa sin conversión manual", () => {
     expectTypeOf<MobileSubmitPayload>().toMatchTypeOf<AccompanimentRequestContent>();
   });
 });
 
-/** Misma forma que `SubmitStudentRequestCommand` de Mobile. */
+/**
+ * Espejo manual de la forma de `SubmitStudentRequestCommand` de Mobile, no
+ * el tipo real: los modelos de Mobile son provisionales y pertenecen a TI4,
+ * así que esta suite no depende de ellos. Si Mobile cambia, este espejo no
+ * lo detecta; TI4-12 lo reemplaza por la comprobación cableada.
+ */
 type MobileSubmitPayload = {
   readonly needSummary: string;
   readonly expectedOutcome: string;
