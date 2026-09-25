@@ -1,7 +1,13 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { SPRINT_1_REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
-import { toAccompanimentRequest, type AccompanimentRequestContent } from "./request";
+import {
+  ACCESS_NEEDS_MAX_LENGTH,
+  toAccessNeedsText,
+  toAccompanimentRequest,
+  type AccompanimentRequestContent,
+} from "./request";
 import type { AccompanimentRequest as BarrelAccompanimentRequest } from "../index";
+import { ACCESS_NEEDS_MAX_LENGTH as BarrelAccessNeedsMaxLength } from "../index";
 
 describe("AccompanimentRequestContent (TI2-8)", () => {
   test("describe la solicitud de Sprint 1 completa", () => {
@@ -76,6 +82,22 @@ describe("toAccompanimentRequest (TI2-8)", () => {
       createdAt: 1000,
     };
     expect(entity.status).toBe("received");
+  });
+});
+
+describe("toAccessNeedsText (TI2-26)", () => {
+  test("recorta el texto con contenido válido", () => {
+    expect(toAccessNeedsText("  Necesidad ficticia  ")).toBe("Necesidad ficticia");
+  });
+
+  test("rechaza el texto vacío o solo con espacios", () => {
+    expect(toAccessNeedsText("")).toBeNull();
+    expect(toAccessNeedsText("   ")).toBeNull();
+  });
+
+  test("el tope provisorio se comparte desde el barrel sin duplicarlo", () => {
+    expect(ACCESS_NEEDS_MAX_LENGTH).toBe(2000);
+    expect(BarrelAccessNeedsMaxLength).toBe(ACCESS_NEEDS_MAX_LENGTH);
   });
 });
 
