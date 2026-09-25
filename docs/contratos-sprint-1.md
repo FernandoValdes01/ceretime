@@ -19,7 +19,7 @@ Superficie pública versionada del Backend para los flujos comprometidos en Spri
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 |---|---|---|---|---|
-| `presentation/requests.createRequest` | `accessNeeds: string` (tope 2000 pendiente de integración en TI2-10; hoy solo valida `string`) | Solicitud en `received` | Estudiante vigente | Error genérico |
+| `presentation/requests.createRequest` | `accessNeeds: string` (tope 1–2000 implementado en PR #46, pendiente de merge; hoy solo valida `string`) | Solicitud en `received` | Estudiante vigente | Error genérico |
 | `presentation/requests.takeRequest` | `requestId` | Solicitud tomada | Profesional vigente | Fuera de `received` o con toma activa se rechaza |
 | `presentation/requests.requestAdditionalInformation` | `requestId`, `reason` (motivo obligatorio) | Solicitud en espera | Profesional con toma activa | Transición inválida o sin motivo se rechaza |
 | `presentation/requests.acceptRequest` | `requestId`, `objective` | Vista completa del acompañamiento aceptado; crea la asignación inicial | Profesional con toma activa | Solo desde estados que llevan a `accepted`; abre exactamente un acompañamiento |
@@ -43,7 +43,7 @@ Los resultados de dominio que pueden fallar usan `ApiResult<T>` (`{status: "ok",
 
 ## Topes y serialización (TI2-23)
 
-`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/request` y exportado por `convex/domain/index.ts` para que el Backend y los consumidores validen igual. La integración en el registro está pendiente en TI2-10: hoy la mutation solo valida `string`, así que un texto mayor aún se persiste. Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
+`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/request` y exportado por `convex/domain/index.ts` para que el Backend y los consumidores validen igual. La validación de 1–2000 caracteres en el registro ya está implementada en la PR #46 (TI2-10), aunque todavía no se integra en `main`: hoy la mutation solo valida `string`, así que un texto mayor aún se persiste. Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
 
 `toStoredRequestFields` convierte el contenido estructurado a la forma persistida uniendo etiquetas de `accessNeeds` más `otherAccessNeed` con salto de línea. Solo cubre condiciones de acceso: `needSummary`, `expectedOutcome`, modalidad y disponibilidad aún no tienen columna en Sprint 1 y quedan pendientes sin inventarles ubicación.
 
@@ -74,5 +74,5 @@ La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo 
 
 ## Pendientes
 
-- TI2-10 integra la validación del tope en el registro de solicitudes.
+- Coordinar con TI2-10 (PR #46) y TI2-26 (PR #52): ambas traen cambios equivalentes sobre los mismos archivos y falta definir cuál implementación se integra y el orden de merge.
 - TI4-12 cablea los hooks al Backend y resuelve las divergencias de valores.
