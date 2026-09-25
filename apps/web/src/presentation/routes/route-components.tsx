@@ -1,5 +1,5 @@
 import { Navigate, Outlet } from "@tanstack/react-router";
-import { useSessionRole, useSessionState } from "../session/session-state.ts";
+import { useSessionAndRole, useSessionState } from "../session/session-state.ts";
 import { IndexPage } from "./index-page.tsx";
 import { LoginPage } from "./login-page.tsx";
 import { RequireStudent } from "./student-guard.tsx";
@@ -33,7 +33,8 @@ export function NotFoundRedirect() {
 }
 
 export function IndexRouteComponent() {
-  return <IndexPage session={useSessionState()} role={useSessionRole()} />;
+  const pair = useSessionAndRole();
+  return <IndexPage session={pair?.session} role={pair?.role} />;
 }
 
 export function LoginRouteComponent() {
@@ -53,12 +54,9 @@ export function StudentIndexRouteComponent() {
 }
 
 export function ProfessionalLayoutRouteComponent() {
+  const pair = useSessionAndRole();
   return (
-    <RequireStaffRole
-      session={useSessionState()}
-      role={useSessionRole()}
-      allowedRoles={PROFESSIONAL_ROLES}
-    >
+    <RequireStaffRole session={pair?.session} role={pair?.role} allowedRoles={PROFESSIONAL_ROLES}>
       <ProfessionalLayout />
     </RequireStaffRole>
   );
@@ -69,12 +67,9 @@ export function ProfessionalIndexRouteComponent() {
 }
 
 export function PractitionerLayoutRouteComponent() {
+  const pair = useSessionAndRole();
   return (
-    <RequireStaffRole
-      session={useSessionState()}
-      role={useSessionRole()}
-      allowedRoles={PRACTITIONER_ROLES}
-    >
+    <RequireStaffRole session={pair?.session} role={pair?.role} allowedRoles={PRACTITIONER_ROLES}>
       <PractitionerLayout />
     </RequireStaffRole>
   );
@@ -85,12 +80,9 @@ export function PractitionerIndexRouteComponent() {
 }
 
 export function AdminLayoutRouteComponent() {
+  const pair = useSessionAndRole();
   return (
-    <RequireStaffRole
-      session={useSessionState()}
-      role={useSessionRole()}
-      allowedRoles={ADMIN_ROLES}
-    >
+    <RequireStaffRole session={pair?.session} role={pair?.role} allowedRoles={ADMIN_ROLES}>
       <AdminLayout />
     </RequireStaffRole>
   );

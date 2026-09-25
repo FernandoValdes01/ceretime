@@ -12,6 +12,14 @@ vi.mock("convex/react", () => ({
   useQuery: () => mockedSession,
 }));
 
+// El índice lee el par sesión y rol: acá el rol no se usa (flujos de
+// Estudiante o sin sesión), así que el par deriva de la sesión mockeada.
+vi.mock("../session/session-state", () => ({
+  useSessionState: () => mockedSession,
+  useSessionAndRole: () =>
+    mockedSession === undefined ? undefined : { session: mockedSession, role: undefined },
+}));
+
 vi.mock("../../infrastructure/auth/auth-client", () => ({
   authClient: { useSession: () => ({ isPending: false }) },
 }));

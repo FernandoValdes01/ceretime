@@ -6,66 +6,53 @@ import { createAppRouter } from "./router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 
 /**
- * Store reactivo de sesión para pruebas (TI2-20): los hooks mockeados se
- * suscriben y `set*` notifica dentro de `act`, así los cambios con el guard
- * montado re-renderizan como la reactividad real de Convex.
+ * Store reactivo del par sesión y rol (TI2-20): como en producción, ambas
+ * mitades viajan juntas en una única respuesta y `setPair` notifica dentro
+ * de `act`, así los cambios con el guard montado re-renderizan como la
+ * reactividad real de Convex. No existe estado intermedio con la sesión de
+ * una cuenta y el rol de otra.
  */
-const sessionMocks = vi.hoisted(() => {
-  let session: WebSessionState = undefined;
-  let role: WebSessionRole = undefined;
+const pairMocks = vi.hoisted(() => {
+  let pair: { session: WebSessionState; role: WebSessionRole } | undefined = undefined;
   let backendConfigured = true;
-  const sessionListeners = new Set<() => void>();
-  const roleListeners = new Set<() => void>();
+  const listeners = new Set<() => void>();
 
-  function notify(listeners: Set<() => void>) {
+  function notify() {
     listeners.forEach((listener) => listener());
   }
 
   return {
-    getSession: () => session,
-    getRole: () => role,
+    getPair: () => pair,
+    getSession: () => pair?.session,
     isBackendConfigured: () => backendConfigured,
-    setSession: (next: WebSessionState) => {
-      session = next;
-      notify(sessionListeners);
-    },
-    setRole: (next: WebSessionRole) => {
-      role = next;
-      notify(roleListeners);
+    setPair: (next: { session: WebSessionState; role: WebSessionRole } | undefined) => {
+      pair = next;
+      notify();
     },
     setBackendConfigured: (next: boolean) => {
       backendConfigured = next;
     },
-    subscribeSession: (listener: () => void) => {
-      sessionListeners.add(listener);
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
       return () => {
-        sessionListeners.delete(listener);
-      };
-    },
-    subscribeRole: (listener: () => void) => {
-      roleListeners.add(listener);
-      return () => {
-        roleListeners.delete(listener);
+        listeners.delete(listener);
       };
     },
     reset: () => {
-      session = undefined;
-      role = undefined;
+      pair = undefined;
       backendConfigured = true;
-      sessionListeners.clear();
-      roleListeners.clear();
+      listeners.clear();
     },
   };
 });
 
-vi.mock("convex/react", () => ({ useQuery: () => sessionMocks.getSession() }));
+vi.mock("convex/react", () => ({ useQuery: () => pairMocks.getSession() }));
 
 vi.mock("../session/session-state", async () => {
   const { useSyncExternalStore } = await import("react");
   return {
-    useSessionState: () =>
-      useSyncExternalStore(sessionMocks.subscribeSession, sessionMocks.getSession),
-    useSessionRole: () => useSyncExternalStore(sessionMocks.subscribeRole, sessionMocks.getRole),
+    useSessionState: () => useSyncExternalStore(pairMocks.subscribe, pairMocks.getSession),
+    useSessionAndRole: () => useSyncExternalStore(pairMocks.subscribe, pairMocks.getPair),
   };
 });
 
@@ -77,7 +64,7 @@ vi.mock("../../infrastructure/convex/convex-client", () => ({
   convexUrl: "https://test.convex.cloud",
   convexSiteUrl: "https://test.convex.site",
   get isBackendConfigured() {
-    return sessionMocks.isBackendConfigured();
+    return pairMocks.isBackendConfigured();
   },
   convexClient: {},
 }));
@@ -100,7 +87,7 @@ beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_URL", "https://test.convex.cloud");
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
   sessionStorage.clear();
-  sessionMocks.reset();
+  pairMocks.reset();
 });
 
 afterEach(() => {
@@ -147,8 +134,7 @@ const PORTALES = [
 
 describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
   test("el acceso directo sin sesión redirige al acceso conservando el retorno", async () => {
-    sessionMocks.setSession(SIN_SESION);
-    sessionMocks.setRole(ROL_DESCONOCIDO);
+    pairMocks.setPair({ session: SIN_SESION, role: ROL_DESCONOCIDO });
     const { router } = renderAt(portal.ruta);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
@@ -160,17 +146,18 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
 
   test.each(portal.ajenos)("el rol %s ve denegado sin contenido del portal", async (rolAjeno) => {
     const emailAjeno = rolAjeno === "student" ? "estudiante@alu.uct.cl" : `${rolAjeno}@uct.cl`;
-    sessionMocks.setSession(
-      rolAjeno === "student"
-        ? {
-            status: "authenticated",
-            email: emailAjeno,
-            name: "Estudiante Ficticio",
-            population: "estudiante",
-          }
-        : sesionPersonal(emailAjeno),
-    );
-    sessionMocks.setRole(rolDe(rolAjeno, emailAjeno));
+    pairMocks.setPair({
+      session:
+        rolAjeno === "student"
+          ? {
+              status: "authenticated",
+              email: emailAjeno,
+              name: "Estudiante Ficticio",
+              population: "estudiante",
+            }
+          : sesionPersonal(emailAjeno),
+      role: rolDe(rolAjeno, emailAjeno),
+    });
     const { router } = renderAt(portal.ruta);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
@@ -180,8 +167,7 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
   });
 
   test("la sesión sin perfil ve denegado aunque esté autenticada", async () => {
-    sessionMocks.setSession(sesionPersonal("fantasma@uct.cl"));
-    sessionMocks.setRole(ROL_DESCONOCIDO);
+    pairMocks.setPair({ session: sesionPersonal("fantasma@uct.cl"), role: ROL_DESCONOCIDO });
     const { router } = renderAt(portal.ruta);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
@@ -189,8 +175,10 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
   });
 
   test("el rol permitido ve su portal sin redirigir", async () => {
-    sessionMocks.setSession(sesionPersonal(`${portal.rol}@uct.cl`));
-    sessionMocks.setRole(rolDe(portal.rol, `${portal.rol}@uct.cl`));
+    pairMocks.setPair({
+      session: sesionPersonal(`${portal.rol}@uct.cl`),
+      role: rolDe(portal.rol, `${portal.rol}@uct.cl`),
+    });
     const { router } = renderAt(portal.ruta);
 
     const portalHeading = await screen.findByRole("heading", { name: portal.titulo });
@@ -201,8 +189,10 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
 
 describe("límites de navegación por rol (TI2-20)", () => {
   test("el Practicante no enlaza acompañamientos concretos", async () => {
-    sessionMocks.setSession(sesionPersonal("intern@uct.cl"));
-    sessionMocks.setRole(rolDe("intern", "intern@uct.cl"));
+    pairMocks.setPair({
+      session: sesionPersonal("intern@uct.cl"),
+      role: rolDe("intern", "intern@uct.cl"),
+    });
     renderAt("/practicante");
 
     await screen.findByRole("heading", { name: "Portal del Practicante" });
@@ -214,8 +204,10 @@ describe("límites de navegación por rol (TI2-20)", () => {
   });
 
   test("el Administrador no enlaza acompañamientos ni notas internas", async () => {
-    sessionMocks.setSession(sesionPersonal("admin@uct.cl"));
-    sessionMocks.setRole(rolDe("admin", "admin@uct.cl"));
+    pairMocks.setPair({
+      session: sesionPersonal("admin@uct.cl"),
+      role: rolDe("admin", "admin@uct.cl"),
+    });
     renderAt("/administrador");
 
     await screen.findByRole("heading", { name: "Portal de Administración" });
@@ -227,8 +219,10 @@ describe("límites de navegación por rol (TI2-20)", () => {
   });
 
   test("el Profesional no entra al portal del Estudiante", async () => {
-    sessionMocks.setSession(sesionPersonal("pro@uct.cl"));
-    sessionMocks.setRole(rolDe("professional", "pro@uct.cl"));
+    pairMocks.setPair({
+      session: sesionPersonal("pro@uct.cl"),
+      role: rolDe("professional", "pro@uct.cl"),
+    });
     const { router } = renderAt("/estudiante");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
@@ -242,24 +236,27 @@ describe("derivación por rol (TI2-20)", () => {
     ["intern", "/practicante"],
     ["admin", "/administrador"],
   ] as const)("el índice deriva al portal de %s", async (rol, destino) => {
-    sessionMocks.setSession(sesionPersonal(`${rol}@uct.cl`));
-    sessionMocks.setRole(rolDe(rol, `${rol}@uct.cl`));
+    pairMocks.setPair({
+      session: sesionPersonal(`${rol}@uct.cl`),
+      role: rolDe(rol, `${rol}@uct.cl`),
+    });
     const { router } = renderAt("/");
 
     await waitFor(() => expect(router.state.location.pathname).toBe(destino));
   });
 
   test("el índice sin rol conocido deriva a denegado", async () => {
-    sessionMocks.setSession(sesionPersonal("fantasma@uct.cl"));
-    sessionMocks.setRole(ROL_DESCONOCIDO);
+    pairMocks.setPair({ session: sesionPersonal("fantasma@uct.cl"), role: ROL_DESCONOCIDO });
     const { router } = renderAt("/");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
   });
 
   test("el acceso con retorno navega ahí para cualquier población", async () => {
-    sessionMocks.setSession(sesionPersonal("pro@uct.cl"));
-    sessionMocks.setRole(rolDe("professional", "pro@uct.cl"));
+    pairMocks.setPair({
+      session: sesionPersonal("pro@uct.cl"),
+      role: rolDe("professional", "pro@uct.cl"),
+    });
     const { router } = renderAt("/login?redirect=/profesional");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/profesional"));
@@ -270,17 +267,19 @@ describe("derivación por rol (TI2-20)", () => {
 
 describe("transiciones de sesión con el guard montado (TI2-20)", () => {
   test("perder la sesión oculta el portal y navega al acceso aunque el rol siga vigente", async () => {
-    sessionMocks.setSession(sesionPersonal("pro@uct.cl"));
-    sessionMocks.setRole(rolDe("professional", "pro@uct.cl"));
+    pairMocks.setPair({
+      session: sesionPersonal("pro@uct.cl"),
+      role: rolDe("professional", "pro@uct.cl"),
+    });
     const { router } = renderAt("/profesional");
 
     const portalHeading = await screen.findByRole("heading", { name: "Portal del Profesional" });
     expect(portalHeading).toBeDefined();
 
-    // La sesión cae pero el rol todavía conserva el valor anterior: el
-    // portal debe ocultarse desde el primer render sin sesión.
+    // La sesión cae pero el par conserva el rol anterior: el portal debe
+    // ocultarse desde el primer render sin sesión.
     act(() => {
-      sessionMocks.setSession(SIN_SESION);
+      pairMocks.setPair({ session: SIN_SESION, role: rolDe("professional", "pro@uct.cl") });
     });
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
@@ -288,17 +287,19 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
     expect(screen.queryByRole("heading", { name: "Portal del Profesional" })).toBeNull();
   });
 
-  test("el índice espera al rol pendiente y deriva al portal cuando se resuelve", async () => {
-    sessionMocks.setSession(sesionPersonal("pro@uct.cl"));
+  test("el índice espera al par pendiente y deriva al portal cuando se resuelve", async () => {
     const { router } = renderAt("/");
 
-    // Rol todavía pendiente: muestra carga sin navegar a ningún lado.
+    // Par todavía pendiente: muestra carga sin navegar a ningún lado.
     const loading = await screen.findByRole("status");
     expect(loading).toBeDefined();
     expect(router.state.location.pathname).toBe("/");
 
     act(() => {
-      sessionMocks.setRole(rolDe("professional", "pro@uct.cl"));
+      pairMocks.setPair({
+        session: sesionPersonal("pro@uct.cl"),
+        role: rolDe("professional", "pro@uct.cl"),
+      });
     });
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/profesional"));
@@ -306,32 +307,41 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
     expect(portalHeading).toBeDefined();
   });
 
-  test("al cambiar de cuenta no monta el portal del rol anterior desfasado", async () => {
-    sessionMocks.setSession(sesionPersonal("pro@uct.cl"));
-    sessionMocks.setRole(rolDe("professional", "pro@uct.cl"));
+  test("al cambiar de cuenta el portal anterior no aparece con la sesión nueva", async () => {
+    pairMocks.setPair({
+      session: sesionPersonal("pro@uct.cl"),
+      role: rolDe("professional", "pro@uct.cl"),
+    });
     const { router } = renderAt("/profesional");
 
     const portalHeading = await screen.findByRole("heading", { name: "Portal del Profesional" });
     expect(portalHeading).toBeDefined();
 
-    // Cambia la cuenta pero el rol aún trae el principal anterior: el
-    // portal debe ocultarse sin navegar, esperando al rol vigente.
+    // El cambio de cuenta llega vinculado: sesión y rol nuevos a la vez,
+    // así el portal anterior jamás se monta con la sesión nueva.
     act(() => {
-      sessionMocks.setSession(sesionPersonal("intern@uct.cl"));
-    });
-
-    await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: "Portal del Profesional" })).toBeNull();
-    });
-    expect(router.state.location.pathname).toBe("/profesional");
-
-    // El rol se actualiza al principal nuevo: como no tiene acceso acá,
-    // deriva a denegado sin haber mostrado el portal anterior.
-    act(() => {
-      sessionMocks.setRole(rolDe("intern", "intern@uct.cl"));
+      pairMocks.setPair({
+        session: sesionPersonal("intern@uct.cl"),
+        role: rolDe("intern", "intern@uct.cl"),
+      });
     });
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
     expect(screen.queryByRole("heading", { name: "Portal del Profesional" })).toBeNull();
+  });
+
+  test("un correo de perfil distinto al de la identidad no bloquea el portal", async () => {
+    pairMocks.setPair({
+      session: sesionPersonal("nuevo@uct.cl"),
+      role: rolDe("professional", "viejo@uct.cl"),
+    });
+    const { router } = renderAt("/profesional");
+
+    // El arranque admite correo y tokenIdentifier independientes: exigir
+    // igualdad dejaría "Cargando…" para siempre. El vínculo es la
+    // identidad común de la respuesta, no los correos.
+    const portalHeading = await screen.findByRole("heading", { name: "Portal del Profesional" });
+    expect(portalHeading).toBeDefined();
+    expect(router.state.location.pathname).toBe("/profesional");
   });
 });

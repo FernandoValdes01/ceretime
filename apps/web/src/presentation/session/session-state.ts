@@ -16,16 +16,24 @@ export function useSessionState() {
 export type WebSessionState = ReturnType<typeof useSessionState>;
 
 /**
- * Rol propio para navegación web (TI2-20): `undefined` mientras carga,
- * autenticado con rol o no autenticado (sin identidad o sin perfil) después.
- * Solo elige portal; no autoriza nada por sí mismo.
+ * Sesión y rol propio para navegación Web (TI2-20): `undefined` mientras
+ * carga, par autenticado/no-autenticado después. Ambas mitades salen de la
+ * misma identidad en una única respuesta, así la Web nunca observa la
+ * sesión de una cuenta con el rol de otra. Solo elige portal; no autoriza
+ * nada por sí mismo.
  */
-export function useSessionRole() {
-  return useQuery(api.presentation.session.getSessionRole);
+export function useSessionAndRole() {
+  return useQuery(api.presentation.session.getSessionWithRole);
 }
 
+/** Forma del par sesión y rol para props y pruebas de guards. */
+export type WebSessionAndRole = ReturnType<typeof useSessionAndRole>;
+
+/** Par resuelto, sin el `undefined` de carga. */
+type ResolvedSessionAndRole = NonNullable<WebSessionAndRole>;
+
 /** Forma del rol de sesión para props y pruebas de guards. */
-export type WebSessionRole = ReturnType<typeof useSessionRole>;
+export type WebSessionRole = ResolvedSessionAndRole["role"] | undefined;
 
 /** Roles institucionales que el Backend puede reportar. */
 export type StaffRole = Extract<
