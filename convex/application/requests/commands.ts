@@ -35,7 +35,7 @@ function deny(): never {
  * Estudiante con cuenta vigente puede registrar; cualquier otro caso recibe
  * denegación genérica, sin motivo ni existencia del recurso. La necesidad de
  * acceso se valida como texto no vacío hasta el tope del contrato
- * (`ACCESS_NEEDS_MAX_LENGTH`, provisorio hasta que TI2-23 lo confirme).
+ * (`ACCESS_NEEDS_MAX_LENGTH`, valor acordado en TI2-23).
  */
 export async function registerRequest(
   ctx: MutationCtx,
