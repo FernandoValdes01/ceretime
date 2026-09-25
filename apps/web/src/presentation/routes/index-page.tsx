@@ -2,10 +2,10 @@ import { useEffect } from "react";
 import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-login.ts";
 import { isBackendConfigured } from "../../infrastructure/convex/convex-client.ts";
 import { AuthScreen } from "../auth/AuthScreen.tsx";
-import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
+import type { WebSessionAndRole, WebSessionState } from "../session/session-state.ts";
 import { useNavigateToPath } from "./navigation.ts";
 import { consumeReturnTarget } from "./return-target.ts";
-import { staffHomeForRole } from "./staff-portal-roles.ts";
+import { isPairCurrent, staffHomeForRole } from "./staff-portal-roles.ts";
 
 /**
  * Índice `/` (TI2-6, TI2-20).
@@ -15,22 +15,32 @@ import { staffHomeForRole } from "./staff-portal-roles.ts";
  * al portal del Estudiante (consumiendo el retorno conservado) o al portal
  * del rol del personal; sin rol conocido va a denegado.
  */
-export function IndexPage({ session, role }: { session: WebSessionState; role: WebSessionRole }) {
+export function IndexPage({
+  session,
+  pair,
+}: {
+  session: WebSessionState;
+  pair: WebSessionAndRole;
+}) {
   const navigateToPath = useNavigateToPath();
 
   useEffect(() => {
-    if (session === undefined || session.status === "unauthenticated") {
+    if (session === undefined || pair === undefined) {
+      return;
+    }
+    if (session.status === "unauthenticated") {
       return;
     }
     if (session.population !== "estudiante") {
-      // Espera el par completo antes de derivar: sesión y rol llegan
-      // vinculados al mismo principal en una única respuesta, así no hay
-      // rol desfasado que valga. También consume el retorno del personal:
-      // una subruta o búsqueda válida no debe perderse ni quedar almacenada
-      // para otra visita. El guard del destino comprueba el rol.
-      if (role === undefined) {
+      // Espera la confirmación antes de derivar: con el par de otra sesión
+      // aún en memoria se navegaría al portal anterior. También consume el
+      // retorno del personal: una subruta o búsqueda válida no debe perderse
+      // ni quedar almacenada para otra visita. El guard del destino
+      // comprueba el rol.
+      if (!isPairCurrent(session, pair)) {
         return;
       }
+      const role = pair.role;
       const home =
         role.status === "authenticated"
           ? (staffHomeForRole(role.role) ?? "/denegado")
@@ -39,7 +49,7 @@ export function IndexPage({ session, role }: { session: WebSessionState; role: W
       return;
     }
     navigateToPath(consumeReturnTarget() ?? "/estudiante");
-  }, [session, role, navigateToPath]);
+  }, [session, pair, navigateToPath]);
 
   // Sin backend la sesión nunca resuelve: se muestra el acceso, que ya
   // contiene el estado explícito de configuración faltante, en vez de un

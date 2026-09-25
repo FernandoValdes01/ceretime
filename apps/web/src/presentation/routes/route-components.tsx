@@ -33,8 +33,7 @@ export function NotFoundRedirect() {
 }
 
 export function IndexRouteComponent() {
-  const pair = useSessionAndRole();
-  return <IndexPage session={pair?.session} role={pair?.role} />;
+  return <IndexPage session={useSessionState()} pair={useSessionAndRole()} />;
 }
 
 export function LoginRouteComponent() {
@@ -54,9 +53,12 @@ export function StudentIndexRouteComponent() {
 }
 
 export function ProfessionalLayoutRouteComponent() {
-  const pair = useSessionAndRole();
   return (
-    <RequireStaffRole session={pair?.session} role={pair?.role} allowedRoles={PROFESSIONAL_ROLES}>
+    <RequireStaffRole
+      session={useSessionState()}
+      pair={useSessionAndRole()}
+      allowedRoles={PROFESSIONAL_ROLES}
+    >
       <ProfessionalLayout />
     </RequireStaffRole>
   );
@@ -67,9 +69,12 @@ export function ProfessionalIndexRouteComponent() {
 }
 
 export function PractitionerLayoutRouteComponent() {
-  const pair = useSessionAndRole();
   return (
-    <RequireStaffRole session={pair?.session} role={pair?.role} allowedRoles={PRACTITIONER_ROLES}>
+    <RequireStaffRole
+      session={useSessionState()}
+      pair={useSessionAndRole()}
+      allowedRoles={PRACTITIONER_ROLES}
+    >
       <PractitionerLayout />
     </RequireStaffRole>
   );
@@ -80,9 +85,12 @@ export function PractitionerIndexRouteComponent() {
 }
 
 export function AdminLayoutRouteComponent() {
-  const pair = useSessionAndRole();
   return (
-    <RequireStaffRole session={pair?.session} role={pair?.role} allowedRoles={ADMIN_ROLES}>
+    <RequireStaffRole
+      session={useSessionState()}
+      pair={useSessionAndRole()}
+      allowedRoles={ADMIN_ROLES}
+    >
       <AdminLayout />
     </RequireStaffRole>
   );

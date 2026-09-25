@@ -16,8 +16,22 @@ vi.mock("convex/react", () => ({
 // Estudiante o sin sesión), así que el par deriva de la sesión mockeada.
 vi.mock("../session/session-state", () => ({
   useSessionState: () => mockedSession,
-  useSessionAndRole: () =>
-    mockedSession === undefined ? undefined : { session: mockedSession, role: undefined },
+  useSessionAndRole: () => {
+    if (mockedSession === undefined) return undefined;
+    if (mockedSession.status === "unauthenticated") {
+      return { session: mockedSession, role: { status: "unauthenticated" } };
+    }
+    if (mockedSession.population === "estudiante") {
+      return {
+        session: mockedSession,
+        role: { status: "authenticated", role: "student", email: mockedSession.email },
+      };
+    }
+    return {
+      session: mockedSession,
+      role: { status: "unauthenticated" },
+    };
+  },
 }));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({

@@ -29,11 +29,8 @@ export function useSessionAndRole() {
 /** Forma del par sesión y rol para props y pruebas de guards. */
 export type WebSessionAndRole = ReturnType<typeof useSessionAndRole>;
 
-/** Par resuelto, sin el `undefined` de carga. */
-type ResolvedSessionAndRole = NonNullable<WebSessionAndRole>;
-
 /** Forma del rol de sesión para props y pruebas de guards. */
-export type WebSessionRole = ResolvedSessionAndRole["role"] | undefined;
+export type WebSessionRole = NonNullable<WebSessionAndRole>["role"];
 
 /** Roles institucionales que el Backend puede reportar. */
 export type StaffRole = Extract<

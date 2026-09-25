@@ -3,17 +3,22 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
-import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
+import type {
+  WebSessionAndRole,
+  WebSessionRole,
+  WebSessionState,
+} from "../session/session-state.ts";
 
 /**
- * Store reactivo del par sesión y rol (TI2-20): como en producción, ambas
- * mitades viajan juntas en una única respuesta y `setPair` notifica dentro
- * de `act`, así los cambios con el guard montado re-renderizan como la
- * reactividad real de Convex. No existe estado intermedio con la sesión de
- * una cuenta y el rol de otra.
+ * Stores reactivos de sesión y par (TI2-20): dos suscripciones
+ * independientes como en producción (`getSessionState` y
+ * `getSessionWithRole` se actualizan por separado). Sin valor propio, la
+ * sesión refleja el par (flujo normal); los tests de desfase fijan ambos
+ * por separado. `set*` notifica dentro de `act` en cada prueba.
  */
-const pairMocks = vi.hoisted(() => {
-  let pair: { session: WebSessionState; role: WebSessionRole } | undefined = undefined;
+const sessionMocks = vi.hoisted(() => {
+  let session: WebSessionState = undefined;
+  let pair: WebSessionAndRole = undefined;
   let backendConfigured = true;
   const listeners = new Set<() => void>();
 
@@ -22,10 +27,14 @@ const pairMocks = vi.hoisted(() => {
   }
 
   return {
+    getSession: () => session ?? pair?.session,
     getPair: () => pair,
-    getSession: () => pair?.session,
     isBackendConfigured: () => backendConfigured,
-    setPair: (next: { session: WebSessionState; role: WebSessionRole } | undefined) => {
+    setSession: (next: WebSessionState) => {
+      session = next;
+      notify();
+    },
+    setPair: (next: WebSessionAndRole) => {
       pair = next;
       notify();
     },
@@ -39,6 +48,7 @@ const pairMocks = vi.hoisted(() => {
       };
     },
     reset: () => {
+      session = undefined;
       pair = undefined;
       backendConfigured = true;
       listeners.clear();
@@ -46,13 +56,13 @@ const pairMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("convex/react", () => ({ useQuery: () => pairMocks.getSession() }));
+vi.mock("convex/react", () => ({ useQuery: () => sessionMocks.getSession() }));
 
 vi.mock("../session/session-state", async () => {
   const { useSyncExternalStore } = await import("react");
   return {
-    useSessionState: () => useSyncExternalStore(pairMocks.subscribe, pairMocks.getSession),
-    useSessionAndRole: () => useSyncExternalStore(pairMocks.subscribe, pairMocks.getPair),
+    useSessionState: () => useSyncExternalStore(sessionMocks.subscribe, sessionMocks.getSession),
+    useSessionAndRole: () => useSyncExternalStore(sessionMocks.subscribe, sessionMocks.getPair),
   };
 });
 
@@ -64,22 +74,22 @@ vi.mock("../../infrastructure/convex/convex-client", () => ({
   convexUrl: "https://test.convex.cloud",
   convexSiteUrl: "https://test.convex.site",
   get isBackendConfigured() {
-    return pairMocks.isBackendConfigured();
+    return sessionMocks.isBackendConfigured();
   },
   convexClient: {},
 }));
 
-const SIN_SESION: WebSessionState = { status: "unauthenticated" };
-const ROL_DESCONOCIDO: WebSessionRole = { status: "unauthenticated" };
+type SesionFija = Exclude<WebSessionState, undefined>;
+type RolFijo = Exclude<WebSessionRole, undefined>;
 
-function sesionPersonal(email: string): WebSessionState {
+const SIN_SESION: SesionFija = { status: "unauthenticated" };
+const ROL_DESCONOCIDO: RolFijo = { status: "unauthenticated" };
+
+function sesionPersonal(email: string): SesionFija {
   return { status: "authenticated", email, name: "Personal Ficticio", population: "personal" };
 }
 
-function rolDe(
-  role: "professional" | "intern" | "admin" | "student",
-  email: string,
-): WebSessionRole {
+function rolDe(role: "professional" | "intern" | "admin" | "student", email: string): RolFijo {
   return { status: "authenticated", role, email };
 }
 
@@ -87,7 +97,7 @@ beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_URL", "https://test.convex.cloud");
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
   sessionStorage.clear();
-  pairMocks.reset();
+  sessionMocks.reset();
 });
 
 afterEach(() => {
@@ -134,7 +144,7 @@ const PORTALES = [
 
 describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
   test("el acceso directo sin sesión redirige al acceso conservando el retorno", async () => {
-    pairMocks.setPair({ session: SIN_SESION, role: ROL_DESCONOCIDO });
+    sessionMocks.setPair({ session: SIN_SESION, role: ROL_DESCONOCIDO });
     const { router } = renderAt(portal.ruta);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
@@ -146,7 +156,7 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
 
   test.each(portal.ajenos)("el rol %s ve denegado sin contenido del portal", async (rolAjeno) => {
     const emailAjeno = rolAjeno === "student" ? "estudiante@alu.uct.cl" : `${rolAjeno}@uct.cl`;
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session:
         rolAjeno === "student"
           ? {
@@ -167,7 +177,7 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
   });
 
   test("la sesión sin perfil ve denegado aunque esté autenticada", async () => {
-    pairMocks.setPair({ session: sesionPersonal("fantasma@uct.cl"), role: ROL_DESCONOCIDO });
+    sessionMocks.setPair({ session: sesionPersonal("fantasma@uct.cl"), role: ROL_DESCONOCIDO });
     const { router } = renderAt(portal.ruta);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
@@ -175,7 +185,7 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
   });
 
   test("el rol permitido ve su portal sin redirigir", async () => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal(`${portal.rol}@uct.cl`),
       role: rolDe(portal.rol, `${portal.rol}@uct.cl`),
     });
@@ -189,7 +199,7 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
 
 describe("límites de navegación por rol (TI2-20)", () => {
   test("el Practicante no enlaza acompañamientos concretos", async () => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal("intern@uct.cl"),
       role: rolDe("intern", "intern@uct.cl"),
     });
@@ -204,7 +214,7 @@ describe("límites de navegación por rol (TI2-20)", () => {
   });
 
   test("el Administrador no enlaza acompañamientos ni notas internas", async () => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal("admin@uct.cl"),
       role: rolDe("admin", "admin@uct.cl"),
     });
@@ -219,7 +229,7 @@ describe("límites de navegación por rol (TI2-20)", () => {
   });
 
   test("el Profesional no entra al portal del Estudiante", async () => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal("pro@uct.cl"),
       role: rolDe("professional", "pro@uct.cl"),
     });
@@ -236,7 +246,7 @@ describe("derivación por rol (TI2-20)", () => {
     ["intern", "/practicante"],
     ["admin", "/administrador"],
   ] as const)("el índice deriva al portal de %s", async (rol, destino) => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal(`${rol}@uct.cl`),
       role: rolDe(rol, `${rol}@uct.cl`),
     });
@@ -246,14 +256,14 @@ describe("derivación por rol (TI2-20)", () => {
   });
 
   test("el índice sin rol conocido deriva a denegado", async () => {
-    pairMocks.setPair({ session: sesionPersonal("fantasma@uct.cl"), role: ROL_DESCONOCIDO });
+    sessionMocks.setPair({ session: sesionPersonal("fantasma@uct.cl"), role: ROL_DESCONOCIDO });
     const { router } = renderAt("/");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
   });
 
   test("el acceso con retorno navega ahí para cualquier población", async () => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal("pro@uct.cl"),
       role: rolDe("professional", "pro@uct.cl"),
     });
@@ -267,7 +277,7 @@ describe("derivación por rol (TI2-20)", () => {
 
 describe("transiciones de sesión con el guard montado (TI2-20)", () => {
   test("perder la sesión oculta el portal y navega al acceso aunque el rol siga vigente", async () => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal("pro@uct.cl"),
       role: rolDe("professional", "pro@uct.cl"),
     });
@@ -279,7 +289,7 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
     // La sesión cae pero el par conserva el rol anterior: el portal debe
     // ocultarse desde el primer render sin sesión.
     act(() => {
-      pairMocks.setPair({ session: SIN_SESION, role: rolDe("professional", "pro@uct.cl") });
+      sessionMocks.setPair({ session: SIN_SESION, role: rolDe("professional", "pro@uct.cl") });
     });
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
@@ -296,7 +306,7 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
     expect(router.state.location.pathname).toBe("/");
 
     act(() => {
-      pairMocks.setPair({
+      sessionMocks.setPair({
         session: sesionPersonal("pro@uct.cl"),
         role: rolDe("professional", "pro@uct.cl"),
       });
@@ -308,7 +318,7 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
   });
 
   test("al cambiar de cuenta el portal anterior no aparece con la sesión nueva", async () => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal("pro@uct.cl"),
       role: rolDe("professional", "pro@uct.cl"),
     });
@@ -320,7 +330,7 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
     // El cambio de cuenta llega vinculado: sesión y rol nuevos a la vez,
     // así el portal anterior jamás se monta con la sesión nueva.
     act(() => {
-      pairMocks.setPair({
+      sessionMocks.setPair({
         session: sesionPersonal("intern@uct.cl"),
         role: rolDe("intern", "intern@uct.cl"),
       });
@@ -331,7 +341,7 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
   });
 
   test("un correo de perfil distinto al de la identidad no bloquea el portal", async () => {
-    pairMocks.setPair({
+    sessionMocks.setPair({
       session: sesionPersonal("nuevo@uct.cl"),
       role: rolDe("professional", "viejo@uct.cl"),
     });
@@ -343,5 +353,39 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
     const portalHeading = await screen.findByRole("heading", { name: "Portal del Profesional" });
     expect(portalHeading).toBeDefined();
     expect(router.state.location.pathname).toBe("/profesional");
+  });
+
+  test("con el par desfasado tras un cambio de cuenta no renderiza ni navega", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("pro@uct.cl"),
+      role: rolDe("professional", "pro@uct.cl"),
+    });
+    const { router } = renderAt("/profesional");
+
+    const portalHeading = await screen.findByRole("heading", { name: "Portal del Profesional" });
+    expect(portalHeading).toBeDefined();
+
+    // La suscripción de sesión ya trae la cuenta nueva pero el par aún no
+    // se actualiza: sin confirmación no se muestra el portal anterior ni
+    // se navega con datos desfasados.
+    act(() => {
+      sessionMocks.setSession(sesionPersonal("intern@uct.cl"));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "Portal del Profesional" })).toBeNull();
+    });
+    expect(router.state.location.pathname).toBe("/profesional");
+
+    // Al confirmarse el par vigente deriva a denegado sin haber expuesto nada.
+    act(() => {
+      sessionMocks.setPair({
+        session: sesionPersonal("intern@uct.cl"),
+        role: rolDe("intern", "intern@uct.cl"),
+      });
+    });
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(screen.queryByRole("heading", { name: "Portal del Profesional" })).toBeNull();
   });
 });
