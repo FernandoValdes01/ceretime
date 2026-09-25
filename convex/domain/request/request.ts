@@ -18,7 +18,23 @@
  * manual contra `AccompanimentRequestContent`.
  */
 
+import type { ApiResult } from "../errors/api_error";
 import { SPRINT_1_REQUEST_STATES, type Sprint1RequestState } from "./state";
+
+/**
+ * Tope del texto de necesidades de acceso en caracteres (TI2-23).
+ *
+ * Valor definitivo del contrato compartido, acordado con TI2-10: el Backend
+ * y los consumidores validan con esta constante para no duplicar el número.
+ * Se rechaza el exceso en vez de truncarlo, porque recortar necesidades de
+ * acceso (Ley 21.719) alteraría en silencio lo que el estudiante declaró.
+ */
+export const ACCESS_NEEDS_MAX_LENGTH = 2000;
+
+/** Verdadero cuando el texto cabe en el tope del contrato. */
+export function isAccessNeedsWithinLimit(text: string): boolean {
+  return text.length <= ACCESS_NEEDS_MAX_LENGTH;
+}
 
 /** Modalidad de atención preferida por el estudiante en la solicitud. */
 export type ModalityPreference = "inPerson" | "online";
@@ -98,4 +114,43 @@ export function toAccompanimentRequest<RowId extends string, StudentId extends s
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   };
+}
+
+/** Campos de la tabla `requests` que salen del contenido estructurado. */
+export interface StoredRequestFields {
+  readonly accessNeeds: string;
+}
+
+/**
+ * Serializa el contenido estructurado a la forma persistida (TI2-23).
+ *
+ * Une las etiquetas de `accessNeeds` más `otherAccessNeed` (si trae texto)
+ * separadas por salto de línea. Solo cubre las condiciones de acceso: el
+ * resto del contenido (`needSummary`, `expectedOutcome`, modalidad,
+ * disponibilidad) aún no tiene columna en el schema de Sprint 1 y queda
+ * pendiente de persistencia futura, sin inventarle ubicación.
+ *
+ * Nunca trunca: si el texto supera `ACCESS_NEEDS_MAX_LENGTH` devuelve error
+ * con código estable para que el llamante lo informe sin filtrar detalles
+ * internos.
+ */
+export function toStoredRequestFields(
+  content: AccompanimentRequestContent,
+): ApiResult<StoredRequestFields> {
+  const parts = content.accessNeeds.map((need) => need.label);
+  const other = content.otherAccessNeed?.trim();
+  if (other) {
+    parts.push(other);
+  }
+  const accessNeeds = parts.join("\n");
+  if (!isAccessNeedsWithinLimit(accessNeeds)) {
+    return {
+      status: "error",
+      error: {
+        code: "access_needs_too_long",
+        message: "El texto de necesidades de acceso supera el máximo permitido.",
+      },
+    };
+  }
+  return { status: "ok", data: { accessNeeds } };
 }

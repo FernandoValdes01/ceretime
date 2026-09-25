@@ -1,7 +1,16 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { SPRINT_1_REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
-import { toAccompanimentRequest, type AccompanimentRequestContent } from "./request";
-import type { AccompanimentRequest as BarrelAccompanimentRequest } from "../index";
+import {
+  ACCESS_NEEDS_MAX_LENGTH,
+  isAccessNeedsWithinLimit,
+  toAccompanimentRequest,
+  toStoredRequestFields,
+  type AccompanimentRequestContent,
+} from "./request";
+import {
+  ACCESS_NEEDS_MAX_LENGTH as BARREL_MAX_LENGTH,
+  type AccompanimentRequest as BarrelAccompanimentRequest,
+} from "../index";
 
 describe("AccompanimentRequestContent (TI2-8)", () => {
   test("describe la solicitud de Sprint 1 completa", () => {
@@ -76,6 +85,61 @@ describe("toAccompanimentRequest (TI2-8)", () => {
       createdAt: 1000,
     };
     expect(entity.status).toBe("received");
+  });
+});
+
+describe("ACCESS_NEEDS_MAX_LENGTH (TI2-23)", () => {
+  test("el tope definitivo es 2000 y sale por el barrel", () => {
+    expect(ACCESS_NEEDS_MAX_LENGTH).toBe(2000);
+    expect(BARREL_MAX_LENGTH).toBe(2000);
+    expect(isAccessNeedsWithinLimit("a".repeat(2000))).toBe(true);
+    expect(isAccessNeedsWithinLimit("a".repeat(2001))).toBe(false);
+  });
+});
+
+describe("toStoredRequestFields (TI2-23)", () => {
+  const contenido: AccompanimentRequestContent = {
+    needSummary: "Necesidad ficticia",
+    expectedOutcome: "Resultado ficticio",
+    accessNeeds: [
+      { id: "1", label: "Intérprete" },
+      { id: "2", label: "Sala silenciosa" },
+    ],
+    modalityPreference: "inPerson",
+    generalAvailability: { preferredWeekdays: [1, 3] },
+    preferredAccessibleInformationChannel: "correo",
+    otherAccessNeed: "Silla cerca de la puerta",
+  };
+
+  test("une etiquetas y texto libre con salto de línea", () => {
+    const resultado = toStoredRequestFields(contenido);
+    expect(resultado).toEqual({
+      status: "ok",
+      data: { accessNeeds: "Intérprete\nSala silenciosa\nSilla cerca de la puerta" },
+    });
+  });
+
+  test("omite el texto libre vacío sin dejar líneas de más", () => {
+    const resultado = toStoredRequestFields({ ...contenido, otherAccessNeed: "   " });
+    expect(resultado).toEqual({
+      status: "ok",
+      data: { accessNeeds: "Intérprete\nSala silenciosa" },
+    });
+  });
+
+  test("rechaza el exceso con error estable en vez de truncar", () => {
+    const resultado = toStoredRequestFields({
+      ...contenido,
+      accessNeeds: [{ id: "1", label: "a".repeat(2001) }],
+      otherAccessNeed: undefined,
+    });
+    expect(resultado).toEqual({
+      status: "error",
+      error: {
+        code: "access_needs_too_long",
+        message: "El texto de necesidades de acceso supera el máximo permitido.",
+      },
+    });
   });
 });
 
