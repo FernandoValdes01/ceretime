@@ -1,6 +1,6 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import { toAccompanimentRequest } from "../../domain/request/request";
+import { ACCESS_NEEDS_MAX_LENGTH, toAccompanimentRequest } from "../../domain/request/request";
 import { transitionRequest } from "../../domain/request/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
@@ -34,7 +34,8 @@ function deny(): never {
  * Registra la solicitud del Estudiante en estado `received`. Solo el propio
  * Estudiante con cuenta vigente puede registrar; cualquier otro caso recibe
  * denegación genérica, sin motivo ni existencia del recurso. La necesidad de
- * acceso se valida como texto no vacío de hasta 2000 caracteres.
+ * acceso se valida como texto no vacío hasta el tope del contrato
+ * (`ACCESS_NEEDS_MAX_LENGTH`, provisorio hasta que TI2-23 lo confirme).
  */
 export async function registerRequest(
   ctx: MutationCtx,
@@ -46,8 +47,10 @@ export async function registerRequest(
   if (accessNeeds.length === 0) {
     throw new Error("Se requiere describir la necesidad de acceso");
   }
-  if (accessNeeds.length > 2000) {
-    throw new Error("La necesidad de acceso supera el máximo permitido");
+  if (accessNeeds.length > ACCESS_NEEDS_MAX_LENGTH) {
+    throw new Error(
+      `La necesidad de acceso supera el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres)`,
+    );
   }
   const requestId = await insertReceivedRequest(ctx, {
     studentId: student._id,

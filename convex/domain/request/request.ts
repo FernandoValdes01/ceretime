@@ -56,6 +56,15 @@ export interface AccompanimentRequestContent {
 }
 
 /**
+ * Tope provisorio del texto de necesidades de acceso (TI2-10).
+ *
+ * TI2-10 valida entradas sin fijar el contrato definitivo: el valor final lo
+ * confirma TI2-23 y vive acá para que el Backend y sus consumidores
+ * (Web y Mobile) validen con el mismo número en vez de duplicarlo.
+ */
+export const ACCESS_NEEDS_MAX_LENGTH = 2000;
+
+/**
  * Entidad pública de solicitud (TI2-8): espejo exacto de la fila de la tabla
  * `requests` tal como la lee el Backend (`_id`, `studentId`, `status`,
  * `accessNeeds` como texto y `createdAt`). Un documento real de la tabla se

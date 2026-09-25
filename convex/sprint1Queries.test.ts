@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { ACCESS_NEEDS_MAX_LENGTH } from "./domain/request/request";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -232,7 +233,7 @@ test("registro valida la necesidad de acceso sin crear nada inválido", async ()
 
   await expect(
     asStudent.mutation(api.presentation.requests.createRequest, {
-      accessNeeds: `x`.repeat(2001),
+      accessNeeds: "x".repeat(ACCESS_NEEDS_MAX_LENGTH + 1),
     }),
   ).rejects.toThrow("máximo");
 });
