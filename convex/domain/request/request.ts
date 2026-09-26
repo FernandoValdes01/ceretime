@@ -65,6 +65,16 @@ export interface AccompanimentRequestContent {
 export const ACCESS_NEEDS_MAX_LENGTH = 2000;
 
 /**
+ * Texto de necesidades de acceso para registrar una solicitud (TI2-26).
+ *
+ * Dominio puro: recorta el texto del estudiante y rechaza el vacío, sin persistir nada. Devuelve el texto recortado o `null` cuando no hay contenido válido; el tope de longitud lo aplica la capa de aplicación junto a este recorte, para que el mensaje de rechazo indique el máximo vigente.
+ */
+export function toAccessNeedsText(raw: string): string | null {
+  const accessNeeds = raw.trim();
+  return accessNeeds === "" ? null : accessNeeds;
+}
+
+/**
  * Entidad pública de solicitud (TI2-8): espejo exacto de la fila de la tabla
  * `requests` tal como la lee el Backend (`_id`, `studentId`, `status`,
  * `accessNeeds` como texto y `createdAt`). Un documento real de la tabla se
