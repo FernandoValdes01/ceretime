@@ -222,6 +222,48 @@ test("detalle inexistente responde igual sin revelar existencia", async () => {
   expect(message).not.toContain(String(missingId));
 });
 
+test("detalle deniega cuenta inhabilitada aunque la solicitud sea propia", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, {
+    subject: "ti10-est-9",
+    email: "ti10-est-9@alu.uct.cl",
+    role: "student",
+    institutionalStatus: "disabled",
+  });
+  const requestId = await seedRequest(t, studentId);
+
+  const asStudent = t.withIdentity(identityFor("ti10-est-9", "ti10-est-9@alu.uct.cl"));
+  const message = await asStudent.query(api.presentation.requests.getRequest, { requestId }).then(
+    () => {
+      throw new Error("Se esperaba denegación");
+    },
+    (error: Error) => error.message,
+  );
+  expect(message).toContain("No autorizado");
+  expect(message).not.toContain(String(requestId));
+});
+
+test("detalle deniega cuenta inactiva aunque la solicitud sea propia", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, {
+    subject: "ti10-est-10",
+    email: "ti10-est-10@alu.uct.cl",
+    role: "student",
+    accountStatus: "inactive",
+  });
+  const requestId = await seedRequest(t, studentId);
+
+  const asStudent = t.withIdentity(identityFor("ti10-est-10", "ti10-est-10@alu.uct.cl"));
+  const message = await asStudent.query(api.presentation.requests.getRequest, { requestId }).then(
+    () => {
+      throw new Error("Se esperaba denegación");
+    },
+    (error: Error) => error.message,
+  );
+  expect(message).toContain("No autorizado");
+  expect(message).not.toContain(String(requestId));
+});
+
 test("registro valida la necesidad de acceso sin crear nada inválido", async () => {
   const t = convexTest(schema, modules);
   await seedUser(t, { subject: "ti10-est-8", email: "ti10-est-8@alu.uct.cl", role: "student" });
