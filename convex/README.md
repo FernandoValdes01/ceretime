@@ -35,3 +35,24 @@ Los secretos del backend (`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIE
 Las variables del backend se declaran con sus tipos en `convex/convex.config.ts` y se leen con `env` desde `./_generated/server`, nunca con `process.env`. Configura los secretos solo con `convex env set` en el deployment (nunca con prefijo `VITE_` ni en el bundle): `BETTER_AUTH_SECRET` (firma de sesiones), `SITE_URL` (origen de la SPA, p. ej. `http://localhost:5173` en desarrollo), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` y, cuando haya orígenes extra (Vercel), `BETTER_AUTH_TRUSTED_ORIGINS` separados por comas. Las variables públicas del cliente (`VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL`, `VITE_SITE_URL`) solo localizan servicios y se documentan sin valores en `apps/web/.env.example`; los `.env.local` nunca se versionan.
 
 Las pruebas del backend corren con `bun run test:convex` (Vitest + convex-test con identidad simulada) y también se ejecutan en CI; el flujo OAuth real contra Google queda como evidencia manual.
+
+## Pruebas y evidencia reproducible (TI2-15)
+
+La matriz automatizada cubre el flujo ya implementado sin ampliar funcionalidad: cuenta válida (`convex/session.test.ts` con `@alu.uct.cl` y `@uct.cl`, más `apps/web/src/application/session/institutional-login.test.ts` para el inicio por población y el retorno controlado), cuenta no autorizada (`convex/session.test.ts` con respuesta idéntica ante dominio externo y ausencia, más `reject_external_user.test.ts`, `minimal_identity.test.ts` y `auth-error.test.ts` para el mensaje genérico), sesión expirada (`convex/session.test.ts` fija el contrato del estado anónimo que Convex expone al expirar la identidad, más el aviso visible en `apps/web/src/presentation/auth/AuthScreen.test.tsx`) y cierre (`convex/session.test.ts` fija el mismo contrato tras el cierre, más `AuthScreen.test.tsx` donde el `signOut` simulado invalida la sesión observada, con error resuelto y rechazo hacia el mensaje genérico de `institutional-login.test.ts`).
+
+Para reproducir desde la raíz: `bun run test:convex`, `bun run test:web`, `bun run --cwd apps/web tsc -p ../../convex/tsconfig.json --noEmit`, `bun run --cwd apps/web tsc -p ../../convex/tsconfig.tests.json --noEmit`, `bun run lint`, `bun run format:check`, `bun --cwd apps/web run lint` y `bun --cwd apps/web run build`.
+
+## Evidencia manual registrada (TI2-15)
+
+El vínculo entre `signOut` y el estado observado por Convex solo se verifica contra el flujo real con cuentas ficticias, fuera del alcance automatizable en CI: requiere el deployment de desarrollo, sus variables y un navegador.
+
+Requisitos: deployment de desarrollo vinculado y configurado antes de levantar la aplicación (secretos del backend con `convex env set`: `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SITE_URL=http://localhost:5173`), `.env.local` en `apps/web` con `VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL` y `VITE_SITE_URL=http://localhost:5173`, aplicación levantada con `bun run dev:web` desde la raíz (inicia Convex y la SPA en `http://localhost:5173`; no ejecutes `bunx convex dev` aparte, ver README raíz) y dos cuentas ficticias (una `@alu.uct.cl` y una externa).
+
+Pasos: 1) ingresar con la cuenta `@alu.uct.cl` y comprobar “Sesión iniciada” con `getSessionState` en `authenticated`; 2) pulsar `Cerrar sesión` y comprobar el retorno al acceso institucional con la query en `{"status":"unauthenticated"}`; 3) ingresar con la cuenta externa y comprobar el mensaje genérico sin detalles; 4) con la sesión iniciada en dos pestañas, cerrar en una y comprobar el aviso “Tu sesión terminó. Vuelve a ingresar.” en la pestaña del cierre y el acceso limpio en la otra.
+
+| Paso | Fecha      | Entorno          | Responsable   | Resultado                                                                             |
+| ---- | ---------- | ---------------- | ------------- | ------------------------------------------------------------------------------------- |
+| 1    | 2026-09-26 | desarrollo local | Wladimir06-py | OK: “Sesión iniciada” con `@alu.uct.cl`                                               |
+| 2    | 2026-09-26 | desarrollo local | Wladimir06-py | OK: tras “Cerrar sesión”, la query responde `{"status":"unauthenticated"}`            |
+| 3    | 2026-09-26 | desarrollo local | Wladimir06-py | OK: mensaje genérico “No pudimos iniciar sesión. Inténtalo de nuevo.”                 |
+| 4    | 2026-09-26 | desarrollo local | Wladimir06-py | OK: la pestaña del cierre muestra el aviso de término; la otra queda en acceso limpio |
