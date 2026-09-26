@@ -13,12 +13,13 @@ import {
 } from "./return-target.ts";
 
 /**
- * Página de acceso (TI2-6).
+ * Página de acceso (TI2-6, TI2-20).
  *
  * Sin sesión muestra el acceso institucional (el `?auth=error` del retorno
- * OAuth lo sigue leyendo `AuthScreen` como en TI2-14). Con sesión de
- * Estudiante redirige al retorno conservado o al portal; con sesión ya
- * iniciada y sin retorno muestra el estado de sesión (incluido el cierre).
+ * OAuth lo sigue leyendo `AuthScreen` como en TI2-14). Con sesión y retorno
+ * válido redirige ahí (cualquier población; el guard del destino decide);
+ * con sesión ya iniciada y sin retorno muestra el estado de sesión
+ * (incluido el cierre).
  */
 export function LoginPage({ session }: { session: WebSessionState }) {
   const search = useSearch({ from: "/login" });
@@ -28,12 +29,12 @@ export function LoginPage({ session }: { session: WebSessionState }) {
     persistReturnTarget(search.redirect);
   }, [search.redirect]);
 
-  // Solo redirige con sesión de Estudiante y retorno válido; sin retorno
-  // muestra el estado de sesión (incluido el cierre) en vez de expulsar al
-  // portal. El retorno guardado solo se consulta sin `?redirect=` en la URL:
-  // una visita explícita al acceso no hereda destinos de otra visita.
+  // Solo redirige con sesión y retorno válido; sin retorno muestra el
+  // estado de sesión (incluido el cierre) en vez de expulsar al portal. El
+  // retorno guardado solo se consulta sin `?redirect=` en la URL: una visita
+  // explícita al acceso no hereda destinos de otra visita.
   const target =
-    session?.status === "authenticated" && session.population === "estudiante"
+    session?.status === "authenticated"
       ? (resolveReturnTarget(search.redirect) ??
         (search.redirect === undefined ? peekReturnTarget() : null))
       : null;

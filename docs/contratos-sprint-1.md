@@ -7,6 +7,15 @@ Superficie pública versionada del Backend para los flujos comprometidos en Spri
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 |---|---|---|---|---|
 | `presentation/session.getSessionState` | — | `{status: "authenticated", email, name, population}` o `{status: "unauthenticated"}` | Cualquiera | Sin identidad, correo no institucional o sesión expirada responden `unauthenticated` sin motivo |
+| `presentation/session.getSessionWithRole` | — | `{session, role}` atómicos de la misma identidad; rol con `role`+`email` o `unauthenticated` | Cualquiera | Sin identidad, sin perfil o sin vigencia responden `unauthenticated` en la mitad que corresponda |
+| `presentation/session.getMyProfile` | — | `{fullName, email, role, institutionalStatus, accountStatus}` | Titular con perfil (vigente o no, para entender un bloqueo) | Sin identidad o sin perfil: error genérico |
+| `presentation/requests.getRequest` | `requestId` | Solicitud completa | Estudiante dueño o Profesional con toma activa | Error genérico, sin revelar existencia ni titularidad |
+| `presentation/session.getSessionWithRole` | — | `{session, role}` atómicos de la misma identidad; rol con `role`+`email` o `unauthenticated` | Cualquiera | Sin identidad, sin perfil o sin vigencia responden `unauthenticated` en la mitad que corresponda |
+| `presentation/session.getMyProfile` | — | `{fullName, email, role, institutionalStatus, accountStatus}` | Titular con perfil (vigente o no, para entender un bloqueo) | Sin identidad o sin perfil: error genérico |
+| `presentation/requests.getRequest` | `requestId` | Solicitud completa | Estudiante dueño o Profesional con toma activa | Error genérico, sin revelar existencia ni titularidad |
+| `presentation/session.getSessionWithRole` | — | `{session, role}` atómicos de la misma identidad; rol con `role`+`email` o `unauthenticated` | Cualquiera | Sin identidad, sin perfil o sin vigencia responden `unauthenticated` en la mitad que corresponda |
+| `presentation/session.getMyProfile` | — | `{fullName, email, role, institutionalStatus, accountStatus}` | Titular con perfil (vigente o no, para entender un bloqueo) | Sin identidad o sin perfil: error genérico |
+| `presentation/requests.getRequest` | `requestId` | Solicitud completa | Estudiante dueño o Profesional con toma activa | Error genérico, sin revelar existencia ni titularidad |
 | `presentation/requests.listOwnRequests` | `paginationOpts` | Página de solicitudes propias completas | Estudiante vigente | Error genérico; solo sus filas |
 | `presentation/requests.listAuthorizedRequests` | `paginationOpts` | Página de solicitudes tomadas por él | Profesional vigente con toma activa | Error genérico; sin toma no hay acceso |
 | `presentation/requests.listOpenRequests` | `paginationOpts` | Bandeja `received` minimizada (sin `accessNeeds`) | Profesional vigente | Error genérico; solo descubrir, no autoriza a operar |
@@ -19,10 +28,10 @@ Superficie pública versionada del Backend para los flujos comprometidos en Spri
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 |---|---|---|---|---|
-| `presentation/requests.createRequest` | `accessNeeds: string` (tope 1–2000 implementado en PR #46, pendiente de merge; hoy solo valida `string`) | Solicitud en `received` | Estudiante vigente | Error genérico |
-| `presentation/requests.takeRequest` | `requestId` | Solicitud tomada | Profesional vigente | Fuera de `received` o con toma activa se rechaza |
-| `presentation/requests.requestAdditionalInformation` | `requestId`, `reason` (motivo obligatorio) | Solicitud en espera | Profesional con toma activa | Transición inválida o sin motivo se rechaza |
-| `presentation/requests.acceptRequest` | `requestId`, `objective` | Vista completa del acompañamiento aceptado; crea la asignación inicial | Profesional con toma activa | Solo desde estados que llevan a `accepted`; abre exactamente un acompañamiento |
+| `presentation/requests.createRequest` | `accessNeeds: string` (texto 1–2000 tras recorte) | Solicitud en `received` | Estudiante vigente | Vacío: "Se requiere describir la necesidad de acceso"; exceso: "La necesidad de acceso supera el máximo permitido (2000 caracteres)"; resto: error genérico |
+| `presentation/requests.takeRequest` | `requestId` | Solicitud tomada | Profesional vigente | "Solo se pueden tomar solicitudes recibidas"; "Ya tomaste esta solicitud"; "La solicitud no admite iniciar la revisión en su estado actual"; resto: error genérico |
+| `presentation/requests.requestAdditionalInformation` | `requestId`, `reason` (motivo obligatorio) | Solicitud en espera | Profesional con toma activa | "Se requiere el motivo para pedir información adicional"; "La solicitud no admite pedir información adicional en su estado actual"; resto: error genérico |
+| `presentation/requests.acceptRequest` | `requestId`, `objective` | Vista completa del acompañamiento aceptado; crea la asignación inicial | Profesional con toma activa | "La solicitud ya fue aceptada"; "La solicitud no admite la aceptación en su estado actual"; "Se requiere el objetivo para abrir el acompañamiento"; resto: error genérico |
 
 ## Operaciones internas (solo servidor)
 
@@ -37,23 +46,41 @@ No forman superficie pública y ningún cliente las llama directo. Se documentan
 
 ## Respuestas y errores
 
-Toda denegación de autorización responde `ConvexError("No autorizado")`: mismo mensaje sin motivo y sin revelar si el recurso existe. Las validaciones de entrada fallan con error de validador de Convex, también sin detalles sensibles.
+Toda denegación de autorización responde `ConvexError("No autorizado")`: mismo mensaje sin motivo y sin revelar si el recurso existe. Aplica a identidad ausente, perfil ausente o no vigente, rol ajeno, fila inexistente o ajena, y toma ausente. Las validaciones de tipo de argumentos fallan con error de validador de Convex, también sin detalles sensibles.
+
+Los rechazos de regla y validación responden `Error` con mensaje específico en español (sin códigos, sin motivo interno):
+
+| Operación | Rechazo con mensaje específico |
+|---|---|
+| `createRequest` | Vacío: "Se requiere describir la necesidad de acceso"; exceso: "La necesidad de acceso supera el máximo permitido (2000 caracteres)" |
+| `takeRequest` | "Solo se pueden tomar solicitudes recibidas"; "Ya tomaste esta solicitud"; "La solicitud no admite iniciar la revisión en su estado actual" |
+| `requestAdditionalInformation` | "Se requiere el motivo para pedir información adicional"; "La solicitud no admite pedir información adicional en su estado actual" |
+| `acceptRequest` | "La solicitud ya fue aceptada"; "La solicitud no admite la aceptación en su estado actual"; "Se requiere el objetivo para abrir el acompañamiento" |
 
 Los resultados de dominio que pueden fallar usan `ApiResult<T>` (`{status: "ok", data}` o `{status: "error", error: PublicApiError}`) de `convex/domain/errors`, con `PublicApiError = {code, message}` sin stack traces ni datos internos. Primer uso: el serializador de solicitudes devuelve `access_needs_too_long` con mensaje genérico en español cuando el texto supera el tope.
 
 ## Topes y serialización (TI2-23)
 
-`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/request` y exportado por `convex/domain/index.ts` para que el Backend y los consumidores validen igual. La validación de 1–2000 caracteres en el registro ya está implementada en la PR #46 (TI2-10), aunque todavía no se integra en `main`: hoy la mutation solo valida `string`, así que un texto mayor aún se persiste. Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
+`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/request` y exportado por `convex/domain/index.ts` para que el Backend y los consumidores validen igual. La validación de 1–2000 caracteres ya está integrada en `registerRequest` (recorta, rechaza vacío y exceso). Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
 
-`toStoredRequestFields` convierte el contenido estructurado a la forma persistida uniendo etiquetas de `accessNeeds` más `otherAccessNeed` con salto de línea. Solo cubre condiciones de acceso: `needSummary`, `expectedOutcome`, modalidad y disponibilidad aún no tienen columna en Sprint 1 y quedan pendientes sin inventarles ubicación.
+`toStoredRequestFields` convierte el contenido estructurado a la forma persistida uniendo etiquetas de `accessNeeds` más `otherAccessNeed` con salto de línea. Destino de cada campo de `SubmitStudentRequestCommand` (verificado contra el tipo real de Mobile):
+
+| Campo del comando | Destino en Sprint 1 |
+|---|---|
+| `accessNeeds` (etiquetas) + `otherAccessNeed` | Texto `accessNeeds` de la fila, vía `toStoredRequestFields`, tope 2000 |
+| `needSummary` | Sin columna: pendiente de persistencia futura, no se inventa ubicación |
+| `expectedOutcome` | Sin columna: pendiente de persistencia futura, no se inventa ubicación |
+| `modalityPreference` | Sin columna: pendiente de persistencia futura, no se inventa ubicación |
+| `generalAvailability` | Sin columna: pendiente de persistencia futura, no se inventa ubicación |
+| `preferredAccessibleInformationChannel` | Sin columna: pendiente de persistencia futura, no se inventa ubicación |
 
 ## Compatibilidad con hooks y mocks Mobile (Sprint 1)
 
 | Hook / puerto Mobile | Operación Backend | Estado |
 |---|---|---|
-| `useStudentArea` (`StudentAreaReader`, mock local) | `getSessionState` + `listOwnRequests` | Pendiente de cableado; mocks vigentes |
+| `useStudentArea` (`StudentAreaReader`, mock local) | `getSessionState` + `listOwnRequests` + `listOwnedAccompaniments` | Pendiente de cableado; mocks vigentes. Perfil (`StudentIdentity`) ← `getMyProfile` (divergencia `fullName`/`displayName` pendiente); `accompaniments` ← `listOwnedAccompaniments` |
 | `use-submit-student-request` (`StudentRequestSubmitter`, mock local) | `createRequest({accessNeeds})` | Pendiente; serializador y tope listos en TI2-23 |
-| `use-professional-review` (`ProfessionalReviewPort`, mock local) | `listOpenRequests`, `listAuthorizedRequests`, `takeRequest`, `requestAdditionalInformation`, `acceptRequest` | Pendiente de cableado; mocks vigentes |
+| `use-professional-review` (`ProfessionalReviewPort`, mock local) | `listOpenRequests`, `listAuthorizedRequests`, `getRequest`, `takeRequest`, `requestAdditionalInformation`, `acceptRequest` | Pendiente de cableado; mocks vigentes |
 | `use-practitioner-accompaniments` (mock local) | `listAssignedAccompaniments` (vista minimizada) | Pendiente de cableado; mocks vigentes |
 | `use-professional-agenda` (mock local) | Sin operación: agenda fuera de Sprint 1 | Fuera de alcance, sin backend |
 | `use-administrator-accounts` (mock local) | `enableIntern` es interna, sin superficie pública | Pendiente de diseño de superficie |
@@ -67,6 +94,7 @@ Divergencias de valores registradas (no inventar valores: lo que sigue lo acuerd
 | Identificador | `_id` (`Id`) | `id` (`string`) |
 | Fecha de creación | `createdAt` epoch (`number`) | `IsoDateTime` (`string`) |
 | Necesidades persistidas | `accessNeeds` texto serializado | arreglo estructurado |
+| Nombre de perfil | `fullName` | `displayName` |
 
 ## Versionado
 
@@ -74,5 +102,5 @@ La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo 
 
 ## Pendientes
 
-- Coordinar con TI2-10 (PR #46) y TI2-26 (PR #52): ambas traen cambios equivalentes sobre los mismos archivos y falta definir cuál implementación se integra y el orden de merge.
+- Coordinar con TI2-26 (PR #52, abierta): trae validación y documentación equivalentes sobre los mismos archivos; falta definir cuál implementación se integra y el orden de merge.
 - TI4-12 cablea los hooks al Backend y resuelve las divergencias de valores.
