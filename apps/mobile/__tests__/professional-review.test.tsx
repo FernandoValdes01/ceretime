@@ -56,6 +56,16 @@ describe("adaptador de revisión profesional", () => {
     const adapter = createMockProfessionalReviewAdapter();
 
     const requests = await adapter.readProfessionalRequests();
+    expect(requests).toHaveLength(7);
+    expect(requests.map(({ status }) => status)).toEqual([
+      "received",
+      "underReview",
+      "awaitingInformationOrAcceptance",
+      "received",
+      "underReview",
+      "accepted",
+      "awaitingInformationOrAcceptance",
+    ]);
     expect(requests[0]?.availableActions).toEqual(["startReview"]);
     expect(requests[1]?.availableActions).toEqual(["requestInformation"]);
     expect(requests[2]?.availableActions).toEqual(["accept"]);

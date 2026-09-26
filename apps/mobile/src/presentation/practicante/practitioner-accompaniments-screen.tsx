@@ -1,21 +1,15 @@
+import { router } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import type { ReactNode } from "react";
 
-import type {
-  PractitionerAccompaniment,
-  PractitionerAccompanimentStatus,
-} from "../../application/practitioner-accompaniment-models";
+import type { PractitionerAccompaniment } from "../../application/practitioner-accompaniment-models";
 import { mobileDependencies } from "../../composition/mobile-dependencies";
+import { AppIcon } from "../components/app-icon";
 import { RoleHome } from "../components/role-home";
 import { usePractitionerAccompaniments } from "../hooks/use-practitioner-accompaniments";
 import { PractitionerAssignmentGuard } from "../navigation/practitioner-assignment-guard";
 import { useNavigationSession } from "../navigation/session";
-
-const statusLabels: Record<PractitionerAccompanimentStatus, string> = {
-  active: "Activo",
-  paused: "En pausa",
-  closed: "Cerrado",
-};
+import { PractitionerAccompanimentStatusBadge } from "./practitioner-accompaniment-status-badge";
 
 function StateMessage({
   title,
@@ -43,19 +37,34 @@ function AccompanimentCard({
   readonly accompaniment: PractitionerAccompaniment;
 }) {
   return (
-    <View
-      accessible
+    <Pressable
+      accessibilityRole="button"
       accessibilityLabel={`Acompañamiento: ${accompaniment.objective}`}
-      style={[styles.surface, styles.card]}
+      accessibilityHint="Abre el detalle del acompañamiento"
+      onPress={() =>
+        router.push({
+          pathname: "/practicante/asignaciones/[accompanimentId]",
+          params: { accompanimentId: accompaniment.id },
+        })
+      }
+      style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressed]}
     >
-      <Text accessibilityRole="header" style={styles.cardTitle}>
-        {accompaniment.objective}
-      </Text>
-      <View style={styles.statusRow}>
-        <Text style={styles.statusLabel}>Estado</Text>
-        <Text style={styles.statusValue}>{statusLabels[accompaniment.status]}</Text>
+      <View style={styles.card}>
+        <Text accessibilityRole="header" style={styles.cardTitle}>
+          {accompaniment.objective}
+        </Text>
+        <View style={styles.cardFooter}>
+          <PractitionerAccompanimentStatusBadge status={accompaniment.status} />
+          <AppIcon
+            accessible={false}
+            color="#5B6C6E"
+            name="chevronRight"
+            size={19}
+            strokeWidth={2}
+          />
+        </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -117,10 +126,7 @@ function AssignedPractitionerAccompaniments() {
   );
 
   return (
-    <RoleHome
-      title="Acompañamientos asignados"
-      description="Consulta sólo los acompañamientos que un profesional te asignó. Esta sección es de sólo lectura."
-    >
+    <RoleHome title="Acompañamientos asignados">
       <PractitionerAccompanimentsContent {...state} />
     </RoleHome>
   );
@@ -135,7 +141,7 @@ export default function PractitionerAccompanimentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  list: { gap: 16 },
+  list: { gap: 12 },
   surface: {
     padding: 18,
     borderRadius: 14,
@@ -144,12 +150,23 @@ const styles = StyleSheet.create({
     borderColor: "#D7E1DF",
   },
   card: {
-    gap: 14,
+    gap: 18,
+    padding: 18,
+    borderRadius: 16,
+    backgroundColor: "#FFF8F4",
+    borderColor: "#DFC9BE",
+    boxShadow: "0 2px 5px rgba(24, 44, 49, 0.07)",
   },
-  cardTitle: { color: "#182C31", fontSize: 19, lineHeight: 26, fontWeight: "700" },
-  statusRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  statusLabel: { color: "#42565B", fontSize: 16 },
-  statusValue: { color: "#246259", fontSize: 16, fontWeight: "700" },
+  cardPressable: { borderRadius: 16 },
+  cardPressed: { opacity: 0.75 },
+  cardTitle: { color: "#182C31", fontSize: 18, lineHeight: 25, fontWeight: "700" },
+  cardFooter: {
+    minHeight: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 1,
+  },
   stateCard: {
     gap: 12,
   },
