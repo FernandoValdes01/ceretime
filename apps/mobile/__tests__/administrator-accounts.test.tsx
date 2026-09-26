@@ -254,4 +254,49 @@ describe("flujo administrativo", () => {
     );
     expect(enableButton).toBeEnabled();
   });
+
+  test("habilitar una cuenta no concede acceso a acompañamientos ni a solicitudes profesionales", async () => {
+    const readAssigned = jest.spyOn(
+      mobileDependencies.practitionerAccompanimentReader,
+      "readAssignedAccompaniments",
+    );
+    const readProfessional = jest.spyOn(
+      mobileDependencies.professionalReviewPort,
+      "readProfessionalRequests",
+    );
+    const readAgenda = jest.spyOn(
+      mobileDependencies.professionalAgendaReader,
+      "readProfessionalAgenda",
+    );
+
+    try {
+      const navigation = renderRouter(appDirectory);
+      fireEvent.press(await screen.findByRole("button", { name: "Entrar como Administrador" }));
+      fireEvent.press(await screen.findByRole("button", { name: "Abrir habilitación de cuentas" }));
+      fireEvent.press(
+        await screen.findByRole("button", { name: "Habilitar cuenta de Alex Rojas" }),
+      );
+      expect(
+        await screen.findByText("La cuenta institucional quedó habilitada."),
+      ).toBeOnTheScreen();
+
+      for (const route of ["/practicante/asignaciones", "/profesional/estudiantes"] as const) {
+        await routerAct(async () => {
+          router.push(route);
+          await Promise.resolve();
+        });
+
+        await waitFor(() => expect(navigation.getPathname()).toBe("/administrador"));
+        expect(screen.getByText("Acceso denegado")).toBeOnTheScreen();
+      }
+
+      expect(readAssigned).not.toHaveBeenCalled();
+      expect(readProfessional).not.toHaveBeenCalled();
+      expect(readAgenda).not.toHaveBeenCalled();
+    } finally {
+      readAssigned.mockRestore();
+      readProfessional.mockRestore();
+      readAgenda.mockRestore();
+    }
+  });
 });
