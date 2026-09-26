@@ -3,6 +3,7 @@ import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { ACCESS_NEEDS_MAX_LENGTH } from "./domain/request/request";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -52,11 +53,16 @@ async function seedUser(
   });
 }
 
-/** Cantidad de solicitudes persistidas. */
-async function countRequests(t: ReturnType<typeof convexTest>) {
-  return await t.run(async (ctx) => {
-    return (await ctx.db.query("requests").collect()).length;
+/**
+ * Confirma que no persiste ninguna solicitud con una lectura acotada: basta
+ * la primera fila para saber que el rechazo no guardó nada, sin barrer la
+ * tabla.
+ */
+async function expectNoRequests(t: ReturnType<typeof convexTest>) {
+  const found = await t.run(async (ctx) => {
+    return await ctx.db.query("requests").first();
   });
+  expect(found).toBeNull();
 }
 
 test("Registro válido guarda la necesidad recortada en estado recibido", async () => {
@@ -86,20 +92,36 @@ test("Necesidad vacía se rechaza como error operativo sin persistir", async () 
     );
   expect(message).toContain("necesidad");
   expect(message).not.toContain("No autorizado");
-  expect(await countRequests(t)).toBe(0);
+  await expectNoRequests(t);
 });
 
-test("Necesidad sobre el tope se rechaza como error operativo sin persistir", async () => {
+test("Necesidad en el tope se acepta y sobre el tope se rechaza sin persistir", async () => {
   const t = convexTest(schema, modules);
   await seedUser(t, { subject: "ti26-est-3", email: "ti26-est-3@alu.uct.cl", role: "student" });
 
+  // Justo en el límite del contrato: se registra íntegro.
   const asStudent = t.withIdentity(identityFor("ti26-est-3", "ti26-est-3@alu.uct.cl"));
+  const created = await asStudent.mutation(api.presentation.requests.createRequest, {
+    accessNeeds: "x".repeat(ACCESS_NEEDS_MAX_LENGTH),
+  });
+  expect(created.status).toBe("received");
+  expect(created.accessNeeds).toHaveLength(ACCESS_NEEDS_MAX_LENGTH);
+
+  // Un carácter sobre el límite: se rechaza como error operativo.
   await expect(
     asStudent.mutation(api.presentation.requests.createRequest, {
-      accessNeeds: "x".repeat(2001),
+      accessNeeds: "x".repeat(ACCESS_NEEDS_MAX_LENGTH + 1),
     }),
   ).rejects.toThrow("máximo");
-  expect(await countRequests(t)).toBe(0);
+
+  // El rechazo no persiste nada nuevo: sigue existiendo solo la aceptada,
+  // comprobado con una lectura acotada en vez de barrer la tabla.
+  const stored = await t.query(internal.requests.getRequestById, { id: created._id });
+  expect(stored?.status).toBe("received");
+  const rows = await t.run(async (ctx) => {
+    return await ctx.db.query("requests").take(2);
+  });
+  expect(rows.map((row) => row._id)).toEqual([created._id]);
 });
 
 test("Toma y operación ajena se deniegan con error genérico sin modificar nada", async () => {
