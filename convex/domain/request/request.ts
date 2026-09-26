@@ -56,9 +56,11 @@ export interface AccompanimentRequestContent {
 }
 
 /**
- * Tope provisorio del texto de necesidades de acceso (TI2-26).
+ * Tope del texto de necesidades de acceso (TI2-23).
  *
- * TI2-26 valida la forma de entrada sin fijar el contrato definitivo: el valor final lo confirma TI2-23 y vive acá para que el Backend y sus consumidores (Web y Mobile) validen con el mismo número en vez de duplicarlo.
+ * Valor acordado en el contrato definitivo de TI2-23: vive acá para que el
+ * Backend y sus consumidores (Web y Mobile) validen con el mismo número en
+ * vez de duplicarlo.
  */
 export const ACCESS_NEEDS_MAX_LENGTH = 2000;
 

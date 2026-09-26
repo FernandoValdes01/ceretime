@@ -32,7 +32,7 @@ La habilitación de cuentas (`internal.accounts.enableIntern`, `internal.account
 
 El Sprint 1 no usa `action`: no hay integraciones ni trabajo que lo requiera y la autenticación institucional corre por las rutas HTTP de Better Auth (`convex/auth.ts`, `convex/http.ts`), así que no existe superficie de actions que validar.
 
-La validación de forma vive en Aplicación/Dominio (`toAccessNeedsText`, política de TI2-21, `toOpeningObjective`): texto recortado, no vacío y hasta `ACCESS_NEEDS_MAX_LENGTH` (provisorio hasta que TI2-23 confirme el contrato). Los permisos se evalúan en el servidor desde `ctx.auth.getUserIdentity()` y el `tokenIdentifier` vinculado, nunca desde identificadores del cliente.
+La validación de forma vive en Aplicación/Dominio (`toAccessNeedsText`, política de TI2-21, `toOpeningObjective`): texto recortado, no vacío y hasta `ACCESS_NEEDS_MAX_LENGTH` (valor acordado con el responsable de TI2-23). Los permisos se evalúan en el servidor desde `ctx.auth.getUserIdentity()` y el `tokenIdentifier` vinculado, nunca desde identificadores del cliente.
 
 Los errores están normalizados: toda denegación responde `No autorizado` sin motivo ni existencia del recurso, y todo rechazo operativo responde un mensaje en español que indica qué corregir (motivo faltante, estado que no admite el paso, duplicados, objetivo o necesidad de acceso) sin modificar nada.
 

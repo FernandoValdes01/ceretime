@@ -95,7 +95,7 @@ describe("toAccessNeedsText (TI2-26)", () => {
     expect(toAccessNeedsText("   ")).toBeNull();
   });
 
-  test("el tope provisorio se comparte desde el barrel sin duplicarlo", () => {
+  test("el tope acordado se comparte desde el barrel sin duplicarlo", () => {
     expect(ACCESS_NEEDS_MAX_LENGTH).toBe(2000);
     expect(BarrelAccessNeedsMaxLength).toBe(ACCESS_NEEDS_MAX_LENGTH);
   });
