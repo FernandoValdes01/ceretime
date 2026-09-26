@@ -1,13 +1,17 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
+import { ConvexError } from "convex/values";
 import { toAccompanimentRequest } from "../../domain/request/request";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
+import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
 import {
+  findActiveTake,
   getRequestById,
   listActiveTakes,
   listOwnedRequests,
   listRequestsByStatus,
 } from "../../infrastructure/requests/repository";
+import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
 /** Posición del barrido y última solicitud emitida dentro del cursor (O(1)). */
@@ -49,6 +53,10 @@ function encodeTakesCursor(cursor: AuthorizedTakesCursor): string {
  * propios: el `studentId` siempre sale del perfil del servidor, nunca del
  * cliente. Opera con datos ficticios.
  */
+
+function deny(): never {
+  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+}
 
 /**
  * Lista las solicitudes propias del Estudiante, paginado. Cualquier otro
@@ -98,6 +106,7 @@ export async function listAuthorizedRequestsUseCase(
   args: { readonly paginationOpts: PaginationOptions },
 ) {
   const professional = await requireActiveProfessional(ctx, identity);
+  if (!Number.isFinite(args.paginationOpts.numItems)) deny();
   const limit = Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), 100);
   const cursor = decodeTakesCursor(args.paginationOpts.cursor);
   const page = await listActiveTakes(ctx, professional._id, {
@@ -153,4 +162,59 @@ export async function listOpenRequestsUseCase(
       createdAt: row.createdAt,
     })),
   };
+}
+
+/**
+ * Detalle de una solicitud con autorización estricta (TI2-10).
+ *
+ * El Estudiante solo lee sus solicitudes propias y el Profesional solo las
+ * que tomó con una toma activa a su nombre; en ambos casos se devuelve la
+ * entidad completa. Cualquier otro caso (sin identidad, sin perfil, cuenta
+ * inhabilitada, Practicante, Administrador, solicitud inexistente o ajena,
+ * o Profesional sin toma) recibe la misma denegación genérica, sin revelar
+ * existencia ni motivo. La bandeja minimizada sigue siendo la única vía de
+ * descubrimiento: una solicitud abierta sin toma no se detalla.
+ */
+export async function getRequestDetailUseCase(
+  ctx: QueryCtx,
+  identity: UserIdentity | null,
+  args: { readonly requestId: Id<"requests"> },
+) {
+  if (identity === null) deny();
+  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
+  if (
+    caller === null ||
+    caller.institutionalStatus !== "enabled" ||
+    caller.accountStatus !== "active"
+  ) {
+    deny();
+  }
+
+  const request = await getRequestById(ctx, args.requestId);
+  if (request === null) deny();
+
+  if (caller.role === "student") {
+    if (request.studentId !== caller._id) deny();
+    return toAccompanimentRequest({
+      _id: request._id,
+      studentId: request.studentId,
+      status: request.status,
+      accessNeeds: request.accessNeeds,
+      createdAt: request.createdAt,
+    });
+  }
+
+  if (caller.role === "professional") {
+    const take = await findActiveTake(ctx, args.requestId, caller._id);
+    if (take === null) deny();
+    return toAccompanimentRequest({
+      _id: request._id,
+      studentId: request.studentId,
+      status: request.status,
+      accessNeeds: request.accessNeeds,
+      createdAt: request.createdAt,
+    });
+  }
+
+  deny();
 }
