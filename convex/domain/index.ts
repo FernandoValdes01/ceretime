@@ -17,7 +17,7 @@ export type {
 } from "./identity/roles";
 
 // Solicitud de acompañamiento y sus estados.
-export { toAccompanimentRequest } from "./request/request";
+export { ACCESS_NEEDS_MAX_LENGTH, toAccompanimentRequest } from "./request/request";
 export type {
   AccessNeed,
   AccompanimentRequest,

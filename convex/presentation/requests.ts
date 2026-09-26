@@ -10,6 +10,7 @@ import {
   listAuthorizedRequestsUseCase,
   listOpenRequestsUseCase,
   listOwnRequestsUseCase,
+  getRequestDetailUseCase,
 } from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
 import { requestStatusUnion } from "../validators";
@@ -64,6 +65,22 @@ export const listOwnRequests = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await listOwnRequestsUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Detalle de una solicitud propia o tomada (TI2-10).
+ *
+ * El Estudiante solo detalla sus solicitudes y el Profesional solo las que
+ * tomó; el resto recibe la denegación genérica sin revelar existencia. La
+ * bandeja minimizada sigue siendo la única vía de descubrimiento.
+ */
+export const getRequest = query({
+  args: { requestId: v.id("requests") },
+  returns: requestValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await getRequestDetailUseCase(ctx, identity, args);
   },
 });
 
