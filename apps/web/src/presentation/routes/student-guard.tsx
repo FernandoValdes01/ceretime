@@ -41,11 +41,17 @@ export function RequireStudent({
   const [returnHref] = useState(href);
 
   useEffect(() => {
-    if (session === undefined || pair === undefined) {
+    if (session === undefined) {
       return;
     }
+    // La redirección por falta de sesión no espera al par: con la sesión
+    // confirmada sin autenticar se navega al acceso aunque el rol siga
+    // pendiente, en vez de dejar un "Cargando…" indefinido.
     if (session.status === "unauthenticated") {
       void navigate({ to: "/login", search: { redirect: returnHref }, replace: true });
+      return;
+    }
+    if (pair === undefined) {
       return;
     }
     // Espera la confirmación como en el guard del personal: con el par de

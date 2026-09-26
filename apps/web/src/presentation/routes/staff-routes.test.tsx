@@ -154,6 +154,15 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
     expect(screen.queryByRole("heading", { name: portal.titulo })).toBeNull();
   });
 
+  test("sin sesión confirmada navega al acceso aunque el par siga pendiente", async () => {
+    sessionMocks.setSession(SIN_SESION);
+    const { router } = renderAt(portal.ruta);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+    expect(router.state.location.search).toMatchObject({ redirect: portal.ruta });
+    expect(screen.queryByRole("heading", { name: portal.titulo })).toBeNull();
+  });
+
   test.each(portal.ajenos)("el rol %s ve denegado sin contenido del portal", async (rolAjeno) => {
     const emailAjeno = rolAjeno === "student" ? "estudiante@alu.uct.cl" : `${rolAjeno}@uct.cl`;
     sessionMocks.setPair({

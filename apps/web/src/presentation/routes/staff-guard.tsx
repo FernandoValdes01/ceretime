@@ -43,13 +43,17 @@ export function RequireStaffRole({
   const [returnHref] = useState(href);
 
   useEffect(() => {
-    if (session === undefined || pair === undefined) {
+    if (session === undefined) {
       return;
     }
-    // La redirección por falta de sesión no espera más que al par
-    // completo: sesión y rol llegan juntos en una única respuesta.
+    // La redirección por falta de sesión no espera al par: con la sesión
+    // confirmada sin autenticar se navega al acceso aunque el rol siga
+    // pendiente, en vez de dejar un "Cargando…" indefinido.
     if (session.status === "unauthenticated") {
       void navigate({ to: "/login", search: { redirect: returnHref }, replace: true });
+      return;
+    }
+    if (pair === undefined) {
       return;
     }
     // Sin confirmación no se navega ni se renderiza: el par puede traer
