@@ -2,6 +2,8 @@
 
 Captura del detalle minimizado de un acompañamiento asignado al Practicante, verificada en el emulador Android Pixel_8_API_35.
 
+![Listado final](./listado-final.png)
+
 ![Detalle permitido](./detalle-permitido.png)
 
 ![Detalle denegado](./detalle-denegado.png)
