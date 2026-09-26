@@ -4,7 +4,7 @@ Evidencia de TI2-12: qué prueba automatizada cubre cada situación de autentica
 
 ## Cómo leerla
 
-Cada prueba se nombra por archivo y título, tal como lo imprime `vitest`, para poder buscarla sin depender de números de línea. El estado dice si la prueba ya está en `main`, si la agrega esta issue (TI2-12), si la trae una issue vecina que todavía no se integra, o si no existe ninguna prueba para esa situación.
+Cada prueba se nombra por archivo y título, tal como lo imprime `vitest`, para poder buscarla sin depender de números de línea. El estado dice si la prueba ya está en `main`, si la agrega esta issue (TI2-12) o si no existe ninguna prueba para esa situación.
 
 Todo se corre con `bun run test:convex` y `bun run test:web`. La CI ejecuta los dos en los jobs "Verificación Backend" y "Validación Web", y cualquier archivo `*.test.ts` o `*.test.tsx` nuevo en `convex/` o `apps/web/src/` entra solo, sin tocar los workflows.
 
@@ -26,8 +26,8 @@ Todo se corre con `bun run test:convex` y `bun run test:web`. La CI ejecuta los 
 | `staff-routes` | `apps/web/src/presentation/routes/staff-routes.test.tsx` |
 | `return-target` | `apps/web/src/presentation/routes/return-target.test.ts` |
 | `auth-error` | `apps/web/src/presentation/auth/auth-error.test.ts` |
-| `institutional-login` | `apps/web/src/application/session/institutional-login.test.ts`, de TI2-15 |
-| `AuthScreen` | `apps/web/src/presentation/auth/AuthScreen.test.tsx`, de TI2-15 |
+| `institutional-login` | `apps/web/src/application/session/institutional-login.test.ts` |
+| `AuthScreen` | `apps/web/src/presentation/auth/AuthScreen.test.tsx` |
 | `sprint1Queries` | `convex/sprint1Queries.test.ts` |
 
 ## Login e identidad institucional
@@ -43,17 +43,19 @@ Todo se corre con `bun run test:convex` y `bun run test:web`. La CI ejecuta los 
 | Un error del proveedor se muestra sin exponer sus valores | Negativo | `auth-error` › "traduce el error del proveedor sin exponer sus valores" | En `main` |
 | Después del login se vuelve a la ruta pedida | Positivo | `student-routes` › "el retorno OAuth en / navega a la ruta conservada una sola vez" | En `main` |
 | El retorno no acepta URLs externas | Negativo | `return-target` › "rechaza URLs absolutas, protocolo relativo y no texto" | En `main` |
-| La interfaz ofrece un inicio por población | Positivo | `institutional-login` › "expone un inicio por población con su sufijo institucional" | TI2-15, sin integrar |
+| La interfaz ofrece un inicio por población | Positivo | `institutional-login` › "expone un inicio por población con su sufijo institucional" | En `main` |
+| El inicio usa Google y vuelve a la aplicación por una ruta fija | Positivo | `institutional-login` › "usa el mismo proveedor Google con retorno controlado a la SPA" | En `main` |
+| Los mensajes de error de ingreso, de sesión expirada y de cierre no revelan dominio ni correo | Negativo | `institutional-login` › "no filtra motivo, dominio ni datos de sesión" | En `main` |
 
 ## Cierre de sesión
 
 | Qué se prueba | Tipo | Prueba | Estado |
 | --- | --- | --- | --- |
 | Con sesión iniciada, la interfaz ofrece cerrarla | Positivo | `student-routes` › "la sesión ya iniciada sin retorno muestra su estado con cierre" | En `main` |
-| El cierre invalida la sesión y vuelve al acceso | Positivo | `AuthScreen` › "vuelve al acceso cuando el cierre invalida la sesión observada" | TI2-15, sin integrar |
-| Llamar al cierre no basta: manda el estado observado | Negativo | `AuthScreen` › "no sale de la sesión solo por llamar a signOut: sigue el estado observado" | TI2-15, sin integrar |
-| Un cierre fallido muestra un mensaje genérico | Negativo | `AuthScreen` › "muestra el mensaje genérico cuando el cierre responde error"; "muestra el mensaje genérico cuando el cierre rechaza" | TI2-15, sin integrar |
-| Después del cierre el backend no entrega datos | Negativo | `session` › "cierre (identidad ausente) responde no autenticado sin datos mínimos (TI2-15)" | TI2-15, sin integrar |
+| El cierre invalida la sesión y vuelve al acceso | Positivo | `AuthScreen` › "vuelve al acceso cuando el cierre invalida la sesión observada" | En `main` |
+| Llamar al cierre no basta: manda el estado observado | Negativo | `AuthScreen` › "no sale de la sesión solo por llamar a signOut: sigue el estado observado" | En `main` |
+| Un cierre fallido muestra un mensaje genérico | Negativo | `AuthScreen` › "muestra el mensaje genérico cuando el cierre responde error"; "muestra el mensaje genérico cuando el cierre rechaza" | En `main` |
+| Después del cierre el backend no entrega datos | Negativo | `session` › "cierre (identidad ausente) responde no autenticado sin datos mínimos (TI2-15)" | En `main` |
 
 ## Sesión persistida y expirada
 
@@ -68,8 +70,8 @@ Dónde se guarda la sesión y cuánto dura lo resuelve Better Auth: `convex/auth
 | Portal del Estudiante: lo mismo | Negativo | `staff-routes` › "la sesión que se pierde con el portal abierto lo oculta y vuelve al acceso" | TI2-12 |
 | Al cambiar de cuenta no aparece el portal anterior | Negativo | `staff-routes` › "al cambiar de cuenta el portal anterior no aparece con la sesión nueva" | En `main` |
 | Un perfil inhabilitado conserva la sesión pero pierde el rol | Negativo | `session_role` › "perfil inhabilitado mantiene sesión pero sin rol" | En `main` |
-| Una sesión expirada responde no autenticado sin motivo | Negativo | `session` › "expiración (identidad ausente) responde no autenticado sin filtrar motivo (TI2-15)" | TI2-15, sin integrar |
-| La interfaz avisa cuando una sesión existente deja de reconocerse | Negativo | `AuthScreen` › "anuncia el término cuando una sesión existente deja de ser reconocida" | TI2-15, sin integrar |
+| Una sesión expirada responde no autenticado sin motivo | Negativo | `session` › "expiración (identidad ausente) responde no autenticado sin filtrar motivo (TI2-15)" | En `main` |
+| La interfaz avisa cuando una sesión existente deja de reconocerse | Negativo | `AuthScreen` › "anuncia el término cuando una sesión existente deja de ser reconocida" | En `main` |
 
 ## Guards de sesión en la Web
 
