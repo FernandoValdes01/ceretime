@@ -42,17 +42,17 @@ La matriz automatizada cubre el flujo ya implementado sin ampliar funcionalidad:
 
 Para reproducir desde la raíz: `bun run test:convex`, `bun run test:web`, `bun run --cwd apps/web tsc -p ../../convex/tsconfig.json --noEmit`, `bun run --cwd apps/web tsc -p ../../convex/tsconfig.tests.json --noEmit`, `bun run lint`, `bun run format:check`, `bun --cwd apps/web run lint` y `bun --cwd apps/web run build`.
 
-## Evidencia manual pendiente de registro (TI2-15)
+## Evidencia manual registrada (TI2-15)
 
 El vínculo entre `signOut` y el estado observado por Convex solo se verifica contra el flujo real con cuentas ficticias, fuera del alcance automatizable en CI: requiere el deployment de desarrollo, sus variables y un navegador.
 
 Requisitos: deployment de desarrollo vinculado y configurado antes de levantar la aplicación (secretos del backend con `convex env set`: `BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SITE_URL=http://localhost:5173`), `.env.local` en `apps/web` con `VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL` y `VITE_SITE_URL=http://localhost:5173`, aplicación levantada con `bun run dev:web` desde la raíz (inicia Convex y la SPA en `http://localhost:5173`; no ejecutes `bunx convex dev` aparte, ver README raíz) y dos cuentas ficticias (una `@alu.uct.cl` y una externa).
 
-Pasos: 1) ingresar con la cuenta `@alu.uct.cl` y comprobar “Sesión iniciada” con `getSessionState` en `authenticated`; 2) pulsar `Cerrar sesión` y comprobar el retorno al acceso institucional con la query en `{"status":"unauthenticated"}`; 3) ingresar con la cuenta externa y comprobar el mensaje genérico sin detalles; 4) con la sesión iniciada en dos pestañas, cerrar en una y comprobar en la otra el aviso “Tu sesión terminó. Vuelve a ingresar.”.
+Pasos: 1) ingresar con la cuenta `@alu.uct.cl` y comprobar “Sesión iniciada” con `getSessionState` en `authenticated`; 2) pulsar `Cerrar sesión` y comprobar el retorno al acceso institucional con la query en `{"status":"unauthenticated"}`; 3) ingresar con la cuenta externa y comprobar el mensaje genérico sin detalles; 4) con la sesión iniciada en dos pestañas, cerrar en una y comprobar el aviso “Tu sesión terminó. Vuelve a ingresar.” en la pestaña del cierre y el acceso limpio en la otra.
 
-| Paso | Fecha     | Entorno          | Responsable | Resultado     |
-| ---- | --------- | ---------------- | ----------- | ------------- |
-| 1    | pendiente | desarrollo local | por asignar | por registrar |
-| 2    | pendiente | desarrollo local | por asignar | por registrar |
-| 3    | pendiente | desarrollo local | por asignar | por registrar |
-| 4    | pendiente | desarrollo local | por asignar | por registrar |
+| Paso | Fecha      | Entorno          | Responsable   | Resultado                                                                             |
+| ---- | ---------- | ---------------- | ------------- | ------------------------------------------------------------------------------------- |
+| 1    | 2026-09-26 | desarrollo local | Wladimir06-py | OK: “Sesión iniciada” con `@alu.uct.cl`                                               |
+| 2    | 2026-09-26 | desarrollo local | Wladimir06-py | OK: tras “Cerrar sesión”, la query responde `{"status":"unauthenticated"}`            |
+| 3    | 2026-09-26 | desarrollo local | Wladimir06-py | OK: mensaje genérico “No pudimos iniciar sesión. Inténtalo de nuevo.”                 |
+| 4    | 2026-09-26 | desarrollo local | Wladimir06-py | OK: la pestaña del cierre muestra el aviso de término; la otra queda en acceso limpio |
