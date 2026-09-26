@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { toMinimalIdentity } from "../application/session/minimal_identity";
+import { resolveSessionAndRole } from "../application/session/portal_role";
 import { getMyProfileUseCase } from "../application/session/profile";
 import { query } from "../_generated/server";
 import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "../validators";
@@ -62,5 +63,41 @@ export const getMyProfile = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     return await getMyProfileUseCase(ctx, identity);
+  },
+});
+
+const sessionStateValidator = v.union(
+  v.object({
+    status: v.literal("authenticated"),
+    email: v.string(),
+    name: v.string(),
+    population: v.union(v.literal("estudiante"), v.literal("personal")),
+  }),
+  v.object({ status: v.literal("unauthenticated") }),
+);
+
+const sessionRoleValidator = v.union(
+  v.object({ status: v.literal("authenticated"), role: roleUnion, email: v.string() }),
+  v.object({ status: v.literal("unauthenticated") }),
+);
+
+/**
+ * Borde de Presentación: sesión y rol propio para navegación Web (TI2-20).
+ *
+ * Adaptador delgado: resuelve la identidad una vez en el servidor y delega
+ * en Aplicación. Devuelve sesión y rol juntos para que la Web nunca observe
+ * la sesión de una cuenta con el rol de otra al cambiar de cuenta. Sin
+ * identidad, sin perfil o sin vigencia responde `unauthenticated` en la
+ * mitad que corresponda. No autoriza nada por sí mismo.
+ */
+export const getSessionWithRole = query({
+  args: {},
+  returns: v.object({
+    session: sessionStateValidator,
+    role: sessionRoleValidator,
+  }),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await resolveSessionAndRole(ctx, identity);
   },
 });
