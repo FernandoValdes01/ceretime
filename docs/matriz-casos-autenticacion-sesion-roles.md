@@ -4,7 +4,7 @@ Evidencia de TI2-12: qué prueba automatizada cubre cada situación de autentica
 
 ## Cómo leerla
 
-Cada prueba se nombra por archivo y título, tal como lo imprime `vitest`, para poder buscarla sin depender de números de línea. El estado dice si la prueba ya está en `main`, si la agrega esta issue (TI2-12) o si no existe ninguna prueba para esa situación.
+Cada prueba se nombra por archivo y título, tal como lo imprime `vitest`, para poder buscarla sin depender de números de línea. El estado dice si la prueba ya está en `main`, o si la agrega esta issue (TI2-12).
 
 Todo se corre con `bun run test:convex` y `bun run test:web`. La CI ejecuta los dos en los jobs "Verificación Backend" y "Validación Web", y cualquier archivo `*.test.ts` o `*.test.tsx` nuevo en `convex/` o `apps/web/src/` entra solo, sin tocar los workflows.
 
@@ -29,6 +29,8 @@ Todo se corre con `bun run test:convex` y `bun run test:web`. La CI ejecuta los 
 | `institutional-login` | `apps/web/src/application/session/institutional-login.test.ts` |
 | `AuthScreen` | `apps/web/src/presentation/auth/AuthScreen.test.tsx` |
 | `sprint1Queries` | `convex/sprint1Queries.test.ts` |
+| `practitionerMinimization` | `convex/practitionerMinimization.test.ts` |
+| `role_permissions` | `convex/role_permissions.test.ts` |
 
 ## Login e identidad institucional
 
@@ -94,16 +96,18 @@ Pruebas de los portales de personal: `staff-routes`, grupos "portal Profesional 
 
 Resultado de llamar cada operación del backend con cada rol vigente, o sin identidad. "Denegado" significa que la operación responde el error genérico `No autorizado`, sin revelar si el recurso existe.
 
+Las celdas de `role_permissions` las agrega esta issue. Ahí el mensaje se compara exacto, así que un rechazo que agregue el motivo falla, y cada grupo tiene una prueba de control donde el rol que corresponde sí opera sobre el mismo escenario: sin ella, un escenario mal armado haría pasar los rechazos por cualquier motivo.
+
 ### Sesión y acompañamientos
 
 | Operación | Estudiante | Profesional | Practicante | Administrador | Sin identidad |
 | --- | --- | --- | --- | --- | --- |
 | Sesión y rol propios | Sesión y rol · `session_role` | Sesión y rol · `session_role` | Sesión y rol · `session_role` | Sesión y rol · `session_role` | No autenticado · `session_role` |
-| Perfil propio | Propio · `sprint1Queries` | **Sin prueba** | **Sin prueba** | **Sin prueba** | Denegado · `sprint1Queries` |
+| Perfil propio | Propio · `sprint1Queries` | Propio · `role_permissions` | Propio · `role_permissions` | Propio · `role_permissions` | Denegado · `sprint1Queries` |
 | Leer un acompañamiento | Propio, completo · `authorization` | Asignado, completo · `authorization` | Asignado, minimizado · `authorization` | Denegado · `authorization` | Denegado · `authorization` |
-| Listar acompañamientos propios | Propios · `authorization` | **Sin prueba** | **Sin prueba** | Denegado · `authorization` | **Sin prueba** |
-| Listar acompañamientos asignados | **Sin prueba** | Asignados · `authorization` | Asignados · `authorization` | Denegado · `authorization` | **Sin prueba** |
-| Leer notas internas | Denegado · `authorization` | Asignado · `authorization` | Denegado · `authorization` | Denegado · `authorization` | **Sin prueba** |
+| Listar acompañamientos propios | Propios · `authorization` | Denegado · `role_permissions` | Denegado · `practitionerMinimization` | Denegado · `authorization` | Denegado · `role_permissions` |
+| Listar acompañamientos asignados | Denegado · `role_permissions` | Asignados · `authorization` | Asignados · `authorization` | Denegado · `authorization` | Denegado · `role_permissions` |
+| Leer notas internas | Denegado · `authorization` | Asignado · `authorization` | Denegado · `authorization` | Denegado · `authorization` | Denegado · `role_permissions` |
 
 ### Asignaciones y habilitación
 
@@ -116,19 +120,15 @@ Resultado de llamar cada operación del backend con cada rol vigente, o sin iden
 
 | Operación | Estudiante | Profesional | Practicante | Administrador | Sin identidad |
 | --- | --- | --- | --- | --- | --- |
-| Registrar una solicitud | Permitido · `requests` | Denegado · `requests` | **Sin prueba** | **Sin prueba** | Denegado · `requests` |
-| Listar solicitudes propias | Propias · `requests` | Denegado · `requests` | **Sin prueba** | **Sin prueba** | Denegado · `requests` |
-| Listar solicitudes tomadas | Denegado · `requests` | Tomadas · `requests` | **Sin prueba** | **Sin prueba** | Denegado · `requests` |
-| Ver la bandeja de recibidas | **Sin prueba** | Recibidas, sin datos sensibles · `requests` | **Sin prueba** | **Sin prueba** | **Sin prueba** |
-| Tomar una solicitud | **Sin prueba** | Permitido si está recibida y sin otra toma · `requests` | **Sin prueba** | **Sin prueba** | **Sin prueba** |
-| Pedir información adicional | Denegado · `requests` | Permitido con toma y motivo · `requests` | **Sin prueba** | **Sin prueba** | Denegado · `requests` |
-| Aceptar una solicitud | Denegado · `acceptance` | Permitido con toma · `acceptance` | **Sin prueba** | **Sin prueba** | Denegado · `acceptance` |
+| Registrar una solicitud | Permitido · `requests` | Denegado · `requests` | Denegado · `role_permissions` | Denegado · `role_permissions` | Denegado · `requests` |
+| Listar solicitudes propias | Propias · `requests` | Denegado · `requests` | Denegado · `role_permissions` | Denegado · `role_permissions` | Denegado · `requests` |
+| Listar solicitudes tomadas | Denegado · `requests` | Tomadas · `requests` | Denegado · `role_permissions` | Denegado · `role_permissions` | Denegado · `requests` |
+| Ver la bandeja de recibidas | Denegado · `role_permissions` | Recibidas, sin datos sensibles · `requests` | Denegado · `role_permissions` | Denegado · `role_permissions` | Denegado · `role_permissions` |
+| Tomar una solicitud | Denegado · `role_permissions` | Permitido si está recibida y sin otra toma · `requests` | Denegado · `role_permissions` | Denegado · `role_permissions` | Denegado · `role_permissions` |
+| Pedir información adicional | Denegado · `requests` | Permitido con toma y motivo · `requests` | Denegado · `role_permissions` | Denegado · `role_permissions` | Denegado · `requests` |
+| Aceptar una solicitud | Denegado · `acceptance` | Permitido con toma · `acceptance` | Denegado · `role_permissions` | Denegado · `role_permissions` | Denegado · `acceptance` |
 | Ver el detalle de una solicitud | Propia · `sprint1Queries` | Tomada · `sprint1Queries` | Denegado · `sprint1Queries` | Denegado · `sprint1Queries` | Denegado · `sprint1Queries` |
 
-## Casos de prueba pendientes
+## Qué no cubre esta matriz
 
-Son el trabajo pendiente de esta rama. Donde el resultado esperado no está escrito en otro documento, se confirma leyendo el caso de uso antes de escribir la prueba.
-
-- **Identidad:** el Profesional, el Practicante y el Administrador consultando su propio perfil; solo está probado el Estudiante.
-- **Solicitudes:** el Practicante y el Administrador en las siete operaciones; el Estudiante y el anónimo en la bandeja y en la toma. El documento de casos de uso de TI2-9, en `convex/application/requests/`, define quién opera cada una y que toda denegación responde el error genérico.
-- **Acompañamientos:** los listados llamados por un rol distinto del que les corresponde, y las notas internas sin identidad.
+Ninguna celda queda sin prueba automatizada. El flujo OAuth real contra Google no se automatiza: TI2-15 lo registró como evidencia manual en `convex/README.md`, con cuentas ficticias.
