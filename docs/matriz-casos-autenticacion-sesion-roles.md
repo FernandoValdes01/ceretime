@@ -4,7 +4,7 @@ Evidencia de TI2-12: qué prueba automatizada cubre cada situación de autentica
 
 ## Cómo leerla
 
-Cada prueba se nombra por archivo y título, tal como lo imprime `vitest`, para poder buscarla sin depender de números de línea. El estado dice si la prueba ya está en `main`, si la trae una issue vecina que todavía no se integra, o si no existe ninguna prueba para esa situación.
+Cada prueba se nombra por archivo y título, tal como lo imprime `vitest`, para poder buscarla sin depender de números de línea. El estado dice si la prueba ya está en `main`, si la agrega esta issue (TI2-12), si la trae una issue vecina que todavía no se integra, o si no existe ninguna prueba para esa situación.
 
 Todo se corre con `bun run test:convex` y `bun run test:web`. La CI ejecuta los dos en los jobs "Verificación Backend" y "Validación Web", y cualquier archivo `*.test.ts` o `*.test.tsx` nuevo en `convex/` o `apps/web/src/` entra solo, sin tocar los workflows.
 
@@ -62,10 +62,10 @@ Dónde se guarda la sesión y cuánto dura lo resuelve Better Auth: `convex/auth
 | Qué se prueba | Tipo | Prueba | Estado |
 | --- | --- | --- | --- |
 | Portales de personal: una sesión existente se restaura sin pasar por el acceso | Positivo | `staff-routes` › "el índice espera al par pendiente y deriva al portal cuando se resuelve" | En `main` |
-| Portal del Estudiante: lo mismo | Positivo | — | **Sin prueba** |
+| Portal del Estudiante: lo mismo | Positivo | `staff-routes` › "la sesión pendiente se restaura en el portal sin pasar por el acceso" | TI2-12 |
 | Sin sesión confirmada no se muestra contenido protegido | Negativo | `staff-routes` › "sin sesión confirmada navega al acceso aunque el par siga pendiente" | En `main` |
 | Portales de personal: perder la sesión oculta el portal y vuelve al acceso | Negativo | `staff-routes` › "perder la sesión oculta el portal y navega al acceso aunque el rol siga vigente" | En `main` |
-| Portal del Estudiante: lo mismo | Negativo | — | **Sin prueba** |
+| Portal del Estudiante: lo mismo | Negativo | `staff-routes` › "la sesión que se pierde con el portal abierto lo oculta y vuelve al acceso" | TI2-12 |
 | Al cambiar de cuenta no aparece el portal anterior | Negativo | `staff-routes` › "al cambiar de cuenta el portal anterior no aparece con la sesión nueva" | En `main` |
 | Un perfil inhabilitado conserva la sesión pero pierde el rol | Negativo | `session_role` › "perfil inhabilitado mantiene sesión pero sin rol" | En `main` |
 | Una sesión expirada responde no autenticado sin motivo | Negativo | `session` › "expiración (identidad ausente) responde no autenticado sin filtrar motivo (TI2-15)" | TI2-15, sin integrar |
@@ -77,14 +77,14 @@ Qué ve cada rol al entrar directamente a cada portal. El guard del Estudiante d
 
 | Portal | Estudiante | Profesional | Practicante | Administrador | Sin sesión | Sin perfil |
 | --- | --- | --- | --- | --- | --- | --- |
-| Estudiante | Entra | Denegado | **Sin prueba** | Denegado por población | Al acceso | Entra por población · **Sin prueba** |
+| Estudiante | Entra | Denegado | Denegado por rol | Denegado por población | Al acceso | Entra por población |
 | Profesional | Denegado | Entra | Denegado | Denegado | Al acceso | Denegado |
 | Practicante | Denegado | Denegado | Entra | Denegado | Al acceso | Denegado |
 | Administración | Denegado | Denegado | Denegado | Entra | Al acceso | Denegado |
 
-El Practicante tiene correo de estudiante, así que pasa el filtro por población del portal del Estudiante y solo lo detiene su rol; ninguna prueba lo ejercita. Al Administrador lo detiene la población, y eso lo prueba `student-routes` › "la sesión de otra población ve denegado sin contenido protegido". Las pruebas de `student-routes` siempre le dan rol de estudiante a la sesión de estudiante, así que la entrada sin perfil tampoco está probada.
+El Practicante tiene correo de estudiante, así que pasa el filtro por población del portal del Estudiante y solo lo detiene su rol. Al Administrador lo detiene la población, y eso lo prueba `student-routes` › "la sesión de otra población ve denegado sin contenido protegido". La cuenta sin perfil entra porque la portada no lee datos del backend, y el backend le niega el perfil propio: `sprint1Queries` › "perfil propio sin identidad o sin perfil se deniega".
 
-Pruebas del portal del Estudiante: `student-routes` › "el Estudiante con sesión ve el portal sin redirigir", "la sesión de otra población ve denegado sin contenido protegido", "el acceso directo sin sesión redirige al acceso conservando el retorno"; `staff-routes` › "el Profesional no entra al portal del Estudiante", "el acceso directo a /estudiante deniega el rol staff sin exponer contenido".
+Pruebas del portal del Estudiante: `student-routes` › "el Estudiante con sesión ve el portal sin redirigir", "la sesión de otra población ve denegado sin contenido protegido", "el acceso directo sin sesión redirige al acceso conservando el retorno"; `staff-routes` › "el Profesional no entra al portal del Estudiante", "el acceso directo a /estudiante deniega el rol staff sin exponer contenido", "el Practicante con correo de estudiante ve denegado sin contenido del portal", "la cuenta de estudiante sin perfil entra por población". Las dos últimas están en `staff-routes` porque su simulador fija el rol aparte de la sesión; el de `student-routes` le da siempre rol de estudiante a la sesión de estudiante.
 
 Pruebas de los portales de personal: `staff-routes`, grupos "portal Profesional (TI2-20)", "portal Practicante (TI2-20)" y "portal Administración (TI2-20)". Cada grupo prueba los tres roles denegados, la sesión sin perfil, el acceso directo sin sesión y el rol que entra.
 
@@ -128,7 +128,5 @@ Resultado de llamar cada operación del backend con cada rol vigente, o sin iden
 Son el trabajo pendiente de esta rama. Donde el resultado esperado no está escrito en otro documento, se confirma leyendo el caso de uso antes de escribir la prueba.
 
 - **Identidad:** el Profesional, el Practicante y el Administrador consultando su propio perfil; solo está probado el Estudiante.
-- **Sesión:** en el portal del Estudiante, la sesión existente que se restaura sin pasar por el acceso, y la sesión que se pierde con el portal abierto.
-- **Guards:** en el portal del Estudiante, el Practicante que entra con su correo de estudiante y la cuenta de estudiante sin perfil, que por diseño de TI2-6 entra por población.
 - **Solicitudes:** el Practicante y el Administrador en las siete operaciones; el Estudiante y el anónimo en la bandeja y en la toma. El documento de casos de uso de TI2-9, en `convex/application/requests/`, define quién opera cada una y que toda denegación responde el error genérico.
 - **Acompañamientos:** los listados llamados por un rol distinto del que les corresponde, y las notas internas sin identidad.
