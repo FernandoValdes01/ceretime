@@ -56,6 +56,15 @@ export interface AccompanimentRequestContent {
 }
 
 /**
+ * Tope del texto de necesidades de acceso (TI2-23).
+ *
+ * Valor acordado en el contrato definitivo de TI2-23: vive acá para que el
+ * Backend y sus consumidores (Web y Mobile) validen con el mismo número en
+ * vez de duplicarlo.
+ */
+export const ACCESS_NEEDS_MAX_LENGTH = 2000;
+
+/**
  * Entidad pública de solicitud (TI2-8): espejo exacto de la fila de la tabla
  * `requests` tal como la lee el Backend (`_id`, `studentId`, `status`,
  * `accessNeeds` como texto y `createdAt`). Un documento real de la tabla se

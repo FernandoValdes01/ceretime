@@ -18,6 +18,7 @@ import type * as application_requests_identity from "../application/requests/ide
 import type * as application_requests_queries from "../application/requests/queries.js";
 import type * as application_session_minimal_identity from "../application/session/minimal_identity.js";
 import type * as application_session_portal_role from "../application/session/portal_role.js";
+import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
 import type * as assignments from "../assignments.js";
 import type * as auth from "../auth.js";
@@ -63,6 +64,7 @@ declare const fullApi: ApiFromModules<{
   "application/requests/queries": typeof application_requests_queries;
   "application/session/minimal_identity": typeof application_session_minimal_identity;
   "application/session/portal_role": typeof application_session_portal_role;
+  "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
   assignments: typeof assignments;
   auth: typeof auth;
