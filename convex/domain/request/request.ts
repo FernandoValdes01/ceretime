@@ -130,6 +130,12 @@ export interface StoredRequestFields {
  * disponibilidad) aún no tiene columna en el schema de Sprint 1 y queda
  * pendiente de persistencia futura, sin inventarle ubicación.
  *
+ * Es solo dominio para que los clientes armen el texto antes de llamar:
+ * Aplicación y Presentación no lo invocan y la API rechaza con sus propios
+ * mensajes (ver tabla de rechazos en `docs/contratos-sprint-1.md`). Exige
+ * texto no vacío como el registro: un arreglo vacío sin texto libre es
+ * error, no fila vacía.
+ *
  * Nunca trunca: si el texto supera `ACCESS_NEEDS_MAX_LENGTH` devuelve error
  * con código estable para que el llamante lo informe sin filtrar detalles
  * internos.
@@ -143,6 +149,15 @@ export function toStoredRequestFields(
     parts.push(other);
   }
   const accessNeeds = parts.join("\n");
+  if (accessNeeds.trim().length === 0) {
+    return {
+      status: "error",
+      error: {
+        code: "access_needs_empty",
+        message: "Se requiere describir la necesidad de acceso.",
+      },
+    };
+  }
   if (!isAccessNeedsWithinLimit(accessNeeds)) {
     return {
       status: "error",

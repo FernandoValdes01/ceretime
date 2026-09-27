@@ -51,11 +51,11 @@ Los rechazos de regla y validación responden `Error` con mensaje específico en
 | `requestAdditionalInformation` | "Se requiere el motivo para pedir información adicional"; "La solicitud no admite pedir información adicional en su estado actual" |
 | `acceptRequest` | "La solicitud ya fue aceptada"; "La solicitud no admite la aceptación en su estado actual"; "Se requiere el objetivo para abrir el acompañamiento" |
 
-Los resultados de dominio que pueden fallar usan `ApiResult<T>` (`{status: "ok", data}` o `{status: "error", error: PublicApiError}`) de `convex/domain/errors`, con `PublicApiError = {code, message}` sin stack traces ni datos internos. Primer uso: el serializador de solicitudes devuelve `access_needs_too_long` con mensaje genérico en español cuando el texto supera el tope.
+Los resultados de dominio que pueden fallar usan `ApiResult<T>` (`{status: "ok", data}` o `{status: "error", error: PublicApiError}`) de `convex/domain/errors`, con `PublicApiError = {code, message}` sin stack traces ni datos internos. El serializador devuelve `access_needs_empty` o `access_needs_too_long`, pero es solo dominio para que los clientes armen el texto antes de llamar: Aplicación y Presentación no lo invocan (verificado con `git grep toStoredRequestFields`) y la API rechaza con los mensajes de la tabla de arriba, no con estos códigos.
 
 ## Topes y serialización (TI2-23)
 
-`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/request` y exportado por `convex/domain/index.ts` para que el Backend y los consumidores validen igual. La validación de 1–2000 caracteres ya está integrada en `registerRequest` (recorta, rechaza vacío y exceso). Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
+`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/request` y exportado por `convex/domain/index.ts`. El Backend aplica el límite (la validación de 1–2000 caracteres ya está integrada en `registerRequest`) y los clientes reusan el valor 2000 documentado acá hasta que exista un paquete compartido: Web y Mobile consumen vía `api` de `convex/_generated/api` y ningún cliente importa `convex/domain` (verificado contra sus imports reales). Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
 
 `toStoredRequestFields` convierte el contenido estructurado a la forma persistida uniendo etiquetas de `accessNeeds` más `otherAccessNeed` con salto de línea. Destino de cada campo de `SubmitStudentRequestCommand` (verificado contra el tipo real de Mobile):
 

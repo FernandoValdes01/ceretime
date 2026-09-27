@@ -146,6 +146,21 @@ describe("toStoredRequestFields (TI2-23)", () => {
       },
     });
   });
+
+  test("rechaza el arreglo vacío con error estable en vez de devolver texto vacío", () => {
+    const resultado = toStoredRequestFields({
+      ...contenido,
+      accessNeeds: [],
+      otherAccessNeed: undefined,
+    });
+    expect(resultado).toEqual({
+      status: "error",
+      error: {
+        code: "access_needs_empty",
+        message: "Se requiere describir la necesidad de acceso.",
+      },
+    });
+  });
 });
 
 describe("REQUEST_STATE_LABELS (TI2-8)", () => {
