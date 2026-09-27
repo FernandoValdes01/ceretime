@@ -126,7 +126,10 @@ function AssignedPractitionerAccompaniments() {
   );
 
   return (
-    <RoleHome title="Acompañamientos asignados">
+    <RoleHome
+      title="Acompañamientos asignados"
+      description="Consulta sólo los acompañamientos que un profesional te asignó. Esta sección es de sólo lectura."
+    >
       <PractitionerAccompanimentsContent {...state} />
     </RoleHome>
   );
