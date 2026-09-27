@@ -35,7 +35,7 @@ const ACCOUNTS: Record<Role, { subject: string; email: string; label: string }> 
 
 const PAGE = { numItems: 10, cursor: null };
 
-function as(t: TestConvex, role: Role): Caller {
+function asRole(t: TestConvex, role: Role): Caller {
   const { subject, email } = ACCOUNTS[role];
   return t.withIdentity({
     subject,
@@ -77,7 +77,7 @@ async function seedRequests(t: TestConvex) {
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
   });
-  await as(t, "professional").mutation(api.presentation.requests.takeRequest, {
+  await asRole(t, "professional").mutation(api.presentation.requests.takeRequest, {
     requestId: underReview,
   });
   return { ids, received, underReview };
@@ -85,11 +85,27 @@ async function seedRequests(t: TestConvex) {
 
 type RequestScenario = Awaited<ReturnType<typeof seedRequests>>;
 
-const REQUEST_OPERATIONS: Array<{
+type RequestOperation = {
   name: string;
   allowed: Role;
   call: (caller: Caller, scenario: RequestScenario) => Promise<unknown>;
-}> = [
+};
+
+const LIST_OPEN_REQUESTS: RequestOperation = {
+  name: "ver la bandeja de recibidas",
+  allowed: "professional",
+  call: (caller) =>
+    caller.query(api.presentation.requests.listOpenRequests, { paginationOpts: PAGE }),
+};
+
+const TAKE_REQUEST: RequestOperation = {
+  name: "tomar una solicitud",
+  allowed: "professional",
+  call: (caller, scenario) =>
+    caller.mutation(api.presentation.requests.takeRequest, { requestId: scenario.received }),
+};
+
+const REQUEST_OPERATIONS: Array<RequestOperation> = [
   {
     name: "registrar una solicitud",
     allowed: "student",
@@ -110,18 +126,8 @@ const REQUEST_OPERATIONS: Array<{
     call: (caller) =>
       caller.query(api.presentation.requests.listAuthorizedRequests, { paginationOpts: PAGE }),
   },
-  {
-    name: "ver la bandeja de recibidas",
-    allowed: "professional",
-    call: (caller) =>
-      caller.query(api.presentation.requests.listOpenRequests, { paginationOpts: PAGE }),
-  },
-  {
-    name: "tomar una solicitud",
-    allowed: "professional",
-    call: (caller, scenario) =>
-      caller.mutation(api.presentation.requests.takeRequest, { requestId: scenario.received }),
-  },
+  LIST_OPEN_REQUESTS,
+  TAKE_REQUEST,
   {
     name: "pedir información adicional",
     allowed: "professional",
@@ -142,10 +148,7 @@ const REQUEST_OPERATIONS: Array<{
   },
 ];
 
-const TRIAGE_OPERATIONS = REQUEST_OPERATIONS.filter(
-  (operation) =>
-    operation.name === "ver la bandeja de recibidas" || operation.name === "tomar una solicitud",
-);
+const TRIAGE_OPERATIONS = [LIST_OPEN_REQUESTS, TAKE_REQUEST];
 
 describe("solicitudes: control del escenario (TI2-12)", () => {
   const controls = REQUEST_OPERATIONS.map((operation) => ({
@@ -157,7 +160,7 @@ describe("solicitudes: control del escenario (TI2-12)", () => {
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(as(t, operation.allowed), scenario)).resolves.toBeDefined();
+    await expect(operation.call(asRole(t, operation.allowed), scenario)).resolves.toBeDefined();
   });
 });
 
@@ -169,7 +172,7 @@ describe.each([
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(as(t, role), scenario)).rejects.toThrow(DENIED);
+    await expect(operation.call(asRole(t, role), scenario)).rejects.toThrow(DENIED);
   });
 });
 
@@ -178,7 +181,7 @@ describe("bandeja y toma fuera del Profesional (TI2-12)", () => {
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(as(t, "student"), scenario)).rejects.toThrow(DENIED);
+    await expect(operation.call(asRole(t, "student"), scenario)).rejects.toThrow(DENIED);
   });
 
   test.each(TRIAGE_OPERATIONS)("sin identidad no se puede $name", async (operation) => {
@@ -198,7 +201,7 @@ describe("perfil propio del personal (TI2-12)", () => {
     const t = convexTest(schema, modules);
     await seedAccounts(t);
 
-    const profile = await as(t, role).query(api.presentation.session.getMyProfile, {});
+    const profile = await asRole(t, role).query(api.presentation.session.getMyProfile, {});
     expect(profile).toEqual({
       fullName: "Ficticio",
       email: ACCOUNTS[role].email,
@@ -217,11 +220,11 @@ describe("perfil propio del personal (TI2-12)", () => {
  */
 async function seedAccompaniment(t: TestConvex) {
   const { ids, underReview } = await seedRequests(t);
-  const accompaniment = await as(t, "professional").mutation(
+  const accompaniment = await asRole(t, "professional").mutation(
     api.presentation.requests.acceptRequest,
     { requestId: underReview, objective: "Objetivo ficticio" },
   );
-  await as(t, "professional").mutation(internal.assignments.assign, {
+  await asRole(t, "professional").mutation(internal.assignments.assign, {
     accompanimentId: accompaniment._id,
     userId: ids.intern,
     assignedRole: "intern",
@@ -241,19 +244,19 @@ describe("acompañamientos por rol (TI2-12)", () => {
     const t = convexTest(schema, modules);
     const accompanimentId = await seedAccompaniment(t);
 
-    const owned = await as(t, "student").query(
+    const owned = await asRole(t, "student").query(
       api.presentation.accompaniments.listOwnedAccompaniments,
       { paginationOpts: PAGE },
     );
     expect(owned.page.map((item) => item._id)).toEqual([accompanimentId]);
     for (const role of ["professional", "intern"] as const) {
-      const assigned = await as(t, role).query(
+      const assigned = await asRole(t, role).query(
         api.presentation.accompaniments.listAssignedAccompaniments,
         { limit: 10 },
       );
       expect(assigned.items.map((item) => item._id)).toEqual([accompanimentId]);
     }
-    const notes = await as(t, "professional").query(
+    const notes = await asRole(t, "professional").query(
       api.presentation.accompaniments.getInternalNotes,
       { accompanimentId, paginationOpts: PAGE },
     );
@@ -266,7 +269,7 @@ describe("acompañamientos por rol (TI2-12)", () => {
     await seedAccompaniment(t);
 
     await expect(
-      as(t, "professional").query(api.presentation.accompaniments.listOwnedAccompaniments, {
+      asRole(t, "professional").query(api.presentation.accompaniments.listOwnedAccompaniments, {
         paginationOpts: PAGE,
       }),
     ).rejects.toThrow(DENIED);
@@ -277,7 +280,7 @@ describe("acompañamientos por rol (TI2-12)", () => {
     await seedAccompaniment(t);
 
     await expect(
-      as(t, "student").query(api.presentation.accompaniments.listAssignedAccompaniments, {
+      asRole(t, "student").query(api.presentation.accompaniments.listAssignedAccompaniments, {
         limit: 10,
       }),
     ).rejects.toThrow(DENIED);
