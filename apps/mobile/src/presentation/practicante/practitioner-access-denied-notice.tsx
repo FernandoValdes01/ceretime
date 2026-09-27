@@ -1,15 +1,21 @@
 import { StyleSheet, Text, View } from "react-native";
 
-export function PractitionerAccessDeniedNotice() {
+import { Action } from "../components/screen";
+
+export function PractitionerAccessDeniedNotice({
+  message = "No existe una asignación válida para tu cuenta. Sólo puedes consultar acompañamientos que un profesional te haya asignado.",
+  onBack,
+}: {
+  readonly message?: string;
+  readonly onBack?: () => void;
+}) {
   return (
     <View accessibilityRole="alert" style={styles.container}>
       <Text accessibilityRole="header" style={styles.title}>
         Acceso denegado
       </Text>
-      <Text style={styles.message}>
-        No existe una asignación válida para tu cuenta. Sólo puedes consultar acompañamientos que un
-        profesional te haya asignado.
-      </Text>
+      <Text style={styles.message}>{message}</Text>
+      {onBack ? <Action label="Volver a acompañamientos" onPress={onBack} /> : null}
     </View>
   );
 }

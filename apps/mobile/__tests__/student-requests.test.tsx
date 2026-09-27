@@ -90,7 +90,7 @@ describe("Solicitudes del estudiante", () => {
       screen.queryByText("Revisa las solicitudes de acompañamiento que has enviado a CERETI."),
     ).not.toBeOnTheScreen();
     expect(screen.queryByText("SOL-DEMO-001")).not.toBeOnTheScreen();
-    expect(screen.getAllByText("Ver detalle")).toHaveLength(2);
+    expect(screen.getAllByText("Ver detalle")).toHaveLength(5);
     fireEvent(requestCard, "focus");
     expect(requestCard).toHaveStyle({
       outlineColor: "#2563eb",

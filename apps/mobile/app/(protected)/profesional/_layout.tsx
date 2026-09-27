@@ -31,6 +31,13 @@ export default function ProfessionalLayout() {
             />
             <Tabs.Screen name="estudiantes/[requestId]" options={{ href: null }} />
             <Tabs.Screen
+              name="acompanamientos"
+              options={{
+                title: "Acompañamientos",
+                tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="users" />,
+              }}
+            />
+            <Tabs.Screen
               name="perfil"
               options={{
                 title: "Perfil",

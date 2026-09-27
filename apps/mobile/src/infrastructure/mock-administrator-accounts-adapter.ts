@@ -20,6 +20,12 @@ const fictionalPractitionerAccounts: readonly PractitionerAccount[] = [
     email: "matias.vera@example.com",
     status: "pending",
   },
+  {
+    id: "practitioner-account-4",
+    displayName: "Valentina Rojas",
+    email: "valentina.rojas@uct.cl",
+    status: "enabled",
+  },
 ];
 
 function hasInstitutionalPractitionerEmail(email: string): boolean {

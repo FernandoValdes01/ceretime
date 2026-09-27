@@ -4,9 +4,11 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-
 import { renderRouter } from "expo-router/testing-library";
 
 import type { PractitionerAccompaniment } from "../src/application/practitioner-accompaniment-models";
+import { PractitionerAccompanimentAccessDeniedError } from "../src/application/practitioner-accompaniment-port";
 import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { createMockPractitionerAccompanimentReader } from "../src/infrastructure/mock-practitioner-accompaniment-reader";
 import { PractitionerAccompanimentsContent } from "../src/presentation/practicante/practitioner-accompaniments-screen";
+import { PractitionerAccompanimentDetailContent } from "../src/presentation/practicante/practitioner-accompaniment-detail-screen";
 import { practitionerRoutes } from "../src/presentation/navigation/practitioner-routes";
 
 const appDirectory = path.resolve(__dirname, "../app");
@@ -22,12 +24,26 @@ describe("lector de acompañamientos del Practicante", () => {
   test("devuelve sólo los acompañamientos asignados a la identidad consultada", async () => {
     const reader = createMockPractitionerAccompanimentReader();
 
+    const assigned = await reader.readAssignedAccompaniments("mock-practitioner-assigned-1");
+    expect(assigned).toHaveLength(5);
+    expect(assigned).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "mock-accompaniment-1", view: "minimized" }),
+        expect.objectContaining({ id: "mock-accompaniment-2", status: "paused" }),
+        expect.objectContaining({ id: "mock-accompaniment-4", status: "closed" }),
+      ]),
+    );
+    expect(assigned.map(({ id }) => id)).not.toContain("mock-accompaniment-foreign-1");
     await expect(
-      reader.readAssignedAccompaniments("mock-practitioner-assigned-1"),
-    ).resolves.toEqual([
-      expect.objectContaining({ id: "mock-accompaniment-1", view: "minimized" }),
-    ]);
+      reader.readAssignedAccompaniment("mock-practitioner-assigned-1", "mock-accompaniment-1"),
+    ).resolves.toEqual(expect.objectContaining({ id: "mock-accompaniment-1", view: "minimized" }));
     await expect(reader.readAssignedAccompaniments("another-practitioner")).resolves.toEqual([]);
+    await expect(
+      reader.readAssignedAccompaniment("mock-practitioner-assigned-1", "not-assigned"),
+    ).rejects.toBeInstanceOf(PractitionerAccompanimentAccessDeniedError);
+    await expect(
+      reader.readAssignedAccompaniment("another-practitioner", "mock-accompaniment-1"),
+    ).rejects.toThrow("No puedes acceder a este acompañamiento.");
   });
 
   test("expone escenarios vacío y error controlado", async () => {
@@ -57,8 +73,11 @@ describe("pantalla de acompañamientos del Practicante", () => {
 
     expect(screen.getByText(accompaniment.objective)).toBeOnTheScreen();
     expect(screen.getByText("Activo")).toBeOnTheScreen();
-    expect(screen.queryByRole("button", { name: /Acompañamiento/ })).not.toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: /Acompañamiento/ })).toBeOnTheScreen();
+    expect(screen.queryByText("Solo lectura")).not.toBeOnTheScreen();
     expect(screen.queryByText("studentId")).not.toBeOnTheScreen();
+    expect(screen.queryByText("Editar")).not.toBeOnTheScreen();
+    expect(screen.queryByText("Eliminar")).not.toBeOnTheScreen();
   });
 
   test("muestra carga, error con reintento y vacío", () => {
@@ -86,6 +105,34 @@ describe("pantalla de acompañamientos del Practicante", () => {
     expect(screen.getByText("No tienes acompañamientos asignados")).toBeOnTheScreen();
   });
 
+  test("muestra carga y error del detalle con reintento", () => {
+    const reload = jest.fn();
+    const onBack = jest.fn();
+    const { rerender } = render(
+      <PractitionerAccompanimentDetailContent
+        status="loading"
+        data={null}
+        error={null}
+        reload={reload}
+        onBack={onBack}
+      />,
+    );
+    expect(screen.getByText("Cargando acompañamiento")).toBeOnTheScreen();
+
+    rerender(
+      <PractitionerAccompanimentDetailContent
+        status="error"
+        data={null}
+        error={new Error("Falla de detalle")}
+        reload={reload}
+        onBack={onBack}
+      />,
+    );
+    expect(screen.getByText("Falla de detalle")).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: "Reintentar carga del acompañamiento" }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   test("el Practicante asignado entra al listado", async () => {
     const navigation = renderRouter(appDirectory);
     await act(async () => {
@@ -95,6 +142,61 @@ describe("pantalla de acompañamientos del Practicante", () => {
 
     expect(await screen.findByText(accompaniment.objective)).toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/practicante/asignaciones");
+  });
+
+  test("abre el detalle minimizado desde el listado", async () => {
+    const navigation = renderRouter(appDirectory);
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Entrar como Practicante" }));
+      await Promise.resolve();
+    });
+
+    fireEvent.press(
+      await screen.findByRole("button", {
+        name: `Acompañamiento: ${accompaniment.objective}`,
+      }),
+    );
+
+    expect(await screen.findByText("Detalle del acompañamiento")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/practicante/asignaciones/mock-accompaniment-1");
+    expect(screen.getByText(accompaniment.objective)).toBeOnTheScreen();
+    expect(screen.getByText("Activo")).toBeOnTheScreen();
+    expect(screen.queryByText("Vista de solo lectura")).not.toBeOnTheScreen();
+    expect(screen.queryByText("studentId")).not.toBeOnTheScreen();
+    expect(screen.queryByText("accessNeeds")).not.toBeOnTheScreen();
+    expect(screen.queryByText("Editar")).not.toBeOnTheScreen();
+    expect(screen.queryByText("Eliminar")).not.toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole("button", { name: "Volver" }));
+    await waitFor(() => expect(navigation.getPathname()).toBe(practitionerRoutes.assigned));
+  });
+
+  test("usa la misma denegación para un acompañamiento no asignado o inexistente", async () => {
+    const navigation = renderRouter(appDirectory);
+    await act(async () => {
+      fireEvent.press(screen.getByRole("button", { name: "Entrar como Practicante" }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      router.push({
+        pathname: "/practicante/asignaciones/[accompanimentId]",
+        params: { accompanimentId: "not-assigned" },
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("No puedes acceder a este acompañamiento.")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/practicante/asignaciones/not-assigned");
+
+    await act(async () => {
+      router.push({
+        pathname: "/practicante/asignaciones/[accompanimentId]",
+        params: { accompanimentId: "does-not-exist" },
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("No puedes acceder a este acompañamiento.")).toBeOnTheScreen();
+    expect(screen.queryByText("not-assigned")).not.toBeOnTheScreen();
   });
 
   test("el Practicante sin asignación recibe acceso denegado", async () => {

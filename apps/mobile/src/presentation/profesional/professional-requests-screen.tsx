@@ -144,9 +144,6 @@ export function ProfessionalRequestsScreen() {
               <StudentText accessibilityRole="header" weight="bold" style={styles.title}>
                 Solicitudes
               </StudentText>
-              <StudentText style={styles.description}>
-                Revisa las solicitudes asignadas y registra el siguiente paso.
-              </StudentText>
             </View>
 
             {status === "loading" ? (
@@ -169,9 +166,6 @@ export function ProfessionalRequestsScreen() {
             ) : null}
             {status === "success" ? (
               <View style={styles.requestList}>
-                <StudentText weight="semibold" style={styles.sectionTitle}>
-                  Solicitudes asignadas
-                </StudentText>
                 {requests.map((request) => (
                   <RequestCard
                     key={request.id}
@@ -197,11 +191,9 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F7FAF9" },
   scroll: { flex: 1 },
   content: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 96 },
-  introduction: { paddingTop: 20, paddingBottom: 18, paddingHorizontal: 4, gap: 8 },
+  introduction: { paddingTop: 20, paddingBottom: 18, paddingHorizontal: 4 },
   title: { color: "#182C31", fontSize: 30, lineHeight: 36 },
-  description: { color: "#42565B", fontSize: 16, lineHeight: 24 },
   requestList: { gap: 12 },
-  sectionTitle: { color: "#182C31", fontSize: 18, lineHeight: 24, marginBottom: 2 },
   requestCard: {
     position: "relative",
     padding: 16,
