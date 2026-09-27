@@ -210,9 +210,8 @@ describe("autenticación mobile simulada", () => {
       fireEvent.press(await screen.findByRole("button", { name: "Entrar como Practicante" }));
       await Promise.resolve();
     });
-    await waitFor(() =>
-      expect(screen.getByText(/Consulta sólo los acompañamientos/)).toBeOnTheScreen(),
-    );
+    await waitFor(() => expect(screen.getByText("Acompañamientos asignados")).toBeOnTheScreen());
+    expect(screen.queryByText(/Consulta sólo los acompañamientos/)).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe(practitionerRoutes.assigned);
   });
 });

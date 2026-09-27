@@ -29,7 +29,7 @@ export function RoleHome({
   title,
   description,
   children,
-}: PropsWithChildren<{ title: string; description: string }>) {
+}: PropsWithChildren<{ title: string; description?: string }>) {
   const { accessDeniedRole, dismissAccessDenied, status, error } = useNavigationSession();
   const isSigningOut = status === "loading";
 

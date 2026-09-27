@@ -1,18 +1,8 @@
-import type { PractitionerAccompaniment } from "../application/practitioner-accompaniment-models";
-import type { PractitionerAccompanimentReader } from "../application/practitioner-accompaniment-port";
-
-const assignedAccompanimentsByPractitioner: Readonly<
-  Record<string, readonly PractitionerAccompaniment[]>
-> = {
-  "mock-practitioner-assigned-1": [
-    {
-      id: "mock-accompaniment-1",
-      objective: "Organizar apoyos para participar en actividades académicas.",
-      status: "active",
-      view: "minimized",
-    },
-  ],
-};
+import {
+  PractitionerAccompanimentAccessDeniedError,
+  type PractitionerAccompanimentReader,
+} from "../application/practitioner-accompaniment-port";
+import { fictionalPractitionerAccompanimentsByPractitioner } from "./mock-practitioner-accompaniment-data";
 
 export type MockPractitionerAccompanimentMode = "success" | "empty" | "error";
 
@@ -40,7 +30,30 @@ export function createMockPractitionerAccompanimentReader({
         return [];
       }
 
-      return assignedAccompanimentsByPractitioner[practitionerId] ?? [];
+      return fictionalPractitionerAccompanimentsByPractitioner[practitionerId] ?? [];
+    },
+    async readAssignedAccompaniment(practitionerId, accompanimentId) {
+      if (delayMs > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      if (mode === "error") {
+        throw new Error("No pudimos cargar el acompañamiento.");
+      }
+
+      if (mode === "empty") {
+        throw new PractitionerAccompanimentAccessDeniedError();
+      }
+
+      const accompaniment = fictionalPractitionerAccompanimentsByPractitioner[practitionerId]?.find(
+        (candidate) => candidate.id === accompanimentId,
+      );
+
+      if (!accompaniment) {
+        throw new PractitionerAccompanimentAccessDeniedError();
+      }
+
+      return accompaniment;
     },
   };
 }

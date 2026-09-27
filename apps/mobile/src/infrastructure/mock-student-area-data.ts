@@ -4,8 +4,8 @@ import type { StudentAreaSnapshot } from "../application/student-area-models";
 export const fictionalStudentArea: StudentAreaSnapshot = {
   student: {
     id: "example-student-1",
-    displayName: "Estudiante de ejemplo",
-    email: "estudiante.demo@example.com",
+    displayName: "Valentina Rojas",
+    email: "valentina.rojas@alu.uct.cl",
     role: "student",
   },
   requests: [
@@ -43,6 +43,55 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
       modalityPreference: "inPerson",
       preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
     },
+    {
+      id: "SOL-DEMO-003",
+      status: "received",
+      origin: "institutionalChannel",
+      createdAt: "2026-09-05T08:45:00.000Z",
+      updatedAt: "2026-09-05T08:45:00.000Z",
+      needSummary:
+        "Coordinar apoyos para comprender instrucciones extensas y participar en trabajos colaborativos.",
+      expectedOutcome: "Contar con acuerdos claros antes de cada actividad grupal.",
+      accessNeeds: [],
+      generalAvailability: {
+        preferredWeekdays: [1, 4],
+        preferredTimeRange: { from: "08:30", to: "10:30" },
+      },
+      modalityPreference: "inPerson",
+      preferredAccessibleInformationChannel: "Mensaje escrito dentro de la plataforma",
+    },
+    {
+      id: "SOL-DEMO-004",
+      status: "awaitingInformationOrAcceptance",
+      origin: "student",
+      createdAt: "2026-09-08T09:50:00.000Z",
+      updatedAt: "2026-09-12T16:30:00.000Z",
+      needSummary:
+        "Revisar alternativas de apoyo para actividades de terreno y salidas académicas.",
+      expectedOutcome: "Acordar una alternativa segura y accesible para el semestre.",
+      accessNeeds: [{ id: "example-access-4", label: "Información anticipada" }],
+      generalAvailability: {
+        preferredWeekdays: [1, 2, 4],
+      },
+      modalityPreference: "online",
+      preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
+    },
+    {
+      id: "SOL-DEMO-005",
+      status: "accepted",
+      origin: "student",
+      createdAt: "2026-08-25T14:10:00.000Z",
+      updatedAt: "2026-08-28T11:20:00.000Z",
+      needSummary: "Mantener apoyos para participar en clases y actividades prácticas.",
+      expectedOutcome: "Continuar el semestre con acuerdos de participación accesibles.",
+      accessNeeds: [{ id: "example-access-5", label: "Material digital accesible" }],
+      generalAvailability: {
+        preferredWeekdays: [2, 4],
+        preferredTimeRange: { from: "14:00", to: "17:00" },
+      },
+      modalityPreference: "inPerson",
+      preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
+    },
   ],
   accompaniments: [
     {
@@ -50,6 +99,12 @@ export const fictionalStudentArea: StudentAreaSnapshot = {
       requestId: "SOL-DEMO-001",
       status: "active",
       createdAt: "2026-08-12T15:00:00.000Z",
+    },
+    {
+      id: "example-accompaniment-2",
+      requestId: "SOL-DEMO-005",
+      status: "paused",
+      createdAt: "2026-08-28T11:20:00.000Z",
     },
   ],
 };
