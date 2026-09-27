@@ -11,7 +11,7 @@ import { usePractitionerAccompaniments } from "../hooks/use-practitioner-accompa
 import { PractitionerAssignmentGuard } from "../navigation/practitioner-assignment-guard";
 import { useNavigationSession } from "../navigation/session";
 
-const statusLabels: Record<PractitionerAccompanimentStatus, string> = {
+const statusTextByStatus: Record<PractitionerAccompanimentStatus, string> = {
   active: "Activo",
   paused: "En pausa",
   closed: "Cerrado",
@@ -53,7 +53,7 @@ function AccompanimentCard({
       </Text>
       <View style={styles.statusRow}>
         <Text style={styles.statusLabel}>Estado</Text>
-        <Text style={styles.statusValue}>{statusLabels[accompaniment.status]}</Text>
+        <Text style={styles.statusValue}>{statusTextByStatus[accompaniment.status]}</Text>
       </View>
     </View>
   );

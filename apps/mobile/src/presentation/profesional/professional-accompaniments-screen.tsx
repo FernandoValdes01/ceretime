@@ -3,31 +3,24 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type { ProfessionalRequest } from "@/application/professional-review-models";
-import type { StudentRequestStatus } from "@/application/student-area-models";
-import { AppIcon } from "@/presentation/components/app-icon";
+import type {
+  ProfessionalAccompaniment,
+  ProfessionalAccompanimentStatus,
+} from "@/application/professional-accompaniment-models";
+import { mobileDependencies } from "@/composition/mobile-dependencies";
+import { AppIcon, type AppIconName } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
-import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
-import { getStudentRequestStatusPresentation } from "@/presentation/estudiante/student-request-status-indicator";
+import { useProfessionalAccompaniments } from "@/presentation/hooks/use-professional-accompaniments";
 import { RoleGuard } from "@/presentation/navigation/role-guard";
-import { useProfessionalReviewContext } from "./professional-review-provider";
 import { ProfessionalHeader } from "./professional-header";
 
-const noActionMessages = {
-  received: "No hay acciones disponibles para esta solicitud.",
-  underReview: "No hay acciones disponibles para esta solicitud.",
-  awaitingInformationOrAcceptance: "Esperando información o aceptación del estudiante.",
-  accepted: "Solicitud aceptada; el acompañamiento puede continuar.",
-  referred: "Solicitud derivada; queda pendiente del contacto y aceptación del estudiante.",
-  closedWithoutAccompaniment: "Solicitud cerrada sin acompañamiento.",
-  cancelled: "Solicitud cancelada.",
-} satisfies Record<StudentRequestStatus, string>;
+const statusPresentations = {
+  active: { label: "Activo", icon: "circleCheck" },
+  paused: { label: "En pausa", icon: "clock" },
+  closed: { label: "Cerrado", icon: "circleX" },
+} satisfies Record<ProfessionalAccompanimentStatus, { label: string; icon: AppIconName }>;
 
-export function getNoActionMessage(status: StudentRequestStatus): string {
-  return noActionMessages[status];
-}
-
-function ReviewState({
+function StateMessage({
   title,
   message,
   action,
@@ -40,7 +33,12 @@ function ReviewState({
 }) {
   return (
     <View style={styles.stateCard}>
-      <StudentText accessibilityRole="header" weight="semibold" style={styles.stateTitle}>
+      <StudentText
+        accessibilityRole="header"
+        accessibilityLiveRegion="polite"
+        weight="semibold"
+        style={styles.stateTitle}
+      >
         {title}
       </StudentText>
       {message ? <StudentText style={styles.stateMessage}>{message}</StudentText> : null}
@@ -60,8 +58,8 @@ function ReviewState({
   );
 }
 
-function StatusBadge({ status }: Pick<ProfessionalRequest, "status">) {
-  const presentation = getStudentRequestStatusPresentation(status);
+function StatusBadge({ status }: Pick<ProfessionalAccompaniment, "status">) {
+  const presentation = statusPresentations[status];
 
   return (
     <View style={styles.statusBadge} accessible={false}>
@@ -79,56 +77,100 @@ function StatusBadge({ status }: Pick<ProfessionalRequest, "status">) {
   );
 }
 
-function RequestCard({
-  request,
+function AccompanimentCard({
+  accompaniment,
   onOpen,
 }: {
-  readonly request: ProfessionalRequest;
+  readonly accompaniment: ProfessionalAccompaniment;
   readonly onOpen: () => void;
 }) {
+  const presentation = statusPresentations[accompaniment.status];
   const [isPressed, setIsPressed] = useState(false);
-  const presentation = getStudentRequestStatusPresentation(request.status);
 
   return (
     <Pressable
-      accessibilityHint="Abre el detalle de la solicitud"
-      accessibilityLabel={`Solicitud de ${request.studentName}. Estado: ${presentation.label}. ${request.needSummary}`}
+      accessibilityHint="Abre el detalle del acompañamiento"
+      accessibilityLabel={`Acompañamiento de ${accompaniment.studentName}. Estado: ${presentation.label}. ${accompaniment.objective}`}
       accessibilityRole="button"
       onPress={onOpen}
       onPressIn={() => setIsPressed(true)}
       onPressOut={() => setIsPressed(false)}
-      style={[styles.requestCard, isPressed && styles.buttonPressed]}
+      style={[styles.accompanimentCard, isPressed && styles.buttonPressed]}
     >
       <View style={styles.cardTopRow}>
         <View style={styles.cardIdentity}>
           <View style={styles.studentAvatar}>
             <StudentText weight="semibold" style={styles.studentAvatarText}>
-              {request.studentName.slice(0, 1)}
+              {accompaniment.studentName.slice(0, 1)}
             </StudentText>
           </View>
           <View style={styles.cardIdentityCopy}>
             <StudentText weight="semibold" style={styles.studentName}>
-              {request.studentName}
-            </StudentText>
-            <StudentText style={styles.dateText}>
-              Recibida el {formatRequestDate(request.createdAt)}
+              {accompaniment.studentName}
             </StudentText>
           </View>
         </View>
-        <StatusBadge status={request.status} />
+        <StatusBadge status={accompaniment.status} />
       </View>
-
       <View style={styles.divider} />
-      <StudentText weight="semibold" style={styles.requestTitle}>
-        {request.needSummary}
+      <StudentText weight="semibold" style={styles.accompanimentTitle}>
+        {accompaniment.objective}
       </StudentText>
-      <StudentText style={styles.requestDescription}>{request.expectedOutcome}</StudentText>
     </Pressable>
   );
 }
 
-export function ProfessionalRequestsScreen() {
-  const { status, requests, error, reload } = useProfessionalReviewContext();
+export function ProfessionalAccompanimentsContent({
+  status,
+  data,
+  error,
+  reload,
+  onOpen = () => undefined,
+}: ReturnType<typeof useProfessionalAccompaniments> & {
+  readonly onOpen?: (accompanimentId: string) => void;
+}) {
+  if (status === "loading") {
+    return (
+      <StateMessage title="Cargando acompañamientos…">
+        <ActivityIndicator accessible={false} color="#087D70" />
+      </StateMessage>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <StateMessage
+        title="No pudimos cargar tus acompañamientos"
+        message={error instanceof Error ? error.message : "Intenta nuevamente."}
+        action={{ label: "Reintentar", onPress: reload }}
+      />
+    );
+  }
+
+  if (status === "empty") {
+    return (
+      <StateMessage
+        title="No tienes acompañamientos autorizados"
+        message="Cuando se abra un acompañamiento autorizado, aparecerá aquí."
+      />
+    );
+  }
+
+  return (
+    <View style={styles.accompanimentList}>
+      {data.map((accompaniment) => (
+        <AccompanimentCard
+          key={accompaniment.id}
+          accompaniment={accompaniment}
+          onOpen={() => onOpen(accompaniment.id)}
+        />
+      ))}
+    </View>
+  );
+}
+
+export function ProfessionalAccompanimentsScreen() {
+  const state = useProfessionalAccompaniments(mobileDependencies.professionalAccompanimentReader);
 
   return (
     <RoleGuard requiredRole="profesional">
@@ -142,44 +184,18 @@ export function ProfessionalRequestsScreen() {
           >
             <View style={styles.introduction}>
               <StudentText accessibilityRole="header" weight="bold" style={styles.title}>
-                Solicitudes
+                Acompañamientos
               </StudentText>
             </View>
-
-            {status === "loading" ? (
-              <ReviewState title="Cargando solicitudes…">
-                <ActivityIndicator accessible={false} color="#087D70" />
-              </ReviewState>
-            ) : null}
-            {status === "error" ? (
-              <ReviewState
-                title="No pudimos cargar las solicitudes"
-                message={error instanceof Error ? error.message : "Intenta nuevamente."}
-                action={{ label: "Reintentar", onPress: reload }}
-              />
-            ) : null}
-            {status === "empty" ? (
-              <ReviewState
-                title="No tienes solicitudes pendientes"
-                message="Cuando CERETI te asigne una solicitud, aparecerá aquí."
-              />
-            ) : null}
-            {status === "success" ? (
-              <View style={styles.requestList}>
-                {requests.map((request) => (
-                  <RequestCard
-                    key={request.id}
-                    request={request}
-                    onOpen={() =>
-                      router.push({
-                        pathname: "/profesional/estudiantes/[requestId]",
-                        params: { requestId: request.id },
-                      })
-                    }
-                  />
-                ))}
-              </View>
-            ) : null}
+            <ProfessionalAccompanimentsContent
+              {...state}
+              onOpen={(accompanimentId) =>
+                router.push({
+                  pathname: "/profesional/acompanamientos/[accompanimentId]",
+                  params: { accompanimentId },
+                })
+              }
+            />
           </ScrollView>
         </SafeAreaView>
       </StudentFonts>
@@ -193,8 +209,8 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 96 },
   introduction: { paddingTop: 20, paddingBottom: 18, paddingHorizontal: 4 },
   title: { color: "#182C31", fontSize: 30, lineHeight: 36 },
-  requestList: { gap: 12 },
-  requestCard: {
+  accompanimentList: { gap: 12 },
+  accompanimentCard: {
     position: "relative",
     padding: 16,
     gap: 10,
@@ -205,12 +221,13 @@ const styles = StyleSheet.create({
     boxShadow: "0 2px 5px rgba(24, 44, 49, 0.08)",
   },
   cardTopRow: {
-    flexDirection: "column",
-    alignItems: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
     gap: 10,
   },
   cardIdentity: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10 },
+  cardIdentityCopy: { flex: 1, gap: 2 },
   studentAvatar: {
     width: 38,
     height: 38,
@@ -220,9 +237,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E9BFA8",
   },
   studentAvatarText: { color: "#704336", fontSize: 16 },
-  cardIdentityCopy: { flex: 1, gap: 2 },
   studentName: { color: "#182C31", fontSize: 16, lineHeight: 21 },
-  dateText: { color: "#687A7D", fontSize: 12, lineHeight: 17 },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -234,8 +249,7 @@ const styles = StyleSheet.create({
   },
   statusText: { color: "#087D70", fontSize: 12, lineHeight: 16 },
   divider: { height: 1, backgroundColor: "#E2E9E7" },
-  requestTitle: { color: "#182C31", fontSize: 17, lineHeight: 23 },
-  requestDescription: { color: "#42565B", fontSize: 14, lineHeight: 21 },
+  accompanimentTitle: { color: "#182C31", fontSize: 17, lineHeight: 23 },
   buttonPressed: { opacity: 0.78 },
   stateCard: {
     alignItems: "flex-start",
