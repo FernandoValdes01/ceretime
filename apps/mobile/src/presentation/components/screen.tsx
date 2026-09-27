@@ -12,7 +12,7 @@ export function Screen({
   headerTitle = "CERETI",
 }: PropsWithChildren<{
   title: string;
-  description: string;
+  description?: string;
   scrollRef?: Ref<ScrollView>;
   showAppHeader?: boolean;
   headerTitle?: string;
@@ -31,7 +31,7 @@ export function Screen({
         <Text accessibilityRole="header" style={styles.title}>
           {title}
         </Text>
-        <Text style={styles.description}>{description}</Text>
+        {description ? <Text style={styles.description}>{description}</Text> : null}
         {children}
       </ScrollView>
     </SafeAreaView>

@@ -5,6 +5,7 @@ import type {
   AuthenticatedUser,
 } from "../application/auth-models";
 import type { AuthPort } from "../application/auth-port";
+import { fictionalPractitionerAccompanimentsByPractitioner } from "./mock-practitioner-accompaniment-data";
 
 export const mockAuthCredentials = {
   estudiante: { email: "estudiante@cereti.test", password: "cereti-demo" },
@@ -26,7 +27,7 @@ const mockUsers: readonly {
     credentials: mockAuthCredentials.estudiante,
     user: {
       id: "mock-student-1",
-      displayName: "Alex Estudiante",
+      displayName: "Valentina Rojas",
       email: mockAuthCredentials.estudiante.email,
       role: "estudiante",
       assignedAccompaniments: [],
@@ -49,7 +50,9 @@ const mockUsers: readonly {
       displayName: "Rocío Practicante",
       email: mockAuthCredentials.practicante.email,
       role: "practicante",
-      assignedAccompaniments: [{ id: "mock-accompaniment-1", title: "Acompañamiento ficticio" }],
+      assignedAccompaniments: fictionalPractitionerAccompanimentsByPractitioner[
+        "mock-practitioner-assigned-1"
+      ].map(({ id, objective }) => ({ id, title: objective })),
     },
   },
   {

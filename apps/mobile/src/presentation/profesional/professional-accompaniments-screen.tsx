@@ -3,22 +3,16 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type {
-  ProfessionalAccompaniment,
-  ProfessionalAccompanimentStatus,
-} from "@/application/professional-accompaniment-models";
+import type { ProfessionalAccompaniment } from "@/application/professional-accompaniment-models";
 import { mobileDependencies } from "@/composition/mobile-dependencies";
-import { AppIcon, type AppIconName } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { useProfessionalAccompaniments } from "@/presentation/hooks/use-professional-accompaniments";
 import { RoleGuard } from "@/presentation/navigation/role-guard";
 import { ProfessionalHeader } from "./professional-header";
-
-const statusPresentations = {
-  active: { label: "Activo", icon: "circleCheck" },
-  paused: { label: "En pausa", icon: "clock" },
-  closed: { label: "Cerrado", icon: "circleX" },
-} satisfies Record<ProfessionalAccompanimentStatus, { label: string; icon: AppIconName }>;
+import {
+  ProfessionalAccompanimentStatusBadge,
+  professionalAccompanimentStatusPresentations,
+} from "./professional-accompaniment-status-badge";
 
 function StateMessage({
   title,
@@ -58,25 +52,6 @@ function StateMessage({
   );
 }
 
-function StatusBadge({ status }: Pick<ProfessionalAccompaniment, "status">) {
-  const presentation = statusPresentations[status];
-
-  return (
-    <View style={styles.statusBadge} accessible={false}>
-      <AppIcon
-        accessible={false}
-        color="#087D70"
-        name={presentation.icon}
-        size={16}
-        strokeWidth={2.2}
-      />
-      <StudentText weight="semibold" style={styles.statusText}>
-        {presentation.label}
-      </StudentText>
-    </View>
-  );
-}
-
 function AccompanimentCard({
   accompaniment,
   onOpen,
@@ -84,7 +59,7 @@ function AccompanimentCard({
   readonly accompaniment: ProfessionalAccompaniment;
   readonly onOpen: () => void;
 }) {
-  const presentation = statusPresentations[accompaniment.status];
+  const presentation = professionalAccompanimentStatusPresentations[accompaniment.status];
   const [isPressed, setIsPressed] = useState(false);
 
   return (
@@ -110,7 +85,7 @@ function AccompanimentCard({
             </StudentText>
           </View>
         </View>
-        <StatusBadge status={accompaniment.status} />
+        <ProfessionalAccompanimentStatusBadge status={accompaniment.status} accessible={false} />
       </View>
       <View style={styles.divider} />
       <StudentText weight="semibold" style={styles.accompanimentTitle}>
@@ -238,16 +213,6 @@ const styles = StyleSheet.create({
   },
   studentAvatarText: { color: "#704336", fontSize: 16 },
   studentName: { color: "#182C31", fontSize: 16, lineHeight: 21 },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 10,
-    backgroundColor: "#E8F4F1",
-  },
-  statusText: { color: "#087D70", fontSize: 12, lineHeight: 16 },
   divider: { height: 1, backgroundColor: "#E2E9E7" },
   accompanimentTitle: { color: "#182C31", fontSize: 17, lineHeight: 23 },
   buttonPressed: { opacity: 0.78 },

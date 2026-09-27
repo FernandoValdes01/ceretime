@@ -198,7 +198,7 @@ export async function takeRequest(
  * Todo ocurre en la misma transacción: estado, bitácora (actor y fecha),
  * acompañamiento (estudiante, necesidades de acceso y vínculo a la solicitud
  * de origen) y asignación inicial del Profesional responsable. Repetir la
- * aceptación —incluso en concurrencia, que Convex serializa— encuentra el
+ * aceptación —incluso en concurrencia, que Convex ejecuta en serie— encuentra el
  * acompañamiento ya creado y se rechaza sin duplicar. La asignación inicial
  * la otorga el propio acto de aceptación; la regla de no auto-otorgarse de
  * TI2-28 rige las concesiones posteriores a terceros, no la apertura.
