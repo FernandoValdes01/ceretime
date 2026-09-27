@@ -192,7 +192,11 @@ describe("hook y vista de revisión profesional", () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText("Solicitudes asignadas")).toBeOnTheScreen();
+    expect(await screen.findByRole("header", { name: "Solicitudes" })).toBeOnTheScreen();
+    expect(screen.queryByText("Solicitudes asignadas")).not.toBeOnTheScreen();
+    expect(
+      screen.queryByText("Revisa las solicitudes asignadas y registra el siguiente paso."),
+    ).not.toBeOnTheScreen();
     expect(screen.queryByText("Acciones disponibles")).not.toBeOnTheScreen();
 
     expect(
