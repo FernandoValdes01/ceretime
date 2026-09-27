@@ -19,8 +19,10 @@ export type {
 // Solicitud de acompañamiento y sus estados.
 export {
   ACCESS_NEEDS_MAX_LENGTH,
+  isAccessNeedsWithinLimit,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toStoredRequestFields,
 } from "./request/request";
 export type {
   AccessNeed,
@@ -28,6 +30,7 @@ export type {
   AccompanimentRequestContent,
   GeneralAvailability,
   ModalityPreference,
+  StoredRequestFields,
 } from "./request/request";
 export {
   FUTURE_REQUEST_STATES,
