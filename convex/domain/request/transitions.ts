@@ -37,13 +37,16 @@ export const SPRINT_1_REQUEST_TRANSITIONS = [
 ] as const satisfies readonly RequestStateTransition[];
 
 /**
- * Registro append-only: es la evidencia de trazabilidad que exige la Ley
- * 21.719, no se edita ni se borra.
+ * Entrada del historial de cambios de estado de la solicitud: se agrega, no se
+ * edita ni se borra. No es el evento de auditoría de RD-03, que registra solo
+ * actor, fecha, acción, recurso y resultado: `reason` es texto libre y puede
+ * traer datos sensibles, así que no se copia a la bitácora de auditoría.
  *
  * `actorId` sale de la sesión autenticada en la capa de aplicación, nunca de un
- * parámetro del cliente. `reason` es texto para el estudiante, sin diagnósticos
- * ni etiquetas clínicas. `occurredAt` es epoch en milisegundos, como maneja las
- * fechas Convex.
+ * parámetro del cliente. `reason` es texto para el estudiante; quien lo escribe
+ * no debe incluir diagnósticos ni etiquetas clínicas, pero el tipo no puede
+ * impedirlo. `occurredAt` es epoch en milisegundos, como maneja las fechas
+ * Convex.
  */
 export type RequestStateChange = {
   readonly from: Sprint1RequestState;

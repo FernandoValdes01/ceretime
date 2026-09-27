@@ -56,6 +56,16 @@ describe("adaptador de revisión profesional", () => {
     const adapter = createMockProfessionalReviewAdapter();
 
     const requests = await adapter.readProfessionalRequests();
+    expect(requests).toHaveLength(7);
+    expect(requests.map(({ status }) => status)).toEqual([
+      "received",
+      "underReview",
+      "awaitingInformationOrAcceptance",
+      "received",
+      "underReview",
+      "accepted",
+      "awaitingInformationOrAcceptance",
+    ]);
     expect(requests[0]?.availableActions).toEqual(["startReview"]);
     expect(requests[1]?.availableActions).toEqual(["requestInformation"]);
     expect(requests[2]?.availableActions).toEqual(["accept"]);
@@ -192,7 +202,11 @@ describe("hook y vista de revisión profesional", () => {
       await Promise.resolve();
     });
 
-    expect(await screen.findByText("Solicitudes asignadas")).toBeOnTheScreen();
+    expect(await screen.findByRole("header", { name: "Solicitudes" })).toBeOnTheScreen();
+    expect(screen.queryByText("Solicitudes asignadas")).not.toBeOnTheScreen();
+    expect(
+      screen.queryByText("Revisa las solicitudes asignadas y registra el siguiente paso."),
+    ).not.toBeOnTheScreen();
     expect(screen.queryByText("Acciones disponibles")).not.toBeOnTheScreen();
 
     expect(

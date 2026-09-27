@@ -8,7 +8,7 @@ const modules = import.meta.glob("./**/*.ts");
 
 // Las semillas solo operan con el interruptor de entorno activado (como en
 // desarrollo). El rechazo con el interruptor apagado (como en producción) se
-// prueba en `users.seeds-guard.test.ts`, aislado por archivo para no heredar
+// prueba en `users.seeds_guard.test.ts`, aislado por archivo para no heredar
 // esta marca.
 vi.stubEnv("TEST_SEEDS_ENABLED", "true");
 

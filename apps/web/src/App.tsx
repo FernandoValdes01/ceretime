@@ -1,15 +1,13 @@
-import { AuthScreen } from "./presentation/auth/AuthScreen.tsx";
+import { RouterProvider } from "@tanstack/react-router";
+import { appRouter } from "./presentation/routes/router.tsx";
 
 /**
- * Raíz de Presentación web (TI2-3): solo acceso y sesión.
- * La autorización y los portales por rol pertenecen a otra issue.
+ * Raíz de Presentación web (TI2-6): router con rutas públicas de acceso y
+ * portal protegido del Estudiante. La autorización efectiva vive en Convex;
+ * las vistas funcionales del portal llegan en Sprint 2.
  */
 function App() {
-  return (
-    <main>
-      <AuthScreen />
-    </main>
-  );
+  return <RouterProvider router={appRouter} />;
 }
 
 export default App;

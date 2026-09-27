@@ -39,6 +39,17 @@ export const fictionalProfessionalAgenda: ProfessionalAgendaDay = {
       color: "green",
       summary: "Revisión de acuerdos y preparación del siguiente encuentro.",
     },
+    {
+      id: "appointment-4",
+      startTime: "16:30",
+      endTime: "17:30",
+      studentName: "Camila Soto",
+      title: "Coordinación de apoyos",
+      location: "Sala D-105",
+      modality: "inPerson",
+      color: "teal",
+      summary: "Definición de apoyos para las próximas actividades académicas.",
+    },
   ],
 };
 

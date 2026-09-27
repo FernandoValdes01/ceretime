@@ -196,7 +196,7 @@ describe("autenticación mobile simulada", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "Todavía no tienes acompañamientos asignados. Te avisaremos cuando exista uno.",
+          "No existe una asignación válida para tu cuenta. Sólo puedes consultar acompañamientos que un profesional te haya asignado.",
         ),
       ).toBeOnTheScreen(),
     );
@@ -210,9 +210,8 @@ describe("autenticación mobile simulada", () => {
       fireEvent.press(await screen.findByRole("button", { name: "Entrar como Practicante" }));
       await Promise.resolve();
     });
-    await waitFor(() =>
-      expect(screen.getByText(/Tienes acompañamientos asignados/)).toBeOnTheScreen(),
-    );
+    await waitFor(() => expect(screen.getByText("Acompañamientos asignados")).toBeOnTheScreen());
+    expect(screen.queryByText(/Consulta sólo los acompañamientos/)).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe(practitionerRoutes.assigned);
   });
 });

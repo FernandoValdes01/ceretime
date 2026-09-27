@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Barrel de contratos compartidos de dominio (TI2-8).
  *
  * Punto único de importación para Web y Mobile: evita que cada consumidor
@@ -17,7 +17,7 @@ export type {
 } from "./identity/roles";
 
 // Solicitud de acompañamiento y sus estados.
-export { toAccompanimentRequest } from "./request/request";
+export { ACCESS_NEEDS_MAX_LENGTH, toAccompanimentRequest } from "./request/request";
 export type {
   AccessNeed,
   AccompanimentRequest,
@@ -55,14 +55,14 @@ export {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
   ASSIGNMENT_VIEW_BY_ROLE,
-} from "./accompaniment/practitioner-assignment";
-export { toAssignmentReadPermission } from "./accompaniment/practitioner-assignment";
+} from "./accompaniment/practitioner_assignment";
+export { toAssignmentReadPermission } from "./accompaniment/practitioner_assignment";
 export type {
   AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
   PractitionerAssignment,
-} from "./accompaniment/practitioner-assignment";
+} from "./accompaniment/practitioner_assignment";
 
 // Errores públicos y estados de respuesta.
-export type { ApiResult, PublicApiError } from "./errors/api-error";
+export type { ApiResult, PublicApiError } from "./errors/api_error";

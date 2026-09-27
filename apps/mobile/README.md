@@ -23,20 +23,22 @@ La navegación funciona sin backend ni inicio de sesión institucional. El enví
 
 ## Mapa de rutas
 
-| URL                           | Acceso        | Resultado                                                                                  |
-| ----------------------------- | ------------- | ------------------------------------------------------------------------------------------ |
-| `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                                            |
-| `/login`                      | Sin sesión    | Selector temporal de roles y prueba sin asignación.                                        |
-| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud y Mis solicitudes.                                     |
-| `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.                               |
-| `/estudiante/solicitudes`     | Estudiante    | Listado ficticio de solicitudes propias y estados de carga.                                |
-| `/estudiante/solicitudes/:id` | Estudiante    | Detalle de una solicitud propia.                                                           |
-| `/profesional`                | Profesional   | Agenda profesional con timeline, detalle de actividades y navegación inferior.             |
-| `/practicante`                | Practicante   | Redirige según las asignaciones de la sesión.                                              |
-| `/practicante/asignaciones`   | Practicante   | Consulta provisional de acompañamientos asignados.                                         |
-| `/practicante/sin-asignacion` | Practicante   | Estado de espera cuando no existen acompañamientos asignados. <!-- cspell:disable-line --> |
-| `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                                             |
-| Cualquier ruta inexistente    | Público       | Página no encontrada con regreso al inicio.                                                |
+| URL                           | Acceso        | Resultado                                                                            |
+| ----------------------------- | ------------- | ------------------------------------------------------------------------------------ |
+| `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                                      |
+| `/login`                      | Sin sesión    | Selector temporal de roles y prueba sin asignación.                                  |
+| `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud y Mis solicitudes.                               |
+| `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.                         |
+| `/estudiante/solicitudes`     | Estudiante    | Listado ficticio de solicitudes propias y estados de carga.                          |
+| `/estudiante/solicitudes/:id` | Estudiante    | Detalle de una solicitud propia.                                                     |
+| `/profesional`                | Profesional   | Agenda profesional con timeline, detalle de actividades y navegación inferior.       |
+| `/practicante`                | Practicante   | Redirige según las asignaciones de la sesión.                                        |
+| `/practicante/asignaciones`   | Practicante   | Listado de acompañamientos asignados, sólo lectura.                                  |
+| `/practicante/sin-asignacion` | Practicante   | Acceso denegado cuando no existe una asignación válida. <!-- cspell:disable-line --> |
+| `/administrador`              | Administrador | Inicio provisional de habilitación de cuentas.                                       |
+| Cualquier ruta inexistente    | Público       | Página no encontrada con regreso al inicio.                                          |
+
+Para comprobar los estados del listado del Practicante, selecciona un escenario ficticio antes de iniciar Expo. Usa `EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_MODE=empty` para la lista vacía, `error` para el error controlado y `EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_DELAY_MS=1200` para observar la carga. Las variables sólo cambian datos de prueba y no contienen secretos.
 
 ```text
 app/

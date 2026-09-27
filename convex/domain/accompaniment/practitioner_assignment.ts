@@ -58,7 +58,7 @@ export interface AssignmentReadPermission {
   grantedAt?: number;
 }
 
-/** Vista que concede cada rol asignado (`practitioner-assignment.ts`). */
+/** Vista que concede cada rol asignado (`practitioner_assignment.ts`). */
 export const ASSIGNMENT_VIEW_BY_ROLE: Record<AssignmentRole, "full" | "minimized"> = {
   professional: "full",
   intern: "minimized",
