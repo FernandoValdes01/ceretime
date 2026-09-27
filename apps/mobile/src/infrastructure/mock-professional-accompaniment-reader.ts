@@ -1,5 +1,8 @@
 import type { ProfessionalAccompaniment } from "../application/professional-accompaniment-models";
-import type { ProfessionalAccompanimentReader } from "../application/professional-accompaniment-port";
+import {
+  ProfessionalAccompanimentAccessDeniedError,
+  type ProfessionalAccompanimentReader,
+} from "../application/professional-accompaniment-port";
 import {
   createMockProfessionalAccompanimentStore,
   type MockProfessionalAccompanimentStore,
@@ -34,6 +37,23 @@ export function createMockProfessionalAccompanimentReader({
       }
 
       return store.read();
+    },
+    async readAccompaniment(accompanimentId): Promise<ProfessionalAccompaniment> {
+      if (delayMs > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      if (mode === "error") {
+        throw new Error("No pudimos cargar el acompañamiento.");
+      }
+
+      const accompaniment = store.read().find((candidate) => candidate.id === accompanimentId);
+
+      if (!accompaniment) {
+        throw new ProfessionalAccompanimentAccessDeniedError();
+      }
+
+      return accompaniment;
     },
   };
 }

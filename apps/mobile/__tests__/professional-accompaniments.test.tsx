@@ -4,6 +4,7 @@ import { act, render } from "@testing-library/react-native";
 import { fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 
 import type { ProfessionalAccompaniment } from "../src/application/professional-accompaniment-models";
+import { ProfessionalAccompanimentAccessDeniedError } from "../src/application/professional-accompaniment-port";
 import { createMockProfessionalAccompanimentReader } from "../src/infrastructure/mock-professional-accompaniment-reader";
 import {
   createMockProfessionalAccompanimentStore,
@@ -11,6 +12,7 @@ import {
 } from "../src/infrastructure/mock-professional-accompaniment-data";
 import { createMockProfessionalReviewAdapter } from "../src/infrastructure/mock-professional-review-adapter";
 import { ProfessionalAccompanimentsContent } from "../src/presentation/profesional/professional-accompaniments-screen";
+import { ProfessionalAccompanimentDetailContent } from "../src/presentation/profesional/professional-accompaniment-detail-screen";
 
 const appDirectory = path.resolve(__dirname, "../app");
 
@@ -34,6 +36,15 @@ describe("lector de acompañamientos del Profesional", () => {
         fictionalOtherProfessionalAccompaniments.map(({ id }) => expect.objectContaining({ id })),
       ),
     );
+    await expect(reader.readAccompaniment("ACO-PRO-001")).resolves.toEqual(
+      expect.objectContaining({ id: "ACO-PRO-001", studentName: "Camila Muñoz" }),
+    );
+    await expect(reader.readAccompaniment("ACO-OTRO-PROFESIONAL-001")).rejects.toBeInstanceOf(
+      ProfessionalAccompanimentAccessDeniedError,
+    );
+    await expect(reader.readAccompaniment("ACO-NO-EXISTE")).rejects.toThrow(
+      "No puedes acceder a este acompañamiento.",
+    );
   });
 
   test("expone escenarios vacío y error controlado", async () => {
@@ -43,6 +54,9 @@ describe("lector de acompañamientos del Profesional", () => {
     await expect(
       createMockProfessionalAccompanimentReader({ mode: "error" }).readAccompaniments(),
     ).rejects.toThrow("No pudimos cargar tus acompañamientos.");
+    await expect(
+      createMockProfessionalAccompanimentReader({ mode: "error" }).readAccompaniment("ACO-PRO-001"),
+    ).rejects.toThrow("No pudimos cargar el acompañamiento.");
   });
 
   test("comparte el acompañamiento creado al aceptar una solicitud", async () => {
@@ -113,7 +127,48 @@ describe("pantalla de acompañamientos del Profesional", () => {
     expect(screen.getByText("No tienes acompañamientos autorizados")).toBeOnTheScreen();
   });
 
-  test("permite navegar desde el listado al placeholder del detalle", async () => {
+  test("muestra carga, error y acceso denegado en el detalle", () => {
+    const reload = jest.fn();
+    const onBack = jest.fn();
+    const { rerender } = render(
+      <ProfessionalAccompanimentDetailContent
+        status="loading"
+        data={null}
+        error={null}
+        reload={reload}
+        onBack={onBack}
+      />,
+    );
+    expect(screen.getByText("Cargando acompañamiento…")).toBeOnTheScreen();
+
+    rerender(
+      <ProfessionalAccompanimentDetailContent
+        status="error"
+        data={null}
+        error={new Error("Falla de detalle")}
+        reload={reload}
+        onBack={onBack}
+      />,
+    );
+    expect(screen.getByText("Falla de detalle")).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: "Reintentar carga del acompañamiento" }));
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <ProfessionalAccompanimentDetailContent
+        status="access-denied"
+        data={null}
+        error={null}
+        reload={reload}
+        onBack={onBack}
+      />,
+    );
+    expect(screen.getByText("Acceso denegado")).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: "Volver a acompañamientos" }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  test("permite navegar desde el listado al detalle autorizado", async () => {
     const navigation = renderRouter(appDirectory);
     await act(async () => {
       fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
@@ -135,7 +190,33 @@ describe("pantalla de acompañamientos del Profesional", () => {
     await waitFor(() =>
       expect(navigation.getPathname()).toBe("/profesional/acompanamientos/ACO-PRO-001"),
     );
-    expect(await screen.findByText("Acompañamiento seleccionado")).toBeOnTheScreen();
-    expect(screen.getByText(/ACO-PRO-001/)).toBeOnTheScreen();
+    expect(await screen.findByText("Detalle del acompañamiento")).toBeOnTheScreen();
+    expect(screen.getByText("Camila Muñoz")).toBeOnTheScreen();
+    expect(
+      screen.getByText("Coordinar apoyos para participar en las evaluaciones del semestre."),
+    ).toBeOnTheScreen();
+    expect(screen.getByText("Activo")).toBeOnTheScreen();
+    expect(screen.queryByText("ACO-PRO-001")).not.toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole("button", { name: "Volver" }));
+    await waitFor(() => expect(navigation.getPathname()).toBe("/profesional/acompanamientos"));
+  });
+
+  test("deniega enlaces directos a acompañamientos ajenos o inexistentes", async () => {
+    const navigation = renderRouter(appDirectory);
+    await act(async () => {
+      fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      router.push({
+        pathname: "/profesional/acompanamientos/[accompanimentId]",
+        params: { accompanimentId: "ACO-OTRO-PROFESIONAL-001" },
+      });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("No puedes acceder a este acompañamiento.")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/profesional/acompanamientos/ACO-OTRO-PROFESIONAL-001");
   });
 });
