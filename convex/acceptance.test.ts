@@ -186,7 +186,7 @@ test("Repetir la aceptación no crea duplicados", async () => {
     objective: "Acompañar la organización del semestre",
   });
 
-  // La repetición —como la segunda de dos concurrentes serializadas— se rechaza
+  // La repetición —igual que una segunda aceptación concurrente— se rechaza
   await expect(
     asProfessional.mutation(api.presentation.requests.acceptRequest, {
       requestId: created._id as Id<"requests">,

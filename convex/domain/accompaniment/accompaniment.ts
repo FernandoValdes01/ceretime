@@ -10,7 +10,7 @@
  * Los identificadores son genéricos con `string` por defecto: Web y Mobile
  * consumen el DTO con `string` plano (así viaja en JSON), mientras la capa
  * de Aplicación instancia la proyección con los `Id` de Convex y conserva
- * el tipado sin duplicar la forma. `toAccompanimentProjection` es el único
+ * los tipos sin duplicar la forma. `toAccompanimentProjection` es el único
  * adaptador entre la fila persistida y la vista devuelta.
  */
 

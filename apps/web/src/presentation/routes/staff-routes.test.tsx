@@ -432,3 +432,90 @@ describe("par inconsistente rol staff y correo estudiante (TI2-20)", () => {
     expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
   });
 });
+
+// Viven acá y no en `student-routes` porque este simulador separa sesión y
+// rol y reacciona a sus cambios; aquel deriva el rol de la población.
+describe("portal del Estudiante con sesión y rol independientes (TI2-12)", () => {
+  function sesionEstudiante(email: string): SesionFija {
+    return {
+      status: "authenticated",
+      email,
+      name: "Estudiante Ficticio",
+      population: "estudiante",
+    };
+  }
+
+  test("la sesión pendiente se restaura en el portal sin pasar por el acceso", async () => {
+    const router = createAppRouter({
+      history: createMemoryHistory({ initialEntries: ["/estudiante"] }),
+    });
+    const rutas: Array<string> = [];
+    router.subscribe("onBeforeNavigate", (evento) => rutas.push(evento.toLocation.pathname));
+    render(<RouterProvider router={router} />);
+
+    const loading = await screen.findByRole("status");
+    expect(loading).toBeDefined();
+    expect(router.state.location.pathname).toBe("/estudiante");
+
+    act(() => {
+      sessionMocks.setPair({
+        session: sesionEstudiante("estudiante@alu.uct.cl"),
+        role: rolDe("student", "estudiante@alu.uct.cl"),
+      });
+    });
+
+    const portalHeading = await screen.findByRole("heading", { name: "Portal del Estudiante" });
+    expect(portalHeading).toBeDefined();
+    expect(router.state.location.pathname).toBe("/estudiante");
+    expect(rutas).not.toContain("/login");
+  });
+
+  test("la sesión que se pierde con el portal abierto lo oculta y vuelve al acceso", async () => {
+    sessionMocks.setPair({
+      session: sesionEstudiante("estudiante@alu.uct.cl"),
+      role: rolDe("student", "estudiante@alu.uct.cl"),
+    });
+    const { router } = renderAt("/estudiante");
+
+    const portalHeading = await screen.findByRole("heading", { name: "Portal del Estudiante" });
+    expect(portalHeading).toBeDefined();
+
+    act(() => {
+      sessionMocks.setPair({
+        session: SIN_SESION,
+        role: rolDe("student", "estudiante@alu.uct.cl"),
+      });
+    });
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+    expect(router.state.location.search).toMatchObject({ redirect: "/estudiante" });
+    expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
+  });
+
+  test("el Practicante con correo de estudiante ve denegado sin contenido del portal", async () => {
+    sessionMocks.setPair({
+      session: sesionEstudiante("practicante@alu.uct.cl"),
+      role: rolDe("intern", "practicante@alu.uct.cl"),
+    });
+    const { router } = renderAt("/estudiante");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    const deniedHeading = await screen.findByRole("heading", { name: "Acceso denegado" });
+    expect(deniedHeading).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
+  });
+
+  // Fija la decisión de TI2-6 y no la amplía: la portada no lee datos, y el
+  // Backend deniega el perfil propio a una cuenta sin fila en `sprint1Queries`.
+  test("la cuenta de estudiante sin perfil entra por población", async () => {
+    sessionMocks.setPair({
+      session: sesionEstudiante("nueva@alu.uct.cl"),
+      role: ROL_DESCONOCIDO,
+    });
+    const { router } = renderAt("/estudiante");
+
+    const portalHeading = await screen.findByRole("heading", { name: "Portal del Estudiante" });
+    expect(portalHeading).toBeDefined();
+    expect(router.state.location.pathname).toBe("/estudiante");
+  });
+});

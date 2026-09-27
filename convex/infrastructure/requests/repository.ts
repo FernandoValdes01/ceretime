@@ -94,18 +94,6 @@ export async function listRequestsByStatus(
     .paginate(paginationOpts);
 }
 
-/** Tomas activas del usuario, paginadas. */
-export async function listTakenRequests(
-  ctx: DbReader,
-  userId: Id<"users">,
-  paginationOpts: PaginationOptions,
-) {
-  return await ctx.db
-    .query("requests")
-    .withIndex("by_takenBy", (q) => q.eq("takenBy", userId))
-    .paginate(paginationOpts);
-}
-
 /** Tomas activas del usuario, paginadas por solicitud para duplicadas adyacentes. */
 export async function listActiveTakes(
   ctx: DbReader,
