@@ -3,8 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
+  ProfessionalActionDetails,
 } from "../../application/professional-review-models";
 import type { ProfessionalReviewPort } from "../../application/professional-review-port";
+import { toMobileOperationError } from "../to-mobile-operation-error";
 
 export type ProfessionalReviewLoadStatus = "loading" | "success" | "empty" | "error";
 export type ProfessionalReviewActionStatus = "idle" | "loading" | "success" | "error";
@@ -20,7 +22,11 @@ export interface ProfessionalReviewState {
   readonly requests: readonly ProfessionalRequest[];
   readonly error: unknown | null;
   readonly reload: () => void;
-  readonly performAction: (requestId: string, action: ProfessionalRequestAction) => Promise<void>;
+  readonly performAction: (
+    requestId: string,
+    action: ProfessionalRequestAction,
+    details?: ProfessionalActionDetails,
+  ) => Promise<void>;
   readonly getActionState: (
     requestId: string,
     action: ProfessionalRequestAction,
@@ -88,7 +94,17 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
     try {
       pending = port.readProfessionalRequests();
     } catch (error) {
-      if (isCurrent()) setLoad(errorLoad(port, error));
+      if (isCurrent()) {
+        setLoad(
+          errorLoad(
+            port,
+            toMobileOperationError(
+              error,
+              "No pudimos cargar las solicitudes del Profesional. Intenta nuevamente.",
+            ),
+          ),
+        );
+      }
       return () => {
         disposed = true;
       };
@@ -99,7 +115,17 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
         if (isCurrent()) setLoad(successLoad(port, requests));
       },
       (error: unknown) => {
-        if (isCurrent()) setLoad(errorLoad(port, error));
+        if (isCurrent()) {
+          setLoad(
+            errorLoad(
+              port,
+              toMobileOperationError(
+                error,
+                "No pudimos cargar las solicitudes del Profesional. Intenta nuevamente.",
+              ),
+            ),
+          );
+        }
       },
     );
 
@@ -111,7 +137,11 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
   const visibleLoad = load.port === port ? load : loadingLoad(port);
 
   const performAction = useCallback(
-    async (requestIdToUpdate: string, action: ProfessionalRequestAction) => {
+    async (
+      requestIdToUpdate: string,
+      action: ProfessionalRequestAction,
+      details?: ProfessionalActionDetails,
+    ) => {
       const key = actionKey(requestIdToUpdate, action);
       setActionStates((current) => ({
         ...current,
@@ -119,7 +149,11 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
       }));
 
       try {
-        const receipt = await port.performProfessionalRequestAction(requestIdToUpdate, action);
+        const receipt = await port.performProfessionalRequestAction(
+          requestIdToUpdate,
+          action,
+          details,
+        );
         setLoad((current) => ({
           ...current,
           requests: current.requests.map((request) =>
@@ -135,13 +169,17 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
           [requestIdToUpdate]: { status: "success", message: receipt.message, error: null },
         }));
       } catch (error) {
+        const safeError = toMobileOperationError(
+          error,
+          "No pudimos actualizar la solicitud. Intenta nuevamente.",
+        );
         setActionStates((current) => ({
           ...current,
-          [key]: { status: "error", message: null, error },
+          [key]: { status: "error", message: null, error: safeError },
         }));
         setRequestFeedback((current) => ({
           ...current,
-          [requestIdToUpdate]: { status: "error", message: null, error },
+          [requestIdToUpdate]: { status: "error", message: null, error: safeError },
         }));
       }
     },

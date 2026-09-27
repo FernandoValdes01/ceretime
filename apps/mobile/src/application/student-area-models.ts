@@ -1,7 +1,4 @@
-/**
- * Provisional Sprint 1 client projections. These are not canonical CERETI
- * contracts; TI2 may map or replace them when its API contract is available.
- */
+/** Presentation models consumed by Mobile screens and hooks. */
 
 export type IsoDateTime = string;
 
@@ -50,32 +47,34 @@ export type StudentRequestStatus =
   | "closedWithoutAccompaniment"
   | "cancelled";
 
-export type StudentRequestOrigin = "student" | "institutionalChannel";
-
 export interface StudentRequest {
   readonly id: string;
   readonly status: StudentRequestStatus;
   /** Present when a request is closed without opening an accompaniment. */
   readonly closureReason?: string;
-  readonly origin: StudentRequestOrigin;
   readonly createdAt: IsoDateTime;
-  readonly updatedAt: IsoDateTime;
-  readonly needSummary: string;
-  readonly expectedOutcome: string;
-  readonly accessNeeds: readonly AccessNeed[];
-  readonly generalAvailability: GeneralAvailability;
-  readonly modalityPreference: ModalityPreference;
-  readonly preferredAccessibleInformationChannel: ProvisionalAccessibleInformationChannel;
+  readonly updatedAt?: IsoDateTime;
+  readonly needSummary?: string;
+  readonly expectedOutcome?: string;
+  /** TI2 currently exposes the saved needs as one string. */
+  readonly accessNeeds: string;
+  readonly generalAvailability?: GeneralAvailability;
+  readonly modalityPreference?: ModalityPreference;
+  readonly preferredAccessibleInformationChannel?: ProvisionalAccessibleInformationChannel;
 }
 
 export type AccompanimentStatus = "active" | "paused" | "closed";
 
-/** The minimum resulting representation for an accepted request. */
+/** Presentation projection of a canonical accompaniment. */
 export interface Accompaniment {
   readonly id: string;
-  readonly requestId: string;
   readonly status: AccompanimentStatus;
-  readonly createdAt: IsoDateTime;
+  readonly objective?: string;
+  readonly accessNeeds?: string;
+  readonly view?: "full" | "minimized";
+  /** Not present in TI2's current accompaniment projection. */
+  readonly requestId?: string;
+  readonly createdAt?: IsoDateTime;
 }
 
 export interface StudentAreaSnapshot {

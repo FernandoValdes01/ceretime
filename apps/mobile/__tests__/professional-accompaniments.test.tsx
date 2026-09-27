@@ -64,12 +64,15 @@ describe("lector de acompañamientos del Profesional", () => {
     const reader = createMockProfessionalAccompanimentReader({ store });
     const reviewAdapter = createMockProfessionalReviewAdapter({ accompanimentStore: store });
 
-    await reviewAdapter.performProfessionalRequestAction("SOL-PRO-003", "accept");
+    await reviewAdapter.performProfessionalRequestAction("SOL-PRO-003", "accept", {
+      objective: "Acordar apoyos accesibles",
+    });
 
     await expect(reader.readAccompaniments()).resolves.toEqual([
       expect.objectContaining({
         id: "ACO-SOL-PRO-003",
-        studentName: "Tomás Herrera",
+        studentName: "Estudiante",
+        objective: "Acordar apoyos accesibles",
       }),
     ]);
   });

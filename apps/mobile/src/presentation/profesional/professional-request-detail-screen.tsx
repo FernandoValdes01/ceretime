@@ -1,10 +1,19 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
+  ProfessionalActionDetails,
 } from "@/application/professional-review-models";
 import type { GeneralAvailability } from "@/application/student-area-models";
 import { AppIcon } from "@/presentation/components/app-icon";
@@ -89,6 +98,7 @@ export function ProfessionalRequestDetailScreen() {
 
           {request ? (
             <RequestDetail
+              key={request.id}
               request={request}
               onAction={performAction}
               getActionState={getActionState}
@@ -106,13 +116,19 @@ function RequestDetail({
   getActionState,
 }: {
   readonly request: ProfessionalRequest;
-  readonly onAction: (requestId: string, action: ProfessionalRequestAction) => Promise<void>;
+  readonly onAction: (
+    requestId: string,
+    action: ProfessionalRequestAction,
+    details?: ProfessionalActionDetails,
+  ) => Promise<void>;
   readonly getActionState: (
     requestId: string,
     action: ProfessionalRequestAction,
   ) => { readonly status: string; readonly message: string | null; readonly error: unknown | null };
 }) {
   const statusPresentation = getStudentRequestStatusPresentation(request.status);
+  const [reason, setReason] = useState("");
+  const [objective, setObjective] = useState("");
 
   return (
     <View style={styles.detailStack}>
@@ -129,12 +145,12 @@ function RequestDetail({
         <View style={styles.identityRow}>
           <View style={styles.studentAvatar}>
             <StudentText weight="semibold" style={styles.studentAvatarText}>
-              {request.studentName.slice(0, 1)}
+              {(request.studentName ?? "E").slice(0, 1)}
             </StudentText>
           </View>
           <View style={styles.identityCopy}>
             <StudentText weight="bold" style={styles.studentName}>
-              {request.studentName}
+              {request.studentName ?? "Estudiante"}
             </StudentText>
             <StudentText style={styles.dateText}>
               Recibida el {formatRequestDate(request.createdAt)}
@@ -155,28 +171,31 @@ function RequestDetail({
           </StudentText>
         </View>
 
-        <DetailRow label="Necesidad" value={request.needSummary} />
-        <DetailRow label="Resultado esperado" value={request.expectedOutcome} />
-        <DetailRow
-          label="Necesidades de acceso"
-          value={
-            request.accessNeeds.length
-              ? request.accessNeeds.map((need) => need.label).join(", ")
-              : "No registró necesidades específicas."
-          }
-        />
-        <DetailRow
-          label="Disponibilidad general"
-          value={formatAvailability(request.generalAvailability)}
-        />
-        <DetailRow
-          label="Modalidad preferida"
-          value={request.modalityPreference === "online" ? "En línea" : "Presencial"}
-        />
-        <DetailRow
-          label="Medio accesible preferido"
-          value={request.preferredAccessibleInformationChannel}
-        />
+        {request.needSummary ? <DetailRow label="Necesidad" value={request.needSummary} /> : null}
+        {request.expectedOutcome ? (
+          <DetailRow label="Resultado esperado" value={request.expectedOutcome} />
+        ) : null}
+        {request.accessNeeds ? (
+          <DetailRow label="Necesidades de acceso" value={request.accessNeeds} />
+        ) : null}
+        {request.generalAvailability ? (
+          <DetailRow
+            label="Disponibilidad general"
+            value={formatAvailability(request.generalAvailability)}
+          />
+        ) : null}
+        {request.modalityPreference ? (
+          <DetailRow
+            label="Modalidad preferida"
+            value={request.modalityPreference === "online" ? "En línea" : "Presencial"}
+          />
+        ) : null}
+        {request.preferredAccessibleInformationChannel ? (
+          <DetailRow
+            label="Medio accesible preferido"
+            value={request.preferredAccessibleInformationChannel}
+          />
+        ) : null}
       </View>
 
       {request.availableActions.length > 0 ? (
@@ -190,15 +209,53 @@ function RequestDetail({
           {request.availableActions.map((action) => {
             const actionState = getActionState(request.id, action);
             const isLoading = actionState.status === "loading";
+            const detail =
+              action === "requestInformation" ? reason : action === "accept" ? objective : "";
+            const needsDetail = action !== "startReview";
             return (
               <View key={action} style={styles.actionBlock}>
+                {needsDetail ? (
+                  <TextInput
+                    accessibilityLabel={
+                      action === "requestInformation"
+                        ? "Motivo para pedir información"
+                        : "Objetivo del acompañamiento"
+                    }
+                    editable={!isLoading}
+                    multiline
+                    onChangeText={action === "requestInformation" ? setReason : setObjective}
+                    placeholder={
+                      action === "requestInformation"
+                        ? "Explica qué información falta"
+                        : "Describe el objetivo del acompañamiento"
+                    }
+                    style={styles.actionInput}
+                    value={detail}
+                  />
+                ) : null}
                 <Pressable
                   accessibilityHint={actionHints[action]}
                   accessibilityRole="button"
-                  accessibilityState={{ busy: isLoading, disabled: isLoading }}
-                  disabled={isLoading}
-                  onPress={() => void onAction(request.id, action)}
-                  style={[styles.primaryButton, isLoading && styles.primaryButtonLoading]}
+                  accessibilityState={{
+                    busy: isLoading,
+                    disabled: isLoading || (needsDetail && !detail.trim()),
+                  }}
+                  disabled={isLoading || (needsDetail && !detail.trim())}
+                  onPress={() =>
+                    void onAction(
+                      request.id,
+                      action,
+                      action === "requestInformation"
+                        ? { reason }
+                        : action === "accept"
+                          ? { objective }
+                          : undefined,
+                    )
+                  }
+                  style={[
+                    styles.primaryButton,
+                    (isLoading || (needsDetail && !detail.trim())) && styles.primaryButtonLoading,
+                  ]}
                 >
                   {isLoading ? (
                     <ActivityIndicator accessible={false} color="#FFFFFF" size="small" />
@@ -259,7 +316,9 @@ function AccompanimentCard({ request }: { readonly request: ProfessionalRequest 
       </View>
       <DetailRow label="Estado" value="Activo" />
       <DetailRow label="Referencia" value={accompaniment.id} />
-      <DetailRow label="Creado el" value={formatRequestDate(accompaniment.createdAt)} />
+      {accompaniment.createdAt ? (
+        <DetailRow label="Creado el" value={formatRequestDate(accompaniment.createdAt)} />
+      ) : null}
     </View>
   );
 }
@@ -356,6 +415,17 @@ const styles = StyleSheet.create({
   sectionTitle: { color: "#182C31", fontSize: 19, lineHeight: 24 },
   sectionDescription: { color: "#42565B", fontSize: 14, lineHeight: 21 },
   actionBlock: { gap: 8, paddingTop: 4 },
+  actionInput: {
+    minHeight: 72,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#9CCEC4",
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    color: "#182C31",
+    fontSize: 15,
+    textAlignVertical: "top",
+  },
   primaryButton: {
     minHeight: 48,
     alignItems: "center",

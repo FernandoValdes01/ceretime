@@ -83,7 +83,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
 
     const requestCard = await screen.findByRole("button", {
-      name: "Solicitud enviada el 10 de agosto de 2026. Organizar apoyos para participar en actividades académicas.",
+      name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
     });
     expect(screen.queryByText("Mis solicitudes")).not.toBeOnTheScreen();
     expect(
@@ -105,11 +105,9 @@ describe("Solicitudes del estudiante", () => {
     expect(screen.getByText("Aceptada")).toBeOnTheScreen();
     expect(screen.getByLabelText("Estado de la solicitud: Aceptada")).toBeOnTheScreen();
     expect(screen.queryByText("Detalle de solicitud")).not.toBeOnTheScreen();
-    expect(screen.getByText("Medio preferido para recibir información")).toBeOnTheScreen();
-    expect(screen.getByText("Correo institucional con texto accesible")).toBeOnTheScreen();
-    expect(
-      screen.getByText("Organizar apoyos para participar en actividades académicas."),
-    ).toBeOnTheScreen();
+    expect(screen.getByText("Necesidades de acceso")).toBeOnTheScreen();
+    expect(screen.getByText("Material digital accesible")).toBeOnTheScreen();
+    expect(screen.queryByText("Medio preferido para recibir información")).not.toBeOnTheScreen();
     expect(screen.queryByText("Días disponibles")).not.toBeOnTheScreen();
     expect(screen.queryByText("Franja horaria")).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001");

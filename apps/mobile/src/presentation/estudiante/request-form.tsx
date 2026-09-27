@@ -301,10 +301,10 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
           accessibilityRole="header"
           className="text-student-text text-lg leading-[26px]"
         >
-          Necesidades de acceso
+          Necesidades de acceso *
         </Text>
         <Text className="text-student-secondary text-base leading-[26px]">
-          Opcional. Selecciona todos los apoyos que necesitas para participar o comunicarte.
+          Selecciona un apoyo o describe otro para participar o comunicarte.
         </Text>
         {accessOptions.map((option) => {
           const selected = values.accessNeeds.some((need) => need.id === option.id);
@@ -331,6 +331,7 @@ export function RequestForm({ onRevealGroup, submitter }: RequestFormProps) {
           "Opcional. Puedes describir un apoyo que no aparezca en la lista.",
           true,
         )}
+        <ErrorText message={errors.accessNeeds} />
       </View>
 
       <View

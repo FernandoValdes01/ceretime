@@ -48,7 +48,7 @@ function RequestCard({ request }: { request: StudentRequest }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Solicitud enviada el ${createdAt}. ${request.needSummary}`}
+      accessibilityLabel={`Solicitud enviada el ${createdAt}. ${request.needSummary ?? "Solicitud de acompañamiento"}`}
       accessibilityHint="Abre el detalle"
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
@@ -74,7 +74,7 @@ function RequestCard({ request }: { request: StudentRequest }) {
         className="text-student-text text-xl leading-[28px]"
         selectable
       >
-        {request.needSummary}
+        {request.needSummary ?? "Solicitud de acompañamiento"}
       </StudentText>
       <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
         Ver detalle
