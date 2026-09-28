@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 
 import { createMockStudentAreaReader } from "../../../../src/infrastructure/mock-student-area-reader";
+import { mockStudentAreaStore } from "../../../../src/infrastructure/mock-student-area-store";
 import { StudentAreaProvider } from "../../../../src/presentation/estudiante/student-area-provider";
 import { RoleGuard } from "../../../../src/presentation/navigation/role-guard";
 
@@ -10,6 +11,7 @@ const demoDelay = Number.isFinite(parsedDelay) && parsedDelay > 0 ? parsedDelay 
 const defaultReader = createMockStudentAreaReader({
   delayMs: demoDelay,
   mode: demoMode === "empty" || demoMode === "error" ? demoMode : "success",
+  store: mockStudentAreaStore,
 });
 
 export default function StudentRequestsLayout() {
