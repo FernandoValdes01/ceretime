@@ -1,134 +1,80 @@
-import type { ProfessionalRequest } from "../application/professional-review-models";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
-/** Datos ficticios para demostrar la revisión de solicitudes del Profesional. */
-export const fictionalProfessionalRequests: readonly ProfessionalRequest[] = [
-  {
-    id: "SOL-PRO-001",
-    studentName: "Martín Gómez",
+import type { CanonicalTakenRequest } from "../application/ti2-sprint-1-contracts";
+import type { CanonicalProfessionalRequestResponses } from "./ti2-contract-mappers";
+
+const requestId = (value: string) => value as Id<"requests">;
+const studentId = "users:student-demo-1" as Id<"users">;
+
+/** Fictional list results shaped from TI2's generated public API types. */
+export const fictionalProfessionalRequestResponses: CanonicalProfessionalRequestResponses = {
+  open: [
+    {
+      _id: requestId("SOL-PRO-001"),
+      studentId,
+      status: "received",
+      createdAt: Date.parse("2026-09-16T13:00:00.000Z"),
+    },
+    {
+      _id: requestId("SOL-PRO-004"),
+      studentId,
+      status: "received",
+      createdAt: Date.parse("2026-09-18T08:20:00.000Z"),
+    },
+  ],
+  authorized: [
+    {
+      _id: requestId("SOL-PRO-002"),
+      studentId,
+      status: "under_review",
+      accessNeeds: "Comunicación escrita",
+      createdAt: Date.parse("2026-09-15T15:30:00.000Z"),
+    },
+    {
+      _id: requestId("SOL-PRO-003"),
+      studentId,
+      status: "awaiting_information_or_acceptance",
+      accessNeeds: "Información anticipada",
+      createdAt: Date.parse("2026-09-12T12:00:00.000Z"),
+    },
+    {
+      _id: requestId("SOL-PRO-005"),
+      studentId,
+      status: "under_review",
+      accessNeeds: "Reducción de estímulos\nComunicación escrita",
+      createdAt: Date.parse("2026-09-17T17:10:00.000Z"),
+    },
+    {
+      _id: requestId("SOL-PRO-006"),
+      studentId,
+      status: "accepted",
+      accessNeeds: "Material digital accesible",
+      createdAt: Date.parse("2026-09-10T14:25:00.000Z"),
+    },
+    {
+      _id: requestId("SOL-PRO-007"),
+      studentId,
+      status: "awaiting_information_or_acceptance",
+      accessNeeds: "Información anticipada",
+      createdAt: Date.parse("2026-09-08T09:50:00.000Z"),
+    },
+  ],
+};
+
+/** Full mutation results available after mock takeRequest calls. */
+export const fictionalTakenRequestResults: Readonly<Record<string, CanonicalTakenRequest>> = {
+  "SOL-PRO-001": {
+    _id: requestId("SOL-PRO-001"),
+    studentId,
     status: "received",
-    createdAt: "2026-09-16T13:00:00.000Z",
-    updatedAt: "2026-09-16T13:00:00.000Z",
-    needSummary: "Organizar apoyos para participar en las evaluaciones del semestre.",
-    expectedOutcome: "Contar con coordinación accesible para cada evaluación.",
-    accessNeeds: [{ id: "access-pro-1", label: "Material digital accesible" }],
-    generalAvailability: {
-      preferredWeekdays: [2, 4],
-      preferredTimeRange: { from: "10:00", to: "13:00" },
-    },
-    modalityPreference: "online",
-    preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
-    availableActions: ["startReview"],
+    accessNeeds: "Material digital accesible",
+    createdAt: Date.parse("2026-09-16T13:00:00.000Z"),
   },
-  {
-    id: "SOL-PRO-002",
-    studentName: "Valentina Rojas",
-    status: "underReview",
-    createdAt: "2026-09-15T15:30:00.000Z",
-    updatedAt: "2026-09-17T09:15:00.000Z",
-    needSummary: "Contar con apoyos para organizar las evaluaciones del semestre.",
-    expectedOutcome: "Planificar cada evaluación con información clara y accesible.",
-    accessNeeds: [
-      { id: "access-pro-2", label: "Comunicación escrita" },
-      { id: "access-pro-3", label: "Más tiempo para comunicarme" },
-    ],
-    generalAvailability: {
-      preferredWeekdays: [1, 3, 5],
-    },
-    modalityPreference: "inPerson",
-    preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
-    availableActions: ["requestInformation"],
-  },
-  {
-    id: "SOL-PRO-003",
-    studentName: "Tomás Herrera",
-    status: "awaitingInformationOrAcceptance",
-    createdAt: "2026-09-12T12:00:00.000Z",
-    updatedAt: "2026-09-14T16:45:00.000Z",
-    needSummary: "Explorar apoyos para continuar su participación académica.",
-    expectedOutcome: "Definir el apoyo que mejor se ajusta a sus necesidades.",
-    accessNeeds: [{ id: "access-pro-4", label: "Información anticipada" }],
-    generalAvailability: {
-      preferredWeekdays: [2],
-    },
-    modalityPreference: "online",
-    preferredAccessibleInformationChannel: "Mensaje escrito dentro de la plataforma",
-    availableActions: ["accept"],
-  },
-  {
-    id: "SOL-PRO-004",
-    studentName: "Camila Soto",
+  "SOL-PRO-004": {
+    _id: requestId("SOL-PRO-004"),
+    studentId,
     status: "received",
-    createdAt: "2026-09-18T08:20:00.000Z",
-    updatedAt: "2026-09-18T08:20:00.000Z",
-    needSummary:
-      "Coordinar apoyos para comprender instrucciones extensas y participar en trabajos colaborativos.",
-    expectedOutcome: "Contar con acuerdos claros para cada actividad grupal.",
-    accessNeeds: [],
-    generalAvailability: {
-      preferredWeekdays: [1, 4],
-      preferredTimeRange: { from: "08:30", to: "10:30" },
-    },
-    modalityPreference: "inPerson",
-    preferredAccessibleInformationChannel: "Mensaje escrito dentro de la plataforma",
-    availableActions: ["startReview"],
+    accessNeeds: "Comunicación escrita",
+    createdAt: Date.parse("2026-09-18T08:20:00.000Z"),
   },
-  {
-    id: "SOL-PRO-005",
-    studentName: "Alex Rojas",
-    status: "underReview",
-    createdAt: "2026-09-17T17:10:00.000Z",
-    updatedAt: "2026-09-19T11:40:00.000Z",
-    needSummary: "Organizar una rutina de estudio con menos estímulos durante la jornada.",
-    expectedOutcome: "Definir un entorno de trabajo predecible para sus evaluaciones.",
-    accessNeeds: [
-      { id: "access-pro-5", label: "Reducción de estímulos" },
-      { id: "access-pro-6", label: "Comunicación escrita" },
-    ],
-    generalAvailability: {
-      preferredWeekdays: [3, 5],
-    },
-    modalityPreference: "online",
-    preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
-    availableActions: ["requestInformation"],
-  },
-  {
-    id: "SOL-PRO-006",
-    studentName: "Matías Vera",
-    status: "accepted",
-    createdAt: "2026-09-10T14:25:00.000Z",
-    updatedAt: "2026-09-12T10:05:00.000Z",
-    needSummary: "Mantener apoyos para participar en clases y actividades prácticas.",
-    expectedOutcome: "Continuar el semestre con acuerdos de participación accesibles.",
-    accessNeeds: [{ id: "access-pro-7", label: "Material digital accesible" }],
-    generalAvailability: {
-      preferredWeekdays: [2, 4],
-      preferredTimeRange: { from: "14:00", to: "17:00" },
-    },
-    modalityPreference: "inPerson",
-    preferredAccessibleInformationChannel: "Correo institucional con texto accesible",
-    availableActions: [],
-    accompaniment: {
-      id: "ACO-SOL-PRO-006",
-      requestId: "SOL-PRO-006",
-      status: "active",
-      createdAt: "2026-09-12T10:05:00.000Z",
-    },
-  },
-  {
-    id: "SOL-PRO-007",
-    studentName: "Diego Pérez",
-    status: "awaitingInformationOrAcceptance",
-    createdAt: "2026-09-08T09:50:00.000Z",
-    updatedAt: "2026-09-20T16:30:00.000Z",
-    needSummary:
-      "Revisar alternativas de apoyo para participar en actividades de terreno y salidas académicas.",
-    expectedOutcome: "Acordar con el estudiante una alternativa segura y accesible.",
-    accessNeeds: [{ id: "access-pro-8", label: "Información anticipada" }],
-    generalAvailability: {
-      preferredWeekdays: [1, 2, 4],
-    },
-    modalityPreference: "online",
-    preferredAccessibleInformationChannel: "Mensaje escrito dentro de la plataforma",
-    availableActions: ["accept"],
-  },
-];
+};

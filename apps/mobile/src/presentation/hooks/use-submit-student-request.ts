@@ -5,6 +5,7 @@ import type {
   SubmitStudentRequestCommand,
 } from "@/application/student-area-models";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
+import { toMobileOperationError } from "@/presentation/to-mobile-operation-error";
 
 export type StudentRequestSubmissionStatus = "idle" | "submitting" | "error" | "success";
 
@@ -59,7 +60,14 @@ export function useSubmitStudentRequest(
         }
       } catch (error) {
         if (mounted.current && attemptId.current === currentAttempt) {
-          setResult({ status: "error", receipt: null, error });
+          setResult({
+            status: "error",
+            receipt: null,
+            error: toMobileOperationError(
+              error,
+              "No pudimos enviar la solicitud. Intenta nuevamente.",
+            ),
+          });
         }
       } finally {
         if (attemptId.current === currentAttempt) {

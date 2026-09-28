@@ -83,7 +83,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
 
     const requestCard = await screen.findByRole("button", {
-      name: "Solicitud enviada el 10 de agosto de 2026. Organizar apoyos para participar en actividades académicas.",
+      name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
     });
     expect(screen.queryByText("Mis solicitudes")).not.toBeOnTheScreen();
     expect(
@@ -105,11 +105,9 @@ describe("Solicitudes del estudiante", () => {
     expect(screen.getByText("Aceptada")).toBeOnTheScreen();
     expect(screen.getByLabelText("Estado de la solicitud: Aceptada")).toBeOnTheScreen();
     expect(screen.queryByText("Detalle de solicitud")).not.toBeOnTheScreen();
-    expect(screen.getByText("Medio preferido para recibir información")).toBeOnTheScreen();
-    expect(screen.getByText("Correo institucional con texto accesible")).toBeOnTheScreen();
-    expect(
-      screen.getByText("Organizar apoyos para participar en actividades académicas."),
-    ).toBeOnTheScreen();
+    expect(screen.getByText("Necesidades de acceso")).toBeOnTheScreen();
+    expect(screen.getByText("Material digital accesible")).toBeOnTheScreen();
+    expect(screen.queryByText("Medio preferido para recibir información")).not.toBeOnTheScreen();
     expect(screen.queryByText("Días disponibles")).not.toBeOnTheScreen();
     expect(screen.queryByText("Franja horaria")).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001");
@@ -139,7 +137,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
     fireEvent.press(
       await screen.findByRole("button", {
-        name: "Solicitud enviada el 10 de agosto de 2026. Organizar apoyos para participar en actividades académicas.",
+        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
       }),
     );
 
@@ -147,14 +145,14 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(screen.getByRole("button", { name: "Ver acompañamiento" }));
 
     expect(await screen.findByRole("header", { name: "Mi acompañamiento" })).toBeOnTheScreen();
-    expect(screen.getByText("example-accompaniment-1")).toBeOnTheScreen();
+    expect(screen.getByText("accompaniments:accompaniment-demo-1")).toBeOnTheScreen();
     expect(screen.getByText("SOL-DEMO-001")).toBeOnTheScreen();
     expect(screen.getByText("Activo")).toBeOnTheScreen();
     expect(screen.getByText("12 de agosto de 2026")).toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001/acompanamiento");
 
     fireEvent.press(screen.getByRole("button", { name: "Volver a la solicitud" }));
-    expect(await screen.findByText("Resultado esperado")).toBeOnTheScreen();
+    expect(await screen.findByText("Necesidades de acceso")).toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001");
   });
 
@@ -166,10 +164,10 @@ describe("Solicitudes del estudiante", () => {
 
     fireEvent.press(await screen.findByRole("button", { name: "Ver acompañamiento" }));
 
-    expect(await screen.findByText("example-accompaniment-2")).toBeOnTheScreen();
+    expect(await screen.findByText("accompaniments:accompaniment-demo-2")).toBeOnTheScreen();
     expect(screen.getByText("SOL-DEMO-005")).toBeOnTheScreen();
     expect(screen.getByText("Pausado")).toBeOnTheScreen();
-    expect(screen.queryByText("example-accompaniment-1")).not.toBeOnTheScreen();
+    expect(screen.queryByText("accompaniments:accompaniment-demo-1")).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-005/acompanamiento");
   });
 
@@ -184,7 +182,7 @@ describe("Solicitudes del estudiante", () => {
 
     await act(async () => router.push("/estudiante/solicitudes/SOL-DEMO-002/acompanamiento"));
     expect(await screen.findByText("Acompañamiento no disponible")).toBeOnTheScreen();
-    expect(screen.queryByText("example-accompaniment-1")).not.toBeOnTheScreen();
+    expect(screen.queryByText("accompaniments:accompaniment-demo-1")).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-002/acompanamiento");
   });
 
@@ -197,7 +195,7 @@ describe("Solicitudes del estudiante", () => {
     );
 
     expect(await screen.findByText("Acompañamiento no disponible")).toBeOnTheScreen();
-    expect(screen.queryByText("example-accompaniment-1")).not.toBeOnTheScreen();
+    expect(screen.queryByText("accompaniments:accompaniment-demo-1")).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe(
       "/estudiante/solicitudes/other-student-request/acompanamiento",
     );

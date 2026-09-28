@@ -92,7 +92,7 @@ function RequestCard({
   return (
     <Pressable
       accessibilityHint="Abre el detalle de la solicitud"
-      accessibilityLabel={`Solicitud de ${request.studentName}. Estado: ${presentation.label}. ${request.needSummary}`}
+      accessibilityLabel={`Solicitud ${request.id} de ${request.studentName ?? "Estudiante"}. Estado: ${presentation.label}.${request.needSummary ? ` ${request.needSummary}` : ""}`}
       accessibilityRole="button"
       onPress={onOpen}
       onPressIn={() => setIsPressed(true)}
@@ -103,12 +103,12 @@ function RequestCard({
         <View style={styles.cardIdentity}>
           <View style={styles.studentAvatar}>
             <StudentText weight="semibold" style={styles.studentAvatarText}>
-              {request.studentName.slice(0, 1)}
+              {(request.studentName ?? "E").slice(0, 1)}
             </StudentText>
           </View>
           <View style={styles.cardIdentityCopy}>
             <StudentText weight="semibold" style={styles.studentName}>
-              {request.studentName}
+              {request.studentName ?? "Estudiante"}
             </StudentText>
             <StudentText style={styles.dateText}>
               Recibida el {formatRequestDate(request.createdAt)}
@@ -120,9 +120,11 @@ function RequestCard({
 
       <View style={styles.divider} />
       <StudentText weight="semibold" style={styles.requestTitle}>
-        {request.needSummary}
+        {request.needSummary ?? "Solicitud de acompañamiento"}
       </StudentText>
-      <StudentText style={styles.requestDescription}>{request.expectedOutcome}</StudentText>
+      {request.expectedOutcome ? (
+        <StudentText style={styles.requestDescription}>{request.expectedOutcome}</StudentText>
+      ) : null}
     </Pressable>
   );
 }

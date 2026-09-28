@@ -46,12 +46,11 @@ function request(id: string): StudentRequest {
   return {
     id,
     status: "received",
-    origin: "student",
     createdAt: "2026-08-10T15:00:00.000Z",
     updatedAt: "2026-08-10T15:00:00.000Z",
     needSummary: "Necesidad ficticia",
     expectedOutcome: "Resultado ficticio",
-    accessNeeds: [],
+    accessNeeds: "",
     generalAvailability: { preferredWeekdays: [2] },
     modalityPreference: "online",
     preferredAccessibleInformationChannel: "Canal ficticio",
@@ -179,7 +178,7 @@ test("consumes the actual infrastructure mock reader when mounted", async () => 
   expect(state.status).toBe("success");
   expect(state.identity.data?.id).toBe("example-student-1");
   expect(state.requests.data[0]?.id).toBe("SOL-DEMO-001");
-  expect(state.accompaniments.data[0]?.id).toBe("example-accompaniment-1");
+  expect(state.accompaniments.data[0]?.id).toBe("accompaniments:accompaniment-demo-1");
   act(() => mounted.renderer.unmount());
 });
 
@@ -198,7 +197,9 @@ test("reports rejected reads, then reloads successfully", async () => {
     await first.promise.catch(() => undefined);
   });
   expect(mounted.getState().status).toBe("error");
-  expect(mounted.getState().error).toBe(failure);
+  expect(mounted.getState().error).toEqual(
+    new Error("No pudimos cargar tus solicitudes. Intenta nuevamente."),
+  );
 
   await act(async () => {
     mounted.getState().reload();
@@ -225,7 +226,9 @@ test("catches a synchronous reader throw", () => {
   const mounted = mount(reader);
 
   expect(mounted.getState().status).toBe("error");
-  expect(mounted.getState().error).toBe(failure);
+  expect(mounted.getState().error).toEqual(
+    new Error("No pudimos cargar tus solicitudes. Intenta nuevamente."),
+  );
   act(() => mounted.renderer.unmount());
 });
 

@@ -97,12 +97,16 @@ export default function StudentAccompanimentScreen() {
             Mi acompañamiento
           </StudentText>
           <DetailField label="Referencia" value={accompaniment.id} />
-          <DetailField label="Solicitud de origen" value={accompaniment.requestId} />
+          {accompaniment.requestId ? (
+            <DetailField label="Solicitud de origen" value={accompaniment.requestId} />
+          ) : null}
           <DetailField label="Estado" value={accompanimentStatusLabel[accompaniment.status]} />
-          <DetailField
-            label="Fecha de apertura"
-            value={formatRequestDate(accompaniment.createdAt)}
-          />
+          {accompaniment.createdAt ? (
+            <DetailField
+              label="Fecha de apertura"
+              value={formatRequestDate(accompaniment.createdAt)}
+            />
+          ) : null}
           <StudentAction label="Volver a la solicitud" secondary onPress={() => router.back()} />
         </View>
       ) : null}

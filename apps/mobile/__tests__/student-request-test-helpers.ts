@@ -9,6 +9,7 @@ export function fillRequiredStudentRequestFields() {
     screen.getByLabelText("¿Qué esperas de CERETI? *"),
     "Aprender a usar un lector de pantalla.",
   );
+  fireEvent.press(screen.getByRole("checkbox", { name: "Comunicación escrita" }));
   fireEvent.press(screen.getByRole("radio", { name: "En línea" }));
   fireEvent.press(screen.getByRole("checkbox", { name: "Lunes" }));
   fireEvent.changeText(

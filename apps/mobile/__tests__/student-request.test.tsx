@@ -53,6 +53,7 @@ describe("Formulario de solicitud del estudiante", () => {
       screen.getByLabelText("¿Cómo prefieres recibir información? *"),
       "Correo accesible.",
     );
+    fireEvent.press(screen.getByRole("checkbox", { name: "Comunicación escrita" }));
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Selecciona una modalidad.")).toBeOnTheScreen();
@@ -83,6 +84,7 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(screen.getByText("Describe la necesidad que quieres abordar.")).toBeOnTheScreen();
     expect(screen.getByText("Selecciona una modalidad.")).toBeOnTheScreen();
     expect(screen.getByText("Selecciona al menos un día.")).toBeOnTheScreen();
+    expect(screen.getByText("Selecciona o describe una necesidad de acceso.")).toBeOnTheScreen();
     fillRequiredStudentRequestFields();
     expect(screen.queryByText("Describe la necesidad que quieres abordar.")).not.toBeOnTheScreen();
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
@@ -90,13 +92,12 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(screen.getByText("Indica qué esperas del acompañamiento.")).toBeOnTheScreen();
   });
 
-  test("permite varios apoyos y texto libre, sin exigir necesidades de acceso", async () => {
+  test("permite varios apoyos y texto libre para las necesidades de acceso", async () => {
     await openForm();
     fillRequiredStudentRequestFields();
-    for (const label of ["Comunicación escrita", "Persona de apoyo"]) {
-      fireEvent.press(screen.getByRole("checkbox", { name: label }));
-      expect(screen.getByRole("checkbox", { name: label })).toBeChecked();
-    }
+    expect(screen.getByRole("checkbox", { name: "Comunicación escrita" })).toBeChecked();
+    fireEvent.press(screen.getByRole("checkbox", { name: "Persona de apoyo" }));
+    expect(screen.getByRole("checkbox", { name: "Persona de apoyo" })).toBeChecked();
     fireEvent.press(screen.getByRole("checkbox", { name: "Comunicación escrita" }));
     expect(screen.getByRole("checkbox", { name: "Comunicación escrita" })).not.toBeChecked();
     fireEvent.changeText(
@@ -176,7 +177,10 @@ describe("Formulario de solicitud del estudiante", () => {
       needSummary: "Me cuesta leer los materiales del curso.",
       expectedOutcome: "Aprender a usar un lector de pantalla.",
       modalityPreference: "online",
-      accessNeeds: [{ id: "support-person", label: "Persona de apoyo" }],
+      accessNeeds: [
+        { id: "written-communication", label: "Comunicación escrita" },
+        { id: "support-person", label: "Persona de apoyo" },
+      ],
       generalAvailability: { preferredWeekdays: [1] },
       preferredAccessibleInformationChannel: "Correo con texto accesible",
     });
@@ -271,6 +275,31 @@ describe("Formulario de solicitud del estudiante", () => {
 });
 
 describe("Adaptador mock de envío", () => {
+  test("no confirma una solicitud sin necesidades de acceso ni consume su referencia", async () => {
+    const submitter = createMockStudentRequestSubmitter({
+      delayMs: 0,
+      now: () => new Date("2026-09-10T12:00:00.000Z"),
+    });
+    const command: SubmitStudentRequestCommand = {
+      needSummary: "Acceder al material del curso.",
+      expectedOutcome: "Leer el contenido.",
+      accessNeeds: [],
+      generalAvailability: { preferredWeekdays: [1] },
+      modalityPreference: "online",
+      preferredAccessibleInformationChannel: "Correo accesible",
+    };
+
+    await expect(submitter.submitStudentRequest(command)).rejects.toThrow(
+      "Se requiere describir la necesidad de acceso",
+    );
+    await expect(
+      submitter.submitStudentRequest({
+        ...command,
+        accessNeeds: [{ id: "written", label: "Comunicación escrita" }],
+      }),
+    ).resolves.toMatchObject({ requestId: "SOL-DEMO-001" });
+  });
+
   test("falla una vez y confirma el reintento cuando se configura fail-once", async () => {
     const submitter = createMockStudentRequestSubmitter({
       delayMs: 0,

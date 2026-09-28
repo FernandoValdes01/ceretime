@@ -52,49 +52,55 @@ async function settle(): Promise<void> {
 }
 
 describe("adaptador de revisión profesional", () => {
-  it("expone solo las acciones permitidas y actualiza el estado", async () => {
+  it("expone respuestas reducidas del contrato y permite tomar una solicitud recibida", async () => {
     const adapter = createMockProfessionalReviewAdapter();
 
     const requests = await adapter.readProfessionalRequests();
     expect(requests).toHaveLength(7);
     expect(requests.map(({ status }) => status)).toEqual([
       "received",
+      "received",
       "underReview",
       "awaitingInformationOrAcceptance",
-      "received",
       "underReview",
       "accepted",
       "awaitingInformationOrAcceptance",
     ]);
     expect(requests[0]?.availableActions).toEqual(["startReview"]);
-    expect(requests[1]?.availableActions).toEqual(["requestInformation"]);
-    expect(requests[2]?.availableActions).toEqual(["accept"]);
+    expect(requests[1]?.availableActions).toEqual(["startReview"]);
+    expect(requests[2]?.availableActions).toEqual(["requestInformation", "accept"]);
+    expect(requests[3]?.availableActions).toEqual(["accept"]);
+    expect(requests[0]?.studentName).toBeUndefined();
+    expect(requests[0]?.needSummary).toBeUndefined();
 
     const reviewReceipt = await adapter.performProfessionalRequestAction(
       "SOL-PRO-001",
       "startReview",
     );
     expect(reviewReceipt.request.status).toBe("underReview");
+    expect(reviewReceipt.request.availableActions).toEqual(["requestInformation", "accept"]);
     expect(reviewReceipt.message).toBe("La solicitud quedó en revisión.");
 
+    await expect(
+      adapter.performProfessionalRequestAction("SOL-PRO-002", "requestInformation"),
+    ).rejects.toThrow("Indica el motivo para pedir información");
     const informationReceipt = await adapter.performProfessionalRequestAction(
       "SOL-PRO-002",
       "requestInformation",
+      { reason: "Falta un dato de acceso" },
     );
     expect(informationReceipt.request.status).toBe("awaitingInformationOrAcceptance");
-
     const acceptanceReceipt = await adapter.performProfessionalRequestAction(
       "SOL-PRO-003",
       "accept",
+      { objective: "Acordar apoyos accesibles" },
     );
     expect(acceptanceReceipt.request.status).toBe("accepted");
-    expect(acceptanceReceipt.request.accompaniment).toEqual({
+    expect(acceptanceReceipt.request.accompaniment).toMatchObject({
       id: "ACO-SOL-PRO-003",
-      requestId: "SOL-PRO-003",
+      objective: "Acordar apoyos accesibles",
       status: "active",
-      createdAt: "2026-09-18T09:00:00.000Z",
     });
-    expect(acceptanceReceipt.message).toBe("La solicitud fue aceptada y abrió un acompañamiento.");
   });
 
   it("rechaza una acción que no corresponde al estado actual", async () => {
@@ -102,7 +108,7 @@ describe("adaptador de revisión profesional", () => {
 
     await expect(
       adapter.performProfessionalRequestAction("SOL-PRO-003", "startReview"),
-    ).rejects.toThrow("Esta acción no está disponible");
+    ).rejects.toThrow("Esta acción todavía no está disponible en el contrato Mobile");
   });
 
   it("permite simular errores de carga y de acción", async () => {
@@ -184,7 +190,9 @@ describe("hook y vista de revisión profesional", () => {
       await Promise.resolve();
     });
     expect(mounted.getState().status).toBe("error");
-    expect(mounted.getState().error).toBe(failure);
+    expect(mounted.getState().error).toEqual(
+      new Error("No pudimos cargar las solicitudes del Profesional. Intenta nuevamente."),
+    );
 
     act(() => mounted.getState().reload());
     expect(mounted.getState().status).toBe("loading");
@@ -193,7 +201,7 @@ describe("hook y vista de revisión profesional", () => {
     act(() => mounted.renderer.unmount());
   });
 
-  test("abre el detalle, acepta una solicitud y muestra el acompañamiento resultante", async () => {
+  test("abre el detalle de una solicitud recibida y registra que comienza la revisión", async () => {
     const navigation = renderRouter(appDirectory);
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
     await waitFor(() => expect(screen.getByText("Jueves, 24 de Octubre")).toBeOnTheScreen());
@@ -209,32 +217,45 @@ describe("hook y vista de revisión profesional", () => {
     ).not.toBeOnTheScreen();
     expect(screen.queryByText("Acciones disponibles")).not.toBeOnTheScreen();
 
-    expect(
-      screen.getByRole("button", {
-        name: "Solicitud de Tomás Herrera. Estado: Esperando información o aceptación. Explorar apoyos para continuar su participación académica.",
-      }),
-    ).toBeOnTheScreen();
+    const requestCard = screen.getByRole("button", {
+      name: "Solicitud SOL-PRO-001 de Estudiante. Estado: Recibida.",
+    });
     expect(screen.queryByText("Ver detalle")).not.toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: "Poner en revisión" })).not.toBeOnTheScreen();
     expect(screen.queryByRole("button", { name: "Aceptar solicitud" })).not.toBeOnTheScreen();
 
-    fireEvent.press(
-      screen.getByRole("button", {
-        name: "Solicitud de Tomás Herrera. Estado: Esperando información o aceptación. Explorar apoyos para continuar su participación académica.",
-      }),
-    );
+    fireEvent.press(requestCard);
     expect(await screen.findByRole("header", { name: "Detalle de solicitud" })).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Aceptar solicitud" })).toBeOnTheScreen();
-    expect(navigation.getPathname()).toBe("/profesional/estudiantes/SOL-PRO-003");
+    expect(screen.getByRole("button", { name: "Poner en revisión" })).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/profesional/estudiantes/SOL-PRO-001");
 
+    fireEvent.press(screen.getByRole("button", { name: "Poner en revisión" }));
+    expect(await screen.findByText("En revisión")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Esperar información" })).toBeDisabled();
+    expect(screen.getByText("Motivo para pedir información")).toHaveStyle({ fontSize: 16 });
+    expect(screen.getByLabelText("Motivo para pedir información")).toHaveStyle({
+      borderColor: "#5A5A5A",
+      borderWidth: 1,
+      fontSize: 16,
+      lineHeight: 26,
+    });
+    fireEvent.changeText(
+      screen.getByLabelText("Motivo para pedir información"),
+      "Necesitamos un dato de acceso",
+    );
+    expect(screen.getByText("Motivo para pedir información")).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: "Esperar información" }));
+    expect(await screen.findByText("Esperando información o aceptación")).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Aceptar solicitud" })).toBeDisabled();
+    expect(screen.getByText("Objetivo del acompañamiento")).toBeOnTheScreen();
+    fireEvent.changeText(
+      screen.getByLabelText("Objetivo del acompañamiento"),
+      "Acordar apoyos accesibles",
+    );
+    expect(screen.getByText("Objetivo del acompañamiento")).toBeOnTheScreen();
     fireEvent.press(screen.getByRole("button", { name: "Aceptar solicitud" }));
     expect(await screen.findByText("Acompañamiento abierto")).toBeOnTheScreen();
-    expect(screen.getByText("ACO-SOL-PRO-003")).toBeOnTheScreen();
-    expect(screen.getByLabelText("Estado: Aceptada")).toBeOnTheScreen();
-    expect(screen.getByTestId("professional-accompaniment-card")).toHaveProp(
-      "accessibilityLiveRegion",
-      "polite",
-    );
+    expect(screen.getByText("ACO-SOL-PRO-001")).toBeOnTheScreen();
   });
 
   test.each([

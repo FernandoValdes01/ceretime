@@ -2,6 +2,7 @@ import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
   ProfessionalRequestActionReceipt,
+  ProfessionalActionDetails,
 } from "./professional-review-models";
 
 export interface ProfessionalReviewReader {
@@ -12,6 +13,7 @@ export interface ProfessionalReviewActions {
   performProfessionalRequestAction(
     requestId: string,
     action: ProfessionalRequestAction,
+    details?: ProfessionalActionDetails,
   ): Promise<ProfessionalRequestActionReceipt>;
 }
 

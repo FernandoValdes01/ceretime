@@ -1,4 +1,11 @@
+import type { Id } from "../../../../convex/_generated/dataModel";
+
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
+import type { CanonicalCreatedRequest } from "@/application/ti2-sprint-1-contracts";
+import {
+  mapCreatedRequestToReceipt,
+  mapStudentSubmissionToCreateRequest,
+} from "./ti2-contract-mappers";
 
 export interface MockStudentRequestSubmitterOptions {
   readonly delayMs?: number;
@@ -16,7 +23,7 @@ export function createMockStudentRequestSubmitter({
   let shouldFail = failureMode === "once";
 
   return {
-    async submitStudentRequest() {
+    async submitStudentRequest(command) {
       if (delayMs > 0) {
         await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
       }
@@ -26,11 +33,17 @@ export function createMockStudentRequestSubmitter({
         throw new Error("Falla simulada del envío");
       }
 
+      const mapped = mapStudentSubmissionToCreateRequest(command);
       sequence += 1;
-      return {
-        requestId: `SOL-DEMO-${sequence.toString().padStart(3, "0")}`,
-        receivedAt: now().toISOString(),
+      const createdAt = now().getTime();
+      const canonicalResult: CanonicalCreatedRequest = {
+        _id: `SOL-DEMO-${sequence.toString().padStart(3, "0")}` as Id<"requests">,
+        studentId: "users:student-demo-1" as Id<"users">,
+        status: "received",
+        accessNeeds: mapped.args.accessNeeds,
+        createdAt,
       };
+      return mapCreatedRequestToReceipt(canonicalResult);
     },
   };
 }
