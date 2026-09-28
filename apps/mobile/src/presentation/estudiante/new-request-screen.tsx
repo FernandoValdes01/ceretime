@@ -1,5 +1,5 @@
-import { useRef } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView } from "react-native";
+import { useEffect, useRef } from "react";
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
@@ -22,13 +22,24 @@ export default function NewRequestScreen({
 }: NewRequestScreenProps = {}) {
   const headerHeight = useHeaderHeight();
   const scrollRef = useRef<ScrollView>(null);
+  const shouldRevealLastFieldRef = useRef(false);
+
+  useEffect(() => {
+    const subscription = Keyboard.addListener("keyboardDidShow", () => {
+      if (shouldRevealLastFieldRef.current) {
+        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
 
   return (
     <RoleGuard requiredRole="estudiante">
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={headerHeight}
+        keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
       >
         <StudentScreen
           scrollRef={scrollRef}
@@ -38,6 +49,12 @@ export default function NewRequestScreen({
           <RequestForm
             submitter={submitter}
             onRevealGroup={(y) => scrollRef.current?.scrollTo({ y, animated: false })}
+            onBottomFieldFocus={() => {
+              shouldRevealLastFieldRef.current = true;
+            }}
+            onBottomFieldBlur={() => {
+              shouldRevealLastFieldRef.current = false;
+            }}
           />
         </StudentScreen>
       </KeyboardAvoidingView>
