@@ -1,4 +1,5 @@
 import type { Id } from "../../../convex/_generated/dataModel";
+import { ConvexError } from "convex/values";
 import type {
   CanonicalCreatedRequest,
   CanonicalStudentAccompaniment,
@@ -159,7 +160,7 @@ describe("adaptadores de contratos TI2 para Mobile", () => {
         "No se pudo enviar.",
       ),
     ).toEqual(new Error("La necesidad de acceso supera el máximo permitido (2000 caracteres)"));
-    expect(toMobileOperationError({ data: "No autorizado" }, "No se pudo cargar.")).toEqual(
+    expect(toMobileOperationError(new ConvexError("No autorizado"), "No se pudo cargar.")).toEqual(
       new Error("No autorizado"),
     );
   });
