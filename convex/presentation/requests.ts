@@ -17,7 +17,8 @@ import { requestStatusUnion } from "../validators";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 
 /**
- * Borde de Presentación: solicitudes del Estudiante (TI2-9).
+ * Borde de Presentación: solicitudes del Estudiante (TI2-9) y API pública de
+ * mutations del Sprint 1 (TI2-26).
  *
  * Adaptador delgado: valida la entrada, resuelve la identidad en el servidor
  * con `ctx.auth.getUserIdentity()` y delega en Aplicación. Nunca acepta un
@@ -25,6 +26,12 @@ import { acceptedAccompanimentValidator } from "./accompaniments";
  *
  * Toda denegación responde con el mismo error genérico, sin exponer el
  * motivo. Opera con datos ficticios.
+ *
+ * TI2-26: las cuatro mutations de abajo son toda la escritura pública del
+ * Sprint 1; la habilitación de cuentas y la concesión de accesos siguen en
+ * las vías internas guardadas (`internal.accounts`, `internal.assignments`) y
+ * el Sprint 1 no usa `action` (sin integraciones que lo requieran: OAuth corre
+ * por las rutas HTTP de Better Auth).
  */
 
 const requestBaseFields = {

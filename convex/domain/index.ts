@@ -20,6 +20,7 @@ export type {
 export {
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
+  toAccessNeedsText,
   toAccompanimentRequest,
   toStoredRequestFields,
 } from "./request/request";

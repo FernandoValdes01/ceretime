@@ -22,6 +22,20 @@ Toda denegación responde el error genérico, sin motivo ni existencia del recur
 - Persiste el estado resultante y el registro del cambio (motivo, actor y fecha) en la misma transacción, en la bitácora `requestTransitions`.
 - Se guarda el texto de necesidades de acceso; convertir el contenido estructurado a la forma persistida es alcance de TI2-23.
 
+## Superficie API del Sprint 1 (TI2-26)
+
+Evidencia de cierre de TI2-26: las mutations públicas son adaptadores delgados que validan la forma de entrada, resuelven la identidad en el servidor y delegan las reglas en Aplicación/Dominio. Solo servidor, sin UI y sin trasladar reglas de seguridad a los clientes. Todo opera con DATOS FICTICIOS.
+
+Las cuatro mutations públicas del Sprint 1 son `createRequest`, `takeRequest`, `requestAdditionalInformation` y `acceptRequest` (ver tabla de arriba); no se agrega ninguna otra escritura pública en este alcance.
+
+La habilitación de cuentas (`internal.accounts.enableIntern`, `internal.accounts.ensureBootstrapAdmin`) y la concesión o revocación de accesos (`internal.assignments.assign`, `internal.assignments.revoke`) siguen en sus vías internas guardadas con autorización en el servidor: ningún cliente las invoca directo y habilitar jamás concede acompañamientos (TI2-11, TI2-28).
+
+El Sprint 1 no usa `action`: no hay integraciones ni trabajo que lo requiera y la autenticación institucional corre por las rutas HTTP de Better Auth (`convex/auth.ts`, `convex/http.ts`), así que no existe superficie de actions que validar.
+
+La validación de forma vive en Aplicación/Dominio (`toAccessNeedsText`, política de TI2-21, `toOpeningObjective`): texto recortado, no vacío y hasta `ACCESS_NEEDS_MAX_LENGTH` (valor acordado con el responsable de TI2-23). Los permisos se evalúan en el servidor desde `ctx.auth.getUserIdentity()` y el `tokenIdentifier` vinculado, nunca desde identificadores del cliente.
+
+Los errores están normalizados: toda denegación responde `No autorizado` sin motivo ni existencia del recurso, y todo rechazo operativo responde un mensaje en español que indica qué corregir (motivo faltante, estado que no admite el paso, duplicados, objetivo o necesidad de acceso) sin modificar nada.
+
 ## Validación
 
 `bun install --frozen-lockfile`, `bun run test:convex`, `tsc` de funciones y de pruebas, `bun run lint` y formato `oxfmt`, todo en verde.
