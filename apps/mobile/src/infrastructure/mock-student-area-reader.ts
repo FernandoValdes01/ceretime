@@ -1,5 +1,10 @@
 import type { StudentAreaReader } from "../application/student-area-port";
-import { fictionalStudentArea } from "./mock-student-area-data";
+import { mapCanonicalStudentArea } from "./ti2-contract-mappers";
+import {
+  fictionalAccompanimentDetails,
+  fictionalStudentAreaResponses,
+  fictionalStudentIdentity,
+} from "./mock-student-area-data";
 
 export type MockStudentAreaMode = "success" | "empty" | "error";
 
@@ -24,10 +29,23 @@ export function createMockStudentAreaReader({
       }
 
       if (mode === "empty") {
-        return { ...fictionalStudentArea, requests: [], accompaniments: [] };
+        return mapCanonicalStudentArea(fictionalStudentIdentity, {
+          requests: [],
+          accompaniments: [],
+        });
       }
 
-      return fictionalStudentArea;
+      const snapshot = mapCanonicalStudentArea(
+        fictionalStudentIdentity,
+        fictionalStudentAreaResponses,
+      );
+      return {
+        ...snapshot,
+        accompaniments: snapshot.accompaniments.map((accompaniment) => {
+          const details = fictionalAccompanimentDetails[accompaniment.id];
+          return details ? { ...accompaniment, ...details } : accompaniment;
+        }),
+      };
     },
   };
 }

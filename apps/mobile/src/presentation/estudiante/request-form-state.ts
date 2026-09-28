@@ -33,6 +33,9 @@ export function validateRequestForm(values: RequestFormValues): RequestFormError
   if (!values.needSummary.trim()) errors.needSummary = "Describe la necesidad que quieres abordar.";
   if (!values.expectedOutcome.trim())
     errors.expectedOutcome = "Indica qué esperas del acompañamiento.";
+  if (!values.accessNeeds.length && !values.otherAccessNeed.trim()) {
+    errors.accessNeeds = "Selecciona o describe una necesidad de acceso.";
+  }
   if (!values.modalityPreference) errors.modalityPreference = "Selecciona una modalidad.";
   if (!values.preferredWeekdays.length) errors.preferredWeekdays = "Selecciona al menos un día.";
   if (!values.preferredAccessibleInformationChannel.trim()) {

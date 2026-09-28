@@ -102,25 +102,34 @@ export default function StudentRequestDetailScreen() {
           <DetailField label="Referencia" value={request.id} />
           <StudentRequestStatusIndicator status={request.status} />
           <DetailField label="Fecha de envío" value={formatRequestDate(request.createdAt)} />
-          <DetailField label="Última actualización" value={formatRequestDate(request.updatedAt)} />
-          <DetailField label="Necesidad" value={request.needSummary} />
-          <DetailField label="Resultado esperado" value={request.expectedOutcome} />
+          {request.updatedAt ? (
+            <DetailField
+              label="Última actualización"
+              value={formatRequestDate(request.updatedAt)}
+            />
+          ) : null}
+          {request.needSummary ? (
+            <DetailField label="Necesidad" value={request.needSummary} />
+          ) : null}
+          {request.expectedOutcome ? (
+            <DetailField label="Resultado esperado" value={request.expectedOutcome} />
+          ) : null}
           <DetailField
             label="Necesidades de acceso"
-            value={
-              request.accessNeeds.length
-                ? request.accessNeeds.map((need) => need.label).join(", ")
-                : "No registraste necesidades específicas."
-            }
+            value={request.accessNeeds || "No registraste necesidades específicas."}
           />
-          <DetailField
-            label="Modalidad preferida"
-            value={request.modalityPreference === "online" ? "En línea" : "Presencial"}
-          />
-          <DetailField
-            label="Medio preferido para recibir información"
-            value={request.preferredAccessibleInformationChannel}
-          />
+          {request.modalityPreference ? (
+            <DetailField
+              label="Modalidad preferida"
+              value={request.modalityPreference === "online" ? "En línea" : "Presencial"}
+            />
+          ) : null}
+          {request.preferredAccessibleInformationChannel ? (
+            <DetailField
+              label="Medio preferido para recibir información"
+              value={request.preferredAccessibleInformationChannel}
+            />
+          ) : null}
           {request.status === "accepted" ? (
             <View className="gap-3">
               <StudentText

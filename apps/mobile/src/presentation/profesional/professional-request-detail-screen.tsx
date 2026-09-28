@@ -1,14 +1,23 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
+  ProfessionalActionDetails,
 } from "@/application/professional-review-models";
 import type { GeneralAvailability } from "@/application/student-area-models";
 import { AppIcon } from "@/presentation/components/app-icon";
-import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
+import { StudentFonts, StudentText, useStudentFont } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
 import { getStudentRequestStatusPresentation } from "@/presentation/estudiante/student-request-status-indicator";
 import { useProfessionalReviewContext } from "./professional-review-provider";
@@ -25,6 +34,14 @@ const actionHints: Record<ProfessionalRequestAction, string> = {
   requestInformation: "Indica que necesitas información para continuar",
   accept: "Acepta la solicitud y abre el acompañamiento",
 };
+
+interface ActionInputField {
+  readonly label: string;
+  readonly placeholder: string;
+  readonly value: string;
+  readonly onChangeText: (value: string) => void;
+  readonly details: ProfessionalActionDetails;
+}
 
 export function ProfessionalRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
@@ -89,6 +106,7 @@ export function ProfessionalRequestDetailScreen() {
 
           {request ? (
             <RequestDetail
+              key={request.id}
               request={request}
               onAction={performAction}
               getActionState={getActionState}
@@ -106,13 +124,37 @@ function RequestDetail({
   getActionState,
 }: {
   readonly request: ProfessionalRequest;
-  readonly onAction: (requestId: string, action: ProfessionalRequestAction) => Promise<void>;
+  readonly onAction: (
+    requestId: string,
+    action: ProfessionalRequestAction,
+    details?: ProfessionalActionDetails,
+  ) => Promise<void>;
   readonly getActionState: (
     requestId: string,
     action: ProfessionalRequestAction,
   ) => { readonly status: string; readonly message: string | null; readonly error: unknown | null };
 }) {
   const statusPresentation = getStudentRequestStatusPresentation(request.status);
+  const fontFamily = useStudentFont();
+  const [reason, setReason] = useState("");
+  const [objective, setObjective] = useState("");
+  const actionInputFields: Record<ProfessionalRequestAction, ActionInputField | null> = {
+    startReview: null,
+    requestInformation: {
+      label: "Motivo para pedir información",
+      placeholder: "Explica qué información falta",
+      value: reason,
+      onChangeText: setReason,
+      details: { reason },
+    },
+    accept: {
+      label: "Objetivo del acompañamiento",
+      placeholder: "Describe el objetivo del acompañamiento",
+      value: objective,
+      onChangeText: setObjective,
+      details: { objective },
+    },
+  };
 
   return (
     <View style={styles.detailStack}>
@@ -129,12 +171,12 @@ function RequestDetail({
         <View style={styles.identityRow}>
           <View style={styles.studentAvatar}>
             <StudentText weight="semibold" style={styles.studentAvatarText}>
-              {request.studentName.slice(0, 1)}
+              {(request.studentName ?? "E").slice(0, 1)}
             </StudentText>
           </View>
           <View style={styles.identityCopy}>
             <StudentText weight="bold" style={styles.studentName}>
-              {request.studentName}
+              {request.studentName ?? "Estudiante"}
             </StudentText>
             <StudentText style={styles.dateText}>
               Recibida el {formatRequestDate(request.createdAt)}
@@ -155,28 +197,31 @@ function RequestDetail({
           </StudentText>
         </View>
 
-        <DetailRow label="Necesidad" value={request.needSummary} />
-        <DetailRow label="Resultado esperado" value={request.expectedOutcome} />
-        <DetailRow
-          label="Necesidades de acceso"
-          value={
-            request.accessNeeds.length
-              ? request.accessNeeds.map((need) => need.label).join(", ")
-              : "No registró necesidades específicas."
-          }
-        />
-        <DetailRow
-          label="Disponibilidad general"
-          value={formatAvailability(request.generalAvailability)}
-        />
-        <DetailRow
-          label="Modalidad preferida"
-          value={request.modalityPreference === "online" ? "En línea" : "Presencial"}
-        />
-        <DetailRow
-          label="Medio accesible preferido"
-          value={request.preferredAccessibleInformationChannel}
-        />
+        {request.needSummary ? <DetailRow label="Necesidad" value={request.needSummary} /> : null}
+        {request.expectedOutcome ? (
+          <DetailRow label="Resultado esperado" value={request.expectedOutcome} />
+        ) : null}
+        {request.accessNeeds ? (
+          <DetailRow label="Necesidades de acceso" value={request.accessNeeds} />
+        ) : null}
+        {request.generalAvailability ? (
+          <DetailRow
+            label="Disponibilidad general"
+            value={formatAvailability(request.generalAvailability)}
+          />
+        ) : null}
+        {request.modalityPreference ? (
+          <DetailRow
+            label="Modalidad preferida"
+            value={request.modalityPreference === "online" ? "En línea" : "Presencial"}
+          />
+        ) : null}
+        {request.preferredAccessibleInformationChannel ? (
+          <DetailRow
+            label="Medio accesible preferido"
+            value={request.preferredAccessibleInformationChannel}
+          />
+        ) : null}
       </View>
 
       {request.availableActions.length > 0 ? (
@@ -190,15 +235,36 @@ function RequestDetail({
           {request.availableActions.map((action) => {
             const actionState = getActionState(request.id, action);
             const isLoading = actionState.status === "loading";
+            const inputField = actionInputFields[action];
+            const isDisabled = isLoading || (inputField !== null && !inputField.value.trim());
             return (
               <View key={action} style={styles.actionBlock}>
+                {inputField ? (
+                  <View style={styles.actionField}>
+                    <StudentText weight="semibold" style={styles.actionLabel}>
+                      {inputField.label}
+                    </StudentText>
+                    <TextInput
+                      accessibilityLabel={inputField.label}
+                      editable={!isLoading}
+                      multiline
+                      onChangeText={inputField.onChangeText}
+                      placeholder={inputField.placeholder}
+                      style={[styles.actionInput, { fontFamily }]}
+                      value={inputField.value}
+                    />
+                  </View>
+                ) : null}
                 <Pressable
                   accessibilityHint={actionHints[action]}
                   accessibilityRole="button"
-                  accessibilityState={{ busy: isLoading, disabled: isLoading }}
-                  disabled={isLoading}
-                  onPress={() => void onAction(request.id, action)}
-                  style={[styles.primaryButton, isLoading && styles.primaryButtonLoading]}
+                  accessibilityState={{
+                    busy: isLoading,
+                    disabled: isDisabled,
+                  }}
+                  disabled={isDisabled}
+                  onPress={() => void onAction(request.id, action, inputField?.details)}
+                  style={[styles.primaryButton, isDisabled && styles.primaryButtonLoading]}
                 >
                   {isLoading ? (
                     <ActivityIndicator accessible={false} color="#FFFFFF" size="small" />
@@ -259,7 +325,9 @@ function AccompanimentCard({ request }: { readonly request: ProfessionalRequest 
       </View>
       <DetailRow label="Estado" value="Activo" />
       <DetailRow label="Referencia" value={accompaniment.id} />
-      <DetailRow label="Creado el" value={formatRequestDate(accompaniment.createdAt)} />
+      {accompaniment.createdAt ? (
+        <DetailRow label="Creado el" value={formatRequestDate(accompaniment.createdAt)} />
+      ) : null}
     </View>
   );
 }
@@ -356,6 +424,20 @@ const styles = StyleSheet.create({
   sectionTitle: { color: "#182C31", fontSize: 19, lineHeight: 24 },
   sectionDescription: { color: "#42565B", fontSize: 14, lineHeight: 21 },
   actionBlock: { gap: 8, paddingTop: 4 },
+  actionField: { gap: 8 },
+  actionLabel: { color: "#182C31", fontSize: 16, lineHeight: 24 },
+  actionInput: {
+    minHeight: 72,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#5A5A5A",
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    color: "#182C31",
+    fontSize: 16,
+    lineHeight: 26,
+    textAlignVertical: "top",
+  },
   primaryButton: {
     minHeight: 48,
     alignItems: "center",

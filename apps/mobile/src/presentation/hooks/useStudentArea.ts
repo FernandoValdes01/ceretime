@@ -7,6 +7,7 @@ import type {
   StudentRequest,
 } from "../../application/student-area-models";
 import type { StudentAreaReader } from "../../application/student-area-port";
+import { toMobileOperationError } from "../to-mobile-operation-error";
 
 export type StudentAreaLoadStatus = "loading" | "success" | "error";
 export type StudentAreaCollectionStatus = StudentAreaLoadStatus | "empty";
@@ -97,7 +98,12 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
       pending = reader.readStudentArea();
     } catch (error) {
       if (isCurrent()) {
-        setLoad(errorLoad(reader, error));
+        setLoad(
+          errorLoad(
+            reader,
+            toMobileOperationError(error, "No pudimos cargar tus solicitudes. Intenta nuevamente."),
+          ),
+        );
       }
       return () => {
         disposed = true;
@@ -112,7 +118,15 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
       },
       (error: unknown) => {
         if (isCurrent()) {
-          setLoad(errorLoad(reader, error));
+          setLoad(
+            errorLoad(
+              reader,
+              toMobileOperationError(
+                error,
+                "No pudimos cargar tus solicitudes. Intenta nuevamente.",
+              ),
+            ),
+          );
         }
       },
     );
