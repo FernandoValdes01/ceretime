@@ -38,6 +38,6 @@ La primera prueba mostró que el simulador devolvía un comprobante independient
 - `bun --cwd apps/mobile expo install --check`: pasó.
 - CSpell en los archivos de texto modificados: pasó.
 - [CI del commit de código, run 36489096177](https://github.com/FernandoValdes01/ceretime/actions/runs/36489096177): lint y formato, Mobile, Web y Backend en verde.
-- El check de Greptile sigue pendiente de revisión automática para el commit de código; no hay solicitudes de review mientras la PR permanece en draft.
+- El check de Greptile informa que falta una revisión para el commit de evidencia. La PR permanece en draft y no se solicitó review, por lo que ese check sigue pendiente.
 
 La PR permanece en draft por indicación del usuario mientras continúa el trabajo de TI4-13.
