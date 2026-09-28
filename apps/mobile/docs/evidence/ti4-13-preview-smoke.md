@@ -32,6 +32,7 @@ La primera prueba mostró que el simulador devolvía un comprobante independient
 ## Ajustes visuales reportados
 
 - La barra de pestañas reserva el espacio inferior del sistema en Android con navegación de tres botones; [captura en el emulador](ti4-13/16-tabs-safe-area-three-button.png).
+- Al abrir el teclado en el último campo del formulario, el cuadro blanco queda visible por encima del teclado; [captura en el emulador](ti4-13/17-keyboard-no-cover.png).
 
 ## Validaciones
 
