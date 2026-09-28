@@ -26,8 +26,12 @@ function DetailField({ label, value }: { label: string; value: string }) {
 
 export default function StudentRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
-  const { requests } = useStudentAreaContext();
+  const { requests, accompaniments } = useStudentAreaContext();
   const request = requests.data.find((item) => item.id === requestId);
+  const accompaniment =
+    request?.status === "accepted"
+      ? accompaniments.data.find((item) => item.requestId === request.id)
+      : undefined;
 
   return (
     <StudentScreen onBack={router.back} showIntroduction={false}>
@@ -117,6 +121,33 @@ export default function StudentRequestDetailScreen() {
             label="Medio preferido para recibir información"
             value={request.preferredAccessibleInformationChannel}
           />
+          {request.status === "accepted" ? (
+            <View className="gap-3">
+              <StudentText
+                weight="semibold"
+                accessibilityRole="header"
+                className="text-student-text text-xl leading-[28px]"
+              >
+                Acompañamiento resultante
+              </StudentText>
+              {accompaniment ? (
+                <StudentAction
+                  label="Ver acompañamiento"
+                  description="Consulta el acompañamiento que se abrió al aceptar esta solicitud."
+                  onPress={() =>
+                    router.push({
+                      pathname: "/estudiante/solicitudes/[requestId]/acompanamiento",
+                      params: { requestId: request.id },
+                    })
+                  }
+                />
+              ) : (
+                <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
+                  El acompañamiento todavía no aparece en tu listado.
+                </StudentText>
+              )}
+            </View>
+          ) : null}
         </View>
       ) : null}
     </StudentScreen>
