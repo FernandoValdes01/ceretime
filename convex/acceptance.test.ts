@@ -311,6 +311,61 @@ test("Sin objetivo se rechaza sin modificar nada", async () => {
   expect(await countAccompanimentsFor(t, created._id as Id<"requests">)).toBe(0);
 });
 
+test("Dos profesionales en contienda abren un solo acompañamiento", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti27-est-1");
+  await seedProfessional(t, "ti27-pro-1");
+
+  // Solicitud en revisión con toma del primer profesional por la vía pública
+  const created = await registerOwnRequest(t, "ti27-est-1");
+  const first = t.withIdentity(identityFor("ti27-pro-1", "ti27-pro-1@uct.cl"));
+  const secondId = await seedProfessional(t, "ti27-pro-2");
+  const second = t.withIdentity(identityFor("ti27-pro-2", "ti27-pro-2@uct.cl"));
+  await first.mutation(api.presentation.requests.takeRequest, {
+    requestId: created._id as Id<"requests">,
+  });
+
+  // Segunda toma coexistente sembrada a mano: por la vía pública no coexisten
+  // en secuencia (la segunda toma se rechaza porque la solicitud ya salió de
+  // `received`), pero filas así existen vía escrituras legacy o tomas
+  // concurrentes en un backend en vivo, que los listados ya toleran
+  await t.run(async (ctx) => {
+    await ctx.db.insert("requestAssignments", {
+      requestId: created._id as Id<"requests">,
+      userId: secondId,
+      grantedBy: secondId,
+      grantedAt: 1,
+      status: "active",
+    });
+  });
+
+  // La primera aceptación abre el acompañamiento
+  const opened = await first.mutation(api.presentation.requests.acceptRequest, {
+    requestId: created._id as Id<"requests">,
+    objective: "Acompañar la organización del semestre",
+  });
+  expect(opened.status).toBe("active");
+
+  // La segunda, aunque tiene toma activa, se rechaza sin duplicar. Nota:
+  // convex-test@0.0.58 ejecuta en secuencia las transacciones de nivel
+  // superior (TransactionManager toma un lock por transacción), así que esta
+  // prueba fija el rechazo entre actores en contienda en secuencia, no
+  // transacciones solapadas; el solapamiento real solo se verifica contra un
+  // backend en vivo.
+  await expect(
+    second.mutation(api.presentation.requests.acceptRequest, {
+      requestId: created._id as Id<"requests">,
+      objective: "Otro objetivo ficticio",
+    }),
+  ).rejects.toThrow("ya fue aceptada");
+  expect(await countAccompanimentsFor(t, created._id as Id<"requests">)).toBe(1);
+  const accepted = await t.query(internal.requests.getRequestById, {
+    id: created._id as Id<"requests">,
+  });
+  expect(accepted?.status).toBe("accepted");
+});
+
 test("Estudiante y Profesional consultan el acompañamiento resultante", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
