@@ -73,3 +73,17 @@ export const fictionalStudentAreaResponses: CanonicalStudentAreaResponses = {
     },
   ],
 };
+
+/** Demo-only links retained for the accompaniment navigation from TI4-35. */
+export const fictionalAccompanimentDetails: Readonly<
+  Record<string, { readonly requestId: string; readonly createdAt: string }>
+> = {
+  "accompaniments:accompaniment-demo-1": {
+    requestId: "SOL-DEMO-001",
+    createdAt: "2026-08-12T15:00:00.000Z",
+  },
+  "accompaniments:accompaniment-demo-2": {
+    requestId: "SOL-DEMO-005",
+    createdAt: "2026-08-28T11:20:00.000Z",
+  },
+};

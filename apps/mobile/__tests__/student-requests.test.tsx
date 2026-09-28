@@ -131,6 +131,76 @@ describe("Solicitudes del estudiante", () => {
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes");
   });
 
+  test("abre el acompañamiento de una solicitud aceptada y vuelve al detalle", async () => {
+    const navigation = renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
+    fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
+    fireEvent.press(
+      await screen.findByRole("button", {
+        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
+      }),
+    );
+
+    expect(await screen.findByRole("button", { name: "Ver acompañamiento" })).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: "Ver acompañamiento" }));
+
+    expect(await screen.findByRole("header", { name: "Mi acompañamiento" })).toBeOnTheScreen();
+    expect(screen.getByText("accompaniments:accompaniment-demo-1")).toBeOnTheScreen();
+    expect(screen.getByText("SOL-DEMO-001")).toBeOnTheScreen();
+    expect(screen.getByText("Activo")).toBeOnTheScreen();
+    expect(screen.getByText("12 de agosto de 2026")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001/acompanamiento");
+
+    fireEvent.press(screen.getByRole("button", { name: "Volver a la solicitud" }));
+    expect(await screen.findByText("Necesidades de acceso")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001");
+  });
+
+  test("vincula cada solicitud aceptada con su propio acompañamiento", async () => {
+    const navigation = renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
+    await screen.findByText("Inicio de Estudiante");
+    await act(async () => router.push("/estudiante/solicitudes/SOL-DEMO-005"));
+
+    fireEvent.press(await screen.findByRole("button", { name: "Ver acompañamiento" }));
+
+    expect(await screen.findByText("accompaniments:accompaniment-demo-2")).toBeOnTheScreen();
+    expect(screen.getByText("SOL-DEMO-005")).toBeOnTheScreen();
+    expect(screen.getByText("Pausado")).toBeOnTheScreen();
+    expect(screen.queryByText("accompaniments:accompaniment-demo-1")).not.toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-005/acompanamiento");
+  });
+
+  test("una solicitud sin aceptación no ofrece un acompañamiento", async () => {
+    const navigation = renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
+    await screen.findByText("Inicio de Estudiante");
+    await act(async () => router.push("/estudiante/solicitudes/SOL-DEMO-002"));
+
+    expect(await screen.findByText("SOL-DEMO-002")).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Ver acompañamiento" })).not.toBeOnTheScreen();
+
+    await act(async () => router.push("/estudiante/solicitudes/SOL-DEMO-002/acompanamiento"));
+    expect(await screen.findByText("Acompañamiento no disponible")).toBeOnTheScreen();
+    expect(screen.queryByText("accompaniments:accompaniment-demo-1")).not.toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-002/acompanamiento");
+  });
+
+  test("un vínculo directo desconocido no revela acompañamientos", async () => {
+    const navigation = renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
+    await screen.findByText("Inicio de Estudiante");
+    await act(async () =>
+      router.push("/estudiante/solicitudes/other-student-request/acompanamiento"),
+    );
+
+    expect(await screen.findByText("Acompañamiento no disponible")).toBeOnTheScreen();
+    expect(screen.queryByText("accompaniments:accompaniment-demo-1")).not.toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe(
+      "/estudiante/solicitudes/other-student-request/acompanamiento",
+    );
+  });
+
   test.each([
     ["Profesional", "/profesional", "Jueves, 24 de Octubre"],
     ["Practicante", "/practicante/asignaciones", "Acompañamientos asignados"],

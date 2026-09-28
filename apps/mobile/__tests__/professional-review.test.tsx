@@ -232,17 +232,26 @@ describe("hook y vista de revisión profesional", () => {
     fireEvent.press(screen.getByRole("button", { name: "Poner en revisión" }));
     expect(await screen.findByText("En revisión")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Esperar información" })).toBeDisabled();
+    expect(screen.getByText("Motivo para pedir información")).toHaveStyle({ fontSize: 16 });
+    expect(screen.getByLabelText("Motivo para pedir información")).toHaveStyle({
+      borderColor: "#5A5A5A",
+      borderWidth: 1,
+      fontSize: 16,
+    });
     fireEvent.changeText(
       screen.getByLabelText("Motivo para pedir información"),
       "Necesitamos un dato de acceso",
     );
+    expect(screen.getByText("Motivo para pedir información")).toBeOnTheScreen();
     fireEvent.press(screen.getByRole("button", { name: "Esperar información" }));
     expect(await screen.findByText("Esperando información o aceptación")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Aceptar solicitud" })).toBeDisabled();
+    expect(screen.getByText("Objetivo del acompañamiento")).toBeOnTheScreen();
     fireEvent.changeText(
       screen.getByLabelText("Objetivo del acompañamiento"),
       "Acordar apoyos accesibles",
     );
+    expect(screen.getByText("Objetivo del acompañamiento")).toBeOnTheScreen();
     fireEvent.press(screen.getByRole("button", { name: "Aceptar solicitud" }));
     expect(await screen.findByText("Acompañamiento abierto")).toBeOnTheScreen();
     expect(screen.getByText("ACO-SOL-PRO-001")).toBeOnTheScreen();

@@ -35,6 +35,14 @@ const actionHints: Record<ProfessionalRequestAction, string> = {
   accept: "Acepta la solicitud y abre el acompañamiento",
 };
 
+interface ActionInputField {
+  readonly label: string;
+  readonly placeholder: string;
+  readonly value: string;
+  readonly onChangeText: (value: string) => void;
+  readonly details: ProfessionalActionDetails;
+}
+
 export function ProfessionalRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
   const { status, requests, error, reload, performAction, getActionState } =
@@ -129,6 +137,23 @@ function RequestDetail({
   const statusPresentation = getStudentRequestStatusPresentation(request.status);
   const [reason, setReason] = useState("");
   const [objective, setObjective] = useState("");
+  const actionInputFields: Record<ProfessionalRequestAction, ActionInputField | null> = {
+    startReview: null,
+    requestInformation: {
+      label: "Motivo para pedir información",
+      placeholder: "Explica qué información falta",
+      value: reason,
+      onChangeText: setReason,
+      details: { reason },
+    },
+    accept: {
+      label: "Objetivo del acompañamiento",
+      placeholder: "Describe el objetivo del acompañamiento",
+      value: objective,
+      onChangeText: setObjective,
+      details: { objective },
+    },
+  };
 
   return (
     <View style={styles.detailStack}>
@@ -209,53 +234,36 @@ function RequestDetail({
           {request.availableActions.map((action) => {
             const actionState = getActionState(request.id, action);
             const isLoading = actionState.status === "loading";
-            const detail =
-              action === "requestInformation" ? reason : action === "accept" ? objective : "";
-            const needsDetail = action !== "startReview";
+            const inputField = actionInputFields[action];
+            const isDisabled = isLoading || (inputField !== null && !inputField.value.trim());
             return (
               <View key={action} style={styles.actionBlock}>
-                {needsDetail ? (
-                  <TextInput
-                    accessibilityLabel={
-                      action === "requestInformation"
-                        ? "Motivo para pedir información"
-                        : "Objetivo del acompañamiento"
-                    }
-                    editable={!isLoading}
-                    multiline
-                    onChangeText={action === "requestInformation" ? setReason : setObjective}
-                    placeholder={
-                      action === "requestInformation"
-                        ? "Explica qué información falta"
-                        : "Describe el objetivo del acompañamiento"
-                    }
-                    style={styles.actionInput}
-                    value={detail}
-                  />
+                {inputField ? (
+                  <View style={styles.actionField}>
+                    <StudentText weight="semibold" style={styles.actionLabel}>
+                      {inputField.label}
+                    </StudentText>
+                    <TextInput
+                      accessibilityLabel={inputField.label}
+                      editable={!isLoading}
+                      multiline
+                      onChangeText={inputField.onChangeText}
+                      placeholder={inputField.placeholder}
+                      style={styles.actionInput}
+                      value={inputField.value}
+                    />
+                  </View>
                 ) : null}
                 <Pressable
                   accessibilityHint={actionHints[action]}
                   accessibilityRole="button"
                   accessibilityState={{
                     busy: isLoading,
-                    disabled: isLoading || (needsDetail && !detail.trim()),
+                    disabled: isDisabled,
                   }}
-                  disabled={isLoading || (needsDetail && !detail.trim())}
-                  onPress={() =>
-                    void onAction(
-                      request.id,
-                      action,
-                      action === "requestInformation"
-                        ? { reason }
-                        : action === "accept"
-                          ? { objective }
-                          : undefined,
-                    )
-                  }
-                  style={[
-                    styles.primaryButton,
-                    (isLoading || (needsDetail && !detail.trim())) && styles.primaryButtonLoading,
-                  ]}
+                  disabled={isDisabled}
+                  onPress={() => void onAction(request.id, action, inputField?.details)}
+                  style={[styles.primaryButton, isDisabled && styles.primaryButtonLoading]}
                 >
                   {isLoading ? (
                     <ActivityIndicator accessible={false} color="#FFFFFF" size="small" />
@@ -415,15 +423,18 @@ const styles = StyleSheet.create({
   sectionTitle: { color: "#182C31", fontSize: 19, lineHeight: 24 },
   sectionDescription: { color: "#42565B", fontSize: 14, lineHeight: 21 },
   actionBlock: { gap: 8, paddingTop: 4 },
+  actionField: { gap: 8 },
+  actionLabel: { color: "#182C31", fontSize: 16, lineHeight: 24 },
   actionInput: {
     minHeight: 72,
     padding: 12,
     borderWidth: 1,
-    borderColor: "#9CCEC4",
-    borderRadius: 12,
+    borderColor: "#5A5A5A",
+    borderRadius: 8,
     backgroundColor: "#FFFFFF",
     color: "#182C31",
-    fontSize: 15,
+    fontSize: 16,
+    lineHeight: 24,
     textAlignVertical: "top",
   },
   primaryButton: {
