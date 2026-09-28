@@ -311,6 +311,43 @@ test("Sin objetivo se rechaza sin modificar nada", async () => {
   expect(await countAccompanimentsFor(t, created._id as Id<"requests">)).toBe(0);
 });
 
+test("Aceptaciones concurrentes abren un solo acompañamiento", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti27-est-1");
+  await seedProfessional(t, "ti27-pro-1");
+
+  // Solicitud en revisión con toma: lista para aceptar
+  const created = await registerOwnRequest(t, "ti27-est-1");
+  const asProfessional = t.withIdentity(identityFor("ti27-pro-1", "ti27-pro-1@uct.cl"));
+  await asProfessional.mutation(api.presentation.requests.takeRequest, {
+    requestId: created._id as Id<"requests">,
+  });
+
+  // Dos aceptaciones en paralelo: Convex las ejecuta en serie y la segunda
+  // encuentra el acompañamiento ya creado, así que se rechaza sin duplicar
+  const attempts = await Promise.allSettled([
+    asProfessional.mutation(api.presentation.requests.acceptRequest, {
+      requestId: created._id as Id<"requests">,
+      objective: "Acompañar la organización del semestre",
+    }),
+    asProfessional.mutation(api.presentation.requests.acceptRequest, {
+      requestId: created._id as Id<"requests">,
+      objective: "Otro objetivo ficticio",
+    }),
+  ]);
+  const fulfilled = attempts.filter((result) => result.status === "fulfilled");
+  const rejected = attempts.filter((result) => result.status === "rejected");
+  expect(fulfilled).toHaveLength(1);
+  expect(rejected).toHaveLength(1);
+  expect(String((rejected[0] as PromiseRejectedResult).reason)).toMatch("ya fue aceptada");
+  expect(await countAccompanimentsFor(t, created._id as Id<"requests">)).toBe(1);
+  const accepted = await t.query(internal.requests.getRequestById, {
+    id: created._id as Id<"requests">,
+  });
+  expect(accepted?.status).toBe("accepted");
+});
+
 test("Estudiante y Profesional consultan el acompañamiento resultante", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
