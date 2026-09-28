@@ -29,6 +29,10 @@ Los datos y cuentas usados son ficticios. El envío del estudiante vive en un al
 
 La primera prueba mostró que el simulador devolvía un comprobante independiente del listado y del detalle. Esta PR conecta los tres pasos mediante el almacén local de sesión y agrega una prueba de integración que navega desde el listado existente, vuelve a Inicio, envía la solicitud y abre su detalle. También cubre el listado de ejemplo vacío.
 
+## Ajustes visuales reportados
+
+- La barra de pestañas reserva el espacio inferior del sistema en Android con navegación de tres botones; [captura en el emulador](ti4-13/16-tabs-safe-area-three-button.png).
+
 ## Validaciones
 
 - `bun run lint`: pasó.
