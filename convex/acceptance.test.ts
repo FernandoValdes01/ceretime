@@ -311,36 +311,54 @@ test("Sin objetivo se rechaza sin modificar nada", async () => {
   expect(await countAccompanimentsFor(t, created._id as Id<"requests">)).toBe(0);
 });
 
-test("Aceptaciones concurrentes abren un solo acompañamiento", async () => {
+test("Dos profesionales en contienda abren un solo acompañamiento", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   await seedStudent(t, "ti27-est-1");
   await seedProfessional(t, "ti27-pro-1");
 
-  // Solicitud en revisión con toma: lista para aceptar
+  // Solicitud en revisión con toma del primer profesional por la vía pública
   const created = await registerOwnRequest(t, "ti27-est-1");
-  const asProfessional = t.withIdentity(identityFor("ti27-pro-1", "ti27-pro-1@uct.cl"));
-  await asProfessional.mutation(api.presentation.requests.takeRequest, {
+  const first = t.withIdentity(identityFor("ti27-pro-1", "ti27-pro-1@uct.cl"));
+  const secondId = await seedProfessional(t, "ti27-pro-2");
+  const second = t.withIdentity(identityFor("ti27-pro-2", "ti27-pro-2@uct.cl"));
+  await first.mutation(api.presentation.requests.takeRequest, {
     requestId: created._id as Id<"requests">,
   });
 
-  // Dos aceptaciones en paralelo: Convex las ejecuta en serie y la segunda
-  // encuentra el acompañamiento ya creado, así que se rechaza sin duplicar
-  const attempts = await Promise.allSettled([
-    asProfessional.mutation(api.presentation.requests.acceptRequest, {
+  // Segunda toma coexistente sembrada a mano: por la vía pública no coexisten
+  // en secuencia (la segunda toma se rechaza porque la solicitud ya salió de
+  // `received`), pero filas así existen vía escrituras legacy o tomas
+  // concurrentes en un backend en vivo, que los listados ya toleran
+  await t.run(async (ctx) => {
+    await ctx.db.insert("requestAssignments", {
       requestId: created._id as Id<"requests">,
-      objective: "Acompañar la organización del semestre",
-    }),
-    asProfessional.mutation(api.presentation.requests.acceptRequest, {
+      userId: secondId,
+      grantedBy: secondId,
+      grantedAt: 1,
+      status: "active",
+    });
+  });
+
+  // La primera aceptación abre el acompañamiento
+  const opened = await first.mutation(api.presentation.requests.acceptRequest, {
+    requestId: created._id as Id<"requests">,
+    objective: "Acompañar la organización del semestre",
+  });
+  expect(opened.status).toBe("active");
+
+  // La segunda, aunque tiene toma activa, se rechaza sin duplicar. Nota:
+  // convex-test@0.0.58 ejecuta en secuencia las transacciones de nivel
+  // superior (TransactionManager toma un lock por transacción), así que esta
+  // prueba fija el rechazo entre actores en contienda en secuencia, no
+  // transacciones solapadas; el solapamiento real solo se verifica contra un
+  // backend en vivo.
+  await expect(
+    second.mutation(api.presentation.requests.acceptRequest, {
       requestId: created._id as Id<"requests">,
       objective: "Otro objetivo ficticio",
     }),
-  ]);
-  const fulfilled = attempts.filter((result) => result.status === "fulfilled");
-  const rejected = attempts.filter((result) => result.status === "rejected");
-  expect(fulfilled).toHaveLength(1);
-  expect(rejected).toHaveLength(1);
-  expect(String((rejected[0] as PromiseRejectedResult).reason)).toMatch("ya fue aceptada");
+  ).rejects.toThrow("ya fue aceptada");
   expect(await countAccompanimentsFor(t, created._id as Id<"requests">)).toBe(1);
   const accepted = await t.query(internal.requests.getRequestById, {
     id: created._id as Id<"requests">,
