@@ -3,6 +3,7 @@ import { SPRINT_1_REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
+  toAccessNeedsText,
   toAccompanimentRequest,
   toStoredRequestFields,
   type AccompanimentRequestContent,
@@ -90,6 +91,22 @@ describe("toAccompanimentRequest (TI2-8)", () => {
       createdAt: 1000,
     };
     expect(entity.status).toBe("received");
+  });
+});
+
+describe("toAccessNeedsText (TI2-26)", () => {
+  test("recorta el texto con contenido válido", () => {
+    expect(toAccessNeedsText("  Necesidad ficticia  ")).toBe("Necesidad ficticia");
+  });
+
+  test("rechaza el texto vacío o solo con espacios", () => {
+    expect(toAccessNeedsText("")).toBeNull();
+    expect(toAccessNeedsText("   ")).toBeNull();
+  });
+
+  test("el tope acordado se comparte desde el barrel sin duplicarlo", () => {
+    expect(ACCESS_NEEDS_MAX_LENGTH).toBe(2000);
+    expect(BARREL_MAX_LENGTH).toBe(ACCESS_NEEDS_MAX_LENGTH);
   });
 });
 

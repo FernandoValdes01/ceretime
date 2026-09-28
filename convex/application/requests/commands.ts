@@ -1,7 +1,11 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniment/accompaniment";
-import { ACCESS_NEEDS_MAX_LENGTH, toAccompanimentRequest } from "../../domain/request/request";
+import {
+  ACCESS_NEEDS_MAX_LENGTH,
+  toAccessNeedsText,
+  toAccompanimentRequest,
+} from "../../domain/request/request";
 import { transitionRequest } from "../../domain/request/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
@@ -42,7 +46,9 @@ function deny(): never {
  * Estudiante con cuenta vigente puede registrar; cualquier otro caso recibe
  * denegación genérica, sin motivo ni existencia del recurso. La necesidad de
  * acceso se valida como texto no vacío hasta el tope del contrato
- * (`ACCESS_NEEDS_MAX_LENGTH`, valor acordado en TI2-23).
+ * (`ACCESS_NEEDS_MAX_LENGTH`, valor acordado en TI2-23) y se persiste
+ * recortada; el rechazo por forma es un error operativo que indica qué
+ * corregir, no una denegación.
  */
 export async function registerRequest(
   ctx: MutationCtx,
@@ -50,8 +56,8 @@ export async function registerRequest(
   input: { readonly accessNeeds: string },
 ) {
   const student = await requireActiveStudent(ctx, identity);
-  const accessNeeds = input.accessNeeds.trim();
-  if (accessNeeds.length === 0) {
+  const accessNeeds = toAccessNeedsText(input.accessNeeds);
+  if (accessNeeds === null) {
     throw new Error("Se requiere describir la necesidad de acceso");
   }
   if (accessNeeds.length > ACCESS_NEEDS_MAX_LENGTH) {
