@@ -16,19 +16,10 @@ const publicRequestMessages = new Set([
   "Se requiere el objetivo para abrir el acompañamiento",
 ]);
 
-function readStructuredPublicError(error: unknown): string | undefined {
-  if (!isRecord(error)) return undefined;
-
-  const data = error.data;
-  if (data === "No autorizado") return data;
-  if (!isRecord(data)) return undefined;
-  if (typeof data.code !== "string" || typeof data.message !== "string") return undefined;
-  return data.message;
-}
-
 export function toMobileOperationError(error: unknown, fallback: string): Error {
-  const publicMessage = readStructuredPublicError(error);
-  if (publicMessage) return new Error(publicMessage);
+  if (isRecord(error) && error.data === "No autorizado") {
+    return new Error("No autorizado");
+  }
   if (error instanceof Error && publicRequestMessages.has(error.message)) {
     return new Error(error.message);
   }

@@ -137,13 +137,19 @@ describe("adaptadores de contratos TI2 para Mobile", () => {
     });
   });
 
-  it("muestra errores públicos con código y mensaje y reemplaza los demás por un mensaje seguro", () => {
+  it("muestra sólo las formas públicas de error y reemplaza los demás mensajes", () => {
     expect(
       toMobileOperationError(
         { data: { code: "FORBIDDEN", message: "No autorizado" } },
         "No se pudo cargar.",
       ),
-    ).toEqual(new Error("No autorizado"));
+    ).toEqual(new Error("No se pudo cargar."));
+    expect(
+      toMobileOperationError(
+        { data: { code: "INTERNAL", message: "Detalle interno" } },
+        "No se pudo cargar.",
+      ),
+    ).toEqual(new Error("No se pudo cargar."));
     expect(
       toMobileOperationError(new Error("detalle interno no público"), "No se pudo cargar."),
     ).toEqual(new Error("No se pudo cargar."));

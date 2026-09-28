@@ -17,7 +17,7 @@ import type {
 } from "@/application/professional-review-models";
 import type { GeneralAvailability } from "@/application/student-area-models";
 import { AppIcon } from "@/presentation/components/app-icon";
-import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
+import { StudentFonts, StudentText, useStudentFont } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
 import { getStudentRequestStatusPresentation } from "@/presentation/estudiante/student-request-status-indicator";
 import { useProfessionalReviewContext } from "./professional-review-provider";
@@ -135,6 +135,7 @@ function RequestDetail({
   ) => { readonly status: string; readonly message: string | null; readonly error: unknown | null };
 }) {
   const statusPresentation = getStudentRequestStatusPresentation(request.status);
+  const fontFamily = useStudentFont();
   const [reason, setReason] = useState("");
   const [objective, setObjective] = useState("");
   const actionInputFields: Record<ProfessionalRequestAction, ActionInputField | null> = {
@@ -249,7 +250,7 @@ function RequestDetail({
                       multiline
                       onChangeText={inputField.onChangeText}
                       placeholder={inputField.placeholder}
-                      style={styles.actionInput}
+                      style={[styles.actionInput, { fontFamily }]}
                       value={inputField.value}
                     />
                   </View>
@@ -434,7 +435,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     color: "#182C31",
     fontSize: 16,
-    lineHeight: 24,
+    lineHeight: 26,
     textAlignVertical: "top",
   },
   primaryButton: {

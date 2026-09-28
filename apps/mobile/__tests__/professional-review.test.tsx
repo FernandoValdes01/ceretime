@@ -237,6 +237,7 @@ describe("hook y vista de revisión profesional", () => {
       borderColor: "#5A5A5A",
       borderWidth: 1,
       fontSize: 16,
+      lineHeight: 26,
     });
     fireEvent.changeText(
       screen.getByLabelText("Motivo para pedir información"),
