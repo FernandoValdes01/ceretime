@@ -45,14 +45,15 @@ export function AccessibilityProvider({ children }: { children: ReactNode }) {
   const setTextSize = useCallback((size: TextSize) => setTextSizeState(size), []);
 
   const increaseText = useCallback(() => {
-    setTextSizeState((current) =>
-      TEXT_SIZE_ORDER[Math.min(TEXT_SIZE_ORDER.indexOf(current) + 1, TEXT_SIZE_ORDER.length - 1)],
+    setTextSizeState(
+      (current) =>
+        TEXT_SIZE_ORDER[Math.min(TEXT_SIZE_ORDER.indexOf(current) + 1, TEXT_SIZE_ORDER.length - 1)],
     );
   }, []);
 
   const decreaseText = useCallback(() => {
-    setTextSizeState((current) =>
-      TEXT_SIZE_ORDER[Math.max(TEXT_SIZE_ORDER.indexOf(current) - 1, 0)],
+    setTextSizeState(
+      (current) => TEXT_SIZE_ORDER[Math.max(TEXT_SIZE_ORDER.indexOf(current) - 1, 0)],
     );
   }, []);
 

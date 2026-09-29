@@ -119,8 +119,8 @@ class StudentPanelErrorBoundary extends Component<
         <section aria-labelledby="student-panel-error-title" className="student-portal__head">
           <h1 id="student-panel-error-title">Portal del Estudiante</h1>
           <p role="alert" className="student-portal__error">
-            No pudimos cargar {this.props.subject}. Si el problema persiste, tu cuenta podría
-            estar pendiente de habilitación.
+            No pudimos cargar {this.props.subject}. Si el problema persiste, tu cuenta podría estar
+            pendiente de habilitación.
           </p>
           <div className="student-portal__cta">
             <button
@@ -210,7 +210,11 @@ function StudentPanelContent() {
         <p className="student-portal__hint">Pronto podrás enviar tu solicitud desde aquí.</p>
       </section>
 
-      <section aria-labelledby="como-funciona-title" id="como-funciona" className="student-portal__section">
+      <section
+        aria-labelledby="como-funciona-title"
+        id="como-funciona"
+        className="student-portal__section"
+      >
         <h2 id="como-funciona-title">Cómo funciona el acompañamiento</h2>
         <ol className="student-portal__steps">
           <li className="student-portal__step">
@@ -353,7 +357,9 @@ function StudentRequestsBody() {
           </li>
         ))}
       </ul>
-      {requests.isDone ? null : <p className="student-portal__hint">Mostrando las más recientes.</p>}
+      {requests.isDone ? null : (
+        <p className="student-portal__hint">Mostrando las más recientes.</p>
+      )}
     </>
   );
 }

@@ -54,7 +54,7 @@ export function AccessibilityMenu() {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open ]);
+  }, [open]);
 
   return (
     <div className="a11y-wrap">
@@ -74,7 +74,12 @@ export function AccessibilityMenu() {
       </button>
 
       {open ? (
-        <div ref={panelRef} role="dialog" aria-label="Opciones de accesibilidad" className="a11y-panel">
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-label="Opciones de accesibilidad"
+          className="a11y-panel"
+        >
           <div className="a11y-panel-head">
             <h2>Accesibilidad</h2>
             <button
@@ -98,7 +103,11 @@ export function AccessibilityMenu() {
               >
                 <span aria-hidden="true">A−</span>
               </button>
-              <div className="a11y-size-group" role="radiogroup" aria-label="Nivel de tamaño del texto">
+              <div
+                className="a11y-size-group"
+                role="radiogroup"
+                aria-label="Nivel de tamaño del texto"
+              >
                 {TEXT_SIZE_OPTIONS.map((option) => (
                   <button
                     key={option.id}
@@ -106,7 +115,9 @@ export function AccessibilityMenu() {
                     role="radio"
                     aria-checked={textSize === option.id}
                     onClick={() => setTextSize(option.id)}
-                    className={["a11y-size-opt", textSize === option.id ? "is-active" : ""].join(" ")}
+                    className={["a11y-size-opt", textSize === option.id ? "is-active" : ""].join(
+                      " ",
+                    )}
                   >
                     {option.label}
                   </button>
@@ -124,11 +135,7 @@ export function AccessibilityMenu() {
           </fieldset>
 
           <div className="a11y-toggles">
-            <ToggleRow
-              active={highContrast}
-              onToggle={toggleHighContrast}
-              label="Alto contraste"
-            />
+            <ToggleRow active={highContrast} onToggle={toggleHighContrast} label="Alto contraste" />
             <ToggleRow
               active={readAloud}
               onToggle={toggleReadAloud}

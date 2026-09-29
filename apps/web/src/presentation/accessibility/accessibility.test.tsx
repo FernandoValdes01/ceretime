@@ -60,7 +60,10 @@ describe("preferencias de accesibilidad (rescate v0)", () => {
   });
 
   test("carga las preferencias guardadas al montar", async () => {
-    localStorage.setItem(A11Y_STORAGE_KEY, JSON.stringify({ textSize: "grande", highContrast: true }));
+    localStorage.setItem(
+      A11Y_STORAGE_KEY,
+      JSON.stringify({ textSize: "grande", highContrast: true }),
+    );
     renderMenu();
 
     expect(document.documentElement.style.getPropertyValue("--font-scale")).toBe("1.15");
