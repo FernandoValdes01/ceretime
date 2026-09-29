@@ -6,8 +6,7 @@ Datos mínimos para mostrar el entorno TI2 con cada rol y cada estado de solicit
 
 - La carga es `internal.fictitiousData.load`, en `convex/fictitiousData.ts`. Solo opera con `TEST_SEEDS_ENABLED=true` en el deployment, igual que `createTestUser`; en producción la variable permanece ausente y la carga se rechaza.
 - Es repetible: si el dataset ya existe, no escribe nada.
-- En cada Preview la ejecuta Convex con `--preview-run fictitiousData:load`, que se ignora en producción.
-- En un deployment de desarrollo propio se carga con `bunx convex env set TEST_SEEDS_ENABLED true` y luego `bunx convex run fictitiousData:load`.
+- Se carga a mano en un deployment de desarrollo propio con `bunx convex run fictitiousData:load`, después de configurar sus variables según la guía de arranque del [README](../README.md). Ningún despliegue la ejecuta automáticamente.
 - Los perfiles se crean con `createTestUser` y las solicitudes pasan por los casos de uso reales (registrar, tomar, pedir información, aceptar y asignar), así que el dataset cumple las mismas reglas que el flujo del cliente.
 
 ## Cuentas

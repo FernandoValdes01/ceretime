@@ -13,9 +13,9 @@ import { findProfileByTokenIdentifier } from "./infrastructure/accompaniments/re
 /**
  * Dataset ficticio mínimo del Sprint 1 (TI2-30).
  *
- * Cada Preview lo carga con `--preview-run fictitiousData:load`; en un
- * deployment de desarrollo se carga a mano con `bunx convex run
- * fictitiousData:load`. El inventario vive en `docs/dataset-ficticio.md`.
+ * Se carga a mano en un deployment de desarrollo con `bunx convex run
+ * fictitiousData:load`, siguiendo la guía de arranque del `README.md` raíz.
+ * El inventario vive en `docs/dataset-ficticio.md`.
  */
 
 // Emisor inventado: una sesión real produce `{CONVEX_SITE_URL}|{subject}`, así
