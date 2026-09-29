@@ -9,15 +9,15 @@ export interface MockStudentAreaStore {
 }
 
 /** Session-only store that joins the student form and its demo reader. */
-export function createMockStudentAreaStore(initialRequestCount = 5): MockStudentAreaStore {
-  let sequence = initialRequestCount;
+export function createMockStudentAreaStore(lastExampleRequestNumber = 5): MockStudentAreaStore {
+  let lastRequestNumber = lastExampleRequestNumber;
   let requests: StudentRequest[] = [];
   const listeners = new Set<() => void>();
 
   return {
     nextRequestId() {
-      sequence += 1;
-      return `SOL-DEMO-${sequence.toString().padStart(3, "0")}`;
+      lastRequestNumber += 1;
+      return `SOL-DEMO-${lastRequestNumber.toString().padStart(3, "0")}`;
     },
     addRequest(request) {
       requests = [request, ...requests];
@@ -27,7 +27,7 @@ export function createMockStudentAreaStore(initialRequestCount = 5): MockStudent
       return requests;
     },
     reset() {
-      sequence = initialRequestCount;
+      lastRequestNumber = lastExampleRequestNumber;
       requests = [];
       listeners.forEach((listener) => listener());
     },
