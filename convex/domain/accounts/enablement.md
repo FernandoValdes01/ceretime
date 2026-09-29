@@ -24,7 +24,7 @@ El arranque crea una sola vez la cuenta administrativa inicial con `internal.acc
 
 ## Garantías contra semillas en producción
 
-Las semillas de desarrollo son solo `internal.users.createTestUser` y los insert directos de las pruebas con `convex-test`; no existe guion automático que las ejecute al desplegar, el arranque falla con `Ya existe una cuenta administrativa` cuando ya hay un Administrador, el arranque exige correo `@uct.cl` con estructura válida y rechaza cualquier otro rol, y toda demostración usa datos ficticios sin reutilizar correos, nombres ni identificadores de producción.
+Las semillas de desarrollo son solo `internal.users.createTestUser`, `internal.requests.createTestRequest` y `internal.fictitiousData.load`, que exigen `TEST_SEEDS_ENABLED === "true"`, y los insert directos de las pruebas con `convex-test`; el único guion automático es `--preview-run fictitiousData:load`, que Convex ejecuta solo en los deployments de Preview e ignora en producción (TI2-30), el arranque falla con `Ya existe una cuenta administrativa` cuando ya hay un Administrador, el arranque exige correo `@uct.cl` con estructura válida y rechaza cualquier otro rol, y toda demostración usa datos ficticios sin reutilizar correos, nombres ni identificadores de producción.
 
 ## Casos cubiertos por pruebas
 
