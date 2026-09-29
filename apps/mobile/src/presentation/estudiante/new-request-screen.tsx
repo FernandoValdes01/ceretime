@@ -22,14 +22,19 @@ export default function NewRequestScreen({
 }: NewRequestScreenProps = {}) {
   const headerHeight = useHeaderHeight();
   const scrollRef = useRef<ScrollView>(null);
-  const shouldRevealLastFieldRef = useRef(false);
+  const focusedInputHandleRef = useRef<number | null>(null);
+
+  function revealFocusedInput() {
+    const focusedInputHandle = focusedInputHandleRef.current;
+    if (focusedInputHandle === null) return;
+
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(focusedInputHandle, 100, true);
+    });
+  }
 
   useEffect(() => {
-    const subscription = Keyboard.addListener("keyboardDidShow", () => {
-      if (shouldRevealLastFieldRef.current) {
-        requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
-      }
-    });
+    const subscription = Keyboard.addListener("keyboardDidShow", revealFocusedInput);
 
     return () => subscription.remove();
   }, []);
@@ -49,11 +54,9 @@ export default function NewRequestScreen({
           <RequestForm
             submitter={submitter}
             onRevealGroup={(y) => scrollRef.current?.scrollTo({ y, animated: false })}
-            onBottomFieldFocus={() => {
-              shouldRevealLastFieldRef.current = true;
-            }}
-            onBottomFieldBlur={() => {
-              shouldRevealLastFieldRef.current = false;
+            onFieldFocus={(inputHandle) => {
+              focusedInputHandleRef.current = inputHandle;
+              revealFocusedInput();
             }}
           />
         </StudentScreen>

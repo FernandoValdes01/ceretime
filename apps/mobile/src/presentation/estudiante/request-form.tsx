@@ -140,17 +140,11 @@ function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubm
 
 export interface RequestFormProps {
   readonly onRevealGroup: (y: number) => void;
-  readonly onBottomFieldFocus?: () => void;
-  readonly onBottomFieldBlur?: () => void;
+  readonly onFieldFocus?: (inputHandle: number) => void;
   readonly submitter: StudentRequestSubmitter;
 }
 
-export function RequestForm({
-  onBottomFieldBlur,
-  onBottomFieldFocus,
-  onRevealGroup,
-  submitter,
-}: RequestFormProps) {
+export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestFormProps) {
   const fontFamily = useStudentFont();
   const [focusedField, setFocusedField] = useState<keyof RequestFormValues | null>(null);
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
@@ -238,13 +232,12 @@ export function RequestForm({
           aria-describedby={errors[key] ? `${key}-error` : undefined}
           value={values[key]}
           onChangeText={(value) => update(key, value)}
-          onFocus={() => {
+          onFocus={(event) => {
             setFocusedField(key);
-            if (key === "preferredAccessibleInformationChannel") onBottomFieldFocus?.();
+            onFieldFocus?.(event.nativeEvent.target);
           }}
           onBlur={() => {
             setFocusedField(null);
-            if (key === "preferredAccessibleInformationChannel") onBottomFieldBlur?.();
           }}
           editable={!isSubmitting}
           accessibilityState={{ disabled: isSubmitting }}
