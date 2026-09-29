@@ -145,10 +145,22 @@ test("runs integrated CI for pull requests and pushes to main", () => {
   expect(pullRequestWorkflow.on.pull_request.branches).toEqual(["main"]);
   expect(pullRequestWorkflow.on.pull_request.types).toContain("ready_for_review");
   expect(pullRequestWorkflow.on.push.branches).toEqual(["main"]);
-  const jobNames = Object.values(pullRequestWorkflow.jobs)
-    .map((job: any) => job.name)
-    .sort();
-  expect(jobNames).toEqual(
-    ["Lint y formato", "Validación Mobile", "Validación Web", "Verificación Backend"].sort(),
+  for (const jobId of ["lint-and-format", "mobile", "web", "backend"]) {
+    expect(pullRequestWorkflow.jobs[jobId]).toBeDefined();
+  }
+});
+
+test("deploys Preview and Production only after the existing CI", () => {
+  const requiredJobs = ["lint-and-format", "mobile", "web", "backend"];
+  const preview = pullRequestWorkflow.jobs["vercel-preview"];
+  const production = pullRequestWorkflow.jobs["vercel-production"];
+
+  expect(preview.needs).toEqual(requiredJobs);
+  expect(preview.if).toContain("github.event_name == 'pull_request'");
+  expect(preview.if).toContain(
+    "github.event.pull_request.head.repo.full_name == github.repository",
   );
+  expect(production.needs).toEqual(requiredJobs);
+  expect(production.if).toContain("github.event_name == 'push'");
+  expect(production.if).toContain("github.ref == 'refs/heads/main'");
 });
