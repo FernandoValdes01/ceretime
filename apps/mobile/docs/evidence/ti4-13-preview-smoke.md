@@ -24,15 +24,13 @@ Emulador AVD `Medium_Phone`, serial ADB `emulator-5554`, Android 17 (API 37), re
 
 Los datos y cuentas usados son ficticios. El envío del estudiante vive en un almacén en memoria del simulador, por lo que el listado y el detalle comparten el envío durante la sesión; no se llama al backend ni se conserva al cerrar la aplicación.
 
-## Hallazgo corregido
+## Hallazgos corregidos
 
-La primera prueba mostró que el simulador devolvía un comprobante independiente del listado y del detalle. Esta PR conecta los tres pasos mediante el almacén local de sesión y agrega una prueba de integración que navega desde el listado existente, vuelve a Inicio, envía la solicitud y abre su detalle. También cubre el listado de ejemplo vacío.
+Las correcciones se realizaron durante los smoke tests de [TI4-13](https://linear.app/ceretime/issue/TI4-13/build-preview-y-smoke-tests-mobile-sprint-1). Cada entrada identifica las issues de origen del flujo, el defecto, el commit que lo corrige y su comprobación.
 
-## Ajustes visuales reportados
-
-- La barra de pestañas reserva el espacio inferior del sistema en Android con navegación de tres botones; [captura del Preview](ti4-13/16-tabs-safe-area-three-button.png).
-- Al enfocar el primer cuadro de texto con varias líneas y abrir el teclado, todo el campo queda visible; [captura del Preview](ti4-13/17-keyboard-no-cover.png).
-- El último cuadro de texto también permanece visible sobre el teclado; [captura del Preview](ti4-13/18-keyboard-no-cover-last-field.png).
+- **Envío ausente del listado y del detalle.** Flujos de origen: [TI4-30, envío y confirmación](https://linear.app/ceretime/issue/TI4-30/estudiante-mobile-envio-errores-y-confirmacion) y [TI4-19, listado y detalle](https://linear.app/ceretime/issue/TI4-19/estudiante-mobile-listado-y-detalle-de-solicitudes). El simulador devolvía un comprobante que el lector no podía consultar. [Corrección `e5cce1c`](https://github.com/FernandoValdes01/ceretime/commit/e5cce1c64f94d2b5ab6e7fa8d8c32dc1fffba14f): formulario, listado y detalle comparten un almacén en memoria. Una prueba de integración recorre listado → Inicio → envío → listado → detalle; otra comprueba el escenario vacío. Evidencia nativa: [comprobante](ti4-13/02-student-result.png), [listado](ti4-13/03-student-list.png) y [detalle](ti4-13/04-student-detail.png).
+- **Pestañas cubiertas por la navegación de Android.** Flujo de origen: [TI4-6, navegación principal](https://linear.app/ceretime/issue/TI4-6/estructura-mobile-navegacion-principal). La barra no reservaba el espacio inferior del sistema. [Corrección `f6d9521`](https://github.com/FernandoValdes01/ceretime/commit/f6d9521365ae50b39b8475655524f05c9ba1137b): las pestañas incorporan el inset inferior. Comprobación con navegación de tres botones: [captura del Preview](ti4-13/16-tabs-safe-area-three-button.png).
+- **Campos del formulario cubiertos por el teclado.** Flujo de origen: [TI4-8, formulario y validaciones](https://linear.app/ceretime/issue/TI4-8/estudiante-mobile-formulario-y-validaciones). Al abrir Gboard, el campo enfocado podía quedar oculto. [Corrección final `a2c68e7`](https://github.com/FernandoValdes01/ceretime/commit/a2c68e7aa8dfe5bf99345cc07ea4ef74da8ae11f): el formulario ajusta su altura y desplaza el campo enfocado sobre el teclado. Comprobación del [primer campo](ti4-13/17-keyboard-no-cover.png) y del [último campo](ti4-13/18-keyboard-no-cover-last-field.png).
 
 ## Validaciones
 
@@ -43,6 +41,5 @@ La primera prueba mostró que el simulador devolvía un comprobante independient
 - `bun --cwd apps/mobile expo install --check`: pasó.
 - CSpell en los archivos de texto modificados: pasó.
 - [CI del commit `a2c68e7`, run 36500984714](https://github.com/FernandoValdes01/ceretime/actions/runs/36500984714): lint y formato, Mobile, Web y Backend en verde; Vercel omitió el deploy porque no estaba afectado.
-- Greptile pide una review. La PR permanece abierta en draft y sin reviewers porque el usuario indicó que continúan otros cambios de TI4-13.
 
-La PR permanece en draft por indicación del usuario mientras continúa el trabajo de TI4-13.
+La evidencia nativa corresponde al Preview compilado desde `a2c68e7`. Las comprobaciones automatizadas se repiten al preparar la rama para revisión; sus resultados vigentes se publican en la PR. La revisión de Greptile y la aprobación humana se verifican sobre el último commit publicado antes de integrar.
