@@ -112,3 +112,114 @@ jobs:
 
       - name: Ejecutar pruebas del backend
         run: bun run test:convex
+
+  vercel-preview:
+    name: Desplegar Web Preview
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.action == 'opened' || github.event.action == 'synchronize') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs:
+      - lint-and-format
+      - mobile
+      - web
+      - backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: vercel-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Obtener configuración Preview de Vercel
+        run: vercel pull --yes --environment=preview --git-branch="$GITHUB_HEAD_REF" --token="$VERCEL_TOKEN"
+
+      - name: Construir Web Preview
+        run: vercel build --token="$VERCEL_TOKEN"
+
+      - name: Desplegar Web Preview
+        id: deploy
+        run: |
+          url="$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Preview: $url" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar URL de Preview en la PR
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+        with:
+          script: |
+            const marker = '<!-- ceretime-vercel-preview -->';
+            const body = `${marker}\nPreview Web: ${process.env.PREVIEW_URL}\n\nCommit: ${context.sha}`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number, per_page: 100,
+            });
+            const previous = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker),
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  vercel-production:
+    name: Desplegar Web Production
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - lint-and-format
+      - mobile
+      - web
+      - backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: vercel-production
+      cancel-in-progress: false
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Obtener configuración Production de Vercel
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Construir Web Production
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Desplegar Web Production
+        run: |
+          url="$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")"
+          echo "Production: $url" >> "$GITHUB_STEP_SUMMARY"
