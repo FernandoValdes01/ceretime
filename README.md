@@ -23,7 +23,7 @@ Después, autentica la CLI una vez por máquina con `gh auth login`.
 Los `.env.example` listan las variables requeridas, sin valores reales. Los `.env.local` guardan los valores y nunca se suben a Git.
 
 - **Raíz**: sin acción manual, `bunx convex dev` crea solo el `.env.local`, con `CONVEX_DEPLOYMENT`, `VITE_CONVEX_URL` y `VITE_CONVEX_SITE_URL`.
-- **`apps/web`**: se copian del `.env.local` de la raíz, porque cada integrante trabaja contra su propio deployment de desarrollo (paso 5 de la guía del entorno TI2).
+- **`apps/web`**: se copian del `.env.local` de la raíz, porque cada integrante trabaja contra su propio deployment de desarrollo (paso 6 de la guía del entorno TI2).
 - **`apps/mobile`**: copiar la plantilla y pedir los valores al equipo:
 
 ```bash
@@ -40,19 +40,26 @@ cp apps/mobile/.env.example apps/mobile/.env.local
 
 Levanta la web y el backend con el dataset ficticio del Sprint 1 (TI2-30) en tu propio deployment de desarrollo de Convex. Los comandos son para Git Bash o una terminal POSIX, desde la raíz del repositorio. Necesitas acceso al proyecto `ceretime` en Convex: si no aparece al vincular, pídelo al equipo.
 
-1. Instala las dependencias sin modificar el lockfile:
+1. Clona el repositorio. En Windows, desactiva la conversión de finales de línea: con la configuración por defecto de Git for Windows (`core.autocrlf=true`) los archivos quedan con CRLF y `bun run format:check` falla en todos, aunque la CI en Linux pase.
+
+   ```bash
+   git clone -c core.autocrlf=false https://github.com/FernandoValdes01/ceretime.git
+   cd ceretime
+   ```
+
+2. Instala las dependencias sin modificar el lockfile:
 
    ```bash
    bun install --frozen-lockfile
    ```
 
-2. Vincula tu deployment de desarrollo. La primera vez se abre el asistente de login: elige el proyecto existente `ceretime` (detalle en [convex/README.md](convex/README.md)). En un deployment nuevo, la subida falla con `MissingEnvironmentVariables` hasta completar el paso 3; es lo esperado.
+3. Vincula tu deployment de desarrollo. La primera vez se abre el asistente de login: elige el proyecto existente `ceretime` (detalle en [convex/README.md](convex/README.md)). En un deployment nuevo, la subida falla con `MissingEnvironmentVariables` hasta completar el paso 4; es lo esperado.
 
    ```bash
    bunx convex dev --once
    ```
 
-3. Configura las variables del backend en tu deployment, una sola vez. `convex/convex.config.ts` las declara obligatorias, salvo `TEST_SEEDS_ENABLED`, que habilita las semillas de desarrollo. El secreto se genera dentro del comando y no aparece en pantalla. Con los valores ficticios de Google la web queda en la pantalla de acceso, y eso basta para comprobar el entorno y el dataset; para iniciar sesión hacen falta las credenciales del cliente OAuth de desarrollo y el callback de tu deployment registrado, como indica [convex/README.md](convex/README.md). `bunx convex env list` muestra los valores: no compartas su salida.
+4. Configura las variables del backend en tu deployment, una sola vez. `convex/convex.config.ts` las declara obligatorias, salvo `TEST_SEEDS_ENABLED`, que habilita las semillas de desarrollo. El secreto se genera dentro del comando y no aparece en pantalla. Con los valores ficticios de Google la web queda en la pantalla de acceso, y eso basta para comprobar el entorno y el dataset; para iniciar sesión hacen falta las credenciales del cliente OAuth de desarrollo y el callback de tu deployment registrado, como indica [convex/README.md](convex/README.md). `bunx convex env list` muestra los valores: no compartas su salida.
 
    ```bash
    bunx convex env set SITE_URL http://localhost:5173
@@ -62,21 +69,21 @@ Levanta la web y el backend con el dataset ficticio del Sprint 1 (TI2-30) en tu 
    bunx convex env set GOOGLE_CLIENT_SECRET sin-login-en-local
    ```
 
-4. Sube las funciones y carga el dataset ficticio. La carga responde `{ "loaded": true }` la primera vez y `{ "loaded": false }` después, sin duplicar datos. El inventario está en [docs/dataset-ficticio.md](docs/dataset-ficticio.md).
+5. Sube las funciones y carga el dataset ficticio. La carga responde `{ "loaded": true }` la primera vez y `{ "loaded": false }` después, sin duplicar datos. El inventario está en [docs/dataset-ficticio.md](docs/dataset-ficticio.md).
 
    ```bash
    bunx convex dev --once
    bunx convex run fictitiousData:load
    ```
 
-5. Copia las variables públicas a la web, que lee su `.env.local` desde `apps/web`:
+6. Copia las variables públicas a la web, que lee su `.env.local` desde `apps/web`:
 
    ```bash
    grep '^VITE_' .env.local > apps/web/.env.local
    echo 'VITE_SITE_URL=http://localhost:5173' >> apps/web/.env.local
    ```
 
-6. Levanta el entorno con `bun run dev:web`, que ya incluye `convex dev`: mientras desarrollas no lo ejecutes aparte. La web queda en `http://localhost:5173`.
+7. Levanta el entorno con `bun run dev:web`, que ya incluye `convex dev`: mientras desarrollas no lo ejecutes aparte. La web queda en `http://localhost:5173`.
 
 ### Comprobación
 
