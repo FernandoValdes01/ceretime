@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from "@tanstack/react-router";
+import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
 import { useSessionAndRole, useSessionState } from "../session/session-state.ts";
 import { IndexPage } from "./index-page.tsx";
 import { LoginPage } from "./login-page.tsx";
@@ -22,9 +23,11 @@ import { StudentHome, StudentLayout } from "./student-portal.tsx";
  */
 export function RootComponent() {
   return (
-    <main>
-      <Outlet />
-    </main>
+    <AccessibilityProvider>
+      <main>
+        <Outlet />
+      </main>
+    </AccessibilityProvider>
   );
 }
 
