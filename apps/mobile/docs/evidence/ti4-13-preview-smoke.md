@@ -5,10 +5,9 @@ Issue: [TI4-13: Build Preview y smoke tests mobile sprint 1](https://linear.app/
 ## Build Preview
 
 - Perfil EAS `preview`, distribución interna y paquete Android `cl.rmv.ceretime`.
-- EAS CLI compiló el APK local con `--profile preview`; Gradle terminó con `BUILD SUCCESSFUL` y el APK de 100,5 MB quedó en `/tmp/ti4-13-preview-student-flow.apk`, fuera del repositorio.
-- SHA-256: `6cf0f12613548b79ea1002910ab6ad781cd21bc87ed1f4a772c1ea889d58b59a`.
-- El artefacto se instaló y abrió en el emulador. Corresponde al commit `e5cce1c64f94d2b5ab6e7fa8d8c32dc1fffba14f`.
-- Build remoto de EAS: [2b964edf-1397-4be1-af96-5b2c1aeccf0c](https://expo.dev/accounts/corvidown-crew/projects/ceretime/builds/2b964edf-1397-4be1-af96-5b2c1aeccf0c), en curso al actualizar esta evidencia.
+- Build remoto completado: [EAS Preview caedf30f-dcf8-44ea-b662-8f6dd9e4401d](https://expo.dev/accounts/corvidown-crew/projects/ceretime/builds/caedf30f-dcf8-44ea-b662-8f6dd9e4401d), compilado desde el commit `a2c68e7aa8dfe5bf99345cc07ea4ef74da8ae11f`.
+- La APK de 101 MB se descargó a `/tmp/ti4-13-preview-a2c68e7.apk`, fuera del repositorio, y se instaló y abrió en el emulador; [descargar APK](https://expo.dev/artifacts/eas/8PbIjdydf79HXxYT-eix2ztNvql2w61qtfnSw0rxGC4.apk).
+- SHA-256 de la APK: `d27343f829aceeb4b4633b84107ff863f27812c462023b0ba47d10f4a29efe3e`.
 
 ## Dispositivo
 
@@ -31,8 +30,9 @@ La primera prueba mostró que el simulador devolvía un comprobante independient
 
 ## Ajustes visuales reportados
 
-- La barra de pestañas reserva el espacio inferior del sistema en Android con navegación de tres botones; [captura en el emulador](ti4-13/16-tabs-safe-area-three-button.png).
-- Al abrir el teclado en el último campo del formulario, el cuadro blanco queda visible por encima del teclado; [captura en el emulador](ti4-13/17-keyboard-no-cover.png).
+- La barra de pestañas reserva el espacio inferior del sistema en Android con navegación de tres botones; [captura del Preview](ti4-13/16-tabs-safe-area-three-button.png).
+- Al enfocar el primer cuadro de texto con varias líneas y abrir el teclado, todo el campo queda visible; [captura del Preview](ti4-13/17-keyboard-no-cover.png).
+- El último cuadro de texto también permanece visible sobre el teclado; [captura del Preview](ti4-13/18-keyboard-no-cover-last-field.png).
 
 ## Validaciones
 
@@ -42,7 +42,7 @@ La primera prueba mostró que el simulador devolvía un comprobante independient
 - `bun run --cwd apps/mobile test`: pasaron 15 suites y 122 pruebas.
 - `bun --cwd apps/mobile expo install --check`: pasó.
 - CSpell en los archivos de texto modificados: pasó.
-- [CI del commit de código, run 36489096177](https://github.com/FernandoValdes01/ceretime/actions/runs/36489096177): lint y formato, Mobile, Web y Backend en verde.
-- El check de Greptile informa que falta una revisión para el commit de evidencia. La PR permanece en draft y no se solicitó review, por lo que ese check sigue pendiente.
+- [CI del commit `a2c68e7`, run 36500984714](https://github.com/FernandoValdes01/ceretime/actions/runs/36500984714): lint y formato, Mobile, Web y Backend en verde; Vercel omitió el deploy porque no estaba afectado.
+- Greptile pide una review. La PR permanece abierta en draft y sin reviewers porque el usuario indicó que continúan otros cambios de TI4-13.
 
 La PR permanece en draft por indicación del usuario mientras continúa el trabajo de TI4-13.
