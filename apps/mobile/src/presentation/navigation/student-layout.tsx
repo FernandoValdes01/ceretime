@@ -1,6 +1,6 @@
 import type { NativeStackNavigationOptions } from "expo-router";
 import { appHeaderOptions } from "./app-header-options";
-import { RoleTabIcon, roleTabScreenOptions, Tabs } from "./role-tabs";
+import { RoleTabIcon, Tabs, useRoleTabScreenOptions } from "./role-tabs";
 
 export const studentLayoutScreenOptions = appHeaderOptions;
 
@@ -10,8 +10,10 @@ export const studentRequestScreenOptions = {
 } satisfies NativeStackNavigationOptions;
 
 export default function StudentLayout() {
+  const screenOptions = useRoleTabScreenOptions();
+
   return (
-    <Tabs screenOptions={roleTabScreenOptions}>
+    <Tabs screenOptions={screenOptions}>
       <Tabs.Screen
         name="index"
         options={{

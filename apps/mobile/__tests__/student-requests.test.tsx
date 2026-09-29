@@ -1,3 +1,4 @@
+import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import { render } from "@testing-library/react-native";
 import path from "node:path";
@@ -5,11 +6,17 @@ import path from "node:path";
 import type { StudentAreaSnapshot } from "@/application/student-area-models";
 import type { StudentAreaReader } from "@/application/student-area-port";
 import { createMockStudentAreaReader } from "@/infrastructure/mock-student-area-reader";
+import {
+  createMockStudentAreaStore,
+  mockStudentAreaStore,
+} from "@/infrastructure/mock-student-area-store";
 import { StudentAreaProvider } from "@/presentation/estudiante/student-area-provider";
 import StudentRequestsScreen from "@/presentation/estudiante/student-requests-screen";
-import { router } from "expo-router";
+import { fillRequiredStudentRequestFields } from "./student-request-test-helpers";
 
 const appDirectory = path.resolve(__dirname, "../app");
+
+afterEach(() => mockStudentAreaStore.reset());
 
 function snapshotWith(requests: StudentAreaSnapshot["requests"]): Promise<StudentAreaSnapshot> {
   return createMockStudentAreaReader()
@@ -111,6 +118,36 @@ describe("Solicitudes del estudiante", () => {
     expect(screen.queryByText("Días disponibles")).not.toBeOnTheScreen();
     expect(screen.queryByText("Franja horaria")).not.toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001");
+  });
+
+  test("incluye en listado y detalle una solicitud enviada durante la sesión", async () => {
+    const navigation = renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
+    fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
+    expect(
+      await screen.findByRole("button", {
+        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
+      }),
+    ).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: /^Inicio, tab/ }));
+    fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
+    fillRequiredStudentRequestFields();
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+
+    expect(await screen.findByText(/SOL-DEMO-006/)).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("button", { name: /^Solicitudes, tab/ }));
+    await waitFor(() => expect(navigation.getPathname()).toBe("/estudiante/solicitudes"));
+
+    const createdRequest = await screen.findByRole("button", {
+      name: /Me cuesta leer los materiales del curso\./,
+    });
+    fireEvent.press(createdRequest);
+
+    expect(await screen.findByText(/SOL-DEMO-006/)).toBeOnTheScreen();
+    expect(screen.getByText("Recibida")).toBeOnTheScreen();
+    expect(screen.getByText("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
+    expect(screen.getByText("Comunicación escrita")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-006");
   });
 
   test("un detalle desconocido no expone datos fuera del snapshot", async () => {
@@ -231,5 +268,20 @@ describe("Adaptador mock de solicitudes", () => {
     await expect(createMockStudentAreaReader({ mode: "error" }).readStudentArea()).rejects.toThrow(
       "Falla simulada al cargar las solicitudes",
     );
+  });
+
+  test("muestra envíos de la sesión en el modo de ejemplos vacíos", async () => {
+    const store = createMockStudentAreaStore();
+    store.addRequest({
+      id: "SOL-DEMO-006",
+      status: "received",
+      createdAt: "2026-09-28T12:00:00.000Z",
+      accessNeeds: "Comunicación escrita",
+    });
+
+    const snapshot = await createMockStudentAreaReader({ mode: "empty", store }).readStudentArea();
+
+    expect(snapshot.requests).toMatchObject([{ id: "SOL-DEMO-006", status: "received" }]);
+    expect(snapshot.accompaniments).toEqual([]);
   });
 });
