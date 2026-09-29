@@ -140,6 +140,10 @@ jobs:
       - name: Descargar el repositorio
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Registrar el commit construido
+        id: checkout-sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Instalar Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -166,10 +170,11 @@ jobs:
         env:
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PREVIEW_BUILD_SHA: ${{ steps.checkout-sha.outputs.sha }}
         with:
           script: |
             const marker = '<!-- ceretime-vercel-preview -->';
-            const body = `${marker}\nPreview Web: ${process.env.PREVIEW_URL}\n\nCommit: ${process.env.PR_HEAD_SHA}`;
+            const body = `${marker}\nPreview Web: ${process.env.PREVIEW_URL}\n\nCommit de la PR: ${process.env.PR_HEAD_SHA}\nCommit construido: ${process.env.PREVIEW_BUILD_SHA}`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, {

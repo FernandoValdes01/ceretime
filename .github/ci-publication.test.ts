@@ -179,12 +179,16 @@ test("disables Git deployments and reserves production CLI flags for main", asyn
   ).toBe(true);
 });
 
-test("publishes the PR head SHA instead of the temporary merge SHA", async () => {
+test("publishes the PR head SHA and checked-out build SHA separately", async () => {
   const preview = pullRequestWorkflow.jobs["vercel-preview"];
+  const checkoutShaStep = preview.steps.find((step: any) => step.id === "checkout-sha");
   const commentStep = preview.steps.find((step: any) =>
     step.uses?.startsWith("actions/github-script@"),
   );
+
+  expect(checkoutShaStep.run).toContain("git rev-parse HEAD");
   expect(commentStep.env.PR_HEAD_SHA).toBe("${{ github.event.pull_request.head.sha }}");
+  expect(commentStep.env.PREVIEW_BUILD_SHA).toBe("${{ steps.checkout-sha.outputs.sha }}");
 
   const writes: any[] = [];
   const github = {
@@ -199,10 +203,16 @@ test("publishes the PR head SHA instead of the temporary merge SHA", async () =>
   await new AsyncFunction("github", "context", "process", commentStep.with.script)(
     github,
     { repo: { owner: "owner", repo: "repo" }, issue: { number: 18 }, sha: "merge-sha" },
-    { env: { PREVIEW_URL: "https://preview.vercel.app", PR_HEAD_SHA: "branch-sha" } },
+    {
+      env: {
+        PREVIEW_URL: "https://preview.vercel.app",
+        PR_HEAD_SHA: "branch-sha",
+        PREVIEW_BUILD_SHA: "merge-sha",
+      },
+    },
   );
 
   expect(writes).toHaveLength(1);
-  expect(writes[0].body).toContain("Commit: branch-sha");
-  expect(writes[0].body).not.toContain("merge-sha");
+  expect(writes[0].body).toContain("Commit de la PR: branch-sha");
+  expect(writes[0].body).toContain("Commit construido: merge-sha");
 });
