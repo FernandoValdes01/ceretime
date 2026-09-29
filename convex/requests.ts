@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
+import { env, internalMutation, internalQuery } from "./_generated/server";
 import { requestStatusUnion } from "./validators";
 
 /**
@@ -11,6 +11,9 @@ import { requestStatusUnion } from "./validators";
 
 /**
  * Crea una solicitud ficticia de prueba para validar persistencia y estados.
+ *
+ * Misma guardia que `createTestUser`: solo opera con `TEST_SEEDS_ENABLED ===
+ * "true"`, así que en producción se rechaza.
  */
 export const createTestRequest = internalMutation({
   args: {
@@ -19,6 +22,9 @@ export const createTestRequest = internalMutation({
     accessNeeds: v.string(),
   },
   handler: async (ctx, args) => {
+    if (env.TEST_SEEDS_ENABLED !== "true") {
+      throw new Error("Las semillas de prueba no están habilitadas en este entorno");
+    }
     return await ctx.db.insert("requests", { ...args, createdAt: Date.now() });
   },
 });
