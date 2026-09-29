@@ -5,18 +5,18 @@ Issue: [TI4-13: Build Preview y smoke tests mobile sprint 1](https://linear.app/
 ## Build Preview
 
 - Perfil EAS `preview`, distribución interna y paquete Android `cl.rmv.ceretime`.
-- Preview compilado con EAS local desde el código del commit `63e990352cb8cadf2563e5f54f98a8a03a954021`, con Expo SDK `57.0.26`, EAS CLI `24.8.0` y JDK `17.0.20.1`.
-- APK de 100,5 MiB en `/tmp/ceretime-pr64-preview-local.apk`, fuera del repositorio. La instalación con `adb install -r` terminó correctamente y la aplicación abrió sin Metro.
-- SHA-256 de la APK: `0232c3d0b1b1b2c71c927194bc4ce414df4d034c91046c95722cf7302470bfe7`.
-- [Build remoto solicitado para el mismo commit](https://expo.dev/accounts/corvidown-crew/projects/ceretime/builds/39c1dc87-bf5a-43f4-a597-8f8217a39f0d). EAS lo mantenía en cola al repetir las pruebas el 29 de septiembre de 2026. Las capturas de este documento corresponden a la APK local.
+- [Build remoto terminado](https://expo.dev/accounts/corvidown-crew/projects/ceretime/builds/39c1dc87-bf5a-43f4-a597-8f8217a39f0d), compilado desde el código del commit `63e990352cb8cadf2563e5f54f98a8a03a954021` con Expo SDK `57.0.26`. EAS terminó la compilación el 29 de septiembre de 2026 a las 21:38 UTC.
+- [Descargar APK Preview](https://expo.dev/artifacts/eas/_HnnHB2nzPN3UaltArtMpIZK9XiTR-R-UtZefnKlxqw.apk), de 100,5 MiB. La copia local está en `/tmp/ceretime-pr64-preview-remote.apk`, fuera del repositorio.
+- SHA-256 de la APK remota: `4868a7b916917b6c1856ec1ae924d3a8755a53e0d5f62ef7c78307b7c7831e11`.
+- La instalación con `adb install -r` terminó correctamente y la aplicación abrió sin Metro. Las capturas de este documento corresponden a esta APK remota.
 
-Comando de compilación usado desde `apps/mobile`, con `JAVA_HOME` y `PATH` apuntando a JDK 17 y el SDK Android local configurado:
+También se comprobó la compilación local del mismo código con EAS CLI `24.8.0` y JDK `17.0.20.1`. Comando usado desde `apps/mobile`, con `JAVA_HOME` y `PATH` apuntando a JDK 17 y el SDK Android local configurado:
 
 ```bash
 bunx --package eas-cli eas build --platform android --profile preview --local --non-interactive --output /tmp/ceretime-pr64-preview-local.apk
 ```
 
-El [Preview remoto anterior](https://expo.dev/accounts/corvidown-crew/projects/ceretime/builds/caedf30f-dcf8-44ea-b662-8f6dd9e4401d) y su [descarga de APK](https://expo.dev/artifacts/eas/8PbIjdydf79HXxYT-eix2ztNvql2w61qtfnSw0rxGC4.apk) corresponden a `a2c68e7`, antes de la actualización final de parches de Expo.
+SHA-256 de la APK local: `0232c3d0b1b1b2c71c927194bc4ce414df4d034c91046c95722cf7302470bfe7`.
 
 ## Dispositivo
 
@@ -24,7 +24,7 @@ Emulador AVD `Medium_Phone`, serial ADB `emulator-5554`, Android 17 (API 37), re
 
 ## Smoke tests
 
-Recorridos repetidos el 29 de septiembre de 2026 sobre la APK Preview local identificada arriba.
+Recorridos repetidos el 29 de septiembre de 2026 sobre la APK Preview remota identificada arriba.
 
 | Flujo                                                       | Resultado                                                                      | Evidencia                                                                                                                                                                                                                                                                                                                                                                                         |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -52,6 +52,6 @@ Las correcciones se realizaron durante los smoke tests de [TI4-13](https://linea
 - `bun --cwd apps/mobile expo install --check`: pasó.
 - CSpell en los archivos de texto modificados: pasó.
 - [CI del código compilado, commit `63e9903`, run 36626377097](https://github.com/FernandoValdes01/ceretime/actions/runs/36626377097): lint y formato, Mobile, Web, Backend y despliegue Web Preview en verde.
-- Pruebas de las reglas de publicación de CI y del gate de Greptile: pasaron 21 pruebas y 73 comprobaciones.
+- Pruebas de las reglas de publicación de CI y del gate de Greptile: pasaron 23 pruebas y 82 comprobaciones.
 
-La evidencia nativa corresponde al código de aplicación de `63e9903`. El commit que agrega estas capturas solo modifica la evidencia. Los resultados de CI del último commit se consultan en la PR. La revisión de Greptile y la aprobación humana se verifican sobre el último commit publicado antes de integrar.
+La evidencia nativa corresponde al código de aplicación de `63e9903`. Los commits posteriores actualizan la evidencia e incorporan la corrección de CI de `main`; el código de la aplicación y sus dependencias coinciden con el Preview compilado. Los resultados de CI del último commit se consultan en la PR. La revisión de Greptile y la aprobación humana se verifican sobre el último commit publicado antes de integrar.
