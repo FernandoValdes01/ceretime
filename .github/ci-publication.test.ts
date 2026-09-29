@@ -164,3 +164,45 @@ test("deploys Preview and Production only after the existing CI", () => {
   expect(production.if).toContain("github.event_name == 'push'");
   expect(production.if).toContain("github.ref == 'refs/heads/main'");
 });
+
+test("disables Git deployments and reserves production CLI flags for main", async () => {
+  const config = await Bun.file(`${import.meta.dir}/../apps/web/vercel.json`).json();
+  expect(config.git.deploymentEnabled).toBe(false);
+
+  const previewSteps = pullRequestWorkflow.jobs["vercel-preview"].steps;
+  const productionSteps = pullRequestWorkflow.jobs["vercel-production"].steps;
+  expect(
+    previewSteps.filter((step: any) => step.run).every((step: any) => !step.run.includes("--prod")),
+  ).toBe(true);
+  expect(
+    productionSteps.some((step: any) => step.run?.includes("vercel deploy --prebuilt --prod")),
+  ).toBe(true);
+});
+
+test("publishes the PR head SHA instead of the temporary merge SHA", async () => {
+  const preview = pullRequestWorkflow.jobs["vercel-preview"];
+  const commentStep = preview.steps.find((step: any) =>
+    step.uses?.startsWith("actions/github-script@"),
+  );
+  expect(commentStep.env.PR_HEAD_SHA).toBe("${{ github.event.pull_request.head.sha }}");
+
+  const writes: any[] = [];
+  const github = {
+    rest: {
+      issues: {
+        listComments: () => {},
+        createComment: async (args: any) => writes.push(args),
+      },
+    },
+    paginate: async () => [],
+  };
+  await new AsyncFunction("github", "context", "process", commentStep.with.script)(
+    github,
+    { repo: { owner: "owner", repo: "repo" }, issue: { number: 18 }, sha: "merge-sha" },
+    { env: { PREVIEW_URL: "https://preview.vercel.app", PR_HEAD_SHA: "branch-sha" } },
+  );
+
+  expect(writes).toHaveLength(1);
+  expect(writes[0].body).toContain("Commit: branch-sha");
+  expect(writes[0].body).not.toContain("merge-sha");
+});
