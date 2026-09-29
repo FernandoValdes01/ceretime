@@ -35,6 +35,7 @@ import type * as domain_request_request from "../domain/request/request.js";
 import type * as domain_request_state from "../domain/request/state.js";
 import type * as domain_request_transition_policy from "../domain/request/transition_policy.js";
 import type * as domain_request_transitions from "../domain/request/transitions.js";
+import type * as fictitiousData from "../fictitiousData.js";
 import type * as http from "../http.js";
 import type * as infrastructure_accompaniments_repository from "../infrastructure/accompaniments/repository.js";
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "domain/request/state": typeof domain_request_state;
   "domain/request/transition_policy": typeof domain_request_transition_policy;
   "domain/request/transitions": typeof domain_request_transitions;
+  fictitiousData: typeof fictitiousData;
   http: typeof http;
   "infrastructure/accompaniments/repository": typeof infrastructure_accompaniments_repository;
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
