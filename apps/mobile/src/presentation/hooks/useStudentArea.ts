@@ -136,6 +136,8 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
     };
   }, [reader, reloadVersion]);
 
+  useEffect(() => reader.subscribe?.(reload), [reader, reload]);
+
   // During the render in which a new reader is supplied, effects have not run
   // yet. Deriving visibility from the reader prevents one frame of stale data.
   const visibleLoad = load.reader === reader ? load : loadingLoad(reader);
