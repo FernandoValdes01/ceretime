@@ -1,20 +1,382 @@
-/* Estructura mínima del portal del Estudiante (TI2-6). */
+/* Portal del Estudiante (TI2-6). Lenguaje del acceso institucional: sobrio y centrado. */
 
 .student-portal {
-  display: grid;
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  font-family: "Fira Sans", system-ui, "Segoe UI", Roboto, sans-serif;
+  color: var(--ct-ink);
+  line-height: 1.6;
+}
+
+.student-portal__skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--ct-primary);
+  color: var(--ct-primary-ink);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+}
+
+.student-portal__skip:focus-visible {
+  left: 1rem;
+  top: 1rem;
+}
+
+/* Encabezado sobrio con la misma barra del acceso. */
+
+.student-portal__header {
+  background: var(--ct-card);
+  border-bottom: 1px solid var(--ct-line);
+}
+
+.student-portal__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  max-width: 50rem;
+  margin: 0 auto;
   padding: 1rem;
+}
+
+.student-portal__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  border-radius: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+  line-height: 1.2;
+}
+
+.student-portal__mark {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  background: var(--ct-primary);
+  color: var(--ct-primary-ink);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.student-portal__name {
+  display: none;
+  flex-direction: column;
+}
+
+.student-portal__name strong {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.student-portal__name span {
+  font-size: 0.875rem;
+  color: var(--ct-muted);
 }
 
 .student-portal__header nav {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
-.student-portal__header a {
-  display: inline-block;
+.student-portal__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.student-portal__header nav a {
+  display: inline-flex;
   box-sizing: border-box;
-  min-width: 44px;
-  min-height: 44px;
+  align-items: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
   padding: 0.625rem 0.75rem;
+  border-radius: 0.5rem;
+  color: var(--ct-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.student-portal__header nav a:hover {
+  background: var(--ct-tonal);
+}
+
+.student-portal__header nav a:focus-visible,
+.student-portal__brand:focus-visible {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+}
+
+/* Contenido centrado como la tarjeta del acceso. */
+
+.student-portal__main {
+  flex: 1;
+  width: 100%;
+  max-width: 50rem;
+  margin: 0 auto;
+  padding: 2.5rem 1rem;
+}
+
+.student-portal__head {
+  background: var(--ct-card);
+  border: 1px solid var(--ct-line);
+  border-radius: 1rem;
+  padding: 2rem;
+}
+
+.student-portal__badge {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ct-primary);
+}
+
+.student-portal__head h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 1rem;
+  color: var(--ct-primary);
+}
+
+.student-portal__lead {
+  font-size: 1rem;
+  margin: 0;
+  color: var(--ct-ink);
+  max-width: 42rem;
+}
+
+.student-portal__cta {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.student-portal__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 3rem;
+  min-width: 2.75rem;
+  border-radius: 0.5rem;
+  padding: 0.625rem 1.5rem;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.student-portal__btn--primary {
+  background: var(--ct-primary);
+  color: var(--ct-primary-ink);
+  border: none;
+}
+
+.student-portal__btn--primary:hover:not(:disabled) {
+  background: var(--ct-primary-hover);
+}
+
+.student-portal__btn--primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.student-portal__btn--ghost {
+  background: transparent;
+  color: var(--ct-primary);
+  border: none;
+}
+
+.student-portal__btn--ghost:hover {
+  background: var(--ct-tonal);
+}
+
+.student-portal__btn:focus-visible {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+}
+
+.student-portal__hint {
+  font-size: 0.875rem;
+  color: var(--ct-muted);
+  margin: 0;
+}
+
+.student-portal__section {
+  background: var(--ct-card);
+  border: 1px solid var(--ct-line);
+  border-radius: 1rem;
+  padding: 2rem;
+  margin-top: 1.5rem;
+}
+
+.student-portal__section-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.student-portal__section h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0;
+  color: var(--ct-ink);
+}
+
+.student-portal__soon {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0.5rem;
+  border: 1px solid var(--ct-line);
+  color: var(--ct-muted);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.student-portal__chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--ct-tonal);
+  color: var(--ct-ink);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.student-portal__list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.student-portal__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--ct-line);
+  border-radius: 0.75rem;
+  background: var(--ct-card);
+  padding: 1rem 1.25rem;
+}
+
+.student-portal__item-meta {
+  font-size: 1rem;
+  color: var(--ct-muted);
+}
+
+.student-portal__loading {
+  margin: 1rem 0 0;
+  border-radius: 1rem;
+  background: var(--ct-tonal);
+  padding: 1.5rem;
+  font-size: 1.125rem;
+  color: var(--ct-muted);
+}
+
+.student-portal__error {
+  background: var(--ct-danger-bg);
+  border: 1px solid var(--ct-danger);
+  border-left: 4px solid var(--ct-danger);
+  border-radius: 0.5rem;
+  color: var(--ct-danger-ink);
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1rem 0 0;
+  padding: 0.75rem;
+}
+
+.student-portal__empty {
+  margin-top: 1rem;
+  border-radius: 1rem;
+  border-top: 4px solid var(--ct-accent);
+  background: var(--ct-tonal);
+  padding: 1.5rem;
+  font-size: 1rem;
+  color: var(--ct-muted);
+}
+
+.student-portal__empty--green {
+  border-top-color: var(--ct-ok);
+}
+
+.student-portal__empty--blue {
+  border-top-color: var(--ct-info);
+}
+
+.student-portal__empty p {
+  margin: 0;
+}
+
+.student-portal__empty-title {
+  font-weight: 600;
+  color: var(--ct-ink);
+  margin: 0 0 0.5rem;
+}
+
+.student-portal__steps {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.student-portal__step {
+  border-top: 2px solid var(--ct-line);
+  padding-top: 1rem;
+}
+
+.student-portal__step-num {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--ct-primary);
+}
+
+.student-portal__step h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.5rem 0;
+}
+
+.student-portal__step p {
+  font-size: 1rem;
+  margin: 0;
+  color: var(--ct-muted);
+}
+
+@media (min-width: 40rem) {
+  .student-portal__name {
+    display: flex;
+  }
+
+  .student-portal__steps {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }

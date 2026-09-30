@@ -16,7 +16,7 @@
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;
-  color-scheme: light dark;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -29,23 +29,42 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+/* Tema claro fijo: el sistema visual es institucional claro (DESIGN.md). */
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+/* Tokens institucionales (DESIGN.md) consumidos por Presentación. */
+:root {
+  --ct-page: #f9fafb;
+  --ct-card: #ffffff;
+  --ct-ink: #1b1c1c;
+  --ct-muted: #3e4946;
+  --ct-primary: #00695b;
+  --ct-primary-hover: #005045;
+  --ct-primary-ink: #ffffff;
+  --ct-line: #e5e7eb;
+  --ct-ring: #2563eb;
+  --ct-tonal: #f5f3f3;
+  --ct-accent: #fcc431;
+  --ct-ok: #76c043;
+  --ct-info: #2e99b0;
+  --ct-danger: #ba1a1a;
+  --ct-danger-bg: #ffdad6;
+  --ct-danger-ink: #93000a;
+  --font-scale: 1;
+
+  /* El tamaño de texto lo controla el panel de accesibilidad. Base 100% = 16px. */
+  font-size: calc(100% * var(--font-scale, 1));
+}
+
+/* Alto contraste: mismos tonos, contraste máximo. */
+.hc {
+  --ct-page: #ffffff;
+  --ct-card: #ffffff;
+  --ct-ink: #000000;
+  --ct-muted: #1f2937;
+  --ct-primary: #00473d;
+  --ct-primary-hover: #00332c;
+  --ct-line: #525c5a;
+  --ct-tonal: #e4e2e2;
 }
 
 #root {

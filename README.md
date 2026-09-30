@@ -16,16 +16,18 @@ Después, autentica la CLI una vez por máquina con `gh auth login`.
   a) TI2 (web): `bun run dev:web`
   b) TI4 (mobile): `bun run dev:mobile`
 - La primera vez, `convex dev` abre un asistente interactivo de login y vinculación; el detalle está en [convex/README.md](convex/README.md).
+- Para TI2, el procedimiento completo desde un clon limpio, con el dataset ficticio y su comprobación, está en [Entorno TI2 desde un clon limpio](#entorno-ti2-desde-un-clon-limpio).
 
 ## Variables de entorno
 
 Los `.env.example` listan las variables requeridas, sin valores reales. Los `.env.local` guardan los valores y nunca se suben a Git.
 
-- **Raíz**: sin acción manual, `bunx convex dev` crea solo el `.env.local`.
-- **`apps/web` y `apps/mobile`**: copiar la plantilla y pedir los valores al equipo:
+- **Raíz**: sin acción manual, `bunx convex dev` crea solo el `.env.local`, con `CONVEX_DEPLOYMENT`, `VITE_CONVEX_URL` y `VITE_CONVEX_SITE_URL`.
+- **`apps/web`**: se copian del `.env.local` de la raíz, porque cada integrante trabaja contra su propio deployment de desarrollo (paso 6 de la guía del entorno TI2).
+- **`apps/mobile`**: copiar la plantilla y pedir los valores al equipo:
 
 ```bash
-cp apps/web/.env.example apps/web/.env.local
+cp apps/mobile/.env.example apps/mobile/.env.local
 ```
 
 `VITE_*` queda visible en el navegador y `EXPO_PUBLIC_*` en la app: nunca pongas secretos en esas variables.
@@ -33,6 +35,64 @@ cp apps/web/.env.example apps/web/.env.local
 **Queda estrictamente prohibido incluir contraseñas, tokens de API o secretos de autenticación (como BETTER_AUTH_SECRET) dentro de apps/mobile/.env.example, apps/web/.env.example o en el código cliente.**
 
 **Los secretos del backend se configuran directamente de forma segura en el entorno de Convex, nunca en los archivos de ejemplo del monorepo.**
+
+## Entorno TI2 desde un clon limpio
+
+Levanta la web y el backend con el dataset ficticio del Sprint 1 (TI2-30) en tu propio deployment de desarrollo de Convex. Los comandos son para Git Bash o una terminal POSIX, desde la raíz del repositorio. Necesitas acceso al proyecto `ceretime` en Convex: si no aparece al vincular, pídelo al equipo.
+
+1. Clona el repositorio. En Windows, desactiva la conversión de finales de línea: con la configuración por defecto de Git for Windows (`core.autocrlf=true`) los archivos quedan con CRLF y `bun run format:check` falla en todos, aunque la CI en Linux pase.
+
+   ```bash
+   git clone -c core.autocrlf=false https://github.com/FernandoValdes01/ceretime.git
+   cd ceretime
+   ```
+
+2. Instala las dependencias sin modificar el lockfile:
+
+   ```bash
+   bun install --frozen-lockfile
+   ```
+
+3. Vincula tu deployment de desarrollo. La primera vez se abre el asistente de login: elige el proyecto existente `ceretime` (detalle en [convex/README.md](convex/README.md)). En un deployment nuevo, la subida falla con `MissingEnvironmentVariables` hasta completar el paso 4; es lo esperado.
+
+   ```bash
+   bunx convex dev --once
+   ```
+
+4. Configura las variables del backend en tu deployment, una sola vez. `convex/convex.config.ts` las declara obligatorias, salvo `TEST_SEEDS_ENABLED`, que habilita las semillas de desarrollo. El secreto se genera dentro del comando y no aparece en pantalla. Con los valores ficticios de Google la web queda en la pantalla de acceso, y eso basta para comprobar el entorno y el dataset; para iniciar sesión hacen falta las credenciales del cliente OAuth de desarrollo y el callback de tu deployment registrado, como indica [convex/README.md](convex/README.md). `bunx convex env list` muestra los valores: no compartas su salida.
+
+   ```bash
+   bunx convex env set SITE_URL http://localhost:5173
+   bunx convex env set BETTER_AUTH_SECRET "$(bun -e "console.log(Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64'))")"
+   bunx convex env set TEST_SEEDS_ENABLED true
+   bunx convex env set GOOGLE_CLIENT_ID sin-login-en-local
+   bunx convex env set GOOGLE_CLIENT_SECRET sin-login-en-local
+   ```
+
+5. Sube las funciones y carga el dataset ficticio. La carga responde `{ "loaded": true }` la primera vez y `{ "loaded": false }` después, sin duplicar datos. El inventario está en [docs/dataset-ficticio.md](docs/dataset-ficticio.md).
+
+   ```bash
+   bunx convex dev --once
+   bunx convex run fictitiousData:load
+   ```
+
+6. Copia las variables públicas a la web, que lee su `.env.local` desde `apps/web`:
+
+   ```bash
+   grep '^VITE_' .env.local > apps/web/.env.local
+   echo 'VITE_SITE_URL=http://localhost:5173' >> apps/web/.env.local
+   ```
+
+7. Levanta el entorno con `bun run dev:web`, que ya incluye `convex dev`: mientras desarrollas no lo ejecutes aparte. La web queda en `http://localhost:5173`.
+
+### Comprobación
+
+- `bunx convex run presentation/session:getSessionState '{}'` responde `{"status":"unauthenticated"}`.
+- En el panel de Convex, la pestaña Data de tu deployment muestra `users` 6, `requests` 4, `requestTransitions` 5, `accompaniments` 1 y `accompanimentAssignments` 2.
+- `http://localhost:5173` muestra el acceso institucional, sin el aviso de configuración faltante.
+- `bun run test:convex`, `bun run test:web`, `bun run lint` y `bun run format:check` terminan sin errores.
+
+En producción no se define `TEST_SEEDS_ENABLED`: sin esa variable, `createTestUser`, `createTestRequest` y `fictitiousData:load` se rechazan.
 
 ## Calidad de código
 

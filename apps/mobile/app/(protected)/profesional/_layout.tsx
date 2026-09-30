@@ -1,17 +1,22 @@
 import { Tabs } from "expo-router";
 
 import { mobileDependencies } from "../../../src/composition/mobile-dependencies";
-import { RoleTabIcon, roleTabScreenOptions } from "../../../src/presentation/navigation/role-tabs";
+import {
+  RoleTabIcon,
+  useRoleTabScreenOptions,
+} from "../../../src/presentation/navigation/role-tabs";
 import { RoleGuard } from "../../../src/presentation/navigation/role-guard";
 import { ProfessionalAgendaProvider } from "../../../src/presentation/profesional/professional-agenda-provider";
 import { ProfessionalReviewProvider } from "../../../src/presentation/profesional/professional-review-provider";
 
 export default function ProfessionalLayout() {
+  const screenOptions = useRoleTabScreenOptions();
+
   return (
     <RoleGuard requiredRole="profesional">
       <ProfessionalReviewProvider port={mobileDependencies.professionalReviewPort}>
         <ProfessionalAgendaProvider reader={mobileDependencies.professionalAgendaReader}>
-          <Tabs initialRouteName="(agenda)" screenOptions={roleTabScreenOptions}>
+          <Tabs initialRouteName="(agenda)" screenOptions={screenOptions}>
             <Tabs.Screen name="inicio" options={{ href: null }} />
             <Tabs.Screen
               name="(agenda)"

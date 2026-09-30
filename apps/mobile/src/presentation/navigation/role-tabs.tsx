@@ -1,9 +1,10 @@
 import { Tabs } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { AppIconName } from "../components/app-icon";
 import { AppIcon } from "../components/app-icon";
 
-export const roleTabScreenOptions = {
+const baseRoleTabScreenOptions = {
   headerShown: false,
   tabBarActiveTintColor: "#078B7B",
   tabBarInactiveTintColor: "#5B6C6E",
@@ -16,6 +17,19 @@ export const roleTabScreenOptions = {
     backgroundColor: "#FFFFFF",
   },
 };
+
+export function useRoleTabScreenOptions() {
+  const { bottom } = useSafeAreaInsets();
+
+  return {
+    ...baseRoleTabScreenOptions,
+    tabBarStyle: {
+      ...baseRoleTabScreenOptions.tabBarStyle,
+      height: baseRoleTabScreenOptions.tabBarStyle.height + bottom,
+      paddingBottom: Math.max(bottom, baseRoleTabScreenOptions.tabBarStyle.paddingBottom),
+    },
+  };
+}
 
 export function RoleTabIcon({
   color,
