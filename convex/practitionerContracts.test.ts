@@ -365,7 +365,7 @@ test("revocación inmediata cierra lectura y listado sin filtrar", async () => {
   expect(typeof row?.revokedAt).toBe("number");
 });
 
-test("contratos públicos conservan forma estable y errores sin filtración", async () => {
+test("contratos públicos conservan forma estable en respuestas exitosas", async () => {
   const t = convexTest(schema, modules);
   const { accompanimentId, opened, requestId, internSubject } = await seedCriticalPathWithIntern(
     t,
@@ -420,12 +420,17 @@ test("apertura única no duplica ante aceptación repetida", async () => {
   });
   expect(opened.status).toBe("active");
 
-  await expect(
+  const repeatMessage = await denyMessage(
     asProfessional.mutation(api.presentation.requests.acceptRequest, {
       requestId,
       objective: "Otro objetivo ficticio",
     }),
-  ).rejects.toThrow("ya fue aceptada");
+  );
+  expect(repeatMessage).toBe("La solicitud ya fue aceptada");
+  expect(repeatMessage).not.toContain(String(requestId));
+  expect(repeatMessage).not.toContain("Objetivo ficticio de apertura única");
+  expect(repeatMessage).not.toContain("Otro objetivo ficticio");
+  expect(repeatMessage).not.toContain("Necesidad de acceso ficticia");
   expect(await countAccompanimentsFor(t, requestId)).toBe(1);
   const accepted = await t.query(internal.requests.getRequestById, { id: requestId });
   expect(accepted?.status).toBe("accepted");
