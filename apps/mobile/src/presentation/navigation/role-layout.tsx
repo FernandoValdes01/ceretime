@@ -1,8 +1,10 @@
-import { RoleTabIcon, roleTabScreenOptions, Tabs } from "./role-tabs";
+import { RoleTabIcon, Tabs, useRoleTabScreenOptions } from "./role-tabs";
 
 export default function RoleLayout() {
+  const screenOptions = useRoleTabScreenOptions();
+
   return (
-    <Tabs screenOptions={roleTabScreenOptions}>
+    <Tabs screenOptions={screenOptions}>
       <Tabs.Screen
         name="index"
         options={{

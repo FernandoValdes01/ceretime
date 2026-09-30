@@ -121,7 +121,7 @@ un rol y la identidad institucional se integrará posteriormente.
 
 ## Envío simulado: TI4-30
 
-El formulario usa un puerto de aplicación independiente del lector de TI4-29. La app inyecta un adaptador mock que espera brevemente y devuelve un comprobante ficticio; no llama a Convex, no guarda datos ni replica reglas del backend.
+El formulario usa un puerto de aplicación independiente del lector de TI4-29. La app inyecta un adaptador mock que espera brevemente y devuelve un comprobante ficticio. El envío y el lector comparten un almacén en memoria para que la nueva solicitud aparezca en el listado y el detalle. Los datos se conservan mientras el proceso de la aplicación está abierto; el adaptador no llama a Convex ni replica reglas del backend.
 
 Durante el envío, los campos y las acciones quedan deshabilitados y una guarda inmediata impide iniciar una segunda promesa. Si el adaptador falla, los campos vuelven a quedar editables y **Reintentar envío** valida y envía los valores visibles del formulario. Cuando el adaptador responde, el formulario se reemplaza por una confirmación con una referencia de prueba.
 
@@ -158,7 +158,7 @@ Para verificar el formulario:
 2. Corregir los errores y comprobar que se conservan los valores ya ingresados.
 3. Seleccionar y desmarcar varios apoyos y días; cambiar entre modalidades.
 4. Probar una franja incompleta, una hora inválida y una franja invertida.
-5. Con el modo `success`, completar los campos obligatorios, pulsar **Enviar solicitud** dos veces con rapidez y comprobar que la acción muestra **Enviando solicitud…**, queda deshabilitada y termina con la confirmación `SOL-DEMO-001`.
+5. Con el modo `success`, completar los campos obligatorios, pulsar **Enviar solicitud** dos veces con rapidez y comprobar que la acción muestra **Enviando solicitud…**, queda deshabilitada y termina con la confirmación `SOL-DEMO-006` en un proceso nuevo. Abrir **Mis solicitudes** y comprobar que la referencia aparece en el listado y abre su detalle. Los envíos siguientes incrementan la referencia.
 6. Reiniciar Expo con `EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE=fail-once`, repetir el formulario y comprobar que el primer intento muestra el error sin borrar los campos. Pulsar **Reintentar envío** y comprobar la confirmación.
 7. Volver al inicio, cambiar de rol y verificar que otros roles no abren la ruta.
 8. En dispositivo, comprobar teclado, desplazamiento, etiquetas accesibles y texto ampliado. Adjuntar evidencia al PR identificando el commit probado.
