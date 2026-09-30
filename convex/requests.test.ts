@@ -1,13 +1,17 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import type { FunctionReturnType } from "convex/server";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+
+// `createTestRequest` es una semilla guardada: solo opera con el interruptor
+// activado, como en `database.test.ts` (aislado por archivo).
+vi.stubEnv("TEST_SEEDS_ENABLED", "true");
 
 const ISSUER = "https://accounts.google.com";
 
