@@ -1,5 +1,8 @@
 ﻿import { v } from "convex/values";
 import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniment/accompaniment";
+import { ATTENTION_STATUS_VALUES } from "./domain/agenda/attention";
+import { AVAILABILITY_EXCEPTION_KIND_VALUES } from "./domain/agenda/availability";
+import { MODALITY_VALUES } from "./domain/agenda/modality";
 import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
@@ -50,3 +53,23 @@ export const assignmentStatusUnion = v.union(
 const requestStatusLiterals = SPRINT_1_REQUEST_STATES.map((state) => v.literal(state));
 
 export const requestStatusUnion = v.union(...requestStatusLiterals);
+
+/**
+ * Modalidades de atención de la agenda (TI2-83), derivadas de los literales
+ * del dominio para que el esquema no defina nombres por su cuenta.
+ */
+export const modalityUnion = v.union(...MODALITY_VALUES.map((value) => v.literal(value)));
+
+/**
+ * Clases de excepción de disponibilidad (TI2-83), derivadas del dominio.
+ */
+export const availabilityExceptionKindUnion = v.union(
+  ...AVAILABILITY_EXCEPTION_KIND_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Estados de la atención reservada (TI2-83), derivados del dominio.
+ */
+export const attentionStatusUnion = v.union(
+  ...ATTENTION_STATUS_VALUES.map((value) => v.literal(value)),
+);

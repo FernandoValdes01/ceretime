@@ -5,7 +5,10 @@ import {
   accountStatusUnion,
   assignmentRoleUnion,
   assignmentStatusUnion,
+  attentionStatusUnion,
+  availabilityExceptionKindUnion,
   institutionalStatusUnion,
+  modalityUnion,
   requestStatusUnion,
   roleUnion,
 } from "./validators";
@@ -157,4 +160,119 @@ export default defineSchema({
     // para que las filas de la misma solicitud queden contiguas y el cursor
     // solo recuerde la última emitida (O(1)), sin historial lineal.
     .index("by_user_and_status_and_request", ["userId", "status", "requestId"]),
+
+  // Tabla 'spaces': catálogo de espacios presenciales (TI2-83). Cada fila
+  // identifica una sala por campus, edificio, piso y sala, con sus
+  // condiciones de acceso e instrucciones de llegada compatibles con lector
+  // de pantalla. `isActive` permite retirar una sala del catálogo sin
+  // borrar el historial de atenciones que la usaron. Solo persistencia: el
+  // catálogo autorizado lo publica TI2-99 y los repositorios los
+  // implementa TI2-95.
+  spaces: defineTable({
+    campus: v.string(),
+    building: v.string(),
+    floor: v.string(),
+    room: v.string(),
+    accessConditions: v.string(),
+    accessInstructions: v.string(),
+    isActive: v.boolean(),
+  })
+    // Catálogo vigente: lo que TI2-99 lista como reservable.
+    .index("by_isActive", ["isActive"])
+    // Sala exacta por sede: ubica la fila y detecta el duplicado lógico
+    // (mismo campus, edificio, piso y sala) sin barrer el catálogo.
+    .index("by_campus_and_building_and_floor_and_room", ["campus", "building", "floor", "room"]),
+
+  // Tabla 'availabilityBlocks': bloques recurrentes de cada profesional
+  // (TI2-83). Cada fila declara un día de semana (`weekday` 0=domingo a
+  // 6=sábado), una ventana en minutos desde las 00:00 (`startMinute` a
+  // `endMinute`) y la modalidad; `spaceId` acompaña al bloque presencial y
+  // queda ausente en el bloque en línea. `isActive` retira un bloque sin
+  // borrarlo. Solo persistencia: la prevención de cruces la aplica la
+  // operación atómica de TI2-84 sobre estos índices.
+  availabilityBlocks: defineTable({
+    professionalId: v.id("users"),
+    weekday: v.number(),
+    startMinute: v.number(),
+    endMinute: v.number(),
+    modality: modalityUnion,
+    spaceId: v.optional(v.id("spaces")),
+    isActive: v.boolean(),
+  })
+    // Bloques del profesional.
+    .index("by_professional", ["professionalId"])
+    // Bloques del profesional en un día de semana: base de la vista diaria
+    // y de la detección de cruces entre bloques.
+    .index("by_professional_and_weekday", ["professionalId", "weekday"])
+    // Bloques vigentes del profesional en un día de semana: lo que la vista
+    // diaria ofrece y lo que la detección de cruces considera, sin filtrar
+    // en memoria.
+    .index("by_professional_and_weekday_and_isActive", ["professionalId", "weekday", "isActive"])
+    // Bloques que usan una sala: base de la detección de cruces por sala.
+    .index("by_space", ["spaceId"]),
+
+  // Tabla 'availabilityExceptions': excepciones puntuales a la recurrencia
+  // (TI2-83). `date` es el inicio del día afectado en milisegundos de época
+  // (00:00 UTC); `kind` cancela disponibilidad (`cancelled`, con `blockId`
+  // al bloque recurrente afectado) o la agrega (`added`, con su propia
+  // ventana en minutos). `reason` deja constancia opcional del motivo.
+  // Solo persistencia, sin reglas de autorización.
+  availabilityExceptions: defineTable({
+    professionalId: v.id("users"),
+    date: v.number(),
+    kind: availabilityExceptionKindUnion,
+    blockId: v.optional(v.id("availabilityBlocks")),
+    startMinute: v.optional(v.number()),
+    endMinute: v.optional(v.number()),
+    reason: v.optional(v.string()),
+  })
+    // Excepciones del profesional en un día: lo que la vista diaria descuenta
+    // o agrega sobre los bloques recurrentes.
+    .index("by_professional_and_date", ["professionalId", "date"])
+    // Excepciones de todos los profesionales en un día: barrido operativo
+    // de la fecha.
+    .index("by_date", ["date"]),
+
+  // Tabla 'attentions': atenciones reservadas (TI2-83). Cada fila es una
+  // ocurrencia concreta (`startsAt` a `endsAt` en milisegundos de época)
+  // vinculada a un acompañamiento; `studentId` duplica al dueño para
+  // listarlo sin uniones, igual que `requests` y `accompaniments`.
+  // `spaceId` acompaña a la atención presencial y queda ausente en línea.
+  // `originalStartsAt` conserva la fecha original al reagendar y
+  // `cancelReason` guarda el motivo (obligatorio para CERETI, opcional para
+  // el estudiante; la distinción la aplica la capa de aplicación, no el
+  // esquema). La cola de inasistencias por estado (`no_show`) para la
+  // justificación con plazo de cinco días hábiles queda para la extensión
+  // futura de justificación, no para este esquema. Solo persistencia: la
+  // ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
+  attentions: defineTable({
+    accompanimentId: v.id("accompaniments"),
+    studentId: v.id("users"),
+    professionalId: v.id("users"),
+    spaceId: v.optional(v.id("spaces")),
+    modality: modalityUnion,
+    status: attentionStatusUnion,
+    startsAt: v.number(),
+    endsAt: v.number(),
+    originalStartsAt: v.optional(v.number()),
+    cancelReason: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    // Atenciones propias del estudiante.
+    .index("by_student", ["studentId"])
+    // Atenciones propias desde un instante: ventana del estudiante sin
+    // filtrar en memoria.
+    .index("by_student_and_startsAt", ["studentId", "startsAt"])
+    // Agenda del profesional.
+    .index("by_professional", ["professionalId"])
+    // Agenda del profesional desde un instante: ventana para la vista
+    // diaria y para la detección de cruces entre profesionales.
+    .index("by_professional_and_startsAt", ["professionalId", "startsAt"])
+    // Ocupación de la sala.
+    .index("by_space", ["spaceId"])
+    // Ocupación de la sala desde un instante: ventana para la detección de
+    // cruces por sala.
+    .index("by_space_and_startsAt", ["spaceId", "startsAt"])
+    // Atenciones del acompañamiento.
+    .index("by_accompaniment", ["accompanimentId"]),
 });
