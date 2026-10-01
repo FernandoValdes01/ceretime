@@ -1,9 +1,11 @@
 ﻿/**
- * Barrel de contratos compartidos de dominio (TI2-8).
+ * Barrel de contratos compartidos de dominio (TI2-8, TI2-87).
  *
  * Punto único de importación para Web y Mobile: evita que cada consumidor
  * navegue archivo por archivo dentro de `convex/domain`. Todos los contratos
- * son puros: no dependen de Convex ni de `convex/_generated`.
+ * son puros: no dependen de Convex ni de `convex/_generated`. TI2-87 suma la
+ * agenda versionada sin duplicar la API Convex: la superficie sigue siendo
+ * `api.presentation.*` y este barrel solo fija la forma v1.
  */
 
 // Identidad, roles y habilitación institucional.
@@ -72,4 +74,70 @@ export type {
 } from "./accompaniment/practitioner_assignment";
 
 // Errores públicos y estados de respuesta.
-export type { ApiResult, PublicApiError } from "./errors/api_error";
+export {
+  API_CONTRACT_VERSION,
+  AVAILABILITY_ERROR_CODES,
+  PUBLIC_ERROR_CODES,
+  PUBLIC_ERROR_MESSAGES,
+  RESERVATION_ERROR_CODES,
+  SPACE_ERROR_CODES,
+  SPRINT_1_ERROR_CODES,
+  toPublicApiError,
+  withContractVersion,
+} from "./errors/api_error";
+export type {
+  ApiContractVersion,
+  ApiResult,
+  PublicApiError,
+  PublicErrorCode,
+  VersionedApiResult,
+} from "./errors/api_error";
+
+// Disponibilidad de agenda versionada (TI2-87): bloques, excepciones y franjas.
+export {
+  AGENDA_CONTRACT_VERSION,
+  AVAILABILITY_MAX_ITEMS_PER_READ,
+  AVAILABILITY_MODALITY_VALUES,
+  AVAILABILITY_SLOT_MINUTES_MAX,
+  AVAILABILITY_SLOT_MINUTES_MIN,
+  isAvailabilityModality,
+  isDurationWithinLimit,
+  isTimeRangeOrdered,
+  isValidDateLabel,
+  isValidTimeLabel,
+  isValidWeekday,
+  toVersionedAvailabilityBlock,
+} from "./agenda/availability";
+export type {
+  AgendaContractVersion,
+  AvailabilityException,
+  AvailabilityModality,
+  AvailabilitySlot,
+  RecurringAvailabilityBlock,
+} from "./agenda/availability";
+
+// Catálogo de espacios versionado (TI2-87): lectura propia sin reglas de negocio.
+export {
+  isSpaceLimitWithinCatalog,
+  SPACE_CATALOG_CONTRACT_VERSION,
+  SPACE_CATALOG_MAX_ITEMS,
+  toSpaceLabel,
+  toVersionedSpace,
+} from "./spaces/space";
+export type { Space, SpaceCatalogContractVersion } from "./spaces/space";
+
+// Reserva de atención versionada (TI2-87): estados y forma sin transiciones.
+export {
+  isReservationRangeOrdered,
+  isReservationStatus,
+  JUSTIFICATION_WINDOW_BUSINESS_DAYS,
+  RESERVATION_CONTRACT_VERSION,
+  RESERVATION_STATUS_LABELS,
+  RESERVATION_STATUS_VALUES,
+  toReservation,
+} from "./reservations/reservation";
+export type {
+  Reservation,
+  ReservationContractVersion,
+  ReservationStatus,
+} from "./reservations/reservation";
