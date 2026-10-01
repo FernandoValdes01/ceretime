@@ -11,6 +11,7 @@ import type {
  */
 export interface StudentAreaReader {
   readStudentArea(): Promise<StudentAreaSnapshot>;
+  subscribe?(onChange: () => void): () => void;
 }
 
 /** Replaceable capability for the provisional student-request submission. */

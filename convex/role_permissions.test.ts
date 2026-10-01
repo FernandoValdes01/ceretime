@@ -1,11 +1,15 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+
+// `createTestRequest` es una semilla guardada: solo opera con el interruptor
+// activado, como en `database.test.ts` (aislado por archivo).
+vi.stubEnv("TEST_SEEDS_ENABLED", "true");
 
 /**
  * Permisos base de los cuatro roles (TI2-12).

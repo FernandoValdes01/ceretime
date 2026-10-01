@@ -8,11 +8,11 @@ Si es la primera vez que clonas el repositorio y nunca has ejecutado Convex en t
 
 1. Login: la terminal te pedirá un nombre del dispositivo, con ENTER puedes utilizar el recomendado, después deberás permitirle entrar en la página web para hacer el login con tu cuenta de Convex con Google o GitHub.
 2. Vinculación: el asistente te ofrecerá crear un proyecto nuevo o vincular uno existente: elige vincular el proyecto compartido del equipo. No crees un proyecto propio: todos los miembros trabajan contra el mismo proyecto y cada uno obtiene su entorno de desarrollo personal dentro de él. Si no lo ves en la lista, pide acceso al equipo antes de continuar.
-3. Generación de la `CONVEX_URL`: una vez completado el vínculo, la plataforma de Convex provisiona automáticamente el entorno en la nube y genera las credenciales de conexión necesarias (incluyendo la `CONVEX_URL` y `CONVEX_SITE_URL`), además de crear localmente la carpeta de tipos `convex/_generated/`.
+3. Generación de las URL: una vez completado el vínculo, la plataforma de Convex provisiona automáticamente tu deployment de desarrollo y escribe en el `.env.local` de la raíz su nombre y sus URL (`VITE_CONVEX_URL` y `VITE_CONVEX_SITE_URL`, con prefijo `VITE_` porque la raíz declara Vite), además de crear localmente la carpeta de tipos `convex/_generated/`. La subida falla con `MissingEnvironmentVariables` hasta configurar las variables obligatorias; el orden completo está en la guía del entorno TI2 del [README raíz](../README.md#entorno-ti2-desde-un-clon-limpio).
 
 ## Variables de entorno
 
-El comando genera solo el `.env.local` de la raíz (`CONVEX_DEPLOYMENT`, `CONVEX_URL`, `CONVEX_SITE_URL`); la plantilla versionada es `.env.example`. Los secretos del backend se configuran en el entorno de Convex, nunca en archivos del repositorio.
+El comando genera solo el `.env.local` de la raíz (`CONVEX_DEPLOYMENT`, `VITE_CONVEX_URL`, `VITE_CONVEX_SITE_URL`); la plantilla versionada es `.env.example`. Los secretos del backend se configuran en el entorno de Convex, nunca en archivos del repositorio.
 
 ## Autenticación institucional (TI2-3)
 
