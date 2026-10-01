@@ -1,6 +1,6 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniment/accompaniment";
+import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
   toAccessNeedsText,

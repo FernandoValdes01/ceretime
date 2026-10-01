@@ -12,6 +12,11 @@
  * declara así: las filas legacy (anteriores a TI2-16) no los tienen y las
  * filas activas nuevas todavía no tienen fecha de revocación. La vigencia
  * del acceso la decide `status`, no la presencia de estos campos.
+ *
+ * Lenguaje: `intern` es el Practicante de `CONTEXT.md`. El nombre anterior
+ * `PractitionerAssignment` designaba lo mismo y se unifica en
+ * `AccompanimentAssignment`, que cubre tanto al Profesional como al
+ * Practicante asignados.
  */
 
 /** Rol con el que una persona queda asignada al acompañamiento. */
@@ -32,7 +37,7 @@ export type AssignmentStatus = (typeof ASSIGNMENT_STATUS_VALUES)[number];
  * revocación. `revokedBy`/`revokedAt` aceptan `null` explícito además de
  * ausencia, porque ambas formas significan "sin revocar".
  */
-export interface PractitionerAssignment {
+export interface AccompanimentAssignment {
   _id: string;
   accompanimentId: string;
   userId: string;
@@ -58,7 +63,7 @@ export interface AssignmentReadPermission {
   grantedAt?: number;
 }
 
-/** Vista que concede cada rol asignado (`practitioner_assignment.ts`). */
+/** Vista que concede cada rol asignado (`assignment.ts`). */
 export const ASSIGNMENT_VIEW_BY_ROLE: Record<AssignmentRole, "full" | "minimized"> = {
   professional: "full",
   intern: "minimized",
@@ -69,7 +74,7 @@ export const ASSIGNMENT_VIEW_BY_ROLE: Record<AssignmentRole, "full" | "minimized
  * Mantiene explícito que una fila revocada no autoriza (RNF-08, RN-26).
  */
 export function toAssignmentReadPermission(
-  assignment: PractitionerAssignment,
+  assignment: AccompanimentAssignment,
 ): AssignmentReadPermission | null {
   if (assignment.status !== "active") return null;
   return {

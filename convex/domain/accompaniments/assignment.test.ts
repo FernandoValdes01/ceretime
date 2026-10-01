@@ -1,11 +1,13 @@
-﻿import { describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   ASSIGNMENT_VIEW_BY_ROLE,
   toAssignmentReadPermission,
-  type PractitionerAssignment,
-} from "./practitioner_assignment";
+  type AccompanimentAssignment,
+} from "./assignment";
 
-function activeAssignment(overrides: Partial<PractitionerAssignment> = {}): PractitionerAssignment {
+function activeAssignment(
+  overrides: Partial<AccompanimentAssignment> = {},
+): AccompanimentAssignment {
   return {
     _id: "assignment-id",
     accompanimentId: "accompaniment-id",
@@ -55,7 +57,7 @@ describe("toAssignmentReadPermission", () => {
   });
 
   test("una fila legacy sin trazabilidad también concede lectura si está activa", () => {
-    const legacy: PractitionerAssignment = {
+    const legacy: AccompanimentAssignment = {
       _id: "assignment-id",
       accompanimentId: "accompaniment-id",
       userId: "user-id",
@@ -72,7 +74,7 @@ describe("toAssignmentReadPermission", () => {
   });
 
   test("una asignación nueva completa conserva toda la trazabilidad", () => {
-    const fresh: PractitionerAssignment = {
+    const fresh: AccompanimentAssignment = {
       _id: "assignment-id",
       accompanimentId: "accompaniment-id",
       userId: "user-id",

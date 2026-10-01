@@ -5,7 +5,7 @@
  * probarse sin levantar el backend (RNF-19).
  *
  * Los literales de rol y estado viven en `../identity/roles` y la vista de
- * lectura en `../accompaniment/accompaniment`; este módulo no los duplica.
+ * lectura en `../accompaniments/accompaniment`; este módulo no los duplica.
  *
  * Fuentes: `docs/especificacion-prototipo.md` (tabla de accesos mínimos),
  * `CONTEXT.md` (Practicante con acceso restringido y minimizado,
@@ -13,10 +13,10 @@
  * RF-38, RF-39, RN-06, RN-08, RN-25, RN-26, RNF-08, RNF-17.
  */
 
-import type { AccompanimentView } from "../accompaniment/accompaniment";
+import type { AccompanimentView } from "../accompaniments/accompaniment";
 import type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
 
-export type { AccompanimentView } from "../accompaniment/accompaniment";
+export type { AccompanimentView } from "../accompaniments/accompaniment";
 export type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
 
 /** Casos de uso cubiertos por la matriz base S2. */

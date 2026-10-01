@@ -1,9 +1,9 @@
 ﻿import { v } from "convex/values";
-import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniment/accompaniment";
+import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniments/accompaniment";
 import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
-} from "./domain/accompaniment/practitioner_assignment";
+} from "./domain/accompaniments/assignment";
 import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import {
   ACCOUNT_STATUS_VALUES,
