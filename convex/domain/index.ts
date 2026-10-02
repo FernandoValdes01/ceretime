@@ -1,9 +1,10 @@
 ﻿/**
- * Barrel de contratos compartidos de dominio (TI2-8).
+ * Barrel de contratos compartidos de dominio (TI2-8, TI2-87).
  *
  * Punto único de importación para Web y Mobile: evita que cada consumidor
- * navegue archivo por archivo dentro de `convex/domain`. Todos los contratos
- * son puros: no dependen de Convex ni de `convex/_generated`.
+ * navegue archivo por archivo dentro de `convex/domain` y que aparezca otra
+ * representación de los mismos conceptos. Todos los contratos son puros: no
+ * dependen de Convex ni de `convex/_generated`.
  */
 
 // Identidad, roles y habilitación institucional.
@@ -73,3 +74,42 @@ export type {
 
 // Errores públicos y estados de respuesta.
 export type { ApiResult, PublicApiError } from "./errors/api_error";
+
+// Disponibilidad: entradas y salidas mínimas con identificadores genéricos (TI2-87).
+export {
+  AVAILABILITY_CONTRACT_VERSION,
+  AVAILABILITY_EXCEPTION_KIND_VALUES,
+} from "./availability/availability";
+export type {
+  AvailabilityBlock,
+  AvailabilityContractVersion,
+  AvailabilityException,
+  AvailabilityExceptionKind,
+  AvailabilitySlot,
+  AvailabilitySlotPage,
+  AvailabilityWindow,
+  ListAvailabilityInput,
+} from "./availability/availability";
+
+// Espacios de atención: catálogo con acceso e instrucciones (TI2-87).
+export { SPACE_CATALOG_CONTRACT_VERSION, toSpaceLabel } from "./spaces/space";
+export type {
+  ListSpacesInput,
+  Space,
+  SpaceCatalogContractVersion,
+  SpaceCatalogPage,
+} from "./spaces/space";
+
+// Atención reservada: reserva y atención en una sola entidad (TI2-87).
+export {
+  APPOINTMENT_CONTRACT_VERSION,
+  APPOINTMENT_STATUS_VALUES,
+  INITIAL_APPOINTMENT_STATUS,
+} from "./appointments/appointment";
+export type {
+  Appointment,
+  AppointmentContractVersion,
+  AppointmentPage,
+  AppointmentStatus,
+  ListAppointmentsInput,
+} from "./appointments/appointment";

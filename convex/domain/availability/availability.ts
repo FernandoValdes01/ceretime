@@ -1,25 +1,90 @@
 /**
- * Disponibilidad recurrente de un profesional: bloques, excepciones y cupos (TI2-81).
+ * Disponibilidad: contratos públicos compartidos v1 y reglas de expansión (TI2-87, TI2-81).
  *
- * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile
- * puedan consumirlo sin levantar el backend. Modela la disponibilidad como
- * bloques semanales (día, ventana, duración, modalidad y lugar) más
- * excepciones puntuales que tienen prioridad sobre la recurrencia, y expande
- * ese modelo a cupos concretos dentro de un rango explícito y acotado.
+ * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile consuman la misma forma sin levantar el backend. Fija las entradas y salidas mínimas con identificadores genéricos (`string` plano, sin `Id`/`Doc` de Convex): bloques con profesionales y días, excepciones puntuales, rango civil explícito y paginación.
  *
- * Disponibilidad no equivale a ocupación: los cupos expandidos son
- * candidatos y reservar, cruzar recursos o impedir solapes entre personas
- * pertenece a TI2-84/TI2-96, no a este módulo. La persistencia (tablas e
- * índices), los validadores del borde y la exportación por el barrel
- * pertenecen a TI2-83/TI2-87: este archivo no toca `convex/schema.ts`,
- * `convex/validators.ts` ni `convex/domain/index.ts`.
+ * Reutiliza `ModalityPreference` de la solicitud para no duplicar su representación; la duración, la recurrencia efectiva y la expansión a cupos pertenecen a TI2-81, los cruces a TI2-84 y la compatibilidad de modalidad y espacio a TI2-82. La autorización contextual queda en Aplicación, la DB y los servicios externos en Infraestructura y las entradas públicas delgadas en Presentación.
  *
- * La modalidad reutiliza `ModalityPreference` de la solicitud para no
- * duplicar su representación; las necesidades de acceso del acompañamiento
- * no se modelan aquí.
+ * Las reglas de TI2-81 operan sobre estos mismos contratos: no existe otra representación de bloques, ventanas, excepciones ni cupos. La expansión exige el profesional dueño de los bloques, respeta la prioridad de las excepciones y devuelve cupos con identidad determinista (`profesional:fecha:inicio`, con sufijo por orden de aparición ante inicios repetidos por solape); la identidad es estable entre llamadas y la persistencia puede reemplazarla por identificadores de fila (TI2-83). Disponibilidad no equivale a ocupación: los cupos son candidatos y reservar pertenece a TI2-84/TI2-96.
  */
 
 import type { ModalityPreference } from "../request/request";
+
+/** Versión del contrato público de disponibilidad. */
+export const AVAILABILITY_CONTRACT_VERSION = "v1" as const;
+
+export type AvailabilityContractVersion = typeof AVAILABILITY_CONTRACT_VERSION;
+
+/** Clases de excepción sobre la recurrencia, fuente única para contratos y reglas. */
+export const AVAILABILITY_EXCEPTION_KIND_VALUES = ["cancelled", "added"] as const;
+
+export type AvailabilityExceptionKind = (typeof AVAILABILITY_EXCEPTION_KIND_VALUES)[number];
+
+/** Ventana dentro de un día civil, en minutos desde las 00:00. */
+export interface AvailabilityWindow {
+  readonly startMinute: number;
+  readonly endMinute: number;
+  readonly slotMinutes: number;
+  readonly modality: ModalityPreference;
+  /** Referencia opaca al espacio; su resolución contra el catálogo es de aplicación (TI2-82). */
+  readonly spaceId?: string;
+}
+
+/** Bloque semanal de disponibilidad con identificadores genéricos. */
+export interface AvailabilityBlock extends AvailabilityWindow {
+  readonly id: string;
+  readonly professionalId: string;
+  /** Día de la semana, 0 (domingo) a 6 (sábado). */
+  readonly weekday: number;
+  readonly version: AvailabilityContractVersion;
+}
+
+/** Excepción puntual sobre la recurrencia en una fecha civil concreta. */
+export interface AvailabilityException {
+  /** Fecha civil en formato `YYYY-MM-DD`. */
+  readonly date: string;
+  readonly kind: AvailabilityExceptionKind;
+  /** Ventanas del día cuando `kind` es `added`; ausente en `cancelled`. */
+  readonly windows?: readonly AvailabilityWindow[];
+  readonly version: AvailabilityContractVersion;
+}
+
+/** Entrada mínima para listar disponibilidad: rango civil explícito y paginación. */
+export interface ListAvailabilityInput {
+  readonly professionalId: string;
+  /** Primera fecha civil incluida, en formato `YYYY-MM-DD`. */
+  readonly from: string;
+  /** Última fecha civil incluida, en formato `YYYY-MM-DD`. */
+  readonly to: string;
+  /** Zona horaria IANA del profesional (p. ej. `America/Santiago`). */
+  readonly timeZone: string;
+  readonly limit: number;
+  readonly cursor?: string;
+  readonly version: AvailabilityContractVersion;
+}
+
+/** Cupo disponible ya resuelto: candidato a reserva, sin estado de ocupación. */
+export interface AvailabilitySlot {
+  readonly id: string;
+  readonly professionalId: string;
+  /** Fecha civil del cupo en formato `YYYY-MM-DD`, en la zona horaria pedida. */
+  readonly date: string;
+  /** Inicio del cupo como milisegundos epoch. */
+  readonly startAt: number;
+  /** Fin del cupo como milisegundos epoch. */
+  readonly endAt: number;
+  readonly modality: ModalityPreference;
+  readonly spaceId?: string;
+  readonly version: AvailabilityContractVersion;
+}
+
+/** Página de cupos con paginación keyset sobre el identificador. */
+export interface AvailabilitySlotPage {
+  readonly items: readonly AvailabilitySlot[];
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
+  readonly version: AvailabilityContractVersion;
+}
 
 /** Primer día admitido en `weekday` (domingo, convención de `Date.getDay`). */
 export const WEEKDAY_MIN = 0;
@@ -36,55 +101,15 @@ export const DAY_END_MINUTE = 1440;
 /**
  * Días civiles máximos que cubre una expansión.
  *
- * La expansión exige un rango explícito y además lo acota: sin este tope un
- * rango abierto podría publicar el calendario completo del profesional.
+ * La expansión exige un rango explícito y además lo acota: sin este tope un rango abierto podría publicar el calendario completo del profesional.
  */
 export const MAX_EXPANSION_DAYS = 92;
 
-/** Ventana dentro de un día civil: inicio, fin, duración del cupo y dónde se atiende. */
-export interface DayWindow {
-  /** Minuto del día del inicio, entero entre 0 y 1439. */
-  readonly startMinute: number;
-  /** Minuto del día del fin, entero entre 1 y 1440 y posterior al inicio. */
-  readonly endMinute: number;
-  /** Duración de cada cupo en minutos: entero positivo que cabe en la ventana. */
-  readonly slotMinutes: number;
-  /** Modalidad efectiva de la atención, no preferencia del estudiante. */
-  readonly modality: ModalityPreference;
-  /**
-   * Referencia opaca al espacio de atención (p. ej. su identificador).
-   * Obligatoria en modalidad presencial y ausente en línea: verificar el
-   * espacio contra el catálogo pertenece a la capa de aplicación.
-   */
-  readonly spaceId?: string;
-}
-
-/** Bloque semanal de disponibilidad: una ventana que se repite cada semana el mismo día. */
-export interface RecurringBlock extends DayWindow {
-  /** Día de la semana, 0 (domingo) a 6 (sábado). */
-  readonly weekday: number;
-}
-
-/** Prioridad de la excepción: cancela el día o agrega ventanas puntuales. */
-export const AVAILABILITY_EXCEPTION_KIND_VALUES = ["cancelled", "added"] as const;
-
-export type AvailabilityExceptionKind = (typeof AVAILABILITY_EXCEPTION_KIND_VALUES)[number];
-
-/** Excepción puntual sobre la recurrencia en una fecha civil concreta. */
-export interface AvailabilityException {
-  /** Fecha civil en formato `YYYY-MM-DD`, interpretada en la zona horaria de la expansión. */
-  readonly date: string;
-  readonly kind: AvailabilityExceptionKind;
-  /**
-   * Ventanas del día cuando `kind` es `added`. Ausente cuando `kind` es
-   * `cancelled`: una cancelación no trae ventanas.
-   */
-  readonly windows?: readonly DayWindow[];
-}
-
-/** Entrada de la expansión: modelo completo más rango civil y zona horaria explícitos. */
+/** Entrada de la expansión: bloques de un profesional más rango civil y zona horaria explícitos. */
 export interface ExpandAvailabilityInput {
-  readonly blocks: readonly RecurringBlock[];
+  /** Profesional dueño de los bloques; cada bloque debe pertenecerle. */
+  readonly professionalId: string;
+  readonly blocks: readonly AvailabilityBlock[];
   readonly exceptions?: readonly AvailabilityException[];
   /** Primera fecha civil incluida, en formato `YYYY-MM-DD`. */
   readonly from: string;
@@ -92,18 +117,6 @@ export interface ExpandAvailabilityInput {
   readonly to: string;
   /** Zona horaria IANA del profesional (p. ej. `America/Santiago`). */
   readonly timeZone: string;
-}
-
-/** Cupo disponible ya resuelto: candidato a reserva, sin estado de ocupación. */
-export interface AvailabilitySlot {
-  /** Fecha civil del cupo en formato `YYYY-MM-DD`, en la zona horaria pedida. */
-  readonly date: string;
-  /** Inicio del cupo como milisegundos epoch. */
-  readonly startAt: number;
-  /** Fin del cupo como milisegundos epoch. */
-  readonly endAt: number;
-  readonly modality: ModalityPreference;
-  readonly spaceId?: string;
 }
 
 /** Verdadero cuando el día cae entre domingo (0) y sábado (6). */
@@ -147,7 +160,7 @@ export function isValidCivilDate(value: string): boolean {
   );
 }
 
-function assertDayWindow(window: DayWindow, where: string): void {
+function assertDayWindow(window: AvailabilityWindow, where: string): void {
   if (!isValidMinuteRange(window.startMinute, window.endMinute)) {
     throw new Error(
       `${where}: el inicio y el fin deben ser minutos enteros dentro del día con el fin posterior al inicio.`,
@@ -171,8 +184,11 @@ function assertDayWindow(window: DayWindow, where: string): void {
   }
 }
 
-function assertBlock(block: RecurringBlock, index: number): void {
+function assertBlock(block: AvailabilityBlock, professionalId: string, index: number): void {
   const where = `Bloque ${index}`;
+  if (block.professionalId !== professionalId) {
+    throw new Error(`${where}: los bloques deben ser del mismo profesional de la expansión.`);
+  }
   if (!isValidWeekday(block.weekday)) {
     throw new Error(`${where}: el día de la semana debe ser un entero entre 0 y 6.`);
   }
@@ -203,9 +219,7 @@ function assertException(exception: AvailabilityException, index: number): void 
 /**
  * Diferencia `local - utc` en milisegundos para la zona horaria en un instante dado.
  *
- * Implementación propia sobre `Intl.DateTimeFormat` para no depender de
- * bibliotecas externas: el dominio sigue siendo puro y la aritmética de
- * instantes queda probada con fechas fijas de invierno y verano.
+ * Implementación propia sobre `Intl.DateTimeFormat` para no depender de bibliotecas externas: el dominio sigue siendo puro y la aritmética de instantes queda probada con fechas fijas de invierno y verano.
  */
 function getTimeZoneOffsetMs(timeZone: string, utcMs: number): number {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -271,18 +285,31 @@ function eachCivilDate(from: string, to: string): string[] {
   return dates;
 }
 
-function expandWindow(date: string, window: DayWindow, timeZone: string): AvailabilitySlot[] {
+function expandWindow(
+  professionalId: string,
+  date: string,
+  window: AvailabilityWindow,
+  timeZone: string,
+  takenIds: Map<string, number>,
+): AvailabilitySlot[] {
   const slots: AvailabilitySlot[] = [];
   const length = window.endMinute - window.startMinute;
   const count = Math.floor(length / window.slotMinutes);
   for (let index = 0; index < count; index += 1) {
     const startMinute = window.startMinute + index * window.slotMinutes;
+    const startAt = civilToEpochMs(date, startMinute, timeZone);
+    const baseId = `${professionalId}:${date}:${startAt}`;
+    const occurrence = takenIds.get(baseId) ?? 0;
+    takenIds.set(baseId, occurrence + 1);
     slots.push({
+      id: occurrence === 0 ? baseId : `${baseId}#${occurrence}`,
+      professionalId,
       date,
-      startAt: civilToEpochMs(date, startMinute, timeZone),
+      startAt,
       endAt: civilToEpochMs(date, startMinute + window.slotMinutes, timeZone),
       modality: window.modality,
       ...(window.spaceId === undefined ? {} : { spaceId: window.spaceId }),
+      version: AVAILABILITY_CONTRACT_VERSION,
     });
   }
   return slots;
@@ -291,21 +318,15 @@ function expandWindow(date: string, window: DayWindow, timeZone: string): Availa
 /**
  * Expande bloques y excepciones a cupos concretos dentro del rango pedido.
  *
- * Reglas: la recurrencia aporta las ventanas de cada fecha según su día de
- * semana; una excepción `cancelled` elimina el día completo y una `added`
- * suma sus ventanas a las del día. Los cupos salen alineados al inicio de
- * cada ventana y ordenados por inicio; el resto menor a la duración se
- * descarta sin alterar la ventana. Los solapes entre bloques se preservan
- * tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
+ * Reglas: cada bloque debe pertenecer al profesional de la expansión; la recurrencia aporta las ventanas de cada fecha según su día de semana; una excepción `cancelled` elimina el día completo y una `added` suma sus ventanas a las del día. Los cupos salen alineados al inicio de cada ventana y ordenados por inicio; el resto menor a la duración se descarta sin alterar la ventana. Los solapes entre bloques se preservan tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
  *
- * Rechaza datos no finitos, fin anterior al inicio, ventanas fuera del día,
- * duraciones no positivas o que no caben, modalidades o espacios
- * inconsistentes, fechas inválidas, rango invertido o mayor a
- * `MAX_EXPANSION_DAYS`, zonas horarias desconocidas y excepciones duplicadas
- * en la misma fecha.
+ * Rechaza datos no finitos, fin anterior al inicio, ventanas fuera del día, duraciones no positivas o que no caben, modalidades o espacios inconsistentes, bloques de otro profesional, fechas inválidas, rango invertido o mayor a `MAX_EXPANSION_DAYS`, zonas horarias desconocidas y excepciones duplicadas en la misma fecha.
  */
 export function expandAvailabilitySlots(input: ExpandAvailabilityInput): AvailabilitySlot[] {
-  input.blocks.forEach(assertBlock);
+  if (input.professionalId.trim() === "") {
+    throw new Error("La expansión requiere el profesional dueño de los bloques.");
+  }
+  input.blocks.forEach((block, index) => assertBlock(block, input.professionalId, index));
   (input.exceptions ?? []).forEach(assertException);
   if (!isValidCivilDate(input.from) || !isValidCivilDate(input.to)) {
     throw new Error("El rango de expansión requiere fechas civiles válidas YYYY-MM-DD.");
@@ -332,18 +353,19 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
   }
 
   const slots: AvailabilitySlot[] = [];
+  const takenIds = new Map<string, number>();
   for (const date of dates) {
     const exception = exceptionsByDate.get(date);
     if (exception?.kind === "cancelled") {
       continue;
     }
     const weekday = civilWeekday(date, input.timeZone);
-    const windows: DayWindow[] = input.blocks.filter((block) => block.weekday === weekday);
+    const windows: AvailabilityWindow[] = input.blocks.filter((block) => block.weekday === weekday);
     if (exception?.kind === "added") {
       windows.push(...(exception.windows ?? []));
     }
     for (const window of windows) {
-      slots.push(...expandWindow(date, window, input.timeZone));
+      slots.push(...expandWindow(input.professionalId, date, window, input.timeZone, takenIds));
     }
   }
   slots.sort((a, b) => a.startAt - b.startAt);
