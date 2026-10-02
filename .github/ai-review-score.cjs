@@ -150,20 +150,27 @@ async function publishReview({ github, context, core, env = process.env }) {
     await github.rest.repos.createCommitStatus(status);
     return;
   }
+  const { data: commit } = await github.rest.repos.getCommit({
+    ...context.repo,
+    ref: env.REVIEW_SHA,
+  });
+  if (commit.sha !== env.REVIEW_SHA)
+    throw new Error("El commit consultado no coincide con el SHA revisado.");
   const body = formatReview(result, env.REVIEW_SHA, env.RUN_URL, env.REVIEW_COST, {
     risk: env.REVIEW_RISK,
     commentsCount: env.REVIEW_COMMENTS,
-    actionSummary: env.ACTION_SUMMARY,
+    commitTitle: commit.commit.message,
   });
-  const reviews = await github.paginate(github.rest.pulls.listReviews, { ...args, per_page: 100 });
   const botLogin = env.REVIEW_BOT_LOGIN || "github-actions[bot]";
-  const original = reviews.findLast(
-    (review) =>
-      review.user?.login === botLogin &&
-      review.commit_id === env.REVIEW_SHA &&
-      review.body?.startsWith("## AI Code Review") &&
-      (env.ACTION_SUMMARY || env.REVIEW_SUMMARY) &&
-      review.body.includes(env.ACTION_SUMMARY || env.REVIEW_SUMMARY),
+  const issueArgs = { ...context.repo, issue_number: args.pull_number };
+  const summaries = await github.paginate(github.rest.issues.listComments, {
+    ...issueArgs,
+    per_page: 100,
+  });
+  const owned = summaries.filter(
+    (comment) =>
+      comment.user?.login === botLogin &&
+      comment.body?.startsWith("<!-- ceretime-ai-review-summary -->"),
   );
   const { data: beforePublication } = await github.rest.pulls.get(args);
   if (
@@ -172,17 +179,18 @@ async function publishReview({ github, context, core, env = process.env }) {
     beforePublication.state !== "open"
   )
     return;
-  if (original && env.REVIEW_OUTCOME === "success") {
-    await github.rest.pulls.updateReview({ ...args, review_id: original.id, body });
+  if (owned.length) {
+    await github.rest.issues.updateComment({ ...context.repo, comment_id: owned[0].id, body });
   } else {
-    await github.rest.pulls.createReview({
-      ...args,
-      commit_id: env.REVIEW_SHA,
-      event: "COMMENT",
-      body,
-    });
+    await github.rest.issues.createComment({ ...issueArgs, body });
   }
+  // Retain only the first summary, even if a previous attempt left duplicates.
+  for (const duplicate of owned.slice(1)) {
+    await github.rest.issues.deleteComment({ ...context.repo, comment_id: duplicate.id });
+  }
+  const reviews = await github.paginate(github.rest.pulls.listReviews, { ...args, per_page: 100 });
   await tidyComments({ github, args, sha: env.REVIEW_SHA, botLogin, reviews });
+  await archiveReviewSummaries({ github, context, botLogin, reviews });
   const { data: latest } = await github.rest.pulls.get(args);
   if (latest.head.sha !== env.REVIEW_SHA || latest.draft || latest.state !== "open") return;
   await github.rest.repos.createCommitStatus(status);
@@ -244,6 +252,26 @@ async function tidyComments({ github, args, sha, botLogin, reviews }) {
   }
 }
 
+async function archiveReviewSummaries({ github, context, botLogin, reviews }) {
+  const args = { ...context.repo, pull_number: context.payload.pull_request.number };
+  reviews ??= await github.paginate(github.rest.pulls.listReviews, { ...args, per_page: 100 });
+  for (const review of reviews) {
+    if (review.user?.login !== botLogin) continue;
+    if (
+      review.body?.startsWith("<!-- ceretime-ai-review -->") ||
+      (review.body?.startsWith("## AI Code Review") &&
+        review.body.includes("https://github.com/mara-werils/ai-code-reviewer"))
+    ) {
+      // Keep the review, its commit association and inline findings, without a second visible summary.
+      await github.rest.pulls.updateReview({
+        ...args,
+        review_id: review.id,
+        body: "<!-- ceretime-ai-review-inline-only -->",
+      });
+    }
+  }
+}
+
 module.exports = {
   STATUS_CONTEXT,
   MODEL,
@@ -254,4 +282,5 @@ module.exports = {
   formatReview,
   prepareReview,
   publishReview,
+  archiveReviewSummaries,
 };

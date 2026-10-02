@@ -97,6 +97,14 @@ jobs:
             const { normalizeConfidence } = require('./.github/ai-review-confidence.cjs');
             await normalizeConfidence({ core });
 
+      - name: Retirar resúmenes históricos de GitHub Actions
+        if: ${{ always() && !cancelled() && steps.r2d2_token.outcome == 'success' }}
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { archiveReviewSummaries } = require('./.github/ai-review-score.cjs');
+            await archiveReviewSummaries({ github, context, botLogin: 'github-actions[bot]' });
+
       - name: Publicar resumen y status del SHA revisado
         if: ${{ always() && !cancelled() }}
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7

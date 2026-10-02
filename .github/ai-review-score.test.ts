@@ -10,6 +10,7 @@ import {
   parseSummary,
   prepareReview,
   publishReview,
+  archiveReviewSummaries,
 } from "./ai-review-score.cjs";
 
 const sha = "a".repeat(40);
@@ -98,6 +99,7 @@ test("rejects inconsistent outputs and an incomplete diff", () => {
 function harness(heads = [sha], draft = false) {
   const statuses: any[] = [];
   const reviews: any[] = [];
+  const summaryWrites: any[] = [];
   const inline: any[] = [];
   const updatedInline: any[] = [];
   const comments: any[] = [];
@@ -131,9 +133,16 @@ function harness(heads = [sha], draft = false) {
       },
       issues: {
         listComments: () => {},
+        createComment: async (args: any) => summaryWrites.push(args),
+        updateComment: async (args: any) => summaryWrites.push(args),
         deleteComment: async (args: any) => deletedComments.push(args),
       },
-      repos: { createCommitStatus: async (args: any) => statuses.push(args) },
+      repos: {
+        createCommitStatus: async (args: any) => statuses.push(args),
+        getCommit: async () => ({
+          data: { sha, commit: { message: "ci(review): revisa el cambio\n\nDetalle" } },
+        }),
+      },
     },
     paginate: async (method: unknown) => {
       if (method === github.rest.pulls.listReviews) return existing;
@@ -173,6 +182,7 @@ function harness(heads = [sha], draft = false) {
     outputs,
     statuses,
     reviews,
+    summaryWrites,
     existing,
     inline,
     updatedInline,
@@ -186,28 +196,32 @@ test("publishes the head SHA rather than the temporary merge SHA", async () => {
   await publishReview(h);
   expect(h.statuses).toHaveLength(1);
   expect(h.statuses[0]).toMatchObject({ sha, state: "success", context: "AI Review 5/5" });
-  expect(h.reviews[0]).toMatchObject({ review_id: 10 });
-  expect(h.reviews[0].body).toContain(`[\`${sha}\`](https://github.com/owner/repo/commit/${sha})`);
+  expect(h.summaryWrites[0]).toMatchObject({ issue_number: 1 });
+  expect(h.summaryWrites[0].body).toContain(
+    `[ci\\(review\\): revisa el cambio](https://github.com/owner/repo/commit/${sha})`,
+  );
+  expect(h.summaryWrites[0].body).toContain(`SHA revisado: \`${sha}\``);
 });
 
-test("creates a COMMENT review with a commit association when there are no inline findings", async () => {
+test("creates one PR summary without creating an extra review when there are no inline findings", async () => {
   const h = harness();
   h.existing.length = 0;
   await publishReview(h);
-  expect(h.reviews[0]).toMatchObject({ commit_id: sha, event: "COMMENT" });
-  expect(h.reviews[0].body).toContain("| low | 0 | Review vigente |");
-  expect(h.reviews[0].body).toContain("NO autoriza merge");
+  expect(h.summaryWrites[0]).toMatchObject({ issue_number: 1 });
+  expect(h.reviews).toHaveLength(0);
+  expect(h.summaryWrites[0].body).toContain("| low | 0 | Review vigente |");
+  expect(h.summaryWrites[0].body).toContain("NO autoriza merge");
 });
 
-test("preserves the inline review when a separate model assessment changes its summary", async () => {
+test("keeps inline findings separate from the single summary", async () => {
   const h = harness();
   const actionSummary = "Observaciones del cambio sin evaluación estructurada.";
   h.existing[0].body = `## AI Code Review\n\n> ${actionSummary}`;
   await publishReview({ ...h, env: { ...h.env, ACTION_SUMMARY: actionSummary } });
-  expect(h.reviews).toHaveLength(1);
-  expect(h.reviews[0]).toMatchObject({ review_id: 10 });
-  expect(h.reviews[0].body).toContain("Confidence Score: 5/5");
-  expect(h.reviews[0].body).not.toContain(actionSummary);
+  expect(h.summaryWrites).toHaveLength(1);
+  expect(h.summaryWrites[0]).toMatchObject({ issue_number: 1 });
+  expect(h.summaryWrites[0].body).toContain("Confidence Score: 5/5");
+  expect(h.summaryWrites[0].body).not.toContain(actionSummary);
   expect(h.statuses[0]).toMatchObject({ sha, state: "success" });
 });
 
@@ -215,7 +229,8 @@ test("ignores summaries from another author", async () => {
   const h = harness();
   h.existing[0].user.login = "someone";
   await publishReview(h);
-  expect(h.reviews[0]).toMatchObject({ commit_id: sha, event: "COMMENT" });
+  expect(h.summaryWrites[0]).toMatchObject({ issue_number: 1 });
+  expect(h.reviews).toHaveLength(0);
 });
 
 for (const [outcome, body, reason] of [
@@ -229,7 +244,7 @@ for (const [outcome, body, reason] of [
     h.env.REVIEW_SUMMARY = body;
     await publishReview(h);
     expect(h.statuses[0]).toMatchObject({ sha, state: "failure" });
-    expect(h.reviews[0].body).toContain("Confidence Score: 0/5");
+    expect(h.summaryWrites[0].body).toContain("Confidence Score: 0/5");
   });
 }
 
@@ -240,7 +255,7 @@ test("an old run never publishes success on a newer head", async () => {
     expect(h.statuses.every((status) => status.sha === sha && status.state !== "success")).toBe(
       true,
     );
-    expect(h.reviews.every((review) => review.commit_id !== oldSha)).toBe(true);
+    expect(h.summaryWrites.every((review) => review.commit_id !== oldSha)).toBe(true);
   }
 });
 
@@ -248,7 +263,7 @@ test("drafts do not publish a review or status", async () => {
   const h = harness([sha], true);
   await publishReview(h);
   await prepareReview(h);
-  expect(h.reviews).toHaveLength(0);
+  expect(h.summaryWrites).toHaveLength(0);
   expect(h.statuses).toHaveLength(0);
   expect(h.outputs.current).toBe("false");
 });
@@ -464,7 +479,7 @@ test("never invents a score when the assessment fails or returns an invalid valu
   await expect(confidence(null, { status: 401 })).rejects.toThrow("HTTP 401");
 });
 
-test("R2D2 displays the real fraction, avatar and compact metadata without bold markers", () => {
+test("R2D2 displays the real fraction without repeating the App avatar", () => {
   for (const score of [0, 3, 5]) {
     const body = formatReview(
       evaluateReview(input({ summary: summary(score) })),
@@ -474,7 +489,8 @@ test("R2D2 displays the real fraction, avatar and compact metadata without bold 
     );
     expect(body).toContain("## R2D2 · AI Code Review");
     expect(body).toContain(`### Confidence Score: ${score}/5`);
-    expect(body).toContain(`/${sha}/.github/assets/r2d2.jpg`);
+    expect(body).not.toContain("<img");
+    expect(body).not.toContain("r2d2.jpg");
     expect(body).toContain("| Risk | Hallazgos | Estado |");
     expect(body).not.toContain("**");
     expect(body).not.toContain("Free & open source");
@@ -520,7 +536,7 @@ test("uses the configured App identity instead of trusting an arbitrary bot", as
   const h = harness();
   h.existing[0].user.login = "r2d2[bot]";
   await publishReview({ ...h, env: { ...h.env, REVIEW_BOT_LOGIN: "r2d2[bot]" } });
-  expect(h.reviews[0]).toMatchObject({ review_id: 10 });
+  expect(h.summaryWrites[0]).toMatchObject({ issue_number: 1 });
   const app = workflow.jobs.review.steps.find((step: any) => step.id === "r2d2_token");
   expect(app.uses).toBe("actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349");
   expect(app.with["permission-contents"]).toBe("read");
@@ -552,4 +568,57 @@ test("formats previous inline findings only when they belong to this bot's ident
   ]);
   expect(h.inline[0].original_commit_id).toBe(oldSha);
   expect(h.updatedInline[0].body).toContain("const result = 2 ** 3;");
+});
+
+test("updates the same summary across commits and retries, ignoring other authors", async () => {
+  const h = harness();
+  h.comments.push(
+    { id: 20, user: { login: "human" }, body: "<!-- ceretime-ai-review-summary -->" },
+    {
+      id: 21,
+      user: { login: "github-actions[bot]" },
+      body: "<!-- ceretime-ai-review-summary -->\nPrevious SHA",
+    },
+    {
+      id: 22,
+      user: { login: "github-actions[bot]" },
+      body: "<!-- ceretime-ai-review-summary -->\nDuplicate",
+    },
+  );
+  await publishReview(h);
+  await publishReview(h);
+  expect(h.summaryWrites.map((write) => write.comment_id)).toEqual([21, 21]);
+  expect(h.summaryWrites.every((write) => !("issue_number" in write))).toBe(true);
+  expect(h.deletedComments.every((comment) => comment.comment_id === 22)).toBe(true);
+});
+
+test("archives only this bot's identified review bodies, preserving inline associations", async () => {
+  const h = harness();
+  h.existing[0].body = "<!-- ceretime-ai-review -->\nOld summary";
+  h.existing.push({
+    id: 11,
+    user: { login: "human" },
+    commit_id: oldSha,
+    body: h.existing[0].body,
+  });
+  await archiveReviewSummaries({ ...h, botLogin: "github-actions[bot]", reviews: h.existing });
+  expect(h.reviews).toEqual([
+    {
+      owner: "owner",
+      repo: "repo",
+      pull_number: 1,
+      review_id: 10,
+      body: "<!-- ceretime-ai-review-inline-only -->",
+    },
+  ]);
+  expect(h.existing[0].commit_id).toBe(sha);
+});
+
+test("uses the exact commit title safely and keeps the full SHA in folded details", () => {
+  const body = formatReview(evaluateReview(input()), sha, runUrl, "0.001", {
+    commitTitle: "docs(ci): añade [enlace]\nBody ignored",
+  });
+  expect(body).toContain("Reviewed commit: [docs\\(ci\\): añade \\[enlace\\]]");
+  expect(body).toContain(`SHA revisado: \`${sha}\``);
+  expect(body).not.toContain("Body ignored");
 });

@@ -33,7 +33,7 @@ El modelo evalúa solo el cambio recibido con la rúbrica de `.pr-reviewer.yml`,
 Confidence Score: 5/5; Risk: low; Reviewed commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; Hallazgos: 0; Resumen: No se detectan problemas relevantes.
 ```
 
-La review publicada muestra la imagen y el nombre R2D2, el score destacado como N/5, una tabla de riesgo, hallazgos y estado, el SHA completo enlazado, el resumen y los datos de ejecución plegados. La presentación no usa negritas y elimina el pie publicitario del upstream. Los hallazgos concretos quedan inline cuando tienen una línea válida en el diff; su prosa se ordena sin modificar código ni bloques de sugerencias. El máximo solicitado es cinco y cero hallazgos es válido. `Hallazgos` cuenta los comentarios aceptados por el motor, no sustituye la comprobación de que GitHub haya publicado cada comentario inline.
+El comentario de resumen muestra el nombre R2D2 y utiliza el avatar de la App, el score destacado como N/5, una tabla de riesgo, hallazgos y estado, el título del commit enlazado, el resumen y el SHA completo en los datos de ejecución plegados. La presentación no usa negritas y elimina el pie publicitario del upstream. Los hallazgos concretos quedan inline cuando tienen una línea válida en el diff; su prosa se ordena sin modificar código ni bloques de sugerencias. El máximo solicitado es cinco y cero hallazgos es válido. `Hallazgos` cuenta los comentarios aceptados por el motor, no sustituye la comprobación de que GitHub haya publicado cada comentario inline.
 
 La prueba real mostró que esta combinación puede devolver solo prosa aun recibiendo el contrato. Cuando ocurre, `.github/ai-review-confidence.cjs` pide al mismo modelo de Groq una evaluación JSON separada del diff y las observaciones. Exige un entero 0–5 y una explicación, y conserva el riesgo, conteo y SHA de la ejecución. No convierte prosa en una nota inventada. El diff temporal se guarda bajo `.git/` únicamente en el runner. Un fallo o JSON inválido de esta evaluación publica failure y 0/5. La review normalizada muestra una sola explicación; los outputs originales siguen disponibles en el run.
 
@@ -48,11 +48,11 @@ La prueba real mostró que esta combinación puede devolver solo prosa aun recib
 
 `Risk: low|medium|high` es la evaluación de riesgo del modelo y debe coincidir con el output `risk_level`. Si no existe un output de riesgo válido, el informe usa `high` como señal conservadora de incertidumbre, no como un hallazgo de seguridad. Los valores duplicados, scores fuera de rango, SHA inválidos y cantidades o riesgos inconsistentes se rechazan. La rúbrica es estable, pero una inferencia del modelo puede variar y no prueba que el código esté libre de errores.
 
-Confidence Score NO significa autorización para hacer merge. CI y la revisión humana correspondiente siguen siendo obligatorias; el reviewer siempre publica `COMMENT`, nunca `APPROVE`.
+Confidence Score NO significa autorización para hacer merge. CI y la revisión humana correspondiente siguen siendo obligatorias; los hallazgos inline usan reviews `COMMENT` y el resumen se publica como comentario de PR, nunca como `APPROVE`.
 
 ## Status y asociación al SHA
 
-El contexto estable del commit status es `AI Review 5/5`. Se publica exclusivamente sobre `github.event.pull_request.head.sha`, nunca sobre `github.sha` del merge temporal. La review normalizada también queda asociada mediante `commit_id` cuando se crea; si la Action ya publicó una review inline sobre ese SHA, se actualiza su cuerpo conservando los comentarios.
+El contexto estable del commit status es `AI Review 5/5`. Se publica exclusivamente sobre `github.event.pull_request.head.sha`, nunca sobre `github.sha` del merge temporal. El resumen vive en un único comentario de PR identificado por un marcador estable y la identidad que lo publica. Se crea una vez y se actualiza en los siguientes commits o reintentos. Muestra el título del commit obtenido de GitHub, enlazado a su SHA; el SHA completo permanece en los detalles. Los hallazgos inline conservan el `commit_id` de la review original. El comentario de PR no tiene `commit_id`: su asociación se verifica con el SHA explícito y el status del commit.
 
 | Condición | Estado y resultado |
 | --- | --- |
@@ -65,7 +65,7 @@ El contexto estable del commit status es `AI Review 5/5`. Se publica exclusivame
 
 Cada ejecución vigente publica primero un failure por review ausente. Un commit nuevo tiene su propio status y no hereda el success del anterior; puede faltar el status durante la espera del runner y esa ausencia nunca demuestra una review válida. La concurrency por número de PR cancela ejecuciones anteriores. El adaptador vuelve a leer el head antes de publicar la review y justo antes del status final. Una ejecución antigua solo puede escribir en su SHA original, incluso si el head cambia después de la consulta: jamás marca como válido un commit nuevo. Las ejecuciones canceladas no publican el resultado final.
 
-No se reutilizan outputs de otra ejecución, comentarios humanos ni notas del bot anterior. Después de publicar la review normalizada y antes de su status final, el adaptador retira los resúmenes publicitarios redundantes publicados por esa misma identidad. Conserva comentarios humanos y otros resultados de Actions. La review normalizada y el status del SHA son la evidencia verificable. Si falla la publicación en GitHub, revisa el job y sus logs: la falta de status o un failure inicial no equivale a éxito.
+No se reutilizan outputs de otra ejecución, comentarios humanos ni notas del bot anterior. Después de actualizar el comentario de resumen y antes de su status final, el adaptador retira los resúmenes publicitarios redundantes publicados por esa misma identidad. Conserva comentarios humanos y otros resultados de Actions. Los cuerpos anteriores de reviews de IA se ocultan sin eliminar hallazgos inline ni asociaciones al commit; cada identidad modifica solo sus propias publicaciones. El comentario único y el status del SHA son la evidencia verificable. Si falla la publicación en GitHub, revisa el job y sus logs: la falta de status o un failure inicial no equivale a éxito.
 
 ## Costos y límites
 

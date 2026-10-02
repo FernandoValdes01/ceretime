@@ -56,10 +56,11 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
   const explanation = withoutBold(
     result.review?.summary ?? "No hay una evaluación válida del cambio.",
   );
+  const title = String(metadata.commitTitle || sha.slice(0, 7))
+    .split(/\r?\n/)[0]
+    .replace(/[\\`*_{}[\]()<>!|]/g, "\\$&");
   return [
-    "<!-- ceretime-ai-review -->",
-    `<img src="https://raw.githubusercontent.com/${repo}/${sha}/.github/assets/r2d2.jpg" alt="R2D2" width="72" height="72">`,
-    "",
+    "<!-- ceretime-ai-review-summary -->",
     "## R2D2 · AI Code Review",
     "",
     `### Confidence Score: ${result.score}/5`,
@@ -68,7 +69,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "| --- | --- | --- |",
     `| ${risk} | ${findings} | ${state} |`,
     "",
-    `Reviewed commit: [\`${sha}\`](https://github.com/${repo}/commit/${sha})`,
+    `Reviewed commit: [${title}](https://github.com/${repo}/commit/${sha})`,
     "",
     "### Resumen",
     "",
@@ -76,6 +77,8 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     "<details>",
     "<summary>Modelo y ejecución</summary>",
+    "",
+    `SHA revisado: \`${sha}\``,
     "",
     `Modelo: \`${MODEL}\` · Proveedor: Groq`,
     "",
