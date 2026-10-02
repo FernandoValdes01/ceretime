@@ -198,7 +198,12 @@ async function tidyComments({ github, args, sha, botLogin }) {
     if (comment.user?.login !== botLogin || comment.original_commit_id !== sha) continue;
     const body = formatInline(comment.body);
     if (body !== comment.body) {
-      await github.rest.pulls.updateReviewComment({ ...args, comment_id: comment.id, body });
+      await github.rest.pulls.updateReviewComment({
+        owner: args.owner,
+        repo: args.repo,
+        comment_id: comment.id,
+        body,
+      });
     }
   }
   const issueArgs = {

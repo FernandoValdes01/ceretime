@@ -507,7 +507,12 @@ test("tidies only the authenticated reviewer's comments and preserves other auth
   );
   await publishReview(h);
   expect(h.updatedInline).toHaveLength(1);
-  expect(h.updatedInline[0]).toMatchObject({ comment_id: 1, body: formatInline(raw) });
+  expect(h.updatedInline[0]).toEqual({
+    owner: "owner",
+    repo: "repo",
+    comment_id: 1,
+    body: formatInline(raw),
+  });
   expect(h.deletedComments).toEqual([{ owner: "owner", repo: "repo", comment_id: 4 }]);
 });
 
