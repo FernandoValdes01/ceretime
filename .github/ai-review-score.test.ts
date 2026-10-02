@@ -170,6 +170,18 @@ test("creates a COMMENT review with a commit association when there are no inlin
   expect(h.reviews[0].body).toContain("NO autoriza merge");
 });
 
+test("preserves the inline review when a separate model assessment changes its summary", async () => {
+  const h = harness();
+  const actionSummary = "Observaciones del cambio sin evaluación estructurada.";
+  h.existing[0].body = `## AI Code Review\n\n> ${actionSummary}`;
+  await publishReview({ ...h, env: { ...h.env, ACTION_SUMMARY: actionSummary } });
+  expect(h.reviews).toHaveLength(1);
+  expect(h.reviews[0]).toMatchObject({ review_id: 10 });
+  expect(h.reviews[0].body).toContain("Confidence Score: 5/5");
+  expect(h.reviews[0].body).toContain(actionSummary);
+  expect(h.statuses[0]).toMatchObject({ sha, state: "success" });
+});
+
 test("ignores summaries from another author", async () => {
   const h = harness();
   h.existing[0].user.login = "someone";

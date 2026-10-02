@@ -48,7 +48,7 @@ Formato: `ID - tipo(scope): descripción`
 
 ## Review automática informativa
 
-Las PR internas hacia `main` reciben AI Code Reviewer con Groq y `openai/gpt-oss-120b` al abrirse, reabrirse, recibir commits o pasar a Ready for review. Draft no consume reviews. Antes de probarlo, conserva la PR en Draft y asigna el reviewer humano correspondiente en Linear. El secret `GROQ_API_KEY` vive en GitHub Actions y nunca se pega en la PR.
+Las PR internas hacia `main` reciben AI Code Reviewer con Groq y `openai/gpt-oss-120b` al abrirse, reabrirse, recibir commits o pasar a Ready for review. Draft no consume reviews. Conserva la PR en Draft durante la preparación y asigna el reviewer humano según el flujo del proyecto, salvo una excepción autorizada para probar la integración. Esa excepción no elimina la aprobación humana antes de integrar. El secret `GROQ_API_KEY` vive en GitHub Actions y nunca se pega en la PR.
 
 La review normalizada muestra `Confidence Score: N/5`, `Risk: low|medium|high`, hallazgos, SHA completo y modelo. El score expresa la evaluación del cambio: 5 sin problemas relevantes, 4 observaciones menores, 3 problemas relevantes, 2 importantes, 1 graves y 0 review no válida. El contexto `AI Review 5/5` pasa solo con review vigente, cobertura completa, cero hallazgos, riesgo low y score 5. Los demás resultados, la ausencia de review, un SHA obsoleto o un fallo mantienen failure informativo. Un resultado de un commit anterior no sirve para el head actual.
 
