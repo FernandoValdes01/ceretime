@@ -9,7 +9,7 @@ import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
 } from "./domain/accompaniment/practitioner_assignment";
-import { PERSISTABLE_REQUEST_STATES } from "./domain/request/state";
+import { PERSISTABLE_REQUEST_STATES, SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,
@@ -49,14 +49,26 @@ export const assignmentStatusUnion = v.union(
 );
 
 /**
- * Estados de solicitud persistibles (TI2-83 adapta validadores para TI2-85):
- * operativos de Sprint 1 (TI2-7) más `closed_without_accompaniment` y
- * `cancelled`, sin `referred`. Derivados del dominio para que el esquema no
- * defina nombres por su cuenta.
+ * Estados de solicitud del contrato de presentación (Sprint 1, TI2-7): lo que
+ * la API pública devuelve hoy. Derivados del dominio para que el esquema no
+ * defina nombres por su cuenta. Mantenerlo en 4 estados conserva intactos
+ * los tipos que Web y Mobile derivan de `api.presentation.*`; TI2-85 lo
+ * ampliará con su mapping y coordinación TI4.
  */
-const requestStatusLiterals = PERSISTABLE_REQUEST_STATES.map((state) => v.literal(state));
+const requestStatusLiterals = SPRINT_1_REQUEST_STATES.map((state) => v.literal(state));
 
 export const requestStatusUnion = v.union(...requestStatusLiterals);
+
+/**
+ * Estados de solicitud persistibles (TI2-83 adapta validadores para TI2-85):
+ * operativos de Sprint 1 más `closed_without_accompaniment` y `cancelled`,
+ * sin `referred`. Solo esquema (`requests`, `requestTransitions`) y
+ * adaptación de lectura; la presentación sigue en 4 estados hasta el
+ * mapping de TI2-85.
+ */
+export const persistableRequestStatusUnion = v.union(
+  ...PERSISTABLE_REQUEST_STATES.map((state) => v.literal(state)),
+);
 
 /**
  * Modalidades de atención de la agenda (TI2-83), derivadas de los literales

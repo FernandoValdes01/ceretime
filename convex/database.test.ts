@@ -1591,7 +1591,9 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen como Spri
     }).status,
   ).toBe("received");
 
-  // La cancelación y el cierre se persisten y se adaptan a la entidad pública.
+  // La cancelación y el cierre se persisten con los literales del dominio;
+  // su mapping a la proyección es de TI2-85, acá se comprueba el valor
+  // guardado tal cual.
   for (const [id, status] of [
     [cancelledId, "cancelled"],
     [closedId, "closed_without_accompaniment"],
@@ -1599,15 +1601,7 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen como Spri
     const stored = await t.run(async (ctx) => {
       return await ctx.db.get(id);
     });
-    expect(
-      toAccompanimentRequest({
-        _id: id,
-        studentId: student,
-        status: stored?.status ?? "",
-        accessNeeds: stored?.accessNeeds ?? "",
-        createdAt: stored?.createdAt ?? 0,
-      }).status,
-    ).toBe(status);
+    expect(stored?.status).toBe(status);
   }
 
   const storedTransition = await t.run(async (ctx) => {
