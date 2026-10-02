@@ -1,6 +1,6 @@
 ---
 name: self-review
-description: "Revisa tu propio cambio contra Linear, los contratos que toca y sus consumidores antes de pedir una revisión independiente. Corrige lo seguro, deja pendientes claros y publica un veredicto claro en la PR."
+description: "Revisa tu propio cambio contra Linear, los SHA actuales de la PR y main, sus contratos y consumidores. Exige evidencia de diseño, reutilización e integración antes de publicar el veredicto."
 disable-model-invocation: true
 metadata:
   scope: local
@@ -25,22 +25,23 @@ La skill puede ejecutarse con un modelo pequeño, pero no debe reducir la revisi
 
 ### 1. Fijar el objeto
 
+- Lee y aplica [revisión vigente e integración en paralelo](references/revision-vigente.md). Fija los SHA remotos actuales de origen, base y `main`; la evidencia y el veredicto cubren esa combinación exacta.
 - Lee la rama actual: el `TEAM-nnn` en su nombre es tu issue (ej. `ti4-8` en `jmunoz/ti4-8-formulario-estudiante`).
 - Resuelve tu PR desde la rama con `gh pr view --json number,title,url,headRefOid,baseRefName`. Si aún no existe PR, detente y pide abrirla primero.
 - Compara el resultado de `git rev-parse HEAD` con `headRefOid`. Si no coinciden, detente y actualiza la rama local antes de leer el diff; el veredicto solo puede cubrir el commit que está publicado en la PR.
 - Lee la issue: descripción, criterios de aceptación, fuera de alcance, dependencias y evidencia de cierre.
 - Lee la descripción de la PR, los commits, las conversaciones pendientes y las revisiones automáticas. Usa esa información como evidencia que debes contrastar, no como una aprobación ni como la fuente única de verdad.
-- Calcula el diff contra el merge-base con la rama base de la PR y conserva ese commit durante toda la revisión:
+- Calcula el diff contra el merge-base entre los SHA fijados de la base y el origen. Conserva esos commits durante la pasada; inspecciona además el `main` actual y las PR relacionadas según la referencia de vigencia:
 
 ```bash
-git merge-base <base> HEAD
-git diff --check <merge-base>...HEAD
-git diff --stat <merge-base>...HEAD
-git diff <merge-base>...HEAD
-git log --oneline <merge-base>..HEAD
+git merge-base <base_sha> <head_sha>
+git diff --check <merge-base>...<head_sha>
+git diff --stat <merge-base>...<head_sha>
+git diff <merge-base>...<head_sha>
+git log --oneline <merge-base>..<head_sha>
 ```
 
-Si el `head` cambia mientras revisas, detente, vuelve a fijar el commit y repite los chequeos afectados. No publiques un veredicto sobre un diff distinto del que leíste.
+Si cambia el origen, la base o `main`, invalida el veredicto y revalida según la referencia de vigencia. No publiques un veredicto sobre una combinación distinta de la que comprobaste.
 
 ### 2. Cargar el contexto correcto
 
@@ -80,6 +81,8 @@ Si no puedes confirmar una compatibilidad, escribe `No pude confirmarlo` y déja
 
 ### 4. Chequeo de comportamiento, seguridad y alcance
 
+Aplica obligatoriamente [calidad de la base de código](../review-ti2-pr/references/calidad-codebase.md) al diff y al destino actual. Registra duplicación, lenguaje, estructura y compatibilidad con sus estados y evidencia. Una comprobación necesaria `no verificable` deja el resultado en `Falta`; no basta con afirmar que el código está ordenado.
+
 Responde cada punto con `pasa`, `pendiente` o `no pasa`, citando archivo y línea, criterio o evidencia:
 
 1. **Criterios:** cada criterio de aceptación está cubierto por el diff o declarado pendiente con una razón válida.
@@ -101,6 +104,7 @@ Ejecuta esta selección después de tener el diff completo; no cargues todas las
 - **Web:** si hay UI nueva o rediseñada en `apps/web/**`, usa `frontend-design`; si corresponde una auditoría de accesibilidad, UX o interfaz existente, usa `web-design-guidelines`; usa `shadcn` solo si el diff toca `components.json`, componentes shadcn, registries, presets o composición basada en ellos.
 - **Backend o contratos compartidos:** si el diff toca `convex/**`, contratos compartidos, schema, validators o una integración que pueda afectar Web y Mobile, ejecuta `blast-radius` antes del veredicto y aplica sus hallazgos a la tabla de contratos.
 - **Dominio:** si cambia terminología, estados, invariantes, entidades o una decisión arquitectónica, consulta `domain-modeling` y verifica el glosario o ADR correspondiente.
+- **Diseño de módulos:** si el diff añade o modifica lógica, módulos, interfaces, adaptadores o dependencias, aplica `codebase-design` según la referencia de calidad del paso 4, aunque sea de invocación manual. Reutiliza esa evidencia; un listado de archivos o la frase «apliqué codebase-design» no cumplen el paso.
 - **Bugs:** `diagnosing-bugs` es un flujo de diagnóstico de inicio a fin; no lo dispares por reflejo al finalizar. En esta etapa solo exige evidencia de reproducción, regresión o prueba de la corrección si el issue era un bug.
 - **Prosa visible:** pasa por `unslop` la prosa del comentario, títulos y textos dirigidos a usuarios, sin modificar código, identificadores, datos ni citas exactas.
 
@@ -115,11 +119,11 @@ Antes del veredicto, corrige los problemas que estén dentro del issue y tengan 
 Clasifica los pendientes por impacto:
 
 - **Bloqueante:** criterio central incompleto, contrato roto, incompatibilidad con datos existentes, pérdida o exposición de datos, autorización evadible, ownership incumplido o fallo que impide integrar o usar el incremento.
-- **Importante:** error funcional real, integración sin coordinación, campos opcionales incompatibles, duplicación que puede producir respuestas distintas o prueba ausente para un riesgo concreto.
+- **Importante:** error funcional real, integración sin coordinación, campos opcionales incompatibles, duplicación de reglas o contratos que obliga a mantener la misma responsabilidad en varios lugares, vocabularios internos paralelos para el mismo concepto sin justificación, ruptura de límites de módulos o prueba ausente para un riesgo concreto. No hace falta que la duplicación ya produzca respuestas distintas para exigir su corrección.
 - **Menor:** documentación, título, formato o mejora acotada que no impide integrar ni deja una decisión abierta.
 - **Revisar con TI4:** etiqueta de traspaso para una decisión que no puedes confirmar con la evidencia disponible. Si puede romper la integración o cambia un contrato público, el resultado debe ser `Falta`; si solo requiere una confirmación y no bloquea el uso, puede aparecer en `Lista con observaciones`, pero nunca se presenta como cerrado.
 
-No uses `Lista con observaciones` para un contrato roto, una incompatibilidad de persistencia o un pendiente que obligaría a TI4 a descubrir el problema durante la revisión. Agrupa problemas que tengan la misma causa y evita llenar la PR con preferencias de estilo.
+Todo pendiente `Bloqueante` o `Importante` deja el resultado en `Falta`. No uses `Lista con observaciones` para posponer esos hallazgos. Agrupa problemas que tengan la misma causa y evita llenar la PR con preferencias de estilo.
 
 ### 7. Título
 
@@ -129,19 +133,19 @@ Compara el título actual con el formato `ID - tipo(scope): descripción`, con t
 
 Termina con uno de estos tres resultados:
 
-- **Lista:** no hay bloqueantes ni importantes, todos los checks relevantes pasan y no queda una contradicción de contrato sin resolver.
+- **Lista:** no hay bloqueantes ni importantes, todos los checks relevantes pasan, el diseño tiene evidencia y la integración está comprobada contra los SHA actuales de origen, base y `main`.
 - **Lista con observaciones:** solo quedan pendientes menores o una confirmación de TI4 que no cambia el contrato ni bloquea su uso, claramente separados de lo que ya está correcto.
-- **Falta:** existe al menos un problema que impide integrar, un check obligatorio que el entorno permite ejecutar no se ejecutó o falló, o una decisión de integración que puede romper el uso del cambio y debe resolverse antes de pedir la revisión final.
+- **Falta:** existe un hallazgo `Bloqueante` o `Importante`, falta evidencia necesaria de diseño o integración, las referencias remotas no están confirmadas o un check obligatorio que el entorno permite ejecutar no se ejecutó o falló.
 
 Publica un único comentario en tu PR con `gh pr comment <n> --body-file <archivo-temporal>`. El comentario siempre empieza con una etiqueta Markdown que identifica el modelo y la herramienta usados:
 
 Incluye al final del comentario una marca de control para que `review-ti2-pr` pueda comprobar que la `self-review` corresponde al commit actual:
 
 ```md
-<!-- cereti:self-review head=<head_sha> result=<Lista|Lista con observaciones|Falta> -->
+<!-- cereti:self-review head=<head_sha> base=<base_sha> main=<main_sha> result=<Lista|Lista con observaciones|Falta> -->
 ```
 
-Reemplaza `<head_sha>` por el SHA exacto de `headRefOid` y `<result>` por el resultado publicado. Justo antes de publicar, vuelve a consultar `headRefOid` y compáralo con `git rev-parse HEAD`; si difieren, detente, actualiza la rama y repite la revisión. Si el `head` cambia después de la revisión, vuelve a ejecutar la skill y publica una marca nueva; no reutilices una `self-review` anterior.
+Reemplaza cada SHA por el commit remoto exacto que revisaste y `<resultado>` por el resultado publicado. Antes y después de publicar, revalida origen, base y `main` según la referencia de vigencia. Que el checkout coincida con `headRefOid` no demuestra que la revisión siga vigente frente a cambios de `main`.
 
 ```md
 ## Review by <modelo> on <herramienta>
@@ -167,6 +171,9 @@ Usa esta estructura:
 
 ### Lo que comprobé
 
+- Origen: `<head_sha>`; base `<base_ref>`: `<base_sha>`; `main`: `<main_sha>`; merge-base: `<merge_base_sha>`.
+- <Tabla de calidad y evidencia de codebase-design cuando corresponda.>
+- <PR relacionadas, SHA, colisiones o dependencias y comprobación de la combinación con el destino actual.>
 - <Criterio, contrato o validación con su evidencia.>
 
 ### Pendientes antes de pedir revisión
@@ -189,7 +196,7 @@ Usa esta estructura:
 
 - <Riesgo o decisión que la revisión final debe confirmar, si queda alguno.>
 
-<!-- cereti:self-review head=<head_sha> result=<resultado> -->
+<!-- cereti:self-review head=<head_sha> base=<base_sha> main=<main_sha> result=<resultado> -->
 ```
 
 Si no hay pendientes, dilo explícitamente y menciona las validaciones que sí ejecutaste. Si el entorno impide una comprobación, indícalo como pendiente de verificación y entrégalo a TI4; no lo conviertas automáticamente en un bloqueo. No uses una lista de checks para esconder una incompatibilidad que no pudiste confirmar. Entrega el mismo texto a la persona usuaria para que sepa qué corregir antes de solicitar la revisión independiente.
