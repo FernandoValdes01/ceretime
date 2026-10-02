@@ -1242,3 +1242,68 @@ test("reuses spare capacity so a fragmented plan fits the unchanged call budget"
   expect(result.score).toBe(5);
   expect(requests.length).toBeLessThanOrEqual(LIMITS.maxCalls);
 });
+
+test("chunk normalization accepts more than five total findings and emits only five", async () => {
+  const h = harness();
+  const workspace = mkdtempSync(join(tmpdir(), "ai-five-findings-"));
+  mkdirSync(join(workspace, ".git"));
+  const plan = buildPlan([chunkFile("first.ts", 150), chunkFile("second.ts", 150)], {}, sha);
+  writeFileSync(join(workspace, ".git/ai-review-plan.json"), JSON.stringify(plan));
+  let totalFindings = 0;
+  try {
+    await normalizeConfidence({
+      core: h.core,
+      github: h.github,
+      context: h.context,
+      env: {
+        ...h.env,
+        REVIEW_MODE: "chunked",
+        REVIEW_COMMENTS: "999",
+        REVIEW_INSTRUCTIONS: "CERETIME",
+        GROQ_API_KEY: "test",
+        GITHUB_WORKSPACE: workspace,
+      },
+      sleep: async () => {},
+      fetchImpl: async (_url: string, request: any) => {
+        const parts = JSON.parse(JSON.parse(request.body).messages[1].content).parts;
+        const findings = parts
+          .flatMap((part: any) =>
+            [...part.patch.matchAll(/\[RIGHT:(\d+)\]/g)].slice(0, 5).map((match: any) => ({
+              path: part.path,
+              line: Number(match[1]),
+              side: "RIGHT",
+              severity: "suggestion",
+              body: `Caso de regresión pendiente para ${part.path}:${match[1]}.`,
+            })),
+          )
+          .slice(0, 5);
+        totalFindings += findings.length;
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    score: 4,
+                    risk: "low",
+                    explanation: "Observaciones menores.",
+                    findings,
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    expect(totalFindings).toBeGreaterThan(5);
+    expect(h.outputs.coverage).toBe("complete");
+    expect(h.outputs.comments).toBe("5");
+    expect(parseSummary(h.outputs.summary)).toMatchObject({ score: 4, findings: 5 });
+    const report = JSON.parse(readFileSync(join(workspace, ".git/ai-review-result.json"), "utf8"));
+    expect(report.findings).toHaveLength(5);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});

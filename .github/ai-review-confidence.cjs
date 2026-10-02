@@ -39,6 +39,12 @@ async function normalizeConfidence({
     core.setOutput("comments", String(report.findings.length));
     return;
   }
+  return normalizeSingleConfidence({ core, env, fetchImpl, sleep });
+}
+
+// Only the Action's single-call path reaches this validation. Chunk reports
+// already aggregate and cap findings at five before returning above.
+async function normalizeSingleConfidence({ core, env, fetchImpl, sleep }) {
   if (env.REVIEW_OUTCOME !== "success" || !env.REVIEW_SUMMARY) return;
   const structured = parseSummary(env.REVIEW_SUMMARY);
   if (
