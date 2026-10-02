@@ -4,7 +4,7 @@ import type { FunctionReturnType } from "convex/server";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { PERSISTABLE_REQUEST_STATES } from "./domain/request/state";
+import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -97,13 +97,13 @@ test("Consultar una solicitud inexistente retorna null", async () => {
   expect(fetchedRequest).toBeNull();
 });
 
-test("El estado persiste los literales persistibles del dominio (Sprint 1 más TI2-85)", async () => {
+test("El estado persiste exactamente los literales de Sprint 1 del dominio", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti16-est-3");
 
-  // Cada estado persistible debe aceptarse tal cual lo define el dominio
-  for (const status of PERSISTABLE_REQUEST_STATES) {
+  // Cada estado de Sprint 1 debe aceptarse tal cual lo define el dominio
+  for (const status of SPRINT_1_REQUEST_STATES) {
     const createdId = await t.mutation(internal.requests.createTestRequest, {
       studentId,
       status,
@@ -115,11 +115,11 @@ test("El estado persiste los literales persistibles del dominio (Sprint 1 más T
     expect(fetchedRequest?.status).toBe(status);
   }
 
-  // `referred` sigue declarado pero no habilitado y debe ser rechazado
+  // Un estado futuro declarado pero no habilitado debe ser rechazado
   await expect(
     t.mutation(internal.requests.createTestRequest, {
       studentId,
-      status: "referred" as never,
+      status: "cancelled" as never,
       accessNeeds: "Necesidad de acceso ficticia",
     }),
   ).rejects.toThrow("Validator error");
