@@ -384,9 +384,28 @@ test("asks the configured model for a real confidence assessment when the Action
 });
 
 test("does not ask Groq again for failed, missing or already structured reviews", async () => {
-  for (const options of [{ outcome: "failure" }, { summary: "" }, { summary: summary() }]) {
+  for (const options of [
+    { outcome: "failure" },
+    { summary: "" },
+    { summary: summary() },
+    { summary: "No reviewable files in this PR (all files match ignore patterns)." },
+  ]) {
     expect((await confidence(null, options)).requests).toHaveLength(0);
   }
+});
+
+test("reassesses structured summaries that contradict the Action outputs", async () => {
+  const result = await confidence(
+    { score: 0, explanation: "La revisión es incompleta." },
+    { summary: summary(0, sha, "high") },
+  );
+  expect(result.requests).toHaveLength(1);
+  expect(parseSummary(result.outputs.summary)).toMatchObject({
+    score: 0,
+    sha,
+    risk: "low",
+    findings: 0,
+  });
 });
 
 test("never invents a score when the assessment fails or returns an invalid value", async () => {

@@ -8,13 +8,20 @@ async function normalizeConfidence({
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
   if (env.REVIEW_OUTCOME !== "success" || !env.REVIEW_SUMMARY) return;
-  if (parseSummary(env.REVIEW_SUMMARY)) {
+  const structured = parseSummary(env.REVIEW_SUMMARY);
+  if (
+    structured &&
+    structured.sha === env.REVIEW_SHA &&
+    structured.risk === env.REVIEW_RISK &&
+    String(structured.findings) === env.REVIEW_COMMENTS
+  ) {
     core.setOutput("summary", env.REVIEW_SUMMARY);
     return;
   }
   if (!/^(low|medium|high)$/.test(env.REVIEW_RISK) || !/^[0-5]$/.test(env.REVIEW_COMMENTS)) {
     throw new Error("Los outputs del reviewer no son válidos.");
   }
+  if (env.REVIEW_SUMMARY.startsWith("No reviewable files in this PR")) return;
   if (!env.GROQ_API_KEY) throw new Error("Falta el secret del proveedor.");
   const diff = fs.readFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-diff.txt`, "utf8");
   const request = {
