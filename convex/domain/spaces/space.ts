@@ -1,26 +1,21 @@
 /**
- * Catálogo de espacios de atención: contratos públicos versionados (TI2-87).
+ * Espacios de atención: contratos públicos compartidos v1 (TI2-87).
  *
- * Dominio puro: no importa Convex ni `convex/_generated`. Fija la forma del
- * espacio presencial (campus, edificio, piso, sala, condiciones de acceso e
- * instrucciones de llegada compatibles con lector de pantalla) con versión
- * explícita `v1`, sin duplicar la API Convex: la lectura propia del catálogo
- * sale por `api.presentation.agenda.*` y este módulo solo fija la forma.
+ * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile
+ * consuman la misma forma sin levantar el backend. Fija el espacio
+ * presencial (campus, edificio, piso, sala, condiciones de acceso e
+ * instrucciones de llegada compatibles con lector de pantalla) con
+ * identificadores genéricos (`string` plano, sin `Id`/`Doc` de Convex).
  *
- * No implementa reglas de negocio: la compatibilidad con necesidades de
- * acceso, la ocupación de salas y la prevención de cruces pertenecen a los
- * casos de uso de otros módulos. Acá solo hay forma, topes y resúmenes.
+ * La ocupación de salas y la compatibilidad con necesidades de acceso
+ * pertenecen a TI2-82; acá solo hay forma versionada y paginación, sin
+ * políticas propias.
  */
 
-import type { ApiResult } from "../errors/api_error";
-
-/** Versión del catálogo de espacios que devuelve cada proyección. */
+/** Versión del contrato público del catálogo de espacios. */
 export const SPACE_CATALOG_CONTRACT_VERSION = "v1" as const;
 
 export type SpaceCatalogContractVersion = typeof SPACE_CATALOG_CONTRACT_VERSION;
-
-/** Tope de lectura propia del catálogo para no devolver listados ilimitados. */
-export const SPACE_CATALOG_MAX_ITEMS = 50;
 
 /** Espacio presencial del catálogo, con acceso e instrucciones. */
 export interface Space {
@@ -36,37 +31,22 @@ export interface Space {
   readonly version: SpaceCatalogContractVersion;
 }
 
+/** Entrada mínima para la lectura propia del catálogo: solo paginación. */
+export interface ListSpacesInput {
+  readonly limit: number;
+  readonly cursor?: string;
+  readonly version: SpaceCatalogContractVersion;
+}
+
+/** Página del catálogo con paginación keyset sobre el identificador. */
+export interface SpaceCatalogPage {
+  readonly items: readonly Space[];
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
+  readonly version: SpaceCatalogContractVersion;
+}
+
 /** Resumen legible de un espacio para listados de Web y Mobile. */
 export function toSpaceLabel(space: Space): string {
   return `${space.campus} · ${space.building} · ${space.floor} · ${space.room}`;
-}
-
-/** Verdadero cuando el límite pedido cabe en el tope del catálogo. */
-export function isSpaceLimitWithinCatalog(limit: number): boolean {
-  return Number.isInteger(limit) && limit >= 1 && limit <= SPACE_CATALOG_MAX_ITEMS;
-}
-
-/**
- * Valida la forma de un espacio sin decidir compatibilidad ni ocupación.
- * Devuelve la misma forma versionada o un error público estable con código.
- */
-export function toVersionedSpace(space: Omit<Space, "version">): ApiResult<Space> {
-  const fields = [
-    space.campus.trim(),
-    space.building.trim(),
-    space.floor.trim(),
-    space.room.trim(),
-    space.accessConditions.trim(),
-    space.arrivalInstructions.trim(),
-  ];
-  if (fields.some((field) => field.length === 0)) {
-    return {
-      status: "error",
-      error: {
-        code: "space_invalid_field",
-        message: "El espacio debe traer campus, edificio, piso, sala, acceso e instrucciones.",
-      },
-    };
-  }
-  return { status: "ok", data: { ...space, version: SPACE_CATALOG_CONTRACT_VERSION } };
 }
