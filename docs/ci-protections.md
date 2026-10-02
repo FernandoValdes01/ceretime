@@ -21,6 +21,8 @@ El workflow concede solo `contents: read` para descargar el código, `pull-reque
 
 `GROQ_API_KEY` debe existir como secret de GitHub Actions y se entrega solo a `ai_review` y al step de evaluación de confianza. Nunca incluyas su valor en código, documentos, comentarios o logs. La presencia del nombre del secret no demuestra que la clave sea válida: eso requiere una llamada real al proveedor. La identidad opcional de R2D2 usa `R2D2_APP_ID` y `R2D2_APP_PRIVATE_KEY`; los [pasos de registro](ci-r2d2-app.md) explican sus permisos mínimos y su configuración sin versionar claves.
 
+La App instalada `R2D2-reviewer` ya publicó una [review real como `r2d2-reviewer[bot]`](https://github.com/FernandoValdes01/ceretime/pull/74#pullrequestreview-5393646415), con su avatar y los statuses del SHA probado creados por esa identidad. El [intento 2 de validación](https://github.com/FernandoValdes01/ceretime/actions/runs/36950538385/attempts/2) completó también la revocación del token. Las publicaciones históricas mantienen el autor original de GitHub Actions.
+
 El código de la PR y su descripción salen del repositorio hacia la API de Groq. La Action se ejecuta en un contenedor del runner y usa GitHub para leer el diff y publicar resultados. Esta versión recibe el diff bruto antes de recortarlo: `ignore_paths` limita los archivos que pueden recibir comentarios y las instrucciones piden ignorarlos, pero no es una garantía de que su contenido no se envíe al proveedor. No uses estos patrones para proteger secretos. El proyecto sigue trabajando con datos ficticios según el [ADR del prototipo](adr/0001-prototipo-sin-datos-reales.md). La configuración no activa RAG ni una base de datos del repositorio.
 
 ## Confidence Score, riesgo y hallazgos

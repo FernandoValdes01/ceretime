@@ -6,7 +6,7 @@ El resumen y los comentarios inline usan el nombre R2D2. La imagen del reviewer 
 
 El autor de GitHub depende del token usado para publicar. `GITHUB_TOKEN` pertenece a la App de GitHub Actions y publica como `github-actions[bot]`; cambiar un título no cambia esa identidad. Para usar una identidad propia, [registra una GitHub App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app) y autentica mediante su token de instalación.
 
-1. Abre [Developer settings → New GitHub App](https://github.com/settings/apps/new). Usa `R2D2` como nombre, si está disponible, y la URL del repositorio como Homepage URL. Si GitHub exige otro nombre por disponibilidad, acuerda ese nombre antes de registrarlo.
+1. Abre [Developer settings → New GitHub App](https://github.com/settings/apps/new). La App de esta integración se llama `R2D2-reviewer`, con slug `r2d2-reviewer`; su autor es `r2d2-reviewer[bot]`. Usa la URL del repositorio como Homepage URL. El nombre visible del resumen sigue siendo R2D2.
 2. Desactiva Webhook y no solicites autorización de usuarios. El workflow de Actions ejecuta el reviewer; la App aporta su identidad.
 3. Concede solo Repository permissions: Contents `Read-only`, Pull requests `Read and write` y Commit statuses `Read and write`. Metadata `Read-only` es implícito. No necesita permisos de administración, Issues, Checks ni escritura de Contents.
 4. Registra la App privada y configura `.github/assets/r2d2.jpg` como logo en sus ajustes. Instala la App seleccionando únicamente `ceretime`.
@@ -15,7 +15,13 @@ El autor de GitHub depende del token usado para publicar. `GITHUB_TOKEN` pertene
 
 La integración usa `actions/create-github-app-token`, fijada por SHA, para generar un token limitado al repositorio y a esos tres permisos. Entrega el mismo token a la Action y a los scripts de publicación. La Action de tokens lo revoca al terminar el job. El workflow no imprime credenciales y mantiene `persist-credentials: false` en el checkout.
 
-Si faltan los secrets de la App, el reviewer sigue funcionando con `GITHUB_TOKEN`: el contenido muestra R2D2, pero el autor todavía es `github-actions[bot]`. No se presenta ese modo como una identidad propia comprobada. Si los secrets existen pero la autenticación falla, se publica un fallo de ejecución; no se considera una review válida. El registro y la instalación de esta App están pendientes hasta que una persona configure sus credenciales y se compruebe un run real con ellas.
+Si faltan los secrets de la App, el reviewer sigue funcionando con `GITHUB_TOKEN`: el contenido muestra R2D2, pero el autor todavía es `github-actions[bot]`. No se presenta ese modo como una identidad propia comprobada. Si los secrets existen pero la autenticación falla, se publica un fallo de ejecución; no se considera una review válida.
+
+## Prueba real de la App
+
+El 02/10/2026 se comprobó la App instalada y sus secrets mediante el [intento 2 del run 36950538385](https://github.com/FernandoValdes01/ceretime/actions/runs/36950538385/attempts/2). Autenticación, llamada real a Groq, normalización, publicación y revocación del token terminaron correctamente. La [review 5393646415](https://github.com/FernandoValdes01/ceretime/pull/74#pullrequestreview-5393646415) tiene autor `r2d2-reviewer[bot]`, el avatar de R2D2 y `commit_id: 2d6e1025572cf7cc9dfae247b0ad6952cebb99d4`, coincidente con el head probado. Los statuses inicial y final de ese SHA también tienen a la App como creadora. No se leyeron ni imprimieron los valores de los secrets, no se añadieron permisos y no fue necesario corregir el código de autenticación.
+
+El resultado del reviewer fue 0/5 por cobertura incompleta, con failure informativo: la autenticación propia funciona, pero esta prueba no convierte la evaluación parcial en 5/5. El avatar se comprobó visualmente desde la URL de la autora de la review y corresponde a `.github/assets/r2d2.jpg`. Las reviews anteriores de GitHub Actions conservan su autor; las nuevas publicaciones usan la App mientras sus secrets estén configurados.
 
 ## Score y transición desde Greptile
 
