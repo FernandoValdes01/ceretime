@@ -1,7 +1,7 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import { toAccompanimentRequest } from "../../domain/request/request";
-import type { Doc, Id } from "../../_generated/dataModel";
+import { toAccompanimentRequest, type AccompanimentRequest } from "../../domain/request/request";
+import type { Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
 import {
@@ -86,7 +86,10 @@ export async function listOwnRequestsUseCase(
 export type AuthorizedRequestItem = {
   readonly _id: Id<"requests">;
   readonly studentId: Id<"users">;
-  readonly status: Doc<"requests">["status"];
+  // Estado de la entidad pública: los ítems se construyen con
+  // `toAccompanimentRequest`, así el tipo refleja lo devuelto y no el
+  // conjunto persistible ampliado (TI2-83/TI2-85).
+  readonly status: AccompanimentRequest["status"];
   readonly accessNeeds: string;
   readonly createdAt: number;
 };
@@ -153,14 +156,26 @@ export async function listOpenRequestsUseCase(
 ) {
   await requireActiveProfessional(ctx, identity);
   const result = await listRequestsByStatus(ctx, "received", args.paginationOpts);
+  // La bandeja solo trae `received`, pero el tipo de la fila cubre el
+  // conjunto persistible ampliado: se adapta con la misma vía que el resto
+  // de las lecturas para conservar el contrato de presentación (TI2-83).
   return {
     ...result,
-    page: result.page.map((row) => ({
-      _id: row._id,
-      studentId: row.studentId,
-      status: row.status,
-      createdAt: row.createdAt,
-    })),
+    page: result.page.map((row) => {
+      const adapted = toAccompanimentRequest({
+        _id: row._id,
+        studentId: row.studentId,
+        status: row.status,
+        accessNeeds: row.accessNeeds,
+        createdAt: row.createdAt,
+      });
+      return {
+        _id: adapted._id,
+        studentId: adapted.studentId,
+        status: adapted.status,
+        createdAt: adapted.createdAt,
+      };
+    }),
   };
 }
 
