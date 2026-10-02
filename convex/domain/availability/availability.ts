@@ -30,5 +30,4 @@ export const DAY_END_MINUTE = 1440;
 /** Clases de excepción sobre la recurrencia de un profesional. */
 export const AVAILABILITY_EXCEPTION_KIND_VALUES = ["cancelled", "added"] as const;
 
-export type AvailabilityExceptionKind =
-  (typeof AVAILABILITY_EXCEPTION_KIND_VALUES)[number];
+export type AvailabilityExceptionKind = (typeof AVAILABILITY_EXCEPTION_KIND_VALUES)[number];
