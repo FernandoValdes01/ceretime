@@ -189,37 +189,44 @@ export default defineSchema({
   // Tabla 'availabilityBlocks': bloques recurrentes de cada profesional
   // (TI2-83). Cada fila declara un día de semana (`weekday` 0=domingo a
   // 6=sábado), una ventana en minutos desde las 00:00 (`startMinute` a
-  // `endMinute`) y la modalidad; `spaceId` acompaña al bloque presencial y
-  // queda ausente en el bloque en línea. `isActive` retira un bloque sin
-  // borrarlo. Solo persistencia: la prevención de cruces la aplica la
-  // operación atómica de TI2-84 sobre estos índices.
+  // `endMinute`), la duración de cada cupo en minutos (`slotMinutes`, nombre
+  // acordado con TI2-81: una ventana de 09:00 a 12:00 con cupos de 30 no es
+  // lo mismo que con cupos de 60) y la modalidad; `spaceId` acompaña al
+  // bloque presencial y queda ausente en el bloque en línea. `isActive`
+  // retira un bloque sin borrarlo. Solo persistencia: la prevención de
+  // cruces la aplica la operación atómica de TI2-84 sobre estos índices y
+  // las reglas de duración son de TI2-81.
   availabilityBlocks: defineTable({
     professionalId: v.id("users"),
     weekday: v.number(),
     startMinute: v.number(),
     endMinute: v.number(),
+    slotMinutes: v.number(),
     modality: modalityUnion,
     spaceId: v.optional(v.id("spaces")),
     isActive: v.boolean(),
   })
     // Bloques del profesional.
-    .index("by_professional", ["professionalId"])
+    .index("by_professionalId", ["professionalId"])
     // Bloques del profesional en un día de semana: base de la vista diaria
     // y de la detección de cruces entre bloques.
-    .index("by_professional_and_weekday", ["professionalId", "weekday"])
+    .index("by_professionalId_and_weekday", ["professionalId", "weekday"])
     // Bloques vigentes del profesional en un día de semana: lo que la vista
     // diaria ofrece y lo que la detección de cruces considera, sin filtrar
     // en memoria.
-    .index("by_professional_and_weekday_and_isActive", ["professionalId", "weekday", "isActive"])
+    .index("by_professionalId_and_weekday_and_isActive", ["professionalId", "weekday", "isActive"])
     // Bloques que usan una sala: base de la detección de cruces por sala.
-    .index("by_space", ["spaceId"]),
+    .index("by_spaceId", ["spaceId"]),
 
   // Tabla 'availabilityExceptions': excepciones puntuales a la recurrencia
   // (TI2-83). `date` es el inicio del día afectado en milisegundos de época
   // (00:00 UTC); `kind` cancela disponibilidad (`cancelled`, con `blockId`
-  // al bloque recurrente afectado) o la agrega (`added`, con su propia
-  // ventana en minutos). `reason` deja constancia opcional del motivo.
-  // Solo persistencia, sin reglas de autorización.
+  // al bloque recurrente afectado, que aporta ventana, duración, modalidad
+  // y lugar) o la agrega (`added`, con su propia ventana completa:
+  // `startMinute`/`endMinute`, `slotMinutes`, `modality` y `spaceId` cuando
+  // es presencial, ausente en línea). `reason` deja constancia opcional del
+  // motivo. Solo persistencia, sin reglas de autorización; las reglas de
+  // ventanas y compatibilidad son de TI2-81/TI2-82.
   availabilityExceptions: defineTable({
     professionalId: v.id("users"),
     date: v.number(),
@@ -227,11 +234,14 @@ export default defineSchema({
     blockId: v.optional(v.id("availabilityBlocks")),
     startMinute: v.optional(v.number()),
     endMinute: v.optional(v.number()),
+    slotMinutes: v.optional(v.number()),
+    modality: v.optional(modalityUnion),
+    spaceId: v.optional(v.id("spaces")),
     reason: v.optional(v.string()),
   })
     // Excepciones del profesional en un día: lo que la vista diaria descuenta
     // o agrega sobre los bloques recurrentes.
-    .index("by_professional_and_date", ["professionalId", "date"])
+    .index("by_professionalId_and_date", ["professionalId", "date"])
     // Excepciones de todos los profesionales en un día: barrido operativo
     // de la fecha.
     .index("by_date", ["date"]),
@@ -263,20 +273,20 @@ export default defineSchema({
     createdAt: v.number(),
   })
     // Atenciones propias del estudiante.
-    .index("by_student", ["studentId"])
+    .index("by_studentId", ["studentId"])
     // Atenciones propias desde un instante: ventana del estudiante sin
     // filtrar en memoria.
-    .index("by_student_and_startsAt", ["studentId", "startsAt"])
+    .index("by_studentId_and_startsAt", ["studentId", "startsAt"])
     // Agenda del profesional.
-    .index("by_professional", ["professionalId"])
+    .index("by_professionalId", ["professionalId"])
     // Agenda del profesional desde un instante: ventana para la vista
     // diaria y para la detección de cruces entre profesionales.
-    .index("by_professional_and_startsAt", ["professionalId", "startsAt"])
+    .index("by_professionalId_and_startsAt", ["professionalId", "startsAt"])
     // Ocupación de la sala.
-    .index("by_space", ["spaceId"])
+    .index("by_spaceId", ["spaceId"])
     // Ocupación de la sala desde un instante: ventana para la detección de
     // cruces por sala.
-    .index("by_space_and_startsAt", ["spaceId", "startsAt"])
+    .index("by_spaceId_and_startsAt", ["spaceId", "startsAt"])
     // Atenciones del acompañamiento.
-    .index("by_accompaniment", ["accompanimentId"]),
+    .index("by_accompanimentId", ["accompanimentId"]),
 });

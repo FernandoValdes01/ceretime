@@ -944,6 +944,7 @@ async function seedTi83Block(
     modality?: "inPerson" | "online";
     spaceId?: Id<"spaces">;
     isActive?: boolean;
+    slotMinutes?: number;
   },
 ): Promise<Id<"availabilityBlocks">> {
   return await t.run(async (ctx) => {
@@ -951,7 +952,8 @@ async function seedTi83Block(
       professionalId: input.professionalId,
       weekday: input.weekday,
       startMinute: 540,
-      endMinute: 600,
+      endMinute: 720,
+      slotMinutes: input.slotMinutes ?? 60,
       modality: input.modality ?? "inPerson",
       ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
       isActive: input.isActive ?? true,
@@ -969,6 +971,9 @@ async function seedTi83Exception(
     blockId?: Id<"availabilityBlocks">;
     startMinute?: number;
     endMinute?: number;
+    slotMinutes?: number;
+    modality?: "inPerson" | "online";
+    spaceId?: Id<"spaces">;
   },
 ): Promise<Id<"availabilityExceptions">> {
   return await t.run(async (ctx) => {
@@ -979,6 +984,9 @@ async function seedTi83Exception(
       ...(input.blockId === undefined ? {} : { blockId: input.blockId }),
       ...(input.startMinute === undefined ? {} : { startMinute: input.startMinute }),
       ...(input.endMinute === undefined ? {} : { endMinute: input.endMinute }),
+      ...(input.slotMinutes === undefined ? {} : { slotMinutes: input.slotMinutes }),
+      ...(input.modality === undefined ? {} : { modality: input.modality }),
+      ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
       reason: "Motivo ficticio",
     });
   });
@@ -1102,11 +1110,18 @@ test("índices de bloques TI2-83: profesional, día, vigencia y sala", async () 
     floor: "2",
     room: "C-204",
   });
-  // Lunes = 1, martes = 2 (0=domingo).
+  // Lunes = 1, martes = 2 (0=domingo). Misma ventana 09:00–12:00 con
+  // distinta duración de cupo: 30 frente a 60 minutos.
   const mondayBlock = await seedTi83Block(t, {
     professionalId: proA,
     weekday: 1,
     spaceId: room,
+  });
+  const shortBlock = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 1,
+    spaceId: room,
+    slotMinutes: 30,
   });
   const tuesdayBlock = await seedTi83Block(t, {
     professionalId: proA,
@@ -1129,42 +1144,62 @@ test("índices de bloques TI2-83: profesional, día, vigencia y sala", async () 
   const all = await t.run(async (ctx) => {
     return await ctx.db
       .query("availabilityBlocks")
-      .withIndex("by_professional", (q) => q.eq("professionalId", proA))
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", proA))
       .take(10);
   });
   expect(all.map((block) => block._id).sort()).toEqual(
-    [mondayBlock, tuesdayBlock, onlineBlock, retiredBlock].sort(),
+    [mondayBlock, shortBlock, tuesdayBlock, onlineBlock, retiredBlock].sort(),
   );
 
   const monday = await t.run(async (ctx) => {
     return await ctx.db
       .query("availabilityBlocks")
-      .withIndex("by_professional_and_weekday", (q) =>
+      .withIndex("by_professionalId_and_weekday", (q) =>
         q.eq("professionalId", proA).eq("weekday", 1),
       )
       .take(10);
   });
   expect(monday.map((block) => block._id).sort()).toEqual(
-    [mondayBlock, onlineBlock, retiredBlock].sort(),
+    [mondayBlock, shortBlock, onlineBlock, retiredBlock].sort(),
   );
+
+  // La misma ventana conserva la diferencia de duración al leerse.
+  const durations = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityBlocks")
+      .withIndex("by_professionalId_and_weekday", (q) =>
+        q.eq("professionalId", proA).eq("weekday", 1),
+      )
+      .take(10);
+  });
+  expect(
+    durations
+      .filter((block) => block.spaceId !== undefined)
+      .map((block) => block.slotMinutes)
+      .sort(),
+  ).toEqual([30, 60]);
 
   const mondayActive = await t.run(async (ctx) => {
     return await ctx.db
       .query("availabilityBlocks")
-      .withIndex("by_professional_and_weekday_and_isActive", (q) =>
+      .withIndex("by_professionalId_and_weekday_and_isActive", (q) =>
         q.eq("professionalId", proA).eq("weekday", 1).eq("isActive", true),
       )
       .take(10);
   });
-  expect(mondayActive.map((block) => block._id).sort()).toEqual([mondayBlock, onlineBlock].sort());
+  expect(mondayActive.map((block) => block._id).sort()).toEqual(
+    [mondayBlock, shortBlock, onlineBlock].sort(),
+  );
 
   const byRoom = await t.run(async (ctx) => {
     return await ctx.db
       .query("availabilityBlocks")
-      .withIndex("by_space", (q) => q.eq("spaceId", room))
+      .withIndex("by_spaceId", (q) => q.eq("spaceId", room))
       .take(10);
   });
-  expect(byRoom.map((block) => block._id).sort()).toEqual([mondayBlock, tuesdayBlock].sort());
+  expect(byRoom.map((block) => block._id).sort()).toEqual(
+    [mondayBlock, shortBlock, tuesdayBlock].sort(),
+  );
 });
 
 test("índices de excepciones TI2-83: profesional-día y barrido por fecha", async () => {
@@ -1189,19 +1224,37 @@ test("índices de excepciones TI2-83: profesional-día y barrido por fecha", asy
     date: TI83_MONDAY,
     blockId: block,
   });
-  const added = await seedTi83Exception(t, {
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const addedInPerson = await seedTi83Exception(t, {
     professionalId: proA,
     date: TI83_TUESDAY,
     kind: "added",
     startMinute: 660,
     endMinute: 720,
+    slotMinutes: 60,
+    modality: "inPerson",
+    spaceId: room,
+  });
+  const addedOnline = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_TUESDAY,
+    kind: "added",
+    startMinute: 780,
+    endMinute: 840,
+    slotMinutes: 30,
+    modality: "online",
   });
   const otherPro = await seedTi83Exception(t, { professionalId: proB, date: TI83_MONDAY });
 
   const mondayMine = await t.run(async (ctx) => {
     return await ctx.db
       .query("availabilityExceptions")
-      .withIndex("by_professional_and_date", (q) =>
+      .withIndex("by_professionalId_and_date", (q) =>
         q.eq("professionalId", proA).eq("date", TI83_MONDAY),
       )
       .take(10);
@@ -1211,12 +1264,12 @@ test("índices de excepciones TI2-83: profesional-día y barrido por fecha", asy
   const tuesdayMine = await t.run(async (ctx) => {
     return await ctx.db
       .query("availabilityExceptions")
-      .withIndex("by_professional_and_date", (q) =>
+      .withIndex("by_professionalId_and_date", (q) =>
         q.eq("professionalId", proA).eq("date", TI83_TUESDAY),
       )
       .take(10);
   });
-  expect(tuesdayMine.map((row) => row._id)).toEqual([added]);
+  expect(tuesdayMine.map((row) => row._id).sort()).toEqual([addedInPerson, addedOnline].sort());
 
   const mondayAll = await t.run(async (ctx) => {
     return await ctx.db
@@ -1226,12 +1279,31 @@ test("índices de excepciones TI2-83: profesional-día y barrido por fecha", asy
   });
   expect(mondayAll.map((row) => row._id).sort()).toEqual([cancelled, otherPro].sort());
 
-  const storedAdded = await t.run(async (ctx) => {
-    return await ctx.db.get(added);
+  // La cancelación conserva el vínculo al bloque y no trae ventana propia.
+  const storedCancelled = await t.run(async (ctx) => {
+    return await ctx.db.get(cancelled);
   });
-  expect(storedAdded?.blockId).toBeUndefined();
-  expect(storedAdded?.startMinute).toBe(660);
-  expect(storedAdded?.endMinute).toBe(720);
+  expect(storedCancelled?.blockId).toEqual(block);
+  expect(storedCancelled?.startMinute).toBeUndefined();
+
+  // La ventana agregada presencial conserva duración, modalidad y lugar;
+  // la en línea conserva duración y modalidad sin sala.
+  const storedInPerson = await t.run(async (ctx) => {
+    return await ctx.db.get(addedInPerson);
+  });
+  expect(storedInPerson?.blockId).toBeUndefined();
+  expect(storedInPerson?.startMinute).toBe(660);
+  expect(storedInPerson?.endMinute).toBe(720);
+  expect(storedInPerson?.slotMinutes).toBe(60);
+  expect(storedInPerson?.modality).toBe("inPerson");
+  expect(storedInPerson?.spaceId).toEqual(room);
+
+  const storedOnline = await t.run(async (ctx) => {
+    return await ctx.db.get(addedOnline);
+  });
+  expect(storedOnline?.slotMinutes).toBe(30);
+  expect(storedOnline?.modality).toBe("online");
+  expect(storedOnline?.spaceId).toBeUndefined();
 });
 
 test("índices de appointments TI2-83: estudiante, profesional, sala y acompañamiento", async () => {
@@ -1289,7 +1361,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const mine = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_student", (q) => q.eq("studentId", student))
+      .withIndex("by_studentId", (q) => q.eq("studentId", student))
       .take(10);
   });
   expect(mine.map((row) => row._id).sort()).toEqual([early, late].sort());
@@ -1298,7 +1370,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const foreignMine = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_student", (q) => q.eq("studentId", otherStudent))
+      .withIndex("by_studentId", (q) => q.eq("studentId", otherStudent))
       .take(10);
   });
   expect(foreignMine.map((row) => row._id)).toEqual([foreign]);
@@ -1306,7 +1378,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const foreignByAccompaniment = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_accompaniment", (q) => q.eq("accompanimentId", otherAccompaniment))
+      .withIndex("by_accompanimentId", (q) => q.eq("accompanimentId", otherAccompaniment))
       .take(10);
   });
   expect(foreignByAccompaniment.map((row) => row._id)).toEqual([foreign]);
@@ -1314,7 +1386,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const mineFromLate = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_student_and_startsAt", (q) =>
+      .withIndex("by_studentId_and_startsAt", (q) =>
         q.eq("studentId", student).gte("startsAt", TI83_MONDAY_10H),
       )
       .take(10);
@@ -1324,7 +1396,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const agenda = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_professional", (q) => q.eq("professionalId", pro))
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", pro))
       .take(10);
   });
   expect(agenda.map((row) => row._id).sort()).toEqual([early, late, foreign].sort());
@@ -1332,7 +1404,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const agendaFrom = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_professional_and_startsAt", (q) =>
+      .withIndex("by_professionalId_and_startsAt", (q) =>
         q.eq("professionalId", pro).gte("startsAt", TI83_MONDAY_10H),
       )
       .take(10);
@@ -1343,7 +1415,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const roomUse = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_space", (q) => q.eq("spaceId", room))
+      .withIndex("by_spaceId", (q) => q.eq("spaceId", room))
       .take(10);
   });
   expect(roomUse.map((row) => row._id).sort()).toEqual([early, late].sort());
@@ -1351,7 +1423,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const roomUseFrom = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_space_and_startsAt", (q) =>
+      .withIndex("by_spaceId_and_startsAt", (q) =>
         q.eq("spaceId", room).gte("startsAt", TI83_MONDAY_10H),
       )
       .take(10);
@@ -1361,7 +1433,7 @@ test("índices de appointments TI2-83: estudiante, profesional, sala y acompaña
   const byAccompaniment = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_accompaniment", (q) => q.eq("accompanimentId", accompaniment))
+      .withIndex("by_accompanimentId", (q) => q.eq("accompanimentId", accompaniment))
       .take(10);
   });
   expect(byAccompaniment.map((row) => row._id).sort()).toEqual([early, late].sort());
@@ -1456,7 +1528,7 @@ test("appointments TI2-83: estados terminales, motivo y orden de ventana", async
   const windowed = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
-      .withIndex("by_student_and_startsAt", (q) =>
+      .withIndex("by_studentId_and_startsAt", (q) =>
         q.eq("studentId", student).gte("startsAt", TI83_MONDAY_9H),
       )
       .take(10);
@@ -1486,6 +1558,7 @@ test("límites TI2-83: el esquema rechaza literales desconocidos y filas incompl
         weekday: 1,
         startMinute: 540,
         endMinute: 600,
+        slotMinutes: 60,
         modality: "hybrid" as unknown as "inPerson",
         isActive: true,
       });
