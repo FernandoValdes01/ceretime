@@ -47,6 +47,9 @@ jobs:
       - name: Comprobar la escala de 0 a 5 sin publicar reviews simuladas
         run: node .github/ai-review-scale.cjs
 
+      - name: Mostrar el caso controlado de 4/5 sin modificar la PR
+        run: node .github/ai-review-demo.cjs
+
       - name: Autenticar como R2D2 cuando la App esté configurada
         id: r2d2_token
         if: env.R2D2_APP_CONFIGURED == 'true'

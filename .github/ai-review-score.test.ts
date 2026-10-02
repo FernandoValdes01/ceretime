@@ -1,3 +1,4 @@
+import "./ai-review-conversation.test.ts";
 import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
