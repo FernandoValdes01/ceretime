@@ -277,17 +277,63 @@ function durationMs(value) {
   );
 }
 
-function rateLimitDelay(headers, attempt, interval) {
+async function quotaInformation(response) {
+  try {
+    const json = await response.json();
+    const message =
+      typeof json?.error?.message === "string" ? json.error.message.slice(0, 4000) : "";
+    // Extract only known units and numeric fields; never return raw provider text.
+    const kind = message.match(/\b(TPM|TPD|RPM|RPD)\b/)?.[1] ?? "unknown";
+    const number = (name) => {
+      const match = message.match(new RegExp(`${name}[: ]+([0-9]+(?:\\.[0-9]+)?)`, "i"));
+      return match ? Number(match[1]) : null;
+    };
+    return {
+      kind,
+      limit: number("Limit"),
+      used: number("Used"),
+      requested: number("Requested"),
+      retryMs: durationMs(message.match(/try again in ([0-9.hms]+)/i)?.[1]),
+    };
+  } catch {
+    return { kind: "unknown", retryMs: 0 };
+  }
+}
+
+function quotaDescription(quota) {
+  const kind = {
+    TPM: "tokens por minuto",
+    TPD: "tokens por día",
+    RPM: "solicitudes por minuto",
+    RPD: "solicitudes por día",
+    unknown: "cuota sin tipo identificado",
+  }[quota.kind];
+  const metrics = [
+    ["límite", quota.limit],
+    ["usado", quota.used],
+    ["solicitado", quota.requested],
+  ]
+    .filter(([, value]) => Number.isFinite(value))
+    .map(([name, value]) => `${name}: ${value}`)
+    .join(", ");
+  return `Groq HTTP 429: ${kind}${metrics ? ` (${metrics})` : ""}.`;
+}
+
+function rateLimitDelay(headers, attempt, interval, quota) {
   const retry = headers?.get("retry-after");
   const retryMs =
     durationMs(retry) ||
-    (Number.isFinite(Date.parse(retry)) ? Math.max(0, Date.parse(retry) - Date.now()) : 0);
-  const tokens = durationMs(headers?.get("x-ratelimit-reset-tokens"));
-  const requests =
-    headers?.get("x-ratelimit-remaining-requests") === "0"
+    (Number.isFinite(Date.parse(retry)) ? Math.max(0, Date.parse(retry) - Date.now()) : 0) ||
+    quota.retryMs;
+  // Retry-After describes this rejection. Other reset headers describe independent
+  // buckets and must not turn a minute-limit retry into an hours-long wait.
+  const reset =
+    quota.kind === "RPD" || quota.kind === "RPM"
       ? durationMs(headers?.get("x-ratelimit-reset-requests"))
-      : 0;
-  return Math.ceil(Math.max(interval * 2 ** attempt, retryMs, tokens, requests)) + 1000;
+      : quota.kind === "TPD"
+        ? 0
+        : durationMs(headers?.get("x-ratelimit-reset-tokens"));
+  return Math.ceil(Math.max(interval * 2 ** attempt, retryMs || reset)) + 1000;
 }
 
 async function reviewPlan({
@@ -297,6 +343,7 @@ async function reviewPlan({
   fetchImpl = fetch,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   isCurrent = async () => true,
+  onProgress = () => {},
 }) {
   if (!apiKey) throw new Error("Falta el secret del proveedor.");
   const results = [],
@@ -354,17 +401,26 @@ async function reviewPlan({
         });
         if (!response.ok) {
           if (response.status === 429) {
-            lastFailure = "Groq rechazó una llamada por límite de cuota (HTTP 429).";
+            const quota = await quotaInformation(response);
+            const detail = quotaDescription(quota);
+            lastFailure = detail;
+            onProgress(detail);
+            if (quota.kind === "TPM" && quota.requested > quota.limit && quota.limit != null) {
+              lastFailure = `${detail} Un bloque supera el límite por solicitud: requiere dividir el contenido; esperar no lo resuelve.`;
+              break;
+            }
             if (attempt >= 2 || calls >= plan.limits.maxCalls) continue;
-            const delay = rateLimitDelay(response.headers, attempt, plan.limits.intervalMs);
+            const delay = rateLimitDelay(response.headers, attempt, plan.limits.intervalMs, quota);
             if (delay > 180000 || rateLimitWait + delay > plan.limits.maxRateLimitWaitMs) {
-              lastFailure =
-                "La cuota de Groq (HTTP 429) requiere una espera mayor que el presupuesto permitido. Reintentar cuando se libere la cuota de la organización.";
+              lastFailure = `${detail} Espera requerida: ${Math.ceil(delay / 1000)} segundos; supera el presupuesto permitido. Reintentar cuando se libere esta cuota de la organización.`;
               break;
             }
             if (attempt < 2 && calls < plan.limits.maxCalls) {
               nextDelay = delay;
               rateLimitWait += delay;
+              onProgress(
+                `Recuperación de cuota: esperar ${Math.ceil(delay / 1000)} segundos antes de reintentar el bloque ${index + 1}/${plan.chunks.length}.`,
+              );
             }
             continue;
           }
@@ -405,6 +461,7 @@ async function reviewPlan({
       break;
     }
     results.push(assessment);
+    onProgress(`Bloque ${index + 1}/${plan.chunks.length} completo; llamadas: ${calls}.`);
   }
   return aggregate(plan, results, calls, errors);
 }

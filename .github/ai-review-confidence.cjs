@@ -21,6 +21,7 @@ async function normalizeConfidence({
       apiKey: env.GROQ_API_KEY,
       fetchImpl,
       sleep,
+      onProgress: (message) => core.info?.(`R2D2: ${message}`),
       isCurrent: async () => {
         const { data: pr } = await github.rest.pulls.get({
           ...context.repo,

@@ -1349,7 +1349,7 @@ test("paces chunks and recovers repeated 429 without skipping required coverage"
   expect(result.coverage).toBe("complete");
   expect(result.processed).toBe(plan.chunks.length);
   expect(calls).toBe(3);
-  expect(pauses[0]).toBeGreaterThanOrEqual(101000);
+  expect(pauses[0]).toBeGreaterThanOrEqual(91000);
   expect(pauses[1]).toBeGreaterThanOrEqual(130000);
   expect(LIMITS.intervalMs).toBe(65000);
 });
@@ -1391,7 +1391,7 @@ test("daily quota cannot cause an early retry before the requested reset", async
   });
   expect(result.calls).toBe(1);
   expect(pauses).toHaveLength(0);
-  expect(result.reasons.join(" ")).toContain("espera mayor que el presupuesto");
+  expect(result.reasons.join(" ")).toContain("supera el presupuesto permitido");
 });
 
 test("all chunks remain eligible while respecting the minute token window", async () => {
@@ -1507,4 +1507,111 @@ test("successful low-token headers delay the next chunk until reset", async () =
   });
   expect(result.coverage).toBe("complete");
   expect(pauses[0]).toBe(76000);
+});
+
+test("429 retry-after identifies the affected limit instead of unrelated reset windows", async () => {
+  const plan = buildPlan([chunkFile("quota-reset.ts", 10)], {}, sha);
+  const pauses: number[] = [];
+  let calls = 0;
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async (ms: number) => {
+      pauses.push(ms);
+    },
+    fetchImpl: async () => {
+      calls++;
+      if (calls === 1)
+        return {
+          ok: false,
+          status: 429,
+          headers: new Headers({
+            "retry-after": "10",
+            "x-ratelimit-reset-tokens": "20m",
+            "x-ratelimit-reset-requests": "12h",
+          }),
+          json: async () => ({
+            error: {
+              message:
+                "Rate limit on tokens per minute (TPM): Limit 8000, Used 7000, Requested 3000. Please try again in 10s. Organization private-id",
+              code: "rate_limit_exceeded",
+            },
+          }),
+        };
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  score: 5,
+                  risk: "low",
+                  explanation: "Correcto.",
+                  findings: [],
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+  });
+  expect(result.coverage).toBe("complete");
+  expect(pauses).toEqual([66000]);
+});
+
+test("daily token exhaustion reports safe numeric evidence without provider identifiers", async () => {
+  const plan = buildPlan([chunkFile("daily-evidence.ts", 10)], {}, sha);
+  const logs: string[] = [];
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async () => {},
+    onProgress: (message: string) => {
+      logs.push(message);
+    },
+    fetchImpl: async () => ({
+      ok: false,
+      status: 429,
+      headers: new Headers({ "retry-after": "900" }),
+      json: async () => ({
+        error: {
+          message:
+            "Rate limit for organization PRIVATE_ORG on tokens per day (TPD): Limit 200000, Used 199000, Requested 3000. Please try again in 15m. KEY_PRIVATE_SOURCE",
+        },
+      }),
+    }),
+  });
+  expect(result.calls).toBe(1);
+  expect(result.reasons.join(" ")).toContain("tokens por día");
+  expect(result.reasons.join(" ")).toContain("límite: 200000");
+  expect(result.reasons.join(" ")).toContain("901 segundos");
+  expect(JSON.stringify({ result, logs })).not.toContain("PRIVATE_ORG");
+  expect(JSON.stringify({ result, logs })).not.toContain("KEY_PRIVATE_SOURCE");
+});
+
+test("a request exceeding the minute allowance reports that waits cannot fix its size", async () => {
+  const plan = buildPlan([chunkFile("oversized-tokens.ts", 10)], {}, sha);
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async () => {},
+    fetchImpl: async () => ({
+      ok: false,
+      status: 429,
+      headers: new Headers(),
+      json: async () => ({
+        error: {
+          message: "Rate limit on tokens per minute (TPM): Limit 8000, Used 0, Requested 9000.",
+        },
+      }),
+    }),
+  });
+  expect(result.calls).toBe(1);
+  expect(result.reasons.join(" ")).toContain("esperar no lo resuelve");
+  expect(result.coverage).toBe("incomplete");
 });
