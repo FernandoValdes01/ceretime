@@ -28,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
+      R2D2_APP_CONFIGURED: ${{ secrets.R2D2_APP_ID != '' && secrets.R2D2_APP_PRIVATE_KEY != '' }}
       REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -37,10 +38,24 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
+      - name: Autenticar como R2D2 cuando la App esté configurada
+        id: r2d2_token
+        if: env.R2D2_APP_CONFIGURED == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.R2D2_APP_ID }}
+          private-key: ${{ secrets.R2D2_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
+          permission-pull-requests: write
+          permission-statuses: write
+
       - name: Invalidar la revisión anterior y preparar instrucciones
         id: prepare
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
+          github-token: ${{ steps.r2d2_token.outputs.token || github.token }}
           script: |
             const { prepareReview } = require('./.github/ai-review-score.cjs');
             await prepareReview({ github, context, core });
@@ -53,6 +68,7 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         with:
+          github_token: ${{ steps.r2d2_token.outputs.token || github.token }}
           provider: groq
           model: openai/gpt-oss-120b
           language: es
@@ -76,6 +92,7 @@ jobs:
           REVIEW_COMMENTS: ${{ steps.ai_review.outputs.comments_count }}
           REVIEW_COVERAGE: ${{ steps.prepare.outputs.coverage }}
         with:
+          github-token: ${{ steps.r2d2_token.outputs.token || github.token }}
           script: |
             const { normalizeConfidence } = require('./.github/ai-review-confidence.cjs');
             await normalizeConfidence({ core });
@@ -89,9 +106,11 @@ jobs:
           ACTION_SUMMARY: ${{ steps.ai_review.outputs.summary }}
           REVIEW_RISK: ${{ steps.ai_review.outputs.risk_level }}
           REVIEW_COMMENTS: ${{ steps.ai_review.outputs.comments_count }}
+          REVIEW_BOT_LOGIN: ${{ steps.r2d2_token.outputs.app-slug && format('{0}[bot]', steps.r2d2_token.outputs.app-slug) || 'github-actions[bot]' }}
           REVIEW_COST: ${{ steps.ai_review.outputs.cost_usd }}
           REVIEW_COVERAGE: ${{ steps.prepare.outputs.coverage }}
         with:
+          github-token: ${{ steps.r2d2_token.outputs.token || github.token }}
           script: |
             const { publishReview } = require('./.github/ai-review-score.cjs');
             await publishReview({ github, context, core });

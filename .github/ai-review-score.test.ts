@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { formatInline, withoutBold } from "./ai-review-presentation.cjs";
 import { normalizeConfidence } from "./ai-review-confidence.cjs";
 import {
   evaluateReview,
@@ -97,6 +98,10 @@ test("rejects inconsistent outputs and an incomplete diff", () => {
 function harness(heads = [sha], draft = false) {
   const statuses: any[] = [];
   const reviews: any[] = [];
+  const inline: any[] = [];
+  const updatedInline: any[] = [];
+  const comments: any[] = [];
+  const deletedComments: any[] = [];
   let reads = 0;
   const existing = [
     {
@@ -119,12 +124,23 @@ function harness(heads = [sha], draft = false) {
         }),
         listReviews: () => {},
         listFiles: () => {},
+        listReviewComments: () => {},
+        updateReviewComment: async (args: any) => updatedInline.push(args),
         createReview: async (args: any) => reviews.push(args),
         updateReview: async (args: any) => reviews.push(args),
       },
+      issues: {
+        listComments: () => {},
+        deleteComment: async (args: any) => deletedComments.push(args),
+      },
       repos: { createCommitStatus: async (args: any) => statuses.push(args) },
     },
-    paginate: async (method: unknown) => (method === github.rest.pulls.listReviews ? existing : []),
+    paginate: async (method: unknown) => {
+      if (method === github.rest.pulls.listReviews) return existing;
+      if (method === github.rest.pulls.listReviewComments) return inline;
+      if (method === github.rest.issues.listComments) return comments;
+      return [];
+    },
     request: async () => ({ data: "diff" }),
   };
   const context = {
@@ -149,7 +165,20 @@ function harness(heads = [sha], draft = false) {
       outputs[name] = value;
     },
   };
-  return { github, context, env, core, outputs, statuses, reviews, existing };
+  return {
+    github,
+    context,
+    env,
+    core,
+    outputs,
+    statuses,
+    reviews,
+    existing,
+    inline,
+    updatedInline,
+    comments,
+    deletedComments,
+  };
 }
 
 test("publishes the head SHA rather than the temporary merge SHA", async () => {
@@ -158,7 +187,7 @@ test("publishes the head SHA rather than the temporary merge SHA", async () => {
   expect(h.statuses).toHaveLength(1);
   expect(h.statuses[0]).toMatchObject({ sha, state: "success", context: "AI Review 5/5" });
   expect(h.reviews[0]).toMatchObject({ review_id: 10 });
-  expect(h.reviews[0].body).toContain(`Reviewed commit: ${sha}`);
+  expect(h.reviews[0].body).toContain(`[\`${sha}\`](https://github.com/owner/repo/commit/${sha})`);
 });
 
 test("creates a COMMENT review with a commit association when there are no inline findings", async () => {
@@ -166,7 +195,7 @@ test("creates a COMMENT review with a commit association when there are no inlin
   h.existing.length = 0;
   await publishReview(h);
   expect(h.reviews[0]).toMatchObject({ commit_id: sha, event: "COMMENT" });
-  expect(h.reviews[0].body).toContain("Hallazgos: 0");
+  expect(h.reviews[0].body).toContain("| low | 0 | Review vigente |");
   expect(h.reviews[0].body).toContain("NO autoriza merge");
 });
 
@@ -178,7 +207,7 @@ test("preserves the inline review when a separate model assessment changes its s
   expect(h.reviews).toHaveLength(1);
   expect(h.reviews[0]).toMatchObject({ review_id: 10 });
   expect(h.reviews[0].body).toContain("Confidence Score: 5/5");
-  expect(h.reviews[0].body).toContain(actionSummary);
+  expect(h.reviews[0].body).not.toContain(actionSummary);
   expect(h.statuses[0]).toMatchObject({ sha, state: "success" });
 });
 
@@ -262,7 +291,7 @@ test("preparation does not overwrite a newer head", async () => {
 test("failure summaries are explicit and never reuse an invalid evaluation", () => {
   const body = formatReview(evaluateReview(input({ outcome: "failure" })), sha, runUrl, "invalid");
   expect(body).toContain("Confidence Score: 0/5");
-  expect(body).toContain("Risk: high");
+  expect(body).toContain("| high | 0 | Error de ejecución |");
   expect(body).toContain("no disponible");
   expect(body).not.toContain("No se detectan problemas relevantes");
 });
@@ -291,6 +320,7 @@ test("pins the action and keeps review permissions, events and concurrency separ
   expect(action.env).toEqual({ GROQ_API_KEY: "${{ secrets.GROQ_API_KEY }}" });
   expect(action.with.custom_instructions).toBe("${{ steps.prepare.outputs.instructions }}");
   expect(action.with).toEqual({
+    github_token: "${{ steps.r2d2_token.outputs.token || github.token }}",
     provider: "groq",
     model: "openai/gpt-oss-120b",
     language: "es",
@@ -432,4 +462,64 @@ test("never invents a score when the assessment fails or returns an invalid valu
   }
   await expect(confidence(null, { status: 429 })).rejects.toThrow("HTTP 429");
   await expect(confidence(null, { status: 401 })).rejects.toThrow("HTTP 401");
+});
+
+test("R2D2 displays the real fraction, avatar and compact metadata without bold markers", () => {
+  for (const score of [0, 3, 5]) {
+    const body = formatReview(
+      evaluateReview(input({ summary: summary(score) })),
+      sha,
+      runUrl,
+      "0.005",
+    );
+    expect(body).toContain("## R2D2 · AI Code Review");
+    expect(body).toContain(`### Confidence Score: ${score}/5`);
+    expect(body).toContain(`/${sha}/.github/assets/r2d2.jpg`);
+    expect(body).toContain("| Risk | Hallazgos | Estado |");
+    expect(body).not.toContain("**");
+    expect(body).not.toContain("Free & open source");
+  }
+});
+
+test("inline formatting keeps suggestions and code literal while removing prose bold", () => {
+  const body =
+    "**[WARNING] Warning**\n\n**Validación**: revisa `2 ** 3`.\n\nSuggested fix:\n```suggestion\nconst power = 2 ** 3;\n```";
+  expect(formatInline(body)).toBe(
+    "<!-- ceretime-r2d2-inline -->\n### R2D2 · Advertencia\n\nValidación: revisa `2 ** 3`.\n\nPropuesta:\n```suggestion\nconst power = 2 ** 3;\n```",
+  );
+  expect(withoutBold("**Título**\n~~~js\nvalue ** 2\n~~~")).toContain("value ** 2");
+  expect(formatInline("Una observación humana.")).toBe("Una observación humana.");
+});
+
+test("tidies only the authenticated reviewer's comments and preserves other authors and old inline findings", async () => {
+  const h = harness();
+  const raw = "**[WARNING] Warning**\n\n**Descripción** del problema.";
+  h.inline.push(
+    { id: 1, user: { login: "github-actions[bot]" }, original_commit_id: sha, body: raw },
+    { id: 2, user: { login: "human" }, original_commit_id: sha, body: raw },
+    { id: 3, user: { login: "github-actions[bot]" }, original_commit_id: oldSha, body: raw },
+  );
+  const advertising = "## AI Code Review\nhttps://github.com/mara-werils/ai-code-reviewer";
+  h.comments.push(
+    { id: 4, user: { login: "github-actions[bot]" }, body: advertising },
+    { id: 5, user: { login: "human" }, body: advertising },
+    { id: 6, user: { login: "github-actions[bot]" }, body: "Resultado de CI" },
+  );
+  await publishReview(h);
+  expect(h.updatedInline).toHaveLength(1);
+  expect(h.updatedInline[0]).toMatchObject({ comment_id: 1, body: formatInline(raw) });
+  expect(h.deletedComments).toEqual([{ owner: "owner", repo: "repo", comment_id: 4 }]);
+});
+
+test("uses the configured App identity instead of trusting an arbitrary bot", async () => {
+  const h = harness();
+  h.existing[0].user.login = "r2d2[bot]";
+  await publishReview({ ...h, env: { ...h.env, REVIEW_BOT_LOGIN: "r2d2[bot]" } });
+  expect(h.reviews[0]).toMatchObject({ review_id: 10 });
+  const app = workflow.jobs.review.steps.find((step: any) => step.id === "r2d2_token");
+  expect(app.uses).toBe("actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349");
+  expect(app.with["permission-contents"]).toBe("read");
+  expect(app.with["permission-pull-requests"]).toBe("write");
+  expect(app.with["permission-statuses"]).toBe("write");
+  expect(app.with.repositories).toBe("${{ github.event.repository.name }}");
 });

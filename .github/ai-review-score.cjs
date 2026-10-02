@@ -1,7 +1,7 @@
 const fs = require("node:fs");
+const { MODEL, formatReview, formatInline } = require("./ai-review-presentation.cjs");
 
 const STATUS_CONTEXT = "AI Review 5/5";
-const MODEL = "openai/gpt-oss-120b";
 const MAX_DIFF_SIZE = 10000;
 const MAX_FILES = 50;
 
@@ -75,45 +75,6 @@ function evaluateReview({
         ? "AI Review 5/5 para el commit actual."
         : `AI Review ${review.score}/5: requiere revisión humana.`,
   };
-}
-
-function formatReview(result, sha, runUrl, cost, metadata = {}) {
-  const validCost = /^\d+(?:\.\d+)?$/.test(cost ?? "") ? cost : "no disponible";
-  const risk =
-    result.review?.risk ??
-    (/^(low|medium|high)$/.test(metadata.risk ?? "") ? metadata.risk : "high");
-  const findings =
-    result.review?.findings ??
-    (/^[0-5]$/.test(metadata.commentsCount ?? "") ? Number(metadata.commentsCount) : 0);
-  return [
-    "<!-- ceretime-ai-review -->",
-    "## AI Code Review",
-    "",
-    `Confidence Score: ${result.score}/5`,
-    "",
-    `Risk: ${risk}`,
-    "",
-    `Hallazgos: ${findings}`,
-    "",
-    `Reviewed commit: ${sha}`,
-    "",
-    `Modelo: ${MODEL}`,
-    "",
-    `Estado: ${result.reason}`,
-    "",
-    result.description,
-    "",
-    result.review?.summary ?? "No hay una evaluación válida del cambio.",
-    metadata.actionSummary && !parseSummary(metadata.actionSummary)
-      ? `\nResumen del reviewer: ${metadata.actionSummary}`
-      : "",
-    "",
-    `Estimación de la Action en USD: ${validCost}. No es una factura de Groq.`,
-    "",
-    `[Logs de la ejecución](${runUrl})`,
-    "",
-    "Confidence Score es informativo y NO autoriza merge. La revisión humana TI4 sigue siendo obligatoria.",
-  ].join("\n");
 }
 
 async function prepareReview({ github, context, core, env = process.env }) {
@@ -195,9 +156,10 @@ async function publishReview({ github, context, core, env = process.env }) {
     actionSummary: env.ACTION_SUMMARY,
   });
   const reviews = await github.paginate(github.rest.pulls.listReviews, { ...args, per_page: 100 });
+  const botLogin = env.REVIEW_BOT_LOGIN || "github-actions[bot]";
   const original = reviews.findLast(
     (review) =>
-      review.user?.login === "github-actions[bot]" &&
+      review.user?.login === botLogin &&
       review.commit_id === env.REVIEW_SHA &&
       review.body?.startsWith("## AI Code Review") &&
       (env.ACTION_SUMMARY || env.REVIEW_SUMMARY) &&
@@ -220,10 +182,46 @@ async function publishReview({ github, context, core, env = process.env }) {
       body,
     });
   }
+  await tidyComments({ github, args, sha: env.REVIEW_SHA, botLogin });
   const { data: latest } = await github.rest.pulls.get(args);
   if (latest.head.sha !== env.REVIEW_SHA || latest.draft || latest.state !== "open") return;
   await github.rest.repos.createCommitStatus(status);
   core.info(result.description);
+}
+
+async function tidyComments({ github, args, sha, botLogin }) {
+  const comments = await github.paginate(github.rest.pulls.listReviewComments, {
+    ...args,
+    per_page: 100,
+  });
+  for (const comment of comments) {
+    if (comment.user?.login !== botLogin || comment.original_commit_id !== sha) continue;
+    const body = formatInline(comment.body);
+    if (body !== comment.body) {
+      await github.rest.pulls.updateReviewComment({ ...args, comment_id: comment.id, body });
+    }
+  }
+  const issueArgs = {
+    owner: args.owner,
+    repo: args.repo,
+    issue_number: args.pull_number,
+    per_page: 100,
+  };
+  const summaries = await github.paginate(github.rest.issues.listComments, issueArgs);
+  for (const comment of summaries) {
+    // Remove only this reviewer's redundant advertising summaries; preserve other bots and humans.
+    if (
+      comment.user?.login === botLogin &&
+      comment.body?.startsWith("## AI Code Review") &&
+      comment.body.includes("https://github.com/mara-werils/ai-code-reviewer")
+    ) {
+      await github.rest.issues.deleteComment({
+        owner: args.owner,
+        repo: args.repo,
+        comment_id: comment.id,
+      });
+    }
+  }
 }
 
 module.exports = {

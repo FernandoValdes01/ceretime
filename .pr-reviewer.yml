@@ -17,6 +17,7 @@ ignore_paths:
   - "*/build/**"
   - "*.lock"
   - node_modules/**
+  - .github/assets/**
 custom_instructions: >-
   MANDATORY OUTPUT CONTRACT, overriding the generic summary description:
   The JSON field summary MUST be exactly one line with this structure:
