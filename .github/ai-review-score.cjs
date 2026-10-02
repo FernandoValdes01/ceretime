@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const { MODEL, formatReview, formatInline } = require("./ai-review-presentation.cjs");
 
-const STATUS_CONTEXT = "AI Review 5/5";
+const STATUS_CONTEXT = "R2D2 Review 5/5";
 const MAX_DIFF_SIZE = 10000;
 const MAX_FILES = 50;
 
@@ -58,12 +58,16 @@ function evaluateReview({
   if (coverage !== "complete") {
     return failure(
       "incomplete",
-      "AI Review 0/5: el diff excede la cobertura del reviewer.",
+      "R2D2 Review 0/5: el diff excede la cobertura del reviewer.",
       review,
     );
   }
   if (review.score === 5 && (review.findings !== 0 || review.risk !== "low")) {
-    return failure("invalid", "AI Review 0/5: score incompatible con riesgo o hallazgos.", review);
+    return failure(
+      "invalid",
+      "R2D2 Review 0/5: score incompatible con riesgo o hallazgos.",
+      review,
+    );
   }
   return {
     state: review.score === 5 ? "success" : "failure",
@@ -72,8 +76,8 @@ function evaluateReview({
     review,
     description:
       review.score === 5
-        ? "AI Review 5/5 para el commit actual."
-        : `AI Review ${review.score}/5: requiere revisión humana.`,
+        ? "R2D2 Review 5/5 para el commit actual."
+        : `R2D2 Review ${review.score}/5: requiere revisión humana.`,
   };
 }
 

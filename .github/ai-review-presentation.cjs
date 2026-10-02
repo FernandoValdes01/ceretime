@@ -86,11 +86,9 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     `[Logs de la ejecución](${runUrl})`,
     "",
+    `[Prueba controlada de la escala de 0/5 a 5/5](${runUrl}#summary)`,
+    "",
     "</details>",
-    "",
-    "---",
-    "",
-    "Confidence Score es informativo y NO autoriza merge. La revisión humana TI4 sigue siendo obligatoria.",
   ].join("\n");
 }
 

@@ -38,6 +38,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
+      - name: Comprobar la escala de 0 a 5 sin publicar reviews simuladas
+        run: node .github/ai-review-scale.cjs
+
       - name: Autenticar como R2D2 cuando la App esté configurada
         id: r2d2_token
         if: env.R2D2_APP_CONFIGURED == 'true'

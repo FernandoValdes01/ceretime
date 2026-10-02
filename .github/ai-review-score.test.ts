@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatInline, withoutBold } from "./ai-review-presentation.cjs";
 import { normalizeConfidence } from "./ai-review-confidence.cjs";
+import { verifyScale } from "./ai-review-scale.cjs";
 import {
   evaluateReview,
   formatReview,
@@ -34,6 +35,25 @@ const input = (overrides = {}) => ({
   currentSha: sha,
   coverage: "complete",
   ...overrides,
+});
+
+test("shows all six controlled scores without publishing simulated reviews", () => {
+  const report = verifyScale();
+  for (let score = 0; score <= 5; score++) {
+    expect(report).toContain(
+      `| ${score}/5 | ${score}/5 | ${score === 5 ? "success" : "failure"} |`,
+    );
+  }
+  expect(report).toContain("No son evaluaciones de Groq");
+  expect(
+    workflow.jobs.review.steps.find((step: any) => step.run === "node .github/ai-review-scale.cjs"),
+  ).toBeDefined();
+});
+
+test("omits the policy footer from the visible review", () => {
+  const body = formatReview(evaluateReview(input()), sha, runUrl, "0");
+  expect(body).not.toContain("Confidence Score es informativo");
+  expect(body).not.toContain("La revisión humana TI4 sigue siendo obligatoria");
 });
 
 test("accepts a current 5/5 review with no findings and low risk", () => {
@@ -195,7 +215,7 @@ test("publishes the head SHA rather than the temporary merge SHA", async () => {
   const h = harness();
   await publishReview(h);
   expect(h.statuses).toHaveLength(1);
-  expect(h.statuses[0]).toMatchObject({ sha, state: "success", context: "AI Review 5/5" });
+  expect(h.statuses[0]).toMatchObject({ sha, state: "success", context: "R2D2 Review 5/5" });
   expect(h.summaryWrites[0]).toMatchObject({ issue_number: 1 });
   expect(h.summaryWrites[0].body).toContain(
     `[ci\\(review\\): revisa el cambio](https://github.com/owner/repo/commit/${sha})`,
@@ -210,7 +230,7 @@ test("creates one PR summary without creating an extra review when there are no 
   expect(h.summaryWrites[0]).toMatchObject({ issue_number: 1 });
   expect(h.reviews).toHaveLength(0);
   expect(h.summaryWrites[0].body).toContain("| low | 0 | Review vigente |");
-  expect(h.summaryWrites[0].body).toContain("NO autoriza merge");
+  expect(h.summaryWrites[0].body).not.toContain("NO autoriza merge");
 });
 
 test("keeps inline findings separate from the single summary", async () => {

@@ -11,7 +11,7 @@ La consulta de `GET /repos/FernandoValdes01/ceretime/rulesets/22399696` y `GET /
 - `Validación Web`
 - `Verificación Backend`
 
-Ni el antiguo status de Greptile ni `AI Review 5/5` son required checks. No agregues AI Review al ruleset: una evaluación del modelo nunca autoriza merge. La configuración consultada exige una aprobación humana, descarta aprobaciones obsoletas y requiere aprobación del último push. Permite squash y merge, y tiene dos usuarios con bypass configurado; este registro describe lo consultado, no modifica esas reglas. Antes de integrar, vuelve a comprobar las reglas efectivas y la revisión humana TI4.
+Ni el antiguo status de Greptile ni `R2D2 Review 5/5` son required checks. No agregues AI Review al ruleset: una evaluación del modelo nunca autoriza merge. La configuración consultada exige una aprobación humana, descarta aprobaciones obsoletas y requiere aprobación del último push. Permite squash y merge, y tiene dos usuarios con bypass configurado; este registro describe lo consultado, no modifica esas reglas. Antes de integrar, vuelve a comprobar las reglas efectivas y la revisión humana TI4.
 
 ## Reviewer, acceso y credenciales
 
@@ -52,11 +52,11 @@ Confidence Score NO significa autorización para hacer merge. CI y la revisión 
 
 ## Status y asociación al SHA
 
-El contexto estable del commit status es `AI Review 5/5`. Se publica exclusivamente sobre `github.event.pull_request.head.sha`, nunca sobre `github.sha` del merge temporal. El resumen vive en un único comentario de PR identificado por un marcador estable y la identidad que lo publica. Se crea una vez y se actualiza en los siguientes commits o reintentos. Muestra el título del commit obtenido de GitHub, enlazado a su SHA; el SHA completo permanece en los detalles. Los hallazgos inline conservan el `commit_id` de la review original. El comentario de PR no tiene `commit_id`: su asociación se verifica con el SHA explícito y el status del commit.
+El contexto estable del commit status es `R2D2 Review 5/5`. Se publica exclusivamente sobre `github.event.pull_request.head.sha`, nunca sobre `github.sha` del merge temporal. El resumen vive en un único comentario de PR identificado por un marcador estable y la identidad que lo publica. Se crea una vez y se actualiza en los siguientes commits o reintentos. Muestra el título del commit obtenido de GitHub, enlazado a su SHA; el SHA completo permanece en los detalles. Los hallazgos inline conservan el `commit_id` de la review original. El comentario de PR no tiene `commit_id`: su asociación se verifica con el SHA explícito y el status del commit.
 
 | Condición | Estado y resultado |
 | --- | --- |
-| Review válida, actual y 5/5 | `success`: `AI Review 5/5 para el commit actual.` |
+| Review válida, actual y 5/5 | `success`: `R2D2 Review 5/5 para el commit actual.` |
 | Review válida y score inferior a 5 | `failure` informativo, con el score y solicitud de revisión humana. |
 | Sin review o sin output summary | `failure`: `Falta la revisión de IA para este commit.` |
 | SHA revisado distinto del actual | `failure`: `La revisión de IA no corresponde al commit actual.` |
@@ -86,3 +86,7 @@ Si Groq falla, una persona con acceso puede desactivar temporalmente solo `AI Co
 La [PR #74](https://github.com/FernandoValdes01/ceretime/pull/74) comprobó el job omitido en [Draft](https://github.com/FernandoValdes01/ceretime/actions/runs/36946199638), respuestas reales de Groq y comentarios inline en las primeras ejecuciones. El [run 36948163361](https://github.com/FernandoValdes01/ceretime/actions/runs/36948163361) publicó los campos normalizados sobre `fd04410a5c68a4e3cf2dbed4ce109c05e9845657`, con `commit_id` coincidente y failure informativo 0/5 por cobertura incompleta. Ese SHA recibió primero failure por ausencia de review y después el resultado de su propia ejecución. Los [cuatro jobs de CI](https://github.com/FernandoValdes01/ceretime/actions/runs/36948163433) pasaron independientemente. Esta evidencia confirma llamadas reales y publicación; no certifica una revisión completa de esta PR extensa ni un success remoto 5/5. El caso 5/5 y las carreras entre ejecuciones están cubiertos por tests locales.
 
 Tras comprobar la alternativa se retiraron `.github/workflows/greptile-score.yml` y `.github/greptile-score.test.ts` en esta misma PR. También se desactivó mediante API el workflow remoto `Sincronizar check de Greptile`, comprobando `disabled_manually`, para impedir nuevas publicaciones mientras la migración espera integración. Su configuración se puede recuperar del padre de la migración si el equipo decide restaurarla; no añadas un gate de IA requerido para revertir. Desinstalar o deshabilitar la GitHub App anterior requiere comprobar permisos y suscripción desde Settings → Integrations. Retirar sus archivos del repositorio no desinstala esa App. La consulta de instalaciones con la credencial disponible respondió 403; ese paso administrativo queda pendiente para una persona con acceso.
+
+## Prueba visible de la escala
+
+Cada ejecución incluye una tabla de casos controlados de 0/5 a 5/5 en el resumen de GitHub Actions. Usa el mismo evaluador del status y comprueba que solo 5/5 produce success. No llama a Groq ni publica comentarios o statuses simulados. Permite verificar la escala aunque la PR real permanezca en 0/5 por cobertura incompleta. El comentario de la review omite el recordatorio de aprobación humana; las protecciones y la revisión humana siguen vigentes.
