@@ -2,7 +2,14 @@ review_style: minimal
 max_comments: 5
 review_language: es
 max_files: 50
-max_diff_size: 10000
+max_diff_size: 10000 # Tamaño de la ruta de una llamada, no límite total de la PR.
+chunking:
+  chunkChars: 10000
+  inputChars: 18000
+  maxChunks: 28
+  maxCalls: 32
+  outputTokens: 1200
+  intervalMs: 30000
 auto_summarize: true
 suggest_tests: true
 label_pr: false

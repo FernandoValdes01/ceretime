@@ -1,9 +1,19 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatInline, withoutBold } from "./ai-review-presentation.cjs";
 import { normalizeConfidence } from "./ai-review-confidence.cjs";
+import {
+  buildPlan,
+  LIMITS,
+  matchesIgnore,
+  reviewPlan,
+  aggregate,
+  validateAssessment,
+  publishFindings,
+} from "./ai-review-chunks.cjs";
 import { verifyScale } from "./ai-review-scale.cjs";
 import {
   evaluateReview,
@@ -63,7 +73,7 @@ test("explains incomplete coverage and retains actionable observations from the 
     filesCount: "25",
   });
   expect(body).toContain("96.400");
-  expect(body).toContain("10.000");
+  expect(body).toContain("El tamaño total no determina la cobertura");
   expect(body).toContain("### Qué debes cambiar");
   expect(body).toContain("Validar la autorización en el backend");
   expect(body).toContain("No es una calificación de la calidad del código");
@@ -181,7 +191,7 @@ function harness(heads = [sha], draft = false) {
       if (method === github.rest.pulls.listReviews) return existing;
       if (method === github.rest.pulls.listReviewComments) return inline;
       if (method === github.rest.issues.listComments) return comments;
-      return [];
+      return [chunkFile("file.ts", 1)];
     },
     request: async () => ({ data: "diff" }),
   };
@@ -322,7 +332,9 @@ test("a synchronize run invalidates the new SHA before calling the model", async
       current: "true",
       instructions: `SHA: ${sha} Coverage: complete`,
       diff_size: "4",
-      files_count: "0",
+      files_count: "1",
+      mode: "single",
+      chunk_instructions: `SHA: ${sha} Coverage: complete`,
     });
     expect(readFileSync(configPath, "utf8")).toContain(sha);
     expect(readFileSync(configPath, "utf8")).not.toContain("__REVIEWED_SHA__");
@@ -384,7 +396,7 @@ test("pins the action and keeps review permissions, events and concurrency separ
   expect(steps[0].with.ref).toBe("${{ github.event.pull_request.head.sha }}");
   expect(steps[0].with["persist-credentials"]).toBe(false);
   expect(steps.at(-1).env.REVIEW_OUTCOME).toBe(
-    "${{ steps.confidence.outcome == 'failure' && 'failure' || steps.ai_review.outcome }}",
+    "${{ steps.prepare.outputs.mode == 'chunked' && steps.confidence.outcome || (steps.confidence.outcome == 'failure' && 'failure' || steps.ai_review.outcome) }}",
   );
   expect(steps.at(-1).env.REVIEW_SUMMARY).toBe("${{ steps.confidence.outputs.summary }}");
   expect(steps.at(-1).if).toBe("${{ always() && !cancelled() }}");
@@ -656,4 +668,550 @@ test("uses the exact commit title safely and keeps the full SHA in folded detail
   expect(body).toContain("Reviewed commit: [docs\\(ci\\): añade \\[enlace\\]]");
   expect(body).toContain(`SHA revisado: \`${sha}\``);
   expect(body).not.toContain("Body ignored");
+});
+
+// The chunk path calls the same model, but publishes only the aggregated review.
+function chunkFile(name: string, lines = 80, width = 70) {
+  return {
+    filename: name,
+    patch: `@@ -0,0 +1,${lines} @@\n${Array.from({ length: lines }, (_, i) => `+${String(i).padStart(5, "0")}${"x".repeat(width)}`).join("\n")}`,
+    additions: lines,
+    deletions: 0,
+  };
+}
+
+async function runChunks(plan: any, responses?: any[], fetchOverride?: any) {
+  const requests: any[] = [];
+  const result = await reviewPlan({
+    plan,
+    instructions:
+      "CERETIME: Presentación -> Aplicación -> Dominio. Autorización en backend. No inventes hallazgos.",
+    apiKey: "test",
+    sleep: async () => {},
+    fetchImpl:
+      fetchOverride ??
+      (async (_url: string, args: any) => {
+        requests.push(JSON.parse(args.body));
+        const response = responses?.length
+          ? responses.shift()
+          : { score: 5, risk: "low", explanation: "Sin problemas relevantes.", findings: [] };
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => ({ choices: [{ message: { content: JSON.stringify(response) } }] }),
+        };
+      }),
+  });
+  return { result, requests };
+}
+
+for (const [label, files] of [
+  ["under 10,000 chars", [chunkFile("small.ts", 20)]],
+  ["over 10,000 chars", [chunkFile("a.ts"), chunkFile("b.ts"), chunkFile("c.ts")]],
+  ["about 100,000 chars", Array.from({ length: 12 }, (_, i) => chunkFile(`file-${i}.ts`, 110))],
+] as const) {
+  test(`reviews the entire eligible diff ${label}`, async () => {
+    const plan = buildPlan(files, {}, sha);
+    expect(plan.issues).toEqual([]);
+    const { result, requests } = await runChunks(plan);
+    expect(result.coverage).toBe("complete");
+    expect(result.processed).toBe(plan.chunks.length);
+    expect(result.score).toBe(5);
+    expect(parseSummary(result.summary)).toMatchObject({ score: 5, sha, risk: "low", findings: 0 });
+    expect(
+      evaluateReview(input({ summary: result.summary, coverage: result.coverage })).state,
+    ).toBe("success");
+    expect(requests).toHaveLength(plan.chunks.length);
+    expect(
+      requests.every(
+        (r) =>
+          r.model === "openai/gpt-oss-120b" &&
+          r.messages[0].content.includes("Autorización en backend") &&
+          JSON.parse(r.messages[1].content).sha === sha,
+      ),
+    ).toBe(true);
+  });
+}
+
+test("groups small files and preserves whole hunks when they fit", () => {
+  const files = [chunkFile("a.ts", 10), chunkFile("b.ts", 10)];
+  const plan = buildPlan(files, {}, sha);
+  expect(plan.chunks).toHaveLength(1);
+  expect(plan.chunks[0].parts.map((p: any) => p.path)).toEqual(["a.ts", "b.ts"]);
+  expect(plan.chunks[0].parts.every((p: any) => p.patch.startsWith("@@"))).toBe(true);
+});
+
+test("splits a large file and an oversized hunk without losing a changed line", () => {
+  const file = chunkFile("large.ts", 500);
+  const plan = buildPlan([file], {}, sha);
+  expect(plan.issues).toEqual([]);
+  expect(plan.chunks.length).toBeGreaterThan(1);
+  const anchors = plan.chunks.flatMap((c: any) => c.parts.flatMap((p: any) => p.anchors));
+  expect(new Set(anchors).size).toBe(500);
+  expect(anchors).toEqual(Array.from({ length: 500 }, (_, i) => `RIGHT:${i + 1}`));
+  for (const chunk of plan.chunks) {
+    expect(
+      chunk.parts.reduce(
+        (n: number, p: any) => n + JSON.stringify({ ...p, anchors: undefined }).length,
+        0,
+      ),
+    ).toBeLessThanOrEqual(LIMITS.chunkChars);
+  }
+});
+
+test("ignored files never count toward coverage or appear in requests", async () => {
+  const plan = buildPlan(
+    [
+      chunkFile("src/a.ts", 10),
+      { filename: "convex/_generated/api.ts" },
+      chunkFile("apps/web/bun.lock", 300),
+    ],
+    { ignore_paths: ["convex/_generated/**", "*.lock"] },
+    sha,
+  );
+  expect(plan.files).toBe(1);
+  expect(plan.issues).toEqual([]);
+  const { result, requests } = await runChunks(plan);
+  expect(result.coverage).toBe("complete");
+  expect(JSON.stringify(requests)).not.toContain("bun.lock");
+  expect(JSON.stringify(requests)).not.toContain("convex/_generated");
+  for (const path of [
+    "bun.lock",
+    "apps/web/yarn.lock",
+    "dist/index.js",
+    "apps/web/dist/index.js",
+  ]) {
+    expect(matchesIgnore(path, config.ignore_paths)).toBe(true);
+  }
+});
+
+test("a failed necessary chunk remains incomplete after a bounded retry", async () => {
+  const plan = buildPlan([chunkFile("a.ts", 160), chunkFile("b.ts", 160)], {}, sha);
+  let calls = 0;
+  const { result } = await runChunks(plan, undefined, async () => {
+    calls++;
+    return calls === 1
+      ? {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    score: 5,
+                    risk: "low",
+                    explanation: "Correcto.",
+                    findings: [],
+                  }),
+                },
+              },
+            ],
+          }),
+        }
+      : { ok: false, status: 503, headers: new Headers() };
+  });
+  expect(result.processed).toBe(1);
+  expect(result.coverage).toBe("incomplete");
+  expect(result.score).toBe(0);
+  expect(calls).toBe(3);
+  expect(evaluateReview(input({ summary: result.summary, coverage: result.coverage })).score).toBe(
+    0,
+  );
+});
+
+test("invalid responses and missing or truncated patches cannot claim complete coverage", async () => {
+  const plan = buildPlan([chunkFile("a.ts", 10)], {}, sha);
+  const { result } = await runChunks(plan, [{ score: 6 }, { score: 6 }]);
+  expect(result.coverage).toBe("incomplete");
+  for (const file of [
+    { filename: "binary.png", additions: 0, deletions: 0 },
+    { ...chunkFile("a.ts", 10), patch: "@@ -0,0 +1,10 @@\n+only one line" },
+  ]) {
+    const missing = buildPlan([file], {}, sha);
+    const run = await runChunks(missing);
+    expect(run.result.coverage).toBe("incomplete");
+    expect(run.requests).toHaveLength(0);
+  }
+});
+
+test("recovers a malformed response but respects call and chunk budgets", async () => {
+  const plan = buildPlan([chunkFile("a.ts", 10)], {}, sha);
+  const recovered = await runChunks(plan, [
+    null,
+    { score: 5, risk: "low", explanation: "Correcto.", findings: [] },
+  ]);
+  expect(recovered.result.coverage).toBe("complete");
+  expect(recovered.result.calls).toBe(2);
+  const tooLarge = buildPlan([chunkFile("a.ts", 400)], { chunking: { maxChunks: 1 } }, sha);
+  expect((await runChunks(tooLarge)).result.coverage).toBe("incomplete");
+  const exhausted = buildPlan([chunkFile("a.ts", 400)], { chunking: { maxCalls: 1 } }, sha);
+  expect((await runChunks(exhausted)).result).toMatchObject({
+    coverage: "incomplete",
+    calls: 1,
+    score: 0,
+  });
+});
+
+test("deduplicates anchors, retains the five most important findings and aggregates conservatively", () => {
+  const plan = buildPlan([chunkFile("a.ts", 10)], {}, sha);
+  const findings = Array.from({ length: 8 }, (_, i) => ({
+    path: "a.ts",
+    line: i + 1,
+    side: "RIGHT",
+    severity: i === 7 ? "critical" : "warning",
+    body: `Problema ${i}. Corrección e impacto.`,
+  }));
+  const result = aggregate(
+    plan,
+    [
+      {
+        score: 1,
+        risk: "high",
+        explanation: "Corregir los problemas.",
+        findings: [
+          ...findings,
+          { ...findings[0], body: "El mismo problema explicado de otra forma." },
+        ],
+      },
+    ],
+    1,
+  );
+  expect(result.coverage).toBe("complete");
+  expect(result.findings).toHaveLength(5);
+  expect(result.findings[0].severity).toBe("critical");
+  expect(result.findings.filter((f: any) => f.line === 1)).toHaveLength(1);
+  expect(parseSummary(result.summary)).toMatchObject({ score: 1, risk: "high", findings: 5, sha });
+});
+
+test("rejects invented inline anchors and incoherent 5/5 responses", () => {
+  const plan = buildPlan([chunkFile("a.ts", 10)], {}, sha);
+  for (const finding of [
+    { path: "other.ts", line: 1 },
+    { path: "a.ts", line: 1000 },
+  ]) {
+    expect(() =>
+      validateAssessment(
+        {
+          score: 3,
+          risk: "medium",
+          explanation: "Problema.",
+          findings: [{ ...finding, side: "RIGHT", severity: "warning", body: "Corregir." }],
+        },
+        plan.chunks[0],
+      ),
+    ).toThrow();
+  }
+  expect(() =>
+    validateAssessment(
+      { score: 5, risk: "high", explanation: "Correcto.", findings: [] },
+      plan.chunks[0],
+    ),
+  ).toThrow();
+});
+
+test("an old run stops requesting chunks and cannot complete a newer SHA", async () => {
+  const plan = buildPlan([chunkFile("a.ts", 400)], {}, sha);
+  let calls = 0;
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    isCurrent: async () => false,
+    fetchImpl: async () => {
+      calls++;
+      throw new Error("Should not call");
+    },
+    sleep: async () => {},
+  });
+  expect(calls).toBe(0);
+  expect(result.coverage).toBe("incomplete");
+  expect(result.score).toBe(0);
+});
+
+test("publishes only the five aggregated inline findings and never a summary per chunk", async () => {
+  const h = harness();
+  const findings = Array.from({ length: 5 }, (_, i) => ({
+    path: "a.ts",
+    line: i + 1,
+    side: "RIGHT",
+    severity: "warning",
+    body: "Corregir esta condición porque cambia el comportamiento.",
+  }));
+  await publishFindings({
+    github: h.github,
+    args: { ...h.context.repo, pull_number: 1 },
+    sha,
+    botLogin: "github-actions[bot]",
+    report: { sha, findings },
+  });
+  expect(h.reviews).toHaveLength(1);
+  expect(h.reviews[0].comments).toHaveLength(5);
+  expect(h.reviews[0].body).toBe("<!-- ceretime-ai-review-inline-only -->");
+  expect(h.summaryWrites).toHaveLength(0);
+  await expect(
+    publishFindings({
+      github: h.github,
+      args: { ...h.context.repo, pull_number: 1 },
+      sha,
+      botLogin: "github-actions[bot]",
+      report: { sha, findings: [...findings, findings[0]] },
+    }),
+  ).rejects.toThrow();
+});
+
+test("the workflow skips the partial Action for chunked plans and publishes aggregate outputs", () => {
+  const steps = workflow.jobs.review.steps;
+  expect(steps.find((s: any) => s.id === "ai_review").if).toContain("mode == 'single'");
+  expect(steps.find((s: any) => s.id === "confidence").if).toContain("mode == 'chunked'");
+  expect(steps.at(-1).env.REVIEW_RISK).toContain("steps.confidence.outputs.risk");
+  expect(steps.at(-1).env.REVIEW_COVERAGE).toContain("steps.confidence.outputs.coverage");
+  expect(steps[0].with["fetch-depth"]).toBe(0);
+});
+
+test("preparation of a 100,000-character PR writes the entire eligible plan without truncation", async () => {
+  const h = harness();
+  const workspace = mkdtempSync(join(tmpdir(), "ai-plan-test-"));
+  mkdirSync(join(workspace, ".git"));
+  writeFileSync(
+    join(workspace, ".pr-reviewer.yml"),
+    readFileSync(join(import.meta.dir, "../.pr-reviewer.yml")),
+  );
+  const files = Array.from({ length: 12 }, (_, i) => chunkFile(`file-${i}.ts`, 110));
+  h.github.request = async () => ({ data: "x".repeat(100000) });
+  const paginate = h.github.paginate;
+  h.github.paginate = async (method: unknown) =>
+    method === h.github.rest.pulls.listFiles ? files : paginate(method);
+  try {
+    await prepareReview({ ...h, env: { ...h.env, GITHUB_WORKSPACE: workspace } });
+    const plan = JSON.parse(readFileSync(join(workspace, ".git/ai-review-plan.json"), "utf8"));
+    expect(plan.files).toBe(12);
+    expect(plan.issues).toEqual([]);
+    expect(h.outputs.mode).toBe("chunked");
+    expect(h.outputs.coverage).toBe("complete");
+    expect(plan.chunks.flatMap((c: any) => c.parts.flatMap((p: any) => p.anchors))).toHaveLength(
+      1320,
+    );
+    expect(readFileSync(join(workspace, ".git/ai-review-diff.txt"), "utf8")).toBe("");
+    expect(h.outputs.chunk_instructions).toContain("Presentación -> Aplicación -> Dominio");
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("normalization and publication use a single complete chunk report on the exact head", async () => {
+  const h = harness();
+  const workspace = mkdtempSync(join(tmpdir(), "ai-chunk-flow-test-"));
+  mkdirSync(join(workspace, ".git"));
+  const plan = buildPlan([chunkFile("a.ts", 150), chunkFile("b.ts", 150)], {}, sha);
+  writeFileSync(join(workspace, ".git/ai-review-plan.json"), JSON.stringify(plan));
+  try {
+    await normalizeConfidence({
+      core: h.core,
+      github: h.github,
+      context: h.context,
+      env: {
+        ...h.env,
+        REVIEW_MODE: "chunked",
+        REVIEW_INSTRUCTIONS: "CERETIME: arquitectura por capas y autorización en backend.",
+        GROQ_API_KEY: "test",
+        GITHUB_WORKSPACE: workspace,
+      },
+      sleep: async () => {},
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  score: 5,
+                  risk: "low",
+                  explanation: "Sin problemas relevantes.",
+                  findings: [],
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+    expect(h.outputs.coverage).toBe("complete");
+    expect(parseSummary(h.outputs.summary)).toMatchObject({ score: 5, sha });
+    await publishReview({
+      ...h,
+      env: {
+        ...h.env,
+        REVIEW_MODE: "chunked",
+        REVIEW_SUMMARY: h.outputs.summary,
+        REVIEW_COVERAGE: h.outputs.coverage,
+        REVIEW_RISK: h.outputs.risk,
+        REVIEW_COMMENTS: h.outputs.comments,
+        GITHUB_WORKSPACE: workspace,
+      },
+    });
+    expect(h.summaryWrites).toHaveLength(1);
+    expect(h.summaryWrites[0].body).toContain(
+      `Bloques procesados: ${plan.chunks.length}/${plan.chunks.length}`,
+    );
+    expect(h.statuses[0]).toMatchObject({ sha, state: "success", context: "R2D2 Review 5/5" });
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("deduplicates the same issue at different valid anchors of one file", () => {
+  const plan = { sha, chunks: [{}, {}], files: 1, issues: [] };
+  const finding = {
+    path: "a.ts",
+    line: 1,
+    side: "RIGHT",
+    severity: "warning",
+    body: "Falta validar autorización.",
+  };
+  const result = aggregate(
+    plan,
+    [
+      { score: 3, risk: "medium", explanation: "Corregir autorización.", findings: [finding] },
+      {
+        score: 3,
+        risk: "medium",
+        explanation: "Corregir autorización.",
+        findings: [{ ...finding, line: 50 }],
+      },
+    ],
+    2,
+  );
+  expect(result.findings).toHaveLength(1);
+  expect(result.coverage).toBe("complete");
+});
+
+test("request-size budgets prevent unexpected context cost without calling the provider", async () => {
+  const plan = buildPlan([chunkFile("a.ts", 10)], {}, sha);
+  let calls = 0;
+  const result = await reviewPlan({
+    plan,
+    instructions: "x".repeat(18000),
+    apiKey: "test",
+    fetchImpl: async () => {
+      calls++;
+      throw new Error("Should not call");
+    },
+    sleep: async () => {},
+  });
+  expect(calls).toBe(0);
+  expect(result.coverage).toBe("incomplete");
+  expect(result.reasons).toContain("Presupuesto de entrada por llamada agotado.");
+});
+
+test("more than fifty small eligible files do not create a coverage ceiling", async () => {
+  const plan = buildPlan(
+    Array.from({ length: 81 }, (_, i) => chunkFile(`file-${i}.ts`, 1)),
+    {},
+    sha,
+  );
+  expect(plan.files).toBe(81);
+  expect(plan.issues).toEqual([]);
+  expect((await runChunks(plan)).result.coverage).toBe("complete");
+});
+
+test("keeps a small multi-hunk file together instead of splitting it to fill a previous chunk", () => {
+  const file = {
+    filename: "multi.ts",
+    additions: 40,
+    deletions: 0,
+    patch: `${chunkFile("a.ts", 20).patch}\n${chunkFile("a.ts", 20).patch.replace("+1,20", "+100,20")}`,
+  };
+  const plan = buildPlan([chunkFile("previous.ts", 90), file], {}, sha);
+  const parts = plan.chunks.flatMap((c: any) => c.parts).filter((p: any) => p.path === "multi.ts");
+  expect(plan.issues).toEqual([]);
+  expect(parts).toHaveLength(1);
+  expect(parts[0].anchors).toHaveLength(40);
+});
+
+test("rejects a provider response marked as truncated even if its JSON parses", async () => {
+  const plan = buildPlan([chunkFile("a.ts", 10)], {}, sha);
+  const { result } = await runChunks(plan, undefined, async () => ({
+    ok: true,
+    json: async () => ({
+      choices: [
+        {
+          finish_reason: "length",
+          message: {
+            content: JSON.stringify({
+              score: 5,
+              risk: "low",
+              explanation: "Correcto.",
+              findings: [],
+            }),
+          },
+        },
+      ],
+    }),
+  }));
+  expect(result.coverage).toBe("incomplete");
+  expect(result.calls).toBe(2);
+});
+
+test("recovers a missing patch with local Git when GitHub cannot return the global diff", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "ai-git-patch-test-"));
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: workspace, encoding: "utf8" }).trim();
+  try {
+    git("init", "--quiet");
+    writeFileSync(join(workspace, "file.ts"), "");
+    git("add", "file.ts");
+    git(
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--quiet",
+      "-m",
+      "base",
+    );
+    const base = git("rev-parse", "HEAD");
+    writeFileSync(join(workspace, "file.ts"), "one\ntwo\nthree\n");
+    git("add", "file.ts");
+    git(
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--quiet",
+      "-m",
+      "change",
+    );
+    const head = git("rev-parse", "HEAD");
+    writeFileSync(
+      join(workspace, ".pr-reviewer.yml"),
+      readFileSync(join(import.meta.dir, "../.pr-reviewer.yml")),
+    );
+    const h = harness([head]);
+    h.github.rest.pulls.get = async () =>
+      ({
+        data: {
+          head: { sha: head },
+          base: { sha: base, ref: "main" },
+          state: "open",
+          draft: false,
+        },
+      }) as any;
+    h.github.request = async () => {
+      throw new Error("Global diff unavailable");
+    };
+    h.github.paginate = async () => [{ filename: "file.ts", additions: 3, deletions: 0 }];
+    await prepareReview({ ...h, env: { ...h.env, REVIEW_SHA: head, GITHUB_WORKSPACE: workspace } });
+    const plan = JSON.parse(readFileSync(join(workspace, ".git/ai-review-plan.json"), "utf8"));
+    expect(plan.issues).toEqual([]);
+    expect(h.outputs.mode).toBe("chunked");
+    expect(h.outputs.coverage).toBe("complete");
+    expect(plan.chunks[0].parts[0].anchors).toEqual(["RIGHT:1", "RIGHT:2", "RIGHT:3"]);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });

@@ -1,9 +1,16 @@
 const fs = require("node:fs");
+const { execFileSync } = require("node:child_process");
+const {
+  buildPlan,
+  publishFindings,
+  patchRecords,
+  matchesIgnore,
+} = require("./ai-review-chunks.cjs");
 const { MODEL, formatReview, formatInline } = require("./ai-review-presentation.cjs");
 
 const STATUS_CONTEXT = "R2D2 Review 5/5";
-const MAX_DIFF_SIZE = 10000;
-const MAX_FILES = 50;
+const SINGLE_CALL_DIFF_SIZE = 10000; // Single-call Action target, never a PR coverage limit.
+const SINGLE_CALL_FILES = 50;
 
 function parseSummary(summary) {
   if (typeof summary !== "string") return null;
@@ -58,7 +65,7 @@ function evaluateReview({
   if (coverage !== "complete") {
     return failure(
       "incomplete",
-      "R2D2 Review 0/5: el diff excede la cobertura del reviewer.",
+      "R2D2 Review 0/5: no se completaron todos los bloques requeridos.",
       review,
     );
   }
@@ -96,22 +103,84 @@ async function prepareReview({ github, context, core, env = process.env }) {
     description: "Falta la revisión de IA para este commit.",
     target_url: env.RUN_URL,
   });
-  const { data: diff } = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
-    ...args,
-    headers: { accept: "application/vnd.github.v3.diff" },
-  });
+  let diff;
+  try {
+    ({ data: diff } = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
+      ...args,
+      headers: { accept: "application/vnd.github.v3.diff" },
+    }));
+  } catch {
+    /* The global diff is optional; eligible file patches are the coverage source. */
+  }
   const files = await github.paginate(github.rest.pulls.listFiles, { ...args, per_page: 100 });
+  const configPath = `${env.GITHUB_WORKSPACE}/.pr-reviewer.yml`;
+  const originalConfig = fs.readFileSync(configPath, "utf8");
+  const parsed = JSON.parse(
+    execFileSync(
+      "bun",
+      ["-e", "console.log(JSON.stringify(Bun.YAML.parse(await Bun.stdin.text())))"],
+      { input: originalConfig, encoding: "utf8" },
+    ),
+  );
+  // GitHub can omit or truncate patches. Reconstruct those from the exact base/head locally.
+  for (const file of files) {
+    if (matchesIgnore(file.filename, parsed.ignore_paths ?? [])) continue;
+    let needsPatch = !file.patch;
+    if (file.patch) {
+      try {
+        const records = patchRecords(file.patch);
+        needsPatch =
+          records.filter((r) => r.side === "RIGHT").length !== file.additions ||
+          records.filter((r) => r.side === "LEFT").length !== file.deletions;
+      } catch {
+        needsPatch = true;
+      }
+    }
+    if (needsPatch && (file.additions || file.deletions)) {
+      try {
+        const raw = execFileSync(
+          "git",
+          [
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--unified=3",
+            `${pr.base.sha}...${env.REVIEW_SHA}`,
+            "--",
+            file.filename,
+          ],
+          { cwd: env.GITHUB_WORKSPACE, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 },
+        );
+        const start = raw.indexOf("@@ ");
+        if (start >= 0) file.patch = raw.slice(start).replace(/\n$/, "");
+      } catch {
+        /* Unavailable patches remain explicit coverage issues. */
+      }
+    }
+  }
+  const plan = buildPlan(files, parsed, env.REVIEW_SHA);
+  if (pr.changed_files != null && pr.changed_files !== files.length)
+    plan.issues.push("GitHub no devolvió todos los archivos modificados.");
+  const mode =
+    typeof diff === "string" &&
+    diff.length <= Math.min(SINGLE_CALL_DIFF_SIZE, parsed.max_diff_size ?? SINGLE_CALL_DIFF_SIZE) &&
+    plan.chunks.length === 1 &&
+    plan.files <= Math.min(SINGLE_CALL_FILES, parsed.max_files ?? SINGLE_CALL_FILES) &&
+    !files.some((f) => matchesIgnore(f.filename, parsed.ignore_paths ?? [])) &&
+    !plan.issues.length
+      ? "single"
+      : "chunked";
+  // Complete here means an eligible plan, not a completed review; the final coverage comes from execution.
+  const coverage = plan.issues.length ? "incomplete" : "complete";
+  fs.writeFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-plan.json`, JSON.stringify(plan), {
+    mode: 0o600,
+  });
   fs.writeFileSync(
     `${env.GITHUB_WORKSPACE}/.git/ai-review-diff.txt`,
-    typeof diff === "string" ? diff.slice(0, MAX_DIFF_SIZE) : "",
+    mode === "single" ? diff : "",
+    { mode: 0o600 },
   );
-  const coverage =
-    typeof diff === "string" && diff.length <= MAX_DIFF_SIZE && files.length <= MAX_FILES
-      ? "complete"
-      : "incomplete";
-  const configPath = `${env.GITHUB_WORKSPACE}/.pr-reviewer.yml`;
-  const config = fs
-    .readFileSync(configPath, "utf8")
+  const config = originalConfig
     .replaceAll("__REVIEWED_SHA__", env.REVIEW_SHA)
     .replaceAll("__COVERAGE__", coverage);
   // The final config field is a folded YAML scalar; also pass it through the Action input.
@@ -125,7 +194,15 @@ async function prepareReview({ github, context, core, env = process.env }) {
   fs.writeFileSync(configPath, config);
   core.setOutput("instructions", instructions);
   core.setOutput("coverage", coverage);
-  core.setOutput("diff_size", typeof diff === "string" ? String(diff.length) : "");
+  core.setOutput("mode", mode);
+  const chunkInstructions = instructions.slice(
+    Math.max(0, instructions.indexOf("Revisa exclusivamente")),
+    instructions.indexOf("Mantén el JSON interno") >= 0
+      ? instructions.indexOf("Mantén el JSON interno")
+      : undefined,
+  );
+  core.setOutput("chunk_instructions", chunkInstructions || instructions);
+  core.setOutput("diff_size", typeof diff === "string" ? String(diff.length) : String(plan.chars));
   core.setOutput("files_count", String(files.length));
   core.setOutput("current", "true");
 }
@@ -134,7 +211,7 @@ async function publishReview({ github, context, core, env = process.env }) {
   const args = { ...context.repo, pull_number: context.payload.pull_request.number };
   const { data: pr } = await github.rest.pulls.get(args);
   if (pr.draft || pr.state !== "open" || pr.base.ref !== "main") return;
-  const result = evaluateReview({
+  let result = evaluateReview({
     outcome: env.REVIEW_OUTCOME,
     summary: env.REVIEW_SUMMARY,
     risk: env.REVIEW_RISK,
@@ -162,6 +239,36 @@ async function publishReview({ github, context, core, env = process.env }) {
   });
   if (commit.sha !== env.REVIEW_SHA)
     throw new Error("El commit consultado no coincide con el SHA revisado.");
+  let report;
+  if (env.REVIEW_MODE === "chunked" && env.REVIEW_OUTCOME === "success") {
+    report = JSON.parse(
+      fs.readFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-result.json`, "utf8"),
+    );
+    const { data: beforeInline } = await github.rest.pulls.get(args);
+    if (
+      beforeInline.head.sha !== env.REVIEW_SHA ||
+      beforeInline.draft ||
+      beforeInline.state !== "open"
+    )
+      return;
+    try {
+      await publishFindings({
+        github,
+        args,
+        sha: env.REVIEW_SHA,
+        botLogin: env.REVIEW_BOT_LOGIN || "github-actions[bot]",
+        report,
+      });
+    } catch {
+      result = evaluateReview({
+        outcome: "failure",
+        expectedSha: env.REVIEW_SHA,
+        currentSha: env.REVIEW_SHA,
+      });
+      status.state = result.state;
+      status.description = result.description;
+    }
+  }
   const body = formatReview(result, env.REVIEW_SHA, env.RUN_URL, env.REVIEW_COST, {
     risk: env.REVIEW_RISK,
     commentsCount: env.REVIEW_COMMENTS,
@@ -169,6 +276,7 @@ async function publishReview({ github, context, core, env = process.env }) {
     actionSummary: env.ACTION_SUMMARY,
     diffSize: env.REVIEW_DIFF_SIZE,
     filesCount: env.REVIEW_FILES_COUNT,
+    report,
   });
   const botLogin = env.REVIEW_BOT_LOGIN || "github-actions[bot]";
   const issueArgs = { ...context.repo, issue_number: args.pull_number };
@@ -284,8 +392,8 @@ async function archiveReviewSummaries({ github, context, botLogin, reviews }) {
 module.exports = {
   STATUS_CONTEXT,
   MODEL,
-  MAX_DIFF_SIZE,
-  MAX_FILES,
+  SINGLE_CALL_DIFF_SIZE,
+  SINGLE_CALL_FILES,
   parseSummary,
   evaluateReview,
   formatReview,

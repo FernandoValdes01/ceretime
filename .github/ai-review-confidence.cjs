@@ -1,12 +1,44 @@
 const fs = require("node:fs");
+const { reviewPlan } = require("./ai-review-chunks.cjs");
 const { MODEL, parseSummary } = require("./ai-review-score.cjs");
 
 async function normalizeConfidence({
   core,
   env = process.env,
   fetchImpl = fetch,
+  github,
+  context,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
+  if (env.REVIEW_MODE === "chunked") {
+    const plan = JSON.parse(
+      fs.readFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-plan.json`, "utf8"),
+    );
+    if (plan.sha !== env.REVIEW_SHA) throw new Error("Plan de otro SHA.");
+    const report = await reviewPlan({
+      plan,
+      instructions: env.REVIEW_INSTRUCTIONS,
+      apiKey: env.GROQ_API_KEY,
+      fetchImpl,
+      sleep,
+      isCurrent: async () => {
+        const { data: pr } = await github.rest.pulls.get({
+          ...context.repo,
+          pull_number: context.payload.pull_request.number,
+        });
+        return pr.head.sha === env.REVIEW_SHA && !pr.draft && pr.state === "open";
+      },
+    });
+    if (!parseSummary(report.summary)) throw new Error("Resumen agregado inválido.");
+    fs.writeFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-result.json`, JSON.stringify(report), {
+      mode: 0o600,
+    });
+    core.setOutput("summary", report.summary);
+    core.setOutput("coverage", report.coverage);
+    core.setOutput("risk", report.risk);
+    core.setOutput("comments", String(report.findings.length));
+    return;
+  }
   if (env.REVIEW_OUTCOME !== "success" || !env.REVIEW_SUMMARY) return;
   const structured = parseSummary(env.REVIEW_SUMMARY);
   if (

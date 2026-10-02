@@ -69,7 +69,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
   );
   const nextAction = {
     incomplete:
-      "El problema pendiente está en la cobertura de la automatización: implementar revisión por bloques que cubra todo el diff y agregue sus resultados respetando la cuota de Groq. Subir el score o marcar la cobertura como completa sin revisar esos bloques no lo resuelve. Si aparecen observaciones parciales, deben revisarse, pero no certifican el resto del cambio.",
+      "Consultar la causa de cobertura incompleta: llamada fallida, respuesta inválida, presupuesto agotado o patch no disponible. Corregir esa causa o ajustar el presupuesto explícito dentro de los límites y reintentar. Las observaciones parciales no certifican el resto del cambio.",
     failed:
       "Consultar los logs enlazados para identificar el error de Groq o de la Action. Corregir la configuración o esperar la cuota del proveedor y reintentar el workflow sobre este mismo SHA.",
     missing: "Ejecutar AI Code Review para el commit actual y comprobar que devuelve un resultado.",
@@ -103,7 +103,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           "",
           "No es una calificación de la calidad del código. La revisión es parcial y no permite evaluar toda la PR.",
           "",
-          `Diff de la PR: ${amount(metadata.diffSize)} caracteres; límite por revisión: 10.000. Archivos: ${amount(metadata.filesCount)}; límite: 50. El adaptador fuerza 0/5 si se supera cualquiera de estos límites.`,
+          `Diff de la PR: ${amount(metadata.diffSize)} caracteres; archivos: ${amount(metadata.filesCount)}. El tamaño total no determina la cobertura. ${metadata.report?.reasons?.join(" ") || "No se completó una revisión válida de todos los bloques."}`,
           "",
           "Cero hallazgos en la parte revisada no significa que el resto esté libre de problemas.",
           "",
@@ -116,6 +116,18 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     ...(observations && observations !== explanation
       ? ["### Observaciones del reviewer", "", observations, ""]
       : []),
+    ...(metadata.report
+      ? [
+          "### Cobertura por bloques",
+          "",
+          `Bloques procesados: ${metadata.report.processed}/${metadata.report.total}. Llamadas a Groq: ${metadata.report.calls}. Cobertura: ${metadata.report.coverage}.`,
+          "",
+          ...metadata.report.findings.map(
+            (f) => `- ${f.path}:${f.line} (${f.side}) · ${withoutBold(f.body)}`,
+          ),
+          "",
+        ]
+      : []),
     "<details>",
     "<summary>Modelo y ejecución</summary>",
     "",
@@ -123,7 +135,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     `Modelo: \`${MODEL}\` · Proveedor: Groq`,
     "",
-    `Estimación de la Action en USD: ${validCost}. No es una factura de Groq; excluye la evaluación adicional.`,
+    `Estimación de la Action en USD: ${validCost}. No es una factura de Groq; las llamadas por bloques se contabilizan aparte, sin estimar un precio no verificado.`,
     "",
     `[Logs de la ejecución](${runUrl})`,
     "",
