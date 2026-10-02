@@ -1,6 +1,6 @@
 # Identidad de R2D2 en GitHub
 
-El resumen y los comentarios inline usan el nombre R2D2. La imagen del reviewer está en `.github/assets/r2d2.jpg`; no pertenece a Web ni Mobile. El resumen muestra la nota real como `Confidence Score: N/5`, una tabla de riesgo, hallazgos y estado, el SHA enlazado y los datos de ejecución plegados. Elimina las negritas de la prosa y el pie publicitario del reviewer. Los bloques de sugerencias y el código permanecen intactos.
+El resumen y los comentarios inline usan el nombre R2D2. La imagen del reviewer está en `.github/assets/r2d2.jpg`; no pertenece a Web ni Mobile. El resumen muestra la nota real como `Confidence Score: N/5`, una tabla de riesgo, hallazgos y estado, el SHA enlazado y los datos de ejecución plegados. Elimina las negritas de la prosa y el pie publicitario del reviewer. También ordena los comentarios antiguos de esa identidad asociados a sus reviews de IA identificadas en la PR, conservando su SHA original. Los bloques de sugerencias y el código permanecen intactos.
 
 ## Autor y avatar
 

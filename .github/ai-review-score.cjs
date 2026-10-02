@@ -182,20 +182,35 @@ async function publishReview({ github, context, core, env = process.env }) {
       body,
     });
   }
-  await tidyComments({ github, args, sha: env.REVIEW_SHA, botLogin });
+  await tidyComments({ github, args, sha: env.REVIEW_SHA, botLogin, reviews });
   const { data: latest } = await github.rest.pulls.get(args);
   if (latest.head.sha !== env.REVIEW_SHA || latest.draft || latest.state !== "open") return;
   await github.rest.repos.createCommitStatus(status);
   core.info(result.description);
 }
 
-async function tidyComments({ github, args, sha, botLogin }) {
+async function tidyComments({ github, args, sha, botLogin, reviews }) {
+  const ownReviews = new Set(
+    reviews
+      .filter(
+        (review) =>
+          review.user?.login === botLogin &&
+          (review.body?.startsWith("<!-- ceretime-ai-review -->") ||
+            (review.body?.startsWith("## AI Code Review") &&
+              review.body.includes("https://github.com/mara-werils/ai-code-reviewer"))),
+      )
+      .map((review) => review.id),
+  );
   const comments = await github.paginate(github.rest.pulls.listReviewComments, {
     ...args,
     per_page: 100,
   });
   for (const comment of comments) {
-    if (comment.user?.login !== botLogin || comment.original_commit_id !== sha) continue;
+    if (
+      comment.user?.login !== botLogin ||
+      (comment.original_commit_id !== sha && !ownReviews.has(comment.pull_request_review_id))
+    )
+      continue;
     const body = formatInline(comment.body);
     if (body !== comment.body) {
       await github.rest.pulls.updateReviewComment({

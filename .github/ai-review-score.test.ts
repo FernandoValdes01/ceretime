@@ -528,3 +528,28 @@ test("uses the configured App identity instead of trusting an arbitrary bot", as
   expect(app.with["permission-statuses"]).toBe("write");
   expect(app.with.repositories).toBe("${{ github.event.repository.name }}");
 });
+
+test("formats previous inline findings only when they belong to this bot's identified AI review", async () => {
+  const h = harness();
+  h.existing.push({
+    id: 11,
+    user: { login: "github-actions[bot]" },
+    commit_id: oldSha,
+    body: "<!-- ceretime-ai-review -->\n## AI Code Review",
+  });
+  const body =
+    "**[WARNING] Warning**\n\n**Hallazgo anterior**.\n```suggestion\nconst result = 2 ** 3;\n```";
+  h.inline.push({
+    id: 12,
+    user: { login: "github-actions[bot]" },
+    original_commit_id: oldSha,
+    pull_request_review_id: 11,
+    body,
+  });
+  await publishReview(h);
+  expect(h.updatedInline).toEqual([
+    { owner: "owner", repo: "repo", comment_id: 12, body: formatInline(body) },
+  ]);
+  expect(h.inline[0].original_commit_id).toBe(oldSha);
+  expect(h.updatedInline[0].body).toContain("const result = 2 ** 3;");
+});
