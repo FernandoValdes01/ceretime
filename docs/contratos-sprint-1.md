@@ -110,3 +110,15 @@ La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo 
 
 - TI2-26 quedó integrada (PR #52): la validación y la documentación de esta superficie ya viven en este archivo y en `convex/apiBackend.test.ts`.
 - TI4-12 cablea los hooks al Backend y resuelve las divergencias de valores.
+
+## Evolución compatible de Sprint 2: disponibilidad, espacios y atención (TI2-87)
+
+Contratos públicos compartidos v1 para Sprint 2, sin otra API ni tipos locales divergentes: la única fuente pura es `convex/domain/availability/`, `convex/domain/spaces/` y `convex/domain/appointments/`, exportada por el barrel `convex/domain/index.ts` para Web y Mobile. Reutilizan `ModalityPreference` de la solicitud, las clases de excepción de TI2-81 (`cancelled`/`added`) y los estados de TI2-83 (`scheduled`, `completed`, `cancelled_by_student`, `cancelled_by_cereti`, `rescheduled`, `no_show`); reserva y atención son una sola entidad y no existe un `domain/reservations` paralelo. La forma de errores públicos (`ApiResult`/`PublicApiError`) se conserva intacta; TI2-88 fija códigos y casos negativos.
+
+| Contrato | Versión | Fuente |
+| --- | --- | --- |
+| Disponibilidad (bloques, excepciones, rango y paginación) | `v1` | `convex/domain/availability/availability.ts` |
+| Espacios (campus, edificio, piso, sala, acceso e instrucciones) | `v1` | `convex/domain/spaces/space.ts` |
+| Atención reservada (una sola entidad, seis estados) | `v1` | `convex/domain/appointments/appointment.ts` |
+
+Contrato propuesto frente a endpoint disponible: estos DTO llevan identificadores genéricos (`string` plano) y campo `version`; las entradas nuevas se entregarán bajo `api.presentation.availability`/`appointments`/`spaces` en las tareas de endpoints (TI2-97/TI2-98/TI2-99/TI2-111), fuera de esta tarea, que no crea endpoints, casos de uso, repositorios, esquema ni adaptadores de calendario. Los clientes siguen compilando sin cambios: Web y Mobile aún no consumen estos DTO y Mobile conserva sus mocks tipados durante Sprint 2; todo dato es ficticio y la autorización contextual queda en Aplicación con la DB y los servicios externos en Infraestructura. Comprobación: espejo manual de los modelos provisionales de Mobile en `convex/domain/availability/availability.test.ts`, ida y vuelta JSON de cada DTO ficticio y regresión de `test:convex`, `test:web`, `build` Web y `typecheck`/`test` Mobile.
