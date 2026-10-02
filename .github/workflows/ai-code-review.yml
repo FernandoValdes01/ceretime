@@ -1,0 +1,78 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: ai-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Revisión informativa de IA
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Descargar el commit de la PR
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Invalidar la revisión anterior y preparar instrucciones
+        id: prepare
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { prepareReview } = require('./.github/ai-review-score.cjs');
+            await prepareReview({ github, context, core });
+
+      - name: Revisar el cambio con Groq
+        id: ai_review
+        if: steps.prepare.outputs.current == 'true'
+        continue-on-error: true
+        uses: mara-werils/ai-code-reviewer@2f6bb8c98d791de5b84dc425eacadcf0a7052fcf
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        with:
+          provider: groq
+          model: openai/gpt-oss-120b
+          language: es
+          review_style: minimal
+          max_comments: "5"
+          auto_summarize: "true"
+          suggest_tests: "true"
+          label_pr: "false"
+
+      - name: Publicar resumen y status del SHA revisado
+        if: ${{ always() && !cancelled() }}
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REVIEW_OUTCOME: ${{ steps.ai_review.outcome }}
+          REVIEW_SUMMARY: ${{ steps.ai_review.outputs.summary }}
+          REVIEW_RISK: ${{ steps.ai_review.outputs.risk_level }}
+          REVIEW_COMMENTS: ${{ steps.ai_review.outputs.comments_count }}
+          REVIEW_COST: ${{ steps.ai_review.outputs.cost_usd }}
+          REVIEW_COVERAGE: ${{ steps.prepare.outputs.coverage }}
+        with:
+          script: |
+            const { publishReview } = require('./.github/ai-review-score.cjs');
+            await publishReview({ github, context, core });
