@@ -68,13 +68,8 @@ function buildPlan(files, config = {}, sha) {
       throw new Error(`Límite inválido: ${key}.`);
   }
   const plan = { sha, limits, chunks: [], issues: [], files: 0, chars: 0 };
-  let parts = [],
-    size = 0;
-  const flush = () => {
-    if (parts.length) plan.chunks.push({ parts });
-    parts = [];
-    size = 0;
-  };
+  // Reuse spare capacity instead of abandoning a partially filled chunk.
+  const bins = [];
   for (const original of files) {
     let file = original;
     if (matchesIgnore(file.filename, config.ignore_paths ?? [])) continue;
@@ -161,12 +156,16 @@ function buildPlan(files, config = {}, sha) {
         plan.issues.push(`Bloque mayor que el presupuesto: ${file.filename}`);
         continue;
       }
-      if (size + partSize > limits.chunkChars) flush();
-      parts.push(part);
-      size += partSize;
+      const available = bins
+        .filter((bin) => bin.size + partSize + 1 <= limits.chunkChars)
+        .sort((a, b) => b.size - a.size)[0];
+      if (available) {
+        available.parts.push(part);
+        available.size += partSize + 1;
+      } else bins.push({ parts: [part], size: partSize + 2 });
     }
   }
-  flush();
+  plan.chunks = bins.map(({ parts }) => ({ parts }));
   if (plan.chunks.length > limits.maxChunks)
     plan.issues.push("Presupuesto máximo de bloques agotado.");
   if (!plan.files) plan.issues.push("No hay archivos elegibles para revisar.");

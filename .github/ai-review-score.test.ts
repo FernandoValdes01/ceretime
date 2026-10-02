@@ -1216,3 +1216,29 @@ test("recovers a missing patch with local Git when GitHub cannot return the glob
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test("reuses spare capacity so a fragmented plan fits the unchanged call budget", async () => {
+  const files = Array.from({ length: 16 }, (_, i) => [
+    chunkFile(`small-${i}.ts`, 20),
+    chunkFile(`large-${i}.ts`, 100),
+  ]).flat();
+  const plan = buildPlan(files, {}, sha);
+  expect(plan.chunks.length).toBeLessThanOrEqual(LIMITS.maxChunks);
+  expect(plan.issues).toEqual([]);
+  const anchors = plan.chunks.flatMap((chunk: any) =>
+    chunk.parts.flatMap((part: any) =>
+      part.anchors.map((anchor: string) => `${part.path}:${anchor}`),
+    ),
+  );
+  expect(anchors).toHaveLength(16 * 120);
+  expect(new Set(anchors).size).toBe(16 * 120);
+  for (const chunk of plan.chunks) {
+    expect(
+      JSON.stringify(chunk.parts.map(({ anchors: _anchors, ...part }: any) => part)).length,
+    ).toBeLessThanOrEqual(LIMITS.chunkChars);
+  }
+  const { result, requests } = await runChunks(plan);
+  expect(result.coverage).toBe("complete");
+  expect(result.score).toBe(5);
+  expect(requests.length).toBeLessThanOrEqual(LIMITS.maxCalls);
+});
