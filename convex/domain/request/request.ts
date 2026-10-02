@@ -19,7 +19,7 @@
  */
 
 import type { ApiResult } from "../errors/api_error";
-import { SPRINT_1_REQUEST_STATES, type Sprint1RequestState } from "./state";
+import { PERSISTABLE_REQUEST_STATES, type PersistableRequestState } from "./state";
 
 /**
  * Tope del texto de necesidades de acceso en caracteres (TI2-23).
@@ -82,24 +82,27 @@ export function toAccessNeedsText(raw: string): string | null {
 }
 
 /**
- * Entidad pública de solicitud (TI2-8): espejo exacto de la fila de la tabla
- * `requests` tal como la lee el Backend (`_id`, `studentId`, `status`,
- * `accessNeeds` como texto y `createdAt`). Un documento real de la tabla se
- * asigna directo a este tipo. Los identificadores son `string` plano para
+ * Entidad pública de solicitud (TI2-8, compatibilidad TI2-83): espejo exacto
+ * de la fila de la tabla `requests` tal como la lee el Backend (`_id`,
+ * `studentId`, `status`, `accessNeeds` como texto y `createdAt`). Acepta los
+ * estados persistibles (Sprint 1 más la cancelación y el cierre de TI2-85)
+ * para que las lecturas anteriores sigan funcionando; solo un literal fuera
+ * de ese conjunto es corrupción. Un documento real de la tabla se asigna
+ * directo a este tipo. Los identificadores son `string` plano para
  * no importar `convex/_generated`; los `Id` de Convex son asignables a
  * `string` y pasan directo al adaptador.
  */
 export interface AccompanimentRequest {
   readonly _id: string;
   readonly studentId: string;
-  readonly status: Sprint1RequestState;
+  readonly status: PersistableRequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
 }
 
 /**
  * Valida una fila persistida de `requests` y devuelve la entidad pública.
- * Rechaza un `status` que no sea un estado de Sprint 1 en vez de propagar
+ * Rechaza un `status` fuera de los estados persistibles en vez de propagar
  * un literal desconocido: una fila con estado inválido es corrupción, no
  * una solicitud. El identificador es genérico para no importar
  * `convex/_generated`: con `string` devuelve la entidad canónica y con un
@@ -114,13 +117,13 @@ export function toAccompanimentRequest<RowId extends string, StudentId extends s
   readonly accessNeeds: string;
   readonly createdAt: number;
 }): AccompanimentRequest & { readonly _id: RowId; readonly studentId: StudentId } {
-  if (!(SPRINT_1_REQUEST_STATES as readonly string[]).includes(row.status)) {
+  if (!(PERSISTABLE_REQUEST_STATES as readonly string[]).includes(row.status)) {
     throw new Error(`Estado de solicitud desconocido en la fila ${row._id}: ${row.status}`);
   }
   return {
     _id: row._id,
     studentId: row.studentId,
-    status: row.status as Sprint1RequestState,
+    status: row.status as PersistableRequestState,
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   };

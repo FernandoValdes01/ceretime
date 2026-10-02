@@ -3,9 +3,9 @@ import { v } from "convex/values";
 import {
   accompanimentStatusUnion,
   accountStatusUnion,
+  appointmentStatusUnion,
   assignmentRoleUnion,
   assignmentStatusUnion,
-  attentionStatusUnion,
   availabilityExceptionKindUnion,
   institutionalStatusUnion,
   modalityUnion,
@@ -106,8 +106,10 @@ export default defineSchema({
   }).index("by_accompaniment", ["accompanimentId"]),
 
   // Tabla 'requests': solicitudes de acompañamiento. El estado usa los
-  // literales de Sprint 1 del dominio (TI2-7); `createdAt` es la fecha de
-  // creación como número. Solo persistencia: las transiciones las aplica TI2-21.
+  // literales persistibles del dominio (Sprint 1 de TI2-7 más la cancelación
+  // y el cierre de TI2-85, sin `referred`); `createdAt` es la fecha de
+  // creación como número. Solo persistencia: las transiciones las aplica TI2-21
+  // y las reglas de cancelación son de TI2-85.
   requests: defineTable({
     studentId: v.id("users"),
     status: requestStatusUnion,
@@ -233,9 +235,10 @@ export default defineSchema({
     // de la fecha.
     .index("by_date", ["date"]),
 
-  // Tabla 'attentions': atenciones reservadas (TI2-83). Cada fila es una
-  // ocurrencia concreta (`startsAt` a `endsAt` en milisegundos de época)
-  // vinculada a un acompañamiento; `studentId` duplica al dueño para
+  // Tabla 'appointments': la única atención creada al reservar (TI2-83, no
+  // existe otra tabla `reservations`). Cada fila es una ocurrencia concreta
+  // (`startsAt` a `endsAt` en milisegundos de época) vinculada a un
+  // acompañamiento y a sus usuarios; `studentId` duplica al dueño para
   // listarlo sin uniones, igual que `requests` y `accompaniments`.
   // `spaceId` acompaña a la atención presencial y queda ausente en línea.
   // `originalStartsAt` conserva la fecha original al reagendar y
@@ -245,13 +248,13 @@ export default defineSchema({
   // justificación con plazo de cinco días hábiles queda para la extensión
   // futura de justificación, no para este esquema. Solo persistencia: la
   // ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
-  attentions: defineTable({
+  appointments: defineTable({
     accompanimentId: v.id("accompaniments"),
     studentId: v.id("users"),
     professionalId: v.id("users"),
     spaceId: v.optional(v.id("spaces")),
     modality: modalityUnion,
-    status: attentionStatusUnion,
+    status: appointmentStatusUnion,
     startsAt: v.number(),
     endsAt: v.number(),
     originalStartsAt: v.optional(v.number()),

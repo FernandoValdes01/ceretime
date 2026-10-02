@@ -36,11 +36,17 @@ export {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
   isSprint1RequestState,
+  PERSISTABLE_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
 } from "./request/state";
-export type { FutureRequestState, RequestState, Sprint1RequestState } from "./request/state";
+export type {
+  FutureRequestState,
+  PersistableRequestState,
+  RequestState,
+  Sprint1RequestState,
+} from "./request/state";
 
 // Acompañamiento y sus vistas de lectura.
 export {
@@ -56,6 +62,23 @@ export type {
   AccompanimentView,
   MinimizedAccompaniment,
 } from "./accompaniment/accompaniment";
+
+// Vocabulario persistido de disponibilidad (TI2-83): literales para los
+// validadores del borde, sin reglas (TI2-81/TI2-82).
+export {
+  AVAILABILITY_EXCEPTION_KIND_VALUES,
+  DAY_END_MINUTE,
+  DAY_START_MINUTE,
+  MODALITY_VALUES,
+  WEEKDAY_MAX,
+  WEEKDAY_MIN,
+} from "./availability/availability";
+export type { AvailabilityExceptionKind, Modality } from "./availability/availability";
+
+// Vocabulario persistido de la atención reservada (TI2-83): literales para
+// los validadores del borde, sin transiciones (TI2-93).
+export { APPOINTMENT_STATUS_VALUES, INITIAL_APPOINTMENT_STATUS } from "./appointments/appointment";
+export type { AppointmentStatus } from "./appointments/appointment";
 
 // Asignaciones de acceso y sus permisos de lectura.
 export {

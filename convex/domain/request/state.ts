@@ -33,6 +33,21 @@ export type Sprint1RequestState = (typeof SPRINT_1_REQUEST_STATES)[number];
 export type FutureRequestState = (typeof FUTURE_REQUEST_STATES)[number];
 export type RequestState = (typeof REQUEST_STATES)[number];
 
+/**
+ * Estados persistibles tras la ampliación de TI2-85 (TI2-83 adapta
+ * validadores). Suma `closed_without_accompaniment` y `cancelled` a los
+ * operativos de Sprint 1; `referred` sigue sin habilitarse porque no tiene
+ * reglas ni proyección acordada. TI2-85 es dueño de las reglas y el mapping;
+ * acá solo se declara qué valores puede traer una fila leída.
+ */
+export const PERSISTABLE_REQUEST_STATES = [
+  ...SPRINT_1_REQUEST_STATES,
+  "closed_without_accompaniment",
+  "cancelled",
+] as const;
+
+export type PersistableRequestState = (typeof PERSISTABLE_REQUEST_STATES)[number];
+
 export const INITIAL_REQUEST_STATE: Sprint1RequestState = "received";
 
 /**

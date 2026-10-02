@@ -1,13 +1,15 @@
 ﻿import { v } from "convex/values";
 import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniment/accompaniment";
-import { ATTENTION_STATUS_VALUES } from "./domain/agenda/attention";
-import { AVAILABILITY_EXCEPTION_KIND_VALUES } from "./domain/agenda/availability";
-import { MODALITY_VALUES } from "./domain/agenda/modality";
+import { APPOINTMENT_STATUS_VALUES } from "./domain/appointments/appointment";
+import {
+  AVAILABILITY_EXCEPTION_KIND_VALUES,
+  MODALITY_VALUES,
+} from "./domain/availability/availability";
 import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
 } from "./domain/accompaniment/practitioner_assignment";
-import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
+import { PERSISTABLE_REQUEST_STATES } from "./domain/request/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,
@@ -47,10 +49,12 @@ export const assignmentStatusUnion = v.union(
 );
 
 /**
- * Estados de solicitud habilitados en Sprint 1, derivados de los literales
- * del dominio (TI2-7) para que el esquema no defina nombres por su cuenta.
+ * Estados de solicitud persistibles (TI2-83 adapta validadores para TI2-85):
+ * operativos de Sprint 1 (TI2-7) más `closed_without_accompaniment` y
+ * `cancelled`, sin `referred`. Derivados del dominio para que el esquema no
+ * defina nombres por su cuenta.
  */
-const requestStatusLiterals = SPRINT_1_REQUEST_STATES.map((state) => v.literal(state));
+const requestStatusLiterals = PERSISTABLE_REQUEST_STATES.map((state) => v.literal(state));
 
 export const requestStatusUnion = v.union(...requestStatusLiterals);
 
@@ -70,6 +74,6 @@ export const availabilityExceptionKindUnion = v.union(
 /**
  * Estados de la atención reservada (TI2-83), derivados del dominio.
  */
-export const attentionStatusUnion = v.union(
-  ...ATTENTION_STATUS_VALUES.map((value) => v.literal(value)),
+export const appointmentStatusUnion = v.union(
+  ...APPOINTMENT_STATUS_VALUES.map((value) => v.literal(value)),
 );

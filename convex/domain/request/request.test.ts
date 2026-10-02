@@ -82,6 +82,29 @@ describe("toAccompanimentRequest (TI2-8)", () => {
     ).toThrow("Estado de solicitud desconocido");
   });
 
+  test("adapta filas con la cancelación y el cierre de TI2-85 sin habilitar referred (TI2-83)", () => {
+    for (const status of ["cancelled", "closed_without_accompaniment"] as const) {
+      expect(
+        toAccompanimentRequest({
+          _id: "request-id",
+          studentId: "student-id",
+          status,
+          accessNeeds: "Necesidad ficticia",
+          createdAt: 1000,
+        }).status,
+      ).toBe(status);
+    }
+    expect(() =>
+      toAccompanimentRequest({
+        _id: "request-id",
+        studentId: "student-id",
+        status: "referred",
+        accessNeeds: "Necesidad ficticia",
+        createdAt: 1000,
+      }),
+    ).toThrow("Estado de solicitud desconocido");
+  });
+
   test("la entidad publica se importa desde el barrel", () => {
     const entity: BarrelAccompanimentRequest = {
       _id: "request-id",
