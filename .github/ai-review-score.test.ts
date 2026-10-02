@@ -1307,3 +1307,204 @@ test("chunk normalization accepts more than five total findings and emits only f
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test("paces chunks and recovers repeated 429 without skipping required coverage", async () => {
+  const plan = buildPlan([chunkFile("rate.ts", 10)], {}, sha);
+  let calls = 0;
+  const pauses: number[] = [];
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async (ms: number) => {
+      pauses.push(ms);
+    },
+    fetchImpl: async () => {
+      calls++;
+      if (calls <= 2)
+        return {
+          ok: false,
+          status: 429,
+          headers: new Headers({ "retry-after": "90", "x-ratelimit-reset-tokens": "1m40s" }),
+        };
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  score: 5,
+                  risk: "low",
+                  explanation: "Sin problemas.",
+                  findings: [],
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+  });
+  expect(result.coverage).toBe("complete");
+  expect(result.processed).toBe(plan.chunks.length);
+  expect(calls).toBe(3);
+  expect(pauses[0]).toBeGreaterThanOrEqual(101000);
+  expect(pauses[1]).toBeGreaterThanOrEqual(130000);
+  expect(LIMITS.intervalMs).toBe(65000);
+});
+
+test("persistent 429 reports quota failure and respects the maximum call count", async () => {
+  const plan = buildPlan([chunkFile("quota.ts", 10)], {}, sha);
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async () => {},
+    fetchImpl: async () => ({ ok: false, status: 429, headers: new Headers() }),
+  });
+  expect(result.calls).toBe(3);
+  expect(result.coverage).toBe("incomplete");
+  expect(result.score).toBe(0);
+  expect(result.reasons.join(" ")).toContain("HTTP 429");
+});
+
+test("daily quota cannot cause an early retry before the requested reset", async () => {
+  const plan = buildPlan([chunkFile("daily.ts", 10)], {}, sha);
+  const pauses: number[] = [];
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async (ms: number) => {
+      pauses.push(ms);
+    },
+    fetchImpl: async () => ({
+      ok: false,
+      status: 429,
+      headers: new Headers({
+        "retry-after": "7200",
+        "x-ratelimit-remaining-requests": "0",
+        "x-ratelimit-reset-requests": "2h",
+      }),
+    }),
+  });
+  expect(result.calls).toBe(1);
+  expect(pauses).toHaveLength(0);
+  expect(result.reasons.join(" ")).toContain("espera mayor que el presupuesto");
+});
+
+test("all chunks remain eligible while respecting the minute token window", async () => {
+  const plan = buildPlan(
+    Array.from({ length: 25 }, (_, i) => chunkFile(`paced-${i}.ts`, 100)),
+    {},
+    sha,
+  );
+  let elapsed = 0,
+    lastRequest = -65000;
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async (ms: number) => {
+      elapsed += ms;
+    },
+    fetchImpl: async () => {
+      expect(elapsed - lastRequest).toBeGreaterThanOrEqual(65000);
+      lastRequest = elapsed;
+      return {
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  score: 5,
+                  risk: "low",
+                  explanation: "Sin problemas.",
+                  findings: [],
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+  });
+  expect(result.coverage).toBe("complete");
+  expect(result.processed).toBe(plan.chunks.length);
+  expect(result.score).toBe(5);
+});
+
+test("quota wait budget stops bounded retries and the current head is checked after waiting", async () => {
+  const plan = buildPlan(
+    [chunkFile("budget.ts", 10)],
+    { chunking: { maxRateLimitWaitMs: 1000 } },
+    sha,
+  );
+  const limited = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async () => {},
+    fetchImpl: async () => ({ ok: false, status: 429, headers: new Headers() }),
+  });
+  expect(limited.calls).toBe(1);
+  expect(limited.coverage).toBe("incomplete");
+  const currentPlan = buildPlan([chunkFile("changed.ts", 10)], {}, sha);
+  let current = true,
+    calls = 0;
+  const changed = await reviewPlan({
+    plan: currentPlan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    isCurrent: async () => current,
+    sleep: async () => {
+      current = false;
+    },
+    fetchImpl: async () => {
+      calls++;
+      return { ok: false, status: 429, headers: new Headers() };
+    },
+  });
+  expect(calls).toBe(1);
+  expect(changed.coverage).toBe("incomplete");
+  expect(changed.reasons).toContain("El head cambió durante la revisión.");
+});
+
+test("successful low-token headers delay the next chunk until reset", async () => {
+  const plan = buildPlan([chunkFile("tokens-a.ts", 100), chunkFile("tokens-b.ts", 100)], {}, sha);
+  const pauses: number[] = [];
+  const result = await reviewPlan({
+    plan,
+    instructions: "CERETIME",
+    apiKey: "test",
+    sleep: async (ms: number) => {
+      pauses.push(ms);
+    },
+    fetchImpl: async () => ({
+      ok: true,
+      headers: new Headers({
+        "x-ratelimit-remaining-tokens": "100",
+        "x-ratelimit-reset-tokens": "1m15s",
+      }),
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                score: 5,
+                risk: "low",
+                explanation: "Sin problemas.",
+                findings: [],
+              }),
+            },
+          },
+        ],
+      }),
+    }),
+  });
+  expect(result.coverage).toBe("complete");
+  expect(pauses[0]).toBe(76000);
+});

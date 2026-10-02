@@ -9,7 +9,8 @@ chunking:
   maxChunks: 28
   maxCalls: 32
   outputTokens: 1200
-  intervalMs: 30000
+  intervalMs: 65000
+  maxRateLimitWaitMs: 600000
 auto_summarize: true
 suggest_tests: true
 label_pr: false

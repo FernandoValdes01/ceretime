@@ -6,7 +6,8 @@ const LIMITS = Object.freeze({
   maxChunks: 28,
   maxCalls: 32,
   outputTokens: 1200,
-  intervalMs: 30000,
+  intervalMs: 65000,
+  maxRateLimitWaitMs: 600000,
 });
 const severityRank = { critical: 3, important: 2, warning: 1, suggestion: 0 };
 const riskRank = { low: 0, medium: 1, high: 2 };
@@ -265,6 +266,30 @@ function aggregate(plan, results, calls, errors = []) {
   };
 }
 
+function durationMs(value) {
+  if (!value) return 0;
+  if (/^\d+(?:\.\d+)?$/.test(value)) return Number(value) * 1000;
+  if (!/^(?:\d+(?:\.\d+)?(?:ms|h|m|s))+$/.test(value)) return 0;
+  return [...value.matchAll(/(\d+(?:\.\d+)?)(ms|h|m|s)/g)].reduce(
+    (total, [, amount, unit]) =>
+      total + Number(amount) * { ms: 1, s: 1000, m: 60000, h: 3600000 }[unit],
+    0,
+  );
+}
+
+function rateLimitDelay(headers, attempt, interval) {
+  const retry = headers?.get("retry-after");
+  const retryMs =
+    durationMs(retry) ||
+    (Number.isFinite(Date.parse(retry)) ? Math.max(0, Date.parse(retry) - Date.now()) : 0);
+  const tokens = durationMs(headers?.get("x-ratelimit-reset-tokens"));
+  const requests =
+    headers?.get("x-ratelimit-remaining-requests") === "0"
+      ? durationMs(headers?.get("x-ratelimit-reset-requests"))
+      : 0;
+  return Math.ceil(Math.max(interval * 2 ** attempt, retryMs, tokens, requests)) + 1000;
+}
+
 async function reviewPlan({
   plan,
   instructions,
@@ -276,16 +301,21 @@ async function reviewPlan({
   if (!apiKey) throw new Error("Falta el secret del proveedor.");
   const results = [],
     errors = [];
-  let calls = 0;
+  let calls = 0,
+    rateLimitWait = 0,
+    nextDelay = 0;
   if (plan.issues.length) return aggregate(plan, results, calls);
-  for (const chunk of plan.chunks) {
-    let assessment;
-    for (let attempt = 0; attempt < 2 && calls < plan.limits.maxCalls; attempt++) {
+  for (const [index, chunk] of plan.chunks.entries()) {
+    let assessment,
+      lastFailure = "Una llamada necesaria falló o devolvió un resultado inválido.";
+    let ordinaryFailures = 0;
+    for (let attempt = 0; attempt < 3 && calls < plan.limits.maxCalls; attempt++) {
       if (!(await isCurrent())) {
         errors.push("El head cambió durante la revisión.");
         return aggregate(plan, results, calls, errors);
       }
-      if (calls) await sleep(plan.limits.intervalMs);
+      if (calls) await sleep(Math.max(plan.limits.intervalMs, nextDelay));
+      nextDelay = 0;
       if (!(await isCurrent())) {
         errors.push("El head cambió durante la revisión.");
         return aggregate(plan, results, calls, errors);
@@ -323,13 +353,23 @@ async function reviewPlan({
           body,
         });
         if (!response.ok) {
-          if (response.status === 429 && attempt === 0) {
-            const delay = Number(response.headers.get("retry-after"));
-            await sleep(
-              Math.min(60000, Math.max(10000, Number.isFinite(delay) ? delay * 1000 : 30000)),
-            );
+          if (response.status === 429) {
+            lastFailure = "Groq rechazó una llamada por límite de cuota (HTTP 429).";
+            if (attempt >= 2 || calls >= plan.limits.maxCalls) continue;
+            const delay = rateLimitDelay(response.headers, attempt, plan.limits.intervalMs);
+            if (delay > 180000 || rateLimitWait + delay > plan.limits.maxRateLimitWaitMs) {
+              lastFailure =
+                "La cuota de Groq (HTTP 429) requiere una espera mayor que el presupuesto permitido. Reintentar cuando se libere la cuota de la organización.";
+              break;
+            }
+            if (attempt < 2 && calls < plan.limits.maxCalls) {
+              nextDelay = delay;
+              rateLimitWait += delay;
+            }
+            continue;
           }
-          throw new Error(`HTTP ${response.status}`);
+          lastFailure = `Groq devolvió HTTP ${response.status} en una llamada necesaria.`;
+          throw new Error("Proveedor no disponible.");
         }
         const json = await response.json();
         if (json.choices?.[0]?.finish_reason === "length") throw new Error("Respuesta truncada.");
@@ -337,16 +377,30 @@ async function reviewPlan({
           JSON.parse(json.choices?.[0]?.message?.content ?? "null"),
           chunk,
         );
+        // A low remaining TPM budget can require a longer pause even after success.
+        const remaining = response.headers?.get("x-ratelimit-remaining-tokens");
+        if (index < plan.chunks.length - 1 && remaining != null && Number(remaining) < 6000) {
+          const reset = durationMs(response.headers.get("x-ratelimit-reset-tokens")) + 1000;
+          if (reset > plan.limits.intervalMs && reset <= 180000) {
+            if (rateLimitWait + reset > plan.limits.maxRateLimitWaitMs) {
+              results.push(assessment);
+              errors.push("Presupuesto de espera para la cuota de Groq agotado.");
+              return aggregate(plan, results, calls, errors);
+            }
+            nextDelay = reset;
+            rateLimitWait += reset;
+          }
+        }
         break;
       } catch {
-        /* A bounded retry also covers invalid JSON and invalid anchors. Never expose provider bodies. */
+        /* Keep invalid-result retries bounded separately from recoverable quota errors. */
+        ordinaryFailures++;
+        if (ordinaryFailures >= 2) break;
       }
     }
     if (!assessment) {
       errors.push(
-        calls >= plan.limits.maxCalls
-          ? "Presupuesto máximo de llamadas agotado."
-          : "Una llamada necesaria falló o devolvió un resultado inválido.",
+        calls >= plan.limits.maxCalls ? "Presupuesto máximo de llamadas agotado." : lastFailure,
       );
       break;
     }
