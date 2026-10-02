@@ -115,10 +115,24 @@ La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo 
 
 Contratos públicos compartidos v1 para Sprint 2, sin otra API ni tipos locales divergentes: la única fuente pura es `convex/domain/availability/`, `convex/domain/spaces/` y `convex/domain/appointments/`, exportada por el barrel `convex/domain/index.ts` para Web y Mobile. Reutilizan `ModalityPreference` de la solicitud, las clases de excepción de TI2-81 (`cancelled`/`added`) y los estados de TI2-83 (`scheduled`, `completed`, `cancelled_by_student`, `cancelled_by_cereti`, `rescheduled`, `no_show`); reserva y atención son una sola entidad y no existe un `domain/reservations` paralelo. La forma de errores públicos (`ApiResult`/`PublicApiError`) se conserva intacta; TI2-88 fija códigos y casos negativos.
 
-| Contrato | Versión | Fuente |
-| --- | --- | --- |
-| Disponibilidad (bloques, excepciones, rango y paginación) | `v1` | `convex/domain/availability/availability.ts` |
-| Espacios (campus, edificio, piso, sala, acceso e instrucciones) | `v1` | `convex/domain/spaces/space.ts` |
-| Atención reservada (una sola entidad, seis estados) | `v1` | `convex/domain/appointments/appointment.ts` |
+| Contrato                                                        | Versión | Fuente                                       |
+| --------------------------------------------------------------- | ------- | -------------------------------------------- |
+| Disponibilidad (bloques, excepciones, rango y paginación)       | `v1`    | `convex/domain/availability/availability.ts` |
+| Espacios (campus, edificio, piso, sala, acceso e instrucciones) | `v1`    | `convex/domain/spaces/space.ts`              |
+| Atención reservada (una sola entidad, seis estados)             | `v1`    | `convex/domain/appointments/appointment.ts`  |
 
 Contrato propuesto frente a endpoint disponible: estos DTO llevan identificadores genéricos (`string` plano) y campo `version`; las entradas nuevas se entregarán bajo `api.presentation.availability`/`appointments`/`spaces` en las tareas de endpoints (TI2-97/TI2-98/TI2-99/TI2-111), fuera de esta tarea, que no crea endpoints, casos de uso, repositorios, esquema ni adaptadores de calendario. Los clientes siguen compilando sin cambios: Web y Mobile aún no consumen estos DTO y Mobile conserva sus mocks tipados durante Sprint 2; todo dato es ficticio y la autorización contextual queda en Aplicación con la DB y los servicios externos en Infraestructura. Comprobación: espejo manual de los modelos provisionales de Mobile en `convex/domain/availability/availability.test.ts`, ida y vuelta JSON de cada DTO ficticio y regresión de `test:convex`, `test:web`, `build` Web y `typecheck`/`test` Mobile.
+
+## Respuestas de conflicto, acceso denegado y ausencia de cupo (TI2-88)
+
+Códigos estables del contrato público común en `convex/domain/errors/api_error.ts`, con `PublicApiError = {code, message}` y `ApiResult<T> = {status: "ok", data} | {status: "error", error}` sin envoltura paralela: los clientes distinguen por `code` y nunca interpretan el texto de `message` como código. Conflicto y ausencia de cupo usan códigos distintos y ninguno revela si el recurso existe; el identificador ajeno y el inexistente responden igual, sin pila, identificadores de terceros, necesidades ni notas.
+
+| Código            | Significado                    | Mensaje comprensible                                                             |
+| ----------------- | ------------------------------ | -------------------------------------------------------------------------------- |
+| `unauthorized`    | Acceso denegado                | `No autorizado`                                                                  |
+| `conflict`        | Conflicto con el estado actual | `La solicitud entra en conflicto con el estado actual.`                          |
+| `no_availability` | Ausencia de cupo               | `Sin cupo disponible. Coordina por el canal oficial con la referencia indicada.` |
+
+Compatibilidad con Sprint 1: se conservan `access_needs_empty`, `access_needs_too_long`, `ConvexError("No autorizado")` y los mensajes operativos en español de la tabla de respuestas y errores; ningún endpoint existente cambia su forma. La ausencia de cupo se coordina por el canal oficial con la referencia mínima ya entregada en la entrada, sin crear una reserva incompatible.
+
+Traducción segura del borde Convex para endpoints nuevos: Dominio no importa Convex, React ni Expo; Aplicación expone `deniedPublicError`, `denyUnauthorized` y `toSecureConvexError` en `convex/application/authorization/authorize.ts` y Presentación reutiliza `throwPublicApiError` en `convex/presentation/session.ts`. Todo endpoint nuevo de disponibilidad, espacios y atención convierte su `PublicApiError` con esa única traducción a `ConvexError({code, message})` con solo esas dos claves. Comprobación: forma de éxito y error con claves exactas y códigos estables en `convex/domain/errors/api_error.test.ts`, e identificador ajeno frente a inexistente con la misma denegación sin filtrar en `convex/apiBackend.test.ts`; el barrel `convex/domain/index.ts` sigue siendo la única fuente pura para Web y Mobile.

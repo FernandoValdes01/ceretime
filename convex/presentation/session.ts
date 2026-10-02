@@ -1,9 +1,25 @@
 import { v } from "convex/values";
+import { toSecureConvexError } from "../application/authorization/authorize";
 import { toMinimalIdentity } from "../application/session/minimal_identity";
 import { resolveSessionAndRole } from "../application/session/portal_role";
 import { getMyProfileUseCase } from "../application/session/profile";
+import type { PublicApiError } from "../domain/errors/api_error";
 import { query } from "../_generated/server";
 import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "../validators";
+
+/**
+ * Traducción segura del borde Convex para endpoints nuevos (TI2-88).
+ *
+ * Entrada pública delgada: reutiliza la misma traducción de Aplicación para
+ * que todos los endpoints nuevos de disponibilidad, espacios y atención
+ * respondan `ConvexError({code, message})` con solo esas dos claves, sin
+ * pila, identificadores de terceros, necesidades ni notas. Sprint 1 se
+ * conserva (`unauthenticated` acá y `ConvexError("No autorizado")` en el
+ * resto); los clientes distinguen por `code`, nunca por el texto.
+ */
+export function throwPublicApiError(error: PublicApiError): never {
+  throw toSecureConvexError(error);
+}
 
 /**
  * Borde de Presentación: estado de sesión (TI2-3).
