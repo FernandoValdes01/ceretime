@@ -45,3 +45,11 @@ Formato: `ID - tipo(scope): descripción`
 - Actualizar una PR es un checkpoint a pedido, no automático tras cada commit.
 - Antes de marcar una PR como lista para revisión, asigna el reviewer que corresponda según las etiquetas de la issue en Linear. La distribución de revisores se mantiene en Linear; no la dupliques en este archivo.
 - Crear o actualizar nunca incluye merge ni cierre.
+
+## Review automática informativa
+
+Las PR internas hacia `main` reciben AI Code Reviewer con Groq y `openai/gpt-oss-120b` al abrirse, reabrirse, recibir commits o pasar a Ready for review. Draft no consume reviews. Antes de probarlo, conserva la PR en Draft y asigna el reviewer humano correspondiente en Linear. El secret `GROQ_API_KEY` vive en GitHub Actions y nunca se pega en la PR.
+
+La review normalizada muestra `Confidence Score: N/5`, `Risk: low|medium|high`, hallazgos, SHA completo y modelo. El score expresa la evaluación del cambio: 5 sin problemas relevantes, 4 observaciones menores, 3 problemas relevantes, 2 importantes, 1 graves y 0 review no válida. El contexto `AI Review 5/5` pasa solo con review vigente, cobertura completa, cero hallazgos, riesgo low y score 5. Los demás resultados, la ausencia de review, un SHA obsoleto o un fallo mantienen failure informativo. Un resultado de un commit anterior no sirve para el head actual.
+
+AI Review NO autoriza merge, no reemplaza la revisión humana TI4 y no debe ser required en `protectedmain`. Sigue verificando los cuatro jobs de CI y la aprobación humana del último cambio. Los hallazgos de IA requieren evaluación humana, incluso cuando el score es 5/5. No declares una review real basándote solo en tests locales o en la existencia del secret. Registra el run, la review y el status asociados al SHA. Si el proveedor falla, conserva la revisión humana y consulta [protecciones de CI](../ci-protections.md) para límites y reversión temporal.
