@@ -77,17 +77,23 @@ function evaluateReview({
   };
 }
 
-function formatReview(result, sha, runUrl, cost) {
+function formatReview(result, sha, runUrl, cost, metadata = {}) {
   const validCost = /^\d+(?:\.\d+)?$/.test(cost ?? "") ? cost : "no disponible";
+  const risk =
+    result.review?.risk ??
+    (/^(low|medium|high)$/.test(metadata.risk ?? "") ? metadata.risk : "high");
+  const findings =
+    result.review?.findings ??
+    (/^[0-5]$/.test(metadata.commentsCount ?? "") ? Number(metadata.commentsCount) : 0);
   return [
     "<!-- ceretime-ai-review -->",
     "## AI Code Review",
     "",
     `Confidence Score: ${result.score}/5`,
     "",
-    `Risk: ${result.review?.risk ?? "high"}`,
+    `Risk: ${risk}`,
     "",
-    `Hallazgos: ${result.review?.findings ?? 0}`,
+    `Hallazgos: ${findings}`,
     "",
     `Reviewed commit: ${sha}`,
     "",
@@ -98,6 +104,9 @@ function formatReview(result, sha, runUrl, cost) {
     result.description,
     "",
     result.review?.summary ?? "No hay una evaluación válida del cambio.",
+    metadata.actionSummary && !parseSummary(metadata.actionSummary)
+      ? `\nResumen del reviewer: ${metadata.actionSummary}`
+      : "",
     "",
     `Estimación de la Action en USD: ${validCost}. No es una factura de Groq.`,
     "",
@@ -127,6 +136,10 @@ async function prepareReview({ github, context, core, env = process.env }) {
     headers: { accept: "application/vnd.github.v3.diff" },
   });
   const files = await github.paginate(github.rest.pulls.listFiles, { ...args, per_page: 100 });
+  fs.writeFileSync(
+    `${env.GITHUB_WORKSPACE}/.git/ai-review-diff.txt`,
+    typeof diff === "string" ? diff.slice(0, MAX_DIFF_SIZE) : "",
+  );
   const coverage =
     typeof diff === "string" && diff.length <= MAX_DIFF_SIZE && files.length <= MAX_FILES
       ? "complete"
@@ -176,15 +189,19 @@ async function publishReview({ github, context, core, env = process.env }) {
     await github.rest.repos.createCommitStatus(status);
     return;
   }
-  const body = formatReview(result, env.REVIEW_SHA, env.RUN_URL, env.REVIEW_COST);
+  const body = formatReview(result, env.REVIEW_SHA, env.RUN_URL, env.REVIEW_COST, {
+    risk: env.REVIEW_RISK,
+    commentsCount: env.REVIEW_COMMENTS,
+    actionSummary: env.ACTION_SUMMARY,
+  });
   const reviews = await github.paginate(github.rest.pulls.listReviews, { ...args, per_page: 100 });
   const original = reviews.findLast(
     (review) =>
       review.user?.login === "github-actions[bot]" &&
       review.commit_id === env.REVIEW_SHA &&
       review.body?.startsWith("## AI Code Review") &&
-      env.REVIEW_SUMMARY &&
-      review.body.includes(env.REVIEW_SUMMARY),
+      (env.ACTION_SUMMARY || env.REVIEW_SUMMARY) &&
+      review.body.includes(env.ACTION_SUMMARY || env.REVIEW_SUMMARY),
   );
   const { data: beforePublication } = await github.rest.pulls.get(args);
   if (

@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { normalizeConfidence } from "./ai-review-confidence.cjs";
 import {
   evaluateReview,
   formatReview,
@@ -215,6 +216,7 @@ test("a synchronize run invalidates the new SHA before calling the model", async
   const h = harness();
   const workspace = mkdtempSync(join(tmpdir(), "ai-review-test-"));
   const configPath = join(workspace, ".pr-reviewer.yml");
+  mkdirSync(join(workspace, ".git"));
   writeFileSync(
     configPath,
     "custom_instructions: >-\n  SHA: __REVIEWED_SHA__\n  Coverage: __COVERAGE__\n",
@@ -289,7 +291,10 @@ test("pins the action and keeps review permissions, events and concurrency separ
   });
   expect(steps[0].with.ref).toBe("${{ github.event.pull_request.head.sha }}");
   expect(steps[0].with["persist-credentials"]).toBe(false);
-  expect(steps.at(-1).env.REVIEW_OUTCOME).toBe("${{ steps.ai_review.outcome }}");
+  expect(steps.at(-1).env.REVIEW_OUTCOME).toBe(
+    "${{ steps.confidence.outcome == 'failure' && 'failure' || steps.ai_review.outcome }}",
+  );
+  expect(steps.at(-1).env.REVIEW_SUMMARY).toBe("${{ steps.confidence.outputs.summary }}");
   expect(steps.at(-1).if).toBe("${{ always() && !cancelled() }}");
   for (const id of ["lint-and-format", "mobile", "web", "backend"])
     expect(ci.jobs[id]).toBeDefined();
@@ -318,4 +323,82 @@ test("reviewer configuration covers generated files and requests the complete sc
   expect(config.custom_instructions).toContain("No inventes hallazgos para completar el límite.");
   expect(config.custom_instructions).toContain("__REVIEWED_SHA__");
   expect(config.custom_instructions).toContain("__COVERAGE__");
+});
+
+async function confidence(
+  responseBody: any,
+  options: { status?: number; outcome?: string; summary?: string } = {},
+) {
+  const h = harness();
+  const workspace = mkdtempSync(join(tmpdir(), "ai-confidence-test-"));
+  mkdirSync(join(workspace, ".git"));
+  writeFileSync(join(workspace, ".git/ai-review-diff.txt"), "example PR diff");
+  const requests: any[] = [];
+  try {
+    await normalizeConfidence({
+      core: h.core,
+      env: {
+        ...h.env,
+        REVIEW_SUMMARY: options.summary ?? "Evaluación sin nota parseable.",
+        REVIEW_OUTCOME: options.outcome ?? "success",
+        GROQ_API_KEY: "test",
+        GITHUB_WORKSPACE: workspace,
+      },
+      sleep: async () => {},
+      fetchImpl: async (url: string, args: any) => {
+        requests.push({ url, body: JSON.parse(args.body) });
+        return {
+          ok: (options.status ?? 200) === 200,
+          status: options.status ?? 200,
+          headers: new Headers(),
+          json: async () => ({ choices: [{ message: { content: JSON.stringify(responseBody) } }] }),
+        };
+      },
+    });
+    return { outputs: h.outputs, requests };
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+}
+
+test("asks the configured model for a real confidence assessment when the Action returns prose", async () => {
+  const result = await confidence({
+    score: 5,
+    explanation: "No se detectan problemas relevantes.",
+  });
+  expect(parseSummary(result.outputs.summary)).toMatchObject({
+    score: 5,
+    sha,
+    risk: "low",
+    findings: 0,
+  });
+  expect(result.requests[0].url).toBe("https://api.groq.com/openai/v1/chat/completions");
+  expect(result.requests[0].body).toMatchObject({
+    model: "openai/gpt-oss-120b",
+    response_format: { type: "json_object" },
+  });
+  expect(JSON.parse(result.requests[0].body.messages[1].content)).toMatchObject({
+    sha,
+    diff: "example PR diff",
+  });
+});
+
+test("does not ask Groq again for failed, missing or already structured reviews", async () => {
+  for (const options of [{ outcome: "failure" }, { summary: "" }, { summary: summary() }]) {
+    expect((await confidence(null, options)).requests).toHaveLength(0);
+  }
+});
+
+test("never invents a score when the assessment fails or returns an invalid value", async () => {
+  for (const body of [
+    { score: 6, explanation: "Invalid" },
+    { score: -1, explanation: "Invalid" },
+    { score: "5", explanation: "Invalid" },
+    { score: 5 },
+    null,
+  ]) {
+    await expect(confidence(body)).rejects.toThrow("evaluación de confianza válida");
+  }
+  await expect(confidence(null, { status: 429 })).rejects.toThrow("HTTP 429");
+  await expect(confidence(null, { status: 401 })).rejects.toThrow("HTTP 401");
 });

@@ -19,19 +19,21 @@ Ni el antiguo status de Greptile ni `AI Review 5/5` son required checks. No agre
 
 El workflow concede solo `contents: read` para descargar el código, `pull-requests: write` para comentarios inline y reviews de tipo `COMMENT`, y `statuses: write` para el status del commit. No aprueba PR, no integra código ni escribe en el producto. El checkout usa el SHA head del evento y `persist-credentials: false`. No se instala una dependencia de runtime en Web, Mobile ni Backend.
 
-`GROQ_API_KEY` debe existir como secret de GitHub Actions y se entrega exclusivamente al step `ai_review`. Nunca incluyas su valor en código, documentos, comentarios o logs. La presencia del nombre del secret no demuestra que la clave sea válida: eso requiere una llamada real al proveedor.
+`GROQ_API_KEY` debe existir como secret de GitHub Actions y se entrega solo a `ai_review` y al step de evaluación de confianza. Nunca incluyas su valor en código, documentos, comentarios o logs. La presencia del nombre del secret no demuestra que la clave sea válida: eso requiere una llamada real al proveedor.
 
 El código de la PR y su descripción salen del repositorio hacia la API de Groq. La Action se ejecuta en un contenedor del runner y usa GitHub para leer el diff y publicar resultados. Esta versión recibe el diff bruto antes de recortarlo: `ignore_paths` limita los archivos que pueden recibir comentarios y las instrucciones piden ignorarlos, pero no es una garantía de que su contenido no se envíe al proveedor. No uses estos patrones para proteger secretos. El proyecto sigue trabajando con datos ficticios según el [ADR del prototipo](adr/0001-prototipo-sin-datos-reales.md). La configuración no activa RAG ni una base de datos del repositorio.
 
 ## Confidence Score, riesgo y hallazgos
 
-El modelo evalúa solo el cambio recibido con la rúbrica de `.pr-reviewer.yml`. El adaptador `.github/ai-review-score.cjs` valida y normaliza sus outputs, sin calcular una nota aleatoria ni copiar el reviewer. El resumen del modelo contiene una única línea física, necesaria por el escritor de outputs de esta versión de la Action:
+El modelo evalúa solo el cambio recibido con la rúbrica de `.pr-reviewer.yml`, entregada como archivo e input explícito. El adaptador `.github/ai-review-score.cjs` valida y normaliza sus outputs, sin calcular una nota aleatoria ni copiar el reviewer. Se solicita una única línea física, necesaria por el escritor de outputs de esta versión de la Action:
 
 ```text
 Confidence Score: 5/5; Risk: low; Reviewed commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; Hallazgos: 0; Resumen: No se detectan problemas relevantes.
 ```
 
 La review publicada muestra cada campo por separado, el SHA completo, el modelo, el resumen y el enlace al run. Los hallazgos concretos quedan inline cuando tienen una línea válida en el diff. El máximo solicitado es cinco y cero hallazgos es válido. `Hallazgos` cuenta los comentarios aceptados por el motor, no sustituye la comprobación de que GitHub haya publicado cada comentario inline.
+
+La prueba real mostró que esta combinación puede devolver solo prosa aun recibiendo el contrato. Cuando ocurre, `.github/ai-review-confidence.cjs` pide al mismo modelo de Groq una evaluación JSON separada del diff y las observaciones. Exige un entero 0–5 y una explicación, y conserva el riesgo, conteo y SHA de la ejecución. No convierte prosa en una nota inventada. El diff temporal se guarda bajo `.git/` únicamente en el runner. Un fallo o JSON inválido de esta evaluación publica failure y 0/5. La review normalizada conserva también el resumen original de la Action.
 
 | Score | Interpretación |
 | --- | --- |
@@ -42,7 +44,7 @@ La review publicada muestra cada campo por separado, el SHA completo, el modelo,
 | 1/5 | Hay problemas graves que probablemente rompan comportamiento o controles importantes. |
 | 0/5 | La revisión no es válida por fallo técnico, ausencia, formato inválido o cobertura incompleta. |
 
-`Risk: low|medium|high` es la evaluación de riesgo del modelo y debe coincidir con el output `risk_level`. Sin una evaluación válida, el informe usa `high` como señal conservadora de incertidumbre, no como un hallazgo de seguridad. Los valores duplicados, scores fuera de rango, SHA inválidos y cantidades o riesgos inconsistentes se rechazan. La rúbrica es estable, pero una inferencia del modelo puede variar y no prueba que el código esté libre de errores.
+`Risk: low|medium|high` es la evaluación de riesgo del modelo y debe coincidir con el output `risk_level`. Si no existe un output de riesgo válido, el informe usa `high` como señal conservadora de incertidumbre, no como un hallazgo de seguridad. Los valores duplicados, scores fuera de rango, SHA inválidos y cantidades o riesgos inconsistentes se rechazan. La rúbrica es estable, pero una inferencia del modelo puede variar y no prueba que el código esté libre de errores.
 
 Confidence Score NO significa autorización para hacer merge. CI y la revisión humana correspondiente siguen siendo obligatorias; el reviewer siempre publica `COMMENT`, nunca `APPROVE`.
 
@@ -69,7 +71,7 @@ La configuración está prevista para el plan gratuito de Groq, sin contratar un
 
 La versión fijada [recorta el diff](https://github.com/mara-werils/ai-code-reviewer/blob/2f6bb8c98d791de5b84dc425eacadcf0a7052fcf/src/review/engine.py) a `max_diff_size` y limita archivos. Se mantienen 10.000 caracteres y 50 archivos para reducir consumo. El adaptador detecta cuando el diff bruto supera esos límites y fuerza 0/5 aunque el modelo devuelva 5/5: una evaluación parcial no obtiene success. El reviewer todavía puede publicar observaciones de la porción recibida. Una PR que modifica únicamente archivos ignorados no obtiene una nota válida del modelo y también queda en failure. Estos límites son conservadores; no garantizan que todas las solicitudes entren en la cuota de tokens.
 
-El output `cost_usd` es una estimación de la Action. Su tabla de precios no incluye este modelo y usa un valor de respaldo; no representa el consumo facturado ni certifica gratuidad. Comprueba uso, límites y plan en Groq antes de considerar cambios de capacidad. Esta integración no cambia planes ni permite compras automáticas.
+El output `cost_usd` es una estimación de la Action y no incluye la evaluación separada de confianza. Su tabla de precios no incluye este modelo y usa un valor de respaldo; no representa el consumo facturado ni certifica gratuidad. Una review puede consumir dos solicitudes, además de los reintentos limitados. La evaluación de confianza usa hasta tres intentos, timeout de 30 segundos por solicitud y espera limitada por `retry-after` entre errores transitorios. Comprueba uso, límites y plan en Groq antes de considerar cambios de capacidad. Esta integración no cambia planes ni permite compras automáticas.
 
 ## Validación real y reversión
 

@@ -63,12 +63,30 @@ jobs:
           label_pr: "false"
           custom_instructions: ${{ steps.prepare.outputs.instructions }}
 
+      - name: Normalizar la evaluación de confianza
+        id: confidence
+        if: steps.ai_review.outcome == 'success'
+        continue-on-error: true
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          REVIEW_OUTCOME: ${{ steps.ai_review.outcome }}
+          REVIEW_SUMMARY: ${{ steps.ai_review.outputs.summary }}
+          REVIEW_RISK: ${{ steps.ai_review.outputs.risk_level }}
+          REVIEW_COMMENTS: ${{ steps.ai_review.outputs.comments_count }}
+          REVIEW_COVERAGE: ${{ steps.prepare.outputs.coverage }}
+        with:
+          script: |
+            const { normalizeConfidence } = require('./.github/ai-review-confidence.cjs');
+            await normalizeConfidence({ core });
+
       - name: Publicar resumen y status del SHA revisado
         if: ${{ always() && !cancelled() }}
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
-          REVIEW_OUTCOME: ${{ steps.ai_review.outcome }}
-          REVIEW_SUMMARY: ${{ steps.ai_review.outputs.summary }}
+          REVIEW_OUTCOME: ${{ steps.confidence.outcome == 'failure' && 'failure' || steps.ai_review.outcome }}
+          REVIEW_SUMMARY: ${{ steps.confidence.outputs.summary }}
+          ACTION_SUMMARY: ${{ steps.ai_review.outputs.summary }}
           REVIEW_RISK: ${{ steps.ai_review.outputs.risk_level }}
           REVIEW_COMMENTS: ${{ steps.ai_review.outputs.comments_count }}
           REVIEW_COST: ${{ steps.ai_review.outputs.cost_usd }}
