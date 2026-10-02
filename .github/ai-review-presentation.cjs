@@ -59,6 +59,28 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
   const title = String(metadata.commitTitle || sha.slice(0, 7))
     .split(/\r?\n/)[0]
     .replace(/[\\`*_{}[\]()<>!|]/g, "\\$&");
+  const amount = (value) =>
+    /^\d+$/.test(value ?? "") ? Number(value).toLocaleString("es-ES") : "no disponible";
+  const rawObservations = String(metadata.actionSummary ?? "").trim();
+  const observations = withoutBold(
+    rawObservations.startsWith("Confidence Score:")
+      ? rawObservations.split("; Resumen: ").slice(1).join("; Resumen: ")
+      : rawObservations,
+  );
+  const nextAction = {
+    incomplete:
+      "El problema pendiente está en la cobertura de la automatización: implementar revisión por bloques que cubra todo el diff y agregue sus resultados respetando la cuota de Groq. Subir el score o marcar la cobertura como completa sin revisar esos bloques no lo resuelve. Si aparecen observaciones parciales, deben revisarse, pero no certifican el resto del cambio.",
+    failed:
+      "Consultar los logs enlazados para identificar el error de Groq o de la Action. Corregir la configuración o esperar la cuota del proveedor y reintentar el workflow sobre este mismo SHA.",
+    missing: "Ejecutar AI Code Review para el commit actual y comprobar que devuelve un resultado.",
+    stale: "Ejecutar de nuevo AI Code Review sobre el head actual de la PR.",
+    invalid:
+      "Comprobar los outputs del reviewer en los logs y corregir el contrato del resumen: score entero de 0 a 5, risk, SHA y cantidad de hallazgos coherentes.",
+    reviewed:
+      findings > 0
+        ? "Revisar los hallazgos inline: cada uno debe explicar el problema introducido, su impacto y la corrección propuesta. Corregir los confirmados y volver a ejecutar la review con el nuevo commit."
+        : "No hay correcciones concretas identificadas por el reviewer. Consultar la justificación de confianza y el resumen antes de decidir cambios; no inventar problemas para subir la nota.",
+  }[result.reason];
   return [
     "<!-- ceretime-ai-review-summary -->",
     "## R2D2 · AI Code Review",
@@ -75,6 +97,25 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     result.reason === "reviewed" ? explanation : `${result.description}\n\n${explanation}`,
     "",
+    ...(result.reason === "incomplete"
+      ? [
+          "### Por qué la confianza es 0/5",
+          "",
+          "No es una calificación de la calidad del código. La revisión es parcial y no permite evaluar toda la PR.",
+          "",
+          `Diff de la PR: ${amount(metadata.diffSize)} caracteres; límite por revisión: 10.000. Archivos: ${amount(metadata.filesCount)}; límite: 50. El adaptador fuerza 0/5 si se supera cualquiera de estos límites.`,
+          "",
+          "Cero hallazgos en la parte revisada no significa que el resto esté libre de problemas.",
+          "",
+        ]
+      : []),
+    "### Qué debes cambiar",
+    "",
+    nextAction,
+    "",
+    ...(observations && observations !== explanation
+      ? ["### Observaciones del reviewer", "", observations, ""]
+      : []),
     "<details>",
     "<summary>Modelo y ejecución</summary>",
     "",

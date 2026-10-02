@@ -115,6 +115,8 @@ jobs:
           REVIEW_OUTCOME: ${{ steps.confidence.outcome == 'failure' && 'failure' || steps.ai_review.outcome }}
           REVIEW_SUMMARY: ${{ steps.confidence.outputs.summary }}
           ACTION_SUMMARY: ${{ steps.ai_review.outputs.summary }}
+          REVIEW_DIFF_SIZE: ${{ steps.prepare.outputs.diff_size }}
+          REVIEW_FILES_COUNT: ${{ steps.prepare.outputs.files_count }}
           REVIEW_RISK: ${{ steps.ai_review.outputs.risk_level }}
           REVIEW_COMMENTS: ${{ steps.ai_review.outputs.comments_count }}
           REVIEW_BOT_LOGIN: ${{ steps.r2d2_token.outputs.app-slug && format('{0}[bot]', steps.r2d2_token.outputs.app-slug) || 'github-actions[bot]' }}

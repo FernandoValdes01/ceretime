@@ -125,6 +125,8 @@ async function prepareReview({ github, context, core, env = process.env }) {
   fs.writeFileSync(configPath, config);
   core.setOutput("instructions", instructions);
   core.setOutput("coverage", coverage);
+  core.setOutput("diff_size", typeof diff === "string" ? String(diff.length) : "");
+  core.setOutput("files_count", String(files.length));
   core.setOutput("current", "true");
 }
 
@@ -164,6 +166,9 @@ async function publishReview({ github, context, core, env = process.env }) {
     risk: env.REVIEW_RISK,
     commentsCount: env.REVIEW_COMMENTS,
     commitTitle: commit.commit.message,
+    actionSummary: env.ACTION_SUMMARY,
+    diffSize: env.REVIEW_DIFF_SIZE,
+    filesCount: env.REVIEW_FILES_COUNT,
   });
   const botLogin = env.REVIEW_BOT_LOGIN || "github-actions[bot]";
   const issueArgs = { ...context.repo, issue_number: args.pull_number };

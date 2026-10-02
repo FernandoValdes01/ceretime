@@ -90,3 +90,5 @@ Tras comprobar la alternativa se retiraron `.github/workflows/greptile-score.yml
 ## Prueba visible de la escala
 
 Cada ejecución incluye una tabla de casos controlados de 0/5 a 5/5 en el resumen de GitHub Actions. Usa el mismo evaluador del status y comprueba que solo 5/5 produce success. No llama a Groq ni publica comentarios o statuses simulados. Permite verificar la escala aunque la PR real permanezca en 0/5 por cobertura incompleta. El comentario de la review omite el recordatorio de aprobación humana; las protecciones y la revisión humana siguen vigentes.
+
+El comentario distingue la justificación de confianza de las observaciones originales de la Action, que se conservan incluso cuando la normalización devuelve solo una limitación técnica. Muestra qué cambiar y por qué; ante cobertura incompleta incluye el tamaño real del diff y la cantidad de archivos junto a los límites. El 0/5 técnico no califica negativamente el código ni convierte cero hallazgos parciales en una certificación. Revisar el diff completo por bloques continúa pendiente; cambiar el texto del comentario no amplía la cobertura.

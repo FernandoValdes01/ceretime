@@ -56,6 +56,19 @@ test("omits the policy footer from the visible review", () => {
   expect(body).not.toContain("La revisión humana TI4 sigue siendo obligatoria");
 });
 
+test("explains incomplete coverage and retains actionable observations from the reviewer", () => {
+  const body = formatReview(evaluateReview(input({ coverage: "incomplete" })), sha, runUrl, "0", {
+    actionSummary: "Validar la autorización en el backend antes de guardar el registro.",
+    diffSize: "96400",
+    filesCount: "25",
+  });
+  expect(body).toContain("96.400");
+  expect(body).toContain("10.000");
+  expect(body).toContain("### Qué debes cambiar");
+  expect(body).toContain("Validar la autorización en el backend");
+  expect(body).toContain("No es una calificación de la calidad del código");
+});
+
 test("accepts a current 5/5 review with no findings and low risk", () => {
   expect(evaluateReview(input())).toMatchObject({ state: "success", score: 5 });
 });
@@ -241,7 +254,7 @@ test("keeps inline findings separate from the single summary", async () => {
   expect(h.summaryWrites).toHaveLength(1);
   expect(h.summaryWrites[0]).toMatchObject({ issue_number: 1 });
   expect(h.summaryWrites[0].body).toContain("Confidence Score: 5/5");
-  expect(h.summaryWrites[0].body).not.toContain(actionSummary);
+  expect(h.summaryWrites[0].body).toContain(actionSummary);
   expect(h.statuses[0]).toMatchObject({ sha, state: "success" });
 });
 
@@ -308,6 +321,8 @@ test("a synchronize run invalidates the new SHA before calling the model", async
       coverage: "complete",
       current: "true",
       instructions: `SHA: ${sha} Coverage: complete`,
+      diff_size: "4",
+      files_count: "0",
     });
     expect(readFileSync(configPath, "utf8")).toContain(sha);
     expect(readFileSync(configPath, "utf8")).not.toContain("__REVIEWED_SHA__");

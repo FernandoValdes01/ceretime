@@ -48,6 +48,10 @@ custom_instructions: >-
   No inventes hallazgos para completar el límite. Si no existen problemas relevantes, indícalo claramente.
   Usa como máximo cinco comentarios concretos, con archivo y línea válidos del
   diff nuevo, priorizados por importancia. Cero comentarios es válido.
+  Cada hallazgo debe explicar qué cambiar, en qué archivo y línea, por qué
+  importa y qué comportamiento incorrecto evita la corrección propuesta.
+  Si la cobertura es incompleta, conserva los hallazgos reales de la parte
+  revisada en el resumen; no sustituyas las observaciones por la limitación técnica.
   Evalúa la confianza usando solo el cambio recibido y justifica el score en el
   resumen: 5 sin problemas relevantes; 4 observaciones menores o riesgo bajo;
   3 problemas relevantes que revisar antes de integrar; 2 problemas importantes
