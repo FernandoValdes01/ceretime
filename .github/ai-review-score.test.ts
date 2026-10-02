@@ -215,7 +215,10 @@ test("a synchronize run invalidates the new SHA before calling the model", async
   const h = harness();
   const workspace = mkdtempSync(join(tmpdir(), "ai-review-test-"));
   const configPath = join(workspace, ".pr-reviewer.yml");
-  writeFileSync(configPath, "SHA: __REVIEWED_SHA__\nCoverage: __COVERAGE__\n");
+  writeFileSync(
+    configPath,
+    "custom_instructions: >-\n  SHA: __REVIEWED_SHA__\n  Coverage: __COVERAGE__\n",
+  );
   try {
     await prepareReview({ ...h, env: { ...h.env, GITHUB_WORKSPACE: workspace } });
     expect(h.statuses[0]).toMatchObject({
@@ -223,7 +226,11 @@ test("a synchronize run invalidates the new SHA before calling the model", async
       state: "failure",
       description: "Falta la revisión de IA para este commit.",
     });
-    expect(h.outputs).toEqual({ coverage: "complete", current: "true" });
+    expect(h.outputs).toEqual({
+      coverage: "complete",
+      current: "true",
+      instructions: `SHA: ${sha} Coverage: complete`,
+    });
     expect(readFileSync(configPath, "utf8")).toContain(sha);
     expect(readFileSync(configPath, "utf8")).not.toContain("__REVIEWED_SHA__");
   } finally {
@@ -268,6 +275,7 @@ test("pins the action and keeps review permissions, events and concurrency separ
   const action = steps.find((step: any) => step.id === "ai_review");
   expect(action.uses).toBe("mara-werils/ai-code-reviewer@2f6bb8c98d791de5b84dc425eacadcf0a7052fcf");
   expect(action.env).toEqual({ GROQ_API_KEY: "${{ secrets.GROQ_API_KEY }}" });
+  expect(action.with.custom_instructions).toBe("${{ steps.prepare.outputs.instructions }}");
   expect(action.with).toEqual({
     provider: "groq",
     model: "openai/gpt-oss-120b",
@@ -277,6 +285,7 @@ test("pins the action and keeps review permissions, events and concurrency separ
     auto_summarize: "true",
     suggest_tests: "true",
     label_pr: "false",
+    custom_instructions: "${{ steps.prepare.outputs.instructions }}",
   });
   expect(steps[0].with.ref).toBe("${{ github.event.pull_request.head.sha }}");
   expect(steps[0].with["persist-credentials"]).toBe(false);

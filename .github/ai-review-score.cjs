@@ -132,13 +132,20 @@ async function prepareReview({ github, context, core, env = process.env }) {
       ? "complete"
       : "incomplete";
   const configPath = `${env.GITHUB_WORKSPACE}/.pr-reviewer.yml`;
-  fs.writeFileSync(
-    configPath,
-    fs
-      .readFileSync(configPath, "utf8")
-      .replaceAll("__REVIEWED_SHA__", env.REVIEW_SHA)
-      .replaceAll("__COVERAGE__", coverage),
-  );
+  const config = fs
+    .readFileSync(configPath, "utf8")
+    .replaceAll("__REVIEWED_SHA__", env.REVIEW_SHA)
+    .replaceAll("__COVERAGE__", coverage);
+  // The final config field is a folded YAML scalar; also pass it through the Action input.
+  const instructions = config
+    .split("custom_instructions: >-\n")[1]
+    ?.split("\n")
+    .map((line) => line.trim())
+    .join(" ")
+    .trim();
+  if (!instructions) throw new Error("Faltan las instrucciones del reviewer.");
+  fs.writeFileSync(configPath, config);
+  core.setOutput("instructions", instructions);
   core.setOutput("coverage", coverage);
   core.setOutput("current", "true");
 }

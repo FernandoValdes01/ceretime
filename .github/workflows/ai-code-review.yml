@@ -61,6 +61,7 @@ jobs:
           auto_summarize: "true"
           suggest_tests: "true"
           label_pr: "false"
+          custom_instructions: ${{ steps.prepare.outputs.instructions }}
 
       - name: Publicar resumen y status del SHA revisado
         if: ${{ always() && !cancelled() }}
