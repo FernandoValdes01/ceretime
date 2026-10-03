@@ -1,0 +1,44 @@
+name: Release Balls
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: Período de PR fusionadas, por ejemplo 7d o 2w
+        default: 7d
+        type: string
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - .github/workflows/release-balls.yml
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-balls-${{ github.event.release.id || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  render:
+    name: Generar carrera de contribuidores
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Generar GIF y video
+        id: balls
+        uses: maria-rcks/release-balls@2ac0374373eff3cf60c201565d7137c0ccedcbe8
+        with:
+          since: ${{ github.event_name != 'release' && (inputs.since || '7d') || '' }}
+          tag: ${{ github.event.release.tag_name || '' }}
+          metric: author
+          format: both
+      - name: Guardar carrera y datos de origen
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-balls
+          path: ${{ steps.balls.outputs.directory }}
+          if-no-files-found: error
+          retention-days: 30
