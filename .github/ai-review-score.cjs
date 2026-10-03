@@ -206,21 +206,32 @@ async function prepareReview({ github, context, core, env = process.env }) {
       plan.issues.push(`Seguimiento mayor que el presupuesto: ${thread.id}`);
       continue;
     }
-    // Keep overlapping anchors from the same file in separate calls so finding
-    // validation and cached results always identify one source unit.
-    const available = plan.chunks
-      .filter((c) => !c.parts.some((p) => p.path === part.path))
-      .map((chunk) => ({
-        chunk,
-        size: JSON.stringify([...chunk.parts, part].map(({ anchors: _anchors, ...p }) => p)).length,
-      }))
-      .filter(({ size }) => size <= plan.limits.chunkChars)
-      .sort((a, b) => b.size - a.size)[0];
-    if (available) available.chunk.parts.push(part);
-    else plan.chunks.push({ parts: [part] });
+    plan.chunks.push({ parts: [part] });
   }
-  if (plan.chunks.length > plan.limits.maxChunks && !plan.issues.length)
-    plan.issues.push("Presupuesto máximo de bloques agotado.");
+  // Pack the largest units first, including followups. Unit content remains intact
+  // for cache reuse. Overlapping findings from one file need unambiguous units.
+  const partSize = (part) => JSON.stringify({ ...part, anchors: undefined }).length;
+  const bins = [];
+  for (const part of plan.chunks
+    .flatMap((c) => c.parts)
+    .sort((a, b) => partSize(b) - partSize(a))) {
+    const size = partSize(part);
+    const available = bins
+      .filter(
+        (bin) =>
+          bin.size + size + 1 <= plan.limits.chunkChars &&
+          !bin.parts.some((p) => p.path === part.path && (p.followupOnly || part.followupOnly)),
+      )
+      .sort((a, b) => b.size - a.size)[0];
+    if (available) {
+      available.parts.push(part);
+      available.size += size + 1;
+    } else bins.push({ parts: [part], size: size + 2 });
+  }
+  plan.chunks = bins.map(({ parts }) => ({ parts }));
+  const budgetIssue = "Presupuesto máximo de bloques agotado.";
+  plan.issues = plan.issues.filter((issue) => issue !== budgetIssue);
+  if (plan.chunks.length > plan.limits.maxChunks) plan.issues.push(budgetIssue);
   plan.base = pr.base.sha;
   plan.discussionKey = hash(JSON.stringify(threads));
   plan.mergeBase = evidence.mergeBase;
