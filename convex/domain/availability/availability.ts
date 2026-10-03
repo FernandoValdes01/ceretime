@@ -216,13 +216,28 @@ function assertException(exception: AvailabilityException, index: number): void 
   }
 }
 
+/** Componentes numéricos de una fecha civil `YYYY-MM-DD` ya validada. */
+function civilDateParts(date: string): { year: number; month: number; day: number } {
+  return {
+    year: Number(date.slice(0, 4)),
+    month: Number(date.slice(5, 7)),
+    day: Number(date.slice(8, 10)),
+  };
+}
+
 /**
- * Diferencia `local - utc` en milisegundos para la zona horaria en un instante dado.
+ * Formateadores por zona horaria, conservados entre llamadas.
  *
- * Implementación propia sobre `Intl.DateTimeFormat` para no depender de bibliotecas externas: el dominio sigue siendo puro y la aritmética de instantes queda probada con fechas fijas de invierno y verano.
+ * Memoización transparente: evita reconstruir el `Intl.DateTimeFormat` en cada instante calculado sin cambiar el resultado.
  */
-function getTimeZoneOffsetMs(timeZone: string, utcMs: number): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
+const timeZoneFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  const cached = timeZoneFormatters.get(timeZone);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const created = new Intl.DateTimeFormat("en-US", {
     timeZone,
     hour12: false,
     year: "numeric",
@@ -231,7 +246,18 @@ function getTimeZoneOffsetMs(timeZone: string, utcMs: number): number {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-  })
+  });
+  timeZoneFormatters.set(timeZone, created);
+  return created;
+}
+
+/**
+ * Diferencia `local - utc` en milisegundos para la zona horaria en un instante dado.
+ *
+ * Implementación propia sobre `Intl.DateTimeFormat` para no depender de bibliotecas externas: el dominio sigue siendo puro y la aritmética de instantes queda probada con fechas fijas de invierno y verano.
+ */
+function getTimeZoneOffsetMs(timeZone: string, utcMs: number): number {
+  const parts = formatterFor(timeZone)
     .formatToParts(new Date(utcMs))
     .reduce<Record<string, string>>((accumulator, part) => {
       accumulator[part.type] = part.value;
@@ -250,9 +276,7 @@ function getTimeZoneOffsetMs(timeZone: string, utcMs: number): number {
 
 /** Convierte una fecha civil más un minuto del día a milisegundos epoch en la zona horaria dada. */
 function civilToEpochMs(date: string, minuteOfDay: number, timeZone: string): number {
-  const year = Number(date.slice(0, 4));
-  const month = Number(date.slice(5, 7));
-  const day = Number(date.slice(8, 10));
+  const { year, month, day } = civilDateParts(date);
   const targetLocal = Date.UTC(year, month - 1, day, 0, 0, 0) + minuteOfDay * 60_000;
   const firstPass = targetLocal - getTimeZoneOffsetMs(timeZone, targetLocal);
   return targetLocal - getTimeZoneOffsetMs(timeZone, firstPass);
@@ -260,9 +284,7 @@ function civilToEpochMs(date: string, minuteOfDay: number, timeZone: string): nu
 
 /** Día de la semana (0 a 6) de una fecha civil en la zona horaria dada. */
 function civilWeekday(date: string, timeZone: string): number {
-  const year = Number(date.slice(0, 4));
-  const month = Number(date.slice(5, 7));
-  const day = Number(date.slice(8, 10));
+  const { year, month, day } = civilDateParts(date);
   const utcNoon = Date.UTC(year, month - 1, day, 12, 0, 0);
   return new Date(utcNoon + getTimeZoneOffsetMs(timeZone, utcNoon)).getUTCDay();
 }
@@ -270,13 +292,12 @@ function civilWeekday(date: string, timeZone: string): number {
 /** Fechas civiles del rango inclusivo, en orden, como textos `YYYY-MM-DD`. */
 function eachCivilDate(from: string, to: string): string[] {
   const dates: string[] = [];
-  const start = new Date(
-    Date.UTC(Number(from.slice(0, 4)), Number(from.slice(5, 7)) - 1, Number(from.slice(8, 10))),
-  );
-  const end = new Date(
-    Date.UTC(Number(to.slice(0, 4)), Number(to.slice(5, 7)) - 1, Number(to.slice(8, 10))),
-  );
-  for (let current = start; current <= end; current = new Date(current.getTime() + 86_400_000)) {
+  const start = civilDateParts(from);
+  const end = civilDateParts(to);
+  const startMs = Date.UTC(start.year, start.month - 1, start.day);
+  const endMs = Date.UTC(end.year, end.month - 1, end.day);
+  for (let currentMs = startMs; currentMs <= endMs; currentMs += 86_400_000) {
+    const current = new Date(currentMs);
     const year = current.getUTCFullYear();
     const month = String(current.getUTCMonth() + 1).padStart(2, "0");
     const day = String(current.getUTCDate()).padStart(2, "0");
