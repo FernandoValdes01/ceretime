@@ -1,4 +1,4 @@
-<!-- cspell:words samsung marvin Samsung Marvin FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES uiautomator juanfra gradlew investigacion -->
+<!-- cspell:words talkback samsung marvin Samsung Marvin FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES uiautomator juanfra gradlew investigacion -->
 
 # Auditoría Android de solicitud y agenda, TI4-47
 
