@@ -4,11 +4,7 @@ import { ConvexError } from "convex/values";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import {
-  deniedPublicError,
-  denyUnauthorized,
-  toSecureConvexError,
-} from "./application/authorization/authorize";
+import { deniedPublicError } from "./application/authorization/authorize";
 import {
   conflictError,
   errResult,
@@ -19,7 +15,7 @@ import {
   unauthorizedError,
 } from "./domain/errors/api_error";
 import { ACCESS_NEEDS_MAX_LENGTH } from "./domain/request/request";
-import { throwPublicApiError } from "./presentation/session";
+import { denyUnauthorized, throwPublicApiError, toSecureConvexError } from "./presentation/session";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
