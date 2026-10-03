@@ -41,4 +41,4 @@ Uno solo, abierto por la aceptación de la solicitud del Estudiante Cuatro, con 
 
 ## Comprobación
 
-`convex/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial y el acompañamiento de este inventario, y que una segunda carga no escriba nada. Corre con `bun run test:convex`.
+`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial y el acompañamiento de este inventario, y que una segunda carga no escriba nada. Corre con `bun run test:convex`.

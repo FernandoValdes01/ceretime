@@ -1,10 +1,10 @@
 ﻿import { v } from "convex/values";
-import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniment/accompaniment";
+import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniments/accompaniment";
 import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
-} from "./domain/accompaniment/practitioner_assignment";
-import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
+} from "./domain/accompaniments/practitioner_assignment";
+import { SPRINT_1_REQUEST_STATES } from "./domain/requests/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,

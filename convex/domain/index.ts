@@ -24,7 +24,7 @@ export {
   toAccessNeedsText,
   toAccompanimentRequest,
   toStoredRequestFields,
-} from "./request/request";
+} from "./requests/request";
 export type {
   AccessNeed,
   AccompanimentRequest,
@@ -32,7 +32,7 @@ export type {
   GeneralAvailability,
   ModalityPreference,
   StoredRequestFields,
-} from "./request/request";
+} from "./requests/request";
 export {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
@@ -40,15 +40,15 @@ export {
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
-} from "./request/state";
-export type { FutureRequestState, RequestState, Sprint1RequestState } from "./request/state";
+} from "./requests/state";
+export type { FutureRequestState, RequestState, Sprint1RequestState } from "./requests/state";
 
 // Acompañamiento y sus vistas de lectura.
 export {
   ACCOMPANIMENT_STATUS_VALUES,
   ACCOMPANIMENT_VIEW_VALUES,
   toAccompanimentProjection,
-} from "./accompaniment/accompaniment";
+} from "./accompaniments/accompaniment";
 export type {
   Accompaniment,
   AccompanimentProjection,
@@ -56,21 +56,21 @@ export type {
   AccompanimentStatus,
   AccompanimentView,
   MinimizedAccompaniment,
-} from "./accompaniment/accompaniment";
+} from "./accompaniments/accompaniment";
 
 // Asignaciones de acceso y sus permisos de lectura.
 export {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
   ASSIGNMENT_VIEW_BY_ROLE,
-} from "./accompaniment/practitioner_assignment";
-export { toAssignmentReadPermission } from "./accompaniment/practitioner_assignment";
+} from "./accompaniments/practitioner_assignment";
+export { toAssignmentReadPermission } from "./accompaniments/practitioner_assignment";
 export type {
   AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
   PractitionerAssignment,
-} from "./accompaniment/practitioner_assignment";
+} from "./accompaniments/practitioner_assignment";
 
 // Errores públicos y estados de respuesta.
 export type { ApiResult, PublicApiError } from "./errors/api_error";

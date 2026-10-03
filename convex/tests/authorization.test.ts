@@ -2,11 +2,11 @@
 import { convexTest } from "convex-test";
 import type { FunctionReturnType } from "convex/server";
 import { expect, test } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 /**
  * Matriz de permisos comprobable en Backend (S2).

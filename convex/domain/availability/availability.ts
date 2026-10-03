@@ -14,7 +14,7 @@
  * TI2-82. Acá solo hay forma versionada, sin políticas propias.
  */
 
-import type { ModalityPreference } from "../request/request";
+import type { ModalityPreference } from "../requests/request";
 
 /** Versión del contrato público de disponibilidad. */
 export const AVAILABILITY_CONTRACT_VERSION = "v1" as const;

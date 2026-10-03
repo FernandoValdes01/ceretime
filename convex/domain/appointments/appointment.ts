@@ -14,7 +14,7 @@
  * plano, sin `Id`/`Doc` de Convex), sin políticas propias.
  */
 
-import type { ModalityPreference } from "../request/request";
+import type { ModalityPreference } from "../requests/request";
 
 /** Versión del contrato público de la atención reservada. */
 export const APPOINTMENT_CONTRACT_VERSION = "v1" as const;

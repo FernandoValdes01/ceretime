@@ -55,7 +55,7 @@ Los resultados de dominio que pueden fallar usan `ApiResult<T>` (`{status: "ok",
 
 ## Topes y serialización (TI2-23)
 
-`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/request` y exportado por `convex/domain/index.ts`. El Backend aplica el límite (la validación de 1–2000 caracteres ya está integrada en `registerRequest`) y los clientes reusan el valor 2000 documentado acá hasta que exista un paquete compartido: Web y Mobile consumen vía `api` de `convex/_generated/api` y ningún cliente importa `convex/domain` (verificado contra sus imports reales). Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
+`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/requests` y exportado por `convex/domain/index.ts`. El Backend aplica el límite (la validación de 1–2000 caracteres ya está integrada en `registerRequest`) y los clientes reusan el valor 2000 documentado acá hasta que exista un paquete compartido: Web y Mobile consumen vía `api` de `convex/_generated/api` y ningún cliente importa `convex/domain` (verificado contra sus imports reales). Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
 
 `toStoredRequestFields` convierte el contenido estructurado a la forma persistida uniendo etiquetas de `accessNeeds` más `otherAccessNeed` con salto de línea. Destino de cada campo de `SubmitStudentRequestCommand` (verificado contra el tipo real de Mobile):
 
@@ -74,7 +74,7 @@ La Web consume la misma superficie `api.presentation.*` sin endpoints propios: `
 
 ## Cierre de seguridad y concurrencia (TI2-27)
 
-La auditoría de TI2-27 no encontró identidad por argumento en funciones públicas (toda la presentación resuelve `ctx.auth.getUserIdentity()` y delega por `tokenIdentifier`), ni lecturas por identificador sin chequeo de titularidad o asignación activa, ni fugas de `accessNeeds`, `studentId` o `authorId` fuera de la vista que corresponde; el Practicante solo lee la vista minimizada (`_id`, `status`, `objective`, `view`) con asignación explícita y activa, las notas internas solo las lee el Profesional asignado y el Administrador siempre recibe denegación en acompañamientos. Criterio de cierre explícito de TI2-27: la apertura única queda garantizada por construcción porque `acceptRequest` comprueba y crea en la misma transacción (`findAccompanimentByRequest` con el índice `accompaniments.by_request` antes de insertar) y queda probada en `convex/acceptance.test.ts` por duplicado (repetición secuencial rechazada con "La solicitud ya fue aceptada" y contienda entre dos profesionales con toma activa donde la segunda aceptación se rechaza sin duplicar); la demostración con transacciones solapadas contra un backend en vivo no es condición de cierre de TI2-27 porque exige el entorno con datos ficticios y clientes autenticados independientes que provee TI2-30, donde queda registrada como evidencia manual pendiente. Toda denegación responde `ConvexError("No autorizado")` sin motivo ni existencia del recurso y los rechazos de regla usan `Error` en español según la tabla de respuestas y errores.
+La auditoría de TI2-27 no encontró identidad por argumento en funciones públicas (toda la presentación resuelve `ctx.auth.getUserIdentity()` y delega por `tokenIdentifier`), ni lecturas por identificador sin chequeo de titularidad o asignación activa, ni fugas de `accessNeeds`, `studentId` o `authorId` fuera de la vista que corresponde; el Practicante solo lee la vista minimizada (`_id`, `status`, `objective`, `view`) con asignación explícita y activa, las notas internas solo las lee el Profesional asignado y el Administrador siempre recibe denegación en acompañamientos. Criterio de cierre explícito de TI2-27: la apertura única queda garantizada por construcción porque `acceptRequest` comprueba y crea en la misma transacción (`findAccompanimentByRequest` con el índice `accompaniments.by_request` antes de insertar) y queda probada en `convex/tests/acceptance.test.ts` por duplicado (repetición secuencial rechazada con "La solicitud ya fue aceptada" y contienda entre dos profesionales con toma activa donde la segunda aceptación se rechaza sin duplicar); la demostración con transacciones solapadas contra un backend en vivo no es condición de cierre de TI2-27 porque exige el entorno con datos ficticios y clientes autenticados independientes que provee TI2-30, donde queda registrada como evidencia manual pendiente. Toda denegación responde `ConvexError("No autorizado")` sin motivo ni existencia del recurso y los rechazos de regla usan `Error` en español según la tabla de respuestas y errores.
 
 ### Prueba en vivo pendiente (guía para TI2-30)
 
@@ -104,11 +104,11 @@ Divergencias de valores registradas (no inventar valores: lo que sigue lo acuerd
 
 ## Versionado
 
-La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo servidor) y los tipos generados en `convex/_generated`, verificados con `tsc` y `test:convex` en CI. Un cambio incompatible se documenta acá antes de implementarse. Comprobación de compatibilidad: espejo manual documentado en `convex/domain/request/request.test.ts` (copia local de la forma de `SubmitStudentRequestCommand`, no el tipo real de Mobile) y la matriz de arriba, que TI4-12 cierra con el cableado final.
+La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo servidor) y los tipos generados en `convex/_generated`, verificados con `tsc` y `test:convex` en CI. Un cambio incompatible se documenta acá antes de implementarse. Comprobación de compatibilidad: espejo manual documentado en `convex/domain/requests/request.test.ts` (copia local de la forma de `SubmitStudentRequestCommand`, no el tipo real de Mobile) y la matriz de arriba, que TI4-12 cierra con el cableado final.
 
 ## Pendientes
 
-- TI2-26 quedó integrada (PR #52): la validación y la documentación de esta superficie ya viven en este archivo y en `convex/apiBackend.test.ts`.
+- TI2-26 quedó integrada (PR #52): la validación y la documentación de esta superficie ya viven en este archivo y en `convex/tests/apiBackend.test.ts`.
 - TI4-12 cablea los hooks al Backend y resuelve las divergencias de valores.
 
 ## Evolución compatible de Sprint 2: disponibilidad, espacios y atención (TI2-87)

@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
-import { api } from "./_generated/api";
-import type { Role } from "./domain/identity/roles";
-import schema from "./schema";
+import { api } from "../_generated/api";
+import type { Role } from "../domain/identity/roles";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 const ISSUER = "https://accounts.google.com";
 
