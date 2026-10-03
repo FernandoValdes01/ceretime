@@ -1,0 +1,133 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: write
+  statuses: write
+
+concurrency:
+  group: ai-code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Revisión informativa de IA
+    if: >-
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      R2D2_APP_CONFIGURED: ${{ secrets.R2D2_APP_ID != '' && secrets.R2D2_APP_PRIVATE_KEY != '' }}
+      REVIEW_SHA: ${{ github.event.pull_request.head.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Descargar el commit de la PR
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Preparar Bun para leer la configuración YAML
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Comprobar la escala de 0 a 5 sin publicar reviews simuladas
+        run: node .github/ai-review-scale.cjs
+
+      - name: Mostrar el caso controlado de 4/5 sin modificar la PR
+        run: node .github/ai-review-demo.cjs
+
+      - name: Autenticar como R2D2 cuando la App esté configurada
+        id: r2d2_token
+        if: env.R2D2_APP_CONFIGURED == 'true'
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.R2D2_APP_ID }}
+          private-key: ${{ secrets.R2D2_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
+          permission-pull-requests: write
+          permission-statuses: write
+
+      - name: Invalidar la revisión anterior y preparar instrucciones
+        id: prepare
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REVIEW_BOT_LOGIN: ${{ steps.r2d2_token.outputs.app-slug && format('{0}[bot]', steps.r2d2_token.outputs.app-slug) || 'github-actions[bot]' }}
+        with:
+          github-token: ${{ steps.r2d2_token.outputs.token || github.token }}
+          script: |
+            const { prepareReview } = require('./.github/ai-review-score.cjs');
+            await prepareReview({ github, context, core });
+
+      - name: Recuperar unidades con contenido y contexto vigentes
+        if: steps.prepare.outputs.current == 'true'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .git/ai-review-memory
+          key: r2d2-${{ github.repository_id }}-${{ github.event.pull_request.number }}-${{ steps.prepare.outputs.memory_key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            r2d2-${{ github.repository_id }}-${{ github.event.pull_request.number }}-${{ steps.prepare.outputs.memory_key }}-
+
+      - name: Revisar unidades pendientes y calcular confianza
+        id: confidence
+        if: steps.prepare.outputs.current == 'true'
+        continue-on-error: true
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          REVIEW_INSTRUCTIONS: ${{ steps.prepare.outputs.instructions }}
+          REVIEW_COVERAGE: ${{ steps.prepare.outputs.coverage }}
+        with:
+          github-token: ${{ steps.r2d2_token.outputs.token || github.token }}
+          script: |
+            const { normalizeConfidence } = require('./.github/ai-review-confidence.cjs');
+            await normalizeConfidence({ core, github, context });
+
+      - name: Conservar bloques válidos aunque la cuota impida terminar
+        if: ${{ always() && !cancelled() && steps.prepare.outputs.current == 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .git/ai-review-memory
+          key: r2d2-${{ github.repository_id }}-${{ github.event.pull_request.number }}-${{ steps.prepare.outputs.memory_key }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Retirar resúmenes históricos de GitHub Actions
+        if: ${{ always() && !cancelled() && steps.r2d2_token.outcome == 'success' }}
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { archiveReviewSummaries } = require('./.github/ai-review-score.cjs');
+            await archiveReviewSummaries({ github, context, botLogin: 'github-actions[bot]' });
+
+      - name: Publicar resumen y status del SHA revisado
+        if: ${{ always() && !cancelled() }}
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REVIEW_OUTCOME: ${{ steps.confidence.outcome }}
+          REVIEW_SUMMARY: ${{ steps.confidence.outputs.summary }}
+          REVIEW_DIFF_SIZE: ${{ steps.prepare.outputs.diff_size }}
+          REVIEW_FILES_COUNT: ${{ steps.prepare.outputs.files_count }}
+          REVIEW_RISK: ${{ steps.confidence.outputs.risk }}
+          REVIEW_COMMENTS: ${{ steps.confidence.outputs.comments }}
+          REVIEW_BOT_LOGIN: ${{ steps.r2d2_token.outputs.app-slug && format('{0}[bot]', steps.r2d2_token.outputs.app-slug) || 'github-actions[bot]' }}
+          REVIEW_COVERAGE: ${{ steps.confidence.outputs.coverage }}
+        with:
+          github-token: ${{ steps.r2d2_token.outputs.token || github.token }}
+          script: |
+            const { publishReview } = require('./.github/ai-review-score.cjs');
+            await publishReview({ github, context, core });

@@ -1,6 +1,6 @@
 # Despliegue Web en Vercel
 
-El workflow `CI` conserva las validaciones de lint, formato, pruebas, tipos y build. Cuando pasan los cuatro jobs, despliega `apps/web` con Vercel CLI. La validación manual de builds y el check de Greptile siguen en sus workflows actuales.
+El workflow `CI` conserva las validaciones de lint, formato, pruebas, tipos y build. Cuando pasan los cuatro jobs, despliega `apps/web` con Vercel CLI. La validación manual de builds y AI Review permanecen en workflows independientes; el status informativo de IA no es una dependencia del despliegue.
 
 ## Configuración del proyecto Vercel
 

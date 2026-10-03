@@ -7,6 +7,7 @@
   "import": ["@cspell/dict-es-es/cspell-ext.json"],
   "ignorePaths": ["convex/_generated/**", "apps/web/public/icons.svg", "apps/web/src/assets/*.svg"],
   "words": [
+    "textconv",
     "Acompa",
     "acompanamiento",
     "Aprobable",
@@ -50,6 +51,8 @@
     "Greptile",
     "greptile",
     "Gomez",
+    "Groq",
+    "groq",
     "gomez",
     "geolocalización",
     "mergear",
@@ -85,6 +88,8 @@
     "reagendamiento",
     "reagendar",
     "opencode",
+    "OpenAI",
+    "openai",
     "Opencode",
     "oxfmt",
     "oxlint",
@@ -111,6 +116,7 @@
     "urldate",
     "urlcolor",
     "Valdés",
+    "Valdes",
     "Venegas",
     "vrivera",
     "wcag",
@@ -118,6 +124,7 @@
     "webgpu",
     "winget",
     "Wladimir",
+    "werils",
     "unslop",
     "worktrees",
     "worklets",
@@ -154,6 +161,12 @@
     "autenticacion",
     "asignacion",
     "acompanamientos",
-    "Sofía"
+    "Sofía",
+    "ratelimit",
+    "basehead",
+    "numstat",
+    "adrs",
+    "lockfiles",
+    "returnallowed"
   ]
 }
