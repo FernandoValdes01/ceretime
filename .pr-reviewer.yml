@@ -2,12 +2,12 @@ review_style: minimal
 max_comments: 5
 review_language: es
 chunking:
-  chunkChars: 12000
-  inputChars: 18000
+  chunkChars: 24000
+  inputChars: 32000
   maxChunks: 32
   maxCalls: 32
   outputTokens: 2400
-  intervalMs: 65000
+  intervalMs: 1000
   maxRateLimitWaitMs: 600000
 ignore_paths:
   - bun.lock

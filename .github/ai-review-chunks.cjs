@@ -6,12 +6,12 @@ const { hash } = require("./ai-review-context.cjs");
 const { ENDPOINT, completionRequest, addUsage, emptyUsage } = require("./ai-review-provider.cjs");
 
 const LIMITS = Object.freeze({
-  chunkChars: 12000,
-  inputChars: 18000,
+  chunkChars: 24000,
+  inputChars: 32000,
   maxChunks: 32,
   maxCalls: 32,
   outputTokens: 2400,
-  intervalMs: 65000,
+  intervalMs: 1000,
   maxRateLimitWaitMs: 600000,
 });
 const severityRank = { critical: 3, important: 2, warning: 1, minor: 0 };

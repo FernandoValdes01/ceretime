@@ -193,6 +193,26 @@ for (const size of [10, 500, 1400])
     expect(requests[0].messages[0].content).toContain("main es la base válida");
     expect(requests[0]).toHaveProperty("max_tokens", LIMITS.outputTokens);
   });
+test("large reviews fit the OpenRouter profile without dropping changed lines", async () => {
+  const plan = buildPlan(
+    Array.from({ length: 33 }, (_, i) => chunkFile(`large-${i}.ts`, 80, 95)),
+    config,
+    sha,
+  );
+  expect(plan.issues).toEqual([]);
+  expect(plan.chunks.length).toBeLessThanOrEqual(plan.limits.maxChunks);
+  const parts = plan.chunks.flatMap((chunk: any) => chunk.parts);
+  for (let i = 0; i < 33; i++) {
+    const anchors = parts
+      .filter((part: any) => part.path === `large-${i}.ts`)
+      .flatMap((part: any) => part.anchors);
+    expect(anchors).toHaveLength(80);
+    expect(new Set(anchors).size).toBe(80);
+  }
+  const { result } = await runChunks(plan);
+  expect(result.coverage).toBe("complete");
+  expect(result.processed).toBe(plan.chunks.length);
+});
 test("small files share calls while hunks keep independent units", async () => {
   const file = {
     filename: "multi.ts",
@@ -333,8 +353,8 @@ test("workflow has one engine pinned actions and no second inference for the sco
     statuses: "write",
   });
   expect(workflow.concurrency["cancel-in-progress"]).toBe(true);
-  expect(workflow.on).toHaveProperty("workflow_dispatch");
-  expect(workflow.jobs["provider-check"].permissions).toEqual({ contents: "read" });
+  expect(workflow.on).not.toHaveProperty("workflow_dispatch");
+  expect(Object.keys(workflow.jobs)).toEqual(["review"]);
   const inference = workflow.jobs.review.steps.find((step: any) => step.id === "confidence");
   expect(inference.env.OPENROUTER_API_KEY).toBe("${{ secrets.OPENROUTER_API_KEY }}");
   expect(inference.env).not.toHaveProperty("GROQ_API_KEY");
@@ -388,8 +408,8 @@ test("paces chunks and recovers repeated 429 without skipping required coverage"
   expect(result.processed).toBe(plan.chunks.length);
   expect(calls).toBe(3);
   expect(pauses[0]).toBeGreaterThanOrEqual(91000);
-  expect(pauses[1]).toBeGreaterThanOrEqual(130000);
-  expect(LIMITS.intervalMs).toBe(65000);
+  expect(pauses[1]).toBeGreaterThanOrEqual(91000);
+  expect(LIMITS.intervalMs).toBe(1000);
 });
 
 test("persistent 429 reports quota failure and respects the maximum call count", async () => {
@@ -432,14 +452,14 @@ test("daily quota cannot cause an early retry before the requested reset", async
   expect(result.reasons.join(" ")).toContain("supera el presupuesto permitido");
 });
 
-test("all chunks remain eligible while respecting the minute token window", async () => {
+test("all chunks remain eligible while respecting the configured interval", async () => {
   const plan = buildPlan(
     Array.from({ length: 25 }, (_, i) => chunkFile(`paced-${i}.ts`, 100)),
     {},
     sha,
   );
   let elapsed = 0,
-    lastRequest = -65000;
+    lastRequest = -LIMITS.intervalMs;
   const result = await reviewPlan({
     plan,
     instructions: "CERETIME",
@@ -448,7 +468,7 @@ test("all chunks remain eligible while respecting the minute token window", asyn
       elapsed += ms;
     },
     fetchImpl: async () => {
-      expect(elapsed - lastRequest).toBeGreaterThanOrEqual(65000);
+      expect(elapsed - lastRequest).toBeGreaterThanOrEqual(LIMITS.intervalMs);
       lastRequest = elapsed;
       return {
         ok: true,
@@ -509,7 +529,7 @@ test("quota wait budget stops bounded retries and the current head is checked af
 });
 
 test("successful low-token headers delay the next chunk until reset", async () => {
-  const plan = buildPlan([chunkFile("tokens-a.ts", 100), chunkFile("tokens-b.ts", 100)], {}, sha);
+  const plan = buildPlan([chunkFile("tokens-a.ts", 200), chunkFile("tokens-b.ts", 200)], {}, sha);
   const pauses: number[] = [];
   const result = await reviewPlan({
     plan,
@@ -588,7 +608,7 @@ test("429 retry-after identifies the affected limit instead of unrelated reset w
     },
   });
   expect(result.coverage).toBe("complete");
-  expect(pauses).toEqual([66000]);
+  expect(pauses).toEqual([11000]);
 });
 
 test("daily token exhaustion reports safe numeric evidence without provider identifiers", async () => {

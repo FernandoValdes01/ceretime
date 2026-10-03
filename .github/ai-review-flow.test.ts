@@ -488,7 +488,12 @@ test("followups use spare capacity without mixing overlapping findings from the 
   });
   try {
     f.put("other.ts", `export const other = "${"x".repeat(6000)}";\n`);
-    f.put(".pr-reviewer.yml", configuration.replace("maxChunks: 32", "maxChunks: 2"));
+    f.put(
+      ".pr-reviewer.yml",
+      configuration
+        .replace("maxChunks: 32", "maxChunks: 2")
+        .replace("chunkChars: 24000", "chunkChars: 12000"),
+    );
     f.advance();
     for (let id = 1; id <= 2; id++)
       f.comments.push({

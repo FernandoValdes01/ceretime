@@ -28,7 +28,7 @@ function fixture() {
     deletions: 0,
     patch: `@@ -0,0 +1,100 @@\n${Array.from({ length: 100 }, () => `+${"x".repeat(75)}`).join("\n")}`,
   }));
-  const plan = buildPlan(files, {}, sha);
+  const plan = buildPlan(files, { chunking: { chunkChars: 12000 } }, sha);
   const identity = memoryIdentity(plan, instructions);
   const memory = createMemory({ directory, identity, apiKey: "simulation" });
   const options = { plan, instructions, apiKey: "simulation", sleep: async () => {}, memory };
