@@ -781,6 +781,64 @@ test("an invalid followup retry receives its validation reason and keeps incompl
   expect(requests[1].messages[0].content).toContain("La respuesta anterior fue rechazada");
 });
 
+test("maintaining a thread retries with the required finding contract and preserves its actual score", async () => {
+  const plan = buildPlan(
+    [
+      {
+        filename: "file.ts",
+        additions: 1,
+        deletions: 0,
+        patch: "@@ -0,0 +1 @@\n+readOwner();",
+        followups: [{ id: "1", currentLine: 1, evidence_incomplete: false }],
+      },
+    ],
+    {},
+    "a".repeat(40),
+  );
+  let calls = 0;
+  const report = await reviewPlan({
+    plan,
+    instructions: "Revisar el cambio.",
+    apiKey: "simulation",
+    sleep: async () => {},
+    fetchImpl: async (_url: string, request: any) => {
+      calls++;
+      if (calls === 2)
+        expect(JSON.parse(request.body).messages[0].content).toContain(
+          "findings con threadId 1 y coordenadas vigentes",
+        );
+      return answer(
+        calls === 1
+          ? []
+          : [
+              {
+                path: "file.ts",
+                line: 1,
+                side: "RIGHT",
+                severity: "important",
+                issue_key: "owner-check",
+                threadId: "1",
+                cause: "El cambio omite comprobar el propietario.",
+                impact: "Un usuario puede leer datos ajenos.",
+                fix: "Validar ownership antes de devolver los datos.",
+              },
+            ],
+        [
+          {
+            id: "1",
+            status: "maintain",
+            explanation: "La lectura añadida sigue sin comprobar el propietario.",
+          },
+        ],
+      );
+    },
+  });
+  expect(report.calls).toBe(2);
+  expect(report.coverage).toBe("complete");
+  expect(report.score).toBe(2);
+  expect(report.findings[0].threadId).toBe("1");
+});
+
 test("line mapping handles insertions deletions and LEFT evidence", async () => {
   expect(mapLine("@@ -0,0 +1 @@\n+new();", 1)).toBe(2);
   expect(mapLine("@@ -2 +1,0 @@\n-deleted();", 2)).toBeNull();
