@@ -88,6 +88,13 @@ const SESION_INTERN: WebSessionState = {
   population: "personal",
 };
 
+const SIN_SESION: WebSessionState = { status: "unauthenticated" };
+
+const PAR_SIN_SESION = {
+  session: SIN_SESION,
+  role: { status: "unauthenticated" },
+} as const;
+
 const PAR_INTERN = {
   session: SESION_INTERN,
   role: { status: "authenticated", role: "intern", email: "intern@uct.cl" },
@@ -224,7 +231,8 @@ describe("bandeja del Profesional (TI2-91)", () => {
     mockedAuthorized = paginaTomadas([], true);
     renderAt("/profesional/solicitudes");
 
-    expect(await screen.findByRole("link", { name: /Recibida/ })).toBeDefined();
+    // La bandeja ya no tiene enlaces (clickable={false}); busca el texto en la fila
+    expect(await screen.findByText("Recibida")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Cargar más" }));
 
     await waitFor(() => expect(screen.getAllByText("Recibida")).toHaveLength(2));
@@ -267,6 +275,18 @@ describe("detalle del Profesional (TI2-91)", () => {
 });
 
 describe("guard de las rutas de gestión (TI2-91)", () => {
+  test("sin sesión redirige al acceso conservando el retorno", async () => {
+    mockedSession = SIN_SESION;
+    mockedPair = PAR_SIN_SESION;
+    const { router } = renderAt("/profesional/solicitudes");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+    expect(router.state.location.search).toMatchObject({
+      redirect: "/profesional/solicitudes",
+    });
+    expect(screen.queryByRole("heading", { name: "Solicitudes" })).toBeNull();
+  });
+
   test("otro rol va a denegado sin contenido de gestión", async () => {
     mockedSession = SESION_INTERN;
     mockedPair = PAR_INTERN;

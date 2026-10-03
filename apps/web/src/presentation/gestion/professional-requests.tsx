@@ -11,8 +11,6 @@ import {
   useAuthorizedRequests,
   useOpenRequests,
   useRequestDetail,
-  type AuthorizedRequestItem,
-  type OpenRequestItem,
 } from "./professional-requests-data.ts";
 
 /**
@@ -56,31 +54,110 @@ export function ProfessionalRequestsPage() {
   );
 }
 
-function OpenInboxBody() {
+/** Fila mínima que muestran las listas: coincide con ambas vistas. */
+type RequestListItem = {
+  readonly _id: string;
+  readonly status: string;
+  readonly createdAt: number;
+};
+
+/** Página tal como la devuelve el Backend: claves `page`, `isDone` y cursor. */
+type RequestListPage<Item extends RequestListItem> = {
+  readonly page: ReadonlyArray<Item>;
+  readonly isDone: boolean;
+  readonly continueCursor: string;
+};
+
+/**
+ * Acumula páginas con cursor sin duplicar y refleja actualizaciones
+ * reactivas (TI2-91).
+ *
+ * Guarda cada página una sola vez durante el render (patrón documentado de
+ * React para ajustar estado en render): evita setState en efectos sin
+ * perder páginas al avanzar el cursor. La clave es el cursor pedido.
+ * Además, si Convex devuelve una página distinta para el mismo cursor
+ * (actualización reactiva), se reemplaza el segmento correspondiente.
+ */
+function usePagedItems<Item extends RequestListItem>(
+  usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
+) {
   const [cursor, setCursor] = useState<string | null>(null);
-  const page = useOpenRequests(cursor);
+  const page = usePage(cursor);
   const [accumulated, setAccumulated] = useState<{
     cursor: string | null | undefined;
-    items: ReadonlyArray<OpenRequestItem>;
+    items: ReadonlyArray<Item>;
     done: boolean;
-  }>({ cursor: undefined, items: [], done: false });
+    /** Hash simple de la página actual para detectar cambios reactivos. */
+    pageHash: string;
+  }>({ cursor: undefined, items: [], done: false, pageHash: "" });
 
-  // Acumula cada página una sola vez durante el render (patrón documentado
-  // de React para ajustar estado en render): evita setState en efectos sin
-  // perder páginas al avanzar el cursor. La clave es el cursor pedido, no
-  // la identidad del objeto página.
-  if (page !== undefined && accumulated.cursor !== cursor) {
-    const known = new Set(accumulated.items.map((item) => item._id));
-    const fresh = page.page.filter((item) => !known.has(item._id));
-    setAccumulated({
-      cursor,
-      items: [...accumulated.items, ...fresh],
-      done: page.isDone,
-    });
+  const currentPageHash = page ? page.page.map((item) => item._id).join(",") : "";
+
+  if (page !== undefined) {
+    const cursorChanged = accumulated.cursor !== cursor;
+    const pageChanged = accumulated.pageHash !== currentPageHash;
+
+    if (cursorChanged || pageChanged) {
+      const known = new Set(accumulated.items.map((item) => item._id));
+      const fresh = page.page.filter((item) => !known.has(item._id));
+      setAccumulated({
+        cursor,
+        items: [...accumulated.items, ...fresh],
+        done: page.isDone,
+        pageHash: currentPageHash,
+      });
+    }
   }
-  const { items, done } = accumulated;
 
-  if (page === undefined && items.length === 0) {
+  return {
+    items: accumulated.items,
+    done: accumulated.done,
+    pending: page === undefined,
+    loadMore: () => setCursor(page?.continueCursor ?? null),
+  };
+}
+
+function RequestRow({
+  request,
+  clickable = true,
+}: {
+  request: RequestListItem;
+  clickable?: boolean;
+}) {
+  const content = (
+    <>
+      <span className="student-portal__chip">{requestStatusLabel(request.status)}</span>
+      <span className="student-portal__item-meta">
+        Registrada el {formatPanelDate(request.createdAt)}
+      </span>
+    </>
+  );
+
+  if (!clickable) {
+    return (
+      <li className="student-portal__item">
+        <span className="gestion-request-row">{content}</span>
+      </li>
+    );
+  }
+
+  return (
+    <li className="student-portal__item">
+      <Link
+        to="/profesional/solicitudes/$requestId"
+        params={{ requestId: request._id }}
+        className="gestion-request-link"
+      >
+        {content}
+      </Link>
+    </li>
+  );
+}
+
+function OpenInboxBody() {
+  const { items, done, pending, loadMore } = usePagedItems(useOpenRequests);
+
+  if (pending && items.length === 0) {
     return (
       <p role="status" className="student-portal__loading">
         Cargando la bandeja…
@@ -101,18 +178,7 @@ function OpenInboxBody() {
     <>
       <ul className="student-portal__list">
         {items.map((request) => (
-          <li key={request._id} className="student-portal__item">
-            <Link
-              to="/profesional/solicitudes/$requestId"
-              params={{ requestId: request._id }}
-              className="gestion-request-link"
-            >
-              <span className="student-portal__chip">{requestStatusLabel(request.status)}</span>
-              <span className="student-portal__item-meta">
-                Registrada el {formatPanelDate(request.createdAt)}
-              </span>
-            </Link>
-          </li>
+          <RequestRow key={request._id} request={request} clickable={false} />
         ))}
       </ul>
       {done ? null : (
@@ -120,8 +186,8 @@ function OpenInboxBody() {
           <button
             type="button"
             className="student-portal__btn student-portal__btn--primary"
-            disabled={page === undefined}
-            onClick={() => setCursor(page?.continueCursor ?? null)}
+            disabled={pending}
+            onClick={loadMore}
           >
             Cargar más
           </button>
@@ -132,28 +198,9 @@ function OpenInboxBody() {
 }
 
 function AuthorizedRequestsBody() {
-  const [cursor, setCursor] = useState<string | null>(null);
-  const page = useAuthorizedRequests(cursor);
-  const [accumulated, setAccumulated] = useState<{
-    cursor: string | null | undefined;
-    items: ReadonlyArray<AuthorizedRequestItem>;
-    done: boolean;
-  }>({ cursor: undefined, items: [], done: false });
+  const { items, done, pending, loadMore } = usePagedItems(useAuthorizedRequests);
 
-  // Igual que la bandeja: acumula cada página una sola vez durante el
-  // render, con clave en el cursor pedido.
-  if (page !== undefined && accumulated.cursor !== cursor) {
-    const known = new Set(accumulated.items.map((item) => item._id));
-    const fresh = page.page.filter((item) => !known.has(item._id));
-    setAccumulated({
-      cursor,
-      items: [...accumulated.items, ...fresh],
-      done: page.isDone,
-    });
-  }
-  const { items, done } = accumulated;
-
-  if (page === undefined && items.length === 0) {
+  if (pending && items.length === 0) {
     return (
       <p role="status" className="student-portal__loading">
         Cargando tus tomadas…
@@ -174,18 +221,7 @@ function AuthorizedRequestsBody() {
     <>
       <ul className="student-portal__list">
         {items.map((request) => (
-          <li key={request._id} className="student-portal__item">
-            <Link
-              to="/profesional/solicitudes/$requestId"
-              params={{ requestId: request._id }}
-              className="gestion-request-link"
-            >
-              <span className="student-portal__chip">{requestStatusLabel(request.status)}</span>
-              <span className="student-portal__item-meta">
-                Registrada el {formatPanelDate(request.createdAt)}
-              </span>
-            </Link>
-          </li>
+          <RequestRow key={request._id} request={request} clickable={true} />
         ))}
       </ul>
       {done ? null : (
@@ -193,8 +229,8 @@ function AuthorizedRequestsBody() {
           <button
             type="button"
             className="student-portal__btn student-portal__btn--primary"
-            disabled={page === undefined}
-            onClick={() => setCursor(page?.continueCursor ?? null)}
+            disabled={pending}
+            onClick={loadMore}
           >
             Cargar más
           </button>

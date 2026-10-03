@@ -2,7 +2,27 @@
    resto de la aplicación (DESIGN.md). El lenguaje visual de listas y
    avisos se reutiliza de student-portal.css sin duplicarlo. */
 
+.gestion-request-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+}
+
 .gestion-request-link:focus-visible {
   outline: 3px solid #2563eb;
   outline-offset: 2px;
+}
+
+/* Fila no clicable de la bandeja (solo lectura hasta tomar, TI2-92). */
+.gestion-request-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  color: inherit;
 }
