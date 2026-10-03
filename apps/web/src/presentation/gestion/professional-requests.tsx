@@ -189,9 +189,15 @@ function OpenInboxBody() {
             className="student-portal__btn student-portal__btn--primary"
             disabled={pending}
             onClick={loadMore}
+            aria-busy={pending}
           >
-            Cargar más
+            {pending ? "Cargando…" : "Cargar más"}
           </button>
+          {pending && (
+            <span role="status" aria-live="polite" className="student-portal__sr-only">
+              Cargando más solicitudes…
+            </span>
+          )}
         </div>
       )}
     </>
@@ -232,9 +238,15 @@ function AuthorizedRequestsBody() {
             className="student-portal__btn student-portal__btn--primary"
             disabled={pending}
             onClick={loadMore}
+            aria-busy={pending}
           >
-            Cargar más
+            {pending ? "Cargando…" : "Cargar más"}
           </button>
+          {pending && (
+            <span role="status" aria-live="polite" className="student-portal__sr-only">
+              Cargando más solicitudes…
+            </span>
+          )}
         </div>
       )}
     </>
