@@ -71,7 +71,7 @@ function harness() {
       expect(request.headers.Authorization).toBe("Bearer simulation");
       expect(JSON.parse(request.body)).toMatchObject({
         model: "deepseek/deepseek-v4.1-flash",
-        reasoning: { effort: "low" },
+        reasoning: { enabled: false },
         response_format: { type: "json_object" },
       });
       requests.push(JSON.parse(request.body));

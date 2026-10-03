@@ -6,7 +6,7 @@ function completionRequest(messages, outputTokens) {
   return {
     model: MODEL,
     temperature: 0.1,
-    reasoning: { effort: "low" },
+    reasoning: { enabled: false },
     max_tokens: outputTokens,
     response_format: { type: "json_object" },
     provider: { require_parameters: true },

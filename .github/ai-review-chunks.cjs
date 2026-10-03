@@ -10,7 +10,7 @@ const LIMITS = Object.freeze({
   inputChars: 32000,
   maxChunks: 32,
   maxCalls: 32,
-  outputTokens: 16000,
+  outputTokens: 6000,
   intervalMs: 1000,
   maxRateLimitWaitMs: 600000,
 });
