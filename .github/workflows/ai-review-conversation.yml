@@ -1,0 +1,55 @@
+name: R2D2 · Conversación inline
+
+on:
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: r2d2-conversation-${{ github.event.comment.id }}
+  cancel-in-progress: false
+
+jobs:
+  conversation:
+    name: Responder al hallazgo en su hilo
+    if: >-
+      github.event.comment.in_reply_to_id &&
+      github.event.comment.user.type == 'User' &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+      !github.event.pull_request.draft &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Descargar la implementación del workflow
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Autenticar exclusivamente como R2D2
+        id: token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ secrets.R2D2_APP_ID }}
+          private-key: ${{ secrets.R2D2_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
+          permission-pull-requests: write
+
+      - name: Discutir únicamente el hallazgo original
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          REVIEW_BOT_LOGIN: ${{ format('{0}[bot]', steps.token.outputs.app-slug) }}
+        with:
+          github-token: ${{ steps.token.outputs.token }}
+          script: |
+            const { respondToInline } = require('./.github/ai-review-conversation.cjs');
+            const result = await respondToInline({ github, context });
+            if (!result.ignored) core.info(`R2D2: llamadas ${result.calls}; tokens de entrada ${result.usage.prompt}; salida ${result.usage.completion}; llamadas medidas ${result.usage.measuredCalls}.`);
