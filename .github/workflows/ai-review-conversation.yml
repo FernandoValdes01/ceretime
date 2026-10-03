@@ -51,4 +51,5 @@ jobs:
           github-token: ${{ steps.token.outputs.token }}
           script: |
             const { respondToInline } = require('./.github/ai-review-conversation.cjs');
-            await respondToInline({ github, context });
+            const result = await respondToInline({ github, context });
+            if (!result.ignored) core.info(`R2D2: llamadas ${result.calls}; tokens de entrada ${result.usage.prompt}; salida ${result.usage.completion}; llamadas medidas ${result.usage.measuredCalls}.`);

@@ -1,4 +1,4 @@
-const MODEL = "openai/gpt-oss-120b";
+const { MODEL, PROVIDER } = require("./ai-review-provider.cjs");
 
 function withoutBold(text) {
   let fence = null;
@@ -122,9 +122,12 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           "",
           `Bloques procesados: ${metadata.report.processed}/${metadata.report.total}. Llamadas a Groq: ${metadata.report.calls}. Cobertura: ${metadata.report.coverage}.`,
           "",
-          ...metadata.report.findings.map(
-            (f) => `- ${f.path}:${f.line} (${f.side}) · ${withoutBold(f.body)}`,
-          ),
+          `Unidades reutilizadas por contenido y contexto: ${metadata.report.reused ?? 0}. Archivos omitidos de IA: ${metadata.report.skipped?.length ?? 0}.`,
+          ...(metadata.report.usage?.measuredCalls
+            ? [
+                `Tokens medidos en esta ejecución: ${metadata.report.usage.prompt} de entrada, ${metadata.report.usage.completion} de salida; ${metadata.report.usage.cachedPrompt} de entrada en caché del proveedor.`,
+              ]
+            : []),
           "",
         ]
       : []),
@@ -133,9 +136,9 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     `SHA revisado: \`${sha}\``,
     "",
-    `Modelo: \`${MODEL}\` · Proveedor: Groq`,
+    `Modelo: \`${MODEL}\` · Proveedor: ${PROVIDER}`,
     "",
-    `Estimación de la Action en USD: ${validCost}. No es una factura de Groq; las llamadas por bloques se contabilizan aparte, sin estimar un precio no verificado.`,
+    `Estimación en USD: ${validCost}. Los tokens medidos corresponden a esta ejecución; no se estima un precio no verificado.`,
     "",
     `[Logs de la ejecución](${runUrl})`,
     "",

@@ -1,16 +1,12 @@
+const { memoryIdentity } = require("./ai-review-memory.cjs");
 const fs = require("node:fs");
 const { execFileSync } = require("node:child_process");
-const {
-  buildPlan,
-  publishFindings,
-  patchRecords,
-  matchesIgnore,
-} = require("./ai-review-chunks.cjs");
+const { buildPlan, publishFindings, patchRecords } = require("./ai-review-chunks.cjs");
+const { enrichFiles, reviewThreads, hash } = require("./ai-review-context.cjs");
+const { classifyFile } = require("./ai-review-selection.cjs");
 const { MODEL, formatReview, formatInline } = require("./ai-review-presentation.cjs");
 
 const STATUS_CONTEXT = "R2D2 Review 5/5";
-const SINGLE_CALL_DIFF_SIZE = 10000; // Single-call Action target, never a PR coverage limit.
-const SINGLE_CALL_FILES = 50;
 
 function parseSummary(summary) {
   if (typeof summary !== "string") return null;
@@ -103,15 +99,6 @@ async function prepareReview({ github, context, core, env = process.env }) {
     description: "Falta la revisión de IA para este commit.",
     target_url: env.RUN_URL,
   });
-  let diff;
-  try {
-    ({ data: diff } = await github.request("GET /repos/{owner}/{repo}/pulls/{pull_number}", {
-      ...args,
-      headers: { accept: "application/vnd.github.v3.diff" },
-    }));
-  } catch {
-    /* The global diff is optional; eligible file patches are the coverage source. */
-  }
   const files = await github.paginate(github.rest.pulls.listFiles, { ...args, per_page: 100 });
   const configPath = `${env.GITHUB_WORKSPACE}/.pr-reviewer.yml`;
   const originalConfig = fs.readFileSync(configPath, "utf8");
@@ -122,9 +109,20 @@ async function prepareReview({ github, context, core, env = process.env }) {
       { input: originalConfig, encoding: "utf8" },
     ),
   );
+  const comments = await github.paginate(github.rest.pulls.listReviewComments, {
+    ...args,
+    per_page: 100,
+  });
+  const threads = reviewThreads(comments, env.REVIEW_BOT_LOGIN || "r2d2-reviewer[bot]");
+  const evidence = enrichFiles(files, {
+    directory: env.GITHUB_WORKSPACE,
+    base: pr.base.sha,
+    sha: env.REVIEW_SHA,
+    threads,
+  });
   // GitHub can omit or truncate patches. Reconstruct those from the exact base/head locally.
   for (const file of files) {
-    if (matchesIgnore(file.filename, parsed.ignore_paths ?? [])) continue;
+    if (!classifyFile(file, parsed).eligible) continue;
     let needsPatch = !file.patch;
     if (file.patch) {
       try {
@@ -161,48 +159,48 @@ async function prepareReview({ github, context, core, env = process.env }) {
   const plan = buildPlan(files, parsed, env.REVIEW_SHA);
   if (pr.changed_files != null && pr.changed_files !== files.length)
     plan.issues.push("GitHub no devolvió todos los archivos modificados.");
-  const mode =
-    typeof diff === "string" &&
-    diff.length <= Math.min(SINGLE_CALL_DIFF_SIZE, parsed.max_diff_size ?? SINGLE_CALL_DIFF_SIZE) &&
-    plan.chunks.length === 1 &&
-    plan.files <= Math.min(SINGLE_CALL_FILES, parsed.max_files ?? SINGLE_CALL_FILES) &&
-    !files.some((f) => matchesIgnore(f.filename, parsed.ignore_paths ?? [])) &&
-    !plan.issues.length
-      ? "single"
-      : "chunked";
-  // Complete here means an eligible plan, not a completed review; the final coverage comes from execution.
-  const coverage = plan.issues.length ? "incomplete" : "complete";
+  const attached = new Set(
+    plan.chunks.flatMap((c) => c.parts.flatMap((p) => (p.followups ?? []).map((t) => t.id))),
+  );
+  // A fix can remove the original hunk or revert the file out of the PR entirely.
+  for (const thread of evidence.followups.filter((t) => !attached.has(t.id))) {
+    plan.chunks.push({
+      parts: [
+        {
+          path: thread.path,
+          kind: "followup",
+          followupOnly: true,
+          patch: "",
+          anchors: [],
+          followups: [thread],
+        },
+      ],
+    });
+  }
+  if (plan.chunks.length > plan.limits.maxChunks && !plan.issues.length)
+    plan.issues.push("Presupuesto máximo de bloques agotado.");
+  plan.base = pr.base.sha;
+  plan.discussionKey = hash(JSON.stringify(threads));
+  plan.mergeBase = evidence.mergeBase;
+  plan.intent = {
+    title: String(pr.title ?? "").slice(0, 200),
+    description: String(pr.body ?? "").slice(0, 1200),
+  };
+  const instructions = parsed.custom_instructions;
+  if (typeof instructions !== "string" || !instructions.trim())
+    throw new Error("Faltan las instrucciones del reviewer.");
+  const latest = (await github.rest.pulls.get(args)).data;
+  if (latest.head.sha !== env.REVIEW_SHA || latest.base.sha !== pr.base.sha) {
+    core.setOutput("current", "false");
+    return;
+  }
   fs.writeFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-plan.json`, JSON.stringify(plan), {
     mode: 0o600,
   });
-  fs.writeFileSync(
-    `${env.GITHUB_WORKSPACE}/.git/ai-review-diff.txt`,
-    mode === "single" ? diff : "",
-    { mode: 0o600 },
-  );
-  const config = originalConfig
-    .replaceAll("__REVIEWED_SHA__", env.REVIEW_SHA)
-    .replaceAll("__COVERAGE__", coverage);
-  // The final config field is a folded YAML scalar; also pass it through the Action input.
-  const instructions = config
-    .split("custom_instructions: >-\n")[1]
-    ?.split("\n")
-    .map((line) => line.trim())
-    .join(" ")
-    .trim();
-  if (!instructions) throw new Error("Faltan las instrucciones del reviewer.");
-  fs.writeFileSync(configPath, config);
   core.setOutput("instructions", instructions);
-  core.setOutput("coverage", coverage);
-  core.setOutput("mode", mode);
-  const chunkInstructions = instructions.slice(
-    Math.max(0, instructions.indexOf("Revisa exclusivamente")),
-    instructions.indexOf("Mantén el JSON interno") >= 0
-      ? instructions.indexOf("Mantén el JSON interno")
-      : undefined,
-  );
-  core.setOutput("chunk_instructions", chunkInstructions || instructions);
-  core.setOutput("diff_size", typeof diff === "string" ? String(diff.length) : String(plan.chars));
+  core.setOutput("coverage", plan.issues.length ? "incomplete" : "complete");
+  core.setOutput("memory_key", memoryIdentity(plan, instructions));
+  core.setOutput("diff_size", String(plan.chars));
   core.setOutput("files_count", String(files.length));
   core.setOutput("current", "true");
 }
@@ -240,13 +238,37 @@ async function publishReview({ github, context, core, env = process.env }) {
   if (commit.sha !== env.REVIEW_SHA)
     throw new Error("El commit consultado no coincide con el SHA revisado.");
   let report;
-  if (env.REVIEW_MODE === "chunked" && env.REVIEW_OUTCOME === "success") {
+  if (env.REVIEW_OUTCOME === "success") {
     report = JSON.parse(
       fs.readFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-result.json`, "utf8"),
     );
+    if (
+      report.sha !== env.REVIEW_SHA ||
+      report.summary !== env.REVIEW_SUMMARY ||
+      report.risk !== env.REVIEW_RISK ||
+      String(report.findings.length) !== env.REVIEW_COMMENTS ||
+      report.coverage !== env.REVIEW_COVERAGE
+    )
+      throw new Error("El informe no coincide con los outputs validados.");
+    const currentThreads = reviewThreads(
+      await github.paginate(github.rest.pulls.listReviewComments, { ...args, per_page: 100 }),
+      env.REVIEW_BOT_LOGIN || "r2d2-reviewer[bot]",
+    );
+    if (
+      pr.base.sha !== report.base ||
+      hash(JSON.stringify(currentThreads)) !== report.discussionKey
+    ) {
+      await github.rest.repos.createCommitStatus({
+        ...status,
+        state: "failure",
+        description: "Cambió la base o la discusión durante la revisión.",
+      });
+      return;
+    }
     const { data: beforeInline } = await github.rest.pulls.get(args);
     if (
       beforeInline.head.sha !== env.REVIEW_SHA ||
+      beforeInline.base.sha !== report.base ||
       beforeInline.draft ||
       beforeInline.state !== "open"
     )
@@ -292,6 +314,7 @@ async function publishReview({ github, context, core, env = process.env }) {
   const { data: beforePublication } = await github.rest.pulls.get(args);
   if (
     beforePublication.head.sha !== env.REVIEW_SHA ||
+    (report && beforePublication.base.sha !== report.base) ||
     beforePublication.draft ||
     beforePublication.state !== "open"
   )
@@ -309,7 +332,13 @@ async function publishReview({ github, context, core, env = process.env }) {
   await tidyComments({ github, args, sha: env.REVIEW_SHA, botLogin, reviews });
   await archiveReviewSummaries({ github, context, botLogin, reviews });
   const { data: latest } = await github.rest.pulls.get(args);
-  if (latest.head.sha !== env.REVIEW_SHA || latest.draft || latest.state !== "open") return;
+  if (
+    latest.head.sha !== env.REVIEW_SHA ||
+    (report && latest.base.sha !== report.base) ||
+    latest.draft ||
+    latest.state !== "open"
+  )
+    return;
   await github.rest.repos.createCommitStatus(status);
   core.info(result.description);
 }
@@ -392,8 +421,6 @@ async function archiveReviewSummaries({ github, context, botLogin, reviews }) {
 module.exports = {
   STATUS_CONTEXT,
   MODEL,
-  SINGLE_CALL_DIFF_SIZE,
-  SINGLE_CALL_FILES,
   parseSummary,
   evaluateReview,
   formatReview,

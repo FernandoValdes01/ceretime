@@ -27,7 +27,11 @@ async function runDemo() {
     path,
     line,
     side: "RIGHT",
-    severity: "suggestion",
+    severity: "minor",
+    issue_key: `edge-case-${line}`,
+    cause: `La línea añadida ${line} cambia el tratamiento de valores límite del contrato.`,
+    impact: "El consumidor obtiene un resultado incorrecto para esos valores.",
+    fix: "Conservar la semántica del contrato y cubrir el caso con una prueba de regresión.",
     body: `Problema:\nFalta una prueba de regresión para ${line === 1 ? "espacios al inicio y al final" : "la diferencia entre texto vacío y valor ausente"}.\n\nImpacto:\nUna modificación futura podría cambiar este contrato sin detectar la regresión.\n\nCorrección propuesta:\nAgregar un caso de prueba que compruebe ${line === 1 ? "la eliminación de espacios externos" : "que el texto vacío se conserva y el valor ausente usa la alternativa"}.`,
   }));
   const report = await reviewPlan({
@@ -36,9 +40,6 @@ async function runDemo() {
     apiKey: "simulation",
     fetchImpl: async () =>
       jsonResponse({
-        score: 4,
-        risk: "low",
-        explanation: "El cambio parece correcto, pero faltan dos casos de regresión menores.",
         findings,
       }),
     sleep: async () => {},
@@ -108,7 +109,10 @@ async function runDemo() {
   for (const comment of inline) {
     assert.equal(comment.path, path);
     assert.ok([1, 2].includes(comment.line));
-    assert.match(comment.body, /Problema:[\s\S]*Impacto:[\s\S]*Corrección propuesta:/);
+    assert.match(
+      comment.body,
+      /Cambio que causa el problema:[\s\S]*Impacto:[\s\S]*Corrección propuesta:/,
+    );
   }
   const evaluated = evaluateReview({
     outcome: "success",
