@@ -41,30 +41,61 @@ async function openForm() {
 }
 
 describe("Formulario de solicitud del estudiante", () => {
+  test("expone el error al volver al campo y revela los apoyos pendientes", async () => {
+    const revealGroup = jest.fn();
+    render(<RequestForm submitter={successfulSubmitter} onRevealGroup={revealGroup} />);
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+    expect(
+      screen.getByLabelText(
+        "¿Qué necesidad quieres abordar? *. Error: Describe la necesidad que quieres abordar.",
+      ),
+    ).toBeOnTheScreen();
+    fireEvent.changeText(
+      screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false }),
+      "Leer materiales.",
+    );
+    expect(screen.getByLabelText("¿Qué necesidad quieres abordar? *")).toBeOnTheScreen();
+    fireEvent.changeText(
+      screen.getByLabelText("¿Qué esperas de CERETI? *", { exact: false }),
+      "Usar un lector.",
+    );
+    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+    await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(1));
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Comunicación escrita. Error: Selecciona o describe una necesidad de acceso.",
+      }),
+    ).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole("checkbox", { name: /Comunicación escrita/ }));
+    expect(screen.getByRole("checkbox", { name: "Comunicación escrita" })).toBeChecked();
+  });
   test("solicita mostrar la selección pendiente al revisar modalidad o días", async () => {
     const revealGroup = jest.fn();
     render(<RequestForm submitter={successfulSubmitter} onRevealGroup={revealGroup} />);
     fireEvent.changeText(
-      screen.getByLabelText("¿Qué necesidad quieres abordar? *"),
+      screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false }),
       "Leer materiales.",
     );
-    fireEvent.changeText(screen.getByLabelText("¿Qué esperas de CERETI? *"), "Usar un lector.");
     fireEvent.changeText(
-      screen.getByLabelText("¿Cómo prefieres recibir información? *"),
+      screen.getByLabelText("¿Qué esperas de CERETI? *", { exact: false }),
+      "Usar un lector.",
+    );
+    fireEvent.changeText(
+      screen.getByLabelText("¿Cómo prefieres recibir información? *", { exact: false }),
       "Correo accesible.",
     );
-    fireEvent.press(screen.getByRole("checkbox", { name: "Comunicación escrita" }));
+    fireEvent.press(screen.getByRole("checkbox", { name: /Comunicación escrita/ }));
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Selecciona una modalidad.")).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("radio", { name: "Presencial" }));
+    fireEvent.press(screen.getByRole("radio", { name: /Presencial/ }));
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     await waitFor(() => expect(revealGroup).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Selecciona al menos un día.")).toBeOnTheScreen();
     expect(
       screen.getByText("Hay campos por revisar. Corrige los mensajes indicados arriba."),
     ).toHaveProp("selectable", true);
-    fireEvent.press(screen.getByRole("checkbox", { name: "Lunes" }));
+    fireEvent.press(screen.getByRole("checkbox", { name: /Lunes/ }));
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
     expect(revealGroup).toHaveBeenCalledTimes(2);
@@ -79,7 +110,10 @@ describe("Formulario de solicitud del estudiante", () => {
 
   test("muestra errores visibles y permite corregirlos sin perder valores", async () => {
     await openForm();
-    fireEvent.changeText(screen.getByLabelText("¿Qué necesidad quieres abordar? *"), "   ");
+    fireEvent.changeText(
+      screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false }),
+      "   ",
+    );
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     expect(screen.getByText("Describe la necesidad que quieres abordar.")).toBeOnTheScreen();
     expect(screen.getByText("Selecciona una modalidad.")).toBeOnTheScreen();
@@ -88,23 +122,23 @@ describe("Formulario de solicitud del estudiante", () => {
     fillRequiredStudentRequestFields();
     expect(screen.queryByText("Describe la necesidad que quieres abordar.")).not.toBeOnTheScreen();
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
-    fireEvent.changeText(screen.getByLabelText("¿Qué esperas de CERETI? *"), "");
+    fireEvent.changeText(screen.getByLabelText("¿Qué esperas de CERETI? *", { exact: false }), "");
     expect(screen.getByText("Indica qué esperas del acompañamiento.")).toBeOnTheScreen();
   });
 
   test("permite varios apoyos y texto libre para las necesidades de acceso", async () => {
     await openForm();
     fillRequiredStudentRequestFields();
-    expect(screen.getByRole("checkbox", { name: "Comunicación escrita" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Comunicación escrita/ })).toBeChecked();
     fireEvent.press(screen.getByRole("checkbox", { name: "Persona de apoyo" }));
     expect(screen.getByRole("checkbox", { name: "Persona de apoyo" })).toBeChecked();
-    fireEvent.press(screen.getByRole("checkbox", { name: "Comunicación escrita" }));
-    expect(screen.getByRole("checkbox", { name: "Comunicación escrita" })).not.toBeChecked();
+    fireEvent.press(screen.getByRole("checkbox", { name: /Comunicación escrita/ }));
+    expect(screen.getByRole("checkbox", { name: /Comunicación escrita/ })).not.toBeChecked();
     fireEvent.changeText(
-      screen.getByLabelText("Otra necesidad de acceso"),
+      screen.getByLabelText("Otra necesidad de acceso", { exact: false }),
       "Instrucciones por pasos.",
     );
-    fireEvent.press(screen.getByRole("radio", { name: "Presencial" }));
+    fireEvent.press(screen.getByRole("radio", { name: /Presencial/ }));
     expect(screen.getByRole("radio", { name: "En línea" })).not.toBeChecked();
     expect(screen.getByDisplayValue("Instrucciones por pasos.")).toBeOnTheScreen();
   });
@@ -112,7 +146,7 @@ describe("Formulario de solicitud del estudiante", () => {
   test("valida una franja opcional incompleta, inválida o invertida", async () => {
     await openForm();
     fillRequiredStudentRequestFields();
-    fireEvent.changeText(screen.getByLabelText("Desde"), "25:00");
+    fireEvent.changeText(screen.getByLabelText("Desde", { exact: false }), "25:00");
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
     expect(
       screen.getByText("Escribe la hora inicial en formato HH:MM, por ejemplo 09:00."),
@@ -120,10 +154,10 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(
       screen.getByText("Escribe la hora final en formato HH:MM, por ejemplo 13:00."),
     ).toBeOnTheScreen();
-    fireEvent.changeText(screen.getByLabelText("Desde"), "13:00");
-    fireEvent.changeText(screen.getByLabelText("Hasta"), "09:00");
+    fireEvent.changeText(screen.getByLabelText("Desde", { exact: false }), "13:00");
+    fireEvent.changeText(screen.getByLabelText("Hasta", { exact: false }), "09:00");
     expect(screen.getByText("La hora final debe ser posterior a la inicial.")).toBeOnTheScreen();
-    fireEvent.changeText(screen.getByLabelText("Hasta"), "14:00");
+    fireEvent.changeText(screen.getByLabelText("Hasta", { exact: false }), "14:00");
     expect(
       screen.queryByText("La hora final debe ser posterior a la inicial."),
     ).not.toBeOnTheScreen();
@@ -166,7 +200,7 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(screen.getByTestId("submission-error")).toHaveStyle({ borderCurve: "continuous" });
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
     fireEvent.changeText(
-      screen.getByLabelText("¿Qué necesidad quieres abordar? *"),
+      screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false }),
       "Necesito acceder a las lecturas actualizadas.",
     );
     fireEvent.press(screen.getByRole("button", { name: "Reintentar envío" }));
@@ -198,9 +232,11 @@ describe("Formulario de solicitud del estudiante", () => {
     render(<RequestForm submitter={{ submitStudentRequest }} onRevealGroup={() => undefined} />);
     fillRequiredStudentRequestFields();
     const action = screen.getByRole("button", { name: "Enviar solicitud" });
-    const needSummary = screen.getByLabelText("¿Qué necesidad quieres abordar? *");
+    const needSummary = screen.getByLabelText("¿Qué necesidad quieres abordar? *", {
+      exact: false,
+    });
     const modality = screen.getByRole("radio", { name: "En línea" });
-    const weekday = screen.getByRole("checkbox", { name: "Lunes" });
+    const weekday = screen.getByRole("checkbox", { name: /Lunes/ });
 
     fireEvent.press(action);
     fireEvent.press(action);
@@ -234,7 +270,9 @@ describe("Formulario de solicitud del estudiante", () => {
       await Promise.resolve();
     });
     await waitFor(() =>
-      expect(screen.getByLabelText("¿Qué necesidad quieres abordar? *")).toHaveProp("value", ""),
+      expect(
+        screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false }),
+      ).toHaveProp("value", ""),
     );
   });
 
