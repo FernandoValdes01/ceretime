@@ -25,7 +25,11 @@ async function verifyProvider({ env = process.env, fetchImpl = fetch } = {}) {
     apiKey: env.OPENROUTER_API_KEY,
     fetchImpl: providerFetch,
   });
-  assert.equal(review.coverage, "complete", `La revisión de prueba quedó incompleta. ${review.reasons.join(" ")}`);
+  assert.equal(
+    review.coverage,
+    "complete",
+    `La revisión de prueba quedó incompleta. ${review.reasons.join(" ")}`,
+  );
   assert.ok(review.usage.measuredCalls > 0, "Falta una respuesta real con uso medido.");
   const pr = {
     number: 1,
