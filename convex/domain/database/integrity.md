@@ -1,6 +1,6 @@
 # Database mínima: migraciones, índices y pruebas — TI2-17
 
-Fuente: lenguaje de `CONTEXT.md` (Practicante con asignación explícita y acceso minimizado, Administrador sin acceso irrestricto), seguridad mínima de `docs/especificacion-prototipo.md` (autorización en backend, habilitación previa de cuentas y datos ficticios) y alcance de la issue TI2-17 (migraciones, índices y pruebas, sin módulo general de auditoría). Este archivo es la evidencia de cierre; el modelo ejecutable vive en [`schema.ts`](../../schema.ts), la auditoría y la migración de filas legacy en [`migrations.ts`](../../migrations.ts), la persistencia en `infrastructure/*/repository.ts` y la prueba reproducible en [`database.test.ts`](../../database.test.ts). Todo opera con datos ficticios.
+Fuente: lenguaje de `CONTEXT.md` (Practicante con asignación explícita y acceso minimizado, Administrador sin acceso irrestricto), seguridad mínima de `docs/especificacion-prototipo.md` (autorización en backend, habilitación previa de cuentas y datos ficticios) y alcance de la issue TI2-17 (migraciones, índices y pruebas, sin módulo general de auditoría). Este archivo es la evidencia de cierre; el modelo ejecutable vive en [`schema.ts`](../../schema.ts), la auditoría y la migración de filas legacy en [`migrations.ts`](../../migrations.ts), la persistencia en `infrastructure/*/repository.ts` y la prueba reproducible en [`database.test.ts`](../../tests/database.test.ts). Todo opera con datos ficticios.
 
 ## Reproducción desde cero
 
