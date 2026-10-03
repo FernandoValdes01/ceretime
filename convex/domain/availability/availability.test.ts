@@ -278,6 +278,50 @@ describe("expandAvailabilitySlots (TI2-81)", () => {
     ).toEqual([]);
   });
 
+  test("los cupos duran exacto aunque la madrugada no exista por el cambio de hora", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [{ ...block(), weekday: 0, startMinute: 0, endMinute: 180 }],
+        from: "2026-09-06",
+        to: "2026-09-06",
+      }),
+    );
+
+    expect(slots).toHaveLength(3);
+    for (const slot of slots) {
+      expect(slot.endAt - slot.startAt).toBe(3_600_000);
+    }
+  });
+
+  test("los cupos duran exacto aunque la hora se repita por el cambio de hora", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [{ ...block(), weekday: 6, startMinute: 1320, endMinute: 1440 }],
+        from: "2026-04-04",
+        to: "2026-04-04",
+      }),
+    );
+
+    expect(slots).toHaveLength(2);
+    for (const slot of slots) {
+      expect(slot.endAt - slot.startAt).toBe(3_600_000);
+    }
+  });
+
+  test("el día de la semana no depende de la zona horaria", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [{ ...block(), weekday: 1 }],
+        from: WINTER_MONDAY,
+        to: WINTER_MONDAY,
+        timeZone: "Pacific/Kiritimati",
+      }),
+    );
+
+    expect(slots).toHaveLength(2);
+    expect(slots[0]).toMatchObject({ date: WINTER_MONDAY, startAt: 1783278000000 });
+  });
+
   test("el borde del día admite un bloque que cierra a las 24:00", () => {
     const slots = expandAvailabilitySlots(
       input({
@@ -417,6 +461,12 @@ describe("rechazos de disponibilidad (TI2-81)", () => {
     ).toThrow("mismo profesional");
     expect(() => expandAvailabilitySlots(input({ professionalId: "  " }))).toThrow(
       "profesional dueño",
+    );
+  });
+
+  test("el rango gigante se rechaza sin expandir", () => {
+    expect(() => expandAvailabilitySlots(input({ from: "1900-01-01", to: "9999-12-31" }))).toThrow(
+      "92 días",
     );
   });
 

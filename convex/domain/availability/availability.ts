@@ -107,7 +107,7 @@ export const MAX_EXPANSION_DAYS = 92;
 
 /** Entrada de la expansión: bloques de un profesional más rango civil y zona horaria explícitos. */
 export interface ExpandAvailabilityInput {
-  /** Profesional dueño de los bloques; cada bloque debe pertenecerle. */
+  /** Profesional dueño de los bloques; cada bloque debe ser del mismo profesional. */
   readonly professionalId: string;
   readonly blocks: readonly AvailabilityBlock[];
   readonly exceptions?: readonly AvailabilityException[];
@@ -226,9 +226,9 @@ function civilDateParts(date: string): { year: number; month: number; day: numbe
 }
 
 /**
- * Formateadores por zona horaria, conservados entre llamadas.
+ * Conversión a zona horaria conservada entre llamadas.
  *
- * Memoización transparente: evita reconstruir el `Intl.DateTimeFormat` en cada instante calculado sin cambiar el resultado.
+ * Se conserva una instancia por zona horaria: evita reconstruir el `Intl.DateTimeFormat` en cada instante calculado sin cambiar el resultado.
  */
 const timeZoneFormatters = new Map<string, Intl.DateTimeFormat>();
 
@@ -252,7 +252,7 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
 }
 
 /**
- * Diferencia `local - utc` en milisegundos para la zona horaria en un instante dado.
+ * Diferencia entre la hora local y UTC, en milésimas de segundo, para la zona horaria en un instante dado.
  *
  * Implementación propia sobre `Intl.DateTimeFormat` para no depender de bibliotecas externas: el dominio sigue siendo puro y la aritmética de instantes queda probada con fechas fijas de invierno y verano.
  */
@@ -274,7 +274,7 @@ function getTimeZoneOffsetMs(timeZone: string, utcMs: number): number {
   return asUtc - utcMs;
 }
 
-/** Convierte una fecha civil más un minuto del día a milisegundos epoch en la zona horaria dada. */
+/** Convierte una fecha civil más un minuto del día a un instante epoch en la zona horaria dada. */
 function civilToEpochMs(date: string, minuteOfDay: number, timeZone: string): number {
   const { year, month, day } = civilDateParts(date);
   const targetLocal = Date.UTC(year, month - 1, day, 0, 0, 0) + minuteOfDay * 60_000;
@@ -282,11 +282,11 @@ function civilToEpochMs(date: string, minuteOfDay: number, timeZone: string): nu
   return targetLocal - getTimeZoneOffsetMs(timeZone, firstPass);
 }
 
-/** Día de la semana (0 a 6) de una fecha civil en la zona horaria dada. */
-function civilWeekday(date: string, timeZone: string): number {
+/** Día de la semana (0 a 6) de una fecha civil, idéntico en todas las zonas horarias. */
+function civilWeekday(date: string): number {
   const { year, month, day } = civilDateParts(date);
-  const utcNoon = Date.UTC(year, month - 1, day, 12, 0, 0);
-  return new Date(utcNoon + getTimeZoneOffsetMs(timeZone, utcNoon)).getUTCDay();
+  const days = Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+  return (((days + 4) % 7) + 7) % 7;
 }
 
 /** Fechas civiles del rango inclusivo, en orden, como textos `YYYY-MM-DD`. */
@@ -327,7 +327,8 @@ function expandWindow(
       professionalId,
       date,
       startAt,
-      endAt: civilToEpochMs(date, startMinute + window.slotMinutes, timeZone),
+      // El fin deriva del inicio más la duración: cada cupo dura exacto aunque la hora civil no exista o se repita en un cambio de hora.
+      endAt: startAt + window.slotMinutes * 60_000,
       modality: window.modality,
       ...(window.spaceId === undefined ? {} : { spaceId: window.spaceId }),
       version: AVAILABILITY_CONTRACT_VERSION,
@@ -339,7 +340,7 @@ function expandWindow(
 /**
  * Expande bloques y excepciones a cupos concretos dentro del rango pedido.
  *
- * Reglas: cada bloque debe pertenecer al profesional de la expansión; la recurrencia aporta las ventanas de cada fecha según su día de semana; una excepción `cancelled` elimina el día completo y una `added` suma sus ventanas a las del día. Los cupos salen alineados al inicio de cada ventana y ordenados por inicio; el resto menor a la duración se descarta sin alterar la ventana. Los solapes entre bloques se preservan tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
+ * Reglas: cada bloque debe ser del mismo profesional de la expansión; la recurrencia aporta las ventanas de cada fecha según su día de semana; una excepción `cancelled` elimina el día completo y una `added` suma sus ventanas a las del día. Los cupos salen alineados al inicio de cada ventana y ordenados por inicio, y el fin de cada cupo deriva del inicio más la duración para durar exacto aunque la hora civil no exista o se repita en un cambio de hora; el resto menor a la duración se descarta sin alterar la ventana. Los solapes entre bloques se preservan tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
  *
  * Rechaza datos no finitos, fin anterior al inicio, ventanas fuera del día, duraciones no positivas o que no caben, modalidades o espacios inconsistentes, bloques de otro profesional, fechas inválidas, rango invertido o mayor a `MAX_EXPANSION_DAYS`, zonas horarias desconocidas y excepciones duplicadas en la misma fecha.
  */
@@ -355,8 +356,15 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
   if (input.from > input.to) {
     throw new Error("El fin del rango de expansión es anterior a su inicio.");
   }
-  const dates = eachCivilDate(input.from, input.to);
-  if (dates.length > MAX_EXPANSION_DAYS) {
+  const rangeStart = civilDateParts(input.from);
+  const rangeEnd = civilDateParts(input.to);
+  const spanDays =
+    Math.round(
+      (Date.UTC(rangeEnd.year, rangeEnd.month - 1, rangeEnd.day) -
+        Date.UTC(rangeStart.year, rangeStart.month - 1, rangeStart.day)) /
+        86_400_000,
+    ) + 1;
+  if (spanDays > MAX_EXPANSION_DAYS) {
     throw new Error(`El rango de expansión supera el máximo de ${MAX_EXPANSION_DAYS} días.`);
   }
   try {
@@ -364,6 +372,7 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
   } catch {
     throw new Error("La zona horaria de la expansión es desconocida.");
   }
+  const dates = eachCivilDate(input.from, input.to);
 
   const exceptionsByDate = new Map<string, AvailabilityException>();
   for (const exception of input.exceptions ?? []) {
@@ -380,7 +389,7 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
     if (exception?.kind === "cancelled") {
       continue;
     }
-    const weekday = civilWeekday(date, input.timeZone);
+    const weekday = civilWeekday(date);
     const windows: AvailabilityWindow[] = input.blocks.filter((block) => block.weekday === weekday);
     if (exception?.kind === "added") {
       windows.push(...(exception.windows ?? []));
