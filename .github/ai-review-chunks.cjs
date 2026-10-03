@@ -6,7 +6,7 @@ const { hash } = require("./ai-review-context.cjs");
 const { ENDPOINT, completionRequest, addUsage, emptyUsage } = require("./ai-review-provider.cjs");
 
 const LIMITS = Object.freeze({
-  chunkChars: 10000,
+  chunkChars: 12000,
   inputChars: 18000,
   maxChunks: 32,
   maxCalls: 32,

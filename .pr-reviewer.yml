@@ -2,7 +2,7 @@ review_style: minimal
 max_comments: 5
 review_language: es
 chunking:
-  chunkChars: 10000
+  chunkChars: 12000
   inputChars: 18000
   maxChunks: 32
   maxCalls: 32
