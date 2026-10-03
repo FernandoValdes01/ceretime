@@ -481,6 +481,56 @@ test("multiple long review threads preserve patch coverage and allow a targeted 
   }
 });
 
+test("followups use spare capacity without mixing overlapping findings from the same file", async () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "other.ts": "export const other = 1;\n",
+  });
+  try {
+    f.put("other.ts", `export const other = "${"x".repeat(6000)}";\n`);
+    f.put(".pr-reviewer.yml", configuration.replace("maxChunks: 32", "maxChunks: 2"));
+    f.advance();
+    for (let id = 1; id <= 2; id++)
+      f.comments.push({
+        id,
+        path: "file.ts",
+        line: 1,
+        original_line: 1,
+        side: "RIGHT",
+        original_commit_id: f.pr.head.sha,
+        diff_hunk:
+          "@@ -1 +1 @@\n-export const run = () => 1;\n+export const run = () => 2;\n" +
+          (id === 1 ? "context ".repeat(400) : ""),
+        body: "<!-- ceretime-r2d2-chunk -->\n" + (id === 1 ? "finding ".repeat(260) : "Contract"),
+        user: { login: BOT, type: "Bot" },
+      });
+    const plan = await f.prepare();
+    expect(plan.issues).toEqual([]);
+    expect(plan.chunks).toHaveLength(2);
+    const followup = plan.chunks.find((c: any) => c.parts.some((p: any) => p.followupOnly));
+    expect(followup.parts.some((p: any) => p.path === "other.ts")).toBe(true);
+    expect(followup.parts.filter((p: any) => p.path === "file.ts")).toHaveLength(1);
+    const report = await f.run((data: any) => ({
+      findings: [],
+      resolutions: data.parts.flatMap((p: any) =>
+        p.followups.map((t: any) => ({
+          id: t.id,
+          status: "not_applicable",
+          explanation: "Comprobado con el contrato actual.",
+        })),
+      ),
+    }));
+    expect(report.coverage).toBe("complete");
+    expect(report.calls).toBe(2);
+    expect(report.resolutions.map((r: any) => r.id).sort()).toEqual(["1", "2"]);
+    expect(
+      f.requests.every((r: any) => JSON.stringify(r.parts).length <= plan.limits.chunkChars),
+    ).toBe(true);
+  } finally {
+    f.clean();
+  }
+});
+
 test("formal evidence follows renames without claiming the code disappeared", () => {
   const f = fixture();
   try {
