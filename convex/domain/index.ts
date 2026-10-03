@@ -48,7 +48,7 @@ export {
   ACCOMPANIMENT_STATUS_VALUES,
   ACCOMPANIMENT_VIEW_VALUES,
   toAccompanimentProjection,
-} from "./accompaniment/accompaniment";
+} from "./accompaniments/accompaniment";
 export type {
   Accompaniment,
   AccompanimentProjection,
@@ -56,21 +56,21 @@ export type {
   AccompanimentStatus,
   AccompanimentView,
   MinimizedAccompaniment,
-} from "./accompaniment/accompaniment";
+} from "./accompaniments/accompaniment";
 
 // Asignaciones de acceso y sus permisos de lectura.
 export {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
   ASSIGNMENT_VIEW_BY_ROLE,
-} from "./accompaniment/practitioner_assignment";
-export { toAssignmentReadPermission } from "./accompaniment/practitioner_assignment";
+} from "./accompaniments/assignment";
+export { toAssignmentReadPermission } from "./accompaniments/assignment";
 export type {
+  AccompanimentAssignment,
   AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
-  PractitionerAssignment,
-} from "./accompaniment/practitioner_assignment";
+} from "./accompaniments/assignment";
 
 // Errores públicos y estados de respuesta.
 export type { ApiResult, PublicApiError } from "./errors/api_error";
