@@ -6,6 +6,11 @@ const { MODEL } = require("./ai-review-provider.cjs");
 // Synthetic GitHub data keeps the real provider check from publishing to a PR.
 async function verifyProvider({ env = process.env, fetchImpl = fetch } = {}) {
   assert.ok(env.OPENROUTER_API_KEY, "Falta OPENROUTER_API_KEY en Actions.");
+  const providerFetch = async (url, options) => {
+    const response = await fetchImpl(url, options);
+    console.info(`Prueba del proveedor: HTTP ${response.status}.`);
+    return response;
+  };
   const sha = "a".repeat(40);
   const source = "export const sum = (a: number, b: number) => a + b;";
   const patch = `@@ -0,0 +1 @@\n+${source}`;
@@ -18,9 +23,9 @@ async function verifyProvider({ env = process.env, fetchImpl = fetch } = {}) {
     plan,
     instructions: "Evalúa esta suma pura, sin dependencias ni requisitos externos.",
     apiKey: env.OPENROUTER_API_KEY,
-    fetchImpl,
+    fetchImpl: providerFetch,
   });
-  assert.equal(review.coverage, "complete", "La revisión de prueba quedó incompleta.");
+  assert.equal(review.coverage, "complete", `La revisión de prueba quedó incompleta. ${review.reasons.join(" ")}`);
   assert.ok(review.usage.measuredCalls > 0, "Falta una respuesta real con uso medido.");
   const pr = {
     number: 1,
@@ -76,7 +81,7 @@ async function verifyProvider({ env = process.env, fetchImpl = fetch } = {}) {
       payload: { action: "created", pull_request: pr, comment: reply },
     },
     env: { REVIEW_BOT_LOGIN: BOT, OPENROUTER_API_KEY: env.OPENROUTER_API_KEY },
-    fetchImpl,
+    fetchImpl: providerFetch,
   });
   assert.ok(conversation.usage?.measuredCalls > 0, "Falta una respuesta real de conversación.");
   assert.equal(posted.length, 1, "La conversación no produjo una respuesta válida.");
