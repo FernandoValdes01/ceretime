@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { internal } from "./_generated/api";
-import schema from "./schema";
+import { internal } from "../_generated/api";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 /**
  * Guardia de semillas de desarrollo (TI2-11).

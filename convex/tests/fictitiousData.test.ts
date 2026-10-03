@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { internal } from "./_generated/api";
-import { SPRINT_1_REQUEST_STATES } from "./domain/requests/state";
-import schema from "./schema";
+import { internal } from "../_generated/api";
+import { SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 /**
  * Dataset ficticio del Sprint 1 (TI2-30). Cada prueba fija el interruptor de
