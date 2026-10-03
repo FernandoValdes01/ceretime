@@ -296,15 +296,26 @@ test("aggregate caps findings and rejects contradictory thread decisions", () =>
   expect(conflict).toMatchObject({ score: 0, coverage: "incomplete" });
 });
 test("budgets and obsolete heads stop inference without inventing coverage", async () => {
-  const plan = buildPlan([chunkFile("file.ts", 400)], { chunking: { maxCalls: 1 } }, sha);
+  const plan = buildPlan(
+    [chunkFile("file.ts", 400)],
+    { chunking: { chunkChars: 12000, maxCalls: 1 } },
+    sha,
+  );
   expect((await runChunks(plan)).result).toMatchObject({
     coverage: "incomplete",
     score: 0,
     calls: 1,
   });
   expect(
-    (await runChunks(buildPlan([chunkFile("file.ts", 400)], { chunking: { maxChunks: 1 } }, sha)))
-      .result.calls,
+    (
+      await runChunks(
+        buildPlan(
+          [chunkFile("file.ts", 400)],
+          { chunking: { chunkChars: 12000, maxChunks: 1 } },
+          sha,
+        ),
+      )
+    ).result.calls,
   ).toBe(0);
   const stale = await reviewPlan({
     plan,
@@ -543,7 +554,11 @@ test("quota wait budget stops bounded retries and the current head is checked af
 });
 
 test("successful low-token headers delay the next chunk until reset", async () => {
-  const plan = buildPlan([chunkFile("tokens-a.ts", 200), chunkFile("tokens-b.ts", 200)], {}, sha);
+  const plan = buildPlan(
+    [chunkFile("tokens-a.ts", 200), chunkFile("tokens-b.ts", 200)],
+    { chunking: { chunkChars: 12000 } },
+    sha,
+  );
   const pauses: number[] = [];
   const result = await reviewPlan({
     plan,

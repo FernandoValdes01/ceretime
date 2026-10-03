@@ -492,7 +492,7 @@ test("followups use spare capacity without mixing overlapping findings from the 
       ".pr-reviewer.yml",
       configuration
         .replace("maxChunks: 32", "maxChunks: 2")
-        .replace("chunkChars: 24000", "chunkChars: 12000"),
+        .replace("chunkChars: 48000", "chunkChars: 12000"),
     );
     f.advance();
     for (let id = 1; id <= 2; id++)
@@ -664,6 +664,32 @@ test("review context preserves numeric return contracts and workflow consumers",
     expect(
       file.context.find((c: any) => c.path === ".github/workflows/review.yml")?.head,
     ).toContain('require("./file.ts")');
+  } finally {
+    f.clean();
+  }
+});
+
+test("workflow review receives the complete implementation of the local scripts it invokes", () => {
+  const source = [
+    'const BOT = "reviewer[bot]";',
+    ...Array.from({ length: 150 }, (_, i) => `const setting${i} = "${"x".repeat(65)}";`),
+    "async function publishReview(args) { await archiveReviewSummaries(args); }",
+    "async function archiveReviewSummaries({ github, botLogin }) {",
+    "  for (const review of await github.listReviews()) {",
+    "    if (review.user.login !== botLogin) continue;",
+    "    await github.updateReview(review);",
+    "  }",
+    "}",
+    "module.exports = { BOT, publishReview, archiveReviewSummaries };",
+  ].join("\n");
+  const workflow =
+    'jobs:\n  review:\n    steps:\n      - uses: actions/github-script@v7\n        with:\n          script: |\n            const { publishReview } = require("./review.cjs");\n            await publishReview({ github, botLogin });\n';
+  const f = fixture({ "review.cjs": source, ".github/workflows/review.yml": workflow });
+  try {
+    const file: any = { filename: ".github/workflows/review.yml", status: "modified" };
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    expect(file.context.find((c: any) => c.path === "review.cjs")?.head).toBe(source);
+    expect(JSON.stringify(file.context).length).toBeLessThanOrEqual(32000);
   } finally {
     f.clean();
   }

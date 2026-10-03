@@ -254,6 +254,7 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
           for (let n = Math.max(0, i - 3); n < Math.min(lines.length, i + 5); n++) selected.add(n);
         return;
       }
+      if (/^const [A-Z_]+\s*=\s*["'\d]/.test(line) && line.length < 300) selected.add(i);
       if (/\b(?:export|function|class|interface|type)\b/.test(line))
         for (let n = i; n < Math.min(lines.length, i + 30); n++) selected.add(n);
     });
@@ -329,6 +330,8 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
         const priority = (p) => Number(!direct.has(p)) * 2 + Number(/\.(?:test|spec)\./.test(p));
         return priority(a) - priority(b) || a.localeCompare(b);
       });
+    const workflow = file.filename.startsWith(".github/workflows/");
+    const invoked = new Set(graph.get(file.filename) ?? []);
     file.context = [file.filename, ...related].slice(0, 8).map((p) => ({
       path: p,
       base: declarations(
@@ -336,13 +339,16 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
         p === file.filename ? 900 : 1400,
         p.startsWith(".github/workflows/"),
       ),
-      head: declarations(
-        sources.get(p),
-        p === file.filename ? 900 : 1400,
-        p.startsWith(".github/workflows/"),
-      ),
+      head:
+        workflow && invoked.has(p) && (sources.get(p)?.length ?? Infinity) <= 24000
+          ? sources.get(p)
+          : declarations(
+              sources.get(p),
+              p === file.filename ? 900 : 1400,
+              p.startsWith(".github/workflows/"),
+            ),
     }));
-    file.context = JSON.parse(clipContext(file.context, 6000));
+    file.context = JSON.parse(clipContext(file.context, workflow ? 32000 : 6000));
     file.followups = threads.filter(
       (thread) => thread.path === file.filename || thread.path === file.previous_filename,
     );
