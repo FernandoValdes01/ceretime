@@ -1,6 +1,6 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import { toAccompanimentRequest } from "../../domain/request/request";
+import { toAccompanimentRequest } from "../../domain/requests/request";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";

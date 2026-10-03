@@ -5,8 +5,8 @@ import {
   ACCESS_NEEDS_MAX_LENGTH,
   toAccessNeedsText,
   toAccompanimentRequest,
-} from "../../domain/request/request";
-import { transitionRequest } from "../../domain/request/transition_policy";
+} from "../../domain/requests/request";
+import { transitionRequest } from "../../domain/requests/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";

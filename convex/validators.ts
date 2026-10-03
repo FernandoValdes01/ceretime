@@ -4,7 +4,7 @@ import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
 } from "./domain/accompaniments/assignment";
-import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
+import { SPRINT_1_REQUEST_STATES } from "./domain/requests/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,

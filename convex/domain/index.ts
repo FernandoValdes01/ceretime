@@ -24,7 +24,7 @@ export {
   toAccessNeedsText,
   toAccompanimentRequest,
   toStoredRequestFields,
-} from "./request/request";
+} from "./requests/request";
 export type {
   AccessNeed,
   AccompanimentRequest,
@@ -32,7 +32,7 @@ export type {
   GeneralAvailability,
   ModalityPreference,
   StoredRequestFields,
-} from "./request/request";
+} from "./requests/request";
 export {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
@@ -40,8 +40,8 @@ export {
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
-} from "./request/state";
-export type { FutureRequestState, RequestState, Sprint1RequestState } from "./request/state";
+} from "./requests/state";
+export type { FutureRequestState, RequestState, Sprint1RequestState } from "./requests/state";
 
 // Acompañamiento y sus vistas de lectura.
 export {

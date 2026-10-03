@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 import { internal } from "./_generated/api";
-import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
+import { SPRINT_1_REQUEST_STATES } from "./domain/requests/state";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");

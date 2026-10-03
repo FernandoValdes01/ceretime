@@ -4,7 +4,7 @@ import type { FunctionReturnType } from "convex/server";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { SPRINT_1_REQUEST_STATES } from "./domain/request/state";
+import { SPRINT_1_REQUEST_STATES } from "./domain/requests/state";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
