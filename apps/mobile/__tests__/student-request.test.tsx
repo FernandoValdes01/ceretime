@@ -1,4 +1,5 @@
 import path from "node:path";
+import { AccessibilityInfo } from "react-native";
 import { render } from "@testing-library/react-native";
 import type {
   StudentRequestSubmissionReceipt,
@@ -41,6 +42,29 @@ async function openForm() {
 }
 
 describe("Formulario de solicitud del estudiante", () => {
+  test("publica el error antes de pedir foco de accesibilidad al primer campo", async () => {
+    const namesAtFocus: string[] = [];
+    const focusEvent = jest
+      .spyOn(AccessibilityInfo, "sendAccessibilityEvent")
+      .mockImplementation(() => {
+        namesAtFocus.push(
+          screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false }).props
+            .accessibilityLabel,
+        );
+      });
+    try {
+      render(<RequestForm submitter={successfulSubmitter} onRevealGroup={() => undefined} />);
+      fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+      await waitFor(() =>
+        expect(namesAtFocus).toEqual([
+          "¿Qué necesidad quieres abordar? *. Error: Describe la necesidad que quieres abordar.",
+        ]),
+      );
+      expect(focusEvent).toHaveBeenCalledWith(expect.anything(), "focus");
+    } finally {
+      focusEvent.mockRestore();
+    }
+  });
   test("expone el error al volver al campo y revela los apoyos pendientes", async () => {
     const revealGroup = jest.fn();
     render(<RequestForm submitter={successfulSubmitter} onRevealGroup={revealGroup} />);

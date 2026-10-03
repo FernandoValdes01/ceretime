@@ -189,7 +189,15 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
             else AccessibilityInfo.sendAccessibilityEvent(control.current, "focus");
           }
         });
-      } else inputs.current[firstError]?.focus();
+      } else {
+        requestAnimationFrame(() => {
+          const input = inputs.current[firstError];
+          input?.focus();
+          if (input && process.env.EXPO_OS !== "web") {
+            AccessibilityInfo.sendAccessibilityEvent(input, "focus");
+          }
+        });
+      }
       AccessibilityInfo.announceForAccessibility(`Revisa el formulario. ${nextErrors[firstError]}`);
     } else {
       Keyboard.dismiss();
