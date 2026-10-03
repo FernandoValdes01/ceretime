@@ -72,3 +72,11 @@ La revalidación del commit de código `50ecb51c03ccd48af42b9e47317caa4b6e18dc55
 ## Pruebas de la preparación
 
 `bun test ./.github/ci-publication.test.ts` ejecuta el script de publicación del workflow con respuestas simuladas de GitHub. Comprueba creación y actualización del comentario, publicación de fallos y rechazo de otra rama, repositorio, número inválido o commit desactualizado. Estas pruebas corren en CI sin ejecutar los builds adicionales ni escribir en GitHub.
+
+## Revisión automática independiente
+
+AI Code Reviewer con OpenRouter y `deepseek/deepseek-v4.1-flash` vive en `.github/workflows/ai-code-review.yml`. No modifica `.github/workflows/build-validation.yml`, su ejecución manual ni las garantías de origen/SHA de TI4-38. Los cuatro jobs de CI conservan sus nombres y comportamiento; el job de lint ejecuta ahora `bun test ./.github/ai-review-score.test.ts` como único reemplazo de la suite del reviewer anterior.
+
+La suite cubre review vigente, ausente, obsoleta, fallida, formato inválido, scores fuera de rango y cambios concurrentes del head. Comprueba que una ejecución antigua no publique success sobre el SHA nuevo y que Draft no publique ni consuma reviews. Son pruebas locales con GitHub simulado: no demuestran una respuesta de OpenRouter ni una review real. La evidencia remota debe registrarse en la misma PR de TI4-45. [Protecciones de CI](ci-protections.md) describe permisos, secret `OPENROUTER_API_KEY`, scores, riesgo, límites, revisión humana y reversión. AI Review es informativo y no es una dependencia del flujo de builds o despliegues.
+
+La suite también comprueba chunking por archivos y hunks, PR de unos 100.000 caracteres, exclusiones antes de enviar código, reintentos y presupuestos, cobertura incompleta por fallo de un bloque, eliminación de repeticiones y máximo de cinco hallazgos. La revisión agregada conserva el contrato de score/riesgo/SHA y un único resumen. Estos tests usan OpenRouter simulado; no consumen la cuota real ni sustituyen la prueba posterior del workflow en GitHub.
