@@ -1,0 +1,51 @@
+diff --git i/apps/mobile/src/composition/mobile-dependencies.ts w/apps/mobile/src/composition/mobile-dependencies.ts
+index 1e15889..de80f9d 100644
+--- i/apps/mobile/src/composition/mobile-dependencies.ts
++++ w/apps/mobile/src/composition/mobile-dependencies.ts
+@@ -32,7 +32,7 @@ const professionalAccompanimentDemoDelay =
+     ? parsedProfessionalAccompanimentDelay
+     : 0;
+
+-export const mobileDependencies = {
++const originalMobileDependencies = {
+   administratorAccountsPort: createMockAdministratorAccountsAdapter(),
+   authPort: createMockAuthenticationPort(),
+   demoCredentials: mockAuthCredentials,
+@@ -57,3 +57,37 @@ export const mobileDependencies = {
+         : "success",
+   }),
+ } as const;
++
++
++// Configuración temporal de auditoría. No forma parte de la aplicación publicada.
++const qaScenario = process.env.EXPO_PUBLIC_TI4_48_QA_SCENARIO;
++const qaListOperations = new Set([
++  "readPractitionerAccounts", "readProfessionalRequests",
++  "readAssignedAccompaniments", "readAccompaniments",
++]);
++function withQa<T extends object>(port: T): T {
++  const calls = new Map<PropertyKey, number>();
++  return new Proxy(port, {
++    get(target, property, receiver) {
++      const operation = Reflect.get(target, property, receiver);
++      if (typeof operation !== "function") return operation;
++      return async (...args: unknown[]) => {
++        const call = (calls.get(property) ?? 0) + 1;
++        calls.set(property, call);
++        await new Promise((resolve) => setTimeout(resolve, 8000));
++        if (qaScenario === "fail-once" && call === 1) {
++          throw new Error("Fallo simulado de la operación. Puedes reintentar.");
++        }
++        if (qaScenario === "empty" && qaListOperations.has(String(property))) return [];
++        return Reflect.apply(operation, target, args);
++      };
++    },
++  });
++}
++export const mobileDependencies = {
++  ...originalMobileDependencies,
++  administratorAccountsPort: withQa(originalMobileDependencies.administratorAccountsPort),
++  professionalReviewPort: withQa(originalMobileDependencies.professionalReviewPort),
++  professionalAccompanimentReader: withQa(originalMobileDependencies.professionalAccompanimentReader),
++  practitionerAccompanimentReader: withQa(originalMobileDependencies.practitionerAccompanimentReader),
++} as const;
