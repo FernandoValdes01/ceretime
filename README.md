@@ -1,5 +1,13 @@
 # **ceretime**
 
+## Carrera del equipo
+
+[![Carrera de autores de PR fusionadas en CERETIME](.github/assets/release-balls.gif)](https://github.com/FernandoValdes01/ceretime/actions/workflows/release-balls.yml)
+
+Generada con [Release Balls](https://github.com/maria-rcks/release-balls) a partir de las PR fusionadas durante los siete días previos al 03/10/2026. Cada bola representa a un autor; su velocidad depende de cuántas PR fusionadas tiene en ese período.
+
+El [workflow Release Balls](https://github.com/FernandoValdes01/ceretime/actions/workflows/release-balls.yml) genera GIF, video y datos al publicar una release o ejecutarlo manualmente. Los archivos quedan como artefactos de Actions. Para renovar esta imagen, descarga el GIF y reemplaza `.github/assets/release-balls.gif` mediante una PR.
+
 ## Requisitos
 
 Para integrarte completamente al flujo (desarrollo, issue tracker y pull requests) necesitas `bun` y la GitHub CLI (`gh`).
