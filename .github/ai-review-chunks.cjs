@@ -150,24 +150,26 @@ function buildPlan(files, config = {}, sha) {
         .join("\n");
       const part = {
         ...extra,
-        followups: (file.followups ?? []).filter(
-          (t) =>
-            !assignedThreads.has(t.id) &&
-            (t.currentLine == null ||
-              unit.some((r) => r.side === "RIGHT" && Math.abs(r.line - t.currentLine) <= 12)),
-        ),
+        followups: (file.followups ?? [])
+          .filter(
+            (t) =>
+              !assignedThreads.has(t.id) &&
+              (t.currentLine == null ||
+                unit.some((r) => r.side === "RIGHT" && Math.abs(r.line - t.currentLine) <= 12)),
+          )
+          .slice(0, 1),
         path: file.filename,
         previousPath: file.previous_filename,
         status: file.status,
         patch,
         anchors: unit.filter((r) => r.side).map((r) => `${r.side}:${r.line}`),
       };
-      for (const thread of part.followups) assignedThreads.add(thread.id);
       const partSize = JSON.stringify({ ...part, anchors: undefined }).length;
       if (partSize > limits.chunkChars) {
         plan.issues.push(`Bloque mayor que el presupuesto: ${file.filename}`);
         continue;
       }
+      for (const thread of part.followups) assignedThreads.add(thread.id);
       const available = bins
         .filter((bin) => bin.size + partSize + 1 <= limits.chunkChars)
         .sort((a, b) => b.size - a.size)[0];
@@ -219,6 +221,8 @@ function validateAssessment(data, chunk) {
       throw new Error("Identidad de hallazgo inválida.");
     if (finding.threadId && !part.followups?.some((t) => t.id === String(finding.threadId)))
       throw new Error("Hilo desconocido.");
+    if (part.followupOnly && !finding.threadId)
+      throw new Error("Un seguimiento no admite hallazgos nuevos.");
     return {
       ...finding,
       threadId: finding.threadId ? String(finding.threadId) : undefined,
@@ -483,7 +487,7 @@ async function reviewPlan({
             [
               {
                 role: "system",
-                content: `${instructions}\nmain es la base válida. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones, nunca defectos de main.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
+                content: `${instructions}\nmain es la base válida. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Los hunks históricos de los hilos solo sirven para resolver esos hallazgos; el patch principal es main...HEAD. CI, build y el reviewer tienen comportamiento funcional aunque no cambien lógica de negocio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones y evidencia con threadId para mantener ese mismo hallazgo; nunca hallazgos nuevos ni defectos ajenos al diff vigente.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
               },
               {
                 role: "user",

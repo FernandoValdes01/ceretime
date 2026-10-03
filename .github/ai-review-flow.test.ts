@@ -422,6 +422,65 @@ test("a fully reverted hunk receives a targeted followup without reviewing main"
   }
 });
 
+test("multiple long review threads preserve patch coverage and allow a targeted finding to remain", async () => {
+  const f = fixture();
+  try {
+    for (let id = 1; id <= 3; id++)
+      f.comments.push({
+        id,
+        path: "file.ts",
+        line: 1,
+        original_line: 1,
+        side: "RIGHT",
+        original_commit_id: f.pr.head.sha,
+        diff_hunk:
+          "@@ -1 +1 @@\n-export const run = () => 1;\n+export const run = () => 2;\n" +
+          "context ".repeat(400),
+        body: "<!-- ceretime-r2d2-chunk -->\n" + "finding ".repeat(260),
+        user: { login: BOT, type: "Bot" },
+      });
+    const plan = await f.prepare();
+    expect(plan.issues).toEqual([]);
+    const parts = plan.chunks.flatMap((c: any) => c.parts);
+    expect(
+      parts
+        .flatMap((p: any) => p.followups)
+        .map((t: any) => t.id)
+        .sort(),
+    ).toEqual(["1", "2", "3"]);
+    expect(parts.some((p: any) => p.anchors.includes("RIGHT:1") && !p.followupOnly)).toBe(true);
+    const report = await f.run((data: any) => ({
+      findings: data.parts.some((p: any) => p.followups.some((t: any) => t.id === "2"))
+        ? [
+            {
+              path: "file.ts",
+              line: 1,
+              side: "RIGHT",
+              severity: "important",
+              issue_key: "contract-value",
+              threadId: "2",
+              cause: "El cambio devuelve 2 en lugar del valor esperado.",
+              impact: "El consumidor recibe otro valor.",
+              fix: "Restaurar el contrato.",
+            },
+          ]
+        : [],
+      resolutions: data.parts.flatMap((p: any) =>
+        p.followups.map((t: any) => ({
+          id: t.id,
+          status: t.id === "2" ? "maintain" : "not_applicable",
+          explanation: "Comprobado con el contrato actual.",
+        })),
+      ),
+    }));
+    expect(report.coverage).toBe("complete");
+    expect(report.findings[0].threadId).toBe("2");
+    expect(f.requests.every((r: any) => r.parts.length > 0)).toBe(true);
+  } finally {
+    f.clean();
+  }
+});
+
 test("formal evidence follows renames without claiming the code disappeared", () => {
   const f = fixture();
   try {

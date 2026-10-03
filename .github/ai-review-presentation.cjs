@@ -105,7 +105,9 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           "",
           `Diff de la PR: ${amount(metadata.diffSize)} caracteres; archivos: ${amount(metadata.filesCount)}. El tamaño total no determina la cobertura. ${metadata.report?.reasons?.join(" ") || "No se completó una revisión válida de todos los bloques."}`,
           "",
-          "Cero hallazgos en la parte revisada no significa que el resto esté libre de problemas.",
+          findings > 0
+            ? "Los hallazgos corresponden a la parte revisada; el resto del cambio sigue pendiente."
+            : "Cero hallazgos en la parte revisada no significa que el resto esté libre de problemas.",
           "",
         ]
       : []),

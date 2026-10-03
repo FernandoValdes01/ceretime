@@ -164,17 +164,50 @@ async function prepareReview({ github, context, core, env = process.env }) {
   );
   // A fix can remove the original hunk or revert the file out of the PR entirely.
   for (const thread of evidence.followups.filter((t) => !attached.has(t.id))) {
+    const related = plan.chunks
+      .flatMap((c) => c.parts)
+      .find(
+        (p) =>
+          Number.isInteger(thread.currentLine) &&
+          thread.currentLine > 0 &&
+          p.path === (thread.currentPath ?? thread.path) &&
+          p.anchors.some(
+            (a) =>
+              a.startsWith("RIGHT:") &&
+              Math.abs(Number(a.split(":")[1]) - thread.currentLine) <= 12,
+          ),
+      );
+    const anchors = (related?.anchors ?? []).filter(
+      (a) => a.startsWith("RIGHT:") && Math.abs(Number(a.split(":")[1]) - thread.currentLine) <= 12,
+    );
+    const part = {
+      path: related?.path ?? thread.path,
+      kind: "followup",
+      followupOnly: true,
+      context: related?.context ?? [],
+      contextKey: related?.contextKey,
+      patch: (related?.patch ?? "")
+        .split("\n")
+        .filter((line) => {
+          const coordinate = line.match(/^\[(RIGHT|LEFT):(\d+)\]/);
+          return coordinate
+            ? anchors.includes(`${coordinate[1]}:${coordinate[2]}`)
+            : line.startsWith("@@");
+        })
+        .join("\n"),
+      anchors,
+      followups: [thread],
+    };
+    if (JSON.stringify({ ...part, anchors: undefined }).length > plan.limits.chunkChars) {
+      part.context = [];
+      part.context_truncated = true;
+    }
+    if (JSON.stringify({ ...part, anchors: undefined }).length > plan.limits.chunkChars) {
+      plan.issues.push(`Seguimiento mayor que el presupuesto: ${thread.id}`);
+      continue;
+    }
     plan.chunks.push({
-      parts: [
-        {
-          path: thread.path,
-          kind: "followup",
-          followupOnly: true,
-          patch: "",
-          anchors: [],
-          followups: [thread],
-        },
-      ],
+      parts: [part],
     });
   }
   if (plan.chunks.length > plan.limits.maxChunks && !plan.issues.length)
