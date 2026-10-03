@@ -10,7 +10,7 @@ const LIMITS = Object.freeze({
   inputChars: 32000,
   maxChunks: 32,
   maxCalls: 32,
-  outputTokens: 6000,
+  outputTokens: 16000,
   intervalMs: 1000,
   maxRateLimitWaitMs: 600000,
 });
@@ -517,7 +517,7 @@ async function reviewPlan({
         const response = await fetchImpl(ENDPOINT, {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(45000),
+          signal: AbortSignal.timeout(180000),
           body,
         });
         if (!response.ok) {
@@ -551,7 +551,14 @@ async function reviewPlan({
         const json = await response.json();
         addUsage(usage, json);
         stage = "parse";
-        if (json.choices?.[0]?.finish_reason === "length") throw new Error("Respuesta truncada.");
+        if (json.choices?.[0]?.finish_reason === "length") {
+          const reasoning = json.usage?.completion_tokens_details?.reasoning_tokens;
+          const content = json.choices[0].message?.content;
+          onProgress(
+            `Salida truncada: límite ${plan.limits.outputTokens} tokens; razonamiento ${Number.isInteger(reasoning) && reasoning >= 0 ? reasoning : "no disponible"}; JSON recibido ${typeof content === "string" ? content.length : 0} caracteres.`,
+          );
+          throw new Error("Respuesta truncada.");
+        }
         const parsed = JSON.parse(json.choices?.[0]?.message?.content ?? "null");
         stage = "validation";
         assessment = validateAssessment(parsed, chunk);

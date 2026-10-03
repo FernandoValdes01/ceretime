@@ -9,6 +9,7 @@ function completionRequest(messages, outputTokens) {
     reasoning: { effort: "low" },
     max_tokens: outputTokens,
     response_format: { type: "json_object" },
+    provider: { require_parameters: true },
     messages,
   };
 }
