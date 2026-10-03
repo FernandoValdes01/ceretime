@@ -53,7 +53,14 @@ async function runChunks(plan: any, responses?: any[], fetchOverride?: any) {
     sleep: async () => {},
     fetchImpl:
       fetchOverride ??
-      (async (_url: string, request: any) => {
+      (async (url: string, request: any) => {
+        expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+        expect(request.headers.Authorization).toBe("Bearer simulation");
+        expect(JSON.parse(request.body)).toMatchObject({
+          model: "deepseek/deepseek-v4.1-flash",
+          reasoning: { effort: "low" },
+          response_format: { type: "json_object" },
+        });
         requests.push(JSON.parse(request.body));
         return jsonResponse(responses?.length ? responses.shift() : { findings: [] });
       }),
@@ -184,7 +191,7 @@ for (const size of [10, 500, 1400])
     expect(result.coverage).toBe("complete");
     expect(requests).toHaveLength(plan.chunks.length);
     expect(requests[0].messages[0].content).toContain("main es la base válida");
-    expect(requests[0]).toHaveProperty("max_completion_tokens", LIMITS.outputTokens);
+    expect(requests[0]).toHaveProperty("max_tokens", LIMITS.outputTokens);
   });
 test("small files share calls while hunks keep independent units", async () => {
   const file = {
@@ -326,6 +333,11 @@ test("workflow has one engine pinned actions and no second inference for the sco
     statuses: "write",
   });
   expect(workflow.concurrency["cancel-in-progress"]).toBe(true);
+  expect(workflow.on).toHaveProperty("workflow_dispatch");
+  expect(workflow.jobs["provider-check"].permissions).toEqual({ contents: "read" });
+  const inference = workflow.jobs.review.steps.find((step: any) => step.id === "confidence");
+  expect(inference.env.OPENROUTER_API_KEY).toBe("${{ secrets.OPENROUTER_API_KEY }}");
+  expect(inference.env).not.toHaveProperty("GROQ_API_KEY");
   expect(text).not.toContain("mara-werils");
   expect(text).not.toContain("steps.ai_review");
   for (const step of workflow.jobs.review.steps)

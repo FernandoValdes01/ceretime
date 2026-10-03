@@ -20,10 +20,10 @@ async function normalizeConfidence({
     memory: createMemory({
       directory: `${env.GITHUB_WORKSPACE}/.git/ai-review-memory`,
       identity: memoryIdentity(plan, env.REVIEW_INSTRUCTIONS),
-      apiKey: env.GROQ_API_KEY,
+      apiKey: env.OPENROUTER_API_KEY,
     }),
     instructions: env.REVIEW_INSTRUCTIONS,
-    apiKey: env.GROQ_API_KEY,
+    apiKey: env.OPENROUTER_API_KEY,
     fetchImpl,
     sleep,
     onProgress: (message) => core.info?.(`R2D2: ${message}`),

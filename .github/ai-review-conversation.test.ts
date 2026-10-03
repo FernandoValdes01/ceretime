@@ -65,8 +65,15 @@ function harness() {
   const options = {
     github,
     context,
-    env: { REVIEW_BOT_LOGIN: BOT, GROQ_API_KEY: "simulation" },
-    fetchImpl: async (_url: string, request: any) => {
+    env: { REVIEW_BOT_LOGIN: BOT, OPENROUTER_API_KEY: "simulation" },
+    fetchImpl: async (url: string, request: any) => {
+      expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+      expect(request.headers.Authorization).toBe("Bearer simulation");
+      expect(JSON.parse(request.body)).toMatchObject({
+        model: "deepseek/deepseek-v4.1-flash",
+        reasoning: { effort: "low" },
+        response_format: { type: "json_object" },
+      });
       requests.push(JSON.parse(request.body));
       if (failed) throw new Error("Unavailable");
       return jsonResponse({
@@ -99,7 +106,7 @@ test("4/5: pipeline completo, dos inline válidos y conversación en el mismo hi
   expect(demo.report.score).toBe(4);
   expect(demo.report.findings).toHaveLength(2);
   expect(demo.replies[0].comment_id).toBe(demo.inline[0].id);
-  expect(demo.evidence).toContain("Groq y GitHub simulados");
+  expect(demo.evidence).toContain("OpenRouter y GitHub simulados");
 });
 
 for (const decision of ["maintain", "correct", "not_applicable", "needs_context"]) {
@@ -181,7 +188,7 @@ test("fallo técnico tiene como máximo dos llamadas y pide reintento sin defend
   expect(h.sent).toHaveLength(1);
 });
 
-test("Draft, fork y App incorrecta no consumen Groq", async () => {
+test("Draft, fork y App incorrecta no consumen OpenRouter", async () => {
   for (const change of [
     (h: any) => {
       h.pr.draft = true;
@@ -216,7 +223,7 @@ test("respuesta inválida se recupera y mensajes largos señalan contexto parcia
 
 test("sin secret o si desaparece la respuesta humana no publica", async () => {
   const h = harness();
-  h.options.env.GROQ_API_KEY = "";
+  h.options.env.OPENROUTER_API_KEY = "";
   expect((await respondToInline(h.options)).ignored).toBe(true);
   expect(h.requests).toHaveLength(0);
   const deleted = harness();

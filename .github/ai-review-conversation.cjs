@@ -17,7 +17,7 @@ async function respondToInline({ github, context, env = process.env, fetchImpl =
   const event = context.payload;
   if (event.action !== "created" || !event.comment?.in_reply_to_id || !human(event.comment))
     return { ignored: true };
-  if (env.REVIEW_BOT_LOGIN !== BOT || !env.GROQ_API_KEY) return { ignored: true };
+  if (env.REVIEW_BOT_LOGIN !== BOT || !env.OPENROUTER_API_KEY) return { ignored: true };
   const args = { ...context.repo, pull_number: event.pull_request.number };
   const eligible = (pr) =>
     !pr.draft &&
@@ -83,7 +83,7 @@ async function respondToInline({ github, context, env = process.env, fetchImpl =
         method: "POST",
         signal: AbortSignal.timeout(30000),
         headers: {
-          Authorization: `Bearer ${env.GROQ_API_KEY}`,
+          Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(

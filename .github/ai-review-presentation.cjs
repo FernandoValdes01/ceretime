@@ -71,7 +71,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     incomplete:
       "Consultar la causa de cobertura incompleta: llamada fallida, respuesta inválida, presupuesto agotado o patch no disponible. Corregir esa causa o ajustar el presupuesto explícito dentro de los límites y reintentar. Las observaciones parciales no certifican el resto del cambio.",
     failed:
-      "Consultar los logs enlazados para identificar el error de Groq o de la Action. Corregir la configuración o esperar la cuota del proveedor y reintentar el workflow sobre este mismo SHA.",
+      "Consultar los logs enlazados para identificar el error de OpenRouter o de la Action. Corregir la configuración o esperar la cuota del proveedor y reintentar el workflow sobre este mismo SHA.",
     missing: "Ejecutar AI Code Review para el commit actual y comprobar que devuelve un resultado.",
     stale: "Ejecutar de nuevo AI Code Review sobre el head actual de la PR.",
     invalid:
@@ -122,7 +122,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
       ? [
           "### Cobertura por bloques",
           "",
-          `Bloques procesados: ${metadata.report.processed}/${metadata.report.total}. Llamadas a Groq: ${metadata.report.calls}. Cobertura: ${metadata.report.coverage}.`,
+          `Bloques procesados: ${metadata.report.processed}/${metadata.report.total}. Llamadas a OpenRouter: ${metadata.report.calls}. Cobertura: ${metadata.report.coverage}.`,
           "",
           `Unidades reutilizadas por contenido y contexto: ${metadata.report.reused ?? 0}. Archivos omitidos de IA: ${metadata.report.skipped?.length ?? 0}.`,
           ...(metadata.report.usage?.measuredCalls

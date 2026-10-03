@@ -1,6 +1,7 @@
 name: AI Code Review
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - main
@@ -16,13 +17,37 @@ permissions:
   statuses: write
 
 concurrency:
-  group: ai-code-review-${{ github.event.pull_request.number }}
+  group: ai-code-review-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  provider-check:
+    name: Comprobar proveedor y modelo
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+    steps:
+      - name: Descargar la versión solicitada
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Consultar el modelo con datos sintéticos
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        with:
+          script: |
+            const { verifyProvider } = require('./.github/ai-review-smoke.cjs');
+            const result = await verifyProvider();
+            core.info(JSON.stringify(result));
+            await core.summary.addHeading('Prueba real del proveedor').addCodeBlock(JSON.stringify(result, null, 2), 'json').write();
   review:
     name: Revisión informativa de IA
     if: >-
+      github.event_name == 'pull_request' &&
       !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
@@ -89,7 +114,7 @@ jobs:
         continue-on-error: true
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           REVIEW_INSTRUCTIONS: ${{ steps.prepare.outputs.instructions }}
           REVIEW_COVERAGE: ${{ steps.prepare.outputs.coverage }}
         with:

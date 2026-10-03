@@ -388,7 +388,7 @@ function quotaDescription(quota) {
     .filter(([, value]) => Number.isFinite(value))
     .map(([name, value]) => `${name}: ${value}`)
     .join(", ");
-  return `Groq HTTP 429: ${kind}${metrics ? ` (${metrics})` : ""}.`;
+  return `OpenRouter HTTP 429: ${kind}${metrics ? ` (${metrics})` : ""}.`;
 }
 
 function rateLimitDelay(headers, attempt, interval, quota) {
@@ -540,7 +540,7 @@ async function reviewPlan({
             }
             continue;
           }
-          lastFailure = `Groq devolvió HTTP ${response.status} en una llamada necesaria.`;
+          lastFailure = `OpenRouter devolvió HTTP ${response.status} en una llamada necesaria.`;
           throw new Error("Proveedor no disponible.");
         }
         const json = await response.json();
@@ -572,7 +572,7 @@ async function reviewPlan({
           if (reset > plan.limits.intervalMs && reset <= 180000) {
             if (rateLimitWait + reset > plan.limits.maxRateLimitWaitMs) {
               results.push(merge([...cachedResults, assessment]));
-              errors.push("Presupuesto de espera para la cuota de Groq agotado.");
+              errors.push("Presupuesto de espera para la cuota de OpenRouter agotado.");
               return finish();
             }
             nextDelay = reset;

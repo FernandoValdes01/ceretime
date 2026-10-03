@@ -22,7 +22,7 @@ function verifyScale() {
   return [
     "## R2D2 · Prueba de la escala",
     "",
-    "Casos controlados de 0/5 a 5/5. No son evaluaciones de Groq ni publican statuses o comentarios en la PR. La review real conserva su resultado.",
+    "Casos controlados de 0/5 a 5/5. No son evaluaciones de OpenRouter ni publican statuses o comentarios en la PR. La review real conserva su resultado.",
     "",
     "| Entrada de prueba | Score obtenido | Estado comprobado |",
     "| --- | --- | --- |",

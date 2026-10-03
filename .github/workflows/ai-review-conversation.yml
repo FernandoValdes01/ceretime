@@ -45,7 +45,7 @@ jobs:
       - name: Discutir únicamente el hallazgo original
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           REVIEW_BOT_LOGIN: ${{ format('{0}[bot]', steps.token.outputs.app-slug) }}
         with:
           github-token: ${{ steps.token.outputs.token }}

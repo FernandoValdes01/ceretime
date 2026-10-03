@@ -10,7 +10,7 @@ function memoryIdentity(plan, instructions) {
   return hash(
     JSON.stringify({
       version: 2,
-      provider: "groq",
+      provider: "openrouter",
       model: MODEL,
       base: plan.base,
       intent: plan.intent,

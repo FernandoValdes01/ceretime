@@ -166,7 +166,7 @@ function fixture(initial: Record<string, string> = { "file.ts": "export const ru
     GITHUB_WORKSPACE: directory,
     REVIEW_SHA: sha,
     REVIEW_BOT_LOGIN: BOT,
-    GROQ_API_KEY: "simulation",
+    OPENROUTER_API_KEY: "simulation",
     RUN_URL: "https://github.com/test/repo/actions/runs/1",
   };
   const context = {

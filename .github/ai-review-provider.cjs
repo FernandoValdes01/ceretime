@@ -1,13 +1,13 @@
-const MODEL = "openai/gpt-oss-120b";
-const PROVIDER = "Groq";
-const ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
+const MODEL = "deepseek/deepseek-v4.1-flash";
+const PROVIDER = "OpenRouter";
+const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 
 function completionRequest(messages, outputTokens) {
   return {
     model: MODEL,
     temperature: 0.1,
-    reasoning_effort: "low",
-    max_completion_tokens: outputTokens,
+    reasoning: { effort: "low" },
+    max_tokens: outputTokens,
     response_format: { type: "json_object" },
     messages,
   };

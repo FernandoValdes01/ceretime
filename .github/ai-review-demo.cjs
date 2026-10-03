@@ -148,7 +148,7 @@ async function runDemo() {
   const answer = await respondToInline({
     github,
     context,
-    env: { REVIEW_BOT_LOGIN: BOT, GROQ_API_KEY: "simulation" },
+    env: { REVIEW_BOT_LOGIN: BOT, OPENROUTER_API_KEY: "simulation" },
     fetchImpl: async () =>
       jsonResponse({
         decision: "not_applicable",
@@ -162,7 +162,7 @@ async function runDemo() {
   const evidence = [
     "## R2D2 · Demostración controlada de 4/5",
     "",
-    "Groq y GitHub simulados. No es una review real, no publica comentarios ni modifica el status o el score de la PR. El diff, el commit y sus enlaces son sintéticos.",
+    "OpenRouter y GitHub simulados. No es una review real, no publica comentarios ni modifica el status o el score de la PR. El diff, el commit y sus enlaces son sintéticos.",
     "",
     summary,
     ...inline
