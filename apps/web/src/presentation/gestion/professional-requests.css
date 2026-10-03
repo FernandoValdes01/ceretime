@@ -1,0 +1,8 @@
+/* Enlaces de gestión del Profesional (TI2-91): foco visible de 3px como el
+   resto de la aplicación (DESIGN.md). El lenguaje visual de listas y
+   avisos se reutiliza de student-portal.css sin duplicarlo. */
+
+.gestion-request-link:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
