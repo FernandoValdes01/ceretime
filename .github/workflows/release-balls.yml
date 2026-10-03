@@ -9,16 +9,13 @@ on:
         type: string
   release:
     types: [published]
-  pull_request:
-    paths:
-      - .github/workflows/release-balls.yml
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: release-balls-${{ github.event.release.id || github.event.pull_request.number || github.ref }}
+  group: release-balls-${{ github.event.release.id || github.ref }}
   cancel-in-progress: false
 
 jobs:
