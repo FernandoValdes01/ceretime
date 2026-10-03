@@ -63,14 +63,14 @@ export {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
   ASSIGNMENT_VIEW_BY_ROLE,
-} from "./accompaniments/assignment";
-export { toAssignmentReadPermission } from "./accompaniments/assignment";
+} from "./accompaniments/practitioner_assignment";
+export { toAssignmentReadPermission } from "./accompaniments/practitioner_assignment";
 export type {
-  AccompanimentAssignment,
   AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
-} from "./accompaniments/assignment";
+  PractitionerAssignment,
+} from "./accompaniments/practitioner_assignment";
 
 // Errores públicos y estados de respuesta.
 export type { ApiResult, PublicApiError } from "./errors/api_error";

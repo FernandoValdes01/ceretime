@@ -2,12 +2,10 @@
 import {
   ASSIGNMENT_VIEW_BY_ROLE,
   toAssignmentReadPermission,
-  type AccompanimentAssignment,
-} from "./assignment";
+  type PractitionerAssignment,
+} from "./practitioner_assignment";
 
-function activeAssignment(
-  overrides: Partial<AccompanimentAssignment> = {},
-): AccompanimentAssignment {
+function activeAssignment(overrides: Partial<PractitionerAssignment> = {}): PractitionerAssignment {
   return {
     _id: "assignment-id",
     accompanimentId: "accompaniment-id",
@@ -57,7 +55,7 @@ describe("toAssignmentReadPermission", () => {
   });
 
   test("una fila legacy sin trazabilidad también concede lectura si está activa", () => {
-    const legacy: AccompanimentAssignment = {
+    const legacy: PractitionerAssignment = {
       _id: "assignment-id",
       accompanimentId: "accompaniment-id",
       userId: "user-id",
@@ -74,7 +72,7 @@ describe("toAssignmentReadPermission", () => {
   });
 
   test("una asignación nueva completa conserva toda la trazabilidad", () => {
-    const fresh: AccompanimentAssignment = {
+    const fresh: PractitionerAssignment = {
       _id: "assignment-id",
       accompanimentId: "accompaniment-id",
       userId: "user-id",

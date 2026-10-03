@@ -32,7 +32,7 @@ export type AssignmentStatus = (typeof ASSIGNMENT_STATUS_VALUES)[number];
  * revocación. `revokedBy`/`revokedAt` aceptan `null` explícito además de
  * ausencia, porque ambas formas significan "sin revocar".
  */
-export interface AccompanimentAssignment {
+export interface PractitionerAssignment {
   _id: string;
   accompanimentId: string;
   userId: string;
@@ -58,7 +58,7 @@ export interface AssignmentReadPermission {
   grantedAt?: number;
 }
 
-/** Vista que concede cada rol asignado (`assignment.ts`). */
+/** Vista que concede cada rol asignado (`practitioner_assignment.ts`). */
 export const ASSIGNMENT_VIEW_BY_ROLE: Record<AssignmentRole, "full" | "minimized"> = {
   professional: "full",
   intern: "minimized",
@@ -69,7 +69,7 @@ export const ASSIGNMENT_VIEW_BY_ROLE: Record<AssignmentRole, "full" | "minimized
  * Mantiene explícito que una fila revocada no autoriza (RNF-08, RN-26).
  */
 export function toAssignmentReadPermission(
-  assignment: AccompanimentAssignment,
+  assignment: PractitionerAssignment,
 ): AssignmentReadPermission | null {
   if (assignment.status !== "active") return null;
   return {

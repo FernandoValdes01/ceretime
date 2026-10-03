@@ -23,8 +23,8 @@ import type * as application_session_reject_external_user from "../application/s
 import type * as assignments from "../assignments.js";
 import type * as auth from "../auth.js";
 import type * as domain_accompaniments_accompaniment from "../domain/accompaniments/accompaniment.js";
-import type * as domain_accompaniments_assignment from "../domain/accompaniments/assignment.js";
 import type * as domain_accompaniments_intern_access from "../domain/accompaniments/intern_access.js";
+import type * as domain_accompaniments_practitioner_assignment from "../domain/accompaniments/practitioner_assignment.js";
 import type * as domain_accounts_enablement from "../domain/accounts/enablement.js";
 import type * as domain_appointments_appointment from "../domain/appointments/appointment.js";
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
@@ -73,8 +73,8 @@ declare const fullApi: ApiFromModules<{
   assignments: typeof assignments;
   auth: typeof auth;
   "domain/accompaniments/accompaniment": typeof domain_accompaniments_accompaniment;
-  "domain/accompaniments/assignment": typeof domain_accompaniments_assignment;
   "domain/accompaniments/intern_access": typeof domain_accompaniments_intern_access;
+  "domain/accompaniments/practitioner_assignment": typeof domain_accompaniments_practitioner_assignment;
   "domain/accounts/enablement": typeof domain_accounts_enablement;
   "domain/appointments/appointment": typeof domain_appointments_appointment;
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
