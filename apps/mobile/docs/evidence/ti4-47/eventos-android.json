@@ -1,0 +1,216 @@
+{
+  "metadatos": "cspell:words facebook accessibilityinfo a11yfocus yfocus androidx ",
+  "escenarios": [
+    {
+      "escenario": "formulario vacío",
+      "eventos": [
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Revisa el formulario. Describe la necesidad que quieres abordar.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.EditText | [] | ¿Qué necesidad quieres abordar? *",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.EditText | [] | ¿Qué necesidad quieres abordar? *"
+      ],
+      "nodos": [
+        "NODE 23 | android.widget.TextView | Enviar solicitud | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(371, 1739 - 709, 1805)",
+        "NODE 22 | android.widget.EditText |  | ¿Qué necesidad quieres abordar? * | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=true | scroll=false | id=null | Rect(108, 1769 - 974, 1915)"
+      ]
+    },
+    {
+      "escenario": "resultado esperado ausente",
+      "eventos": [
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Revisa el formulario. Indica qué esperas del acompañamiento.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.EditText | [] | ¿Qué esperas de CERETI? *",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.EditText | [] | ¿Qué esperas de CERETI? *",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [Cuéntanos qué te gustaría lograr con el acompañamiento.] | null"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.EditText | Necesito material escrito accesible. | ¿Qué necesidad quieres abordar? * | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=true | scroll=false | id=null | Rect(108, 1752 - 974, 1915)",
+        "NODE 22 | android.widget.TextView | Cuéntanos qué te gustaría lograr con el acompañamiento. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 1777 - 974, 1915)",
+        "NODE 22 | android.widget.EditText |  | ¿Qué esperas de CERETI? * | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 1936 - 974, 1915)"
+      ]
+    },
+    {
+      "escenario": "necesidades de acceso ausentes",
+      "eventos": [
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Revisa el formulario. Selecciona o describe una necesidad de acceso.] | null"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.TextView | Cuéntanos qué te gustaría lograr con el acompañamiento. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 1593 - 974, 1731)",
+        "NODE 22 | android.widget.EditText | Participar con material en texto. | ¿Qué esperas de CERETI? * | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 1752 - 974, 1915)"
+      ]
+    },
+    {
+      "escenario": "modalidad ausente",
+      "eventos": [
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Revisa el formulario. Selecciona una modalidad.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.view.ViewGroup | [Presencial] | Presencial",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [Modalidad preferida *] | null",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.view.ViewGroup | [Presencial] | Presencial"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.TextView | Cuéntanos qué te gustaría lograr con el acompañamiento. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 1593 - 974, 1731)",
+        "NODE 22 | android.widget.EditText | Participar con material en texto. | ¿Qué esperas de CERETI? * | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 1752 - 974, 1915)",
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 2489 - 972, 1915)",
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -1308)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=false | checkable=true | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 433 - 972, 569)"
+      ]
+    },
+    {
+      "escenario": "día ausente",
+      "eventos": [
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Revisa el formulario. Selecciona al menos un día.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.view.ViewGroup | [Lunes] | Lunes",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [Disponibilidad general *] | null",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.view.ViewGroup | [Lunes] | Lunes"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -1497)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 277 - 972, 380)",
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -1886)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -9)",
+        "NODE 22 | android.widget.CheckBox | null | Lunes | hint=null | error=null | invalid=false | checked=false | checkable=true | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 613 - 356, 749)"
+      ]
+    },
+    {
+      "escenario": "canal ausente",
+      "eventos": [
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Revisa el formulario. Indica cómo prefieres recibir información.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.EditText | [] | ¿Cómo prefieres recibir información? *",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.EditText | [] | ¿Cómo prefieres recibir información? *",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.] | null"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -2255)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -378)",
+        "NODE 22 | android.widget.CheckBox | null | Lunes | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 356, 380)",
+        "NODE 22 | android.widget.TextView | Opcional. Indica una franja común para los días seleccionados, usando el formato de 24 horas. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(107, 894 - 973, 1101)",
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -2648)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -771)",
+        "NODE 22 | android.widget.CheckBox | null | Lunes | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 356, -13)",
+        "NODE 22 | android.widget.TextView | Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 1708 - 974, 1915)",
+        "NODE 22 | android.widget.EditText |  | ¿Cómo prefieres recibir información? * | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 1936 - 974, 1915)"
+      ]
+    },
+    {
+      "escenario": "hora inválida",
+      "eventos": [
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Revisa el formulario. Escribe la hora inicial en formato HH:MM, por ejemplo 09:00.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.EditText | [99:99] | Desde",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.EditText | [99:99] | Desde",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [Opcional. Indica una franja común para los días seleccionados, usando el formato de 24 horas.] | null"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -2839)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -962)",
+        "NODE 22 | android.widget.CheckBox | null | Lunes | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 356, -204)",
+        "NODE 22 | android.widget.TextView | Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 1842 - 974, 1915)",
+        "NODE 22 | android.widget.EditText | Correo con texto accesible. | ¿Cómo prefieres recibir información? * | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 2070 - 974, 1915)",
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -1441)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 300 - 972, 436)",
+        "NODE 22 | android.widget.CheckBox | null | Lunes | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 1058 - 356, 1194)",
+        "NODE 22 | android.widget.TextView | Opcional. Indica una franja común para los días seleccionados, usando el formato de 24 horas. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(107, 1708 - 973, 1915)",
+        "NODE 22 | android.widget.EditText | 99:99 | Desde | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 2138 - 974, 1915)"
+      ]
+    },
+    {
+      "escenario": "selección de apoyo",
+      "eventos": [],
+      "nodos": [
+        "NODE 22 | android.widget.TextView | Cuéntanos qué te gustaría lograr con el acompañamiento. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 1593 - 974, 1731)",
+        "NODE 22 | android.widget.EditText | Participar con material en texto. | ¿Qué esperas de CERETI? * | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 1752 - 974, 1915)",
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 2489 - 972, 1915)"
+      ]
+    },
+    {
+      "escenario": "selección de modalidad",
+      "eventos": [
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Modalidad preferida *] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [El nombre y correo se obtendrán de la cuenta institucional cuando esté disponible el inicio de sesión.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Presencial] | null"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -1308)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=false | checkable=true | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 433 - 972, 569)",
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -1497)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 277 - 972, 380)"
+      ]
+    },
+    {
+      "escenario": "selección de día",
+      "eventos": [
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Selecciona los días que te acomodan. Esta preferencia no reserva una hora.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Opcional. Indica una franja común para los días seleccionados, usando el formato de 24 horas.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [El nombre y correo se obtendrán de la cuenta institucional cuando esté disponible el inicio de sesión.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Lunes] | null",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [Opcional. Indica una franja común para los días seleccionados, usando el formato de 24 horas.] | null"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -1886)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -9)",
+        "NODE 22 | android.widget.CheckBox | null | Lunes | hint=null | error=null | invalid=false | checked=false | checkable=true | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(108, 613 - 356, 749)",
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -2255)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -378)",
+        "NODE 22 | android.widget.CheckBox | null | Lunes | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 356, 380)",
+        "NODE 22 | android.widget.TextView | Opcional. Indica una franja común para los días seleccionados, usando el formato de 24 horas. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(107, 894 - 973, 1101)"
+      ]
+    },
+    {
+      "escenario": "envío y confirmación",
+      "eventos": [
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Enviando solicitud ficticia.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Otra necesidad de acceso] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Opcional. Puedes describir un apoyo que no aparezca en la lista.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [¿Cómo prefieres recibir información? *] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [Enviando solicitud…] | null",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.view.ViewGroup | [Enviando solicitud…] | Enviando solicitud…",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [¿Cómo prefieres recibir información? *] | null",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.] | null",
+        "EVENT TYPE_ANNOUNCEMENT | com.facebook.react.modules.accessibilityinfo.AccessibilityInfoModule | [Solicitud ficticia enviada.] | null",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [Referencia: SOL-DEMO-006] | null"
+      ],
+      "nodos": [
+        "NODE 22 | android.widget.CheckBox | null | Comunicación escrita | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, -1828)",
+        "NODE 22 | android.widget.RadioButton | null | Presencial | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 972, 49)",
+        "NODE 22 | android.widget.CheckBox | null | Lunes | hint=null | error=null | invalid=false | checked=true | checkable=true | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 671 - 356, 807)",
+        "NODE 22 | android.widget.TextView | Opcional. Indica una franja común para los días seleccionados, usando el formato de 24 horas. | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(107, 1321 - 973, 1528)",
+        "NODE 22 | android.widget.EditText | 09:00 | Desde | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 1751 - 974, 1915)",
+        "NODE 23 | android.widget.TextView | Referencia: SOL-DEMO-006 | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(105, 1483 - 975, 1552)"
+      ]
+    },
+    {
+      "escenario": "detalle de agenda",
+      "eventos": [
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [09:00 - 10:00] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [09:00 - 10:00] | null",
+        "EVENT TYPE_VIEW_FOCUSED | android.widget.TextView | [09:00 - 10:00] | null",
+        "EVENT TYPE_VIEW_ACCESSIBILITY_FOCUSED | android.widget.TextView | [09:00 - 10:00] | null"
+      ],
+      "nodos": [
+        "NODE 26 | android.widget.Button | null | Martín Gómez, Seguimiento, 09:00 | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=true | scroll=false | id=null | Rect(302, 330 - 1038, 608)",
+        "NODE 24 | android.widget.TextView | 09:00 - 10:00 | null | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=true | scroll=false | id=null | Rect(106, 712 - 976, 774)"
+      ]
+    },
+    {
+      "escenario": "día siguiente",
+      "eventos": [],
+      "nodos": [
+        "NODE 16 | android.view.View | null | Agenda | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=true | scroll=false | id=null | Rect(0, 2058 - 270, 2214)"
+      ]
+    },
+    {
+      "escenario": "día anterior",
+      "eventos": [],
+      "nodos": [
+        "NODE 16 | android.view.View | null | Agenda | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=true | scroll=false | id=null | Rect(0, 2058 - 270, 2214)"
+      ]
+    },
+    {
+      "escenario": "nodos después de validación y navegación manual",
+      "eventos": [],
+      "nodos": [
+        "NODE 22 | android.widget.EditText |  | ¿Qué necesidad quieres abordar? * | extras=androidx.view.accessibility.AccessibilityNodeInfoCompat.SPANS_START_KEY=[]; | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=true | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 974, -5584)",
+        "NODE 22 | android.view.View | Describe la necesidad que quieres abordar. | null | extras=androidx.view.accessibility.AccessibilityNodeInfoCompat.SPANS_START_KEY=[];AccessibilityNodeInfo.roleDescription=Alerta; | hint=null | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 277 - 974, -5494)",
+        "NODE 22 | android.widget.EditText |  | ¿Cómo prefieres recibir información? * | extras=androidx.view.accessibility.AccessibilityNodeInfoCompat.SPANS_START_KEY=[]; | hint= | error=null | invalid=false | checked=false | checkable=false | enabled=true | focus=false | a11yfocus=false | scroll=false | id=null | Rect(108, 747 - 974, 1041)"
+      ]
+    }
+  ]
+}
