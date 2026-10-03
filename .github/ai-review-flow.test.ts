@@ -603,6 +603,72 @@ test("missing old evidence cannot resolve a thread and formal followups attach o
   expect(report.coverage).toBe("incomplete");
 });
 
+test("historical changes above 3200 characters retain complete evidence within the budget", () => {
+  const f = fixture({
+    "file.ts": Array.from({ length: 120 }, (_, i) => `export const value${i} = ${i};`).join("\n"),
+  });
+  try {
+    const file: any = { filename: "file.ts", status: "modified" };
+    const { followups } = enrichFiles([file], {
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      threads: [{ id: "1", path: "file.ts", line: 30, side: "RIGHT", sha: f.base, messages: [] }],
+    });
+    const delta = f.git("diff", "--unified=3", f.base, f.pr.head.sha, "--", "file.ts");
+    expect(delta.length).toBeGreaterThan(3200);
+    expect(followups[0].related_change.trim()).toBe(delta);
+    expect(followups[0].evidence_incomplete).toBe(false);
+    expect(followups[0].currentLine).toBeNull();
+  } finally {
+    f.clean();
+  }
+});
+
+test("historical changes beyond the evidence budget remain explicitly incomplete", () => {
+  const f = fixture({
+    "file.ts": Array.from({ length: 600 }, (_, i) => `export const value${i} = ${i};`).join("\n"),
+  });
+  try {
+    const { followups } = enrichFiles([], {
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      threads: [{ id: "1", path: "file.ts", line: 30, side: "RIGHT", sha: f.base, messages: [] }],
+    });
+    expect(followups[0].related_change).toHaveLength(12000);
+    expect(followups[0].evidence_incomplete).toBe(true);
+  } finally {
+    f.clean();
+  }
+});
+
+test("review context preserves numeric return contracts and workflow consumers", () => {
+  const f = fixture({
+    "file.ts":
+      'const { MODEL } = require("./provider.cjs");\nfunction formatReview(result) { return result.review.findings > 0; }\nmodule.exports = { formatReview };\n',
+    "provider.cjs": 'module.exports = { MODEL: "simulation" };\n',
+    "score.cjs":
+      'const { formatReview } = require("./file");\nfunction parseSummary(summary) {\n  const match = summary.match(/([0-5])/);\n  if (!match) return null;\n  const first = match[1];\n  const second = match[2];\n  const third = match[3];\n  const fourth = match[4];\n  const fifth = match[5];\n  return {\n    findings: Number(match[1]),\n  };\n}\nmodule.exports = { parseSummary, formatReview };\n',
+    "a-transitive.test.ts":
+      'const { parseSummary } = require("./score.cjs");\nexport const testContract = () => parseSummary("2");\n',
+    ".github/workflows/review.yml":
+      'jobs:\n  review:\n    steps:\n      - uses: actions/github-script@v7\n        with:\n          script: |\n            const { formatReview } = require("./file.ts");\n            formatReview(result);\n',
+  });
+  try {
+    const file: any = { filename: "file.ts", status: "modified" };
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    expect(file.context.find((c: any) => c.path === "score.cjs")?.head).toContain(
+      "findings: Number(match[1])",
+    );
+    expect(
+      file.context.find((c: any) => c.path === ".github/workflows/review.yml")?.head,
+    ).toContain('require("./file.ts")');
+  } finally {
+    f.clean();
+  }
+});
+
 test("removed modules retain the consumers that depend on their original contract", () => {
   const f = fixture({
     "file.ts": "export const run = () => 1;\n",
@@ -807,7 +873,7 @@ test("conversation marks truncated related changes as incomplete evidence", asyn
       request: async () => ({
         data: {
           merge_base_commit: { sha: old },
-          files: [{ filename: "file.ts", patch: `@@ -2 +2 @@\n-old();\n+${"x".repeat(8000)}` }],
+          files: [{ filename: "file.ts", patch: `@@ -2 +2 @@\n-old();\n+${"x".repeat(16000)}` }],
         },
       }),
       rest: {
@@ -828,7 +894,7 @@ test("conversation marks truncated related changes as incomplete evidence", asyn
     head: "b".repeat(40),
   });
   expect(evidence.currentLine).toBe(1);
-  expect(evidence.related_change).toHaveLength(3200);
+  expect(evidence.related_change).toHaveLength(12000);
   expect(evidence.evidence_incomplete).toBe(true);
 });
 

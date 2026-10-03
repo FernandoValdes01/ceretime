@@ -3,6 +3,7 @@ const path = require("node:path").posix;
 const crypto = require("node:crypto");
 const { stable, parseConfig, PACKAGE_KEYS } = require("./ai-review-selection.cjs");
 const BOT = "r2d2-reviewer[bot]";
+const HISTORY_CHARS = 12000;
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const clip = (value, size) => String(value ?? "").slice(0, size);
 
@@ -175,9 +176,9 @@ async function threadEvidence({ github, repo, root, head }) {
   return {
     original_excerpt: excerpt(original, line),
     current_excerpt: excerpt(current, currentLine),
-    related_change: clip(delta, 3200),
+    related_change: clip(delta, HISTORY_CHARS),
     evidence_incomplete:
-      original == null || current == null || delta == null || delta.length > 3200,
+      original == null || current == null || delta == null || delta.length > HISTORY_CHARS,
     currentLine,
     currentPath,
   };
@@ -212,7 +213,9 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       ),
     ),
   ].filter(
-    (p) => /\.[cm]?[jt]sx?$/.test(p) && !/(?:node_modules|_generated|dist|\.agents)\//.test(p),
+    (p) =>
+      (/\.[cm]?[jt]sx?$/.test(p) || /^\.github\/workflows\/.*\.ya?ml$/.test(p)) &&
+      !/(?:node_modules|_generated|dist|\.agents)\//.test(p),
   );
   const sources = new Map(paths.map((p) => [p, read(sha, p)]));
   const baseSources = new Map(paths.map((p) => [p, read(mergeBase, p)]));
@@ -221,7 +224,12 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       .map((m) => {
         const app = filename.match(/^(apps\/[^/]+)/)?.[1];
         const target = m[1].startsWith(".")
-          ? path.normalize(path.join(path.dirname(filename), m[1]))
+          ? path.normalize(
+              path.join(
+                filename.startsWith(".github/workflows/") ? "" : path.dirname(filename),
+                m[1],
+              ),
+            )
           : app
             ? `${app}/src/${m[1].slice(2)}`
             : m[1];
@@ -237,19 +245,29 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       [...new Set([...imports(p, sources.get(p)), ...imports(p, baseSources.get(p))])],
     ]),
   );
-  const declarations = (text) => {
+  const declarations = (text, budget, workflow) => {
     const lines = (text ?? "").split("\n"),
       selected = new Set();
     lines.forEach((line, i) => {
-      if (/\b(?:import|export|function|class|interface|type|require)\b/.test(line))
-        for (let n = i; n < Math.min(lines.length, i + 5); n++) selected.add(n);
+      if (workflow) {
+        if (/\brequire\b/.test(line))
+          for (let n = Math.max(0, i - 3); n < Math.min(lines.length, i + 5); n++) selected.add(n);
+        return;
+      }
+      if (/\b(?:export|function|class|interface|type)\b/.test(line))
+        for (let n = i; n < Math.min(lines.length, i + 30); n++) selected.add(n);
     });
+    if (!selected.size)
+      lines.forEach((line, i) => {
+        if (/\b(?:import|require)\b/.test(line))
+          for (let n = i; n < Math.min(lines.length, i + 30); n++) selected.add(n);
+      });
     return clip(
       [...selected]
         .sort((a, b) => a - b)
         .map((i) => lines[i])
         .join("\n"),
-      900,
+      budget,
     );
   };
   const environment = (filename) => {
@@ -303,14 +321,28 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
         dependencies: [...dependencies].sort().map((p) => [p, hash(sources.get(p) ?? "")]),
       }),
     );
-    file.context = [file.filename, ...[...dependencies].sort().filter((p) => p !== file.filename)]
-      .slice(0, 4)
-      .map((p) => ({
-        path: p,
-        base: declarations(read(mergeBase, p)),
-        head: declarations(sources.get(p)),
-      }));
-    file.context = JSON.parse(clipContext(file.context, 2400));
+    const consumers = paths.filter((p) => graph.get(p)?.includes(file.filename));
+    const direct = new Set([...consumers, ...(graph.get(file.filename) ?? [])]);
+    const related = [...dependencies]
+      .filter((p) => p !== file.filename)
+      .sort((a, b) => {
+        const priority = (p) => Number(!direct.has(p)) * 2 + Number(/\.(?:test|spec)\./.test(p));
+        return priority(a) - priority(b) || a.localeCompare(b);
+      });
+    file.context = [file.filename, ...related].slice(0, 8).map((p) => ({
+      path: p,
+      base: declarations(
+        read(mergeBase, p),
+        p === file.filename ? 900 : 1400,
+        p.startsWith(".github/workflows/"),
+      ),
+      head: declarations(
+        sources.get(p),
+        p === file.filename ? 900 : 1400,
+        p.startsWith(".github/workflows/"),
+      ),
+    }));
+    file.context = JSON.parse(clipContext(file.context, 6000));
     file.followups = threads.filter(
       (thread) => thread.path === file.filename || thread.path === file.previous_filename,
     );
@@ -354,12 +386,12 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       original_excerpt: excerpt(original, thread.line),
       current_excerpt: excerpt(current, currentLine),
       currentLine,
-      related_change: clip(delta, 3200),
+      related_change: clip(delta, HISTORY_CHARS),
       evidence_incomplete:
         delta == null ||
         original == null ||
         (current == null && !deleted) ||
-        (delta?.length ?? 0) > 3200,
+        (delta?.length ?? 0) > HISTORY_CHARS,
     };
   });
   for (const file of files)
@@ -370,10 +402,14 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
 }
 
 function clipContext(items, budget) {
-  const result = [];
-  for (const item of items) {
-    if (JSON.stringify([...result, item]).length > budget) break;
-    result.push(item);
+  const result = items.map((item) => ({ ...item }));
+  // Share the excerpt budget instead of dropping later contract producers entirely.
+  while (JSON.stringify(result).length > budget) {
+    const largest = result
+      .flatMap((item) => ["base", "head"].map((key) => ({ item, key })))
+      .sort((a, b) => b.item[b.key].length - a.item[a.key].length)[0];
+    if (!largest?.item[largest.key].length) break;
+    largest.item[largest.key] = largest.item[largest.key].slice(0, -100);
   }
   return JSON.stringify(result);
 }

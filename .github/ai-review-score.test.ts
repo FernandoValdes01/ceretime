@@ -213,6 +213,20 @@ test("large reviews fit the OpenRouter profile without dropping changed lines", 
   expect(result.coverage).toBe("complete");
   expect(result.processed).toBe(plan.chunks.length);
 });
+test("each inference identifies its scope within the complete review plan", async () => {
+  const plan = buildPlan([chunkFile("file.ts", 1400)], {}, sha);
+  const { requests } = await runChunks(plan);
+  expect(requests.length).toBeGreaterThan(1);
+  for (const [index, request] of requests.entries()) {
+    expect(JSON.parse(request.messages[1].content).scope).toEqual({
+      block: index + 1,
+      totalBlocks: plan.chunks.length,
+      paths: [...new Set(plan.chunks[index].parts.map((part: any) => part.path))],
+    });
+    expect(request.messages[0].content).toContain("Los demás bloques se revisan por separado");
+    expect(request.messages[0].content).toContain("contrato necesario para evaluar estas partes");
+  }
+});
 test("small files share calls while hunks keep independent units", async () => {
   const file = {
     filename: "multi.ts",
