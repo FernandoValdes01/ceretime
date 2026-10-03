@@ -76,43 +76,44 @@ type RequestListPage<Item extends RequestListItem> = {
  * React para ajustar estado en render): evita setState en efectos sin
  * perder páginas al avanzar el cursor. La clave es el cursor pedido.
  * Además, si Convex devuelve una página distinta para el mismo cursor
- * (actualización reactiva), se reemplaza el segmento correspondiente.
+ * (actualización reactiva), se reemplaza ese segmento y se reconstruye
+ * la lista completa en orden de cursor.
  */
 function usePagedItems<Item extends RequestListItem>(
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
 ) {
   const [cursor, setCursor] = useState<string | null>(null);
   const page = usePage(cursor);
-  const [accumulated, setAccumulated] = useState<{
-    cursor: string | null | undefined;
-    items: ReadonlyArray<Item>;
-    done: boolean;
-    /** Hash simple de la página actual para detectar cambios reactivos. */
-    pageHash: string;
-  }>({ cursor: undefined, items: [], done: false, pageHash: "" });
-
-  const currentPageHash = page ? page.page.map((item) => item._id).join(",") : "";
+  const [pages, setPages] = useState<Map<string, { items: ReadonlyArray<Item>; hash: string }>>(
+    new Map(),
+  );
+  const [done, setDone] = useState(false);
 
   if (page !== undefined) {
-    const cursorChanged = accumulated.cursor !== cursor;
-    const pageChanged = accumulated.pageHash !== currentPageHash;
+    const currentHash = page.page.map((item) => item._id).join(",");
+    const existing = pages.get(cursor ?? "first");
+    const pageChanged = !existing || existing.hash !== currentHash;
 
-    if (cursorChanged || pageChanged) {
-      const known = new Set(accumulated.items.map((item) => item._id));
-      const fresh = page.page.filter((item) => !known.has(item._id));
-      setAccumulated({
-        cursor,
-        items: [...accumulated.items, ...fresh],
-        done: page.isDone,
-        pageHash: currentPageHash,
+    if (pageChanged) {
+      setPages((prev) => {
+        const next = new Map(prev);
+        next.set(cursor ?? "first", { items: page.page, hash: currentHash });
+        return next;
       });
+      setDone(page.isDone);
     }
   }
 
+  // Reconstruye la lista concatenando páginas en orden de cursor:
+  // "first" (null) primero, luego el resto en orden de inserción.
+  const items = Array.from(pages.entries())
+    .sort(([a], [b]) => (a === "first" ? -1 : b === "first" ? 1 : 0))
+    .flatMap(([, v]) => v.items);
+
   return {
-    items: accumulated.items,
-    done: accumulated.done,
-    pending: page === undefined,
+    items,
+    done,
+    pending: page === undefined && pages.size === 0,
     loadMore: () => setCursor(page?.continueCursor ?? null),
   };
 }
