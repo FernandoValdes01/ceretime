@@ -465,6 +465,7 @@ async function reviewPlan({
       lastFailure = "Una llamada necesaria falló o devolvió un resultado inválido.";
     let ordinaryFailures = 0;
     for (let attempt = 0; attempt < 3 && calls < plan.limits.maxCalls; attempt++) {
+      let stage = "request";
       if (!(await isCurrent())) {
         errors.push("El head cambió durante la revisión.");
         return finish();
@@ -482,7 +483,7 @@ async function reviewPlan({
             [
               {
                 role: "system",
-                content: `${instructions}\nmain es la base válida. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Si falta evidencia devuelve needs_context. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones, nunca defectos de main.`,
+                content: `${instructions}\nmain es la base válida. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones, nunca defectos de main.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
               },
               {
                 role: "user",
@@ -540,11 +541,11 @@ async function reviewPlan({
         }
         const json = await response.json();
         addUsage(usage, json);
+        stage = "parse";
         if (json.choices?.[0]?.finish_reason === "length") throw new Error("Respuesta truncada.");
-        assessment = validateAssessment(
-          JSON.parse(json.choices?.[0]?.message?.content ?? "null"),
-          chunk,
-        );
+        const parsed = JSON.parse(json.choices?.[0]?.message?.content ?? "null");
+        stage = "validation";
+        assessment = validateAssessment(parsed, chunk);
         try {
           for (const part of pending) {
             if (!assessment.limitations.length)
@@ -575,8 +576,16 @@ async function reviewPlan({
           }
         }
         break;
-      } catch {
+      } catch (error) {
         /* Keep invalid-result retries bounded separately from recoverable quota errors. */
+        if (stage === "validation")
+          lastFailure = error instanceof TypeError ? "Estructura JSON inválida." : error.message;
+        else if (stage === "parse")
+          lastFailure =
+            error.message === "Respuesta truncada." ? error.message : "Respuesta JSON inválida.";
+        else if (error.name === "TimeoutError" || error.name === "AbortError")
+          lastFailure = "La solicitud al proveedor superó el tiempo permitido.";
+        onProgress(`Bloque ${index + 1}/${plan.chunks.length}: ${lastFailure}`);
         ordinaryFailures++;
         if (ordinaryFailures >= 2) break;
       }

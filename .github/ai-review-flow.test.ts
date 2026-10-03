@@ -5,7 +5,13 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { prepareReview, publishReview } from "./ai-review-score.cjs";
 import { normalizeConfidence } from "./ai-review-confidence.cjs";
-import { buildPlan, validateAssessment, aggregate, publishFindings } from "./ai-review-chunks.cjs";
+import {
+  buildPlan,
+  validateAssessment,
+  aggregate,
+  publishFindings,
+  reviewPlan,
+} from "./ai-review-chunks.cjs";
 import {
   enrichFiles,
   reviewThreads,
@@ -523,6 +529,50 @@ test("configuration mentioning Convex does not load unrelated backend context", 
   } finally {
     f.clean();
   }
+});
+
+test("an invalid followup retry receives its validation reason and keeps incomplete evidence explicit", async () => {
+  const plan = buildPlan(
+    [
+      {
+        filename: "file.ts",
+        additions: 1,
+        deletions: 0,
+        patch: "@@ -0,0 +1 @@\n+run();",
+        followups: [{ id: "1", currentLine: null, evidence_incomplete: true }],
+      },
+    ],
+    {},
+    "a".repeat(40),
+  );
+  const requests: any[] = [],
+    progress: string[] = [];
+  const report = await reviewPlan({
+    plan,
+    instructions: "Revisar el cambio.",
+    apiKey: "simulation",
+    sleep: async () => {},
+    onProgress: (value: string) => progress.push(value),
+    fetchImpl: async (_url: string, request: any) => {
+      requests.push(JSON.parse(request.body));
+      return answer(
+        [],
+        [
+          {
+            id: "1",
+            status: requests.length === 1 ? "resolved" : "needs_context",
+            explanation: "Falta la versión original para comprobar la corrección.",
+          },
+        ],
+      );
+    },
+  });
+  expect(report.calls).toBe(2);
+  expect(report.processed).toBe(1);
+  expect(report.coverage).toBe("incomplete");
+  expect(report.resolutions[0].status).toBe("needs_context");
+  expect(progress.join("\n")).toContain("No se puede resolver un hilo con evidencia incompleta.");
+  expect(requests[1].messages[0].content).toContain("La respuesta anterior fue rechazada");
 });
 
 test("line mapping handles insertions deletions and LEFT evidence", async () => {
