@@ -113,7 +113,7 @@ function usePagedItems<Item extends RequestListItem>(
   return {
     items,
     done,
-    pending: page === undefined && pages.size === 0,
+    pending: page === undefined,
     loadMore: () => setCursor(page?.continueCursor ?? null),
   };
 }
