@@ -43,7 +43,7 @@ jobs:
             const reply={id:2,in_reply_to_id:1,body:'The function uses a + b. Please check the finding against this code.',user:{login:'developer',type:'User'},author_association:'MEMBER'};
             const comments=[root,reply];
             const posted=[];
-            const fakeGithub={paginate:async()=>comments,rest:{pulls:{get:async()=>({data:pr}),listReviewComments:()=>{},createReplyForReviewComment:async payload=>posted.push(payload)},repos:{getContent:async()=>({data:{type:'file',encoding:'base64',size:64,content:Buffer.from('export const sum = (a: number, b: number) => a + b;').toString('base64')}})}};
+            const fakeGithub={paginate:async()=>comments,rest:{pulls:{get:async()=>({data:pr}),listReviewComments:()=>{},createReplyForReviewComment:async payload=>posted.push(payload)},repos:{getContent:async()=>({data:{type:'file',encoding:'base64',size:64,content:Buffer.from('export const sum = (a: number, b: number) => a + b;').toString('base64')}})}}};
             const answer=await respondToInline({github:fakeGithub,context:{repo:{owner:'synthetic',repo:'test'},payload:{action:'created',pull_request:pr,comment:reply}},env:{REVIEW_BOT_LOGIN:BOT,OPENROUTER_API_KEY:process.env.OPENROUTER_API_KEY},fetchImpl});
             assert.ok(answer.usage.measuredCalls > 0, 'No completed conversation model call');
             assert.equal(posted.length,1, 'Conversation did not produce a reply');
