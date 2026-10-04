@@ -1,4 +1,4 @@
-<!-- cspell:words samsung Samsung marvin UiAutomation FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES apksigner Sam Rocío uiautomator -->
+<!-- cspell:words talkback samsung Samsung marvin UiAutomation FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES apksigner Sam Rocío uiautomator -->
 
 # Auditoría Android de vistas de gestión, TI4-48
 
