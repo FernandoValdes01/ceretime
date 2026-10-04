@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#246259",
   },
-  focused: { outlineWidth: 2, outlineColor: "#2563EB", outlineOffset: 2 },
+  focused: { outlineWidth: 3, outlineColor: "#2563EB", outlineOffset: 2 },
   pressed: { backgroundColor: "#17483F" },
   disabled: { opacity: 0.55 },
   buttonLabel: {

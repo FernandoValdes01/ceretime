@@ -103,7 +103,7 @@ export function AppHeader({
 }
 
 const styles = StyleSheet.create({
-  focused: { outlineWidth: 2, outlineColor: "#2563EB", borderRadius: 8 },
+  focused: { outlineWidth: 3, outlineColor: "#2563EB", borderRadius: 8 },
   container: { backgroundColor: "#F7FAF9" },
   header: {
     minHeight: 68,
