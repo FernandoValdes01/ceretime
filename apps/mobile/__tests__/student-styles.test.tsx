@@ -89,7 +89,7 @@ test("Tailwind distingue selección, foco y pulsación sin perder la selección"
 test("el foco del campo tiene prioridad sobre el borde de error", () => {
   render(<RequestForm submitter={submitter} onRevealGroup={() => {}} />);
   fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
-  const input = screen.getByLabelText("¿Qué necesidad quieres abordar? *");
+  const input = screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false });
   expect(input).toHaveStyle({ borderColor: "#ba1a1a" });
   fireEvent(input, "focus");
   expect(input).toHaveStyle({ borderColor: "#2563eb" });
