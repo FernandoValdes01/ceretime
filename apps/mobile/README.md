@@ -68,6 +68,10 @@ Los grupos entre paréntesis no aparecen en la URL. `Stack.Protected` protege la
 - Los identificadores de `roles.ts` son locales a la navegación. No definen contratos compartidos con el backend.
 - Esta protección controla la navegación del cliente. La autorización real debe verificarse en el backend cuando se integre la API.
 
+## Matriz de accesibilidad
+
+La [matriz inicial WCAG 2.2 A/AA](./docs/accessibility/wcag-matrix.md) reúne las rutas actuales, los métodos Android, las versiones de evidencia y los pendientes por criterio. TI4-47 y TI4-48 conservan sus auditorías por issue; TI4-64 consolidará los resultados en esa misma matriz. Las capturas históricas y las pruebas parciales no acreditan conformidad global.
+
 ## Validación
 
 ```sh
