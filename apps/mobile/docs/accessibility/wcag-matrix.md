@@ -865,7 +865,7 @@ La solicitud, el acompañamiento y la atención conservan sus significados en [C
 
 ## Comprobaciones de esta entrega
 
-TI4-46 verifica cobertura de archivos de ruta frente al inventario, existencia de enlaces locales, identificadores/niveles frente a la recomendación WCAG 2.2, versiones de los informes y separación de estados. No se ejecutaron TalkBack, mediciones de contraste o pruebas de pantalla en esta tarea. Los resultados de lint, formato, cspell y CI se adjuntan a la PR del commit documental.
+TI4-46 verifica cobertura de archivos de ruta frente al inventario, existencia de enlaces locales, identificadores/niveles frente a la recomendación WCAG 2.2, versiones de los informes y separación de estados. No se ejecutaron TalkBack, mediciones de contraste o pruebas de pantalla en esta tarea. Los resultados de lint, formato, cspell y CI se adjuntan a la PR del commit documental. Las [capturas del recorrido documental](../evidence/ti4-46/README.md) muestran la matriz en GitHub y la apertura de una fuente de evidencia.
 
 [1.1.1]: https://www.w3.org/TR/WCAG22/#non-text-content
 [1.2.1]: https://www.w3.org/TR/WCAG22/#audio-only-and-video-only-prerecorded
