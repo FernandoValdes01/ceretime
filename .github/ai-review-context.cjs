@@ -61,6 +61,7 @@ function reviewThreads(comments, botLogin = BOT) {
         line: root.original_line ?? root.line,
         currentLine: root.line,
         sha: root.original_commit_id,
+        originalBase: reviewedBase(root.body),
         finding: clip((root.body ?? "").replace(/\n\nVerificado en [\s\S]*$/, ""), 2200),
         hunk: clip(root.diff_hunk, 3000),
         messages: replies.slice(-4).map((c) => ({
@@ -128,6 +129,10 @@ function excerpt(text, line, radius = 10) {
   );
 }
 
+function reviewedBase(body) {
+  return String(body ?? "").match(/<!-- ceretime-r2d2-base:([a-f0-9]{40}) -->/)?.[1];
+}
+
 async function threadEvidence({ github, repo, root, head }) {
   let ref = root.original_commit_id,
     delta = null,
@@ -151,7 +156,10 @@ async function threadEvidence({ github, repo, root, head }) {
       : null;
   };
   try {
-    if (root.side === "LEFT") ref = (await compare("main", ref)).merge_base_commit.sha;
+    if (root.side === "LEFT") {
+      ref = reviewedBase(root.body);
+      if (!ref) throw new Error("Base histórica no disponible.");
+    }
     original = await read(ref, root.path);
     if (ref === head) delta = "";
     else {
@@ -360,7 +368,10 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       delta = null,
       currentPath = thread.path;
     try {
-      if (thread.side === "LEFT") ref = git("merge-base", base, thread.sha).trim();
+      if (thread.side === "LEFT") {
+        ref = thread.originalBase;
+        if (!ref) throw new Error("Base histórica no disponible.");
+      }
       original = read(ref, thread.path);
       const rename = git("diff", "--name-status", "--find-renames", ref, sha)
         .split("\n")
@@ -457,6 +468,7 @@ module.exports = {
   mapLine,
   excerpt,
   threadEvidence,
+  reviewedBase,
   gitReader,
   enrichFiles,
   contentKey,

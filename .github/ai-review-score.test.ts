@@ -190,7 +190,7 @@ for (const size of [10, 500, 1400])
     const { result, requests } = await runChunks(plan);
     expect(result.coverage).toBe("complete");
     expect(requests).toHaveLength(plan.chunks.length);
-    expect(requests[0].messages[0].content).toContain("main es la base válida");
+    expect(requests[0].messages[0].content).toContain("La base inmediata de esta PR");
     expect(requests[0]).toHaveProperty("max_tokens", LIMITS.outputTokens);
   });
 test("large reviews fit the OpenRouter profile without dropping changed lines", async () => {
@@ -370,7 +370,16 @@ test("presentation preserves literal code and suggestions", () => {
 test("workflow has one engine pinned actions and no second inference for the score", () => {
   const text = readFileSync(`${import.meta.dir}/workflows/ai-code-review.yml`, "utf8");
   const workflow = Bun.YAML.parse(text);
-  expect(workflow.on.pull_request.branches).toEqual(["main"]);
+  expect(workflow.on.pull_request).not.toHaveProperty("branches");
+  expect(workflow.on.pull_request.types).toContain("edited");
+  expect(workflow.jobs.review.if).toContain("github.event.changes.base");
+  expect(workflow.concurrency.group).toContain("github.run_id");
+  expect(workflow.jobs.review.env.REVIEW_BASE_SHA).toBe(
+    "${{ github.event.pull_request.base.sha }}",
+  );
+  expect(workflow.jobs.review.env.REVIEW_BASE_REF).toBe(
+    "${{ github.event.pull_request.base.ref }}",
+  );
   expect(workflow.on.pull_request.types).toContain("synchronize");
   expect(workflow.permissions).toEqual({
     contents: "read",
@@ -550,7 +559,9 @@ test("quota wait budget stops bounded retries and the current head is checked af
   });
   expect(calls).toBe(1);
   expect(changed.coverage).toBe("incomplete");
-  expect(changed.reasons).toContain("El head cambió durante la revisión.");
+  expect(changed.reasons).toContain(
+    "Cambió el head, la base o la elegibilidad durante la revisión.",
+  );
 });
 
 test("successful low-token headers delay the next chunk until reset", async () => {
