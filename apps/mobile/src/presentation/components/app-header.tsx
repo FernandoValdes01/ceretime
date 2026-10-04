@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { StudentText } from "../estudiante/student-text";
@@ -11,6 +13,7 @@ export function AppHeader({
   readonly onBack?: () => void;
   readonly title?: string;
 }) {
+  const [focusedControl, setFocusedControl] = useState<string | null>(null);
   const navigationSession = useOptionalNavigationSession();
   const session = navigationSession?.session ?? null;
   const status = navigationSession?.status ?? "unauthenticated";
@@ -23,11 +26,12 @@ export function AppHeader({
       <View style={styles.header}>
         {onBack ? (
           <Pressable
+            onFocus={() => setFocusedControl("Volver")}
+            onBlur={() => setFocusedControl(null)}
             accessibilityLabel="Volver"
             accessibilityRole="button"
-            hitSlop={10}
             onPress={onBack}
-            style={styles.backButton}
+            style={[styles.backButton, focusedControl === "Volver" && styles.focused]}
           >
             <AppIcon
               accessible={false}
@@ -59,19 +63,20 @@ export function AppHeader({
             accessibilityRole="button"
             accessibilityState={{ disabled: true }}
             disabled
-            hitSlop={10}
+            style={styles.logoutButton}
           >
             <AppIcon accessible={false} color="#087D70" name="bell" size={22} strokeWidth={2.1} />
           </Pressable>
           <Pressable
+            onFocus={() => setFocusedControl("logout")}
+            onBlur={() => setFocusedControl(null)}
             accessibilityHint="Cierra tu sesión actual"
             accessibilityLabel={isSigningOut ? "Cerrando sesión…" : "Cerrar sesión"}
             accessibilityRole="button"
             accessibilityState={{ disabled: isSigningOut }}
             disabled={isSigningOut}
-            hitSlop={10}
             onPress={() => void navigationSession?.signOut()}
-            style={styles.logoutButton}
+            style={[styles.logoutButton, focusedControl === "logout" && styles.focused]}
           >
             <AppIcon accessible={false} color="#42565B" name="logOut" size={21} strokeWidth={2.1} />
           </Pressable>
@@ -82,9 +87,11 @@ export function AppHeader({
           <AppIcon accessible={false} color="#9B5C00" name="alert" size={18} strokeWidth={2.2} />
           <StudentText style={styles.errorText}>{sessionError}</StudentText>
           <Pressable
+            onFocus={() => setFocusedControl("Cerrar aviso")}
+            onBlur={() => setFocusedControl(null)}
             accessibilityLabel="Cerrar aviso"
             accessibilityRole="button"
-            hitSlop={8}
+            style={[styles.logoutButton, focusedControl === "Cerrar aviso" && styles.focused]}
             onPress={navigationSession?.clearError}
           >
             <AppIcon accessible={false} color="#704336" name="x" size={18} strokeWidth={2} />
@@ -96,6 +103,7 @@ export function AppHeader({
 }
 
 const styles = StyleSheet.create({
+  focused: { outlineWidth: 2, outlineColor: "#2563EB", borderRadius: 8 },
   container: { backgroundColor: "#F7FAF9" },
   header: {
     minHeight: 68,
@@ -116,11 +124,17 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
     boxShadow: "0 1px 3px rgba(24, 44, 49, 0.2)",
   },
-  avatarText: { color: "#704336", fontSize: 15 },
-  brand: { color: "#087D70", fontSize: 19, letterSpacing: 1.4 },
-  backButton: { width: 32, marginRight: 4 },
-  actions: { flexDirection: "row", alignItems: "center", gap: 18 },
-  logoutButton: { alignItems: "center", justifyContent: "center" },
+  avatarText: { color: "#704336", fontSize: 15, lineHeight: 19 },
+  brand: { color: "#087D70", flexShrink: 1, fontSize: 19, letterSpacing: 1.4 },
+  backButton: {
+    width: 48,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 4,
+  },
+  actions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  logoutButton: { width: 48, height: 48, alignItems: "center", justifyContent: "center" },
   errorBanner: {
     minHeight: 42,
     marginHorizontal: 14,

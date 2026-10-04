@@ -1,3 +1,5 @@
+import { Text, useWindowDimensions, type ColorValue } from "react-native";
+
 import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -6,7 +8,7 @@ import { AppIcon } from "../components/app-icon";
 
 const baseRoleTabScreenOptions = {
   headerShown: false,
-  tabBarActiveTintColor: "#078B7B",
+  tabBarActiveTintColor: "#087D70",
   tabBarInactiveTintColor: "#5B6C6E",
   tabBarLabelStyle: { fontSize: 12, fontWeight: "600" as const },
   tabBarStyle: {
@@ -20,12 +22,19 @@ const baseRoleTabScreenOptions = {
 
 export function useRoleTabScreenOptions() {
   const { bottom } = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
 
   return {
     ...baseRoleTabScreenOptions,
+    tabBarLabelPosition: "below-icon" as const,
+    tabBarLabel: ({ children, color }: { children: string; color: ColorValue }) => (
+      <Text style={[baseRoleTabScreenOptions.tabBarLabelStyle, { color, textAlign: "center" }]}>
+        {children}
+      </Text>
+    ),
     tabBarStyle: {
       ...baseRoleTabScreenOptions.tabBarStyle,
-      height: baseRoleTabScreenOptions.tabBarStyle.height + bottom,
+      height: 42 + 42 * Math.max(1, fontScale) + bottom,
       paddingBottom: Math.max(bottom, baseRoleTabScreenOptions.tabBarStyle.paddingBottom),
     },
   };
