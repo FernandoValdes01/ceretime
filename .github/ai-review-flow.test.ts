@@ -73,7 +73,7 @@ function fixture(initial: Record<string, string> = { "file.ts": "export const ru
     reviews: any[] = [],
     requests: any[] = [];
   const listFiles = () =>
-    git("diff", "--name-only", `${base}...${pr.head.sha}`)
+    git("diff", "--name-only", `${pr.base.sha}...${pr.head.sha}`)
       .split("\n")
       .filter(Boolean)
       .map((filename) => {
@@ -81,7 +81,7 @@ function fixture(initial: Record<string, string> = { "file.ts": "export const ru
           "diff",
           "--no-ext-diff",
           "--unified=3",
-          `${base}...${pr.head.sha}`,
+          `${pr.base.sha}...${pr.head.sha}`,
           "--",
           filename,
         );
@@ -89,7 +89,7 @@ function fixture(initial: Record<string, string> = { "file.ts": "export const ru
         const [add, del] = git(
           "diff",
           "--numstat",
-          `${base}...${pr.head.sha}`,
+          `${pr.base.sha}...${pr.head.sha}`,
           "--",
           filename,
         ).split("\t");
@@ -165,6 +165,8 @@ function fixture(initial: Record<string, string> = { "file.ts": "export const ru
   const env: any = {
     GITHUB_WORKSPACE: directory,
     REVIEW_SHA: sha,
+    REVIEW_BASE_SHA: base,
+    REVIEW_BASE_REF: "main",
     REVIEW_BOT_LOGIN: BOT,
     OPENROUTER_API_KEY: "simulation",
     RUN_URL: "https://github.com/test/repo/actions/runs/1",
@@ -180,6 +182,8 @@ function fixture(initial: Record<string, string> = { "file.ts": "export const ru
     return sha;
   };
   const prepare = async () => {
+    env.REVIEW_BASE_SHA = pr.base.sha;
+    env.REVIEW_BASE_REF = pr.base.ref;
     await prepareReview({ github, context, core, env });
     return JSON.parse(readFileSync(join(directory, ".git/ai-review-plan.json"), "utf8"));
   };
@@ -877,13 +881,19 @@ test("line mapping handles insertions deletions and LEFT evidence", async () => 
   const evidence = await threadEvidence({
     github,
     repo: { owner: "test", repo: "repo" },
-    root: { path: "file.ts", original_line: 1, side: "LEFT", original_commit_id: old },
+    root: {
+      path: "file.ts",
+      original_line: 1,
+      side: "LEFT",
+      original_commit_id: old,
+      body: `<!-- ceretime-r2d2-base:${base} -->`,
+    },
     head,
   });
   expect(evidence.currentLine).toBe(2);
   expect(evidence.original_excerpt).toContain("1: original()");
   expect(evidence.current_excerpt).toContain("2: original()");
-  expect(calls[0].basehead).toBe(`main...${old}`);
+  expect(calls[0].basehead).toBe(`${base}...${head}`);
 });
 
 test("publication never certifies newer heads changed main or edited human context", async () => {
@@ -1019,6 +1029,360 @@ test("cached findings remap coordinates and content/context changes miss safely"
     expect(memory.get(shifted).findings[0].line).toBe(20);
     expect(memory.get({ ...part, contextKey: "changed" })).toBeNull();
     expect(memory.get({ ...part, patch: part.patch.replace("unsafe", "safe") })).toBeNull();
+  } finally {
+    f.clean();
+  }
+});
+
+for (const baseRef of ["feature/lower-pr", "release/next"]) {
+  test(`internal PR against ${baseRef} reviews only its own layer`, async () => {
+    const f = fixture();
+    try {
+      f.put("lower.ts", "export const inherited = 1;\n");
+      const lower = f.advance();
+      f.put("file.ts", "export const run = () => 3;\n");
+      f.advance();
+      f.pr.base = { sha: lower, ref: baseRef };
+      const plan = await f.prepare();
+      expect(plan.base).toBe(lower);
+      expect(plan.baseRef).toBe(baseRef);
+      expect(plan.mergeBase).toBe(lower);
+      expect(plan.files).toBe(1);
+      expect(plan.chunks.flatMap((c: any) => c.parts.map((p: any) => p.path))).toEqual(["file.ts"]);
+      const report = await f.run();
+      expect(report.coverage).toBe("complete");
+      expect(f.requests[0].baseRef).toBe(baseRef);
+      expect(f.requests[0].parts[0].patch).toContain("-export const run = () => 2");
+      await publishReview(f);
+      expect(f.statuses.at(-1).state).toBe("success");
+    } finally {
+      f.clean();
+    }
+  });
+}
+
+test("merging a lower PR and retargeting to main invalidates the old review even with identical SHAs", async () => {
+  const f = fixture();
+  try {
+    f.pr.base.ref = "feature/lower-pr";
+    const first = await f.prepare();
+    await f.run();
+    await publishReview(f);
+    const firstBody = f.summaries[0].body;
+    const count = f.statuses.length;
+    f.pr.base.ref = "main";
+    await publishReview(f);
+    expect(f.statuses).toHaveLength(count);
+    expect(f.summaries[0].body).toBe(firstBody);
+    const next = await f.prepare();
+    expect(memoryIdentity(first, f.outputs.instructions)).not.toBe(
+      memoryIdentity(next, f.outputs.instructions),
+    );
+    expect(f.statuses.at(-1).state).toBe("failure");
+    const report = await f.run();
+    expect(report.reused).toBe(0);
+    await publishReview(f);
+    expect(f.statuses.at(-1).state).toBe("success");
+    expect(f.summaries).toHaveLength(1);
+  } finally {
+    f.clean();
+  }
+});
+
+for (const change of ["ref", "sha", "fork", "draft", "closed"]) {
+  test(`preparation rejects ${change} changed while reading the diff`, async () => {
+    const f = fixture();
+    try {
+      const paginate = f.github.paginate;
+      f.github.paginate = async (...args: any[]) => {
+        const result = await paginate(...args);
+        if (change === "ref") f.pr.base.ref = "other-base";
+        if (change === "sha") f.pr.base.sha = "b".repeat(40);
+        if (change === "fork") f.pr.head.repo.full_name = "fork/repo";
+        if (change === "draft") f.pr.draft = true;
+        if (change === "closed") f.pr.state = "closed";
+        return result;
+      };
+      await prepareReview(f);
+      expect(f.outputs.current).toBe("false");
+      expect(() => readFileSync(join(f.directory, ".git/ai-review-plan.json"))).toThrow();
+    } finally {
+      f.clean();
+    }
+  });
+}
+
+for (const change of ["ref", "sha"]) {
+  test(`base ${change} changed during inference cannot be cached or published`, async () => {
+    const f = fixture();
+    try {
+      await f.prepare();
+      const report = await f.run(() => {
+        if (change === "ref") f.pr.base.ref = "other-base";
+        else f.pr.base.sha = "b".repeat(40);
+        return { findings: [], resolutions: [] };
+      });
+      expect(report.coverage).toBe("incomplete");
+      expect(report.processed).toBe(0);
+      expect(report.reasons.join(" ")).toContain("la base");
+      await publishReview(f);
+      expect(f.summaries).toHaveLength(0);
+      expect(f.statuses.at(-1).state).toBe("failure");
+    } finally {
+      f.clean();
+    }
+  });
+}
+
+for (const read of [2, 3, 4]) {
+  test(`same-SHA base change during publication read ${read} prevents a success status`, async () => {
+    const f = fixture();
+    try {
+      await f.prepare();
+      await f.run();
+      let reads = 0;
+      f.github.rest.pulls.get = async () => {
+        if (++reads === read) f.pr.base.ref = "other-base";
+        return { data: f.pr };
+      };
+      await publishReview(f);
+      expect(f.statuses.at(-1).state).toBe("failure");
+      if (read < 4) expect(f.summaries).toHaveLength(0);
+      expect(f.reviews).toHaveLength(0);
+    } finally {
+      f.clean();
+    }
+  });
+}
+
+test("a stale event or cosmetic edit cannot reset a newer success status", async () => {
+  const f = fixture();
+  try {
+    await f.prepare();
+    await f.run();
+    await publishReview(f);
+    const count = f.statuses.length;
+    f.env.REVIEW_BASE_REF = "previous-base";
+    await prepareReview(f);
+    await publishReview(f);
+    expect(f.outputs.current).toBe("false");
+    expect(f.statuses).toHaveLength(count);
+    f.env.REVIEW_BASE_REF = f.pr.base.ref;
+    Object.assign(f.context.payload, { action: "edited", changes: { title: { from: "Old" } } });
+    await prepareReview(f);
+    expect(f.outputs.current).toBe("false");
+    expect(f.statuses).toHaveLength(count);
+  } finally {
+    f.clean();
+  }
+});
+
+test("an edited base event resets the same head status and prepares its new target", async () => {
+  const f = fixture();
+  try {
+    await f.prepare();
+    await f.run();
+    await publishReview(f);
+    f.pr.base.ref = "feature/lower-pr";
+    Object.assign(f.context.payload, {
+      action: "edited",
+      changes: { base: { ref: { from: "main" } } },
+    });
+    const plan = await f.prepare();
+    expect(f.outputs.current).toBe("true");
+    expect(plan.baseRef).toBe("feature/lower-pr");
+    expect(f.statuses.at(-1).state).toBe("failure");
+  } finally {
+    f.clean();
+  }
+});
+
+test("new LEFT findings preserve their historical base through a merge and later review", async () => {
+  const f = fixture();
+  try {
+    f.pr.base.ref = "feature/lower-pr";
+    await f.prepare();
+    const report = await f.run(() => ({
+      findings: [
+        {
+          path: "file.ts",
+          line: 1,
+          side: "LEFT",
+          severity: "minor",
+          issue_key: "removed-check",
+          cause: "El cambio elimina una comprobación.",
+          impact: "Admite datos inválidos.",
+          fix: "Conservar la comprobación.",
+        },
+      ],
+      resolutions: [],
+    }));
+    await publishReview(f);
+    expect(f.comments[0].body).toContain(`<!-- ceretime-r2d2-base:${f.base} -->`);
+    // A lower PR can land with squash: the new base SHA is not the historical base.
+    const nextBase = "b".repeat(40);
+    await publishFindings({
+      github: f.github,
+      args: { owner: "test", repo: "repo", pull_number: 1 },
+      sha: f.pr.head.sha,
+      botLogin: BOT,
+      report: { ...report, mergeBase: nextBase },
+    });
+    expect(f.comments[0].body).toContain(`<!-- ceretime-r2d2-base:${f.base} -->`);
+    expect(f.comments[0].body).not.toContain(`<!-- ceretime-r2d2-base:${nextBase} -->`);
+    f.pr.base.ref = "main";
+    const evidence = enrichFiles([], {
+      directory: f.directory,
+      base: f.pr.head.sha,
+      sha: f.pr.head.sha,
+      threads: reviewThreads(f.comments),
+    });
+    expect(evidence.followups[0].original_excerpt).toContain("run = () => 1");
+    expect(evidence.followups[0].evidence_incomplete).toBe(false);
+  } finally {
+    f.clean();
+  }
+});
+
+test("legacy LEFT findings without a historical base explicitly require context", async () => {
+  let reads = 0;
+  const evidence = await threadEvidence({
+    github: {
+      rest: {
+        repos: {
+          getContent: async () => {
+            reads++;
+            throw new Error("Unexpected");
+          },
+        },
+      },
+    },
+    repo: { owner: "test", repo: "repo" },
+    head: "a".repeat(40),
+    root: { side: "LEFT", path: "file.ts", original_line: 1, original_commit_id: "c".repeat(40) },
+  });
+  expect(evidence.evidence_incomplete).toBe(true);
+  expect(evidence.original_excerpt).toBeNull();
+  expect(reads).toBe(0);
+});
+
+test("base change after reading inline comments prevents posting stale findings", async () => {
+  const f = fixture();
+  try {
+    await f.prepare();
+    await f.run(() => ({
+      findings: [
+        {
+          path: "file.ts",
+          line: 1,
+          side: "RIGHT",
+          severity: "minor",
+          issue_key: "check",
+          cause: "Falta validación.",
+          impact: "Admite datos inválidos.",
+          fix: "Validar.",
+        },
+      ],
+      resolutions: [],
+    }));
+    const paginate = f.github.paginate;
+    let reads = 0;
+    f.github.paginate = async (...args: any[]) => {
+      const result = await paginate(...args);
+      if (args[0] === f.github.rest.pulls.listReviewComments && ++reads === 2)
+        f.pr.base.ref = "other-base";
+      return result;
+    };
+    await publishReview(f);
+    expect(f.reviews).toHaveLength(0);
+    expect(f.summaries).toHaveLength(0);
+    expect(f.statuses.at(-1).state).toBe("failure");
+  } finally {
+    f.clean();
+  }
+});
+
+test("review context includes the complete direct eligibility contract even with many consumers", () => {
+  const source = readFileSync(join(import.meta.dir, "ai-review-target.cjs"), "utf8");
+  const consumers = Object.fromEntries(
+    Array.from({ length: 7 }, (_, index) => [
+      `.github/a-consumer-${index}.cjs`,
+      'const { run } = require("./entry.cjs");\nfunction consume() { return run(); }\n',
+    ]),
+  );
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    ".github/entry.cjs":
+      'const { currentReview } = require("./ai-review-target.cjs");\nfunction run(pr, target, repo) { return currentReview(pr, target, repo); }\n',
+    ".github/ai-review-target.cjs": source,
+    ...consumers,
+  });
+  try {
+    const file: any = { filename: ".github/entry.cjs", status: "modified" };
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    expect(
+      file.context.find((item: any) => item.path === ".github/ai-review-target.cjs")?.head,
+    ).toBe(source);
+  } finally {
+    f.clean();
+  }
+});
+
+test("review context preserves distant function defaults and the imports behind changed hunks", () => {
+  const source = readFileSync(join(import.meta.dir, "ai-review-chunks.cjs"), "utf8");
+  const f = fixture({ ".github/large.cjs": source });
+  try {
+    const file: any = {
+      filename: ".github/large.cjs",
+      status: "modified",
+      patch: "@@ -631 +631 @@\n-old();\n+isCurrent();",
+    };
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    const own = file.context.find((item: any) => item.path === file.filename);
+    expect(own.head).toContain("isCurrent = async () => true");
+    expect(own.head).toContain('hash, reviewedBase } = require("./ai-review-context.cjs")');
+  } finally {
+    f.clean();
+  }
+});
+
+test("repeated publication neither replaces a legacy anchor base nor rewrites identical findings", async () => {
+  const f = fixture();
+  try {
+    await f.prepare();
+    const report = await f.run(() => ({
+      findings: [
+        {
+          path: "file.ts",
+          line: 1,
+          side: "RIGHT",
+          severity: "minor",
+          issue_key: "check",
+          cause: "Falta validación.",
+          impact: "Admite datos inválidos.",
+          fix: "Validar.",
+        },
+      ],
+      resolutions: [],
+    }));
+    await publishReview(f);
+    f.comments[0].body = f.comments[0].body.replace(
+      /\n\n<!-- ceretime-r2d2-base:[a-f0-9]{40} -->/,
+      "",
+    );
+    let updates = 0;
+    f.github.rest.pulls.updateReviewComment = async () => {
+      updates++;
+    };
+    await publishFindings({
+      github: f.github,
+      args: { owner: "test", repo: "repo", pull_number: 1 },
+      sha: f.pr.head.sha,
+      botLogin: BOT,
+      report: { ...report, mergeBase: "b".repeat(40) },
+    });
+    expect(updates).toBe(0);
+    expect(f.comments[0].body).not.toContain("ceretime-r2d2-base:");
   } finally {
     f.clean();
   }

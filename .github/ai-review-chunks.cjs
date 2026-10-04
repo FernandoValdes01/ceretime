@@ -1,7 +1,7 @@
 const { withoutBold } = require("./ai-review-presentation.cjs");
 
 const { classifyFile, matchesIgnore } = require("./ai-review-selection.cjs");
-const { hash } = require("./ai-review-context.cjs");
+const { hash, reviewedBase } = require("./ai-review-context.cjs");
 
 const { ENDPOINT, completionRequest, addUsage, emptyUsage } = require("./ai-review-provider.cjs");
 
@@ -170,6 +170,30 @@ function buildPlan(files, config = {}, sha) {
         continue;
       }
       for (const thread of part.followups) assignedThreads.add(thread.id);
+      // Hunks in one file share their contract context whenever the combined
+      // payload fits. Keep at most one formal followup in each part.
+      let combined = false;
+      for (const bin of bins) {
+        const previous = bin.parts.find(
+          (p) => p.path === part.path && p.followups.length + part.followups.length <= 1,
+        );
+        if (!previous) continue;
+        const merged = {
+          ...previous,
+          patch: `${previous.patch}\n${part.patch}`,
+          anchors: [...previous.anchors, ...part.anchors],
+          followups: [...previous.followups, ...part.followups],
+        };
+        const increase =
+          JSON.stringify({ ...merged, anchors: undefined }).length -
+          JSON.stringify({ ...previous, anchors: undefined }).length;
+        if (bin.size + increase > limits.chunkChars) continue;
+        Object.assign(previous, merged);
+        bin.size += increase;
+        combined = true;
+        break;
+      }
+      if (combined) continue;
       const available = bins
         .filter((bin) => bin.size + partSize + 1 <= limits.chunkChars)
         .sort((a, b) => b.size - a.size)[0];
@@ -217,6 +241,17 @@ function validateAssessment(data, chunk) {
       )
         throw new Error("Hallazgo sin causalidad, impacto o corrección.");
     }
+    if (
+      /^(?:(?:ningún|ninguno|ninguna)(?: impacto)? funcional|ningún impacto|sin impacto funcional|none\b|no functional impact)/i.test(
+        finding.impact.trim(),
+      ) ||
+      /^(?:no requiere (?:cambio|corrección)|no (?:change|fix) (?:is )?(?:required|needed))/i.test(
+        finding.fix.trim(),
+      )
+    )
+      throw new Error(
+        "Un hallazgo exige impacto funcional y una corrección necesaria; las observaciones sin defecto deben omitirse.",
+      );
     if (!/^[a-z0-9][a-z0-9_-]*$/.test(finding.issue_key))
       throw new Error("Identidad de hallazgo inválida.");
     if (finding.threadId && !part.followups?.some((t) => t.id === String(finding.threadId)))
@@ -324,6 +359,8 @@ function aggregate(plan, results, calls, errors = []) {
   return {
     sha: plan.sha,
     base: plan.base,
+    baseRef: plan.baseRef,
+    mergeBase: plan.mergeBase,
     discussionKey: plan.discussionKey,
     coverage,
     score,
@@ -429,6 +466,10 @@ async function reviewPlan({
     reused = 0;
   const usage = emptyUsage();
   const finish = () => ({ ...aggregate(plan, results, calls, errors), reused, usage });
+  if (!(await isCurrent())) {
+    errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");
+    return finish();
+  }
   if (plan.issues.length) return finish();
   for (const [index, originalChunk] of plan.chunks.entries()) {
     const cachedResults = [],
@@ -447,7 +488,7 @@ async function reviewPlan({
       }
     }
     if (!(await isCurrent())) {
-      errors.push("El head cambió durante la revisión.");
+      errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");
       return finish();
     }
     const merge = (items) => ({
@@ -473,13 +514,13 @@ async function reviewPlan({
     for (let attempt = 0; attempt < 3 && calls < plan.limits.maxCalls; attempt++) {
       let stage = "request";
       if (!(await isCurrent())) {
-        errors.push("El head cambió durante la revisión.");
+        errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");
         return finish();
       }
       if (calls) await sleep(Math.max(plan.limits.intervalMs, nextDelay));
       nextDelay = 0;
       if (!(await isCurrent())) {
-        errors.push("El head cambió durante la revisión.");
+        errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");
         return finish();
       }
       calls++;
@@ -489,13 +530,14 @@ async function reviewPlan({
             [
               {
                 role: "system",
-                content: `${instructions}\nEsta llamada evalúa exclusivamente las partes recibidas del bloque scope.block de scope.totalBlocks. Los demás bloques se revisan por separado y la cobertura global se comprueba localmente; su ausencia en esta llamada no es una limitación. El contexto aporta contratos y, para workflows, los scripts locales invocados completos cuando caben en el presupuesto. Los demás extractos no son archivos completos. Respeta las precondiciones del workflow: un paso fallido sin continue-on-error impide los posteriores; always() no elimina otras condiciones unidas con &&. Los outputs documentados de una Action fijada a SHA son parte de su contrato. Una limitación exige un comportamiento concreto que no puedas verificar; evaluar a partir de extractos no es por sí solo cobertura incompleta. Registra limitations solo si falta un contrato necesario para evaluar estas partes, indicando el símbolo o flujo concreto y la evidencia que falta. No exijas el PR completo ni los módulos de producción para revisar cambios independientes en tests. Verifica los tipos en sus productores y consumidores antes de afirmar una incompatibilidad; no supongas que un campo es un array por su nombre. main es la base válida. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Los hunks históricos de los hilos solo sirven para resolver esos hallazgos; el patch principal es main...HEAD. CI, build y el reviewer tienen comportamiento funcional aunque no cambien lógica de negocio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Una resolución con status maintain obliga a incluir en findings el hallazgo correspondiente con el mismo threadId, path, line, side, severity, issue_key, cause, impact y fix. La resolución por sí sola no es evidencia. Un hallazgo anterior tampoco prueba que el problema exista: verifica su afirmación y su impacto contra las funciones y condiciones actuales, incluidas las llamadas que ya cumplan esa responsabilidad. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones y evidencia con threadId para mantener ese mismo hallazgo; nunca hallazgos nuevos ni defectos ajenos al diff vigente.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
+                content: `${instructions}\nEsta llamada evalúa exclusivamente las partes recibidas del bloque scope.block de scope.totalBlocks. Los demás bloques se revisan por separado y la cobertura global se comprueba localmente; su ausencia en esta llamada no es una limitación. El contexto aporta contratos y, para workflows, los scripts locales invocados completos cuando caben en el presupuesto. Cada entrada de context indica baseComplete y headComplete: true significa contenido completo, false significa un extracto. Las declaraciones e imports del módulo se conservan antes de los extractos. El contenido de un archivo nuevo puede aparecer completo en su patch aunque su contexto esté recortado. No declares que falta una función o parámetro sin revisar el patch, las declaraciones y los contratos recibidos. Evalúa solo el bloque actual; otros archivos modificados se revisan en sus propios bloques. Respeta las precondiciones del workflow: un paso fallido sin continue-on-error impide los posteriores; always() no elimina otras condiciones unidas con &&. Los outputs documentados de una Action fijada a SHA son parte de su contrato. Una limitación exige un comportamiento concreto que no puedas verificar; evaluar a partir de extractos no es por sí solo cobertura incompleta. Registra limitations solo si falta un contrato necesario para evaluar estas partes, indicando el símbolo o flujo concreto y la evidencia que falta. No exijas el PR completo ni los módulos de producción para revisar cambios independientes en tests. Verifica los tipos en sus productores y consumidores antes de afirmar una incompatibilidad; no supongas que un campo es un array por su nombre. La base inmediata de esta PR es la referencia para evaluar el cambio. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. No publiques como hallazgo una observación que no tenga impacto funcional o que no requiera corrección. Si la evidencia solo permite una hipótesis, describe la limitación concreta en limitations; no afirmes que un símbolo no existe por no verlo en un extracto. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Los hunks históricos de los hilos solo sirven para resolver esos hallazgos; el patch principal es baseSHA...headSHA de esta PR, incluso dentro de un stack. CI, build y el reviewer tienen comportamiento funcional aunque no cambien lógica de negocio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Una resolución con status maintain obliga a incluir en findings el hallazgo correspondiente con el mismo threadId, path, line, side, severity, issue_key, cause, impact y fix. La resolución por sí sola no es evidencia. Un hallazgo anterior tampoco prueba que el problema exista: verifica su afirmación y su impacto contra las funciones y condiciones actuales, incluidas las llamadas que ya cumplan esa responsabilidad. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones y evidencia con threadId para mantener ese mismo hallazgo; nunca hallazgos nuevos ni defectos ajenos al diff vigente.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
               },
               {
                 role: "user",
                 content: JSON.stringify({
                   sha: plan.sha,
                   base: plan.base,
+                  baseRef: plan.baseRef,
                   intent: plan.intent,
                   scope: {
                     block: index + 1,
@@ -551,6 +593,10 @@ async function reviewPlan({
           throw new Error("Proveedor no disponible.");
         }
         const json = await response.json();
+        if (!(await isCurrent())) {
+          errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");
+          return finish();
+        }
         addUsage(usage, json);
         stage = "parse";
         if (json.choices?.[0]?.finish_reason === "length") {
@@ -617,10 +663,22 @@ async function reviewPlan({
     results.push(merge([...cachedResults, assessment]));
     onProgress(`Bloque ${index + 1}/${plan.chunks.length} completo; llamadas: ${calls}.`);
   }
+  if (!(await isCurrent()))
+    errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");
   return finish();
 }
 
-async function publishFindings({ github, args, sha, botLogin, report }) {
+async function publishFindings({
+  github,
+  args,
+  sha,
+  botLogin,
+  report,
+  isCurrent = async () => true,
+}) {
+  const requireCurrent = async () => {
+    if (!(await isCurrent())) throw new Error("La revisión ya no está vigente.");
+  };
   if (report.sha !== sha || report.findings.length > 5)
     throw new Error("Hallazgos de otro SHA o fuera del límite.");
   const existing = await github.paginate(github.rest.pulls.listReviewComments, {
@@ -638,22 +696,28 @@ async function publishFindings({ github, args, sha, botLogin, report }) {
       warning: "Advertencia",
       minor: "Observación funcional menor",
     }[finding.severity];
-    const body = `${marker}\n### R2D2 · ${severity}\n\n${withoutBold(finding.body)}\n\nVerificado en ${sha}: ${finding.path}:${finding.line} (${finding.side}).`;
+    let body = `${marker}\n### R2D2 · ${severity}\n\n${withoutBold(finding.body)}\n\nVerificado en ${sha}: ${finding.path}:${finding.line} (${finding.side}).`;
     const old = owned.find(
       (c) => (finding.threadId && String(c.id) === finding.threadId) || c.body?.startsWith(marker),
     );
+    const originalBase = old ? reviewedBase(old.body) : report.mergeBase;
+    if (/^[a-f0-9]{40}$/.test(originalBase ?? ""))
+      body += `\n\n<!-- ceretime-r2d2-base:${originalBase} -->`;
     if (old) {
       // Preserve the root and its human replies. GitHub keeps its original anchor.
-      if (old.body !== body)
+      if (old.body !== body) {
+        await requireCurrent();
         await github.rest.pulls.updateReviewComment({
           owner: args.owner,
           repo: args.repo,
           comment_id: old.id,
           body,
         });
+      }
     } else comments.push({ path: finding.path, line: finding.line, side: finding.side, body });
   }
-  if (comments.length)
+  if (comments.length) {
+    await requireCurrent();
     await github.rest.pulls.createReview({
       ...args,
       commit_id: sha,
@@ -661,6 +725,7 @@ async function publishFindings({ github, args, sha, botLogin, report }) {
       body: "<!-- ceretime-ai-review-inline-only -->",
       comments,
     });
+  }
   for (const resolution of report.resolutions ?? []) {
     const root = owned.find((c) => String(c.id) === String(resolution.id));
     if (!root) throw new Error("No se encontró el hilo revisado.");
@@ -680,6 +745,7 @@ async function publishFindings({ github, args, sha, botLogin, report }) {
       maintain: "Hallazgo pendiente",
       needs_context: "Falta evidencia",
     }[resolution.status];
+    await requireCurrent();
     await github.rest.pulls.createReplyForReviewComment({
       ...args,
       comment_id: root.id,
