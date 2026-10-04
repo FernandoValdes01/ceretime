@@ -170,6 +170,30 @@ function buildPlan(files, config = {}, sha) {
         continue;
       }
       for (const thread of part.followups) assignedThreads.add(thread.id);
+      // Hunks in one file share their contract context whenever the combined
+      // payload fits. Keep at most one formal followup in each part.
+      let combined = false;
+      for (const bin of bins) {
+        const previous = bin.parts.find(
+          (p) => p.path === part.path && p.followups.length + part.followups.length <= 1,
+        );
+        if (!previous) continue;
+        const merged = {
+          ...previous,
+          patch: `${previous.patch}\n${part.patch}`,
+          anchors: [...previous.anchors, ...part.anchors],
+          followups: [...previous.followups, ...part.followups],
+        };
+        const increase =
+          JSON.stringify({ ...merged, anchors: undefined }).length -
+          JSON.stringify({ ...previous, anchors: undefined }).length;
+        if (bin.size + increase > limits.chunkChars) continue;
+        Object.assign(previous, merged);
+        bin.size += increase;
+        combined = true;
+        break;
+      }
+      if (combined) continue;
       const available = bins
         .filter((bin) => bin.size + partSize + 1 <= limits.chunkChars)
         .sort((a, b) => b.size - a.size)[0];
@@ -217,6 +241,17 @@ function validateAssessment(data, chunk) {
       )
         throw new Error("Hallazgo sin causalidad, impacto o corrección.");
     }
+    if (
+      /^(?:(?:ningún|ninguno|ninguna)(?: impacto)? funcional|ningún impacto|sin impacto funcional|none\b|no functional impact)/i.test(
+        finding.impact.trim(),
+      ) ||
+      /^(?:no requiere (?:cambio|corrección)|no (?:change|fix) (?:is )?(?:required|needed))/i.test(
+        finding.fix.trim(),
+      )
+    )
+      throw new Error(
+        "Un hallazgo exige impacto funcional y una corrección necesaria; las observaciones sin defecto deben omitirse.",
+      );
     if (!/^[a-z0-9][a-z0-9_-]*$/.test(finding.issue_key))
       throw new Error("Identidad de hallazgo inválida.");
     if (finding.threadId && !part.followups?.some((t) => t.id === String(finding.threadId)))
@@ -495,7 +530,7 @@ async function reviewPlan({
             [
               {
                 role: "system",
-                content: `${instructions}\nEsta llamada evalúa exclusivamente las partes recibidas del bloque scope.block de scope.totalBlocks. Los demás bloques se revisan por separado y la cobertura global se comprueba localmente; su ausencia en esta llamada no es una limitación. El contexto aporta contratos y, para workflows, los scripts locales invocados completos cuando caben en el presupuesto. Los demás extractos no son archivos completos. Respeta las precondiciones del workflow: un paso fallido sin continue-on-error impide los posteriores; always() no elimina otras condiciones unidas con &&. Los outputs documentados de una Action fijada a SHA son parte de su contrato. Una limitación exige un comportamiento concreto que no puedas verificar; evaluar a partir de extractos no es por sí solo cobertura incompleta. Registra limitations solo si falta un contrato necesario para evaluar estas partes, indicando el símbolo o flujo concreto y la evidencia que falta. No exijas el PR completo ni los módulos de producción para revisar cambios independientes en tests. Verifica los tipos en sus productores y consumidores antes de afirmar una incompatibilidad; no supongas que un campo es un array por su nombre. La base inmediata de esta PR es la referencia para evaluar el cambio. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Los hunks históricos de los hilos solo sirven para resolver esos hallazgos; el patch principal es baseSHA...headSHA de esta PR, incluso dentro de un stack. CI, build y el reviewer tienen comportamiento funcional aunque no cambien lógica de negocio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Una resolución con status maintain obliga a incluir en findings el hallazgo correspondiente con el mismo threadId, path, line, side, severity, issue_key, cause, impact y fix. La resolución por sí sola no es evidencia. Un hallazgo anterior tampoco prueba que el problema exista: verifica su afirmación y su impacto contra las funciones y condiciones actuales, incluidas las llamadas que ya cumplan esa responsabilidad. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones y evidencia con threadId para mantener ese mismo hallazgo; nunca hallazgos nuevos ni defectos ajenos al diff vigente.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
+                content: `${instructions}\nEsta llamada evalúa exclusivamente las partes recibidas del bloque scope.block de scope.totalBlocks. Los demás bloques se revisan por separado y la cobertura global se comprueba localmente; su ausencia en esta llamada no es una limitación. El contexto aporta contratos y, para workflows, los scripts locales invocados completos cuando caben en el presupuesto. Cada entrada de context indica baseComplete y headComplete: true significa contenido completo, false significa un extracto. Las declaraciones e imports del módulo se conservan antes de los extractos. El contenido de un archivo nuevo puede aparecer completo en su patch aunque su contexto esté recortado. No declares que falta una función o parámetro sin revisar el patch, las declaraciones y los contratos recibidos. Evalúa solo el bloque actual; otros archivos modificados se revisan en sus propios bloques. Respeta las precondiciones del workflow: un paso fallido sin continue-on-error impide los posteriores; always() no elimina otras condiciones unidas con &&. Los outputs documentados de una Action fijada a SHA son parte de su contrato. Una limitación exige un comportamiento concreto que no puedas verificar; evaluar a partir de extractos no es por sí solo cobertura incompleta. Registra limitations solo si falta un contrato necesario para evaluar estas partes, indicando el símbolo o flujo concreto y la evidencia que falta. No exijas el PR completo ni los módulos de producción para revisar cambios independientes en tests. Verifica los tipos en sus productores y consumidores antes de afirmar una incompatibilidad; no supongas que un campo es un array por su nombre. La base inmediata de esta PR es la referencia para evaluar el cambio. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. No publiques como hallazgo una observación que no tenga impacto funcional o que no requiera corrección. Si la evidencia solo permite una hipótesis, describe la limitación concreta en limitations; no afirmes que un símbolo no existe por no verlo en un extracto. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Los hunks históricos de los hilos solo sirven para resolver esos hallazgos; el patch principal es baseSHA...headSHA de esta PR, incluso dentro de un stack. CI, build y el reviewer tienen comportamiento funcional aunque no cambien lógica de negocio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Una resolución con status maintain obliga a incluir en findings el hallazgo correspondiente con el mismo threadId, path, line, side, severity, issue_key, cause, impact y fix. La resolución por sí sola no es evidencia. Un hallazgo anterior tampoco prueba que el problema exista: verifica su afirmación y su impacto contra las funciones y condiciones actuales, incluidas las llamadas que ya cumplan esa responsabilidad. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones y evidencia con threadId para mantener ese mismo hallazgo; nunca hallazgos nuevos ni defectos ajenos al diff vigente.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
               },
               {
                 role: "user",

@@ -253,29 +253,43 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       [...new Set([...imports(p, sources.get(p)), ...imports(p, baseSources.get(p))])],
     ]),
   );
-  const declarations = (text, budget, workflow) => {
-    const lines = (text ?? "").split("\n"),
+  const declarations = (text, budget, workflow, patch, side) => {
+    if (!text) return "";
+    if (text.length <= budget) return text;
+    if (workflow) return clip(text, budget);
+    const lines = text.split("\n"),
       selected = new Set();
-    lines.forEach((line, i) => {
-      if (workflow) {
-        if (/\brequire\b/.test(line))
-          for (let n = Math.max(0, i - 3); n < Math.min(lines.length, i + 5); n++) selected.add(n);
-        return;
+    // Signatures and imports precede body excerpts, so a late function's defaults
+    // cannot disappear behind earlier declarations or a large prompt literal.
+    const headers = [
+      ...text.matchAll(/^(?:export )?(?:async )?function \w+\([\s\S]*?\)\s*\{/gm),
+      ...text.matchAll(
+        /^(?:const|import) [\s\S]*?(?:require\(["'][^"']+["']\)|from ["'][^"']+["']);/gm,
+      ),
+    ]
+      .map((match) => match[0])
+      .filter((header) => header.length <= 1200);
+    if (patch) {
+      for (const hunk of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
+        const start = Number(hunk[side === "base" ? 1 : 3]) - 1;
+        const count = Number(hunk[side === "base" ? 2 : 4] ?? 1);
+        for (let n = Math.max(0, start - 15); n < Math.min(lines.length, start + count + 15); n++)
+          if (lines[n].length <= 1200) selected.add(n);
       }
-      if (/^const [A-Z_]+\s*=\s*["'\d]/.test(line) && line.length < 300) selected.add(i);
-      if (/\b(?:export|function|class|interface|type)\b/.test(line))
-        for (let n = i; n < Math.min(lines.length, i + 30); n++) selected.add(n);
-    });
-    if (!selected.size)
+    } else {
       lines.forEach((line, i) => {
-        if (/\b(?:import|require)\b/.test(line))
-          for (let n = i; n < Math.min(lines.length, i + 30); n++) selected.add(n);
+        if (/\b(?:export|function|class|interface|type)\b/.test(line))
+          for (let n = i; n < Math.min(lines.length, i + 30); n++)
+            if (lines[n].length <= 1200) selected.add(n);
       });
+    }
     return clip(
-      [...selected]
-        .sort((a, b) => a - b)
-        .map((i) => lines[i])
-        .join("\n"),
+      [
+        "// Declaraciones e imports del módulo. Los cuerpos siguientes son extractos.",
+        ...new Set(headers),
+        "// Extractos del código relacionado con el cambio.",
+        ...[...selected].sort((a, b) => a - b).map((i) => `${i + 1}: ${lines[i]}`),
+      ].join("\n"),
       budget,
     );
   };
@@ -335,28 +349,49 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
     const related = [...dependencies]
       .filter((p) => p !== file.filename)
       .sort((a, b) => {
-        const priority = (p) => Number(!direct.has(p)) * 2 + Number(/\.(?:test|spec)\./.test(p));
+        const priority = (p) =>
+          (graph.get(file.filename)?.includes(p) ? 0 : direct.has(p) ? 2 : 4) +
+          Number(/\.(?:test|spec)\./.test(p));
         return priority(a) - priority(b) || a.localeCompare(b);
       });
     const workflow = file.filename.startsWith(".github/workflows/");
     const invoked = new Set(graph.get(file.filename) ?? []);
-    file.context = [file.filename, ...related].slice(0, 8).map((p) => ({
-      path: p,
-      base: declarations(
-        read(mergeBase, p),
-        p === file.filename ? 900 : 1400,
+    file.context = [file.filename, ...related].slice(0, 8).map((p) => {
+      const original = read(mergeBase, p),
+        current = sources.get(p);
+      const own = p === file.filename;
+      const budget = p.startsWith(".github/workflows/")
+        ? own
+          ? 8000
+          : 1600
+        : own
+          ? 4000
+          : invoked.has(p)
+            ? 2000
+            : direct.has(p)
+              ? 800
+              : 600;
+      const ownPatch = p === file.filename ? file.patch : undefined;
+      const baseText = declarations(
+        original,
+        own ? 1800 : 600,
         p.startsWith(".github/workflows/"),
-      ),
-      head:
-        workflow && invoked.has(p) && (sources.get(p)?.length ?? Infinity) <= 24000
-          ? sources.get(p)
-          : declarations(
-              sources.get(p),
-              p === file.filename ? 900 : 1400,
-              p.startsWith(".github/workflows/"),
-            ),
-    }));
-    file.context = JSON.parse(clipContext(file.context, workflow ? 32000 : 6000));
+        ownPatch,
+        "base",
+      );
+      const headText =
+        workflow && invoked.has(p) && (current?.length ?? Infinity) <= 24000
+          ? current
+          : declarations(current, budget, p.startsWith(".github/workflows/"), ownPatch, "head");
+      return {
+        path: p,
+        base: baseText,
+        head: headText,
+        baseComplete: original == null || baseText === original,
+        headComplete: current == null || headText === current,
+      };
+    });
+    file.context = JSON.parse(clipContext(file.context, workflow ? 32000 : 12000));
     file.followups = threads.filter(
       (thread) => thread.path === file.filename || thread.path === file.previous_filename,
     );
@@ -422,11 +457,23 @@ function clipContext(items, budget) {
   const result = items.map((item) => ({ ...item }));
   // Share the excerpt budget instead of dropping later contract producers entirely.
   while (JSON.stringify(result).length > budget) {
-    const largest = result
+    const fields = result
       .flatMap((item) => ["base", "head"].map((key) => ({ item, key })))
-      .sort((a, b) => b.item[b.key].length - a.item[a.key].length)[0];
+      .filter(({ item, key }) => item[key].length);
+    // Prefer current contracts over historical excerpts. Preserve complete small
+    // modules and complete invoked scripts while partial evidence can be reduced.
+    const candidates = fields.filter(({ item, key }) =>
+      key === "base" ? item[key].length > 400 : !item.headComplete && item[key].length > 2000,
+    );
+    const partial = fields.filter(({ item, key }) => key === "base" || !item.headComplete);
+    const largest = (candidates.length ? candidates : partial.length ? partial : fields).sort(
+      (a, b) =>
+        Number(b.key === "base") - Number(a.key === "base") ||
+        b.item[b.key].length - a.item[a.key].length,
+    )[0];
     if (!largest?.item[largest.key].length) break;
     largest.item[largest.key] = largest.item[largest.key].slice(0, -100);
+    largest.item[`${largest.key}Complete`] = false;
   }
   return JSON.stringify(result);
 }

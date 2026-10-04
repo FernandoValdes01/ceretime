@@ -1301,3 +1301,89 @@ test("base change after reading inline comments prevents posting stale findings"
     f.clean();
   }
 });
+
+test("review context includes the complete direct eligibility contract even with many consumers", () => {
+  const source = readFileSync(join(import.meta.dir, "ai-review-target.cjs"), "utf8");
+  const consumers = Object.fromEntries(
+    Array.from({ length: 7 }, (_, index) => [
+      `.github/a-consumer-${index}.cjs`,
+      'const { run } = require("./entry.cjs");\nfunction consume() { return run(); }\n',
+    ]),
+  );
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    ".github/entry.cjs":
+      'const { currentReview } = require("./ai-review-target.cjs");\nfunction run(pr, target, repo) { return currentReview(pr, target, repo); }\n',
+    ".github/ai-review-target.cjs": source,
+    ...consumers,
+  });
+  try {
+    const file: any = { filename: ".github/entry.cjs", status: "modified" };
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    expect(
+      file.context.find((item: any) => item.path === ".github/ai-review-target.cjs")?.head,
+    ).toBe(source);
+  } finally {
+    f.clean();
+  }
+});
+
+test("review context preserves distant function defaults and the imports behind changed hunks", () => {
+  const source = readFileSync(join(import.meta.dir, "ai-review-chunks.cjs"), "utf8");
+  const f = fixture({ ".github/large.cjs": source });
+  try {
+    const file: any = {
+      filename: ".github/large.cjs",
+      status: "modified",
+      patch: "@@ -631 +631 @@\n-old();\n+isCurrent();",
+    };
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    const own = file.context.find((item: any) => item.path === file.filename);
+    expect(own.head).toContain("isCurrent = async () => true");
+    expect(own.head).toContain('hash, reviewedBase } = require("./ai-review-context.cjs")');
+  } finally {
+    f.clean();
+  }
+});
+
+test("repeated publication neither replaces a legacy anchor base nor rewrites identical findings", async () => {
+  const f = fixture();
+  try {
+    await f.prepare();
+    const report = await f.run(() => ({
+      findings: [
+        {
+          path: "file.ts",
+          line: 1,
+          side: "RIGHT",
+          severity: "minor",
+          issue_key: "check",
+          cause: "Falta validación.",
+          impact: "Admite datos inválidos.",
+          fix: "Validar.",
+        },
+      ],
+      resolutions: [],
+    }));
+    await publishReview(f);
+    f.comments[0].body = f.comments[0].body.replace(
+      /\n\n<!-- ceretime-r2d2-base:[a-f0-9]{40} -->/,
+      "",
+    );
+    let updates = 0;
+    f.github.rest.pulls.updateReviewComment = async () => {
+      updates++;
+    };
+    await publishFindings({
+      github: f.github,
+      args: { owner: "test", repo: "repo", pull_number: 1 },
+      sha: f.pr.head.sha,
+      botLogin: BOT,
+      report: { ...report, mergeBase: "b".repeat(40) },
+    });
+    expect(updates).toBe(0);
+    expect(f.comments[0].body).not.toContain("ceretime-r2d2-base:");
+  } finally {
+    f.clean();
+  }
+});
