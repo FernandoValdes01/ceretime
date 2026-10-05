@@ -72,8 +72,26 @@ export type {
   PractitionerAssignment,
 } from "./accompaniment/practitioner_assignment";
 
-// Errores públicos y estados de respuesta.
-export type { ApiResult, PublicApiError } from "./errors/api_error";
+// Errores públicos y estados de respuesta (TI2-8, TI2-88).
+export {
+  API_ERROR_CODE_VALUES,
+  API_ERROR_MESSAGES,
+  CONFLICT_ERROR_CODE,
+  CONFLICT_ERROR_MESSAGE,
+  NO_AVAILABILITY_ERROR_CODE,
+  NO_AVAILABILITY_ERROR_MESSAGE,
+  UNAUTHORIZED_ERROR_CODE,
+  UNAUTHORIZED_ERROR_MESSAGE,
+  conflictError,
+  errResult,
+  isApiErrorCode,
+  isErrorResult,
+  isOkResult,
+  noAvailabilityError,
+  okResult,
+  unauthorizedError,
+} from "./errors/api_error";
+export type { ApiErrorCode, ApiResult, PublicApiError } from "./errors/api_error";
 
 // Disponibilidad: entradas y salidas mínimas con identificadores genéricos (TI2-87).
 export {

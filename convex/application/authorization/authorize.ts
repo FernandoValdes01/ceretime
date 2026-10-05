@@ -7,18 +7,43 @@ import {
   type InstitutionalStatus,
   type Role,
 } from "../../domain/authorization/permissions";
+import {
+  UNAUTHORIZED_ERROR_CODE,
+  UNAUTHORIZED_ERROR_MESSAGE,
+  unauthorizedError,
+  type PublicApiError,
+} from "../../domain/errors/api_error";
 
 /**
- * Caso de uso de autorización por alcance (S2).
+ * Caso de uso de autorización por alcance (S2, TI2-88).
  *
  * Capa de Aplicación: construye el contexto desde documentos ya recuperados
  * en Presentación y delega la decisión en Dominio. No acepta identificadores
  * del cliente como prueba: `callerUserId` siempre sale del perfil vinculado a
  * `ctx.auth.getUserIdentity().tokenIdentifier` en el servidor.
+ *
+ * Módulo puro: trabaja con tipos y políticas sin importar Convex. La
+ * autorización contextual queda acá; la traducción al borde Convex vive en
+ * Presentación para que disponibilidad, espacios y atención no dependan de
+ * autorización para adaptar sus respuestas.
  */
 
 /** Mensaje genérico único para cualquier denegación, sin exponer el motivo. */
-export const AUTHORIZATION_DENIED_MESSAGE = "No autorizado";
+export const AUTHORIZATION_DENIED_MESSAGE = UNAUTHORIZED_ERROR_MESSAGE;
+
+/** Código estable de acceso denegado del contrato público común (TI2-88). */
+export const AUTHORIZATION_DENIED_CODE = UNAUTHORIZED_ERROR_CODE;
+
+/**
+ * Error público de acceso denegado, sin motivo ni existencia del recurso.
+ *
+ * Reutiliza el contrato común del dominio sin una segunda fábrica: es el
+ * mismo `{code: "unauthorized", message: "No autorizado"}` de
+ * `unauthorizedError()`.
+ */
+export function deniedPublicError(): PublicApiError {
+  return unauthorizedError();
+}
 
 export type AuthorizableProfile = {
   readonly _id: string;
