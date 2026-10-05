@@ -56,7 +56,7 @@ async function runDemo() {
     body: "Prueba sin efectos externos.",
     state: "open",
     draft: false,
-    base: { ref: "main" },
+    base: { ref: "main", sha: "b".repeat(40) },
     head: { sha, repo: { full_name: "test/simulation" } },
   };
   const github = {
