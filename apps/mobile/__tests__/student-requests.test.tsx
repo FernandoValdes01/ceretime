@@ -135,7 +135,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
 
     expect(await screen.findByText(/SOL-DEMO-006/)).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("button", { name: /^Solicitudes(?:, tab.*)?$/ }));
+    fireEvent.press(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 3" }));
     await waitFor(() => expect(navigation.getPathname()).toBe("/estudiante/solicitudes"));
 
     const createdRequest = await screen.findByRole("button", {

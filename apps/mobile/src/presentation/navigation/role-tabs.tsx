@@ -1,4 +1,4 @@
-import { Text, useWindowDimensions, type ColorValue } from "react-native";
+import { Platform, Text, useWindowDimensions, type ColorValue } from "react-native";
 
 import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -38,6 +38,10 @@ export function useRoleTabScreenOptions() {
       paddingBottom: Math.max(bottom, baseRoleTabScreenOptions.tabBarStyle.paddingBottom),
     },
   };
+}
+
+export function roleTabAccessibilityLabel(label: string, position: number, total: number) {
+  return Platform.select({ ios: `${label}, pestaña, ${position} de ${total}` });
 }
 
 export function RoleTabIcon({
