@@ -37,11 +37,17 @@ export {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
   isSprint1RequestState,
+  PERSISTABLE_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
 } from "./request/state";
-export type { FutureRequestState, RequestState, Sprint1RequestState } from "./request/state";
+export type {
+  FutureRequestState,
+  PersistableRequestState,
+  RequestState,
+  Sprint1RequestState,
+} from "./request/state";
 
 // Acompañamiento y sus vistas de lectura.
 export {
@@ -57,6 +63,12 @@ export type {
   AccompanimentView,
   MinimizedAccompaniment,
 } from "./accompaniment/accompaniment";
+
+// Vocabulario persistido de disponibilidad (TI2-83): la única fuente en
+// valores de modalidad para los validadores del borde. El resto de los
+// símbolos de este módulo (versión, clases de excepción, ventanas y
+// proyecciones) los exporta la sección TI2-87 de abajo sin duplicarlos.
+export { MODALITY_VALUES } from "./availability/availability";
 
 // Asignaciones de acceso y sus permisos de lectura.
 export {
