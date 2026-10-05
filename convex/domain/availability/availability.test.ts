@@ -334,6 +334,38 @@ describe("expandAvailabilitySlots (TI2-81)", () => {
     }
   });
 
+  test("la hora inexistente dentro del día no produce cupos", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [{ ...block(), weekday: 0, startMinute: 120, endMinute: 180 }],
+        from: "2026-03-08",
+        to: "2026-03-08",
+        timeZone: "America/New_York",
+      }),
+    );
+
+    expect(slots).toEqual([]);
+  });
+
+  test("el salto horario no duplica instantes", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [{ ...block(), weekday: 0, startMinute: 60, endMinute: 240 }],
+        from: "2026-03-08",
+        to: "2026-03-08",
+        timeZone: "America/New_York",
+      }),
+    );
+
+    expect(slots).toHaveLength(2);
+    expect(slots.map((slot) => localDateTime(slot.startAt, "America/New_York"))).toEqual([
+      "2026-03-08 01:00",
+      "2026-03-08 03:00",
+    ]);
+    const starts = slots.map((slot) => slot.startAt);
+    expect(new Set(starts).size).toBe(starts.length);
+  });
+
   test("el día de la semana no depende de la zona horaria", () => {
     const slots = expandAvailabilitySlots(
       input({

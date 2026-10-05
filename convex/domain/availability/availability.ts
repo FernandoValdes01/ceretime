@@ -338,6 +338,12 @@ function civilDateOfInstant(epochMs: number, timeZone: string): string {
   return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
 }
 
+/** Minuto del día de un instante en la zona horaria dada; difiere del pedido si la hora civil no existe. */
+function civilMinuteOfInstant(epochMs: number, timeZone: string): number {
+  const parts = zonedDateParts(epochMs, timeZone);
+  return (Number(parts["hour"]) % 24) * 60 + Number(parts["minute"]);
+}
+
 /** Ventanas serializadas para distinguir agregados distintos en la misma fecha. */
 function windowsKey(windows: readonly AvailabilityWindow[] | undefined): string {
   return (windows ?? [])
@@ -404,8 +410,11 @@ function expandWindow(
   for (let index = 0; index < count; index += 1) {
     const startMinute = window.startMinute + index * window.slotMinutes;
     const startAt = civilToEpochMs(date, startMinute, timeZone);
-    // Las horas civiles inexistentes (cambio de hora) no producen cupo: evitan devolver instantes fuera del día pedido.
-    if (civilDateOfInstant(startAt, timeZone) !== date) {
+    // Las horas civiles inexistentes (cambio de hora) no producen cupo: la ida y vuelta no coincide con lo pedido.
+    if (
+      civilDateOfInstant(startAt, timeZone) !== date ||
+      civilMinuteOfInstant(startAt, timeZone) !== startMinute
+    ) {
       continue;
     }
     const baseId = `${professionalId}:${date}:${startAt}`;
