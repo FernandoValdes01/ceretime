@@ -5,7 +5,7 @@
  *
  * Reutiliza `ModalityPreference` de la solicitud para no duplicar su representación; la duración, la recurrencia efectiva y la expansión a cupos pertenecen a TI2-81, los cruces a TI2-84 y la compatibilidad de modalidad y espacio a TI2-82. La autorización contextual queda en Aplicación, la DB y los servicios externos en Infraestructura y las entradas públicas delgadas en Presentación.
  *
- * Las reglas de TI2-81 operan sobre estos mismos contratos: no existe otra representación de bloques, ventanas, excepciones ni cupos. La expansión exige el profesional dueño de los bloques, respeta la prioridad de las excepciones y devuelve cupos con identidad determinista (`profesional:fecha:inicio`, con sufijo por orden de aparición ante inicios repetidos por solape); la identidad es estable entre llamadas y la persistencia puede reemplazarla por identificadores de fila (TI2-83). Disponibilidad no equivale a ocupación: los cupos son candidatos y reservar pertenece a TI2-84/TI2-96.
+ * Las reglas de TI2-81 operan sobre estos mismos contratos: no existe otra representación de bloques, ventanas, excepciones ni cupos. La expansión exige el profesional dueño de los bloques y respeta la prioridad de las excepciones: la cancelación de un día elimina el día completo, la cancelación con `blockId` descuenta solo ese bloque y conserva los demás, y el agregado convive con ambas. Las ventanas se procesan en orden estable para que la identidad de cada cupo no dependa del orden de entrada. La expansión devuelve cupos con identidad determinista (`profesional:fecha:inicio`, con sufijo por orden de aparición ante inicios repetidos); la identidad es estable entre llamadas y la persistencia puede reemplazarla por identificadores de fila (TI2-83). Disponibilidad no equivale a ocupación: los cupos son candidatos y reservar pertenece a TI2-84/TI2-96.
  */
 
 import type { ModalityPreference } from "../request/request";
@@ -58,6 +58,10 @@ export interface AvailabilityException {
   /** Fecha civil en formato `YYYY-MM-DD`. */
   readonly date: string;
   readonly kind: AvailabilityExceptionKind;
+  /**
+   * Bloque afectado cuando `kind` es `cancelled`: cancela solo sus cupos y conserva los demás bloques del día. Ausente para cancelar el día completo y para `added`, que trae su propia ventana.
+   */
+  readonly blockId?: string;
   /** Ventanas del día cuando `kind` es `added`; ausente en `cancelled`. */
   readonly windows?: readonly AvailabilityWindow[];
   readonly version: AvailabilityContractVersion;
@@ -220,6 +224,9 @@ function assertException(exception: AvailabilityException, index: number): void 
   if (exception.kind === "cancelled" && exception.windows !== undefined) {
     throw new Error(`${where}: la cancelación de un día no trae ventanas.`);
   }
+  if (exception.kind === "added" && exception.blockId !== undefined) {
+    throw new Error(`${where}: el agregado trae su propia ventana, no un bloque.`);
+  }
   if (exception.kind === "added") {
     if (exception.windows === undefined || exception.windows.length === 0) {
       throw new Error(`${where}: el agregado de un día requiere al menos una ventana.`);
@@ -265,18 +272,23 @@ function formatterFor(timeZone: string): Intl.DateTimeFormat {
   return created;
 }
 
+/** Partes de fecha y hora de un instante en la zona horaria dada. */
+function zonedDateParts(epochMs: number, timeZone: string): Record<string, string> {
+  return formatterFor(timeZone)
+    .formatToParts(new Date(epochMs))
+    .reduce<Record<string, string>>((accumulator, part) => {
+      accumulator[part.type] = part.value;
+      return accumulator;
+    }, {});
+}
+
 /**
  * Diferencia entre la hora local y UTC, en milésimas de segundo, para la zona horaria en un instante dado.
  *
  * Implementación propia sobre `Intl.DateTimeFormat` para no depender de bibliotecas externas: el dominio sigue siendo puro y la aritmética de instantes queda probada con fechas fijas de invierno y verano.
  */
 function getTimeZoneOffsetMs(timeZone: string, utcMs: number): number {
-  const parts = formatterFor(timeZone)
-    .formatToParts(new Date(utcMs))
-    .reduce<Record<string, string>>((accumulator, part) => {
-      accumulator[part.type] = part.value;
-      return accumulator;
-    }, {});
+  const parts = zonedDateParts(utcMs, timeZone);
   const asUtc = Date.UTC(
     Number(parts["year"]),
     Number(parts["month"]) - 1,
@@ -320,6 +332,36 @@ function eachCivilDate(from: string, to: string): string[] {
   return dates;
 }
 
+/** Fecha civil `YYYY-MM-DD` de un instante en la zona horaria dada. */
+function civilDateOfInstant(epochMs: number, timeZone: string): string {
+  const parts = zonedDateParts(epochMs, timeZone);
+  return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
+}
+
+/**
+ * Orden estable de ventanas para que la identidad de cada cupo no dependa del orden de entrada.
+ */
+function compareWindows(a: AvailabilityWindow, b: AvailabilityWindow): number {
+  if (a.startMinute !== b.startMinute) {
+    return a.startMinute - b.startMinute;
+  }
+  if (a.endMinute !== b.endMinute) {
+    return a.endMinute - b.endMinute;
+  }
+  if (a.slotMinutes !== b.slotMinutes) {
+    return a.slotMinutes - b.slotMinutes;
+  }
+  if (a.modality !== b.modality) {
+    return a.modality < b.modality ? -1 : 1;
+  }
+  const aSpace = a.spaceId ?? "";
+  const bSpace = b.spaceId ?? "";
+  if (aSpace !== bSpace) {
+    return aSpace < bSpace ? -1 : 1;
+  }
+  return 0;
+}
+
 function expandWindow(
   professionalId: string,
   date: string,
@@ -333,6 +375,10 @@ function expandWindow(
   for (let index = 0; index < count; index += 1) {
     const startMinute = window.startMinute + index * window.slotMinutes;
     const startAt = civilToEpochMs(date, startMinute, timeZone);
+    // Las horas civiles inexistentes (cambio de hora) no producen cupo: evitan devolver instantes fuera del día pedido.
+    if (civilDateOfInstant(startAt, timeZone) !== date) {
+      continue;
+    }
     const baseId = `${professionalId}:${date}:${startAt}`;
     const occurrence = takenIds.get(baseId) ?? 0;
     takenIds.set(baseId, occurrence + 1);
@@ -354,9 +400,9 @@ function expandWindow(
 /**
  * Expande bloques y excepciones a cupos concretos dentro del rango pedido.
  *
- * Reglas: cada bloque debe ser del mismo profesional de la expansión; la recurrencia aporta las ventanas de cada fecha según su día de semana; una excepción `cancelled` elimina el día completo y una `added` suma sus ventanas a las del día. Los cupos salen alineados al inicio de cada ventana y ordenados por inicio, y el fin de cada cupo deriva del inicio más la duración para durar exacto aunque la hora civil no exista o se repita en un cambio de hora; el resto menor a la duración se descarta sin alterar la ventana. Los solapes entre bloques se preservan tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
+ * Reglas: cada bloque debe ser del mismo profesional de la expansión; la recurrencia aporta las ventanas de cada fecha según su día de semana; una excepción `cancelled` sin bloque elimina el día completo, con bloque descuenta solo ese bloque, y una `added` suma sus ventanas a las del día. Los cupos salen alineados al inicio de cada ventana y ordenados por inicio, y el fin de cada cupo deriva del inicio más la duración para durar exacto aunque la hora civil no exista o se repita en un cambio de hora; las horas civiles inexistentes no producen cupo para no devolver instantes fuera del día pedido; el resto menor a la duración se descarta sin alterar la ventana. Los solapes entre bloques se preservan tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
  *
- * Rechaza datos no finitos, fin anterior al inicio, ventanas fuera del día, duraciones no positivas o que no caben, modalidades o espacios inconsistentes, bloques de otro profesional, fechas inválidas, rango invertido o mayor a `MAX_EXPANSION_DAYS`, zonas horarias desconocidas y excepciones duplicadas en la misma fecha.
+ * Rechaza datos no finitos, fin anterior al inicio, ventanas fuera del día, duraciones no positivas o que no caben, modalidades o espacios inconsistentes, bloques de otro profesional, agregado con bloque, fechas inválidas, rango invertido o mayor a `MAX_EXPANSION_DAYS`, zonas horarias desconocidas y excepciones repetidas en la misma fecha.
  */
 export function expandAvailabilitySlots(input: ExpandAvailabilityInput): AvailabilitySlot[] {
   if (input.professionalId.trim() === "") {
@@ -388,27 +434,41 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
   }
   const dates = eachCivilDate(input.from, input.to);
 
-  const exceptionsByDate = new Map<string, AvailabilityException>();
+  const exceptionsByDate = new Map<string, AvailabilityException[]>();
   for (const exception of input.exceptions ?? []) {
-    if (exceptionsByDate.has(exception.date)) {
+    const list = exceptionsByDate.get(exception.date) ?? [];
+    const key = `${exception.kind}|${exception.blockId ?? ""}`;
+    if (list.some((item) => `${item.kind}|${item.blockId ?? ""}` === key)) {
       throw new Error(`La fecha ${exception.date} trae más de una excepción.`);
     }
-    exceptionsByDate.set(exception.date, exception);
+    list.push(exception);
+    exceptionsByDate.set(exception.date, list);
   }
 
   const slots: AvailabilitySlot[] = [];
   const takenIds = new Map<string, number>();
   for (const date of dates) {
-    const exception = exceptionsByDate.get(date);
-    if (exception?.kind === "cancelled") {
+    const dayExceptions = exceptionsByDate.get(date) ?? [];
+    if (dayExceptions.some((e) => e.kind === "cancelled" && e.blockId === undefined)) {
       continue;
     }
+    const cancelledBlocks = new Set(
+      dayExceptions.filter((e) => e.kind === "cancelled").map((e) => e.blockId as string),
+    );
     const weekday = civilWeekday(date);
-    const windows: AvailabilityWindow[] = input.blocks.filter((block) => block.weekday === weekday);
-    if (exception?.kind === "added") {
-      windows.push(...(exception.windows ?? []));
+    const dayWindows: AvailabilityWindow[] = [];
+    for (const block of input.blocks) {
+      if (block.weekday === weekday && !cancelledBlocks.has(block.id)) {
+        dayWindows.push(block);
+      }
     }
-    for (const window of windows) {
+    for (const exception of dayExceptions) {
+      if (exception.kind === "added") {
+        dayWindows.push(...(exception.windows ?? []));
+      }
+    }
+    const ordered = [...dayWindows].sort(compareWindows);
+    for (const window of ordered) {
       slots.push(...expandWindow(input.professionalId, date, window, input.timeZone, takenIds));
     }
   }

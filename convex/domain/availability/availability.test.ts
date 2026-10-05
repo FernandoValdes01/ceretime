@@ -126,6 +126,25 @@ function slotId(date: string, startAt: number): string {
   return `${PROFESSIONAL_ID}:${date}:${startAt}`;
 }
 
+/** Fecha y hora civil `YYYY-MM-DD HH:MM` de un instante en la zona horaria dada. */
+function localDateTime(epoch: number, timeZone = TIME_ZONE): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .formatToParts(new Date(epoch))
+    .reduce<Record<string, string>>((accumulator, part) => {
+      accumulator[part.type] = part.value;
+      return accumulator;
+    }, {});
+  return `${parts["year"]}-${parts["month"]}-${parts["day"]} ${parts["hour"]}:${parts["minute"]}`;
+}
+
 function block(overrides: Partial<AvailabilityBlock> = {}): AvailabilityBlock {
   return {
     id: "bloque-ficticio-1",
@@ -278,7 +297,7 @@ describe("expandAvailabilitySlots (TI2-81)", () => {
     ).toEqual([]);
   });
 
-  test("los cupos duran exacto aunque la madrugada no exista por el cambio de hora", () => {
+  test("la madrugada inexistente no produce cupos fuera del día", () => {
     const slots = expandAvailabilitySlots(
       input({
         blocks: [{ ...block(), weekday: 0, startMinute: 0, endMinute: 180 }],
@@ -287,7 +306,11 @@ describe("expandAvailabilitySlots (TI2-81)", () => {
       }),
     );
 
-    expect(slots).toHaveLength(3);
+    expect(slots).toHaveLength(2);
+    expect(localDateTime(slots[0]?.startAt ?? 0)).toBe("2026-09-06 01:00");
+    expect(localDateTime(slots[0]?.endAt ?? 0)).toBe("2026-09-06 02:00");
+    expect(localDateTime(slots[1]?.startAt ?? 0)).toBe("2026-09-06 02:00");
+    expect(localDateTime(slots[1]?.endAt ?? 0)).toBe("2026-09-06 03:00");
     for (const slot of slots) {
       expect(slot.endAt - slot.startAt).toBe(3_600_000);
     }
@@ -303,6 +326,9 @@ describe("expandAvailabilitySlots (TI2-81)", () => {
     );
 
     expect(slots).toHaveLength(2);
+    expect(localDateTime(slots[0]?.startAt ?? 0)).toBe("2026-04-04 22:00");
+    expect(localDateTime(slots[0]?.endAt ?? 0)).toBe("2026-04-04 23:00");
+    expect(localDateTime(slots[1]?.startAt ?? 0)).toBe("2026-04-04 23:00");
     for (const slot of slots) {
       expect(slot.endAt - slot.startAt).toBe(3_600_000);
     }
@@ -375,6 +401,154 @@ describe("expandAvailabilitySlots (TI2-81)", () => {
     expect(slots[1]?.startAt).toBe(slots[2]?.startAt);
     expect(slots[1]?.endAt).toBeGreaterThan(slots[2]?.startAt ?? 0);
     expect(slots[1]?.id).not.toBe(slots[2]?.id);
+  });
+
+  test("cancelar un bloque conserva los cupos de los demás", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [
+          { ...block(), id: "bloque-a", weekday: 1, startMinute: 540, endMinute: 600 },
+          { ...block(), id: "bloque-b", weekday: 1, startMinute: 600, endMinute: 660 },
+        ],
+        from: WINTER_MONDAY,
+        to: WINTER_MONDAY,
+        exceptions: [
+          { date: WINTER_MONDAY, kind: "cancelled", blockId: "bloque-a", version: "v1" },
+        ],
+      }),
+    );
+
+    expect(slots).toHaveLength(1);
+    expect(localDateTime(slots[0]?.startAt ?? 0)).toBe("2026-07-06 10:00");
+    expect(slots[0]?.modality).toBe("inPerson");
+  });
+
+  test("la cancelación de un bloque convive con un agregado del mismo día", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [
+          { ...block(), id: "bloque-a", weekday: 1, startMinute: 540, endMinute: 600 },
+          { ...block(), id: "bloque-b", weekday: 1, startMinute: 600, endMinute: 660 },
+        ],
+        from: WINTER_MONDAY,
+        to: WINTER_MONDAY,
+        exceptions: [
+          { date: WINTER_MONDAY, kind: "cancelled", blockId: "bloque-a", version: "v1" },
+          {
+            date: WINTER_MONDAY,
+            kind: "added",
+            windows: [{ startMinute: 660, endMinute: 720, slotMinutes: 60, modality: "online" }],
+            version: "v1",
+          },
+        ],
+      }),
+    );
+
+    expect(slots).toHaveLength(2);
+    expect(slots.map((slot) => localDateTime(slot.startAt))).toEqual([
+      "2026-07-06 10:00",
+      "2026-07-06 11:00",
+    ]);
+    expect(slots.map((slot) => slot.modality).sort()).toEqual(["inPerson", "online"]);
+  });
+
+  test("la cancelación del día deja sin efecto el agregado del mismo día", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [],
+        from: WINTER_MONDAY,
+        to: WINTER_MONDAY,
+        exceptions: [
+          { date: WINTER_MONDAY, kind: "cancelled", version: "v1" },
+          {
+            date: WINTER_MONDAY,
+            kind: "added",
+            windows: [{ startMinute: 540, endMinute: 600, slotMinutes: 60, modality: "online" }],
+            version: "v1",
+          },
+        ],
+      }),
+    );
+
+    expect(slots).toEqual([]);
+  });
+
+  test("la cancelación de un bloque inexistente no descuenta nada", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        from: WINTER_WEDNESDAY,
+        to: WINTER_WEDNESDAY,
+        exceptions: [
+          { date: WINTER_WEDNESDAY, kind: "cancelled", blockId: "bloque-fantasma", version: "v1" },
+        ],
+      }),
+    );
+
+    expect(slots).toHaveLength(2);
+  });
+
+  test("reordenar los bloques conserva el ID de cada cupo", () => {
+    const first = expandAvailabilitySlots(
+      input({
+        blocks: [
+          { ...block(), weekday: 1, startMinute: 540, endMinute: 600, slotMinutes: 60 },
+          {
+            ...block(),
+            id: "bloque-ficticio-2",
+            weekday: 1,
+            startMinute: 540,
+            endMinute: 600,
+            slotMinutes: 60,
+            modality: "online",
+            spaceId: undefined,
+          },
+        ],
+        from: WINTER_MONDAY,
+        to: WINTER_MONDAY,
+      }),
+    );
+    const second = expandAvailabilitySlots(
+      input({
+        blocks: [
+          {
+            ...block(),
+            id: "bloque-ficticio-2",
+            weekday: 1,
+            startMinute: 540,
+            endMinute: 600,
+            slotMinutes: 60,
+            modality: "online",
+            spaceId: undefined,
+          },
+          { ...block(), weekday: 1, startMinute: 540, endMinute: 600, slotMinutes: 60 },
+        ],
+        from: WINTER_MONDAY,
+        to: WINTER_MONDAY,
+      }),
+    );
+
+    expect(second).toEqual(first);
+    expect(first[0]).toMatchObject({ modality: "inPerson", spaceId: "sala-1" });
+    expect(first[1]).toMatchObject({ modality: "online" });
+    expect(first[0]?.id).not.toBe(first[1]?.id);
+  });
+
+  test("el agregado con bloque se rechaza", () => {
+    expect(() =>
+      expandAvailabilitySlots(
+        input({
+          exceptions: [
+            {
+              date: WINTER_WEDNESDAY,
+              kind: "added",
+              blockId: "bloque-ficticio-1",
+              windows: [{ startMinute: 540, endMinute: 600, slotMinutes: 60, modality: "online" }],
+              version: "v1",
+            },
+          ],
+        }),
+      ),
+    ).toThrow("propia ventana");
   });
 
   test("el agregado que solapa un bloque suma sin reemplazar", () => {
