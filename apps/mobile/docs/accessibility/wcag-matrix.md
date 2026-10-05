@@ -2,6 +2,8 @@
 
 Issue: [TI4-46](https://linear.app/ceretime/issue/TI4-46/crear-matriz-inicial-wcag-22-aaa-por-pantalla-criterio-aplicable). Inventario del 4 de octubre de 2026 sobre `main` `297ae38781f2a518bda1b772c9325ab328bd4427`, identificado como B0. TI4-45 figura Done en Linear. La base de planificación `a025299` es anterior a las auditorías TI4-47/TI4-48 y a la corrección TI4-53 ya integradas en B0.
 
+La rama de TI4-46 se actualizó con `main` `6734a7955d058f853546c5ea1bd5636df2411e9a` el 5 de octubre de 2026. Esa base incorpora las correcciones de accesibilidad de la [PR #84](https://github.com/FernandoValdes01/ceretime/pull/84), también de TI4-53. B0 y los resultados de esta matriz conservan sus versiones originales; actualizar la rama no repite las pruebas ni acredita esos resultados sobre el código nuevo. TI4-64 deberá registrar la versión y evidencia de cada repetición. La PR #83 contiene la matriz y sus capturas; las correcciones de pantallas pertenecen a la PR #84 ya integrada.
+
 Esta es la fuente única por pantalla y criterio. TI4-46 define la estructura y enlaza evidencia disponible; no ejecuta otra auditoría Android. TI4-64, a cargo de Vicente Rivera en S4, extenderá este documento con pruebas propias y las correcciones disponibles hasta S3. Los informes por issue conservan sus resultados y capturas originales.
 
 El alcance es A/AA, conforme a [WCAG 2.2](https://www.w3.org/TR/WCAG22/). La adaptación nativa consulta [WCAG2Mobile](https://www.w3.org/TR/wcag2mobile-22/), que es un borrador, y [WCAG2ICT](https://www.w3.org/TR/wcag2ict-22/). Las asignaciones a rutas son una interpretación de evaluación del equipo. La matriz no afirma conformidad global ni AAA.
