@@ -43,10 +43,10 @@ export function AccessibilityPreferencesProvider({
   const [reload, setReload] = useState(0);
   const [loadedPort, setLoadedPort] = useState<AccessibilityPreferencesPort | null>(null);
   const busy = useRef(true);
-  const lifetime = useRef<{ active: boolean } | null>(null);
+  const lifetime = useRef<{ active: boolean; port: AccessibilityPreferencesPort } | null>(null);
 
   useEffect(() => {
-    const operation = { active: true };
+    const operation = { active: true, port };
     lifetime.current = operation;
     busy.current = true;
     void (async () => {
@@ -76,7 +76,8 @@ export function AccessibilityPreferencesProvider({
 
   async function updatePreferences(patch: Partial<AccessibilityPreferences>): Promise<boolean> {
     const operation = lifetime.current;
-    if (busy.current || loadedPort !== port || !operation?.active) return false;
+    if (busy.current || loadedPort !== port || !operation?.active || operation.port !== port)
+      return false;
     busy.current = true;
     setStatus("saving");
     setError(null);

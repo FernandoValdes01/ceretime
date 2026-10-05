@@ -311,6 +311,38 @@ describe("proveedor único de preferencias", () => {
     expect(screen.queryByText(/información privada/)).not.toBeOnTheScreen();
   });
 
+  test("rechaza un callback del puerto anterior y permite guardar con el vigente", async () => {
+    const oldStorage = memoryStorage();
+    const nextStorage = memoryStorage();
+    const oldPort = createLocalAccessibilityPreferencesAdapter(oldStorage);
+    const nextPort = createLocalAccessibilityPreferencesAdapter(nextStorage);
+    const view = render(
+      <AccessibilityPreferencesProvider port={oldPort}>
+        <Consumer name="uno" />
+      </AccessibilityPreferencesProvider>,
+    );
+    await screen.findByText("uno: ready system");
+    const retainedUpdate = currentState.updatePreferences;
+    view.rerender(
+      <AccessibilityPreferencesProvider port={nextPort}>
+        <Consumer name="uno" />
+      </AccessibilityPreferencesProvider>,
+    );
+    await screen.findByText("uno: ready system");
+    await act(async () => {
+      expect(await retainedUpdate({ textScale: 2 })).toBe(false);
+    });
+    expect(oldStorage.setItem).not.toHaveBeenCalled();
+    expect(nextStorage.setItem).not.toHaveBeenCalled();
+    expect(screen.getByText("uno: ready system")).toBeOnTheScreen();
+    await act(async () => {
+      expect(await currentState.updatePreferences({ textScale: 2 })).toBe(true);
+    });
+    expect(oldStorage.setItem).not.toHaveBeenCalled();
+    expect(nextStorage.setItem).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("uno: ready 2")).toBeOnTheScreen();
+  });
+
   test("ignora hidratación de un puerto anterior y su resolución tras desmontar", async () => {
     const pending = deferred<Awaited<ReturnType<AccessibilityPreferencesPort["read"]>>>();
     const oldPort: AccessibilityPreferencesPort = {
