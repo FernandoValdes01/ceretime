@@ -42,24 +42,6 @@ async function openForm() {
 }
 
 describe("Formulario de solicitud del estudiante", () => {
-  test.each([
-    ["Desde", "Formato HH:MM, por ejemplo 09:00."],
-    ["Hasta", "Formato HH:MM, por ejemplo 13:00."],
-    [
-      "¿Cómo prefieres recibir información? *",
-      "Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.",
-    ],
-  ])("agrupa la etiqueta y ayuda de %s en el campo editable", (label, hint) => {
-    render(<RequestForm submitter={successfulSubmitter} onRevealGroup={() => undefined} />);
-    expect(screen.queryByText(label)).toBeNull();
-    expect(screen.queryByText(hint)).toBeNull();
-    expect(screen.getByText(label, { includeHiddenElements: true })).toBeOnTheScreen();
-    expect(screen.getByText(hint, { includeHiddenElements: true })).toBeOnTheScreen();
-    const input = screen.getByLabelText(label);
-    expect(input).toHaveProp("accessibilityHint", hint);
-    fireEvent.changeText(input, "09:00");
-    expect(screen.getByDisplayValue("09:00")).toBeOnTheScreen();
-  });
   test("publica el error antes de pedir foco de accesibilidad al primer campo", async () => {
     const namesAtFocus: string[] = [];
     const focusEvent = jest

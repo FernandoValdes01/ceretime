@@ -1,4 +1,4 @@
-import { RoleTabIcon, roleTabAccessibilityLabel, Tabs, useRoleTabScreenOptions } from "./role-tabs";
+import { RoleTabIcon, Tabs, useRoleTabScreenOptions } from "./role-tabs";
 
 export default function PractitionerLayout() {
   const screenOptions = useRoleTabScreenOptions();
@@ -9,7 +9,6 @@ export default function PractitionerLayout() {
         name="asignaciones"
         options={{
           title: "Inicio",
-          tabBarAccessibilityLabel: roleTabAccessibilityLabel("Inicio", 1, 2),
           tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="graduationCap" />,
         }}
       />
@@ -17,7 +16,6 @@ export default function PractitionerLayout() {
         name="perfil"
         options={{
           title: "Perfil",
-          tabBarAccessibilityLabel: roleTabAccessibilityLabel("Perfil", 2, 2),
           tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="user" />,
         }}
       />

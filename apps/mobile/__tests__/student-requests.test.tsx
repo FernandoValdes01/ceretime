@@ -129,13 +129,13 @@ describe("Solicitudes del estudiante", () => {
         name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
       }),
     ).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("button", { name: /^Inicio(?:, tab.*)?$/ }));
+    fireEvent.press(screen.getByRole("button", { name: /^Inicio, tab/ }));
     fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
     fillRequiredStudentRequestFields();
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
 
     expect(await screen.findByText(/SOL-DEMO-006/)).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 3" }));
+    fireEvent.press(screen.getByRole("button", { name: /^Solicitudes, tab/ }));
     await waitFor(() => expect(navigation.getPathname()).toBe("/estudiante/solicitudes"));
 
     const createdRequest = await screen.findByRole("button", {

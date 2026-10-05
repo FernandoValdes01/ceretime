@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useMemo } from "react";
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type {
@@ -94,8 +94,6 @@ function EventCard({ event }: { readonly event: ProfessionalAgendaEvent }) {
 }
 
 function Timeline({ events }: { readonly events: readonly ProfessionalAgendaEvent[] }) {
-  const { fontScale } = useWindowDimensions();
-  const timeColumnWidth = 54 * Math.max(1, fontScale);
   const orderedEvents = useMemo(
     () => [...events].sort((left, right) => left.startTime.localeCompare(right.startTime)),
     [events],
@@ -103,11 +101,11 @@ function Timeline({ events }: { readonly events: readonly ProfessionalAgendaEven
 
   return (
     <View style={styles.timeline}>
-      <View pointerEvents="none" style={[styles.timelineLine, { left: 34.5 + timeColumnWidth }]} />
+      <View pointerEvents="none" style={styles.timelineLine} />
       {orderedEvents.map((event, index) => (
         <View key={event.id}>
           <View style={styles.timelineRow}>
-            <View style={[styles.timeColumn, { width: timeColumnWidth }]}>
+            <View style={styles.timeColumn}>
               <StudentText weight="semibold" style={styles.timeText}>
                 {event.startTime}
               </StudentText>
@@ -121,7 +119,7 @@ function Timeline({ events }: { readonly events: readonly ProfessionalAgendaEven
           </View>
           {index === 1 ? (
             <View style={styles.lunchRow}>
-              <View style={[styles.timeColumn, { width: timeColumnWidth }]}>
+              <View style={styles.timeColumn}>
                 <StudentText style={styles.lunchTime}>13:00</StudentText>
               </View>
               <View style={styles.markerColumn} />
@@ -229,9 +227,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7FAF9",
   },
   dayArrow: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-  dayCopy: { flex: 1, alignItems: "center", gap: 2, paddingVertical: 8 },
+  dayCopy: { alignItems: "center", gap: 2 },
   dayTitle: { color: "#182C31", fontSize: 23, lineHeight: 28 },
-  dateLabel: { color: "#42565B", fontSize: 15, lineHeight: 21, textAlign: "center" },
+  dateLabel: { color: "#42565B", fontSize: 15, lineHeight: 21 },
   timeline: { paddingTop: 20, paddingHorizontal: 16, paddingBottom: 14 },
   timelineLine: {
     position: "absolute",
@@ -263,12 +261,12 @@ const styles = StyleSheet.create({
   },
   eventCardPressed: { opacity: 0.78 },
   cardHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  studentName: { flex: 1, color: "#182C31", fontSize: 18, lineHeight: 23 },
+  studentName: { color: "#182C31", fontSize: 18, lineHeight: 23 },
   eventMetaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   eventMeta: { flex: 1, color: "#42565B", fontSize: 15, lineHeight: 21 },
   lunchRow: { minHeight: 59, flexDirection: "row", alignItems: "center" },
-  lunchTime: { color: "#42565B", fontSize: 11, textAlign: "right" },
-  lunchLabel: { color: "#42565B", fontSize: 13, textAlign: "center" },
+  lunchTime: { color: "#7B8A8A", fontSize: 11, textAlign: "right" },
+  lunchLabel: { color: "#8EA19E", fontSize: 13, textAlign: "center" },
   stateCard: {
     marginHorizontal: 16,
     padding: 20,
@@ -286,7 +284,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     justifyContent: "center",
     borderRadius: 10,
-    backgroundColor: "#087D70",
+    backgroundColor: "#078B7B",
   },
   retryText: { color: "#FFFFFF", fontSize: 15 },
 });

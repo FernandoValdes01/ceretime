@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { Pressable, ScrollView, StyleSheet } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppHeader } from "@/presentation/components/app-header";
@@ -16,7 +16,7 @@ export function AdministratorHomeScreen() {
       <StudentFonts>
         <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
           <AppHeader />
-          <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.content}>
             {accessDeniedRole ? (
               <AccessDeniedNotice role={accessDeniedRole} onDismiss={dismissAccessDenied} />
             ) : null}
@@ -38,7 +38,7 @@ export function AdministratorHomeScreen() {
                 Habilitar cuentas
               </StudentText>
             </Pressable>
-          </ScrollView>
+          </View>
         </SafeAreaView>
       </StudentFonts>
     </RoleGuard>
@@ -47,18 +47,16 @@ export function AdministratorHomeScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F7FAF9" },
-  content: { flexGrow: 1, justifyContent: "center", padding: 24, gap: 12 },
+  content: { flex: 1, justifyContent: "center", padding: 24, gap: 12 },
   title: { color: "#182C31", fontSize: 30, lineHeight: 36 },
   description: { color: "#42565B", fontSize: 17, lineHeight: 25 },
   action: {
     minHeight: 52,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
     marginTop: 8,
     borderRadius: 12,
-    backgroundColor: "#087D70",
+    backgroundColor: "#078B7B",
   },
   actionPressed: { backgroundColor: "#056B60" },
   actionText: { color: "#FFFFFF", fontSize: 17, lineHeight: 23 },

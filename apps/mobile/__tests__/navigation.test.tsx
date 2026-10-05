@@ -72,23 +72,6 @@ describe("Navegación principal", () => {
     },
   );
 
-  test.each([
-    ["Estudiante", ["Inicio", "Solicitudes", "Perfil"]],
-    ["Profesional", ["Agenda", "Solicitudes", "Acompañamientos", "Perfil"]],
-    ["Practicante", ["Inicio", "Perfil"]],
-    ["Administrador", ["Inicio", "Usuarios", "Perfil"]],
-  ] as const)("%s anuncia nombre, pestaña y posición en iOS", async (role, labels) => {
-    renderRouter(appDirectory);
-    fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${role}` }));
-    for (const [index, label] of labels.entries()) {
-      expect(
-        await screen.findByRole("button", {
-          name: `${label}, pestaña, ${index + 1} de ${labels.length}`,
-        }),
-      ).toBeOnTheScreen();
-    }
-  });
-
   test("una dirección inexistente ofrece volver al acceso", async () => {
     const navigation = renderRouter(appDirectory, { initialUrl: "/no-existe" });
     expect(await screen.findByRole("header", { name: "Página no encontrada" })).toBeOnTheScreen();

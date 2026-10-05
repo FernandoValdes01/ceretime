@@ -1,4 +1,4 @@
-import { useState, type PropsWithChildren, type Ref } from "react";
+import type { PropsWithChildren, Ref } from "react";
 import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppHeader } from "./app-header";
@@ -47,8 +47,6 @@ export function Action({
   onPress: () => void;
   disabled?: boolean;
 }) {
-  const [focused, setFocused] = useState(false);
-
   return (
     <Pressable
       // Este botón conserva el callback de StyleSheet, sin conversión de clases.
@@ -56,12 +54,9 @@ export function Action({
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
-        focused && styles.focused,
         pressed && styles.pressed,
         disabled && styles.disabled,
       ]}
@@ -98,7 +93,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#246259",
   },
-  focused: { outlineWidth: 3, outlineColor: "#2563EB", outlineOffset: 2 },
   pressed: { backgroundColor: "#17483F" },
   disabled: { opacity: 0.55 },
   buttonLabel: {

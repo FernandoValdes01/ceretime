@@ -3,7 +3,6 @@ import { Tabs } from "expo-router";
 import { mobileDependencies } from "../../../src/composition/mobile-dependencies";
 import {
   RoleTabIcon,
-  roleTabAccessibilityLabel,
   useRoleTabScreenOptions,
 } from "../../../src/presentation/navigation/role-tabs";
 import { RoleGuard } from "../../../src/presentation/navigation/role-guard";
@@ -23,7 +22,6 @@ export default function ProfessionalLayout() {
               name="(agenda)"
               options={{
                 title: "Agenda",
-                tabBarAccessibilityLabel: roleTabAccessibilityLabel("Agenda", 1, 4),
                 tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="calendar" />,
               }}
             />
@@ -31,7 +29,6 @@ export default function ProfessionalLayout() {
               name="estudiantes"
               options={{
                 title: "Solicitudes",
-                tabBarAccessibilityLabel: roleTabAccessibilityLabel("Solicitudes", 2, 4),
                 tabBarIcon: ({ color }) => (
                   <RoleTabIcon color={String(color)} name="clipboardList" />
                 ),
@@ -42,7 +39,6 @@ export default function ProfessionalLayout() {
               name="acompanamientos"
               options={{
                 title: "Acompañamientos",
-                tabBarAccessibilityLabel: roleTabAccessibilityLabel("Acompañamientos", 3, 4),
                 tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="users" />,
               }}
             />
@@ -50,7 +46,6 @@ export default function ProfessionalLayout() {
               name="perfil"
               options={{
                 title: "Perfil",
-                tabBarAccessibilityLabel: roleTabAccessibilityLabel("Perfil", 4, 4),
                 tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="user" />,
               }}
             />
