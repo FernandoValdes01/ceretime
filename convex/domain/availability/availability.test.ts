@@ -452,7 +452,7 @@ describe("expandAvailabilitySlots (TI2-81)", () => {
     expect(slots.map((slot) => slot.modality).sort()).toEqual(["inPerson", "online"]);
   });
 
-  test("la cancelación del día deja sin efecto el agregado del mismo día", () => {
+  test("el agregado convive con la cancelación del día", () => {
     const slots = expandAvailabilitySlots(
       input({
         blocks: [],
@@ -470,7 +470,58 @@ describe("expandAvailabilitySlots (TI2-81)", () => {
       }),
     );
 
-    expect(slots).toEqual([]);
+    expect(slots).toHaveLength(1);
+    expect(slots[0]).toMatchObject({ date: WINTER_MONDAY, startAt: MONDAY_0900 });
+  });
+
+  test("dos agregados distintos del mismo día se suman", () => {
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [],
+        from: WINTER_MONDAY,
+        to: WINTER_MONDAY,
+        exceptions: [
+          {
+            date: WINTER_MONDAY,
+            kind: "added",
+            windows: [{ startMinute: 540, endMinute: 600, slotMinutes: 60, modality: "online" }],
+            version: "v1",
+          },
+          {
+            date: WINTER_MONDAY,
+            kind: "added",
+            windows: [
+              {
+                startMinute: 600,
+                endMinute: 660,
+                slotMinutes: 60,
+                modality: "inPerson",
+                spaceId: "sala-1",
+              },
+            ],
+            version: "v1",
+          },
+        ],
+      }),
+    );
+
+    expect(slots).toHaveLength(2);
+    expect(slots.map((slot) => localDateTime(slot.startAt))).toEqual([
+      "2026-07-06 09:00",
+      "2026-07-06 10:00",
+    ]);
+  });
+
+  test("el agregado repetido se rechaza", () => {
+    const added = {
+      date: WINTER_MONDAY,
+      kind: "added",
+      windows: [{ startMinute: 540, endMinute: 600, slotMinutes: 60, modality: "online" }],
+      version: "v1",
+    } as const;
+    expect(() =>
+      expandAvailabilitySlots(input({ blocks: [], exceptions: [added, { ...added }] })),
+    ).toThrow("más de una excepción");
   });
 
   test("la cancelación de un bloque inexistente no descuenta nada", () => {

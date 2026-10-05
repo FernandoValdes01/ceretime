@@ -5,7 +5,7 @@
  *
  * Reutiliza `ModalityPreference` de la solicitud para no duplicar su representación; la duración, la recurrencia efectiva y la expansión a cupos pertenecen a TI2-81, los cruces a TI2-84 y la compatibilidad de modalidad y espacio a TI2-82. La autorización contextual queda en Aplicación, la DB y los servicios externos en Infraestructura y las entradas públicas delgadas en Presentación.
  *
- * Las reglas de TI2-81 operan sobre estos mismos contratos: no existe otra representación de bloques, ventanas, excepciones ni cupos. La expansión exige el profesional dueño de los bloques y respeta la prioridad de las excepciones: la cancelación de un día elimina el día completo, la cancelación con `blockId` descuenta solo ese bloque y conserva los demás, y el agregado convive con ambas. Las ventanas se procesan en orden estable para que la identidad de cada cupo no dependa del orden de entrada. La expansión devuelve cupos con identidad determinista (`profesional:fecha:inicio`, con sufijo por orden de aparición ante inicios repetidos); la identidad es estable entre llamadas y la persistencia puede reemplazarla por identificadores de fila (TI2-83). Disponibilidad no equivale a ocupación: los cupos son candidatos y reservar pertenece a TI2-84/TI2-96.
+ * Las reglas de TI2-81 operan sobre estos mismos contratos: no existe otra representación de bloques, ventanas, excepciones ni cupos. La expansión exige el profesional dueño de los bloques y respeta la prioridad de las excepciones: la cancelación de un día elimina la recurrencia del día pero conserva los agregados, la cancelación con `blockId` descuenta solo ese bloque y conserva los demás, y el agregado convive con ambas. Las ventanas se procesan en orden estable y los cupos se ordenan por inicio con desempate por identificador, para que la identidad de cada cupo no dependa del orden de entrada. La expansión devuelve cupos con identidad determinista (`profesional:fecha:inicio`, con sufijo por orden de aparición ante inicios repetidos); la identidad es estable entre llamadas y la persistencia puede reemplazarla por identificadores de fila (TI2-83). Disponibilidad no equivale a ocupación: los cupos son candidatos y reservar pertenece a TI2-84/TI2-96.
  */
 
 import type { ModalityPreference } from "../request/request";
@@ -338,6 +338,35 @@ function civilDateOfInstant(epochMs: number, timeZone: string): string {
   return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
 }
 
+/** Ventanas serializadas para distinguir agregados distintos en la misma fecha. */
+function windowsKey(windows: readonly AvailabilityWindow[] | undefined): string {
+  return (windows ?? [])
+    .map(
+      (window) =>
+        `${window.startMinute}-${window.endMinute}-${window.slotMinutes}-${window.modality}-${window.spaceId ?? ""}`,
+    )
+    .join(";");
+}
+
+/** Clave de unicidad de una excepción dentro de su fecha. */
+function exceptionKey(exception: AvailabilityException): string {
+  return `${exception.kind}|${exception.blockId ?? ""}|${windowsKey(exception.windows)}`;
+}
+
+/**
+ * Orden final de cupos: por inicio y, ante inicios repetidos, por identificador.
+ *
+ * El desempate explícito evita depender de la estabilidad del ordenamiento para la identidad determinista.
+ */
+function compareSlots(a: AvailabilitySlot, b: AvailabilitySlot): number {
+  if (a.startAt !== b.startAt) {
+    return a.startAt - b.startAt;
+  }
+  if (a.id !== b.id) {
+    return a.id < b.id ? -1 : 1;
+  }
+  return 0;
+}
 /**
  * Orden estable de ventanas para que la identidad de cada cupo no dependa del orden de entrada.
  */
@@ -400,7 +429,7 @@ function expandWindow(
 /**
  * Expande bloques y excepciones a cupos concretos dentro del rango pedido.
  *
- * Reglas: cada bloque debe ser del mismo profesional de la expansión; la recurrencia aporta las ventanas de cada fecha según su día de semana; una excepción `cancelled` sin bloque elimina el día completo, con bloque descuenta solo ese bloque, y una `added` suma sus ventanas a las del día. Los cupos salen alineados al inicio de cada ventana y ordenados por inicio, y el fin de cada cupo deriva del inicio más la duración para durar exacto aunque la hora civil no exista o se repita en un cambio de hora; las horas civiles inexistentes no producen cupo para no devolver instantes fuera del día pedido; el resto menor a la duración se descarta sin alterar la ventana. Los solapes entre bloques se preservan tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
+ * Reglas: cada bloque debe ser del mismo profesional de la expansión; la recurrencia aporta las ventanas de cada fecha según su día de semana; una excepción `cancelled` sin bloque elimina la recurrencia del día pero conserva los agregados, con bloque descuenta solo ese bloque, y una `added` suma sus ventanas a las del día. Los cupos salen alineados al inicio de cada ventana y ordenados por inicio con desempate por identificador, y el fin de cada cupo deriva del inicio más la duración para durar exacto aunque la hora civil no exista o se repita en un cambio de hora; las horas civiles inexistentes no producen cupo para no devolver instantes fuera del día pedido; el resto menor a la duración se descarta sin alterar la ventana. Los solapes entre bloques se preservan tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
  *
  * Rechaza datos no finitos, fin anterior al inicio, ventanas fuera del día, duraciones no positivas o que no caben, modalidades o espacios inconsistentes, bloques de otro profesional, agregado con bloque, fechas inválidas, rango invertido o mayor a `MAX_EXPANSION_DAYS`, zonas horarias desconocidas y excepciones repetidas en la misma fecha.
  */
@@ -437,8 +466,8 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
   const exceptionsByDate = new Map<string, AvailabilityException[]>();
   for (const exception of input.exceptions ?? []) {
     const list = exceptionsByDate.get(exception.date) ?? [];
-    const key = `${exception.kind}|${exception.blockId ?? ""}`;
-    if (list.some((item) => `${item.kind}|${item.blockId ?? ""}` === key)) {
+    const key = exceptionKey(exception);
+    if (list.some((item) => exceptionKey(item) === key)) {
       throw new Error(`La fecha ${exception.date} trae más de una excepción.`);
     }
     list.push(exception);
@@ -449,17 +478,19 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
   const takenIds = new Map<string, number>();
   for (const date of dates) {
     const dayExceptions = exceptionsByDate.get(date) ?? [];
-    if (dayExceptions.some((e) => e.kind === "cancelled" && e.blockId === undefined)) {
-      continue;
-    }
+    const dayCancelled = dayExceptions.some(
+      (e) => e.kind === "cancelled" && e.blockId === undefined,
+    );
     const cancelledBlocks = new Set(
       dayExceptions.filter((e) => e.kind === "cancelled").map((e) => e.blockId as string),
     );
     const weekday = civilWeekday(date);
     const dayWindows: AvailabilityWindow[] = [];
-    for (const block of input.blocks) {
-      if (block.weekday === weekday && !cancelledBlocks.has(block.id)) {
-        dayWindows.push(block);
+    if (!dayCancelled) {
+      for (const block of input.blocks) {
+        if (block.weekday === weekday && !cancelledBlocks.has(block.id)) {
+          dayWindows.push(block);
+        }
       }
     }
     for (const exception of dayExceptions) {
@@ -472,6 +503,6 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
       slots.push(...expandWindow(input.professionalId, date, window, input.timeZone, takenIds));
     }
   }
-  slots.sort((a, b) => a.startAt - b.startAt);
+  slots.sort(compareSlots);
   return slots;
 }
