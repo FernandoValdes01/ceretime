@@ -1,6 +1,6 @@
 import type { NativeStackNavigationOptions } from "expo-router";
 import { appHeaderOptions } from "./app-header-options";
-import { RoleTabIcon, Tabs, useRoleTabScreenOptions } from "./role-tabs";
+import { RoleTabIcon, roleTabAccessibilityLabel, Tabs, useRoleTabScreenOptions } from "./role-tabs";
 
 export const studentLayoutScreenOptions = appHeaderOptions;
 
@@ -18,6 +18,7 @@ export default function StudentLayout() {
         name="index"
         options={{
           title: "Inicio",
+          tabBarAccessibilityLabel: roleTabAccessibilityLabel("Inicio", 1, 3),
           tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="house" />,
         }}
       />
@@ -25,6 +26,7 @@ export default function StudentLayout() {
         name="solicitudes"
         options={{
           title: "Solicitudes",
+          tabBarAccessibilityLabel: roleTabAccessibilityLabel("Solicitudes", 2, 3),
           tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="clipboardList" />,
         }}
       />
@@ -32,6 +34,7 @@ export default function StudentLayout() {
         name="perfil"
         options={{
           title: "Perfil",
+          tabBarAccessibilityLabel: roleTabAccessibilityLabel("Perfil", 3, 3),
           tabBarIcon: ({ color }) => <RoleTabIcon color={String(color)} name="user" />,
         }}
       />

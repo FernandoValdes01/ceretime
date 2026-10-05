@@ -20,7 +20,6 @@ jobs:
       github.event.comment.user.type == 'User' &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) &&
       !github.event.pull_request.draft &&
-      github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 4
