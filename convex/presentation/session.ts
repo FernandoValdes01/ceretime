@@ -1,9 +1,51 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
+import { AUTHORIZATION_DENIED_MESSAGE } from "../application/authorization/authorize";
 import { toMinimalIdentity } from "../application/session/minimal_identity";
 import { resolveSessionAndRole } from "../application/session/portal_role";
 import { getMyProfileUseCase } from "../application/session/profile";
+import type { PublicApiError } from "../domain/errors/api_error";
 import { query } from "../_generated/server";
 import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "../validators";
+
+/**
+ * Traducción segura del borde Convex para endpoints nuevos (TI2-88).
+ *
+ * Borde compartido de Presentación: convierte un `PublicApiError` del
+ * dominio en `ConvexError({code, message})` con solo esas dos claves, sin
+ * pila, identificadores de terceros, necesidades ni notas. Conflicto
+ * (`conflict`) y ausencia de cupo (`no_availability`) usan códigos distintos
+ * sin filtrar la existencia de recursos; la ausencia de cupo se coordina por
+ * el canal oficial con la referencia mínima ya entregada, sin crear una
+ * reserva incompatible. Todos los endpoints nuevos de disponibilidad,
+ * espacios y atención la reutilizan en vez de inventar su propia forma de
+ * error o depender de autorización para adaptar sus respuestas. Sprint 1 se
+ * conserva (`unauthenticated` acá y `ConvexError("No autorizado")` en el
+ * resto); los clientes distinguen por `code`, nunca por el texto.
+ */
+export function toSecureConvexError(
+  error: PublicApiError,
+): ConvexError<{ code: string; message: string }> {
+  return new ConvexError({ code: error.code, message: error.message });
+}
+
+/**
+ * Denegación de Sprint 1 para reutilizar en endpoints nuevos y existentes.
+ *
+ * Lanza el mismo `ConvexError("No autorizado")` sin revelar si el recurso
+ * existe o a quién pertenece. Se conserva para compatibilidad: los clientes
+ * distinguen por código en el contrato común, nunca interpretando el texto.
+ */
+export function denyUnauthorized(): never {
+  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+}
+
+/**
+ * Entrada pública delgada: lanza la traducción compartida de este borde para
+ * que disponibilidad, espacios y atención respondan igual sin duplicarla.
+ */
+export function throwPublicApiError(error: PublicApiError): never {
+  throw toSecureConvexError(error);
+}
 
 /**
  * Borde de Presentación: estado de sesión (TI2-3).
