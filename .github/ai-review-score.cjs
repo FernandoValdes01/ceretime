@@ -6,6 +6,8 @@ const { enrichFiles, reviewThreads, hash } = require("./ai-review-context.cjs");
 const { classifyFile } = require("./ai-review-selection.cjs");
 const { MODEL, formatReview, formatInline } = require("./ai-review-presentation.cjs");
 
+const { eventTarget, currentReview } = require("./ai-review-target.cjs");
+
 const STATUS_CONTEXT = "R2D2 Review 5/5";
 
 function parseSummary(summary) {
@@ -87,7 +89,11 @@ function evaluateReview({
 async function prepareReview({ github, context, core, env = process.env }) {
   const args = { ...context.repo, pull_number: context.payload.pull_request.number };
   const { data: pr } = await github.rest.pulls.get(args);
-  if (pr.head.sha !== env.REVIEW_SHA || pr.draft || pr.state !== "open" || pr.base.ref !== "main") {
+  const target = eventTarget(context, env);
+  if (
+    (context.payload.action === "edited" && !context.payload.changes?.base) ||
+    !currentReview(pr, target, context.repo)
+  ) {
     core.setOutput("current", "false");
     return;
   }
@@ -116,7 +122,7 @@ async function prepareReview({ github, context, core, env = process.env }) {
   const threads = reviewThreads(comments, env.REVIEW_BOT_LOGIN || "r2d2-reviewer[bot]");
   const evidence = enrichFiles(files, {
     directory: env.GITHUB_WORKSPACE,
-    base: pr.base.sha,
+    base: target.base,
     sha: env.REVIEW_SHA,
     threads,
   });
@@ -143,7 +149,7 @@ async function prepareReview({ github, context, core, env = process.env }) {
             "--no-ext-diff",
             "--no-textconv",
             "--unified=3",
-            `${pr.base.sha}...${env.REVIEW_SHA}`,
+            `${target.base}...${env.REVIEW_SHA}`,
             "--",
             file.filename,
           ],
@@ -232,7 +238,8 @@ async function prepareReview({ github, context, core, env = process.env }) {
   const budgetIssue = "Presupuesto máximo de bloques agotado.";
   plan.issues = plan.issues.filter((issue) => issue !== budgetIssue);
   if (plan.chunks.length > plan.limits.maxChunks) plan.issues.push(budgetIssue);
-  plan.base = pr.base.sha;
+  plan.base = target.base;
+  plan.baseRef = target.baseRef;
   plan.discussionKey = hash(JSON.stringify(threads));
   plan.mergeBase = evidence.mergeBase;
   plan.intent = {
@@ -243,7 +250,7 @@ async function prepareReview({ github, context, core, env = process.env }) {
   if (typeof instructions !== "string" || !instructions.trim())
     throw new Error("Faltan las instrucciones del reviewer.");
   const latest = (await github.rest.pulls.get(args)).data;
-  if (latest.head.sha !== env.REVIEW_SHA || latest.base.sha !== pr.base.sha) {
+  if (!currentReview(latest, target, context.repo)) {
     core.setOutput("current", "false");
     return;
   }
@@ -261,7 +268,8 @@ async function prepareReview({ github, context, core, env = process.env }) {
 async function publishReview({ github, context, core, env = process.env }) {
   const args = { ...context.repo, pull_number: context.payload.pull_request.number };
   const { data: pr } = await github.rest.pulls.get(args);
-  if (pr.draft || pr.state !== "open" || pr.base.ref !== "main") return;
+  const target = eventTarget(context, env);
+  if (!currentReview(pr, target, context.repo)) return;
   let result = evaluateReview({
     outcome: env.REVIEW_OUTCOME,
     summary: env.REVIEW_SUMMARY,
@@ -280,10 +288,6 @@ async function publishReview({ github, context, core, env = process.env }) {
     description: result.description,
     target_url: env.RUN_URL,
   };
-  if (pr.head.sha !== env.REVIEW_SHA) {
-    await github.rest.repos.createCommitStatus(status);
-    return;
-  }
   const { data: commit } = await github.rest.repos.getCommit({
     ...context.repo,
     ref: env.REVIEW_SHA,
@@ -308,7 +312,7 @@ async function publishReview({ github, context, core, env = process.env }) {
       env.REVIEW_BOT_LOGIN || "r2d2-reviewer[bot]",
     );
     if (
-      pr.base.sha !== report.base ||
+      !currentReview(pr, report, context.repo) ||
       hash(JSON.stringify(currentThreads)) !== report.discussionKey
     ) {
       await github.rest.repos.createCommitStatus({
@@ -320,10 +324,8 @@ async function publishReview({ github, context, core, env = process.env }) {
     }
     const { data: beforeInline } = await github.rest.pulls.get(args);
     if (
-      beforeInline.head.sha !== env.REVIEW_SHA ||
-      beforeInline.base.sha !== report.base ||
-      beforeInline.draft ||
-      beforeInline.state !== "open"
+      !currentReview(beforeInline, target, context.repo) ||
+      !currentReview(beforeInline, report, context.repo)
     )
       return;
     try {
@@ -333,6 +335,13 @@ async function publishReview({ github, context, core, env = process.env }) {
         sha: env.REVIEW_SHA,
         botLogin: env.REVIEW_BOT_LOGIN || "github-actions[bot]",
         report,
+        isCurrent: async () => {
+          const latest = (await github.rest.pulls.get(args)).data;
+          return (
+            currentReview(latest, target, context.repo) &&
+            currentReview(latest, report, context.repo)
+          );
+        },
       });
     } catch {
       result = evaluateReview({
@@ -366,10 +375,8 @@ async function publishReview({ github, context, core, env = process.env }) {
   );
   const { data: beforePublication } = await github.rest.pulls.get(args);
   if (
-    beforePublication.head.sha !== env.REVIEW_SHA ||
-    (report && beforePublication.base.sha !== report.base) ||
-    beforePublication.draft ||
-    beforePublication.state !== "open"
+    !currentReview(beforePublication, target, context.repo) ||
+    (report && !currentReview(beforePublication, report, context.repo))
   )
     return;
   if (owned.length) {
@@ -386,10 +393,8 @@ async function publishReview({ github, context, core, env = process.env }) {
   await archiveReviewSummaries({ github, context, botLogin, reviews });
   const { data: latest } = await github.rest.pulls.get(args);
   if (
-    latest.head.sha !== env.REVIEW_SHA ||
-    (report && latest.base.sha !== report.base) ||
-    latest.draft ||
-    latest.state !== "open"
+    !currentReview(latest, target, context.repo) ||
+    (report && !currentReview(latest, report, context.repo))
   )
     return;
   await github.rest.repos.createCommitStatus(status);

@@ -13,6 +13,7 @@ function memoryIdentity(plan, instructions) {
       provider: "openrouter",
       model: MODEL,
       base: plan.base,
+      baseRef: plan.baseRef,
       intent: plan.intent,
       limits: plan.limits,
       instructions,
