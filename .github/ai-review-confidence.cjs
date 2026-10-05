@@ -1,3 +1,4 @@
+const { currentReview } = require("./ai-review-target.cjs");
 const fs = require("node:fs");
 const { memoryIdentity, createMemory } = require("./ai-review-memory.cjs");
 const { reviewPlan } = require("./ai-review-chunks.cjs");
@@ -32,13 +33,7 @@ async function normalizeConfidence({
         ...context.repo,
         pull_number: context.payload.pull_request.number,
       });
-      return (
-        pr.head.sha === env.REVIEW_SHA &&
-        pr.base.sha === plan.base &&
-        pr.base.ref === "main" &&
-        !pr.draft &&
-        pr.state === "open"
-      );
+      return currentReview(pr, plan, context.repo);
     },
   });
   if (!parseSummary(report.summary)) throw new Error("Resumen agregado inválido.");

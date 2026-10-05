@@ -20,6 +20,20 @@ export const AVAILABILITY_EXCEPTION_KIND_VALUES = ["cancelled", "added"] as cons
 
 export type AvailabilityExceptionKind = (typeof AVAILABILITY_EXCEPTION_KIND_VALUES)[number];
 
+/**
+ * Modalidades admitidas por la especificación vigente (TI2-83, sin híbrida).
+ *
+ * Única fuente en valores para los validadores del borde
+ * (`convex/validators.ts`): restringida a `ModalityPreference` para no
+ * duplicar su representación. La semana (0–6, convención de `Date.getDay`)
+ * y los minutos del día (0–1440) quedan documentados en el esquema y sus
+ * reglas son de TI2-81.
+ */
+export const MODALITY_VALUES = [
+  "inPerson",
+  "online",
+] as const satisfies readonly ModalityPreference[];
+
 /** Ventana dentro de un día civil, en minutos desde las 00:00. */
 export interface AvailabilityWindow {
   readonly startMinute: number;

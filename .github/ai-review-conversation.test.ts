@@ -10,7 +10,7 @@ function harness() {
     body: "Contexto",
     state: "open",
     draft: false,
-    base: { ref: "main" },
+    base: { ref: "main", sha: "b".repeat(40) },
     head: { sha, repo: { full_name: "test/repo" } },
   };
   const root = {
@@ -236,3 +236,28 @@ test("sin secret o si desaparece la respuesta humana no publica", async () => {
   expect((await respondToInline(deleted.options)).ignored).toBe(true);
   expect(deleted.sent).toHaveLength(0);
 });
+
+test("conversation accepts an internal stacked PR and supplies its immediate base", async () => {
+  const h = harness();
+  h.pr.base.ref = "feature/lower-pr";
+  const result = await respondToInline(h.options);
+  expect(result.decision).toBe("not_applicable");
+  const data = JSON.parse(h.requests[0].messages[1].content);
+  expect(data.pr.baseRef).toBe("feature/lower-pr");
+  expect(data.pr.base).toBe(h.pr.base.sha);
+});
+
+for (const change of ["ref", "sha"]) {
+  test(`base ${change} changed during conversation suppresses the obsolete reply`, async () => {
+    const h = harness();
+    const fetchImpl = h.options.fetchImpl;
+    h.options.fetchImpl = async (...args: Parameters<typeof fetchImpl>) => {
+      const response = await fetchImpl(...args);
+      if (change === "ref") h.pr.base.ref = "feature/lower-pr";
+      else h.pr.base.sha = "c".repeat(40);
+      return response;
+    };
+    expect((await respondToInline(h.options)).ignored).toBe(true);
+    expect(h.sent).toHaveLength(0);
+  });
+}
