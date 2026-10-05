@@ -237,11 +237,19 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
         <Text
           weight="semibold"
           nativeID={`${key}-label`}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
           className="text-student-text text-lg leading-[26px]"
         >
           {label}
         </Text>
-        <Text className="text-student-secondary text-base leading-[26px]">{hint}</Text>
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          className="text-student-secondary text-base leading-[26px]"
+        >
+          {hint}
+        </Text>
         <TextInput
           ref={(input) => {
             inputs.current[key] = input;
