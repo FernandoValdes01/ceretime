@@ -93,6 +93,12 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     `Reviewed commit: [${title}](https://github.com/${repo}/commit/${sha})`,
     "",
+    ...(metadata.report?.baseRef
+      ? [
+          `Base revisada: ${JSON.stringify(metadata.report.baseRef)}; SHA: ${metadata.report.base}.`,
+          "",
+        ]
+      : []),
     "### Resumen",
     "",
     result.reason === "reviewed" ? explanation : `${result.description}\n\n${explanation}`,
