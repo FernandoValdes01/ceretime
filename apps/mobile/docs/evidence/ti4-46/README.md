@@ -12,7 +12,7 @@ Estas capturas muestran el funcionamiento visual de las pantallas incluidas en l
 - Cliente Android de desarrollo: versión 1.0.0, código 1, paquete temporal `cl.rmv.ceretime.ti446`.
 - SHA-256 del APK compilado e instalado: `16dc9d2b320fb5b2cb983dc51f738f6730f59040329b56f3f569659166c56dfd`.
 
-El cliente se compiló desde el worktree de la PR con JDK 17 y `bun run mobile:android --no-bundler --app-id cl.rmv.ceretime.ti446 --device Medium_Phone`. El sufijo `.ti446` se agregó únicamente al proyecto Android generado e ignorado por Git, para instalar el cliente junto al Preview existente. Metro se inició desde el mismo worktree con `bun run mobile:start --dev-client --port 8081` y completó el bundle Android. El acceso se realizó mediante una copia temporal de `ceretime-mobile` dirigida a ese worktree.
+El cliente se compiló desde el árbol de trabajo de la PR con JDK 17 y `bun run mobile:android --no-bundler --app-id cl.rmv.ceretime.ti446 --device Medium_Phone`. El sufijo `.ti446` se agregó únicamente al proyecto Android generado e ignorado por Git, para instalar el cliente junto al Preview existente. Metro se inició desde el mismo árbol de trabajo con `bun run mobile:start --dev-client --port 8081` y completó el bundle Android. El acceso se realizó mediante una copia temporal de `ceretime-mobile` dirigida a ese árbol de trabajo.
 
 ## Recorrido observado
 
