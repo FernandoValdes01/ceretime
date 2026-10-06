@@ -139,6 +139,28 @@ function buildPlan(files, config = {}, sha) {
         ? blockContextBudget
         : 0;
     const plannedMetadataSize = metadataSize + contextReserve;
+    const contextForAnchors = (anchors) =>
+      (file.context ?? []).map((item) => {
+        if (
+          item.path !== file.filename ||
+          !file.after ||
+          file.after.length <= 12000 ||
+          !anchors.length
+        )
+          return item;
+        const syntheticPatch = anchors
+          .filter((anchor) => anchor.startsWith("RIGHT:"))
+          .map((anchor) => `@@ -1,0 +${anchor.slice("RIGHT:".length)},1 @@`)
+          .join("\n");
+        if (!syntheticPatch) return item;
+        const head = relevantDeclarations(file.after, syntheticPatch, "head", blockContextBudget);
+        return {
+          ...item,
+          head,
+          headComplete: head === file.after,
+          selection: "declarations_containing_this_block_and_referenced_declarations",
+        };
+      });
     const hunks = [];
     for (const record of records) {
       if (record.header) hunks.push([]);
@@ -175,27 +197,10 @@ function buildPlan(files, config = {}, sha) {
       const patch = unit
         .map((r) => (r.side ? `[${r.side}:${r.line}] ${r.text}` : r.text))
         .join("\n");
-      const partContext = (file.context ?? []).map((item) => {
-        if (
-          item.path !== file.filename ||
-          !file.after ||
-          file.after.length <= 12000 ||
-          !unit.some((record) => record.side)
-        )
-          return item;
-        const anchors = unit
-          .filter((record) => record.side === "RIGHT")
-          .map((record) => `@@ -1,0 +${record.line},1 @@`)
-          .join("\n");
-        if (!anchors) return item;
-        const head = relevantDeclarations(file.after, anchors, "head", blockContextBudget);
-        return {
-          ...item,
-          head,
-          headComplete: head === file.after,
-          selection: "declarations_containing_this_block_and_referenced_declarations",
-        };
-      });
+      const anchors = unit
+        .filter((record) => record.side)
+        .map((record) => `${record.side}:${record.line}`);
+      const partContext = contextForAnchors(anchors);
       const part = {
         ...extra,
         context: partContext,
@@ -224,16 +229,15 @@ function buildPlan(files, config = {}, sha) {
       let combined = false;
       for (const bin of bins) {
         const previous = bin.parts.find(
-          (p) =>
-            p.path === part.path &&
-            JSON.stringify(p.context) === JSON.stringify(part.context) &&
-            p.followups.length + part.followups.length <= 1,
+          (p) => p.path === part.path && p.followups.length + part.followups.length <= 1,
         );
         if (!previous) continue;
+        const anchors = [...previous.anchors, ...part.anchors];
         const merged = {
           ...previous,
           patch: `${previous.patch}\n${part.patch}`,
-          anchors: [...previous.anchors, ...part.anchors],
+          anchors,
+          context: contextForAnchors(anchors),
           followups: [...previous.followups, ...part.followups],
         };
         const increase =
