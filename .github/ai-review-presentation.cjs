@@ -134,7 +134,8 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           "",
           `Defectos verificados: ${metadata.report.totalFindings ?? findings}. Solicitudes de evidencia pendientes: ${metadata.report.missingEvidence?.length ?? 0}. Incidentes del revisor: ${metadata.report.infrastructure?.length ?? 0}.`,
           ...(metadata.report.missingEvidence ?? []).map(
-            (r) => `Evidencia pendiente: ${r.path}, ${r.symbol ?? r.fragment}: ${r.reason}`,
+            (r) =>
+              `Evidencia pendiente: ${r.path}, ${r.symbol ?? r.fragment ?? "archivo completo"}: ${r.reason}`,
           ),
           ...(metadata.report.infrastructure ?? []).map((r) => `Incidente: ${r}`),
           `Unidades reutilizadas por contenido y contexto: ${metadata.report.reused ?? 0}. Archivos omitidos de IA: ${metadata.report.skipped?.length ?? 0}.`,

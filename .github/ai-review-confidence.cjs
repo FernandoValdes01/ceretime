@@ -1,4 +1,4 @@
-const { recoverEvidence } = require("./ai-review-evidence.cjs");
+const { recoverEvidence, inferEvidenceRequests } = require("./ai-review-evidence.cjs");
 const { currentReview, pullNumber } = require("./ai-review-target.cjs");
 const fs = require("node:fs");
 const { memoryIdentity, createMemory } = require("./ai-review-memory.cjs");
@@ -21,6 +21,8 @@ async function normalizeConfidence({
   const report = await reviewPlan({
     plan,
     verify,
+    resolveEvidence: ({ chunk, limitations }) =>
+      inferEvidenceRequests({ directory: env.GITHUB_WORKSPACE, sha: plan.sha, chunk, limitations }),
     recoverContext: ({ chunk, requests }) =>
       recoverEvidence({
         directory: env.GITHUB_WORKSPACE,

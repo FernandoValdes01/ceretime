@@ -65,6 +65,13 @@ const proof = (index: number, extra = {}) => ({
       : "La condición de la expansión produce el resultado observado",
   counterevidence:
     "Comprobados los validadores, la prioridad documentada y el productor de identidad antes del sort",
+  expectedContract: {
+    path,
+    quote: "y el agregado convive con ambas.",
+    rule: "Cada agregado conserva sus ventanas e identidad; convive con cancelaciones.",
+  },
+  impactTrace:
+    "La expansión devuelve cupos: dos agregados deberían producir dos cupos y una cancelación con agregado debe conservar el agregado.",
   references: [
     {
       path,
@@ -108,6 +115,15 @@ for (const extra of [
   { references: [{ path, quote: "invented unsupported quotation" }] },
   { verdict: "insufficient" },
   { counterevidence: "" },
+  { expectedContract: undefined },
+  {
+    expectedContract: {
+      path,
+      quote: "a new obligation invented by the reviewer",
+      rule: "invented",
+    },
+  },
+  { impactTrace: "" },
 ])
   test(`unproven candidate is omitted ${JSON.stringify(extra)}`, () => {
     expect(decideFinding(candidates[0], proof(0, extra), part)).toBe("insufficient");
@@ -364,4 +380,69 @@ test("lack of verification budget cannot maintain a prior finding", async () => 
   });
   expect(result.assessment.findings).toEqual([]);
   expect(result.assessment.resolutions[0].status).toBe("needs_context");
+});
+
+test("live reviewer regressions refute busy-state, payload accounting and declaration-completeness claims", () => {
+  const evidencePath = ".github/ai-review-evidence.cjs";
+  const providerPath =
+    "apps/mobile/src/presentation/accessibility/accessibility-preferences-provider.tsx";
+  const evidenceSource = readFileSync(`${import.meta.dir}/ai-review-evidence.cjs`, "utf8");
+  const providerSource = readFileSync(`${import.meta.dir}/../${providerPath}`, "utf8");
+  const cases = [
+    {
+      path: providerPath,
+      source: providerSource,
+      symbol: "AccessibilityPreferencesProvider",
+      quote: 'setStatus("loading");',
+      actual: "false mientras status informa loading",
+      claim: "No se distingue ocupado de fallo",
+    },
+    {
+      path: evidencePath,
+      source: evidenceSource,
+      symbol: "recoverEvidence",
+      quote: "recoveredChars += text.length;",
+      actual: "El acumulador cuenta exactamente los caracteres transmitidos",
+      claim: "Los imports se cuentan doble y agotan un presupuesto ficticio",
+    },
+    {
+      path: evidencePath,
+      source: evidenceSource,
+      symbol: "recoverEvidence",
+      quote: "declarationComplete: end === selected.text.length,",
+      actual: "Archivo parcial, declaración completa y cero solicitudes pendientes",
+      claim: "headComplete false obliga otra recuperación",
+    },
+  ];
+  for (const item of cases) {
+    const candidate = { ...candidates[0], path: item.path, cause: item.claim };
+    const available = {
+      path: item.path,
+      patch: "",
+      context: [{ path: item.path, head: item.source }],
+    };
+    const observation = {
+      ...proof(0),
+      symbol: item.symbol,
+      actual: item.claim,
+      expected: item.actual,
+      expectedContract: undefined,
+      references: [{ path: item.path, quote: item.quote }],
+    };
+    expect(decideFinding(candidate, observation, available)).toBe("insufficient");
+    expect(
+      decideFinding(
+        candidate,
+        {
+          ...observation,
+          verdict: "refuted",
+          actual: item.actual,
+          expected: item.actual,
+          counterevidence:
+            "El productor, el contrato y el consumidor muestran que el comportamiento observado cumple la regla vigente.",
+        },
+        available,
+      ),
+    ).toBe("refuted");
+  }
 });

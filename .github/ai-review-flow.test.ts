@@ -22,7 +22,7 @@ import {
   threadEvidence,
 } from "./ai-review-context.cjs";
 import { memoryIdentity, createMemory } from "./ai-review-memory.cjs";
-import { recoverEvidence } from "./ai-review-evidence.cjs";
+import { recoverEvidence, inferEvidenceRequests } from "./ai-review-evidence.cjs";
 import { gitReader } from "./ai-review-context.cjs";
 import { pullNumber } from "./ai-review-target.cjs";
 
@@ -1696,6 +1696,13 @@ test("broken import caused by a pure move is verified and published as a general
                   {
                     index: 0,
                     verdict: "confirmed",
+                    expectedContract: {
+                      path: "consumer.ts",
+                      quote: "import { stableIdentity } from './old';",
+                      rule: "The imported module must still resolve after the move.",
+                    },
+                    impactTrace:
+                      "The consumer import cannot resolve the old module path and compilation fails.",
                     symbol: "stableIdentity",
                     input: "Load consumer.ts after moving old.ts",
                     actual: "Cannot resolve ./old",
@@ -2310,6 +2317,160 @@ test("compound evidence keeps missing declarations pending and resolves literal 
     expect(
       recovered.chunk.parts[0].context.some((item: any) => item.head.includes("node publish.cjs")),
     ).toBe(false);
+  } finally {
+    f.clean();
+  }
+});
+
+test("free-text missing code becomes structured recovery while ambiguous context stays incomplete", async () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "contract.ts": "export function contractValue() { return 42; }\n",
+  });
+  try {
+    const plan = await f.prepare();
+    plan.chunks[0].parts[0].context.push({ path: "contract.ts", head: "", headComplete: false });
+    let calls = 0;
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      sleep: async () => {},
+      resolveEvidence: ({ chunk, limitations }: any) =>
+        inferEvidenceRequests({ directory: f.directory, sha: f.pr.head.sha, chunk, limitations }),
+      recoverContext: ({ chunk, requests }: any) =>
+        recoverEvidence({
+          directory: f.directory,
+          base: f.base,
+          sha: f.pr.head.sha,
+          chunk,
+          requests,
+        }),
+      fetchImpl: async () => ({
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  findings: [],
+                  limitations:
+                    ++calls === 1 ? ["Falta contractValue para comprobar el contrato."] : [],
+                }),
+              },
+            },
+          ],
+        }),
+      }),
+    });
+    expect(calls).toBe(2);
+    expect(report.coverage).toBe("complete");
+    const unresolved = inferEvidenceRequests({
+      directory: f.directory,
+      sha: f.pr.head.sha,
+      chunk: plan.chunks[0],
+      limitations: ["Falta información externa de una decisión no documentada."],
+    });
+    expect(unresolved.requests).toEqual([]);
+    expect(unresolved.limitations).toHaveLength(1);
+  } finally {
+    f.clean();
+  }
+});
+
+test("recovery counts transmitted imports and keeps file completeness separate from declaration completeness", () => {
+  const source =
+    "import { helper } from './helper';\nexport function contractValue() {\n" +
+    "helper();\n".repeat(2200) +
+    "return 42;\n}\nexport function anotherContract() { return 7; }\n";
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "contract.ts": source,
+    "helper.ts": "export function helper() {}\n",
+  });
+  try {
+    const chunk = { parts: [{ path: "file.ts", context: [], contextKey: "fixture" }] };
+    const request = {
+      path: "contract.ts",
+      symbol: "contractValue",
+      reason: "Verify complete declaration",
+    };
+    const first = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk,
+      requests: [request],
+    });
+    const sent = first.chunk.parts[0].context.reduce(
+      (total: number, item: any) => total + item.head.length,
+      0,
+    );
+    expect(first.recoveredChars).toBe(sent);
+    expect(sent).toBeLessThanOrEqual(16000);
+    expect(first.unresolved[0].availability).toBe("partial");
+    const second = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk: first.chunk,
+      requests: first.unresolved,
+    });
+    expect(second.unresolved).toEqual([]);
+    expect(second.chunk.parts[0].context.at(-1).headComplete).toBe(false);
+    expect(second.chunk.parts[0].context.at(-1).declarationComplete).toBe(true);
+    expect(second.chunk.parts[0].evidenceRecovery[0].availability).toBe("present");
+  } finally {
+    f.clean();
+  }
+});
+
+test("mixed unique and ambiguous contracts never erase the unresolved limitation", () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "a.ts": "export function uniqueContract() { return 1; }\n",
+    "b.ts": "export function ambiguousContract() { return 2; }\n",
+    "c.ts": "export function ambiguousContract() { return 3; }\n",
+  });
+  try {
+    const limitation =
+      "No puedo verificar uniqueContract y ambiguousContract: ambos contratos faltan.";
+    const chunk = {
+      parts: [
+        { path: "file.ts", context: ["a.ts", "b.ts", "c.ts"].map((path) => ({ path, head: "" })) },
+      ],
+    };
+    const resolved = inferEvidenceRequests({
+      directory: f.directory,
+      sha: f.pr.head.sha,
+      chunk,
+      limitations: [limitation],
+    });
+    expect(resolved.requests.map((request: any) => request.symbol)).toEqual(["uniqueContract"]);
+    expect(resolved.limitations).toEqual([limitation]);
+  } finally {
+    f.clean();
+  }
+});
+
+test("whole-file recovery distinguishes a present empty file from absent or unavailable content", () => {
+  const f = fixture({ "file.ts": "export const run = () => 1;\n", "empty.ts": "" });
+  try {
+    const recovered = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk: { parts: [{ path: "file.ts", context: [] }] },
+      requests: [{ path: "empty.ts", scope: "file", reason: "Verify the complete file" }],
+    });
+    expect(recovered.unresolved).toEqual([]);
+    expect(recovered.chunk.parts[0].context[0]).toMatchObject({
+      head: "",
+      headState: "present",
+      headComplete: true,
+      declarationComplete: true,
+    });
   } finally {
     f.clean();
   }

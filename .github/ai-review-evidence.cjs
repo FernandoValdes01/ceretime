@@ -23,7 +23,11 @@ function evidenceRequests(value = []) {
       typeof request.reason !== "string" ||
       !request.reason.trim() ||
       request.reason.length > 800 ||
-      ![request.symbol, request.fragment].some((text) => typeof text === "string" && text.trim()) ||
+      (request.scope != null && request.scope !== "file") ||
+      (request.scope !== "file" &&
+        ![request.symbol, request.fragment].some(
+          (text) => typeof text === "string" && text.trim(),
+        )) ||
       [request.symbol, request.fragment].some(
         (text) => text != null && (typeof text !== "string" || !text.trim() || text.length > 300),
       )
@@ -52,6 +56,22 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         availability: "symbol_absent",
         detail:
           "El símbolo o fragmento no existe en este commit. Solicita un identificador declarado o una cita literal.",
+      });
+      continue;
+    }
+    if (request.scope === "file" && selected.text === "") {
+      recovered.push({
+        path: request.path,
+        side: request.side,
+        text: "",
+        complete: true,
+        declarationComplete: true,
+        offset: 0,
+      });
+      fulfilled.push({
+        ...request,
+        availability: "present",
+        detail: "El archivo existe y está vacío.",
       });
       continue;
     }
@@ -148,6 +168,7 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
   return { chunk: { ...chunk, parts }, recovered: recovered.length, unresolved, recoveredChars };
 }
 function selectEvidence(text, request) {
+  if (request.scope === "file") return { text, imports: "" };
   if (/\.ya?ml$/.test(request.path)) {
     const needle = (request.fragment ?? request.symbol).replace(/^(?:paso|step)\s+/i, "");
     const lines = text.split("\n");
@@ -225,10 +246,89 @@ function requestKey(request) {
     request.side ?? "head",
     identifiers?.length ? identifiers.join(",") : (request.symbol ?? null),
     request.fragment ?? null,
+    request.scope ?? null,
   ]);
+}
+// Resolve legacy free-text limitations only against declarations and paths in
+// the changed module's bounded dependency neighborhood. Ambiguity stays visible.
+function inferEvidenceRequests({ directory, sha, chunk, limitations }) {
+  const { readState } = gitReader(directory);
+  const paths = new Set(
+    chunk.parts.flatMap((part) => [part.path, ...(part.context ?? []).map((entry) => entry.path)]),
+  );
+  for (const part of chunk.parts) {
+    const state = readState(sha, part.path);
+    if (state.status !== "present") continue;
+    for (const match of state.text.matchAll(/(?:from\s*|require\(\s*)["'](\.[^"']+)["']/g)) {
+      const stem = path.posix.normalize(path.posix.join(path.posix.dirname(part.path), match[1]));
+      if (stem.startsWith("../")) continue;
+      for (const candidate of [
+        stem,
+        ...[".ts", ".tsx", ".cjs", ".js", "/index.ts", "/index.tsx"].map((suffix) => stem + suffix),
+      ]) {
+        if (readState(sha, candidate).status === "present") {
+          paths.add(candidate);
+          break;
+        }
+      }
+    }
+  }
+  const sources = [...paths]
+    .slice(0, 32)
+    .map((filename) => ({ path: filename, state: readState(sha, filename) }))
+    .filter(({ state }) => state.status === "present");
+  const requests = [];
+  for (const reason of limitations ?? []) {
+    const tokens = new Set(reason.match(/[A-Za-z_$][\w$]*/g) ?? []);
+    const matched = [];
+    for (const source of sources.filter(({ path }) => /\.(?:[cm]?js|tsx?)$/.test(path))) {
+      const tree = ts.createSourceFile(
+        source.path,
+        source.state.text,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX,
+      );
+      const visit = (node) => {
+        if (
+          (ts.isFunctionDeclaration(node) ||
+            ts.isClassDeclaration(node) ||
+            ts.isInterfaceDeclaration(node) ||
+            ts.isTypeAliasDeclaration(node) ||
+            ts.isVariableDeclaration(node)) &&
+          node.name
+        ) {
+          const symbol = node.name.getText(tree);
+          if (tokens.has(symbol) && /^[$A-Za-z_][$\w]*$/.test(symbol))
+            matched.push({ path: source.path, symbol, side: "head", reason });
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(tree);
+    }
+    const unique = [...new Map(matched.map((request) => [request.symbol, request])).values()];
+    // A named declaration must occur in exactly one candidate file.
+    const candidates = unique.filter(
+      (request) => matched.filter((item) => item.symbol === request.symbol).length === 1,
+    );
+    if (!candidates.length) {
+      const explicit = sources.filter((source) => reason.includes(source.path));
+      if (explicit.length === 1)
+        candidates.push({ path: explicit[0].path, scope: "file", side: "head", reason });
+    }
+    const fresh = candidates.filter(
+      (request) => !requests.some((old) => requestKey(old) === requestKey(request)),
+    );
+    if (candidates.length && requests.length + fresh.length <= MAX_REQUESTS)
+      requests.push(...fresh);
+  }
+  // Only the subsequent analysis may resolve a limitation. A unique symbol
+  // within a mixed limitation does not prove that its other assumptions hold.
+  return { requests: evidenceRequests(requests), limitations: [...(limitations ?? [])] };
 }
 module.exports = {
   requestKey,
+  inferEvidenceRequests,
   evidenceRequests,
   recoverEvidence,
   MAX_REQUESTS,
