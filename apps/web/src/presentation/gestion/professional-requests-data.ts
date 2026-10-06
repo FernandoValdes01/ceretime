@@ -1,4 +1,4 @@
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 // Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
 // el monorepo defina el alias o paquete interno compartido.
@@ -6,10 +6,10 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
- * Lecturas de solicitudes del Profesional (TI2-91).
+ * Lecturas y escrituras de solicitudes del Profesional (TI2-91/92).
  *
- * Cableado delgado, un hook por recurso: consume solo queries públicas ya
- * existentes. Cada query responde `undefined` mientras carga y la
+ * Cableado delgado, un hook por recurso: consume solo queries/mutations públicas
+ * ya existentes. Cada query responde `undefined` mientras carga y la
  * autorización vive en Convex. Separarlas permite que la bandeja y las
  * tomadas carguen y fallen por su cuenta.
  */
@@ -34,6 +34,16 @@ export function useRequestDetail(requestId: string) {
     // ajeno responde denegación genérica sin filtrar existencia.
     requestId: requestId as Id<"requests">,
   });
+}
+
+/** Mutación para tomar una solicitud (TI2-92). */
+export function useTakeRequest() {
+  return useMutation(api.presentation.requests.takeRequest);
+}
+
+/** Mutación para pedir información adicional (TI2-92). */
+export function useRequestAdditionalInformation() {
+  return useMutation(api.presentation.requests.requestAdditionalInformation);
 }
 
 /** Página de bandeja o tomadas, derivada del contrato generado (sin duplicar formas). */

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatPanelDate } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 // Reutiliza el lenguaje visual del panel (listas, fichas, errores): una sola
 // fuente para no duplicar el sistema de diseño entre portales.
 import "../routes/student-portal.css";
@@ -10,7 +11,9 @@ import { requestStatusLabel } from "./gestion-labels.ts";
 import {
   useAuthorizedRequests,
   useOpenRequests,
+  useRequestAdditionalInformation,
   useRequestDetail,
+  useTakeRequest,
 } from "./professional-requests-data.ts";
 
 /**
@@ -284,8 +287,31 @@ export function ProfessionalRequestDetailPage({ requestId }: { requestId: string
   );
 }
 
+/** Acciones disponibles según el estado de la solicitud (TI2-92). */
+type RequestAction = { type: "take" } | { type: "requestInfo" } | { type: "none" };
+
+function getAvailableAction(status: string): RequestAction {
+  switch (status) {
+    case "received":
+      return { type: "take" };
+    case "under_review":
+      return { type: "requestInfo" };
+    default:
+      return { type: "none" };
+  }
+}
+
 function RequestDetailBody({ requestId }: { requestId: string }) {
   const request = useRequestDetail(requestId);
+  const takeRequest = useTakeRequest();
+  const requestAdditionalInformation = useRequestAdditionalInformation();
+
+  // Estado local para la UI de acciones (TI2-92)
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isActionPending, setIsActionPending] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [infoReason, setInfoReason] = useState("");
+  const [infoReasonError, setInfoReasonError] = useState<string | null>(null);
 
   if (request === undefined) {
     return (
@@ -295,20 +321,175 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
     );
   }
 
+  const availableAction = getAvailableAction(request.status);
+
+  const handleTake = async () => {
+    if (isActionPending) return;
+    setActionError(null);
+    setIsActionPending(true);
+    try {
+      await takeRequest({ requestId: requestId as Id<"requests"> });
+      // La query reactiva (useRequestDetail) actualizará el estado automáticamente
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "No se pudo tomar la solicitud");
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
+  const handleRequestInfoOpen = () => {
+    setShowInfoModal(true);
+    setInfoReason("");
+    setInfoReasonError(null);
+  };
+
+  const handleRequestInfoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isActionPending) return;
+
+    const trimmed = infoReason.trim();
+    if (!trimmed) {
+      setInfoReasonError("El motivo es obligatorio");
+      return;
+    }
+    if (trimmed.length > 2000) {
+      setInfoReasonError("El motivo no puede exceder 2000 caracteres");
+      return;
+    }
+
+    setInfoReasonError(null);
+    setIsActionPending(true);
+    try {
+      await requestAdditionalInformation({
+        requestId: requestId as Id<"requests">,
+        reason: trimmed,
+      });
+      setShowInfoModal(false);
+      // La query reactiva actualizará el estado automáticamente
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "No se pudo pedir información");
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
+  const actionButton = (() => {
+    if (availableAction.type === "take") {
+      return (
+        <button
+          type="button"
+          className="student-portal__btn student-portal__btn--primary"
+          disabled={isActionPending}
+          onClick={handleTake}
+          aria-busy={isActionPending}
+        >
+          {isActionPending ? "Tomando…" : "Tomar solicitud"}
+        </button>
+      );
+    }
+    if (availableAction.type === "requestInfo") {
+      return (
+        <button
+          type="button"
+          className="student-portal__btn student-portal__btn--primary"
+          disabled={isActionPending}
+          onClick={handleRequestInfoOpen}
+          aria-busy={isActionPending}
+        >
+          {isActionPending ? "Enviando…" : "Pedir información"}
+        </button>
+      );
+    }
+    return null;
+  })();
+
   return (
-    <dl>
-      <div>
-        <dt>Estado</dt>
-        <dd>{requestStatusLabel(request.status)}</dd>
-      </div>
-      <div>
-        <dt>Registrada</dt>
-        <dd>{formatPanelDate(request.createdAt)}</dd>
-      </div>
-      <div>
-        <dt>Necesidades de acceso</dt>
-        <dd>{request.accessNeeds}</dd>
-      </div>
-    </dl>
+    <>
+      <dl>
+        <div>
+          <dt>Estado</dt>
+          <dd>{requestStatusLabel(request.status)}</dd>
+        </div>
+        <div>
+          <dt>Registrada</dt>
+          <dd>{formatPanelDate(request.createdAt)}</dd>
+        </div>
+        <div>
+          <dt>Necesidades de acceso</dt>
+          <dd>{request.accessNeeds}</dd>
+        </div>
+      </dl>
+
+      {actionError && (
+        <div className="student-portal__error" role="alert" aria-live="assertive">
+          {actionError}
+        </div>
+      )}
+
+      {actionButton && <div className="student-portal__cta">{actionButton}</div>}
+
+      {/* Modal para pedir información (TI2-92) */}
+      {showInfoModal && (
+        <div
+          className="student-portal__modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="info-modal-title"
+        >
+          <div className="student-portal__modal">
+            <h2 id="info-modal-title" className="student-portal__modal-title">
+              Pedir información adicional
+            </h2>
+            <p className="student-portal__modal-text">
+              El estudiante recibirá este motivo para completar su solicitud.
+            </p>
+            <form onSubmit={handleRequestInfoSubmit}>
+              <div className="student-portal__form-field">
+                <label htmlFor="info-reason" className="student-portal__label">
+                  Motivo <span aria-hidden="true">*</span>
+                </label>
+                <textarea
+                  id="info-reason"
+                  className={`student-portal__textarea ${infoReasonError ? "student-portal__textarea--error" : ""}`}
+                  value={infoReason}
+                  onChange={(e) => setInfoReason(e.target.value)}
+                  maxLength={2000}
+                  rows={4}
+                  aria-describedby={infoReasonError ? "info-reason-error" : "info-reason-hint"}
+                  aria-invalid={infoReasonError ? "true" : "false"}
+                  disabled={isActionPending}
+                />
+                {infoReasonError && (
+                  <p id="info-reason-error" className="student-portal__field-error" role="alert">
+                    {infoReasonError}
+                  </p>
+                )}
+                <p id="info-reason-hint" className="student-portal__hint">
+                  Máximo 2000 caracteres ({infoReason.length}/2000)
+                </p>
+              </div>
+              <div className="student-portal__modal-actions">
+                <button
+                  type="button"
+                  className="student-portal__btn student-portal__btn--ghost"
+                  onClick={() => setShowInfoModal(false)}
+                  disabled={isActionPending}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="student-portal__btn student-portal__btn--primary"
+                  disabled={isActionPending}
+                  aria-busy={isActionPending}
+                >
+                  {isActionPending ? "Enviando…" : "Enviar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
