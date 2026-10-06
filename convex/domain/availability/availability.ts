@@ -24,7 +24,7 @@ export type AvailabilityExceptionKind = (typeof AVAILABILITY_EXCEPTION_KIND_VALU
  * Modalidades admitidas por la especificación vigente (TI2-83, sin híbrida).
  *
  * Única fuente en valores para los validadores del borde
- * (`convex/validators.ts`): restringida a `ModalityPreference` para no
+ * (`convex/infrastructure/validators.ts`): restringida a `ModalityPreference` para no
  * duplicar su representación. La semana (0–6, convención de `Date.getDay`)
  * y los minutos del día (0–1440) quedan documentados en el esquema y sus
  * reglas son de TI2-81.

@@ -31,12 +31,12 @@ Superficie pública versionada del Backend para los flujos comprometidos en Spri
 
 No forman superficie pública y ningún cliente las llama directo. Se documentan porque la checklist las exige y sus contratos rigen la vigencia que ven los guards:
 
-| Operación                                | Argumentos                                  | Hace                                                                                                   |
-| ---------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `internal.assignments.assign`            | `accompanimentId`, `userId`, `assignedRole` | Crea la fila activa con `grantedBy`/`grantedAt`; exige Profesional autorizado y Practicante habilitado |
-| `internal.assignments.revoke`            | `accompanimentId`, `userId`, `assignedRole` | Revoca todas las filas activas de la tripla con `revokedBy`/`revokedAt`, sin borrar historial          |
-| `internal.accounts.enableIntern`         | `userId`                                    | Habilita la cuenta del Practicante pendiente; solo Administrador vigente                               |
-| `internal.accounts.ensureBootstrapAdmin` | `email`, `fullName`, `tokenIdentifier`      | Arranque administrativo inicial de un solo uso                                                         |
+| Operación                                           | Argumentos                                  | Hace                                                                                                   |
+| --------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `internal.operations.assignments.assign`            | `accompanimentId`, `userId`, `assignedRole` | Crea la fila activa con `grantedBy`/`grantedAt`; exige Profesional autorizado y Practicante habilitado |
+| `internal.operations.assignments.revoke`            | `accompanimentId`, `userId`, `assignedRole` | Revoca todas las filas activas de la tripla con `revokedBy`/`revokedAt`, sin borrar historial          |
+| `internal.operations.accounts.enableIntern`         | `userId`                                    | Habilita la cuenta del Practicante pendiente; solo Administrador vigente                               |
+| `internal.operations.accounts.ensureBootstrapAdmin` | `email`, `fullName`, `tokenIdentifier`      | Arranque administrativo inicial de un solo uso                                                         |
 
 ## Respuestas y errores
 
