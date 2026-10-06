@@ -1347,7 +1347,9 @@ test("review context preserves distant function defaults and the imports behind 
     enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
     const own = file.context.find((item: any) => item.path === file.filename);
     expect(own.head).toContain("isCurrent = async () => true");
-    expect(own.head).toContain('hash, reviewedBase } = require("./ai-review-context.cjs")');
+    expect(own.head).toContain(
+      'hash, reviewedBase, relevantDeclarations } = require("./ai-review-context.cjs")',
+    );
   } finally {
     f.clean();
   }
@@ -2362,6 +2364,48 @@ test("a local verification input limit is reported as a reviewer budget incident
   expect(report.infrastructure[0]).toContain("presupuesto de entrada");
   expect(report.infrastructure[0]).not.toContain("proveedor");
   expect(report.findings).toEqual([]);
+});
+
+test("split added-file blocks receive the complete declaration containing their changed lines", () => {
+  const sections = Array.from({ length: 20 }, (_, index) => {
+    const body = Array.from(
+      { length: 70 },
+      (_, line) => `  const case${index}Line${line} = "${"x".repeat(90)}";`,
+    ).join("\n");
+    return `test("case-${index}", () => {\n  const uniqueCaseMarker${index} = "case-${index}";\n${body}\n  expect(uniqueCaseMarker${index}).toBe("case-${index}");\n});`;
+  }).join("\n\n");
+  const source = `import { expect, test } from "bun:test";\n${sections}\n`;
+  const lines = source.split("\n");
+  const file = {
+    filename: ".github/large-flow.test.ts",
+    status: "added",
+    additions: lines.length,
+    deletions: 0,
+    patch: `@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join("\n")}`,
+    after: source,
+    context: [
+      { path: ".github/large-flow.test.ts", head: source.slice(0, 4000), headComplete: false },
+    ],
+  };
+
+  const plan = buildPlan([file]);
+  const contexts = plan.chunks
+    .flatMap((chunk: any) => chunk.parts)
+    .map((part: any) => {
+      const own = part.context.find((item: any) => item.path === file.filename);
+      expect(own.selection).toBe("declarations_containing_this_block_and_referenced_declarations");
+      expect(own.head).not.toBe(source.slice(0, 4000));
+      return own.head;
+    });
+
+  expect(plan.issues).toEqual([]);
+  expect(contexts.length).toBeGreaterThan(1);
+  const recoveredCases = new Set(
+    contexts.flatMap((context: string) =>
+      [...context.matchAll(/uniqueCaseMarker(\d+)/g)].map((m) => m[1]),
+    ),
+  );
+  expect(recoveredCases.size).toBeGreaterThanOrEqual(18);
 });
 
 test("partitioned patches keep prior findings with their actual coordinate", () => {

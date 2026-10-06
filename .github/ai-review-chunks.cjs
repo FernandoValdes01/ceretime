@@ -7,7 +7,7 @@ const { verifyAssessment, publishable, sealFinding } = require("./ai-review-veri
 const { withoutBold } = require("./ai-review-presentation.cjs");
 
 const { classifyFile, matchesIgnore } = require("./ai-review-selection.cjs");
-const { hash, reviewedBase } = require("./ai-review-context.cjs");
+const { hash, reviewedBase, relevantDeclarations } = require("./ai-review-context.cjs");
 
 const { ENDPOINT, completionRequest, addUsage, emptyUsage } = require("./ai-review-provider.cjs");
 
@@ -125,6 +125,15 @@ function buildPlan(files, config = {}, sha) {
       }).length +
       Math.max(2, ...(file.followups ?? []).map((t) => JSON.stringify(t).length)) +
       100;
+    // The block-specific AST excerpt replaces the smaller file-level own-file
+    // excerpt below. Reserve its full budget while splitting patches so the
+    // final serialized block remains within chunkChars.
+    const blockContextBudget = Math.min(24000, Math.floor(limits.chunkChars / 2));
+    const contextReserve =
+      file.after?.length > 12000 && file.context?.some((item) => item.path === file.filename)
+        ? blockContextBudget
+        : 0;
+    const plannedMetadataSize = metadataSize + contextReserve;
     const recordSize = (r) =>
       JSON.stringify(r.side ? `[${r.side}:${r.line}] ${r.text}` : r.text).length + 2;
     const hunks = [];
@@ -135,18 +144,21 @@ function buildPlan(files, config = {}, sha) {
     const units = routeOnly ? [[]] : [];
     for (const hunk of hunks) {
       const length = hunk.reduce((n, r) => n + recordSize(r), 0);
-      if (length + metadataSize <= limits.chunkChars) {
+      if (length + plannedMetadataSize <= limits.chunkChars) {
         units.push(hunk);
         continue;
       }
       let unit = [],
         unitSize = 0;
       for (const record of hunk) {
-        if (recordSize(record) + metadataSize > limits.chunkChars) {
+        if (recordSize(record) + plannedMetadataSize > limits.chunkChars) {
           plan.issues.push(`Línea mayor que el presupuesto por bloque: ${file.filename}`);
           break;
         }
-        if (unitSize + recordSize(record) + metadataSize > limits.chunkChars && unit.length) {
+        if (
+          unitSize + recordSize(record) + plannedMetadataSize > limits.chunkChars &&
+          unit.length
+        ) {
           units.push(unit);
           unit = [hunk[0], ...hunk.filter((r) => !r.side && !r.header).slice(0, 2)];
           unitSize = unit.reduce((n, r) => n + recordSize(r), 0);
@@ -160,8 +172,30 @@ function buildPlan(files, config = {}, sha) {
       const patch = unit
         .map((r) => (r.side ? `[${r.side}:${r.line}] ${r.text}` : r.text))
         .join("\n");
+      const partContext = (file.context ?? []).map((item) => {
+        if (
+          item.path !== file.filename ||
+          !file.after ||
+          file.after.length <= 12000 ||
+          !unit.some((record) => record.side)
+        )
+          return item;
+        const anchors = unit
+          .filter((record) => record.side === "RIGHT")
+          .map((record) => `@@ -1,0 +${record.line},1 @@`)
+          .join("\n");
+        if (!anchors) return item;
+        const head = relevantDeclarations(file.after, anchors, "head", blockContextBudget);
+        return {
+          ...item,
+          head,
+          headComplete: head === file.after,
+          selection: "declarations_containing_this_block_and_referenced_declarations",
+        };
+      });
       const part = {
         ...extra,
+        context: partContext,
         followups: (file.followups ?? [])
           .filter(
             (t) =>
@@ -187,7 +221,10 @@ function buildPlan(files, config = {}, sha) {
       let combined = false;
       for (const bin of bins) {
         const previous = bin.parts.find(
-          (p) => p.path === part.path && p.followups.length + part.followups.length <= 1,
+          (p) =>
+            p.path === part.path &&
+            JSON.stringify(p.context) === JSON.stringify(part.context) &&
+            p.followups.length + part.followups.length <= 1,
         );
         if (!previous) continue;
         const merged = {

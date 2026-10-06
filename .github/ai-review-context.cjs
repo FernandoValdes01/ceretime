@@ -602,5 +602,6 @@ module.exports = {
   reviewedBase,
   gitReader,
   enrichFiles,
+  relevantDeclarations,
   contentKey,
 };
