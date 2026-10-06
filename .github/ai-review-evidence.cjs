@@ -255,6 +255,30 @@ function selectEvidence(text, request) {
     ts.forEachChild(node, (child) => visit(child, nextOwner));
   };
   if (request.symbol) visit(source);
+  if (request.symbol && !selected.length) {
+    const needles = request.symbol
+      .split(/[,/]/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 4);
+    const tests = [];
+    const visitTests = (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        ["test", "it"].includes(node.expression.text)
+      ) {
+        const text = node.getText(source);
+        const matches = needles.filter((needle) => text.includes(needle));
+        if (matches.length) tests.push({ node, specificity: matches.join("").length });
+      }
+      ts.forEachChild(node, visitTests);
+    };
+    visitTests(source);
+    const best = tests.sort(
+      (a, b) => b.specificity - a.specificity || a.node.getWidth(source) - b.node.getWidth(source),
+    )[0];
+    if (best) selected.push(best.node);
+  }
   if (request.fragment) {
     const node = source.statements.find((statement) =>
       statement.getText(source).includes(request.fragment),

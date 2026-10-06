@@ -4,8 +4,8 @@ review_language: es
 chunking:
   chunkChars: 48000
   inputChars: 64000
-  maxChunks: 32
-  maxCalls: 64
+  maxChunks: 48
+  maxCalls: 80
   outputTokens: 6000
   intervalMs: 1000
   maxRateLimitWaitMs: 600000

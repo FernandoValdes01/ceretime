@@ -1560,7 +1560,7 @@ test("structured requests recover a omitted contract then rerun only the affecte
   }
 });
 
-test("unrecoverable evidence is explicit and repeated requests stop after two recovery rounds", async () => {
+test("unrecoverable evidence stays explicit after three bounded recovery rounds", async () => {
   const f = fixture();
   try {
     const plan = await f.prepare();
@@ -1606,7 +1606,7 @@ test("unrecoverable evidence is explicit and repeated requests stop after two re
         };
       },
     });
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
     expect(report.coverage).toBe("incomplete");
     expect(report.processed).toBe(report.total);
     expect(report.qualityScore).toBeNull();
@@ -2026,6 +2026,40 @@ test("property requests recover the enclosing helper that defines or consumes th
   }
 });
 
+test("descriptive test requests recover only the matching test case", () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "target.ts":
+      'import { test } from "bun:test";\ntest("read-failed update preserves old data", () => update("read-failed"));\ntest("write succeeds", () => update("write-failed"));\n',
+  });
+  try {
+    const chunk = buildPlan(
+      [{ filename: "file.ts", patch: "@@ -1 +1 @@\n-a\n+b", additions: 1, deletions: 1 }],
+      {},
+      f.pr.head.sha,
+    ).chunks[0];
+    const result = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk,
+      requests: [
+        {
+          path: "target.ts",
+          symbol: "describe/update/read-failed",
+          reason: "Inspect the read failure regression test",
+        },
+      ],
+    });
+    expect(result.unresolved).toEqual([]);
+    const recovered = result.chunk.parts[0].context.map((item: any) => item.head).join("\n");
+    expect(recovered).toContain("read-failed update preserves old data");
+    expect(recovered).not.toContain("write succeeds");
+  } finally {
+    f.clean();
+  }
+});
+
 test("live recovery sizing ignores anchors that are never sent to inference", async () => {
   const f = fixture({
     "file.ts": "export const run = () => 1;\n",
@@ -2092,10 +2126,10 @@ test("live recovery sizing ignores anchors that are never sent to inference", as
   }
 });
 
-test("a large declaration is paginated across two rounds without losing the trusted continuation", async () => {
+test("a large declaration is paginated across three rounds without losing the trusted continuation", async () => {
   const large =
     "export function largeContract() {\n" +
-    "const filler = 1;\n".repeat(1150) +
+    "const filler = 1;\n".repeat(1800) +
     "return 'completed-contract';\n}\n";
   const f = fixture({ "file.ts": "export const run = () => 1;\n", "large.ts": large });
   try {
@@ -2117,7 +2151,7 @@ test("a large declaration is paginated across two rounds without losing the trus
         calls++;
         expect(request.body.length).toBeLessThanOrEqual(plan.limits.inputChars);
         const parts = JSON.parse(JSON.parse(request.body).messages[1].content).parts;
-        if (calls === 3) {
+        if (calls === 4) {
           const text = parts
             .flatMap((part: any) => part.context)
             .map((c: any) => c.head)
@@ -2138,7 +2172,7 @@ test("a large declaration is paginated across two rounds without losing the trus
                   content: JSON.stringify({
                     findings: [],
                     evidenceRequests:
-                      calls < 3
+                      calls < 4
                         ? [
                             {
                               path: "large.ts",
@@ -2155,7 +2189,7 @@ test("a large declaration is paginated across two rounds without losing the trus
         };
       },
     });
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
     expect(report.coverage).toBe("complete");
     expect(report.missingEvidence).toEqual([]);
   } finally {
