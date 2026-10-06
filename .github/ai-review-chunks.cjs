@@ -1,3 +1,4 @@
+const { verifyAssessment, publishable, sealFinding } = require("./ai-review-verification.cjs");
 const { withoutBold } = require("./ai-review-presentation.cjs");
 
 const { classifyFile, matchesIgnore } = require("./ai-review-selection.cjs");
@@ -456,6 +457,7 @@ async function reviewPlan({
   isCurrent = async () => true,
   onProgress = () => {},
   memory,
+  verify = verifyAssessment,
 }) {
   if (!apiKey && plan.chunks.length) throw new Error("Falta el secret del proveedor.");
   const results = [],
@@ -481,6 +483,11 @@ async function reviewPlan({
           pending.push(part);
           continue;
         }
+        if (cached.findings.some((f) => !f.verification))
+          throw new Error("Memoria sin verificación.");
+        cached.findings = cached.findings.map((f) =>
+          sealFinding(f, f.verification.evidence, plan.sha),
+        );
         cachedResults.push(validateAssessment(cached, { parts: [part] }));
         reused++;
       } catch {
@@ -509,6 +516,7 @@ async function reviewPlan({
     }
     const chunk = { parts: pending };
     let assessment,
+      candidate,
       lastFailure = "Una llamada necesaria falló o devolvió un resultado inválido.";
     let ordinaryFailures = 0;
     for (let attempt = 0; attempt < 3 && calls < plan.limits.maxCalls; attempt++) {
@@ -609,7 +617,51 @@ async function reviewPlan({
         }
         const parsed = JSON.parse(json.choices?.[0]?.message?.content ?? "null");
         stage = "validation";
-        assessment = validateAssessment(parsed, chunk);
+        candidate = validateAssessment(parsed, chunk);
+        stage = "verification";
+        if (candidate.findings.length && calls < plan.limits.maxCalls)
+          await sleep(plan.limits.intervalMs);
+        const verified = await verify({
+          assessment: candidate,
+          chunk,
+          sha: plan.sha,
+          fetchImpl: async (...args) => {
+            for (let retry = 0; retry < 3; retry++) {
+              if (calls >= plan.limits.maxCalls || !(await isCurrent()))
+                throw new Error("No queda presupuesto o vigencia para verificar.");
+              calls++;
+              const verificationResponse = await fetchImpl(...args);
+              if (verificationResponse.status !== 429) return verificationResponse;
+              const quota = await quotaInformation(verificationResponse);
+              onProgress(quotaDescription(quota));
+              const delay = rateLimitDelay(
+                verificationResponse.headers,
+                retry,
+                plan.limits.intervalMs,
+                quota,
+              );
+              if (
+                retry === 2 ||
+                calls >= plan.limits.maxCalls ||
+                delay > 180000 ||
+                rateLimitWait + delay > plan.limits.maxRateLimitWaitMs ||
+                (quota.kind === "TPM" && quota.requested > quota.limit && quota.limit != null)
+              )
+                throw new Error(
+                  "No se puede recuperar la cuota dentro del presupuesto de verificación.",
+                );
+              rateLimitWait += delay;
+              await sleep(delay);
+            }
+            throw new Error("Verificación sin respuesta.");
+          },
+          apiKey,
+          budget: plan.limits.maxCalls - calls,
+          limits: plan.limits,
+          isCurrent,
+        });
+        for (const key of Object.keys(usage)) usage[key] += verified.usage[key];
+        assessment = verified.assessment;
         try {
           for (const part of pending) {
             if (!assessment.limitations.length)
@@ -641,6 +693,26 @@ async function reviewPlan({
         }
         break;
       } catch (error) {
+        if (stage === "verification") {
+          assessment = {
+            ...candidate,
+            findings: [],
+            resolutions: candidate.resolutions.map((r) =>
+              r.status === "maintain"
+                ? {
+                    ...r,
+                    status: "needs_context",
+                    explanation: "La verificación del hallazgo no se completó.",
+                  }
+                : r,
+            ),
+            limitations: [
+              ...candidate.limitations,
+              "La verificación de candidatos no se completó; se conserva cobertura incompleta.",
+            ],
+          };
+          break;
+        }
         /* Keep invalid-result retries bounded separately from recoverable quota errors. */
         if (stage === "validation")
           lastFailure = error instanceof TypeError ? "Estructura JSON inválida." : error.message;
@@ -679,7 +751,11 @@ async function publishFindings({
   const requireCurrent = async () => {
     if (!(await isCurrent())) throw new Error("La revisión ya no está vigente.");
   };
-  if (report.sha !== sha || report.findings.length > 5)
+  if (
+    report.sha !== sha ||
+    report.findings.length > 5 ||
+    report.findings.some((f) => !publishable(f, sha))
+  )
     throw new Error("Hallazgos de otro SHA o fuera del límite.");
   const existing = await github.paginate(github.rest.pulls.listReviewComments, {
     ...args,
@@ -697,6 +773,9 @@ async function publishFindings({
       minor: "Observación funcional menor",
     }[finding.severity];
     let body = `${marker}\n### R2D2 · ${severity}\n\n${withoutBold(finding.body)}\n\nVerificado en ${sha}: ${finding.path}:${finding.line} (${finding.side}).`;
+    const evidence = finding.verification.evidence;
+    if (typeof evidence.input === "string")
+      body += `\n\nEntrada: ${withoutBold(evidence.input)}\n\nResultado actual: ${withoutBold(evidence.actual)}\n\nResultado esperado: ${withoutBold(evidence.expected)}\n\nTraza: ${withoutBold(evidence.trace)}\n\nComprobaciones: ${withoutBold(evidence.counterevidence)}`;
     const old = owned.find(
       (c) => (finding.threadId && String(c.id) === finding.threadId) || c.body?.startsWith(marker),
     );

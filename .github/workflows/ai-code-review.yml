@@ -46,6 +46,9 @@ jobs:
         with:
           bun-version-file: package.json
 
+      - name: Instalar el parser de contexto con el lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
+
       - name: Comprobar la escala de 0 a 5 sin publicar reviews simuladas
         run: node .github/ai-review-scale.cjs
 

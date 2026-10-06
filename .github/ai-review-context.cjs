@@ -4,6 +4,81 @@ const crypto = require("node:crypto");
 const { stable, parseConfig, PACKAGE_KEYS } = require("./ai-review-selection.cjs");
 const BOT = "r2d2-reviewer[bot]";
 const HISTORY_CHARS = 12000;
+const ts = require("node:module").createRequire(path.join(__dirname, "../apps/web/package.json"))(
+  "typescript",
+);
+
+// Parse declarations instead of guessing body boundaries from nearby lines.
+function relevantDeclarations(text, patch, side, budget) {
+  const source = ts.createSourceFile(
+    "context.tsx",
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const declarations = source.statements.filter(
+    (node) =>
+      ts.isExpressionStatement(node) ||
+      ts.isFunctionDeclaration(node) ||
+      ts.isVariableStatement(node) ||
+      ts.isClassDeclaration(node) ||
+      ts.isInterfaceDeclaration(node) ||
+      ts.isTypeAliasDeclaration(node) ||
+      ts.isEnumDeclaration(node),
+  );
+  const names = (node) => {
+    const result = new Set();
+    const visit = (child) => {
+      if (ts.isIdentifier(child)) result.add(child.text);
+      ts.forEachChild(child, visit);
+    };
+    visit(node);
+    return result;
+  };
+  const declared = (node) =>
+    ts.isVariableStatement(node)
+      ? node.declarationList.declarations.flatMap((d) => [...names(d.name)])
+      : node.name
+        ? [node.name.text]
+        : [];
+  const ranges = [...(patch ?? "").matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)].map(
+    (m) => {
+      const start = Number(m[side === "base" ? 1 : 3]) - 1;
+      return [start, start + Math.max(1, Number(m[side === "base" ? 2 : 4] ?? 1))];
+    },
+  );
+  const selected = declarations.filter(
+    (node) =>
+      !patch ||
+      ranges.some(
+        ([start, end]) =>
+          source.getLineAndCharacterOfPosition(node.getStart(source)).line < end &&
+          source.getLineAndCharacterOfPosition(node.end).line >= start,
+      ),
+  );
+  const required = new Set(selected.flatMap((node) => [...names(node)]));
+  for (let depth = 0; depth < 3; depth++)
+    for (const node of declarations)
+      if (!selected.includes(node) && declared(node).some((name) => required.has(name))) {
+        selected.push(node);
+        for (const name of names(node)) required.add(name);
+      }
+  const imports = source.statements.filter(
+    (node) =>
+      ts.isImportDeclaration(node) ||
+      (ts.isVariableStatement(node) && /require\(["']/.test(node.getText(source))),
+  );
+  const snippets = [...new Set([...imports, ...selected])].map((node) => {
+    const start = source.getLineAndCharacterOfPosition(node.getStart(source)).line;
+    return node
+      .getText(source)
+      .split("\n")
+      .map((line, index) => `${start + index + 1}: ${line}`)
+      .join("\n");
+  });
+  return snippets.join("\n").slice(0, budget);
+}
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const clip = (value, size) => String(value ?? "").slice(0, size);
 
@@ -257,41 +332,7 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
     if (!text) return "";
     if (text.length <= budget) return text;
     if (workflow) return clip(text, budget);
-    const lines = text.split("\n"),
-      selected = new Set();
-    // Signatures and imports precede body excerpts, so a late function's defaults
-    // cannot disappear behind earlier declarations or a large prompt literal.
-    const headers = [
-      ...text.matchAll(/^(?:export )?(?:async )?function \w+\([\s\S]*?\)\s*\{/gm),
-      ...text.matchAll(
-        /^(?:const|import) [\s\S]*?(?:require\(["'][^"']+["']\)|from ["'][^"']+["']);/gm,
-      ),
-    ]
-      .map((match) => match[0])
-      .filter((header) => header.length <= 1200);
-    if (patch) {
-      for (const hunk of patch.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
-        const start = Number(hunk[side === "base" ? 1 : 3]) - 1;
-        const count = Number(hunk[side === "base" ? 2 : 4] ?? 1);
-        for (let n = Math.max(0, start - 15); n < Math.min(lines.length, start + count + 15); n++)
-          if (lines[n].length <= 1200) selected.add(n);
-      }
-    } else {
-      lines.forEach((line, i) => {
-        if (/\b(?:export|function|class|interface|type)\b/.test(line))
-          for (let n = i; n < Math.min(lines.length, i + 30); n++)
-            if (lines[n].length <= 1200) selected.add(n);
-      });
-    }
-    return clip(
-      [
-        "// Declaraciones e imports del módulo. Los cuerpos siguientes son extractos.",
-        ...new Set(headers),
-        "// Extractos del código relacionado con el cambio.",
-        ...[...selected].sort((a, b) => a - b).map((i) => `${i + 1}: ${lines[i]}`),
-      ].join("\n"),
-      budget,
-    );
+    return relevantDeclarations(text, patch, side, budget);
   };
   const environment = (filename) => {
     const app = filename.match(/^(apps\/[^/]+)/)?.[1];
@@ -356,41 +397,47 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       });
     const workflow = file.filename.startsWith(".github/workflows/");
     const invoked = new Set(graph.get(file.filename) ?? []);
-    file.context = [file.filename, ...related].slice(0, 8).map((p) => {
-      const original = read(mergeBase, p),
-        current = sources.get(p);
-      const own = p === file.filename;
-      const budget = p.startsWith(".github/workflows/")
-        ? own
-          ? 8000
-          : 1600
-        : own
-          ? 4000
-          : invoked.has(p)
-            ? 2000
-            : direct.has(p)
-              ? 800
-              : 600;
-      const ownPatch = p === file.filename ? file.patch : undefined;
-      const baseText = declarations(
-        original,
-        own ? 1800 : 600,
-        p.startsWith(".github/workflows/"),
-        ownPatch,
-        "base",
-      );
-      const headText =
-        workflow && invoked.has(p) && (current?.length ?? Infinity) <= 24000
-          ? current
-          : declarations(current, budget, p.startsWith(".github/workflows/"), ownPatch, "head");
-      return {
-        path: p,
-        base: baseText,
-        head: headText,
-        baseComplete: original == null || baseText === original,
-        headComplete: current == null || headText === current,
-      };
-    });
+    const tests = related.filter((p) => /\.(?:test|spec)\./.test(p));
+    const contracts = related.filter((p) => !tests.includes(p));
+    file.context = [
+      ...new Set([file.filename, ...contracts.slice(0, 10), ...tests.slice(0, 3), ...contracts]),
+    ]
+      .slice(0, 16)
+      .map((p) => {
+        const original = read(mergeBase, p),
+          current = sources.get(p);
+        const own = p === file.filename;
+        const budget = p.startsWith(".github/workflows/")
+          ? own
+            ? 8000
+            : 1600
+          : own
+            ? 4000
+            : invoked.has(p)
+              ? 2000
+              : direct.has(p)
+                ? 2400
+                : 600;
+        const ownPatch = p === file.filename ? file.patch : undefined;
+        const baseText = declarations(
+          original,
+          own ? 1800 : 600,
+          p.startsWith(".github/workflows/"),
+          ownPatch,
+          "base",
+        );
+        const headText =
+          workflow && invoked.has(p) && (current?.length ?? Infinity) <= 24000
+            ? current
+            : declarations(current, budget, p.startsWith(".github/workflows/"), ownPatch, "head");
+        return {
+          path: p,
+          base: baseText,
+          head: headText,
+          baseComplete: original == null || baseText === original,
+          headComplete: current == null || headText === current,
+        };
+      });
     file.context = JSON.parse(clipContext(file.context, workflow ? 32000 : 12000));
     file.followups = threads.filter(
       (thread) => thread.path === file.filename || thread.path === file.previous_filename,

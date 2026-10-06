@@ -180,6 +180,8 @@
     "numstat",
     "adrs",
     "lockfiles",
-    "returnallowed"
+    "returnallowed",
+    "counterevidence",
+    "HMAC"
   ]
 }

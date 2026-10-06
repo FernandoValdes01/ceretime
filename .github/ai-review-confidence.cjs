@@ -10,6 +10,7 @@ async function normalizeConfidence({
   fetchImpl = fetch,
   github,
   context,
+  verify,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
   const plan = JSON.parse(
@@ -18,6 +19,7 @@ async function normalizeConfidence({
   if (plan.sha !== env.REVIEW_SHA) throw new Error("Plan de otro SHA.");
   const report = await reviewPlan({
     plan,
+    verify,
     memory: createMemory({
       directory: `${env.GITHUB_WORKSPACE}/.git/ai-review-memory`,
       identity: memoryIdentity(plan, env.REVIEW_INSTRUCTIONS),

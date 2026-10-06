@@ -1,3 +1,4 @@
+import { fixtureVerifier } from "./ai-review-test-verifier.cjs";
 import { expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
@@ -190,6 +191,7 @@ function fixture(initial: Record<string, string> = { "file.ts": "export const ru
   const run = async (model = () => ({ findings: [], resolutions: [] })) => {
     env.REVIEW_INSTRUCTIONS = outputs.instructions;
     await normalizeConfidence({
+      verify: fixtureVerifier,
       github,
       context,
       core,
@@ -758,6 +760,7 @@ test("an invalid followup retry receives its validation reason and keeps incompl
   const requests: any[] = [],
     progress: string[] = [];
   const report = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "Revisar el cambio.",
     apiKey: "simulation",
@@ -801,6 +804,7 @@ test("maintaining a thread retries with the required finding contract and preser
   );
   let calls = 0;
   const report = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "Revisar el cambio.",
     apiKey: "simulation",

@@ -1,3 +1,6 @@
+import "./ai-review-context-retrieval.test.ts";
+import "./ai-review-verification.test.ts";
+import { fixtureVerifier } from "./ai-review-test-verifier.cjs";
 import "./ai-review-memory.test.ts";
 import "./ai-review-conversation.test.ts";
 import "./ai-review-flow.test.ts";
@@ -47,6 +50,7 @@ const jsonResponse = (data: unknown, extra = {}) => ({
 async function runChunks(plan: any, responses?: any[], fetchOverride?: any) {
   const requests: any[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME: autorización en backend.",
     apiKey: "simulation",
@@ -102,6 +106,7 @@ test("no eligible changes require no key or inference and remain explicit", asyn
     sha,
   );
   const report = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     fetchImpl: async () => {
@@ -344,6 +349,7 @@ test("budgets and obsolete heads stop inference without inventing coverage", asy
     ).result.calls,
   ).toBe(0);
   const stale = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "simulation",
@@ -434,6 +440,7 @@ test("paces chunks and recovers repeated 429 without skipping required coverage"
   let calls = 0;
   const pauses: number[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -475,6 +482,7 @@ test("paces chunks and recovers repeated 429 without skipping required coverage"
 test("persistent 429 reports quota failure and respects the maximum call count", async () => {
   const plan = buildPlan([chunkFile("quota.ts", 10)], {}, sha);
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -491,6 +499,7 @@ test("daily quota cannot cause an early retry before the requested reset", async
   const plan = buildPlan([chunkFile("daily.ts", 10)], {}, sha);
   const pauses: number[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -521,6 +530,7 @@ test("all chunks remain eligible while respecting the configured interval", asyn
   let elapsed = 0,
     lastRequest = -LIMITS.intervalMs;
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -559,6 +569,7 @@ test("quota wait budget stops bounded retries and the current head is checked af
     sha,
   );
   const limited = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -571,6 +582,7 @@ test("quota wait budget stops bounded retries and the current head is checked af
   let current = true,
     calls = 0;
   const changed = await reviewPlan({
+    verify: fixtureVerifier,
     plan: currentPlan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -598,6 +610,7 @@ test("successful low-token headers delay the next chunk until reset", async () =
   );
   const pauses: number[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -632,6 +645,7 @@ test("429 retry-after identifies the affected limit instead of unrelated reset w
   const pauses: number[] = [];
   let calls = 0;
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -681,6 +695,7 @@ test("daily token exhaustion reports safe numeric evidence without provider iden
   const plan = buildPlan([chunkFile("daily-evidence.ts", 10)], {}, sha);
   const logs: string[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -711,6 +726,7 @@ test("daily token exhaustion reports safe numeric evidence without provider iden
 test("a request exceeding the minute allowance reports that waits cannot fix its size", async () => {
   const plan = buildPlan([chunkFile("oversized-tokens.ts", 10)], {}, sha);
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -741,6 +757,7 @@ test("an observation explicitly requiring no correction is rejected and retried"
   expect(() => validateAssessment({ findings: [observation] }, plan.chunks[0])).toThrow();
   const requests: any[] = [];
   const report = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "Revisar el cambio.",
     apiKey: "simulation",

@@ -1,3 +1,4 @@
+import { fixtureVerifier } from "./ai-review-test-verifier.cjs";
 import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -47,6 +48,7 @@ test("resumes partial quota failure using valid blocks instead of reviewing them
   let calls = 0;
   try {
     const first = await reviewPlan({
+      verify: fixtureVerifier,
       ...f.options,
       fetchImpl: async () => {
         if (++calls === 1) return valid();
@@ -62,6 +64,7 @@ test("resumes partial quota failure using valid blocks instead of reviewing them
       measuredCalls: 1,
     });
     const resumed = await reviewPlan({
+      verify: fixtureVerifier,
       ...f.options,
       fetchImpl: async () => {
         calls++;
@@ -74,6 +77,7 @@ test("resumes partial quota failure using valid blocks instead of reviewing them
     expect(resumed.calls).toBe(f.plan.chunks.length - 1);
     expect(resumed.usage.prompt).toBe(1000 * resumed.calls);
     const complete = await reviewPlan({
+      verify: fixtureVerifier,
       ...f.options,
       fetchImpl: async () => {
         throw new Error("No network expected");
@@ -153,10 +157,15 @@ test("cached invalid assessments and stale heads never become completed coverage
         },
       ],
     });
-    const recovered = await reviewPlan({ ...f.options, fetchImpl: async () => valid() });
+    const recovered = await reviewPlan({
+      verify: fixtureVerifier,
+      ...f.options,
+      fetchImpl: async () => valid(),
+    });
     expect(recovered.calls).toBe(f.plan.chunks.length);
     expect(recovered.reused).toBe(0);
     const stale = await reviewPlan({
+      verify: fixtureVerifier,
       ...f.options,
       isCurrent: async () => false,
       fetchImpl: async () => valid(),
