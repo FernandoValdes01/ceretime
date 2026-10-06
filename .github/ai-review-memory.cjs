@@ -18,7 +18,16 @@ function memoryIdentity(plan, instructions) {
       limits: plan.limits,
       instructions,
       implementation: hash(
-        ["chunks", "selection", "context", "memory", "provider", "verification", "evidence"]
+        [
+          "chunks",
+          "selection",
+          "context",
+          "memory",
+          "provider",
+          "verification",
+          "evidence",
+          "payload",
+        ]
           .map((name) => fs.readFileSync(path.join(__dirname, `ai-review-${name}.cjs`), "utf8"))
           .join("\n"),
       ),

@@ -784,3 +784,16 @@ test("an observation explicitly requiring no correction is rejected and retried"
   expect(report.coverage).toBe("complete");
   expect(requests[1].messages[0].content).toContain("La respuesta anterior fue rechazada");
 });
+
+test("UI snapshot XML is evidence while Android manifests and resource XML remain reviewable", () => {
+  expect(
+    classifyFile({ filename: "apps/mobile/docs/evidence/ti4-50/01-defaults.xml" }).eligible,
+  ).toBe(false);
+  expect(
+    classifyFile({ filename: "apps/mobile/android/app/src/main/AndroidManifest.xml" }).eligible,
+  ).toBe(true);
+  expect(
+    classifyFile({ filename: "apps/mobile/android/app/src/main/res/values/styles.xml" }).eligible,
+  ).toBe(true);
+  expect(classifyFile({ filename: "docs/contracts/config.xml" }).eligible).toBe(true);
+});

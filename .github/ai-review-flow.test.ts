@@ -1887,7 +1887,7 @@ test("an explicit justified evidence resolution can finish after a demonstrated 
   }
 });
 
-test("evidence recovery rejects excessive requests and reports oversized declarations", () => {
+test("evidence recovery rejects excessive requests and paginates oversized declarations", () => {
   const f = fixture({
     "file.ts": "export const run = () => 1;\n",
     "contract.ts":
@@ -1921,9 +1921,9 @@ test("evidence recovery rejects excessive requests and reports oversized declara
       chunk: plan.chunks[0],
       requests: [request],
     });
-    expect(result.recovered).toBe(0);
-    expect(result.unresolved[0].detail).toContain("presupuesto");
-    expect(result.chunk.parts[0].evidenceRecovery).toHaveLength(1);
+    expect(result.recovered).toBe(2);
+    expect(result.unresolved).toEqual([]);
+    expect(result.chunk.parts[0].context.every((c: any) => c.head.length <= 4000)).toBe(true);
     expect(() =>
       recoverEvidence({
         directory: f.directory,
@@ -1933,6 +1933,383 @@ test("evidence recovery rejects excessive requests and reports oversized declara
         requests: Array.from({ length: 9 }, () => request),
       }),
     ).toThrow();
+  } finally {
+    f.clean();
+  }
+});
+
+test("live descriptive and compound symbol requests recover the actual named declarations", () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "target.ts":
+      "export function currentReview() { return true; }\nexport function eventTarget() { return 1; }\nexport function pullNumber() { return 85; }\n",
+  });
+  try {
+    const chunk = buildPlan(
+      [{ filename: "file.ts", patch: "@@ -1 +1 @@\n-a\n+b", additions: 1, deletions: 1 }],
+      {},
+      f.pr.head.sha,
+    ).chunks[0];
+    const result = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk,
+      requests: [
+        {
+          path: "target.ts",
+          symbol: "currentReview, eventTarget, pullNumber",
+          reason: "Check manual dispatch contracts",
+        },
+      ],
+    });
+    expect(result.unresolved).toEqual([]);
+    expect(result.recovered).toBeGreaterThan(0);
+    expect(result.chunk.parts[0].context.map((c: any) => c.head).join("\n")).toContain(
+      "function pullNumber",
+    );
+  } finally {
+    f.clean();
+  }
+});
+
+test("live recovery sizing ignores anchors that are never sent to inference", async () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "target.ts": "export function pullNumber() { /*" + "x".repeat(900) + "*/ return 85; }\n",
+  });
+  try {
+    const lines = Array.from({ length: 1500 }, () => "+x();").join("\n");
+    const plan = buildPlan(
+      [
+        {
+          filename: "file.ts",
+          status: "added",
+          patch: `@@ -0,0 +1,1500 @@\n${lines}`,
+          additions: 1500,
+          deletions: 0,
+        },
+      ],
+      {},
+      f.pr.head.sha,
+    );
+    expect(plan.chunks).toHaveLength(1);
+    let calls = 0;
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      sleep: async () => {},
+      recoverContext: ({ chunk, requests }: any) =>
+        recoverEvidence({
+          directory: f.directory,
+          base: f.base,
+          sha: f.pr.head.sha,
+          chunk,
+          requests,
+        }),
+      fetchImpl: async (_url: any, request: any) => {
+        expect(request.body.length).toBeLessThanOrEqual(plan.limits.inputChars);
+        calls++;
+        const data = {
+          findings: [],
+          evidenceRequests:
+            calls === 1
+              ? [
+                  {
+                    path: "target.ts",
+                    symbol: "pullNumber",
+                    reason: "Verify the manual PR number contract",
+                  },
+                ]
+              : [],
+        };
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            choices: [{ finish_reason: "stop", message: { content: JSON.stringify(data) } }],
+          }),
+        };
+      },
+    });
+    expect(calls).toBe(2);
+    expect(report.coverage).toBe("complete");
+  } finally {
+    f.clean();
+  }
+});
+
+test("a large declaration is paginated across two rounds without losing the trusted continuation", async () => {
+  const large =
+    "export function largeContract() {\n" +
+    "const filler = 1;\n".repeat(1150) +
+    "return 'completed-contract';\n}\n";
+  const f = fixture({ "file.ts": "export const run = () => 1;\n", "large.ts": large });
+  try {
+    const plan = await f.prepare();
+    let calls = 0;
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      sleep: async () => {},
+      recoverContext: ({ chunk, requests }: any) =>
+        recoverEvidence({
+          directory: f.directory,
+          base: f.base,
+          sha: f.pr.head.sha,
+          chunk,
+          requests,
+        }),
+      fetchImpl: async (_url: any, request: any) => {
+        calls++;
+        expect(request.body.length).toBeLessThanOrEqual(plan.limits.inputChars);
+        const parts = JSON.parse(JSON.parse(request.body).messages[1].content).parts;
+        if (calls === 3) {
+          const text = parts
+            .flatMap((part: any) => part.context)
+            .map((c: any) => c.head)
+            .join("\n");
+          expect(text).toContain("completed-contract");
+          expect(parts[0].evidenceRecovery.some((r: any) => r.availability === "present")).toBe(
+            true,
+          );
+        }
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify({
+                    findings: [],
+                    evidenceRequests:
+                      calls < 3
+                        ? [
+                            {
+                              path: "large.ts",
+                              symbol: "largeContract (cuerpo completo)",
+                              reason: "Verify all return branches",
+                            },
+                          ]
+                        : [],
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    expect(calls).toBe(3);
+    expect(report.coverage).toBe("complete");
+    expect(report.missingEvidence).toEqual([]);
+  } finally {
+    f.clean();
+  }
+});
+
+test("a full block is partitioned for recovered evidence without losing patch coordinates", async () => {
+  const large =
+    "export function largeContract() {\n" +
+    "const filler = 1;\n".repeat(1150) +
+    "return 'completed-contract';\n}\n";
+  const f = fixture({ "file.ts": "export const run = () => 1;\n", "large.ts": large });
+  try {
+    const plan = await f.prepare();
+    const part = plan.chunks[0].parts[0];
+    const extra = Array.from(
+      { length: 900 },
+      (_, i) => `[RIGHT:${i + 100}] +const filler = 1234567890;`,
+    );
+    part.patch += "\n" + extra.join("\n");
+    part.anchors.push(...extra.map((_, i) => `RIGHT:${i + 100}`));
+    const cached = {
+      ...part,
+      path: "cached.ts",
+      patch: "[RIGHT:1] +export const cached = 1;",
+      anchors: ["RIGHT:1"],
+      followups: [{ id: "cached-thread" }],
+    };
+    plan.chunks[0].parts.push(cached);
+    const expected = new Set(part.anchors);
+    const seen = new Set<string>();
+    let calls = 0;
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      memory: {
+        get: (p: any) =>
+          p.path === "cached.ts"
+            ? {
+                findings: [],
+                resolutions: [
+                  {
+                    id: "cached-thread",
+                    status: "resolved",
+                    explanation: "Verified cached resolution",
+                  },
+                ],
+                limitations: [],
+              }
+            : null,
+        set: () => {},
+      },
+      sleep: async () => {},
+      recoverContext: ({ chunk, requests }: any) =>
+        recoverEvidence({
+          directory: f.directory,
+          base: f.base,
+          sha: f.pr.head.sha,
+          chunk,
+          requests,
+        }),
+      fetchImpl: async (_url: any, request: any) => {
+        calls++;
+        expect(request.body.length).toBeLessThanOrEqual(plan.limits.inputChars);
+        const parts = JSON.parse(JSON.parse(request.body).messages[1].content).parts;
+        const complete = parts
+          .flatMap((p: any) => p.context)
+          .some((c: any) => c.head.includes("completed-contract"));
+        if (complete)
+          for (const p of parts)
+            for (const match of p.patch.matchAll(/\[(RIGHT|LEFT):(\d+)\]/g))
+              seen.add(`${match[1]}:${match[2]}`);
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify({
+                    findings: [],
+                    evidenceRequests: complete
+                      ? []
+                      : [
+                          {
+                            path: "large.ts",
+                            symbol: "largeContract",
+                            reason: "Verify all branches",
+                          },
+                        ],
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    expect(plan.chunks.length).toBeGreaterThan(1);
+    expect(report.coverage).toBe("complete");
+    expect(report.resolutions).toContainEqual({
+      id: "cached-thread",
+      status: "resolved",
+      explanation: "Verified cached resolution",
+    });
+    expect(seen).toEqual(expected);
+    expect(calls).toBeLessThanOrEqual(32);
+  } finally {
+    f.clean();
+  }
+});
+
+test("a local verification input limit is reported as a reviewer budget incident", async () => {
+  const plan = buildPlan(
+    [{ filename: "file.ts", patch: "@@ -1 +1 @@\n-before\n+after", additions: 1, deletions: 1 }],
+    {},
+    "a".repeat(40),
+  );
+  const report = await reviewPlan({
+    plan,
+    apiKey: "fixture",
+    sleep: async () => {},
+    verify: async () => {
+      throw new Error("La evidencia de verificación supera el presupuesto de entrada.");
+    },
+    fetchImpl: async () =>
+      answer([
+        {
+          path: "file.ts",
+          line: 1,
+          side: "RIGHT",
+          severity: "important",
+          issue_key: "actual-defect",
+          cause: "Changed return contract",
+          impact: "Wrong return value",
+          fix: "Restore the contract",
+        },
+      ]),
+  });
+  expect(report.coverage).toBe("incomplete");
+  expect(report.infrastructure[0]).toContain("presupuesto de entrada");
+  expect(report.infrastructure[0]).not.toContain("proveedor");
+  expect(report.findings).toEqual([]);
+});
+
+test("partitioned patches keep prior findings with their actual coordinate", () => {
+  const { splitRecoveredChunk } = require("./ai-review-payload.cjs");
+  const parts = [
+    {
+      path: "file.ts",
+      status: "modified",
+      context: [{ path: "contract.ts", head: "x".repeat(500) }],
+      patch: Array.from(
+        { length: 20 },
+        (_, i) => `[RIGHT:${i + 1}] +const v${i} = ${i}; // ${"x".repeat(80)}`,
+      ).join("\n"),
+      anchors: Array.from({ length: 20 }, (_, i) => `RIGHT:${i + 1}`),
+      followups: [{ id: "9", currentLine: 20, original_excerpt: "x".repeat(200) }],
+    },
+  ];
+  const chunks = splitRecoveredChunk({ parts }, 1400);
+  expect(chunks.length).toBeGreaterThan(1);
+  const { publicParts } = require("./ai-review-payload.cjs");
+  expect(
+    chunks.every((chunk: any) => JSON.stringify(publicParts(chunk.parts)).length <= 1400),
+  ).toBe(true);
+  const containing = chunks
+    .flatMap((chunk: any) => chunk.parts)
+    .find((part: any) => part.followups.some((thread: any) => thread.id === "9"));
+  expect(containing.anchors).toContain("RIGHT:20");
+  expect(
+    chunks.flatMap((chunk: any) => chunk.parts).flatMap((part: any) => part.followups),
+  ).toHaveLength(1);
+});
+
+test("compound evidence keeps missing declarations pending and resolves literal workflow steps", () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    ".github/workflows/example.yml":
+      "jobs:\n  review:\n    steps:\n      - name: Verify evidence\n        run: node verify.cjs\n      - name: Publish\n        run: node publish.cjs\n",
+  });
+  try {
+    const chunk = { parts: [{ path: "file.ts", context: [], contextKey: "fixture" }] };
+    const recovered = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk,
+      requests: [
+        { path: "file.ts", symbol: "run, missingContract", reason: "Verify both declarations" },
+        {
+          path: ".github/workflows/example.yml",
+          fragment: "Verify evidence",
+          reason: "Verify invoked command",
+        },
+      ],
+    });
+    expect(recovered.unresolved).toHaveLength(1);
+    expect(recovered.unresolved[0].detail).toContain("missingContract");
+    expect(
+      recovered.chunk.parts[0].context.some((item: any) => item.head.includes("node verify.cjs")),
+    ).toBe(true);
+    expect(
+      recovered.chunk.parts[0].context.some((item: any) => item.head.includes("node publish.cjs")),
+    ).toBe(false);
   } finally {
     f.clean();
   }

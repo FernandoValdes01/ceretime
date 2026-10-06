@@ -1,6 +1,6 @@
 # Corrección de evidencia y cobertura de R2D2
 
-Este cambio amplía la auditoría de CI/R2D2 dentro de la rama y PR de TI4-50 por instrucción del responsable. No modifica código funcional de Web, Mobile ni Backend. La PR permanece Draft; no se modifica `main` ni el ruleset.
+Este cambio amplía la auditoría de CI/R2D2 dentro de la rama y PR de TI4-50 por instrucción del responsable. No modifica código funcional de Web, Mobile ni Backend. La PR está abierta para revisión por instrucción del responsable; no se modifica `main` ni el ruleset.
 
 ## Reproducción y causas
 
@@ -37,7 +37,7 @@ Estos son errores del reviewer y de documentación operativa. No son fallos exte
 | `bun run lint`                               | Verde                                                  |
 | `bun run format:check`                       | Verde, después de `bun run format`                     |
 | `bun test ./.github/ci-publication.test.ts`  | 22 pruebas verdes                                      |
-| `bun test ./.github/ai-review-score.test.ts` | 137 pruebas verdes, incluye suites nuevas              |
+| `bun test ./.github/ai-review-score.test.ts` | 145 pruebas verdes, incluye suites nuevas              |
 | `bun run test:convex`                        | 351 pruebas verdes                                     |
 | `bun run test:web`                           | 87 pruebas verdes                                      |
 | `bun run --cwd apps/mobile typecheck`        | Verde                                                  |
@@ -59,3 +59,15 @@ La recuperación puede consumir llamadas adicionales, dentro del presupuesto glo
 El trigger manual debe estar integrado en la rama predeterminada antes de que GitHub lo habilite. La PR sigue Draft y la revisión remota de IA se omite; no se consume OpenRouter para esta entrega ni se afirma haber obtenido una revisión real 5/5. Los runs reales de CI se enlazan en la descripción de la PR. Consulta [protecciones de CI](../docs/ci-protections.md) para ejecutar de nuevo una revisión formal sin hallazgos inline.
 
 La consulta del ruleset confirmó cinco checks obligatorios y asociación del status R2D2 con la App `5164648`. No se modifican bypass, métodos de merge, resolución obligatoria de hilos, secretos, modelo, categorías de defectos ni los cuatro nombres de CI. La recuperación de un bloqueo del reviewer se documenta; no se fabrica un status aprobado ni se integra la PR automáticamente.
+
+## Comprobación real después de abrir la PR
+
+La [ejecución 37471196981](https://github.com/FernandoValdes01/ceretime/actions/runs/37471196981), sobre `58b241e`, procesó 19/19 bloques y realizó 25 llamadas, pero dejó once solicitudes pendientes y un incidente de verificación. El resultado correcto fue «revisión incompleta», sin nota de calidad ni hallazgos publicados. Los cuatro checks de CI y Preview pasaron en la [ejecución 37471197014](https://github.com/FernandoValdes01/ceretime/actions/runs/37471197014). Esto demuestra un bloqueo del reviewer; no demuestra un defecto del producto ni una caída del runner.
+
+La recuperación exigía símbolos exactos, por lo que solicitudes como `reviewPlan (cuerpo completo)` o varios identificadores juntos no se resolvían. Además, una declaración de 19.648 caracteres superaba el fragmento de 4.000; el presupuesto de recuperación contaba coordenadas internas que no se enviaban al modelo y no reservaba espacio en bloques llenos. Una reproducción local mostró 45.834 caracteres iniciales y 63.589 después de recuperar evidencia, frente al límite de 48.000. Las capturas XML del emulador se trataban como código y provocaban solicitudes ajenas a su propósito.
+
+La corrección admite identificadores compuestos y descripciones anteriores, conserva pendientes los símbolos realmente ausentes, permite fragmentos literales de tests y pasos de workflows y pagina declaraciones con cursores validados. Se mantienen dos rondas de recuperación, hasta ocho solicitudes, fragmentos de 4.000 y 16.000 caracteres recuperados por ronda. Se eliminan coordenadas internas y extractos idénticos de ambas solicitudes de inferencia; los contratos del bloque se comparten también al verificar citas. Si la evidencia no cabe, solo se divide el bloque afectado, conservando todas las líneas y coordenadas del diff, los contratos, los resultados en memoria y la ubicación de hilos anteriores. Los límites de 32 bloques y 32 llamadas permanecen; si no cabe una partición segura, el resultado sigue incompleto.
+
+Los XML y patches bajo `docs/evidence/` se excluyen como artefactos de demostración. Los manifiestos Android, recursos XML y contratos XML siguen siendo revisables. Los errores de presupuesto, JSON, tiempo y HTTP del proveedor se distinguen en el diagnóstico; no se atribuye automáticamente un fallo local al proveedor. No se modifican la escala, las severidades, la verificación independiente ni los casos positivos de PR #73 para obtener una aprobación.
+
+Las nuevas regresiones cubren símbolos compuestos, símbolos ausentes, declaraciones paginadas, continuidad del cursor, presupuesto del payload público, un bloque lleno que debe dividirse sin perder coordenadas ni resultados en memoria, hilos trasladados a su fragmento, pasos de workflow y diagnóstico de límites locales. La nueva ejecución real debe comprobarse sobre el siguiente commit; este informe no certifica anticipadamente 5/5.
