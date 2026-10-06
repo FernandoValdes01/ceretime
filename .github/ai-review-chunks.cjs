@@ -306,14 +306,21 @@ function validateAssessment(data, chunk) {
       throw new Error(
         "Un hallazgo exige impacto funcional y una corrección necesaria; las observaciones sin defecto deben omitirse.",
       );
-    if (!/^[a-z0-9][a-z0-9_-]*$/.test(finding.issue_key))
-      throw new Error("Identidad de hallazgo inválida.");
+    const issueKey = finding.issue_key
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    if (!issueKey) throw new Error("Identidad de hallazgo inválida.");
     if (finding.threadId && !part.followups?.some((t) => t.id === String(finding.threadId)))
       throw new Error("Hilo desconocido.");
     if (part.followupOnly && !finding.threadId)
       throw new Error("Un seguimiento no admite hallazgos nuevos.");
     return {
       ...finding,
+      issue_key: issueKey,
       threadId: finding.threadId ? String(finding.threadId) : undefined,
       body: `Cambio que causa el problema: ${finding.cause}\n\nImpacto: ${finding.impact}\n\nCorrección propuesta: ${finding.fix}`,
     };

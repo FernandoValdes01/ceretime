@@ -107,6 +107,17 @@ for (const data of [
       validateAssessment(data, buildPlan([chunkFile("file.ts", 10)], {}, sha).chunks[0]),
     ).toThrow();
   });
+test("finding identities normalize punctuation without losing a stable issue key", () => {
+  const plan = buildPlan([chunkFile("file.ts", 10)], {}, sha);
+  const assessment = validateAssessment(
+    { findings: [finding({ issue_key: "  Session Error: invalid token!  " })] },
+    plan.chunks[0],
+  );
+  expect(assessment.findings[0].issue_key).toBe("session-error-invalid-token");
+  expect(() =>
+    validateAssessment({ findings: [finding({ issue_key: " !!! " })] }, plan.chunks[0]),
+  ).toThrow("Identidad de hallazgo inválida.");
+});
 test("multiple concrete limitations can describe one changed file without invalidating coverage", () => {
   const plan = buildPlan([chunkFile("file.ts", 10)], {}, sha);
   const limitations = ["Falta verificar el consumidor A.", "Falta verificar el contrato B."];
