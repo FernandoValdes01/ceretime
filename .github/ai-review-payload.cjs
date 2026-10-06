@@ -4,22 +4,42 @@ function publicParts(parts) {
   const seen = new Set();
   return parts.map(({ anchors: _anchors, contextKey: _contextKey, ...part }) => ({
     ...part,
-    context: (part.context ?? []).filter((item) => {
-      const key = JSON.stringify(item);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    }),
+    context: (part.context ?? [])
+      .map(({ forPath: _forPath, ...item }) => item)
+      .filter((item) => {
+        const key = JSON.stringify(item);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }),
   }));
 }
 // Split only a recovered block that no longer fits. Every partition receives the
 // same contracts; patch coordinates survive verbatim and no line is discarded.
 function splitRecoveredChunk(chunk, limit) {
-  const context = publicParts(chunk.parts).flatMap((part) => part.context);
+  const recoveredByPath = new Map();
+  for (const item of publicParts(chunk.parts)
+    .flatMap((part) => part.context)
+    .filter((entry) => entry.recovered)) {
+    const key = `${item.path}:${item.side ?? (item.headState === "present" ? "head" : "base")}:${item.offset ?? 0}`;
+    recoveredByPath.set(key, item);
+  }
   const fits = (parts) => JSON.stringify(publicParts(parts)).length <= limit;
   const chunks = [];
   let current = [];
   for (const original of chunk.parts) {
+    const paths = new Set([
+      original.path,
+      original.change?.oldPath,
+      original.previousPath,
+      ...(original.context ?? []).map((item) => item.path),
+    ]);
+    const relatedRecovered = [...recoveredByPath.values()].filter((item) =>
+      item.forPath ? item.forPath === original.path : paths.has(item.path),
+    );
+    const context = publicParts([
+      { ...original, context: original.context ?? [] },
+    ])[0].context.concat(relatedRecovered);
     const part = { ...original, context };
     const pieces = [];
     if (fits([part])) pieces.push(part);

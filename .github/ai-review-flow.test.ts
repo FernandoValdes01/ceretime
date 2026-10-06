@@ -1497,6 +1497,12 @@ test("structured requests recover a omitted contract then rerun only the affecte
   });
   try {
     const plan = await f.prepare();
+    plan.chunks[0].parts[0].context.push({
+      path: "contract.ts",
+      head: "",
+      headState: "present",
+      headComplete: false,
+    });
     let calls = 0;
     const report = await reviewPlan({
       plan,
@@ -1558,6 +1564,12 @@ test("unrecoverable evidence is explicit and repeated requests stop after two re
   const f = fixture();
   try {
     const plan = await f.prepare();
+    plan.chunks[0].parts[0].context.push({
+      path: "large.ts",
+      head: "",
+      headState: "present",
+      headComplete: false,
+    });
     let calls = 0;
     const report = await reviewPlan({
       plan,
@@ -2125,6 +2137,12 @@ test("a full block is partitioned for recovered evidence without losing patch co
   const f = fixture({ "file.ts": "export const run = () => 1;\n", "large.ts": large });
   try {
     const plan = await f.prepare();
+    plan.chunks[0].parts[0].context.push({
+      path: "large.ts",
+      head: "",
+      headState: "present",
+      headComplete: false,
+    });
     const part = plan.chunks[0].parts[0];
     const extra = Array.from(
       { length: 900 },
@@ -2294,7 +2312,18 @@ test("compound evidence keeps missing declarations pending and resolves literal 
       "jobs:\n  review:\n    steps:\n      - name: Verify evidence\n        run: node verify.cjs\n      - name: Publish\n        run: node publish.cjs\n",
   });
   try {
-    const chunk = { parts: [{ path: "file.ts", context: [], contextKey: "fixture" }] };
+    const chunk = {
+      parts: [
+        {
+          path: "file.ts",
+          context: [
+            { path: ".github/ai-review-chunks.cjs", head: "" },
+            { path: ".github/workflows/example.yml", head: "" },
+          ],
+          contextKey: "fixture",
+        },
+      ],
+    };
     const recovered = recoverEvidence({
       directory: f.directory,
       base: f.base,
@@ -2461,11 +2490,18 @@ test("whole-file recovery distinguishes a present empty file from absent or unav
       directory: f.directory,
       base: f.base,
       sha: f.pr.head.sha,
-      chunk: { parts: [{ path: "file.ts", context: [] }] },
+      chunk: {
+        parts: [
+          {
+            path: "file.ts",
+            context: [{ path: "empty.ts", head: "", headState: "present", headComplete: false }],
+          },
+        ],
+      },
       requests: [{ path: "empty.ts", scope: "file", reason: "Verify the complete file" }],
     });
     expect(recovered.unresolved).toEqual([]);
-    expect(recovered.chunk.parts[0].context[0]).toMatchObject({
+    expect(recovered.chunk.parts[0].context.at(-1)).toMatchObject({
       head: "",
       headState: "present",
       headComplete: true,
@@ -2474,4 +2510,78 @@ test("whole-file recovery distinguishes a present empty file from absent or unav
   } finally {
     f.clean();
   }
+});
+
+test("recovery for one changed file is not copied into unrelated partitions", () => {
+  const { splitRecoveredChunk, publicParts } = require("./ai-review-payload.cjs");
+  const chunk = {
+    parts: [
+      {
+        path: "a.ts",
+        change: { oldPath: "a.ts" },
+        status: "modified",
+        context: [{ path: "a.ts", head: "a contract" }],
+        patch: "[RIGHT:1] +change a",
+        anchors: ["RIGHT:1"],
+        followups: [],
+      },
+      {
+        path: "b.ts",
+        change: { oldPath: "b.ts" },
+        status: "modified",
+        context: [{ path: "b.ts", head: "b contract" }],
+        patch: "[RIGHT:2] +change b",
+        anchors: ["RIGHT:2"],
+        followups: [],
+      },
+    ],
+  };
+  const recovered = chunk.parts.map((part) => ({
+    ...part,
+    context:
+      part.path === "a.ts"
+        ? [
+            ...part.context,
+            {
+              path: "a.ts",
+              head: "recovered contract",
+              headState: "present",
+              recovered: true,
+              offset: 0,
+            },
+          ]
+        : part.context,
+  }));
+  const split = splitRecoveredChunk({ parts: recovered }, 350);
+  expect(split).not.toBeNull();
+  const a = split
+    .flatMap((block: any) => publicParts(block.parts))
+    .find((part: any) => part.path === "a.ts");
+  const b = split
+    .flatMap((block: any) => publicParts(block.parts))
+    .find((part: any) => part.path === "b.ts");
+  expect(a.context.some((item: any) => item.recovered)).toBe(true);
+  expect(b.context.some((item: any) => item.recovered)).toBe(false);
+});
+
+test("a structured evidence request cannot claim context for a different changed file", () => {
+  const chunk = {
+    parts: [{ path: "changed.ts", anchors: ["RIGHT:1"], patch: "[RIGHT:1] +value" }],
+  };
+  expect(() =>
+    validateAssessment(
+      {
+        findings: [],
+        evidenceRequests: [
+          {
+            path: "contract.ts",
+            symbol: "contractValue",
+            forPath: "other.ts",
+            reason: "Verify the changed contract",
+          },
+        ],
+      },
+      chunk,
+    ),
+  ).toThrow("Ruta de cambio asociada a evidencia desconocida");
 });

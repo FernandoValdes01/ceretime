@@ -56,7 +56,7 @@ test("resumes partial quota failure using valid blocks instead of reviewing them
       },
     });
     expect(first.coverage).toBe("incomplete");
-    expect(first.processed).toBe(1);
+    expect(first.processed).toBe(2);
     expect(first.usage).toEqual({
       prompt: 1000,
       completion: 100,

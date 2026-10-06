@@ -23,6 +23,11 @@ function evidenceRequests(value = []) {
       typeof request.reason !== "string" ||
       !request.reason.trim() ||
       request.reason.length > 800 ||
+      (request.forPath != null &&
+        (typeof request.forPath !== "string" ||
+          !/^[a-zA-Z0-9_.@/ -]+$/.test(request.forPath) ||
+          request.forPath.startsWith("/") ||
+          request.forPath.split("/").some((part) => !part || part === "." || part === ".."))) ||
       (request.scope != null && request.scope !== "file") ||
       (request.scope !== "file" &&
         ![request.symbol, request.fragment].some(
@@ -67,6 +72,11 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         complete: true,
         declarationComplete: true,
         offset: 0,
+        ...(request.forPath
+          ? { forPath: request.forPath }
+          : chunk.parts.length === 1
+            ? { forPath: chunk.parts[0].path }
+            : {}),
       });
       fulfilled.push({
         ...request,
@@ -109,6 +119,11 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         complete: cursor === 0 && end === selected.text.length && text.trim() === state.text.trim(),
         declarationComplete: end === selected.text.length,
         offset: cursor,
+        ...(request.forPath
+          ? { forPath: request.forPath }
+          : chunk.parts.length === 1
+            ? { forPath: chunk.parts[0].path }
+            : {}),
       });
       cursor = end;
     }
@@ -137,6 +152,18 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
   const parts = chunk.parts.map((part) => {
     const context = structuredClone(part.context ?? []);
     for (const item of recovered) {
+      const relatedPaths = new Set([
+        part.path,
+        part.change?.oldPath,
+        part.previousPath,
+        ...context.map((entry) => entry.path),
+      ]);
+      // Attach a request to the changed part that requested its contract, not
+      // every unrelated change that happened to share the provider block.
+      const requestPart =
+        item.forPath ?? (chunk.parts.length === 1 ? chunk.parts[0].path : undefined);
+      if (requestPart && requestPart !== part.path) continue;
+      if (!requestPart && !relatedPaths.has(item.path)) continue;
       // Keep recovered declarations separate from an existing excerpt; never replace other evidence.
       context.push({
         path: item.path,
@@ -149,6 +176,7 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         recovered: true,
         declarationComplete: item.declarationComplete,
         offset: item.offset,
+        ...(item.forPath ? { forPath: item.forPath } : {}),
       });
     }
     return {
@@ -247,6 +275,7 @@ function requestKey(request) {
     identifiers?.length ? identifiers.join(",") : (request.symbol ?? null),
     request.fragment ?? null,
     request.scope ?? null,
+    request.forPath ?? null,
   ]);
 }
 // Resolve legacy free-text limitations only against declarations and paths in

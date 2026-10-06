@@ -228,6 +228,13 @@ test("each inference identifies its scope within the complete review plan", asyn
       block: index + 1,
       totalBlocks: plan.chunks.length,
       paths: [...new Set(plan.chunks[index].parts.map((part: any) => part.path))],
+      followupThreads: plan.chunks[index].parts.flatMap((part: any) =>
+        (part.followups ?? []).map((thread: any) => ({
+          id: thread.id,
+          path: part.path,
+          currentLine: thread.currentLine,
+        })),
+      ),
     });
     expect(request.messages[0].content).toContain("Los demás bloques se revisan por separado");
     expect(request.messages[0].content).toContain("contrato necesario para evaluar estas partes");
@@ -796,4 +803,25 @@ test("UI snapshot XML is evidence while Android manifests and resource XML remai
     classifyFile({ filename: "apps/mobile/android/app/src/main/res/values/styles.xml" }).eligible,
   ).toBe(true);
   expect(classifyFile({ filename: "docs/contracts/config.xml" }).eligible).toBe(true);
+});
+
+test("an invalid block stays incomplete while independent later blocks still receive review", async () => {
+  const plan = buildPlan([chunkFile("first.ts", 1, 10), chunkFile("later.ts", 1, 10)], config, sha);
+  plan.chunks = plan.chunks.flatMap((chunk: any) =>
+    chunk.parts.map((part: any) => ({ parts: [part] })),
+  );
+  expect(plan.chunks).toHaveLength(2);
+  let calls = 0;
+  const { result } = await runChunks(plan, undefined, async (_url: string, request: any) => {
+    calls++;
+    const { paths } = JSON.parse(JSON.parse(request.body).messages[1].content).scope;
+    if (paths[0] === "first.ts") return jsonResponse({ findings: [], score: 5 });
+    return jsonResponse({ findings: [] });
+  });
+  expect(calls).toBe(3);
+  expect(result.processed).toBe(2);
+  expect(result.total).toBe(2);
+  expect(result.coverage).toBe("incomplete");
+  expect(result.qualityScore).toBeNull();
+  expect(result.infrastructure).toHaveLength(1);
 });
