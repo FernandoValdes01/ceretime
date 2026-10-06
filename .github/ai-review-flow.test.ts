@@ -2632,6 +2632,48 @@ test("recovery for one changed file is not copied into unrelated partitions", ()
   expect(b.context.some((item: any) => item.recovered)).toBe(false);
 });
 
+test("oversized recovered contracts are distributed without dropping changed lines", () => {
+  const { splitRecoveredChunk, publicParts } = require("./ai-review-payload.cjs");
+  const anchors = Array.from({ length: 8 }, (_, i) => `RIGHT:${i + 1}`);
+  const part = {
+    path: "a.ts",
+    status: "modified",
+    context: [
+      { path: "a.ts", head: "base contract" },
+      {
+        path: "a.ts",
+        head: "first recovered contract ".repeat(8),
+        headState: "present",
+        recovered: true,
+        offset: 0,
+      },
+      {
+        path: "a.ts",
+        head: "second recovered contract ".repeat(8),
+        headState: "present",
+        recovered: true,
+        offset: 1,
+      },
+    ],
+    patch: anchors.map((anchor) => `[${anchor}] +const value = 1;`).join("\n"),
+    anchors,
+    followups: [],
+  };
+  const chunks = splitRecoveredChunk({ parts: [part] }, 900);
+  expect(chunks).not.toBeNull();
+  const reviewed = chunks.flatMap((chunk: any) => publicParts(chunk.parts));
+  expect(reviewed.every((item: any) => JSON.stringify(item).length <= 900)).toBe(true);
+  expect(
+    reviewed
+      .flatMap((item: any) => [...item.patch.matchAll(/\[(RIGHT|LEFT):(\d+)\]/g)])
+      .map((match: any) => `${match[1]}:${match[2]}`)
+      .sort(),
+  ).toEqual(anchors.sort());
+  expect(
+    reviewed.flatMap((item: any) => item.context).filter((item: any) => item.recovered),
+  ).toHaveLength(2);
+});
+
 test("a structured evidence request cannot claim context for a different changed file", () => {
   const chunk = {
     parts: [{ path: "changed.ts", anchors: ["RIGHT:1"], patch: "[RIGHT:1] +value" }],
