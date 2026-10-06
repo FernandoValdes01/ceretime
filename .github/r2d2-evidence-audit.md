@@ -27,7 +27,7 @@ Estos son errores del reviewer y de documentación operativa. No son fallos exte
 - Plan, evaluación y publicación: `.github/ai-review-chunks.cjs`, `.github/ai-review-verification.cjs`, `.github/ai-review-score.cjs`, `.github/ai-review-target.cjs`, `.github/ai-review-memory.cjs`, `.github/ai-review-presentation.cjs`.
 - Operación y demostraciones: `.github/workflows/ai-code-review.yml`, `.github/ai-review-scale.cjs`, `.github/ai-review-demo.cjs`.
 - Regresiones: `.github/ai-review-renames.test.ts`, `.github/ai-review-flow.test.ts`, `.github/ai-review-score.test.ts`.
-- Documentación: `.github/ci-audit.md`, este informe, `docs/ci-protections.md`, `docs/ci-r2d2-app.md`, `docs/agents/pull-requests.md`.
+- Documentación: `.github/ci-audit.md`, este informe, `docs/ci-protections.md`, `docs/ci-r2d2-app.md`, `docs/agents/pull-requests.md`, `docs/ci-build-validation.md`, `docs/vercel-deployment.md`.
 
 ## Validación local
 
