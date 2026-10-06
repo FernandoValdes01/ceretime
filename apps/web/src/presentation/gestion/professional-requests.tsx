@@ -93,7 +93,8 @@ function usePagedItems<Item extends RequestListItem>(
   const [done, setDone] = useState(false);
 
   if (page !== undefined) {
-    const currentHash = page.page.map((item) => item._id).join(",");
+    // Hash incluye _id y status para detectar cambios de datos con mismo ID
+    const currentHash = page.page.map((item) => `${item._id}:${item.status}`).join(",");
     const existing = pages.get(cursor ?? "first");
     const pageChanged = !existing || existing.hash !== currentHash;
 
@@ -281,7 +282,7 @@ export function ProfessionalRequestDetailPage({ requestId }: { requestId: string
         </Link>
       </p>
       <StudentPanelErrorBoundary subject="el detalle de la solicitud" level="section">
-        <RequestDetailBody requestId={requestId} />
+        <RequestDetailBody key={requestId} requestId={requestId} />
       </StudentPanelErrorBoundary>
     </section>
   );

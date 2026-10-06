@@ -511,4 +511,25 @@ describe("acciones del Profesional (TI2-92)", () => {
       expect(screen.queryByRole("button", { name: /Tomar|Pedir información/ })).toBeNull();
     }
   });
+
+  test("navegar de detalle denegado a uno válido muestra el nuevo sin reintento", async () => {
+    comoProfesional();
+    // Primero: detalle denegado
+    detailThrows = new Error("No autorizado");
+    renderAt("/profesional/solicitudes/req-ajena");
+
+    expect(
+      await screen.findByText("No pudimos cargar el detalle de la solicitud.", { exact: false }),
+    ).toBeDefined();
+
+    // Navega a uno válido (cambia requestId en la URL)
+    detailThrows = null;
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    // Debe mostrar el detalle válido SIN necesidad de pulsar "Reintentar"
+    expect(await screen.findByRole("heading", { name: "Detalle de la solicitud" })).toBeDefined();
+    expect(await screen.findByText("En revisión")).toBeDefined();
+    expect(screen.queryByText("No pudimos cargar el detalle")).toBeNull();
+  });
 });
