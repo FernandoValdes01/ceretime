@@ -81,7 +81,7 @@ async function seedAssignment(
 ) {
   return await t
     .withIdentity(identityFor(caller.subject, caller.email))
-    .mutation(internal.assignments.assign, input);
+    .mutation(internal.operations.assignments.assign, input);
 }
 
 async function seedRevoke(
@@ -95,7 +95,7 @@ async function seedRevoke(
 ) {
   return await t
     .withIdentity(identityFor(caller.subject, caller.email))
-    .mutation(internal.assignments.revoke, input);
+    .mutation(internal.operations.assignments.revoke, input);
 }
 
 async function seedNote(
@@ -624,7 +624,7 @@ test("revocar exige profesional vigente y es idempotente", async () => {
   await seedAssignment(t, input, caller);
 
   const asStudent = t.withIdentity(identityFor("s2-est-16", "est16@alu.uct.cl"));
-  await expect(asStudent.mutation(internal.assignments.revoke, input)).rejects.toThrow(
+  await expect(asStudent.mutation(internal.operations.assignments.revoke, input)).rejects.toThrow(
     "No autorizado",
   );
 
@@ -724,15 +724,17 @@ test("asignar exige profesional vigente: anónimo, estudiante e inhabilitado den
     assignedRole: "intern" as const,
   };
 
-  await expect(t.mutation(internal.assignments.assign, input)).rejects.toThrow("No autorizado");
+  await expect(t.mutation(internal.operations.assignments.assign, input)).rejects.toThrow(
+    "No autorizado",
+  );
 
   const asStudent = t.withIdentity(identityFor("s2-est-15", "est15@alu.uct.cl"));
-  await expect(asStudent.mutation(internal.assignments.assign, input)).rejects.toThrow(
+  await expect(asStudent.mutation(internal.operations.assignments.assign, input)).rejects.toThrow(
     "No autorizado",
   );
 
   const asDisabled = t.withIdentity(identityFor("s2-pro-9", "pro9@uct.cl"));
-  await expect(asDisabled.mutation(internal.assignments.assign, input)).rejects.toThrow(
+  await expect(asDisabled.mutation(internal.operations.assignments.assign, input)).rejects.toThrow(
     "No autorizado",
   );
 });

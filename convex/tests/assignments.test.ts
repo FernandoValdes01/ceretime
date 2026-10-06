@@ -114,13 +114,13 @@ test("Asignar registra quién concede y cuándo", async () => {
   };
 
   const asBootstrap = t.withIdentity(identityFor("ti16-pro-10b", "pro10b@uct.cl"));
-  await asBootstrap.mutation(internal.assignments.assign, {
+  await asBootstrap.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: proId,
     assignedRole: "professional",
   });
   const asPro = t.withIdentity(identityFor("ti16-pro-10", "pro10@uct.cl"));
-  await asPro.mutation(internal.assignments.assign, input);
+  await asPro.mutation(internal.operations.assignments.assign, input);
 
   const row = await findAssignmentRow(t, input);
   expect(row).not.toBeNull();
@@ -161,14 +161,14 @@ test("Revocar registra quién revoca y cuándo", async () => {
   };
 
   const asBootstrap = t.withIdentity(identityFor("ti16-pro-11b", "pro11b@uct.cl"));
-  await asBootstrap.mutation(internal.assignments.assign, {
+  await asBootstrap.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: proId,
     assignedRole: "professional",
   });
   const asPro = t.withIdentity(identityFor("ti16-pro-11", "pro11@uct.cl"));
-  await asPro.mutation(internal.assignments.assign, input);
-  await asPro.mutation(internal.assignments.revoke, input);
+  await asPro.mutation(internal.operations.assignments.assign, input);
+  await asPro.mutation(internal.operations.assignments.revoke, input);
 
   const row = await findAssignmentRow(t, input);
   expect(row).not.toBeNull();
@@ -207,7 +207,7 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
   });
   const accompanimentId = await seedAccompaniment(t, studentId);
   const asBootstrap = t.withIdentity(identityFor("ti16-pro-14c", "pro14c@uct.cl"));
-  await asBootstrap.mutation(internal.assignments.assign, {
+  await asBootstrap.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: proId,
     assignedRole: "professional",
@@ -216,7 +216,7 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
 
   // Un estudiante no puede quedar registrado como Practicante
   await expect(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: studentId,
       assignedRole: "intern",
@@ -225,7 +225,7 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
 
   // Un Practicante no puede quedar registrado como Profesional
   await expect(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: internId,
       assignedRole: "professional",
@@ -234,7 +234,7 @@ test("Asignar exige que el rol del usuario coincida con el rol asignado", async 
 
   // Un Profesional no puede quedar registrado como Practicante
   await expect(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: otherProId,
       assignedRole: "intern",
@@ -289,5 +289,7 @@ test("Revocar falla si no alcanza a cerrar todas las filas activas", async () =>
   });
 
   const asPro = t.withIdentity(identityFor("ti16-pro-15", "pro15@uct.cl"));
-  await expect(asPro.mutation(internal.assignments.revoke, input)).rejects.toThrow("sin revocar");
+  await expect(asPro.mutation(internal.operations.assignments.revoke, input)).rejects.toThrow(
+    "sin revocar",
+  );
 });

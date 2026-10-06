@@ -137,12 +137,12 @@ test("profesional detalla solo la solicitud tomada", async () => {
     role: "student",
   });
   await seedUser(t, { subject: "ti10-pro-1", email: "ti10-pro-1@uct.cl", role: "professional" });
-  const takenId = await t.mutation(internal.requests.createTestRequest, {
+  const takenId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Tomada ficticia",
   });
-  const openId = await t.mutation(internal.requests.createTestRequest, {
+  const openId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Abierta ficticia",

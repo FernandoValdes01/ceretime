@@ -57,11 +57,14 @@ test("Persistencia de solicitud: crear, consultar y verificar estado en Convex",
   };
 
   // 1. Ejecutar la mutación interna real de Convex
-  const createdId = await t.mutation(internal.requests.createTestRequest, dummyRequestData);
+  const createdId = await t.mutation(
+    internal.operations.requests.createTestRequest,
+    dummyRequestData,
+  );
   expect(createdId).toBeDefined();
 
   // 2. Ejecutar la consulta interna real de Convex
-  const fetchedRequest = await t.query(internal.requests.getRequestById, {
+  const fetchedRequest = await t.query(internal.operations.requests.getRequestById, {
     id: createdId,
   });
 
@@ -91,7 +94,7 @@ test("Consultar una solicitud inexistente retorna null", async () => {
   });
 
   // La consulta de un ID inexistente debe retornar null
-  const fetchedRequest = await t.query(internal.requests.getRequestById, {
+  const fetchedRequest = await t.query(internal.operations.requests.getRequestById, {
     id: missingId,
   });
   expect(fetchedRequest).toBeNull();
@@ -104,12 +107,12 @@ test("El estado persiste exactamente los literales de Sprint 1 del dominio", asy
 
   // Cada estado de Sprint 1 debe aceptarse tal cual lo define el dominio
   for (const status of SPRINT_1_REQUEST_STATES) {
-    const createdId = await t.mutation(internal.requests.createTestRequest, {
+    const createdId = await t.mutation(internal.operations.requests.createTestRequest, {
       studentId,
       status,
       accessNeeds: "Necesidad de acceso ficticia",
     });
-    const fetchedRequest = await t.query(internal.requests.getRequestById, {
+    const fetchedRequest = await t.query(internal.operations.requests.getRequestById, {
       id: createdId,
     });
     expect(fetchedRequest?.status).toBe(status);
@@ -117,7 +120,7 @@ test("El estado persiste exactamente los literales de Sprint 1 del dominio", asy
 
   // Un estado futuro declarado pero no habilitado debe ser rechazado
   await expect(
-    t.mutation(internal.requests.createTestRequest, {
+    t.mutation(internal.operations.requests.createTestRequest, {
       studentId,
       status: "cancelled" as never,
       accessNeeds: "Necesidad de acceso ficticia",
@@ -235,12 +238,12 @@ test("Profesional lista solo solicitudes tomadas", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-9");
-  const takenId = await t.mutation(internal.requests.createTestRequest, {
+  const takenId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Tomada ficticia",
   });
-  await t.mutation(internal.requests.createTestRequest, {
+  await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Suelta ficticia",
@@ -292,7 +295,7 @@ test("Fila repetida manual no duplica en el listado", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-11");
-  const takenId = await t.mutation(internal.requests.createTestRequest, {
+  const takenId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Tomada ficticia",
@@ -333,7 +336,7 @@ test("Fila manual sin puntero aparece por la fuente legacy", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-19");
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Suelta ficticia",
@@ -369,7 +372,7 @@ test("Legacy duplicadas en páginas distintas salen una sola vez", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-20");
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Duplicada ficticia",
@@ -420,7 +423,7 @@ test("Caminar tomas guardadas no repite ninguna solicitud", async () => {
   const expected: Id<"requests">[] = [];
   for (const tag of ["a", "b", "c"]) {
     expected.push(
-      await t.mutation(internal.requests.createTestRequest, {
+      await t.mutation(internal.operations.requests.createTestRequest, {
         studentId,
         status: "received",
         accessNeeds: `Tomada ${tag} ficticia`,
@@ -466,7 +469,7 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-12");
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Tomada ficticia",
@@ -492,7 +495,7 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
 
   // La toma fija el puntero en la misma transacción: fila y listado
   // no pueden divergir por la vía guardada
-  const pointed = await t.query(internal.requests.getRequestById, { id: requestId });
+  const pointed = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   const proId = await t.run(async (ctx) => {
     const profile = await ctx.db
       .query("users")
@@ -507,7 +510,7 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
   ).rejects.toThrow("recibidas");
 
   // Una toma activa sobre una recibida también se rechaza como duplicada
-  const freshId = await t.mutation(internal.requests.createTestRequest, {
+  const freshId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Otra tomada ficticia",
@@ -536,7 +539,7 @@ test("Tomar exige solicitud recibida sin otra toma activa", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-16");
-  const reviewingId = await t.mutation(internal.requests.createTestRequest, {
+  const reviewingId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "under_review",
     accessNeeds: "En revisión ficticia",
@@ -565,17 +568,17 @@ test("Bandeja muestra solo recibidas sin datos sensibles", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-17");
-  const receivedId = await t.mutation(internal.requests.createTestRequest, {
+  const receivedId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Recibida ficticia",
   });
-  await t.mutation(internal.requests.createTestRequest, {
+  await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "under_review",
     accessNeeds: "En revisión ficticia",
   });
-  await t.mutation(internal.requests.createTestRequest, {
+  await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "accepted",
     accessNeeds: "Aceptada ficticia",
@@ -614,7 +617,7 @@ test("Tomar una solicitud recibida inicia su revisión con registro", async () =
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-14");
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Tomada ficticia",
@@ -699,7 +702,7 @@ test("Profesional pide información adicional en solicitud en revisión", async 
       tokenIdentifier: `${ISSUER}|ti9-pro-3`,
     });
   });
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
@@ -728,7 +731,7 @@ test("Profesional pide información adicional en solicitud en revisión", async 
   expect(infoChange?.occurredAt).toBeDefined();
 
   // Sin motivo se rechaza indicando qué corregir, sin modificar nada
-  const pendingId = await t.mutation(internal.requests.createTestRequest, {
+  const pendingId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Otra necesidad ficticia",
@@ -742,7 +745,7 @@ test("Profesional pide información adicional en solicitud en revisión", async 
       reason: "  ",
     }),
   ).rejects.toThrow("motivo");
-  const untouched = await t.query(internal.requests.getRequestById, { id: pendingId });
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: pendingId });
   expect(untouched?.status).toBe("under_review");
 });
 
@@ -750,7 +753,7 @@ test("Pedir información se deniega sin Profesional vigente o en estado inválid
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-5");
-  const receivedId = await t.mutation(internal.requests.createTestRequest, {
+  const receivedId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
@@ -778,7 +781,7 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti9-est-13");
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "under_review",
     accessNeeds: "Necesidad de acceso ficticia",
@@ -802,6 +805,6 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
       reason: "Falta el horario disponible",
     }),
   ).rejects.toThrow("No autorizado");
-  const untouched = await t.query(internal.requests.getRequestById, { id: requestId });
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(untouched?.status).toBe("under_review");
 });

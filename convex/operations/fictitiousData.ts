@@ -1,20 +1,20 @@
 import type { UserIdentity } from "convex/server";
-import { internal } from "./_generated/api";
-import { env, internalMutation } from "./_generated/server";
-import { assignAccompaniment } from "./application/accompaniments/commands";
+import { internal } from "../_generated/api";
+import { env, internalMutation } from "../_generated/server";
+import { assignAccompaniment } from "../application/accompaniments/commands";
 import {
   acceptRequest,
   registerRequest,
   requestAdditionalInformation,
   takeRequest,
-} from "./application/requests/commands";
-import { findProfileByTokenIdentifier } from "./infrastructure/accompaniments/repository";
+} from "../application/requests/commands";
+import { findProfileByTokenIdentifier } from "../infrastructure/accompaniments/repository";
 
 /**
  * Dataset ficticio mínimo del Sprint 1 (TI2-30).
  *
  * Se carga a mano en un deployment de desarrollo con `bunx convex run
- * fictitiousData:load`, siguiendo la guía de arranque del `README.md` raíz.
+ * operations/fictitiousData:load`, siguiendo la guía de arranque del `README.md` raíz.
  * El inventario vive en `docs/dataset-ficticio.md`.
  */
 
@@ -86,7 +86,7 @@ export const load = internalMutation({
     }
 
     const createProfile = (key: AccountKey) =>
-      ctx.runMutation(internal.users.createTestUser, {
+      ctx.runMutation(internal.operations.users.createTestUser, {
         email: ACCOUNTS[key].email,
         fullName: ACCOUNTS[key].fullName,
         role: ACCOUNTS[key].role,

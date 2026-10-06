@@ -2,8 +2,8 @@ import { v } from "convex/values";
 import {
   enableInternAccount,
   ensureBootstrapAdmin as ensureBootstrapAdminUseCase,
-} from "./application/accounts/enablement";
-import { internalMutation } from "./_generated/server";
+} from "../application/accounts/enablement";
+import { internalMutation } from "../_generated/server";
 
 /**
  * Escritura guardada de cuentas (TI2-11).
@@ -37,7 +37,7 @@ export const enableIntern = internalMutation({
  * Vía controlada y única: falla cuando ya existe un Administrador. El
  * procedimiento por entorno (valores, orden y verificación) vive en
  * `domain/accounts/enablement.md`; las semillas de desarrollo
- * (`internal.users.createTestUser`) nunca se ejecutan en producción.
+ * (`internal.operations.users.createTestUser`) nunca se ejecutan en producción.
  */
 export const ensureBootstrapAdmin = internalMutation({
   args: {

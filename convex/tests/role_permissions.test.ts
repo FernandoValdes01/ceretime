@@ -71,12 +71,12 @@ async function seedAccounts(t: TestConvex) {
 /** Una solicitud recibida sin toma y otra en revisión tomada por el Profesional. */
 async function seedRequests(t: TestConvex) {
   const ids = await seedAccounts(t);
-  const received = await t.mutation(internal.requests.createTestRequest, {
+  const received = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId: ids.student,
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
   });
-  const underReview = await t.mutation(internal.requests.createTestRequest, {
+  const underReview = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId: ids.student,
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
@@ -228,7 +228,7 @@ async function seedAccompaniment(t: TestConvex) {
     api.presentation.requests.acceptRequest,
     { requestId: underReview, objective: "Objetivo ficticio" },
   );
-  await asRole(t, "professional").mutation(internal.assignments.assign, {
+  await asRole(t, "professional").mutation(internal.operations.assignments.assign, {
     accompanimentId: accompaniment._id,
     userId: ids.intern,
     assignedRole: "intern",

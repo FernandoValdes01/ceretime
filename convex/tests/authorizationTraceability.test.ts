@@ -149,7 +149,9 @@ test("habilitación registra actor, fecha y recurso sin cambiar el rol", async (
   });
 
   const asAdmin = t.withIdentity(identityFor("ti19-adm-1", "adm1@uct.cl"));
-  const enabledId = await asAdmin.mutation(internal.accounts.enableIntern, { userId: internId });
+  const enabledId = await asAdmin.mutation(internal.operations.accounts.enableIntern, {
+    userId: internId,
+  });
   expect(enabledId).toEqual(internId);
 
   const stored = await t.run(async (ctx) => {
@@ -162,7 +164,7 @@ test("habilitación registra actor, fecha y recurso sin cambiar el rol", async (
   expect(typeof stored?.enabledAt).toBe("number");
 
   const duplicate = await denyMessage(
-    asAdmin.mutation(internal.accounts.enableIntern, { userId: internId }),
+    asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: internId }),
   );
   expect(duplicate).toBe(DENIED);
 });
@@ -194,14 +196,14 @@ test("concesión y revocación registran actor, fecha y recurso", async () => {
 
   await t
     .withIdentity(identityFor("ti19-pro-2b", "pro2b@uct.cl"))
-    .mutation(internal.assignments.assign, {
+    .mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: granterId,
       assignedRole: "professional",
     });
 
   const asGranter = t.withIdentity(identityFor("ti19-pro-2", "pro2@uct.cl"));
-  await asGranter.mutation(internal.assignments.assign, input);
+  await asGranter.mutation(internal.operations.assignments.assign, input);
 
   const granted = await findAssignmentRow(t, input);
   expect(granted?.status).toBe("active");
@@ -213,7 +215,7 @@ test("concesión y revocación registran actor, fecha y recurso", async () => {
   expect(granted?.revokedBy).toBeUndefined();
   expect(granted?.revokedAt).toBeUndefined();
 
-  await asGranter.mutation(internal.assignments.revoke, input);
+  await asGranter.mutation(internal.operations.assignments.revoke, input);
   const revoked = await findAssignmentRow(t, input);
   expect(revoked?.status).toBe("revoked");
   expect(revoked?.grantedBy).toEqual(granterId);
@@ -221,7 +223,7 @@ test("concesión y revocación registran actor, fecha y recurso", async () => {
   expect(revoked?.revokedBy).toEqual(granterId);
   expect(typeof revoked?.revokedAt).toBe("number");
 
-  const second = await asGranter.mutation(internal.assignments.revoke, input);
+  const second = await asGranter.mutation(internal.operations.assignments.revoke, input);
   expect(second).toBeNull();
 });
 
@@ -255,7 +257,7 @@ test("denegación normalizada no filtra existencia del recurso", async () => {
   const accompanimentId = await seedAccompaniment(t, studentId);
   await t
     .withIdentity(identityFor("ti19-pro-3b", "pro3b@uct.cl"))
-    .mutation(internal.assignments.assign, {
+    .mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: granterId,
       assignedRole: "professional",
@@ -290,7 +292,7 @@ test("denegación normalizada no filtra existencia del recurso", async () => {
   expect(notesMissing).not.toContain(String(missingAccompaniment));
 
   const assignMissing = await denyMessage(
-    asGranter.mutation(internal.assignments.assign, {
+    asGranter.mutation(internal.operations.assignments.assign, {
       accompanimentId: missingAccompaniment,
       userId: internId,
       assignedRole: "intern",
@@ -300,7 +302,7 @@ test("denegación normalizada no filtra existencia del recurso", async () => {
   expect(assignMissing).not.toContain(String(missingAccompaniment));
 
   const revokeMissing = await denyMessage(
-    asGranter.mutation(internal.assignments.revoke, {
+    asGranter.mutation(internal.operations.assignments.revoke, {
       accompanimentId: missingAccompaniment,
       userId: internId,
       assignedRole: "intern",
@@ -309,7 +311,7 @@ test("denegación normalizada no filtra existencia del recurso", async () => {
   expect(revokeMissing).toBe(DENIED);
 
   const enableMissing = await denyMessage(
-    asAdmin.mutation(internal.accounts.enableIntern, { userId: missingUser }),
+    asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: missingUser }),
   );
   expect(enableMissing).toBe(DENIED);
   expect(enableMissing).not.toContain(String(missingUser));
@@ -341,7 +343,7 @@ test("administrador no obtiene acceso irrestricto a acompañamientos", async () 
   const accompanimentId = await seedAccompaniment(t, studentId);
 
   const asAdmin = t.withIdentity(identityFor("ti19-adm-4", "adm4@uct.cl"));
-  await asAdmin.mutation(internal.accounts.enableIntern, { userId: internId });
+  await asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: internId });
 
   expect(
     await denyMessage(
@@ -370,7 +372,7 @@ test("administrador no obtiene acceso irrestricto a acompañamientos", async () 
   ).toBe(DENIED);
   expect(
     await denyMessage(
-      asAdmin.mutation(internal.assignments.assign, {
+      asAdmin.mutation(internal.operations.assignments.assign, {
         accompanimentId,
         userId: internId,
         assignedRole: "intern",
@@ -379,7 +381,7 @@ test("administrador no obtiene acceso irrestricto a acompañamientos", async () 
   ).toBe(DENIED);
   expect(
     await denyMessage(
-      asAdmin.mutation(internal.assignments.revoke, {
+      asAdmin.mutation(internal.operations.assignments.revoke, {
         accompanimentId,
         userId: internId,
         assignedRole: "intern",
@@ -413,7 +415,7 @@ test("asignación propia de practicante queda rechazada", async () => {
   const accompanimentId = await seedAccompaniment(t, studentId);
   await t
     .withIdentity(identityFor("ti19-pro-5b", "pro5b@uct.cl"))
-    .mutation(internal.assignments.assign, {
+    .mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: granterId,
       assignedRole: "professional",
@@ -421,7 +423,7 @@ test("asignación propia de practicante queda rechazada", async () => {
 
   const asGranter = t.withIdentity(identityFor("ti19-pro-5", "pro5@uct.cl"));
   const selfProfessional = await denyMessage(
-    asGranter.mutation(internal.assignments.assign, {
+    asGranter.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: granterId,
       assignedRole: "professional",
@@ -430,7 +432,7 @@ test("asignación propia de practicante queda rechazada", async () => {
   expect(selfProfessional).toBe(DENIED);
 
   const selfIntern = await denyMessage(
-    asGranter.mutation(internal.assignments.assign, {
+    asGranter.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: granterId,
       assignedRole: "intern",
@@ -440,7 +442,7 @@ test("asignación propia de practicante queda rechazada", async () => {
 
   const asIntern = t.withIdentity(identityFor("ti19-int-5", "int5@alu.uct.cl"));
   const internSelf = await denyMessage(
-    asIntern.mutation(internal.assignments.assign, {
+    asIntern.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",
@@ -491,13 +493,13 @@ test("acceso posterior a revocación queda rechazado", async () => {
 
   await t
     .withIdentity(identityFor("ti19-pro-6b", "pro6b@uct.cl"))
-    .mutation(internal.assignments.assign, {
+    .mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: granterId,
       assignedRole: "professional",
     });
   const asGranter = t.withIdentity(identityFor("ti19-pro-6", "pro6@uct.cl"));
-  await asGranter.mutation(internal.assignments.assign, input);
+  await asGranter.mutation(internal.operations.assignments.assign, input);
 
   const asIntern = t.withIdentity(identityFor("ti19-int-6", "int6@alu.uct.cl"));
   const before = await asIntern.query(api.presentation.accompaniments.getAccompaniment, {
@@ -510,7 +512,7 @@ test("acceso posterior a revocación queda rechazado", async () => {
   );
   expect(listedBefore.items).toHaveLength(1);
 
-  await asGranter.mutation(internal.assignments.revoke, input);
+  await asGranter.mutation(internal.operations.assignments.revoke, input);
 
   expect(
     await denyMessage(
@@ -558,14 +560,14 @@ test("trazabilidad mínima no expone datos innecesarios", async () => {
   const accompanimentId = await seedAccompaniment(t, studentId);
   await t
     .withIdentity(identityFor("ti19-pro-7b", "pro7b@uct.cl"))
-    .mutation(internal.assignments.assign, {
+    .mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: granterId,
       assignedRole: "professional",
     });
   await t
     .withIdentity(identityFor("ti19-pro-7", "pro7@uct.cl"))
-    .mutation(internal.assignments.assign, {
+    .mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",

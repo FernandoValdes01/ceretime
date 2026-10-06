@@ -89,7 +89,7 @@ async function authorizeProfessional(
 ) {
   await t
     .withIdentity(identityFor(bootstrap.subject, bootstrap.email))
-    .mutation(internal.assignments.assign, {
+    .mutation(internal.operations.assignments.assign, {
       accompanimentId: input.accompanimentId,
       userId: input.professionalId,
       assignedRole: "professional",
@@ -147,7 +147,7 @@ test("profesional autorizado concede acceso al practicante habilitado y queda au
   );
 
   const asPro = t.withIdentity(identityFor("ti28-pro-1", "pro1@uct.cl"));
-  await asPro.mutation(internal.assignments.assign, {
+  await asPro.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: internId,
     assignedRole: "intern",
@@ -198,8 +198,8 @@ test("profesional autorizado retira el acceso y la revocación queda auditada", 
 
   const asPro = t.withIdentity(identityFor("ti28-pro-2", "pro2@uct.cl"));
   const input = { accompanimentId, userId: internId, assignedRole: "intern" as const };
-  await asPro.mutation(internal.assignments.assign, input);
-  await asPro.mutation(internal.assignments.revoke, input);
+  await asPro.mutation(internal.operations.assignments.assign, input);
+  await asPro.mutation(internal.operations.assignments.revoke, input);
 
   const row = await findAssignmentRow(t, input);
   expect(row).not.toBeNull();
@@ -209,7 +209,7 @@ test("profesional autorizado retira el acceso y la revocación queda auditada", 
   expect(row?.revokedBy).toEqual(proId);
   expect(typeof row?.revokedAt).toBe("number");
 
-  const second = await asPro.mutation(internal.assignments.revoke, input);
+  const second = await asPro.mutation(internal.operations.assignments.revoke, input);
   expect(second).toBeNull();
 });
 
@@ -255,7 +255,7 @@ test("retirar cierra la fila aunque la cuenta haya perdido vigencia", async () =
   const asPro = t.withIdentity(identityFor("ti28-pro-8", "pro8@uct.cl"));
   const cases = [{ userId: disabledId }, { userId: pendingId }, { userId: inactiveId }];
   for (const tracked of cases) {
-    await asPro.mutation(internal.assignments.assign, {
+    await asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: tracked.userId,
       assignedRole: "intern",
@@ -272,7 +272,7 @@ test("retirar cierra la fila aunque la cuenta haya perdido vigencia", async () =
   // ya no esté habilitado.
   for (const tracked of cases) {
     const input = { accompanimentId, userId: tracked.userId, assignedRole: "intern" as const };
-    const revoked = await asPro.mutation(internal.assignments.revoke, input);
+    const revoked = await asPro.mutation(internal.operations.assignments.revoke, input);
     expect(revoked).toBe(1);
     const row = await findAssignmentRow(t, input);
     expect(row?.status).toBe("revoked");
@@ -327,7 +327,7 @@ test("practicante sin cuenta habilitada no recibe acceso", async () => {
   const asPro = t.withIdentity(identityFor("ti28-pro-3", "pro3@uct.cl"));
   for (const userId of [disabledId, pendingId, inactiveId]) {
     const message = await denyMessage(
-      asPro.mutation(internal.assignments.assign, {
+      asPro.mutation(internal.operations.assignments.assign, {
         accompanimentId,
         userId,
         assignedRole: "intern",
@@ -377,7 +377,7 @@ test("profesional no autorizado sobre el acompañamiento no concede ni revoca", 
     { subject: "ti28-pro-4b", email: "pro4b@uct.cl" },
   );
   const asAuthorized = t.withIdentity(identityFor("ti28-pro-4", "pro4@uct.cl"));
-  await asAuthorized.mutation(internal.assignments.assign, {
+  await asAuthorized.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: internId,
     assignedRole: "intern",
@@ -385,7 +385,7 @@ test("profesional no autorizado sobre el acompañamiento no concede ni revoca", 
 
   const asOutsider = t.withIdentity(identityFor("ti28-pro-4c", "pro4c@uct.cl"));
   const assignMessage = await denyMessage(
-    asOutsider.mutation(internal.assignments.assign, {
+    asOutsider.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",
@@ -394,7 +394,7 @@ test("profesional no autorizado sobre el acompañamiento no concede ni revoca", 
   expect(assignMessage).toContain("No autorizado");
 
   const revokeMessage = await denyMessage(
-    asOutsider.mutation(internal.assignments.revoke, {
+    asOutsider.mutation(internal.operations.assignments.revoke, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",
@@ -444,7 +444,7 @@ test("acompañamiento inexistente responde igual que denegado", async () => {
 
   const asPro = t.withIdentity(identityFor("ti28-pro-5", "pro5@uct.cl"));
   const assignMessage = await denyMessage(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId: missingId,
       userId: internId,
       assignedRole: "intern",
@@ -454,7 +454,7 @@ test("acompañamiento inexistente responde igual que denegado", async () => {
   expect(assignMessage).not.toContain(String(missingId));
 
   const revokeMessage = await denyMessage(
-    asPro.mutation(internal.assignments.revoke, {
+    asPro.mutation(internal.operations.assignments.revoke, {
       accompanimentId: missingId,
       userId: internId,
       assignedRole: "intern",
@@ -495,7 +495,7 @@ test("autoasignación queda rechazada con el mismo error genérico", async () =>
 
   const asPro = t.withIdentity(identityFor("ti28-pro-6", "pro6@uct.cl"));
   const selfMessage = await denyMessage(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: proId,
       assignedRole: "intern",
@@ -505,7 +505,7 @@ test("autoasignación queda rechazada con el mismo error genérico", async () =>
 
   const asIntern = t.withIdentity(identityFor("ti28-int-8", "int8@alu.uct.cl"));
   const internMessage = await denyMessage(
-    asIntern.mutation(internal.assignments.assign, {
+    asIntern.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",
@@ -535,7 +535,7 @@ test("administrador solo habilita y no concede acompañamientos", async () => {
 
   const asAdmin = t.withIdentity(identityFor("ti28-adm-1", "adm1@uct.cl"));
   const assignMessage = await denyMessage(
-    asAdmin.mutation(internal.assignments.assign, {
+    asAdmin.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",
@@ -544,7 +544,7 @@ test("administrador solo habilita y no concede acompañamientos", async () => {
   expect(assignMessage).toContain("No autorizado");
 
   const revokeMessage = await denyMessage(
-    asAdmin.mutation(internal.assignments.revoke, {
+    asAdmin.mutation(internal.operations.assignments.revoke, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",

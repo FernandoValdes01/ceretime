@@ -110,7 +110,7 @@ test("Profesional con toma acepta en revisión y abre un acompañamiento", async
   expect(opened.studentId).toBeDefined();
 
   // La solicitud queda aceptada y vinculada al acompañamiento resultante
-  const accepted = await t.query(internal.requests.getRequestById, {
+  const accepted = await t.query(internal.operations.requests.getRequestById, {
     id: created._id as Id<"requests">,
   });
   expect(accepted?.status).toBe("accepted");
@@ -198,7 +198,7 @@ test("Repetir la aceptación no crea duplicados", async () => {
     }),
   ).rejects.toThrow("ya fue aceptada");
   expect(await countAccompanimentsFor(t, created._id as Id<"requests">)).toBe(1);
-  const accepted = await t.query(internal.requests.getRequestById, {
+  const accepted = await t.query(internal.operations.requests.getRequestById, {
     id: created._id as Id<"requests">,
   });
   expect(accepted?.status).toBe("accepted");
@@ -208,7 +208,7 @@ test("Sin toma del Profesional se deniega sin modificar nada", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti24-est-4");
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "under_review",
     accessNeeds: "Necesidad de acceso ficticia",
@@ -223,7 +223,7 @@ test("Sin toma del Profesional se deniega sin modificar nada", async () => {
       objective: "Acompañar la organización del semestre",
     }),
   ).rejects.toThrow("No autorizado");
-  const untouched = await t.query(internal.requests.getRequestById, { id: requestId });
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(untouched?.status).toBe("under_review");
   expect(await countAccompanimentsFor(t, requestId)).toBe(0);
 });
@@ -232,7 +232,7 @@ test("Estudiante o anónimo no aceptan solicitudes", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti24-est-5");
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "under_review",
     accessNeeds: "Necesidad de acceso ficticia",
@@ -261,7 +261,7 @@ test("Fuera de revisión no se acepta aunque exista toma", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti24-est-6");
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
@@ -285,7 +285,7 @@ test("Fuera de revisión no se acepta aunque exista toma", async () => {
       objective: "Acompañar la organización del semestre",
     }),
   ).rejects.toThrow("estado actual");
-  const untouched = await t.query(internal.requests.getRequestById, { id: requestId });
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(untouched?.status).toBe("received");
   expect(await countAccompanimentsFor(t, requestId)).toBe(0);
 });
@@ -308,7 +308,7 @@ test("Sin objetivo se rechaza sin modificar nada", async () => {
       objective: "  ",
     }),
   ).rejects.toThrow("objetivo");
-  const untouched = await t.query(internal.requests.getRequestById, {
+  const untouched = await t.query(internal.operations.requests.getRequestById, {
     id: created._id as Id<"requests">,
   });
   expect(untouched?.status).toBe("under_review");
@@ -364,7 +364,7 @@ test("Dos profesionales en contienda abren un solo acompañamiento", async () =>
     }),
   ).rejects.toThrow("ya fue aceptada");
   expect(await countAccompanimentsFor(t, created._id as Id<"requests">)).toBe(1);
-  const accepted = await t.query(internal.requests.getRequestById, {
+  const accepted = await t.query(internal.operations.requests.getRequestById, {
     id: created._id as Id<"requests">,
   });
   expect(accepted?.status).toBe("accepted");

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
-import { env, internalMutation, internalQuery } from "./_generated/server";
-import { requestStatusUnion } from "./infrastructure/validators";
+import { env, internalMutation, internalQuery } from "../_generated/server";
+import { requestStatusUnion } from "../infrastructure/validators";
 
 /**
  * Módulo de funciones internas para la entidad 'requests'.

@@ -1,12 +1,12 @@
 import { v } from "convex/values";
-import { env, internalMutation, internalQuery } from "./_generated/server";
-import { normalizeEmail } from "./domain/auth/institutional_domain";
-import { findUserByEmail } from "./infrastructure/accounts/repository";
+import { env, internalMutation, internalQuery } from "../_generated/server";
+import { normalizeEmail } from "../domain/auth/institutional_domain";
+import { findUserByEmail } from "../infrastructure/accounts/repository";
 import {
   accountStatusUnion,
   institutionalStatusUnion,
   roleUnion,
-} from "./infrastructure/validators";
+} from "../infrastructure/validators";
 
 /**
  * Módulo de funciones internas para la entidad 'users'.
@@ -20,7 +20,7 @@ import {
  * (`TEST_SEEDS_ENABLED === "true"`, variable de servidor no controlable por
  * el cliente): en producción la variable permanece ausente y la llamada se
  * rechaza. Además, jamás crea administradores: la única vía de creación
- * administrativa es el arranque controlado `internal.accounts.ensureBootstrapAdmin`.
+ * administrativa es el arranque controlado `internal.operations.accounts.ensureBootstrapAdmin`.
  */
 export const createTestUser = internalMutation({
   args: {
