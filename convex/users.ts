@@ -2,7 +2,11 @@ import { v } from "convex/values";
 import { env, internalMutation, internalQuery } from "./_generated/server";
 import { normalizeEmail } from "./domain/auth/institutional_domain";
 import { findUserByEmail } from "./infrastructure/accounts/repository";
-import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "./validators";
+import {
+  accountStatusUnion,
+  institutionalStatusUnion,
+  roleUnion,
+} from "./infrastructure/validators";
 
 /**
  * Módulo de funciones internas para la entidad 'users'.

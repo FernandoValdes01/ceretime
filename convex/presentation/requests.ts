@@ -13,7 +13,7 @@ import {
   getRequestDetailUseCase,
 } from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
-import { requestStatusUnion } from "../validators";
+import { requestStatusUnion } from "../infrastructure/validators";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 
 /**

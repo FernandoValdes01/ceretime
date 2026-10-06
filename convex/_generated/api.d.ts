@@ -43,13 +43,13 @@ import type * as http from "../http.js";
 import type * as infrastructure_accompaniments_repository from "../infrastructure/accompaniments/repository.js";
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
+import type * as infrastructure_validators from "../infrastructure/validators.js";
 import type * as migrations from "../migrations.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as requests from "../requests.js";
 import type * as users from "../users.js";
-import type * as validators from "../validators.js";
 
 import type {
   ApiFromModules,
@@ -93,13 +93,13 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/accompaniments/repository": typeof infrastructure_accompaniments_repository;
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
+  "infrastructure/validators": typeof infrastructure_validators;
   migrations: typeof migrations;
   "presentation/accompaniments": typeof presentation_accompaniments;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   requests: typeof requests;
   users: typeof users;
-  validators: typeof validators;
 }>;
 
 /**

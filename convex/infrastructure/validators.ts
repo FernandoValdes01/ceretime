@@ -1,20 +1,20 @@
 ﻿import { v } from "convex/values";
-import { ACCOMPANIMENT_STATUS_VALUES } from "./domain/accompaniments/accompaniment";
-import { APPOINTMENT_STATUS_VALUES } from "./domain/appointments/appointment";
+import { ACCOMPANIMENT_STATUS_VALUES } from "../domain/accompaniments/accompaniment";
+import { APPOINTMENT_STATUS_VALUES } from "../domain/appointments/appointment";
 import {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
   MODALITY_VALUES,
-} from "./domain/availability/availability";
+} from "../domain/availability/availability";
 import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
-} from "./domain/accompaniments/practitioner_assignment";
-import { PERSISTABLE_REQUEST_STATES, SPRINT_1_REQUEST_STATES } from "./domain/requests/state";
+} from "../domain/accompaniments/practitioner_assignment";
+import { PERSISTABLE_REQUEST_STATES, SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,
   ROLE_VALUES,
-} from "./domain/identity/roles";
+} from "../domain/identity/roles";
 
 /**
  * Validadores compartidos de identidad y roles.

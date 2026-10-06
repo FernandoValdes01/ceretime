@@ -11,7 +11,7 @@ import {
   modalityUnion,
   persistableRequestStatusUnion,
   roleUnion,
-} from "./validators";
+} from "./infrastructure/validators";
 
 /**
  * Esquema de base de datos Convex para la gestión de usuarios y

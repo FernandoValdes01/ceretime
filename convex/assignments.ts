@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { assignAccompaniment, revokeAccompaniment } from "./application/accompaniments/commands";
 import { internalMutation } from "./_generated/server";
-import { assignmentRoleUnion } from "./validators";
+import { assignmentRoleUnion } from "./infrastructure/validators";
 
 /**
  * Escritura guardada de asignaciones (S2, TI2-28).
