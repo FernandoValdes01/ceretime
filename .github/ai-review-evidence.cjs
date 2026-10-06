@@ -223,20 +223,36 @@ function selectEvidence(text, request) {
   );
   const selected = [];
   const foundNames = new Set();
-  const visit = (node) => {
-    const declared =
-      (ts.isFunctionDeclaration(node) ||
-        ts.isClassDeclaration(node) ||
-        ts.isInterfaceDeclaration(node) ||
-        ts.isTypeAliasDeclaration(node) ||
-        ts.isVariableDeclaration(node)) &&
-      node.name?.getText(source);
+  const visit = (node, owner = null) => {
+    const isDeclaration =
+      ts.isFunctionDeclaration(node) ||
+      ts.isClassDeclaration(node) ||
+      ts.isInterfaceDeclaration(node) ||
+      ts.isTypeAliasDeclaration(node) ||
+      ts.isVariableDeclaration(node);
+    const declared = isDeclaration && node.name?.getText(source);
     if (declared && names.has(declared)) {
       selected.push(node);
       foundNames.add(declared);
       return;
     }
-    ts.forEachChild(node, visit);
+    const property =
+      (ts.isPropertyAssignment(node) ||
+        ts.isPropertyDeclaration(node) ||
+        ts.isPropertySignature(node) ||
+        ts.isMethodDeclaration(node) ||
+        ts.isPropertyAccessExpression(node)) &&
+      ts.isIdentifier(node.name)
+        ? node.name.text
+        : ts.isShorthandPropertyAssignment(node)
+          ? node.name.text
+          : null;
+    if (property && names.has(property) && owner) {
+      selected.push(owner);
+      foundNames.add(property);
+    }
+    const nextOwner = isDeclaration && node.name ? node : owner;
+    ts.forEachChild(node, (child) => visit(child, nextOwner));
   };
   if (request.symbol) visit(source);
   if (request.fragment) {
@@ -258,7 +274,7 @@ function selectEvidence(text, request) {
     missing: request.symbol?.split("(")[0].includes(",")
       ? [...names].filter((name) => !foundNames.has(name))
       : [],
-    text: selected.map((node) => node.getText(source)).join("\n"),
+    text: [...new Set(selected)].map((node) => node.getText(source)).join("\n"),
     imports: imports ? imports + "\n" : "",
   };
 }

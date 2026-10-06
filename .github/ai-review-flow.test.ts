@@ -1992,6 +1992,40 @@ test("live descriptive and compound symbol requests recover the actual named dec
   }
 });
 
+test("property requests recover the enclosing helper that defines or consumes them", () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "target.ts":
+      "export function recoverEvidence() { return { complete: true }; }\nexport function consume() { return recoverEvidence().complete; }\n",
+  });
+  try {
+    const chunk = buildPlan(
+      [{ filename: "file.ts", patch: "@@ -1 +1 @@\n-a\n+b", additions: 1, deletions: 1 }],
+      {},
+      f.pr.head.sha,
+    ).chunks[0];
+    const result = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk,
+      requests: [
+        {
+          path: "target.ts",
+          symbol: "complete",
+          reason: "Verify the consumer of the complete evidence flag",
+        },
+      ],
+    });
+    expect(result.unresolved).toEqual([]);
+    const recovered = result.chunk.parts[0].context.map((item: any) => item.head).join("\n");
+    expect(recovered).toContain("function recoverEvidence()");
+    expect(recovered).toContain("function consume()");
+  } finally {
+    f.clean();
+  }
+});
+
 test("live recovery sizing ignores anchors that are never sent to inference", async () => {
   const f = fixture({
     "file.ts": "export const run = () => 1;\n",
