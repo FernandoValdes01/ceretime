@@ -1,3 +1,4 @@
+import "./ci-policy.test.ts";
 import { expect, test } from "bun:test";
 
 const workflow = Bun.YAML.parse(
@@ -142,7 +143,7 @@ test("keeps manual builds out of pull request CI", () => {
 });
 
 test("runs integrated CI for pull requests and pushes to main", () => {
-  expect(pullRequestWorkflow.on.pull_request.branches).toEqual(["main"]);
+  expect(pullRequestWorkflow.on.pull_request.branches).toBeUndefined();
   expect(pullRequestWorkflow.on.pull_request.types).toContain("ready_for_review");
   expect(pullRequestWorkflow.on.push.branches).toEqual(["main"]);
   for (const jobId of ["lint-and-format", "mobile", "web", "backend"]) {
@@ -193,6 +194,15 @@ test("publishes the PR head SHA and checked-out build SHA separately", async () 
   const writes: any[] = [];
   const github = {
     rest: {
+      pulls: {
+        get: async () => ({
+          data: {
+            state: "open",
+            head: { sha: "branch-sha" },
+            base: { sha: "base-sha", ref: "main" },
+          },
+        }),
+      },
       issues: {
         listComments: () => {},
         createComment: async (args: any) => writes.push(args),
@@ -207,6 +217,8 @@ test("publishes the PR head SHA and checked-out build SHA separately", async () 
       env: {
         PREVIEW_URL: "https://preview.vercel.app",
         PR_HEAD_SHA: "branch-sha",
+        PR_BASE_SHA: "base-sha",
+        PR_BASE_REF: "main",
         PREVIEW_BUILD_SHA: "merge-sha",
       },
     },
