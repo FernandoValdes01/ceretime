@@ -283,11 +283,32 @@ function gitReader(directory) {
       return null;
     }
   };
-  return { git, read };
+  const readState = (ref, filename) => {
+    try {
+      git("cat-file", "-e", `${ref}^{commit}`);
+      if (!git("ls-tree", ref, "--", filename).trim())
+        return { status: "absent", reason: "La ruta no existe en este commit.", text: null };
+      const text = read(ref, filename);
+      return text == null
+        ? {
+            status: "unavailable",
+            reason: "No se pudo leer el contenido dentro del límite de tamaño.",
+            text: null,
+          }
+        : { status: "present", reason: "Contenido recuperado de Git.", text };
+    } catch {
+      return {
+        status: "unavailable",
+        reason: "Commit o contenido no disponible en Git.",
+        text: null,
+      };
+    }
+  };
+  return { git, read, readState };
 }
 
 function enrichFiles(files, { directory, base, sha, threads = [] }) {
-  const { git, read } = gitReader(directory);
+  const { git, read, readState } = gitReader(directory);
   const mergeBase = git("merge-base", base, sha).trim();
   const paths = [
     ...new Set(
@@ -357,7 +378,7 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
     file.before = read(mergeBase, file.previous_filename ?? file.filename);
     file.after = read(sha, file.filename);
     const dependencies = new Set(),
-      queue = [file.filename];
+      queue = [file.filename, file.previous_filename].filter(Boolean);
     // Follow dependency and consumer chains, including re-export barrels.
     while (queue.length) {
       const target = queue.pop();
@@ -385,7 +406,9 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
         dependencies: [...dependencies].sort().map((p) => [p, hash(sources.get(p) ?? "")]),
       }),
     );
-    const consumers = paths.filter((p) => graph.get(p)?.includes(file.filename));
+    const consumers = paths.filter((p) =>
+      graph.get(p)?.some((target) => target === file.filename || target === file.previous_filename),
+    );
     const direct = new Set([...consumers, ...(graph.get(file.filename) ?? [])]);
     const related = [...dependencies]
       .filter((p) => p !== file.filename)
@@ -404,8 +427,11 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
     ]
       .slice(0, 16)
       .map((p) => {
-        const original = read(mergeBase, p),
-          current = sources.get(p);
+        const basePath = p === file.filename ? (file.previous_filename ?? p) : p;
+        const before = readState(mergeBase, basePath),
+          after = readState(sha, p);
+        const original = before.text,
+          current = after.text;
         const own = p === file.filename;
         const budget = p.startsWith(".github/workflows/")
           ? own
@@ -432,10 +458,21 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
             : declarations(current, budget, p.startsWith(".github/workflows/"), ownPatch, "head");
         return {
           path: p,
+          basePath,
+          baseState:
+            before.status === "absent" && p === file.filename && file.status === "added"
+              ? "not_yet_created"
+              : before.status,
+          headState:
+            after.status === "absent" && p === file.filename && file.status === "removed"
+              ? "deleted"
+              : after.status,
+          baseReason: before.reason,
+          headReason: after.reason,
           base: baseText,
           head: headText,
-          baseComplete: original == null || baseText === original,
-          headComplete: current == null || headText === current,
+          baseComplete: original != null && baseText === original,
+          headComplete: current != null && headText === current,
         };
       });
     file.context = JSON.parse(clipContext(file.context, workflow ? 32000 : 12000));

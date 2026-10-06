@@ -22,6 +22,9 @@ import {
   threadEvidence,
 } from "./ai-review-context.cjs";
 import { memoryIdentity, createMemory } from "./ai-review-memory.cjs";
+import { recoverEvidence } from "./ai-review-evidence.cjs";
+import { gitReader } from "./ai-review-context.cjs";
+import { pullNumber } from "./ai-review-target.cjs";
 
 const configuration = readFileSync(join(import.meta.dir, "../.pr-reviewer.yml"), "utf8");
 const answer = (findings: any[] = [], resolutions: any[] = []) => ({
@@ -1387,6 +1390,549 @@ test("repeated publication neither replaces a legacy anchor base nor rewrites id
     });
     expect(updates).toBe(0);
     expect(f.comments[0].body).not.toContain("ceretime-r2d2-base:");
+  } finally {
+    f.clean();
+  }
+});
+
+test("missing and truncated patches are reconstructed before selecting a late modified function", async () => {
+  for (const patch of [
+    undefined,
+    "@@ -1,2 +1,2 @@\n-export const prelude = 1;\n+export const prelude = 2;",
+  ]) {
+    const initial =
+      Array.from({ length: 150 }, (_, i) => `export const filler${i} = ${i};`).join("\n") +
+      "\nexport function changedLate() { return 1; }\n";
+    const f = fixture({ "file.ts": initial });
+    try {
+      f.put("file.ts", initial.replace("changedLate() { return 1", "changedLate() { return 2"));
+      f.advance();
+      const paginate = f.github.paginate;
+      f.github.paginate = (method: any, args: any) =>
+        method === f.github.rest.pulls.listFiles
+          ? [{ filename: "file.ts", status: "modified", additions: 1, deletions: 1, patch }]
+          : paginate(method, args);
+      const plan = await f.prepare();
+      expect(plan.issues).toEqual([]);
+      const own = plan.chunks[0].parts[0].context.find((c: any) => c.path === "file.ts");
+      expect(own.head).toContain("changedLate");
+      expect(own.base).toContain("changedLate");
+      expect(plan.chunks[0].parts[0].patch).toContain("changedLate");
+    } finally {
+      f.clean();
+    }
+  }
+});
+
+test("rename with content changes keeps previous history and reconstructs only changed lines", async () => {
+  const f = fixture({
+    "file.ts": "export const first = 1;\nexport const second = 2;\nexport const third = 3;\n",
+  });
+  try {
+    f.git("mv", "file.ts", "moved.ts");
+    f.put(
+      "moved.ts",
+      "export const first = 1;\nexport const second = 2;\nexport const third = 4;\n",
+    );
+    f.advance();
+    const paginate = f.github.paginate;
+    f.github.paginate = (method: any, args: any) =>
+      method === f.github.rest.pulls.listFiles
+        ? [
+            {
+              filename: "moved.ts",
+              previous_filename: "file.ts",
+              status: "renamed",
+              additions: 1,
+              deletions: 1,
+            },
+          ]
+        : paginate(method, args);
+    const plan = await f.prepare();
+    expect(plan.issues).toEqual([]);
+    const part = plan.chunks[0].parts[0];
+    expect(part.change.contentChanged).toBe(true);
+    expect(part.context[0].basePath).toBe("file.ts");
+    expect(part.context[0].base).toContain("third = 3");
+    expect(part.anchors).toEqual(["LEFT:3", "RIGHT:3"]);
+  } finally {
+    f.clean();
+  }
+});
+
+test("source availability distinguishes a new file, deletion and unavailable commit", () => {
+  const f = fixture();
+  try {
+    const file: any = {
+      filename: "new.ts",
+      status: "added",
+      patch: "@@ -0,0 +1 @@\n+export const newValue = 1;",
+    };
+    f.put("new.ts", "export const newValue = 1;\n");
+    f.advance();
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    expect(file.context[0].baseState).toBe("not_yet_created");
+    expect(file.context[0].baseComplete).toBe(false);
+    f.git("rm", "file.ts");
+    f.advance();
+    const removed: any = {
+      filename: "file.ts",
+      status: "removed",
+      patch: "@@ -1 +0,0 @@\n-export const run = () => 1;",
+    };
+    enrichFiles([removed], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    expect(removed.context[0].headState).toBe("deleted");
+    expect(removed.context[0].headComplete).toBe(false);
+    expect(gitReader(f.directory).readState("0".repeat(40), "file.ts").status).toBe("unavailable");
+    expect(gitReader(f.directory).readState(f.base, "missing.ts").status).toBe("absent");
+  } finally {
+    f.clean();
+  }
+});
+
+test("structured requests recover a omitted contract then rerun only the affected block", async () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "contract.ts": "export function stableContract() { return 42; }\n",
+  });
+  try {
+    const plan = await f.prepare();
+    let calls = 0;
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      instructions: "Review",
+      sleep: async () => {},
+      recoverContext: ({ chunk, requests }: any) =>
+        recoverEvidence({
+          directory: f.directory,
+          base: f.base,
+          sha: f.pr.head.sha,
+          chunk,
+          requests,
+        }),
+      fetchImpl: async (_url: any, request: any) => {
+        calls++;
+        const parts = JSON.parse(JSON.parse(request.body).messages[1].content).parts;
+        if (calls === 2)
+          expect(
+            parts[0].context.some((c: any) => c.recovered && c.head.includes("stableContract")),
+          ).toBe(true);
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify({
+                    findings: [],
+                    evidenceRequests:
+                      calls === 1
+                        ? [
+                            {
+                              path: "contract.ts",
+                              symbol: "stableContract",
+                              reason: "Verify the return contract",
+                            },
+                          ]
+                        : [],
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    expect(calls).toBe(2);
+    expect(report.coverage).toBe("complete");
+    expect(report.missingEvidence).toEqual([]);
+  } finally {
+    f.clean();
+  }
+});
+
+test("unrecoverable evidence is explicit and repeated requests stop after two recovery rounds", async () => {
+  const f = fixture();
+  try {
+    const plan = await f.prepare();
+    let calls = 0;
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      sleep: async () => {},
+      recoverContext: ({ chunk, requests }: any) =>
+        recoverEvidence({
+          directory: f.directory,
+          base: f.base,
+          sha: f.pr.head.sha,
+          chunk,
+          requests,
+        }),
+      fetchImpl: async () => {
+        calls++;
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify({
+                    findings: [],
+                    evidenceRequests: [
+                      { path: "file.ts", symbol: "run", reason: "Check the callable contract" },
+                    ],
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    expect(calls).toBe(3);
+    expect(report.coverage).toBe("incomplete");
+    expect(report.processed).toBe(report.total);
+    expect(report.qualityScore).toBeNull();
+    expect(report.infrastructure).toEqual([]);
+    expect(report.missingEvidence).toHaveLength(1);
+    const missing = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk: plan.chunks[0],
+      requests: [{ path: "gone.ts", symbol: "missing", reason: "Need imported contract" }],
+    });
+    expect(missing.unresolved[0].availability).toBe("absent");
+    expect(() =>
+      recoverEvidence({
+        directory: f.directory,
+        base: f.base,
+        sha: f.pr.head.sha,
+        chunk: plan.chunks[0],
+        requests: [{ path: "../outside.ts", symbol: "missing", reason: "Need imported contract" }],
+      }),
+    ).toThrow();
+  } finally {
+    f.clean();
+  }
+});
+
+test("manual formal review uses captured live targets and rejects a base change without inline threads", async () => {
+  const f = fixture();
+  try {
+    const context: any = { repo: f.context.repo, payload: { inputs: { pr_number: "1" } } };
+    expect(pullNumber(context, f.env)).toBe(1);
+    await prepareReview({ github: f.github, context, core: f.core, env: f.env });
+    expect(f.outputs.current).toBe("true");
+    f.env.REVIEW_INSTRUCTIONS = f.outputs.instructions;
+    await normalizeConfidence({
+      github: f.github,
+      context,
+      core: f.core,
+      env: f.env,
+      sleep: async () => {},
+      fetchImpl: async () => answer(),
+    });
+    Object.assign(f.env, {
+      REVIEW_OUTCOME: "success",
+      REVIEW_SUMMARY: f.outputs.summary,
+      REVIEW_RISK: f.outputs.risk,
+      REVIEW_COMMENTS: f.outputs.comments,
+      REVIEW_COVERAGE: f.outputs.coverage,
+    });
+    f.pr.base.ref = "another-base";
+    await publishReview({ github: f.github, context, core: f.core, env: f.env });
+    expect(f.statuses.some((s) => s.state === "success")).toBe(false);
+    expect(f.summaries).toHaveLength(0);
+  } finally {
+    f.clean();
+  }
+});
+
+test("broken import caused by a pure move is verified and published as a general PR finding", async () => {
+  const consumer =
+    "import { stableIdentity } from './old';\nexport const value = stableIdentity;\n";
+  const f = fixture({ "old.ts": "export const stableIdentity = 42;\n", "consumer.ts": consumer });
+  try {
+    f.git("mv", "old.ts", "new.ts");
+    f.advance();
+    const files: any[] = [
+      {
+        filename: "new.ts",
+        previous_filename: "old.ts",
+        status: "renamed",
+        additions: 0,
+        deletions: 0,
+      },
+    ];
+    enrichFiles(files, { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    const plan = buildPlan(files, {}, f.pr.head.sha);
+    let calls = 0;
+    const finding = {
+      scope: "pull_request",
+      path: "new.ts",
+      severity: "important",
+      issue_key: "broken-consumer-import",
+      cause: "Moving old.ts leaves consumer.ts importing the deleted path",
+      impact: "Import resolution fails",
+      fix: "Update the import to new.ts",
+    };
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      sleep: async () => {},
+      fetchImpl: async () => {
+        calls++;
+        const data =
+          calls === 1
+            ? { findings: [finding] }
+            : {
+                decisions: [
+                  {
+                    index: 0,
+                    verdict: "confirmed",
+                    symbol: "stableIdentity",
+                    input: "Load consumer.ts after moving old.ts",
+                    actual: "Cannot resolve ./old",
+                    expected: "Resolve ./new and obtain 42",
+                    trace: "The move removes old.ts while the unchanged consumer imports ./old",
+                    counterevidence:
+                      "Both source paths and unchanged consumer were checked; no reexport retains old.ts",
+                    references: [
+                      { path: "consumer.ts", quote: "import { stableIdentity } from './old';" },
+                    ],
+                  },
+                ],
+              };
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            choices: [{ finish_reason: "stop", message: { content: JSON.stringify(data) } }],
+          }),
+        };
+      },
+    });
+    expect(calls).toBe(2);
+    expect(report.coverage).toBe("complete");
+    expect(report.findings).toHaveLength(1);
+    await publishFindings({
+      github: f.github,
+      args: { ...f.context.repo, pull_number: 1 },
+      sha: f.pr.head.sha,
+      botLogin: BOT,
+      report,
+    });
+    expect(f.reviews).toHaveLength(1);
+    expect(f.reviews[0].comments).toBeUndefined();
+    expect(f.reviews[0].body).toContain("Cannot resolve ./old");
+    expect(f.reviews[0].body).not.toContain("undefined");
+  } finally {
+    f.clean();
+  }
+});
+
+test("partial recovery keeps an unresolved request visible until explicitly dismissed", async () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "contract.ts": "export const stableContract = 42;\n",
+  });
+  try {
+    const plan = await f.prepare();
+    let calls = 0;
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      sleep: async () => {},
+      recoverContext: ({ chunk, requests }: any) =>
+        recoverEvidence({
+          directory: f.directory,
+          base: f.base,
+          sha: f.pr.head.sha,
+          chunk,
+          requests,
+        }),
+      fetchImpl: async (_url: any, request: any) => {
+        calls++;
+        const parts = JSON.parse(JSON.parse(request.body).messages[1].content).parts;
+        if (calls > 1)
+          expect(
+            parts[0].evidenceRecovery.some(
+              (r: any) => r.path === "missing.ts" && r.availability === "absent",
+            ),
+          ).toBe(true);
+        const evidenceRequests =
+          calls === 1
+            ? [
+                { path: "contract.ts", symbol: "stableContract", reason: "Need the contract" },
+                {
+                  path: "missing.ts",
+                  symbol: "requiredContract",
+                  reason: "Need the missing contract",
+                },
+              ]
+            : [];
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: { content: JSON.stringify({ findings: [], evidenceRequests }) },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    expect(report.coverage).toBe("incomplete");
+    expect(report.missingEvidence).toHaveLength(1);
+    expect(report.missingEvidence[0].path).toBe("missing.ts");
+    expect(report.missingEvidence[0].availability).toBe("absent");
+  } finally {
+    f.clean();
+  }
+});
+
+test("a complete rerun without general findings supersedes the earlier general review", async () => {
+  const f = fixture();
+  try {
+    const previous = {
+      id: 25,
+      commit_id: f.pr.head.sha,
+      user: { login: BOT },
+      body: "<!-- ceretime-r2d2-general-findings -->\nDefecto anterior verificado",
+    };
+    const paginate = f.github.paginate;
+    f.github.paginate = (method: any, args: any) =>
+      method === f.github.rest.pulls.listReviews ? [previous] : paginate(method, args);
+    f.github.rest.pulls.updateReview = async (request: any) => {
+      expect(request.review_id).toBe(25);
+      previous.body = request.body;
+    };
+    await publishFindings({
+      github: f.github,
+      args: { ...f.context.repo, pull_number: 1 },
+      sha: f.pr.head.sha,
+      botLogin: BOT,
+      report: { sha: f.pr.head.sha, findings: [], resolutions: [], coverage: "complete" },
+    });
+    expect(previous.body).toContain("sustituida");
+    expect(previous.body).not.toStartWith("<!-- ceretime-r2d2-general-findings -->");
+    expect(previous.body).toContain("Defecto anterior verificado");
+  } finally {
+    f.clean();
+  }
+});
+
+test("an explicit justified evidence resolution can finish after a demonstrated absence", async () => {
+  const f = fixture();
+  try {
+    const plan = await f.prepare();
+    let calls = 0;
+    const request = {
+      path: "optional.ts",
+      symbol: "optionalContract",
+      side: "head",
+      reason: "Check optional integration",
+    };
+    const report = await reviewPlan({
+      plan,
+      apiKey: "fixture",
+      sleep: async () => {},
+      recoverContext: ({ chunk, requests }: any) =>
+        recoverEvidence({
+          directory: f.directory,
+          base: f.base,
+          sha: f.pr.head.sha,
+          chunk,
+          requests,
+        }),
+      fetchImpl: async () => {
+        calls++;
+        const data =
+          calls === 1
+            ? { findings: [], evidenceRequests: [request] }
+            : {
+                findings: [],
+                evidenceResolutions: [
+                  {
+                    ...request,
+                    status: "not_needed",
+                    reason:
+                      "The optional module is absent and run has no call to it; its contract does not affect this change",
+                  },
+                ],
+              };
+        return {
+          ok: true,
+          headers: new Headers(),
+          json: async () => ({
+            choices: [{ finish_reason: "stop", message: { content: JSON.stringify(data) } }],
+          }),
+        };
+      },
+    });
+    expect(calls).toBe(2);
+    expect(report.coverage).toBe("complete");
+    expect(report.missingEvidence).toEqual([]);
+  } finally {
+    f.clean();
+  }
+});
+
+test("evidence recovery rejects excessive requests and reports oversized declarations", () => {
+  const f = fixture({
+    "file.ts": "export const run = () => 1;\n",
+    "contract.ts":
+      "export function oversizedContract() {\n" +
+      "const filler = 1;\n".repeat(300) +
+      "return filler;\n}\n",
+  });
+  try {
+    const plan = buildPlan(
+      [
+        {
+          filename: "file.ts",
+          status: "modified",
+          patch: "@@ -1 +1 @@\n-export const run = () => 1;\n+export const run = () => 2;",
+          additions: 1,
+          deletions: 1,
+        },
+      ],
+      {},
+      f.pr.head.sha,
+    );
+    const request = {
+      path: "contract.ts",
+      symbol: "oversizedContract",
+      reason: "Check the return contract",
+    };
+    const result = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk: plan.chunks[0],
+      requests: [request],
+    });
+    expect(result.recovered).toBe(0);
+    expect(result.unresolved[0].detail).toContain("presupuesto");
+    expect(result.chunk.parts[0].evidenceRecovery).toHaveLength(1);
+    expect(() =>
+      recoverEvidence({
+        directory: f.directory,
+        base: f.base,
+        sha: f.pr.head.sha,
+        chunk: plan.chunks[0],
+        requests: Array.from({ length: 9 }, () => request),
+      }),
+    ).toThrow();
   } finally {
     f.clean();
   }

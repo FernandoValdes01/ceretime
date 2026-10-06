@@ -1,3 +1,4 @@
+import "./ai-review-renames.test.ts";
 import "./ai-review-context-retrieval.test.ts";
 import "./ai-review-verification.test.ts";
 import { fixtureVerifier } from "./ai-review-test-verifier.cjs";
@@ -419,7 +420,15 @@ test("workflow has one engine pinned actions and no second inference for the sco
     statuses: "write",
   });
   expect(workflow.concurrency["cancel-in-progress"]).toBe(true);
-  expect(workflow.on).not.toHaveProperty("workflow_dispatch");
+  expect(workflow.on.workflow_dispatch.inputs.pr_number.required).toBe(true);
+  expect(workflow.concurrency.group).toContain("inputs.pr_number");
+  const target = workflow.jobs.review.steps.find((step: any) => step.id === "target");
+  expect(target.with.script).toContain("github.rest.pulls.get");
+  expect(target.with.script).toContain("pr.draft");
+  expect(
+    workflow.jobs.review.steps.find((step: any) => step.uses?.startsWith("actions/checkout@")).with
+      .ref,
+  ).toBe("${{ steps.target.outputs.sha }}");
   expect(Object.keys(workflow.jobs)).toEqual(["review"]);
   const inference = workflow.jobs.review.steps.find((step: any) => step.id === "confidence");
   expect(inference.env.OPENROUTER_API_KEY).toBe("${{ secrets.OPENROUTER_API_KEY }}");

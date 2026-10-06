@@ -1,4 +1,5 @@
-const { currentReview } = require("./ai-review-target.cjs");
+const { recoverEvidence } = require("./ai-review-evidence.cjs");
+const { currentReview, pullNumber } = require("./ai-review-target.cjs");
 const fs = require("node:fs");
 const { memoryIdentity, createMemory } = require("./ai-review-memory.cjs");
 const { reviewPlan } = require("./ai-review-chunks.cjs");
@@ -20,6 +21,14 @@ async function normalizeConfidence({
   const report = await reviewPlan({
     plan,
     verify,
+    recoverContext: ({ chunk, requests }) =>
+      recoverEvidence({
+        directory: env.GITHUB_WORKSPACE,
+        base: plan.mergeBase,
+        sha: plan.sha,
+        chunk,
+        requests,
+      }),
     memory: createMemory({
       directory: `${env.GITHUB_WORKSPACE}/.git/ai-review-memory`,
       identity: memoryIdentity(plan, env.REVIEW_INSTRUCTIONS),
@@ -33,7 +42,7 @@ async function normalizeConfidence({
     isCurrent: async () => {
       const { data: pr } = await github.rest.pulls.get({
         ...context.repo,
-        pull_number: context.payload.pull_request.number,
+        pull_number: pullNumber(context, env),
       });
       return currentReview(pr, plan, context.repo);
     },

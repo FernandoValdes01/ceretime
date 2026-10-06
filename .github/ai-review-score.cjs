@@ -6,7 +6,7 @@ const { enrichFiles, reviewThreads, hash } = require("./ai-review-context.cjs");
 const { classifyFile } = require("./ai-review-selection.cjs");
 const { MODEL, formatReview, formatInline } = require("./ai-review-presentation.cjs");
 
-const { eventTarget, currentReview } = require("./ai-review-target.cjs");
+const { eventTarget, currentReview, pullNumber } = require("./ai-review-target.cjs");
 
 const STATUS_CONTEXT = "R2D2 Review 5/5";
 
@@ -63,7 +63,7 @@ function evaluateReview({
   if (coverage !== "complete") {
     return failure(
       "incomplete",
-      "R2D2 Review 0/5: no se completaron todos los bloques requeridos.",
+      "R2D2: revisión incompleta; consultar evidencia pendiente e incidentes en el informe.",
       review,
     );
   }
@@ -87,7 +87,7 @@ function evaluateReview({
 }
 
 async function prepareReview({ github, context, core, env = process.env }) {
-  const args = { ...context.repo, pull_number: context.payload.pull_request.number };
+  const args = { ...context.repo, pull_number: pullNumber(context, env) };
   const { data: pr } = await github.rest.pulls.get(args);
   const target = eventTarget(context, env);
   if (
@@ -120,12 +120,6 @@ async function prepareReview({ github, context, core, env = process.env }) {
     per_page: 100,
   });
   const threads = reviewThreads(comments, env.REVIEW_BOT_LOGIN || "r2d2-reviewer[bot]");
-  const evidence = enrichFiles(files, {
-    directory: env.GITHUB_WORKSPACE,
-    base: target.base,
-    sha: env.REVIEW_SHA,
-    threads,
-  });
   // GitHub can omit or truncate patches. Reconstruct those from the exact base/head locally.
   for (const file of files) {
     if (!classifyFile(file, parsed).eligible) continue;
@@ -148,10 +142,11 @@ async function prepareReview({ github, context, core, env = process.env }) {
             "diff",
             "--no-ext-diff",
             "--no-textconv",
+            "--find-renames",
             "--unified=3",
             `${target.base}...${env.REVIEW_SHA}`,
             "--",
-            file.filename,
+            ...new Set([file.previous_filename, file.filename].filter(Boolean)),
           ],
           { cwd: env.GITHUB_WORKSPACE, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 },
         );
@@ -162,6 +157,12 @@ async function prepareReview({ github, context, core, env = process.env }) {
       }
     }
   }
+  const evidence = enrichFiles(files, {
+    directory: env.GITHUB_WORKSPACE,
+    base: target.base,
+    sha: env.REVIEW_SHA,
+    threads,
+  });
   const plan = buildPlan(files, parsed, env.REVIEW_SHA);
   if (pr.changed_files != null && pr.changed_files !== files.length)
     plan.issues.push("GitHub no devolvió todos los archivos modificados.");
@@ -266,7 +267,7 @@ async function prepareReview({ github, context, core, env = process.env }) {
 }
 
 async function publishReview({ github, context, core, env = process.env }) {
-  const args = { ...context.repo, pull_number: context.payload.pull_request.number };
+  const args = { ...context.repo, pull_number: pullNumber(context, env) };
   const { data: pr } = await github.rest.pulls.get(args);
   const target = eventTarget(context, env);
   if (!currentReview(pr, target, context.repo)) return;
@@ -307,6 +308,12 @@ async function publishReview({ github, context, core, env = process.env }) {
       report.coverage !== env.REVIEW_COVERAGE
     )
       throw new Error("El informe no coincide con los outputs validados.");
+    if (result.reason === "incomplete") {
+      const cause = report.infrastructure?.[0] ?? report.reasons?.[0] ?? "Falta procesar bloques.";
+      result.description =
+        `R2D2: revisión incompleta (${report.processed}/${report.total}); ${cause}`.slice(0, 140);
+      status.description = result.description;
+    }
     const currentThreads = reviewThreads(
       await github.paginate(github.rest.pulls.listReviewComments, { ...args, per_page: 100 }),
       env.REVIEW_BOT_LOGIN || "r2d2-reviewer[bot]",
@@ -456,8 +463,8 @@ async function tidyComments({ github, args, sha, botLogin, reviews }) {
   }
 }
 
-async function archiveReviewSummaries({ github, context, botLogin, reviews }) {
-  const args = { ...context.repo, pull_number: context.payload.pull_request.number };
+async function archiveReviewSummaries({ github, context, botLogin, reviews, env = process.env }) {
+  const args = { ...context.repo, pull_number: pullNumber(context, env) };
   reviews ??= await github.paginate(github.rest.pulls.listReviews, { ...args, per_page: 100 });
   for (const review of reviews) {
     if (review.user?.login !== botLogin) continue;

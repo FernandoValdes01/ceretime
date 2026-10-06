@@ -18,7 +18,7 @@ function memoryIdentity(plan, instructions) {
       limits: plan.limits,
       instructions,
       implementation: hash(
-        ["chunks", "selection", "context", "memory", "provider", "verification"]
+        ["chunks", "selection", "context", "memory", "provider", "verification", "evidence"]
           .map((name) => fs.readFileSync(path.join(__dirname, `ai-review-${name}.cjs`), "utf8"))
           .join("\n"),
       ),
@@ -55,6 +55,7 @@ function createMemory({ directory, identity, apiKey, now = Date.now }) {
           return null;
         const assessment = payload.assessment;
         const findings = assessment.findings.map(({ anchorIndex, ...finding }) => {
+          if (finding.scope === "pull_request") return finding;
           const anchor = part.anchors[anchorIndex];
           if (!anchor) throw new Error("Coordenada ya no disponible.");
           const [side, line] = anchor.split(":");
@@ -74,6 +75,7 @@ function createMemory({ directory, identity, apiKey, now = Date.now }) {
         assessment: {
           ...assessment,
           findings: assessment.findings.map(({ side, line, ...finding }) => {
+            if (finding.scope === "pull_request") return finding;
             const anchorIndex = part.anchors.indexOf(`${side}:${line}`);
             if (anchorIndex < 0) throw new Error("Hallazgo fuera del bloque.");
             return { ...finding, anchorIndex };

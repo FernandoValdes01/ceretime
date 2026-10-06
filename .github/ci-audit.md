@@ -62,7 +62,7 @@ Se revisaron package.json, apps/web/package.json y apps/mobile/package.json: los
 
 ## Ruleset y cambios manuales propuestos
 
-protectedmain exige una PR, una aprobación, aprobación del último push, descarte de aprobaciones antiguas y los cuatro checks de GitHub Actions con strict_required_status_checks_policy true. Conserva dos actores de bypass y prohíbe eliminar o forzar main. R2D2 permanece informativo y no es required.
+protectedmain exige una PR, una aprobación, aprobación del último push, descarte de aprobaciones antiguas y los cuatro checks de GitHub Actions con strict_required_status_checks_policy true. Conserva dos actores de bypass y prohíbe eliminar o forzar main. Esta fue la configuración inicial de la auditoría. La consulta posterior del 06/10/2026 confirmó que R2D2 Review 5/5 también es obligatorio y pertenece a la App R2D2; el estado vigente está en docs/ci-protections.md.
 
 En Settings → Rules → Rulesets → protectedmain → Require a pull request before merging, conviene activar Require conversation resolution before merging, que corresponde a required_review_thread_resolution = true. Obliga a cerrar también hilos humanos; con R2D2, el equipo debe resolver manualmente los retirados porque una respuesta del bot no marca el hilo como resuelto. Puede bloquear merges hasta esa acción humana, incluso si el bot ya retiró su finding.
 
@@ -95,4 +95,4 @@ También se ejecutaron directamente las suites nuevas de política, contexto y v
 
 La revisión por estándares no encontró infracciones. La revisión de especificación detectó dos defectos del primer diff: una edición de metadatos cancelaba Preview y un 429 de verificación repetía detección sin respetar Retry-After. Ambos quedaron corregidos y sus regresiones aprobaron. La recuperación ahora conserva el candidato y vuelve a enviar la misma solicitud de verificación, compartiendo los límites de cuota/espera. Un fallo definitivo de verificación deja cobertura incompleta, sin reemplazar el candidato por una nueva detección vacía.
 
-Permanecen los avisos existentes de act en Jest, scrollTo en jsdom y configuración de Vitest; no se ocultaron ni se convirtieron en fallos. La revisión humana de la PR, la resolución de hilos y la integración siguen pendientes. No se alteraron rulesets, bypass, main, roles del producto, límites de gravedad ni el carácter informativo de R2D2.
+Permanecen los avisos existentes de act en Jest, scrollTo en jsdom y configuración de Vitest; no se ocultaron ni se convirtieron en fallos. La revisión humana de la PR, la resolución de hilos y la integración siguen pendientes. No se alteraron rulesets, bypass, main, roles del producto, límites de gravedad ni la política de R2D2.

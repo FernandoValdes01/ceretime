@@ -62,11 +62,12 @@ async function runDemo() {
     head: { sha, repo: { full_name: "test/simulation" } },
   };
   const github = {
-    paginate: async () => inline,
+    paginate: async (method) => (method === github.rest.pulls.listReviewComments ? inline : []),
     rest: {
       pulls: {
         get: async () => ({ data: pr }),
         listReviewComments: () => {},
+        listReviews: () => {},
         createReview: async (request) => {
           assert.equal(request.commit_id, sha);
           for (const comment of request.comments)

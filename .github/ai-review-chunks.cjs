@@ -1,3 +1,7 @@
+const {
+  requestKey,
+  evidenceRequests: validateEvidenceRequests,
+} = require("./ai-review-evidence.cjs");
 const { verifyAssessment, publishable, sealFinding } = require("./ai-review-verification.cjs");
 const { withoutBold } = require("./ai-review-presentation.cjs");
 
@@ -73,16 +77,14 @@ function buildPlan(files, config = {}, sha) {
       continue;
     }
     plan.files++;
-    if (!file.patch && file.additions === 0 && file.deletions === 0 && file.status === "renamed") {
-      file = { ...file, patch: "@@ -0,0 +0,0 @@" };
-    }
-    if (!file.patch) {
+    const routeOnly = file.additions === 0 && file.deletions === 0 && file.status === "renamed";
+    if (!file.patch && !routeOnly) {
       plan.issues.push(`Patch no disponible: ${file.filename}`);
       continue;
     }
     let records;
     try {
-      records = patchRecords(file.patch);
+      records = routeOnly ? [] : patchRecords(file.patch);
     } catch {
       plan.issues.push(`Patch incompleto o no interpretable: ${file.filename}`);
       continue;
@@ -96,9 +98,14 @@ function buildPlan(files, config = {}, sha) {
       plan.issues.push(`Patch no cubre todas las líneas: ${file.filename}`);
       continue;
     }
-    plan.chars += file.patch.length;
+    plan.chars += (file.patch ?? "").length;
     // Pack whole hunks first. Only oversized hunks are divided at line boundaries.
     const extra = {
+      change: {
+        oldPath: file.previous_filename ?? (file.status === "added" ? null : file.filename),
+        newPath: file.status === "removed" ? null : file.filename,
+        contentChanged: !routeOnly,
+      },
       kind: selection.kind,
       focus: selection.focus,
       context: file.context ?? [],
@@ -121,7 +128,7 @@ function buildPlan(files, config = {}, sha) {
       if (record.header) hunks.push([]);
       hunks.at(-1).push(record);
     }
-    const units = [];
+    const units = routeOnly ? [[]] : [];
     for (const hunk of hunks) {
       const length = hunk.reduce((n, r) => n + recordSize(r), 0);
       if (length + metadataSize <= limits.chunkChars) {
@@ -223,14 +230,31 @@ function validateAssessment(data, chunk) {
     limitations.some((l) => typeof l !== "string" || !l.trim() || l.length > 800)
   )
     throw new Error("Limitaciones inválidas.");
+  const evidenceRequests = validateEvidenceRequests(data.evidenceRequests);
+  const evidenceResolutions = validateEvidenceRequests(data.evidenceResolutions);
+  if (
+    evidenceResolutions.some(
+      (request) =>
+        request.status !== "not_needed" ||
+        !chunk.parts.some((part) =>
+          part.evidenceRecovery?.some((old) => requestKey(old) === requestKey(request)),
+        ),
+    )
+  )
+    throw new Error("Resolución de evidencia desconocida o inválida.");
   const findings = data.findings.map((finding) => {
     const part = chunk.parts.find(
-      (p) => p.path === finding.path && p.anchors.includes(`${finding.side}:${finding.line}`),
+      (p) =>
+        p.path === finding.path &&
+        (finding.scope === "pull_request"
+          ? !p.anchors.length && p.status === "renamed"
+          : p.anchors.includes(`${finding.side}:${finding.line}`)),
     );
     if (
       !part ||
-      !Number.isInteger(finding.line) ||
-      finding.line <= 0 ||
+      (finding.scope !== "pull_request" &&
+        (!Number.isInteger(finding.line) || finding.line <= 0)) ||
+      (finding.scope === "pull_request" && (finding.line != null || finding.side != null)) ||
       !Object.hasOwn(severityRank, finding.severity)
     )
       throw new Error("Hallazgo sin línea válida.");
@@ -305,6 +329,8 @@ function validateAssessment(data, chunk) {
     findings,
     resolutions,
     limitations,
+    evidenceRequests,
+    evidenceResolutions,
   };
 }
 
@@ -317,7 +343,9 @@ function aggregate(plan, results, calls, errors = []) {
         ((old.issue_key && old.issue_key === finding.issue_key) ||
           (old.body && old.body === finding.body)),
     );
-    const key = duplicate?.[0] ?? `${finding.path}:${finding.side}:${finding.line}`;
+    const key =
+      duplicate?.[0] ??
+      `${finding.path}:${finding.scope === "pull_request" ? finding.issue_key : `${finding.side}:${finding.line}`}`;
     if (!unique.has(key) || severityRank[finding.severity] > severityRank[unique.get(key).severity])
       unique.set(key, finding);
   }
@@ -330,7 +358,17 @@ function aggregate(plan, results, calls, errors = []) {
   const resolutions = [
     ...new Map(results.flatMap((r) => r.resolutions ?? []).map((r) => [String(r.id), r])).values(),
   ];
-  const reasons = [...plan.issues, ...errors, ...results.flatMap((r) => r.limitations ?? [])];
+  const reasons = [
+    ...plan.issues,
+    ...errors,
+    ...results.flatMap((r) => r.limitations ?? []),
+    ...results.flatMap((r) =>
+      (r.evidenceRequests ?? []).map(
+        (request) =>
+          `Falta evidencia: ${request.path}, ${request.symbol ?? request.fragment}: ${request.reason}`,
+      ),
+    ),
+  ];
   for (const resolution of resolutions) {
     const versions = results
       .flatMap((r) => r.resolutions ?? [])
@@ -375,6 +413,11 @@ function aggregate(plan, results, calls, errors = []) {
     total: plan.chunks.length,
     calls,
     reasons,
+    missingEvidence: results.flatMap((r) => r.evidenceRequests ?? []),
+    limitations: results.flatMap((r) => r.limitations ?? []),
+    infrastructure: errors,
+    planningIssues: plan.issues,
+    qualityScore: coverage === "complete" ? score : null,
   };
 }
 
@@ -458,6 +501,7 @@ async function reviewPlan({
   onProgress = () => {},
   memory,
   verify = verifyAssessment,
+  recoverContext,
 }) {
   if (!apiKey && plan.chunks.length) throw new Error("Falta el secret del proveedor.");
   const results = [],
@@ -506,6 +550,7 @@ async function reviewPlan({
         ).values(),
       ],
       limitations: items.flatMap((r) => r.limitations ?? []),
+      evidenceRequests: items.flatMap((r) => r.evidenceRequests ?? []),
     });
     if (!pending.length) {
       results.push(merge(cachedResults));
@@ -514,7 +559,32 @@ async function reviewPlan({
       );
       continue;
     }
-    const chunk = { parts: pending };
+    let chunk = { parts: pending };
+    let recoveryRounds = 0;
+    const outstanding = new Map();
+    const recover = async (requests) => {
+      if (
+        !requests?.length ||
+        !recoverContext ||
+        recoveryRounds >= 2 ||
+        calls >= plan.limits.maxCalls ||
+        !(await isCurrent())
+      )
+        return false;
+      recoveryRounds++;
+      const batch = requests.slice(0, 8);
+      const recovery = await recoverContext({ chunk, requests: batch });
+      for (const request of requests) outstanding.set(requestKey(request), request);
+      for (const request of recovery.unresolved ?? [])
+        outstanding.set(requestKey(request), request);
+      if (JSON.stringify(recovery.chunk).length > plan.limits.chunkChars) return false;
+      const unresolvedKeys = new Set((recovery.unresolved ?? []).map(requestKey));
+      for (const request of batch)
+        if (!unresolvedKeys.has(requestKey(request))) outstanding.delete(requestKey(request));
+      chunk = recovery.chunk;
+      onProgress(`Bloque ${index + 1}: evidencia recuperada; ronda ${recoveryRounds}/2.`);
+      return true;
+    };
     let assessment,
       candidate,
       lastFailure = "Una llamada necesaria falló o devolvió un resultado inválido.";
@@ -538,7 +608,7 @@ async function reviewPlan({
             [
               {
                 role: "system",
-                content: `${instructions}\nEsta llamada evalúa exclusivamente las partes recibidas del bloque scope.block de scope.totalBlocks. Los demás bloques se revisan por separado y la cobertura global se comprueba localmente; su ausencia en esta llamada no es una limitación. El contexto aporta contratos y, para workflows, los scripts locales invocados completos cuando caben en el presupuesto. Cada entrada de context indica baseComplete y headComplete: true significa contenido completo, false significa un extracto. Las declaraciones e imports del módulo se conservan antes de los extractos. El contenido de un archivo nuevo puede aparecer completo en su patch aunque su contexto esté recortado. No declares que falta una función o parámetro sin revisar el patch, las declaraciones y los contratos recibidos. Evalúa solo el bloque actual; otros archivos modificados se revisan en sus propios bloques. Respeta las precondiciones del workflow: un paso fallido sin continue-on-error impide los posteriores; always() no elimina otras condiciones unidas con &&. Los outputs documentados de una Action fijada a SHA son parte de su contrato. Una limitación exige un comportamiento concreto que no puedas verificar; evaluar a partir de extractos no es por sí solo cobertura incompleta. Registra limitations solo si falta un contrato necesario para evaluar estas partes, indicando el símbolo o flujo concreto y la evidencia que falta. No exijas el PR completo ni los módulos de producción para revisar cambios independientes en tests. Verifica los tipos en sus productores y consumidores antes de afirmar una incompatibilidad; no supongas que un campo es un array por su nombre. La base inmediata de esta PR es la referencia para evaluar el cambio. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. No publiques como hallazgo una observación que no tenga impacto funcional o que no requiera corrección. Si la evidencia solo permite una hipótesis, describe la limitación concreta en limitations; no afirmes que un símbolo no existe por no verlo en un extracto. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Los hunks históricos de los hilos solo sirven para resolver esos hallazgos; el patch principal es baseSHA...headSHA de esta PR, incluso dentro de un stack. CI, build y el reviewer tienen comportamiento funcional aunque no cambien lógica de negocio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Una resolución con status maintain obliga a incluir en findings el hallazgo correspondiente con el mismo threadId, path, line, side, severity, issue_key, cause, impact y fix. La resolución por sí sola no es evidencia. Un hallazgo anterior tampoco prueba que el problema exista: verifica su afirmación y su impacto contra las funciones y condiciones actuales, incluidas las llamadas que ya cumplan esa responsabilidad. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],limitations:[motivos concretos si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Solo coordenadas anotadas [RIGHT:N] o [LEFT:N], máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones y evidencia con threadId para mantener ese mismo hallazgo; nunca hallazgos nuevos ni defectos ajenos al diff vigente.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
+                content: `${instructions}\nEsta llamada evalúa exclusivamente las partes recibidas del bloque scope.block de scope.totalBlocks. Los demás bloques se revisan por separado y la cobertura global se comprueba localmente; su ausencia en esta llamada no es una limitación. El contexto aporta contratos y, para workflows, los scripts locales invocados completos cuando caben en el presupuesto. Cada entrada de context indica baseComplete y headComplete: true significa contenido completo; false exige consultar baseState/headState: present indica un extracto, not_yet_created y deleted son ausencias demostradas, unavailable indica un fallo de lectura. Las declaraciones e imports del módulo se conservan antes de los extractos. El contenido de un archivo nuevo puede aparecer completo en su patch aunque su contexto esté recortado. No declares que falta una función o parámetro sin revisar el patch, las declaraciones y los contratos recibidos. Evalúa solo el bloque actual; otros archivos modificados se revisan en sus propios bloques. Respeta las precondiciones del workflow: un paso fallido sin continue-on-error impide los posteriores; always() no elimina otras condiciones unidas con &&. Los outputs documentados de una Action fijada a SHA son parte de su contrato. Una limitación exige un comportamiento concreto que no puedas verificar; evaluar a partir de extractos no es por sí solo cobertura incompleta. Pide evidencia faltante en evidenceRequests:[{path,symbol o fragment,side:head|base,reason}]. Usa rutas relativas exactas del repositorio y declara por qué esa declaración es necesaria. Se recuperará desde Git y se repetirá este bloque hasta dos veces, ocho solicitudes por ronda y 16000 caracteres. Los resultados fallidos de recuperación aparecen en evidenceRecovery con disponibilidad y motivo. Las solicitudes pendientes no desaparecen por omitirlas en la respuesta. Si el contrato ya no es necesario por una ausencia demostrada o por el flujo comprobado, devuelve evidenceResolutions:[{path,symbol o fragment,side,status:not_needed,reason:justificación concreta}]; solo resuelve solicitudes ya recibidas en evidenceRecovery. Un renombre tiene change.oldPath y change.newPath; no presupongas que mantiene válidos los imports de sus consumidores. Si no hay anchors, un defecto de ruta admite scope:pull_request sin line ni side; exige la misma evidencia causal que un hallazgo inline. Registra limitations solo si falta un contrato necesario para evaluar estas partes, indicando el símbolo o flujo concreto y la evidencia que falta. No exijas el PR completo ni los módulos de producción para revisar cambios independientes en tests. Verifica los tipos en sus productores y consumidores antes de afirmar una incompatibilidad; no supongas que un campo es un array por su nombre. La base inmediata de esta PR es la referencia para evaluar el cambio. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. No publiques como hallazgo una observación que no tenga impacto funcional o que no requiera corrección. Si la evidencia solo permite una hipótesis, describe la limitación concreta en limitations; no afirmes que un símbolo no existe por no verlo en un extracto. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Los hunks históricos de los hilos solo sirven para resolver esos hallazgos; el patch principal es baseSHA...headSHA de esta PR, incluso dentro de un stack. CI, build y el reviewer tienen comportamiento funcional aunque no cambien lógica de negocio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Una resolución con status maintain obliga a incluir en findings el hallazgo correspondiente con el mismo threadId, path, line, side, severity, issue_key, cause, impact y fix. La resolución por sí sola no es evidencia. Un hallazgo anterior tampoco prueba que el problema exista: verifica su afirmación y su impacto contra las funciones y condiciones actuales, incluidas las llamadas que ya cumplan esa responsabilidad. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],evidenceRequests:[{path,symbol o fragment,side:head|base,reason}],limitations:[motivos concretos no recuperables si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Para scope:inline, solo coordenadas anotadas [RIGHT:N] o [LEFT:N]; scope:pull_request solo en renombres sin anchors, máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones y evidencia con threadId para mantener ese mismo hallazgo; nunca hallazgos nuevos ni defectos ajenos al diff vigente.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
               },
               {
                 role: "user",
@@ -618,6 +688,20 @@ async function reviewPlan({
         const parsed = JSON.parse(json.choices?.[0]?.message?.content ?? "null");
         stage = "validation";
         candidate = validateAssessment(parsed, chunk);
+        for (const request of candidate.evidenceResolutions)
+          outstanding.delete(requestKey(request));
+        candidate.evidenceRequests = [
+          ...new Map(
+            [...outstanding.values(), ...candidate.evidenceRequests].map((request) => [
+              requestKey(request),
+              request,
+            ]),
+          ).values(),
+        ];
+        if (await recover(candidate.evidenceRequests)) {
+          attempt--;
+          continue;
+        }
         stage = "verification";
         if (candidate.findings.length && calls < plan.limits.maxCalls)
           await sleep(plan.limits.intervalMs);
@@ -662,12 +746,30 @@ async function reviewPlan({
         });
         for (const key of Object.keys(usage)) usage[key] += verified.usage[key];
         assessment = verified.assessment;
+        assessment.evidenceRequests = [
+          ...new Map(
+            [...outstanding.values(), ...(assessment.evidenceRequests ?? [])].map((request) => [
+              requestKey(request),
+              request,
+            ]),
+          ).values(),
+        ];
+        if (await recover(assessment.evidenceRequests)) {
+          attempt--;
+          continue;
+        }
         try {
           for (const part of pending) {
-            if (!assessment.limitations.length)
+            if (
+              !assessment.limitations.length &&
+              !assessment.evidenceRequests?.length &&
+              !recoveryRounds
+            )
               memory?.set(part, {
                 findings: assessment.findings.filter(
-                  (f) => f.path === part.path && part.anchors.includes(`${f.side}:${f.line}`),
+                  (f) =>
+                    f.path === part.path &&
+                    (f.scope === "pull_request" || part.anchors.includes(`${f.side}:${f.line}`)),
                 ),
                 resolutions: assessment.resolutions.filter((r) =>
                   part.followups?.some((t) => t.id === String(r.id)),
@@ -694,6 +796,7 @@ async function reviewPlan({
         break;
       } catch (error) {
         if (stage === "verification") {
+          errors.push("Incidente: la verificación del proveedor no se completó.");
           assessment = {
             ...candidate,
             findings: [],
@@ -762,7 +865,8 @@ async function publishFindings({
     per_page: 100,
   });
   const owned = existing.filter((c) => c.user?.login === botLogin && !c.in_reply_to_id);
-  const comments = [];
+  const comments = [],
+    general = [];
   for (const finding of report.findings) {
     const id = hash(`${finding.path}:${finding.issue_key}`).slice(0, 24);
     const marker = `<!-- ceretime-r2d2-finding:${id} -->`;
@@ -772,10 +876,14 @@ async function publishFindings({
       warning: "Advertencia",
       minor: "Observación funcional menor",
     }[finding.severity];
-    let body = `${marker}\n### R2D2 · ${severity}\n\n${withoutBold(finding.body)}\n\nVerificado en ${sha}: ${finding.path}:${finding.line} (${finding.side}).`;
+    let body = `${marker}\n### R2D2 · ${severity}\n\n${withoutBold(finding.body)}\n\nVerificado en ${sha}: ${finding.scope === "pull_request" ? `${finding.path} (cambio de ruta)` : `${finding.path}:${finding.line} (${finding.side})`}.`;
     const evidence = finding.verification.evidence;
     if (typeof evidence.input === "string")
       body += `\n\nEntrada: ${withoutBold(evidence.input)}\n\nResultado actual: ${withoutBold(evidence.actual)}\n\nResultado esperado: ${withoutBold(evidence.expected)}\n\nTraza: ${withoutBold(evidence.trace)}\n\nComprobaciones: ${withoutBold(evidence.counterevidence)}`;
+    if (finding.scope === "pull_request") {
+      general.push(body);
+      continue;
+    }
     const old = owned.find(
       (c) => (finding.threadId && String(c.id) === finding.threadId) || c.body?.startsWith(marker),
     );
@@ -794,6 +902,35 @@ async function publishFindings({
         });
       }
     } else comments.push({ path: finding.path, line: finding.line, side: finding.side, body });
+  }
+  if (general.length || report.coverage === "complete") {
+    const reviews = await github.paginate(github.rest.pulls.listReviews, {
+      ...args,
+      per_page: 100,
+    });
+    const ownedGeneral = reviews.filter(
+      (review) =>
+        review.user?.login === botLogin &&
+        review.body?.startsWith("<!-- ceretime-r2d2-general-findings -->"),
+    );
+    const previous = ownedGeneral.find((review) => review.commit_id === sha);
+    for (const review of ownedGeneral) {
+      if (general.length && review.id === previous?.id) continue;
+      if (report.coverage !== "complete" && review.commit_id === sha) continue;
+      await requireCurrent();
+      await github.rest.pulls.updateReview({
+        ...args,
+        review_id: review.id,
+        body: `<!-- ceretime-r2d2-general-history -->\nRevisión general sustituida por la comprobación formal de ${sha}. Consultar el informe vigente.\n\n<details>\n<summary>Evidencia histórica</summary>\n\n${review.body}\n\n</details>`,
+      });
+    }
+    if (general.length) {
+      const body = `<!-- ceretime-r2d2-general-findings -->\n${general.join("\n\n")}`;
+      await requireCurrent();
+      if (previous) await github.rest.pulls.updateReview({ ...args, review_id: previous.id, body });
+      else
+        await github.rest.pulls.createReview({ ...args, commit_id: sha, event: "COMMENT", body });
+    }
   }
   if (comments.length) {
     await requireCurrent();
