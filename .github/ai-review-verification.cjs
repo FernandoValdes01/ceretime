@@ -45,6 +45,15 @@ function decideFinding(finding, evidence, part) {
     part.path,
     `${texts.get(part.path) ?? ""}\n${(part.patch ?? "").replace(/^\[LEFT:\d+\].*$/gm, "").replace(/\[RIGHT:\d+\] \+/g, "")}`,
   );
+  const contractIsIndependent = (contract) => {
+    if (contract.path !== part.path) return true;
+    return (
+      !/[=<>;{}]/.test(contract.quote) &&
+      /\b(debe|deben|conserva|conservan|convive|elimina|respeta|mantiene|mantienen|stable|preserves|must|shall)\b/i.test(
+        contract.quote,
+      )
+    );
+  };
   if (![...texts.values()].some((text) => text.includes(evidence.symbol))) return "insufficient";
   for (const reference of evidence.references)
     if (
@@ -64,6 +73,8 @@ function decideFinding(finding, evidence, part) {
       typeof contract.quote !== "string" ||
       contract.quote.trim().length < 12 ||
       contract.quote.length > 1200 ||
+      // A code expression under review cannot establish its own expected behavior.
+      !contractIsIndependent(contract) ||
       !texts.get(contract.path)?.includes(contract.quote) ||
       typeof evidence.impactTrace !== "string" ||
       !evidence.impactTrace.trim() ||

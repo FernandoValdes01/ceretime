@@ -67,7 +67,8 @@ const proof = (index: number, extra = {}) => ({
     "Comprobados los validadores, la prioridad documentada y el productor de identidad antes del sort",
   expectedContract: {
     path,
-    quote: "y el agregado convive con ambas.",
+    quote:
+      "la cancelación de un día elimina el día completo, la cancelación con `blockId` descuenta solo ese bloque y conserva los demás, y el agregado convive con ambas.",
     rule: "Cada agregado conserva sus ventanas e identidad; convive con cancelaciones.",
   },
   impactTrace:
@@ -133,6 +134,33 @@ test("proof can preserve true positives without increasing confidence thresholds
   expect(decideFinding(candidates[1], proof(1), part)).toBe("confirmed");
   expect(decideFinding(candidates[2], proof(2), part)).toBe("refuted");
   expect(decideFinding(candidates[0], { verdict: "refuted" }, part)).toBe("insufficient");
+});
+test("an implementation expression cannot serve as its own expected contract", () => {
+  const candidate = { ...candidates[0], path: ".github/ai-review-evidence.cjs" };
+  const part = {
+    path: candidate.path,
+    patch: "",
+    context: [
+      {
+        path: candidate.path,
+        head: "const capacity = MAX_RECOVERED - recoveredChars - imports.length;",
+      },
+    ],
+  };
+  expect(
+    decideFinding(
+      candidate,
+      {
+        ...proof(0),
+        expectedContract: {
+          path: candidate.path,
+          quote: "const capacity = MAX_RECOVERED - recoveredChars - imports.length;",
+          rule: "recoveredChars must exclude imports",
+        },
+      },
+      part,
+    ),
+  ).toBe("insufficient");
 });
 test("real verifier publishes only the two witnessed defects and validates proof integrity", async () => {
   const result = await verifyAssessment({

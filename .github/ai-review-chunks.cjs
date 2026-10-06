@@ -15,7 +15,9 @@ const LIMITS = Object.freeze({
   chunkChars: 48000,
   inputChars: 64000,
   maxChunks: 32,
-  maxCalls: 32,
+  // Every planned block gets one primary call; keep a bounded reserve for
+  // evidence recovery, retries, and independent finding verification.
+  maxCalls: 64,
   outputTokens: 6000,
   intervalMs: 1000,
   maxRateLimitWaitMs: 600000,
@@ -945,9 +947,10 @@ async function reviewPlan({
       continue;
     }
     if (!assessment) {
-      const cause =
-        calls >= plan.limits.maxCalls ? "Presupuesto máximo de llamadas agotado." : lastFailure;
+      const exhausted = calls >= plan.limits.maxCalls;
+      const cause = exhausted ? "Presupuesto máximo de llamadas agotado." : lastFailure;
       errors.push(cause);
+      if (exhausted) break;
       results.push(
         merge([
           ...cachedResults,
