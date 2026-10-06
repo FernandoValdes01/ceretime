@@ -20,6 +20,11 @@ import { formatInline, withoutBold } from "./ai-review-presentation.cjs";
 import { verifyScale } from "./ai-review-scale.cjs";
 const sha = "a".repeat(40);
 const config = Bun.YAML.parse(readFileSync(`${import.meta.dir}/../.pr-reviewer.yml`, "utf8"));
+test("reviewer config reserves bounded calls for recovery and independent verification", () => {
+  expect(config.chunking.maxCalls).toBe(64);
+  expect(config.chunking.maxCalls).toBe(LIMITS.maxCalls);
+  expect(buildPlan([], config, sha).limits.maxCalls).toBe(64);
+});
 function chunkFile(filename: string, lines = 80, width = 70) {
   return {
     filename,
