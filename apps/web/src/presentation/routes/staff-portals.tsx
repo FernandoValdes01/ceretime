@@ -31,7 +31,15 @@ function StaffLayout({ title, home }: { title: string; home: ReactNode }) {
 
 export function ProfessionalLayout() {
   return (
-    <StaffLayout title="Portal del Profesional" home={<Link to="/profesional">Inicio</Link>} />
+    <StaffLayout
+      title="Portal del Profesional"
+      home={
+        <>
+          <Link to="/profesional">Inicio</Link>{" "}
+          <Link to="/profesional/solicitudes">Solicitudes</Link>
+        </>
+      }
+    />
   );
 }
 
