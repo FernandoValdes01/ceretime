@@ -2262,13 +2262,33 @@ test("a full block is partitioned for recovered evidence without losing patch co
         calls++;
         expect(request.body.length).toBeLessThanOrEqual(plan.limits.inputChars);
         const parts = JSON.parse(JSON.parse(request.body).messages[1].content).parts;
-        const complete = parts
-          .flatMap((p: any) => p.context)
-          .some((c: any) => c.head.includes("completed-contract"));
+        const pages = [
+          ...new Map(
+            parts
+              .flatMap((p: any) => p.context)
+              .filter((c: any) => c.path === "large.ts" && c.recovered && c.headState === "present")
+              .map((c: any) => [`${c.offset}:${c.head}`, c]),
+          ).values(),
+        ].sort((a: any, b: any) => a.offset - b.offset);
+        let cursor = 0;
+        for (const page of pages as any[]) if (page.offset === cursor) cursor += page.head.length;
+        const complete =
+          pages[0]?.offset === 0 &&
+          pages.at(-1)?.declarationComplete &&
+          pages.at(-1)?.head.includes("completed-contract") &&
+          cursor >= pages.at(-1).offset + pages.at(-1).head.length;
         if (complete)
           for (const p of parts)
             for (const match of p.patch.matchAll(/\[(RIGHT|LEFT):(\d+)\]/g))
               seen.add(`${match[1]}:${match[2]}`);
+        const pending = parts
+          .flatMap((p: any) => p.evidenceRecovery ?? [])
+          .find(
+            (item: any) =>
+              item.path === "large.ts" &&
+              item.symbol === "largeContract" &&
+              item.availability === "partial",
+          );
         return {
           ok: true,
           headers: new Headers(),
@@ -2286,6 +2306,7 @@ test("a full block is partitioned for recovered evidence without losing patch co
                             path: "large.ts",
                             symbol: "largeContract",
                             reason: "Verify all branches",
+                            ...(pending?.cursor == null ? {} : { cursor: pending.cursor }),
                           },
                         ],
                   }),

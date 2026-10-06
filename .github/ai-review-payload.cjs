@@ -122,15 +122,11 @@ function splitRecoveredChunk(chunk, limit) {
     }
     for (const piece of pieces) {
       if (!fits([piece])) return null;
-      if (current.length && (relatedRecovered.length || !fits([...current, piece]))) {
+      if (current.length && !fits([...current, piece])) {
         chunks.push({ ...chunk, parts: current });
         current = [];
       }
       current.push(piece);
-      if (relatedRecovered.length) {
-        chunks.push({ ...chunk, parts: current });
-        current = [];
-      }
     }
   }
   if (current.length) chunks.push({ ...chunk, parts: current });
