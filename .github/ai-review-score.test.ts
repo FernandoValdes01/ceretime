@@ -105,6 +105,20 @@ for (const data of [
       validateAssessment(data, buildPlan([chunkFile("file.ts", 10)], {}, sha).chunks[0]),
     ).toThrow();
   });
+test("multiple concrete limitations can describe one changed file without invalidating coverage", () => {
+  const plan = buildPlan([chunkFile("file.ts", 10)], {}, sha);
+  const limitations = ["Falta verificar el consumidor A.", "Falta verificar el contrato B."];
+  expect(plan.chunks[0].parts).toHaveLength(1);
+  expect(validateAssessment({ findings: [], limitations }, plan.chunks[0]).limitations).toEqual(
+    limitations,
+  );
+  expect(() =>
+    validateAssessment(
+      { findings: [], limitations: Array.from({ length: 17 }, () => "Limitación concreta.") },
+      plan.chunks[0],
+    ),
+  ).toThrow("Limitaciones inválidas.");
+});
 test("no eligible changes require no key or inference and remain explicit", async () => {
   const plan = buildPlan(
     [{ filename: "image.png" }, { filename: "bun.lock" }, chunkFile("docs/notes.md", 1)],

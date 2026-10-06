@@ -23,6 +23,7 @@ const LIMITS = Object.freeze({
   maxRateLimitWaitMs: 600000,
 });
 const severityRank = { critical: 3, important: 2, warning: 1, minor: 0 };
+const MAX_LIMITATIONS_PER_BLOCK = 16;
 
 // Keep every patch line and its original coordinates, including deletions.
 function patchRecords(patch) {
@@ -229,7 +230,7 @@ function validateAssessment(data, chunk) {
   const limitations = data.limitations ?? [];
   if (
     !Array.isArray(limitations) ||
-    limitations.length > chunk.parts.length ||
+    limitations.length > MAX_LIMITATIONS_PER_BLOCK ||
     limitations.some((l) => typeof l !== "string" || !l.trim() || l.length > 800)
   )
     throw new Error("Limitaciones inválidas.");
