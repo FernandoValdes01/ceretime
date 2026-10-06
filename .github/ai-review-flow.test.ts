@@ -2408,6 +2408,28 @@ test("split added-file blocks receive the complete declaration containing their 
   expect(recoveredCases.size).toBeGreaterThanOrEqual(18);
 });
 
+test("block context budget leaves room for the largest indivisible patch line", () => {
+  const source = `test("wide-line", () => { const payload = "${"x".repeat(30000)}"; expect(payload).toHaveLength(30000); });\n`;
+  const file = {
+    filename: ".github/wide-line.test.ts",
+    status: "added",
+    additions: 1,
+    deletions: 0,
+    patch: `@@ -0,0 +1,1 @@\n+${source.trimEnd()}`,
+    after: source,
+    context: [
+      { path: ".github/wide-line.test.ts", head: source.slice(0, 4000), headComplete: false },
+    ],
+  };
+  const plan = buildPlan([file]);
+
+  expect(plan.issues).toEqual([]);
+  expect(
+    plan.chunks.flatMap((chunk: any) => chunk.parts).some((part: any) => part.anchors.length),
+  ).toBe(true);
+  expect(JSON.stringify(plan.chunks[0]).length).toBeLessThanOrEqual(48000);
+});
+
 test("partitioned patches keep prior findings with their actual coordinate", () => {
   const { splitRecoveredChunk } = require("./ai-review-payload.cjs");
   const parts = [

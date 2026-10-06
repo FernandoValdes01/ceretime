@@ -125,17 +125,20 @@ function buildPlan(files, config = {}, sha) {
       }).length +
       Math.max(2, ...(file.followups ?? []).map((t) => JSON.stringify(t).length)) +
       100;
-    // The block-specific AST excerpt replaces the smaller file-level own-file
-    // excerpt below. Reserve its full budget while splitting patches so the
-    // final serialized block remains within chunkChars.
-    const blockContextBudget = Math.min(24000, Math.floor(limits.chunkChars / 2));
+    const recordSize = (r) =>
+      JSON.stringify(r.side ? `[${r.side}:${r.line}] ${r.text}` : r.text).length + 2;
+    // Reserve the block-specific excerpt, but account for the largest indivisible
+    // patch record so context budgeting cannot reject a line that otherwise fits.
+    const largestRecord = Math.max(0, ...records.map(recordSize));
+    const blockContextBudget = Math.max(
+      0,
+      Math.min(24000, limits.chunkChars - metadataSize - largestRecord),
+    );
     const contextReserve =
       file.after?.length > 12000 && file.context?.some((item) => item.path === file.filename)
         ? blockContextBudget
         : 0;
     const plannedMetadataSize = metadataSize + contextReserve;
-    const recordSize = (r) =>
-      JSON.stringify(r.side ? `[${r.side}:${r.line}] ${r.text}` : r.text).length + 2;
     const hunks = [];
     for (const record of records) {
       if (record.header) hunks.push([]);
@@ -159,7 +162,7 @@ function buildPlan(files, config = {}, sha) {
           unitSize + recordSize(record) + plannedMetadataSize > limits.chunkChars &&
           unit.length
         ) {
-          units.push(unit);
+          if (unit.some((item) => item.side)) units.push(unit);
           unit = [hunk[0], ...hunk.filter((r) => !r.side && !r.header).slice(0, 2)];
           unitSize = unit.reduce((n, r) => n + recordSize(r), 0);
         }
