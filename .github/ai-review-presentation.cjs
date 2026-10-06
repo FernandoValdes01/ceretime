@@ -63,7 +63,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     /^\d+$/.test(value ?? "") ? Number(value).toLocaleString("es-ES") : "no disponible";
   const rawObservations = String(metadata.actionSummary ?? "").trim();
   const observations = withoutBold(
-    rawObservations.startsWith("Confidence Score:")
+    /^(?:Confidence Score:|Review status: incomplete;)/.test(rawObservations)
       ? rawObservations.split("; Resumen: ").slice(1).join("; Resumen: ")
       : rawObservations,
   );

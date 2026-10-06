@@ -68,7 +68,7 @@ test("rename reads history at previous path and retains consumers of the removed
   }
 });
 test("complete block processing with missing evidence reports incomplete review without a quality zero", () => {
-  const summary = `Confidence Score: 0/5; Risk: low; Reviewed commit: ${sha}; Hallazgos: 0; Resumen: Procesados 13/13 bloques. Falta contrato de imports.`;
+  const summary = `Review status: incomplete; Risk: low; Reviewed commit: ${sha}; Hallazgos: 0; Resumen: Procesados 13/13 bloques. Falta contrato de imports.`;
   const result = evaluateReview({
     outcome: "success",
     summary,

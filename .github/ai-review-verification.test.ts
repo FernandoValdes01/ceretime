@@ -391,7 +391,7 @@ test("failed verification cannot certify 5/5 by regenerating a different detecti
   });
   expect(calls).toBe(2);
   expect(report.coverage).toBe("incomplete");
-  expect(report.score).toBe(0);
+  expect(report.score).toBeNull();
   expect(report.findings).toEqual([]);
 });
 test("lack of verification budget cannot maintain a prior finding", async () => {

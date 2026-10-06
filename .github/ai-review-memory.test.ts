@@ -171,7 +171,7 @@ test("cached invalid assessments and stale heads never become completed coverage
       fetchImpl: async () => valid(),
     });
     expect(stale.coverage).toBe("incomplete");
-    expect(stale.score).toBe(0);
+    expect(stale.score).toBeNull();
     expect(stale.calls).toBe(0);
   } finally {
     f.clean();

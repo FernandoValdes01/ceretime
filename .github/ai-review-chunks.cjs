@@ -422,7 +422,7 @@ function aggregate(plan, results, calls, errors = []) {
     !reasons.length && results.length === plan.chunks.length ? "complete" : "incomplete";
   const rank = Math.max(-1, ...allFindings.map((f) => severityRank[f.severity]));
   const risk = rank >= 2 ? "high" : rank === 1 ? "medium" : "low";
-  const score = coverage === "complete" ? (rank < 0 ? 5 : 4 - rank) : 0;
+  const score = coverage === "complete" ? (rank < 0 ? 5 : 4 - rank) : null;
   const explanation = (
     !plan.files && !plan.chunks.length && !reasons.length
       ? "Sin cambios que requieran análisis con IA."
@@ -444,7 +444,10 @@ function aggregate(plan, results, calls, errors = []) {
     resolutions,
     skipped: plan.skipped ?? [],
     totalFindings: allFindings.length,
-    summary: `Confidence Score: ${score}/5; Risk: ${risk}; Reviewed commit: ${plan.sha}; Hallazgos: ${findings.length}; Resumen: ${explanation}`,
+    summary:
+      coverage === "complete"
+        ? `Confidence Score: ${score}/5; Risk: ${risk}; Reviewed commit: ${plan.sha}; Hallazgos: ${findings.length}; Resumen: ${explanation}`
+        : `Review status: incomplete; Risk: ${risk}; Reviewed commit: ${plan.sha}; Hallazgos: ${findings.length}; Resumen: ${explanation}`,
     processed: results.length,
     total: plan.chunks.length,
     calls,

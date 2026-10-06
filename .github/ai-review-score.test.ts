@@ -132,6 +132,33 @@ test("multiple concrete limitations can describe one changed file without invali
     ),
   ).toThrow("Limitaciones inválidas.");
 });
+test("incomplete coverage reports its state without inventing a quality score", () => {
+  const plan = buildPlan([chunkFile("file.ts", 10)], {}, sha);
+  const report = aggregate(
+    plan,
+    [{ findings: [], limitations: ["Falta comprobar un contrato requerido."] }],
+    1,
+  );
+  expect(report).toMatchObject({ coverage: "incomplete", score: null, qualityScore: null });
+  expect(report.summary).toContain("Review status: incomplete");
+  expect(report.summary).not.toContain("0/5");
+  const result = evaluateReview({
+    outcome: "success",
+    summary: report.summary,
+    risk: report.risk,
+    commentsCount: "0",
+    expectedSha: sha,
+    currentSha: sha,
+    coverage: report.coverage,
+  });
+  const body = formatReview(result, sha, "https://github.com/test/repo/actions/runs/1", "", {
+    report,
+    actionSummary: report.summary,
+  });
+  expect(body).toContain("Revisión incompleta");
+  expect(body).not.toContain("Confidence Score");
+  expect(body).not.toContain("0/5");
+});
 test("no eligible changes require no key or inference and remain explicit", async () => {
   const plan = buildPlan(
     [{ filename: "image.png" }, { filename: "bun.lock" }, chunkFile("docs/notes.md", 1)],
@@ -316,7 +343,7 @@ test("missing, truncated or invalid patches cannot certify coverage", async () =
     { ...chunkFile("file.ts", 10), patch: "@@ -0,0 +1,10 @@\n+only one line" },
   ]) {
     const { result, requests } = await runChunks(buildPlan([file], {}, sha));
-    expect(result).toMatchObject({ score: 0, coverage: "incomplete" });
+    expect(result).toMatchObject({ score: null, coverage: "incomplete" });
     expect(requests).toHaveLength(0);
   }
   const plan = buildPlan([chunkFile("file.ts", 1)], {}, sha);
@@ -345,7 +372,7 @@ test("invalid responses retry once and technical uncertainty is not a finding", 
   const uncertain = await runChunks(plan, [
     { findings: [], limitations: ["Falta el contrato externo para comprobar el cambio."] },
   ]);
-  expect(uncertain.result).toMatchObject({ coverage: "incomplete", calls: 1, score: 0 });
+  expect(uncertain.result).toMatchObject({ coverage: "incomplete", calls: 1, score: null });
   expect(uncertain.result.findings).toHaveLength(0);
 });
 test("aggregate caps findings and rejects contradictory thread decisions", () => {
@@ -364,7 +391,7 @@ test("aggregate caps findings and rejects contradictory thread decisions", () =>
     ],
     2,
   );
-  expect(conflict).toMatchObject({ score: 0, coverage: "incomplete" });
+  expect(conflict).toMatchObject({ score: null, coverage: "incomplete" });
 });
 test("budgets and obsolete heads stop inference without inventing coverage", async () => {
   const plan = buildPlan(
@@ -374,7 +401,7 @@ test("budgets and obsolete heads stop inference without inventing coverage", asy
   );
   expect((await runChunks(plan)).result).toMatchObject({
     coverage: "incomplete",
-    score: 0,
+    score: null,
     calls: 1,
   });
   expect(
@@ -398,7 +425,7 @@ test("budgets and obsolete heads stop inference without inventing coverage", asy
       throw new Error("Unexpected inference");
     },
   });
-  expect(stale).toMatchObject({ calls: 0, score: 0, coverage: "incomplete" });
+  expect(stale).toMatchObject({ calls: 0, score: null, coverage: "incomplete" });
 });
 test("publication contract rejects stale missing inconsistent and failed summaries", () => {
   const report = aggregate(buildPlan([], {}, sha), [], 0);
@@ -539,7 +566,7 @@ test("persistent 429 reports quota failure and respects the maximum call count",
   });
   expect(result.calls).toBe(3);
   expect(result.coverage).toBe("incomplete");
-  expect(result.score).toBe(0);
+  expect(result.score).toBeNull();
   expect(result.reasons.join(" ")).toContain("HTTP 429");
 });
 

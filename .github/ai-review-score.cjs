@@ -12,10 +12,24 @@ const STATUS_CONTEXT = "R2D2 Review 5/5";
 
 function parseSummary(summary) {
   if (typeof summary !== "string") return null;
-  const match = summary.match(
+  const completed = summary.match(
     /^Confidence Score: ([0-5])\/5; Risk: (low|medium|high); Reviewed commit: ([a-f0-9]{40}); Hallazgos: ([0-5]); Resumen: ([^\r\n;]+)$/,
   );
-  if (!match || /Confidence Score:|Reviewed commit:/.test(match[5])) return null;
+  const incomplete = summary.match(
+    /^Review status: incomplete; Risk: (low|medium|high); Reviewed commit: ([a-f0-9]{40}); Hallazgos: ([0-5]); Resumen: ([^\r\n;]+)$/,
+  );
+  if (!completed && !incomplete) return null;
+  const match = completed ?? incomplete;
+  if (/Confidence Score:|Reviewed commit:/.test(match.at(-1))) return null;
+  if (incomplete)
+    return {
+      score: null,
+      risk: incomplete[1],
+      sha: incomplete[2],
+      findings: Number(incomplete[3]),
+      summary: incomplete[4].trim(),
+      coverage: "incomplete",
+    };
   return {
     score: Number(match[1]),
     risk: match[2],
@@ -38,7 +52,7 @@ function evaluateReview({
     state: "failure",
     reason,
     description,
-    score: 0,
+    score: null,
     review,
   });
   if (currentSha !== expectedSha) {
@@ -60,7 +74,7 @@ function evaluateReview({
   if (review.sha !== expectedSha) {
     return failure("stale", "La revisión de IA no corresponde al commit actual.");
   }
-  if (coverage !== "complete") {
+  if (coverage !== "complete" || review.coverage === "incomplete") {
     return failure(
       "incomplete",
       "R2D2: revisión incompleta; consultar evidencia pendiente e incidentes en el informe.",
