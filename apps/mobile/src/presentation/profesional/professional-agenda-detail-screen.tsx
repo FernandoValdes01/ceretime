@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
@@ -15,7 +15,7 @@ export function ProfessionalAgendaDetailScreen() {
     <StudentFonts>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
         <ProfessionalHeader onBack={() => router.back()} />
-        <View style={styles.content}>
+        <ScrollView contentContainerStyle={styles.content}>
           {status === "error" ? (
             <View style={styles.stateCard}>
               <StudentText accessibilityRole="header" weight="semibold" style={styles.stateTitle}>
@@ -55,7 +55,7 @@ export function ProfessionalAgendaDetailScreen() {
           ) : status === "loading" ? null : (
             <StudentText style={styles.message}>No encontramos esta actividad.</StudentText>
           )}
-        </View>
+        </ScrollView>
       </SafeAreaView>
     </StudentFonts>
   );
@@ -74,7 +74,7 @@ function DetailRow({ label, value }: { readonly label: string; readonly value: s
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#F7FAF9" },
-  content: { flex: 1, padding: 20 },
+  content: { flexGrow: 1, padding: 20 },
   detailCard: {
     padding: 20,
     gap: 12,
@@ -86,7 +86,7 @@ const styles = StyleSheet.create({
   title: { color: "#087D70", fontSize: 18 },
   divider: { height: 1, backgroundColor: "#D7E1DF" },
   detailRow: { gap: 3 },
-  label: { color: "#7B8A8A", fontSize: 13 },
+  label: { color: "#42565B", fontSize: 13 },
   value: { color: "#182C31", fontSize: 16 },
   summary: { color: "#42565B", fontSize: 16, lineHeight: 24 },
   message: { color: "#5B6C6E", fontSize: 17, textAlign: "center" },
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     justifyContent: "center",
     borderRadius: 10,
-    backgroundColor: "#078B7B",
+    backgroundColor: "#087D70",
   },
   retryText: { color: "#FFFFFF", fontSize: 15 },
 });

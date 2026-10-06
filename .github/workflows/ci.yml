@@ -41,8 +41,8 @@ jobs:
       - name: Probar publicación de resultados de CI
         run: bun test ./.github/ci-publication.test.ts
 
-      - name: Probar el gate de Greptile
-        run: bun test ./.github/greptile-score.test.ts
+      - name: Probar el score de AI Review
+        run: bun test ./.github/ai-review-score.test.ts
 
   mobile:
     name: Validación Mobile

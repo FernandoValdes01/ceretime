@@ -3,6 +3,8 @@ import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { toAccompanimentRequest } from "../domain/requests/request";
+import { transitionRequest } from "../domain/requests/transition_policy";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -893,4 +895,812 @@ test("la migración avanza por páginas hasta agotar las filas", async () => {
   expect(second.scanned).toBe(1);
   expect(second.revoked).toBe(1);
   expect(second.isDone).toBe(true);
+});
+
+/**
+ * Agenda de Sprint 2 (TI2-83): espacios, bloques recurrentes, excepciones y
+ * la única tabla de atención (`appointments`, no `reservations`).
+ *
+ * Cada prueba parte de una base vacía y siembra solo datos ficticios con
+ * `ctx.db`, lo que demuestra que cada índice declarado responde en el orden
+ * declarado sin datos previos. Solo persistencia: la ocupación atómica es
+ * TI2-84, el catálogo autorizado es TI2-99, los repositorios de escritura
+ * son TI2-95 y las reglas de TI2-81/TI2-82/TI2-93 no se implementan acá.
+ */
+
+/** Lunes 2026-10-12 00:00 UTC en milisegundos de época. */
+const TI83_MONDAY = Date.UTC(2026, 9, 12);
+/** Martes 2026-10-13 00:00 UTC en milisegundos de época. */
+const TI83_TUESDAY = Date.UTC(2026, 9, 13);
+/** Lunes 2026-10-12 09:00 UTC en milisegundos de época. */
+const TI83_MONDAY_9H = TI83_MONDAY + 9 * 3_600_000;
+/** Lunes 2026-10-12 10:00 UTC en milisegundos de época. */
+const TI83_MONDAY_10H = TI83_MONDAY + 10 * 3_600_000;
+
+/** Sala ficticia del catálogo. */
+async function seedTi83Space(
+  t: ReturnType<typeof convexTest>,
+  input: { campus: string; building: string; floor: string; room: string; isActive?: boolean },
+): Promise<Id<"spaces">> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("spaces", {
+      campus: input.campus,
+      building: input.building,
+      floor: input.floor,
+      room: input.room,
+      accessConditions: "Condición de acceso ficticia",
+      accessInstructions: "Instrucción de llegada ficticia",
+      isActive: input.isActive ?? true,
+    });
+  });
+}
+
+/** Bloque recurrente ficticio del profesional. */
+async function seedTi83Block(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    professionalId: Id<"users">;
+    weekday: number;
+    modality?: "inPerson" | "online";
+    spaceId?: Id<"spaces">;
+    isActive?: boolean;
+    slotMinutes?: number;
+  },
+): Promise<Id<"availabilityBlocks">> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("availabilityBlocks", {
+      professionalId: input.professionalId,
+      weekday: input.weekday,
+      startMinute: 540,
+      endMinute: 720,
+      slotMinutes: input.slotMinutes ?? 60,
+      modality: input.modality ?? "inPerson",
+      ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
+      isActive: input.isActive ?? true,
+    });
+  });
+}
+
+/** Excepción ficticia del profesional en un día. */
+async function seedTi83Exception(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    professionalId: Id<"users">;
+    date: number;
+    kind?: "cancelled" | "added";
+    blockId?: Id<"availabilityBlocks">;
+    startMinute?: number;
+    endMinute?: number;
+    slotMinutes?: number;
+    modality?: "inPerson" | "online";
+    spaceId?: Id<"spaces">;
+  },
+): Promise<Id<"availabilityExceptions">> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("availabilityExceptions", {
+      professionalId: input.professionalId,
+      date: input.date,
+      kind: input.kind ?? "cancelled",
+      ...(input.blockId === undefined ? {} : { blockId: input.blockId }),
+      ...(input.startMinute === undefined ? {} : { startMinute: input.startMinute }),
+      ...(input.endMinute === undefined ? {} : { endMinute: input.endMinute }),
+      ...(input.slotMinutes === undefined ? {} : { slotMinutes: input.slotMinutes }),
+      ...(input.modality === undefined ? {} : { modality: input.modality }),
+      ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
+      reason: "Motivo ficticio",
+    });
+  });
+}
+
+/** Atención reservada ficticia en la única tabla `appointments`. */
+async function seedTi83Appointment(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    accompanimentId: Id<"accompaniments">;
+    studentId: Id<"users">;
+    professionalId: Id<"users">;
+    startsAt: number;
+    endsAt: number;
+    modality?: "inPerson" | "online";
+    status?:
+      | "scheduled"
+      | "completed"
+      | "cancelled_by_student"
+      | "cancelled_by_cereti"
+      | "rescheduled"
+      | "no_show";
+    spaceId?: Id<"spaces">;
+    originalStartsAt?: number;
+    cancelReason?: string;
+  },
+): Promise<Id<"appointments">> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("appointments", {
+      accompanimentId: input.accompanimentId,
+      studentId: input.studentId,
+      professionalId: input.professionalId,
+      ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
+      modality: input.modality ?? "inPerson",
+      status: input.status ?? "scheduled",
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
+      ...(input.cancelReason === undefined ? {} : { cancelReason: input.cancelReason }),
+      createdAt: 1,
+    });
+  });
+}
+
+test("índices de espacios TI2-83: catálogo vigente y sala exacta", async () => {
+  const t = convexTest(schema, modules);
+  const activeId = await seedTi83Space(t, {
+    campus: "Campus Norte",
+    building: "Edificio C",
+    floor: "2",
+    room: "C-204",
+  });
+  const retiredId = await seedTi83Space(t, {
+    campus: "Campus Norte",
+    building: "Edificio C",
+    floor: "2",
+    room: "C-205",
+    isActive: false,
+  });
+
+  const active = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("spaces")
+      .withIndex("by_isActive", (q) => q.eq("isActive", true))
+      .take(10);
+  });
+  expect(active.map((space) => space._id)).toEqual([activeId]);
+
+  const retired = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("spaces")
+      .withIndex("by_isActive", (q) => q.eq("isActive", false))
+      .take(10);
+  });
+  expect(retired.map((space) => space._id)).toEqual([retiredId]);
+
+  const found = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("spaces")
+      .withIndex("by_campus_and_building_and_floor_and_room", (q) =>
+        q
+          .eq("campus", "Campus Norte")
+          .eq("building", "Edificio C")
+          .eq("floor", "2")
+          .eq("room", "C-204"),
+      )
+      .take(1);
+  });
+  expect(found.map((space) => space._id)).toEqual([activeId]);
+
+  const missing = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("spaces")
+      .withIndex("by_campus_and_building_and_floor_and_room", (q) =>
+        q
+          .eq("campus", "Campus Norte")
+          .eq("building", "Edificio C")
+          .eq("floor", "2")
+          .eq("room", "C-999"),
+      )
+      .take(1);
+  });
+  expect(missing).toHaveLength(0);
+});
+
+test("índices de bloques TI2-83: profesional, día, vigencia y sala", async () => {
+  const t = convexTest(schema, modules);
+  const proA = await seedUser(t, {
+    subject: "ti83-pro-a",
+    email: "proa@uct.cl",
+    role: "professional",
+  });
+  const proB = await seedUser(t, {
+    subject: "ti83-pro-b",
+    email: "prob@uct.cl",
+    role: "professional",
+  });
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  // Lunes = 1, martes = 2 (0=domingo). Misma ventana 09:00–12:00 con
+  // distinta duración de cupo: 30 frente a 60 minutos.
+  const mondayBlock = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 1,
+    spaceId: room,
+  });
+  const shortBlock = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 1,
+    spaceId: room,
+    slotMinutes: 30,
+  });
+  const tuesdayBlock = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 2,
+    spaceId: room,
+  });
+  const onlineBlock = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 1,
+    modality: "online",
+  });
+  const retiredBlock = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 1,
+    modality: "online",
+    isActive: false,
+  });
+  await seedTi83Block(t, { professionalId: proB, weekday: 1, modality: "online" });
+
+  const all = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityBlocks")
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", proA))
+      .take(10);
+  });
+  expect(all.map((block) => block._id).sort()).toEqual(
+    [mondayBlock, shortBlock, tuesdayBlock, onlineBlock, retiredBlock].sort(),
+  );
+
+  const monday = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityBlocks")
+      .withIndex("by_professionalId_and_weekday", (q) =>
+        q.eq("professionalId", proA).eq("weekday", 1),
+      )
+      .take(10);
+  });
+  expect(monday.map((block) => block._id).sort()).toEqual(
+    [mondayBlock, shortBlock, onlineBlock, retiredBlock].sort(),
+  );
+
+  // La misma ventana conserva la diferencia de duración al leerse.
+  const durations = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityBlocks")
+      .withIndex("by_professionalId_and_weekday", (q) =>
+        q.eq("professionalId", proA).eq("weekday", 1),
+      )
+      .take(10);
+  });
+  expect(
+    durations
+      .filter((block) => block.spaceId !== undefined)
+      .map((block) => block.slotMinutes)
+      .sort(),
+  ).toEqual([30, 60]);
+
+  const mondayActive = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityBlocks")
+      .withIndex("by_professionalId_and_weekday_and_isActive", (q) =>
+        q.eq("professionalId", proA).eq("weekday", 1).eq("isActive", true),
+      )
+      .take(10);
+  });
+  expect(mondayActive.map((block) => block._id).sort()).toEqual(
+    [mondayBlock, shortBlock, onlineBlock].sort(),
+  );
+
+  const byRoom = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityBlocks")
+      .withIndex("by_spaceId", (q) => q.eq("spaceId", room))
+      .take(10);
+  });
+  expect(byRoom.map((block) => block._id).sort()).toEqual(
+    [mondayBlock, shortBlock, tuesdayBlock].sort(),
+  );
+});
+
+test("índices de excepciones TI2-83: profesional-día y barrido por fecha", async () => {
+  const t = convexTest(schema, modules);
+  const proA = await seedUser(t, {
+    subject: "ti83-exc-a",
+    email: "exca@uct.cl",
+    role: "professional",
+  });
+  const proB = await seedUser(t, {
+    subject: "ti83-exc-b",
+    email: "excb@uct.cl",
+    role: "professional",
+  });
+  const block = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 1,
+    modality: "online",
+  });
+  const cancelled = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_MONDAY,
+    blockId: block,
+  });
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const addedInPerson = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_TUESDAY,
+    kind: "added",
+    startMinute: 660,
+    endMinute: 720,
+    slotMinutes: 60,
+    modality: "inPerson",
+    spaceId: room,
+  });
+  const addedOnline = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_TUESDAY,
+    kind: "added",
+    startMinute: 780,
+    endMinute: 840,
+    slotMinutes: 30,
+    modality: "online",
+  });
+  const otherPro = await seedTi83Exception(t, { professionalId: proB, date: TI83_MONDAY });
+
+  const mondayMine = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityExceptions")
+      .withIndex("by_professionalId_and_date", (q) =>
+        q.eq("professionalId", proA).eq("date", TI83_MONDAY),
+      )
+      .take(10);
+  });
+  expect(mondayMine.map((row) => row._id)).toEqual([cancelled]);
+
+  const tuesdayMine = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityExceptions")
+      .withIndex("by_professionalId_and_date", (q) =>
+        q.eq("professionalId", proA).eq("date", TI83_TUESDAY),
+      )
+      .take(10);
+  });
+  expect(tuesdayMine.map((row) => row._id).sort()).toEqual([addedInPerson, addedOnline].sort());
+
+  const mondayAll = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("availabilityExceptions")
+      .withIndex("by_date", (q) => q.eq("date", TI83_MONDAY))
+      .take(10);
+  });
+  expect(mondayAll.map((row) => row._id).sort()).toEqual([cancelled, otherPro].sort());
+
+  // La cancelación conserva el vínculo al bloque y no trae ventana propia.
+  const storedCancelled = await t.run(async (ctx) => {
+    return await ctx.db.get(cancelled);
+  });
+  expect(storedCancelled?.blockId).toEqual(block);
+  expect(storedCancelled?.startMinute).toBeUndefined();
+
+  // La ventana agregada presencial conserva duración, modalidad y lugar;
+  // la en línea conserva duración y modalidad sin sala.
+  const storedInPerson = await t.run(async (ctx) => {
+    return await ctx.db.get(addedInPerson);
+  });
+  expect(storedInPerson?.blockId).toBeUndefined();
+  expect(storedInPerson?.startMinute).toBe(660);
+  expect(storedInPerson?.endMinute).toBe(720);
+  expect(storedInPerson?.slotMinutes).toBe(60);
+  expect(storedInPerson?.modality).toBe("inPerson");
+  expect(storedInPerson?.spaceId).toEqual(room);
+
+  const storedOnline = await t.run(async (ctx) => {
+    return await ctx.db.get(addedOnline);
+  });
+  expect(storedOnline?.slotMinutes).toBe(30);
+  expect(storedOnline?.modality).toBe("online");
+  expect(storedOnline?.spaceId).toBeUndefined();
+});
+
+test("índices de appointments TI2-83: estudiante, profesional, sala y acompañamiento", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti83-est",
+    email: "est@alu.uct.cl",
+    role: "student",
+  });
+  const otherStudent = await seedUser(t, {
+    subject: "ti83-est-b",
+    email: "estb@alu.uct.cl",
+    role: "student",
+  });
+  const pro = await seedUser(t, {
+    subject: "ti83-ate-pro",
+    email: "atepro@uct.cl",
+    role: "professional",
+  });
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const accompaniment = await seedAccompaniment(t, student);
+  const otherAccompaniment = await seedAccompaniment(t, otherStudent);
+  const early = await seedTi83Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    spaceId: room,
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+  });
+  const late = await seedTi83Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    spaceId: room,
+    startsAt: TI83_MONDAY_10H,
+    endsAt: TI83_MONDAY_10H + 3_600_000,
+    status: "rescheduled",
+    originalStartsAt: TI83_MONDAY_9H,
+  });
+  const foreign = await seedTi83Appointment(t, {
+    accompanimentId: otherAccompaniment,
+    studentId: otherStudent,
+    professionalId: pro,
+    modality: "online",
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+  });
+
+  const mine = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_studentId", (q) => q.eq("studentId", student))
+      .take(10);
+  });
+  expect(mine.map((row) => row._id).sort()).toEqual([early, late].sort());
+
+  // Aislamiento: el otro estudiante y el otro acompañamiento solo ven lo propio.
+  const foreignMine = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_studentId", (q) => q.eq("studentId", otherStudent))
+      .take(10);
+  });
+  expect(foreignMine.map((row) => row._id)).toEqual([foreign]);
+
+  const foreignByAccompaniment = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_accompanimentId", (q) => q.eq("accompanimentId", otherAccompaniment))
+      .take(10);
+  });
+  expect(foreignByAccompaniment.map((row) => row._id)).toEqual([foreign]);
+
+  const mineFromLate = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_studentId_and_startsAt", (q) =>
+        q.eq("studentId", student).gte("startsAt", TI83_MONDAY_10H),
+      )
+      .take(10);
+  });
+  expect(mineFromLate.map((row) => row._id)).toEqual([late]);
+
+  const agenda = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", pro))
+      .take(10);
+  });
+  expect(agenda.map((row) => row._id).sort()).toEqual([early, late, foreign].sort());
+
+  const agendaFrom = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", pro).gte("startsAt", TI83_MONDAY_10H),
+      )
+      .take(10);
+  });
+  // La atención ajena empieza a las 09:00 y queda fuera de la ventana.
+  expect(agendaFrom.map((row) => row._id)).toEqual([late]);
+
+  const roomUse = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_spaceId", (q) => q.eq("spaceId", room))
+      .take(10);
+  });
+  expect(roomUse.map((row) => row._id).sort()).toEqual([early, late].sort());
+
+  const roomUseFrom = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_spaceId_and_startsAt", (q) =>
+        q.eq("spaceId", room).gte("startsAt", TI83_MONDAY_10H),
+      )
+      .take(10);
+  });
+  expect(roomUseFrom.map((row) => row._id)).toEqual([late]);
+
+  const byAccompaniment = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_accompanimentId", (q) => q.eq("accompanimentId", accompaniment))
+      .take(10);
+  });
+  expect(byAccompaniment.map((row) => row._id).sort()).toEqual([early, late].sort());
+
+  const rescheduled = await t.run(async (ctx) => {
+    return await ctx.db.get(late);
+  });
+  expect(rescheduled?.originalStartsAt).toBe(TI83_MONDAY_9H);
+
+  const online = await t.run(async (ctx) => {
+    return await ctx.db.get(foreign);
+  });
+  expect(online?.spaceId).toBeUndefined();
+});
+
+test("appointments TI2-83: estados terminales, motivo y orden de ventana", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti83-est-term",
+    email: "estterm@alu.uct.cl",
+    role: "student",
+  });
+  const pro = await seedUser(t, {
+    subject: "ti83-pro-term",
+    email: "proterm@uct.cl",
+    role: "professional",
+  });
+  const accompaniment = await seedAccompaniment(t, student);
+  const base = {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+  } as const;
+  const completed = await seedTi83Appointment(t, { ...base, status: "completed" });
+  const studentCancelled = await seedTi83Appointment(t, {
+    ...base,
+    status: "cancelled_by_student",
+    startsAt: TI83_MONDAY_10H,
+    endsAt: TI83_MONDAY_10H + 3_600_000,
+  });
+  const ceretiCancelled = await seedTi83Appointment(t, {
+    ...base,
+    status: "cancelled_by_cereti",
+    startsAt: TI83_MONDAY_10H + 3_600_000,
+    endsAt: TI83_MONDAY_10H + 7_200_000,
+    cancelReason: "Sala no disponible",
+  });
+  const noShow = await seedTi83Appointment(t, {
+    ...base,
+    status: "no_show",
+    startsAt: TI83_MONDAY_10H + 7_200_000,
+    endsAt: TI83_MONDAY_10H + 10_800_000,
+  });
+
+  const storedStudent = await t.run(async (ctx) => {
+    return await ctx.db.get(studentCancelled);
+  });
+  expect(storedStudent?.status).toBe("cancelled_by_student");
+  expect(storedStudent?.cancelReason).toBeUndefined();
+
+  const storedCereti = await t.run(async (ctx) => {
+    return await ctx.db.get(ceretiCancelled);
+  });
+  expect(storedCereti?.status).toBe("cancelled_by_cereti");
+  expect(storedCereti?.cancelReason).toBe("Sala no disponible");
+
+  const storedNoShow = await t.run(async (ctx) => {
+    return await ctx.db.get(noShow);
+  });
+  expect(storedNoShow?.status).toBe("no_show");
+
+  const storedCompleted = await t.run(async (ctx) => {
+    return await ctx.db.get(completed);
+  });
+  expect(storedCompleted?.status).toBe("completed");
+
+  // Siembra tardía primero: el orden lo impone el índice, no la inserción.
+  await seedTi83Appointment(t, {
+    ...base,
+    modality: "online",
+    startsAt: TI83_MONDAY_10H,
+    endsAt: TI83_MONDAY_10H + 3_600_000,
+  });
+  await seedTi83Appointment(t, {
+    ...base,
+    modality: "online",
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+  });
+  const windowed = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_studentId_and_startsAt", (q) =>
+        q.eq("studentId", student).gte("startsAt", TI83_MONDAY_9H),
+      )
+      .take(10);
+  });
+  expect(windowed.map((row) => row.startsAt)).toEqual([
+    TI83_MONDAY_9H,
+    TI83_MONDAY_9H,
+    TI83_MONDAY_10H,
+    TI83_MONDAY_10H,
+    TI83_MONDAY_10H + 3_600_000,
+    TI83_MONDAY_10H + 7_200_000,
+  ]);
+});
+
+test("límites TI2-83: el esquema rechaza literales desconocidos y filas incompletas", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedUser(t, {
+    subject: "ti83-lim-pro",
+    email: "limpro@uct.cl",
+    role: "professional",
+  });
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("availabilityBlocks", {
+        professionalId: pro,
+        weekday: 1,
+        startMinute: 540,
+        endMinute: 600,
+        slotMinutes: 60,
+        modality: "hybrid" as unknown as "inPerson",
+        isActive: true,
+      });
+    }),
+  ).rejects.toThrow("Validator error");
+
+  const student = await seedUser(t, {
+    subject: "ti83-lim-est",
+    email: "limest@alu.uct.cl",
+    role: "student",
+  });
+  const accompaniment = await seedAccompaniment(t, student);
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("appointments", {
+        accompanimentId: accompaniment,
+        studentId: student,
+        professionalId: pro,
+        modality: "inPerson",
+        status: "scheduled",
+        startsAt: TI83_MONDAY_9H,
+        createdAt: 1,
+      } as never);
+    }),
+  ).rejects.toThrow("Validator error");
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("appointments", {
+        accompanimentId: accompaniment,
+        studentId: student,
+        professionalId: pro,
+        modality: "inPerson",
+        status: "justified" as unknown as "scheduled",
+        startsAt: TI83_MONDAY_9H,
+        endsAt: TI83_MONDAY_10H,
+        createdAt: 1,
+      });
+    }),
+  ).rejects.toThrow("Validator error");
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("availabilityExceptions", {
+        professionalId: pro,
+        date: TI83_MONDAY,
+        kind: "moved" as unknown as "cancelled",
+      });
+    }),
+  ).rejects.toThrow("Validator error");
+});
+
+test("compatibilidad TI2-85: cancelación y cierre persisten y se leen como Sprint 1", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti83-comp-est",
+    email: "compest@alu.uct.cl",
+    role: "student",
+  });
+  const pro = await seedUser(t, {
+    subject: "ti83-comp-pro",
+    email: "comppro@uct.cl",
+    role: "professional",
+  });
+  const legacy = await seedRequest(t, student, "received");
+  const cancelledId = await t.run(async (ctx) => {
+    return await ctx.db.insert("requests", {
+      studentId: student,
+      status: "cancelled",
+      accessNeeds: "Necesidad de acceso ficticia",
+      createdAt: 2,
+    });
+  });
+  const closedId = await t.run(async (ctx) => {
+    return await ctx.db.insert("requests", {
+      studentId: student,
+      status: "closed_without_accompaniment",
+      accessNeeds: "Necesidad de acceso ficticia",
+      createdAt: 3,
+    });
+  });
+  const transitionId = await t.run(async (ctx) => {
+    return await ctx.db.insert("requestTransitions", {
+      requestId: cancelledId,
+      from: "received",
+      to: "cancelled",
+      actorId: student,
+      occurredAt: 4,
+    });
+  });
+
+  // Las lecturas anteriores siguen adaptando documentos de Sprint 1.
+  const legacyStored = await t.run(async (ctx) => {
+    return await ctx.db.get(legacy);
+  });
+  expect(
+    toAccompanimentRequest({
+      _id: legacy,
+      studentId: student,
+      status: legacyStored?.status ?? "",
+      accessNeeds: legacyStored?.accessNeeds ?? "",
+      createdAt: legacyStored?.createdAt ?? 0,
+    }).status,
+  ).toBe("received");
+
+  // La cancelación y el cierre se persisten con los literales del dominio;
+  // su mapping a la proyección es de TI2-85, acá se comprueba el valor
+  // guardado tal cual.
+  for (const [id, status] of [
+    [cancelledId, "cancelled"],
+    [closedId, "closed_without_accompaniment"],
+  ] as const) {
+    const stored = await t.run(async (ctx) => {
+      return await ctx.db.get(id);
+    });
+    expect(stored?.status).toBe(status);
+  }
+
+  const storedTransition = await t.run(async (ctx) => {
+    return await ctx.db.get(transitionId);
+  });
+  expect(storedTransition?.to).toBe("cancelled");
+
+  // Sin reglas de TI2-85, el intento de transición se rechaza de forma segura.
+  expect(
+    transitionRequest({
+      from: "received",
+      to: "cancelled",
+      actorId: pro,
+      occurredAt: 5,
+    }),
+  ).toEqual({ status: "rejected", cause: "transition_not_allowed" });
+
+  // `referred` sigue sin habilitarse en el esquema.
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("requests", {
+        studentId: student,
+        status: "referred" as unknown as "received",
+        accessNeeds: "Necesidad de acceso ficticia",
+        createdAt: 6,
+      });
+    }),
+  ).rejects.toThrow("Validator error");
 });
