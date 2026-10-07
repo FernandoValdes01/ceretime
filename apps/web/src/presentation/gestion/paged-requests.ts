@@ -65,6 +65,14 @@ export function usePagedItems<Item extends RequestListItem>(
     items,
     done,
     pending: page === undefined,
-    loadMore: () => setCursor(page?.continueCursor ?? null),
+    // Sin página vigente o sin más páginas no hay a dónde avanzar: no toca
+    // el cursor (la UI además oculta el botón con done y lo deshabilita con
+    // pending; esto blinda la primitiva aunque se invoque programáticamente).
+    loadMore: () => {
+      if (done || page === undefined) {
+        return;
+      }
+      setCursor(page.continueCursor);
+    },
   };
 }
