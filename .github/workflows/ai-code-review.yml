@@ -101,6 +101,7 @@ jobs:
           REVIEW_BOT_LOGIN: ${{ steps.r2d2_token.outputs.app-slug && format('{0}[bot]', steps.r2d2_token.outputs.app-slug) || 'github-actions[bot]' }}
         with:
           github-token: ${{ steps.r2d2_token.outputs.token || github.token }}
+          retries: 2
           script: |
             const { prepareReview } = require('./.github/ai-review-score.cjs');
             await prepareReview({ github, context, core });
