@@ -7,71 +7,84 @@ const HISTORY_CHARS = 12000;
 const ts = require("node:module").createRequire(path.join(__dirname, "../apps/web/package.json"))(
   "typescript",
 );
+const declarationCache = new Map();
+const MAX_DECLARATION_CACHE = 8;
 
 function declarationAnalysis(text, patch, side) {
-  const source = ts.createSourceFile(
-    "context.tsx",
-    text,
-    ts.ScriptTarget.Latest,
-    true,
-    ts.ScriptKind.TSX,
-  );
-  const declarations = source.statements.filter(
-    (node) =>
-      ts.isImportDeclaration(node) ||
-      ts.isExpressionStatement(node) ||
-      ts.isFunctionDeclaration(node) ||
-      ts.isVariableStatement(node) ||
-      ts.isClassDeclaration(node) ||
-      ts.isInterfaceDeclaration(node) ||
-      ts.isTypeAliasDeclaration(node) ||
-      ts.isEnumDeclaration(node),
-  );
-  const names = (node) => {
-    const result = new Set();
-    const visit = (child) => {
-      if (ts.isIdentifier(child)) result.add(child.text);
-      ts.forEachChild(child, visit);
+  let analysis = declarationCache.get(text);
+  if (!analysis) {
+    const source = ts.createSourceFile(
+      "context.tsx",
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const declarations = source.statements.filter(
+      (node) =>
+        ts.isImportDeclaration(node) ||
+        ts.isExpressionStatement(node) ||
+        ts.isFunctionDeclaration(node) ||
+        ts.isVariableStatement(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node) ||
+        ts.isEnumDeclaration(node),
+    );
+    const names = (node) => {
+      const result = new Set();
+      const visit = (child) => {
+        if (ts.isIdentifier(child)) result.add(child.text);
+        ts.forEachChild(child, visit);
+      };
+      visit(node);
+      return result;
     };
-    visit(node);
-    return result;
-  };
-  const declared = (node) =>
-    ts.isVariableStatement(node)
-      ? node.declarationList.declarations.flatMap((d) => [...names(d.name)])
-      : node.name
-        ? [node.name.text]
-        : [];
-  const references = (node) => {
-    const result = new Set();
-    const visit = (child) => {
-      if (ts.isIdentifier(child)) {
-        const parent = child.parent;
-        const binding =
-          parent.name === child &&
-          (ts.isVariableDeclaration(parent) ||
-            ts.isFunctionDeclaration(parent) ||
-            ts.isClassDeclaration(parent) ||
-            ts.isInterfaceDeclaration(parent) ||
-            ts.isTypeAliasDeclaration(parent) ||
-            ts.isEnumDeclaration(parent) ||
-            ts.isParameter(parent) ||
-            ts.isTypeParameterDeclaration(parent) ||
-            ts.isBindingElement(parent));
-        const property =
-          (ts.isPropertyAccessExpression(parent) ||
-            ts.isPropertyAssignment(parent) ||
-            ts.isPropertyDeclaration(parent) ||
-            ts.isPropertySignature(parent) ||
-            ts.isMethodDeclaration(parent)) &&
-          parent.name === child;
-        if (!binding && !property) result.add(child.text);
-      }
-      ts.forEachChild(child, visit);
+    const declared = (node) =>
+      ts.isVariableStatement(node)
+        ? node.declarationList.declarations.flatMap((d) => [...names(d.name)])
+        : node.name
+          ? [node.name.text]
+          : [];
+    const references = (node) => {
+      const result = new Set();
+      const visit = (child) => {
+        if (ts.isIdentifier(child)) {
+          const parent = child.parent;
+          const binding =
+            parent.name === child &&
+            (ts.isVariableDeclaration(parent) ||
+              ts.isFunctionDeclaration(parent) ||
+              ts.isClassDeclaration(parent) ||
+              ts.isInterfaceDeclaration(parent) ||
+              ts.isTypeAliasDeclaration(parent) ||
+              ts.isEnumDeclaration(parent) ||
+              ts.isParameter(parent) ||
+              ts.isTypeParameterDeclaration(parent) ||
+              ts.isBindingElement(parent));
+          const property =
+            (ts.isPropertyAccessExpression(parent) ||
+              ts.isPropertyAssignment(parent) ||
+              ts.isPropertyDeclaration(parent) ||
+              ts.isPropertySignature(parent) ||
+              ts.isMethodDeclaration(parent)) &&
+            parent.name === child;
+          if (!binding && !property) result.add(child.text);
+        }
+        ts.forEachChild(child, visit);
+      };
+      visit(node);
+      return result;
     };
-    visit(node);
-    return result;
-  };
+    analysis = { source, declarations, names, declared, references };
+    declarationCache.set(text, analysis);
+    if (declarationCache.size > MAX_DECLARATION_CACHE)
+      declarationCache.delete(declarationCache.keys().next().value);
+  } else {
+    declarationCache.delete(text);
+    declarationCache.set(text, analysis);
+  }
+  const { source, declarations, names, declared, references } = analysis;
   const ranges = [...(patch ?? "").matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)].map(
     (m) => {
       const start = Number(m[side === "base" ? 1 : 3]) - 1;
@@ -196,6 +209,23 @@ function declarationSymbols(text, patch, side, mode = "all") {
   return [
     ...new Set([...expandImportedSymbols(source, symbols, mode === "references"), ...members]),
   ];
+}
+
+function declarationSymbolsAtLine(text, line, side, mode = "all") {
+  if (typeof text !== "string" || !Number.isInteger(line) || line < 1) return [];
+  const lines = text.split("\n");
+  const numbered = lines.some((value) => /^\d+: /.test(value));
+  let source = text;
+  if (numbered) {
+    const indexed = [];
+    for (const value of lines) {
+      const match = value.match(/^(\d+): (.*)$/);
+      if (match) indexed[Number(match[1]) - 1] = match[2];
+    }
+    source = indexed.map((value) => value ?? "").join("\n");
+  }
+  if (line > source.split("\n").length) return [];
+  return declarationSymbols(source, `@@ -${line},1 +${line},1 @@`, side, mode);
 }
 
 function publicContracts(text, patch, side) {
@@ -965,6 +995,7 @@ module.exports = {
   gitReader,
   enrichFiles,
   declarationSymbols,
+  declarationSymbolsAtLine,
   changedContractSymbols,
   relevantDeclarations,
   contentKey,

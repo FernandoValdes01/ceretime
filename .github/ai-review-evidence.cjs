@@ -79,6 +79,12 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
       recovered.push({
         path: request.path,
         side: request.side,
+        evidenceSide: request.side,
+        evidenceSelector: request.symbol
+          ? { symbol: request.symbol }
+          : request.fragment
+            ? { fragment: request.fragment }
+            : { symbol: "<file>" },
         text: "",
         complete: true,
         declarationComplete: true,
@@ -126,6 +132,12 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
       recovered.push({
         path: request.path,
         side: request.side,
+        evidenceSide: request.side,
+        evidenceSelector: request.symbol
+          ? { symbol: request.symbol }
+          : request.fragment
+            ? { fragment: request.fragment }
+            : { symbol: "<file>" },
         text,
         complete: cursor === 0 && end === selected.text.length && text.trim() === state.text.trim(),
         declarationComplete: end === selected.text.length,
@@ -199,6 +211,8 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         baseComplete: item.side === "base" && item.complete,
         headComplete: item.side === "head" && item.complete,
         recovered: true,
+        evidenceSide: item.evidenceSide,
+        evidenceSelector: item.evidenceSelector,
         declarationComplete: item.declarationComplete,
         offset: item.offset,
         ...(item.forPath ? { forPath: item.forPath } : {}),

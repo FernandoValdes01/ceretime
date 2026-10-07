@@ -5,6 +5,7 @@ const { buildPlan, publishFindings, patchRecords } = require("./ai-review-chunks
 const { enrichFiles, reviewThreads, hash } = require("./ai-review-context.cjs");
 const { classifyFile } = require("./ai-review-selection.cjs");
 const { MODEL, formatReview, formatInline } = require("./ai-review-presentation.cjs");
+const { publicEvidenceBundle } = require("./ai-review-payload.cjs");
 
 const { eventTarget, currentReview, pullNumber } = require("./ai-review-target.cjs");
 
@@ -100,26 +101,55 @@ function evaluateReview({
   };
 }
 
-function packReviewParts(parts, chunkChars) {
-  const partSize = (part) => JSON.stringify({ ...part, anchors: undefined }).length;
+function packReviewParts(parts, chunkChars, refs = {}) {
+  const partSize = (part) => JSON.stringify(publicEvidenceBundle([part], refs)).length;
+  const orderKey = (part) =>
+    `${part.path}\0${[...(part.anchors ?? [])].sort().join(",")}\0${(part.followups ?? [])
+      .map((thread) => String(thread.id))
+      .sort()
+      .join(",")}`;
+  const canShare = (a, b) => {
+    if (a.path !== b.path) return true;
+    if (a.followupOnly || b.followupOnly) return false;
+    const first = new Set((a.followups ?? []).map((thread) => String(thread.id)));
+    const second = new Set((b.followups ?? []).map((thread) => String(thread.id)));
+    if (first.size && second.size && [...first].some((id) => !second.has(id))) return false;
+    return first.size + second.size <= 1 || [...first].every((id) => second.has(id));
+  };
+  const bundleSize = (items) => JSON.stringify(publicEvidenceBundle(items, refs)).length;
   const bins = [];
-  for (const part of [...parts].sort((a, b) => partSize(b) - partSize(a))) {
-    const size = partSize(part);
+  const orderedParts = [...parts].sort(
+    (a, b) => partSize(b) - partSize(a) || orderKey(a).localeCompare(orderKey(b)),
+  );
+  for (const part of orderedParts) {
     const available = bins
+      .map((bin, index) => ({ bin, index, size: bundleSize([...bin.parts, part]) }))
       .filter(
-        (bin) =>
-          bin.size + size + 1 <= chunkChars &&
-          !bin.parts.some(
-            (item) => item.path === part.path && (item.followupOnly || part.followupOnly),
-          ),
+        ({ bin, size }) => size <= chunkChars && bin.parts.every((item) => canShare(item, part)),
       )
-      .sort((a, b) => a.size - b.size)[0];
+      .sort(
+        (a, b) =>
+          a.size - b.size ||
+          a.bin.parts
+            .map(orderKey)
+            .sort()
+            .join("\0")
+            .localeCompare(b.bin.parts.map(orderKey).sort().join("\0")) ||
+          a.index - b.index,
+      )[0]?.bin;
     if (available) {
       available.parts.push(part);
-      available.size += size + 1;
-    } else bins.push({ parts: [part], size: size + 2 });
+      available.parts.sort((a, b) => orderKey(a).localeCompare(orderKey(b)));
+      available.size = bundleSize(available.parts);
+    } else bins.push({ parts: [part], size: partSize(part) });
   }
-  return bins.map(({ parts: packed }) => ({ parts: packed }));
+  return bins
+    .map(({ parts: packed }) => ({
+      parts: packed.sort((a, b) => orderKey(a).localeCompare(orderKey(b))),
+    }))
+    .sort((a, b) =>
+      a.parts.map(orderKey).join("\0").localeCompare(b.parts.map(orderKey).join("\0")),
+    );
 }
 
 async function prepareReview({ github, context, core, env = process.env }) {
@@ -256,6 +286,7 @@ async function prepareReview({ github, context, core, env = process.env }) {
   plan.chunks = packReviewParts(
     plan.chunks.flatMap((chunk) => chunk.parts),
     plan.limits.chunkChars,
+    { mergeBase: evidence.mergeBase, base: target.base, headRef: plan.sha },
   );
   const budgetIssue = "Presupuesto máximo de bloques agotado.";
   plan.issues = plan.issues.filter((issue) => issue !== budgetIssue);
