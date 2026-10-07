@@ -3,6 +3,8 @@ import { Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppHeader } from "../components/app-header";
 import { AppIcon } from "../components/app-icon";
+import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
+import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
 import { StudentFonts, StudentText } from "./student-text";
 
 type StudentScreenIntroductionProps =
@@ -78,6 +80,9 @@ export function StudentAction({
   secondary = false,
   disabled = false,
 }: StudentActionProps) {
+  const accessibility = useOptionalAccessibilityPreferences();
+  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -109,7 +114,7 @@ export function StudentAction({
         <AppIcon
           name="chevronRight"
           size={28}
-          color={secondary ? "#0A7C70" : "#FFFFFF"}
+          color={secondary ? colors.primary : colors.surface}
           accessible={false}
           testID="student-action-chevron-right"
         />

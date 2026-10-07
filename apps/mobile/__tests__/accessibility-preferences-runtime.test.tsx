@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react-native";
+import { act, render, screen, waitFor } from "@testing-library/react-native";
 import { AccessibilityInfo, AppState, Text } from "react-native";
 import { useEffect } from "react";
 import {
@@ -26,12 +26,19 @@ function createPort(
 }
 
 let effectiveMotion = false;
+let effectiveHighContrast = false;
 function Consumer() {
   const { effective } = useAccessibilityPreferences();
   useEffect(() => {
     effectiveMotion = effective.reduceMotion;
+    effectiveHighContrast = effective.highContrast;
   }, [effective]);
-  return <Text>{effective.reduceMotion ? "movimiento reducido" : "movimiento normal"}</Text>;
+  return (
+    <>
+      <Text>{effective.reduceMotion ? "movimiento reducido" : "movimiento normal"}</Text>
+      <Text>{effective.highContrast ? "alto contraste" : "contraste normal"}</Text>
+    </>
+  );
 }
 
 describe("preferencias de accesibilidad del sistema", () => {
@@ -42,6 +49,7 @@ describe("preferencias de accesibilidad del sistema", () => {
   test("actualiza movimiento en vivo y retira la suscripción al desmontar", async () => {
     let onMotionChanged: ((enabled: boolean) => void) | undefined;
     const removeMotionListener = jest.fn();
+    const removeAppStateListener = jest.fn();
     jest.spyOn(AccessibilityInfo, "isReduceMotionEnabled").mockResolvedValue(false);
     jest.spyOn(AccessibilityInfo, "isDarkerSystemColorsEnabled").mockResolvedValue(false);
     (jest.spyOn(AccessibilityInfo, "addEventListener") as jest.Mock).mockImplementation(
@@ -52,7 +60,7 @@ describe("preferencias de accesibilidad del sistema", () => {
         return { remove: removeMotionListener };
       },
     );
-    jest.spyOn(AppState, "addEventListener").mockReturnValue({ remove: jest.fn() });
+    jest.spyOn(AppState, "addEventListener").mockReturnValue({ remove: removeAppStateListener });
 
     const view = render(
       <AccessibilityPreferencesProvider port={createPort()}>
@@ -67,6 +75,40 @@ describe("preferencias de accesibilidad del sistema", () => {
 
     view.unmount();
     expect(removeMotionListener).toHaveBeenCalledTimes(1);
+    expect(removeAppStateListener).toHaveBeenCalledTimes(1);
+  });
+
+  test("vuelve a consultar alto contraste al regresar a la aplicación", async () => {
+    let onAppStateChange: ((state: string) => void) | undefined;
+    jest.spyOn(AccessibilityInfo, "isReduceMotionEnabled").mockResolvedValue(false);
+    jest
+      .spyOn(AccessibilityInfo, "isDarkerSystemColorsEnabled")
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true);
+    jest
+      .spyOn(AccessibilityInfo, "isHighTextContrastEnabled")
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true);
+    (jest.spyOn(AccessibilityInfo, "addEventListener") as jest.Mock).mockReturnValue({
+      remove: jest.fn(),
+    });
+    (jest.spyOn(AppState, "addEventListener") as jest.Mock).mockImplementation(
+      (_event, handler) => {
+        onAppStateChange = handler as unknown as (state: string) => void;
+        return { remove: jest.fn() };
+      },
+    );
+
+    render(
+      <AccessibilityPreferencesProvider port={createPort()}>
+        <Consumer />
+      </AccessibilityPreferencesProvider>,
+    );
+    expect(await screen.findByText("contraste normal")).toBeOnTheScreen();
+
+    act(() => onAppStateChange?.("active"));
+    expect(await screen.findByText("alto contraste")).toBeOnTheScreen();
+    await waitFor(() => expect(effectiveHighContrast).toBe(true));
   });
 
   test("una preferencia local explícita conserva precedencia al cambiar el sistema", async () => {

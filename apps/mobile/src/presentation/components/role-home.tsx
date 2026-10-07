@@ -1,9 +1,12 @@
-import { View, StyleSheet, Text } from "react-native";
+import { View, StyleSheet } from "react-native";
 import type { PropsWithChildren } from "react";
 
 import type { NavigationRole } from "../navigation/roles";
 import { useNavigationSession } from "../navigation/session";
+import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
+import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
 import { Action, Screen } from "./screen";
+import { StudentText } from "../estudiante/student-text";
 
 export function AccessDeniedNotice({
   role,
@@ -12,14 +15,19 @@ export function AccessDeniedNotice({
   readonly role: NavigationRole;
   readonly onDismiss: () => void;
 }) {
+  const accessibility = useOptionalAccessibilityPreferences();
+  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+
   return (
-    <View style={styles.denied}>
-      <Text accessibilityRole="alert" style={styles.deniedTitle}>
+    <View
+      style={[styles.denied, { backgroundColor: colors.errorSurface, borderColor: colors.error }]}
+    >
+      <StudentText accessibilityRole="alert" style={[styles.deniedTitle, { color: colors.error }]}>
         Acceso denegado
-      </Text>
-      <Text style={styles.deniedDescription}>
+      </StudentText>
+      <StudentText style={[styles.deniedDescription, { color: colors.secondary }]}>
         No puedes abrir la sección de {role} con tu sesión actual.
-      </Text>
+      </StudentText>
       <Action label="Entendido" onPress={onDismiss} />
     </View>
   );
@@ -32,6 +40,8 @@ export function RoleHome({
 }: PropsWithChildren<{ title: string; description?: string }>) {
   const { accessDeniedRole, dismissAccessDenied, status, error } = useNavigationSession();
   const isSigningOut = status === "loading";
+  const accessibility = useOptionalAccessibilityPreferences();
+  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
 
   return (
     <Screen title={title} description={description} showAppHeader>
@@ -40,19 +50,19 @@ export function RoleHome({
       ) : null}
       {children}
       {isSigningOut ? (
-        <Text
+        <StudentText
           accessibilityLabel="Cerrando sesión"
           accessibilityLiveRegion="polite"
           accessibilityRole="progressbar"
-          style={styles.status}
+          style={[styles.status, { color: colors.primary }]}
         >
           Cerrando sesión…
-        </Text>
+        </StudentText>
       ) : null}
       {error ? (
-        <Text accessibilityRole="alert" style={styles.error}>
+        <StudentText accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>
           {error}
-        </Text>
+        </StudentText>
       ) : null}
     </Screen>
   );

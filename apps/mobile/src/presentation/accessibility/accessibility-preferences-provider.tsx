@@ -1,13 +1,16 @@
 import { AccessibilityInfo, AppState, Platform, useWindowDimensions } from "react-native";
+import { vars } from "nativewind";
 import {
   createContext,
   useContext,
   useEffect,
   useRef,
   useState,
+  type ComponentType,
   type PropsWithChildren,
 } from "react";
-import { ReducedMotionConfig, ReduceMotion, useReducedMotion } from "react-native-reanimated";
+import { View } from "react-native";
+import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
 import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
@@ -21,6 +24,7 @@ import {
   resolveAccessibilitySettings,
   type SystemAccessibilitySettings,
 } from "./accessibility-preferences-policy";
+import { getAccessibilityColorVariables } from "./accessibility-color-palette";
 
 export interface AccessibilityPreferencesState {
   readonly preferences: AccessibilityPreferences;
@@ -44,12 +48,11 @@ export function AccessibilityPreferencesProvider({
   children,
 }: PropsWithChildren<{ readonly port: AccessibilityPreferencesPort }>) {
   const { fontScale } = useWindowDimensions();
-  const initialReduceMotion = useReducedMotion();
   const [systemSettings, setSystemSettings] = useState<
     Omit<SystemAccessibilitySettings, "fontScale">
   >(() => ({
     highContrast: false,
-    reduceMotion: initialReduceMotion,
+    reduceMotion: false,
   }));
   const [preferences, setPreferences] = useState(defaultAccessibilityPreferences);
   const [status, setStatus] = useState<AccessibilityPreferencesState["status"]>("loading");
@@ -170,6 +173,32 @@ export function AccessibilityPreferencesProvider({
     loadedPort === port ? preferences : defaultAccessibilityPreferences,
     { ...systemSettings, fontScale },
   );
+  const textScaleVariables = Object.fromEntries(
+    [
+      ["--ceretime-font-xs", 12],
+      ["--ceretime-font-sm", 14],
+      ["--ceretime-font-base", 16],
+      ["--ceretime-font-lg", 18],
+      ["--ceretime-font-xl", 20],
+      ["--ceretime-font-2xl", 24],
+      ["--ceretime-font-3xl", 30],
+      ["--ceretime-font-4xl", 36],
+      ["--ceretime-font-28", 28],
+      ["--ceretime-line-xs", 16],
+      ["--ceretime-line-sm", 20],
+      ["--ceretime-line-base", 24],
+      ["--ceretime-line-lg", 28],
+      ["--ceretime-line-xl", 28],
+      ["--ceretime-line-2xl", 32],
+      ["--ceretime-line-3xl", 36],
+      ["--ceretime-line-4xl", 40],
+      ...[20, 25, 26, 28, 29, 34, 37].map((size) => [`--ceretime-line-${size}`, size]),
+    ].map(([name, size]) => {
+      return [String(name), `${Number(size) * effective.textScaleMultiplier}px`];
+    }),
+  );
+  const MotionConfig = ReducedMotionConfig as ComponentType<{ mode: ReduceMotion }> | undefined;
+  const reduceMotionModes = ReduceMotion as typeof ReduceMotion | undefined;
 
   return (
     <PreferencesContext
@@ -183,16 +212,22 @@ export function AccessibilityPreferencesProvider({
         reloadPreferences,
       }}
     >
-      <ReducedMotionConfig
-        mode={
-          effective.reduceMotionMode === "system"
-            ? ReduceMotion.System
-            : effective.reduceMotionMode === "always"
-              ? ReduceMotion.Always
-              : ReduceMotion.Never
-        }
-      />
-      {children}
+      <View
+        style={[
+          { flex: 1 },
+          vars({
+            ...textScaleVariables,
+            ...getAccessibilityColorVariables(effective.highContrast),
+          }),
+        ]}
+      >
+        {MotionConfig && reduceMotionModes ? (
+          <MotionConfig
+            mode={effective.reduceMotion ? reduceMotionModes.Always : reduceMotionModes.Never}
+          />
+        ) : null}
+        {children}
+      </View>
     </PreferencesContext>
   );
 }

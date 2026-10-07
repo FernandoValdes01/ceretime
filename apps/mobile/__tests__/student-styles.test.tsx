@@ -115,6 +115,6 @@ test("las variantes de acción conservan tamaños y colores distintos", () => {
     minHeight: 52,
     borderRadius: 8,
     backgroundColor: "#ffffff",
-    borderColor: "#bdc9c5",
+    borderColor: "#68736f",
   });
 });
