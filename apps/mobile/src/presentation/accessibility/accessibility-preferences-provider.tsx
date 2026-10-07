@@ -21,6 +21,7 @@ import type {
   AccessibilityPreferencesReadResult,
 } from "../../application/accessibility-preferences-port";
 import {
+  getNativeFontSize,
   resolveAccessibilitySettings,
   type SystemAccessibilitySettings,
 } from "./accessibility-preferences-policy";
@@ -66,9 +67,13 @@ export function AccessibilityPreferencesProvider({
   useEffect(() => {
     let active = true;
     let queryVersion = 0;
+    let motionEventVersion = 0;
+    let contrastEventVersion = 0;
 
     async function refreshSystemSettings() {
       const version = ++queryVersion;
+      const motionVersionAtStart = motionEventVersion;
+      const contrastVersionAtStart = contrastEventVersion;
       const contrastQuery =
         Platform.OS === "android"
           ? AccessibilityInfo.isHighTextContrastEnabled()
@@ -81,18 +86,24 @@ export function AccessibilityPreferencesProvider({
       ]);
 
       if (!active || version !== queryVersion) return;
-      setSystemSettings((current) => ({ ...current, reduceMotion, highContrast }));
+      setSystemSettings((current) => ({
+        ...current,
+        reduceMotion:
+          motionVersionAtStart === motionEventVersion ? reduceMotion : current.reduceMotion,
+        highContrast:
+          contrastVersionAtStart === contrastEventVersion ? highContrast : current.highContrast,
+      }));
     }
 
     function updateHighContrast(highContrast: boolean) {
-      queryVersion += 1;
+      contrastEventVersion += 1;
       if (active) setSystemSettings((current) => ({ ...current, highContrast }));
     }
 
     const motionSubscription = AccessibilityInfo.addEventListener(
       "reduceMotionChanged",
       (reduceMotion) => {
-        queryVersion += 1;
+        motionEventVersion += 1;
         if (active) setSystemSettings((current) => ({ ...current, reduceMotion }));
       },
     );
@@ -205,9 +216,10 @@ export function AccessibilityPreferencesProvider({
       ["--ceretime-line-3xl", 36],
       ["--ceretime-line-4xl", 40],
       ...[20, 25, 26, 28, 29, 34, 37].map((size) => [`--ceretime-line-${size}`, size]),
-    ].map(([name, size]) => {
-      return [String(name), `${Number(size) * effective.textScaleMultiplier}px`];
-    }),
+    ].map(([name, size]) => [
+      String(name),
+      `${getNativeFontSize(Number(size), effective.textScale, fontScale, Platform.OS, Platform.Version)}px`,
+    ]),
   );
   const MotionConfig = ReducedMotionConfig as ComponentType<{ mode: ReduceMotion }> | undefined;
   const reduceMotionModes = ReduceMotion as typeof ReduceMotion | undefined;

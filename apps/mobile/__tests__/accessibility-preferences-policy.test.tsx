@@ -2,7 +2,10 @@ import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
 } from "@/application/accessibility-preferences-models";
-import { resolveAccessibilitySettings } from "@/presentation/accessibility/accessibility-preferences-policy";
+import {
+  getNativeFontSize,
+  resolveAccessibilitySettings,
+} from "@/presentation/accessibility/accessibility-preferences-policy";
 
 describe("política efectiva de accesibilidad", () => {
   test("system sigue el tamaño del sistema sin volver a escalarlo", () => {
@@ -14,7 +17,6 @@ describe("política efectiva de accesibilidad", () => {
       }),
     ).toEqual({
       textScale: 1.5,
-      textScaleMultiplier: 1,
       highContrast: true,
       reduceMotion: true,
       reduceMotionMode: "system",
@@ -36,7 +38,6 @@ describe("política efectiva de accesibilidad", () => {
         }),
       ).toMatchObject({
         textScale,
-        textScaleMultiplier: textScale / 1.5,
         highContrast: false,
         reduceMotion: false,
         reduceMotionMode: "system",
@@ -52,7 +53,6 @@ describe("política efectiva de accesibilidad", () => {
       ),
     ).toEqual({
       textScale: 1,
-      textScaleMultiplier: 0.5,
       highContrast: false,
       reduceMotion: false,
       reduceMotionMode: "never",
@@ -66,6 +66,14 @@ describe("política efectiva de accesibilidad", () => {
         highContrast: false,
         reduceMotion: false,
       }),
-    ).toMatchObject({ textScale: 1, textScaleMultiplier: 1 });
+    ).toMatchObject({ textScale: 1 });
+  });
+
+  test("compensa el escalado no lineal Android para el tamaño elegido en la app", () => {
+    expect(getNativeFontSize(20, 1.5, 2, "android", 37)).toBeCloseTo(14);
+    expect(getNativeFontSize(20, 2, 1, "android", 37)).toBeCloseTo(34);
+    expect(getNativeFontSize(20, 1.5, 2, "ios", "18.0")).toBeCloseTo(15);
+    expect(getNativeFontSize(20, 1.5, 1.5, "android", 37)).toBe(20);
+    expect(getNativeFontSize(20, 1.5, Number.NaN, "android", 37)).toBeCloseTo(26);
   });
 });

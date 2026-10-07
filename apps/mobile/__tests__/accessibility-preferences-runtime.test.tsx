@@ -91,6 +91,43 @@ describe("preferencias de accesibilidad del sistema", () => {
     expect(removeAppStateListener).toHaveBeenCalledTimes(1);
   });
 
+  test.each(["reduceMotionChanged", "darkerSystemColorsChanged"] as const)(
+    "una lectura pendiente actualiza el otro ajuste después del evento %s",
+    async (eventName) => {
+      let resolveMotion!: (enabled: boolean) => void;
+      let resolveContrast!: (enabled: boolean) => void;
+      const handlers: Record<string, (enabled: boolean) => void> = {};
+      jest
+        .spyOn(AccessibilityInfo, "isReduceMotionEnabled")
+        .mockImplementation(() => new Promise((resolve) => (resolveMotion = resolve)));
+      jest
+        .spyOn(AccessibilityInfo, "isDarkerSystemColorsEnabled")
+        .mockImplementation(() => new Promise((resolve) => (resolveContrast = resolve)));
+      (jest.spyOn(AccessibilityInfo, "addEventListener") as jest.Mock).mockImplementation(
+        (name, handler) => {
+          handlers[name] = handler as unknown as (enabled: boolean) => void;
+          return { remove: jest.fn() };
+        },
+      );
+      jest.spyOn(AppState, "addEventListener").mockReturnValue({ remove: jest.fn() });
+
+      render(
+        <AccessibilityPreferencesProvider port={createPort()}>
+          <Consumer />
+        </AccessibilityPreferencesProvider>,
+      );
+
+      await act(async () => {
+        handlers[eventName](true);
+        resolveMotion(eventName === "reduceMotionChanged" ? false : true);
+        resolveContrast(eventName === "darkerSystemColorsChanged" ? false : true);
+      });
+
+      expect(screen.getByText("movimiento reducido")).toBeOnTheScreen();
+      expect(screen.getByText("alto contraste")).toBeOnTheScreen();
+    },
+  );
+
   test("vuelve a consultar alto contraste al regresar a la aplicación", async () => {
     let onAppStateChange: ((state: string) => void) | undefined;
     jest.spyOn(AccessibilityInfo, "isReduceMotionEnabled").mockResolvedValue(false);
