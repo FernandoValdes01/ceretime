@@ -121,7 +121,9 @@ export function canReadInternalNote(context: AuthorizationContext): boolean {
 /**
  * Edición de bloques y excepciones: solo el Profesional vigente sobre su
  * propio calendario (RF-12). Poder consultar cupos para un acompañamiento no
- * habilita editar el calendario de nadie.
+ * habilita editar el calendario de nadie. Leer y gestionar el calendario
+ * propio (bloques y excepciones del mismo Profesional) usa esta misma regla;
+ * `availability:read` es solo para consultar cupos de un acompañamiento.
  */
 export function canEditAvailability(context: CalendarAuthorizationContext): boolean {
   if (!isProfileActive(context)) return false;
