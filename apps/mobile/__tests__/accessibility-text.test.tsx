@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react-native";
+import * as ReactNative from "react-native";
 import { TextInput } from "react-native";
 import type { PropsWithChildren } from "react";
 import {
@@ -12,6 +13,8 @@ import { StudentScreen } from "@/presentation/estudiante/student-screen";
 import { StudentText } from "@/presentation/estudiante/student-text";
 
 jest.mock("expo-font", () => ({ useFonts: () => [true, null] }));
+
+afterEach(() => jest.restoreAllMocks());
 
 function createPort(
   textScale: AccessibilityPreferences["textScale"],
@@ -51,7 +54,7 @@ test("el tamaño elegido escala texto y altura de línea una sola vez", async ()
     { wrapper: ({ children }) => <Provider textScale={1.5}>{children}</Provider> },
   );
   await waitFor(() =>
-    expect(screen.getByTestId("scaled-class")).toHaveStyle({ fontSize: 15, lineHeight: 21 }),
+    expect(screen.getByTestId("scaled-class")).toHaveStyle({ fontSize: 15, lineHeight: 21.75 }),
   );
   render(
     <StudentScreen title="Texto ampliado" description="Un encabezado que sigue escalando." />,
@@ -60,7 +63,7 @@ test("el tamaño elegido escala texto y altura de línea una sola vez", async ()
   await waitFor(() =>
     expect(screen.getByRole("header", { name: "Texto ampliado" })).toHaveStyle({
       fontSize: 21,
-      lineHeight: 27,
+      lineHeight: 27.75,
     }),
   );
 });
@@ -82,8 +85,36 @@ test("el tamaño de texto configurado llega a TextInput mediante NativeWind", as
   });
 
   await waitFor(() =>
-    expect(screen.getByTestId("scaled-input")).toHaveStyle({ fontSize: 12, lineHeight: 19 }),
+    expect(screen.getByTestId("scaled-input")).toHaveStyle({ fontSize: 12, lineHeight: 19.5 }),
   );
+});
+
+test("Android conserva decimales de la escala elegida en texto directo y NativeWind", async () => {
+  jest.replaceProperty(ReactNative.Platform, "OS", "android");
+  jest.spyOn(ReactNative.Platform, "Version", "get").mockReturnValue(37);
+  jest.spyOn(ReactNative, "useWindowDimensions").mockReturnValue({
+    width: 360,
+    height: 800,
+    scale: 3,
+    fontScale: 2,
+  });
+
+  render(
+    <>
+      <StudentText testID="android-inline" style={{ fontSize: 16 }}>
+        Texto directo
+      </StudentText>
+      <TextInput testID="android-nativewind" className="text-base" />
+    </>,
+    { wrapper: ({ children }) => <Provider textScale={1.5}>{children}</Provider> },
+  );
+
+  await waitFor(() => {
+    expect(
+      ReactNative.StyleSheet.flatten(screen.getByTestId("android-inline").props.style),
+    ).toEqual(expect.objectContaining({ fontSize: 11.5 }));
+    expect(screen.getByTestId("android-nativewind")).toHaveStyle({ fontSize: 11.5 });
+  });
 });
 
 test("el alto contraste actualiza el token de texto y la base Screen", async () => {

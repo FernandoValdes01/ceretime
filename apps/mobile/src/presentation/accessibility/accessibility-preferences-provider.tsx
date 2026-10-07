@@ -218,7 +218,13 @@ export function AccessibilityPreferencesProvider({
       ...[20, 25, 26, 28, 29, 34, 37].map((size) => [`--ceretime-line-${size}`, size]),
     ].map(([name, size]) => [
       String(name),
-      `${getNativeFontSize(Number(size), effective.textScale, fontScale, Platform.OS, Platform.Version)}px`,
+      getNativeFontSize(
+        Number(size),
+        effective.textScale,
+        fontScale,
+        Platform.OS,
+        Platform.Version,
+      ),
     ]),
   );
   const MotionConfig = ReducedMotionConfig as ComponentType<{ mode: ReduceMotion }> | undefined;

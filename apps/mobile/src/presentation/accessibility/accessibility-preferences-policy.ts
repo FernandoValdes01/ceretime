@@ -68,7 +68,7 @@ export function getNativeFontSize(
     version < 34 ||
     (safeSystemScale < 1.05 && targetScale < 1.05)
   ) {
-    return fontSize * (targetScale / safeSystemScale);
+    return roundNativeFontSize(fontSize * (targetScale / safeSystemScale));
   }
 
   const targetDp = convertAndroidSpToDp(fontSize, targetScale);
@@ -79,7 +79,11 @@ export function getNativeFontSize(
     if (convertAndroidSpToDp(candidate, safeSystemScale) < targetDp) lower = candidate;
     else upper = candidate;
   }
-  return (lower + upper) / 2;
+  return roundNativeFontSize((lower + upper) / 2);
+}
+
+function roundNativeFontSize(fontSize: number): number {
+  return Math.round(fontSize * 100) / 100;
 }
 
 function convertAndroidSpToDp(fontSize: number, scale: number): number {
