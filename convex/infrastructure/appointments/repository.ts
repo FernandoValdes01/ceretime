@@ -44,27 +44,41 @@ function isBlocking(existing: Doc<"appointments">): boolean {
   return !CANCELLED_APPOINTMENT_STATUSES.has(existing.status);
 }
 
-/** Ventana para barrer colisiones del mismo instante sin lecturas ilimitadas. */
-const SAME_INSTANT_SCAN_LIMIT = 10;
+/** Tamaño de página del barrido del instante. */
+const SAME_INSTANT_PAGE_SIZE = 50;
 
 /**
  * Ocupante del cupo discreto (profesional e inicio), o `null` si está
- * libre. Las filas del mismo instante son pocas por construcción (reintentos
- * sobre el mismo cupo), así que una ventana acotada basta para decidir sin
- * lecturas ilimitadas; la vía de producción usa este mismo índice.
+ * libre. Revisa todas las filas del instante con el mismo índice hasta
+ * encontrar una que bloquee o terminar: las cancelaciones quedan en el
+ * historial y esconderían una atención activa posterior si la lectura se
+ * cortara en una ventana fija (TI4-39). El conjunto por instante es pequeño
+ * por construcción (reintentos sobre el mismo cupo), así que el recorrido
+ * avanza por páginas sin leer todo de una vez; la vía de producción usa
+ * este mismo índice.
  */
 export async function findOccupantByProfessionalAndStart(
   ctx: DbReader,
   professionalId: Id<"users">,
   startsAt: number,
 ): Promise<Doc<"appointments"> | null> {
-  const sameInstant = await ctx.db
-    .query("appointments")
-    .withIndex("by_professionalId_and_startsAt", (q) =>
-      q.eq("professionalId", professionalId).eq("startsAt", startsAt),
-    )
-    .take(SAME_INSTANT_SCAN_LIMIT);
-  return sameInstant.find(isBlocking) ?? null;
+  let cursor: string | null = null;
+  for (;;) {
+    const page = await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", professionalId).eq("startsAt", startsAt),
+      )
+      .paginate({ numItems: SAME_INSTANT_PAGE_SIZE, cursor });
+    const blocking = page.page.find(isBlocking);
+    if (blocking !== undefined) {
+      return blocking;
+    }
+    if (page.isDone) {
+      return null;
+    }
+    cursor = page.continueCursor;
+  }
 }
 
 /** Entrada de la ocupación con identificadores Convex. */

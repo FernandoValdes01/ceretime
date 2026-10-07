@@ -569,3 +569,56 @@ test("El cupo liberado por cancelación se puede volver a ocupar (TI2-84)", asyn
   });
   expect(stored?.status).toBe("scheduled");
 });
+
+test("Diez ciclos de reserva y cancelación no ocultan la atención activa (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti84-est-e");
+  const pro = await seedProfessional(t, "ti84-pro-4");
+  const accompaniment = await seedAccompaniment(t, student);
+  const slot = {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    modality: "online" as const,
+    startsAt: TI84_SLOT_START,
+    endsAt: TI84_SLOT_END,
+  };
+
+  // Historial de diez ciclos de reserva y cancelación en el mismo cupo
+  for (let cycle = 0; cycle < 10; cycle += 1) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("appointments", {
+        ...slot,
+        status: "cancelled_by_student",
+        createdAt: 1,
+      });
+    });
+  }
+
+  // El cupo sigue libre: la ocupación crea la atención activa posterior
+  const first = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, slot);
+  });
+  if (!isOkResult(first)) throw new Error("Se esperaba ocupación del cupo");
+
+  // El intento siguiente ve la atención activa tras el historial y se rechaza
+  const second = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, slot);
+  });
+  if (!isErrorResult(second)) throw new Error("Se esperaba rechazo por contienda");
+  expect(second.error.code).toBe(CONFLICT_ERROR_CODE);
+
+  // Se conserva la atención existente y no se escribe otra
+  const active = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", pro).eq("startsAt", TI84_SLOT_START),
+      )
+      .take(20);
+  });
+  expect(active.filter((row) => row.status === "scheduled").map((row) => row._id)).toEqual([
+    first.data.appointmentId,
+  ]);
+});
