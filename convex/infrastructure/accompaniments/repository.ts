@@ -252,3 +252,27 @@ export async function revokeAssignmentRow(
     revokedAt: Date.now(),
   });
 }
+
+/**
+ * Lecturas de la autorización de agenda (TI2-86). Cumple por forma el puerto
+ * `AuthorizationReader` de Aplicación sin importarlo, para que
+ * Infraestructura no dependa de Aplicación. Los identificadores llegan como
+ * texto: uno que no pertenece a la tabla responde igual que uno inexistente.
+ */
+export function authorizationReader(ctx: DbReader) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getAccompaniment: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      return id === null ? null : await getAccompanimentById(ctx, id);
+    },
+    findActiveAssignments: async (accompanimentId: string, userId: string) => {
+      const accompaniment = ctx.db.normalizeId("accompaniments", accompanimentId);
+      const user = ctx.db.normalizeId("users", userId);
+      return accompaniment === null || user === null
+        ? []
+        : await findActiveAssignmentsForUser(ctx, accompaniment, user);
+    },
+  };
+}
