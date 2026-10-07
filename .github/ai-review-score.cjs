@@ -5,17 +5,32 @@ const { buildPlan, publishFindings, patchRecords } = require("./ai-review-chunks
 const { enrichFiles, reviewThreads, hash } = require("./ai-review-context.cjs");
 const { classifyFile } = require("./ai-review-selection.cjs");
 const { MODEL, formatReview, formatInline } = require("./ai-review-presentation.cjs");
+const { publicEvidenceBundle } = require("./ai-review-payload.cjs");
 
-const { eventTarget, currentReview } = require("./ai-review-target.cjs");
+const { eventTarget, currentReview, pullNumber } = require("./ai-review-target.cjs");
 
 const STATUS_CONTEXT = "R2D2 Review 5/5";
 
 function parseSummary(summary) {
   if (typeof summary !== "string") return null;
-  const match = summary.match(
+  const completed = summary.match(
     /^Confidence Score: ([0-5])\/5; Risk: (low|medium|high); Reviewed commit: ([a-f0-9]{40}); Hallazgos: ([0-5]); Resumen: ([^\r\n;]+)$/,
   );
-  if (!match || /Confidence Score:|Reviewed commit:/.test(match[5])) return null;
+  const incomplete = summary.match(
+    /^Review status: incomplete; Risk: (low|medium|high); Reviewed commit: ([a-f0-9]{40}); Hallazgos: ([0-5]); Resumen: ([^\r\n;]+)$/,
+  );
+  if (!completed && !incomplete) return null;
+  const match = completed ?? incomplete;
+  if (/Confidence Score:|Reviewed commit:/.test(match.at(-1))) return null;
+  if (incomplete)
+    return {
+      score: null,
+      risk: incomplete[1],
+      sha: incomplete[2],
+      findings: Number(incomplete[3]),
+      summary: incomplete[4].trim(),
+      coverage: "incomplete",
+    };
   return {
     score: Number(match[1]),
     risk: match[2],
@@ -38,7 +53,7 @@ function evaluateReview({
     state: "failure",
     reason,
     description,
-    score: 0,
+    score: null,
     review,
   });
   if (currentSha !== expectedSha) {
@@ -60,10 +75,10 @@ function evaluateReview({
   if (review.sha !== expectedSha) {
     return failure("stale", "La revisión de IA no corresponde al commit actual.");
   }
-  if (coverage !== "complete") {
+  if (coverage !== "complete" || review.coverage === "incomplete") {
     return failure(
       "incomplete",
-      "R2D2 Review 0/5: no se completaron todos los bloques requeridos.",
+      "R2D2: revisión incompleta; consultar evidencia pendiente e incidentes en el informe.",
       review,
     );
   }
@@ -86,8 +101,59 @@ function evaluateReview({
   };
 }
 
+function packReviewParts(parts, chunkChars, refs = {}) {
+  const partSize = (part) => JSON.stringify(publicEvidenceBundle([part], refs)).length;
+  const orderKey = (part) =>
+    `${part.path}\0${[...(part.anchors ?? [])].sort().join(",")}\0${(part.followups ?? [])
+      .map((thread) => String(thread.id))
+      .sort()
+      .join(",")}`;
+  const canShare = (a, b) => {
+    if (a.path !== b.path) return true;
+    if (a.followupOnly || b.followupOnly) return false;
+    const first = new Set((a.followups ?? []).map((thread) => String(thread.id)));
+    const second = new Set((b.followups ?? []).map((thread) => String(thread.id)));
+    if (first.size && second.size && [...first].some((id) => !second.has(id))) return false;
+    return first.size + second.size <= 1 || [...first].every((id) => second.has(id));
+  };
+  const bundleSize = (items) => JSON.stringify(publicEvidenceBundle(items, refs)).length;
+  const bins = [];
+  const orderedParts = [...parts].sort(
+    (a, b) => partSize(b) - partSize(a) || orderKey(a).localeCompare(orderKey(b)),
+  );
+  for (const part of orderedParts) {
+    const available = bins
+      .map((bin, index) => ({ bin, index, size: bundleSize([...bin.parts, part]) }))
+      .filter(
+        ({ bin, size }) => size <= chunkChars && bin.parts.every((item) => canShare(item, part)),
+      )
+      .sort(
+        (a, b) =>
+          a.size - b.size ||
+          a.bin.parts
+            .map(orderKey)
+            .sort()
+            .join("\0")
+            .localeCompare(b.bin.parts.map(orderKey).sort().join("\0")) ||
+          a.index - b.index,
+      )[0]?.bin;
+    if (available) {
+      available.parts.push(part);
+      available.parts.sort((a, b) => orderKey(a).localeCompare(orderKey(b)));
+      available.size = bundleSize(available.parts);
+    } else bins.push({ parts: [part], size: partSize(part) });
+  }
+  return bins
+    .map(({ parts: packed }) => ({
+      parts: packed.sort((a, b) => orderKey(a).localeCompare(orderKey(b))),
+    }))
+    .sort((a, b) =>
+      a.parts.map(orderKey).join("\0").localeCompare(b.parts.map(orderKey).join("\0")),
+    );
+}
+
 async function prepareReview({ github, context, core, env = process.env }) {
-  const args = { ...context.repo, pull_number: context.payload.pull_request.number };
+  const args = { ...context.repo, pull_number: pullNumber(context, env) };
   const { data: pr } = await github.rest.pulls.get(args);
   const target = eventTarget(context, env);
   if (
@@ -120,12 +186,6 @@ async function prepareReview({ github, context, core, env = process.env }) {
     per_page: 100,
   });
   const threads = reviewThreads(comments, env.REVIEW_BOT_LOGIN || "r2d2-reviewer[bot]");
-  const evidence = enrichFiles(files, {
-    directory: env.GITHUB_WORKSPACE,
-    base: target.base,
-    sha: env.REVIEW_SHA,
-    threads,
-  });
   // GitHub can omit or truncate patches. Reconstruct those from the exact base/head locally.
   for (const file of files) {
     if (!classifyFile(file, parsed).eligible) continue;
@@ -148,10 +208,11 @@ async function prepareReview({ github, context, core, env = process.env }) {
             "diff",
             "--no-ext-diff",
             "--no-textconv",
+            "--find-renames",
             "--unified=3",
             `${target.base}...${env.REVIEW_SHA}`,
             "--",
-            file.filename,
+            ...new Set([file.previous_filename, file.filename].filter(Boolean)),
           ],
           { cwd: env.GITHUB_WORKSPACE, encoding: "utf8", maxBuffer: 5 * 1024 * 1024 },
         );
@@ -162,6 +223,12 @@ async function prepareReview({ github, context, core, env = process.env }) {
       }
     }
   }
+  const evidence = enrichFiles(files, {
+    directory: env.GITHUB_WORKSPACE,
+    base: target.base,
+    sha: env.REVIEW_SHA,
+    threads,
+  });
   const plan = buildPlan(files, parsed, env.REVIEW_SHA);
   if (pr.changed_files != null && pr.changed_files !== files.length)
     plan.issues.push("GitHub no devolvió todos los archivos modificados.");
@@ -216,25 +283,11 @@ async function prepareReview({ github, context, core, env = process.env }) {
   }
   // Pack the largest units first, including followups. Unit content remains intact
   // for cache reuse. Overlapping findings from one file need unambiguous units.
-  const partSize = (part) => JSON.stringify({ ...part, anchors: undefined }).length;
-  const bins = [];
-  for (const part of plan.chunks
-    .flatMap((c) => c.parts)
-    .sort((a, b) => partSize(b) - partSize(a))) {
-    const size = partSize(part);
-    const available = bins
-      .filter(
-        (bin) =>
-          bin.size + size + 1 <= plan.limits.chunkChars &&
-          !bin.parts.some((p) => p.path === part.path && (p.followupOnly || part.followupOnly)),
-      )
-      .sort((a, b) => b.size - a.size)[0];
-    if (available) {
-      available.parts.push(part);
-      available.size += size + 1;
-    } else bins.push({ parts: [part], size: size + 2 });
-  }
-  plan.chunks = bins.map(({ parts }) => ({ parts }));
+  plan.chunks = packReviewParts(
+    plan.chunks.flatMap((chunk) => chunk.parts),
+    plan.limits.chunkChars,
+    { mergeBase: evidence.mergeBase, base: target.base, headRef: plan.sha },
+  );
   const budgetIssue = "Presupuesto máximo de bloques agotado.";
   plan.issues = plan.issues.filter((issue) => issue !== budgetIssue);
   if (plan.chunks.length > plan.limits.maxChunks) plan.issues.push(budgetIssue);
@@ -266,7 +319,7 @@ async function prepareReview({ github, context, core, env = process.env }) {
 }
 
 async function publishReview({ github, context, core, env = process.env }) {
-  const args = { ...context.repo, pull_number: context.payload.pull_request.number };
+  const args = { ...context.repo, pull_number: pullNumber(context, env) };
   const { data: pr } = await github.rest.pulls.get(args);
   const target = eventTarget(context, env);
   if (!currentReview(pr, target, context.repo)) return;
@@ -307,6 +360,12 @@ async function publishReview({ github, context, core, env = process.env }) {
       report.coverage !== env.REVIEW_COVERAGE
     )
       throw new Error("El informe no coincide con los outputs validados.");
+    if (result.reason === "incomplete") {
+      const cause = report.infrastructure?.[0] ?? report.reasons?.[0] ?? "Falta procesar bloques.";
+      result.description =
+        `R2D2: revisión incompleta (${report.processed}/${report.total}); ${cause}`.slice(0, 140);
+      status.description = result.description;
+    }
     const currentThreads = reviewThreads(
       await github.paginate(github.rest.pulls.listReviewComments, { ...args, per_page: 100 }),
       env.REVIEW_BOT_LOGIN || "r2d2-reviewer[bot]",
@@ -456,8 +515,8 @@ async function tidyComments({ github, args, sha, botLogin, reviews }) {
   }
 }
 
-async function archiveReviewSummaries({ github, context, botLogin, reviews }) {
-  const args = { ...context.repo, pull_number: context.payload.pull_request.number };
+async function archiveReviewSummaries({ github, context, botLogin, reviews, env = process.env }) {
+  const args = { ...context.repo, pull_number: pullNumber(context, env) };
   reviews ??= await github.paginate(github.rest.pulls.listReviews, { ...args, per_page: 100 });
   for (const review of reviews) {
     if (review.user?.login !== botLogin) continue;
@@ -482,6 +541,7 @@ module.exports = {
   parseSummary,
   evaluateReview,
   formatReview,
+  packReviewParts,
   prepareReview,
   publishReview,
   archiveReviewSummaries,
