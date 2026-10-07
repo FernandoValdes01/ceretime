@@ -114,7 +114,7 @@ Sus transiciones **no se modelan todavía**. El documento de requerimientos marc
 
 ## Contrato público
 
-`api.presentation.requests.*` sigue entregando solo los cuatro estados de Sprint 1. Mobile deriva sus tipos de ese contrato y su mapeo de estados es exhaustivo, así que ampliarlo es un cambio incompatible que se coordina con TI4 en la tarea que publique cancelar y cerrar. Hasta entonces los dos casos de uso no tienen entrada pública y las lecturas públicas pasan por `toSprint1AccompanimentRequest`, que rechaza una fila cerrada o cancelada en vez de entregarla con un estado que los clientes no saben mostrar.
+`api.presentation.requests.*` sigue entregando solo los cuatro estados de Sprint 1. Mobile deriva sus tipos de ese contrato y su mapeo de estados es exhaustivo, así que ampliarlo es un cambio incompatible que se coordina con TI4 en la tarea que publique cancelar y cerrar. Hasta entonces los dos casos de uso no tienen entrada pública y ninguna lectura pública entrega una fila cerrada o cancelada con un estado que los clientes no saben mostrar. Los listados paginados (`listOwnRequests` y `listAuthorizedRequests`) la omiten, para que una sola fila cerrada no deje sin respuesta el listado completo; el detalle (`getRequest`) y las mutations la rechazan con `toSprint1AccompanimentRequest`, porque ahí entregarla violaría el contrato.
 
 ## Casos cubiertos por pruebas
 

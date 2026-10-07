@@ -1211,3 +1211,60 @@ test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza si
   expect(await snapshotOf(t, requestId)).toEqual(afterFirst);
   expect(afterFirst.transitions).toHaveLength(1);
 });
+
+test("TI2-85: tras cerrar, la bandeja del Profesional sigue respondiendo con el resto de las solicitudes", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-12", "student");
+  const proId = await seedProfile(t, "ti85-pro-8", "professional");
+  const closedId = await seedRequestIn(t, studentId, "under_review");
+  const openId = await seedRequestIn(t, studentId, "under_review");
+  await seedTake(t, closedId, proId);
+  await seedTake(t, openId, proId);
+  await closeAs(t, identityOf("ti85-pro-8"), closedId, "Motivo ficticio");
+
+  // La cerrada se omite: una sola fila fuera del contrato no tumba la bandeja
+  const asProfessional = t.withIdentity(identityOf("ti85-pro-8"));
+  const page = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(page.page.map((item) => item._id)).toEqual([openId]);
+
+  // El detalle sí la rechaza: ahí entregarla violaría el contrato público
+  await expect(
+    asProfessional.query(api.presentation.requests.getRequest, { requestId: closedId }),
+  ).rejects.toThrow("fuera del contrato público de Sprint 1");
+});
+
+test("TI2-85: tras cancelar, el listado del Estudiante y la bandeja del Profesional con toma siguen respondiendo", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-13", "student");
+  const proId = await seedProfile(t, "ti85-pro-9", "professional");
+  const cancelledId = await seedRequestIn(t, studentId, "under_review");
+  const openId = await seedRequestIn(t, studentId, "received");
+  await seedTake(t, cancelledId, proId);
+  await cancelAs(t, identityOf("ti85-est-13"), cancelledId, "Motivo ficticio");
+
+  const own = await t
+    .withIdentity(identityOf("ti85-est-13"))
+    .query(api.presentation.requests.listOwnRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+  expect(own.page.map((item) => item._id)).toEqual([openId]);
+
+  // Cancelar no revoca la toma, así que la bandeja sigue pasando por la fila
+  const activeTakes = await t.run((ctx) =>
+    ctx.db
+      .query("requestAssignments")
+      .withIndex("by_request_and_user_and_status", (q) =>
+        q.eq("requestId", cancelledId).eq("userId", proId).eq("status", "active"),
+      )
+      .collect(),
+  );
+  expect(activeTakes).toHaveLength(1);
+  const authorized = await t
+    .withIdentity(identityOf("ti85-pro-9"))
+    .query(api.presentation.requests.listAuthorizedRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+  expect(authorized.page).toEqual([]);
+});

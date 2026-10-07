@@ -1,7 +1,7 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import { toSprint1AccompanimentRequest } from "../../domain/requests/request";
-import type { Sprint1RequestState } from "../../domain/requests/state";
+import { isSprint1RequestState, type Sprint1RequestState } from "../../domain/requests/state";
 import type { Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
@@ -15,7 +15,7 @@ import {
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
-/** Posición del barrido y última solicitud emitida dentro del cursor (O(1)). */
+/** Posición del barrido y última solicitud emitida u omitida dentro del cursor (O(1)). */
 type AuthorizedTakesCursor = {
   readonly pos: string | null;
   readonly last: string | null;
@@ -62,6 +62,11 @@ function deny(): never {
 /**
  * Lista las solicitudes propias del Estudiante, paginado. Cualquier otro
  * rol recibe denegación genérica, sin motivo ni existencia de recursos.
+ *
+ * Las solicitudes canceladas o cerradas sin acompañamiento se omiten en vez
+ * de pasar por `toSprint1AccompanimentRequest`, que lanzaría y dejaría sin
+ * listado también a las abiertas. Se mostrarán cuando la tarea que publique
+ * cancelar y cerrar amplíe `requestStatusUnion` junto con TI4 (TI2-85).
  */
 export async function listOwnRequestsUseCase(
   ctx: QueryCtx,
@@ -72,14 +77,18 @@ export async function listOwnRequestsUseCase(
   const result = await listOwnedRequests(ctx, student._id, args.paginationOpts);
   return {
     ...result,
-    page: result.page.map((row) =>
-      toSprint1AccompanimentRequest({
-        _id: row._id,
-        studentId: row.studentId,
-        status: row.status,
-        accessNeeds: row.accessNeeds,
-        createdAt: row.createdAt,
-      }),
+    page: result.page.flatMap((row) =>
+      isSprint1RequestState(row.status)
+        ? [
+            toSprint1AccompanimentRequest({
+              _id: row._id,
+              studentId: row.studentId,
+              status: row.status,
+              accessNeeds: row.accessNeeds,
+              createdAt: row.createdAt,
+            }),
+          ]
+        : [],
     ),
   };
 }
@@ -89,7 +98,9 @@ export type AuthorizedRequestItem = {
   readonly studentId: Id<"users">;
   // Estado del contrato público: los ítems se construyen con
   // `toSprint1AccompanimentRequest`, así el tipo refleja lo devuelto y no el
-  // conjunto persistible ampliado (TI2-83/TI2-85).
+  // conjunto persistible ampliado (TI2-83/TI2-85). Las solicitudes canceladas
+  // o cerradas se omiten hasta que la tarea que publique cancelar y cerrar
+  // amplíe `requestStatusUnion` junto con TI4.
   readonly status: Sprint1RequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
@@ -101,8 +112,12 @@ export type AuthorizedRequestItem = {
  * su nombre, vengan de la vía guardada o de filas legacy escritas a mano.
  * Un único `.paginate()` por llamada (límite de Convex) sobre las tomas
  * ordenadas por solicitud: las filas duplicadas quedan adyacentes y el
- * cursor solo guarda la posición y la última solicitud emitida (O(1)), sin
+ * cursor solo guarda la posición y la última solicitud emitida u omitida (O(1)), sin
  * historial lineal. Cualquier otro rol recibe denegación genérica.
+ *
+ * Cerrar o cancelar no revoca la toma, así que una solicitud cancelada o
+ * cerrada sin acompañamiento sigue apareciendo en el barrido: se omite, igual
+ * que en el listado propio, hasta que el contrato público se amplíe (TI2-85).
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
@@ -125,6 +140,12 @@ export async function listAuthorizedRequestsUseCase(
     seenInPage.add(take.requestId);
     const request = await getRequestById(ctx, take.requestId);
     if (request === null) continue;
+    if (!isSprint1RequestState(request.status)) {
+      // `last` avanza también al omitir, para que la página siguiente salte las
+      // tomas repetidas de esta solicitud sin volver a leerla.
+      last = take.requestId;
+      continue;
+    }
     last = take.requestId;
     items.push(
       toSprint1AccompanimentRequest({

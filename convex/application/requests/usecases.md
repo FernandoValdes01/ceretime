@@ -27,6 +27,8 @@ Dos casos de uso de `commands.ts` que todavía no tienen entrada pública. Recib
 
 Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la misma transacción, y un rechazo no escribe nada. Rechazos con mensaje específico: "Se requiere el motivo para cancelar la solicitud", "La solicitud no admite la cancelación en su estado actual", "Se requiere el motivo para cerrar la solicitud sin acompañamiento" y "La solicitud no admite el cierre sin acompañamiento en su estado actual". Una solicitud ajena, inexistente o sin toma recibe la denegación genérica.
 
+Mientras tanto, `listOwnRequests` y `listAuthorizedRequests` omiten las solicitudes canceladas o cerradas, y `getRequest` y las mutations las rechazan.
+
 Publicarlos exige ampliar el contrato de estados de `api.presentation.requests.*` y el mapeo de Mobile, coordinado con TI4: ver [`state-model.md`](../../domain/requests/state-model.md#contrato-público).
 
 ## Alcance explícito
