@@ -13,6 +13,9 @@ import type { ModalityPreference } from "../../domain/requests/request";
  * Reserva y atención son una sola entidad (`appointments`, sin tabla
  * `reservations` paralela); los identificadores son genéricos (`string`
  * plano) para que Web y Mobile compartan la forma sin levantar el backend.
+ * Los instantes siguen el vocabulario de TI2-87 (`startAt`/`endAt` como en
+ * `AvailabilitySlot`, el cupo que TI2-98 entrega); el repositorio los mapea
+ * a las columnas del esquema (`startsAt`/`endsAt`).
  * La versión del contrato la fija TI2-87 (`AppointmentContractVersion`); acá
  * no hay otra versión paralela. El rechazo por contienda usa `conflict`
  * (TI2-88); `no_availability` queda para la ausencia de cupo en búsqueda
@@ -29,10 +32,10 @@ export interface OccupySlotInput {
   readonly modality: ModalityPreference;
   /** Referencia opaca al espacio; ausente en modalidad en línea. */
   readonly spaceId?: string;
-  /** Inicio del cupo como milisegundos epoch. */
-  readonly startsAt: number;
-  /** Fin del cupo como milisegundos epoch. */
-  readonly endsAt: number;
+  /** Inicio del cupo como milisegundos epoch (vocabulario TI2-87). */
+  readonly startAt: number;
+  /** Fin del cupo como milisegundos epoch (vocabulario TI2-87). */
+  readonly endAt: number;
 }
 
 /** Éxito de la ocupación: la atención creada, con identificador genérico. */

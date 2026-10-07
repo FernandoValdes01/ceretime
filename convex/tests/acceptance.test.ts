@@ -622,3 +622,73 @@ test("Diez ciclos de reserva y cancelación no ocultan la atención activa (TI2-
     first.data.appointmentId,
   ]);
 });
+
+test("Un historial largo no oculta la atención activa (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti84-est-f");
+  const pro = await seedProfessional(t, "ti84-pro-5");
+  const accompaniment = await seedAccompaniment(t, student);
+  const slot = {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    modality: "online" as const,
+    startsAt: TI84_SLOT_START,
+    endsAt: TI84_SLOT_END,
+  };
+
+  // Historial con 55 cancelaciones: supera cualquier ventana fija de lectura
+  await t.run(async (ctx) => {
+    for (let cycle = 0; cycle < 55; cycle += 1) {
+      await ctx.db.insert("appointments", {
+        ...slot,
+        status: "cancelled_by_student",
+        createdAt: 1,
+      });
+    }
+  });
+
+  // La ocupación crea la atención activa posterior al historial
+  const first = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, slot);
+  });
+  if (!isOkResult(first)) throw new Error("Se esperaba ocupación del cupo");
+
+  // La lectura completa del instante encuentra la atención activa igual
+  const second = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, slot);
+  });
+  if (!isErrorResult(second)) throw new Error("Se esperaba rechazo por contienda");
+  expect(second.error.code).toBe(CONFLICT_ERROR_CODE);
+});
+
+test("Dos cupos distintos del mismo profesional se ocupan sin conflicto (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti84-est-g");
+  const pro = await seedProfessional(t, "ti84-pro-6");
+  const accompaniment = await seedAccompaniment(t, student);
+
+  // Cada inicio es un cupo discreto: ocupar uno no bloquea el siguiente
+  for (const startsAt of [TI84_SLOT_START, TI84_SLOT_END]) {
+    const occupied = await t.run(async (ctx) => {
+      return await occupySlotAtomically(ctx, {
+        accompanimentId: accompaniment,
+        studentId: student,
+        professionalId: pro,
+        modality: "online",
+        startsAt,
+        endsAt: startsAt + 3_600_000,
+      });
+    });
+    if (!isOkResult(occupied)) throw new Error("Se esperaba ocupación del cupo libre");
+  }
+  const agenda = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", pro))
+      .take(10);
+  });
+  expect(agenda).toHaveLength(2);
+});
