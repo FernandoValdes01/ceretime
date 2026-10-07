@@ -977,27 +977,29 @@ test("TI2-85: sin identidad, sin rol Estudiante o sin cuenta vigente no se cance
   const t = convexTest(schema, modules);
   const ownerId = await seedProfile(t, "ti85-est-5", "student");
   const requestId = await seedRequestIn(t, ownerId, "received");
-  for (const [subject, role] of [
-    ["ti85-pro-1", "professional"],
-    ["ti85-int-1", "intern"],
-    ["ti85-adm-1", "admin"],
-  ] as const) {
-    await seedProfile(t, subject, role);
-  }
   const before = await snapshotOf(t, requestId);
 
-  for (const identity of [
-    null,
-    identityOf("ti85-sin-perfil"),
-    identityOf("ti85-pro-1"),
-    identityOf("ti85-int-1"),
-    identityOf("ti85-adm-1"),
-  ]) {
+  for (const identity of [null, identityOf("ti85-sin-perfil")]) {
     await expect(cancelAs(t, identity, requestId, "Motivo ficticio")).rejects.toThrow(
       "No autorizado",
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
+
+  // Otro rol sobre una solicitud a su propio nombre: la denegación sale del
+  // rol, no de la pertenencia
+  for (const [subject, role] of [
+    ["ti85-pro-1", "professional"],
+    ["ti85-int-1", "intern"],
+    ["ti85-adm-1", "admin"],
+  ] as const) {
+    const profileId = await seedProfile(t, subject, role);
+    const ownId = await seedRequestIn(t, profileId, "received");
+    await expect(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio")).rejects.toThrow(
+      "No autorizado",
+    );
+    expect((await snapshotOf(t, ownId)).status).toBe("received");
+  }
 
   // Cuenta no vigente sobre su propia solicitud: la vigencia se exige antes
   // que la pertenencia
