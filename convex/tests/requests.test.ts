@@ -1,9 +1,10 @@
 /// <reference types="vite/client" />
-import { convexTest } from "convex-test";
+import { convexTest, type TestConvex } from "convex-test";
 import type { FunctionReturnType } from "convex/server";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
+import { cancelRequest, closeRequestWithoutAccompaniment } from "../application/requests/commands";
 import { SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
 import schema from "../schema";
 
@@ -118,7 +119,8 @@ test("El estado persiste exactamente los literales de Sprint 1 del dominio", asy
     expect(fetchedRequest?.status).toBe(status);
   }
 
-  // Un estado futuro declarado pero no habilitado debe ser rechazado
+  // La semilla usa el contrato público de Sprint 1: un cierre de TI2-85 se
+  // persiste por su caso de uso, no por esta vía
   await expect(
     t.mutation(internal.operations.requests.createTestRequest, {
       studentId,
@@ -807,4 +809,403 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
   ).rejects.toThrow("No autorizado");
   const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(untouched?.status).toBe("under_review");
+});
+
+/*
+ * TI2-85: cancelar y cerrar sin acompañamiento. Los dos casos de uso todavía
+ * no tienen entrada pública, así que se invocan dentro de `t.run`, que
+ * convex-test ejecuta como una mutation y revierte si lanza: un rechazo se
+ * prueba igual que en producción. La identidad llega ya resuelta, como la
+ * entrega el borde con `ctx.auth.getUserIdentity()`.
+ */
+
+type SchemaTest = TestConvex<typeof schema>;
+type Identity = ReturnType<typeof identityFor> | null;
+
+const ENABLED = { institutionalStatus: "enabled", accountStatus: "active" } as const;
+
+/** Perfil ficticio con rol y vigencia a elección. */
+async function seedProfile(
+  t: SchemaTest,
+  subject: string,
+  role: Doc<"users">["role"],
+  status: Pick<Doc<"users">, "institutionalStatus" | "accountStatus"> = ENABLED,
+) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: `${subject}@uct.cl`,
+      fullName: "Perfil Ficticio",
+      role,
+      ...status,
+      tokenIdentifier: `${ISSUER}|${subject}`,
+    });
+  });
+}
+
+const identityOf = (subject: string) => identityFor(subject, `${subject}@uct.cl`);
+
+/** Solicitud ficticia insertada directo en el estado indicado. */
+async function seedRequestIn(
+  t: SchemaTest,
+  studentId: Id<"users">,
+  status: Doc<"requests">["status"],
+) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("requests", {
+      studentId,
+      status,
+      accessNeeds: "Necesidad de acceso ficticia",
+      createdAt: Date.now(),
+    });
+  });
+}
+
+/** Toma ficticia del usuario sobre la solicitud, activa o revocada. */
+async function seedTake(
+  t: SchemaTest,
+  requestId: Id<"requests">,
+  userId: Id<"users">,
+  status: Doc<"requestAssignments">["status"] = "active",
+) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("requestAssignments", {
+      requestId,
+      userId,
+      grantedBy: userId,
+      grantedAt: 1,
+      status,
+    });
+  });
+}
+
+/** Estado, registro de cambios y acompañamientos de la solicitud. */
+async function snapshotOf(t: SchemaTest, requestId: Id<"requests">) {
+  return await t.run(async (ctx) => {
+    const request = await ctx.db.get(requestId);
+    const transitions = await ctx.db
+      .query("requestTransitions")
+      .withIndex("by_request", (q) => q.eq("requestId", requestId))
+      .collect();
+    // Filtro en memoria sobre datos mínimos, como en `acceptance.test.ts`.
+    const accompaniments = await ctx.db
+      .query("accompaniments")
+      .filter((q) => q.eq(q.field("requestId"), requestId))
+      .take(2);
+    return { status: request?.status, transitions, accompaniments: accompaniments.length };
+  });
+}
+
+function cancelAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, reason: string) {
+  return t.run((ctx) => cancelRequest(ctx, identity, { requestId, reason }));
+}
+
+function closeAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, reason: string) {
+  return t.run((ctx) => closeRequestWithoutAccompaniment(ctx, identity, { requestId, reason }));
+}
+
+const OPEN_FOR_STUDENT = [
+  "received",
+  "under_review",
+  "awaiting_information_or_acceptance",
+] as const;
+
+test("TI2-85: el Estudiante cancela su solicitud abierta y queda el registro con motivo", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-1", "student");
+
+  for (const from of OPEN_FOR_STUDENT) {
+    const requestId = await seedRequestIn(t, studentId, from);
+    const cancelled = await cancelAs(
+      t,
+      identityOf("ti85-est-1"),
+      requestId,
+      "  Ya recibí el apoyo por otra vía  ",
+    );
+    expect(cancelled).toMatchObject({ _id: requestId, studentId, status: "cancelled" });
+
+    // Estado y registro en la misma transacción, con el Estudiante como actor
+    // y el motivo recortado; no se abre ningún acompañamiento
+    const after = await snapshotOf(t, requestId);
+    expect(after.status).toBe("cancelled");
+    expect(after.accompaniments).toBe(0);
+    expect(after.transitions).toHaveLength(1);
+    expect(after.transitions[0]).toMatchObject({
+      from,
+      to: "cancelled",
+      actorId: studentId,
+      reason: "Ya recibí el apoyo por otra vía",
+    });
+    expect(after.transitions[0]?.occurredAt).toBeGreaterThan(0);
+  }
+});
+
+test("TI2-85: cancelar exige motivo y el rechazo no deja escrituras", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-2", "student");
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+  const before = await snapshotOf(t, requestId);
+
+  for (const reason of ["", "   "]) {
+    await expect(cancelAs(t, identityOf("ti85-est-2"), requestId, reason)).rejects.toThrow(
+      "Se requiere el motivo para cancelar la solicitud",
+    );
+  }
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+});
+
+test("TI2-85: cancelar una solicitud ajena o inexistente se deniega igual, sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const ownerId = await seedProfile(t, "ti85-est-3", "student");
+  await seedProfile(t, "ti85-est-4", "student");
+  const foreignId = await seedRequestIn(t, ownerId, "received");
+  const missingId = await seedRequestIn(t, ownerId, "received");
+  await t.run(async (ctx) => {
+    await ctx.db.delete(missingId);
+  });
+  const before = await snapshotOf(t, foreignId);
+
+  // Otro Estudiante vigente no distingue una solicitud ajena de una inexistente
+  for (const requestId of [foreignId, missingId]) {
+    await expect(
+      cancelAs(t, identityOf("ti85-est-4"), requestId, "Motivo ficticio"),
+    ).rejects.toThrow("No autorizado");
+  }
+  expect(await snapshotOf(t, foreignId)).toEqual(before);
+});
+
+test("TI2-85: sin identidad, sin rol Estudiante o sin cuenta vigente no se cancela", async () => {
+  const t = convexTest(schema, modules);
+  const ownerId = await seedProfile(t, "ti85-est-5", "student");
+  const requestId = await seedRequestIn(t, ownerId, "received");
+  for (const [subject, role] of [
+    ["ti85-pro-1", "professional"],
+    ["ti85-int-1", "intern"],
+    ["ti85-adm-1", "admin"],
+  ] as const) {
+    await seedProfile(t, subject, role);
+  }
+  const before = await snapshotOf(t, requestId);
+
+  for (const identity of [
+    null,
+    identityOf("ti85-sin-perfil"),
+    identityOf("ti85-pro-1"),
+    identityOf("ti85-int-1"),
+    identityOf("ti85-adm-1"),
+  ]) {
+    await expect(cancelAs(t, identity, requestId, "Motivo ficticio")).rejects.toThrow(
+      "No autorizado",
+    );
+  }
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+
+  // Cuenta no vigente sobre su propia solicitud: la vigencia se exige antes
+  // que la pertenencia
+  for (const [subject, status] of [
+    ["ti85-est-inh", { institutionalStatus: "disabled", accountStatus: "active" }],
+    ["ti85-est-pen", { institutionalStatus: "pending", accountStatus: "active" }],
+    ["ti85-est-ina", { institutionalStatus: "enabled", accountStatus: "inactive" }],
+  ] as const) {
+    const studentId = await seedProfile(t, subject, "student", status);
+    const ownId = await seedRequestIn(t, studentId, "received");
+    await expect(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio")).rejects.toThrow(
+      "No autorizado",
+    );
+    expect((await snapshotOf(t, ownId)).status).toBe("received");
+  }
+});
+
+test("TI2-85: repetir la cancelación o cancelar una aceptada o cerrada se rechaza sin tocar el historial", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-6", "student");
+  const student = identityOf("ti85-est-6");
+
+  // La segunda cancelación parte del estado que dejó la primera
+  const requestId = await seedRequestIn(t, studentId, "received");
+  await cancelAs(t, student, requestId, "Motivo ficticio");
+  const afterFirst = await snapshotOf(t, requestId);
+  await expect(cancelAs(t, student, requestId, "Otro motivo")).rejects.toThrow(
+    "La solicitud no admite la cancelación en su estado actual",
+  );
+  expect(await snapshotOf(t, requestId)).toEqual(afterFirst);
+  expect(afterFirst.transitions).toHaveLength(1);
+
+  for (const status of ["accepted", "closed_without_accompaniment"] as const) {
+    const endedId = await seedRequestIn(t, studentId, status);
+    await expect(cancelAs(t, student, endedId, "Motivo ficticio")).rejects.toThrow(
+      "no admite la cancelación",
+    );
+    expect(await snapshotOf(t, endedId)).toEqual({
+      status,
+      transitions: [],
+      accompaniments: 0,
+    });
+  }
+});
+
+test("TI2-85: el Profesional con toma cierra sin acompañamiento desde revisión y desde espera", async () => {
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti85-est-7");
+  const proId = await seedProfile(t, "ti85-pro-2", "professional");
+  const asStudent = t.withIdentity(identityFor("ti85-est-7", "ti85-est-7@alu.uct.cl"));
+  const asProfessional = t.withIdentity(identityOf("ti85-pro-2"));
+
+  // En revisión: registrar y tomar por la vía pública, cerrar por el caso de uso
+  const reviewed = await asStudent.mutation(api.presentation.requests.createRequest, {
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+  await asProfessional.mutation(api.presentation.requests.takeRequest, {
+    requestId: reviewed._id,
+  });
+  const closed = await closeAs(
+    t,
+    identityOf("ti85-pro-2"),
+    reviewed._id,
+    "  La necesidad corresponde a otra unidad de la universidad  ",
+  );
+  expect(closed.status).toBe("closed_without_accompaniment");
+  const afterReview = await snapshotOf(t, reviewed._id);
+  expect(afterReview.status).toBe("closed_without_accompaniment");
+  expect(afterReview.accompaniments).toBe(0);
+  expect(afterReview.transitions.map((row) => `${row.from} -> ${row.to}`)).toEqual([
+    "received -> under_review",
+    "under_review -> closed_without_accompaniment",
+  ]);
+  expect(afterReview.transitions[1]).toMatchObject({
+    actorId: proId,
+    reason: "La necesidad corresponde a otra unidad de la universidad",
+  });
+
+  // La toma queda activa como rastro de quién revisó
+  const take = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("requestAssignments")
+      .withIndex("by_request_and_user_and_status", (q) =>
+        q.eq("requestId", reviewed._id).eq("userId", proId).eq("status", "active"),
+      )
+      .take(2);
+  });
+  expect(take).toHaveLength(1);
+
+  // En espera: tras pedir información también se puede cerrar
+  const waiting = await asStudent.mutation(api.presentation.requests.createRequest, {
+    accessNeeds: "Otra necesidad ficticia",
+  });
+  await asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: waiting._id });
+  await asProfessional.mutation(api.presentation.requests.requestAdditionalInformation, {
+    requestId: waiting._id,
+    reason: "Falta el horario en que puedes asistir",
+  });
+  await closeAs(t, identityOf("ti85-pro-2"), waiting._id, "No hubo respuesta en el plazo acordado");
+  const afterWaiting = await snapshotOf(t, waiting._id);
+  expect(afterWaiting.status).toBe("closed_without_accompaniment");
+  expect(afterWaiting.accompaniments).toBe(0);
+  expect(afterWaiting.transitions.at(-1)).toMatchObject({
+    from: "awaiting_information_or_acceptance",
+    to: "closed_without_accompaniment",
+  });
+});
+
+test("TI2-85: cerrar exige toma activa; sin ella o con una revocada se deniega sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-8", "student");
+  const takerId = await seedProfile(t, "ti85-pro-3", "professional");
+  await seedProfile(t, "ti85-pro-4", "professional");
+  const revokedId = await seedProfile(t, "ti85-pro-5", "professional");
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+  await seedTake(t, requestId, takerId);
+  await seedTake(t, requestId, revokedId, "revoked");
+  const missingId = await seedRequestIn(t, studentId, "under_review");
+  await t.run(async (ctx) => {
+    await ctx.db.delete(missingId);
+  });
+  const before = await snapshotOf(t, requestId);
+
+  // Otro Profesional sin toma y uno con la toma revocada no operan
+  for (const subject of ["ti85-pro-4", "ti85-pro-5"]) {
+    await expect(closeAs(t, identityOf(subject), requestId, "Motivo ficticio")).rejects.toThrow(
+      "No autorizado",
+    );
+  }
+  // Una solicitud inexistente responde igual que una sin toma
+  await expect(closeAs(t, identityOf("ti85-pro-3"), missingId, "Motivo ficticio")).rejects.toThrow(
+    "No autorizado",
+  );
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+});
+
+test("TI2-85: cerrar exige motivo y el rechazo no deja escrituras", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-9", "student");
+  const proId = await seedProfile(t, "ti85-pro-6", "professional");
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+  await seedTake(t, requestId, proId);
+  const before = await snapshotOf(t, requestId);
+
+  for (const reason of ["", "   "]) {
+    await expect(closeAs(t, identityOf("ti85-pro-6"), requestId, reason)).rejects.toThrow(
+      "Se requiere el motivo para cerrar la solicitud sin acompañamiento",
+    );
+  }
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+});
+
+test("TI2-85: sin identidad, sin rol Profesional o sin cuenta vigente no se cierra", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-10", "student");
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+
+  // Cada perfil tiene una toma sembrada: la denegación sale del rol o de la
+  // vigencia, no de la falta de toma
+  await seedTake(t, requestId, studentId);
+  const others = [
+    ["ti85-int-2", "intern", ENABLED],
+    ["ti85-adm-2", "admin", ENABLED],
+    ["ti85-pro-inh", "professional", { institutionalStatus: "disabled", accountStatus: "active" }],
+    ["ti85-pro-ina", "professional", { institutionalStatus: "enabled", accountStatus: "inactive" }],
+  ] as const;
+  for (const [subject, role, status] of others) {
+    await seedTake(t, requestId, await seedProfile(t, subject, role, status));
+  }
+  const before = await snapshotOf(t, requestId);
+
+  const subjects = ["ti85-est-10", ...others.map(([subject]) => subject)];
+  for (const identity of [null, identityOf("ti85-sin-perfil"), ...subjects.map(identityOf)]) {
+    await expect(closeAs(t, identity, requestId, "Motivo ficticio")).rejects.toThrow(
+      "No autorizado",
+    );
+  }
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+});
+
+test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza sin tocar el historial", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti85-est-11", "student");
+  const proId = await seedProfile(t, "ti85-pro-7", "professional");
+  const professional = identityOf("ti85-pro-7");
+
+  // Con una toma escrita a mano: el paso no existe aunque haya toma
+  for (const status of ["received", "accepted", "cancelled"] as const) {
+    const requestId = await seedRequestIn(t, studentId, status);
+    await seedTake(t, requestId, proId);
+    await expect(closeAs(t, professional, requestId, "Motivo ficticio")).rejects.toThrow(
+      "La solicitud no admite el cierre sin acompañamiento en su estado actual",
+    );
+    expect(await snapshotOf(t, requestId)).toEqual({
+      status,
+      transitions: [],
+      accompaniments: 0,
+    });
+  }
+
+  // Repetir el cierre parte del estado que dejó el primero
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+  await seedTake(t, requestId, proId);
+  await closeAs(t, professional, requestId, "Motivo ficticio");
+  const afterFirst = await snapshotOf(t, requestId);
+  await expect(closeAs(t, professional, requestId, "Otro motivo")).rejects.toThrow(
+    "no admite el cierre",
+  );
+  expect(await snapshotOf(t, requestId)).toEqual(afterFirst);
+  expect(afterFirst.transitions).toHaveLength(1);
 });

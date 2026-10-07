@@ -1,23 +1,23 @@
 /**
- * Política de transición de la solicitud de acompañamiento (TI2-21).
+ * Política de transición de la solicitud de acompañamiento (TI2-21, TI2-85).
  *
- * Dominio puro: consume la tabla de `transitions.ts` y decide si un intento de
- * cambio de estado procede. No persiste ni muta nada: devuelve un resultado y
- * la capa de aplicación decide qué guardar.
+ * Dominio puro: consume las tablas de `transitions.ts` y decide si un intento
+ * de cambio de estado procede. No persiste ni muta nada: devuelve un resultado
+ * y la capa de aplicación decide qué guardar.
  */
 
 import type { RequestState } from "./state";
 import {
   ACCEPTANCE_STATE,
-  SPRINT_1_REQUEST_TRANSITIONS,
+  REQUEST_TRANSITIONS,
   type RequestStateChange,
   type RequestStateTransition,
 } from "./transitions";
 
 /**
- * `from` y `to` admiten cualquier estado declarado, incluidos los de Cycles
- * futuros: la política es el único punto que los rechaza, así ninguna capa
- * superior necesita filtrarlos antes.
+ * `from` y `to` admiten cualquier estado declarado, incluido `referred`: la
+ * política es el único punto que los rechaza, así ninguna capa superior
+ * necesita filtrarlos antes.
  */
 export type RequestTransitionAttempt = {
   readonly from: RequestState;
@@ -51,11 +51,12 @@ export type RequestTransitionResult =
        */
       readonly change: RequestStateChange;
       /**
-       * Verdadero cuando este intento llega a `accepted`. No garantiza unicidad:
-       * la política no conoce la solicitud ni su historial, así que repetir un
-       * intento válido la vuelve a emitir. La apertura única (TI2-24) exige leer
-       * y actualizar el estado persistido de forma atómica; con el `from` real,
-       * el segundo intento no tiene transición desde `accepted` y se rechaza.
+       * Verdadero cuando este intento llega a `accepted`; cancelar o cerrar
+       * nunca lo activan. No garantiza unicidad: la política no conoce la
+       * solicitud ni su historial, así que repetir un intento válido la vuelve
+       * a emitir. La apertura única (TI2-24) exige leer y actualizar el estado
+       * persistido de forma atómica; con el `from` real, el segundo intento no
+       * tiene transición desde `accepted` y se rechaza.
        */
       readonly opensAccompaniment: boolean;
     }
@@ -64,14 +65,12 @@ export type RequestTransitionResult =
       readonly cause: TransitionRejectionCause;
     };
 
-/** Búsqueda exacta en la tabla: un par ausente es una transición inválida. */
-export function findSprint1Transition(
+/** Búsqueda exacta en las tablas: un par ausente es una transición inválida. */
+export function findRequestTransition(
   from: RequestState,
   to: RequestState,
 ): RequestStateTransition | undefined {
-  return SPRINT_1_REQUEST_TRANSITIONS.find(
-    (transition) => transition.from === from && transition.to === to,
-  );
+  return REQUEST_TRANSITIONS.find((transition) => transition.from === from && transition.to === to);
 }
 
 /**
@@ -81,10 +80,10 @@ export function findSprint1Transition(
  * primera que el llamador tiene que resolver.
  *
  * `change` se construye desde la fila de la tabla y no desde el intento: así la
- * entrada solo puede contener estados de Sprint 1, sin conversiones de tipo.
+ * entrada solo puede contener estados persistibles, sin conversiones de tipo.
  */
 export function transitionRequest(attempt: RequestTransitionAttempt): RequestTransitionResult {
-  const transition = findSprint1Transition(attempt.from, attempt.to);
+  const transition = findRequestTransition(attempt.from, attempt.to);
   if (transition === undefined) return { status: "rejected", cause: "transition_not_allowed" };
 
   const actorId = attempt.actorId.trim();

@@ -1,6 +1,7 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import { toAccompanimentRequest, type AccompanimentRequest } from "../../domain/requests/request";
+import { toSprint1AccompanimentRequest } from "../../domain/requests/request";
+import type { Sprint1RequestState } from "../../domain/requests/state";
 import type { Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
@@ -72,7 +73,7 @@ export async function listOwnRequestsUseCase(
   return {
     ...result,
     page: result.page.map((row) =>
-      toAccompanimentRequest({
+      toSprint1AccompanimentRequest({
         _id: row._id,
         studentId: row.studentId,
         status: row.status,
@@ -86,10 +87,10 @@ export async function listOwnRequestsUseCase(
 export type AuthorizedRequestItem = {
   readonly _id: Id<"requests">;
   readonly studentId: Id<"users">;
-  // Estado de la entidad pública: los ítems se construyen con
-  // `toAccompanimentRequest`, así el tipo refleja lo devuelto y no el
+  // Estado del contrato público: los ítems se construyen con
+  // `toSprint1AccompanimentRequest`, así el tipo refleja lo devuelto y no el
   // conjunto persistible ampliado (TI2-83/TI2-85).
-  readonly status: AccompanimentRequest["status"];
+  readonly status: Sprint1RequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
 };
@@ -126,7 +127,7 @@ export async function listAuthorizedRequestsUseCase(
     if (request === null) continue;
     last = take.requestId;
     items.push(
-      toAccompanimentRequest({
+      toSprint1AccompanimentRequest({
         _id: request._id,
         studentId: request.studentId,
         status: request.status,
@@ -162,7 +163,7 @@ export async function listOpenRequestsUseCase(
   return {
     ...result,
     page: result.page.map((row) => {
-      const adapted = toAccompanimentRequest({
+      const adapted = toSprint1AccompanimentRequest({
         _id: row._id,
         studentId: row.studentId,
         status: row.status,
@@ -210,7 +211,7 @@ export async function getRequestDetailUseCase(
 
   if (caller.role === "student") {
     if (request.studentId !== caller._id) deny();
-    return toAccompanimentRequest({
+    return toSprint1AccompanimentRequest({
       _id: request._id,
       studentId: request.studentId,
       status: request.status,
@@ -222,7 +223,7 @@ export async function getRequestDetailUseCase(
   if (caller.role === "professional") {
     const take = await findActiveTake(ctx, args.requestId, caller._id);
     if (take === null) deny();
-    return toAccompanimentRequest({
+    return toSprint1AccompanimentRequest({
       _id: request._id,
       studentId: request.studentId,
       status: request.status,
