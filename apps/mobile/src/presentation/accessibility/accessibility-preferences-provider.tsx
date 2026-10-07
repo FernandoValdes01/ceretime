@@ -1,3 +1,4 @@
+import { AccessibilityInfo, AppState, Platform, useWindowDimensions } from "react-native";
 import {
   createContext,
   useContext,
@@ -6,6 +7,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
+import { ReducedMotionConfig, ReduceMotion, useReducedMotion } from "react-native-reanimated";
 import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
@@ -15,12 +17,17 @@ import type {
   AccessibilityPreferencesPort,
   AccessibilityPreferencesReadResult,
 } from "../../application/accessibility-preferences-port";
+import {
+  resolveAccessibilitySettings,
+  type SystemAccessibilitySettings,
+} from "./accessibility-preferences-policy";
 
 export interface AccessibilityPreferencesState {
   readonly preferences: AccessibilityPreferences;
   readonly status: "loading" | "ready" | "saving";
   readonly source: AccessibilityPreferencesReadResult["source"];
   readonly error: string | null;
+  readonly effective: ReturnType<typeof resolveAccessibilitySettings>;
   readonly reloadPreferences: () => void;
   readonly updatePreferences: (patch: Partial<AccessibilityPreferences>) => Promise<boolean>;
 }
@@ -36,6 +43,14 @@ export function AccessibilityPreferencesProvider({
   port,
   children,
 }: PropsWithChildren<{ readonly port: AccessibilityPreferencesPort }>) {
+  const { fontScale } = useWindowDimensions();
+  const initialReduceMotion = useReducedMotion();
+  const [systemSettings, setSystemSettings] = useState<
+    Omit<SystemAccessibilitySettings, "fontScale">
+  >(() => ({
+    highContrast: false,
+    reduceMotion: initialReduceMotion,
+  }));
   const [preferences, setPreferences] = useState(defaultAccessibilityPreferences);
   const [status, setStatus] = useState<AccessibilityPreferencesState["status"]>("loading");
   const [source, setSource] = useState<AccessibilityPreferencesState["source"]>("default");
@@ -44,6 +59,47 @@ export function AccessibilityPreferencesProvider({
   const [loadedPort, setLoadedPort] = useState<AccessibilityPreferencesPort | null>(null);
   const busy = useRef(true);
   const lifetime = useRef<{ active: boolean; port: AccessibilityPreferencesPort } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let queryVersion = 0;
+
+    async function refreshSystemSettings() {
+      const version = ++queryVersion;
+      const contrastQuery =
+        Platform.OS === "android"
+          ? AccessibilityInfo.isHighTextContrastEnabled()
+          : Platform.OS === "ios"
+            ? AccessibilityInfo.isDarkerSystemColorsEnabled()
+            : Promise.resolve(false);
+      const [reduceMotion, highContrast] = await Promise.all([
+        AccessibilityInfo.isReduceMotionEnabled().catch(() => false),
+        contrastQuery.catch(() => false),
+      ]);
+
+      if (!active || version !== queryVersion) return;
+      setSystemSettings((current) => ({ ...current, reduceMotion, highContrast }));
+    }
+
+    const motionSubscription = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      (reduceMotion) => {
+        queryVersion += 1;
+        if (active) setSystemSettings((current) => ({ ...current, reduceMotion }));
+      },
+    );
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshSystemSettings();
+    });
+    void refreshSystemSettings();
+
+    return () => {
+      active = false;
+      queryVersion += 1;
+      motionSubscription.remove();
+      appStateSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const operation = { active: true, port };
@@ -110,6 +166,11 @@ export function AccessibilityPreferencesProvider({
     setReload((value) => value + 1);
   }
 
+  const effective = resolveAccessibilitySettings(
+    loadedPort === port ? preferences : defaultAccessibilityPreferences,
+    { ...systemSettings, fontScale },
+  );
+
   return (
     <PreferencesContext
       value={{
@@ -117,10 +178,20 @@ export function AccessibilityPreferencesProvider({
         status: loadedPort === port ? status : "loading",
         source: loadedPort === port ? source : "default",
         error: loadedPort === port ? error : null,
+        effective,
         updatePreferences,
         reloadPreferences,
       }}
     >
+      <ReducedMotionConfig
+        mode={
+          effective.reduceMotionMode === "system"
+            ? ReduceMotion.System
+            : effective.reduceMotionMode === "always"
+              ? ReduceMotion.Always
+              : ReduceMotion.Never
+        }
+      />
       {children}
     </PreferencesContext>
   );
@@ -130,4 +201,8 @@ export function useAccessibilityPreferences() {
   const state = useContext(PreferencesContext);
   if (!state) throw new Error("Las preferencias necesitan AccessibilityPreferencesProvider.");
   return state;
+}
+
+export function useOptionalAccessibilityPreferences() {
+  return useContext(PreferencesContext);
 }
