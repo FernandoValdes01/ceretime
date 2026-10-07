@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 /**
  * Casos de uso de lectura restringida del Practicante con minimización (TI2-25).
@@ -29,8 +29,8 @@ const modules = import.meta.glob("./**/*.ts");
  * existencia del recurso. La superficie pública de acompañamientos son solo
  * consultas (`getAccompaniment`, `listOwnedAccompaniments`,
  * `listAssignedAccompaniments`, `getInternalNotes`); la única escritura es la
- * vía interna guardada (`internal.assignments.assign` y
- * `internal.assignments.revoke`), que exige un Profesional vigente distinto
+ * vía interna guardada (`internal.operations.assignments.assign` y
+ * `internal.operations.assignments.revoke`), que exige un Profesional vigente distinto
  * del destinatario.
  */
 
@@ -95,7 +95,7 @@ async function seedAssignment(
 ) {
   return await t
     .withIdentity(identityFor(caller.subject, caller.email))
-    .mutation(internal.assignments.assign, input);
+    .mutation(internal.operations.assignments.assign, input);
 }
 
 /** Mensaje de la denegación, o falla si la operación fue permitida. */
@@ -438,21 +438,21 @@ test("intentos de modificación del practicante se rechazan", async () => {
 
   const asIntern = t.withIdentity(identityFor("ti25-int-6", "int6@alu.uct.cl"));
   await expect(
-    asIntern.mutation(internal.assignments.assign, {
+    asIntern.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: intern.id,
       assignedRole: "intern",
     }),
   ).rejects.toThrow("No autorizado");
   await expect(
-    asIntern.mutation(internal.assignments.assign, {
+    asIntern.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: otherIntern.id,
       assignedRole: "intern",
     }),
   ).rejects.toThrow("No autorizado");
   await expect(
-    asIntern.mutation(internal.assignments.revoke, {
+    asIntern.mutation(internal.operations.assignments.revoke, {
       accompanimentId,
       userId: intern.id,
       assignedRole: "intern",

@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { internal } from "./_generated/api";
-import schema from "./schema";
+import { internal } from "../_generated/api";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 // Las semillas solo operan con el interruptor de entorno activado (como en
 // desarrollo). El rechazo con el interruptor apagado (como en producción) se
@@ -31,11 +31,11 @@ test("Persistencia de usuario: crear, consultar y verificar rol/estado en Convex
   };
 
   // 1. Ejecutar la mutación interna real de Convex
-  const createdId = await t.mutation(internal.users.createTestUser, dummyUserData);
+  const createdId = await t.mutation(internal.operations.users.createTestUser, dummyUserData);
   expect(createdId).toBeDefined();
 
   // 2. Ejecutar la consulta interna real de Convex
-  const fetchedUser = await t.query(internal.users.getUserById, {
+  const fetchedUser = await t.query(internal.operations.users.getUserById, {
     id: createdId,
   });
 
@@ -68,7 +68,7 @@ test("Consultar un usuario inexistente retorna null", async () => {
   });
 
   // La consulta de un ID inexistente debe retornar null
-  const fetchedUser = await t.query(internal.users.getUserById, {
+  const fetchedUser = await t.query(internal.operations.users.getUserById, {
     id: missingId,
   });
   expect(fetchedUser).toBeNull();
@@ -90,7 +90,7 @@ test("Rechaza roles o estados inválidos al crear un usuario", async () => {
 
   // Un rol fuera del catálogo debe ser rechazado por el validador
   await expect(
-    t.mutation(internal.users.createTestUser, {
+    t.mutation(internal.operations.users.createTestUser, {
       ...dummyUserData,
       role: "superadmin" as never,
     }),
@@ -98,7 +98,7 @@ test("Rechaza roles o estados inválidos al crear un usuario", async () => {
 
   // Un estado institucional fuera del catálogo debe ser rechazado por el validador
   await expect(
-    t.mutation(internal.users.createTestUser, {
+    t.mutation(internal.operations.users.createTestUser, {
       ...dummyUserData,
       institutionalStatus: "graduated" as never,
     }),
@@ -106,7 +106,7 @@ test("Rechaza roles o estados inválidos al crear un usuario", async () => {
 
   // Un estado de cuenta fuera del catálogo debe ser rechazado por el validador
   await expect(
-    t.mutation(internal.users.createTestUser, {
+    t.mutation(internal.operations.users.createTestUser, {
       ...dummyUserData,
       accountStatus: "suspended" as never,
     }),
@@ -121,7 +121,7 @@ test("Vincula el perfil persistido con la identidad autenticada", async () => {
   const tokenIdentifier = "https://accounts.google.com|ficticio-789";
 
   // 1. Persistir el perfil asociado a la identidad ficticia
-  const createdId = await t.mutation(internal.users.createTestUser, {
+  const createdId = await t.mutation(internal.operations.users.createTestUser, {
     email: "vinculado.ficticio@cereti.cl",
     fullName: "Vinculado Ficticio",
     role: "student" as const,
@@ -132,7 +132,7 @@ test("Vincula el perfil persistido con la identidad autenticada", async () => {
   expect(createdId).toBeDefined();
 
   // 2. Recuperar el mismo perfil mediante su identificador de identidad
-  const linkedUser = await t.query(internal.users.getUserByTokenIdentifier, {
+  const linkedUser = await t.query(internal.operations.users.getUserByTokenIdentifier, {
     tokenIdentifier,
   });
   expect(linkedUser).not.toBeNull();
@@ -140,7 +140,7 @@ test("Vincula el perfil persistido con la identidad autenticada", async () => {
   expect(linkedUser?.email).toBe("vinculado.ficticio@cereti.cl");
 
   // 3. Un identificador desconocido no vincula ningún perfil
-  const missingUser = await t.query(internal.users.getUserByTokenIdentifier, {
+  const missingUser = await t.query(internal.operations.users.getUserByTokenIdentifier, {
     tokenIdentifier: "https://accounts.google.com|inexistente-000",
   });
   expect(missingUser).toBeNull();
@@ -161,12 +161,12 @@ test("Rechaza perfiles duplicados para la misma identidad", async () => {
   };
 
   // 1. El primer perfil con esa identidad se persiste
-  const createdId = await t.mutation(internal.users.createTestUser, profile);
+  const createdId = await t.mutation(internal.operations.users.createTestUser, profile);
   expect(createdId).toBeDefined();
 
   // 2. Un segundo perfil con la misma identidad debe ser rechazado
   await expect(
-    t.mutation(internal.users.createTestUser, {
+    t.mutation(internal.operations.users.createTestUser, {
       ...profile,
       email: "otro.ficticio@cereti.cl",
     }),

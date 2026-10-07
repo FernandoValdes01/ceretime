@@ -1,8 +1,8 @@
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError } from "convex/values";
-import { internalMutation, internalQuery } from "./_generated/server";
-import { AUTHORIZATION_DENIED_MESSAGE } from "./application/authorization/authorize";
-import { findProfileByTokenIdentifier } from "./infrastructure/accounts/repository";
+import { internalMutation, internalQuery } from "../_generated/server";
+import { AUTHORIZATION_DENIED_MESSAGE } from "../application/authorization/authorize";
+import { findProfileByTokenIdentifier } from "../infrastructure/accounts/repository";
 
 /**
  * Migración de la database mínima (TI2-17): trazabilidad de asignaciones.

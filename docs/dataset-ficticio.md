@@ -4,14 +4,14 @@ Datos mínimos para mostrar el entorno TI2 con cada rol y cada estado de solicit
 
 ## Cómo se carga
 
-- La carga es `internal.fictitiousData.load`, en `convex/fictitiousData.ts`. Solo opera con `TEST_SEEDS_ENABLED=true` en el deployment, igual que `createTestUser`; en producción la variable permanece ausente y la carga se rechaza.
+- La carga es `internal.operations.fictitiousData.load`, en `convex/operations/fictitiousData.ts`. Solo opera con `TEST_SEEDS_ENABLED=true` en el deployment, igual que `createTestUser`; en producción la variable permanece ausente y la carga se rechaza.
 - Es repetible: si el dataset ya existe, no escribe nada.
-- Se carga a mano en un deployment de desarrollo propio con `bunx convex run fictitiousData:load`, después de configurar sus variables según la guía de arranque del [README](../README.md). Ningún despliegue la ejecuta automáticamente.
+- Se carga a mano en un deployment de desarrollo propio con `bunx convex run operations/fictitiousData:load`, después de configurar sus variables según la guía de arranque del [README](../README.md). Ningún despliegue la ejecuta automáticamente.
 - Los perfiles se crean con `createTestUser` y las solicitudes pasan por los casos de uso reales (registrar, tomar, pedir información, aceptar y asignar), así que el dataset cumple las mismas reglas que el flujo del cliente.
 
 ## Cuentas
 
-Todas quedan habilitadas y vigentes. Su `tokenIdentifier` usa el emisor inventado `dataset-ficticio`, que ningún inicio de sesión real produce: nadie puede entrar como una de estas cuentas. El dataset no crea Administradores, porque el primero sale solo de `internal.accounts.ensureBootstrapAdmin`.
+Todas quedan habilitadas y vigentes. Su `tokenIdentifier` usa el emisor inventado `dataset-ficticio`, que ningún inicio de sesión real produce: nadie puede entrar como una de estas cuentas. El dataset no crea Administradores, porque el primero sale solo de `internal.operations.accounts.ensureBootstrapAdmin`.
 
 | Cuenta                     | Rol         | Correo                            |
 | -------------------------- | ----------- | --------------------------------- |
@@ -41,4 +41,4 @@ Uno solo, abierto por la aceptación de la solicitud del Estudiante Cuatro, con 
 
 ## Comprobación
 
-`convex/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial y el acompañamiento de este inventario, y que una segunda carga no escriba nada. Corre con `bun run test:convex`.
+`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial y el acompañamiento de este inventario, y que una segunda carga no escriba nada. Corre con `bun run test:convex`.
