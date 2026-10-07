@@ -61,9 +61,12 @@ export function ProfessionalRequestsPage() {
 function RequestRow({
   request,
   clickable = true,
+  take,
 }: {
   request: RequestListItem;
   clickable?: boolean;
+  /** Solo bandeja: tomar sin pasar por el detalle (denegado sin toma). */
+  take?: { disabled: boolean; busy: boolean; onTake: () => void };
 }) {
   const content = (
     <>
@@ -78,6 +81,17 @@ function RequestRow({
     return (
       <li className="student-portal__item">
         <span className="gestion-request-row">{content}</span>
+        {take && (
+          <button
+            type="button"
+            className="student-portal__btn student-portal__btn--ghost"
+            disabled={take.disabled || take.busy}
+            onClick={take.onTake}
+            aria-busy={take.busy}
+          >
+            {take.busy ? "Tomando…" : "Tomar"}
+          </button>
+        )}
       </li>
     );
   }
@@ -97,6 +111,27 @@ function RequestRow({
 
 function OpenInboxBody() {
   const { items, done, pending, loadMore } = usePagedItems(useOpenRequests);
+  const takeRequest = useTakeRequest();
+  const [takingId, setTakingId] = useState<string | null>(null);
+  const [takeError, setTakeError] = useState<string | null>(null);
+
+  // La toma vive en la bandeja porque el detalle exige toma activa
+  // (getRequest deniega sin ella): sin este botón la acción sería inalcanzable.
+  async function handleTake(requestId: string) {
+    if (takingId !== null) {
+      return;
+    }
+    setTakeError(null);
+    setTakingId(requestId);
+    try {
+      await takeRequest({ requestId: requestId as Id<"requests"> });
+      // Las queries reactivas mueven la solicitud a "Mis tomadas" solas.
+    } catch (err) {
+      setTakeError(err instanceof Error ? err.message : "No se pudo tomar la solicitud");
+    } finally {
+      setTakingId(null);
+    }
+  }
 
   if (pending && items.length === 0) {
     return (
@@ -117,9 +152,23 @@ function OpenInboxBody() {
 
   return (
     <>
+      {takeError && (
+        <p role="alert" className="student-portal__error">
+          {takeError}
+        </p>
+      )}
       <ul className="student-portal__list">
         {items.map((request) => (
-          <RequestRow key={request._id} request={request} clickable={false} />
+          <RequestRow
+            key={request._id}
+            request={request}
+            clickable={false}
+            take={{
+              disabled: takingId !== null,
+              busy: takingId === request._id,
+              onTake: () => handleTake(request._id),
+            }}
+          />
         ))}
       </ul>
       {done ? null : (
@@ -253,6 +302,50 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [infoReason, setInfoReason] = useState("");
   const [infoReasonError, setInfoReasonError] = useState<string | null>(null);
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+
+  // Al abrir el modal mueve el foco al motivo (solo DOM, sin setState).
+  useEffect(() => {
+    if (showInfoModal) {
+      reasonRef.current?.focus();
+    }
+  }, [showInfoModal]);
+
+  function closeInfoModal() {
+    setShowInfoModal(false);
+    openButtonRef.current?.focus();
+  }
+
+  // Trampa de Tab dentro del diálogo y cierre con Escape.
+  function handleDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeInfoModal();
+      return;
+    }
+    if (event.key !== "Tab" || dialogRef.current === null) {
+      return;
+    }
+    const focusables = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (focusables.length === 0) {
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   if (request === undefined) {
     return (
@@ -305,7 +398,7 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
         requestId: requestId as Id<"requests">,
         reason: trimmed,
       });
-      setShowInfoModal(false);
+      closeInfoModal();
       // La query reactiva actualizará el estado automáticamente
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "No se pudo pedir información");
@@ -332,10 +425,12 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
       return (
         <button
           type="button"
+          ref={openButtonRef}
           className="student-portal__btn student-portal__btn--primary"
           disabled={isActionPending}
           onClick={handleRequestInfoOpen}
           aria-busy={isActionPending}
+          aria-haspopup="dialog"
         >
           {isActionPending ? "Enviando…" : "Pedir información"}
         </button>
@@ -372,10 +467,12 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
       {/* Modal para pedir información (TI2-92) */}
       {showInfoModal && (
         <div
+          ref={dialogRef}
           className="student-portal__modal-overlay"
           role="dialog"
           aria-modal="true"
           aria-labelledby="info-modal-title"
+          onKeyDown={handleDialogKeyDown}
         >
           <div className="student-portal__modal">
             <h2 id="info-modal-title" className="student-portal__modal-title">
@@ -391,6 +488,7 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
                 </label>
                 <textarea
                   id="info-reason"
+                  ref={reasonRef}
                   className={`student-portal__textarea ${infoReasonError ? "student-portal__textarea--error" : ""}`}
                   value={infoReason}
                   onChange={(e) => setInfoReason(e.target.value)}
@@ -413,7 +511,7 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
                 <button
                   type="button"
                   className="student-portal__btn student-portal__btn--ghost"
-                  onClick={() => setShowInfoModal(false)}
+                  onClick={closeInfoModal}
                   disabled={isActionPending}
                 >
                   Cancelar

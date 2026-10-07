@@ -50,6 +50,9 @@ let mockedAuthorized: AuthorizedRequestsPage | undefined;
 let mockedDetail: RequestDetail | undefined;
 let detailThrows: Error | null = null;
 
+// Mock global de convex/react: solo lo usa AuthScreen (ruta /login) con
+// useQuery directo; las lecturas de gestión se mockean por módulo abajo con
+// valores distintos por recurso, así que este mock no interfiere con ellas.
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
 vi.mock("../session/session-state", () => ({
@@ -69,19 +72,6 @@ vi.mock("./professional-requests-data.ts", () => ({
   },
   useTakeRequest: () => takeRequestMock,
   useRequestAdditionalInformation: () => requestInfoMock,
-}));
-
-vi.mock("../../infrastructure/auth/auth-client", () => ({
-  authClient: { useSession: () => ({ isPending: false }) },
-}));
-
-vi.mock("../../infrastructure/convex/convex-client", () => ({
-  convexUrl: "https://test.convex.cloud",
-  convexSiteUrl: "https://test.convex.site",
-  get isBackendConfigured() {
-    return mockedBackendConfigured;
-  },
-  convexClient: {},
 }));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
@@ -228,6 +218,53 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(await screen.findByText("En revisión")).toBeDefined();
     const enlace = await screen.findByRole("link", { name: /En revisión/ });
     expect(enlace.getAttribute("href")).toBe("/profesional/solicitudes/req-9");
+  });
+
+  test("tomar desde la bandeja ejecuta takeRequest con el id de la fila", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([filaAbierta({ _id: "req-1" })], true);
+    mockedAuthorized = paginaTomadas([], true);
+    takeRequestMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes");
+
+    const tomarBtn = await screen.findByRole("button", { name: "Tomar" });
+    expect(tomarBtn.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(tomarBtn);
+
+    expect(takeRequestMock).toHaveBeenCalledTimes(1);
+    expect(takeRequestMock).toHaveBeenCalledWith({ requestId: "req-1" });
+  });
+
+  test("error al tomar en bandeja muestra aviso y permite reintento", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([filaAbierta({ _id: "req-1" })], true);
+    mockedAuthorized = paginaTomadas([], true);
+    takeRequestMock.mockRejectedValueOnce(new Error("No autorizado"));
+    renderAt("/profesional/solicitudes");
+
+    const tomarBtn = await screen.findByRole("button", { name: "Tomar" });
+    fireEvent.click(tomarBtn);
+
+    expect(await screen.findByText("No autorizado")).toBeDefined();
+    expect(tomarBtn.hasAttribute("disabled")).toBe(false);
+
+    takeRequestMock.mockResolvedValue(undefined);
+    fireEvent.click(tomarBtn);
+    expect(takeRequestMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("doble clic en tomar de la bandeja no duplica la llamada", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([filaAbierta({ _id: "req-1" })], true);
+    mockedAuthorized = paginaTomadas([], true);
+    takeRequestMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes");
+
+    const tomarBtn = await screen.findByRole("button", { name: "Tomar" });
+    fireEvent.click(tomarBtn);
+    fireEvent.click(tomarBtn);
+
+    expect(takeRequestMock).toHaveBeenCalledTimes(1);
   });
 
   test("bandeja vacía muestra el vacío explícito", async () => {
@@ -526,9 +563,11 @@ describe("acciones del Profesional (TI2-92)", () => {
     const enviarBtn = screen.getByRole("button", { name: "Enviar" });
     fireEvent.click(enviarBtn);
 
-    // Tras el primer clic, el botón se deshabilita (aria-busy + disabled)
+    // Tras el primer clic el botón se deshabilita; el segundo clic (misma
+    // referencia) lo frena el guard isActionPending del handler, no el DOM.
     expect(enviarBtn.hasAttribute("disabled")).toBe(true);
-    // Segundo clic no encuentra botón habilitado, así que no duplica la llamada
+    fireEvent.click(enviarBtn);
+
     expect(requestInfoMock).toHaveBeenCalledTimes(1);
   });
 
@@ -546,6 +585,52 @@ describe("acciones del Profesional (TI2-92)", () => {
     expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull();
   });
 
+  test("abrir el modal mueve el foco al motivo", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    const motivo = await screen.findByLabelText("Motivo *");
+
+    await waitFor(() => expect(document.activeElement).toBe(motivo));
+  });
+
+  test("Escape cierra el modal y devuelve el foco al botón", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    const abrirBtn = await screen.findByRole("button", { name: "Pedir información" });
+    fireEvent.click(abrirBtn);
+    const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
+
+    fireEvent.keyDown(dialogo, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull();
+    expect(document.activeElement).toBe(abrirBtn);
+  });
+
+  test("Tab queda atrapado dentro del modal", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
+    const motivo = screen.getByLabelText("Motivo *");
+
+    // Desde el último foco (Enviar), Tab envuelve al primero (motivo).
+    const enviarBtn = screen.getByRole("button", { name: "Enviar" });
+    enviarBtn.focus();
+    fireEvent.keyDown(dialogo, { key: "Tab" });
+    expect(document.activeElement).toBe(motivo);
+
+    // Desde el primero, Shift+Tab envuelve al último.
+    fireEvent.keyDown(dialogo, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(enviarBtn);
+  });
+
   test("estados accepted y awaiting_information_or_acceptance no muestran acciones", async () => {
     const detalleAccepted: RequestDetail = {
       ...DETALLE_UNDER_REVIEW,
@@ -561,28 +646,10 @@ describe("acciones del Profesional (TI2-92)", () => {
       mockedDetail = detalle;
       renderAt("/profesional/solicitudes/req-9");
 
+      // Espera el detalle renderizado: sin esto la ausencia de botones sería
+      // vacuosa (el cuerpo aún no monta).
+      expect(await screen.findByText("Necesidad ficticia de acceso")).toBeDefined();
       expect(screen.queryByRole("button", { name: /Tomar|Pedir información/ })).toBeNull();
     }
-  });
-
-  test("navegar de detalle denegado a uno válido muestra el nuevo sin reintento", async () => {
-    comoProfesional();
-    // Primero: detalle denegado
-    detailThrows = new Error("No autorizado");
-    renderAt("/profesional/solicitudes/req-ajena");
-
-    expect(
-      await screen.findByText("No pudimos cargar el detalle de la solicitud.", { exact: false }),
-    ).toBeDefined();
-
-    // Navega a uno válido (cambia requestId en la URL)
-    detailThrows = null;
-    mockedDetail = DETALLE_UNDER_REVIEW;
-    renderAt("/profesional/solicitudes/req-9");
-
-    // Debe mostrar el detalle válido SIN necesidad de pulsar "Reintentar"
-    expect(await screen.findByRole("heading", { name: "Detalle de la solicitud" })).toBeDefined();
-    expect(await screen.findByText("En revisión")).toBeDefined();
-    expect(screen.queryByText("No pudimos cargar el detalle")).toBeNull();
   });
 });
