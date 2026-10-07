@@ -4,7 +4,7 @@ function reviewTarget(pr) {
 }
 
 function eventTarget(context, env) {
-  const target = reviewTarget(context.payload.pull_request);
+  const target = reviewTarget(context.payload.pull_request ?? {});
   return {
     sha: env.REVIEW_SHA ?? target.sha,
     base: env.REVIEW_BASE_SHA ?? target.base,
@@ -32,4 +32,13 @@ function currentReview(pr, target, repo) {
   );
 }
 
-module.exports = { reviewTarget, eventTarget, eligibleReview, currentReview };
+function pullNumber(context, env = process.env) {
+  const value =
+    context.payload.pull_request?.number ??
+    env.REVIEW_PR_NUMBER ??
+    context.payload.inputs?.pr_number;
+  if (!/^[1-9][0-9]*$/.test(String(value)) || !Number.isSafeInteger(Number(value)))
+    throw new Error("Número de PR inválido.");
+  return Number(value);
+}
+module.exports = { pullNumber, reviewTarget, eventTarget, eligibleReview, currentReview };

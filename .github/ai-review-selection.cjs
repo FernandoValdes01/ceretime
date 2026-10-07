@@ -85,7 +85,11 @@ function spacingOnly(before, after) {
 
 function classifyFile(file, config = {}) {
   const path = file.filename;
-  if (matchesIgnore(path, config.ignore_paths ?? []) || GENERATED.test(path))
+  if (
+    matchesIgnore(path, config.ignore_paths ?? []) ||
+    GENERATED.test(path) ||
+    /(?:^|\/)docs\/evidence\/.*\.(?:xml|patch)$/i.test(path)
+  )
     return { eligible: false, reason: "generated-or-ignored" };
   if (BINARY.test(path) || file.binary) return { eligible: false, reason: "binary" };
   const contractDoc = matchesIgnore(
