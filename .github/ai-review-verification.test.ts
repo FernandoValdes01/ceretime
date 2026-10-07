@@ -44,7 +44,14 @@ const part = {
   path,
   patch: "",
   anchors: candidates.map((f) => `RIGHT:${f.line}`),
-  context: [{ path, head: source, headComplete: true }],
+  context: [
+    {
+      path,
+      head: source,
+      headComplete: true,
+      evidenceSelector: { symbols: ["expandAvailabilitySlots"] },
+    },
+  ],
 };
 const proof = (index: number, extra = {}) => ({
   index,
@@ -162,6 +169,187 @@ test("an implementation expression cannot serve as its own expected contract", (
     ),
   ).toBe("insufficient");
 });
+test("historical contracts cannot validate a candidate against the current head", () => {
+  const candidate = {
+    ...candidates[0],
+    path: "worker.ts",
+    line: 1,
+    side: "RIGHT",
+  };
+  const available = {
+    path: candidate.path,
+    patch: "@@ -0,0 +1 @@\n[RIGHT:1] +export function worker() { return allowedQuota; }",
+    anchors: ["RIGHT:1"],
+    context: [
+      {
+        path: "worker.ts",
+        head: "export function worker() { return allowedQuota; }",
+        base: "export function worker() { return allowedQuota; }",
+      },
+      {
+        path: "quota.ts",
+        head: "export const allowedQuota = 20;",
+        base: "export const allowedQuota = 10;",
+      },
+    ],
+  };
+  const historicalOnly = {
+    ...proof(0),
+    symbol: "worker",
+    actual: "20",
+    expected: "10",
+    expectedContract: {
+      path: "quota.ts",
+      quote: "export const allowedQuota = 10;",
+      rule: "The quota remains ten.",
+    },
+    references: [
+      { path: "worker.ts", quote: "export function worker() { return allowedQuota; }" },
+      { path: "quota.ts", side: "base", quote: "export const allowedQuota = 10;" },
+    ],
+  };
+  expect(decideFinding(candidate, historicalOnly, available)).toBe("insufficient");
+  expect(
+    decideFinding(
+      candidate,
+      {
+        ...historicalOnly,
+        expected: "20",
+        expectedContract: {
+          path: "quota.ts",
+          quote: "export const allowedQuota = 20;",
+          rule: "The current quota is twenty.",
+        },
+        references: [
+          { path: "worker.ts", quote: "export function worker() { return allowedQuota; }" },
+          { path: "quota.ts", quote: "export const allowedQuota = 10;" },
+        ],
+      },
+      available,
+    ),
+  ).toBe("insufficient");
+  expect(
+    decideFinding(
+      candidate,
+      {
+        ...historicalOnly,
+        expected: "20",
+        expectedContract: {
+          path: "quota.ts",
+          quote: "export const allowedQuota = 20;",
+          rule: "The current quota is twenty.",
+        },
+      },
+      available,
+    ),
+  ).toBe("refuted");
+});
+test("the verifier confirms a deleted function from its LEFT patch when base context is clipped", async () => {
+  const currentPath = "apps/web/src/amount.ts";
+  const historicalPath = "apps/web/src/old-amount.ts";
+  const contractPath = "apps/web/src/amount-consumer.ts";
+  const candidate = {
+    path: currentPath,
+    line: 9,
+    side: "LEFT",
+    severity: "important",
+    issue_key: "deleted-multiplier",
+    cause: "El diff elimina el multiplicador del cálculo del importe.",
+    impact: "El importe calculado deja de seguir el contrato.",
+    fix: "Conservar el cálculo que exige el contrato.",
+  };
+  const historicalPart = {
+    path: currentPath,
+    change: { oldPath: historicalPath, newPath: currentPath },
+    anchors: ["LEFT:9"],
+    patch: [
+      "@@ -8,3 +7,0 @@",
+      "[LEFT:8] -export function calculateFare(amount: number) {",
+      "[LEFT:9] -  return amount * 2;",
+      "[LEFT:10] -}",
+    ].join("\n"),
+    context: [
+      {
+        path: currentPath,
+        basePath: historicalPath,
+        base: "export const unrelatedHelper = 1;",
+        head: "export const updated = true;",
+        baseComplete: false,
+        headComplete: false,
+      },
+      {
+        path: contractPath,
+        head: "// calculateFare must preserve the requested amount.",
+        headComplete: true,
+      },
+    ],
+  };
+  let calls = 0;
+  const result = await verifyAssessment({
+    assessment: { findings: [candidate], limitations: [], resolutions: [] },
+    chunk: { parts: [historicalPart] },
+    sha,
+    apiKey: "fixture",
+    budget: 1,
+    isCurrent: async () => true,
+    fetchImpl: async (_url: string, request: any) => {
+      calls++;
+      const payload = JSON.parse(JSON.parse(request.body).messages[1].content);
+      expect(payload.candidates[0].patch).toContain("[LEFT:9] -  return amount * 2;");
+      expect(payload.evidence.some((item: any) => item.path.base === historicalPath)).toBe(true);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  decisions: [
+                    {
+                      index: payload.candidates[0].index,
+                      verdict: "confirmed",
+                      symbol: "calculateFare",
+                      input: "calculateFare(5)",
+                      actual: "10",
+                      expected: "5",
+                      trace: "La implementación histórica multiplicaba por dos el importe.",
+                      counterevidence: "Se revisaron el consumidor y el contrato vigente.",
+                      expectedContract: {
+                        path: contractPath,
+                        quote: "// calculateFare must preserve the requested amount.",
+                        rule: "El importe debe conservar el valor solicitado.",
+                      },
+                      impactTrace: "El consumidor vigente muestra el importe al estudiante.",
+                      references: [
+                        {
+                          path: historicalPath,
+                          side: "base",
+                          quote: "return amount * 2;",
+                        },
+                        {
+                          path: contractPath,
+                          quote: "// calculateFare must preserve the requested amount.",
+                        },
+                      ],
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+  });
+  expect(calls).toBe(1);
+  expect(result.assessment.evidenceRequests).toEqual([]);
+  expect(result.assessment.limitations).toEqual([]);
+  expect(result.assessment.findings.map((finding: any) => finding.issue_key)).toEqual([
+    "deleted-multiplier",
+  ]);
+  expect(publishable(result.assessment.findings[0], sha)).toBe(true);
+});
 test("real verifier publishes only the two witnessed defects and validates proof integrity", async () => {
   const result = await verifyAssessment({
     assessment: { findings: candidates, limitations: [], resolutions: [] },
@@ -172,7 +360,11 @@ test("real verifier publishes only the two witnessed defects and validates proof
     isCurrent: async () => true,
     fetchImpl: async (_url: string, request: any) => {
       const messages = JSON.parse(request.body).messages;
+      const payload = JSON.parse(messages[1].content);
       expect(messages[0].content).toContain("evidencia que contradiga");
+      expect(payload.candidates).toHaveLength(3);
+      expect(payload.evidence).toHaveLength(1);
+      expect(payload.evidenceVersion).toEqual({ base: null, head: sha });
       expect(messages[1].content).toContain("compareWindows");
       expect(messages[1].content).toContain("takenIds.set");
       return {
@@ -220,6 +412,233 @@ test("real verifier publishes only the two witnessed defects and validates proof
       report: { sha, findings: [candidates[2]] },
     }),
   ).rejects.toThrow();
+});
+test("candidate verification sends only its related hunk and evidence", async () => {
+  const candidate = candidates[0];
+  const marker = `RIGHT:${candidate.line}`;
+  const unrelatedPath = "apps/mobile/src/unrelated.ts";
+  const consumerPath = "apps/mobile/src/consumer.ts";
+  const result = await verifyAssessment({
+    assessment: { findings: [candidate], limitations: [], resolutions: [] },
+    chunk: {
+      parts: [
+        {
+          ...part,
+          context: [
+            ...part.context,
+            {
+              path: consumerPath,
+              relationship: "consumer",
+              head: "export const result = expandAvailabilitySlots(input);",
+              evidenceSelector: { symbols: ["expandAvailabilitySlots"] },
+            },
+            {
+              path: unrelatedPath,
+              relationship: "dependency",
+              head: "export function unrelatedMarker() { return true; }",
+              evidenceSelector: { symbols: ["unrelatedMarker"] },
+            },
+          ],
+          patch: [
+            `@@ -${candidate.line - 1},0 +${candidate.line} @@`,
+            `[${marker}] +const key = \`unrelated-to-other-hunk\`;`,
+            "@@ -80,0 +81 @@",
+            "[RIGHT:81] +otherChangedBehavior();",
+          ].join("\n"),
+        },
+        {
+          path: unrelatedPath,
+          anchors: ["RIGHT:4"],
+          patch: "@@ -3,0 +4 @@\n[RIGHT:4] +unrelatedMarker();",
+          context: [{ path: unrelatedPath, head: "const unrelatedMarker = true;" }],
+        },
+      ],
+    },
+    sha,
+    apiKey: "fixture",
+    budget: 1,
+    isCurrent: async () => true,
+    fetchImpl: async (_url: string, request: any) => {
+      const messages = JSON.parse(request.body).messages;
+      const payload = JSON.parse(messages[1].content);
+      expect(payload.candidates).toHaveLength(1);
+      expect(payload.candidates[0].patch).toContain("unrelated-to-other-hunk");
+      expect(payload.candidates[0].patch).not.toContain("otherChangedBehavior");
+      expect(payload.evidence.map((item: any) => item.path.head)).toEqual([consumerPath, path]);
+      expect(JSON.stringify(payload)).not.toContain(unrelatedPath);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { content: JSON.stringify({ decisions: [proof(0)] }) },
+            },
+          ],
+        }),
+      };
+    },
+  });
+  expect(result.calls).toBe(1);
+  expect(result.assessment.findings.map((finding: any) => finding.issue_key)).toEqual([
+    "added-collision",
+  ]);
+});
+test("candidates without shared evidence use separate verifier requests", async () => {
+  const paths = ["apps/mobile/src/alpha.ts", "apps/mobile/src/beta.ts"];
+  const findings = paths.map((candidatePath, index) => ({
+    ...candidates[0],
+    path: candidatePath,
+    line: 1,
+    issue_key: `independent-${index}`,
+  }));
+  const parts = paths.map((candidatePath, index) => ({
+    path: candidatePath,
+    anchors: ["RIGHT:1"],
+    patch: `@@ -0,0 +1 @@\n[RIGHT:1] +export const ${index ? "beta" : "alpha"} = true;`,
+    context: [
+      {
+        path: candidatePath,
+        head: `export function ${index ? "beta" : "alpha"}() { return true; }`,
+        evidenceSelector: { symbols: [index ? "beta" : "alpha"] },
+      },
+    ],
+  }));
+  let calls = 0;
+  const result = await verifyAssessment({
+    assessment: { findings, limitations: [], resolutions: [] },
+    chunk: { parts },
+    sha,
+    apiKey: "fixture",
+    budget: 2,
+    isCurrent: async () => true,
+    fetchImpl: async (_url: string, request: any) => {
+      calls++;
+      const payload = JSON.parse(JSON.parse(request.body).messages[1].content);
+      expect(payload.candidates).toHaveLength(1);
+      const candidate = payload.candidates[0].finding;
+      const candidateIndex = payload.candidates[0].index;
+      const index = paths.indexOf(candidate.path);
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(payload.evidence.map((item: any) => item.path.head)).toEqual([candidate.path]);
+      const symbol = index ? "beta" : "alpha";
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  decisions: [
+                    {
+                      index: candidateIndex,
+                      verdict: "refuted",
+                      symbol,
+                      input: "Una entrada válida",
+                      actual: "true",
+                      expected: "true",
+                      trace: "La implementación conserva el resultado esperado.",
+                      counterevidence: "La declaración devuelve el valor contractual.",
+                      references: [
+                        {
+                          path: candidate.path,
+                          quote: `export function ${symbol}() { return true; }`,
+                        },
+                      ],
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+  });
+  expect(calls).toBe(2);
+  expect(result.calls).toBe(2);
+  expect(result.assessment.findings).toEqual([]);
+  expect(result.assessment.limitations).toEqual([]);
+});
+test("verification groups retain more than eight recovery requests for bounded later batches", async () => {
+  const paths = ["apps/mobile/src/alpha.ts", "apps/mobile/src/beta.ts"];
+  const findings = paths.map((candidatePath, index) => ({
+    ...candidates[0],
+    path: candidatePath,
+    line: 1,
+    issue_key: `independent-${index}`,
+  }));
+  const parts = paths.map((candidatePath, index) => ({
+    path: candidatePath,
+    anchors: ["RIGHT:1"],
+    patch: `@@ -0,0 +1 @@\n[RIGHT:1] +export const ${index ? "beta" : "alpha"} = true;`,
+    context: [
+      {
+        path: candidatePath,
+        head: `export function ${index ? "beta" : "alpha"}() { return true; }`,
+        evidenceSelector: { symbols: [index ? "beta" : "alpha"] },
+      },
+    ],
+  }));
+  let groupIndex = 0;
+  const result = await verifyAssessment({
+    assessment: { findings, limitations: [], resolutions: [] },
+    chunk: { parts },
+    sha,
+    apiKey: "fixture",
+    budget: 2,
+    isCurrent: async () => true,
+    fetchImpl: async (_url: string, request: any) => {
+      const payload = JSON.parse(JSON.parse(request.body).messages[1].content);
+      const candidate = payload.candidates[0].finding;
+      const candidateIndex = payload.candidates[0].index;
+      const symbol = candidate.path.endsWith("alpha.ts") ? "alpha" : "beta";
+      const evidenceRequests = Array.from({ length: 5 }, (_, index) => ({
+        path: `apps/mobile/src/${symbol}-${index}.ts`,
+        symbol: `Context${symbol}${index}`,
+        side: "head",
+        reason: `Check ${symbol} dependency ${index}.`,
+      }));
+      groupIndex++;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  decisions: [
+                    {
+                      index: candidateIndex,
+                      verdict: "refuted",
+                      symbol,
+                      input: "Una entrada válida",
+                      actual: "true",
+                      expected: "true",
+                      trace: "La implementación conserva el resultado esperado.",
+                      counterevidence: "La declaración devuelve el valor contractual.",
+                      references: [
+                        {
+                          path: candidate.path,
+                          quote: `export function ${symbol}() { return true; }`,
+                        },
+                      ],
+                    },
+                  ],
+                  evidenceRequests,
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+  });
+  expect(groupIndex).toBe(2);
+  expect(result.assessment.findings).toEqual([]);
+  expect(result.assessment.evidenceRequests).toHaveLength(10);
 });
 test("exhausted verification budget omits findings and leaves coverage incomplete", async () => {
   const result = await verifyAssessment({

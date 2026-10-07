@@ -113,22 +113,10 @@ function publicEvidenceBundle(parts, refs = {}) {
 }
 
 // Kept as a small projection for internal callers that only need part metadata.
-function publicParts(parts) {
-  const seen = new Set();
-  return parts.map(
-    ({ anchors: _anchors, contextKey: _contextKey, cacheGroupId: _cacheGroupId, ...part }) => ({
-      ...part,
-      context: (part.context ?? [])
-        .map(({ forPath: _forPath, relationship: _relationship, ...item }) => item)
-        .filter((item) => {
-          const key = JSON.stringify(item);
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        }),
-    }),
-  );
+function publicParts(parts, refs = {}) {
+  return publicEvidenceBundle(parts, refs).parts;
 }
+
 // Split a recovered block that no longer fits. Keep every patch coordinate and
 // distribute large recovered context across fitting partitions instead of
 // copying the full context into each one.

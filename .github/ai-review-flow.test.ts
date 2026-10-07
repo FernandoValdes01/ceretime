@@ -2694,6 +2694,141 @@ test("a local verification input limit is reported as a reviewer budget incident
   expect(report.findings).toEqual([]);
 });
 
+test("verification recovery drains distinct grouped requests in batches of eight", async () => {
+  const path = "apps/mobile/src/aggregate.ts";
+  const source = Array.from(
+    { length: 12 },
+    (_, index) => `export const value${index + 1} = true;`,
+  ).join("\n");
+  const sourceLines = source.split("\n");
+  const plan = buildPlan(
+    [
+      {
+        filename: path,
+        status: "added",
+        additions: sourceLines.length,
+        deletions: 0,
+        patch: `@@ -0,0 +1,${sourceLines.length} @@\n${sourceLines.map((line) => `+${line}`).join("\n")}`,
+        after: `${source}\n`,
+        context: [
+          {
+            path,
+            head: source,
+          },
+        ],
+      },
+    ],
+    { chunking: { chunkChars: 4000 } },
+    "a".repeat(40),
+  );
+  const findings = [1, 2].map((line, index) => ({
+    path,
+    line,
+    side: "RIGHT",
+    severity: "important",
+    issue_key: `candidate-${index}`,
+    cause: `Candidate ${index} awaits independent evidence`,
+    impact: `Candidate ${index} affects behavior`,
+    fix: `Restore candidate ${index}'s contract`,
+  }));
+  const requests = Array.from({ length: 10 }, (_, index) => ({
+    path: `apps/mobile/src/context-${index}.ts`,
+    forPath: path,
+    symbol: `context${index}`,
+    side: "head",
+    reason: `Verify dependency ${index}.`,
+  }));
+  const recoveryBatchSizes: number[] = [];
+  const recoveredSymbols = new Set<string>();
+  const analyzedCoordinates = new Set<string>();
+  let analysisCalls = 0;
+  let verificationCalls = 0;
+  const report = await reviewPlan({
+    plan,
+    apiKey: "fixture",
+    instructions: "Check independent candidates.",
+    sleep: async () => {},
+    fetchImpl: async (_url: string, options: any) => {
+      analysisCalls++;
+      const body = JSON.parse(options.body);
+      const anchors = [...body.messages[1].content.matchAll(/\[RIGHT:(\d+)\]/g)].map(
+        (match: RegExpMatchArray) => `RIGHT:${match[1]}`,
+      );
+      for (const anchor of anchors) analyzedCoordinates.add(anchor);
+      const currentFindings = findings.filter((finding) =>
+        anchors.includes(`RIGHT:${finding.line}`),
+      );
+      return {
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  findings: currentFindings,
+                  limitations: [],
+                  evidenceRequests: [],
+                  resolutions: [],
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+    verify: async ({ assessment }: any) => {
+      verificationCalls++;
+      return {
+        calls: 0,
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        assessment: {
+          ...assessment,
+          findings: assessment.findings,
+          evidenceRequests: verificationCalls === 1 ? requests : [],
+        },
+      };
+    },
+    recoverContext: async ({ chunk, requests: batch }: any) => {
+      recoveryBatchSizes.push(batch.length);
+      return {
+        chunk: {
+          parts: chunk.parts.map((part: any) => ({
+            ...part,
+            context: [
+              ...part.context,
+              ...batch
+                .filter((request: any) => request.forPath === part.path)
+                .map((request: any, index: number) => {
+                  recoveredSymbols.add(request.symbol);
+                  return {
+                    path: request.path,
+                    head: `export const ${request.symbol} = "${"x".repeat(500)}";`,
+                    headState: "present",
+                    recovered: true,
+                    offset: index * 512,
+                    forPath: part.path,
+                  };
+                }),
+            ],
+          })),
+        },
+        unresolved: [],
+      };
+    },
+  });
+  expect(verificationCalls).toBeGreaterThanOrEqual(1);
+  expect(recoveryBatchSizes).toEqual([8, 2]);
+  expect(recoveredSymbols).toEqual(new Set(requests.map((request) => request.symbol)));
+  expect(analysisCalls).toBeGreaterThan(3);
+  expect(analyzedCoordinates).toEqual(new Set(sourceLines.map((_, index) => `RIGHT:${index + 1}`)));
+  expect(report.findings.map((finding: any) => finding.issue_key).sort()).toEqual([
+    "candidate-0",
+    "candidate-1",
+  ]);
+  expect(report.coverage).toBe("complete");
+});
 
 test("split added-file blocks receive the complete declaration containing their changed lines", () => {
   const sections = Array.from({ length: 20 }, (_, index) => {
