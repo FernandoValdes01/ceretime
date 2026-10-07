@@ -2,6 +2,7 @@ const { recoverEvidence, inferEvidenceRequests } = require("./ai-review-evidence
 const { currentReview, pullNumber } = require("./ai-review-target.cjs");
 const fs = require("node:fs");
 const { memoryIdentity, createMemory } = require("./ai-review-memory.cjs");
+const { gitReader, hash } = require("./ai-review-context.cjs");
 const { reviewPlan } = require("./ai-review-chunks.cjs");
 const { parseSummary } = require("./ai-review-score.cjs");
 
@@ -18,6 +19,7 @@ async function normalizeConfidence({
     fs.readFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-plan.json`, "utf8"),
   );
   if (plan.sha !== env.REVIEW_SHA) throw new Error("Plan de otro SHA.");
+  const { readState } = gitReader(env.GITHUB_WORKSPACE);
   const report = await reviewPlan({
     plan,
     verify,
@@ -35,6 +37,13 @@ async function normalizeConfidence({
       directory: `${env.GITHUB_WORKSPACE}/.git/ai-review-memory`,
       identity: memoryIdentity(plan, env.REVIEW_INSTRUCTIONS),
       apiKey: env.OPENROUTER_API_KEY,
+      readEvidence: ({ path, side }) => {
+        const state = readState(side === "base" ? plan.mergeBase : plan.sha, path);
+        return {
+          status: state.status,
+          hash: state.status === "present" ? hash(state.text) : null,
+        };
+      },
     }),
     instructions: env.REVIEW_INSTRUCTIONS,
     apiKey: env.OPENROUTER_API_KEY,

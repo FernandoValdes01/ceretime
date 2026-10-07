@@ -100,6 +100,28 @@ function evaluateReview({
   };
 }
 
+function packReviewParts(parts, chunkChars) {
+  const partSize = (part) => JSON.stringify({ ...part, anchors: undefined }).length;
+  const bins = [];
+  for (const part of [...parts].sort((a, b) => partSize(b) - partSize(a))) {
+    const size = partSize(part);
+    const available = bins
+      .filter(
+        (bin) =>
+          bin.size + size + 1 <= chunkChars &&
+          !bin.parts.some(
+            (item) => item.path === part.path && (item.followupOnly || part.followupOnly),
+          ),
+      )
+      .sort((a, b) => a.size - b.size)[0];
+    if (available) {
+      available.parts.push(part);
+      available.size += size + 1;
+    } else bins.push({ parts: [part], size: size + 2 });
+  }
+  return bins.map(({ parts: packed }) => ({ parts: packed }));
+}
+
 async function prepareReview({ github, context, core, env = process.env }) {
   const args = { ...context.repo, pull_number: pullNumber(context, env) };
   const { data: pr } = await github.rest.pulls.get(args);
@@ -231,25 +253,10 @@ async function prepareReview({ github, context, core, env = process.env }) {
   }
   // Pack the largest units first, including followups. Unit content remains intact
   // for cache reuse. Overlapping findings from one file need unambiguous units.
-  const partSize = (part) => JSON.stringify({ ...part, anchors: undefined }).length;
-  const bins = [];
-  for (const part of plan.chunks
-    .flatMap((c) => c.parts)
-    .sort((a, b) => partSize(b) - partSize(a))) {
-    const size = partSize(part);
-    const available = bins
-      .filter(
-        (bin) =>
-          bin.size + size + 1 <= plan.limits.chunkChars &&
-          !bin.parts.some((p) => p.path === part.path && (p.followupOnly || part.followupOnly)),
-      )
-      .sort((a, b) => b.size - a.size)[0];
-    if (available) {
-      available.parts.push(part);
-      available.size += size + 1;
-    } else bins.push({ parts: [part], size: size + 2 });
-  }
-  plan.chunks = bins.map(({ parts }) => ({ parts }));
+  plan.chunks = packReviewParts(
+    plan.chunks.flatMap((chunk) => chunk.parts),
+    plan.limits.chunkChars,
+  );
   const budgetIssue = "Presupuesto máximo de bloques agotado.";
   plan.issues = plan.issues.filter((issue) => issue !== budgetIssue);
   if (plan.chunks.length > plan.limits.maxChunks) plan.issues.push(budgetIssue);
@@ -503,6 +510,7 @@ module.exports = {
   parseSummary,
   evaluateReview,
   formatReview,
+  packReviewParts,
   prepareReview,
   publishReview,
   archiveReviewSummaries,

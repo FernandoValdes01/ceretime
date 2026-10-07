@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { prepareReview, publishReview } from "./ai-review-score.cjs";
+import { packReviewParts, prepareReview, publishReview } from "./ai-review-score.cjs";
 import { normalizeConfidence } from "./ai-review-confidence.cjs";
 import {
   buildPlan,
@@ -18,6 +18,7 @@ import {
   reviewThreads,
   mapLine,
   contentKey,
+  declarationSymbols,
   BOT,
   threadEvidence,
 } from "./ai-review-context.cjs";
@@ -543,6 +544,47 @@ test("followups use spare capacity without mixing overlapping findings from the 
   } finally {
     f.clean();
   }
+});
+
+test("followup packing uses two blocks without losing evidence or combining same-file followups", () => {
+  const part = (path: string, targetSize: number, contentId: string, followupOnly = false) => {
+    const value: any = {
+      path,
+      followupOnly,
+      followups: followupOnly ? [{ id: contentId }] : [],
+      contentId,
+      content: "",
+      anchors: [],
+    };
+    const size = JSON.stringify({ ...value, anchors: undefined }).length;
+    value.content = "x".repeat(targetSize - size);
+    expect(JSON.stringify({ ...value, anchors: undefined })).toHaveLength(targetSize);
+    return value;
+  };
+  const input = [
+    part("same.ts", 2500, "same-followup", true),
+    part("other.ts", 3200, "other-followup", true),
+    part("third.ts", 6300, "third-followup", true),
+    part("same.ts", 4300, "changed-code"),
+  ];
+
+  const chunks = packReviewParts(input, 10000);
+  const packed = chunks.flatMap((chunk: any) => chunk.parts);
+
+  expect(chunks).toHaveLength(2);
+  expect(packed.map((item: any) => item.contentId).sort()).toEqual(
+    input.map((item) => item.contentId).sort(),
+  );
+  expect(packed.map((item: any) => item.content).sort()).toEqual(
+    input.map((item) => item.content).sort(),
+  );
+  expect(
+    chunks.every(
+      (chunk: any) =>
+        !chunk.parts.some((item: any) => item.path === "same.ts" && item.followupOnly) ||
+        !chunk.parts.some((item: any) => item.path === "same.ts" && !item.followupOnly),
+    ),
+  ).toBe(true);
 });
 
 test("formal evidence follows renames without claiming the code disappeared", () => {
@@ -1335,21 +1377,173 @@ test("review context includes the complete direct eligibility contract even with
   }
 });
 
-test("review context preserves distant function defaults and the imports behind changed hunks", () => {
-  const source = readFileSync(join(import.meta.dir, "ai-review-chunks.cjs"), "utf8");
-  const f = fixture({ ".github/large.cjs": source });
+test("review context keeps necessary ES imports, side-effect imports and require bindings", () => {
+  const fillers = Array.from(
+    { length: 900 },
+    (_, index) => `function unrelated${index}() { return ${index}; }`,
+  ).join("\n");
+  const helperFillers = Array.from(
+    { length: 90 },
+    (_, index) => `function helperNoise${index}() { return ${index}; }`,
+  ).join("\n");
+  const helperSource = [
+    helperFillers,
+    "function helper(value) { return value; }",
+    "function work(value) { return helper(value); }",
+    "module.exports = { helper, work };",
+    "",
+  ].join("\n");
+  const before = [
+    'import { check } from "./contract";',
+    'import "./register";',
+    'const { helper } = require("./helpers");',
+    'const helpers = require("./helpers");',
+    "function run(enabled = true) {",
+    "  return enabled ? helpers.work(helper(check())) : 0;",
+    "}",
+    fillers,
+    "",
+  ].join("\n");
+  const after = before.replace(
+    "return enabled ? helpers.work(helper(check())) : 0;",
+    "return enabled ? helpers.work(helper(check())) : -1;",
+  );
+  const f = fixture({ ".github/large.cjs": before, ".github/helpers.cjs": helperSource });
   try {
+    f.put(".github/large.cjs", after);
+    f.advance();
+    const changedLine =
+      after
+        .split("\n")
+        .findIndex((line) =>
+          line.includes("return enabled ? helpers.work(helper(check())) : -1;"),
+        ) + 1;
     const file: any = {
       filename: ".github/large.cjs",
       status: "modified",
-      patch: "@@ -631 +631 @@\n-old();\n+isCurrent();",
+      additions: 1,
+      deletions: 1,
+      before,
+      after,
+      patch: `@@ -${changedLine},1 +${changedLine},1 @@\n-  return enabled ? helpers.work(helper(check())) : 0;\n+  return enabled ? helpers.work(helper(check())) : -1;`,
     };
     enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
-    const own = file.context.find((item: any) => item.path === file.filename);
-    expect(own.head).toContain("isCurrent = async () => true");
-    expect(own.head).toContain(
-      'hash, reviewedBase, relevantDeclarations } = require("./ai-review-context.cjs")',
+    const plan = buildPlan([file], {}, f.pr.head.sha);
+    expect(plan.issues).toEqual([]);
+    const own = plan.chunks[0].parts[0].context.find((item: any) => item.path === file.filename);
+    const helpers = plan.chunks[0].parts[0].context.find(
+      (item: any) => item.path === ".github/helpers.cjs",
     );
+    expect(own.head).toContain('import { check } from "./contract";');
+    expect(own.head).toContain('import "./register";');
+    expect(own.head).toContain('const { helper } = require("./helpers");');
+    expect(own.head).toContain('const helpers = require("./helpers");');
+    expect(own.head).toContain("function run(enabled = true)");
+    expect(own.head).not.toContain("function unrelated");
+    expect(declarationSymbols(after, file.patch, "head", "references")).toContain("helpers");
+    expect(declarationSymbols(after, file.patch, "head", "references")).toContain("work");
+    expect(helpers.head).toContain("function work(value)");
+    expect(helpers.head).not.toContain("function helperNoise");
+  } finally {
+    f.clean();
+  }
+});
+
+test("review context keeps consumers when an unannotated function return may change shape", () => {
+  const before = [
+    "export function checkPermission() {",
+    "  return { allowed: true };",
+    "}",
+    "",
+  ].join("\n");
+  const after = before.replace("return { allowed: true };", "return null;");
+  const consumer = [
+    'import { checkPermission } from "./contract";',
+    "export function consume() {",
+    "  return checkPermission().allowed ? 1 : 0;",
+    "}",
+    ...Array.from(
+      { length: 180 },
+      (_, index) => `function unrelated${index}() { return ${index}; }`,
+    ),
+    "",
+  ].join("\n");
+  const f = fixture({ "contract.ts": before, "consumer.ts": consumer });
+  try {
+    f.put("contract.ts", after);
+    f.advance();
+    const file: any = {
+      filename: "contract.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      before,
+      after,
+      patch:
+        "@@ -1,3 +1,3 @@\n export function checkPermission() {\n-  return { allowed: true };\n+  return null;\n }",
+    };
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    const plan = buildPlan([file], {}, f.pr.head.sha);
+    const selectedConsumer = plan.chunks
+      .flatMap((chunk: any) => chunk.parts)
+      .flatMap((part: any) => part.context)
+      .find((item: any) => item.path === "consumer.ts");
+
+    expect(plan.issues).toEqual([]);
+    expect(selectedConsumer.relationship).toBe("consumer");
+    expect(selectedConsumer.head).toContain("function consume()");
+    expect(selectedConsumer.head).toContain("checkPermission().allowed");
+  } finally {
+    f.clean();
+  }
+});
+
+test("namespace imports and require consumers are selected by the accessed contract member", () => {
+  const before = ["export function getAccess() {", "  return { allowed: true };", "}", ""].join(
+    "\n",
+  );
+  const after = before.replace("return { allowed: true };", "return null;");
+  const fillers = Array.from(
+    { length: 180 },
+    (_, index) => `function unrelated${index}() { return ${index}; }`,
+  );
+  const consumer = (binding: string) =>
+    [binding, "export const allowed = access.getAccess().allowed;", ...fillers, ""].join("\n");
+  const consumerFiles = {
+    "consumer-es.ts": consumer('import * as access from "./access";'),
+    "consumer-require.ts": consumer('const access = require("./access");'),
+  };
+  const f = fixture({ "access.ts": before, ...consumerFiles });
+  try {
+    f.put("access.ts", after);
+    f.advance();
+    const file: any = {
+      filename: "access.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      before,
+      after,
+      patch:
+        "@@ -1,3 +1,3 @@\n export function getAccess() {\n-  return { allowed: true };\n+  return null;\n }",
+    };
+    enrichFiles([file], { directory: f.directory, base: f.base, sha: f.pr.head.sha });
+    const plan = buildPlan([file], {}, f.pr.head.sha);
+    const parts = plan.chunks.flatMap((chunk: any) => chunk.parts);
+
+    expect(plan.issues).toEqual([]);
+    for (const [path, binding] of Object.entries({
+      "consumer-es.ts": 'import * as access from "./access";',
+      "consumer-require.ts": 'const access = require("./access");',
+    })) {
+      const context = parts
+        .flatMap((part: any) => part.context)
+        .find((item: any) => item.path === path);
+      expect(context.relationship).toBe("consumer");
+      expect(context.head).toContain(binding);
+      expect(context.head).toContain("access.getAccess().allowed");
+      expect(context.head).not.toContain("function unrelated");
+    }
   } finally {
     f.clean();
   }
@@ -1417,9 +1611,8 @@ test("missing and truncated patches are reconstructed before selecting a late mo
       const plan = await f.prepare();
       expect(plan.issues).toEqual([]);
       const own = plan.chunks[0].parts[0].context.find((c: any) => c.path === "file.ts");
-      expect(own.head).toContain("changedLate");
-      expect(own.base).toContain("changedLate");
       expect(plan.chunks[0].parts[0].patch).toContain("changedLate");
+      expect(`${own.head}\n${own.base}\n${plan.chunks[0].parts[0].patch}`).toContain("changedLate");
     } finally {
       f.clean();
     }

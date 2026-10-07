@@ -7,7 +7,14 @@ const { verifyAssessment, publishable, sealFinding } = require("./ai-review-veri
 const { withoutBold } = require("./ai-review-presentation.cjs");
 
 const { classifyFile, matchesIgnore } = require("./ai-review-selection.cjs");
-const { hash, reviewedBase, relevantDeclarations } = require("./ai-review-context.cjs");
+const {
+  hash,
+  reviewedBase,
+  declarationSymbols,
+  changedContractSymbols,
+  relevantDeclarations,
+  contentKey,
+} = require("./ai-review-context.cjs");
 
 const { ENDPOINT, completionRequest, addUsage, emptyUsage } = require("./ai-review-provider.cjs");
 
@@ -134,33 +141,167 @@ function buildPlan(files, config = {}, sha) {
       0,
       Math.min(24000, limits.chunkChars - metadataSize - largestRecord),
     );
-    const contextReserve =
-      file.after?.length > 12000 && file.context?.some((item) => item.path === file.filename)
-        ? blockContextBudget
-        : 0;
-    const plannedMetadataSize = metadataSize + contextReserve;
-    const contextForAnchors = (anchors) =>
-      (file.context ?? []).map((item) => {
-        if (
-          item.path !== file.filename ||
-          !file.after ||
-          file.after.length <= 12000 ||
-          !anchors.length
-        )
-          return item;
-        const syntheticPatch = anchors
-          .filter((anchor) => anchor.startsWith("RIGHT:"))
-          .map((anchor) => `@@ -1,0 +${anchor.slice("RIGHT:".length)},1 @@`)
+    // The selected context is measured after symbol resolution below. Reserving
+    // a whole-file allowance here splits hunks even when their actual excerpts fit.
+    const plannedMetadataSize = metadataSize;
+    const contextForAnchors = (anchors, maxOwnContextBudget = blockContextBudget) => {
+      const rightPatch = anchors
+        .filter((anchor) => anchor.startsWith("RIGHT:"))
+        .map((anchor) => `@@ -1,0 +${anchor.slice("RIGHT:".length)},1 @@`)
+        .join("\n");
+      const leftPatch = anchors
+        .filter((anchor) => anchor.startsWith("LEFT:"))
+        .map((anchor) => `@@ -${anchor.slice("LEFT:".length)},1 +0,0 @@`)
+        .join("\n");
+      const changedContracts = changedContractSymbols(
+        file.before,
+        file.after,
+        leftPatch,
+        rightPatch,
+      );
+      const dependencySymbols = [
+        ...new Set([
+          ...declarationSymbols(file.after, rightPatch, "head", "references"),
+          ...declarationSymbols(file.before, leftPatch, "base", "references"),
+        ]),
+      ];
+      const contractSet = new Set(changedContracts);
+      const consumerSymbols = [
+        ...new Set(
+          [
+            ...declarationSymbols(file.after, rightPatch, "head", "declared"),
+            ...declarationSymbols(file.before, leftPatch, "base", "declared"),
+          ].filter((symbol) => contractSet.has(symbol)),
+        ),
+      ];
+      const withoutPatchLines = (text, side) => {
+        if (file.status === "added" || !text) return text;
+        const changedLines = new Set(
+          anchors
+            .filter((anchor) => anchor.startsWith(`${side}:`))
+            .map((anchor) => Number(anchor.slice(side.length + 1))),
+        );
+        if (!changedLines.size) return text;
+        return text
+          .split("\n")
+          .filter((line) => {
+            const numbered = line.match(/^(\d+): /);
+            return !numbered || !changedLines.has(Number(numbered[1]));
+          })
           .join("\n");
-        if (!syntheticPatch) return item;
-        const head = relevantDeclarations(file.after, syntheticPatch, "head", blockContextBudget);
+      };
+      return (file.context ?? []).map((item) => {
+        const baseContent = typeof item.base === "string" ? item.base : "";
+        const headContent = typeof item.head === "string" ? item.head : "";
+        if (!anchors.length) return { ...item, base: baseContent, head: headContent };
+        if (
+          item.path === file.filename &&
+          !file.filename.startsWith(".github/workflows/") &&
+          ((file.after?.length ?? 0) > headContent.length ||
+            (file.before?.length ?? 0) > baseContent.length)
+        ) {
+          const selectedHead =
+            rightPatch && file.after?.length > headContent.length
+              ? relevantDeclarations(
+                  file.after,
+                  rightPatch,
+                  "head",
+                  Math.min(
+                    maxOwnContextBudget,
+                    file.after.length > 12000 ? blockContextBudget : headContent.length,
+                  ),
+                  [],
+                  "definitions",
+                  { includeConsumers: changedContracts.length > 0 },
+                )
+              : headContent;
+          const selectedBase =
+            file.before?.length > baseContent.length && leftPatch
+              ? relevantDeclarations(
+                  file.before,
+                  leftPatch,
+                  "base",
+                  baseContent.length,
+                  [],
+                  "definitions",
+                  { includeConsumers: changedContracts.length > 0 },
+                )
+              : baseContent;
+          const head = withoutPatchLines(selectedHead, "RIGHT");
+          const base = withoutPatchLines(selectedBase, "LEFT");
+          return {
+            ...item,
+            base,
+            head,
+            baseComplete: base === file.before,
+            headComplete: head === file.after,
+            selection: "declarations_containing_this_block_and_referenced_declarations",
+          };
+        }
+        if (
+          item.path === file.filename ||
+          !/\.[cm]?[jt]sx?$/.test(item.path) ||
+          file.filename.startsWith(".github/workflows/")
+        )
+          return { ...item, base: baseContent, head: headContent };
+        const sources = file.contextSources;
+        const current = sources?.head?.get(item.path);
+        const original = sources?.base?.get(item.basePath ?? item.path);
+        if (!current && !original) return { ...item, base: baseContent, head: headContent };
+        const symbols =
+          item.relationship === "consumer"
+            ? consumerSymbols
+            : item.relationship === "both"
+              ? [...new Set([...dependencySymbols, ...consumerSymbols])]
+              : dependencySymbols;
+        if (!symbols.length)
+          return {
+            ...item,
+            base: "",
+            head: "",
+            baseComplete: original == null,
+            headComplete: current == null,
+            selection: "no_matching_contract",
+          };
+        const symbolMode =
+          item.relationship === "consumer"
+            ? "consumers"
+            : item.relationship === "both"
+              ? "all"
+              : "definitions";
+        const head =
+          current && current.length > headContent.length
+            ? relevantDeclarations(
+                current,
+                undefined,
+                "head",
+                headContent.length,
+                symbols,
+                symbolMode,
+              )
+            : headContent;
+        const base =
+          original && original.length > baseContent.length
+            ? relevantDeclarations(
+                original,
+                undefined,
+                "base",
+                baseContent.length,
+                symbols,
+                symbolMode,
+              )
+            : baseContent;
+        if (head === headContent && base === baseContent) return { ...item, base, head };
         return {
           ...item,
+          base,
           head,
-          headComplete: head === file.after,
-          selection: "declarations_containing_this_block_and_referenced_declarations",
+          baseComplete: original == null || base === original,
+          headComplete: current == null || head === current,
+          selection: "contracts_matching_changed_symbols",
         };
       });
+    };
     const hunks = [];
     for (const record of records) {
       if (record.header) hunks.push([]);
@@ -175,35 +316,31 @@ function buildPlan(files, config = {}, sha) {
       }
       let unit = [],
         unitSize = 0;
-      for (const record of hunk) {
-        if (recordSize(record) + plannedMetadataSize > limits.chunkChars) {
-          plan.issues.push(`Línea mayor que el presupuesto por bloque: ${file.filename}`);
-          break;
-        }
+      for (const [recordIndex, record] of hunk.entries()) {
         if (
           unitSize + recordSize(record) + plannedMetadataSize > limits.chunkChars &&
-          unit.length
+          unit.some((item) => item.side) &&
+          hunk.slice(recordIndex + 1).some((item) => item.side)
         ) {
-          if (unit.some((item) => item.side)) units.push(unit);
-          unit = [hunk[0], ...hunk.filter((r) => !r.side && !r.header).slice(0, 2)];
-          unitSize = unit.reduce((n, r) => n + recordSize(r), 0);
+          units.push(unit);
+          unit = [hunk[0]];
+          unitSize = recordSize(hunk[0]);
         }
         unit.push(record);
         unitSize += recordSize(record);
       }
-      if (unit.length) units.push(unit);
+      if (unit.length > 1) units.push(unit);
     }
-    for (const unit of units) {
+    const createPart = (unit, ownContextBudget = blockContextBudget) => {
       const patch = unit
         .map((r) => (r.side ? `[${r.side}:${r.line}] ${r.text}` : r.text))
         .join("\n");
       const anchors = unit
         .filter((record) => record.side)
         .map((record) => `${record.side}:${record.line}`);
-      const partContext = contextForAnchors(anchors);
-      const part = {
+      return {
         ...extra,
-        context: partContext,
+        context: contextForAnchors(anchors, ownContextBudget),
         followups: (file.followups ?? [])
           .filter(
             (t) =>
@@ -218,45 +355,92 @@ function buildPlan(files, config = {}, sha) {
         patch,
         anchors: unit.filter((r) => r.side).map((r) => `${r.side}:${r.line}`),
       };
-      const partSize = JSON.stringify({ ...part, anchors: undefined }).length;
-      if (partSize > limits.chunkChars) {
-        plan.issues.push(`Bloque mayor que el presupuesto: ${file.filename}`);
-        continue;
+    };
+    const serializedSize = (part) => JSON.stringify({ ...part, anchors: undefined }).length;
+    const fitContextBudget = (unit) => {
+      const original = createPart(unit);
+      const originalSize = serializedSize(original);
+      if (originalSize <= limits.chunkChars)
+        return { part: original, size: originalSize, contextBudget: blockContextBudget };
+      let lower = 0,
+        upper = blockContextBudget - 1,
+        best = null;
+      for (let attempt = 0; attempt < 16 && lower <= upper; attempt++) {
+        const contextBudget = Math.floor((lower + upper) / 2);
+        const part = createPart(unit, contextBudget);
+        const size = serializedSize(part);
+        if (size <= limits.chunkChars) {
+          best = { part, size, contextBudget };
+          lower = contextBudget + 1;
+        } else upper = contextBudget - 1;
       }
-      for (const thread of part.followups) assignedThreads.add(thread.id);
-      // Hunks in one file share their contract context whenever the combined
-      // payload fits. Keep at most one formal followup in each part.
-      let combined = false;
-      for (const bin of bins) {
-        const previous = bin.parts.find(
-          (p) => p.path === part.path && p.followups.length + part.followups.length <= 1,
-        );
-        if (!previous) continue;
-        const anchors = [...previous.anchors, ...part.anchors];
-        const merged = {
-          ...previous,
-          patch: `${previous.patch}\n${part.patch}`,
-          anchors,
-          context: contextForAnchors(anchors),
-          followups: [...previous.followups, ...part.followups],
-        };
-        const increase =
-          JSON.stringify({ ...merged, anchors: undefined }).length -
-          JSON.stringify({ ...previous, anchors: undefined }).length;
-        if (bin.size + increase > limits.chunkChars) continue;
-        Object.assign(previous, merged);
-        bin.size += increase;
-        combined = true;
-        break;
+      return best ?? { part: original, size: originalSize, contextBudget: blockContextBudget };
+    };
+    const splitToFit = (unit) => {
+      const visit = (candidate) => {
+        const size = serializedSize(createPart(candidate));
+        if (size <= limits.chunkChars)
+          return [{ unit: candidate, contextBudget: blockContextBudget }];
+        const body = candidate.filter((record) => !record.header);
+        const changedIndexes = body.flatMap((record, index) => (record.side ? [index] : []));
+        if (changedIndexes.length <= 1) {
+          const fitted = fitContextBudget(candidate);
+          if (fitted.size <= limits.chunkChars)
+            return [{ unit: candidate, contextBudget: fitted.contextBudget }];
+          plan.issues.push(`Línea mayor que el presupuesto por bloque: ${file.filename}`);
+          return [];
+        }
+        const splitIndex = changedIndexes[Math.floor(changedIndexes.length / 2)];
+        const headers = candidate.filter((record) => record.header);
+        const left = [...headers, ...body.slice(0, splitIndex)];
+        const right = [...headers, ...body.slice(splitIndex)];
+        return [...visit(left), ...visit(right)];
+      };
+      return visit(unit);
+    };
+    for (const unit of units) {
+      for (const split of splitToFit(unit)) {
+        const part = createPart(split.unit, split.contextBudget);
+        const partSize = serializedSize(part);
+        if (partSize > limits.chunkChars) {
+          plan.issues.push(`Bloque mayor que el presupuesto: ${file.filename}`);
+          continue;
+        }
+        for (const thread of part.followups) assignedThreads.add(thread.id);
+        // Hunks in one file share their contract context whenever the combined
+        // payload fits. Keep at most one formal followup in each part.
+        let combined = false;
+        for (const bin of bins) {
+          const previous = bin.parts.find(
+            (p) => p.path === part.path && p.followups.length + part.followups.length <= 1,
+          );
+          if (!previous) continue;
+          const anchors = [...previous.anchors, ...part.anchors];
+          const merged = {
+            ...previous,
+            patch: `${previous.patch}\n${part.patch}`,
+            anchors,
+            context: contextForAnchors(anchors),
+            followups: [...previous.followups, ...part.followups],
+          };
+          const increase =
+            JSON.stringify({ ...merged, anchors: undefined }).length -
+            JSON.stringify({ ...previous, anchors: undefined }).length;
+          if (bin.size + increase > limits.chunkChars) continue;
+          Object.assign(previous, merged);
+          bin.size += increase;
+          combined = true;
+          break;
+        }
+        if (combined) continue;
+        const available = bins
+          .filter((bin) => bin.size + partSize + 1 <= limits.chunkChars)
+          .sort((a, b) => b.size - a.size)[0];
+        if (available) {
+          available.parts.push(part);
+          available.size += partSize + 1;
+        } else bins.push({ parts: [part], size: partSize + 2 });
       }
-      if (combined) continue;
-      const available = bins
-        .filter((bin) => bin.size + partSize + 1 <= limits.chunkChars)
-        .sort((a, b) => b.size - a.size)[0];
-      if (available) {
-        available.parts.push(part);
-        available.size += partSize + 1;
-      } else bins.push({ parts: [part], size: partSize + 2 });
     }
   }
   plan.chunks = bins.map(({ parts }) => ({ parts }));
@@ -589,7 +773,23 @@ async function reviewPlan({
 }) {
   if (!apiKey && plan.chunks.length) throw new Error("Falta el secret del proveedor.");
   const results = [],
-    errors = [];
+    errors = [],
+    cacheGroups = new Map();
+  const hasStableEvidenceDependencies = (part) =>
+    Boolean(
+      part.evidenceDependencies?.length &&
+      part.evidenceDependencies.every((item) => ["present", "absent"].includes(item.status)),
+    );
+  const mergeEvidenceDependencies = (part, dependencies = []) => {
+    part.evidenceDependencies = [
+      ...new Map(
+        [...(part.evidenceDependencies ?? []), ...dependencies].map((item) => [
+          JSON.stringify([item.path, item.side, item.ref, item.status, item.hash, item.forPath]),
+          item,
+        ]),
+      ).values(),
+    ];
+  };
   let calls = 0,
     rateLimitWait = 0,
     nextDelay = 0,
@@ -612,12 +812,19 @@ async function reviewPlan({
           pending.push(part);
           continue;
         }
+        mergeEvidenceDependencies(part, cached.evidenceDependencies);
         if (cached.findings.some((f) => !f.verification))
           throw new Error("Memoria sin verificación.");
         cached.findings = cached.findings.map((f) =>
           sealFinding(f, f.verification.evidence, plan.sha),
         );
-        cachedResults.push(validateAssessment(cached, { parts: [part] }));
+        const cachedAssessment = validateAssessment(cached, { parts: [part] });
+        cachedResults.push(cachedAssessment);
+        const group = cacheGroups.get(part.cacheGroupId);
+        if (group) {
+          mergeEvidenceDependencies(group.originPart, part.evidenceDependencies);
+          group.assessments.push(cachedAssessment);
+        }
         reused++;
       } catch {
         pending.push(part);
@@ -637,7 +844,38 @@ async function reviewPlan({
       limitations: items.flatMap((r) => r.limitations ?? []),
       evidenceRequests: items.flatMap((r) => r.evidenceRequests ?? []),
     });
+    const persistRecoveredCacheGroups = () => {
+      const persist = (id) => {
+        const group = cacheGroups.get(id);
+        if (!group || group.assessments.length !== group.expected) return;
+        const combined = merge(group.assessments);
+        cacheGroups.delete(id);
+        try {
+          if (hasStableEvidenceDependencies(group.originPart) && memory)
+            memory.set(group.originPart, combined);
+        } catch {
+          onProgress("No se pudo guardar la memoria temporal; la evaluación válida se conserva.");
+        }
+        if (!group.parentId) return;
+        const parent = cacheGroups.get(group.parentId);
+        if (!parent) return;
+        mergeEvidenceDependencies(parent.originPart, group.originPart.evidenceDependencies);
+        parent.assessments.push(combined);
+        persist(group.parentId);
+      };
+      for (const id of cacheGroups.keys()) {
+        persist(id);
+      }
+    };
+    const recordCacheAssessment = (id, assessment, part) => {
+      const group = cacheGroups.get(id);
+      if (!group) return;
+      mergeEvidenceDependencies(group.originPart, part.evidenceDependencies);
+      group.assessments.push(assessment);
+      persistRecoveredCacheGroups();
+    };
     if (!pending.length) {
+      persistRecoveredCacheGroups();
       results.push(merge(cachedResults));
       onProgress(
         `Bloque ${index + 1}/${plan.chunks.length} recuperado de memoria de contenido y contexto.`,
@@ -666,16 +904,61 @@ async function reviewPlan({
       recoveryRounds++;
       const batch = requests.slice(0, 8);
       const recovery = await recoverContext({ chunk, requests: batch });
+      for (const [partIndex, recoveredPart] of recovery.chunk.parts.entries()) {
+        const part = pending[partIndex];
+        if (!part) continue;
+        part.evidenceDependencies = [
+          ...new Map(
+            [
+              ...(part.evidenceDependencies ?? []),
+              ...(recoveredPart.evidenceDependencies ?? []),
+            ].map((dependency) => [
+              JSON.stringify([
+                dependency.path,
+                dependency.side,
+                dependency.ref,
+                dependency.status,
+                dependency.hash,
+                dependency.forPath,
+              ]),
+              dependency,
+            ]),
+          ).values(),
+        ];
+      }
       for (const request of requests) outstanding.set(requestKey(request), request);
       for (const request of recovery.unresolved ?? [])
         outstanding.set(requestKey(request), request);
       if (JSON.stringify(publicParts(recovery.chunk.parts)).length > plan.limits.chunkChars) {
+        const origins = recovery.chunk.parts.map((recoveredPart, partIndex) => {
+          const originalPart = pending[partIndex];
+          if (!originalPart) return null;
+          const key = contentKey(originalPart);
+          const parentId = originalPart.cacheGroupId;
+          const id = hash(
+            JSON.stringify([plan.sha, index, partIndex, key, parentId, recoveryRounds]),
+          );
+          recoveredPart.cacheGroupId = id;
+          return { id, originalPart, parentId };
+        });
         const partitions = splitRecoveredChunk(recovery.chunk, plan.limits.chunkChars);
         if (
           partitions &&
           plan.chunks.length - 1 + partitions.length <= plan.limits.maxChunks &&
           calls + partitions.length <= plan.limits.maxCalls
         ) {
+          for (const origin of origins)
+            if (origin)
+              cacheGroups.set(origin.id, {
+                originPart: origin.originalPart,
+                parentId: origin.parentId,
+                expected: 0,
+                assessments: [],
+              });
+          for (const part of partitions.flatMap((partition) => partition.parts)) {
+            const group = cacheGroups.get(part.cacheGroupId);
+            if (group) group.expected++;
+          }
           // Keep cached parts in the first partition so their verified findings
           // and resolutions are merged after restarting this original block.
           partitions[0].parts.unshift(
@@ -916,21 +1199,22 @@ async function reviewPlan({
         if (restart) break;
         try {
           for (const part of pending) {
-            if (
-              !assessment.limitations.length &&
-              !assessment.evidenceRequests?.length &&
-              !recoveryRounds
-            )
-              memory?.set(part, {
-                findings: assessment.findings.filter(
-                  (f) =>
-                    f.path === part.path &&
-                    (f.scope === "pull_request" || part.anchors.includes(`${f.side}:${f.line}`)),
-                ),
-                resolutions: assessment.resolutions.filter((r) =>
-                  part.followups?.some((t) => t.id === String(r.id)),
-                ),
-              });
+            const complete = !assessment.limitations.length && !assessment.evidenceRequests?.length;
+            const partAssessment = {
+              findings: assessment.findings.filter(
+                (f) =>
+                  f.path === part.path &&
+                  (f.scope === "pull_request" || part.anchors.includes(`${f.side}:${f.line}`)),
+              ),
+              resolutions: assessment.resolutions.filter((r) =>
+                part.followups?.some((t) => t.id === String(r.id)),
+              ),
+            };
+            if (complete && (!recoveryRounds || hasStableEvidenceDependencies(part)) && memory)
+              memory.set(part, partAssessment);
+            const group = cacheGroups.get(part.cacheGroupId);
+            if (!complete || !group) continue;
+            recordCacheAssessment(part.cacheGroupId, partAssessment, part);
           }
         } catch {
           onProgress("No se pudo guardar la memoria temporal; la evaluación válida se conserva.");

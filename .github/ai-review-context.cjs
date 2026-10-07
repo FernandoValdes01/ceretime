@@ -8,8 +8,7 @@ const ts = require("node:module").createRequire(path.join(__dirname, "../apps/we
   "typescript",
 );
 
-// Parse declarations instead of guessing body boundaries from nearby lines.
-function relevantDeclarations(text, patch, side, budget) {
+function declarationAnalysis(text, patch, side) {
   const source = ts.createSourceFile(
     "context.tsx",
     text,
@@ -19,6 +18,7 @@ function relevantDeclarations(text, patch, side, budget) {
   );
   const declarations = source.statements.filter(
     (node) =>
+      ts.isImportDeclaration(node) ||
       ts.isExpressionStatement(node) ||
       ts.isFunctionDeclaration(node) ||
       ts.isVariableStatement(node) ||
@@ -42,34 +42,380 @@ function relevantDeclarations(text, patch, side, budget) {
       : node.name
         ? [node.name.text]
         : [];
+  const references = (node) => {
+    const result = new Set();
+    const visit = (child) => {
+      if (ts.isIdentifier(child)) {
+        const parent = child.parent;
+        const binding =
+          parent.name === child &&
+          (ts.isVariableDeclaration(parent) ||
+            ts.isFunctionDeclaration(parent) ||
+            ts.isClassDeclaration(parent) ||
+            ts.isInterfaceDeclaration(parent) ||
+            ts.isTypeAliasDeclaration(parent) ||
+            ts.isEnumDeclaration(parent) ||
+            ts.isParameter(parent) ||
+            ts.isTypeParameterDeclaration(parent) ||
+            ts.isBindingElement(parent));
+        const property =
+          (ts.isPropertyAccessExpression(parent) ||
+            ts.isPropertyAssignment(parent) ||
+            ts.isPropertyDeclaration(parent) ||
+            ts.isPropertySignature(parent) ||
+            ts.isMethodDeclaration(parent)) &&
+          parent.name === child;
+        if (!binding && !property) result.add(child.text);
+      }
+      ts.forEachChild(child, visit);
+    };
+    visit(node);
+    return result;
+  };
   const ranges = [...(patch ?? "").matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)].map(
     (m) => {
       const start = Number(m[side === "base" ? 1 : 3]) - 1;
       return [start, start + Math.max(1, Number(m[side === "base" ? 2 : 4] ?? 1))];
     },
   );
-  const selected = declarations.filter(
-    (node) =>
-      !patch ||
-      ranges.some(
-        ([start, end]) =>
-          source.getLineAndCharacterOfPosition(node.getStart(source)).line < end &&
-          source.getLineAndCharacterOfPosition(node.end).line >= start,
-      ),
-  );
-  const required = new Set(selected.flatMap((node) => [...names(node)]));
-  for (let depth = 0; depth < 3; depth++)
-    for (const node of declarations)
-      if (!selected.includes(node) && declared(node).some((name) => required.has(name))) {
-        selected.push(node);
-        for (const name of names(node)) required.add(name);
+  const selected = ranges.length
+    ? declarations.filter((node) =>
+        ranges.some(
+          ([start, end]) =>
+            source.getLineAndCharacterOfPosition(node.getStart(source)).line < end &&
+            source.getLineAndCharacterOfPosition(node.end).line >= start,
+        ),
+      )
+    : [];
+  return { source, declarations, names, declared, references, ranges, selected };
+}
+
+function expandImportedSymbols(source, symbols, importedOnly = false) {
+  const references = new Set(symbols);
+  const result = new Set(importedOnly ? [] : symbols);
+  const bindings = [];
+  for (const statement of source.statements) {
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const clause = statement.importClause;
+      if (!clause) continue;
+      if (clause.name) bindings.push([clause.name.text, "default"]);
+      if (clause.namedBindings && ts.isNamedImports(clause.namedBindings))
+        for (const element of clause.namedBindings.elements)
+          bindings.push([element.name.text, element.propertyName?.text ?? element.name.text]);
+      if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings))
+        bindings.push([clause.namedBindings.name.text, clause.namedBindings.name.text]);
+      continue;
+    }
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (
+        !declaration.initializer ||
+        !ts.isCallExpression(declaration.initializer) ||
+        !ts.isIdentifier(declaration.initializer.expression) ||
+        declaration.initializer.expression.text !== "require"
+      )
+        continue;
+      if (ts.isObjectBindingPattern(declaration.name)) {
+        for (const element of declaration.name.elements)
+          if (ts.isIdentifier(element.name))
+            bindings.push([
+              element.name.text,
+              element.propertyName && ts.isIdentifier(element.propertyName)
+                ? element.propertyName.text
+                : element.name.text,
+            ]);
+      } else if (ts.isIdentifier(declaration.name)) {
+        bindings.push([declaration.name.text, declaration.name.text]);
       }
-  const imports = source.statements.filter(
-    (node) =>
-      ts.isImportDeclaration(node) ||
-      (ts.isVariableStatement(node) && /require\(["']/.test(node.getText(source))),
+    }
+  }
+  for (const [local, imported] of bindings)
+    if (references.has(local) || references.has(imported)) {
+      result.add(local);
+      result.add(imported);
+    }
+  return result;
+}
+
+function namespaceBindings(source) {
+  const namespaces = new Set();
+  for (const statement of source.statements) {
+    if (ts.isImportDeclaration(statement)) {
+      if (
+        statement.importClause?.namedBindings &&
+        ts.isNamespaceImport(statement.importClause.namedBindings)
+      )
+        namespaces.add(statement.importClause.namedBindings.name.text);
+      continue;
+    }
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations)
+      if (
+        ts.isIdentifier(declaration.name) &&
+        declaration.initializer &&
+        ts.isCallExpression(declaration.initializer) &&
+        ts.isIdentifier(declaration.initializer.expression) &&
+        declaration.initializer.expression.text === "require" &&
+        ts.isStringLiteral(declaration.initializer.arguments[0])
+      )
+        namespaces.add(declaration.name.text);
+  }
+  return namespaces;
+}
+
+function namespaceMembers(source, selected, namespaces = namespaceBindings(source)) {
+  const members = new Set();
+  for (const declaration of selected) {
+    const visit = (node) => {
+      if (ts.isPropertyAccessExpression(node)) {
+        let root = node.expression;
+        while (ts.isPropertyAccessExpression(root)) root = root.expression;
+        if (ts.isIdentifier(root) && namespaces.has(root.text)) {
+          let access = node;
+          while (ts.isPropertyAccessExpression(access)) {
+            members.add(access.name.text);
+            access = access.expression;
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(declaration);
+  }
+  return members;
+}
+
+function declarationSymbols(text, patch, side, mode = "all") {
+  if (!text) return [];
+  const { source, selected, declared, references } = declarationAnalysis(text, patch, side);
+  const symbols = selected.flatMap((node) => [
+    ...(mode === "all" || mode === "declared" ? declared(node) : []),
+    ...(mode === "all" || mode === "references" ? references(node) : []),
+  ]);
+  const members = mode === "all" || mode === "references" ? namespaceMembers(source, selected) : [];
+  return [
+    ...new Set([...expandImportedSymbols(source, symbols, mode === "references"), ...members]),
+  ];
+}
+
+function publicContracts(text, patch, side) {
+  if (!text) return new Map();
+  const { source, selected, declared } = declarationAnalysis(text, patch, side);
+  const exported = new Map();
+  const addExport = (local, name = local) => {
+    const names = exported.get(local) ?? new Set();
+    names.add(name);
+    exported.set(local, names);
+  };
+  for (const statement of source.statements) {
+    if (
+      ts.isExpressionStatement(statement) &&
+      ts.isBinaryExpression(statement.expression) &&
+      statement.expression.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
+      const { left, right } = statement.expression;
+      const moduleExports =
+        ts.isPropertyAccessExpression(left) &&
+        ts.isIdentifier(left.expression) &&
+        left.expression.text === "module" &&
+        left.name.text === "exports";
+      const exportsMember =
+        ts.isPropertyAccessExpression(left) &&
+        ts.isIdentifier(left.expression) &&
+        left.expression.text === "exports";
+      if (moduleExports && ts.isObjectLiteralExpression(right))
+        for (const property of right.properties) {
+          if (ts.isShorthandPropertyAssignment(property)) addExport(property.name.text);
+          else if (ts.isPropertyAssignment(property) && ts.isIdentifier(property.initializer))
+            addExport(
+              property.initializer.text,
+              property.name.getText(source).replaceAll(/["']/g, ""),
+            );
+        }
+      if (exportsMember && ts.isIdentifier(right)) addExport(right.text, left.name.text);
+    }
+  }
+  const contract = (node) => {
+    const modifiers = node.modifiers?.map((modifier) => modifier.kind) ?? [];
+    const parameters = (items) =>
+      [...items].map(
+        (parameter) =>
+          `${parameter.dotDotDotToken ? "..." : ""}${parameter.name.getText(source)}${parameter.questionToken ? "?" : ""}:${parameter.type?.getText(source) ?? ""}${parameter.initializer ? `=${parameter.initializer.getText(source)}` : ""}`,
+      );
+    const callable = (node) =>
+      JSON.stringify({
+        typeParameters: node.typeParameters?.map((item) => item.getText(source)) ?? [],
+        parameters: parameters(node.parameters),
+        returnType: node.type?.getText(source) ?? "",
+      });
+    if (ts.isFunctionDeclaration(node))
+      return JSON.stringify([
+        modifiers,
+        node.name?.text,
+        callable(node),
+        node.type || !node.body ? null : node.body.getText(source),
+      ]);
+    if (ts.isVariableStatement(node))
+      return JSON.stringify([
+        modifiers,
+        node.declarationList.declarations.map((declaration) => {
+          const initializer = declaration.initializer;
+          const isCallable =
+            initializer &&
+            (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer));
+          return [
+            declaration.name.getText(source),
+            declaration.type?.getText(source) ?? "",
+            isCallable
+              ? callable(initializer) +
+                (initializer.type ? "" : `:${initializer.body.getText(source)}`)
+              : (initializer?.getText(source) ?? ""),
+          ];
+        }),
+      ]);
+    if (
+      ts.isTypeAliasDeclaration(node) ||
+      ts.isInterfaceDeclaration(node) ||
+      ts.isClassDeclaration(node) ||
+      ts.isEnumDeclaration(node)
+    )
+      return node.getText(source);
+    return node.getText(source);
+  };
+  const uncertainReturn = (node) => {
+    if (ts.isFunctionDeclaration(node)) return !node.type;
+    if (!ts.isVariableStatement(node)) return false;
+    return node.declarationList.declarations.some((declaration) => {
+      const initializer = declaration.initializer;
+      return (
+        initializer &&
+        (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) &&
+        !declaration.type &&
+        !initializer.type
+      );
+    });
+  };
+  const result = new Map();
+  for (const node of selected) {
+    const isEsExport = (node.modifiers ?? []).some(
+      (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+    );
+    for (const local of declared(node)) {
+      if (!isEsExport && !exported.has(local)) continue;
+      result.set(local, {
+        signature: contract(node),
+        uncertain: uncertainReturn(node),
+        names: [...(exported.get(local) ?? [local])],
+      });
+    }
+  }
+  return result;
+}
+
+function changedContractSymbols(before, after, basePatch, headPatch) {
+  const base = publicContracts(before, basePatch, "base");
+  const head = publicContracts(after, headPatch, "head");
+  const changed = new Set();
+  for (const local of new Set([...base.keys(), ...head.keys()])) {
+    const before = base.get(local),
+      current = head.get(local);
+    if (!before?.uncertain && !current?.uncertain && before?.signature === current?.signature)
+      continue;
+    changed.add(local);
+    for (const name of [...(before?.names ?? []), ...(current?.names ?? [])]) changed.add(name);
+  }
+  return [...changed];
+}
+
+// Select the changed declarations, their local helpers, and direct consumers.
+function relevantDeclarations(
+  text,
+  patch,
+  side,
+  budget,
+  symbols = [],
+  symbolMode = "definitions",
+  { includeConsumers = true } = {},
+) {
+  if (!text) return "";
+  const {
+    source,
+    declarations,
+    names,
+    declared,
+    references,
+    selected: changed,
+  } = declarationAnalysis(text, patch, side);
+  const requested = expandImportedSymbols(source, symbols);
+  const namespaces =
+    symbolMode === "consumers" || symbolMode === "all" ? namespaceBindings(source) : null;
+  const primary = changed.length
+    ? changed
+    : requested.size
+      ? declarations.filter((node) => {
+          const nodeReferences = references(node);
+          const members = namespaces ? namespaceMembers(source, [node], namespaces) : [];
+          return symbolMode === "consumers"
+            ? [...nodeReferences, ...members].some((name) => requested.has(name))
+            : symbolMode === "all"
+              ? [...declared(node), ...nodeReferences, ...members].some((name) =>
+                  requested.has(name),
+                )
+              : [...declared(node)].some((name) => requested.has(name));
+        })
+      : declarations;
+  if (requested.size && !primary.length) return "";
+  const selected = new Set(primary);
+  const addHelpers = (seeds, destination) => {
+    let needed = new Set(seeds.flatMap((node) => [...references(node)]));
+    while (needed.size) {
+      const found = declarations.filter(
+        (node) => !selected.has(node) && declared(node).some((name) => needed.has(name)),
+      );
+      if (!found.length) break;
+      for (const node of found) {
+        selected.add(node);
+        destination.push(node);
+        for (const name of declared(node)) needed.delete(name);
+      }
+      needed = new Set([...needed, ...found.flatMap((node) => [...references(node)])]);
+    }
+  };
+  const helpers = [];
+  addHelpers(primary, helpers);
+  const contractNames = new Set(primary.flatMap((node) => declared(node)));
+  const consumers =
+    changed.length && includeConsumers
+      ? declarations.filter(
+          (node) =>
+            !selected.has(node) && [...references(node)].some((name) => contractNames.has(name)),
+        )
+      : [];
+  for (const node of consumers) selected.add(node);
+  const consumerHelpers = [];
+  addHelpers(consumers, consumerHelpers);
+  const ordered = [...new Set([...primary, ...helpers, ...consumers, ...consumerHelpers])];
+  const neededImports = new Set(
+    ordered.flatMap((node) => [...declared(node), ...references(node)]),
   );
-  const snippets = [...new Set([...imports, ...selected])].map((node) => {
+  const imports = source.statements.filter((node) => {
+    if (ts.isExpressionStatement(node) && /\brequire\s*\(/.test(node.getText(source))) return true;
+    if (
+      ts.isVariableStatement(node) &&
+      /\brequire\s*\(/.test(node.getText(source)) &&
+      [...names(node)].some((name) => neededImports.has(name))
+    )
+      return true;
+    if (!ts.isImportDeclaration(node)) return false;
+    const clause = node.importClause;
+    const sideEffectOnly =
+      !clause ||
+      (!clause.name &&
+        (!clause.namedBindings ||
+          (ts.isNamedImports(clause.namedBindings) && clause.namedBindings.elements.length === 0)));
+    return sideEffectOnly || [...names(node)].some((name) => neededImports.has(name));
+  });
+  const snippets = [...new Set([...imports, ...ordered])].map((node) => {
     const start = source.getLineAndCharacterOfPosition(node.getStart(source)).line;
     return node
       .getText(source)
@@ -349,11 +695,11 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       [...new Set([...imports(p, sources.get(p)), ...imports(p, baseSources.get(p))])],
     ]),
   );
-  const declarations = (text, budget, workflow, patch, side) => {
+  const declarations = (text, budget, workflow, patch, side, symbols) => {
     if (!text) return "";
     if (text.length <= budget) return text;
     if (workflow) return clip(text, budget);
-    return relevantDeclarations(text, patch, side, budget);
+    return relevantDeclarations(text, patch, side, budget, symbols);
   };
   const environment = (filename) => {
     const app = filename.match(/^(apps\/[^/]+)/)?.[1];
@@ -409,6 +755,8 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
     const consumers = paths.filter((p) =>
       graph.get(p)?.some((target) => target === file.filename || target === file.previous_filename),
     );
+    const directDependencies = new Set(graph.get(file.filename) ?? []);
+    const consumerPaths = new Set(consumers);
     const direct = new Set([...consumers, ...(graph.get(file.filename) ?? [])]);
     const related = [...dependencies]
       .filter((p) => p !== file.filename)
@@ -445,6 +793,15 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
                 ? 2400
                 : 600;
         const ownPatch = p === file.filename ? file.patch : undefined;
+        const relationship = own
+          ? "own"
+          : directDependencies.has(p) && consumerPaths.has(p)
+            ? "both"
+            : directDependencies.has(p)
+              ? "dependency"
+              : consumerPaths.has(p)
+                ? "consumer"
+                : "related";
         const baseText = declarations(
           original,
           own ? 1800 : 600,
@@ -458,6 +815,7 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
             : declarations(current, budget, p.startsWith(".github/workflows/"), ownPatch, "head");
         return {
           path: p,
+          relationship,
           basePath,
           baseState:
             before.status === "absent" && p === file.filename && file.status === "added"
@@ -479,6 +837,10 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
     file.followups = threads.filter(
       (thread) => thread.path === file.filename || thread.path === file.previous_filename,
     );
+    Object.defineProperty(file, "contextSources", {
+      value: { head: sources, base: baseSources },
+      configurable: true,
+    });
   }
   const followups = threads.map((thread) => {
     let ref = thread.sha,
@@ -602,6 +964,8 @@ module.exports = {
   reviewedBase,
   gitReader,
   enrichFiles,
+  declarationSymbols,
+  changedContractSymbols,
   relevantDeclarations,
   contentKey,
 };

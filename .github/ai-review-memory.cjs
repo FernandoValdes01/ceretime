@@ -4,12 +4,13 @@ const crypto = require("node:crypto");
 const { MODEL } = require("./ai-review-presentation.cjs");
 const { contentKey } = require("./ai-review-context.cjs");
 const TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_EVIDENCE_DEPENDENCIES = 32;
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 function memoryIdentity(plan, instructions) {
   return hash(
     JSON.stringify({
-      version: 2,
+      version: 3,
       provider: "openrouter",
       model: MODEL,
       base: plan.base,
@@ -27,6 +28,7 @@ function memoryIdentity(plan, instructions) {
           "verification",
           "evidence",
           "payload",
+          "confidence",
         ]
           .map((name) => fs.readFileSync(path.join(__dirname, `ai-review-${name}.cjs`), "utf8"))
           .join("\n"),
@@ -35,7 +37,7 @@ function memoryIdentity(plan, instructions) {
   );
 }
 
-function createMemory({ directory, identity, apiKey, now = Date.now }) {
+function createMemory({ directory, identity, apiKey, now = Date.now, readEvidence }) {
   const file = (part) => path.join(directory, `${contentKey(part)}.json`);
   const signature = (payload) =>
     crypto.createHmac("sha256", apiKey).update(JSON.stringify(payload)).digest("hex");
@@ -62,6 +64,29 @@ function createMemory({ directory, identity, apiKey, now = Date.now }) {
           )
         )
           return null;
+        const evidence = payload.evidenceDependencies ?? [];
+        if (
+          !Array.isArray(evidence) ||
+          evidence.length > MAX_EVIDENCE_DEPENDENCIES ||
+          evidence.some(
+            (item) =>
+              !item ||
+              typeof item.path !== "string" ||
+              !["base", "head"].includes(item.side) ||
+              typeof item.ref !== "string" ||
+              !/^[a-f0-9]{40}$/.test(item.ref) ||
+              !["present", "absent"].includes(item.status) ||
+              (item.status === "present"
+                ? !/^[a-f0-9]{64}$/.test(item.hash ?? "")
+                : item.hash !== null),
+          ) ||
+          (evidence.length > 0 && typeof readEvidence !== "function")
+        )
+          return null;
+        for (const item of evidence) {
+          const current = readEvidence(item);
+          if (!current || current.status !== item.status || current.hash !== item.hash) return null;
+        }
         const assessment = payload.assessment;
         const findings = assessment.findings.map(({ anchorIndex, ...finding }) => {
           if (finding.scope === "pull_request") return finding;
@@ -70,7 +95,7 @@ function createMemory({ directory, identity, apiKey, now = Date.now }) {
           const [side, line] = anchor.split(":");
           return { ...finding, side, line: Number(line) };
         });
-        return { ...assessment, findings };
+        return { ...assessment, findings, evidenceDependencies: evidence };
       } catch {
         return null;
       }
@@ -81,6 +106,21 @@ function createMemory({ directory, identity, apiKey, now = Date.now }) {
         identity,
         chunk: contentKey(part),
         createdAt: now(),
+        evidenceDependencies: [
+          ...new Map(
+            (part.evidenceDependencies ?? []).map((item) => [
+              JSON.stringify([
+                item.path,
+                item.side,
+                item.ref,
+                item.status,
+                item.hash,
+                item.forPath,
+              ]),
+              item,
+            ]),
+          ).values(),
+        ],
         assessment: {
           ...assessment,
           findings: assessment.findings.map(({ side, line, ...finding }) => {

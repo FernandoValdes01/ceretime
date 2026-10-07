@@ -46,10 +46,21 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
   const { readState } = gitReader(directory);
   let recoveredChars = 0;
   const recovered = [],
+    dependencies = [],
     unresolved = [],
     fulfilled = [];
   for (const request of evidenceRequests(requests)) {
-    const state = readState(request.side === "base" ? base : sha, request.path);
+    const ref = request.side === "base" ? base : sha;
+    const state = readState(ref, request.path);
+    const dependency = {
+      path: request.path,
+      side: request.side,
+      ref,
+      status: state.status,
+      hash: state.status === "present" ? hash(state.text) : null,
+      ...(request.forPath ? { forPath: request.forPath } : {}),
+    };
+    dependencies.push(dependency);
     if (state.status !== "present") {
       unresolved.push({ ...request, availability: state.status, detail: state.reason });
       continue;
@@ -151,6 +162,20 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
   }
   const parts = chunk.parts.map((part) => {
     const context = structuredClone(part.context ?? []);
+    const evidenceDependencies = [...(part.evidenceDependencies ?? [])];
+    for (const dependency of dependencies) {
+      const relatedPaths = new Set([
+        part.path,
+        part.change?.oldPath,
+        part.previousPath,
+        ...context.map((entry) => entry.path),
+      ]);
+      const requestPart =
+        dependency.forPath ?? (chunk.parts.length === 1 ? chunk.parts[0].path : undefined);
+      if (requestPart && requestPart !== part.path) continue;
+      if (!requestPart && !relatedPaths.has(dependency.path)) continue;
+      evidenceDependencies.push(dependency);
+    }
     for (const item of recovered) {
       const relatedPaths = new Set([
         part.path,
@@ -187,6 +212,14 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
           [...(part.evidenceRecovery ?? []), ...fulfilled, ...unresolved].map((request) => [
             requestKey(request),
             request,
+          ]),
+        ).values(),
+      ],
+      evidenceDependencies: [
+        ...new Map(
+          evidenceDependencies.map((item) => [
+            JSON.stringify([item.path, item.side, item.ref, item.status, item.hash, item.forPath]),
+            item,
           ]),
         ).values(),
       ],
