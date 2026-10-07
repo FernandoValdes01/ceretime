@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
@@ -10,6 +18,7 @@ import type {
   OpenRequestsPage,
   RequestDetail,
 } from "./professional-requests-data.ts";
+import { usePagedItems } from "./paged-requests.ts";
 
 /**
  * Pruebas de bandeja y detalle del Profesional (TI2-91).
@@ -238,6 +247,27 @@ describe("bandeja del Profesional (TI2-91)", () => {
     await waitFor(() => expect(screen.getAllByText("Recibida")).toHaveLength(2));
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
   });
+
+  test("isDone se sincroniza aunque filas y estados no cambien", () => {
+    const fila = { _id: "req-9", status: "under_review", createdAt: 1700000000000 };
+    const sinMasPaginas = { page: [fila], isDone: true, continueCursor: "c1" };
+    // Mismos IDs y estados, pero isDone pasa a false (hay página siguiente).
+    const conMasPaginas = { page: [{ ...fila }], isDone: false, continueCursor: "c1" };
+
+    const { result, rerender } = renderHook(
+      ({ page }: { page: typeof sinMasPaginas | undefined }) => usePagedItems(() => page),
+      { initialProps: { page: sinMasPaginas as typeof sinMasPaginas | undefined } },
+    );
+
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.done).toBe(true);
+
+    // Equivale al push reactivo de Convex con mismos datos e isDone distinto.
+    rerender({ page: conMasPaginas });
+
+    expect(result.current.items).toHaveLength(1);
+    expect(result.current.done).toBe(false);
+  });
 });
 
 describe("detalle del Profesional (TI2-91)", () => {
@@ -271,6 +301,29 @@ describe("detalle del Profesional (TI2-91)", () => {
     ).toBeDefined();
     expect(screen.queryByText("Necesidad ficticia de acceso")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Detalle de la solicitud" })).toBeDefined();
+  });
+
+  test("navegar de detalle denegado a uno válido lo muestra sin reintento", async () => {
+    comoProfesional();
+    detailThrows = new Error("No autorizado");
+    const { router } = renderAt("/profesional/solicitudes/req-ajena");
+
+    expect(
+      await screen.findByText("No pudimos cargar el detalle de la solicitud.", { exact: false }),
+    ).toBeDefined();
+
+    // Navega dentro del mismo router: el límite debe reiniciarse con el requestId.
+    detailThrows = null;
+    mockedDetail = DETALLE;
+    await act(async () => {
+      router.history.push("/profesional/solicitudes/req-9");
+    });
+
+    expect(await screen.findByText("En revisión")).toBeDefined();
+    expect(screen.getByText("Necesidad ficticia de acceso")).toBeDefined();
+    expect(
+      screen.queryByText("No pudimos cargar el detalle de la solicitud.", { exact: false }),
+    ).toBeNull();
   });
 });
 
