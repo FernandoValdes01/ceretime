@@ -84,6 +84,11 @@ export function AccessibilityPreferencesProvider({
       setSystemSettings((current) => ({ ...current, reduceMotion, highContrast }));
     }
 
+    function updateHighContrast(highContrast: boolean) {
+      queryVersion += 1;
+      if (active) setSystemSettings((current) => ({ ...current, highContrast }));
+    }
+
     const motionSubscription = AccessibilityInfo.addEventListener(
       "reduceMotionChanged",
       (reduceMotion) => {
@@ -91,6 +96,12 @@ export function AccessibilityPreferencesProvider({
         if (active) setSystemSettings((current) => ({ ...current, reduceMotion }));
       },
     );
+    const contrastSubscription =
+      Platform.OS === "android"
+        ? AccessibilityInfo.addEventListener("highTextContrastChanged", updateHighContrast)
+        : Platform.OS === "ios"
+          ? AccessibilityInfo.addEventListener("darkerSystemColorsChanged", updateHighContrast)
+          : null;
     const appStateSubscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void refreshSystemSettings();
     });
@@ -100,6 +111,7 @@ export function AccessibilityPreferencesProvider({
       active = false;
       queryVersion += 1;
       motionSubscription.remove();
+      contrastSubscription?.remove();
       appStateSubscription.remove();
     };
   }, []);

@@ -48,7 +48,9 @@ describe("preferencias de accesibilidad del sistema", () => {
 
   test("actualiza movimiento en vivo y retira la suscripción al desmontar", async () => {
     let onMotionChanged: ((enabled: boolean) => void) | undefined;
+    let onContrastChanged: ((enabled: boolean) => void) | undefined;
     const removeMotionListener = jest.fn();
+    const removeContrastListener = jest.fn();
     const removeAppStateListener = jest.fn();
     jest.spyOn(AccessibilityInfo, "isReduceMotionEnabled").mockResolvedValue(false);
     jest.spyOn(AccessibilityInfo, "isDarkerSystemColorsEnabled").mockResolvedValue(false);
@@ -56,8 +58,13 @@ describe("preferencias de accesibilidad del sistema", () => {
       (eventName, handler) => {
         if (eventName === "reduceMotionChanged") {
           onMotionChanged = handler as unknown as (enabled: boolean) => void;
+          return { remove: removeMotionListener };
         }
-        return { remove: removeMotionListener };
+        if (eventName === "highTextContrastChanged" || eventName === "darkerSystemColorsChanged") {
+          onContrastChanged = handler as unknown as (enabled: boolean) => void;
+          return { remove: removeContrastListener };
+        }
+        return { remove: jest.fn() };
       },
     );
     jest.spyOn(AppState, "addEventListener").mockReturnValue({ remove: removeAppStateListener });
@@ -68,6 +75,11 @@ describe("preferencias de accesibilidad del sistema", () => {
       </AccessibilityPreferencesProvider>,
     );
     expect(await screen.findByText("movimiento normal")).toBeOnTheScreen();
+    expect(screen.getByText("contraste normal")).toBeOnTheScreen();
+
+    act(() => onContrastChanged?.(true));
+    expect(screen.getByText("alto contraste")).toBeOnTheScreen();
+    expect(effectiveHighContrast).toBe(true);
 
     act(() => onMotionChanged?.(true));
     expect(screen.getByText("movimiento reducido")).toBeOnTheScreen();
@@ -75,6 +87,7 @@ describe("preferencias de accesibilidad del sistema", () => {
 
     view.unmount();
     expect(removeMotionListener).toHaveBeenCalledTimes(1);
+    expect(removeContrastListener).toHaveBeenCalledTimes(1);
     expect(removeAppStateListener).toHaveBeenCalledTimes(1);
   });
 
