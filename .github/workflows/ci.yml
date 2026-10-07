@@ -2,16 +2,19 @@ name: CI
 
 on:
   pull_request:
-    branches:
-      - main
     types:
       - opened
       - reopened
       - synchronize
       - ready_for_review
+      - edited
   push:
     branches:
       - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}-${{ github.event.action == 'edited' && !github.event.changes.base && github.run_id || 'validation' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -117,7 +120,9 @@ jobs:
     name: Desplegar Web Preview
     if: >-
       github.event_name == 'pull_request' &&
-      (github.event.action == 'opened' || github.event.action == 'synchronize') &&
+      (github.event.action == 'opened' || github.event.action == 'synchronize' ||
+       github.event.action == 'reopened' || github.event.action == 'ready_for_review' ||
+       (github.event.action == 'edited' && github.event.changes.base)) &&
       github.event.pull_request.head.repo.full_name == github.repository
     needs:
       - lint-and-format
@@ -170,6 +175,8 @@ jobs:
         env:
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PREVIEW_BUILD_SHA: ${{ steps.checkout-sha.outputs.sha }}
         with:
           script: |
@@ -177,9 +184,21 @@ jobs:
             const body = `${marker}\nPreview Web: ${process.env.PREVIEW_URL}\n\nCommit de la PR: ${process.env.PR_HEAD_SHA}\nCommit construido: ${process.env.PREVIEW_BUILD_SHA}`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: issue_number });
+            if (pr.state !== 'open' || pr.head.sha !== process.env.PR_HEAD_SHA ||
+                pr.base.sha !== process.env.PR_BASE_SHA || pr.base.ref !== process.env.PR_BASE_REF) {
+              core.info('Preview obsoleto: se conserva el comentario vigente.');
+              return;
+            }
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number, per_page: 100,
             });
+            const { data: latest } = await github.rest.pulls.get({ owner, repo, pull_number: issue_number });
+            if (latest.state !== 'open' || latest.head.sha !== process.env.PR_HEAD_SHA ||
+                latest.base.sha !== process.env.PR_BASE_SHA || latest.base.ref !== process.env.PR_BASE_REF) {
+              core.info('La PR cambió durante la publicación de Preview.');
+              return;
+            }
             const previous = comments.find((comment) =>
               comment.user?.type === 'Bot' && comment.body?.includes(marker),
             );
@@ -225,7 +244,18 @@ jobs:
       - name: Construir Web Production
         run: vercel build --prod --token="$VERCEL_TOKEN"
 
+      - name: Comprobar que Production corresponde al main vigente
+        id: production-target
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { data: ref } = await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' });
+            const current = ref.object.sha === context.sha;
+            if (!current) core.summary.addRaw('Production omitida: este run valida un commit anterior de main.').write();
+            return current;
+
       - name: Desplegar Web Production
+        if: steps.production-target.outputs.result == 'true'
         run: |
           url="$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")"
           echo "Production: $url" >> "$GITHUB_STEP_SUMMARY"

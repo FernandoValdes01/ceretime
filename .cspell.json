@@ -7,6 +7,14 @@
   "import": ["@cspell/dict-es-es/cspell-ext.json"],
   "ignorePaths": ["convex/_generated/**", "apps/web/public/icons.svg", "apps/web/src/assets/*.svg"],
   "words": [
+    "Adoptium",
+    "Temurin",
+    "gradlew",
+    "prebuild",
+    "androidx",
+    "gphone",
+    "screencap",
+    "uiautomator",
     "textconv",
     "Acompa",
     "acompanamiento",
@@ -172,6 +180,8 @@
     "numstat",
     "adrs",
     "lockfiles",
-    "returnallowed"
+    "returnallowed",
+    "counterevidence",
+    "HMAC"
   ]
 }
