@@ -15,7 +15,11 @@ import type { ClosureRequestState, PersistableRequestState, Sprint1RequestState 
 export type RequestStateTransition = {
   readonly from: PersistableRequestState;
   readonly to: PersistableRequestState;
-  /** El motivo es lo que le explica al estudiante qué falta o por qué se cerró. */
+  /**
+   * Al pedir información o cerrar, el motivo le explica al estudiante qué falta
+   * o por qué se cerró; al cancelar lo escribe el propio Estudiante y deja
+   * trazado por qué terminó la solicitud.
+   */
   readonly requiresReason: boolean;
 };
 
@@ -85,8 +89,9 @@ export const REQUEST_TRANSITIONS = [
  *
  * `actorId` sale de la sesión autenticada en la capa de aplicación, nunca de un
  * parámetro del cliente: es el Profesional o, al cancelar, el propio
- * Estudiante. `reason` es texto para el estudiante; quien lo escribe no debe
- * incluir diagnósticos ni etiquetas clínicas, pero el tipo no puede
+ * Estudiante. `reason` lo escribe ese actor: el Profesional para el
+ * estudiante o, al cancelar, el Estudiante para CERETI. Quien lo escribe no
+ * debe incluir diagnósticos ni etiquetas clínicas, pero el tipo no puede
  * impedirlo. `occurredAt` es epoch en milisegundos, como maneja las fechas
  * Convex.
  */

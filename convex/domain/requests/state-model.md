@@ -134,7 +134,7 @@ Lo que estas pruebas no cubren, porque vive fuera del dominio: quién está auto
 
 Una transición aplicada deja dos rastros distintos, y no deben confundirse.
 
-El **historial de cambios de estado** es parte de la solicitud. Cada transición aplicada produce una entrada con origen, destino, actor, instante y, cuando lo hubo, el motivo; la capa de aplicación la guarda en `requestTransitions`, junto al estado resultante y en la misma transacción, como hacen los casos de uso de TI2-9. El actor es el Profesional o, al cancelar, el propio Estudiante. El motivo se conserva ahí porque es lo que le explica al estudiante qué información falta o por qué se cerró, y queda protegido por el mismo control de acceso que la solicitud.
+El **historial de cambios de estado** es parte de la solicitud. Cada transición aplicada produce una entrada con origen, destino, actor, instante y, cuando lo hubo, el motivo; la capa de aplicación la guarda en `requestTransitions`, junto al estado resultante y en la misma transacción, como hacen los casos de uso de TI2-9. El actor es el Profesional o, al cancelar, el propio Estudiante. El motivo se conserva ahí porque le explica al estudiante qué información falta o por qué se cerró o, al cancelar, deja trazado por qué el Estudiante terminó la solicitud, y queda protegido por el mismo control de acceso que la solicitud.
 
 El **evento de auditoría** es lo que exige RD-03: registra solo actor, fecha, acción, recurso y resultado, sin contenido sensible, como piden también RF-31, RN-19 y RNF-11. **El motivo no se copia a la bitácora de auditoría**: es texto libre y puede traer necesidades de acceso u otros datos sensibles. El evento de auditoría de las transiciones de solicitud todavía no tiene tabla y no se crea en este issue.
 
