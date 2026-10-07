@@ -10,13 +10,21 @@ const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 function memoryIdentity(plan, instructions) {
   return hash(
     JSON.stringify({
-      version: 3,
+      version: 4,
       provider: "openrouter",
       model: MODEL,
+      // Base refs stay in the identity because a partial context fingerprint
+      // cannot prove that every historical input was available.
       base: plan.base,
       baseRef: plan.baseRef,
+      mergeBase: plan.mergeBase,
       intent: plan.intent,
-      limits: plan.limits,
+      reviewPolicy: plan.reviewPolicy ?? {},
+      // The output ceiling can truncate an assessment; pacing, retries and
+      // block limits only control work completed within this invocation.
+      semanticLimits: {
+        outputTokens: plan.limits?.outputTokens ?? 6000,
+      },
       instructions,
       implementation: hash(
         [
@@ -29,6 +37,7 @@ function memoryIdentity(plan, instructions) {
           "evidence",
           "payload",
           "confidence",
+          "score",
         ]
           .map((name) => fs.readFileSync(path.join(__dirname, `ai-review-${name}.cjs`), "utf8"))
           .join("\n"),

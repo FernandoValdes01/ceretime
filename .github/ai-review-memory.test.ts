@@ -234,6 +234,7 @@ for (const change of [
   "base",
   "instructions",
   "model-policy",
+  "review-policy",
   "expiry",
   "signature",
   "corruption",
@@ -253,6 +254,11 @@ for (const change of [
       if (change === "model-policy")
         identity = memoryIdentity(
           { ...f.plan, limits: { ...f.plan.limits, outputTokens: 500 } },
+          instructions,
+        );
+      if (change === "review-policy")
+        identity = memoryIdentity(
+          { ...f.plan, reviewPolicy: { ...f.plan.reviewPolicy, reviewLanguage: "en" } },
           instructions,
         );
       if (change === "expiry") now = () => Date.now() + TTL_MS + 1;
@@ -276,6 +282,60 @@ for (const change of [
     }
   });
 }
+
+test("operational limits reuse complete results when their semantic inputs stay equal", async () => {
+  const f = fixture();
+  try {
+    const first = await reviewPlan({
+      verify: fixtureVerifier,
+      ...f.options,
+      fetchImpl: async () => valid(),
+    });
+    expect(first.coverage).toBe("complete");
+    const plan = {
+      ...f.plan,
+      limits: {
+        ...f.plan.limits,
+        chunkChars: 11000,
+        inputChars: 63000,
+        maxChunks: 47,
+        maxCalls: 79,
+        intervalMs: 250,
+        maxRateLimitWaitMs: 590000,
+      },
+    };
+    const identity = memoryIdentity(plan, instructions);
+    expect(identity).toBe(f.identity);
+    const memory = createMemory({ directory: f.directory, identity, apiKey: "simulation" });
+    const repeated = await reviewPlan({
+      verify: fixtureVerifier,
+      ...f.options,
+      plan,
+      memory,
+      fetchImpl: async () => {
+        throw new Error("No network expected for a complete operational cache hit");
+      },
+    });
+    expect(repeated.coverage).toBe("complete");
+    expect(repeated.reused).toBe(f.plan.chunks.length);
+    expect(repeated.calls).toBe(0);
+  } finally {
+    f.clean();
+  }
+});
+
+test("output token ceiling remains part of the semantic memory identity", () => {
+  const f = fixture();
+  try {
+    const changed = {
+      ...f.plan,
+      limits: { ...f.plan.limits, outputTokens: f.plan.limits.outputTokens - 1 },
+    };
+    expect(memoryIdentity(changed, instructions)).not.toBe(f.identity);
+  } finally {
+    f.clean();
+  }
+});
 
 test("cached invalid assessments and stale heads never become completed coverage", async () => {
   const f = fixture();
@@ -362,6 +422,134 @@ test("a complete evidence recovery caches every verified hash and reuses it with
     expect(f.analysisCalls()).toBe(callsBeforeReuse);
   } finally {
     f.clean();
+  }
+});
+
+test("unrelated complete parts cache after a sibling's evidence recovery", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "r2d2-shared-recovery-cache-"));
+  const head = "c".repeat(40);
+  const base = "d".repeat(40);
+  const text = "export const helper = (value: number) => value + 1;";
+  const evidenceDependency = {
+    path: "helper.ts",
+    side: "head" as const,
+    ref: head,
+    status: "present" as const,
+    hash: hash(text),
+    forPath: "changed.ts",
+  };
+  const readEvidence = (item: any) =>
+    item.path === "helper.ts" && item.ref === head ? { status: "present", hash: hash(text) } : null;
+  const newPlan = () => {
+    const plan = buildPlan(
+      [
+        {
+          filename: "changed.ts",
+          status: "modified",
+          additions: 1,
+          deletions: 1,
+          patch: "@@ -1 +1 @@\n-export const value = 1;\n+export const value = helper(1);",
+        },
+        {
+          filename: "independent.ts",
+          status: "modified",
+          additions: 1,
+          deletions: 1,
+          patch: "@@ -1 +1 @@\n-export const other = 1;\n+export const other = 2;",
+        },
+      ],
+      { chunking: { chunkChars: 12000 } },
+      head,
+    );
+    plan.base = base;
+    plan.baseRef = "main";
+    plan.mergeBase = base;
+    plan.intent = { title: "Shared evidence cache", description: "" };
+    return plan;
+  };
+  const initialPlan = newPlan();
+  expect(initialPlan.chunks).toHaveLength(1);
+  expect(initialPlan.chunks[0].parts).toHaveLength(2);
+  const identity = memoryIdentity(initialPlan, instructions);
+  const memory = createMemory({ directory, identity, apiKey: "simulation", readEvidence });
+  let analysisCalls = 0;
+  const run = (plan: any, fetchImpl: any) =>
+    reviewPlan({
+      plan,
+      instructions,
+      apiKey: "simulation",
+      memory,
+      verify: fixtureVerifier,
+      sleep: async () => {},
+      fetchImpl,
+      recoverContext: async ({ chunk, requests }: any) => ({
+        chunk: {
+          ...chunk,
+          parts: chunk.parts.map((part: any) =>
+            requests.some((request: any) => request.forPath === part.path)
+              ? {
+                  ...part,
+                  context: [
+                    ...part.context,
+                    {
+                      path: "helper.ts",
+                      head: text,
+                      headState: "present",
+                      baseState: "not_requested",
+                      headComplete: false,
+                      recovered: true,
+                      evidenceSelector: { symbol: "helper" },
+                      forPath: part.path,
+                    },
+                  ],
+                  evidenceDependencies: [evidenceDependency],
+                }
+              : part,
+          ),
+        },
+        unresolved: [],
+      }),
+    });
+  try {
+    const first = await run(newPlan(), async () => {
+      analysisCalls++;
+      return valid({
+        findings: [],
+        resolutions: [],
+        evidenceRequests:
+          analysisCalls === 1
+            ? [
+                {
+                  path: "helper.ts",
+                  symbol: "helper",
+                  side: "head",
+                  reason: "Verificar la dependencia consumida por changed.ts.",
+                  forPath: "changed.ts",
+                },
+              ]
+            : [],
+      });
+    });
+    expect(first.coverage).toBe("complete");
+    expect(first.calls).toBe(2);
+
+    const cachedChanged = memory.get(
+      newPlan().chunks[0].parts.find((part: any) => part.path === "changed.ts"),
+    );
+    const cachedIndependent = memory.get(
+      newPlan().chunks[0].parts.find((part: any) => part.path === "independent.ts"),
+    );
+    expect(cachedChanged?.evidenceDependencies).toEqual([evidenceDependency]);
+    expect(cachedIndependent?.evidenceDependencies).toEqual([]);
+
+    const repeated = await run(newPlan(), async () => {
+      throw new Error("A complete unchanged sibling must be reused after evidence recovery.");
+    });
+    expect(repeated.coverage).toBe("complete");
+    expect(repeated.reused).toBe(2);
+    expect(repeated.calls).toBe(0);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
 

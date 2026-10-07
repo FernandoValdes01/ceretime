@@ -96,6 +96,13 @@ function buildPlan(files, config = {}, sha) {
       throw new Error(`Límite inválido: ${key}.`);
   }
   const plan = { sha, limits, chunks: [], issues: [], files: 0, chars: 0, skipped: [] };
+  plan.reviewPolicy = {
+    reviewStyle: config.review_style ?? "minimal",
+    reviewLanguage: config.review_language ?? "es",
+    maxComments: config.max_comments ?? 5,
+    ignorePaths: [...(config.ignore_paths ?? [])].sort((a, b) => a.localeCompare(b)),
+    selection: config.selection ?? {},
+  };
   // Reuse spare capacity instead of abandoning a partially filled chunk.
   const bins = [];
   const assignedThreads = new Set();
@@ -865,10 +872,7 @@ async function reviewPlan({
     errors = [],
     cacheGroups = new Map();
   const hasStableEvidenceDependencies = (part) =>
-    Boolean(
-      part.evidenceDependencies?.length &&
-      part.evidenceDependencies.every((item) => ["present", "absent"].includes(item.status)),
-    );
+    (part.evidenceDependencies ?? []).every((item) => ["present", "absent"].includes(item.status));
   const mergeEvidenceDependencies = (part, dependencies = []) => {
     part.evidenceDependencies = [
       ...new Map(
