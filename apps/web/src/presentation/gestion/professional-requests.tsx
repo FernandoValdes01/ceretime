@@ -306,16 +306,23 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
 
-  // Al abrir el modal mueve el foco al motivo (solo DOM, sin setState).
+  // Foco del modal (TI2-92): al abrir va al motivo; al cerrar vuelve al botón
+  // que lo abrió. El cierre se resuelve en efecto tras el commit (y no en el
+  // handler): al cerrar tras un envío el botón sigue deshabilitado hasta que
+  // se vacía isActionPending, y focus() sobre un botón deshabilitado no hace
+  // nada. Solo DOM, sin setState.
+  const prevShowInfoModal = useRef(showInfoModal);
   useEffect(() => {
     if (showInfoModal) {
       reasonRef.current?.focus();
+    } else if (prevShowInfoModal.current) {
+      openButtonRef.current?.focus();
     }
+    prevShowInfoModal.current = showInfoModal;
   }, [showInfoModal]);
 
   function closeInfoModal() {
     setShowInfoModal(false);
-    openButtonRef.current?.focus();
   }
 
   // Trampa de Tab dentro del diálogo y cierre con Escape.

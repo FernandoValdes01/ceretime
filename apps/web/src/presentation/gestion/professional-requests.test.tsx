@@ -507,6 +507,13 @@ describe("acciones del Profesional (TI2-92)", () => {
       requestId: "req-9",
       reason: "Falta información sobre horario",
     });
+
+    // Tras el éxito el modal cierra y el foco vuelve al botón que lo abrió
+    // (sigue montado: el cambio de estado reactivo llega después del cierre).
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull(),
+    );
+    expect(document.activeElement?.textContent).toBe("Pedir información");
   });
 
   test("error en takeRequest muestra mensaje y permite reintento", async () => {
