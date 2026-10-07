@@ -8,7 +8,7 @@
  * Las reglas de TI2-81 operan sobre estos mismos contratos: no existe otra representación de bloques, ventanas, excepciones ni cupos. La expansión exige el profesional dueño de los bloques y respeta la prioridad de las excepciones: la cancelación de un día elimina la recurrencia del día pero conserva los agregados, la cancelación con `blockId` descuenta solo ese bloque y conserva los demás, y el agregado convive con ambas. Las ventanas se procesan en orden estable y los cupos se ordenan por inicio con desempate por identificador, para que la identidad de cada cupo no dependa del orden de entrada. La expansión devuelve cupos con identidad determinista (`profesional:fecha:inicio`, con sufijo por orden de aparición ante inicios repetidos); la identidad es estable entre llamadas y la persistencia puede reemplazarla por identificadores de fila (TI2-83). Disponibilidad no equivale a ocupación: los cupos son candidatos y reservar pertenece a TI2-84/TI2-96.
  */
 
-import type { ModalityPreference } from "../request/request";
+import type { ModalityPreference } from "../requests/request";
 
 /** Versión del contrato público de disponibilidad. */
 export const AVAILABILITY_CONTRACT_VERSION = "v1" as const;
@@ -24,7 +24,7 @@ export type AvailabilityExceptionKind = (typeof AVAILABILITY_EXCEPTION_KIND_VALU
  * Modalidades admitidas por la especificación vigente (TI2-83, sin híbrida).
  *
  * Única fuente en valores para los validadores del borde
- * (`convex/validators.ts`): restringida a `ModalityPreference` para no
+ * (`convex/infrastructure/validators.ts`): restringida a `ModalityPreference` para no
  * duplicar su representación. La semana (0–6, convención de `Date.getDay`)
  * y los minutos del día (0–1440) quedan documentados en el esquema y sus
  * reglas son de TI2-81.

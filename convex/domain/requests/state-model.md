@@ -23,7 +23,7 @@ stateDiagram-v2
 
 Las cuatro transiciones del diagrama son exactamente las de `SPRINT_1_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido, incluidos los saltos hacia adelante y los retrocesos.
 
-[`state_model.test.ts`](./state_model.test.ts) lee este archivo y falla si el diagrama o las tablas dejan de coincidir con `state.ts` y `transitions.ts`; si editas cualquiera de ellos, corre `bunx vitest run convex/domain/request`.
+[`state_model.test.ts`](./state_model.test.ts) lee este archivo y falla si el diagrama o las tablas dejan de coincidir con `state.ts` y `transitions.ts`; si editas cualquiera de ellos, corre `bunx vitest run convex/domain/requests`.
 
 | Estado                               | Etiqueta en interfaz               | Rol que lo provoca                                          |
 | ------------------------------------ | ---------------------------------- | ----------------------------------------------------------- |
@@ -82,7 +82,7 @@ Sus transiciones de origen **no se modelan todavía**. El documento de requerimi
 Las pruebas del dominio de la solicitud viven en [`state.test.ts`](./state.test.ts), [`transitions.test.ts`](./transitions.test.ts), [`transition_policy.test.ts`](./transition_policy.test.ts), [`state_model.test.ts`](./state_model.test.ts) y [`request.test.ts`](./request.test.ts). `bun run test:convex` las corre junto al resto del backend; para correr solo estas:
 
 ```bash
-bunx vitest run convex/domain/request
+bunx vitest run convex/domain/requests
 ```
 
 Positivos: las cuatro transiciones declaradas se aplican y devuelven actor, origen, destino, instante y el motivo cuando llega; el paso a espera acepta un motivo con texto y lo conserva; llegar a la aceptación marca que corresponde abrir el acompañamiento; el estado inicial es `received` y queda reconocido como estado con operación; los cuatro estados de Sprint 1 y los tres declarados para después tienen etiqueta visible y una sola definición; el diagrama dibuja exactamente las transiciones de la tabla, marca "exige motivo" donde la tabla lo exige, entra por el estado inicial y sale por la aceptación; la tabla no repite filas, no deja la solicitud donde ya estaba, alcanza todos los estados desde el inicial y lleva a la aceptación desde cualquiera de ellos.

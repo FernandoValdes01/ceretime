@@ -2,9 +2,9 @@
 import { convexTest } from "convex-test";
 import { ConvexError } from "convex/values";
 import { expect, test, vi } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import { deniedPublicError } from "./application/authorization/authorize";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import { deniedPublicError } from "../application/authorization/authorize";
 import {
   conflictError,
   errResult,
@@ -13,12 +13,16 @@ import {
   noAvailabilityError,
   okResult,
   unauthorizedError,
-} from "./domain/errors/api_error";
-import { ACCESS_NEEDS_MAX_LENGTH } from "./domain/request/request";
-import { denyUnauthorized, throwPublicApiError, toSecureConvexError } from "./presentation/session";
-import schema from "./schema";
+} from "../domain/errors/api_error";
+import { ACCESS_NEEDS_MAX_LENGTH } from "../domain/requests/request";
+import {
+  denyUnauthorized,
+  throwPublicApiError,
+  toSecureConvexError,
+} from "../presentation/session";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 // `createTestRequest` es una semilla guardada: solo opera con el interruptor
 // activado, como en `database.test.ts` (aislado por archivo).
@@ -132,7 +136,7 @@ test("Necesidad en el tope se acepta y sobre el tope se rechaza sin persistir", 
 
   // El rechazo no persiste nada nuevo: sigue existiendo solo la aceptada,
   // comprobado con una lectura acotada en vez de barrer la tabla.
-  const stored = await t.query(internal.requests.getRequestById, { id: created._id });
+  const stored = await t.query(internal.operations.requests.getRequestById, { id: created._id });
   expect(stored?.status).toBe("received");
   const rows = await t.run(async (ctx) => {
     return await ctx.db.query("requests").take(2);
@@ -148,7 +152,7 @@ test("Toma y operación ajena se deniegan con error genérico sin modificar nada
     role: "student",
   });
   await seedUser(t, { subject: "ti26-pro-1", email: "ti26-pro-1@uct.cl", role: "professional" });
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
@@ -171,7 +175,7 @@ test("Toma y operación ajena se deniegan con error genérico sin modificar nada
       reason: "Falta el horario disponible",
     }),
   ).rejects.toThrow("No autorizado");
-  const untouched = await t.query(internal.requests.getRequestById, { id: requestId });
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(untouched?.status).toBe("received");
 });
 
@@ -194,13 +198,15 @@ test("Habilitación guardada: el administrador habilita y el resto se deniega", 
 
   // Vía interna con Administrador vigente: habilita sin cambiar el rol.
   const asAdmin = t.withIdentity(identityFor("ti26-adm-1", "ti26-adm-1@uct.cl"));
-  const enabledId = await asAdmin.mutation(internal.accounts.enableIntern, { userId: internId });
+  const enabledId = await asAdmin.mutation(internal.operations.accounts.enableIntern, {
+    userId: internId,
+  });
   expect(enabledId).toEqual(internId);
 
   // Un Estudiante no habilita cuentas por la vía guardada.
   const asStudent = t.withIdentity(identityFor("ti26-est-5", "ti26-est-5@alu.uct.cl"));
   await expect(
-    asStudent.mutation(internal.accounts.enableIntern, { userId: otherId }),
+    asStudent.mutation(internal.operations.accounts.enableIntern, { userId: otherId }),
   ).rejects.toThrow("No autorizado");
 });
 
@@ -233,13 +239,13 @@ test("Concesión guardada: el profesional autorizado concede y el practicante no
 
   // Arranque entre profesionales y concesión al Practicante habilitado.
   const asBootstrap = t.withIdentity(identityFor("ti26-pro-3", "ti26-pro-3@uct.cl"));
-  await asBootstrap.mutation(internal.assignments.assign, {
+  await asBootstrap.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: proId,
     assignedRole: "professional",
   });
   const asPro = t.withIdentity(identityFor("ti26-pro-2", "ti26-pro-2@uct.cl"));
-  await asPro.mutation(internal.assignments.assign, {
+  await asPro.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: internId,
     assignedRole: "intern",
@@ -261,7 +267,7 @@ test("Concesión guardada: el profesional autorizado concede y el practicante no
   // El Practicante no se auto-asigna accesos por la vía guardada.
   const asIntern = t.withIdentity(identityFor("ti26-int-3", "ti26-int-3@alu.uct.cl"));
   await expect(
-    asIntern.mutation(internal.assignments.assign, {
+    asIntern.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",
@@ -332,7 +338,7 @@ test("Contrato TI2-88: identificador ajeno e inexistente responden igual sin fil
     role: "student",
   });
   await seedUser(t, { subject: "ti88-est-2", email: "ti88-est-2@alu.uct.cl", role: "student" });
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId: ownerId,
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",

@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 /**
  * Cadena estricta de Practicante en Backend (TI2-18).
@@ -81,7 +81,7 @@ async function seedAssignment(
 ) {
   return await t
     .withIdentity(identityFor(caller.subject, caller.email))
-    .mutation(internal.assignments.assign, input);
+    .mutation(internal.operations.assignments.assign, input);
 }
 
 async function seedRevoke(
@@ -95,7 +95,7 @@ async function seedRevoke(
 ) {
   return await t
     .withIdentity(identityFor(caller.subject, caller.email))
-    .mutation(internal.assignments.revoke, input);
+    .mutation(internal.operations.assignments.revoke, input);
 }
 
 /** Mensaje de la denegación, o falla si la operación fue permitida. */
@@ -378,14 +378,14 @@ test("practicante no puede crear ni revocar asignaciones", async () => {
 
   const asIntern = t.withIdentity(identityFor("ti18-int-8", "int8@alu.uct.cl"));
   await expect(
-    asIntern.mutation(internal.assignments.assign, {
+    asIntern.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: intern.id,
       assignedRole: "intern",
     }),
   ).rejects.toThrow("No autorizado");
   await expect(
-    asIntern.mutation(internal.assignments.revoke, {
+    asIntern.mutation(internal.operations.assignments.revoke, {
       accompanimentId,
       userId: intern.id,
       assignedRole: "intern",
@@ -417,7 +417,7 @@ test("nadie puede asignarse acceso a sí mismo", async () => {
 
   const asPro = t.withIdentity(identityFor("ti18-pro-9", "pro9@uct.cl"));
   await expect(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: pro.id,
       assignedRole: "professional",
@@ -426,7 +426,7 @@ test("nadie puede asignarse acceso a sí mismo", async () => {
   // El bloqueo por asignarse a sí mismo precede a la validación de rol:
   // responde el mismo error genérico y no el de coherencia de rol.
   await expect(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: pro.id,
       assignedRole: "intern",
@@ -435,7 +435,7 @@ test("nadie puede asignarse acceso a sí mismo", async () => {
 
   const asAdmin = t.withIdentity(identityFor("ti18-adm-9", "adm9@uct.cl"));
   await expect(
-    asAdmin.mutation(internal.assignments.assign, {
+    asAdmin.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: pro.id,
       assignedRole: "professional",

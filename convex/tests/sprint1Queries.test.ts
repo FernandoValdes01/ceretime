@@ -1,12 +1,12 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import { ACCESS_NEEDS_MAX_LENGTH } from "./domain/request/request";
-import schema from "./schema";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import { ACCESS_NEEDS_MAX_LENGTH } from "../domain/requests/request";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 // `createTestRequest` es una semilla guardada: solo opera con el interruptor
 // activado, como en `database.test.ts` (aislado por archivo).
@@ -137,12 +137,12 @@ test("profesional detalla solo la solicitud tomada", async () => {
     role: "student",
   });
   await seedUser(t, { subject: "ti10-pro-1", email: "ti10-pro-1@uct.cl", role: "professional" });
-  const takenId = await t.mutation(internal.requests.createTestRequest, {
+  const takenId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Tomada ficticia",
   });
-  const openId = await t.mutation(internal.requests.createTestRequest, {
+  const openId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "received",
     accessNeeds: "Abierta ficticia",

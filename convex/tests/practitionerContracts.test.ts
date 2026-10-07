@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 /**
  * Cobertura integrada de Practicante, contratos públicos y ruta crítica (TI2-29).
@@ -20,7 +20,7 @@ const modules = import.meta.glob("./**/*.ts");
  * explícito) y datos ficticios. La autorización se resuelve en el servidor a
  * partir de `ctx.auth.getUserIdentity()`; ningún `userId` del cliente se usa
  * como prueba. La superficie pública son solo `presentation/*`; la escritura
- * de asignaciones es la vía interna guardada (`internal.assignments.*`).
+ * de asignaciones es la vía interna guardada (`internal.operations.assignments.*`).
  */
 
 const ISSUER = "https://accounts.google.com";
@@ -113,7 +113,7 @@ async function seedCriticalPathWithIntern(t: ReturnType<typeof convexTest>, pref
   const accompanimentId = opened._id;
 
   const asPro = t.withIdentity(identityFor(proSubject, `${proSubject}@uct.cl`));
-  await asPro.mutation(internal.assignments.assign, {
+  await asPro.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: internId,
     assignedRole: "intern",
@@ -272,21 +272,21 @@ test("modificación y autoasignación del practicante se rechazan", async () => 
 
   const asIntern = t.withIdentity(identityFor(internSubject, `${internSubject}@alu.uct.cl`));
   await expect(
-    asIntern.mutation(internal.assignments.assign, {
+    asIntern.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",
     }),
   ).rejects.toThrow(DENIED);
   await expect(
-    asIntern.mutation(internal.assignments.assign, {
+    asIntern.mutation(internal.operations.assignments.assign, {
       accompanimentId,
       userId: otherInternId,
       assignedRole: "intern",
     }),
   ).rejects.toThrow(DENIED);
   await expect(
-    asIntern.mutation(internal.assignments.revoke, {
+    asIntern.mutation(internal.operations.assignments.revoke, {
       accompanimentId,
       userId: internId,
       assignedRole: "intern",
@@ -320,7 +320,7 @@ test("revocación inmediata cierra lectura y listado sin filtrar", async () => {
   expect(before.view).toBe("minimized");
 
   const asPro = t.withIdentity(identityFor(proSubject, `${proSubject}@uct.cl`));
-  await asPro.mutation(internal.assignments.revoke, {
+  await asPro.mutation(internal.operations.assignments.revoke, {
     accompanimentId,
     userId: internId,
     assignedRole: "intern",
@@ -390,7 +390,7 @@ test("contratos públicos conservan forma estable en respuestas exitosas", async
   });
   expect(Object.keys(minimized).sort()).toEqual(["_id", "objective", "status", "view"]);
 
-  const accepted = await t.query(internal.requests.getRequestById, { id: requestId });
+  const accepted = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(accepted?.status).toBe("accepted");
   expect(await countAccompanimentsFor(t, requestId)).toBe(1);
 });
@@ -432,6 +432,6 @@ test("apertura única no duplica ante aceptación repetida", async () => {
   expect(repeatMessage).not.toContain("Otro objetivo ficticio");
   expect(repeatMessage).not.toContain("Necesidad de acceso ficticia");
   expect(await countAccompanimentsFor(t, requestId)).toBe(1);
-  const accepted = await t.query(internal.requests.getRequestById, { id: requestId });
+  const accepted = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(accepted?.status).toBe("accepted");
 });

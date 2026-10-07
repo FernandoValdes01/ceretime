@@ -1,13 +1,13 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import { toAccompanimentRequest } from "./domain/request/request";
-import { transitionRequest } from "./domain/request/transition_policy";
-import schema from "./schema";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import { toAccompanimentRequest } from "../domain/requests/request";
+import { transitionRequest } from "../domain/requests/transition_policy";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 // Las semillas guardadas solo operan con el interruptor activado, igual que
 // en `users.test.ts` (aislado por archivo).
@@ -158,24 +158,24 @@ test("unicidad de identidad: correo e identificador duplicados se rechazan", asy
     accountStatus: "active" as const,
     tokenIdentifier: `${ISSUER}|ti17-duplicado-1`,
   };
-  await t.mutation(internal.users.createTestUser, profile);
+  await t.mutation(internal.operations.users.createTestUser, profile);
 
   await expect(
-    t.mutation(internal.users.createTestUser, {
+    t.mutation(internal.operations.users.createTestUser, {
       ...profile,
       email: "otro@alu.uct.cl",
     }),
   ).rejects.toThrow("Ya existe un perfil");
 
   await expect(
-    t.mutation(internal.users.createTestUser, {
+    t.mutation(internal.operations.users.createTestUser, {
       ...profile,
       tokenIdentifier: `${ISSUER}|ti17-duplicado-2`,
     }),
   ).rejects.toThrow("Ya existe un perfil con este correo");
 
   await expect(
-    t.mutation(internal.users.createTestUser, {
+    t.mutation(internal.operations.users.createTestUser, {
       ...profile,
       email: "Duplicado@alu.uct.cl",
       tokenIdentifier: `${ISSUER}|ti17-duplicado-3`,
@@ -183,7 +183,7 @@ test("unicidad de identidad: correo e identificador duplicados se rechazan", asy
   ).rejects.toThrow("Ya existe un perfil con este correo");
 
   await expect(
-    t.mutation(internal.users.createTestUser, {
+    t.mutation(internal.operations.users.createTestUser, {
       ...profile,
       email: "  duplicado@alu.uct.cl  ",
       tokenIdentifier: `${ISSUER}|ti17-duplicado-4`,
@@ -193,7 +193,7 @@ test("unicidad de identidad: correo e identificador duplicados se rechazan", asy
 
 test("la semilla normaliza el correo antes de guardarlo", async () => {
   const t = convexTest(schema, modules);
-  const createdId = await t.mutation(internal.users.createTestUser, {
+  const createdId = await t.mutation(internal.operations.users.createTestUser, {
     email: "  Mezclado@alu.uct.cl  ",
     fullName: "Ficticio",
     role: "student" as const,
@@ -216,7 +216,7 @@ test("el arranque rechaza el correo de un perfil existente", async () => {
   });
 
   await expect(
-    t.mutation(internal.accounts.ensureBootstrapAdmin, {
+    t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
       email: "previo@uct.cl",
       fullName: "Ficticio",
       tokenIdentifier: `${ISSUER}|ti17-boot-nuevo`,
@@ -341,7 +341,7 @@ test("integridad de asignaciones: el acompañamiento y el usuario deben existir"
   // El llamante está autorizado sobre el acompañamiento existente, así la
   // denegación prueba el recurso inexistente y no la falta de alcance.
   const asBootstrap = t.withIdentity(identityFor("ti17-miss-boot", "missboot@uct.cl"));
-  await asBootstrap.mutation(internal.assignments.assign, {
+  await asBootstrap.mutation(internal.operations.assignments.assign, {
     accompanimentId: accompaniment,
     userId: proId,
     assignedRole: "professional",
@@ -350,14 +350,14 @@ test("integridad de asignaciones: el acompañamiento y el usuario deben existir"
   // TI2-28: el recurso inexistente se deniega con el mismo error genérico,
   // sin revelar existencia, y no se crea ninguna fila.
   await expect(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId: missingAccompaniment,
       userId: intern,
       assignedRole: "intern",
     }),
   ).rejects.toThrow("No autorizado");
   await expect(
-    asPro.mutation(internal.assignments.assign, {
+    asPro.mutation(internal.operations.assignments.assign, {
       accompanimentId: accompaniment,
       userId: missingUser,
       assignedRole: "intern",
@@ -393,7 +393,7 @@ test("integridad de asignaciones: el acompañamiento y el usuario deben existir"
 
 test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamiento, asignación y revocación", async () => {
   const t = convexTest(schema, modules);
-  const adminId = await t.mutation(internal.accounts.ensureBootstrapAdmin, {
+  const adminId = await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
     email: "traza@uct.cl",
     fullName: "Administrador Ficticio",
     tokenIdentifier: `${ISSUER}|ti17-traza-adm`,
@@ -421,7 +421,7 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   });
 
   const asAdmin = t.withIdentity(identityFor("ti17-traza-adm", "traza@uct.cl"));
-  await asAdmin.mutation(internal.accounts.enableIntern, { userId: internId });
+  await asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: internId });
   const enabled = await t.run(async (ctx) => {
     return await ctx.db.get(internId);
   });
@@ -429,12 +429,12 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   expect(enabled?.enabledBy).toEqual(adminId);
   expect(typeof enabled?.enabledAt).toBe("number");
 
-  const requestId = await t.mutation(internal.requests.createTestRequest, {
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
     studentId,
     status: "accepted",
     accessNeeds: "Necesidad de acceso ficticia",
   });
-  const request = await t.query(internal.requests.getRequestById, { id: requestId });
+  const request = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(typeof request?.createdAt).toBe("number");
 
   const accompanimentId = await seedAccompaniment(t, studentId, requestId);
@@ -442,7 +442,7 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   // TI2-28: la concesión a Practicante exige profesional autorizado sobre el
   // acompañamiento; esta fila profesional suma una unidad al barrido.
   const asBootstrap = t.withIdentity(identityFor("ti17-traza-boot", "trazaboot@uct.cl"));
-  await asBootstrap.mutation(internal.assignments.assign, {
+  await asBootstrap.mutation(internal.operations.assignments.assign, {
     accompanimentId,
     userId: proId,
     assignedRole: "professional",
@@ -453,7 +453,7 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
     userId: internId,
     assignedRole: "intern" as const,
   };
-  await asPro.mutation(internal.assignments.assign, input);
+  await asPro.mutation(internal.operations.assignments.assign, input);
   const assigned = await t.run(async (ctx) => {
     return await ctx.db
       .query("accompanimentAssignments")
@@ -470,7 +470,7 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   expect(assigned[0]?.grantedBy).toEqual(proId);
   expect(typeof assigned[0]?.grantedAt).toBe("number");
 
-  await asPro.mutation(internal.assignments.revoke, input);
+  await asPro.mutation(internal.operations.assignments.revoke, input);
   const revoked = await t.run(async (ctx) => {
     return await ctx.db
       .query("accompanimentAssignments")
@@ -488,7 +488,7 @@ test("trazabilidad mínima de Sprint 1: habilitación, solicitud, acompañamient
   expect(revoked[0]?.revokedBy).toEqual(proId);
   expect(typeof revoked[0]?.revokedAt).toBe("number");
 
-  const audit = await t.query(internal.migrations.auditAssignmentTraceability, {
+  const audit = await t.query(internal.operations.migrations.auditAssignmentTraceability, {
     paginationOpts: { numItems: 10, cursor: null },
   });
   expect(audit.scanned).toBe(2);
@@ -544,12 +544,12 @@ test("practicante no recupera recursos fuera de sus asignaciones", async () => {
   // TI2-28: solo un profesional autorizado sobre accA puede conceder al
   // Practicante; la fila profesional no afecta las consultas por rol intern.
   const asBootstrap = t.withIdentity(identityFor("ti17-iso-boot", "isoboot@uct.cl"));
-  await asBootstrap.mutation(internal.assignments.assign, {
+  await asBootstrap.mutation(internal.operations.assignments.assign, {
     accompanimentId: accA,
     userId: proId,
     assignedRole: "professional",
   });
-  await asPro.mutation(internal.assignments.assign, {
+  await asPro.mutation(internal.operations.assignments.assign, {
     accompanimentId: accA,
     userId: internId,
     assignedRole: "intern",
@@ -645,13 +645,13 @@ test("la auditoría detecta filas legacy y aprueba la vía guardada", async () =
   });
 
   const asPro = t.withIdentity(identityFor("ti17-audit-otorga", "auditotorga@uct.cl"));
-  await asPro.mutation(internal.assignments.assign, {
+  await asPro.mutation(internal.operations.assignments.assign, {
     accompanimentId: guarded,
     userId: proId,
     assignedRole: "professional",
   });
 
-  const first = await t.query(internal.migrations.auditAssignmentTraceability, {
+  const first = await t.query(internal.operations.migrations.auditAssignmentTraceability, {
     paginationOpts: { numItems: 2, cursor: null },
   });
   expect(first.scanned).toBe(2);
@@ -661,7 +661,7 @@ test("la auditoría detecta filas legacy y aprueba la vía guardada", async () =
   expect(first.sampleLegacyIds).toHaveLength(2);
   expect(first.isDone).toBe(false);
 
-  const second = await t.query(internal.migrations.auditAssignmentTraceability, {
+  const second = await t.query(internal.operations.migrations.auditAssignmentTraceability, {
     paginationOpts: { numItems: 2, cursor: first.continueCursor },
   });
   expect(second.scanned).toBe(1);
@@ -685,24 +685,24 @@ test("la migración exige administrador vigente", async () => {
   });
   const input = { paginationOpts: { numItems: 10, cursor: null } };
 
-  await expect(t.mutation(internal.migrations.migrateLegacyAssignments, input)).rejects.toThrow(
-    "No autorizado",
-  );
+  await expect(
+    t.mutation(internal.operations.migrations.migrateLegacyAssignments, input),
+  ).rejects.toThrow("No autorizado");
 
   const asStudent = t.withIdentity(identityFor("ti17-mig-est", "migest@alu.uct.cl"));
   await expect(
-    asStudent.mutation(internal.migrations.migrateLegacyAssignments, input),
+    asStudent.mutation(internal.operations.migrations.migrateLegacyAssignments, input),
   ).rejects.toThrow("No autorizado");
 
   const asPro = t.withIdentity(identityFor("ti17-mig-pro", "migpro@uct.cl"));
-  await expect(asPro.mutation(internal.migrations.migrateLegacyAssignments, input)).rejects.toThrow(
-    "No autorizado",
-  );
+  await expect(
+    asPro.mutation(internal.operations.migrations.migrateLegacyAssignments, input),
+  ).rejects.toThrow("No autorizado");
 });
 
 test("la migración acepta la identidad mínima del CLI (subject, issuer y tokenIdentifier)", async () => {
   const t = convexTest(schema, modules);
-  await t.mutation(internal.accounts.ensureBootstrapAdmin, {
+  await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
     email: "migcli@uct.cl",
     fullName: "Administrador Ficticio",
     tokenIdentifier: `${ISSUER}|ti17-mig-cli`,
@@ -714,9 +714,12 @@ test("la migración acepta la identidad mínima del CLI (subject, issuer y token
     issuer: ISSUER,
     tokenIdentifier: `${ISSUER}|ti17-mig-cli`,
   });
-  const migrated = await asCliAdmin.mutation(internal.migrations.migrateLegacyAssignments, {
-    paginationOpts: { numItems: 10, cursor: null },
-  });
+  const migrated = await asCliAdmin.mutation(
+    internal.operations.migrations.migrateLegacyAssignments,
+    {
+      paginationOpts: { numItems: 10, cursor: null },
+    },
+  );
   expect(migrated.scanned).toBe(0);
   expect(migrated.revoked).toBe(0);
   expect(migrated.isDone).toBe(true);
@@ -724,7 +727,7 @@ test("la migración acepta la identidad mínima del CLI (subject, issuer y token
 
 test("la migración revoca activas legacy sin inventar concesión", async () => {
   const t = convexTest(schema, modules);
-  const adminId = await t.mutation(internal.accounts.ensureBootstrapAdmin, {
+  const adminId = await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
     email: "migadmin@uct.cl",
     fullName: "Administrador Ficticio",
     tokenIdentifier: `${ISSUER}|ti17-mig-adm`,
@@ -767,14 +770,14 @@ test("la migración revoca activas legacy sin inventar concesión", async () => 
     });
   });
   const asPro = t.withIdentity(identityFor("ti17-mig-otorga", "migotorga@uct.cl"));
-  await asPro.mutation(internal.assignments.assign, {
+  await asPro.mutation(internal.operations.assignments.assign, {
     accompanimentId: guarded,
     userId: proId,
     assignedRole: "professional",
   });
 
   const asAdmin = t.withIdentity(identityFor("ti17-mig-adm", "migadmin@uct.cl"));
-  const migrated = await asAdmin.mutation(internal.migrations.migrateLegacyAssignments, {
+  const migrated = await asAdmin.mutation(internal.operations.migrations.migrateLegacyAssignments, {
     paginationOpts: { numItems: 10, cursor: null },
   });
   expect(migrated.scanned).toBe(3);
@@ -841,7 +844,7 @@ test("la migración revoca activas legacy sin inventar concesión", async () => 
     }),
   ).rejects.toThrow("No autorizado");
 
-  const audit = await t.query(internal.migrations.auditAssignmentTraceability, {
+  const audit = await t.query(internal.operations.migrations.auditAssignmentTraceability, {
     paginationOpts: { numItems: 10, cursor: null },
   });
   expect(audit.activeMissingGrant).toBe(0);
@@ -851,7 +854,7 @@ test("la migración revoca activas legacy sin inventar concesión", async () => 
 
 test("la migración avanza por páginas hasta agotar las filas", async () => {
   const t = convexTest(schema, modules);
-  await t.mutation(internal.accounts.ensureBootstrapAdmin, {
+  await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
     email: "migpaginado@uct.cl",
     fullName: "Administrador Ficticio",
     tokenIdentifier: `${ISSUER}|ti17-mig-paginado`,
@@ -882,14 +885,14 @@ test("la migración avanza por páginas hasta agotar las filas", async () => {
   });
 
   const asAdmin = t.withIdentity(identityFor("ti17-mig-paginado", "migpaginado@uct.cl"));
-  const first = await asAdmin.mutation(internal.migrations.migrateLegacyAssignments, {
+  const first = await asAdmin.mutation(internal.operations.migrations.migrateLegacyAssignments, {
     paginationOpts: { numItems: 2, cursor: null },
   });
   expect(first.scanned).toBe(2);
   expect(first.revoked).toBe(2);
   expect(first.isDone).toBe(false);
 
-  const second = await asAdmin.mutation(internal.migrations.migrateLegacyAssignments, {
+  const second = await asAdmin.mutation(internal.operations.migrations.migrateLegacyAssignments, {
     paginationOpts: { numItems: 2, cursor: first.continueCursor },
   });
   expect(second.scanned).toBe(1);

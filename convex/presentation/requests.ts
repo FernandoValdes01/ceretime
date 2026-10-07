@@ -13,7 +13,7 @@ import {
   getRequestDetailUseCase,
 } from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
-import { requestStatusUnion } from "../validators";
+import { requestStatusUnion } from "../infrastructure/validators";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 
 /**
@@ -29,7 +29,7 @@ import { acceptedAccompanimentValidator } from "./accompaniments";
  *
  * TI2-26: las cuatro mutations de abajo son toda la escritura pública del
  * Sprint 1; la habilitación de cuentas y la concesión de accesos siguen en
- * las vías internas guardadas (`internal.accounts`, `internal.assignments`) y
+ * las vías internas guardadas (`internal.operations.accounts`, `internal.operations.assignments`) y
  * el Sprint 1 no usa `action` (sin integraciones que lo requieran: OAuth corre
  * por las rutas HTTP de Better Auth).
  */

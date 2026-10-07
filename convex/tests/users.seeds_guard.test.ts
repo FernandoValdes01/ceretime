@@ -1,15 +1,15 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { internal } from "./_generated/api";
-import schema from "./schema";
+import { internal } from "../_generated/api";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 /**
  * Guardia de semillas de desarrollo (TI2-11).
  *
- * `internal.users.createTestUser` solo opera con el interruptor de entorno
+ * `internal.operations.users.createTestUser` solo opera con el interruptor de entorno
  * `TEST_SEEDS_ENABLED === "true"` (variable de servidor, no controlable por
  * el cliente). La primera prueba fija la marca en vacío —reproduce
  * producción— y demuestra el rechazo; `users.test.ts` la activa para su
@@ -31,7 +31,7 @@ function seedArgs(overrides: Record<string, unknown> = {}) {
 test("sin interruptor (producción) rechaza la semilla", async () => {
   vi.stubEnv("TEST_SEEDS_ENABLED", "");
   const t = convexTest(schema, modules);
-  await expect(t.mutation(internal.users.createTestUser, seedArgs())).rejects.toThrow(
+  await expect(t.mutation(internal.operations.users.createTestUser, seedArgs())).rejects.toThrow(
     "no están habilitadas en este entorno",
   );
 });
@@ -41,7 +41,7 @@ test("con interruptor rechaza crear administradores fuera del arranque", async (
   const t = convexTest(schema, modules);
   await expect(
     t.mutation(
-      internal.users.createTestUser,
+      internal.operations.users.createTestUser,
       seedArgs({ role: "admin", tokenIdentifier: "https://accounts.google.com|semilla-guard-2" }),
     ),
   ).rejects.toThrow("no pueden crear administradores");

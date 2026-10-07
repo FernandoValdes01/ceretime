@@ -81,7 +81,7 @@ Levanta la web y el backend con el dataset ficticio del Sprint 1 (TI2-30) en tu 
 
    ```bash
    bunx convex dev --once
-   bunx convex run fictitiousData:load
+   bunx convex run operations/fictitiousData:load
    ```
 
 6. Copia las variables públicas a la web, que lee su `.env.local` desde `apps/web`:
@@ -100,7 +100,7 @@ Levanta la web y el backend con el dataset ficticio del Sprint 1 (TI2-30) en tu 
 - `http://localhost:5173` muestra el acceso institucional, sin el aviso de configuración faltante.
 - `bun run test:convex`, `bun run test:web`, `bun run lint` y `bun run format:check` terminan sin errores.
 
-En producción no se define `TEST_SEEDS_ENABLED`: sin esa variable, `createTestUser`, `createTestRequest` y `fictitiousData:load` se rechazan.
+En producción no se define `TEST_SEEDS_ENABLED`: sin esa variable, `createTestUser`, `createTestRequest` y `operations/fictitiousData:load` se rechazan.
 
 ## Calidad de código
 

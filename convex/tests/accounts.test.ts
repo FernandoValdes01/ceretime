@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
+import { api, internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
+import schema from "../schema";
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob("../**/*.ts");
 
 /**
  * Habilitación institucional y arranque administrativo (TI2-11).
@@ -71,7 +71,7 @@ test("administrador habilita al practicante pendiente y registra actor y fecha",
   });
 
   const asAdmin = t.withIdentity(identityFor("ti2-11-adm-1", "adm1@uct.cl"));
-  const enabledId = await asAdmin.mutation(internal.accounts.enableIntern, {
+  const enabledId = await asAdmin.mutation(internal.operations.accounts.enableIntern, {
     userId: intern.id,
   });
   expect(enabledId).toEqual(intern.id);
@@ -116,7 +116,7 @@ test("cuenta habilitada sigue sin leer acompañamientos sin asignación", async 
   });
 
   const asAdmin = t.withIdentity(identityFor("ti2-11-adm-2", "adm2@uct.cl"));
-  await asAdmin.mutation(internal.accounts.enableIntern, { userId: intern.id });
+  await asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: intern.id });
 
   const asIntern = t.withIdentity(identityFor("ti2-11-int-2", "practicante2@alu.uct.cl"));
   await expect(
@@ -166,30 +166,32 @@ test("habilitar exige administrador vigente: otros roles y anónimo denegados", 
   });
   const input = { userId: target.id };
 
-  await expect(t.mutation(internal.accounts.enableIntern, input)).rejects.toThrow("No autorizado");
-
-  const asStudent = t.withIdentity(identityFor("ti2-11-est-2", "est2@alu.uct.cl"));
-  await expect(asStudent.mutation(internal.accounts.enableIntern, input)).rejects.toThrow(
+  await expect(t.mutation(internal.operations.accounts.enableIntern, input)).rejects.toThrow(
     "No autorizado",
   );
+
+  const asStudent = t.withIdentity(identityFor("ti2-11-est-2", "est2@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(internal.operations.accounts.enableIntern, input),
+  ).rejects.toThrow("No autorizado");
   expect(student.id).toBeDefined();
 
   const asPro = t.withIdentity(identityFor("ti2-11-pro-1", "pro1@uct.cl"));
-  await expect(asPro.mutation(internal.accounts.enableIntern, input)).rejects.toThrow(
+  await expect(asPro.mutation(internal.operations.accounts.enableIntern, input)).rejects.toThrow(
     "No autorizado",
   );
   expect(pro.id).toBeDefined();
 
   const asIntern = t.withIdentity(identityFor("ti2-11-int-3", "practicante3@alu.uct.cl"));
-  await expect(asIntern.mutation(internal.accounts.enableIntern, input)).rejects.toThrow(
+  await expect(asIntern.mutation(internal.operations.accounts.enableIntern, input)).rejects.toThrow(
     "No autorizado",
   );
   expect(internCaller.id).toBeDefined();
 
   const asDisabled = t.withIdentity(identityFor("ti2-11-adm-4", "adm4@uct.cl"));
-  await expect(asDisabled.mutation(internal.accounts.enableIntern, input)).rejects.toThrow(
-    "No autorizado",
-  );
+  await expect(
+    asDisabled.mutation(internal.operations.accounts.enableIntern, input),
+  ).rejects.toThrow("No autorizado");
 });
 
 test("validación del objetivo: todo rechazo responde No autorizado", async () => {
@@ -210,7 +212,7 @@ test("validación del objetivo: todo rechazo responde No autorizado", async () =
     institutionalStatus: "pending",
   });
   await expect(
-    asAdmin.mutation(internal.accounts.enableIntern, { userId: external.id }),
+    asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: external.id }),
   ).rejects.toThrow("No autorizado");
 
   const inactive = await seedUser(t, {
@@ -222,7 +224,7 @@ test("validación del objetivo: todo rechazo responde No autorizado", async () =
     accountStatus: "inactive",
   });
   await expect(
-    asAdmin.mutation(internal.accounts.enableIntern, { userId: inactive.id }),
+    asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: inactive.id }),
   ).rejects.toThrow("No autorizado");
 
   const notIntern = await seedUser(t, {
@@ -233,7 +235,7 @@ test("validación del objetivo: todo rechazo responde No autorizado", async () =
     institutionalStatus: "pending",
   });
   await expect(
-    asAdmin.mutation(internal.accounts.enableIntern, { userId: notIntern.id }),
+    asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: notIntern.id }),
   ).rejects.toThrow("No autorizado");
 
   const disabled = await seedUser(t, {
@@ -244,7 +246,7 @@ test("validación del objetivo: todo rechazo responde No autorizado", async () =
     institutionalStatus: "disabled",
   });
   await expect(
-    asAdmin.mutation(internal.accounts.enableIntern, { userId: disabled.id }),
+    asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: disabled.id }),
   ).rejects.toThrow("No autorizado");
 
   const already = await seedUser(t, {
@@ -255,7 +257,7 @@ test("validación del objetivo: todo rechazo responde No autorizado", async () =
     institutionalStatus: "enabled",
   });
   await expect(
-    asAdmin.mutation(internal.accounts.enableIntern, { userId: already.id }),
+    asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: already.id }),
   ).rejects.toThrow("No autorizado");
 });
 
@@ -282,7 +284,7 @@ test("recurso inexistente responde igual que denegado", async () => {
 
   const asAdmin = t.withIdentity(identityFor("ti2-11-adm-6", "adm6@uct.cl"));
   await expect(
-    asAdmin.mutation(internal.accounts.enableIntern, {
+    asAdmin.mutation(internal.operations.accounts.enableIntern, {
       userId: missingId as Id<"users">,
     }),
   ).rejects.toThrow("No autorizado");
@@ -290,7 +292,7 @@ test("recurso inexistente responde igual que denegado", async () => {
 
 test("arranque crea al primer administrador y rechaza el segundo", async () => {
   const t = convexTest(schema, modules);
-  const created = await t.mutation(internal.accounts.ensureBootstrapAdmin, {
+  const created = await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
     email: "inicial@uct.cl",
     fullName: "Administrador Inicial",
     tokenIdentifier: "https://accounts.google.com|bootstrap-1",
@@ -306,7 +308,7 @@ test("arranque crea al primer administrador y rechaza el segundo", async () => {
   expect(typeof stored?.enabledAt).toBe("number");
 
   await expect(
-    t.mutation(internal.accounts.ensureBootstrapAdmin, {
+    t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
       email: "otro@uct.cl",
       fullName: "Otro Administrador",
       tokenIdentifier: "https://accounts.google.com|bootstrap-2",
@@ -317,7 +319,7 @@ test("arranque crea al primer administrador y rechaza el segundo", async () => {
 test("arranque rechaza correo no institucional e identidad duplicada", async () => {
   const t = convexTest(schema, modules);
   await expect(
-    t.mutation(internal.accounts.ensureBootstrapAdmin, {
+    t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
       email: "externo@gmail.com",
       fullName: "Administrador Externo",
       tokenIdentifier: "https://accounts.google.com|bootstrap-ext",
@@ -325,7 +327,7 @@ test("arranque rechaza correo no institucional e identidad duplicada", async () 
   ).rejects.toThrow("institucional");
 
   await expect(
-    t.mutation(internal.accounts.ensureBootstrapAdmin, {
+    t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
       email: "estudiante@alu.uct.cl",
       fullName: "Administrador Estudiantil",
       tokenIdentifier: "https://accounts.google.com|bootstrap-alu",
@@ -339,7 +341,7 @@ test("arranque rechaza correo no institucional e identidad duplicada", async () 
     role: "professional",
   });
   await expect(
-    t.mutation(internal.accounts.ensureBootstrapAdmin, {
+    t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
       email: "nuevo@uct.cl",
       fullName: "Nuevo Administrador",
       tokenIdentifier: "https://accounts.google.com|bootstrap-dup",
@@ -371,7 +373,7 @@ test("la habilitación jamás cambia el rol ni crea administradores", async () =
   });
 
   const asAdmin = t.withIdentity(identityFor("ti2-11-adm-7", "adm7@uct.cl"));
-  await asAdmin.mutation(internal.accounts.enableIntern, { userId: intern.id });
+  await asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: intern.id });
   const stored = await t.run(async (ctx) => {
     return await ctx.db.get(intern.id);
   });
@@ -380,11 +382,11 @@ test("la habilitación jamás cambia el rol ni crea administradores", async () =
   // Ni siquiera un administrador pendiente se habilita por esta vía: no hay
   // promoción a administrador desde la habilitación de practicantes.
   await expect(
-    asAdmin.mutation(internal.accounts.enableIntern, { userId: otherAdmin.id }),
+    asAdmin.mutation(internal.operations.accounts.enableIntern, { userId: otherAdmin.id }),
   ).rejects.toThrow("No autorizado");
 
   // La vía guardada exige permiso incluso sin identidad.
-  await expect(t.mutation(internal.accounts.enableIntern, { userId: intern.id })).rejects.toThrow(
-    "No autorizado",
-  );
+  await expect(
+    t.mutation(internal.operations.accounts.enableIntern, { userId: intern.id }),
+  ).rejects.toThrow("No autorizado");
 });
