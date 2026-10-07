@@ -471,7 +471,7 @@ test("Dos intentos sobre el mismo cupo crean como máximo una atención (TI2-84)
   expect(second.error.code).toBe(CONFLICT_ERROR_CODE);
   expect(second.error.code).not.toBe(NO_AVAILABILITY_ERROR_CODE);
 
-  // Cardinalidad final: una sola atención en el cupo, la del primer intento
+  // Una sola atención en el cupo, la del primer intento
   const agenda = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
@@ -538,7 +538,7 @@ test("El cupo liberado por cancelación se puede volver a ocupar (TI2-84)", asyn
   const pro = await seedProfessional(t, "ti84-pro-3");
   const accompaniment = await seedAccompaniment(t, student);
 
-  // Atención cancelada por el estudiante en el cupo: deja de ocuparlo
+  // Atención cancelada por el estudiante: libera el cupo
   await t.run(async (ctx) => {
     return await ctx.db.insert("appointments", {
       accompanimentId: accompaniment,
