@@ -50,6 +50,7 @@ const androidFontScaleTables = [
   { scale: 1.8, dp: [14.4, 18, 21.6, 24.4, 27.6, 30.8, 32.8, 34.8, 100] },
   { scale: 2, dp: [16, 20, 24, 26, 30, 34, 36, 38, 100] },
 ] as const;
+const android14FontScaleTables = androidFontScaleTables.filter(({ scale }) => scale >= 1.15);
 const androidFontScaleReferenceSizes = [8, 10, 12, 14, 18, 20, 24, 30, 100] as const;
 
 /** Returns the native SP size that renders to the chosen scale's DP size. */
@@ -71,12 +72,12 @@ export function getNativeFontSize(
     return roundNativeFontSize(fontSize * (targetScale / safeSystemScale));
   }
 
-  const targetDp = convertAndroidSpToDp(fontSize, targetScale);
+  const targetDp = convertAndroidSpToDp(fontSize, targetScale, version);
   let lower = 0;
   let upper = Math.max(fontSize * 4, 400);
   for (let iteration = 0; iteration < 40; iteration += 1) {
     const candidate = (lower + upper) / 2;
-    if (convertAndroidSpToDp(candidate, safeSystemScale) < targetDp) lower = candidate;
+    if (convertAndroidSpToDp(candidate, safeSystemScale, version) < targetDp) lower = candidate;
     else upper = candidate;
   }
   return roundNativeFontSize((lower + upper) / 2);
@@ -86,13 +87,15 @@ function roundNativeFontSize(fontSize: number): number {
   return Math.round(fontSize * 100) / 100;
 }
 
-function convertAndroidSpToDp(fontSize: number, scale: number): number {
-  if (scale < 1.05) return fontSize * scale;
+function convertAndroidSpToDp(fontSize: number, scale: number, platformVersion: number): number {
+  const fontScaleTables =
+    platformVersion === 34 ? android14FontScaleTables : androidFontScaleTables;
+  if (scale < fontScaleTables[0].scale) return fontSize * scale;
 
-  const upperIndex = androidFontScaleTables.findIndex((table) => table.scale >= scale);
+  const upperIndex = fontScaleTables.findIndex((table) => table.scale >= scale);
   if (upperIndex < 0) return fontSize * scale;
-  const lowerTable = androidFontScaleTables[Math.max(0, upperIndex - 1)];
-  const upperTable = androidFontScaleTables[upperIndex] ?? lowerTable;
+  const lowerTable = fontScaleTables[Math.max(0, upperIndex - 1)];
+  const upperTable = fontScaleTables[upperIndex] ?? lowerTable;
   const scaleProgress =
     upperTable.scale === lowerTable.scale
       ? 0

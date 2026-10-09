@@ -76,4 +76,14 @@ describe("política efectiva de accesibilidad", () => {
     expect(getNativeFontSize(20, 1.5, 1.5, "android", 37)).toBe(20);
     expect(getNativeFontSize(20, 1.5, Number.NaN, "android", 37)).toBeCloseTo(26);
   });
+
+  test("Android 14 conserva el escalado lineal hasta su primera curva no lineal", () => {
+    expect(getNativeFontSize(30, 1, 1.1, "android", 34)).toBeCloseTo(30 / 1.1);
+    expect(getNativeFontSize(30, 1, 1.14, "android", 34)).toBeCloseTo(30 / 1.14);
+    expect(getNativeFontSize(30, 1, 1.15, "android", 34)).toBeCloseTo(30);
+  });
+
+  test("Android 15 conserva la curva no lineal para la escala 1.1", () => {
+    expect(getNativeFontSize(30, 1, 1.1, "android", 35)).toBeCloseTo(30);
+  });
 });
