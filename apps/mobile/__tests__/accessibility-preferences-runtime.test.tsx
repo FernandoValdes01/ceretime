@@ -11,6 +11,15 @@ import {
   useAccessibilityPreferences,
 } from "@/presentation/accessibility/accessibility-preferences-provider";
 
+const { ReducedMotionManager } = jest.requireActual(
+  "react-native-reanimated/lib/module/ReducedMotion",
+) as {
+  ReducedMotionManager: {
+    jsValue: boolean;
+    uiValue: { value: boolean };
+  };
+};
+
 const systemPreferences = {
   ...defaultAccessibilityPreferences,
   reduceMotion: "system",
@@ -89,6 +98,42 @@ describe("preferencias de accesibilidad del sistema", () => {
     expect(removeMotionListener).toHaveBeenCalledTimes(1);
     expect(removeContrastListener).toHaveBeenCalledTimes(1);
     expect(removeAppStateListener).toHaveBeenCalledTimes(1);
+  });
+
+  test("actualiza el modo global de Reanimated cuando cambia el ajuste del sistema", async () => {
+    let onMotionChanged: ((enabled: boolean) => void) | undefined;
+    jest.spyOn(AccessibilityInfo, "isReduceMotionEnabled").mockResolvedValue(false);
+    jest.spyOn(AccessibilityInfo, "isDarkerSystemColorsEnabled").mockResolvedValue(false);
+    (jest.spyOn(AccessibilityInfo, "addEventListener") as jest.Mock).mockImplementation(
+      (eventName, handler) => {
+        if (eventName === "reduceMotionChanged") {
+          onMotionChanged = handler as unknown as (enabled: boolean) => void;
+        }
+        return { remove: jest.fn() };
+      },
+    );
+    jest.spyOn(AppState, "addEventListener").mockReturnValue({ remove: jest.fn() });
+
+    const view = render(
+      <AccessibilityPreferencesProvider port={createPort()}>
+        <Consumer />
+      </AccessibilityPreferencesProvider>,
+    );
+
+    await waitFor(() => expect(ReducedMotionManager.jsValue).toBe(false));
+    act(() => onMotionChanged?.(true));
+    await waitFor(() => {
+      expect(ReducedMotionManager.jsValue).toBe(true);
+      expect(ReducedMotionManager.uiValue.value).toBe(true);
+    });
+
+    act(() => onMotionChanged?.(false));
+    await waitFor(() => {
+      expect(ReducedMotionManager.jsValue).toBe(false);
+      expect(ReducedMotionManager.uiValue.value).toBe(false);
+    });
+
+    view.unmount();
   });
 
   test.each(["reduceMotionChanged", "darkerSystemColorsChanged"] as const)(
