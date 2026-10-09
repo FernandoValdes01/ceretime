@@ -14,7 +14,7 @@ import { isProfileActive } from "../authorization/permissions";
  * asignación entre profesionales sigue en arranque (cualquier profesional
  * vigente puede otorgarla) y su recorte por acompañamiento llega con el flujo
  * público de RF-39. Los literales deben mantenerse en sincronía con
- * `convex/validators.ts`.
+ * `convex/infrastructure/validators.ts`.
  */
 
 export type InternAccessRole = "student" | "professional" | "intern" | "admin";

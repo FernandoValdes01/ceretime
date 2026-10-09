@@ -1,5 +1,8 @@
+const { recoverEvidence, inferEvidenceRequests } = require("./ai-review-evidence.cjs");
+const { currentReview, pullNumber } = require("./ai-review-target.cjs");
 const fs = require("node:fs");
 const { memoryIdentity, createMemory } = require("./ai-review-memory.cjs");
+const { gitReader, hash } = require("./ai-review-context.cjs");
 const { reviewPlan } = require("./ai-review-chunks.cjs");
 const { parseSummary } = require("./ai-review-score.cjs");
 
@@ -9,18 +12,38 @@ async function normalizeConfidence({
   fetchImpl = fetch,
   github,
   context,
+  verify,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
   const plan = JSON.parse(
     fs.readFileSync(`${env.GITHUB_WORKSPACE}/.git/ai-review-plan.json`, "utf8"),
   );
   if (plan.sha !== env.REVIEW_SHA) throw new Error("Plan de otro SHA.");
+  const { readState } = gitReader(env.GITHUB_WORKSPACE);
   const report = await reviewPlan({
     plan,
+    verify,
+    resolveEvidence: ({ chunk, limitations }) =>
+      inferEvidenceRequests({ directory: env.GITHUB_WORKSPACE, sha: plan.sha, chunk, limitations }),
+    recoverContext: ({ chunk, requests }) =>
+      recoverEvidence({
+        directory: env.GITHUB_WORKSPACE,
+        base: plan.mergeBase,
+        sha: plan.sha,
+        chunk,
+        requests,
+      }),
     memory: createMemory({
       directory: `${env.GITHUB_WORKSPACE}/.git/ai-review-memory`,
       identity: memoryIdentity(plan, env.REVIEW_INSTRUCTIONS),
       apiKey: env.OPENROUTER_API_KEY,
+      readEvidence: ({ path, side }) => {
+        const state = readState(side === "base" ? plan.mergeBase : plan.sha, path);
+        return {
+          status: state.status,
+          hash: state.status === "present" ? hash(state.text) : null,
+        };
+      },
     }),
     instructions: env.REVIEW_INSTRUCTIONS,
     apiKey: env.OPENROUTER_API_KEY,
@@ -30,15 +53,9 @@ async function normalizeConfidence({
     isCurrent: async () => {
       const { data: pr } = await github.rest.pulls.get({
         ...context.repo,
-        pull_number: context.payload.pull_request.number,
+        pull_number: pullNumber(context, env),
       });
-      return (
-        pr.head.sha === env.REVIEW_SHA &&
-        pr.base.sha === plan.base &&
-        pr.base.ref === "main" &&
-        !pr.draft &&
-        pr.state === "open"
-      );
+      return currentReview(pr, plan, context.repo);
     },
   });
   if (!parseSummary(report.summary)) throw new Error("Resumen agregado inválido.");

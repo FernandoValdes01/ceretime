@@ -4,20 +4,41 @@ const crypto = require("node:crypto");
 const { MODEL } = require("./ai-review-presentation.cjs");
 const { contentKey } = require("./ai-review-context.cjs");
 const TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_EVIDENCE_DEPENDENCIES = 32;
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 
 function memoryIdentity(plan, instructions) {
   return hash(
     JSON.stringify({
-      version: 2,
+      version: 4,
       provider: "openrouter",
       model: MODEL,
+      // Base refs stay in the identity because a partial context fingerprint
+      // cannot prove that every historical input was available.
       base: plan.base,
+      baseRef: plan.baseRef,
+      mergeBase: plan.mergeBase,
       intent: plan.intent,
-      limits: plan.limits,
+      reviewPolicy: plan.reviewPolicy ?? {},
+      // The output ceiling can truncate an assessment; pacing, retries and
+      // block limits only control work completed within this invocation.
+      semanticLimits: {
+        outputTokens: plan.limits?.outputTokens ?? 6000,
+      },
       instructions,
       implementation: hash(
-        ["chunks", "selection", "context", "memory", "provider"]
+        [
+          "chunks",
+          "selection",
+          "context",
+          "memory",
+          "provider",
+          "verification",
+          "evidence",
+          "payload",
+          "confidence",
+          "score",
+        ]
           .map((name) => fs.readFileSync(path.join(__dirname, `ai-review-${name}.cjs`), "utf8"))
           .join("\n"),
       ),
@@ -25,7 +46,7 @@ function memoryIdentity(plan, instructions) {
   );
 }
 
-function createMemory({ directory, identity, apiKey, now = Date.now }) {
+function createMemory({ directory, identity, apiKey, now = Date.now, readEvidence }) {
   const file = (part) => path.join(directory, `${contentKey(part)}.json`);
   const signature = (payload) =>
     crypto.createHmac("sha256", apiKey).update(JSON.stringify(payload)).digest("hex");
@@ -52,14 +73,38 @@ function createMemory({ directory, identity, apiKey, now = Date.now }) {
           )
         )
           return null;
+        const evidence = payload.evidenceDependencies ?? [];
+        if (
+          !Array.isArray(evidence) ||
+          evidence.length > MAX_EVIDENCE_DEPENDENCIES ||
+          evidence.some(
+            (item) =>
+              !item ||
+              typeof item.path !== "string" ||
+              !["base", "head"].includes(item.side) ||
+              typeof item.ref !== "string" ||
+              !/^[a-f0-9]{40}$/.test(item.ref) ||
+              !["present", "absent"].includes(item.status) ||
+              (item.status === "present"
+                ? !/^[a-f0-9]{64}$/.test(item.hash ?? "")
+                : item.hash !== null),
+          ) ||
+          (evidence.length > 0 && typeof readEvidence !== "function")
+        )
+          return null;
+        for (const item of evidence) {
+          const current = readEvidence(item);
+          if (!current || current.status !== item.status || current.hash !== item.hash) return null;
+        }
         const assessment = payload.assessment;
         const findings = assessment.findings.map(({ anchorIndex, ...finding }) => {
+          if (finding.scope === "pull_request") return finding;
           const anchor = part.anchors[anchorIndex];
           if (!anchor) throw new Error("Coordenada ya no disponible.");
           const [side, line] = anchor.split(":");
           return { ...finding, side, line: Number(line) };
         });
-        return { ...assessment, findings };
+        return { ...assessment, findings, evidenceDependencies: evidence };
       } catch {
         return null;
       }
@@ -70,9 +115,25 @@ function createMemory({ directory, identity, apiKey, now = Date.now }) {
         identity,
         chunk: contentKey(part),
         createdAt: now(),
+        evidenceDependencies: [
+          ...new Map(
+            (part.evidenceDependencies ?? []).map((item) => [
+              JSON.stringify([
+                item.path,
+                item.side,
+                item.ref,
+                item.status,
+                item.hash,
+                item.forPath,
+              ]),
+              item,
+            ]),
+          ).values(),
+        ],
         assessment: {
           ...assessment,
           findings: assessment.findings.map(({ side, line, ...finding }) => {
+            if (finding.scope === "pull_request") return finding;
             const anchorIndex = part.anchors.indexOf(`${side}:${line}`);
             if (anchorIndex < 0) throw new Error("Hallazgo fuera del bloque.");
             return { ...finding, anchorIndex };

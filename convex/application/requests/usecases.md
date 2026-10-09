@@ -28,7 +28,7 @@ Evidencia de cierre de TI2-26: las mutations públicas son adaptadores delgados 
 
 Las cuatro mutations públicas del Sprint 1 son `createRequest`, `takeRequest`, `requestAdditionalInformation` y `acceptRequest` (ver tabla de arriba); no se agrega ninguna otra escritura pública en este alcance.
 
-La habilitación de cuentas (`internal.accounts.enableIntern`, `internal.accounts.ensureBootstrapAdmin`) y la concesión o revocación de accesos (`internal.assignments.assign`, `internal.assignments.revoke`) siguen en sus vías internas guardadas con autorización en el servidor: ningún cliente las invoca directo y habilitar jamás concede acompañamientos (TI2-11, TI2-28).
+La habilitación de cuentas (`internal.operations.accounts.enableIntern`, `internal.operations.accounts.ensureBootstrapAdmin`) y la concesión o revocación de accesos (`internal.operations.assignments.assign`, `internal.operations.assignments.revoke`) siguen en sus vías internas guardadas con autorización en el servidor: ningún cliente las invoca directo y habilitar jamás concede acompañamientos (TI2-11, TI2-28).
 
 El Sprint 1 no usa `action`: no hay integraciones ni trabajo que lo requiera y la autenticación institucional corre por las rutas HTTP de Better Auth (`convex/auth.ts`, `convex/http.ts`), así que no existe superficie de actions que validar.
 

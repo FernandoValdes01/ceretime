@@ -31,12 +31,12 @@ Superficie pública versionada del Backend para los flujos comprometidos en Spri
 
 No forman superficie pública y ningún cliente las llama directo. Se documentan porque la checklist las exige y sus contratos rigen la vigencia que ven los guards:
 
-| Operación                                | Argumentos                                  | Hace                                                                                                   |
-| ---------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `internal.assignments.assign`            | `accompanimentId`, `userId`, `assignedRole` | Crea la fila activa con `grantedBy`/`grantedAt`; exige Profesional autorizado y Practicante habilitado |
-| `internal.assignments.revoke`            | `accompanimentId`, `userId`, `assignedRole` | Revoca todas las filas activas de la tripla con `revokedBy`/`revokedAt`, sin borrar historial          |
-| `internal.accounts.enableIntern`         | `userId`                                    | Habilita la cuenta del Practicante pendiente; solo Administrador vigente                               |
-| `internal.accounts.ensureBootstrapAdmin` | `email`, `fullName`, `tokenIdentifier`      | Arranque administrativo inicial de un solo uso                                                         |
+| Operación                                           | Argumentos                                  | Hace                                                                                                   |
+| --------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `internal.operations.assignments.assign`            | `accompanimentId`, `userId`, `assignedRole` | Crea la fila activa con `grantedBy`/`grantedAt`; exige Profesional autorizado y Practicante habilitado |
+| `internal.operations.assignments.revoke`            | `accompanimentId`, `userId`, `assignedRole` | Revoca todas las filas activas de la tripla con `revokedBy`/`revokedAt`, sin borrar historial          |
+| `internal.operations.accounts.enableIntern`         | `userId`                                    | Habilita la cuenta del Practicante pendiente; solo Administrador vigente                               |
+| `internal.operations.accounts.ensureBootstrapAdmin` | `email`, `fullName`, `tokenIdentifier`      | Arranque administrativo inicial de un solo uso                                                         |
 
 ## Respuestas y errores
 
@@ -55,7 +55,7 @@ Los resultados de dominio que pueden fallar usan `ApiResult<T>` (`{status: "ok",
 
 ## Topes y serialización (TI2-23)
 
-`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/request` y exportado por `convex/domain/index.ts`. El Backend aplica el límite (la validación de 1–2000 caracteres ya está integrada en `registerRequest`) y los clientes reusan el valor 2000 documentado acá hasta que exista un paquete compartido: Web y Mobile consumen vía `api` de `convex/_generated/api` y ningún cliente importa `convex/domain` (verificado contra sus imports reales). Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
+`ACCESS_NEEDS_MAX_LENGTH = 2000`, centralizado en `convex/domain/requests` y exportado por `convex/domain/index.ts`. El Backend aplica el límite (la validación de 1–2000 caracteres ya está integrada en `registerRequest`) y los clientes reusan el valor 2000 documentado acá hasta que exista un paquete compartido: Web y Mobile consumen vía `api` de `convex/_generated/api` y ningún cliente importa `convex/domain` (verificado contra sus imports reales). Se rechaza el exceso, nunca se trunca: recortar necesidades de acceso alteraría en silencio lo declarado (Ley 21.719).
 
 `toStoredRequestFields` convierte el contenido estructurado a la forma persistida uniendo etiquetas de `accessNeeds` más `otherAccessNeed` con salto de línea. Destino de cada campo de `SubmitStudentRequestCommand` (verificado contra el tipo real de Mobile):
 
@@ -74,7 +74,7 @@ La Web consume la misma superficie `api.presentation.*` sin endpoints propios: `
 
 ## Cierre de seguridad y concurrencia (TI2-27)
 
-La auditoría de TI2-27 no encontró identidad por argumento en funciones públicas (toda la presentación resuelve `ctx.auth.getUserIdentity()` y delega por `tokenIdentifier`), ni lecturas por identificador sin chequeo de titularidad o asignación activa, ni fugas de `accessNeeds`, `studentId` o `authorId` fuera de la vista que corresponde; el Practicante solo lee la vista minimizada (`_id`, `status`, `objective`, `view`) con asignación explícita y activa, las notas internas solo las lee el Profesional asignado y el Administrador siempre recibe denegación en acompañamientos. Criterio de cierre explícito de TI2-27: la apertura única queda garantizada por construcción porque `acceptRequest` comprueba y crea en la misma transacción (`findAccompanimentByRequest` con el índice `accompaniments.by_request` antes de insertar) y queda probada en `convex/acceptance.test.ts` por duplicado (repetición secuencial rechazada con "La solicitud ya fue aceptada" y contienda entre dos profesionales con toma activa donde la segunda aceptación se rechaza sin duplicar); la demostración con transacciones solapadas contra un backend en vivo no es condición de cierre de TI2-27 porque exige el entorno con datos ficticios y clientes autenticados independientes que provee TI2-30, donde queda registrada como evidencia manual pendiente. Toda denegación responde `ConvexError("No autorizado")` sin motivo ni existencia del recurso y los rechazos de regla usan `Error` en español según la tabla de respuestas y errores.
+La auditoría de TI2-27 no encontró identidad por argumento en funciones públicas (toda la presentación resuelve `ctx.auth.getUserIdentity()` y delega por `tokenIdentifier`), ni lecturas por identificador sin chequeo de titularidad o asignación activa, ni fugas de `accessNeeds`, `studentId` o `authorId` fuera de la vista que corresponde; el Practicante solo lee la vista minimizada (`_id`, `status`, `objective`, `view`) con asignación explícita y activa, las notas internas solo las lee el Profesional asignado y el Administrador siempre recibe denegación en acompañamientos. Criterio de cierre explícito de TI2-27: la apertura única queda garantizada por construcción porque `acceptRequest` comprueba y crea en la misma transacción (`findAccompanimentByRequest` con el índice `accompaniments.by_request` antes de insertar) y queda probada en `convex/tests/acceptance.test.ts` por duplicado (repetición secuencial rechazada con "La solicitud ya fue aceptada" y contienda entre dos profesionales con toma activa donde la segunda aceptación se rechaza sin duplicar); la demostración con transacciones solapadas contra un backend en vivo no es condición de cierre de TI2-27 porque exige el entorno con datos ficticios y clientes autenticados independientes que provee TI2-30, donde queda registrada como evidencia manual pendiente. Toda denegación responde `ConvexError("No autorizado")` sin motivo ni existencia del recurso y los rechazos de regla usan `Error` en español según la tabla de respuestas y errores.
 
 ### Prueba en vivo pendiente (guía para TI2-30)
 
@@ -104,21 +104,35 @@ Divergencias de valores registradas (no inventar valores: lo que sigue lo acuerd
 
 ## Versionado
 
-La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo servidor) y los tipos generados en `convex/_generated`, verificados con `tsc` y `test:convex` en CI. Un cambio incompatible se documenta acá antes de implementarse. Comprobación de compatibilidad: espejo manual documentado en `convex/domain/request/request.test.ts` (copia local de la forma de `SubmitStudentRequestCommand`, no el tipo real de Mobile) y la matriz de arriba, que TI4-12 cierra con el cableado final.
+La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo servidor) y los tipos generados en `convex/_generated`, verificados con `tsc` y `test:convex` en CI. Un cambio incompatible se documenta acá antes de implementarse. Comprobación de compatibilidad: espejo manual documentado en `convex/domain/requests/request.test.ts` (copia local de la forma de `SubmitStudentRequestCommand`, no el tipo real de Mobile) y la matriz de arriba, que TI4-12 cierra con el cableado final.
 
 ## Pendientes
 
-- TI2-26 quedó integrada (PR #52): la validación y la documentación de esta superficie ya viven en este archivo y en `convex/apiBackend.test.ts`.
+- TI2-26 quedó integrada (PR #52): la validación y la documentación de esta superficie ya viven en este archivo y en `convex/tests/apiBackend.test.ts`.
 - TI4-12 cablea los hooks al Backend y resuelve las divergencias de valores.
 
 ## Evolución compatible de Sprint 2: disponibilidad, espacios y atención (TI2-87)
 
 Contratos públicos compartidos v1 para Sprint 2, sin otra API ni tipos locales divergentes: la única fuente pura es `convex/domain/availability/`, `convex/domain/spaces/` y `convex/domain/appointments/`, exportada por el barrel `convex/domain/index.ts` para Web y Mobile. Reutilizan `ModalityPreference` de la solicitud, las clases de excepción de TI2-81 (`cancelled`/`added`) y los estados de TI2-83 (`scheduled`, `completed`, `cancelled_by_student`, `cancelled_by_cereti`, `rescheduled`, `no_show`); reserva y atención son una sola entidad y no existe un `domain/reservations` paralelo. La forma de errores públicos (`ApiResult`/`PublicApiError`) se conserva intacta; TI2-88 fija códigos y casos negativos.
 
-| Contrato | Versión | Fuente |
-| --- | --- | --- |
-| Disponibilidad (bloques, excepciones, rango y paginación) | `v1` | `convex/domain/availability/availability.ts` |
-| Espacios (campus, edificio, piso, sala, acceso e instrucciones) | `v1` | `convex/domain/spaces/space.ts` |
-| Atención reservada (una sola entidad, seis estados) | `v1` | `convex/domain/appointments/appointment.ts` |
+| Contrato                                                        | Versión | Fuente                                       |
+| --------------------------------------------------------------- | ------- | -------------------------------------------- |
+| Disponibilidad (bloques, excepciones, rango y paginación)       | `v1`    | `convex/domain/availability/availability.ts` |
+| Espacios (campus, edificio, piso, sala, acceso e instrucciones) | `v1`    | `convex/domain/spaces/space.ts`              |
+| Atención reservada (una sola entidad, seis estados)             | `v1`    | `convex/domain/appointments/appointment.ts`  |
 
 Contrato propuesto frente a endpoint disponible: estos DTO llevan identificadores genéricos (`string` plano) y campo `version`; las entradas nuevas se entregarán bajo `api.presentation.availability`/`appointments`/`spaces` en las tareas de endpoints (TI2-97/TI2-98/TI2-99/TI2-111), fuera de esta tarea, que no crea endpoints, casos de uso, repositorios, esquema ni adaptadores de calendario. Los clientes siguen compilando sin cambios: Web y Mobile aún no consumen estos DTO y Mobile conserva sus mocks tipados durante Sprint 2; todo dato es ficticio y la autorización contextual queda en Aplicación con la DB y los servicios externos en Infraestructura. Comprobación: espejo manual de los modelos provisionales de Mobile en `convex/domain/availability/availability.test.ts`, ida y vuelta JSON de cada DTO ficticio y regresión de `test:convex`, `test:web`, `build` Web y `typecheck`/`test` Mobile.
+
+## Respuestas de conflicto, acceso denegado y ausencia de cupo (TI2-88)
+
+Códigos estables del contrato público común en `convex/domain/errors/api_error.ts`, con `PublicApiError = {code, message}` y `ApiResult<T> = {status: "ok", data} | {status: "error", error}` sin envoltura paralela: los clientes distinguen por `code` y nunca interpretan el texto de `message` como código. Conflicto y ausencia de cupo usan códigos distintos y ninguno revela si el recurso existe; el identificador ajeno y el inexistente responden igual, sin pila, identificadores de terceros, necesidades ni notas.
+
+| Código            | Significado                    | Mensaje comprensible                                                             |
+| ----------------- | ------------------------------ | -------------------------------------------------------------------------------- |
+| `unauthorized`    | Acceso denegado                | `No autorizado`                                                                  |
+| `conflict`        | Conflicto con el estado actual | `La solicitud entra en conflicto con el estado actual.`                          |
+| `no_availability` | Ausencia de cupo               | `Sin cupo disponible. Coordina por el canal oficial con la referencia indicada.` |
+
+Compatibilidad con Sprint 1: se conservan `access_needs_empty`, `access_needs_too_long`, `ConvexError("No autorizado")` y los mensajes operativos en español de la tabla de respuestas y errores; ningún endpoint existente cambia su forma. La ausencia de cupo se coordina por el canal oficial con la referencia mínima ya entregada en la entrada, sin crear una reserva incompatible.
+
+Traducción segura del borde Convex para endpoints nuevos: Dominio no importa Convex, React ni Expo y Aplicación conserva la autorización contextual sin importar Convex; Aplicación expone `deniedPublicError` en `convex/application/authorization/authorize.ts` reutilizando `unauthorizedError()` del dominio y Presentación expone la traducción compartida `toSecureConvexError`, `denyUnauthorized` y `throwPublicApiError` en `convex/presentation/session.ts`. Todo endpoint nuevo de disponibilidad, espacios y atención convierte su `PublicApiError` con esa única traducción a `ConvexError({code, message})` con solo esas dos claves, sin depender de autorización para adaptar sus respuestas. Comprobación: forma de éxito y error con claves exactas y códigos estables en `convex/domain/errors/api_error.test.ts`, e identificador ajeno frente a inexistente con la misma denegación sin filtrar en `convex/tests/apiBackend.test.ts`; el barrel `convex/domain/index.ts` sigue siendo la única fuente pura para Web y Mobile.

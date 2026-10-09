@@ -1,3 +1,7 @@
+import "./ai-review-renames.test.ts";
+import "./ai-review-context-retrieval.test.ts";
+import "./ai-review-verification.test.ts";
+import { fixtureVerifier } from "./ai-review-test-verifier.cjs";
 import "./ai-review-memory.test.ts";
 import "./ai-review-conversation.test.ts";
 import "./ai-review-flow.test.ts";
@@ -16,6 +20,13 @@ import { formatInline, withoutBold } from "./ai-review-presentation.cjs";
 import { verifyScale } from "./ai-review-scale.cjs";
 const sha = "a".repeat(40);
 const config = Bun.YAML.parse(readFileSync(`${import.meta.dir}/../.pr-reviewer.yml`, "utf8"));
+test("reviewer config reserves bounded calls for recovery and independent verification", () => {
+  expect(config.chunking.maxChunks).toBe(48);
+  expect(config.chunking.maxCalls).toBe(80);
+  expect(config.chunking.maxCalls).toBe(LIMITS.maxCalls);
+  expect(config.chunking.maxChunks).toBe(LIMITS.maxChunks);
+  expect(buildPlan([], config, sha).limits.maxCalls).toBe(80);
+});
 function chunkFile(filename: string, lines = 80, width = 70) {
   return {
     filename,
@@ -47,6 +58,7 @@ const jsonResponse = (data: unknown, extra = {}) => ({
 async function runChunks(plan: any, responses?: any[], fetchOverride?: any) {
   const requests: any[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME: autorización en backend.",
     apiKey: "simulation",
@@ -95,6 +107,58 @@ for (const data of [
       validateAssessment(data, buildPlan([chunkFile("file.ts", 10)], {}, sha).chunks[0]),
     ).toThrow();
   });
+test("finding identities normalize punctuation without losing a stable issue key", () => {
+  const plan = buildPlan([chunkFile("file.ts", 10)], {}, sha);
+  const assessment = validateAssessment(
+    { findings: [finding({ issue_key: "  Session Error: invalid token!  " })] },
+    plan.chunks[0],
+  );
+  expect(assessment.findings[0].issue_key).toBe("session-error-invalid-token");
+  expect(() =>
+    validateAssessment({ findings: [finding({ issue_key: " !!! " })] }, plan.chunks[0]),
+  ).toThrow("Identidad de hallazgo inválida.");
+});
+test("multiple concrete limitations can describe one changed file without invalidating coverage", () => {
+  const plan = buildPlan([chunkFile("file.ts", 10)], {}, sha);
+  const limitations = ["Falta verificar el consumidor A.", "Falta verificar el contrato B."];
+  expect(plan.chunks[0].parts).toHaveLength(1);
+  expect(validateAssessment({ findings: [], limitations }, plan.chunks[0]).limitations).toEqual(
+    limitations,
+  );
+  expect(() =>
+    validateAssessment(
+      { findings: [], limitations: Array.from({ length: 17 }, () => "Limitación concreta.") },
+      plan.chunks[0],
+    ),
+  ).toThrow("Limitaciones inválidas.");
+});
+test("incomplete coverage reports its state without inventing a quality score", () => {
+  const plan = buildPlan([chunkFile("file.ts", 10)], {}, sha);
+  const report = aggregate(
+    plan,
+    [{ findings: [], limitations: ["Falta comprobar un contrato requerido."] }],
+    1,
+  );
+  expect(report).toMatchObject({ coverage: "incomplete", score: null, qualityScore: null });
+  expect(report.summary).toContain("Review status: incomplete");
+  expect(report.summary).not.toContain("0/5");
+  const result = evaluateReview({
+    outcome: "success",
+    summary: report.summary,
+    risk: report.risk,
+    commentsCount: "0",
+    expectedSha: sha,
+    currentSha: sha,
+    coverage: report.coverage,
+  });
+  const body = formatReview(result, sha, "https://github.com/test/repo/actions/runs/1", "", {
+    report,
+    actionSummary: report.summary,
+  });
+  expect(body).toContain("Revisión incompleta");
+  expect(body).not.toContain("Confidence Score");
+  expect(body).not.toContain("0/5");
+});
 test("no eligible changes require no key or inference and remain explicit", async () => {
   const plan = buildPlan(
     [{ filename: "image.png" }, { filename: "bun.lock" }, chunkFile("docs/notes.md", 1)],
@@ -102,6 +166,7 @@ test("no eligible changes require no key or inference and remain explicit", asyn
     sha,
   );
   const report = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     fetchImpl: async () => {
@@ -190,7 +255,7 @@ for (const size of [10, 500, 1400])
     const { result, requests } = await runChunks(plan);
     expect(result.coverage).toBe("complete");
     expect(requests).toHaveLength(plan.chunks.length);
-    expect(requests[0].messages[0].content).toContain("main es la base válida");
+    expect(requests[0].messages[0].content).toContain("La base inmediata de esta PR");
     expect(requests[0]).toHaveProperty("max_tokens", LIMITS.outputTokens);
   });
 test("large reviews fit the OpenRouter profile without dropping changed lines", async () => {
@@ -222,12 +287,19 @@ test("each inference identifies its scope within the complete review plan", asyn
       block: index + 1,
       totalBlocks: plan.chunks.length,
       paths: [...new Set(plan.chunks[index].parts.map((part: any) => part.path))],
+      followupThreads: plan.chunks[index].parts.flatMap((part: any) =>
+        (part.followups ?? []).map((thread: any) => ({
+          id: thread.id,
+          path: part.path,
+          currentLine: thread.currentLine,
+        })),
+      ),
     });
     expect(request.messages[0].content).toContain("Los demás bloques se revisan por separado");
     expect(request.messages[0].content).toContain("contrato necesario para evaluar estas partes");
   }
 });
-test("small files share calls while hunks keep independent units", async () => {
+test("small files share calls while grouped hunks retain every coordinate", async () => {
   const file = {
     filename: "multi.ts",
     additions: 2,
@@ -236,8 +308,34 @@ test("small files share calls while hunks keep independent units", async () => {
   };
   const plan = buildPlan([file, chunkFile("file.ts", 1)], {}, sha);
   expect(plan.chunks).toHaveLength(1);
-  expect(plan.chunks[0].parts).toHaveLength(3);
+  expect(plan.chunks[0].parts).toHaveLength(2);
+  expect(plan.chunks[0].parts.find((p: any) => p.path === "multi.ts").anchors).toEqual([
+    "RIGHT:1",
+    "RIGHT:22",
+  ]);
   expect((await runChunks(plan)).result.calls).toBe(1);
+});
+test("many small hunks share a large contract without consuming the call budget", async () => {
+  const file = {
+    filename: "multi.ts",
+    additions: 40,
+    deletions: 0,
+    patch: Array.from(
+      { length: 40 },
+      (_, n) => `@@ -${n * 10},0 +${n * 11 + 1} @@\n+run${n}();`,
+    ).join("\n"),
+    context: [{ path: "contract.ts", head: "x".repeat(30000) }],
+  };
+  const plan = buildPlan([file], {}, sha);
+  expect(plan.issues).toEqual([]);
+  expect(plan.chunks).toHaveLength(1);
+  expect(plan.chunks[0].parts[0].anchors).toEqual(
+    Array.from({ length: 40 }, (_, n) => `RIGHT:${n * 11 + 1}`),
+  );
+  const { result, requests } = await runChunks(plan);
+  expect(result.coverage).toBe("complete");
+  expect(requests).toHaveLength(1);
+  expect(JSON.stringify(requests[0]).length).toBeLessThanOrEqual(plan.limits.inputChars);
 });
 test("missing, truncated or invalid patches cannot certify coverage", async () => {
   for (const file of [
@@ -245,7 +343,7 @@ test("missing, truncated or invalid patches cannot certify coverage", async () =
     { ...chunkFile("file.ts", 10), patch: "@@ -0,0 +1,10 @@\n+only one line" },
   ]) {
     const { result, requests } = await runChunks(buildPlan([file], {}, sha));
-    expect(result).toMatchObject({ score: 0, coverage: "incomplete" });
+    expect(result).toMatchObject({ score: null, coverage: "incomplete" });
     expect(requests).toHaveLength(0);
   }
   const plan = buildPlan([chunkFile("file.ts", 1)], {}, sha);
@@ -274,7 +372,7 @@ test("invalid responses retry once and technical uncertainty is not a finding", 
   const uncertain = await runChunks(plan, [
     { findings: [], limitations: ["Falta el contrato externo para comprobar el cambio."] },
   ]);
-  expect(uncertain.result).toMatchObject({ coverage: "incomplete", calls: 1, score: 0 });
+  expect(uncertain.result).toMatchObject({ coverage: "incomplete", calls: 1, score: null });
   expect(uncertain.result.findings).toHaveLength(0);
 });
 test("aggregate caps findings and rejects contradictory thread decisions", () => {
@@ -293,7 +391,7 @@ test("aggregate caps findings and rejects contradictory thread decisions", () =>
     ],
     2,
   );
-  expect(conflict).toMatchObject({ score: 0, coverage: "incomplete" });
+  expect(conflict).toMatchObject({ score: null, coverage: "incomplete" });
 });
 test("budgets and obsolete heads stop inference without inventing coverage", async () => {
   const plan = buildPlan(
@@ -303,7 +401,7 @@ test("budgets and obsolete heads stop inference without inventing coverage", asy
   );
   expect((await runChunks(plan)).result).toMatchObject({
     coverage: "incomplete",
-    score: 0,
+    score: null,
     calls: 1,
   });
   expect(
@@ -318,6 +416,7 @@ test("budgets and obsolete heads stop inference without inventing coverage", asy
     ).result.calls,
   ).toBe(0);
   const stale = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "simulation",
@@ -326,7 +425,7 @@ test("budgets and obsolete heads stop inference without inventing coverage", asy
       throw new Error("Unexpected inference");
     },
   });
-  expect(stale).toMatchObject({ calls: 0, score: 0, coverage: "incomplete" });
+  expect(stale).toMatchObject({ calls: 0, score: null, coverage: "incomplete" });
 });
 test("publication contract rejects stale missing inconsistent and failed summaries", () => {
   const report = aggregate(buildPlan([], {}, sha), [], 0);
@@ -370,7 +469,16 @@ test("presentation preserves literal code and suggestions", () => {
 test("workflow has one engine pinned actions and no second inference for the score", () => {
   const text = readFileSync(`${import.meta.dir}/workflows/ai-code-review.yml`, "utf8");
   const workflow = Bun.YAML.parse(text);
-  expect(workflow.on.pull_request.branches).toEqual(["main"]);
+  expect(workflow.on.pull_request).not.toHaveProperty("branches");
+  expect(workflow.on.pull_request.types).toContain("edited");
+  expect(workflow.jobs.review.if).toContain("github.event.changes.base");
+  expect(workflow.concurrency.group).toContain("github.run_id");
+  expect(workflow.jobs.review.env.REVIEW_BASE_SHA).toBe(
+    "${{ github.event.pull_request.base.sha }}",
+  );
+  expect(workflow.jobs.review.env.REVIEW_BASE_REF).toBe(
+    "${{ github.event.pull_request.base.ref }}",
+  );
   expect(workflow.on.pull_request.types).toContain("synchronize");
   expect(workflow.permissions).toEqual({
     contents: "read",
@@ -378,7 +486,15 @@ test("workflow has one engine pinned actions and no second inference for the sco
     statuses: "write",
   });
   expect(workflow.concurrency["cancel-in-progress"]).toBe(true);
-  expect(workflow.on).not.toHaveProperty("workflow_dispatch");
+  expect(workflow.on.workflow_dispatch.inputs.pr_number.required).toBe(true);
+  expect(workflow.concurrency.group).toContain("inputs.pr_number");
+  const target = workflow.jobs.review.steps.find((step: any) => step.id === "target");
+  expect(target.with.script).toContain("github.rest.pulls.get");
+  expect(target.with.script).toContain("pr.draft");
+  expect(
+    workflow.jobs.review.steps.find((step: any) => step.uses?.startsWith("actions/checkout@")).with
+      .ref,
+  ).toBe("${{ steps.target.outputs.sha }}");
   expect(Object.keys(workflow.jobs)).toEqual(["review"]);
   const inference = workflow.jobs.review.steps.find((step: any) => step.id === "confidence");
   expect(inference.env.OPENROUTER_API_KEY).toBe("${{ secrets.OPENROUTER_API_KEY }}");
@@ -399,6 +515,7 @@ test("paces chunks and recovers repeated 429 without skipping required coverage"
   let calls = 0;
   const pauses: number[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -440,6 +557,7 @@ test("paces chunks and recovers repeated 429 without skipping required coverage"
 test("persistent 429 reports quota failure and respects the maximum call count", async () => {
   const plan = buildPlan([chunkFile("quota.ts", 10)], {}, sha);
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -448,7 +566,7 @@ test("persistent 429 reports quota failure and respects the maximum call count",
   });
   expect(result.calls).toBe(3);
   expect(result.coverage).toBe("incomplete");
-  expect(result.score).toBe(0);
+  expect(result.score).toBeNull();
   expect(result.reasons.join(" ")).toContain("HTTP 429");
 });
 
@@ -456,6 +574,7 @@ test("daily quota cannot cause an early retry before the requested reset", async
   const plan = buildPlan([chunkFile("daily.ts", 10)], {}, sha);
   const pauses: number[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -486,6 +605,7 @@ test("all chunks remain eligible while respecting the configured interval", asyn
   let elapsed = 0,
     lastRequest = -LIMITS.intervalMs;
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -524,6 +644,7 @@ test("quota wait budget stops bounded retries and the current head is checked af
     sha,
   );
   const limited = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -536,6 +657,7 @@ test("quota wait budget stops bounded retries and the current head is checked af
   let current = true,
     calls = 0;
   const changed = await reviewPlan({
+    verify: fixtureVerifier,
     plan: currentPlan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -550,7 +672,9 @@ test("quota wait budget stops bounded retries and the current head is checked af
   });
   expect(calls).toBe(1);
   expect(changed.coverage).toBe("incomplete");
-  expect(changed.reasons).toContain("El head cambió durante la revisión.");
+  expect(changed.reasons).toContain(
+    "Cambió el head, la base o la elegibilidad durante la revisión.",
+  );
 });
 
 test("successful low-token headers delay the next chunk until reset", async () => {
@@ -561,6 +685,7 @@ test("successful low-token headers delay the next chunk until reset", async () =
   );
   const pauses: number[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -595,6 +720,7 @@ test("429 retry-after identifies the affected limit instead of unrelated reset w
   const pauses: number[] = [];
   let calls = 0;
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -644,6 +770,7 @@ test("daily token exhaustion reports safe numeric evidence without provider iden
   const plan = buildPlan([chunkFile("daily-evidence.ts", 10)], {}, sha);
   const logs: string[] = [];
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -674,6 +801,7 @@ test("daily token exhaustion reports safe numeric evidence without provider iden
 test("a request exceeding the minute allowance reports that waits cannot fix its size", async () => {
   const plan = buildPlan([chunkFile("oversized-tokens.ts", 10)], {}, sha);
   const result = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "CERETIME",
     apiKey: "test",
@@ -692,4 +820,67 @@ test("a request exceeding the minute allowance reports that waits cannot fix its
   expect(result.calls).toBe(1);
   expect(result.reasons.join(" ")).toContain("esperar no lo resuelve");
   expect(result.coverage).toBe("incomplete");
+});
+
+test("an observation explicitly requiring no correction is rejected and retried", async () => {
+  const plan = buildPlan([chunkFile("file.ts", 10)], {}, sha);
+  const observation = finding({
+    cause: "El grupo de concurrencia usa el identificador de ejecución correctamente.",
+    impact: "Ninguno funcional: el diseño es correcto.",
+    fix: "No requiere cambio; el diseño es correcto.",
+  });
+  expect(() => validateAssessment({ findings: [observation] }, plan.chunks[0])).toThrow();
+  const requests: any[] = [];
+  const report = await reviewPlan({
+    verify: fixtureVerifier,
+    plan,
+    instructions: "Revisar el cambio.",
+    apiKey: "simulation",
+    sleep: async () => {},
+    fetchImpl: async (_url: string, request: any) => {
+      requests.push(JSON.parse(request.body));
+      return jsonResponse({
+        findings: requests.length === 1 ? [observation] : [],
+        resolutions: [],
+      });
+    },
+  });
+  expect(report.calls).toBe(2);
+  expect(report.findings).toEqual([]);
+  expect(report.coverage).toBe("complete");
+  expect(requests[1].messages[0].content).toContain("La respuesta anterior fue rechazada");
+});
+
+test("UI snapshot XML is evidence while Android manifests and resource XML remain reviewable", () => {
+  expect(
+    classifyFile({ filename: "apps/mobile/docs/evidence/ti4-50/01-defaults.xml" }).eligible,
+  ).toBe(false);
+  expect(
+    classifyFile({ filename: "apps/mobile/android/app/src/main/AndroidManifest.xml" }).eligible,
+  ).toBe(true);
+  expect(
+    classifyFile({ filename: "apps/mobile/android/app/src/main/res/values/styles.xml" }).eligible,
+  ).toBe(true);
+  expect(classifyFile({ filename: "docs/contracts/config.xml" }).eligible).toBe(true);
+});
+
+test("an invalid block stays incomplete while independent later blocks still receive review", async () => {
+  const plan = buildPlan([chunkFile("first.ts", 1, 10), chunkFile("later.ts", 1, 10)], config, sha);
+  plan.chunks = plan.chunks.flatMap((chunk: any) =>
+    chunk.parts.map((part: any) => ({ parts: [part] })),
+  );
+  expect(plan.chunks).toHaveLength(2);
+  let calls = 0;
+  const { result } = await runChunks(plan, undefined, async (_url: string, request: any) => {
+    calls++;
+    const { paths } = JSON.parse(JSON.parse(request.body).messages[1].content).scope;
+    if (paths[0] === "first.ts") return jsonResponse({ findings: [], score: 5 });
+    return jsonResponse({ findings: [] });
+  });
+  expect(calls).toBe(3);
+  expect(result.processed).toBe(2);
+  expect(result.total).toBe(2);
+  expect(result.coverage).toBe("incomplete");
+  expect(result.qualityScore).toBeNull();
+  expect(result.infrastructure).toHaveLength(1);
 });

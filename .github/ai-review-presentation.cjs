@@ -63,13 +63,13 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     /^\d+$/.test(value ?? "") ? Number(value).toLocaleString("es-ES") : "no disponible";
   const rawObservations = String(metadata.actionSummary ?? "").trim();
   const observations = withoutBold(
-    rawObservations.startsWith("Confidence Score:")
+    /^(?:Confidence Score:|Review status: incomplete;)/.test(rawObservations)
       ? rawObservations.split("; Resumen: ").slice(1).join("; Resumen: ")
       : rawObservations,
   );
   const nextAction = {
     incomplete:
-      "Consultar la causa de cobertura incompleta: llamada fallida, respuesta inválida, presupuesto agotado o patch no disponible. Corregir esa causa o ajustar el presupuesto explícito dentro de los límites y reintentar. Las observaciones parciales no certifican el resto del cambio.",
+      "Ejecutar AI Code Review desde Actions con Run workflow y el número de PR para repetir la comprobación formal del head y la base actuales, incluso sin hallazgos inline. Consultar la causa de cobertura incompleta: llamada fallida, respuesta inválida, presupuesto agotado o patch no disponible. Corregir esa causa o ajustar el presupuesto explícito dentro de los límites y reintentar. Las observaciones parciales no certifican el resto del cambio.",
     failed:
       "Consultar los logs enlazados para identificar el error de OpenRouter o de la Action. Corregir la configuración o esperar la cuota del proveedor y reintentar el workflow sobre este mismo SHA.",
     missing: "Ejecutar AI Code Review para el commit actual y comprobar que devuelve un resultado.",
@@ -78,14 +78,16 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
       "Comprobar los outputs del reviewer en los logs y corregir el contrato del resumen: score entero de 0 a 5, risk, SHA y cantidad de hallazgos coherentes.",
     reviewed:
       findings > 0
-        ? "Revisar los hallazgos inline: cada uno debe explicar el problema introducido, su impacto y la corrección propuesta. Corregir los confirmados y volver a ejecutar la review con el nuevo commit."
+        ? "Revisar los hallazgos de la PR y los comentarios inline: cada uno debe explicar el problema introducido, su impacto y la corrección propuesta. Corregir los confirmados y volver a ejecutar la review con el nuevo commit."
         : "No hay correcciones concretas identificadas por el reviewer. Consultar la justificación de confianza y el resumen antes de decidir cambios; no inventar problemas para subir la nota.",
   }[result.reason];
   return [
     "<!-- ceretime-ai-review-summary -->",
     "## R2D2 · AI Code Review",
     "",
-    `### Confidence Score: ${result.score}/5`,
+    result.reason === "reviewed"
+      ? `### Confidence Score: ${result.score}/5`
+      : "### Revisión incompleta",
     "",
     "| Risk | Hallazgos | Estado |",
     "| --- | --- | --- |",
@@ -93,15 +95,21 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     `Reviewed commit: [${title}](https://github.com/${repo}/commit/${sha})`,
     "",
+    ...(metadata.report?.baseRef
+      ? [
+          `Base revisada: ${JSON.stringify(metadata.report.baseRef)}; SHA: ${metadata.report.base}.`,
+          "",
+        ]
+      : []),
     "### Resumen",
     "",
     result.reason === "reviewed" ? explanation : `${result.description}\n\n${explanation}`,
     "",
     ...(result.reason === "incomplete"
       ? [
-          "### Por qué la confianza es 0/5",
+          "### Evidencia pendiente",
           "",
-          "No es una calificación de la calidad del código. La revisión es parcial y no permite evaluar toda la PR.",
+          "La revisión es parcial. No se asigna una calificación de calidad mientras falte evidencia.",
           "",
           `Diff de la PR: ${amount(metadata.diffSize)} caracteres; archivos: ${amount(metadata.filesCount)}. El tamaño total no determina la cobertura. ${metadata.report?.reasons?.join(" ") || "No se completó una revisión válida de todos los bloques."}`,
           "",
@@ -120,10 +128,16 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
       : []),
     ...(metadata.report
       ? [
-          "### Cobertura por bloques",
+          "### Cobertura, defectos e incidentes",
           "",
           `Bloques procesados: ${metadata.report.processed}/${metadata.report.total}. Llamadas a OpenRouter: ${metadata.report.calls}. Cobertura: ${metadata.report.coverage}.`,
           "",
+          `Defectos verificados: ${metadata.report.totalFindings ?? findings}. Solicitudes de evidencia pendientes: ${metadata.report.missingEvidence?.length ?? 0}. Incidentes del revisor: ${metadata.report.infrastructure?.length ?? 0}.`,
+          ...(metadata.report.missingEvidence ?? []).map(
+            (r) =>
+              `Evidencia pendiente: ${r.path}, ${r.symbol ?? r.fragment ?? "archivo completo"}: ${r.reason}`,
+          ),
+          ...(metadata.report.infrastructure ?? []).map((r) => `Incidente: ${r}`),
           `Unidades reutilizadas por contenido y contexto: ${metadata.report.reused ?? 0}. Archivos omitidos de IA: ${metadata.report.skipped?.length ?? 0}.`,
           ...(metadata.report.usage?.measuredCalls
             ? [
@@ -144,7 +158,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     `[Logs de la ejecución](${runUrl})`,
     "",
-    `[Prueba controlada de la escala de 0/5 a 5/5](${runUrl}#summary)`,
+    `[Prueba controlada de la escala y de resultados incompletos](${runUrl}#summary)`,
     "",
     "</details>",
   ].join("\n");

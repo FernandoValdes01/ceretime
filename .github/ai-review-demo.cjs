@@ -1,3 +1,4 @@
+const { fixtureVerifier } = require("./ai-review-test-verifier.cjs");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const { buildPlan, reviewPlan, publishFindings } = require("./ai-review-chunks.cjs");
@@ -35,6 +36,7 @@ async function runDemo() {
     body: `Problema:\nFalta una prueba de regresión para ${line === 1 ? "espacios al inicio y al final" : "la diferencia entre texto vacío y valor ausente"}.\n\nImpacto:\nUna modificación futura podría cambiar este contrato sin detectar la regresión.\n\nCorrección propuesta:\nAgregar un caso de prueba que compruebe ${line === 1 ? "la eliminación de espacios externos" : "que el texto vacío se conserva y el valor ausente usa la alternativa"}.`,
   }));
   const report = await reviewPlan({
+    verify: fixtureVerifier,
     plan,
     instructions: "Caso controlado, no review real.",
     apiKey: "simulation",
@@ -56,15 +58,16 @@ async function runDemo() {
     body: "Prueba sin efectos externos.",
     state: "open",
     draft: false,
-    base: { ref: "main" },
+    base: { ref: "main", sha: "b".repeat(40) },
     head: { sha, repo: { full_name: "test/simulation" } },
   };
   const github = {
-    paginate: async () => inline,
+    paginate: async (method) => (method === github.rest.pulls.listReviewComments ? inline : []),
     rest: {
       pulls: {
         get: async () => ({ data: pr }),
         listReviewComments: () => {},
+        listReviews: () => {},
         createReview: async (request) => {
           assert.equal(request.commit_id, sha);
           for (const comment of request.comments)

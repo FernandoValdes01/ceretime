@@ -1,0 +1,54 @@
+diff --git a/apps/mobile/app/ti4-50-native-probe.tsx b/apps/mobile/app/ti4-50-native-probe.tsx
+new file mode 100644
+index 0000000..e9aeb07
+--- /dev/null
++++ b/apps/mobile/app/ti4-50-native-probe.tsx
+@@ -0,0 +1,48 @@
++import { useState } from "react";
++import { Button, ScrollView, Text } from "react-native";
++import AsyncStorage from "@react-native-async-storage/async-storage";
++import { useAccessibilityPreferences } from "../src/presentation/accessibility/accessibility-preferences-provider";
++import { accessibilityPreferencesStorageKey } from "../src/infrastructure/local-accessibility-preferences-adapter";
++
++export default function NativePreferencesProbe() {
++  const state = useAccessibilityPreferences();
++  const [result, setResult] = useState("Sin operación");
++  const [raw, setRaw] = useState("No consultado");
++  async function inspect() {
++    setRaw((await AsyncStorage.getItem(accessibilityPreferencesStorageKey)) ?? "Ausente");
++  }
++  return (
++    <ScrollView contentContainerStyle={{ padding: 24, paddingTop: 64, gap: 14 }}>
++      <Text accessibilityRole="header" style={{ fontSize: 26 }}>Prueba nativa TI4-50</Text>
++      <Text>{`Estado: ${state.status}`}</Text>
++      <Text>{`Origen: ${state.source}`}</Text>
++      <Text>{`Texto: ${state.preferences.textScale}`}</Text>
++      <Text>{`Contraste: ${state.preferences.highContrast}`}</Text>
++      <Text>{`Movimiento: ${state.preferences.reduceMotion}`}</Text>
++      <Text>{result}</Text>
++      {state.error ? <Text accessibilityRole="alert">{state.error}</Text> : null}
++      <Button title="Guardar ampliación" disabled={state.status !== "ready"} onPress={async () => {
++        const saved = await state.updatePreferences({ textScale: 2, highContrast: "on", reduceMotion: "on" });
++        setResult(saved ? "Guardado confirmado" : "Guardado rechazado");
++        await inspect();
++      }} />
++      <Button title="Consultar almacenamiento" onPress={inspect} />
++      <Button title="Sembrar datos corruptos" onPress={async () => {
++        await AsyncStorage.setItem(accessibilityPreferencesStorageKey, "fixture-corrupto");
++        setResult("Datos corruptos sembrados. Reiniciar proceso.");
++        await inspect();
++      }} />
++      <Button title="Quitar clave de prueba" onPress={async () => {
++        await AsyncStorage.removeItem(accessibilityPreferencesStorageKey);
++        setResult("Clave eliminada. Reiniciar proceso.");
++        await inspect();
++      }} />
++      <Button title="Guardar predeterminados" disabled={state.status !== "ready"} onPress={async () => {
++        const saved = await state.updatePreferences({ textScale: "system", highContrast: "system", reduceMotion: "system" });
++        setResult(saved ? "Predeterminados guardados" : "Guardado rechazado");
++        await inspect();
++      }} />
++      <Text selectable>{`Dispositivo: ${raw}`}</Text>
++    </ScrollView>
++  );
++}

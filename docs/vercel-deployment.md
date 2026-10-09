@@ -1,6 +1,6 @@
 # Despliegue Web en Vercel
 
-El workflow `CI` conserva las validaciones de lint, formato, pruebas, tipos y build. Cuando pasan los cuatro jobs, despliega `apps/web` con Vercel CLI. La validación manual de builds y AI Review permanecen en workflows independientes; el status informativo de IA no es una dependencia del despliegue.
+El workflow `CI` conserva las validaciones de lint, formato, pruebas, tipos y build. Cuando pasan los cuatro jobs, despliega `apps/web` con Vercel CLI. La validación manual de builds y AI Review permanecen en workflows independientes; el status formal de R2D2 es obligatorio para integrar en main, aunque no exista una dependencia entre su job y el despliegue.
 
 ## Configuración del proyecto Vercel
 

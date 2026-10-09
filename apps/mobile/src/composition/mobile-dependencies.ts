@@ -9,6 +9,7 @@ import { createMockProfessionalAccompanimentReader } from "../infrastructure/moc
 import { createMockProfessionalAccompanimentStore } from "../infrastructure/mock-professional-accompaniment-data";
 import { createMockProfessionalReviewAdapter } from "../infrastructure/mock-professional-review-adapter";
 import { createMockPractitionerAccompanimentReader } from "../infrastructure/mock-practitioner-accompaniment-reader";
+import { createLocalAccessibilityPreferencesAdapter } from "../infrastructure/local-accessibility-preferences-adapter";
 
 const professionalAccompanimentStore = createMockProfessionalAccompanimentStore();
 
@@ -33,6 +34,7 @@ const professionalAccompanimentDemoDelay =
     : 0;
 
 export const mobileDependencies = {
+  accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
   administratorAccountsPort: createMockAdministratorAccountsAdapter(),
   authPort: createMockAuthenticationPort(),
   demoCredentials: mockAuthCredentials,

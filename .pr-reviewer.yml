@@ -4,8 +4,8 @@ review_language: es
 chunking:
   chunkChars: 48000
   inputChars: 64000
-  maxChunks: 32
-  maxCalls: 32
+  maxChunks: 48
+  maxCalls: 80
   outputTokens: 6000
   intervalMs: 1000
   maxRateLimitWaitMs: 600000
@@ -37,7 +37,7 @@ custom_instructions: >-
   Presentación -> Aplicación -> Dominio; Infraestructura implementa adaptadores de Aplicación y Dominio.
   No coloques reglas de negocio en Presentación o Infraestructura ni accedas a persistencia desde Presentación.
   Web y Mobile comparten Convex: no dupliques reglas compartidas ni confíes la autorización al frontend.
-  main es la base válida. Un problema preexistente solo aplica si la PR lo empeora o depende
+  La base inmediata de esta PR es la referencia para evaluar el cambio. Un problema preexistente solo aplica si la PR lo empeora o depende
   directamente de él: exige evidencia del cambio y de su efecto.
   No comentes formato, Oxlint/Oxfmt, nombres subjetivos, cosmética ni problemas preexistentes ajenos al cambio.
   No inventes hallazgos para completar el límite. Si no existen problemas relevantes, indícalo claramente.
