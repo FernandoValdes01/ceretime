@@ -24,7 +24,7 @@ export {
   toAccessNeedsText,
   toAccompanimentRequest,
   toStoredRequestFields,
-} from "./request/request";
+} from "./requests/request";
 export type {
   AccessNeed,
   AccompanimentRequest,
@@ -32,7 +32,7 @@ export type {
   GeneralAvailability,
   ModalityPreference,
   StoredRequestFields,
-} from "./request/request";
+} from "./requests/request";
 export {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
@@ -41,20 +41,20 @@ export {
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
-} from "./request/state";
+} from "./requests/state";
 export type {
   FutureRequestState,
   PersistableRequestState,
   RequestState,
   Sprint1RequestState,
-} from "./request/state";
+} from "./requests/state";
 
 // Acompañamiento y sus vistas de lectura.
 export {
   ACCOMPANIMENT_STATUS_VALUES,
   ACCOMPANIMENT_VIEW_VALUES,
   toAccompanimentProjection,
-} from "./accompaniment/accompaniment";
+} from "./accompaniments/accompaniment";
 export type {
   Accompaniment,
   AccompanimentProjection,
@@ -62,7 +62,7 @@ export type {
   AccompanimentStatus,
   AccompanimentView,
   MinimizedAccompaniment,
-} from "./accompaniment/accompaniment";
+} from "./accompaniments/accompaniment";
 
 // Vocabulario persistido de disponibilidad (TI2-83): la única fuente en
 // valores de modalidad para los validadores del borde. El resto de los
@@ -75,14 +75,14 @@ export {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
   ASSIGNMENT_VIEW_BY_ROLE,
-} from "./accompaniment/practitioner_assignment";
-export { toAssignmentReadPermission } from "./accompaniment/practitioner_assignment";
+} from "./accompaniments/practitioner_assignment";
+export { toAssignmentReadPermission } from "./accompaniments/practitioner_assignment";
 export type {
   AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
   PractitionerAssignment,
-} from "./accompaniment/practitioner_assignment";
+} from "./accompaniments/practitioner_assignment";
 
 // Errores públicos y estados de respuesta (TI2-8, TI2-88).
 export {

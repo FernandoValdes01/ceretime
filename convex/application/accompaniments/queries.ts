@@ -21,7 +21,7 @@ import {
   toAccompanimentProjection,
   type AccompanimentProjection,
   type AccompanimentView,
-} from "../../domain/accompaniment/accompaniment";
+} from "../../domain/accompaniments/accompaniment";
 
 /**
  * Casos de uso de lectura de acompañamientos (S2).
