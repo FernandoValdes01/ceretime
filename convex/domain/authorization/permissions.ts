@@ -60,14 +60,14 @@ export type AgendaAuthorizationContext = AuthorizationContext & {
 
 /**
  * Edición de disponibilidad, que no depende de un acompañamiento.
- * `isCalendarOwner` es verdadero cuando los bloques o excepciones son del
+ * `isAvailabilityOwner` es verdadero cuando los bloques o excepciones son del
  * mismo usuario que llama.
  */
-export type CalendarAuthorizationContext = {
+export type AvailabilityAuthorizationContext = {
   readonly role: Role;
   readonly institutionalStatus: InstitutionalStatus;
   readonly accountStatus: AccountStatus;
-  readonly isCalendarOwner: boolean;
+  readonly isAvailabilityOwner: boolean;
 };
 
 /** La cuenta debe estar habilitada y vigente para cualquier operación. */
@@ -120,14 +120,15 @@ export function canReadInternalNote(context: AuthorizationContext): boolean {
 
 /**
  * Edición de bloques y excepciones: solo el Profesional vigente sobre su
- * propio calendario (RF-12). Poder consultar cupos para un acompañamiento no
- * habilita editar el calendario de nadie. Leer y gestionar el calendario
- * propio (bloques y excepciones del mismo Profesional) usa esta misma regla;
- * `availability:read` es solo para consultar cupos de un acompañamiento.
+ * propia disponibilidad (RF-12). Poder consultar cupos para un
+ * acompañamiento no habilita editar la disponibilidad de nadie. Leer y
+ * gestionar la disponibilidad propia (bloques y excepciones del mismo
+ * Profesional) usa esta misma regla; `availability:read` es solo para
+ * consultar cupos de un acompañamiento.
  */
-export function canEditAvailability(context: CalendarAuthorizationContext): boolean {
+export function canEditAvailability(context: AvailabilityAuthorizationContext): boolean {
   if (!isProfileActive(context)) return false;
-  return context.role === "professional" && context.isCalendarOwner;
+  return context.role === "professional" && context.isAvailabilityOwner;
 }
 
 /**
@@ -198,7 +199,7 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   {
     action: "availability:edit",
     student: "denegado",
-    professional: "permitido solo su propio calendario",
+    professional: "permitido solo su propia disponibilidad",
     intern: "denegado",
     admin: "denegado",
   },

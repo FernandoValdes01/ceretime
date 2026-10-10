@@ -150,7 +150,7 @@ function fakeReader(data: {
 }
 
 describe("authorizeAvailabilityEdit", () => {
-  test("el Profesional edita su calendario y el actor sale de la identidad del servidor", async () => {
+  test("el Profesional edita su disponibilidad y el actor sale de la identidad del servidor", async () => {
     const reader = fakeReader({ profiles: [professional] });
     expect(
       await authorizeAvailabilityEdit(reader, {
@@ -160,7 +160,7 @@ describe("authorizeAvailabilityEdit", () => {
     ).toEqual({ status: "ok", data: { callerId: "user-pro" } });
   });
 
-  test("calendario ajeno, sin identidad o con otro rol se deniega", async () => {
+  test("disponibilidad ajena, sin identidad o con otro rol se deniega", async () => {
     const reader = fakeReader({ profiles: [professional, student] });
     expect(
       await authorizeAvailabilityEdit(reader, {
@@ -178,6 +178,22 @@ describe("authorizeAvailabilityEdit", () => {
       await authorizeAvailabilityEdit(reader, {
         tokenIdentifier: "token-student",
         professionalId: "user-student",
+      }),
+    ).toEqual(DENIED);
+  });
+
+  test("al crear, sin fila previa, el dueño es el Profesional que llama y otros roles se deniegan", async () => {
+    const reader = fakeReader({ profiles: [professional, student] });
+    expect(
+      await authorizeAvailabilityEdit(reader, {
+        tokenIdentifier: "token-pro",
+        professionalId: null,
+      }),
+    ).toEqual({ status: "ok", data: { callerId: "user-pro" } });
+    expect(
+      await authorizeAvailabilityEdit(reader, {
+        tokenIdentifier: "token-student",
+        professionalId: null,
       }),
     ).toEqual(DENIED);
   });

@@ -223,13 +223,19 @@ async function loadAgendaContext(
 }
 
 /**
- * Edición de bloques y excepciones. `professionalId` es el dueño del
- * calendario que se quiere editar, no la identidad: se compara con el perfil
- * del servidor y solo coincide cuando el Profesional edita lo suyo.
+ * Edición de bloques y excepciones. `professionalId` es el dueño de la
+ * disponibilidad que se quiere editar, no la identidad: se compara con el
+ * perfil del servidor y solo coincide cuando el Profesional edita lo suyo.
+ *
+ * Nunca sale del cliente. Al editar un bloque o una excepción existente es
+ * el `professionalId` guardado en esa fila, leído en el servidor. Al crear no
+ * hay fila: se pasa `null` y el dueño de lo creado es `auth.data.callerId`.
+ * Un `professionalId` del cliente junto con un `blockId` también del cliente
+ * autorizaría editar la disponibilidad de otro.
  */
 export async function authorizeAvailabilityEdit(
   reader: AuthorizationReader,
-  request: { readonly tokenIdentifier: string | null; readonly professionalId: string },
+  request: { readonly tokenIdentifier: string | null; readonly professionalId: string | null },
 ): Promise<ApiResult<AgendaGrant>> {
   const profile = await findCaller(reader, request.tokenIdentifier);
   if (
@@ -238,7 +244,8 @@ export async function authorizeAvailabilityEdit(
       role: profile.role,
       institutionalStatus: profile.institutionalStatus,
       accountStatus: profile.accountStatus,
-      isCalendarOwner: profile._id === request.professionalId,
+      isAvailabilityOwner:
+        request.professionalId === null || profile._id === request.professionalId,
     })
   ) {
     return denied();

@@ -11,7 +11,7 @@ import {
   PERMISSION_MATRIX,
   type AgendaAuthorizationContext,
   type AuthorizationContext,
-  type CalendarAuthorizationContext,
+  type AvailabilityAuthorizationContext,
 } from "./permissions";
 
 function activeContext(overrides: Partial<AuthorizationContext>): AuthorizationContext {
@@ -30,14 +30,14 @@ function agendaContext(overrides: Partial<AgendaAuthorizationContext>): AgendaAu
   return { ...activeContext({}), accompanimentStatus: "active", ...overrides };
 }
 
-function calendarContext(
-  overrides: Partial<CalendarAuthorizationContext>,
-): CalendarAuthorizationContext {
+function availabilityContext(
+  overrides: Partial<AvailabilityAuthorizationContext>,
+): AvailabilityAuthorizationContext {
   return {
     role: "professional",
     institutionalStatus: "enabled",
     accountStatus: "active",
-    isCalendarOwner: true,
+    isAvailabilityOwner: true,
     ...overrides,
   };
 }
@@ -158,20 +158,20 @@ describe("canReadInternalNote", () => {
 });
 
 describe("canEditAvailability", () => {
-  test("el profesional vigente edita solo su propio calendario", () => {
-    expect(canEditAvailability(calendarContext({ isCalendarOwner: true }))).toBe(true);
-    expect(canEditAvailability(calendarContext({ isCalendarOwner: false }))).toBe(false);
+  test("el profesional vigente edita solo su propia disponibilidad", () => {
+    expect(canEditAvailability(availabilityContext({ isAvailabilityOwner: true }))).toBe(true);
+    expect(canEditAvailability(availabilityContext({ isAvailabilityOwner: false }))).toBe(false);
   });
 
-  test("estudiante, practicante y administrador no editan ni el calendario a su nombre", () => {
+  test("estudiante, practicante y administrador no editan ni la disponibilidad a su nombre", () => {
     for (const role of ["student", "intern", "admin"] as const) {
-      expect(canEditAvailability(calendarContext({ role }))).toBe(false);
+      expect(canEditAvailability(availabilityContext({ role }))).toBe(false);
     }
   });
 
   test("cuenta inhabilitada, pendiente o inactiva no edita", () => {
     for (const account of INACTIVE_ACCOUNTS) {
-      expect(canEditAvailability(calendarContext(account))).toBe(false);
+      expect(canEditAvailability(availabilityContext(account))).toBe(false);
     }
   });
 });
