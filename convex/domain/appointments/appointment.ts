@@ -203,7 +203,7 @@ export type AppointmentTransitionResult =
        * sobrescribe después.
        */
       readonly originalStartAt?: number;
-      /** Motivo normalizado, presente solo cuando el intento trae motivo útil. */
+      /** Motivo de cancelación normalizado: solo en cancelaciones con motivo. */
       readonly cancelReason?: string;
     }
   | {
