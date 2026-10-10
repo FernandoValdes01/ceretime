@@ -19,6 +19,7 @@ import {
   mapLine,
   contentKey,
   declarationSymbols,
+  declarationDigests,
   BOT,
   threadEvidence,
 } from "./ai-review-context.cjs";
@@ -29,6 +30,121 @@ import { pullNumber } from "./ai-review-target.cjs";
 import { publicEvidenceBundle } from "./ai-review-payload.cjs";
 
 const configuration = readFileSync(join(import.meta.dir, "../.pr-reviewer.yml"), "utf8");
+
+test("declaration completeness requires every canonical line in the projected diff and evidence", () => {
+  const source = "export function calculate() {\n  const result = 2;\n  return result;\n}\n";
+  const part = {
+    path: "file.ts",
+    anchors: ["RIGHT:2"],
+    patch: "@@ -2,1 +2,1 @@\n[RIGHT:2] +  const result = 2;",
+    declarationCatalog: { head: declarationDigests(source) },
+    context: [
+      {
+        path: "file.ts",
+        head: "1: export function calculate() {\n3:   return result;\n4: }",
+        headComplete: false,
+      },
+    ],
+  };
+  const full = publicEvidenceBundle([part]);
+  expect(full.parts[0].completeDeclarations.head).toEqual([
+    { symbol: "calculate", startLine: 1, endLine: 4 },
+  ]);
+  expect(full.evidence[0].headComplete).toBe(false);
+  expect(full.parts[0].completeFiles).toEqual({ head: true });
+  expect(full.parts[0].declarationCatalog).toBeUndefined();
+  for (const incomplete of [
+    { ...part, patch: "" },
+    { ...part, patch: part.patch.replace("result = 2", "result = 3") },
+    { ...part, context: [{ ...part.context[0], head: "1: export function calculate() {\n4: }" }] },
+  ]) {
+    expect(publicEvidenceBundle([incomplete]).parts[0].completeDeclarations).toBeUndefined();
+    expect(publicEvidenceBundle([incomplete]).parts[0].completeFiles).toBeUndefined();
+  }
+});
+
+test("a complete added file is sent once and keeps honest completeness after projection", () => {
+  const source = Array.from(
+    { length: 60 },
+    (_, index) => `export const value${index} = ${index}; // ${"context ".repeat(4)}`,
+  ).join("\n");
+  const part = {
+    path: "added.ts",
+    declarationCatalog: { head: declarationDigests(source) },
+    patch:
+      "@@ -0,0 +1,60 @@\n" +
+      source
+        .split("\n")
+        .map((line, index) => `[RIGHT:${index + 1}] +${line}`)
+        .join("\n"),
+    context: [{ path: "added.ts", head: source, headComplete: true }],
+  };
+  const payload = publicEvidenceBundle([part]);
+  expect(payload.parts[0].completeFiles).toEqual({ head: true });
+  expect(payload.evidence[0].head).toBe("");
+  expect(payload.evidence[0].headComplete).toBe(false);
+  const cropped = publicEvidenceBundle([
+    {
+      ...part,
+      patch: part.patch.split("\n").slice(0, 21).join("\n"),
+      context: [{ ...part.context[0], head: "", headComplete: false }],
+    },
+  ]);
+  expect(cropped.parts[0].completeFiles).toBeUndefined();
+  expect(cropped.parts[0].completeDeclarations.head).toHaveLength(20);
+});
+
+test("an excerpt without a requested declaration keeps a shared identity without pretending its symbol exists", () => {
+  const context = [
+    {
+      path: "helper.ts",
+      head: "return currentValue;",
+      evidenceSelector: { symbols: ["missingHelper"] },
+    },
+  ];
+  const bundle = publicEvidenceBundle([
+    { path: "a.ts", anchors: ["RIGHT:1"], context },
+    { path: "b.ts", anchors: ["RIGHT:2"], context },
+  ]);
+  expect(bundle.evidence).toHaveLength(1);
+  expect(bundle.evidence[0].selector).toEqual({ symbol: "<excerpt>" });
+  expect(bundle.parts[0].evidenceRefs[0].id).toBe(bundle.parts[1].evidenceRefs[0].id);
+});
+
+test("a long requested range is paginated within the recovery budget rather than rejected", () => {
+  const source = Array.from(
+    { length: 200 },
+    (_, index) => `export const value${index} = ${index};`,
+  ).join("\n");
+  const f = fixture({ "range.ts": source });
+  try {
+    const normalized = validateAssessment(
+      {
+        findings: [],
+        evidenceRequests: [
+          { path: "range.ts", startLine: "1", endLine: "200", reason: "Comprobar las constantes." },
+        ],
+      },
+      { parts: [{ path: "file.ts", anchors: [], followups: [] }] },
+      { repairEvidenceProtocol: true },
+    );
+    expect(normalized.limitations).toEqual([]);
+    const recovered = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk: { parts: [{ path: "file.ts", context: [] }] },
+      requests: normalized.evidenceRequests,
+    });
+    expect(recovered.unresolved).toEqual([]);
+    expect(recovered.recoveredChars).toBeLessThanOrEqual(16000);
+    const bundle = publicEvidenceBundle(recovered.chunk.parts);
+    expect(bundle.evidence.map((item) => item.head).join("")).toBe(source);
+    expect(bundle.evidence.every((item) => !item.headComplete)).toBe(true);
+  } finally {
+    f.clean();
+  }
+});
 
 test("a fully recovered file exposes complete content without breaking a cross-page quote", () => {
   const quote = "export const preservedIdentifier = true;";

@@ -13,6 +13,7 @@ const {
   reviewedBase,
   declarationSymbols,
   changedContractSymbols,
+  declarationDigests,
   relevantDeclarations,
   clipContext,
   contentKey,
@@ -27,7 +28,7 @@ const {
 } = require("./ai-review-provider.cjs");
 
 const REVIEW_PROTOCOL = `Analiza todas las parts recibidas y su interacción. Cada part contiene el diff con [RIGHT:N]/[LEFT:N] y evidenceRefs; evidence contiene código de base/head identificado por ruta y selector. Usa solo las referencias asociadas a cada cambio. baseSameAsHead:true significa que base y head contienen el mismo texto, enviado una vez en head. Los demás bloques se revisan por separado: su ausencia no demuestra falta de cobertura.
-Lee diff, declaraciones, helpers y consumidores antes de concluir. baseComplete/headComplete indican archivo completo. En evidencia paginada, declarationComplete marca la última página: la declaración completa exige conservar todas las páginas desde offset:0. present con Complete:false es un extracto, not_yet_created/deleted son ausencias demostradas, unavailable es fallo de lectura. El código completo de un archivo nuevo puede estar en su diff. Un extracto no es un fallo de lectura ni exige por sí solo más contexto: evalúa el flujo cambiado con la evidencia disponible. Solicita solo el contrato que falte para una comprobación concreta, sin exigir todas las rutas del archivo. En funciones extensas, pide el helper o la declaración interna pertinente.
+completeFiles indica archivo completo entre diff y evidencia. completeDeclarations enumera declaraciones cuyo código completo está presente entre diff y evidencia asociada, comprobado línea por línea contra Git; no exige archivo completo. Una proyección más pequeña vuelve a comprobar esa lista. Lee diff, declaraciones, helpers y consumidores antes de concluir. baseComplete/headComplete indican archivo completo. En evidencia paginada, declarationComplete marca la última página: la declaración completa exige conservar todas las páginas desde offset:0. present con Complete:false es un extracto, not_yet_created/deleted son ausencias demostradas, unavailable es fallo de lectura. El código completo de un archivo nuevo puede estar en su diff. Un extracto no es un fallo de lectura ni exige por sí solo más contexto: evalúa el flujo cambiado con la evidencia disponible. Solicita solo el contrato que falte para una comprobación concreta, sin exigir todas las rutas del archivo. En funciones extensas, pide el helper o la declaración interna pertinente.
 Solicita código necesario desde Git en evidenceRequests:[{path,symbol o fragment,side:head|base,reason,forPath?:ruta del cambio}]. symbol es un identificador declarado; fragment es una cita literal o nombre exacto de test/paso. scope:file permite pedir un archivo completo. Para una función extensa pide startLine/endLine (coordenadas reales del lado pedido), máximo 80 líneas. Incluye forPath si hay varios cambios. Nunca describas código recuperable solo en limitations. Hay tres rondas compartidas por bloque original aunque se divida, ocho solicitudes y 16000 caracteres por ronda. El servidor controla las continuaciones: no envíes cursor. evidenceRecovery informa disponibilidad y cursor. No repitas una solicitud ya satisfecha. Resuelve pendientes innecesarios solo mediante evidenceResolutions:[{path,symbol o fragment,side,status:not_needed,reason}] para solicitudes recibidas, justificando el flujo comprobado. limitations solo describe incertidumbre concreta que sigue sin resolverse.
 La base inmediata de esta PR es la referencia para evaluar el cambio. Una limitación exige un contrato necesario para evaluar estas partes. Cada hallazgo exige cambio causal, impacto observable y corrección necesaria, con base/head y contrato vigente. El contexto sin cambios sirve para verificar, no para reportar defectos preexistentes. Comprueba productores y consumidores; una hipótesis no es un defecto. No ejecutes código. Respeta condiciones de workflows y contratos de versiones fijadas. No inventes errores por ausencia de tests.
 Devuelve JSON: {summary:descripción breve del cambio y flujo evaluado,findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key, cause,impact,fix,threadId?:id previo}],evidenceRequests:[],evidenceResolutions:[],limitations:[],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation}]}.
@@ -445,6 +446,9 @@ function buildPlan(files, config = {}, sha) {
       }
       if (unit.length > 1) units.push(unit);
     }
+    const declarationCatalog = /\.[cm]?[jt]sx?$/.test(file.filename)
+      ? { head: declarationDigests(file.after), base: declarationDigests(file.before) }
+      : undefined;
     const createPart = (unit, ownContextBudget = blockContextBudget) => {
       const patch = unit
         .map((r) => (r.side ? `[${r.side}:${r.line}] ${r.text}` : r.text))
@@ -466,6 +470,7 @@ function buildPlan(files, config = {}, sha) {
         path: file.filename,
         previousPath: file.previous_filename,
         status: file.status,
+        declarationCatalog,
         patch,
         anchors: unit.filter((r) => r.side).map((r) => `${r.side}:${r.line}`),
       };
@@ -1812,6 +1817,7 @@ async function reviewPlan({
           },
           apiKey,
           budget: plan.limits.maxCalls - calls,
+          canReserve: (body) => budget.canReserve(body),
           limits: plan.limits,
           isCurrent,
           sleep,

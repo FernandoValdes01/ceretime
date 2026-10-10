@@ -41,14 +41,19 @@ const emptyUsage = () => ({ prompt: 0, completion: 0, cachedPrompt: 0, measuredC
 // reservation, including failed requests whose consumption cannot be measured.
 function tokenBudget(limit) {
   let spent = 0;
+  const reservation = (body) => {
+    const request = JSON.parse(body);
+    return Buffer.byteLength(JSON.stringify(request.messages), "utf8") + request.max_tokens + 512;
+  };
   return {
     get spent() {
       return spent;
     },
+    canReserve(body) {
+      return spent + reservation(body) <= limit;
+    },
     reserve(body, ceiling = limit) {
-      const request = JSON.parse(body);
-      const reserved =
-        Buffer.byteLength(JSON.stringify(request.messages), "utf8") + request.max_tokens + 512;
+      const reserved = reservation(body);
       if (spent + reserved > limit) throw new Error("Presupuesto total de tokens agotado.");
       if (spent + reserved > ceiling)
         throw new Error("Presupuesto de análisis agotado; se conserva reserva para verificar.");

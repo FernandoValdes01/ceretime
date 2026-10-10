@@ -357,6 +357,39 @@ function changedContractSymbols(before, after, basePatch, headPatch) {
   return [...changed];
 }
 
+// Keep canonical declaration digests private. A public completeness receipt
+// is valid only if every source line survives the final payload projection.
+function declarationDigests(text) {
+  if (!text) return [];
+  const { source, declarations, declared } = declarationAnalysis(text, "", "head");
+  const whole = text.replace(/\n$/, "");
+  return [
+    {
+      symbols: ["<file>"],
+      startLine: 1,
+      endLine: whole.split("\n").length,
+      hash: hash(whole.replace(/^[^\S\r\n]*/, "")),
+    },
+    ...declarations.flatMap((node) => {
+      const symbols = declared(node);
+      if (!symbols.length) return [];
+      const start = source.getLineAndCharacterOfPosition(node.getStart(source));
+      const end = source.getLineAndCharacterOfPosition(node.end);
+      const startLine = start.line + 1;
+      const lines = node.getText(source).split("\n");
+      return [
+        {
+          symbols,
+          startLine,
+          endLine: startLine + lines.length - 1,
+          endColumn: end.character - (lines.length === 1 ? start.character : 0),
+          hash: hash(lines.join("\n")),
+        },
+      ];
+    }),
+  ];
+}
+
 // Select the changed declarations, their local helpers, and direct consumers.
 function relevantDeclarations(
   text,
@@ -1038,6 +1071,7 @@ module.exports = {
   declarationSymbols,
   declarationSymbolsAtLine,
   changedContractSymbols,
+  declarationDigests,
   relevantDeclarations,
   clipContext,
   contentKey,

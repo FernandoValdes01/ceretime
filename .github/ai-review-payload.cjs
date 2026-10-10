@@ -31,12 +31,84 @@ function selectorFor(item, part) {
     const symbols = selected.symbols.filter((symbol) => declarations.has(symbol));
     if (symbols.length)
       return { symbols: [...new Set(symbols)].sort((a, b) => a.localeCompare(b)) };
+    return { symbol: "<excerpt>" };
   }
   if (selected) return selected;
   if (part.anchors?.length) return { coordinates: ordered(part.anchors) };
   if (part.change?.oldPath && part.change.oldPath !== part.change.newPath)
     return { symbol: "<rename>" };
   return { symbol: "<file>" };
+}
+
+function completeDeclarations(part, context) {
+  const result = {};
+  for (const side of ["base", "head"]) {
+    const available = new Map();
+    for (const item of context) {
+      if (item.path !== part.path && item.basePath !== part.path) continue;
+      const lines = String(item[side] ?? "").split("\n");
+      const numbered = lines.some((line) => /^\d+: /.test(line));
+      const start = item.evidenceSelector?.startLine;
+      for (const [index, line] of lines.entries()) {
+        const match = numbered && line.match(/^(\d+): (.*)$/);
+        if (match) available.set(Number(match[1]), match[2]);
+        else if (!numbered && (item[`${side}Complete`] || (start && !item.offset)))
+          available.set((start ?? 1) + index, line);
+      }
+    }
+    const tag = side === "head" ? "RIGHT" : "LEFT";
+    for (const line of String(part.patch ?? "").split("\n")) {
+      const match = line.match(/^\[(RIGHT|LEFT):(\d+)\] ([+-])(.*)$/);
+      if (match?.[1] === tag) available.set(Number(match[2]), match[4]);
+    }
+    const complete = (part.declarationCatalog?.[side] ?? []).flatMap((entry) => {
+      const lines = [];
+      for (let line = entry.startLine; line <= entry.endLine; line++) {
+        if (!available.has(line)) return [];
+        lines.push(available.get(line));
+      }
+      lines[0] = lines[0].trimStart();
+      if (entry.endColumn != null) lines[lines.length - 1] = lines.at(-1).slice(0, entry.endColumn);
+      if (hash(lines.join("\n")) !== entry.hash) return [];
+      return entry.symbols.map((symbol) => ({
+        symbol,
+        startLine: entry.startLine,
+        endLine: entry.endLine,
+      }));
+    });
+    if (complete.length) result[side] = complete;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+function withoutDuplicatePatch(part, context) {
+  const changed = { head: new Map(), base: new Map() };
+  for (const line of String(part.patch ?? "").split("\n")) {
+    const match = line.match(/^\[(RIGHT|LEFT):(\d+)\] ([+-])(.*)$/);
+    if (match) changed[match[1] === "RIGHT" ? "head" : "base"].set(Number(match[2]), match[4]);
+  }
+  return context.map((item) => {
+    if (item.path !== part.path && item.basePath !== part.path) return item;
+    const result = { ...item };
+    for (const side of ["head", "base"]) {
+      const text = item[side];
+      if (typeof text !== "string" || !item[`${side}Complete`] || changed[side].size < 10) continue;
+      const lines = text.split("\n");
+      const duplicateSize = lines.reduce(
+        (size, line, index) => size + (changed[side].get(index + 1) === line ? line.length : 0),
+        0,
+      );
+      if (duplicateSize < 1000) continue;
+      result[side] = lines
+        .flatMap((line, index) =>
+          changed[side].get(index + 1) === line ? [] : [`${index + 1}: ${line}`],
+        )
+        .join("\n");
+      result[`${side}Complete`] = false;
+      result.declarationComplete = false;
+    }
+    return result;
+  });
 }
 
 function publicEvidenceBundle(parts, refs = {}) {
@@ -47,7 +119,8 @@ function publicEvidenceBundle(parts, refs = {}) {
   };
   const publicParts = parts.map((part) => {
     const references = [];
-    for (const item of mergeRecoveredContext(part.context ?? [])) {
+    const context = withoutDuplicatePatch(part, mergeRecoveredContext(part.context ?? []));
+    for (const item of context) {
       const identity = {
         path: {
           base: item.basePath ?? item.path,
@@ -98,9 +171,26 @@ function publicEvidenceBundle(parts, refs = {}) {
       context: _context,
       contextKey: _contextKey,
       cacheGroupId: _cacheGroupId,
+      declarationCatalog: _declarationCatalog,
       ...publicPart
     } = part;
-    return { ...publicPart, evidenceRefs: references };
+    const completeness = completeDeclarations(part, context);
+    const completeFiles = Object.fromEntries(
+      Object.entries(completeness ?? {})
+        .filter(([, entries]) => entries.some((entry) => entry.symbol === "<file>"))
+        .map(([side]) => [side, true]),
+    );
+    const declarations = Object.fromEntries(
+      Object.entries(completeness ?? {})
+        .map(([side, entries]) => [side, entries.filter((entry) => entry.symbol !== "<file>")])
+        .filter(([, entries]) => entries.length),
+    );
+    return {
+      ...publicPart,
+      completeFiles: Object.keys(completeFiles).length ? completeFiles : undefined,
+      completeDeclarations: Object.keys(declarations).length ? declarations : undefined,
+      evidenceRefs: references,
+    };
   });
   const sortedEvidence = [...evidence.values()]
     .map(({ version: _version, ...item }) => item)

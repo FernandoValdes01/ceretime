@@ -37,6 +37,14 @@ La tercera corrección conserva decisiones válidas aunque otra solicitud o grup
 
 Al preparar este cambio, su inferencia real todavía está pendiente. Una simulación no certifica una revisión completa; repetir la ejecución formal únicamente cuando exista una corrección concreta que comprobar.
 
-La tercera ejecución [38073982013](https://github.com/FernandoValdes01/ceretime/actions/runs/38073982013), sobre `265962c`, también falló: 562661 tokens, 23 de 29 bloques procesados, 28 solicitudes pendientes y cero defectos confirmados. La corrección actual reconstruye las páginas completas y sus citas, permite rangos acotados para funciones extensas, conserva las comprobaciones que refutan hipótesis y evita otra llamada cuando solo cambia la metadata. Se priorizan los cambios de aplicación y se reduce el límite total a 450000 tokens. Su validación real sigue pendiente.
+La tercera ejecución [38073982013](https://github.com/FernandoValdes01/ceretime/actions/runs/38073982013), sobre `265962c`, también falló: 562661 tokens, 23 de 29 bloques procesados, 28 solicitudes pendientes y cero defectos confirmados. La corrección actual reconstruye las páginas completas y sus citas, permite rangos acotados para funciones extensas, conserva las comprobaciones que refutan hipótesis y evita otra llamada cuando solo cambia la metadata. Se priorizan los cambios de aplicación y se reduce el límite total a 450000 tokens. La cuarta ejecución quedó incompleta: 397684 tokens, 10 de 24 bloques completos, seis solicitudes pendientes, una hipótesis refutada y ningún defecto confirmado.
 
 La auditoría posterior está en [r2d2-audit.md](r2d2-audit.md). El informe parcial conserva los hallazgos verificados, analiza los patches válidos aunque otro sea ilegible y muestra las correcciones en el comentario principal.
+
+## Regresiones del cuarto resultado
+
+Se reprodujeron y corrigieron el rechazo de rangos válidos más largos, la pérdida de información sobre declaraciones completas repartidas entre diff y contexto y el rechazo de candidatos agrupados que cabían por separado en el saldo de tokens. La proyección omite copias idénticas del código y conserva contratos y helpers necesarios para comprobar los defectos reales archivados. Las pruebas negativas comprueban que una línea ausente, alterada o recortada no autoriza marcar un archivo o declaración completos. La inferencia real del ajuste sigue pendiente.
+
+La comparación local del mismo diff real de la PR #90, en `cf4b161`, mantuvo 36 archivos y cero incidentes de preparación: pasó de 21 a 19 solicitudes iniciales y de 1130158 a 1014861 bytes HTTP, un descenso del 10,2 %. No incluye hilos históricos, caché ni rondas posteriores; las respuestas fueron simuladas y no se llamó al modelo. Este resultado mide tamaño de mensajes, no tokens ni calidad de revisión.
+
+Las 243 pruebas locales aprobaron, incluidos seis casos nuevos que reproducen estos fallos y los defectos conocidos de la PR #73. También aprobaron lint, formato y CSpell sobre los diez archivos modificados. No se modifica la política de aprobación ni se publica una hipótesis como defecto comprobado.

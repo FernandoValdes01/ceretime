@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { expandAvailabilitySlots } from "./fixtures/pr73-availability";
 import { decideFinding, verifyAssessment, publishable } from "./ai-review-verification.cjs";
 import { publishFindings } from "./ai-review-chunks.cjs";
+import { declarationDigests } from "./ai-review-context.cjs";
+import { tokenBudget } from "./ai-review-provider.cjs";
 const sha = "a".repeat(40),
   path = ".github/fixtures/pr73-availability.ts";
 const source = readFileSync(`${import.meta.dir}/fixtures/pr73-availability.ts`, "utf8");
@@ -53,6 +55,155 @@ const part = {
     },
   ],
 };
+
+test("a large candidate packet retains its changed line and contracts within remaining budget", async () => {
+  const path = "apps/mobile/large.ts";
+  const text =
+    "export function calculate() {\n" +
+    "  const paddingValue = 1;\n".repeat(1000) +
+    "  return paddingValue;\n}\n";
+  const candidate = { ...candidates[0], path, line: 500 };
+  const chunk = {
+    parts: [
+      {
+        path,
+        anchors: ["RIGHT:500"],
+        patch:
+          "@@ -500,1 +500,1 @@\n[LEFT:500] -  const paddingValue = 0;\n[RIGHT:500] +  const paddingValue = 1;",
+        declarationCatalog: { head: declarationDigests(text) },
+        context: [
+          { path, head: text, headComplete: true },
+          { path: "contract.md", head: "The result must follow the current contract." },
+        ],
+      },
+    ],
+  };
+  const result = await verifyAssessment({
+    sha,
+    chunk,
+    assessment: { findings: [candidate], resolutions: [], limitations: [] },
+    limits: { inputChars: 24000, outputTokens: 2000, intervalMs: 0 },
+    budget: 1,
+    apiKey: "test",
+    isCurrent: async () => true,
+    fetchImpl: async (_url: string, request: any) => {
+      expect(Buffer.byteLength(request.body)).toBeLessThan(12000);
+      const data = JSON.parse(JSON.parse(request.body).messages[1].content);
+      expect(data.candidates[0].patch).toContain("[RIGHT:500]");
+      expect(data.candidates[0].completeDeclarations).toBeUndefined();
+      expect(data.evidence.some((item: any) => item.path.head === "contract.md")).toBe(true);
+      expect(
+        data.evidence.some((item: any) => item.head.includes("500:   const paddingValue = 1;")),
+      ).toBe(true);
+      expect(data.evidence.find((item: any) => item.path.head === path).headComplete).toBe(false);
+      return {
+        ok: true,
+        json: async () => ({
+          usage: { prompt_tokens: 100, completion_tokens: 10 },
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  decisions: [{ index: 0, verdict: "insufficient" }],
+                  evidenceRequests: [],
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+  });
+  expect(result.calls).toBe(1);
+  expect(result.assessment.findings).toEqual([]);
+  expect(result.assessment.verificationPending).toHaveLength(1);
+});
+
+test("shared candidates split when the combined request cannot reserve the remaining tokens", async () => {
+  const paths = ["apps/mobile/alpha.ts", "apps/mobile/beta.ts"];
+  const findings = paths.map((path) => ({ ...candidates[0], path, line: 1 }));
+  const chunk = {
+    parts: paths.map((path) => ({
+      path,
+      anchors: ["RIGHT:1"],
+      patch: "@@ -1,1 +1,1 @@\n[RIGHT:1] +export const result = 2;",
+      context: [
+        { path, head: `export const result = 2; // ${"extra ".repeat(200)}` },
+        { path: "contract.md", head: "Current shared contract." },
+      ],
+    })),
+  };
+  const invoke = async (
+    canReserve: (body: string) => boolean,
+    consume = (_body: string) => {},
+    finish = (_json: any) => {},
+  ) => {
+    const bodies: string[] = [];
+    const result = await verifyAssessment({
+      sha,
+      chunk,
+      assessment: { findings, resolutions: [], limitations: [] },
+      limits: { inputChars: 64000, outputTokens: 1000, intervalMs: 0 },
+      budget: 2,
+      canReserve,
+      apiKey: "test",
+      fetchImpl: async (_url: string, request: any) => {
+        bodies.push(request.body);
+        consume(request.body);
+        const data = JSON.parse(JSON.parse(request.body).messages[1].content);
+        const json = {
+          usage: { prompt_tokens: 1, completion_tokens: 1 },
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  decisions: data.candidates.map((item: any) => ({
+                    index: item.index,
+                    verdict: "insufficient",
+                  })),
+                  evidenceRequests: [],
+                }),
+              },
+            },
+          ],
+        };
+        return {
+          ok: true,
+          json: async () => {
+            finish(json);
+            return json;
+          },
+        };
+      },
+    });
+    return { result, bodies };
+  };
+  const combined = await invoke(() => true);
+  expect(combined.bodies).toHaveLength(1);
+  const request = JSON.parse(combined.bodies[0]);
+  const budget = tokenBudget(
+    Buffer.byteLength(JSON.stringify(request.messages)) + request.max_tokens + 511,
+  );
+  expect(budget.canReserve(combined.bodies[0])).toBe(false);
+  let settle = (_json: any) => {};
+  const split = await invoke(
+    (body) => budget.canReserve(body),
+    (body) => {
+      settle = budget.reserve(body);
+    },
+    (json) => settle(json),
+  );
+  expect(split.result.calls).toBe(2);
+  expect(
+    split.bodies.every(
+      (body) => JSON.parse(JSON.parse(body).messages[1].content).candidates.length === 1,
+    ),
+  ).toBe(true);
+  expect(split.result.assessment.verificationPending).toHaveLength(2);
+  expect(budget.spent).toBe(4);
+});
 const proof = (index: number, extra = {}) => ({
   index,
   issue_key: candidates[index].issue_key,

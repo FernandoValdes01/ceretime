@@ -43,7 +43,7 @@ function evidenceRequests(value = []) {
           !Number.isInteger(request.endLine) ||
           request.startLine < 1 ||
           request.endLine < request.startLine ||
-          request.endLine - request.startLine >= 80 ||
+          request.endLine - request.startLine >= 640 ||
           request.endLine > 200000),
       selector:
         request.scope !== "file" &&
@@ -80,6 +80,9 @@ function normalizeEvidenceRequests(value = [], chunk = { parts: [] }) {
       if (typeof input.reason === "string") input.reason = input.reason.slice(0, 800);
       if (input.side === "RIGHT") input.side = "head";
       if (input.side === "LEFT") input.side = "base";
+      for (const field of ["startLine", "endLine"])
+        if (typeof input[field] === "string" && /^\d{1,6}$/.test(input[field]))
+          input[field] = Number(input[field]);
       if (!input.scope && !input.symbol && !input.fragment && input.startLine == null)
         input.scope = "file";
       if (input.startLine != null) {
