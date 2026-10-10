@@ -1,0 +1,129 @@
+:root {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+  --code-bg: #f4f3ec;
+  --accent: #aa3bff;
+  --accent-bg: rgba(170, 59, 255, 0.1);
+  --accent-border: rgba(170, 59, 255, 0.5);
+  --social-bg: rgba(244, 243, 236, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+
+  --sans: system-ui, "Segoe UI", Roboto, sans-serif;
+  --heading: system-ui, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  font: 18px/145% var(--sans);
+  letter-spacing: 0.18px;
+  color-scheme: light;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  @media (max-width: 1024px) {
+    font-size: 16px;
+  }
+}
+
+/* Tema claro fijo: el sistema visual es institucional claro (DESIGN.md). */
+
+/* Tokens institucionales (DESIGN.md) consumidos por Presentación. */
+:root {
+  --ct-page: #f9fafb;
+  --ct-card: #ffffff;
+  --ct-ink: #1b1c1c;
+  --ct-muted: #3e4946;
+  --ct-primary: #00695b;
+  --ct-primary-hover: #005045;
+  --ct-primary-ink: #ffffff;
+  --ct-line: #e5e7eb;
+  --ct-ring: #2563eb;
+  --ct-tonal: #f5f3f3;
+  --ct-accent: #fcc431;
+  --ct-ok: #76c043;
+  --ct-info: #2e99b0;
+  --ct-danger: #ba1a1a;
+  --ct-danger-bg: #ffdad6;
+  --ct-danger-ink: #93000a;
+  --font-scale: 1;
+
+  /* El tamaño de texto lo controla el panel de accesibilidad. Base 100% = 16px. */
+  font-size: calc(100% * var(--font-scale, 1));
+}
+
+/* Alto contraste: mismos tonos, contraste máximo. */
+.hc {
+  --ct-page: #ffffff;
+  --ct-card: #ffffff;
+  --ct-ink: #000000;
+  --ct-muted: #1f2937;
+  --ct-primary: #00473d;
+  --ct-primary-hover: #00332c;
+  --ct-line: #525c5a;
+  --ct-tonal: #e4e2e2;
+}
+
+#root {
+  width: 1126px;
+  max-width: 100%;
+  margin: 0 auto;
+  text-align: center;
+  border-inline: 1px solid var(--border);
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+h1 {
+  font-size: 56px;
+  letter-spacing: -1.68px;
+  margin: 32px 0;
+  @media (max-width: 1024px) {
+    font-size: 36px;
+    margin: 20px 0;
+  }
+}
+h2 {
+  font-size: 24px;
+  line-height: 118%;
+  letter-spacing: -0.24px;
+  margin: 0 0 8px;
+  @media (max-width: 1024px) {
+    font-size: 20px;
+  }
+}
+p {
+  margin: 0;
+}
+
+code,
+.counter {
+  font-family: var(--mono);
+  display: inline-flex;
+  border-radius: 4px;
+  color: var(--text-h);
+}
+
+code {
+  font-size: 15px;
+  line-height: 135%;
+  padding: 4px 8px;
+  background: var(--code-bg);
+}
