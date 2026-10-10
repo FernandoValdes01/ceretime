@@ -45,11 +45,13 @@ function tokenBudget(limit) {
     get spent() {
       return spent;
     },
-    reserve(body) {
+    reserve(body, ceiling = limit) {
       const request = JSON.parse(body);
       const reserved =
         Buffer.byteLength(JSON.stringify(request.messages), "utf8") + request.max_tokens + 512;
       if (spent + reserved > limit) throw new Error("Presupuesto total de tokens agotado.");
+      if (spent + reserved > ceiling)
+        throw new Error("Presupuesto de análisis agotado; se conserva reserva para verificar.");
       spent += reserved;
       let settled = false;
       return (json) => {

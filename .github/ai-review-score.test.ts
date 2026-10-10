@@ -52,6 +52,7 @@ const jsonResponse = (data: unknown, extra = {}) => ({
   ok: true,
   headers: new Headers(),
   json: async () => ({
+    usage: { prompt_tokens: 1000, completion_tokens: 100 },
     choices: [{ finish_reason: "stop", message: { content: JSON.stringify(data) } }],
   }),
   ...extra,

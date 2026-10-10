@@ -2,6 +2,7 @@ const { publicEvidenceBundle, splitRecoveredChunk } = require("./ai-review-paylo
 const {
   requestKey,
   evidenceRequests: validateEvidenceRequests,
+  normalizeEvidenceRequests,
 } = require("./ai-review-evidence.cjs");
 const { verifyAssessment, publishable, sealFinding } = require("./ai-review-verification.cjs");
 const { withoutBold } = require("./ai-review-presentation.cjs");
@@ -26,7 +27,7 @@ const {
 } = require("./ai-review-provider.cjs");
 
 const REVIEW_PROTOCOL = `Analiza todas las parts recibidas y su interacción. Cada part contiene el diff con [RIGHT:N]/[LEFT:N] y evidenceRefs; evidence contiene código de base/head identificado por ruta y selector. Usa solo las referencias asociadas a cada cambio. baseSameAsHead:true significa que base y head contienen el mismo texto, enviado una vez en head. Los demás bloques se revisan por separado: su ausencia no demuestra falta de cobertura.
-Lee diff, declaraciones, helpers y consumidores antes de concluir. baseComplete/headComplete indican archivo completo. En evidencia paginada, declarationComplete marca la última página: la declaración completa exige conservar todas las páginas desde offset:0. present con Complete:false es un extracto, not_yet_created/deleted son ausencias demostradas, unavailable es fallo de lectura. El código completo de un archivo nuevo puede estar en su diff.
+Lee diff, declaraciones, helpers y consumidores antes de concluir. baseComplete/headComplete indican archivo completo. En evidencia paginada, declarationComplete marca la última página: la declaración completa exige conservar todas las páginas desde offset:0. present con Complete:false es un extracto, not_yet_created/deleted son ausencias demostradas, unavailable es fallo de lectura. El código completo de un archivo nuevo puede estar en su diff. Un extracto no es un fallo de lectura ni exige por sí solo más contexto: evalúa el flujo cambiado con la evidencia disponible. Solicita solo el contrato que falte para una comprobación concreta, sin exigir todas las rutas del archivo. En funciones extensas, pide el helper o la declaración interna pertinente.
 Solicita código necesario desde Git en evidenceRequests:[{path,symbol o fragment,side:head|base,reason,forPath?:ruta del cambio}]. symbol es un identificador declarado; fragment es una cita literal o nombre exacto de test/paso. scope:file permite pedir un archivo completo. Incluye forPath si hay varios cambios. Nunca describas código recuperable solo en limitations. Hay tres rondas compartidas por bloque original aunque se divida, ocho solicitudes y 16000 caracteres por ronda. El servidor controla las continuaciones: no envíes cursor. evidenceRecovery informa disponibilidad y cursor. No repitas una solicitud ya satisfecha. Resuelve pendientes innecesarios solo mediante evidenceResolutions:[{path,symbol o fragment,side,status:not_needed,reason}] para solicitudes recibidas, justificando el flujo comprobado. limitations solo describe incertidumbre concreta que sigue sin resolverse.
 La base inmediata de esta PR es la referencia para evaluar el cambio. Una limitación exige un contrato necesario para evaluar estas partes. Cada hallazgo exige cambio causal, impacto observable y corrección necesaria, con base/head y contrato vigente. El contexto sin cambios sirve para verificar, no para reportar defectos preexistentes. Comprueba productores y consumidores; una hipótesis no es un defecto. No ejecutes código. Respeta condiciones de workflows y contratos de versiones fijadas. No inventes errores por ausencia de tests.
 Devuelve JSON: {summary:descripción breve del cambio y flujo evaluado,findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key, cause,impact,fix,threadId?:id previo}],evidenceRequests:[],evidenceResolutions:[],limitations:[],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation}]}.
@@ -613,30 +614,23 @@ function validateAssessment(
     const unique = [...new Map(matching.map((old) => [requestKey(old), old])).values()];
     return unique.length === 1 ? unique[0] : undefined;
   };
-  const evidenceRequests = validateEvidenceRequests(
-    repairEvidenceProtocol && Array.isArray(data.evidenceRequests)
-      ? data.evidenceRequests.map(({ cursor: _cursor, ...request }) => request)
-      : data.evidenceRequests,
-  ).map((request) => {
-    if (!repairEvidenceProtocol) return request;
+  const normalized = repairEvidenceProtocol
+    ? normalizeEvidenceRequests(data.evidenceRequests, chunk)
+    : { requests: validateEvidenceRequests(data.evidenceRequests), rejected: [] };
+  const evidenceRequests = normalized.requests;
+  const resolutionInput = repairEvidenceProtocol
+    ? normalizeEvidenceRequests(data.evidenceResolutions, chunk)
+    : { requests: validateEvidenceRequests(data.evidenceResolutions), rejected: [] };
+  ignoredEvidenceResolutions.push(...resolutionInput.rejected);
+  const evidenceResolutions = resolutionInput.requests.flatMap((request) => {
+    if (!repairEvidenceProtocol) return [request];
     const previous = previousRequest(request);
-    return {
-      ...request,
-      ...(previous?.forPath ? { forPath: previous.forPath } : {}),
-      ...(previous?.availability === "partial" ? { cursor: previous.cursor } : {}),
-    };
+    if (request.status !== "not_needed" || !previous) {
+      ignoredEvidenceResolutions.push(request);
+      return [];
+    }
+    return [{ ...request, forPath: previous.forPath }];
   });
-  const evidenceResolutions = validateEvidenceRequests(data.evidenceResolutions).flatMap(
-    (request) => {
-      if (!repairEvidenceProtocol) return [request];
-      const previous = previousRequest(request);
-      if (request.status !== "not_needed" || !previous) {
-        ignoredEvidenceResolutions.push(request);
-        return [];
-      }
-      return [{ ...request, ...(previous.forPath ? { forPath: previous.forPath } : {}) }];
-    },
-  );
   if (
     evidenceRequests.some(
       (request) =>
@@ -656,7 +650,10 @@ function validateAssessment(
         request.cursor != null &&
         !chunk.parts.some((part) =>
           part.evidenceRecovery?.some(
-            (old) => requestKey(old) === requestKey(request) && old.cursor === request.cursor,
+            (old) =>
+              requestKey(repairEvidenceProtocol ? { ...old, forPath: undefined } : old) ===
+                requestKey(repairEvidenceProtocol ? { ...request, forPath: undefined } : request) &&
+              old.cursor === request.cursor,
           ),
         ),
     )
@@ -793,6 +790,10 @@ function validateAssessment(
     resolutions,
     limitations: [
       ...limitations,
+      ...normalized.rejected.map(
+        (item) =>
+          `Solicitud de contexto descartada${item.path ? ` para ${item.path}` : ""}: ${item.reason}`,
+      ),
       ...rejectedFindings.map(
         (finding) => `Candidato inválido ${finding.index + 1}: ${finding.reason}`,
       ),
@@ -913,6 +914,7 @@ function aggregate(plan, results, calls, errors = []) {
     limitations: results.flatMap((r) => r.limitations ?? []),
     infrastructure: errors,
     planningIssues: plan.issues,
+    verificationPending: results.flatMap((result) => result.verificationPending ?? []),
     qualityScore: coverage === "complete" ? score : null,
   };
 }
@@ -1008,8 +1010,88 @@ async function reviewPlan({
   const sharedRecoveredEvidence = new Map();
   const fulfilledEvidence = new Map();
   const sharedEvidenceDependencies = new Map();
+  const verificationDependencies = new Map();
+  const sharedRequestKey = (request) => requestKey({ ...request, forPath: undefined });
+  const matchesRecovered = (item, request) =>
+    sharedRequestKey({
+      path: item.path,
+      side: item.evidenceSide,
+      ...(item.evidenceSelector?.symbol === "<file>" ? { scope: "file" } : item.evidenceSelector),
+    }) === sharedRequestKey(request);
+  const recoverVerificationContext =
+    recoverContext &&
+    (async ({ chunk, requests }) => {
+      const cached = requests.filter((request) => fulfilledEvidence.has(sharedRequestKey(request)));
+      const parts = chunk.parts.map((part) => {
+        const relevant = cached.filter(
+          (request) => !request.forPath || request.forPath === part.path,
+        );
+        const entries = [...sharedRecoveredEvidence.values()].filter((item) =>
+          relevant.some((request) => matchesRecovered(item, request)),
+        );
+        return {
+          ...part,
+          context: [
+            ...new Map(
+              [
+                ...(part.context ?? []),
+                ...entries.map((item) => ({ ...item, forPath: part.path })),
+              ].map((item) => [hash(JSON.stringify(item)), item]),
+            ).values(),
+          ],
+          evidenceDependencies: [
+            ...(part.evidenceDependencies ?? []),
+            ...[...sharedEvidenceDependencies.values()]
+              .filter((item) =>
+                relevant.some(
+                  (request) => item.path === request.path && item.side === (request.side ?? "head"),
+                ),
+              )
+              .map((item) => ({ ...item, forPath: part.path })),
+          ],
+        };
+      });
+      const fresh = requests.filter((request) => !fulfilledEvidence.has(sharedRequestKey(request)));
+      if (cached.length)
+        onProgress(
+          `Verificación: ${cached.length} declaraciones reutilizadas desde Git sin volver a recuperarlas.`,
+        );
+      const recovery = fresh.length
+        ? await recoverContext({ chunk: { ...chunk, parts }, requests: fresh })
+        : { chunk: { ...chunk, parts }, unresolved: [] };
+      for (const part of recovery.chunk.parts) {
+        verificationDependencies.set(part.path, [
+          ...new Map(
+            [
+              ...(verificationDependencies.get(part.path) ?? []),
+              ...(part.evidenceDependencies ?? []),
+            ].map((item) => [hash(JSON.stringify(item)), item]),
+          ).values(),
+        ]);
+        for (const item of part.context ?? [])
+          if (item.recovered)
+            sharedRecoveredEvidence.set(
+              hash(JSON.stringify({ ...item, forPath: undefined })),
+              item,
+            );
+        for (const dependency of part.evidenceDependencies ?? [])
+          sharedEvidenceDependencies.set(
+            hash(JSON.stringify({ ...dependency, forPath: undefined })),
+            dependency,
+          );
+      }
+      for (const request of fresh)
+        if (
+          !(recovery.unresolved ?? []).some(
+            (item) => sharedRequestKey(item) === sharedRequestKey(request),
+          )
+        )
+          fulfilledEvidence.set(sharedRequestKey(request), request);
+      return recovery;
+    });
   const analyzedFiles = new Set();
   const initialSummaries = new Set();
+  const initialAnalyses = new Map();
   const hasStableEvidenceDependencies = (part) =>
     (part.evidenceDependencies ?? []).every((item) => ["present", "absent"].includes(item.status));
   const mergeEvidenceDependencies = (part, dependencies = []) => {
@@ -1027,10 +1109,17 @@ async function reviewPlan({
     nextDelay = 0,
     reused = 0;
   const usage = emptyUsage();
+  const usageByStage = { analysis: emptyUsage(), verification: emptyUsage() };
+  let providerStage = "analysis";
   const budget = tokenBudget(plan.limits.totalTokens ?? LIMITS.totalTokens);
   const fetchProvider = fetchImpl;
   fetchImpl = async (url, request) => {
-    const settle = budget.reserve(request.body);
+    const stage = providerStage;
+    const totalTokens = plan.limits.totalTokens ?? LIMITS.totalTokens;
+    const settle = budget.reserve(
+      request.body,
+      stage === "analysis" ? Math.floor(totalTokens * 0.6) : totalTokens,
+    );
     calls++;
     const response = await fetchProvider(url, request);
     return {
@@ -1041,6 +1130,7 @@ async function reviewPlan({
         const json = await response.json();
         settle(json);
         addUsage(usage, json);
+        addUsage(usageByStage[stage], json);
         return json;
       },
     };
@@ -1051,7 +1141,13 @@ async function reviewPlan({
       ...report,
       reused,
       usage,
+      usageByStage,
       analyzedFiles: [...analyzedFiles].sort(),
+      analyses: [...initialAnalyses.values()],
+      verificationPending: [
+        ...report.verificationPending,
+        ...[...deferredAssessments.values()].flatMap((item) => item.findings),
+      ],
       changeSummaries: [...new Set([...report.changeSummaries, ...initialSummaries])],
       tokenBudget: { limit: plan.limits.totalTokens ?? LIMITS.totalTokens, charged: budget.spent },
     };
@@ -1107,6 +1203,7 @@ async function reviewPlan({
         .slice(0, 600),
       limitations: items.flatMap((r) => r.limitations ?? []),
       evidenceRequests: items.flatMap((r) => r.evidenceRequests ?? []),
+      verificationPending: items.flatMap((r) => r.verificationPending ?? []),
     });
     const persistRecoveredCacheGroups = () => {
       const persist = (id) => {
@@ -1247,20 +1344,6 @@ async function reviewPlan({
       return true;
     };
     const attemptedEvidenceRequests = new Set();
-    const sharedRequestKey = (request) =>
-      requestKey({
-        ...request,
-        forPath: undefined,
-        ...(request.scope === "file" ? { symbol: undefined, fragment: undefined } : {}),
-      });
-    const matchesRecovered = (item, request) =>
-      item.path === request.path &&
-      item.evidenceSide === (request.side ?? "head") &&
-      (request.scope === "file"
-        ? item.evidenceSelector?.symbol === "<file>"
-        : request.symbol
-          ? item.evidenceSelector?.symbol === request.symbol
-          : item.evidenceSelector?.fragment === request.fragment);
     const recover = async (requests) => {
       // Partitions share retrieved declarations. A sibling can reuse all pages
       // without reading Git or restarting the original recovery allowance.
@@ -1451,6 +1534,7 @@ async function reviewPlan({
           candidate = deferred;
           deferredAssessments.delete(originalChunk);
         } else {
+          providerStage = "analysis";
           const body = JSON.stringify(
             completionRequest(
               [
@@ -1602,7 +1686,7 @@ async function reviewPlan({
             onProgress(
               `Candidato ${finding.index + 1} inválido en bloque ${index + 1}; se conservan los demás: ${finding.reason}`,
             );
-          if (candidate.limitations.length && resolveEvidence) {
+          if (!candidate.findings.length && candidate.limitations.length && resolveEvidence) {
             const resolved = resolveEvidence({ chunk, limitations: candidate.limitations });
             candidate.evidenceRequests = [
               ...new Map(
@@ -1637,6 +1721,10 @@ async function reviewPlan({
         originalChunk.reviewStarted = true;
         for (const part of chunk.parts) analyzedFiles.add(part.path);
         if (candidate.changeSummary) initialSummaries.add(candidate.changeSummary);
+        initialAnalyses.set(originalChunk, {
+          paths: [...new Set(chunk.parts.map((part) => part.path))],
+          summary: candidate.changeSummary,
+        });
         if (
           (candidate.evidenceRequests.length || candidate.findings.length) &&
           plan.chunks.slice(index + 1).some((next) => !next.reviewStarted)
@@ -1677,6 +1765,7 @@ async function reviewPlan({
         }
         if (restart) break;
         stage = "verification";
+        providerStage = "verification";
         if (candidate.findings.length && calls < plan.limits.maxCalls)
           await sleep(plan.limits.intervalMs);
         const verified = await verify({
@@ -1718,11 +1807,13 @@ async function reviewPlan({
           isCurrent,
           sleep,
           refs: { base: plan.base, mergeBase: plan.mergeBase, headRef: plan.sha },
+          recoverContext: recoverVerificationContext,
+          onProgress,
         });
         assessment = verified.assessment;
         for (const request of assessment.evidenceRequests ?? [])
           recoveryBudget.verificationRequests.add(requestKey(request));
-        if (assessment.limitations.length && resolveEvidence) {
+        if (!candidate.findings.length && assessment.limitations.length && resolveEvidence) {
           const resolved = resolveEvidence({ chunk, limitations: assessment.limitations });
           assessment.evidenceRequests = [
             ...new Map(
@@ -1742,16 +1833,14 @@ async function reviewPlan({
             ]),
           ).values(),
         ];
-        if (
-          !assessment.findings.some((finding) => publishable(finding, plan.sha)) &&
-          (await recover(assessment.evidenceRequests))
-        ) {
+        if (!candidate.findings.length && (await recover(assessment.evidenceRequests))) {
           attempt--;
           continue;
         }
         if (restart) break;
         try {
           for (const part of pending) {
+            mergeEvidenceDependencies(part, verificationDependencies.get(part.path));
             const complete = !assessment.limitations.length && !assessment.evidenceRequests?.length;
             const partAssessment = {
               changeSummary: assessment.changeSummary,
@@ -1789,6 +1878,17 @@ async function reviewPlan({
         }
         break;
       } catch (error) {
+        if (error.message.startsWith("Presupuesto de análisis agotado")) {
+          assessment = {
+            findings: [],
+            resolutions: [],
+            changeSummary: candidate?.changeSummary,
+            evidenceRequests: candidate?.evidenceRequests ?? [...outstanding.values()],
+            limitations: [error.message],
+          };
+          onProgress(error.message);
+          break;
+        }
         if (error.message === "Presupuesto total de tokens agotado.") {
           lastFailure = error.message;
           break;

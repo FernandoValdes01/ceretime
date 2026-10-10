@@ -25,28 +25,97 @@ function evidenceRequests(value = []) {
   if (!Array.isArray(value) || value.length > MAX_REQUESTS)
     throw new Error("Solicitudes de evidencia fuera del límite.");
   return value.map((request) => {
-    if (
-      !request ||
-      !repositoryPath(request.path) ||
-      !["base", "head"].includes(request.side ?? "head") ||
-      (request.cursor != null &&
-        (!Number.isInteger(request.cursor) || request.cursor < 0 || request.cursor > 200000)) ||
-      typeof request.reason !== "string" ||
-      !request.reason.trim() ||
-      request.reason.length > 800 ||
-      (request.forPath != null && !repositoryPath(request.forPath)) ||
-      (request.scope != null && request.scope !== "file") ||
-      (request.scope !== "file" &&
-        ![request.symbol, request.fragment].some(
-          (text) => typeof text === "string" && text.trim(),
-        )) ||
-      [request.symbol, request.fragment].some(
-        (text) => text != null && (typeof text !== "string" || !text.trim() || text.length > 300),
-      )
-    )
-      throw new Error("Solicitud de evidencia inválida.");
+    if (!request || typeof request !== "object")
+      throw new Error("Solicitud de evidencia inválida. Campo: request.");
+    const invalid = {
+      path: !repositoryPath(request.path),
+      side: !["base", "head"].includes(request.side ?? "head"),
+      cursor:
+        request.cursor != null &&
+        (!Number.isInteger(request.cursor) || request.cursor < 0 || request.cursor > 200000),
+      reason:
+        typeof request.reason !== "string" || !request.reason.trim() || request.reason.length > 800,
+      forPath: request.forPath != null && !repositoryPath(request.forPath),
+      scope: request.scope != null && request.scope !== "file",
+      selector:
+        request.scope !== "file" &&
+        ![request.symbol, request.fragment].some((text) => typeof text === "string" && text.trim()),
+      symbol:
+        request.symbol != null &&
+        (typeof request.symbol !== "string" ||
+          !request.symbol.trim() ||
+          request.symbol.length > 300),
+      fragment:
+        request.fragment != null &&
+        (typeof request.fragment !== "string" ||
+          !request.fragment.trim() ||
+          request.fragment.length > 300),
+    };
+    const fields = Object.keys(invalid).filter((key) => invalid[key]);
+    if (fields.length)
+      throw new Error(`Solicitud de evidencia inválida. Campos: ${fields.join(", ")}.`);
     return { ...request, side: request.side ?? "head" };
   });
+}
+
+// Treat model requests as independent protocol items. A malformed item must
+// not discard a valid finding or another request. Cursors belong to Git.
+function normalizeEvidenceRequests(value = [], chunk = { parts: [] }) {
+  const requests = [],
+    rejected = [];
+  const received = chunk.parts.flatMap((part) => part.evidenceRecovery ?? []);
+  for (const raw of Array.isArray(value) ? value : [value]) {
+    try {
+      const { cursor: _cursor, ...input } = raw ?? {};
+      if (input.reason == null) input.reason = "Verificar evidencia solicitada.";
+      if (typeof input.reason === "string") input.reason = input.reason.slice(0, 800);
+      if (input.side === "RIGHT") input.side = "head";
+      if (input.side === "LEFT") input.side = "base";
+      if (["symbol", "declaration"].includes(input.scope) && (input.symbol || input.fragment))
+        delete input.scope;
+      if (input.scope === "file") {
+        delete input.symbol;
+        delete input.fragment;
+      }
+      const request = evidenceRequests([input])[0];
+      if (
+        request.forPath &&
+        !chunk.parts.some(
+          (part) => part.path === request.forPath || part.change?.oldPath === request.forPath,
+        )
+      ) {
+        const paths = [...new Set(chunk.parts.map((part) => part.path))];
+        if (paths.length !== 1) throw new Error("Ruta de cambio asociada a evidencia desconocida.");
+        request.forPath = paths[0];
+      }
+      const previous = received.filter(
+        (old) =>
+          requestKey({ ...old, forPath: undefined }) ===
+            requestKey({ ...request, forPath: undefined }) &&
+          (!request.forPath || !old.forPath || request.forPath === old.forPath),
+      );
+      const continuations = [
+        ...new Set(
+          previous
+            .filter((old) => old.availability === "partial")
+            .map((old) => old.cursor)
+            .filter(Number.isInteger),
+        ),
+      ];
+      if (continuations.length === 1) request.cursor = continuations[0];
+      const paths = [...new Set(previous.map((old) => old.forPath).filter(Boolean))];
+      if (!request.forPath && paths.length === 1) request.forPath = paths[0];
+      if (requests.length >= MAX_REQUESTS)
+        throw new Error("Solicitudes de evidencia fuera del límite.");
+      if (!requests.some((old) => requestKey(old) === requestKey(request))) requests.push(request);
+    } catch (error) {
+      rejected.push({
+        path: repositoryPath(raw?.path) ? raw.path : undefined,
+        reason: error.message,
+      });
+    }
+  }
+  return { requests, rejected };
 }
 
 function recoverEvidence({ directory, base, sha, chunk, requests }) {
@@ -391,8 +460,12 @@ function requestKey(request) {
   return JSON.stringify([
     request.path,
     request.side ?? "head",
-    identifiers?.length ? identifiers.join(",") : (request.symbol ?? null),
-    request.fragment ?? null,
+    request.scope === "file"
+      ? null
+      : identifiers?.length
+        ? identifiers.join(",")
+        : (request.symbol ?? null),
+    request.scope === "file" ? null : (request.fragment ?? null),
     request.scope ?? null,
     request.forPath ?? null,
   ]);
@@ -478,6 +551,7 @@ module.exports = {
   requestKey,
   inferEvidenceRequests,
   evidenceRequests,
+  normalizeEvidenceRequests,
   recoverEvidence,
   MAX_REQUESTS,
   MAX_FRAGMENT,

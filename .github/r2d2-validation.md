@@ -23,7 +23,7 @@ El texto inicial baja un 14,3 % en total y un 13,7 % en la PR #90. Los cuerpos H
 
 ## Comprobaciones
 
-`bun test --timeout 15000 ./.github/ai-review-score.test.ts ./.github/ci-publication.test.ts`: 223 pruebas aprobadas, incluidas catorce regresiones nuevas sobre rutas literales, CSS, declaraciones completas, evidencia compartida, aislamiento de candidatos y presupuesto. Las pruebas usan respuestas simuladas. Se comprobaron también `bun run lint`, `bun run format:check` y CSpell sobre los archivos modificados.
+`bun test --timeout 15000 ./.github/ai-review-score.test.ts ./.github/ci-publication.test.ts`: 231 pruebas aprobadas para la tercera corrección, incluidas las regresiones de las dos anteriores y ocho casos adicionales sobre solicitudes, verificación y reserva de presupuesto. Las pruebas usan respuestas simuladas y el verificador real para los casos nuevos. Se comprobaron también `bun run lint`, `bun run format:check` y CSpell sobre los once archivos modificados.
 
 ## Resultado real y corrección posterior
 
@@ -31,6 +31,10 @@ La ejecución [38061965001](https://github.com/FernandoValdes01/ceretime/actions
 
 La corrección posterior recorre primero todos los bloques y difiere recuperación y verificación; conserva el análisis inicial para retomarlo sin repetir esa llamada; comparte declaraciones recuperadas y sus dependencias entre bloques; mantiene tres rondas por bloque original entre sus divisiones; y transmite los imports una vez por declaración. El servidor controla los cursores. Una resolución desconocida no elimina ninguna solicitud pendiente ni provoca un reintento del bloque completo. Las limitaciones reales y los candidatos sin verificación siguen impidiendo la aprobación.
 
-Las pruebas comprueban el orden del recorrido, la reutilización entre consumidores, los límites compartidos, las continuaciones y la conservación de todas las coordenadas después de dividir. Al preparar este cambio, su inferencia real todavía está pendiente. Una simulación no certifica una revisión completa; repetir la ejecución formal únicamente cuando exista una corrección concreta que comprobar.
+Las pruebas comprueban el orden del recorrido, la reutilización entre consumidores, los límites compartidos, las continuaciones y la conservación de todas las coordenadas después de dividir. La segunda ejecución [38067356340](https://github.com/FernandoValdes01/ceretime/actions/runs/38067356340), sobre `edd7b28`, analizó inicialmente 35 archivos, completó 14 de 27 bloques, dejó 50 solicitudes pendientes y consumió 559230 tokens. Tampoco produjo hallazgos verificados.
+
+La tercera corrección conserva decisiones válidas aunque otra solicitud o grupo falle; restaura continuaciones de Git sin exigir que la asociación al cambio sea idéntica; recupera evidencia dentro del verificador sin repetir detección; y reserva el 40 % del presupuesto para verificar. El informe incluye todos los resúmenes iniciales disponibles, los defectos comprobados y, por separado, candidatos pendientes. El modelo, el presupuesto total y la exigencia de pruebas para publicar defectos se mantienen.
+
+Al preparar este cambio, su inferencia real todavía está pendiente. Una simulación no certifica una revisión completa; repetir la ejecución formal únicamente cuando exista una corrección concreta que comprobar.
 
 La auditoría posterior está en [r2d2-audit.md](r2d2-audit.md). El informe parcial conserva los hallazgos verificados, analiza los patches válidos aunque otro sea ilegible y muestra las correcciones en el comentario principal.

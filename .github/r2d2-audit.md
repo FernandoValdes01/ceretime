@@ -1,6 +1,6 @@
 # Auditoría de R2D2
 
-Fecha: 2026-10-10. Alcance: selección, contexto, consumo, verificación y publicación de la PR #90. Se inspeccionaron el código publicado en `d5967fd`, los logs de la ejecución [38061965001](https://github.com/FernandoValdes01/ceretime/actions/runs/38061965001) y las correcciones locales posteriores. La PR seguía abierta con ese mismo SHA al consultar GitHub. No se ejecutó otra inferencia pagada durante esta auditoría.
+Fecha: 2026-10-10. Alcance: selección, contexto, consumo, verificación y publicación de la PR #90. Se inspeccionaron las dos ejecuciones reales y el código publicado en `d5967fd` y `edd7b28`. La tercera corrección se preparó y comprobó localmente antes de publicar otra ejecución.
 
 ## Cómo funciona
 
@@ -22,14 +22,26 @@ La configuración limita la ejecución a 80 llamadas, 48 bloques y 600000 tokens
 
 La ejecución medida consumió 531278 tokens de entrada y 14711 de salida: 545989 en total. Procesó 17 de 39 bloques, dejó 47 solicitudes pendientes y no produjo hallazgos verificados. El éxito del job de Actions indica que publicó un resultado; el status de revisión fue fallo. La falta de hallazgos no demuestra ausencia de defectos.
 
-## Corrección local
+## Segundo resultado real
+
+La ejecución [38067356340](https://github.com/FernandoValdes01/ceretime/actions/runs/38067356340), sobre `edd7b28`, tampoco resolvió el problema: hubo análisis inicial de 35 archivos, pero solo 14 de 27 bloques completos, 50 solicitudes pendientes, cuatro incidentes y cero hallazgos verificados. Consumió 537331 tokens de entrada y 21899 de salida: 559230 en total, repartidos en 36 llamadas. Su status de revisión fue fallo.
+
+Se reprodujo localmente el rechazo de un cursor legítimo: Git devolvía una continuación sin `forPath`, y el modelo la asociaba al archivo del cambio en la siguiente solicitud. La identidad estricta consideraba esa asociación una solicitud diferente y rechazaba la continuación, aunque su ruta, lado y selector fueran los mismos. Además, una solicitud inválida del verificador eliminaba las decisiones válidas de su respuesta; después de recuperar contexto se volvía a detectar sobre el diff entero, en vez de comprobar el candidato original.
+
+## Corrección actual
 
 Se recorre primero el diff disponible y se conservan las respuestas para retomarlas. Las divisiones comparten tres rondas por bloque original; las declaraciones y sus dependencias se reutilizan entre bloques; los imports se transmiten una vez por declaración. El servidor controla los cursores y una resolución desconocida no elimina pendientes ni reinicia todo el análisis.
 
-Un patch ilegible deja un incidente explícito y permite analizar los bloques válidos hasta el límite. Si hay candidatos, se verifican antes de recuperar contexto adicional de cobertura. Si se confirma un defecto, se conserva y publica junto con las partes pendientes; se evita otra recuperación para completar ese bloque. El comentario principal muestra archivo, línea, problema, impacto y propuesta. Una revisión parcial sin hallazgos muestra riesgo no determinado.
+Las solicitudes del modelo se normalizan una por una. Se descartan sus cursores y se restaura únicamente la continuación conocida en Git, aunque se haya añadido una asociación inequívoca con el archivo cambiado. Un selector inválido se informa con el campo rechazado y conserva otras solicitudes y hallazgos. Las decisiones del verificador también se aíslan por candidato: un índice ausente, una respuesta inválida, un fallo del proveedor o el agotamiento de llamadas en otro grupo no borra pruebas ya confirmadas.
+
+Cuando falta evidencia para un candidato, el verificador recupera solo sus declaraciones y vuelve a comprobar ese candidato, hasta tres rondas. No vuelve a detectar sobre el bloque completo. La evidencia y sus dependencias se comparten entre comprobaciones y se incluyen al guardar la caché, de modo que un contrato cambiado invalide conclusiones anteriores. El contrato de prueba, las citas, el vínculo con HEAD y el sello de publicación mantienen sus validaciones.
+
+El análisis puede consumir como máximo el 60 % del presupuesto total; el resto queda disponible para comprobar candidatos. El límite total permanece en 600000 tokens y las solicitudes sin consumo medido conservan su reserva. Este límite evita gastar todo en detección y recuperación, pero no garantiza cobertura completa de una PR de cualquier tamaño.
+
+Un patch ilegible deja un incidente explícito y permite analizar los bloques válidos hasta el límite. El comentario principal muestra archivo, línea, problema, impacto y propuesta de cada defecto comprobado. Incluye los candidatos pendientes como observaciones sin confirmar y los resúmenes disponibles de todos los bloques en los detalles. Una revisión parcial sin hallazgos muestra riesgo no determinado.
 
 La cobertura parcial conserva el status de fallo y no recibe una nota de calidad. Cambiar esa regla afectaría la política actual de aprobación del repositorio. Los hallazgos comprobados sí son útiles aunque ese status siga pendiente; no se publican hipótesis como defectos.
 
 ## Límite de la auditoría
 
-Las regresiones locales comprueban el control de flujo y la presentación con respuestas simuladas. No certifican la calidad del modelo ni que toda declaración extensa quepa en una solicitud. La revisión real del cambio posterior continúa pendiente; no se afirma que la PR completa ya haya sido revisada.
+Las regresiones locales ejecutan el verificador real con respuestas simuladas. Incluyen defectos demostrables de la PR #73 archivada, recuperación sin repetir detección, conservación de pruebas entre grupos, continuidad de cursores y reserva para verificar al agotar el análisis. No certifican la calidad del modelo ni que toda declaración extensa quepa en una solicitud. El resultado real de la tercera corrección sigue pendiente; no se afirma que la PR completa ya haya sido revisada.

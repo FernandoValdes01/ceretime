@@ -2623,6 +2623,7 @@ test("a full block is partitioned for recovered evidence without losing patch co
           ok: true,
           headers: new Headers(),
           json: async () => ({
+            usage: { prompt_tokens: 10000, completion_tokens: 200 },
             choices: [
               {
                 finish_reason: "stop",
@@ -2694,123 +2695,104 @@ test("a local verification input limit is reported as a reviewer budget incident
   expect(report.findings).toEqual([]);
 });
 
-test("verification recovery drains distinct grouped requests in batches of eight", async () => {
+test("real verification recovers batches of eight without repeating detection", async () => {
+  const respond = (data: any) => ({
+    ok: true,
+    headers: new Headers(),
+    json: async () => ({
+      usage: { prompt_tokens: 1000, completion_tokens: 100 },
+      choices: [{ finish_reason: "stop", message: { content: JSON.stringify(data) } }],
+    }),
+  });
   const path = "apps/mobile/src/aggregate.ts";
-  const source = Array.from(
-    { length: 12 },
-    (_, index) => `export const value${index + 1} = true;`,
-  ).join("\n");
-  const sourceLines = source.split("\n");
+  const lines = Array.from({ length: 12 }, (_, i) => `export const value${i + 1} = true;`);
+  const contract = "export const expectedValue = false;";
   const plan = buildPlan(
     [
       {
         filename: path,
         status: "added",
-        additions: sourceLines.length,
+        additions: 12,
         deletions: 0,
-        patch: `@@ -0,0 +1,${sourceLines.length} @@\n${sourceLines.map((line) => `+${line}`).join("\n")}`,
-        after: `${source}\n`,
-        context: [
-          {
-            path,
-            head: source,
-          },
-        ],
+        patch: `@@ -0,0 +1,12 @@\n${lines.map((line) => `+${line}`).join("\n")}`,
+        context: [{ path: "contract.ts", head: contract, headComplete: true }],
       },
     ],
-    { chunking: { chunkChars: 4000 } },
+    {},
     "a".repeat(40),
   );
-  const findings = [1, 2].map((line, index) => ({
+  const findings = [1, 2].map((line) => ({
     path,
     line,
     side: "RIGHT",
     severity: "important",
-    issue_key: `candidate-${index}`,
-    cause: `Candidate ${index} awaits independent evidence`,
-    impact: `Candidate ${index} affects behavior`,
-    fix: `Restore candidate ${index}'s contract`,
+    issue_key: `candidate-${line - 1}`,
+    cause: `value${line} usa true en vez del valor contractual.`,
+    impact: "El consumidor recibe un valor incorrecto.",
+    fix: "Aplicar expectedValue.",
   }));
-  const requests = Array.from({ length: 10 }, (_, index) => ({
-    path: `apps/mobile/src/context-${index}.ts`,
+  const requests = Array.from({ length: 10 }, (_, i) => ({
+    path: `context-${i}.ts`,
+    symbol: `context${i}`,
     forPath: path,
-    symbol: `context${index}`,
+    reason: `Verify dependency ${i}.`,
     side: "head",
-    reason: `Verify dependency ${index}.`,
   }));
-  const recoveryBatchSizes: number[] = [];
-  const recoveredSymbols = new Set<string>();
-  const analyzedCoordinates = new Set<string>();
-  let analysisCalls = 0;
-  let verificationCalls = 0;
+  const batches: number[] = [],
+    recovered = new Set<string>();
+  let analyses = 0,
+    verifications = 0;
   const report = await reviewPlan({
     plan,
     apiKey: "fixture",
-    instructions: "Check independent candidates.",
     sleep: async () => {},
-    fetchImpl: async (_url: string, options: any) => {
-      analysisCalls++;
-      const body = JSON.parse(options.body);
-      const anchors = [...body.messages[1].content.matchAll(/\[RIGHT:(\d+)\]/g)].map(
-        (match: RegExpMatchArray) => `RIGHT:${match[1]}`,
-      );
-      for (const anchor of anchors) analyzedCoordinates.add(anchor);
-      const currentFindings = findings.filter((finding) =>
-        anchors.includes(`RIGHT:${finding.line}`),
-      );
-      return {
-        ok: true,
-        headers: new Headers(),
-        json: async () => ({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: {
-                content: JSON.stringify({
-                  findings: currentFindings,
-                  limitations: [],
-                  evidenceRequests: [],
-                  resolutions: [],
-                }),
-              },
-            },
-          ],
-        }),
-      };
-    },
-    verify: async ({ assessment }: any) => {
-      verificationCalls++;
-      return {
-        calls: 0,
-        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-        assessment: {
-          ...assessment,
-          findings: assessment.findings,
-          evidenceRequests: verificationCalls === 1 ? requests : [],
-        },
-      };
+    fetchImpl: async (_url: any, options: any) => {
+      const payload = JSON.parse(JSON.parse(options.body).messages[1].content);
+      if (!payload.candidates) {
+        analyses++;
+        return respond({ findings });
+      }
+      verifications++;
+      const complete = recovered.size === 10;
+      return respond({
+        decisions: payload.candidates.map((candidate: any) => ({
+          index: candidate.index,
+          verdict: complete ? "confirmed" : "insufficient",
+          symbol: `value${candidate.finding.line}`,
+          input: "Una entrada válida.",
+          actual: "true",
+          expected: "false",
+          trace: "El export entrega true al consumidor que requiere expectedValue.",
+          counterevidence: "No hay una transformación posterior que aplique expectedValue.",
+          expectedContract: {
+            path: "contract.ts",
+            quote: contract,
+            rule: "El consumidor requiere false.",
+          },
+          impactTrace: "El consumidor recibe true y aplica la rama incorrecta.",
+          references: [{ path, quote: lines[candidate.finding.line - 1] }],
+        })),
+        evidenceRequests: complete
+          ? []
+          : requests.filter((r) => !recovered.has(r.symbol)).slice(0, 8),
+      });
     },
     recoverContext: async ({ chunk, requests: batch }: any) => {
-      recoveryBatchSizes.push(batch.length);
+      batches.push(batch.length);
+      for (const request of batch) recovered.add(request.symbol);
       return {
         chunk: {
           parts: chunk.parts.map((part: any) => ({
             ...part,
             context: [
               ...part.context,
-              ...batch
-                .filter((request: any) => request.forPath === part.path)
-                .map((request: any, index: number) => {
-                  recoveredSymbols.add(request.symbol);
-                  return {
-                    path: request.path,
-                    head: `export const ${request.symbol} = "${"x".repeat(500)}";`,
-                    headState: "present",
-                    recovered: true,
-                    offset: index * 512,
-                    forPath: part.path,
-                  };
-                }),
+              ...batch.map((request: any) => ({
+                path: request.path,
+                head: `export const ${request.symbol} = true;`,
+                recovered: true,
+                headComplete: true,
+                forPath: path,
+              })),
             ],
           })),
         },
@@ -2818,16 +2800,15 @@ test("verification recovery drains distinct grouped requests in batches of eight
       };
     },
   });
-  expect(verificationCalls).toBeGreaterThanOrEqual(1);
-  expect(recoveryBatchSizes).toEqual([8, 2]);
-  expect(recoveredSymbols).toEqual(new Set(requests.map((request) => request.symbol)));
-  expect(analysisCalls).toBeGreaterThan(3);
-  expect(analyzedCoordinates).toEqual(new Set(sourceLines.map((_, index) => `RIGHT:${index + 1}`)));
+  expect(analyses).toBe(1);
+  expect(verifications).toBe(3);
+  expect(batches).toEqual([8, 2]);
+  expect(recovered.size).toBe(10);
+  expect(report.coverage).toBe("complete");
   expect(report.findings.map((finding: any) => finding.issue_key).sort()).toEqual([
     "candidate-0",
     "candidate-1",
   ]);
-  expect(report.coverage).toBe("complete");
 });
 
 test("split added-file blocks receive the complete declaration containing their changed lines", () => {

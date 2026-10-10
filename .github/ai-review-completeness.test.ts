@@ -530,3 +530,51 @@ test("deferred candidates are verified before unrelated coverage recovery", asyn
   expect(report.missingEvidence).toHaveLength(1);
   expect(report).toMatchObject({ calls: 2, coverage: "incomplete", score: null });
 });
+
+test("server continuation survives adding a changed-file association", () => {
+  const current = plan().chunks[0];
+  current.parts[0].evidenceRecovery = [
+    {
+      path: "helper.ts",
+      symbol: "helper",
+      side: "head",
+      reason: "Comprobar el contrato.",
+      cursor: 8,
+      availability: "partial",
+    },
+  ];
+  const result = validateAssessment(
+    {
+      findings: [],
+      evidenceRequests: [
+        {
+          path: "helper.ts",
+          symbol: "helper",
+          reason: "Comprobar el contrato.",
+          forPath: "file.ts",
+          cursor: 999,
+        },
+      ],
+    },
+    current,
+    { repairEvidenceProtocol: true },
+  );
+  expect(result.evidenceRequests[0]).toMatchObject({ cursor: 8, forPath: "file.ts" });
+});
+
+test("malformed context requests preserve valid candidates and requests", () => {
+  const result = validateAssessment(
+    {
+      findings: [finding(1)],
+      evidenceRequests: [
+        { path: "helper.ts", symbol: "helper", reason: "Comprobar." },
+        { path: "../secret", scope: "file", reason: "Invalid request" },
+      ],
+    },
+    plan().chunks[0],
+    { repairEvidenceProtocol: true, isolateInvalidFindings: true },
+  );
+  expect(result.findings).toHaveLength(1);
+  expect(result.evidenceRequests).toHaveLength(1);
+  expect(result.limitations[0]).toContain("Solicitud de contexto descartada");
+});

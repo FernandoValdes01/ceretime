@@ -612,7 +612,7 @@ test("verification groups retain more than eight recovery requests for bounded l
                   decisions: [
                     {
                       index: candidateIndex,
-                      verdict: "refuted",
+                      verdict: "insufficient",
                       symbol,
                       input: "Una entrada válida",
                       actual: "true",
@@ -892,4 +892,273 @@ test("live reviewer regressions refute busy-state, payload accounting and declar
       ),
     ).toBe("refuted");
   }
+});
+
+test("verified proof survives a malformed context request in the same response", async () => {
+  const result = await verifyAssessment({
+    assessment: { findings: [candidates[0]], limitations: [], resolutions: [] },
+    chunk: { parts: [part] },
+    sha,
+    budget: 1,
+    apiKey: "fixture",
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: {
+              content: JSON.stringify({
+                decisions: [proof(0)],
+                evidenceRequests: [{ path: "../secret", scope: "file", reason: "Invalid request" }],
+              }),
+            },
+          },
+        ],
+      }),
+    }),
+  });
+  expect(result.assessment.findings).toHaveLength(1);
+  expect(publishable(result.assessment.findings[0], sha)).toBe(true);
+  expect(result.assessment.limitations[0]).toContain("contexto descartado");
+});
+
+test("one missing decision does not erase another confirmed defect", async () => {
+  const result = await verifyAssessment({
+    assessment: { findings: candidates.slice(0, 2), limitations: [], resolutions: [] },
+    chunk: { parts: [part] },
+    sha,
+    budget: 1,
+    apiKey: "fixture",
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: JSON.stringify({ decisions: [proof(0)] }) },
+          },
+        ],
+      }),
+    }),
+  });
+  expect(result.assessment.findings).toHaveLength(1);
+  expect(result.assessment.verificationPending).toHaveLength(1);
+  expect(publishable(result.assessment.findings[0], sha)).toBe(true);
+});
+
+test.each(["provider", "budget"])(
+  "%s failure in a second group preserves the first verified proof",
+  async (failure) => {
+    const paths = ["alpha.ts", "beta.ts"];
+    const findings = paths.map((path) => ({ ...candidates[0], path }));
+    const parts = paths.map((path) => ({
+      ...part,
+      path,
+      context: [{ path, head: source, headComplete: true }],
+    }));
+    let calls = 0;
+    const result = await verifyAssessment({
+      assessment: { findings, limitations: [], resolutions: [] },
+      chunk: { parts },
+      sha,
+      budget: failure === "budget" ? 1 : 2,
+      apiKey: "fixture",
+      fetchImpl: async (_url: any, options: any) => {
+        calls++;
+        if (calls === 2) return { ok: false, status: 503 };
+        const candidate = JSON.parse(JSON.parse(options.body).messages[1].content).candidates[0];
+        const evidence = proof(0, {
+          index: candidate.index,
+          expectedContract: { ...proof(0).expectedContract, path: candidate.finding.path },
+          references: [{ ...proof(0).references[0], path: candidate.finding.path }],
+        });
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: { content: JSON.stringify({ decisions: [evidence] }) },
+              },
+            ],
+          }),
+        };
+      },
+    });
+    expect(calls).toBe(failure === "budget" ? 1 : 2);
+    expect(result.assessment.findings).toHaveLength(1);
+    expect(result.assessment.verificationPending).toHaveLength(1);
+    expect(publishable(result.assessment.findings[0], sha)).toBe(true);
+  },
+);
+
+test("recovered evidence verifies the original archived defects without detecting again", async () => {
+  const { buildPlan, reviewPlan } = await import("./ai-review-chunks.cjs");
+  const lines = source.split("\n");
+  const plan = buildPlan(
+    [
+      {
+        filename: path,
+        status: "added",
+        additions: 3,
+        deletions: 0,
+        patch: candidates
+          .map((f) => `@@ -${f.line},0 +${f.line} @@\n+${lines[f.line - 1]}`)
+          .join("\n"),
+        context: [
+          { path, head: "export function expandAvailabilitySlots() {}", headComplete: false },
+        ],
+      },
+    ],
+    {},
+    sha,
+  );
+  let analyses = 0,
+    verifications = 0,
+    recoveries = 0;
+  const stored: any[] = [];
+  const dependency = { path, side: "head", ref: sha, status: "present", hash: "b".repeat(64) };
+  const report = await reviewPlan({
+    plan,
+    apiKey: "fixture",
+    sleep: async () => {},
+    memory: { get: () => null, set: (part: any) => stored.push(structuredClone(part)) },
+    fetchImpl: async (_url: any, options: any) => {
+      const payload = JSON.parse(JSON.parse(options.body).messages[1].content);
+      let data: any;
+      if (!payload.candidates) {
+        analyses++;
+        data = { findings: candidates, summary: "La PR cambia la expansión de cupos." };
+      } else {
+        verifications++;
+        data = recoveries
+          ? {
+              decisions: payload.candidates.map((candidate: any) => {
+                const index = candidates.findIndex(
+                  (f) => f.issue_key === candidate.finding.issue_key,
+                );
+                return proof(index, { index: candidate.index });
+              }),
+            }
+          : {
+              decisions: payload.candidates.map((candidate: any) => ({
+                index: candidate.index,
+                verdict: "insufficient",
+              })),
+              evidenceRequests: [
+                { path, scope: "file", reason: "Verificar el contrato actual de cupos." },
+              ],
+            };
+      }
+      return {
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({
+          usage: { prompt_tokens: 3000, completion_tokens: 300 },
+          choices: [{ finish_reason: "stop", message: { content: JSON.stringify(data) } }],
+        }),
+      };
+    },
+    recoverContext: async ({ chunk }: any) => {
+      recoveries++;
+      return {
+        chunk: {
+          parts: chunk.parts.map((p: any) => ({
+            ...p,
+            context: [
+              ...p.context,
+              {
+                path,
+                head: source,
+                recovered: true,
+                headComplete: true,
+                evidenceSide: "head",
+                evidenceSelector: { symbol: "<file>" },
+                offset: 0,
+                declarationComplete: true,
+              },
+            ],
+            evidenceDependencies: [dependency],
+          })),
+        },
+        unresolved: [],
+      };
+    },
+  });
+  expect(analyses).toBe(1);
+  expect(verifications).toBe(2);
+  expect(recoveries).toBe(1);
+  expect(report.calls).toBe(3);
+  expect(report.coverage).toBe("complete");
+  expect(report.findings.map((finding: any) => finding.issue_key)).toEqual([
+    "added-collision",
+    "cancel-added",
+  ]);
+  expect(report.findings.every((finding: any) => publishable(finding, sha))).toBe(true);
+  expect(report.analyses[0].summary).toContain("expansión de cupos");
+  expect(stored).toHaveLength(1);
+  expect(stored[0].evidenceDependencies).toContainEqual(dependency);
+});
+
+test("analysis exhaustion leaves budget for the original verified candidate", async () => {
+  const { buildPlan, reviewPlan } = await import("./ai-review-chunks.cjs");
+  const finding = candidates[0];
+  const plan = buildPlan(
+    [
+      {
+        filename: path,
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        patch: `@@ -${finding.line},0 +${finding.line} @@\n+${source.split("\n")[finding.line - 1]}`,
+        context: part.context,
+      },
+    ],
+    {},
+    sha,
+  );
+  const origin = plan.chunks[0].parts[0];
+  origin.patch += `\n // ${"x".repeat(35000)}`;
+  plan.chunks = Array.from({ length: 13 }, (_, i) => ({
+    parts: [i === 0 ? origin : { ...origin, path: `healthy-${i}.ts`, followups: [] }],
+  }));
+  plan.files = 13;
+  let analyses = 0,
+    verifications = 0;
+  const report = await reviewPlan({
+    plan,
+    apiKey: "fixture",
+    sleep: async () => {},
+    fetchImpl: async (_url: any, options: any) => {
+      const envelope = JSON.parse(options.body),
+        payload = JSON.parse(envelope.messages[1].content);
+      let data: any, tokens: number;
+      if (payload.candidates) {
+        verifications++;
+        data = { decisions: [proof(0)] };
+        tokens = 5000;
+      } else {
+        analyses++;
+        data = { findings: payload.parts[0].path === path ? [finding] : [] };
+        tokens = 30000;
+      }
+      expect(tokens).toBeLessThan(Buffer.byteLength(JSON.stringify(envelope.messages)));
+      return {
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({
+          usage: { prompt_tokens: tokens, completion_tokens: 0 },
+          choices: [{ finish_reason: "stop", message: { content: JSON.stringify(data) } }],
+        }),
+      };
+    },
+  });
+  expect(analyses).toBeLessThan(13);
+  expect(verifications).toBe(1);
+  expect(report.findings).toHaveLength(1);
+  expect(publishable(report.findings[0], sha)).toBe(true);
+  expect(report.coverage).toBe("incomplete");
+  expect(report.usageByStage.verification.prompt).toBe(5000);
+  expect(report.tokenBudget.charged).toBeLessThan(400000);
 });

@@ -124,6 +124,20 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
       : []),
     nextAction,
     "",
+    ...(metadata.report?.verificationPending?.length
+      ? [
+          "### Puntos pendientes de comprobar",
+          "",
+          "Estos candidatos necesitan evidencia adicional; todavía no son defectos confirmados.",
+          "",
+          ...metadata.report.verificationPending
+            .slice(0, 5)
+            .flatMap((finding) => [
+              `- ${finding.path}:${finding.line}: ${withoutBold(finding.cause)}`,
+            ]),
+          "",
+        ]
+      : []),
     ...(result.reason === "incomplete"
       ? [
           "### Evidencia pendiente",
@@ -154,6 +168,16 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           "### Cobertura, defectos e incidentes",
           "",
           `Bloques procesados: ${metadata.report.processed}/${metadata.report.total}. Llamadas a OpenRouter: ${metadata.report.calls}. Cobertura: ${metadata.report.coverage}.`,
+          ...(metadata.report.analyses?.length
+            ? [
+                "",
+                "### Análisis inicial por archivos",
+                "",
+                ...metadata.report.analyses
+                  .filter((item) => item.summary)
+                  .flatMap((item) => [item.paths.join(", "), "", withoutBold(item.summary), ""]),
+              ]
+            : []),
           ...(metadata.report.analyzedFiles
             ? [
                 `Archivos con análisis inicial: ${metadata.report.analyzedFiles.length}. La recuperación y verificación pendientes se detallan por separado.`,
@@ -188,6 +212,11 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           ...(metadata.report.tokenBudget
             ? [
                 `Presupuesto de tokens: ${metadata.report.tokenBudget.charged}/${metadata.report.tokenBudget.limit}. Incluye reservas conservadas cuando el proveedor no informa consumo.`,
+              ]
+            : []),
+          ...(metadata.report.usageByStage
+            ? [
+                `Tokens medidos de análisis: ${metadata.report.usageByStage.analysis.prompt + metadata.report.usageByStage.analysis.completion}. Tokens medidos de verificación: ${metadata.report.usageByStage.verification.prompt + metadata.report.usageByStage.verification.completion}.`,
               ]
             : []),
           "",
