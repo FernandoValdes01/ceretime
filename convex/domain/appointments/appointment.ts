@@ -177,7 +177,9 @@ export const APPOINTMENT_REJECTION_CAUSES = [
   "transition_not_allowed",
   "actor_required",
   "occurred_at_invalid",
+  "current_start_invalid",
   "reason_required",
+  "occurred_before_start",
   "reschedule_required",
   "reschedule_invalid",
 ] as const;
@@ -225,6 +227,21 @@ function isValidInstant(value: number): boolean {
 }
 
 /**
+ * Destinos que registran algo ya ocurrido: realización e inasistencia en sus
+ * tres estados. Solo proceden cuando el instante del registro no es anterior
+ * al inicio vigente; así no se puede dar por realizada ni registrar
+ * inasistencia antes de la atención, y el plazo de justificación de TI2-94
+ * siempre cuenta desde una inasistencia ya ocurrida. Cancelar y reagendar sí
+ * pueden ocurrir antes del inicio y no pasan por esta regla.
+ */
+const PAST_EVENT_TARGETS: ReadonlySet<AppointmentStatus> = new Set([
+  "completed",
+  "no_show",
+  "no_show_justified",
+  "no_show_unjustified",
+]);
+
+/**
  * Aplica la política de transición de la atención (TI2-93).
  *
  * Dominio puro: no persiste ni muta nada, devuelve un resultado y la capa de
@@ -233,9 +250,16 @@ function isValidInstant(value: number): boolean {
  * en el historial. Las causas se evalúan de la más general a la más
  * específica.
  *
+ * Reglas temporales, todas puras como el fin posterior al inicio: la fecha
+ * vigente siempre debe ser válida; realización e inasistencia exigen
+ * `occurredAt` no anterior al inicio; reagendar exige inicio nuevo distinto
+ * y no anterior al instante del registro (no se mueve al pasado).
+ *
  * Al reagendar, `originalStartAt` conserva la primera fecha y no se
  * sobrescribe en reagendamientos encadenados; la fecha efectiva viaja
- * aparte. El motivo es obligatorio solo para la cancelación CERETI y
+ * aparte y el retorno solo trae lo que un reagendamiento puede producir
+ * (sin `cancelReason`: ninguna transición con reagendamiento es
+ * cancelación). El motivo es obligatorio solo para la cancelación CERETI y
  * opcional para la del estudiante.
  */
 export function transitionAppointment(
@@ -251,9 +275,17 @@ export function transitionAppointment(
     return { status: "rejected", cause: "occurred_at_invalid" };
   }
 
+  if (!isValidInstant(attempt.currentStartAt)) {
+    return { status: "rejected", cause: "current_start_invalid" };
+  }
+
   const reason = attempt.reason?.trim();
   if (transition.requiresReason && !reason) {
     return { status: "rejected", cause: "reason_required" };
+  }
+
+  if (PAST_EVENT_TARGETS.has(transition.to) && attempt.occurredAt < attempt.currentStartAt) {
+    return { status: "rejected", cause: "occurred_before_start" };
   }
 
   const change: AppointmentStateChange = {
@@ -264,10 +296,9 @@ export function transitionAppointment(
     ...(reason ? { reason } : {}),
   };
 
-  const isCancel =
-    transition.to === "cancelled_by_student" || transition.to === "cancelled_by_cereti";
-
   if (!transition.requiresReschedule) {
+    const isCancel =
+      transition.to === "cancelled_by_student" || transition.to === "cancelled_by_cereti";
     const preserved =
       attempt.currentOriginalStartAt !== undefined && isValidInstant(attempt.currentOriginalStartAt)
         ? { originalStartAt: attempt.currentOriginalStartAt }
@@ -285,11 +316,11 @@ export function transitionAppointment(
     return { status: "rejected", cause: "reschedule_required" };
   }
   if (
-    !isValidInstant(attempt.currentStartAt) ||
     !isValidInstant(attempt.newStartAt) ||
     !isValidInstant(attempt.newEndAt) ||
     attempt.newEndAt <= attempt.newStartAt ||
-    attempt.newStartAt === attempt.currentStartAt
+    attempt.newStartAt === attempt.currentStartAt ||
+    attempt.newStartAt < attempt.occurredAt
   ) {
     return { status: "rejected", cause: "reschedule_invalid" };
   }
@@ -305,7 +336,6 @@ export function transitionAppointment(
     effectiveStartAt: attempt.newStartAt,
     effectiveEndAt: attempt.newEndAt,
     originalStartAt,
-    ...(isCancel && reason ? { cancelReason: reason } : {}),
   };
 }
 

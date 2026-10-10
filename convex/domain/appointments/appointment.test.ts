@@ -71,7 +71,7 @@ describe("Política de transición de la atención (TI2-93)", () => {
       from: "scheduled",
       to: "completed",
       actorId: "profesional-ficticio-1",
-      occurredAt: 1000,
+      occurredAt: 2000,
       currentStartAt: 2000,
     });
     expect(completed.status).toBe("applied");
@@ -172,7 +172,7 @@ describe("Política de transición de la atención (TI2-93)", () => {
       from: "rescheduled",
       to: "completed",
       actorId: "profesional-ficticio-1",
-      occurredAt: 3000,
+      occurredAt: 5000,
       currentStartAt: 5000,
       currentOriginalStartAt: second.originalStartAt,
     });
@@ -187,7 +187,7 @@ describe("Política de transición de la atención (TI2-93)", () => {
       from: "scheduled",
       to: "no_show",
       actorId: "profesional-ficticio-1",
-      occurredAt: 1000,
+      occurredAt: 2000,
       currentStartAt: 2000,
     });
     expect(pending.status).toBe("applied");
@@ -262,7 +262,7 @@ describe("Política de transición de la atención (TI2-93)", () => {
       from: "scheduled",
       to: "completed",
       actorId: "profesional-ficticio-1",
-      occurredAt: 1000,
+      occurredAt: 2000,
       reason: "Sesión realizada",
       currentStartAt: 2000,
     });
@@ -318,6 +318,97 @@ describe("Política de transición de la atención (TI2-93)", () => {
         currentStartAt: 2000,
       }),
     ).toEqual({ status: "rejected", cause: "transition_not_allowed" });
+  });
+
+  test("rechaza realización e inasistencia anteriores al inicio vigente", () => {
+    expect(
+      transitionAppointment({
+        from: "scheduled",
+        to: "completed",
+        actorId: "profesional-ficticio-1",
+        occurredAt: 1000,
+        currentStartAt: 2000,
+      }),
+    ).toEqual({ status: "rejected", cause: "occurred_before_start" });
+
+    expect(
+      transitionAppointment({
+        from: "scheduled",
+        to: "no_show",
+        actorId: "profesional-ficticio-1",
+        occurredAt: 1000,
+        currentStartAt: 2000,
+      }),
+    ).toEqual({ status: "rejected", cause: "occurred_before_start" });
+
+    expect(
+      transitionAppointment({
+        from: "no_show",
+        to: "no_show_justified",
+        actorId: "profesional-ficticio-1",
+        occurredAt: 1000,
+        currentStartAt: 2000,
+      }),
+    ).toEqual({ status: "rejected", cause: "occurred_before_start" });
+
+    const cancelBeforeStart = transitionAppointment({
+      from: "scheduled",
+      to: "cancelled_by_student",
+      actorId: "estudiante-ficticio-1",
+      occurredAt: 1000,
+      currentStartAt: 2000,
+    });
+    expect(cancelBeforeStart.status).toBe("applied");
+  });
+
+  test("rechaza fecha vigente inválida en vez de devolver fecha efectiva corrupta", () => {
+    expect(
+      transitionAppointment({
+        from: "scheduled",
+        to: "completed",
+        actorId: "profesional-ficticio-1",
+        occurredAt: 2000,
+        currentStartAt: Number.NaN,
+      }),
+    ).toEqual({ status: "rejected", cause: "current_start_invalid" });
+
+    expect(
+      transitionAppointment({
+        from: "scheduled",
+        to: "no_show",
+        actorId: "profesional-ficticio-1",
+        occurredAt: 2000,
+        currentStartAt: 0,
+      }),
+    ).toEqual({ status: "rejected", cause: "current_start_invalid" });
+  });
+
+  test("rechaza reagendamiento a una fecha que ya pasó", () => {
+    expect(
+      transitionAppointment({
+        from: "scheduled",
+        to: "rescheduled",
+        actorId: "profesional-ficticio-1",
+        occurredAt: 5000,
+        currentStartAt: 6000,
+        newStartAt: 4000,
+        newEndAt: 4600,
+      }),
+    ).toEqual({ status: "rejected", cause: "reschedule_invalid" });
+
+    const atPresent = transitionAppointment({
+      from: "scheduled",
+      to: "rescheduled",
+      actorId: "profesional-ficticio-1",
+      occurredAt: 5000,
+      currentStartAt: 6000,
+      newStartAt: 5000,
+      newEndAt: 5600,
+    });
+    expect(atPresent.status).toBe("applied");
+    if (atPresent.status !== "applied") return;
+    expect(atPresent.effectiveStartAt).toBe(5000);
+    expect(atPresent.originalStartAt).toBe(6000);
   });
 
   test("rechaza actor, fecha y fechas de reagendamiento inválidas", () => {
