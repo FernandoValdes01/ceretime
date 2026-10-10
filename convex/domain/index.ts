@@ -130,16 +130,26 @@ export type {
   SpaceCatalogPage,
 } from "./spaces/space";
 
-// Atención reservada: reserva y atención en una sola entidad (TI2-87).
+// Atención reservada: reserva y atención en una sola entidad (TI2-87, TI2-93).
 export {
   APPOINTMENT_CONTRACT_VERSION,
+  APPOINTMENT_REJECTION_CAUSES,
   APPOINTMENT_STATUS_VALUES,
+  APPOINTMENT_TRANSITIONS,
+  findAppointmentTransition,
   INITIAL_APPOINTMENT_STATUS,
+  NO_SHOW_PENDING_STATE,
+  transitionAppointment,
 } from "./appointments/appointment";
 export type {
   Appointment,
   AppointmentContractVersion,
   AppointmentPage,
+  AppointmentRejectionCause,
+  AppointmentStateChange,
+  AppointmentStateTransition,
   AppointmentStatus,
+  AppointmentTransitionAttempt,
+  AppointmentTransitionResult,
   ListAppointmentsInput,
 } from "./appointments/appointment";
