@@ -1,13 +1,14 @@
 import { describe, expect, test } from "vitest";
 import stateModel from "./state-model.md?raw";
 import {
+  CLOSURE_REQUEST_STATES,
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
   REQUEST_STATE_LABELS,
   REQUEST_STATES,
   SPRINT_1_REQUEST_STATES,
 } from "./state";
-import { ACCEPTANCE_STATE, SPRINT_1_REQUEST_TRANSITIONS } from "./transitions";
+import { ACCEPTANCE_STATE, CLOSURE_REQUEST_TRANSITIONS, REQUEST_TRANSITIONS } from "./transitions";
 
 /**
  * `state-model.md` es la evidencia de cierre del modelo, pero nada lo ataba al
@@ -31,7 +32,11 @@ function sectionLines(title: string): string[] {
   return lines.slice(start, end === -1 ? undefined : end);
 }
 
-const STATE_TABLE_SECTIONS = ["Implementado en Sprint 1", "Declarado, no habilitado"];
+const STATE_TABLE_SECTIONS = [
+  "Implementado en Sprint 1",
+  "Implementado en Sprint 2 (TI2-85)",
+  "Declarado, no habilitado",
+];
 
 type StateRow = { readonly state: string; readonly cells: readonly string[] };
 
@@ -75,9 +80,9 @@ const transitions = edges.filter((edge) => edge.from !== "[*]" && edge.to !== "[
 const pair = (from: string, to: string) => `${from} -> ${to}`;
 
 describe("diagrama de state-model.md", () => {
-  test("dibuja exactamente las transiciones de SPRINT_1_REQUEST_TRANSITIONS", () => {
+  test("dibuja exactamente las transiciones de REQUEST_TRANSITIONS", () => {
     const drawn = transitions.map((edge) => pair(edge.from, edge.to));
-    const declared = SPRINT_1_REQUEST_TRANSITIONS.map((row) => pair(row.from, row.to));
+    const declared = REQUEST_TRANSITIONS.map((row) => pair(row.from, row.to));
     expect(drawn.sort()).toEqual(declared.sort());
   });
 
@@ -85,7 +90,7 @@ describe("diagrama de state-model.md", () => {
     const marked = transitions
       .filter((edge) => edge.label === "exige motivo")
       .map((edge) => pair(edge.from, edge.to));
-    const required = SPRINT_1_REQUEST_TRANSITIONS.filter((row) => row.requiresReason).map((row) =>
+    const required = REQUEST_TRANSITIONS.filter((row) => row.requiresReason).map((row) =>
       pair(row.from, row.to),
     );
     expect(marked.sort()).toEqual(required.sort());
@@ -96,9 +101,9 @@ describe("diagrama de state-model.md", () => {
     expect(entries).toEqual([INITIAL_REQUEST_STATE]);
   });
 
-  test("termina en la aceptación, donde se abre el acompañamiento", () => {
+  test("termina en la aceptación, que abre el acompañamiento, o en un cierre", () => {
     const exits = edges.filter((edge) => edge.to === "[*]").map((edge) => edge.from);
-    expect(exits).toEqual([ACCEPTANCE_STATE]);
+    expect(exits.sort()).toEqual([ACCEPTANCE_STATE, ...CLOSURE_REQUEST_STATES].sort());
   });
 
   test("resalta como Sprint 1 exactamente los estados con operación", () => {
@@ -107,6 +112,14 @@ describe("diagrama de state-model.md", () => {
       ?.split(/\s+/)[1]
       ?.split(",");
     expect(highlighted?.sort()).toEqual([...SPRINT_1_REQUEST_STATES].sort());
+  });
+
+  test("resalta como cierre exactamente los estados terminales sin acompañamiento", () => {
+    const highlighted = mermaidLines()
+      .find((line) => line.startsWith("class ") && line.endsWith(" closure"))
+      ?.split(/\s+/)[1]
+      ?.split(",");
+    expect(highlighted?.sort()).toEqual([...CLOSURE_REQUEST_STATES].sort());
   });
 
   test("no dibuja estados de un Cycle futuro, como decide «Declarado, no habilitado»", () => {
@@ -120,6 +133,28 @@ describe("tablas de state-model.md", () => {
     expect(stateRows("Implementado en Sprint 1").map((row) => row.state)).toEqual([
       ...SPRINT_1_REQUEST_STATES,
     ]);
+  });
+
+  test("«Implementado en Sprint 2 (TI2-85)» tiene una fila por cierre, sin repetir ni sobrar", () => {
+    expect(stateRows("Implementado en Sprint 2 (TI2-85)").map((row) => row.state)).toEqual([
+      ...CLOSURE_REQUEST_STATES,
+    ]);
+  });
+
+  test("«Cierres sin acompañamiento» describe exactamente CLOSURE_REQUEST_TRANSITIONS", () => {
+    const unquote = (cell: string | undefined) => cell?.replace(/`/g, "") ?? "";
+    const documented = stateRows("Cierres sin acompañamiento").map((row) => ({
+      from: unquote(row.cells[0]),
+      to: unquote(row.cells[1]),
+      requiresReason: row.cells[3] === "Sí",
+    }));
+    expect(documented).toEqual(
+      CLOSURE_REQUEST_TRANSITIONS.map((row) => ({
+        from: row.from,
+        to: row.to,
+        requiresReason: row.requiresReason,
+      })),
+    );
   });
 
   test("«Declarado, no habilitado» tiene una fila por estado declarado, sin repetir ni sobrar", () => {

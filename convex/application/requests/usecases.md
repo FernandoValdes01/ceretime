@@ -16,6 +16,21 @@ Evidencia de cierre de TI2-9: endpoints públicos de solicitudes para Estudiante
 
 Toda denegación responde el error genérico, sin motivo ni existencia del recurso. El `studentId` siempre sale del perfil del servidor, nunca del cliente.
 
+## Cierres sin acompañamiento (TI2-85)
+
+Dos casos de uso de `commands.ts` que todavía no tienen entrada pública. Reciben la identidad ya resuelta, como los demás, y se prueban en `convex/tests/requests.test.ts` y `convex/tests/acceptance.test.ts` dentro de `t.run`.
+
+| Caso de uso                        | Quién                                     | Qué hace                                                                                                            |
+| ---------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `cancelRequest`                    | Estudiante vigente, dueño de la solicitud | Mueve `received`, `under_review` o `awaiting_information_or_acceptance` a `cancelled` con motivo obligatorio        |
+| `closeRequestWithoutAccompaniment` | Profesional vigente con toma activa       | Mueve `under_review` o `awaiting_information_or_acceptance` a `closed_without_accompaniment` con motivo obligatorio |
+
+Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la misma transacción, y un rechazo no escribe nada. Rechazos con mensaje específico: "Se requiere el motivo para cancelar la solicitud", "La solicitud no admite la cancelación en su estado actual", "Se requiere el motivo para cerrar la solicitud sin acompañamiento" y "La solicitud no admite el cierre sin acompañamiento en su estado actual". Una solicitud ajena, inexistente o sin toma recibe la denegación genérica.
+
+Mientras tanto, `listOwnRequests` y `listAuthorizedRequests` omiten las solicitudes canceladas o cerradas, y `getRequest` y las mutations las rechazan.
+
+Publicarlos exige ampliar el contrato de estados de `api.presentation.requests.*` y el mapeo de Mobile, coordinado con TI4: ver [`state-model.md`](../../domain/requests/state-model.md#contrato-público).
+
 ## Alcance explícito
 
 - El Profesional solo opera solicitudes con toma activa a su nombre; la toma es manual y queda auditada (quién y cuándo). Sin toma no hay acceso.
