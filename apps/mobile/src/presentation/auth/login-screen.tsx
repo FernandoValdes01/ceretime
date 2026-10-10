@@ -1,7 +1,10 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import type { AuthCredentials } from "../../application/auth-models";
+import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
+import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
 import { Action, Screen } from "../components/screen";
+import { StudentText } from "../estudiante/student-text";
 import { roles } from "../navigation/roles";
 import { useNavigationSession } from "../navigation/session";
 
@@ -12,6 +15,8 @@ export function LoginScreen({
 }) {
   const { signIn, selectRole, status, error } = useNavigationSession();
   const isLoading = status === "loading";
+  const accessibility = useOptionalAccessibilityPreferences();
+  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
 
   return (
     <Screen
@@ -19,9 +24,12 @@ export function LoginScreen({
       description="Selecciona un rol para explorar CERETI. El acceso institucional se integrará más adelante."
     >
       <View style={styles.selector}>
-        <Text accessibilityRole="header" style={styles.selectorTitle}>
+        <StudentText
+          accessibilityRole="header"
+          style={[styles.selectorTitle, { color: colors.text }]}
+        >
           Elige un rol
-        </Text>
+        </StudentText>
         {roles.map(({ id, label }) => (
           <Action
             key={id}
@@ -36,14 +44,17 @@ export function LoginScreen({
           onPress={() => void signIn(unassignedPractitionerCredentials)}
         />
         {isLoading ? (
-          <Text accessibilityRole="progressbar" style={styles.status}>
+          <StudentText
+            accessibilityRole="progressbar"
+            style={[styles.status, { color: colors.primary }]}
+          >
             Preparando la experiencia…
-          </Text>
+          </StudentText>
         ) : null}
         {error ? (
-          <Text accessibilityRole="alert" style={styles.error}>
+          <StudentText accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>
             {error}
-          </Text>
+          </StudentText>
         ) : null}
       </View>
     </Screen>
