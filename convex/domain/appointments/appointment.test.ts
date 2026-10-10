@@ -3,13 +3,19 @@ import {
   APPOINTMENT_CONTRACT_VERSION,
   APPOINTMENT_STATUS_VALUES,
   INITIAL_APPOINTMENT_STATUS,
+  JUSTIFICATION_BUSINESS_DAYS,
   NO_SHOW_PENDING_STATE,
+  calculateJustificationDeadline,
+  decideJustificationTimeliness,
   transitionAppointment,
   type Appointment,
   type AppointmentPage,
 } from "./appointment";
 import {
   APPOINTMENT_CONTRACT_VERSION as BARREL_VERSION,
+  JUSTIFICATION_BUSINESS_DAYS as BARREL_BUSINESS_DAYS,
+  calculateJustificationDeadline as barrelDeadline,
+  decideJustificationTimeliness as barrelTimeliness,
   transitionAppointment as barrelTransition,
   type Appointment as BarrelAppointment,
 } from "../index";
@@ -465,5 +471,233 @@ describe("Política de transición de la atención (TI2-93)", () => {
         newEndAt: 3000,
       }),
     ).toEqual({ status: "rejected", cause: "reschedule_invalid" });
+  });
+});
+
+describe("Plazo de cinco días hábiles de justificación (TI2-94)", () => {
+  const TIME_ZONE = "America/Santiago";
+  /** Lunes 2026-10-12 12:00 UTC: 09:00 en Santiago, mismo día civil. */
+  const MONDAY = Date.UTC(2026, 9, 12, 12);
+  /** Viernes 2026-10-16 12:00 UTC. */
+  const FRIDAY = Date.UTC(2026, 9, 16, 12);
+
+  test("sale por el barrel sin duplicar la fuente y cuenta cinco días hábiles", () => {
+    expect(JUSTIFICATION_BUSINESS_DAYS).toBe(5);
+    expect(BARREL_BUSINESS_DAYS).toBe(JUSTIFICATION_BUSINESS_DAYS);
+    expect(barrelDeadline).toBe(calculateJustificationDeadline);
+    expect(barrelTimeliness).toBe(decideJustificationTimeliness);
+  });
+
+  test("cuenta días hábiles posteriores a la inasistencia, no cinco corridos", () => {
+    const deadline = calculateJustificationDeadline({ missedAt: MONDAY, timeZone: TIME_ZONE });
+    expect(deadline.absenceDate).toBe("2026-10-12");
+    // Mar 13 (1), mié 14 (2), jue 15 (3), vie 16 (4), lun 19 (5): salta el finde.
+    expect(deadline.deadlineDate).toBe("2026-10-19");
+    expect(deadline.businessDays).toBe(5);
+    expect(deadline.timeZone).toBe(TIME_ZONE);
+    expect(deadline.holidays).toEqual([]);
+    expect(Number.isFinite(deadline.deadlineAt)).toBe(true);
+    // Cinco corridos habrían vencido el sábado 2026-10-17.
+    expect(deadline.deadlineDate).not.toBe("2026-10-17");
+  });
+
+  test("mismos inputs dan el mismo plazo sin reloj implícito", () => {
+    const input = { missedAt: MONDAY, timeZone: TIME_ZONE } as const;
+    expect(calculateJustificationDeadline(input)).toEqual(calculateJustificationDeadline(input));
+    const withHolidays = {
+      missedAt: MONDAY,
+      timeZone: TIME_ZONE,
+      holidays: ["2026-10-14"],
+    } as const;
+    expect(calculateJustificationDeadline(withHolidays)).toEqual(
+      calculateJustificationDeadline({
+        missedAt: MONDAY,
+        timeZone: TIME_ZONE,
+        holidays: ["2026-10-14"],
+      }),
+    );
+  });
+
+  test("el viernes salta el fin de semana completo", () => {
+    const deadline = calculateJustificationDeadline({ missedAt: FRIDAY, timeZone: TIME_ZONE });
+    expect(deadline.absenceDate).toBe("2026-10-16");
+    // Lun 19 (1), mar 20 (2), mié 21 (3), jue 22 (4), vie 23 (5).
+    expect(deadline.deadlineDate).toBe("2026-10-23");
+  });
+
+  test("el feriado explícito corre el plazo y el de fin de semana no", () => {
+    const withHoliday = calculateJustificationDeadline({
+      missedAt: MONDAY,
+      timeZone: TIME_ZONE,
+      holidays: ["2026-10-14"],
+    });
+    // Mar 13 (1), jue 15 (2), vie 16 (3), lun 19 (4), mar 20 (5).
+    expect(withHoliday.deadlineDate).toBe("2026-10-20");
+    expect(withHoliday.holidays).toEqual(["2026-10-14"]);
+
+    const weekendHoliday = calculateJustificationDeadline({
+      missedAt: MONDAY,
+      timeZone: TIME_ZONE,
+      holidays: ["2026-10-17"],
+    });
+    expect(weekendHoliday.deadlineDate).toBe("2026-10-19");
+  });
+
+  test("cruza mes y año contando solo hábiles", () => {
+    const monthCross = calculateJustificationDeadline({
+      missedAt: Date.UTC(2026, 9, 30, 12),
+      timeZone: TIME_ZONE,
+    });
+    expect(monthCross.absenceDate).toBe("2026-10-30");
+    // Lun 02-11 (1), mar 03 (2), mié 04 (3), jue 05 (4), vie 06 (5).
+    expect(monthCross.deadlineDate).toBe("2026-11-06");
+
+    const yearCross = calculateJustificationDeadline({
+      missedAt: Date.UTC(2026, 11, 28, 12),
+      timeZone: TIME_ZONE,
+    });
+    expect(yearCross.absenceDate).toBe("2026-12-28");
+    // Mar 29 (1), mié 30 (2), jue 31 (3), vie 01-01 (4), lun 04-01 (5).
+    expect(yearCross.deadlineDate).toBe("2027-01-04");
+
+    const yearCrossWithHoliday = calculateJustificationDeadline({
+      missedAt: Date.UTC(2026, 11, 28, 12),
+      timeZone: TIME_ZONE,
+      holidays: ["2027-01-01"],
+    });
+    expect(yearCrossWithHoliday.deadlineDate).toBe("2027-01-05");
+  });
+
+  test("el orden y los duplicados de feriados no cambian el plazo", () => {
+    const first = calculateJustificationDeadline({
+      missedAt: MONDAY,
+      timeZone: TIME_ZONE,
+      holidays: ["2026-10-20", "2026-10-14"],
+    });
+    const second = calculateJustificationDeadline({
+      missedAt: MONDAY,
+      timeZone: TIME_ZONE,
+      holidays: ["2026-10-14", "2026-10-14", "2026-10-20"],
+    });
+    expect(first).toEqual(second);
+    expect(first.holidays).toEqual(["2026-10-14", "2026-10-20"]);
+    // Mar 13 (1), jue 15 (2), vie 16 (3), lun 19 (4), mié 21 (5).
+    expect(first.deadlineDate).toBe("2026-10-21");
+  });
+
+  test("la zona horaria es explícita: el mismo instante cambia de día civil", () => {
+    // 2026-10-12 02:00 UTC es domingo 2026-10-11 en Santiago y lunes en UTC.
+    const instant = Date.UTC(2026, 9, 12, 2);
+    const santiago = calculateJustificationDeadline({ missedAt: instant, timeZone: TIME_ZONE });
+    const utc = calculateJustificationDeadline({ missedAt: instant, timeZone: "UTC" });
+    expect(santiago.absenceDate).toBe("2026-10-11");
+    expect(utc.absenceDate).toBe("2026-10-12");
+    expect(santiago.deadlineDate).toBe("2026-10-16");
+    expect(utc.deadlineDate).toBe("2026-10-19");
+    expect(santiago.deadlineDate).not.toBe(utc.deadlineDate);
+  });
+
+  test("límite exclusivo: instante exacto fuera y milisegundo anterior dentro", () => {
+    const deadline = calculateJustificationDeadline({ missedAt: MONDAY, timeZone: TIME_ZONE });
+    const exact = decideJustificationTimeliness({
+      missedAt: MONDAY,
+      submittedAt: deadline.deadlineAt,
+      timeZone: TIME_ZONE,
+    });
+    expect(exact.deadlineDate).toBe(deadline.deadlineDate);
+    expect(exact.withinDeadline).toBe(false);
+
+    const before = decideJustificationTimeliness({
+      missedAt: MONDAY,
+      submittedAt: deadline.deadlineAt - 1,
+      timeZone: TIME_ZONE,
+    });
+    expect(before.withinDeadline).toBe(true);
+
+    const after = decideJustificationTimeliness({
+      missedAt: MONDAY,
+      submittedAt: deadline.deadlineAt + 1,
+      timeZone: TIME_ZONE,
+    });
+    expect(after.withinDeadline).toBe(false);
+  });
+
+  test("devuelve cálculo y decisión para TI2-119 sin persistir", () => {
+    const deadline = calculateJustificationDeadline({ missedAt: MONDAY, timeZone: TIME_ZONE });
+    const timely = decideJustificationTimeliness({
+      missedAt: MONDAY,
+      submittedAt: MONDAY,
+      timeZone: TIME_ZONE,
+    });
+    expect(timely.absenceDate).toBe(deadline.absenceDate);
+    expect(timely.deadlineDate).toBe(deadline.deadlineDate);
+    expect(timely.deadlineAt).toBe(deadline.deadlineAt);
+    expect(timely.submittedAt).toBe(MONDAY);
+    expect(timely.submittedDate).toBe("2026-10-12");
+    expect(timely.withinDeadline).toBe(true);
+
+    const early = decideJustificationTimeliness({
+      missedAt: MONDAY,
+      submittedAt: MONDAY - 1,
+      timeZone: TIME_ZONE,
+    });
+    expect(early.withinDeadline).toBe(false);
+  });
+
+  test("el feriado el mismo día de la inasistencia no desplaza el plazo", () => {
+    const deadline = calculateJustificationDeadline({
+      missedAt: MONDAY,
+      timeZone: TIME_ZONE,
+      holidays: ["2026-10-12"],
+    });
+    expect(deadline.absenceDate).toBe("2026-10-12");
+    expect(deadline.deadlineDate).toBe("2026-10-19");
+  });
+
+  test("la entrega en fin de semana dentro del plazo cuenta como dentro", () => {
+    // Sábado 2026-10-17 12:00 UTC: 09:00 en Santiago, antes del vencimiento.
+    const saturday = Date.UTC(2026, 9, 17, 12);
+    const decision = decideJustificationTimeliness({
+      missedAt: MONDAY,
+      submittedAt: saturday,
+      timeZone: TIME_ZONE,
+    });
+    expect(decision.submittedDate).toBe("2026-10-17");
+    expect(decision.withinDeadline).toBe(true);
+  });
+
+  test("rechaza instantes fuera del rango representable de fecha", () => {
+    expect(() => calculateJustificationDeadline({ missedAt: 1e30, timeZone: TIME_ZONE })).toThrow(
+      "instante válido",
+    );
+    expect(() =>
+      decideJustificationTimeliness({ missedAt: MONDAY, submittedAt: 1e30, timeZone: TIME_ZONE }),
+    ).toThrow("entrega");
+  });
+
+  test("rechaza instantes, zonas y feriados inválidos", () => {
+    expect(() => calculateJustificationDeadline({ missedAt: 0, timeZone: TIME_ZONE })).toThrow(
+      "instante válido",
+    );
+    expect(() => calculateJustificationDeadline({ missedAt: MONDAY, timeZone: "" })).toThrow(
+      "zona horaria",
+    );
+    expect(() =>
+      calculateJustificationDeadline({ missedAt: MONDAY, timeZone: "Mars/Olympus" }),
+    ).toThrow("desconocida");
+    expect(() =>
+      calculateJustificationDeadline({
+        missedAt: MONDAY,
+        timeZone: TIME_ZONE,
+        holidays: ["2026-13-40"],
+      }),
+    ).toThrow("feriado");
+    expect(() =>
+      decideJustificationTimeliness({
+        missedAt: MONDAY,
+        submittedAt: Number.NaN,
+        timeZone: TIME_ZONE,
+      }),
+    ).toThrow("entrega");
   });
 });
