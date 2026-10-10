@@ -2,10 +2,10 @@ review_style: minimal
 max_comments: 5
 review_language: es
 chunking:
-  chunkChars: 48000
-  inputChars: 64000
+  chunkChars: 180000
+  inputChars: 240000
   maxChunks: 48
-  maxCalls: 80
+  maxCalls: 24
   totalTokens: 450000
   outputTokens: 6000
   intervalMs: 1000

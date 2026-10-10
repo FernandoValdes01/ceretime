@@ -234,6 +234,38 @@ test("token reservation settles once and unknown usage keeps the conservative re
   expect(() => tokenBudget(1).reserve(body)).toThrow("Presupuesto total de tokens agotado.");
 });
 
+test("large requests split to fit the remaining conservative analysis reservation", async () => {
+  const current = buildPlan(
+    ["a.ts", "b.ts"].map((filename) => ({
+      filename,
+      status: "added",
+      additions: 1,
+      deletions: 0,
+      patch: "@@ -0,0 +1 @@\n+export const value = 1;",
+      context: [{ path: filename, head: "// " + "x".repeat(9000), headComplete: false }],
+    })),
+    { chunking: { totalTokens: 26000, outputTokens: 1000 } },
+    sha,
+  );
+  expect(current.chunks).toHaveLength(1);
+  const paths: string[] = [];
+  const report = await reviewPlan({
+    plan: current,
+    apiKey: "fixture",
+    instructions: "",
+    sleep: async () => {},
+    fetchImpl: async (_url: string, request: any) => {
+      const payload = JSON.parse(JSON.parse(request.body).messages[1].content);
+      paths.push(...payload.parts.map((part: any) => part.path));
+      return response({ findings: [], resolutions: [] }, 100, 10);
+    },
+  });
+  expect(paths.sort()).toEqual(["a.ts", "b.ts"]);
+  expect(report.calls).toBe(2);
+  expect(report.coverage).toBe("complete");
+  expect(report.tokenBudget.charged).toBe(220);
+});
+
 test("the total token budget blocks provider requests and counts independent verification usage", async () => {
   const blocked = plan();
   blocked.limits.totalTokens = 1;

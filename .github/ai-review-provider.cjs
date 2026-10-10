@@ -49,8 +49,8 @@ function tokenBudget(limit) {
     get spent() {
       return spent;
     },
-    canReserve(body) {
-      return spent + reservation(body) <= limit;
+    canReserve(body, ceiling = limit) {
+      return spent + reservation(body) <= Math.min(limit, ceiling);
     },
     reserve(body, ceiling = limit) {
       const reserved = reservation(body);

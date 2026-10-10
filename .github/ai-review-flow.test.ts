@@ -111,6 +111,52 @@ test("an excerpt without a requested declaration keeps a shared identity without
   expect(bundle.parts[0].evidenceRefs[0].id).toBe(bundle.parts[1].evidenceRefs[0].id);
 });
 
+test("wide packets include a complete large changed function before any recovery call", () => {
+  const head =
+    "export function orchestrate() {\n" +
+    "  consumeCurrentContract();\n".repeat(1700) +
+    "  return 2;\n}\n";
+  const base = head.replace("return 2", "return 1");
+  const config = { chunking: { chunkChars: 180000, inputChars: 240000 } };
+  const files = [
+    {
+      filename: "orchestrate.ts",
+      status: "modified",
+      additions: 1,
+      deletions: 1,
+      patch: "@@ -1702,1 +1702,1 @@\n-  return 1;\n+  return 2;",
+      before: base,
+      after: head,
+      context: [
+        {
+          path: "orchestrate.ts",
+          base: "export function orchestrate() {",
+          head: "export function orchestrate() {",
+          headComplete: false,
+        },
+        { path: "contract.md", head: "Required current contract.\n".repeat(200) },
+      ],
+    },
+  ];
+  const plan = buildPlan(files, config, "a".repeat(40));
+  expect(plan.issues).toEqual([]);
+  expect(plan.chunks).toHaveLength(1);
+  const bundle = publicEvidenceBundle(plan.chunks[0].parts);
+  expect(bundle.parts[0].completeFiles.head).toBe(true);
+  expect(bundle.parts[0].completeDeclarations.head).toContainEqual({
+    symbol: "orchestrate",
+    startLine: 1,
+    endLine: 1703,
+  });
+  expect(bundle.evidence.find((item: any) => item.path.head === "orchestrate.ts").head).toContain(
+    "consumeCurrentContract();",
+  );
+  expect(bundle.evidence.find((item: any) => item.path.head === "contract.md").head).toContain(
+    "Required current contract.",
+  );
+  expect(bundle.parts[0].patch).toContain("[RIGHT:1702] +  return 2;");
+});
+
 test("a long requested range is paginated within the recovery budget rather than rejected", () => {
   const source = Array.from(
     { length: 200 },
@@ -843,8 +889,8 @@ test("followups use spare capacity without mixing overlapping findings from the 
     f.put(
       ".pr-reviewer.yml",
       configuration
-        .replace("maxChunks: 32", "maxChunks: 2")
-        .replace("chunkChars: 48000", "chunkChars: 12000"),
+        .replace(/maxChunks: \d+/, "maxChunks: 2")
+        .replace(/chunkChars: \d+/, "chunkChars: 12000"),
     );
     f.advance();
     for (let id = 1; id <= 2; id++)
@@ -2745,6 +2791,8 @@ test("a full block is partitioned for recovered evidence without losing patch co
   const f = fixture({ "file.ts": "export const run = () => 1;\n", "large.ts": large });
   try {
     const plan = await f.prepare();
+    plan.limits.chunkChars = 48000;
+    plan.limits.inputChars = 64000;
     plan.chunks[0].parts[0].context.push({
       path: "large.ts",
       head: "",

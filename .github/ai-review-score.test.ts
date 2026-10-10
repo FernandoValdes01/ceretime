@@ -23,12 +23,12 @@ const sha = "a".repeat(40);
 const config = Bun.YAML.parse(readFileSync(`${import.meta.dir}/../.pr-reviewer.yml`, "utf8"));
 test("reviewer config reserves bounded calls for recovery and independent verification", () => {
   expect(config.chunking.maxChunks).toBe(48);
-  expect(config.chunking.maxCalls).toBe(80);
-  expect(config.chunking.maxCalls).toBe(LIMITS.maxCalls);
+  expect(config.chunking.maxCalls).toBe(24);
+  expect(config.chunking.maxCalls).toBeLessThanOrEqual(LIMITS.maxCalls);
   expect(config.chunking.maxChunks).toBe(LIMITS.maxChunks);
   expect(config.chunking.totalTokens).toBe(450000);
   expect(config.chunking.totalTokens).toBe(LIMITS.totalTokens);
-  expect(buildPlan([], config, sha).limits.maxCalls).toBe(80);
+  expect(buildPlan([], config, sha).limits.maxCalls).toBe(24);
 });
 function chunkFile(filename: string, lines = 80, width = 70) {
   return {

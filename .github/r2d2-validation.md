@@ -48,3 +48,11 @@ Se reprodujeron y corrigieron el rechazo de rangos válidos más largos, la pér
 La comparación local del mismo diff real de la PR #90, en `cf4b161`, mantuvo 36 archivos y cero incidentes de preparación: pasó de 21 a 19 solicitudes iniciales y de 1130158 a 1014861 bytes HTTP, un descenso del 10,2 %. No incluye hilos históricos, caché ni rondas posteriores; las respuestas fueron simuladas y no se llamó al modelo. Este resultado mide tamaño de mensajes, no tokens ni calidad de revisión.
 
 Las 243 pruebas locales aprobaron, incluidos seis casos nuevos que reproducen estos fallos y los defectos conocidos de la PR #73. También aprobaron lint, formato y CSpell sobre los diez archivos modificados. No se modifica la política de aprobación ni se publica una hipótesis como defecto comprobado.
+
+## Contexto completo y llamadas acotadas
+
+La ejecución sobre `19c8408` volvió a quedar incompleta: 403404 tokens, 15 de 27 bloques completos, una solicitud pendiente y cero defectos confirmados. Las cinco hipótesis pendientes no son defectos comprobados.
+
+El ajuste actual conserva el archivo HEAD completo cuando cabe en un paquete amplio, en lugar de eliminar su última declaración al recortar contexto histórico. Los paquetes pasan a 180000 caracteres y la solicitud completa a 240000; el límite total sigue en 450000 tokens y el máximo de llamadas baja de 80 a 24. Las solicitudes se dividen también cuando no caben en la reserva conservadora restante; se conserva el saldo destinado a verificar hallazgos. El protocolo exige una entrada concreta, el efecto visible en el código y un contrato presente antes de emitir un candidato.
+
+Aprobaron 245 pruebas locales, incluida una función modificada de 1703 líneas con contexto histórico parcial y un caso que divide dos archivos para respetar la reserva restante. La preparación local del diff real de la PR #90, sobre `19c8408`, produjo ocho solicitudes, 36 archivos, cero incidentes y 33 de 37 partes con HEAD completo comprobado. Las respuestas fueron simuladas; el tamaño HTTP fue 1478152 bytes. Estos datos prueban disponibilidad del código y límites del flujo, no ahorro de tokens ni calidad del modelo.

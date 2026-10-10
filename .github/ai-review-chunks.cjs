@@ -30,13 +30,13 @@ const {
 const REVIEW_PROTOCOL = `Analiza todas las parts recibidas y su interacción. Cada part contiene el diff con [RIGHT:N]/[LEFT:N] y evidenceRefs; evidence contiene código de base/head identificado por ruta y selector. Usa solo las referencias asociadas a cada cambio. baseSameAsHead:true significa que base y head contienen el mismo texto, enviado una vez en head. Los demás bloques se revisan por separado: su ausencia no demuestra falta de cobertura.
 completeFiles indica archivo completo entre diff y evidencia. completeDeclarations enumera declaraciones cuyo código completo está presente entre diff y evidencia asociada, comprobado línea por línea contra Git; no exige archivo completo. Una proyección más pequeña vuelve a comprobar esa lista. Lee diff, declaraciones, helpers y consumidores antes de concluir. baseComplete/headComplete indican archivo completo. En evidencia paginada, declarationComplete marca la última página: la declaración completa exige conservar todas las páginas desde offset:0. present con Complete:false es un extracto, not_yet_created/deleted son ausencias demostradas, unavailable es fallo de lectura. El código completo de un archivo nuevo puede estar en su diff. Un extracto no es un fallo de lectura ni exige por sí solo más contexto: evalúa el flujo cambiado con la evidencia disponible. Solicita solo el contrato que falte para una comprobación concreta, sin exigir todas las rutas del archivo. En funciones extensas, pide el helper o la declaración interna pertinente.
 Solicita código necesario desde Git en evidenceRequests:[{path,symbol o fragment,side:head|base,reason,forPath?:ruta del cambio}]. symbol es un identificador declarado; fragment es una cita literal o nombre exacto de test/paso. scope:file permite pedir un archivo completo. Para una función extensa pide startLine/endLine (coordenadas reales del lado pedido), máximo 80 líneas. Incluye forPath si hay varios cambios. Nunca describas código recuperable solo en limitations. Hay tres rondas compartidas por bloque original aunque se divida, ocho solicitudes y 16000 caracteres por ronda. El servidor controla las continuaciones: no envíes cursor. evidenceRecovery informa disponibilidad y cursor. No repitas una solicitud ya satisfecha. Resuelve pendientes innecesarios solo mediante evidenceResolutions:[{path,symbol o fragment,side,status:not_needed,reason}] para solicitudes recibidas, justificando el flujo comprobado. limitations solo describe incertidumbre concreta que sigue sin resolverse.
-La base inmediata de esta PR es la referencia para evaluar el cambio. Una limitación exige un contrato necesario para evaluar estas partes. Cada hallazgo exige cambio causal, impacto observable y corrección necesaria, con base/head y contrato vigente. El contexto sin cambios sirve para verificar, no para reportar defectos preexistentes. Comprueba productores y consumidores; una hipótesis no es un defecto. No ejecutes código. Respeta condiciones de workflows y contratos de versiones fijadas. No inventes errores por ausencia de tests.
+La base inmediata de esta PR es la referencia para evaluar el cambio. Una limitación exige un contrato necesario para evaluar estas partes. Cada hallazgo exige cambio causal, impacto observable y corrección necesaria, con base/head y contrato vigente. El contexto sin cambios sirve para verificar, no para reportar defectos preexistentes. Comprueba productores y consumidores; una hipótesis no es un defecto. No ejecutes código. Respeta condiciones de workflows y contratos de versiones fijadas. No inventes errores por ausencia de tests. Antes de emitir un hallazgo, identifica una entrada o condición concreta, el comportamiento observado en el código y el resultado exigido por un contrato presente. Descarta sospechas formuladas solo como posibilidad y comprueba primero las guardas, operaciones aritméticas y helpers que podrían refutarlas. No solicites más código para explorar riesgos genéricos.
 Devuelve JSON: {summary:descripción breve del cambio y flujo evaluado,findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key, cause,impact,fix,threadId?:id previo}],evidenceRequests:[],evidenceResolutions:[],limitations:[],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation}]}.
 Máximo cinco hallazgos, cero válido; cause/impact/fix hasta 240 caracteres, summary hasta 600. Usa coordenadas exactas del diff. En un renombre sin anchors admite scope:pull_request sin line ni side. No devuelvas score/risk. Da una resolución por cada scope.followupThreads: maintain exige findings con threadId y evidencia actual; resolved/not_applicable exige cita actual. evidence_incomplete exige needs_context. Un bloque followupOnly solo verifica sus hilos, sin hallazgos nuevos. Si falta evidencia, no declares completitud ni aprobación.`;
 
 const LIMITS = Object.freeze({
-  chunkChars: 48000,
-  inputChars: 64000,
+  chunkChars: 180000,
+  inputChars: 240000,
   maxChunks: 48,
   // Every planned block gets one primary call; keep a bounded reserve for
   // evidence recovery, retries, and independent finding verification.
@@ -107,7 +107,7 @@ function patchRecords(patch) {
 }
 
 function buildPlan(files, config = {}, sha) {
-  const limits = { ...LIMITS, ...config.chunking };
+  const limits = { ...LIMITS, chunkChars: 48000, inputChars: 64000, ...config.chunking };
   for (const [key, max] of Object.entries(LIMITS)) {
     if (!Number.isInteger(limits[key]) || limits[key] <= 0 || limits[key] > max)
       throw new Error(`Límite inválido: ${key}.`);
@@ -188,7 +188,10 @@ function buildPlan(files, config = {}, sha) {
     const largestRecord = Math.max(0, ...records.map(recordSize));
     const blockContextBudget = Math.max(
       0,
-      Math.min(24000, limits.chunkChars - metadataSize - largestRecord),
+      Math.min(
+        limits.chunkChars >= 128000 ? 144000 : 24000,
+        limits.chunkChars - metadataSize - largestRecord,
+      ),
     );
     // The selected context is measured after symbol resolution below. Reserving
     // a whole-file allowance here splits hunks even when their actual excerpts fit.
@@ -247,7 +250,18 @@ function buildPlan(files, config = {}, sha) {
       };
       const selectedContext = (file.context ?? []).map((item) => {
         const baseContent = typeof item.base === "string" ? item.base : "";
-        const headContent = typeof item.head === "string" ? item.head : "";
+        const completeHead =
+          limits.chunkChars >= 128000 &&
+          item.path === file.filename &&
+          /\.[cm]?[jt]sx?$/.test(file.filename) &&
+          typeof file.after === "string" &&
+          file.after.length <= maxOwnContextBudget;
+        const headContent = completeHead
+          ? file.after
+          : typeof item.head === "string"
+            ? item.head
+            : "";
+        if (completeHead) item = { ...item, headComplete: true };
         if (!anchors.length)
           return {
             ...item,
@@ -295,7 +309,7 @@ function buildPlan(files, config = {}, sha) {
                   { includeConsumers: changedContracts.length > 0 },
                 )
               : baseContent;
-          const head = withoutPatchLines(selectedHead, "RIGHT");
+          const head = completeHead ? selectedHead : withoutPatchLines(selectedHead, "RIGHT");
           const base = withoutPatchLines(selectedBase, "LEFT");
           const symbols = [
             ...new Set([
@@ -415,7 +429,15 @@ function buildPlan(files, config = {}, sha) {
       const ownSize = JSON.stringify(
         selectedContext.filter((item) => item.path === file.filename),
       ).length;
-      return JSON.parse(clipContext(selectedContext, Math.min(24000, Math.max(12000, ownSize))));
+      return JSON.parse(
+        clipContext(
+          selectedContext,
+          Math.min(
+            limits.chunkChars >= 128000 ? 168000 : 24000,
+            Math.max(12000, ownSize + (limits.chunkChars >= 128000 ? 12000 : 0)),
+          ),
+        ),
+      );
     };
     const hunks = [];
     for (const record of records) {
@@ -1592,10 +1614,11 @@ async function reviewPlan({
               plan.limits.outputTokens,
             ),
           );
-          if (body.length > plan.limits.inputChars) {
+          const analysisCeiling = Math.floor((plan.limits.totalTokens ?? LIMITS.totalTokens) * 0.9);
+          if (body.length > plan.limits.inputChars || !budget.canReserve(body, analysisCeiling)) {
             const envelope = JSON.parse(body);
             const originalUser = JSON.parse(envelope.messages[1].content);
-            const requestSize = (parts) => {
+            const requestBody = (parts) => {
               const bundle = publicEvidenceBundle(parts, refs);
               const payload = {
                 ...originalUser,
@@ -1615,19 +1638,26 @@ async function reviewPlan({
               const messages = envelope.messages.map((message, messageIndex) =>
                 messageIndex === 1 ? { ...message, content: JSON.stringify(payload) } : message,
               );
-              return JSON.stringify({ ...envelope, messages }).length;
+              return JSON.stringify({ ...envelope, messages });
             };
             const fits = (parts) =>
               JSON.stringify(publicEvidenceBundle(parts, refs)).length <= plan.limits.chunkChars &&
-              requestSize(parts) <= plan.limits.inputChars;
+              requestBody(parts).length <= plan.limits.inputChars &&
+              budget.canReserve(requestBody(parts), analysisCeiling);
             if (
               restartWithPartitions(
                 { ...chunk, parts: chunk.parts.map((part) => ({ ...part })) },
                 fits,
-                "solicitud completa supera el presupuesto con instrucciones y JSON",
+                "solicitud completa supera el tamaño permitido o el saldo reservado",
               )
             )
               break;
+            if (body.length <= plan.limits.inputChars)
+              throw new Error(
+                budget.canReserve(body)
+                  ? "Presupuesto de análisis agotado; se conserva reserva para verificar."
+                  : "Presupuesto total de tokens agotado.",
+              );
             errors.push("Presupuesto de entrada por llamada agotado.");
             assessment = {
               findings: [],
