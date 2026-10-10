@@ -478,6 +478,19 @@ function justificationNextCivilDate(date: string): string {
   return `${nextYear}-${nextMonth}-${nextDay}`;
 }
 
+/**
+ * Verdadero cuando el instante es representable como fecha (`new Date` válido).
+ *
+ * `isValidInstant` (TI2-93) solo exige finito positivo; magnitudes absurdas
+ * como `1e30` lo pasan pero `Intl` lanzaría `RangeError`. Este resguardo las
+ * convierte en el error propio del plazo para no filtrar excepciones crudas.
+ */
+function assertUsableJustificationInstant(value: number, message: string): void {
+  if (!isValidInstant(value) || Number.isNaN(new Date(value).getTime())) {
+    throw new Error(message);
+  }
+}
+
 function assertJustificationTimeZone(timeZone: string): void {
   if (typeof timeZone !== "string" || timeZone.trim() === "") {
     throw new Error("El plazo requiere una zona horaria IANA explícita.");
@@ -513,9 +526,10 @@ function normalizeJustificationHolidays(
 export function calculateJustificationDeadline(
   input: CalculateJustificationDeadlineInput,
 ): JustificationDeadline {
-  if (!isValidInstant(input.missedAt)) {
-    throw new Error("La inasistencia requiere un instante válido en milisegundos.");
-  }
+  assertUsableJustificationInstant(
+    input.missedAt,
+    "La inasistencia requiere un instante válido en milisegundos.",
+  );
   assertJustificationTimeZone(input.timeZone);
   const holidays = normalizeJustificationHolidays(input.holidays);
   const holidaySet = new Set(holidays);
@@ -565,9 +579,10 @@ export function calculateJustificationDeadline(
 export function decideJustificationTimeliness(
   input: DecideJustificationTimelinessInput,
 ): JustificationTimeliness {
-  if (!isValidInstant(input.submittedAt)) {
-    throw new Error("La entrega requiere un instante válido en milisegundos.");
-  }
+  assertUsableJustificationInstant(
+    input.submittedAt,
+    "La entrega requiere un instante válido en milisegundos.",
+  );
   const deadline = calculateJustificationDeadline(input);
   const submittedDate = justificationCivilDateOfInstant(input.submittedAt, input.timeZone);
   const withinDeadline =

@@ -644,6 +644,37 @@ describe("Plazo de cinco días hábiles de justificación (TI2-94)", () => {
     expect(early.withinDeadline).toBe(false);
   });
 
+  test("el feriado el mismo día de la inasistencia no desplaza el plazo", () => {
+    const deadline = calculateJustificationDeadline({
+      missedAt: MONDAY,
+      timeZone: TIME_ZONE,
+      holidays: ["2026-10-12"],
+    });
+    expect(deadline.absenceDate).toBe("2026-10-12");
+    expect(deadline.deadlineDate).toBe("2026-10-19");
+  });
+
+  test("la entrega en fin de semana dentro del plazo cuenta como dentro", () => {
+    // Sábado 2026-10-17 12:00 UTC: 09:00 en Santiago, antes del vencimiento.
+    const saturday = Date.UTC(2026, 9, 17, 12);
+    const decision = decideJustificationTimeliness({
+      missedAt: MONDAY,
+      submittedAt: saturday,
+      timeZone: TIME_ZONE,
+    });
+    expect(decision.submittedDate).toBe("2026-10-17");
+    expect(decision.withinDeadline).toBe(true);
+  });
+
+  test("rechaza instantes fuera del rango representable de fecha", () => {
+    expect(() => calculateJustificationDeadline({ missedAt: 1e30, timeZone: TIME_ZONE })).toThrow(
+      "instante válido",
+    );
+    expect(() =>
+      decideJustificationTimeliness({ missedAt: MONDAY, submittedAt: 1e30, timeZone: TIME_ZONE }),
+    ).toThrow("entrega");
+  });
+
   test("rechaza instantes, zonas y feriados inválidos", () => {
     expect(() => calculateJustificationDeadline({ missedAt: 0, timeZone: TIME_ZONE })).toThrow(
       "instante válido",
