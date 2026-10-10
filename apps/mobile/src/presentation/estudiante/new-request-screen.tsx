@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
+import { router } from "expo-router";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
 import { mockStudentAreaStore } from "@/infrastructure/mock-student-area-store";
@@ -26,7 +27,7 @@ export default function NewRequestScreen({
 
   function revealFocusedInput() {
     const focusedInputHandle = focusedInputHandleRef.current;
-    if (focusedInputHandle === null) return;
+    if (focusedInputHandle === null || !Keyboard.isVisible()) return;
 
     requestAnimationFrame(() => {
       scrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(focusedInputHandle, 100, true);
@@ -35,7 +36,6 @@ export default function NewRequestScreen({
 
   useEffect(() => {
     const subscription = Keyboard.addListener("keyboardDidShow", revealFocusedInput);
-
     return () => subscription.remove();
   }, []);
 
@@ -45,9 +45,11 @@ export default function NewRequestScreen({
         className="flex-1"
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
+        onLayout={revealFocusedInput}
       >
         <StudentScreen
           scrollRef={scrollRef}
+          onBack={router.back}
           title="Solicitud de acompañamiento"
           description="Describe la necesidad que quieres abordar con CERETI. Esta solicitud no es un canal de urgencias."
         >

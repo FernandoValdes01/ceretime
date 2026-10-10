@@ -145,7 +145,7 @@ describe("Formulario de solicitud del estudiante", () => {
   test("el stack conserva el retorno desde Nueva solicitud", async () => {
     const navigation = await openForm();
     expect(navigation.getPathname()).toBe("/estudiante/nueva-solicitud");
-    await act(async () => router.back());
+    await act(async () => fireEvent.press(screen.getByRole("button", { name: "Volver" })));
     expect(await screen.findByText("Inicio de Estudiante")).toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/estudiante");
   });
