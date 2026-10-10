@@ -65,8 +65,9 @@ function publicEvidenceBundle(parts, refs = {}) {
         declarationComplete: item.declarationComplete,
         selection: item.selection,
         recovered: item.recovered,
-        base: item.base ?? "",
+        base: item.base && item.base === item.head ? "" : (item.base ?? ""),
         head: item.head ?? "",
+        ...(item.base && item.base === item.head ? { baseSameAsHead: true } : {}),
       };
       const id = hash(JSON.stringify({ identity, content })).slice(0, 24);
       if (!evidence.has(id))

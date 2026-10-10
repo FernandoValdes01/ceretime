@@ -55,7 +55,7 @@ test("related tests survive more than eight direct imports within the context bu
 test("AST retrieval preserves the full distant helper used by the changed function", () => {
   const before =
     "function stableIdentity(value: string) {\n return `assigned-before-sort:${value}`;\n}\n" +
-    Array.from({ length: 120 }, (_, i) => `// padding ${i} ${"x".repeat(50)}`).join("\n") +
+    Array.from({ length: 240 }, (_, i) => `// padding ${i} ${"x".repeat(50)}`).join("\n") +
     "\nexport function changed(value: string) {\n return stableIdentity(value);\n}\n";
   const result = context(
     { "target.ts": before },

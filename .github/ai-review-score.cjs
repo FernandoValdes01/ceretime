@@ -117,18 +117,38 @@ function packReviewParts(parts, chunkChars, refs = {}) {
     return first.size + second.size <= 1 || [...first].every((id) => second.has(id));
   };
   const bundleSize = (items) => JSON.stringify(publicEvidenceBundle(items, refs)).length;
+  const affinity = (items, part) => {
+    const paths = new Set(
+      (part.context ?? []).filter((item) => item.head || item.base).map((item) => item.path),
+    );
+    return items.reduce(
+      (total, other) =>
+        total +
+        Number(paths.has(other.path)) +
+        (other.context ?? []).filter(
+          (item) => (item.head || item.base) && (item.path === part.path || paths.has(item.path)),
+        ).length,
+      0,
+    );
+  };
   const bins = [];
   const orderedParts = [...parts].sort(
     (a, b) => partSize(b) - partSize(a) || orderKey(a).localeCompare(orderKey(b)),
   );
   for (const part of orderedParts) {
     const available = bins
-      .map((bin, index) => ({ bin, index, size: bundleSize([...bin.parts, part]) }))
+      .map((bin, index) => ({
+        bin,
+        index,
+        size: bundleSize([...bin.parts, part]),
+        affinity: affinity(bin.parts, part),
+      }))
       .filter(
         ({ bin, size }) => size <= chunkChars && bin.parts.every((item) => canShare(item, part)),
       )
       .sort(
         (a, b) =>
+          b.affinity - a.affinity ||
           a.size - b.size ||
           a.bin.parts
             .map(orderKey)

@@ -35,4 +35,39 @@ function addUsage(usage, json) {
 }
 
 const emptyUsage = () => ({ prompt: 0, completion: 0, cachedPrompt: 0, measuredCalls: 0 });
-module.exports = { MODEL, PROVIDER, ENDPOINT, completionRequest, addUsage, emptyUsage };
+
+// Reserve conservatively from UTF-8 bytes before the request, then settle with
+// provider usage (cached input still counts as tokens). Unknown usage keeps its
+// reservation, including failed requests whose consumption cannot be measured.
+function tokenBudget(limit) {
+  let spent = 0;
+  return {
+    get spent() {
+      return spent;
+    },
+    reserve(body) {
+      const request = JSON.parse(body);
+      const reserved =
+        Buffer.byteLength(JSON.stringify(request.messages), "utf8") + request.max_tokens + 512;
+      if (spent + reserved > limit) throw new Error("Presupuesto total de tokens agotado.");
+      spent += reserved;
+      let settled = false;
+      return (json) => {
+        if (settled) return;
+        settled = true;
+        const measured = emptyUsage();
+        addUsage(measured, json);
+        if (measured.measuredCalls) spent += measured.prompt + measured.completion - reserved;
+      };
+    },
+  };
+}
+module.exports = {
+  MODEL,
+  PROVIDER,
+  ENDPOINT,
+  completionRequest,
+  addUsage,
+  emptyUsage,
+  tokenBudget,
+};

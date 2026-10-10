@@ -13,10 +13,24 @@ const {
   declarationSymbols,
   changedContractSymbols,
   relevantDeclarations,
+  clipContext,
   contentKey,
 } = require("./ai-review-context.cjs");
 
-const { ENDPOINT, completionRequest, addUsage, emptyUsage } = require("./ai-review-provider.cjs");
+const {
+  ENDPOINT,
+  completionRequest,
+  addUsage,
+  emptyUsage,
+  tokenBudget,
+} = require("./ai-review-provider.cjs");
+
+const REVIEW_PROTOCOL = `Analiza todas las parts recibidas y su interacción. Cada part contiene el diff con [RIGHT:N]/[LEFT:N] y evidenceRefs; evidence contiene código de base/head identificado por ruta y selector. Usa solo las referencias asociadas a cada cambio. baseSameAsHead:true significa que base y head contienen el mismo texto, enviado una vez en head. Los demás bloques se revisan por separado: su ausencia no demuestra falta de cobertura.
+Lee diff, declaraciones, helpers y consumidores antes de concluir. baseComplete/headComplete indican archivo completo; declarationComplete indica declaración completa. present con Complete:false es un extracto, not_yet_created/deleted son ausencias demostradas, unavailable es fallo de lectura. El código completo de un archivo nuevo puede estar en su diff.
+Solicita código necesario desde Git en evidenceRequests:[{path,symbol o fragment,side:head|base,reason,forPath?:ruta del cambio}]. symbol es un identificador declarado; fragment es una cita literal o nombre exacto de test/paso. scope:file permite pedir un archivo completo. Incluye forPath si hay varios cambios. Nunca describas código recuperable solo en limitations. Hay tres rondas, ocho solicitudes y 16000 caracteres por ronda, con continuaciones automáticas. evidenceRecovery informa disponibilidad y cursor. No repitas una solicitud ya satisfecha. Resuelve pendientes innecesarios solo mediante evidenceResolutions:[{path,symbol o fragment,side,status:not_needed,reason}] para solicitudes recibidas, justificando el flujo comprobado. limitations solo describe incertidumbre concreta que sigue sin resolverse.
+La base inmediata de esta PR es la referencia para evaluar el cambio. Una limitación exige un contrato necesario para evaluar estas partes. Cada hallazgo exige cambio causal, impacto observable y corrección necesaria, con base/head y contrato vigente. El contexto sin cambios sirve para verificar, no para reportar defectos preexistentes. Comprueba productores y consumidores; una hipótesis no es un defecto. No ejecutes código. Respeta condiciones de workflows y contratos de versiones fijadas. No inventes errores por ausencia de tests.
+Devuelve JSON: {summary:descripción breve del cambio y flujo evaluado,findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key, cause,impact,fix,threadId?:id previo}],evidenceRequests:[],evidenceResolutions:[],limitations:[],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation}]}.
+Máximo cinco hallazgos, cero válido; cause/impact/fix hasta 240 caracteres, summary hasta 600. Usa coordenadas exactas del diff. En un renombre sin anchors admite scope:pull_request sin line ni side. No devuelvas score/risk. Da una resolución por cada scope.followupThreads: maintain exige findings con threadId y evidencia actual; resolved/not_applicable exige cita actual. evidence_incomplete exige needs_context. Un bloque followupOnly solo verifica sus hilos, sin hallazgos nuevos. Si falta evidencia, no declares completitud ni aprobación.`;
 
 const LIMITS = Object.freeze({
   chunkChars: 48000,
@@ -25,6 +39,7 @@ const LIMITS = Object.freeze({
   // Every planned block gets one primary call; keep a bounded reserve for
   // evidence recovery, retries, and independent finding verification.
   maxCalls: 80,
+  totalTokens: 600000,
   outputTokens: 6000,
   intervalMs: 1000,
   maxRateLimitWaitMs: 600000,
@@ -214,15 +229,21 @@ function buildPlan(files, config = {}, sha) {
             .map((anchor) => Number(anchor.slice(side.length + 1))),
         );
         if (!changedLines.size) return text;
-        return text
-          .split("\n")
+        const lines = text.split("\n");
+        const numbered = lines.some((line) => /^\d+: /.test(line));
+        return lines
+          .map((line, index) =>
+            !numbered && (text === file.after || text === file.before)
+              ? `${index + 1}: ${line}`
+              : line,
+          )
           .filter((line) => {
             const numbered = line.match(/^(\d+): /);
             return !numbered || !changedLines.has(Number(numbered[1]));
           })
           .join("\n");
       };
-      return (file.context ?? []).map((item) => {
+      const selectedContext = (file.context ?? []).map((item) => {
         const baseContent = typeof item.base === "string" ? item.base : "";
         const headContent = typeof item.head === "string" ? item.head : "";
         if (!anchors.length)
@@ -239,31 +260,34 @@ function buildPlan(files, config = {}, sha) {
         if (
           item.path === file.filename &&
           !file.filename.startsWith(".github/workflows/") &&
+          !file.filename.endsWith(".css") &&
           ((file.after?.length ?? 0) > headContent.length ||
-            (file.before?.length ?? 0) > baseContent.length)
+            headContent.length > maxOwnContextBudget ||
+            (file.before?.length ?? 0) > baseContent.length ||
+            baseContent.length > maxOwnContextBudget)
         ) {
           const selectedHead =
-            rightPatch && file.after?.length > headContent.length
+            rightPatch &&
+            (file.after?.length > headContent.length || headContent.length > maxOwnContextBudget)
               ? relevantDeclarations(
                   file.after,
                   rightPatch,
                   "head",
-                  Math.min(
-                    maxOwnContextBudget,
-                    file.after.length > 12000 ? blockContextBudget : headContent.length,
-                  ),
+                  maxOwnContextBudget,
                   [],
                   "definitions",
                   { includeConsumers: changedContracts.length > 0 },
                 )
               : headContent;
           const selectedBase =
-            file.before?.length > baseContent.length && leftPatch
+            (file.before?.length > baseContent.length ||
+              baseContent.length > maxOwnContextBudget) &&
+            leftPatch
               ? relevantDeclarations(
                   file.before,
                   leftPatch,
                   "base",
-                  baseContent.length,
+                  Math.min(maxOwnContextBudget, 6000),
                   [],
                   "definitions",
                   { includeConsumers: changedContracts.length > 0 },
@@ -291,6 +315,7 @@ function buildPlan(files, config = {}, sha) {
         }
         if (
           item.path === file.filename ||
+          file.filename.endsWith(".css") ||
           !/\.[cm]?[jt]sx?$/.test(item.path) ||
           file.filename.startsWith(".github/workflows/")
         )
@@ -342,7 +367,7 @@ function buildPlan(files, config = {}, sha) {
                 current,
                 undefined,
                 "head",
-                headContent.length,
+                Math.min(maxOwnContextBudget, 6000),
                 symbols,
                 symbolMode,
               )
@@ -353,11 +378,21 @@ function buildPlan(files, config = {}, sha) {
                 original,
                 undefined,
                 "base",
-                baseContent.length,
+                Math.min(maxOwnContextBudget, 3000),
                 symbols,
                 symbolMode,
               )
             : baseContent;
+        const sameVersion = current === original && current != null;
+        if (sameVersion)
+          return {
+            ...item,
+            head,
+            base: head,
+            headComplete: head === current,
+            baseComplete: head === original,
+            evidenceSelector: { symbols: [...new Set(symbols)].sort((a, b) => a.localeCompare(b)) },
+          };
         if (head === headContent && base === baseContent)
           return {
             ...item,
@@ -375,6 +410,10 @@ function buildPlan(files, config = {}, sha) {
           evidenceSelector: { symbols: [...new Set(symbols)].sort((a, b) => a.localeCompare(b)) },
         };
       });
+      const ownSize = JSON.stringify(
+        selectedContext.filter((item) => item.path === file.filename),
+      ).length;
+      return JSON.parse(clipContext(selectedContext, Math.min(24000, Math.max(12000, ownSize))));
     };
     const hunks = [];
     for (const record of records) {
@@ -546,7 +585,7 @@ function buildPlan(files, config = {}, sha) {
   return plan;
 }
 
-function validateAssessment(data, chunk) {
+function validateAssessment(data, chunk, { isolateInvalidFindings = false } = {}) {
   if (!data || !Array.isArray(data.findings) || data.findings.length > 5)
     throw new Error("Respuesta de bloque inválida.");
   if (Object.hasOwn(data, "score") || Object.hasOwn(data, "risk"))
@@ -595,62 +634,88 @@ function validateAssessment(data, chunk) {
     )
   )
     throw new Error("Resolución de evidencia desconocida o inválida.");
-  const findings = data.findings.map((finding) => {
-    const part = chunk.parts.find(
-      (p) =>
-        p.path === finding.path &&
-        (finding.scope === "pull_request"
-          ? !p.anchors.length && p.status === "renamed"
-          : p.anchors.includes(`${finding.side}:${finding.line}`)),
-    );
-    if (
-      !part ||
-      (finding.scope !== "pull_request" &&
-        (!Number.isInteger(finding.line) || finding.line <= 0)) ||
-      (finding.scope === "pull_request" && (finding.line != null || finding.side != null)) ||
-      !Object.hasOwn(severityRank, finding.severity)
-    )
-      throw new Error("Hallazgo sin línea válida.");
-    for (const key of ["issue_key", "cause", "impact", "fix"]) {
-      if (
-        typeof finding[key] !== "string" ||
-        !finding[key].trim() ||
-        finding[key].length > (key === "issue_key" ? 100 : 800)
-      )
-        throw new Error("Hallazgo sin causalidad, impacto o corrección.");
-    }
-    if (
-      /^(?:(?:ningún|ninguno|ninguna)(?: impacto)? funcional|ningún impacto|sin impacto funcional|none\b|no functional impact)/i.test(
-        finding.impact.trim(),
-      ) ||
-      /^(?:no requiere (?:cambio|corrección)|no (?:change|fix) (?:is )?(?:required|needed))/i.test(
-        finding.fix.trim(),
-      )
-    )
-      throw new Error(
-        "Un hallazgo exige impacto funcional y una corrección necesaria; las observaciones sin defecto deben omitirse.",
+  const rejectedFindings = [];
+  const findings = data.findings.flatMap((finding, index) => {
+    try {
+      const part = chunk.parts.find(
+        (p) =>
+          p.path === finding.path &&
+          (finding.scope === "pull_request"
+            ? !p.anchors.length && p.status === "renamed"
+            : p.anchors.includes(`${finding.side}:${finding.line}`)),
       );
-    const issueKey = finding.issue_key
-      .trim()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "");
-    if (!issueKey) throw new Error("Identidad de hallazgo inválida.");
-    if (finding.threadId && !part.followups?.some((t) => t.id === String(finding.threadId)))
-      throw new Error("Hilo desconocido.");
-    if (part.followupOnly && !finding.threadId)
-      throw new Error("Un seguimiento no admite hallazgos nuevos.");
-    return {
-      ...finding,
-      issue_key: issueKey,
-      threadId: finding.threadId ? String(finding.threadId) : undefined,
-      body: `Cambio que causa el problema: ${finding.cause}\n\nImpacto: ${finding.impact}\n\nCorrección propuesta: ${finding.fix}`,
-    };
+      if (
+        !part ||
+        (finding.scope !== "pull_request" &&
+          (!Number.isInteger(finding.line) || finding.line <= 0)) ||
+        (finding.scope === "pull_request" && (finding.line != null || finding.side != null)) ||
+        !Object.hasOwn(severityRank, finding.severity)
+      )
+        throw new Error("Hallazgo sin línea válida.");
+      for (const key of ["issue_key", "cause", "impact", "fix"]) {
+        if (
+          typeof finding[key] !== "string" ||
+          !finding[key].trim() ||
+          finding[key].length > (key === "issue_key" ? 100 : 800)
+        )
+          throw new Error("Hallazgo sin causalidad, impacto o corrección.");
+      }
+      if (
+        /^(?:(?:ningún|ninguno|ninguna)(?: impacto)? funcional|ningún impacto|sin impacto funcional|none\b|no functional impact)/i.test(
+          finding.impact.trim(),
+        ) ||
+        /^(?:no requiere (?:cambio|corrección)|no (?:change|fix) (?:is )?(?:required|needed))/i.test(
+          finding.fix.trim(),
+        )
+      )
+        throw new Error(
+          "Un hallazgo exige impacto funcional y una corrección necesaria; las observaciones sin defecto deben omitirse.",
+        );
+      const issueKey = finding.issue_key
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+      if (!issueKey) throw new Error("Identidad de hallazgo inválida.");
+      if (finding.threadId && !part.followups?.some((t) => t.id === String(finding.threadId)))
+        throw new Error("Hilo desconocido.");
+      if (part.followupOnly && !finding.threadId)
+        throw new Error("Un seguimiento no admite hallazgos nuevos.");
+      return [
+        {
+          ...finding,
+          issue_key: issueKey,
+          threadId: finding.threadId ? String(finding.threadId) : undefined,
+          body: `Cambio que causa el problema: ${finding.cause}\n\nImpacto: ${finding.impact}\n\nCorrección propuesta: ${finding.fix}`,
+        },
+      ];
+    } catch (error) {
+      if (!isolateInvalidFindings || error.message.startsWith("Un hallazgo exige")) throw error;
+      rejectedFindings.push({
+        index,
+        path: finding?.path,
+        reason: error instanceof TypeError ? "Estructura inválida." : error.message,
+      });
+      return [];
+    }
   });
   const expected = new Set(chunk.parts.flatMap((p) => (p.followups ?? []).map((t) => t.id)));
-  const resolutions = data.resolutions ?? [];
+  const rawResolutions = data.resolutions ?? [];
+  const resolutions = Array.isArray(rawResolutions)
+    ? rawResolutions.map((resolution) =>
+        rejectedFindings.length &&
+        resolution.status === "maintain" &&
+        !findings.some((finding) => finding.threadId === String(resolution.id))
+          ? {
+              ...resolution,
+              status: "needs_context",
+              explanation: "El candidato del hilo no tiene un formato válido.",
+            }
+          : resolution,
+      )
+    : rawResolutions;
   if (!Array.isArray(resolutions) || resolutions.length !== expected.size)
     throw new Error("Falta comprobar un hallazgo anterior.");
   const seen = new Set();
@@ -688,9 +753,16 @@ function validateAssessment(data, chunk) {
       : "Sin problemas relevantes en este bloque.",
     findings,
     resolutions,
-    limitations,
+    limitations: [
+      ...limitations,
+      ...rejectedFindings.map(
+        (finding) => `Candidato inválido ${finding.index + 1}: ${finding.reason}`,
+      ),
+    ],
     evidenceRequests,
     evidenceResolutions,
+    rejectedFindings,
+    changeSummary: typeof data.summary === "string" ? withoutBold(data.summary).slice(0, 600) : "",
   };
 }
 
@@ -776,6 +848,28 @@ function aggregate(plan, results, calls, errors = []) {
     total: plan.chunks.length,
     calls,
     reasons,
+    changeSummaries: [...new Set(results.map((r) => r.changeSummary).filter(Boolean))],
+    files: [
+      ...new Set(plan.chunks.flatMap((chunk) => (chunk.parts ?? []).map((part) => part.path))),
+    ].map((path) => {
+      const units = plan.chunks.flatMap((chunk, index) =>
+        (chunk.parts ?? []).filter((part) => part.path === path).map(() => results[index]),
+      );
+      return {
+        path,
+        coverage: units.every(
+          (result) =>
+            result &&
+            !(
+              result.limitations?.length ||
+              result.evidenceRequests?.length ||
+              result.resolutions?.some((resolution) => resolution.status === "needs_context")
+            ),
+        )
+          ? "complete"
+          : "incomplete",
+      };
+    }),
     missingEvidence: results.flatMap((r) => r.evidenceRequests ?? []),
     limitations: results.flatMap((r) => r.limitations ?? []),
     infrastructure: errors,
@@ -888,7 +982,30 @@ async function reviewPlan({
     nextDelay = 0,
     reused = 0;
   const usage = emptyUsage();
-  const finish = () => ({ ...aggregate(plan, results, calls, errors), reused, usage });
+  const budget = tokenBudget(plan.limits.totalTokens ?? LIMITS.totalTokens);
+  const fetchProvider = fetchImpl;
+  fetchImpl = async (url, request) => {
+    const settle = budget.reserve(request.body);
+    calls++;
+    const response = await fetchProvider(url, request);
+    return {
+      ok: response.ok,
+      status: response.status,
+      headers: response.headers,
+      json: async () => {
+        const json = await response.json();
+        settle(json);
+        addUsage(usage, json);
+        return json;
+      },
+    };
+  };
+  const finish = () => ({
+    ...aggregate(plan, results, calls, errors),
+    reused,
+    usage,
+    tokenBudget: { limit: plan.limits.totalTokens ?? LIMITS.totalTokens, charged: budget.spent },
+  });
   if (!(await isCurrent())) {
     errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");
     return finish();
@@ -934,6 +1051,9 @@ async function reviewPlan({
           items.flatMap((r) => r.resolutions ?? []).map((r) => [String(r.id), r]),
         ).values(),
       ],
+      changeSummary: [...new Set(items.map((r) => r.changeSummary).filter(Boolean))]
+        .join(" ")
+        .slice(0, 600),
       limitations: items.flatMap((r) => r.limitations ?? []),
       evidenceRequests: items.flatMap((r) => r.evidenceRequests ?? []),
     });
@@ -1128,7 +1248,7 @@ async function reviewPlan({
         return false;
       }
       chunk = recovery.chunk;
-      onProgress(`Bloque ${index + 1}: evidencia recuperada; ronda ${recoveryRounds}/2.`);
+      onProgress(`Bloque ${index + 1}: evidencia recuperada; ronda ${recoveryRounds}/3.`);
       return true;
     };
     let assessment,
@@ -1153,7 +1273,7 @@ async function reviewPlan({
             [
               {
                 role: "system",
-                content: `${instructions}${ordinaryFailures ? `\nLa respuesta anterior fue rechazada localmente: ${lastFailure}. Corrige el protocolo sin silenciar incertidumbre ni cambiar el análisis para forzar aprobación.` : ""}\nEsta llamada evalúa exclusivamente las partes recibidas del bloque scope.block de scope.totalBlocks. Los artefactos de evidencia no son código y no deben demostrar por sí solos contratos de producción. Los demás bloques se revisan por separado y la cobertura global se comprueba localmente; su ausencia en esta llamada no es una limitación. Cada parte conserva su diff y evidenceRefs; cada id apunta a evidence[], que incluye una sola copia del fragmento compartido y se indican ruta, versiones base/head y selector por coordenadas o símbolo. Usa solo los ids asociados a esa parte. La evidencia y su asociación viajan juntas en esta solicitud, sin depender de llamadas anteriores. Tras una división, los cambios restantes se revisan en sus bloques independientes. El contexto aporta contratos y, para workflows, los scripts locales invocados completos cuando caben en el presupuesto. Cada entrada de evidence indica baseComplete y headComplete: true significa contenido completo; false exige consultar baseState/headState: present indica un extracto, not_yet_created y deleted son ausencias demostradas, unavailable indica un fallo de lectura. Las declaraciones e imports del módulo se conservan antes de los extractos. El contenido de un archivo nuevo puede aparecer completo en su patch aunque su contexto esté recortado. No declares que falta una función o parámetro sin revisar el patch, las declaraciones y los contratos recibidos. Evalúa solo el bloque actual; otros archivos modificados se revisan en sus propios bloques. Respeta las precondiciones del workflow: un paso fallido sin continue-on-error impide los posteriores; always() no elimina otras condiciones unidas con &&. Los outputs documentados de una Action fijada a SHA son parte de su contrato. Una limitación exige un comportamiento concreto que no puedas verificar; evaluar a partir de extractos no es por sí solo cobertura incompleta. Para cualquier contrato o código faltante, SIEMPRE pide evidenceRequests; no uses limitations para describir archivos o funciones que se puedan recuperar desde Git. Pide evidencia faltante en evidenceRequests:[{path,symbol o fragment,side:head|base,reason,forPath?:ruta del cambio que necesita el contexto}]. symbol debe ser un identificador real y único, sin descripciones; pide varios símbolos con solicitudes separadas. fragment debe ser una cita literal o el nombre exacto de un paso YAML o test, nunca una instrucción. Si el bloque contiene varios archivos modificados, añade forPath con la ruta del cambio concreto que necesita este contexto; no reutilices la evidencia en cambios independientes. Las declaraciones grandes se paginan automáticamente y evidenceRecovery comunica un cursor pendiente. Usa rutas relativas exactas del repositorio y declara por qué esa declaración es necesaria. Se recuperará desde Git y se repetirá este bloque hasta tres rondas, ocho solicitudes por ronda y 16000 caracteres. Los resultados fallidos de recuperación aparecen en evidenceRecovery con disponibilidad y motivo. Las solicitudes pendientes no desaparecen por omitirlas en la respuesta. Si el contrato ya no es necesario por una ausencia demostrada o por el flujo comprobado, devuelve evidenceResolutions:[{path,symbol o fragment,side,status:not_needed,reason:justificación concreta}]; solo resuelve solicitudes ya recibidas en evidenceRecovery. Un renombre tiene change.oldPath y change.newPath; no presupongas que mantiene válidos los imports de sus consumidores. Si no hay anchors, un defecto de ruta admite scope:pull_request sin line ni side; exige la misma evidencia causal que un hallazgo inline. Registra limitations solo si falta un contrato necesario para evaluar estas partes, indicando el símbolo o flujo concreto y la evidencia que falta. No exijas el PR completo ni los módulos de producción para revisar cambios independientes en tests. Verifica los tipos en sus productores y consumidores antes de afirmar una incompatibilidad; no supongas que un campo es un array por su nombre. La base inmediata de esta PR es la referencia para evaluar el cambio. Solo reporta defectos que este diff introduzca, empeore o de los que dependa directamente, explicando esa relación causal. No publiques como hallazgo una observación que no tenga impacto funcional o que no requiera corrección. Si la evidencia solo permite una hipótesis, describe la limitación concreta en limitations; no afirmes que un símbolo no existe por no verlo en un extracto. cause, impact y fix deben ser breves, hasta 240 caracteres cada uno. El contexto sin cambios sirve exclusivamente para verificar el cambio. Los hunks históricos de los hilos solo sirven para resolver esos hallazgos; el patch principal es baseSHA...headSHA de esta PR, incluso dentro de un stack. CI, build y el reviewer tienen comportamiento funcional aunque no cambien lógica de negocio. Comprueba cada hilo previo usando el hallazgo, la explicación humana y el cambio relacionado. Retira los refutados o resueltos; mantener exige evidencia anclada al diff vigente. No repitas un hallazgo previo con otra identidad: usa threadId. Una resolución con status maintain obliga a incluir en findings el hallazgo correspondiente con el mismo threadId, path, line, side, severity, issue_key, cause, impact y fix. Una resolución resolved o not_applicable lleva el id y explicación con cita actual. Debes devolver exactamente una resolución para cada id de scope.followupThreads. Ejemplo: {resolutions:[{id:"42",status:"not_applicable",explanation:"El contrato vigente X muestra que el guard rechazaba esta entrada; la condición sigue presente en la línea citada."}]}. El hallazgo histórico y su comentario no son evidencia de que siga ocurriendo. La resolución por sí sola no es evidencia para mantener. Un hallazgo anterior tampoco prueba que el problema exista: verifica su afirmación y su impacto contra las funciones y condiciones actuales, incluidas las llamadas que ya cumplan esa responsabilidad. Si evidence_incomplete es true, ese hilo exige status needs_context, incluso si parece resuelto. Devuelve solo JSON: {findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key:identificador-estable-del-defecto,cause:cambio concreto y problema,impact:flujo afectado,fix:corrección,threadId:id del hilo previo si existe}],evidenceRequests:[{path,symbol o fragment,side:head|base,reason,forPath?:ruta del cambio que necesita el contexto}],limitations:[motivos concretos no recuperables si no puedes evaluar el cambio],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation:evidencia técnica breve}]}. Para scope:inline, solo coordenadas anotadas [RIGHT:N] o [LEFT:N]; scope:pull_request solo en renombres sin anchors, máximo cinco hallazgos funcionales; cero es válido. Sin comentarios de estilo ni preferencias. No devuelvas score: se calcula localmente. Si el contexto es insuficiente para evaluar un cambio, registra limitations: no inventes una cobertura completa. Un bloque followupOnly solo admite resoluciones y evidencia con threadId para mantener ese mismo hallazgo; nunca hallazgos nuevos ni defectos ajenos al diff vigente.${ordinaryFailures ? ` La respuesta anterior fue rechazada: ${lastFailure} Corrige ese contrato en este intento.` : ""}`,
+                content: `${instructions}\n${REVIEW_PROTOCOL}${ordinaryFailures ? `\nLa respuesta anterior fue rechazada: ${lastFailure}. Repara solo el protocolo; conserva el análisis válido y su incertidumbre.` : ""}`,
               },
               {
                 role: "user",
@@ -1165,7 +1285,7 @@ async function reviewPlan({
                   scope: {
                     block: index + 1,
                     totalBlocks: plan.chunks.length,
-                    paths: [...new Set(chunk.parts.map((part) => part.path))],
+                    paths: [...new Set((chunk.parts ?? []).map((part) => part.path))],
                     followupThreads: chunk.parts.flatMap((part) =>
                       (part.followups ?? []).map((thread) => ({
                         id: thread.id,
@@ -1232,7 +1352,6 @@ async function reviewPlan({
           };
           break;
         }
-        calls++;
         const response = await fetchImpl(ENDPOINT, {
           method: "POST",
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -1272,7 +1391,6 @@ async function reviewPlan({
           errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");
           return finish();
         }
-        addUsage(usage, json);
         stage = "parse";
         if (json.choices?.[0]?.finish_reason === "length") {
           const reasoning = json.usage?.completion_tokens_details?.reasoning_tokens;
@@ -1284,7 +1402,11 @@ async function reviewPlan({
         }
         const parsed = JSON.parse(json.choices?.[0]?.message?.content ?? "null");
         stage = "validation";
-        candidate = validateAssessment(parsed, chunk);
+        candidate = validateAssessment(parsed, chunk, { isolateInvalidFindings: true });
+        for (const finding of candidate.rejectedFindings)
+          onProgress(
+            `Candidato ${finding.index + 1} inválido en bloque ${index + 1}; se conservan los demás: ${finding.reason}`,
+          );
         if (candidate.limitations.length && resolveEvidence) {
           const resolved = resolveEvidence({ chunk, limitations: candidate.limitations });
           candidate.evidenceRequests = [
@@ -1332,7 +1454,6 @@ async function reviewPlan({
             for (let retry = 0; retry < 3; retry++) {
               if (calls >= plan.limits.maxCalls || !(await isCurrent()))
                 throw new Error("No queda presupuesto o vigencia para verificar.");
-              calls++;
               const verificationResponse = await fetchImpl(...args);
               if (verificationResponse.status !== 429) return verificationResponse;
               const quota = await quotaInformation(verificationResponse);
@@ -1365,7 +1486,6 @@ async function reviewPlan({
           sleep,
           refs: { base: plan.base, mergeBase: plan.mergeBase, headRef: plan.sha },
         });
-        for (const key of Object.keys(usage)) usage[key] += verified.usage[key];
         assessment = verified.assessment;
         if (assessment.limitations.length && resolveEvidence) {
           const resolved = resolveEvidence({ chunk, limitations: assessment.limitations });
@@ -1396,6 +1516,7 @@ async function reviewPlan({
           for (const part of pending) {
             const complete = !assessment.limitations.length && !assessment.evidenceRequests?.length;
             const partAssessment = {
+              changeSummary: assessment.changeSummary,
               findings: assessment.findings.filter(
                 (f) =>
                   f.path === part.path &&
@@ -1430,6 +1551,10 @@ async function reviewPlan({
         }
         break;
       } catch (error) {
+        if (error.message === "Presupuesto total de tokens agotado.") {
+          lastFailure = error.message;
+          break;
+        }
         if (stage === "verification") {
           const known =
             /^(La evidencia de verificación supera|Decisiones de verificación inválidas|La verificación del proveedor no está disponible|La verificación no está completa|No queda presupuesto|No se puede recuperar la cuota|Solicitud de evidencia inválida|Solicitudes de evidencia fuera)/.test(
@@ -1481,8 +1606,9 @@ async function reviewPlan({
       continue;
     }
     if (!assessment) {
-      const exhausted = calls >= plan.limits.maxCalls;
-      const cause = exhausted ? "Presupuesto máximo de llamadas agotado." : lastFailure;
+      const callsExhausted = calls >= plan.limits.maxCalls;
+      const exhausted = callsExhausted || lastFailure === "Presupuesto total de tokens agotado.";
+      const cause = callsExhausted ? "Presupuesto máximo de llamadas agotado." : lastFailure;
       errors.push(cause);
       if (exhausted) break;
       results.push(
@@ -1502,7 +1628,9 @@ async function reviewPlan({
       continue;
     }
     results.push(merge([...cachedResults, assessment]));
-    onProgress(`Bloque ${index + 1}/${plan.chunks.length} completo; llamadas: ${calls}.`);
+    onProgress(
+      `Bloque ${index + 1}/${plan.chunks.length} ${assessment.limitations?.length || assessment.evidenceRequests?.length ? "procesado con evidencia pendiente" : "completo"}; llamadas: ${calls}.`,
+    );
   }
   if (!(await isCurrent()))
     errors.push("Cambió el head, la base o la elegibilidad durante la revisión.");

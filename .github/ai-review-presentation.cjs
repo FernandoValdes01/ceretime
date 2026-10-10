@@ -59,8 +59,6 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
   const title = String(metadata.commitTitle || sha.slice(0, 7))
     .split(/\r?\n/)[0]
     .replace(/[\\`*_{}[\]()<>!|]/g, "\\$&");
-  const amount = (value) =>
-    /^\d+$/.test(value ?? "") ? Number(value).toLocaleString("es-ES") : "no disponible";
   const rawObservations = String(metadata.actionSummary ?? "").trim();
   const observations = withoutBold(
     /^(?:Confidence Score:|Review status: incomplete;)/.test(rawObservations)
@@ -69,7 +67,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
   );
   const nextAction = {
     incomplete:
-      "Ejecutar AI Code Review desde Actions con Run workflow y el número de PR para repetir la comprobación formal del head y la base actuales, incluso sin hallazgos inline. Consultar la causa de cobertura incompleta: llamada fallida, respuesta inválida, presupuesto agotado o patch no disponible. Corregir esa causa o ajustar el presupuesto explícito dentro de los límites y reintentar. Las observaciones parciales no certifican el resto del cambio.",
+      "Consultar la evidencia pendiente y los logs. Corregir la causa antes de repetir AI Code Review desde Actions con el número de PR; reintentar sin cambios puede consumir tokens y dejar el mismo resultado.",
     failed:
       "Consultar los logs enlazados para identificar el error de OpenRouter o de la Action. Corregir la configuración o esperar la cuota del proveedor y reintentar el workflow sobre este mismo SHA.",
     missing: "Ejecutar AI Code Review para el commit actual y comprobar que devuelve un resultado.",
@@ -103,7 +101,12 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
       : []),
     "### Resumen",
     "",
-    result.reason === "reviewed" ? explanation : `${result.description}\n\n${explanation}`,
+    ...(metadata.report?.changeSummaries?.length
+      ? [
+          withoutBold(metadata.report.changeSummaries.slice(0, 3).join("\n\n")),
+          ...(result.reason === "reviewed" ? [] : [result.description]),
+        ]
+      : [result.reason === "reviewed" ? explanation : result.description]),
     "",
     ...(result.reason === "incomplete"
       ? [
@@ -111,7 +114,12 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           "",
           "La revisión es parcial. No se asigna una calificación de calidad mientras falte evidencia.",
           "",
-          `Diff de la PR: ${amount(metadata.diffSize)} caracteres; archivos: ${amount(metadata.filesCount)}. El tamaño total no determina la cobertura. ${metadata.report?.reasons?.join(" ") || "No se completó una revisión válida de todos los bloques."}`,
+          ...[
+            ...new Set(metadata.report?.missingEvidence?.map((request) => request.path) ?? []),
+          ].map((path) => `- ${path}`),
+          ...(metadata.report?.missingEvidence?.length
+            ? []
+            : ["Consulta los incidentes en los detalles de la ejecución."]),
           "",
           findings > 0
             ? "Los hallazgos corresponden a la parte revisada; el resto del cambio sigue pendiente."
@@ -128,11 +136,27 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
       : []),
     ...(metadata.report
       ? [
+          "<details>",
+          "<summary>Detalles de cobertura y consumo</summary>",
+          "",
           "### Cobertura, defectos e incidentes",
           "",
           `Bloques procesados: ${metadata.report.processed}/${metadata.report.total}. Llamadas a OpenRouter: ${metadata.report.calls}. Cobertura: ${metadata.report.coverage}.`,
           "",
           `Defectos verificados: ${metadata.report.totalFindings ?? findings}. Solicitudes de evidencia pendientes: ${metadata.report.missingEvidence?.length ?? 0}. Incidentes del revisor: ${metadata.report.infrastructure?.length ?? 0}.`,
+          ...(metadata.report.files?.length
+            ? [
+                "",
+                ...metadata.report.files.map(
+                  (file) =>
+                    `- ${file.path}: ${file.coverage === "complete" ? "completo" : "pendiente"}`,
+                ),
+                "",
+              ]
+            : []),
+          ...[...new Set(metadata.report.reasons ?? [])]
+            .filter((reason) => !reason.startsWith("Falta evidencia:"))
+            .map((reason) => `Limitación: ${reason}`),
           ...(metadata.report.missingEvidence ?? []).map(
             (r) =>
               `Evidencia pendiente: ${r.path}, ${r.symbol ?? r.fragment ?? "archivo completo"}: ${r.reason}`,
@@ -144,6 +168,13 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
                 `Tokens medidos en esta ejecución: ${metadata.report.usage.prompt} de entrada, ${metadata.report.usage.completion} de salida; ${metadata.report.usage.cachedPrompt} de entrada en caché del proveedor.`,
               ]
             : []),
+          ...(metadata.report.tokenBudget
+            ? [
+                `Presupuesto de tokens: ${metadata.report.tokenBudget.charged}/${metadata.report.tokenBudget.limit}. Incluye reservas conservadas cuando el proveedor no informa consumo.`,
+              ]
+            : []),
+          "",
+          "</details>",
           "",
         ]
       : []),

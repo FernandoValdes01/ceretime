@@ -453,7 +453,17 @@ function relevantDeclarations(
       .map((line, index) => `${start + index + 1}: ${line}`)
       .join("\n");
   });
-  return snippets.join("\n").slice(0, budget);
+  // A prefix of a function hides its behavior. Keep complete declarations and
+  // leave omitted ones available to the bounded Git recovery protocol.
+  let used = 0;
+  return snippets
+    .filter((snippet) => {
+      const size = snippet.length + Number(used > 0);
+      if (used + size > budget) return false;
+      used += size;
+      return true;
+    })
+    .join("\n");
 }
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const clip = (value, size) => String(value ?? "").slice(0, size);
@@ -662,7 +672,7 @@ function gitReader(directory) {
   const readState = (ref, filename) => {
     try {
       git("cat-file", "-e", `${ref}^{commit}`);
-      if (!git("ls-tree", ref, "--", filename).trim())
+      if (!git("ls-tree", "-z", ref, "--", `:(literal)${filename}`).trim())
         return { status: "absent", reason: "La ruta no existe en este commit.", text: null };
       const text = read(ref, filename);
       return text == null
@@ -689,12 +699,12 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
   const paths = [
     ...new Set(
       [sha, mergeBase].flatMap((ref) =>
-        git("ls-tree", "-r", "--name-only", ref).trim().split("\n"),
+        git("ls-tree", "-rz", "--name-only", ref).split("\0").filter(Boolean),
       ),
     ),
   ].filter(
     (p) =>
-      (/\.[cm]?[jt]sx?$/.test(p) || /^\.github\/workflows\/.*\.ya?ml$/.test(p)) &&
+      (/\.(?:[cm]?[jt]sx?|css)$/.test(p) || /^\.github\/workflows\/.*\.ya?ml$/.test(p)) &&
       !/(?:node_modules|_generated|dist|\.agents)\//.test(p),
   );
   const sources = new Map(paths.map((p) => [p, read(sha, p)]));
@@ -725,10 +735,26 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
       [...new Set([...imports(p, sources.get(p)), ...imports(p, baseSources.get(p))])],
     ]),
   );
+  // CSS contracts have consumers without a JS import of their producer.
+  for (const file of files.filter((file) => file.filename.endsWith(".css"))) {
+    const tokens = new Set(
+      `${read(mergeBase, file.filename) ?? ""}\n${read(sha, file.filename) ?? ""}`.match(
+        /--[A-Za-z_][\w-]*/g,
+      ) ?? [],
+    );
+    if (!tokens.size) continue;
+    for (const candidate of paths) {
+      if (candidate === file.filename) continue;
+      const text = `${sources.get(candidate) ?? ""}\n${baseSources.get(candidate) ?? ""}`;
+      if ([...tokens].some((token) => text.includes(token)))
+        graph.get(candidate).push(file.filename);
+    }
+  }
   const declarations = (text, budget, workflow, patch, side, symbols) => {
     if (!text) return "";
     if (text.length <= budget) return text;
-    if (workflow) return clip(text, budget);
+    if (workflow || !/\b(?:import|export|function|const|let|var|class|interface|type)\b/.test(text))
+      return clip(text, budget);
     return relevantDeclarations(text, patch, side, budget, symbols);
   };
   const environment = (filename) => {
@@ -816,11 +842,11 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
             ? 8000
             : 1600
           : own
-            ? 4000
+            ? 10000
             : invoked.has(p)
               ? 2000
               : direct.has(p)
-                ? 2400
+                ? 6000
                 : 600;
         const ownPatch = p === file.filename ? file.patch : undefined;
         const relationship = own
@@ -834,15 +860,21 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
                 : "related";
         const baseText = declarations(
           original,
-          own ? 1800 : 600,
-          p.startsWith(".github/workflows/"),
+          own ? 6000 : 2000,
+          p.startsWith(".github/workflows/") || p.endsWith(".css"),
           ownPatch,
           "base",
         );
         const headText =
           workflow && invoked.has(p) && (current?.length ?? Infinity) <= 24000
             ? current
-            : declarations(current, budget, p.startsWith(".github/workflows/"), ownPatch, "head");
+            : declarations(
+                current,
+                budget,
+                p.startsWith(".github/workflows/") || p.endsWith(".css"),
+                ownPatch,
+                "head",
+              );
         return {
           path: p,
           relationship,
@@ -857,9 +889,10 @@ function enrichFiles(files, { directory, base, sha, threads = [] }) {
               : after.status,
           baseReason: before.reason,
           headReason: after.reason,
-          base: baseText,
+          base: original === current ? headText : baseText,
           head: headText,
-          baseComplete: original != null && baseText === original,
+          baseComplete:
+            original != null && (original === current ? headText : baseText) === original,
           headComplete: current != null && headText === current,
         };
       });
@@ -948,7 +981,15 @@ function clipContext(items, budget) {
         b.item[b.key].length - a.item[a.key].length,
     )[0];
     if (!largest?.item[largest.key].length) break;
-    largest.item[largest.key] = largest.item[largest.key].slice(0, -100);
+    const text = largest.item[largest.key];
+    if (/\.[cm]?[jt]sx?$/.test(largest.item.path)) {
+      const lines = text.split("\n");
+      const raw = lines.map((line) => line.replace(/^\d+: /, "")).join("\n");
+      const { source } = declarationAnalysis(raw);
+      const last = source.statements.at(-1);
+      const start = last ? source.getLineAndCharacterOfPosition(last.getStart(source)).line : 0;
+      largest.item[largest.key] = lines.slice(0, start).join("\n");
+    } else largest.item[largest.key] = text.slice(0, -100);
     largest.item[`${largest.key}Complete`] = false;
   }
   return JSON.stringify(result);
@@ -998,5 +1039,6 @@ module.exports = {
   declarationSymbolsAtLine,
   changedContractSymbols,
   relevantDeclarations,
+  clipContext,
   contentKey,
 };

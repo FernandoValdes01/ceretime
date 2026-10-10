@@ -1,5 +1,6 @@
 import "./ai-review-renames.test.ts";
 import "./ai-review-context-retrieval.test.ts";
+import "./ai-review-completeness.test.ts";
 import "./ai-review-verification.test.ts";
 import { fixtureVerifier } from "./ai-review-test-verifier.cjs";
 import "./ai-review-memory.test.ts";

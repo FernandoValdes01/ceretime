@@ -6,28 +6,35 @@ const MAX_REQUESTS = 8;
 const MAX_FRAGMENT = 4000;
 const MAX_RECOVERED = 16000;
 
+function repositoryPath(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 300 &&
+    !value.includes("\\") &&
+    ![...value].some(
+      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    ) &&
+    !value.startsWith("/") &&
+    !/^[A-Za-z]:/.test(value) &&
+    !value.split("/").some((part) => !part || part === "." || part === "..")
+  );
+}
+
 function evidenceRequests(value = []) {
   if (!Array.isArray(value) || value.length > MAX_REQUESTS)
     throw new Error("Solicitudes de evidencia fuera del límite.");
   return value.map((request) => {
     if (
       !request ||
-      typeof request.path !== "string" ||
-      request.path.length > 300 ||
-      !/^[a-zA-Z0-9_.@/ -]+$/.test(request.path) ||
-      request.path.startsWith("/") ||
-      request.path.split("/").some((part) => !part || part === "." || part === "..") ||
+      !repositoryPath(request.path) ||
       !["base", "head"].includes(request.side ?? "head") ||
       (request.cursor != null &&
         (!Number.isInteger(request.cursor) || request.cursor < 0 || request.cursor > 200000)) ||
       typeof request.reason !== "string" ||
       !request.reason.trim() ||
       request.reason.length > 800 ||
-      (request.forPath != null &&
-        (typeof request.forPath !== "string" ||
-          !/^[a-zA-Z0-9_.@/ -]+$/.test(request.forPath) ||
-          request.forPath.startsWith("/") ||
-          request.forPath.split("/").some((part) => !part || part === "." || part === ".."))) ||
+      (request.forPath != null && !repositoryPath(request.forPath)) ||
       (request.scope != null && request.scope !== "file") ||
       (request.scope !== "file" &&
         ![request.symbol, request.fragment].some(
@@ -244,6 +251,8 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
 }
 function selectEvidence(text, request) {
   if (request.scope === "file") return { text, imports: "" };
+  if (request.path.endsWith(".css"))
+    return text.includes(request.fragment ?? request.symbol) ? { text, imports: "" } : null;
   if (/\.ya?ml$/.test(request.path)) {
     const needle = (request.fragment ?? request.symbol).replace(/^(?:paso|step)\s+/i, "");
     const lines = text.split("\n");
