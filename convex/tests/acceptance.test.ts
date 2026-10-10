@@ -10,6 +10,7 @@ import {
   NO_AVAILABILITY_ERROR_CODE,
 } from "../domain/errors/api_error";
 import { occupySlotAtomically } from "../infrastructure/appointments/repository";
+import { cancelRequest, closeRequestWithoutAccompaniment } from "../application/requests/commands";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -691,4 +692,80 @@ test("Dos cupos distintos del mismo profesional se ocupan sin conflicto (TI2-84)
       .take(10);
   });
   expect(agenda).toHaveLength(2);
+});
+
+/*
+ * TI2-85: cancelar y cerrar sin acompañamiento no tienen entrada pública
+ * todavía; se invocan dentro de `t.run` con la identidad ya resuelta.
+ */
+
+test("TI2-85: cerrar o cancelar no abre acompañamiento y la aceptación posterior se rechaza", async () => {
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti85-acc-est-1");
+  await seedProfessional(t, "ti85-acc-pro-1");
+  const asProfessional = t.withIdentity(identityFor("ti85-acc-pro-1", "ti85-acc-pro-1@uct.cl"));
+  const student = identityFor("ti85-acc-est-1", "ti85-acc-est-1@alu.uct.cl");
+  const professional = identityFor("ti85-acc-pro-1", "ti85-acc-pro-1@uct.cl");
+
+  // Cerrada por el Profesional con toma, cancelada por el Estudiante en revisión
+  const closedId = (await registerOwnRequest(t, "ti85-acc-est-1"))._id as Id<"requests">;
+  await asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: closedId });
+  await t.run((ctx) =>
+    closeRequestWithoutAccompaniment(ctx, professional, {
+      requestId: closedId,
+      reason: "La necesidad corresponde a otra unidad",
+    }),
+  );
+  const cancelledId = (await registerOwnRequest(t, "ti85-acc-est-1"))._id as Id<"requests">;
+  await asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: cancelledId });
+  await t.run((ctx) =>
+    cancelRequest(ctx, student, { requestId: cancelledId, reason: "Ya no necesito el apoyo" }),
+  );
+
+  // Ninguna abre acompañamiento y la toma vigente no permite aceptarlas después
+  for (const requestId of [closedId, cancelledId]) {
+    expect(await countAccompanimentsFor(t, requestId)).toBe(0);
+    await expect(
+      asProfessional.mutation(api.presentation.requests.acceptRequest, {
+        requestId,
+        objective: "Objetivo ficticio",
+      }),
+    ).rejects.toThrow("La solicitud no admite la aceptación en su estado actual");
+    expect(await countAccompanimentsFor(t, requestId)).toBe(0);
+  }
+});
+
+test("TI2-85: una solicitud aceptada conserva exactamente un acompañamiento ante cancelar o cerrar", async () => {
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti85-acc-est-2");
+  await seedProfessional(t, "ti85-acc-pro-2");
+  const asProfessional = t.withIdentity(identityFor("ti85-acc-pro-2", "ti85-acc-pro-2@uct.cl"));
+  const requestId = (await registerOwnRequest(t, "ti85-acc-est-2"))._id as Id<"requests">;
+  await asProfessional.mutation(api.presentation.requests.takeRequest, { requestId });
+  await asProfessional.mutation(api.presentation.requests.acceptRequest, {
+    requestId,
+    objective: "Acompañar la organización del semestre",
+  });
+
+  await expect(
+    t.run((ctx) =>
+      cancelRequest(ctx, identityFor("ti85-acc-est-2", "ti85-acc-est-2@alu.uct.cl"), {
+        requestId,
+        reason: "Motivo ficticio",
+      }),
+    ),
+  ).rejects.toThrow("no admite la cancelación");
+  await expect(
+    t.run((ctx) =>
+      closeRequestWithoutAccompaniment(
+        ctx,
+        identityFor("ti85-acc-pro-2", "ti85-acc-pro-2@uct.cl"),
+        { requestId, reason: "Motivo ficticio" },
+      ),
+    ),
+  ).rejects.toThrow("no admite el cierre");
+
+  const stored = await t.query(internal.operations.requests.getRequestById, { id: requestId });
+  expect(stored?.status).toBe("accepted");
+  expect(await countAccompanimentsFor(t, requestId)).toBe(1);
 });
