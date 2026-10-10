@@ -1359,3 +1359,77 @@ test("analysis exhaustion leaves budget for the original verified candidate", as
   expect(report.usageByStage.verification.prompt).toBe(5000);
   expect(report.tokenBudget.charged).toBeLessThan(450000);
 });
+
+test("an unaffordable primary packet cannot discard affordable deferred verification", async () => {
+  const { buildPlan, reviewPlan } = await import("./ai-review-chunks.cjs");
+  const finding = candidates[0];
+  const plan = buildPlan(
+    [
+      {
+        filename: path,
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        patch: `@@ -${finding.line},0 +${finding.line} @@\n+${source.split("\n")[finding.line - 1]}`,
+        context: part.context,
+      },
+    ],
+    {},
+    sha,
+  );
+  plan.limits.totalTokens = 120000;
+  plan.limits.inputChars = 240000;
+  plan.limits.chunkChars = 180000;
+  const origin = plan.chunks[0].parts[0];
+  origin.patch += `\n // ${"x".repeat(35000)}`;
+  plan.chunks = Array.from({ length: 2 }, (_, i) => ({
+    parts: [
+      i === 0
+        ? origin
+        : {
+            ...origin,
+            path: `healthy-${i}.ts`,
+            followups: [],
+            patch: origin.patch + `\n // ${"y".repeat(60000)}`,
+          },
+    ],
+  }));
+  plan.files = 2;
+  let analyses = 0,
+    verifications = 0;
+  const report = await reviewPlan({
+    plan,
+    apiKey: "fixture",
+    sleep: async () => {},
+    fetchImpl: async (_url: any, options: any) => {
+      const envelope = JSON.parse(options.body),
+        payload = JSON.parse(envelope.messages[1].content);
+      let data: any, tokens: number;
+      if (payload.candidates) {
+        verifications++;
+        data = { decisions: [proof(0)] };
+        tokens = 5000;
+      } else {
+        analyses++;
+        data = { findings: payload.parts[0].path === path ? [finding] : [] };
+        tokens = 40000;
+      }
+      expect(tokens).toBeLessThan(Buffer.byteLength(JSON.stringify(envelope.messages)));
+      return {
+        ok: true,
+        headers: new Headers(),
+        json: async () => ({
+          usage: { prompt_tokens: tokens, completion_tokens: 0 },
+          choices: [{ finish_reason: "stop", message: { content: JSON.stringify(data) } }],
+        }),
+      };
+    },
+  });
+  expect(analyses).toBe(1);
+  expect(verifications).toBe(1);
+  expect(report.findings).toHaveLength(1);
+  expect(publishable(report.findings[0], sha)).toBe(true);
+  expect(report.coverage).toBe("incomplete");
+  expect(report.usageByStage.verification.prompt).toBe(5000);
+  expect(report.tokenBudget.charged).toBeLessThan(120000);
+});

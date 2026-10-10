@@ -1654,7 +1654,7 @@ async function reviewPlan({
               break;
             if (body.length <= plan.limits.inputChars)
               throw new Error(
-                budget.canReserve(body)
+                budget.spent > 0
                   ? "Presupuesto de análisis agotado; se conserva reserva para verificar."
                   : "Presupuesto total de tokens agotado.",
               );
