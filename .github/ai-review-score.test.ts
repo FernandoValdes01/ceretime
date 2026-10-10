@@ -415,7 +415,7 @@ test("budgets and obsolete heads stop inference without inventing coverage", asy
         ),
       )
     ).result.calls,
-  ).toBe(0);
+  ).toBe(1);
   const stale = await reviewPlan({
     verify: fixtureVerifier,
     plan,
@@ -884,4 +884,55 @@ test("an invalid block stays incomplete while independent later blocks still rec
   expect(result.coverage).toBe("incomplete");
   expect(result.qualityScore).toBeNull();
   expect(result.infrastructure).toHaveLength(1);
+});
+
+test("partial report puts verified corrections in the summary without implying approval", () => {
+  const report = aggregate(
+    buildPlan([chunkFile("file.ts", 1)], config, sha),
+    [
+      {
+        findings: [
+          {
+            path: "file.ts",
+            line: 1,
+            side: "RIGHT",
+            severity: "important",
+            issue_key: "missing-validation",
+            body: "Problema: falta validar. Impacto: entrada inválida. Propuesta: validar antes de guardar.",
+          },
+        ],
+        evidenceRequests: [
+          { path: "helper.ts", symbol: "helper", reason: "Comprobar otro flujo." },
+        ],
+      },
+    ],
+    1,
+  );
+  const result = evaluateReview({
+    outcome: "success",
+    summary: report.summary,
+    risk: report.risk,
+    commentsCount: "1",
+    expectedSha: sha,
+    currentSha: sha,
+    coverage: report.coverage,
+  });
+  const body = formatReview(result, sha, "https://github.com/test/repo/actions/runs/1", "", {
+    report,
+  });
+  expect(result.state).toBe("failure");
+  expect(body).toContain("#### file.ts:1");
+  expect(body).toContain("Propuesta: validar antes de guardar.");
+  expect(body).toContain("Corregir los hallazgos verificados");
+  expect(body.indexOf("Propuesta: validar antes de guardar.")).toBeLessThan(
+    body.indexOf("### Evidencia pendiente"),
+  );
+  expect(body).not.toContain("Confidence Score:");
+  const empty = { ...report, findings: [], totalFindings: 0 };
+  const emptyResult = { ...result, review: { ...result.review, findings: 0, risk: "low" } };
+  expect(
+    formatReview(emptyResult, sha, "https://github.com/test/repo/actions/runs/1", "", {
+      report: empty,
+    }),
+  ).toContain("| No determinado | 0 |");
 });

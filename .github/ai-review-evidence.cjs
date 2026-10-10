@@ -87,11 +87,14 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         path: request.path,
         side: request.side,
         evidenceSide: request.side,
-        evidenceSelector: request.symbol
-          ? { symbol: request.symbol }
-          : request.fragment
-            ? { fragment: request.fragment }
-            : { symbol: "<file>" },
+        evidenceSelector:
+          request.scope === "file"
+            ? { symbol: "<file>" }
+            : request.symbol
+              ? { symbol: request.symbol }
+              : request.fragment
+                ? { fragment: request.fragment }
+                : { symbol: "<file>" },
         text: "",
         complete: true,
         declarationComplete: true,
@@ -110,7 +113,22 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
       continue;
     }
     const imports = selected.imports;
-    if (imports.length >= MAX_FRAGMENT) {
+    let includeImports =
+      imports.length > 0 &&
+      !chunk.parts.some((part) =>
+        (part.context ?? []).some(
+          (item) =>
+            item.recovered &&
+            item.path === request.path &&
+            (request.symbol
+              ? item.evidenceSelector?.symbol === request.symbol
+              : item.evidenceSelector?.fragment === request.fragment) &&
+            String(item[request.side] ?? "")
+              .replace(/^\d+: /gm, "")
+              .includes(imports.trim()),
+        ),
+      );
+    if (includeImports && imports.length >= MAX_FRAGMENT) {
       unresolved.push({
         ...request,
         availability: "too_large",
@@ -128,23 +146,28 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
       continue;
     }
     while (cursor < selected.text.length) {
+      const prefix = includeImports ? imports : "";
       const capacity = Math.min(
-        MAX_FRAGMENT - imports.length,
-        MAX_RECOVERED - recoveredChars - imports.length,
+        MAX_FRAGMENT - prefix.length,
+        MAX_RECOVERED - recoveredChars - prefix.length,
       );
       if (capacity <= 0) break;
       const end = Math.min(selected.text.length, cursor + capacity);
-      const text = imports + selected.text.slice(cursor, end);
+      const text = prefix + selected.text.slice(cursor, end);
+      includeImports = false;
       recoveredChars += text.length;
       recovered.push({
         path: request.path,
         side: request.side,
         evidenceSide: request.side,
-        evidenceSelector: request.symbol
-          ? { symbol: request.symbol }
-          : request.fragment
-            ? { fragment: request.fragment }
-            : { symbol: "<file>" },
+        evidenceSelector:
+          request.scope === "file"
+            ? { symbol: "<file>" }
+            : request.symbol
+              ? { symbol: request.symbol }
+              : request.fragment
+                ? { fragment: request.fragment }
+                : { symbol: "<file>" },
         text,
         complete: cursor === 0 && end === selected.text.length && text.trim() === state.text.trim(),
         declarationComplete: end === selected.text.length,

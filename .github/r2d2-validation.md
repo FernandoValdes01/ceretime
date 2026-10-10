@@ -6,7 +6,7 @@ Un candidato con coordenadas inválidas deja una limitación, conserva los demá
 
 ## Comparación con las PR abiertas
 
-Se construyeron solicitudes con los commits auditados de las siete PR, comparando la implementación de `2f12a27340858a3676f6881cb1aebbd209eeafbc` con este cambio. Se usaron respuestas simuladas sin hallazgos, sin hilos históricos ni caché de conclusiones. Esta comparación mide solamente las solicitudes iniciales: no mide tokens del modelo, rondas posteriores ni calidad de una revisión real. No se llamó a OpenRouter ni se ejecutaron workflows de GitHub.
+Se construyeron solicitudes con los commits auditados de las siete PR, comparando la implementación de `2f12a27340858a3676f6881cb1aebbd209eeafbc` con el primer arreglo publicado en `d5967fd`. Se usaron respuestas simuladas sin hallazgos, sin hilos históricos ni caché de conclusiones. Esta comparación mide solamente las solicitudes iniciales: no mide tokens del modelo, rondas posteriores ni calidad de una revisión real. No se llamó a OpenRouter ni se ejecutaron workflows de GitHub.
 
 | PR    | Solicitudes antes | Solicitudes después | Caracteres antes | Caracteres después |
 | ----- | ----------------: | ------------------: | ---------------: | -----------------: |
@@ -23,6 +23,14 @@ El texto inicial baja un 14,3 % en total y un 13,7 % en la PR #90. Los cuerpos H
 
 ## Comprobaciones
 
-`bun test ./.github/ai-review-score.test.ts ./.github/ci-publication.test.ts`: 216 pruebas aprobadas, incluidas siete regresiones nuevas sobre rutas literales, CSS, declaraciones completas, evidencia compartida, aislamiento de candidatos y presupuesto. Las pruebas usan respuestas simuladas. Se comprobaron también `bun run lint`, `bun run format:check` y CSpell sobre los archivos modificados.
+`bun test --timeout 15000 ./.github/ai-review-score.test.ts ./.github/ci-publication.test.ts`: 223 pruebas aprobadas, incluidas catorce regresiones nuevas sobre rutas literales, CSS, declaraciones completas, evidencia compartida, aislamiento de candidatos y presupuesto. Las pruebas usan respuestas simuladas. Se comprobaron también `bun run lint`, `bun run format:check` y CSpell sobre los archivos modificados.
 
-La calidad de la inferencia permanece pendiente de una revisión real sobre el commit publicado. Para controlar el gasto, preparar la PR como Draft y ejecutar una sola revisión formal cuando el cambio esté listo; repetirla únicamente si hay una corrección concreta que comprobar.
+## Resultado real y corrección posterior
+
+La ejecución [38061965001](https://github.com/FernandoValdes01/ceretime/actions/runs/38061965001), sobre `d5967fd` en la PR #90, quedó incompleta: 17 de 39 bloques, 47 solicitudes pendientes y 545989 tokens medidos. El primer arreglo no resolvió la revisión completa. Los logs muestran que las divisiones reiniciaban las rondas de recuperación, se repetían declaraciones y los errores de cursor o resolución repetían el análisis.
+
+La corrección posterior recorre primero todos los bloques y difiere recuperación y verificación; conserva el análisis inicial para retomarlo sin repetir esa llamada; comparte declaraciones recuperadas y sus dependencias entre bloques; mantiene tres rondas por bloque original entre sus divisiones; y transmite los imports una vez por declaración. El servidor controla los cursores. Una resolución desconocida no elimina ninguna solicitud pendiente ni provoca un reintento del bloque completo. Las limitaciones reales y los candidatos sin verificación siguen impidiendo la aprobación.
+
+Las pruebas comprueban el orden del recorrido, la reutilización entre consumidores, los límites compartidos, las continuaciones y la conservación de todas las coordenadas después de dividir. Al preparar este cambio, su inferencia real todavía está pendiente. Una simulación no certifica una revisión completa; repetir la ejecución formal únicamente cuando exista una corrección concreta que comprobar.
+
+La auditoría posterior está en [r2d2-audit.md](r2d2-audit.md). El informe parcial conserva los hallazgos verificados, analiza los patches válidos aunque otro sea ilegible y muestra las correcciones en el comentario principal.

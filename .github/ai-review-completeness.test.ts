@@ -276,3 +276,257 @@ test("the total token budget blocks provider requests and counts independent ver
     tokenBudget: { charged: 24 },
   });
 });
+
+test("every initial block is analyzed before recovery and deferred analysis is reused", async () => {
+  const current = plan();
+  const first = current.chunks[0].parts[0];
+  current.files = 3;
+  current.chunks = [
+    { parts: [first] },
+    { parts: [{ ...first, path: "other.ts" }] },
+    { parts: [{ ...first, path: "last.ts" }] },
+  ];
+  const order: string[] = [];
+  const request = { path: "helper.ts", symbol: "helper", reason: "Comprobar el contrato." };
+  const report = await reviewPlan({
+    plan: current,
+    apiKey: "fixture",
+    instructions: "",
+    sleep: async () => {},
+    fetchImpl: async (_url: any, envelope: any) => {
+      const payload = JSON.parse(JSON.parse(envelope.body).messages[1].content);
+      const path = payload.parts[0].path;
+      order.push(`analyze:${path}`);
+      const available = payload.evidence.some(
+        (item: any) =>
+          item.path.head === "helper.ts" && item.head.includes("export function helper"),
+      );
+      return response({
+        findings: [],
+        evidenceRequests: path !== "last.ts" && !available ? [request] : [],
+      });
+    },
+    recoverContext: ({ chunk, requests }: any) => {
+      order.push("recover:helper.ts");
+      return {
+        chunk: {
+          parts: chunk.parts.map((part: any) => ({
+            ...part,
+            evidenceRecovery: requests.map((item: any) => ({ ...item, availability: "present" })),
+            context: [
+              ...(part.context ?? []),
+              {
+                path: "helper.ts",
+                head: "export function helper() {}",
+                base: "",
+                recovered: true,
+                evidenceSide: "head",
+                evidenceSelector: { symbol: "helper" },
+                offset: 0,
+                declarationComplete: true,
+              },
+            ],
+          })),
+        },
+        unresolved: [],
+      };
+    },
+  });
+  expect(order).toEqual([
+    "analyze:file.ts",
+    "analyze:other.ts",
+    "analyze:last.ts",
+    "recover:helper.ts",
+    "analyze:file.ts",
+    "analyze:other.ts",
+  ]);
+  expect(report).toMatchObject({
+    coverage: "complete",
+    calls: 5,
+    analyzedFiles: ["file.ts", "last.ts", "other.ts"],
+  });
+});
+
+test("the server controls continuation cursors and unknown resolutions cannot approve a block", () => {
+  const current = plan();
+  const request = {
+    path: "file.ts",
+    symbol: "value",
+    side: "head",
+    forPath: "file.ts",
+    reason: "Comprobar el contrato.",
+  };
+  current.chunks[0].parts[0].evidenceRecovery = [
+    { ...request, cursor: 8, availability: "partial" },
+  ];
+  const assessed = validateAssessment(
+    {
+      findings: [],
+      evidenceRequests: [{ ...request, forPath: undefined, cursor: 999 }],
+      evidenceResolutions: [
+        {
+          path: "unknown.ts",
+          symbol: "unknown",
+          side: "head",
+          reason: "No se necesita.",
+          status: "not_needed",
+        },
+      ],
+    },
+    current.chunks[0],
+    { repairEvidenceProtocol: true },
+  );
+  expect(assessed.evidenceRequests[0]).toMatchObject({ cursor: 8, forPath: "file.ts" });
+  expect(assessed.evidenceResolutions).toEqual([]);
+  expect(aggregate(current, [assessed], 1)).toMatchObject({ coverage: "incomplete", score: null });
+});
+
+test("partitions share the original recovery allowance instead of resetting it", async () => {
+  const current = plan();
+  const part = current.chunks[0].parts[0];
+  part.patch = Array.from(
+    { length: 500 },
+    (_, i) => `[RIGHT:${i + 1}] +const value${i} = '${"x".repeat(45)}';`,
+  ).join("\n");
+  part.anchors = Array.from({ length: 500 }, (_, i) => `RIGHT:${i + 1}`);
+  const request = {
+    path: "helper.ts",
+    symbol: "largeHelper",
+    reason: "Comprobar todas las ramas.",
+  };
+  let recoveries = 0;
+  const report = await reviewPlan({
+    plan: current,
+    apiKey: "fixture",
+    instructions: "",
+    sleep: async () => {},
+    fetchImpl: async () => response({ findings: [], evidenceRequests: [request] }),
+    recoverContext: ({ chunk, requests }: any) => {
+      recoveries++;
+      return {
+        chunk: {
+          parts: chunk.parts.map((item: any) => ({
+            ...item,
+            context: [
+              ...(item.context ?? []),
+              {
+                path: "helper.ts",
+                head: "x".repeat(8000),
+                base: "",
+                recovered: true,
+                evidenceSide: "head",
+                evidenceSelector: { symbol: "largeHelper" },
+                offset: (recoveries - 1) * 8000,
+                declarationComplete: false,
+              },
+            ],
+            evidenceRecovery: requests.map((requested: any) => ({
+              ...requested,
+              availability: "partial",
+              cursor: recoveries * 8000,
+            })),
+          })),
+        },
+        unresolved: requests.map((requested: any) => ({
+          ...requested,
+          availability: "partial",
+          cursor: recoveries * 8000,
+        })),
+      };
+    },
+  });
+  expect(current.chunks.length).toBeGreaterThan(1);
+  expect(recoveries).toBe(3);
+  expect(report).toMatchObject({ coverage: "incomplete", score: null });
+  expect(report.processed).toBe(report.total);
+});
+
+test("unreadable patch preserves review of valid files and verified findings", async () => {
+  const current = buildPlan(
+    [
+      { filename: "broken.ts", status: "modified", additions: 1, deletions: 0 },
+      {
+        filename: "file.ts",
+        status: "added",
+        additions: 1,
+        deletions: 0,
+        patch: "@@ -0,0 +1 @@\n+export const value = 1;",
+      },
+    ],
+    {},
+    sha,
+  );
+  const report = await reviewPlan({
+    plan: current,
+    apiKey: "fixture",
+    sleep: async () => {},
+    verify: fixtureVerifier,
+    fetchImpl: async () => response({ findings: [finding(1)] }),
+  });
+  expect(report.calls).toBe(1);
+  expect(report.findings).toHaveLength(1);
+  expect(report).toMatchObject({ coverage: "incomplete", score: null });
+  expect(report.planningIssues).toContain("Patch no disponible: broken.ts");
+});
+
+test("verified defect is retained without recovering unrelated missing coverage", async () => {
+  let recoveries = 0;
+  const report = await reviewPlan({
+    plan: plan(),
+    apiKey: "fixture",
+    sleep: async () => {},
+    verify: fixtureVerifier,
+    fetchImpl: async () =>
+      response({
+        findings: [finding(1)],
+        evidenceRequests: [{ path: "other.ts", symbol: "helper", reason: "Comprobar otro flujo." }],
+      }),
+    recoverContext: async () => {
+      recoveries++;
+      throw new Error("Unexpected recovery");
+    },
+  });
+  expect(recoveries).toBe(0);
+  expect(report.calls).toBe(1);
+  expect(report.findings).toHaveLength(1);
+  expect(report.missingEvidence).toHaveLength(1);
+  expect(report).toMatchObject({ coverage: "incomplete", score: null });
+});
+
+test("deferred candidates are verified before unrelated coverage recovery", async () => {
+  const current = plan();
+  const last = plan().chunks[0].parts[0];
+  current.chunks.push({ parts: [{ ...last, path: "last.ts" }] });
+  current.files = 2;
+  const events: string[] = [];
+  const report = await reviewPlan({
+    plan: current,
+    apiKey: "fixture",
+    sleep: async () => {},
+    verify: async (args: any) => {
+      events.push(`verify:${args.chunk.parts[0].path}`);
+      return fixtureVerifier(args);
+    },
+    fetchImpl: async (_url: any, options: any) => {
+      const path = JSON.parse(JSON.parse(options.body).messages[1].content).parts[0].path;
+      events.push(`analyze:${path}`);
+      return response(
+        path === "file.ts"
+          ? {
+              findings: [finding(1)],
+              evidenceRequests: [
+                { path: "other.ts", symbol: "helper", reason: "Comprobar otro flujo." },
+              ],
+            }
+          : { findings: [] },
+      );
+    },
+    recoverContext: async () => {
+      throw new Error("Unrelated coverage must not precede verification");
+    },
+  });
+  expect(events.indexOf("analyze:last.ts")).toBeLessThan(events.indexOf("verify:file.ts"));
+  expect(report.findings).toHaveLength(1);
+  expect(report.missingEvidence).toHaveLength(1);
+  expect(report).toMatchObject({ calls: 2, coverage: "incomplete", score: null });
+});

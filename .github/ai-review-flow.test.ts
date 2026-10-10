@@ -1890,7 +1890,7 @@ test("structured requests recover a omitted contract then rerun only the affecte
   }
 });
 
-test("unrecoverable evidence stays explicit after three bounded recovery rounds", async () => {
+test("repeated requests for fulfilled evidence stay explicit without repeating recovery", async () => {
   const f = fixture();
   try {
     const plan = await f.prepare();
@@ -1936,7 +1936,7 @@ test("unrecoverable evidence stays explicit after three bounded recovery rounds"
         };
       },
     });
-    expect(calls).toBe(4);
+    expect(calls).toBe(2);
     expect(report.coverage).toBe("incomplete");
     expect(report.processed).toBe(report.total);
     expect(report.qualityScore).toBeNull();
@@ -3056,6 +3056,10 @@ test("recovery counts transmitted imports and keeps file completeness separate f
       0,
     );
     expect(first.recoveredChars).toBe(sent);
+    expect(
+      first.chunk.parts[0].context.filter((item: any) => item.head.includes("import { helper }"))
+        .length,
+    ).toBe(1);
     expect(sent).toBeLessThanOrEqual(16000);
     expect(first.unresolved[0].availability).toBe("partial");
     const second = recoverEvidence({

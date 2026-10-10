@@ -65,9 +65,13 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
       ? rawObservations.split("; Resumen: ").slice(1).join("; Resumen: ")
       : rawObservations,
   );
+  const confirmed = metadata.report?.findings ?? [];
+  const displayedRisk = result.reason === "incomplete" && findings === 0 ? "No determinado" : risk;
   const nextAction = {
     incomplete:
-      "Consultar la evidencia pendiente y los logs. Corregir la causa antes de repetir AI Code Review desde Actions con el número de PR; reintentar sin cambios puede consumir tokens y dejar el mismo resultado.",
+      findings > 0
+        ? "Corregir los hallazgos verificados indicados abajo. La evidencia pendiente limita el alcance del informe y no invalida esas correcciones."
+        : "No se identificaron correcciones verificadas en la parte revisada. Consultar la evidencia pendiente y los logs. Corregir la causa antes de repetir AI Code Review desde Actions con el número de PR; reintentar sin cambios puede consumir tokens y dejar el mismo resultado.",
     failed:
       "Consultar los logs enlazados para identificar el error de OpenRouter o de la Action. Corregir la configuración o esperar la cuota del proveedor y reintentar el workflow sobre este mismo SHA.",
     missing: "Ejecutar AI Code Review para el commit actual y comprobar que devuelve un resultado.",
@@ -89,7 +93,7 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
     "",
     "| Risk | Hallazgos | Estado |",
     "| --- | --- | --- |",
-    `| ${risk} | ${findings} | ${state} |`,
+    `| ${displayedRisk} | ${findings} | ${state} |`,
     "",
     `Reviewed commit: [${title}](https://github.com/${repo}/commit/${sha})`,
     "",
@@ -107,6 +111,18 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           ...(result.reason === "reviewed" ? [] : [result.description]),
         ]
       : [result.reason === "reviewed" ? explanation : result.description]),
+    "",
+    "### Qué debes cambiar",
+    "",
+    ...(confirmed.length
+      ? confirmed.flatMap((finding) => [
+          `#### ${finding.path}${finding.line ? `:${finding.line}` : ""}`,
+          "",
+          withoutBold(finding.body),
+          "",
+        ])
+      : []),
+    nextAction,
     "",
     ...(result.reason === "incomplete"
       ? [
@@ -127,10 +143,6 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           "",
         ]
       : []),
-    "### Qué debes cambiar",
-    "",
-    nextAction,
-    "",
     ...(observations && observations !== explanation
       ? ["### Observaciones del reviewer", "", observations, ""]
       : []),
@@ -142,6 +154,11 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
           "### Cobertura, defectos e incidentes",
           "",
           `Bloques procesados: ${metadata.report.processed}/${metadata.report.total}. Llamadas a OpenRouter: ${metadata.report.calls}. Cobertura: ${metadata.report.coverage}.`,
+          ...(metadata.report.analyzedFiles
+            ? [
+                `Archivos con análisis inicial: ${metadata.report.analyzedFiles.length}. La recuperación y verificación pendientes se detallan por separado.`,
+              ]
+            : []),
           "",
           `Defectos verificados: ${metadata.report.totalFindings ?? findings}. Solicitudes de evidencia pendientes: ${metadata.report.missingEvidence?.length ?? 0}. Incidentes del revisor: ${metadata.report.infrastructure?.length ?? 0}.`,
           ...(metadata.report.files?.length
