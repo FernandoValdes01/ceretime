@@ -1,0 +1,41 @@
+/* Enlaces de gestión del Profesional (TI2-91): foco visible de 3px como el
+   resto de la aplicación (DESIGN.md). El lenguaje visual de listas y
+   avisos se reutiliza de student-portal.css sin duplicarlo. */
+
+.gestion-request-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.gestion-request-link:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* Fila no clicable de la bandeja (solo lectura hasta tomar, TI2-92). */
+.gestion-request-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  color: inherit;
+}
+
+/* Solo para screen readers: anuncia estado de carga del botón "Cargar más". */
+.student-portal__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
