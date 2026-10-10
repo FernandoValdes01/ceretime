@@ -52,8 +52,10 @@ export const assignmentStatusUnion = v.union(
  * Estados de solicitud del contrato de presentación (Sprint 1, TI2-7): lo que
  * la API pública devuelve hoy. Derivados del dominio para que el esquema no
  * defina nombres por su cuenta. Mantenerlo en 4 estados conserva intactos
- * los tipos que Web y Mobile derivan de `api.presentation.*`; TI2-85 lo
- * ampliará con su mapping y coordinación TI4.
+ * los tipos que Web y Mobile derivan de `api.presentation.*`. TI2-85 habilitó
+ * los cierres en Dominio y Aplicación sin ampliarlo: el mapeo de estados de
+ * Mobile es exhaustivo y deja de compilar con 6. Lo amplía, junto con TI4, la
+ * tarea que publique cancelar y cerrar.
  */
 const requestStatusLiterals = SPRINT_1_REQUEST_STATES.map((state) => v.literal(state));
 
@@ -63,8 +65,7 @@ export const requestStatusUnion = v.union(...requestStatusLiterals);
  * Estados de solicitud persistibles (TI2-83 adapta validadores para TI2-85):
  * operativos de Sprint 1 más `closed_without_accompaniment` y `cancelled`,
  * sin `referred`. Solo esquema (`requests`, `requestTransitions`) y
- * adaptación de lectura; la presentación sigue en 4 estados hasta el
- * mapping de TI2-85.
+ * adaptación de lectura; la presentación sigue en 4 estados (ver arriba).
  */
 export const persistableRequestStatusUnion = v.union(
   ...PERSISTABLE_REQUEST_STATES.map((state) => v.literal(state)),

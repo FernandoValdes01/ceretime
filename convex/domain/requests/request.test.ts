@@ -1,10 +1,16 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { SPRINT_1_REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
+import {
+  CLOSURE_REQUEST_STATES,
+  PERSISTABLE_REQUEST_STATES,
+  REQUEST_STATE_LABELS,
+  SPRINT_1_REQUEST_STATES,
+} from "./state";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toSprint1AccompanimentRequest,
   toStoredRequestFields,
   type AccompanimentRequestContent,
 } from "./request";
@@ -49,9 +55,18 @@ type MobileSubmitPayload = {
   readonly preferredAccessibleInformationChannel: string;
 };
 
-describe("toAccompanimentRequest (TI2-8)", () => {
-  test("adapta una fila existente con cada estado de Sprint 1", () => {
-    for (const status of SPRINT_1_REQUEST_STATES) {
+/** Fila ficticia de `requests` con el estado indicado. */
+const rowWith = (status: string) => ({
+  _id: "request-id",
+  studentId: "student-id",
+  status,
+  accessNeeds: "Necesidad ficticia",
+  createdAt: 1000,
+});
+
+describe("toAccompanimentRequest (TI2-8, TI2-85)", () => {
+  test("adapta una fila existente con cada estado persistible, cierres incluidos", () => {
+    for (const status of PERSISTABLE_REQUEST_STATES) {
       expect(
         toAccompanimentRequest({
           _id: "request-id",
@@ -82,6 +97,12 @@ describe("toAccompanimentRequest (TI2-8)", () => {
     ).toThrow("Estado de solicitud desconocido");
   });
 
+  test("rechaza una fila derivada, estado sin reglas ni proyección acordada", () => {
+    expect(() => toAccompanimentRequest(rowWith("referred"))).toThrow(
+      "Estado de solicitud desconocido",
+    );
+  });
+
   test("la entidad publica se importa desde el barrel", () => {
     const entity: BarrelAccompanimentRequest = {
       _id: "request-id",
@@ -91,6 +112,30 @@ describe("toAccompanimentRequest (TI2-8)", () => {
       createdAt: 1000,
     };
     expect(entity.status).toBe("received");
+  });
+});
+
+describe("toSprint1AccompanimentRequest (TI2-85)", () => {
+  test.each(SPRINT_1_REQUEST_STATES)(
+    "entrega una fila %s tal cual al contrato público",
+    (status) => {
+      expect(toSprint1AccompanimentRequest(rowWith(status))).toEqual(rowWith(status));
+    },
+  );
+
+  test.each(CLOSURE_REQUEST_STATES)(
+    "rechaza una fila %s: el contrato público todavía no la entrega",
+    (status) => {
+      expect(() => toSprint1AccompanimentRequest(rowWith(status))).toThrow(
+        "fuera del contrato público de Sprint 1",
+      );
+    },
+  );
+
+  test("una fila corrupta sigue fallando como estado desconocido", () => {
+    expect(() => toSprint1AccompanimentRequest(rowWith("referred"))).toThrow(
+      "Estado de solicitud desconocido",
+    );
   });
 });
 
