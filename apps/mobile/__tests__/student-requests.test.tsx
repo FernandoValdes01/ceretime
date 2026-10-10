@@ -2,6 +2,8 @@ import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import { render } from "@testing-library/react-native";
 import path from "node:path";
+import { StrictMode } from "react";
+import { AccessibilityInfo } from "react-native";
 
 import type { StudentAreaSnapshot } from "@/application/student-area-models";
 import type { StudentAreaReader } from "@/application/student-area-port";
@@ -16,7 +18,11 @@ import { fillRequiredStudentRequestFields } from "./student-request-test-helpers
 
 const appDirectory = path.resolve(__dirname, "../app");
 
-afterEach(() => mockStudentAreaStore.reset());
+afterEach(() => {
+  jest.clearAllMocks();
+  mockStudentAreaStore.reset();
+  jest.restoreAllMocks();
+});
 
 function snapshotWith(requests: StudentAreaSnapshot["requests"]): Promise<StudentAreaSnapshot> {
   return createMockStudentAreaReader()
@@ -30,21 +36,36 @@ function snapshotWith(requests: StudentAreaSnapshot["requests"]): Promise<Studen
 
 describe("Solicitudes del estudiante", () => {
   test("muestra carga y luego las solicitudes del snapshot del estudiante", async () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     let resolveRead!: (snapshot: StudentAreaSnapshot) => void;
     const pending = new Promise<StudentAreaSnapshot>((resolve) => {
       resolveRead = resolve;
     });
     const reader: StudentAreaReader = { readStudentArea: () => pending };
 
-    render(
-      <StudentAreaProvider reader={reader}>
-        <StudentRequestsScreen />
-      </StudentAreaProvider>,
+    const view = render(
+      <StrictMode>
+        <StudentAreaProvider reader={reader}>
+          <StudentRequestsScreen />
+        </StudentAreaProvider>
+      </StrictMode>,
     );
 
     expect(screen.getByText("Cargando solicitudes…")).toBeOnTheScreen();
+    expect(announce.mock.calls).toEqual([["Cargando solicitudes."]]);
     await act(async () => resolveRead(await snapshotWith([])));
     expect(await screen.findByText("Aún no tienes solicitudes")).toBeOnTheScreen();
+    view.rerender(
+      <StrictMode>
+        <StudentAreaProvider reader={reader}>
+          <StudentRequestsScreen />
+        </StudentAreaProvider>
+      </StrictMode>,
+    );
+    expect(announce.mock.calls).toEqual([
+      ["Cargando solicitudes."],
+      ["Aún no tienes solicitudes."],
+    ]);
   });
 
   test("muestra el estado vacío y permite iniciar una nueva solicitud", async () => {
@@ -121,6 +142,7 @@ describe("Solicitudes del estudiante", () => {
   });
 
   test("incluye en listado y detalle una solicitud enviada durante la sesión", async () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     const navigation = renderRouter(appDirectory);
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
@@ -132,9 +154,14 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(screen.getByRole("button", { name: /^Inicio(?:, tab.*)?$/ }));
     fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
     fillRequiredStudentRequestFields();
+    announce.mockClear();
     fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
 
     expect(await screen.findByText(/SOL-DEMO-006/)).toBeOnTheScreen();
+    expect(announce.mock.calls).toEqual([
+      ["Enviando solicitud ficticia."],
+      ["Solicitud ficticia enviada."],
+    ]);
     fireEvent.press(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 3" }));
     await waitFor(() => expect(navigation.getPathname()).toBe("/estudiante/solicitudes"));
 
