@@ -7,7 +7,7 @@ import { RoleGuard } from "../../../src/presentation/navigation/role-guard";
 import { useNavigationSession } from "../../../src/presentation/navigation/session";
 
 export default function StudentHome() {
-  const { accessDeniedRole, dismissAccessDenied, status, error } = useNavigationSession();
+  const { accessDeniedRole, dismissAccessDenied, status } = useNavigationSession();
   const isSigningOut = status === "loading";
 
   return (
@@ -23,11 +23,13 @@ export default function StudentHome() {
           label="Nueva solicitud"
           description="Cuéntanos qué acompañamiento necesitas"
           onPress={() => router.push("/estudiante/nueva-solicitud")}
+          disabled={isSigningOut}
         />
         <StudentAction
           label="Mis solicitudes"
           description="Consulta tus solicitudes enviadas"
           onPress={() => router.push("/estudiante/solicitudes")}
+          disabled={isSigningOut}
           secondary
         />
         {isSigningOut ? (
@@ -35,14 +37,10 @@ export default function StudentHome() {
             accessibilityLabel="Cerrando sesión"
             accessibilityLiveRegion="polite"
             accessibilityRole="progressbar"
+            accessibilityState={{ busy: true }}
             className="text-center text-base text-student-primary"
           >
             Cerrando sesión…
-          </StudentText>
-        ) : null}
-        {error ? (
-          <StudentText accessibilityRole="alert" className="text-center text-base text-red-800">
-            {error}
           </StudentText>
         ) : null}
       </StudentScreen>
