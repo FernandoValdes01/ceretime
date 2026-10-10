@@ -5,6 +5,12 @@ import {
   selectCompatibleOptions,
   type CompatibilityOption,
 } from "./compatibility";
+import {
+  assessCompatibility as barrelAssessCompatibility,
+  selectCompatibleOptions as barrelSelectCompatibleOptions,
+  type CompatibilityOption as BarrelCompatibilityOption,
+  type Space as BarrelSpace,
+} from "../index";
 import type { AccessNeed } from "../requests/request";
 import type { Space } from "./space";
 
@@ -138,6 +144,24 @@ describe("selectCompatibleOptions (TI2-82)", () => {
 
   test("la ausencia de opción devuelve vacía", () => {
     expect(selectCompatibleOptions([need(RAMP, "Rampa (ficticio)")], [])).toEqual([]);
+  });
+});
+
+describe("superficie compartida por el barrel (TI2-82)", () => {
+  test("la política se importa desde convex/domain con un Space completo", () => {
+    const needs = [need(RAMP, "Rampa (ficticio)")];
+    const fullSpace: BarrelSpace = space();
+    const option: BarrelCompatibilityOption = {
+      modality: "inPerson",
+      space: { space: fullSpace, isActive: true, satisfiedNeeds: needs },
+    };
+
+    expect(barrelAssessCompatibility(needs, option)).toEqual(assessCompatibility(needs, option));
+    expect(barrelAssessCompatibility(needs, option)).toEqual({
+      compatible: true,
+      issues: [],
+    });
+    expect(barrelSelectCompatibleOptions(needs, [option])).toEqual([option]);
   });
 });
 
