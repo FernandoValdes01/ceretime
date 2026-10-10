@@ -130,6 +130,20 @@ export type {
   SpaceCatalogPage,
 } from "./spaces/space";
 
+// Compatibilidad de modalidad y espacio con necesidades de acceso (TI2-82).
+export {
+  COMPATIBILITY_ISSUE_VALUES,
+  assessCompatibility,
+  selectCompatibleOptions,
+} from "./spaces/compatibility";
+export type {
+  CompatibilityDecision,
+  CompatibilityIssue,
+  CompatibilityIssueCode,
+  CompatibilityOption,
+  CompatibilitySpace,
+} from "./spaces/compatibility";
+
 // Atención reservada: reserva y atención en una sola entidad (TI2-87, TI2-93).
 export {
   APPOINTMENT_CONTRACT_VERSION,
