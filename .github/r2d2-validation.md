@@ -1,6 +1,6 @@
 # R2D2: validación local del contexto y consumo
 
-El cambio permite recuperar rutas de Expo con paréntesis, corchetes y Unicode desde Git; incorpora consumidores de variables CSS; conserva declaraciones enteras al ajustar el contexto; comparte evidencia idéntica entre base y head; y agrupa cambios relacionados. El modelo y los límites por llamada permanecen iguales. El presupuesto acumulado de 600000 tokens incluye análisis, recuperación, reintentos y verificación independiente; se hace una reserva conservadora antes de solicitar y se ajusta con el consumo informado por OpenRouter. Las solicitudes sin datos de consumo conservan su reserva.
+El cambio permite recuperar rutas de Expo con paréntesis, corchetes y Unicode desde Git; incorpora consumidores de variables CSS; conserva declaraciones enteras al ajustar el contexto; comparte evidencia idéntica entre base y head; y agrupa cambios relacionados. El modelo y los límites por llamada permanecen iguales. El presupuesto acumulado actual es de 450000 tokens e incluye análisis, recuperación, reintentos y verificación independiente; se hace una reserva conservadora antes de solicitar y se ajusta con el consumo informado por OpenRouter. Las solicitudes sin datos de consumo conservan su reserva.
 
 Un candidato con coordenadas inválidas deja una limitación, conserva los demás candidatos y evita repetir el análisis entero. Los candidatos válidos siguen requiriendo verificación independiente. La revisión muestra un resumen breve, archivos pendientes y detalles de cobertura y consumo. La evidencia incompleta sigue bloqueando la aprobación y no recibe una nota de calidad.
 
@@ -23,7 +23,7 @@ El texto inicial baja un 14,3 % en total y un 13,7 % en la PR #90. Los cuerpos H
 
 ## Comprobaciones
 
-`bun test --timeout 15000 ./.github/ai-review-score.test.ts ./.github/ci-publication.test.ts`: 231 pruebas aprobadas para la tercera corrección, incluidas las regresiones de las dos anteriores y ocho casos adicionales sobre solicitudes, verificación y reserva de presupuesto. Las pruebas usan respuestas simuladas y el verificador real para los casos nuevos. Se comprobaron también `bun run lint`, `bun run format:check` y CSpell sobre los once archivos modificados.
+`bun test --timeout 15000 ./.github/ai-review-score.test.ts ./.github/ci-publication.test.ts`: 237 pruebas aprobadas, incluidas las regresiones anteriores y seis casos adicionales sobre archivos completos, helpers, rangos, citas entre páginas, prioridad de aplicación y ausencia de llamadas por cambios de metadata. Las pruebas usan respuestas simuladas y el verificador real para los casos nuevos. Se comprobaron `bun run lint`, `bun run format:check` y CSpell sobre los doce archivos modificados.
 
 ## Resultado real y corrección posterior
 
@@ -36,5 +36,7 @@ Las pruebas comprueban el orden del recorrido, la reutilización entre consumido
 La tercera corrección conserva decisiones válidas aunque otra solicitud o grupo falle; restaura continuaciones de Git sin exigir que la asociación al cambio sea idéntica; recupera evidencia dentro del verificador sin repetir detección; y reserva el 40 % del presupuesto para verificar. El informe incluye todos los resúmenes iniciales disponibles, los defectos comprobados y, por separado, candidatos pendientes. El modelo, el presupuesto total y la exigencia de pruebas para publicar defectos se mantienen.
 
 Al preparar este cambio, su inferencia real todavía está pendiente. Una simulación no certifica una revisión completa; repetir la ejecución formal únicamente cuando exista una corrección concreta que comprobar.
+
+La tercera ejecución [38073982013](https://github.com/FernandoValdes01/ceretime/actions/runs/38073982013), sobre `265962c`, también falló: 562661 tokens, 23 de 29 bloques procesados, 28 solicitudes pendientes y cero defectos confirmados. La corrección actual reconstruye las páginas completas y sus citas, permite rangos acotados para funciones extensas, conserva las comprobaciones que refutan hipótesis y evita otra llamada cuando solo cambia la metadata. Se priorizan los cambios de aplicación y se reduce el límite total a 450000 tokens. Su validación real sigue pendiente.
 
 La auditoría posterior está en [r2d2-audit.md](r2d2-audit.md). El informe parcial conserva los hallazgos verificados, analiza los patches válidos aunque otro sea ilegible y muestra las correcciones en el comentario principal.

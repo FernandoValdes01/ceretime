@@ -856,7 +856,7 @@ test("live reviewer regressions refute busy-state, payload accounting and declar
       path: evidencePath,
       source: evidenceSource,
       symbol: "recoverEvidence",
-      quote: "declarationComplete: end === selected.text.length,",
+      quote: "end === selected.text.length && selected.declarationComplete !== false",
       actual: "Archivo parcial, declaración completa y cero solicitudes pendientes",
       claim: "headComplete false obliga otra recuperación",
     },
@@ -947,10 +947,51 @@ test("one missing decision does not erase another confirmed defect", async () =>
   expect(publishable(result.assessment.findings[0], sha)).toBe(true);
 });
 
+test("metadata-only recovery does not spend another verification call", async () => {
+  let calls = 0;
+  const result = await verifyAssessment({
+    assessment: { findings: [candidates[0]], limitations: [], resolutions: [] },
+    chunk: { parts: [part] },
+    sha,
+    budget: 4,
+    apiKey: "fixture",
+    fetchImpl: async () => {
+      calls++;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  decisions: [{ index: 0, verdict: "insufficient" }],
+                  evidenceRequests: [{ path, scope: "file", reason: "Comprobar el contrato." }],
+                }),
+              },
+            },
+          ],
+        }),
+      };
+    },
+    recoverContext: async ({ chunk }: any) => ({
+      chunk: {
+        parts: chunk.parts.map((p: any) => ({
+          ...p,
+          context: p.context.map((item: any) => ({ ...item, forPath: p.path })),
+        })),
+      },
+      unresolved: [],
+    }),
+  });
+  expect(calls).toBe(1);
+  expect(result.assessment.verificationPending).toHaveLength(1);
+});
+
 test.each(["provider", "budget"])(
   "%s failure in a second group preserves the first verified proof",
   async (failure) => {
-    const paths = ["alpha.ts", "beta.ts"];
+    const paths = [".github/reviewer.ts", "apps/mobile/beta.ts"];
     const findings = paths.map((path) => ({ ...candidates[0], path }));
     const parts = paths.map((path) => ({
       ...part,
@@ -988,6 +1029,7 @@ test.each(["provider", "budget"])(
     });
     expect(calls).toBe(failure === "budget" ? 1 : 2);
     expect(result.assessment.findings).toHaveLength(1);
+    expect(result.assessment.findings[0].path).toBe("apps/mobile/beta.ts");
     expect(result.assessment.verificationPending).toHaveLength(1);
     expect(publishable(result.assessment.findings[0], sha)).toBe(true);
   },
@@ -1096,6 +1138,10 @@ test("recovered evidence verifies the original archived defects without detectin
     "cancel-added",
   ]);
   expect(report.findings.every((finding: any) => publishable(finding, sha))).toBe(true);
+  expect(report.verificationResults).toHaveLength(3);
+  expect(report.verificationResults.find((item: any) => item.verdict === "refuted").issue_key).toBe(
+    "sort-ids",
+  );
   expect(report.analyses[0].summary).toContain("expansión de cupos");
   expect(stored).toHaveLength(1);
   expect(stored[0].evidenceDependencies).toContainEqual(dependency);
@@ -1120,10 +1166,10 @@ test("analysis exhaustion leaves budget for the original verified candidate", as
   );
   const origin = plan.chunks[0].parts[0];
   origin.patch += `\n // ${"x".repeat(35000)}`;
-  plan.chunks = Array.from({ length: 13 }, (_, i) => ({
+  plan.chunks = Array.from({ length: 17 }, (_, i) => ({
     parts: [i === 0 ? origin : { ...origin, path: `healthy-${i}.ts`, followups: [] }],
   }));
-  plan.files = 13;
+  plan.files = 17;
   let analyses = 0,
     verifications = 0;
   const report = await reviewPlan({
@@ -1154,11 +1200,11 @@ test("analysis exhaustion leaves budget for the original verified candidate", as
       };
     },
   });
-  expect(analyses).toBeLessThan(13);
+  expect(analyses).toBeLessThan(17);
   expect(verifications).toBe(1);
   expect(report.findings).toHaveLength(1);
   expect(publishable(report.findings[0], sha)).toBe(true);
   expect(report.coverage).toBe("incomplete");
   expect(report.usageByStage.verification.prompt).toBe(5000);
-  expect(report.tokenBudget.charged).toBeLessThan(400000);
+  expect(report.tokenBudget.charged).toBeLessThan(450000);
 });

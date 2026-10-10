@@ -1,4 +1,5 @@
 const { hash } = require("./ai-review-context.cjs");
+const { mergeRecoveredContext } = require("./ai-review-evidence.cjs");
 
 function ordered(values = []) {
   return [...new Set(values)].sort((a, b) => {
@@ -46,7 +47,7 @@ function publicEvidenceBundle(parts, refs = {}) {
   };
   const publicParts = parts.map((part) => {
     const references = [];
-    for (const item of part.context ?? []) {
+    for (const item of mergeRecoveredContext(part.context ?? [])) {
       const identity = {
         path: {
           base: item.basePath ?? item.path,

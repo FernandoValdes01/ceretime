@@ -28,7 +28,7 @@ const {
 
 const REVIEW_PROTOCOL = `Analiza todas las parts recibidas y su interacción. Cada part contiene el diff con [RIGHT:N]/[LEFT:N] y evidenceRefs; evidence contiene código de base/head identificado por ruta y selector. Usa solo las referencias asociadas a cada cambio. baseSameAsHead:true significa que base y head contienen el mismo texto, enviado una vez en head. Los demás bloques se revisan por separado: su ausencia no demuestra falta de cobertura.
 Lee diff, declaraciones, helpers y consumidores antes de concluir. baseComplete/headComplete indican archivo completo. En evidencia paginada, declarationComplete marca la última página: la declaración completa exige conservar todas las páginas desde offset:0. present con Complete:false es un extracto, not_yet_created/deleted son ausencias demostradas, unavailable es fallo de lectura. El código completo de un archivo nuevo puede estar en su diff. Un extracto no es un fallo de lectura ni exige por sí solo más contexto: evalúa el flujo cambiado con la evidencia disponible. Solicita solo el contrato que falte para una comprobación concreta, sin exigir todas las rutas del archivo. En funciones extensas, pide el helper o la declaración interna pertinente.
-Solicita código necesario desde Git en evidenceRequests:[{path,symbol o fragment,side:head|base,reason,forPath?:ruta del cambio}]. symbol es un identificador declarado; fragment es una cita literal o nombre exacto de test/paso. scope:file permite pedir un archivo completo. Incluye forPath si hay varios cambios. Nunca describas código recuperable solo en limitations. Hay tres rondas compartidas por bloque original aunque se divida, ocho solicitudes y 16000 caracteres por ronda. El servidor controla las continuaciones: no envíes cursor. evidenceRecovery informa disponibilidad y cursor. No repitas una solicitud ya satisfecha. Resuelve pendientes innecesarios solo mediante evidenceResolutions:[{path,symbol o fragment,side,status:not_needed,reason}] para solicitudes recibidas, justificando el flujo comprobado. limitations solo describe incertidumbre concreta que sigue sin resolverse.
+Solicita código necesario desde Git en evidenceRequests:[{path,symbol o fragment,side:head|base,reason,forPath?:ruta del cambio}]. symbol es un identificador declarado; fragment es una cita literal o nombre exacto de test/paso. scope:file permite pedir un archivo completo. Para una función extensa pide startLine/endLine (coordenadas reales del lado pedido), máximo 80 líneas. Incluye forPath si hay varios cambios. Nunca describas código recuperable solo en limitations. Hay tres rondas compartidas por bloque original aunque se divida, ocho solicitudes y 16000 caracteres por ronda. El servidor controla las continuaciones: no envíes cursor. evidenceRecovery informa disponibilidad y cursor. No repitas una solicitud ya satisfecha. Resuelve pendientes innecesarios solo mediante evidenceResolutions:[{path,symbol o fragment,side,status:not_needed,reason}] para solicitudes recibidas, justificando el flujo comprobado. limitations solo describe incertidumbre concreta que sigue sin resolverse.
 La base inmediata de esta PR es la referencia para evaluar el cambio. Una limitación exige un contrato necesario para evaluar estas partes. Cada hallazgo exige cambio causal, impacto observable y corrección necesaria, con base/head y contrato vigente. El contexto sin cambios sirve para verificar, no para reportar defectos preexistentes. Comprueba productores y consumidores; una hipótesis no es un defecto. No ejecutes código. Respeta condiciones de workflows y contratos de versiones fijadas. No inventes errores por ausencia de tests.
 Devuelve JSON: {summary:descripción breve del cambio y flujo evaluado,findings:[{path,line,side:RIGHT|LEFT,severity:critical|important|warning|minor,issue_key, cause,impact,fix,threadId?:id previo}],evidenceRequests:[],evidenceResolutions:[],limitations:[],resolutions:[{id,status:resolved|not_applicable|maintain|needs_context,explanation}]}.
 Máximo cinco hallazgos, cero válido; cause/impact/fix hasta 240 caracteres, summary hasta 600. Usa coordenadas exactas del diff. En un renombre sin anchors admite scope:pull_request sin line ni side. No devuelvas score/risk. Da una resolución por cada scope.followupThreads: maintain exige findings con threadId y evidencia actual; resolved/not_applicable exige cita actual. evidence_incomplete exige needs_context. Un bloque followupOnly solo verifica sus hilos, sin hallazgos nuevos. Si falta evidencia, no declares completitud ni aprobación.`;
@@ -40,7 +40,7 @@ const LIMITS = Object.freeze({
   // Every planned block gets one primary call; keep a bounded reserve for
   // evidence recovery, retries, and independent finding verification.
   maxCalls: 80,
-  totalTokens: 600000,
+  totalTokens: 450000,
   outputTokens: 6000,
   intervalMs: 1000,
   maxRateLimitWaitMs: 600000,
@@ -915,6 +915,7 @@ function aggregate(plan, results, calls, errors = []) {
     infrastructure: errors,
     planningIssues: plan.issues,
     verificationPending: results.flatMap((result) => result.verificationPending ?? []),
+    verificationResults: results.flatMap((result) => result.verificationResults ?? []),
     qualityScore: coverage === "complete" ? score : null,
   };
 }
@@ -1003,6 +1004,20 @@ async function reviewPlan({
   resolveEvidence,
 }) {
   if (!apiKey && plan.chunks.length) throw new Error("Falta el secret del proveedor.");
+  const productShare = (chunk) => {
+    const parts = chunk.parts ?? [];
+    const size = (part) => String(part.patch ?? "").length + 1;
+    return (
+      parts
+        .filter((part) => /^(apps|convex|packages)\//.test(part.path))
+        .reduce((sum, part) => sum + size(part), 0) /
+      Math.max(
+        1,
+        parts.reduce((sum, part) => sum + size(part), 0),
+      )
+    );
+  };
+  plan.chunks.sort((a, b) => productShare(b) - productShare(a));
   const results = [],
     errors = [],
     cacheGroups = new Map();
@@ -1118,7 +1133,7 @@ async function reviewPlan({
     const totalTokens = plan.limits.totalTokens ?? LIMITS.totalTokens;
     const settle = budget.reserve(
       request.body,
-      stage === "analysis" ? Math.floor(totalTokens * 0.6) : totalTokens,
+      stage === "analysis" ? Math.floor(totalTokens * 0.9) : totalTokens,
     );
     calls++;
     const response = await fetchProvider(url, request);
@@ -1204,6 +1219,7 @@ async function reviewPlan({
       limitations: items.flatMap((r) => r.limitations ?? []),
       evidenceRequests: items.flatMap((r) => r.evidenceRequests ?? []),
       verificationPending: items.flatMap((r) => r.verificationPending ?? []),
+      verificationResults: items.flatMap((r) => r.verificationResults ?? []),
     });
     const persistRecoveredCacheGroups = () => {
       const persist = (id) => {
@@ -1249,7 +1265,6 @@ async function reviewPlan({
       evidence: sharedRecoveredEvidence,
       fulfilled: fulfilledEvidence,
     };
-    recoveryBudget.verificationRequests ??= new Set();
     originalChunk.recoveryBudget = recoveryBudget;
     let recoveryRounds = recoveryBudget.rounds;
     let restart = false;
@@ -1753,13 +1768,7 @@ async function reviewPlan({
           );
           break;
         }
-        if (
-          (!candidate.findings.length ||
-            candidate.evidenceRequests.some((request) =>
-              recoveryBudget.verificationRequests.has(requestKey(request)),
-            )) &&
-          (await recover(candidate.evidenceRequests))
-        ) {
+        if (!candidate.findings.length && (await recover(candidate.evidenceRequests))) {
           attempt--;
           continue;
         }
@@ -1811,8 +1820,6 @@ async function reviewPlan({
           onProgress,
         });
         assessment = verified.assessment;
-        for (const request of assessment.evidenceRequests ?? [])
-          recoveryBudget.verificationRequests.add(requestKey(request));
         if (!candidate.findings.length && assessment.limitations.length && resolveEvidence) {
           const resolved = resolveEvidence({ chunk, limitations: assessment.limitations });
           assessment.evidenceRequests = [

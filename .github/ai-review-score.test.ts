@@ -26,6 +26,8 @@ test("reviewer config reserves bounded calls for recovery and independent verifi
   expect(config.chunking.maxCalls).toBe(80);
   expect(config.chunking.maxCalls).toBe(LIMITS.maxCalls);
   expect(config.chunking.maxChunks).toBe(LIMITS.maxChunks);
+  expect(config.chunking.totalTokens).toBe(450000);
+  expect(config.chunking.totalTokens).toBe(LIMITS.totalTokens);
   expect(buildPlan([], config, sha).limits.maxCalls).toBe(80);
 });
 function chunkFile(filename: string, lines = 80, width = 70) {

@@ -124,6 +124,17 @@ function formatReview(result, sha, runUrl, cost, metadata = {}) {
       : []),
     nextAction,
     "",
+    ...(metadata.report?.verificationResults?.some((item) => item.verdict === "refuted")
+      ? [
+          "### Comprobaciones sin defecto",
+          "",
+          ...metadata.report.verificationResults
+            .filter((item) => item.verdict === "refuted")
+            .slice(0, 5)
+            .flatMap((item) => [`- ${item.path}:${item.line}: ${withoutBold(item.explanation)}`]),
+          "",
+        ]
+      : []),
     ...(metadata.report?.verificationPending?.length
       ? [
           "### Puntos pendientes de comprobar",

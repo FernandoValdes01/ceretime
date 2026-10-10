@@ -578,3 +578,42 @@ test("malformed context requests preserve valid candidates and requests", () => 
   expect(result.evidenceRequests).toHaveLength(1);
   expect(result.limitations[0]).toContain("Solicitud de contexto descartada");
 });
+
+test("path-only requests use bounded file recovery and line ranges reject unbounded input", () => {
+  const current = plan().chunks[0];
+  const result = validateAssessment(
+    {
+      findings: [],
+      evidenceRequests: [
+        { path: "helper.ts", reason: "Comprobar el contrato." },
+        { path: "helper.ts", startLine: 1, endLine: 9000, reason: "Invalid range" },
+      ],
+    },
+    current,
+    { repairEvidenceProtocol: true },
+  );
+  expect(result.evidenceRequests).toHaveLength(1);
+  expect(result.evidenceRequests[0].scope).toBe("file");
+  expect(result.limitations[0]).toContain("range");
+});
+
+test("application changes receive analysis before reviewer infrastructure", async () => {
+  const current = plan();
+  current.chunks[0].parts[0].path = ".github/reviewer.ts";
+  const application = plan().chunks[0];
+  application.parts[0].path = "apps/mobile/task.ts";
+  current.chunks.push(application);
+  current.files = 2;
+  const paths: string[] = [];
+  const report = await reviewPlan({
+    plan: current,
+    apiKey: "fixture",
+    sleep: async () => {},
+    fetchImpl: async (_url: any, options: any) => {
+      paths.push(JSON.parse(JSON.parse(options.body).messages[1].content).parts[0].path);
+      return response({ findings: [] });
+    },
+  });
+  expect(paths).toEqual(["apps/mobile/task.ts", ".github/reviewer.ts"]);
+  expect(report.coverage).toBe("complete");
+});

@@ -26,8 +26,104 @@ import { memoryIdentity, createMemory } from "./ai-review-memory.cjs";
 import { recoverEvidence, inferEvidenceRequests } from "./ai-review-evidence.cjs";
 import { gitReader } from "./ai-review-context.cjs";
 import { pullNumber } from "./ai-review-target.cjs";
+import { publicEvidenceBundle } from "./ai-review-payload.cjs";
 
 const configuration = readFileSync(join(import.meta.dir, "../.pr-reviewer.yml"), "utf8");
+
+test("a fully recovered file exposes complete content without breaking a cross-page quote", () => {
+  const quote = "export const preservedIdentifier = true;";
+  const source = `//${"x".repeat(3990)}\n${quote}\n${"// padding\n".repeat(100)}`;
+  const f = fixture({ "file.ts": "export const run = () => 1;\n", "contract.ts": source });
+  try {
+    const recovered = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk: { parts: [{ path: "file.ts", context: [] }] },
+      requests: [{ path: "contract.ts", scope: "file", reason: "Comprobar el contrato." }],
+    });
+    expect(recovered.chunk.parts[0].context).toHaveLength(2);
+    const bundle = publicEvidenceBundle(recovered.chunk.parts);
+    expect(bundle.evidence).toHaveLength(1);
+    expect(bundle.evidence[0].head).toBe(source);
+    expect(bundle.evidence[0].headComplete).toBe(true);
+    expect(bundle.evidence[0].head).toContain(quote);
+    const missingPage = publicEvidenceBundle([
+      { ...recovered.chunk.parts[0], context: recovered.chunk.parts[0].context.slice(1) },
+    ]);
+    expect(missingPage.evidence[0].headComplete).toBe(false);
+  } finally {
+    f.clean();
+  }
+});
+
+test("a short requested component includes its local helpers and consumer imports", () => {
+  const source =
+    "import { policy } from './policy';\nexport function Component() { return helper(); }\nfunction helper() { return policy(); }\n";
+  const f = fixture({ "file.ts": "export const run = () => 1;\n", "component.ts": source });
+  try {
+    for (const symbol of ["Component", "policy"]) {
+      const result = recoverEvidence({
+        directory: f.directory,
+        base: f.base,
+        sha: f.pr.head.sha,
+        chunk: { parts: [{ path: "file.ts", context: [] }] },
+        requests: [{ path: "component.ts", symbol, reason: "Comprobar el consumidor." }],
+      });
+      expect(result.unresolved).toEqual([]);
+      expect(result.chunk.parts[0].context[0].head).toBe(source);
+      expect(result.chunk.parts[0].context[0].headComplete).toBe(true);
+    }
+  } finally {
+    f.clean();
+  }
+});
+
+test("a large candidate function yields a bounded excerpt and supports an explicit line range", () => {
+  const source =
+    "export function giant() {\n" + "  const filler = 1;\n".repeat(1600) + "  return filler;\n}\n";
+  const f = fixture({ "large.ts": source });
+  try {
+    const chunk = { parts: [{ path: "large.ts", context: [], anchors: ["RIGHT:1400"] }] };
+    const result = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk,
+      requests: [
+        { path: "large.ts", symbol: "giant", reason: "Comprobar el flujo de la línea cambiada." },
+      ],
+    });
+    expect(result.recoveredChars).toBeLessThan(2000);
+    expect(result.chunk.parts[0].context[0].declarationComplete).toBe(false);
+    expect(result.unresolved[0].availability).toBe("focused_excerpt");
+    const explicit = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk,
+      requests: [
+        { path: "large.ts", startLine: 1598, endLine: 1603, reason: "Comprobar el retorno." },
+      ],
+    });
+    expect(explicit.unresolved).toEqual([]);
+    expect(explicit.chunk.parts[0].context[0].head).toContain("return filler;");
+    expect(explicit.chunk.parts[0].context[0].headComplete).toBe(false);
+    const literal = recoverEvidence({
+      directory: f.directory,
+      base: f.base,
+      sha: f.pr.head.sha,
+      chunk,
+      requests: [
+        { path: "large.ts", fragment: "return filler;", reason: "Comprobar solo el retorno." },
+      ],
+    });
+    expect(literal.recoveredChars).toBeLessThan(100);
+    expect(literal.chunk.parts[0].context[0].head).toBe("return filler;");
+  } finally {
+    f.clean();
+  }
+});
 const answer = (findings: any[] = [], resolutions: any[] = []) => ({
   ok: true,
   headers: new Headers(),

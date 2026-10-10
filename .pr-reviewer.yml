@@ -6,7 +6,7 @@ chunking:
   inputChars: 64000
   maxChunks: 48
   maxCalls: 80
-  totalTokens: 600000
+  totalTokens: 450000
   outputTokens: 6000
   intervalMs: 1000
   maxRateLimitWaitMs: 600000

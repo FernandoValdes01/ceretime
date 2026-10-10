@@ -37,8 +37,17 @@ function evidenceRequests(value = []) {
         typeof request.reason !== "string" || !request.reason.trim() || request.reason.length > 800,
       forPath: request.forPath != null && !repositoryPath(request.forPath),
       scope: request.scope != null && request.scope !== "file",
+      range:
+        (request.startLine != null || request.endLine != null) &&
+        (!Number.isInteger(request.startLine) ||
+          !Number.isInteger(request.endLine) ||
+          request.startLine < 1 ||
+          request.endLine < request.startLine ||
+          request.endLine - request.startLine >= 80 ||
+          request.endLine > 200000),
       selector:
         request.scope !== "file" &&
+        request.startLine == null &&
         ![request.symbol, request.fragment].some((text) => typeof text === "string" && text.trim()),
       symbol:
         request.symbol != null &&
@@ -71,6 +80,13 @@ function normalizeEvidenceRequests(value = [], chunk = { parts: [] }) {
       if (typeof input.reason === "string") input.reason = input.reason.slice(0, 800);
       if (input.side === "RIGHT") input.side = "head";
       if (input.side === "LEFT") input.side = "base";
+      if (!input.scope && !input.symbol && !input.fragment && input.startLine == null)
+        input.scope = "file";
+      if (input.startLine != null) {
+        delete input.scope;
+        delete input.symbol;
+        delete input.fragment;
+      }
       if (["symbol", "declaration"].includes(input.scope) && (input.symbol || input.fragment))
         delete input.scope;
       if (input.scope === "file") {
@@ -141,7 +157,21 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
       unresolved.push({ ...request, availability: state.status, detail: state.reason });
       continue;
     }
-    const selected = selectEvidence(state.text, request);
+    const focus = chunk.parts
+      .filter(
+        (part) => part.path === request.path && (!request.forPath || request.forPath === part.path),
+      )
+      .flatMap((part) =>
+        (part.anchors ?? [])
+          .filter((anchor) => anchor.startsWith(request.side === "base" ? "LEFT:" : "RIGHT:"))
+          .map((anchor) => Number(anchor.split(":")[1])),
+      );
+    const selected = selectEvidence(
+      state.text,
+      request,
+      focus.length <= 5 ? focus : [],
+      chunk.verificationFocused,
+    );
     if (!selected) {
       unresolved.push({
         ...request,
@@ -157,13 +187,14 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         side: request.side,
         evidenceSide: request.side,
         evidenceSelector:
-          request.scope === "file"
+          selected.selector ??
+          (request.scope === "file"
             ? { symbol: "<file>" }
             : request.symbol
               ? { symbol: request.symbol }
               : request.fragment
                 ? { fragment: request.fragment }
-                : { symbol: "<file>" },
+                : { symbol: "<file>" }),
         text: "",
         complete: true,
         declarationComplete: true,
@@ -230,17 +261,20 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         side: request.side,
         evidenceSide: request.side,
         evidenceSelector:
-          request.scope === "file"
+          selected.selector ??
+          (request.scope === "file"
             ? { symbol: "<file>" }
             : request.symbol
               ? { symbol: request.symbol }
               : request.fragment
                 ? { fragment: request.fragment }
-                : { symbol: "<file>" },
+                : { symbol: "<file>" }),
         text,
         complete: cursor === 0 && end === selected.text.length && text.trim() === state.text.trim(),
-        declarationComplete: end === selected.text.length,
+        declarationComplete: end === selected.text.length && selected.declarationComplete !== false,
         offset: cursor,
+        endOffset: end,
+        wholeFile: selected.text === state.text,
         ...(request.forPath
           ? { forPath: request.forPath }
           : chunk.parts.length === 1
@@ -249,7 +283,18 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
       });
       cursor = end;
     }
-    if (cursor >= selected.text.length && selected.missing?.length) {
+    if (
+      cursor >= selected.text.length &&
+      selected.declarationComplete === false &&
+      request.startLine == null
+    ) {
+      unresolved.push({
+        ...request,
+        availability: "focused_excerpt",
+        detail:
+          "Se entregó el rango pertinente, no la declaración completa. Pide otro rango de hasta 80 líneas solo si falta una comprobación concreta.",
+      });
+    } else if (cursor >= selected.text.length && selected.missing?.length) {
       unresolved.push({
         ...request,
         availability: "symbol_absent",
@@ -314,6 +359,8 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
         evidenceSelector: item.evidenceSelector,
         declarationComplete: item.declarationComplete,
         offset: item.offset,
+        endOffset: item.endOffset,
+        wholeFile: item.wholeFile,
         ...(item.forPath ? { forPath: item.forPath } : {}),
       });
     }
@@ -341,7 +388,17 @@ function recoverEvidence({ directory, base, sha, chunk, requests }) {
   });
   return { chunk: { ...chunk, parts }, recovered: recovered.length, unresolved, recoveredChars };
 }
-function selectEvidence(text, request) {
+function selectEvidence(text, request, focus = [], verificationFocused = false) {
+  const range = (startLine, endLine) => ({
+    text: text
+      .split("\n")
+      .slice(startLine - 1, endLine)
+      .join("\n"),
+    imports: "",
+    selector: { startLine, endLine },
+    declarationComplete: false,
+  });
+  if (request.startLine != null) return range(request.startLine, request.endLine);
   if (request.scope === "file") return { text, imports: "" };
   if (request.path.endsWith(".css"))
     return text.includes(request.fragment ?? request.symbol) ? { text, imports: "" } : null;
@@ -428,24 +485,73 @@ function selectEvidence(text, request) {
     if (best) selected.push(best.node);
   }
   if (request.fragment) {
-    const node = source.statements.find((statement) =>
-      statement.getText(source).includes(request.fragment),
-    );
+    const statements = [];
+    const visitStatements = (node) => {
+      if (
+        ts.isStatement(node) &&
+        !ts.isBlock(node) &&
+        node.getText(source).includes(request.fragment)
+      )
+        statements.push(node);
+      ts.forEachChild(node, visitStatements);
+    };
+    visitStatements(source);
+    const node = statements.sort((a, b) => a.getWidth(source) - b.getWidth(source))[0];
     if (node) selected.push(node);
     else {
       const at = text.indexOf(request.fragment);
       if (at >= 0) return { text: text.slice(Math.max(0, at - 400), at + 1600), imports: "" };
     }
   }
+  if (!selected.length && request.symbol) {
+    const references = [];
+    const visitReferences = (node) => {
+      if (ts.isImportDeclaration(node)) return;
+      if (ts.isIdentifier(node) && names.has(node.text)) references.push(node);
+      ts.forEachChild(node, visitReferences);
+    };
+    visitReferences(source);
+    if (references.length && text.length <= MAX_RECOVERED) return { text, imports: "" };
+  }
   if (!selected.length) return null;
+  const missing = request.symbol?.split("(")[0].includes(",")
+    ? [...names].filter((name) => !foundNames.has(name))
+    : [];
+  const selectedTest = selected.some(
+    (node) =>
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      ["test", "it"].includes(node.expression.text),
+  );
+  if (
+    text.length <= MAX_RECOVERED &&
+    !request.fragment &&
+    !missing.length &&
+    !selectedTest &&
+    !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(request.path)
+  )
+    return { text, imports: "" };
+  const oversized = selected.find((node) => node.getWidth(source) > MAX_RECOVERED);
+  if (oversized && (focus.length || verificationFocused)) {
+    const firstLine = source.getLineAndCharacterOfPosition(oversized.getStart(source)).line + 1;
+    const lastLine = source.getLineAndCharacterOfPosition(oversized.end).line + 1;
+    const relevant = focus.filter((line) => line >= firstLine && line <= lastLine);
+    const startLine = Math.max(firstLine, relevant.length ? Math.min(...relevant) - 20 : firstLine);
+    return range(
+      startLine,
+      Math.min(
+        lastLine,
+        startLine + 79,
+        relevant.length ? Math.max(...relevant) + 20 : startLine + 40,
+      ),
+    );
+  }
   const imports = source.statements
     .filter((node) => ts.isImportDeclaration(node))
     .map((node) => node.getText(source))
     .join("\n");
   return {
-    missing: request.symbol?.split("(")[0].includes(",")
-      ? [...names].filter((name) => !foundNames.has(name))
-      : [],
+    missing,
     text: [...new Set(selected)].map((node) => node.getText(source)).join("\n"),
     imports: imports ? imports + "\n" : "",
   };
@@ -467,8 +573,56 @@ function requestKey(request) {
         : (request.symbol ?? null),
     request.scope === "file" ? null : (request.fragment ?? null),
     request.scope ?? null,
+    request.startLine ?? null,
+    request.endLine ?? null,
     request.forPath ?? null,
   ]);
+}
+
+// Join only a complete, contiguous recovered selection. Its 4k transport pages
+// must not appear as a missing file, or insert a newline inside an exact quote.
+function mergeRecoveredContext(items) {
+  const groups = new Map();
+  for (const item of items) {
+    if (!item.recovered || !Number.isInteger(item.endOffset)) continue;
+    const key = JSON.stringify([
+      item.path,
+      item.basePath,
+      item.evidenceSide,
+      item.evidenceSelector,
+      item.forPath,
+    ]);
+    const group = groups.get(key) ?? [];
+    group.push(item);
+    groups.set(key, group);
+  }
+  const replacements = new Map(),
+    removed = new Set();
+  for (const group of groups.values()) {
+    const pages = [...group].sort((a, b) => a.offset - b.offset);
+    const last = pages.at(-1);
+    if (
+      pages[0].offset !== 0 ||
+      !last.declarationComplete ||
+      pages.some((page, i) => i && page.offset !== pages[i - 1].endOffset) ||
+      pages.reduce((size, page) => size + (page.head?.length ?? 0) + (page.base?.length ?? 0), 0) >
+        MAX_RECOVERED
+    )
+      continue;
+    const first = pages[0],
+      complete = pages.every((page) => page.wholeFile);
+    replacements.set(group[0], {
+      ...first,
+      base: pages.map((page) => page.base ?? "").join(""),
+      head: pages.map((page) => page.head ?? "").join(""),
+      endOffset: last.endOffset,
+      declarationComplete: true,
+      baseComplete: complete && first.evidenceSide === "base",
+      headComplete: complete && first.evidenceSide === "head",
+    });
+    group.slice(1).forEach((page) => removed.add(page));
+  }
+  return items.filter((item) => !removed.has(item)).map((item) => replacements.get(item) ?? item);
 }
 // Resolve legacy free-text limitations only against declarations and paths in
 // the changed module's bounded dependency neighborhood. Ambiguity stays visible.
@@ -552,6 +706,7 @@ module.exports = {
   inferEvidenceRequests,
   evidenceRequests,
   normalizeEvidenceRequests,
+  mergeRecoveredContext,
   recoverEvidence,
   MAX_REQUESTS,
   MAX_FRAGMENT,
