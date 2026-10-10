@@ -3,6 +3,13 @@ import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import {
+  CONFLICT_ERROR_CODE,
+  isErrorResult,
+  isOkResult,
+  NO_AVAILABILITY_ERROR_CODE,
+} from "../domain/errors/api_error";
+import { occupySlotAtomically } from "../infrastructure/appointments/repository";
 import { cancelRequest, closeRequestWithoutAccompaniment } from "../application/requests/commands";
 import schema from "../schema";
 
@@ -52,6 +59,24 @@ async function seedProfessional(t: ReturnType<typeof convexTest>, subject: strin
     });
   });
 }
+
+/** Acompañamiento ficticio para ocupar un cupo como atención. */
+async function seedAccompaniment(t: ReturnType<typeof convexTest>, studentId: Id<"users">) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Necesidad de acceso ficticia",
+    });
+  });
+}
+
+/** Lunes 2026-10-12 09:00 UTC en milisegundos de época. */
+const TI84_SLOT_START = Date.UTC(2026, 9, 12, 9);
+
+/** Lunes 2026-10-12 10:00 UTC en milisegundos de época. */
+const TI84_SLOT_END = Date.UTC(2026, 9, 12, 10);
 
 /** Solicitud recibida lista para tomar por la vía pública. */
 async function registerOwnRequest(
@@ -399,6 +424,274 @@ test("Estudiante y Profesional consultan el acompañamiento resultante", async (
     { accompanimentId: opened._id },
   );
   expect(professionalView.view).toBe("full");
+});
+
+test("Dos intentos sobre el mismo cupo crean como máximo una atención (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentA = await seedStudent(t, "ti84-est-a");
+  const studentB = await seedStudent(t, "ti84-est-b");
+  const pro = await seedProfessional(t, "ti84-pro-1");
+  const accompanimentA = await seedAccompaniment(t, studentA);
+  const accompanimentB = await seedAccompaniment(t, studentB);
+
+  // Primer intento: ocupa el cupo en la misma transacción que crea la atención
+  const first = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompanimentA,
+      studentId: studentA,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(first)) throw new Error("Se esperaba ocupación del cupo");
+  expect(Object.keys(first).sort()).toEqual(["data", "status"]);
+
+  // Segundo intento sobre el mismo profesional e inicio: se rechaza con el
+  // código estable de conflicto, distinto de la ausencia de cupo en búsqueda.
+  // Nota: convex-test@0.0.58 ejecuta en secuencia las transacciones de nivel
+  // superior (TransactionManager toma un lock por transacción), así que esta
+  // prueba fija el rechazo entre intentos en contienda en secuencia, no
+  // transacciones solapadas; el solapamiento real (contienda OCC) solo se
+  // verifica contra un backend en vivo con datos ficticios.
+  const second = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompanimentB,
+      studentId: studentB,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isErrorResult(second)) throw new Error("Se esperaba rechazo por contienda");
+  expect(Object.keys(second).sort()).toEqual(["error", "status"]);
+  expect(Object.keys(second.error).sort()).toEqual(["code", "message"]);
+  expect(second.error.code).toBe(CONFLICT_ERROR_CODE);
+  expect(second.error.code).not.toBe(NO_AVAILABILITY_ERROR_CODE);
+
+  // Una sola atención en el cupo, la del primer intento
+  const agenda = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", pro).eq("startsAt", TI84_SLOT_START),
+      )
+      .take(10);
+  });
+  expect(agenda.map((row) => row._id)).toEqual([first.data.appointmentId]);
+
+  // Ausencia de escrituras parciales: el segundo estudiante no tiene atenciones
+  const foreign = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_studentId", (q) => q.eq("studentId", studentB))
+      .take(10);
+  });
+  expect(foreign).toHaveLength(0);
+
+  // El rechazo preserva el estado: la primera atención sigue intacta
+  const stored = await t.run(async (ctx) => {
+    return await ctx.db.get(first.data.appointmentId);
+  });
+  expect(stored?.status).toBe("scheduled");
+  expect(stored?.startsAt).toBe(TI84_SLOT_START);
+  expect(stored?.endsAt).toBe(TI84_SLOT_END);
+  expect(stored?.professionalId).toEqual(pro);
+});
+
+test("El cupo con intervalo invertido se rechaza sin persistir (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti84-est-c");
+  const pro = await seedProfessional(t, "ti84-pro-2");
+  const accompaniment = await seedAccompaniment(t, student);
+
+  // El servidor no confía en el cliente: el fin anterior al inicio es un
+  // error operativo que indica qué corregir, sin guardar nada.
+  await expect(
+    t.run(async (ctx) => {
+      return await occupySlotAtomically(ctx, {
+        accompanimentId: accompaniment,
+        studentId: student,
+        professionalId: pro,
+        modality: "online",
+        startsAt: TI84_SLOT_END,
+        endsAt: TI84_SLOT_START,
+      });
+    }),
+  ).rejects.toThrow("posterior");
+  const agenda = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", pro))
+      .take(10);
+  });
+  expect(agenda).toHaveLength(0);
+});
+
+test("El cupo liberado por cancelación se puede volver a ocupar (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti84-est-d");
+  const pro = await seedProfessional(t, "ti84-pro-3");
+  const accompaniment = await seedAccompaniment(t, student);
+
+  // Atención cancelada por el estudiante: libera el cupo
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("appointments", {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      status: "cancelled_by_student",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+      createdAt: 1,
+    });
+  });
+
+  // La ocupación posterior del mismo cupo crea la atención en `scheduled`
+  const retry = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(retry)) throw new Error("Se esperaba ocupación del cupo liberado");
+  const stored = await t.run(async (ctx) => {
+    return await ctx.db.get(retry.data.appointmentId);
+  });
+  expect(stored?.status).toBe("scheduled");
+});
+
+test("Diez ciclos de reserva y cancelación no ocultan la atención activa (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti84-est-e");
+  const pro = await seedProfessional(t, "ti84-pro-4");
+  const accompaniment = await seedAccompaniment(t, student);
+  const slot = {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    modality: "online" as const,
+    startsAt: TI84_SLOT_START,
+    endsAt: TI84_SLOT_END,
+  };
+
+  // Historial de diez ciclos de reserva y cancelación en el mismo cupo
+  for (let cycle = 0; cycle < 10; cycle += 1) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("appointments", {
+        ...slot,
+        status: "cancelled_by_student",
+        createdAt: 1,
+      });
+    });
+  }
+
+  // El cupo sigue libre: la ocupación crea la atención activa posterior
+  const first = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, slot);
+  });
+  if (!isOkResult(first)) throw new Error("Se esperaba ocupación del cupo");
+
+  // El intento siguiente ve la atención activa tras el historial y se rechaza
+  const second = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, slot);
+  });
+  if (!isErrorResult(second)) throw new Error("Se esperaba rechazo por contienda");
+  expect(second.error.code).toBe(CONFLICT_ERROR_CODE);
+
+  // Se conserva la atención existente y no se escribe otra
+  const active = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", pro).eq("startsAt", TI84_SLOT_START),
+      )
+      .take(20);
+  });
+  expect(active.filter((row) => row.status === "scheduled").map((row) => row._id)).toEqual([
+    first.data.appointmentId,
+  ]);
+});
+
+test("Un historial largo no oculta la atención activa (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti84-est-f");
+  const pro = await seedProfessional(t, "ti84-pro-5");
+  const accompaniment = await seedAccompaniment(t, student);
+  const slot = {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    modality: "online" as const,
+    startsAt: TI84_SLOT_START,
+    endsAt: TI84_SLOT_END,
+  };
+
+  // Historial con 55 cancelaciones: supera cualquier ventana fija de lectura
+  await t.run(async (ctx) => {
+    for (let cycle = 0; cycle < 55; cycle += 1) {
+      await ctx.db.insert("appointments", {
+        ...slot,
+        status: "cancelled_by_student",
+        createdAt: 1,
+      });
+    }
+  });
+
+  // La ocupación crea la atención activa posterior al historial
+  const first = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, slot);
+  });
+  if (!isOkResult(first)) throw new Error("Se esperaba ocupación del cupo");
+
+  // La lectura completa del instante encuentra la atención activa igual
+  const second = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, slot);
+  });
+  if (!isErrorResult(second)) throw new Error("Se esperaba rechazo por contienda");
+  expect(second.error.code).toBe(CONFLICT_ERROR_CODE);
+});
+
+test("Dos cupos distintos del mismo profesional se ocupan sin conflicto (TI2-84)", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti84-est-g");
+  const pro = await seedProfessional(t, "ti84-pro-6");
+  const accompaniment = await seedAccompaniment(t, student);
+
+  // Cada inicio es un cupo discreto: ocupar uno no bloquea el siguiente
+  for (const startsAt of [TI84_SLOT_START, TI84_SLOT_END]) {
+    const occupied = await t.run(async (ctx) => {
+      return await occupySlotAtomically(ctx, {
+        accompanimentId: accompaniment,
+        studentId: student,
+        professionalId: pro,
+        modality: "online",
+        startsAt,
+        endsAt: startsAt + 3_600_000,
+      });
+    });
+    if (!isOkResult(occupied)) throw new Error("Se esperaba ocupación del cupo libre");
+  }
+  const agenda = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", pro))
+      .take(10);
+  });
+  expect(agenda).toHaveLength(2);
 });
 
 /*
