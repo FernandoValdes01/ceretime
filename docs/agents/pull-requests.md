@@ -46,12 +46,6 @@ Formato: `ID - tipo(scope): descripción`
 - Antes de marcar una PR como lista para revisión, asigna el reviewer que corresponda según las etiquetas de la issue en Linear. La distribución de revisores se mantiene en Linear; no la dupliques en este archivo.
 - Crear o actualizar nunca incluye merge ni cierre.
 
-## Revisión automática obligatoria
+## Validación y revisión humana
 
-Las PR internas con cualquier base reciben R2D2 al abrirse, reabrirse, recibir commits, pasar a Ready for review o cambiar de base. Draft no consume revisiones. Conserva la PR en Draft durante la preparación y asigna el reviewer humano según Linear antes de solicitar su revisión. El secret `OPENROUTER_API_KEY` vive en GitHub Actions y nunca se pega en la PR.
-
-El ruleset `protectedmain` exige los cuatro checks de CI y `R2D2 Review 5/5`, asociado a la App R2D2. Este último solo pasa con revisión vigente de head y base, cobertura completa, cero hallazgos, riesgo low y score 5. La revisión humana y la aprobación del último push siguen siendo obligatorias. R2D2 no autoriza ni realiza merge.
-
-Una revisión incompleta muestra evidencia pendiente e incidentes, sin nota de calidad de 0/5. Puede bloquear aunque todos los bloques hayan sido procesados. Los hallazgos sobre renombres puros pueden aparecer como review general de la PR sin coordenada inline. La conversación no modifica el status formal.
-
-Para repetir la comprobación formal sin commits artificiales ni hallazgos inline, usa Actions → AI Code Review → Run workflow con el número de PR. El trigger debe estar integrado en la rama predeterminada; consulta [protecciones de CI](../ci-protections.md) para requisitos, límites y recuperación. No corrijas código funcional válido para resolver un incidente del reviewer. No declares una inferencia real basándote solo en tests locales: registra run y status asociados al SHA vigente.
+Las PR deben aprobar los cuatro checks de CI y recibir la aprobación humana requerida por `protectedmain`. Asigna el reviewer según Linear antes de solicitar revisión. Los detalles de los checks y las reglas de integración están en [protecciones de CI](../ci-protections.md).
