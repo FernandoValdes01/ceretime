@@ -1,35 +1,48 @@
 import { assert, describe, expect, test } from "vitest";
-import { FUTURE_REQUEST_STATES, REQUEST_STATES, SPRINT_1_REQUEST_STATES } from "./state";
 import {
-  findSprint1Transition,
+  CLOSURE_REQUEST_STATES,
+  FUTURE_REQUEST_STATES,
+  REQUEST_STATES,
+  SPRINT_1_REQUEST_STATES,
+} from "./state";
+import {
+  findRequestTransition,
   TRANSITION_REJECTION_CAUSES,
   transitionRequest,
   type RequestTransitionAttempt,
   type TransitionRejectionCause,
 } from "./transition_policy";
-import { ACCEPTANCE_STATE, SPRINT_1_REQUEST_TRANSITIONS } from "./transitions";
+import {
+  ACCEPTANCE_STATE,
+  CLOSURE_REQUEST_TRANSITIONS,
+  REQUEST_TRANSITIONS,
+  SPRINT_1_REQUEST_TRANSITIONS,
+} from "./transitions";
 
 /** Datos ficticios: el actor no corresponde a ninguna persona real. */
 const actor = { actorId: "profesional-ficticio-1", occurredAt: 1_700_000_000_000 };
 
-describe("findSprint1Transition", () => {
-  test("encuentra cada transición declarada en la tabla", () => {
-    for (const row of SPRINT_1_REQUEST_TRANSITIONS) {
-      expect(findSprint1Transition(row.from, row.to)).toBe(row);
+describe("findRequestTransition", () => {
+  test("encuentra cada transición declarada en las tablas", () => {
+    for (const row of REQUEST_TRANSITIONS) {
+      expect(findRequestTransition(row.from, row.to)).toBe(row);
     }
   });
 
   test("devuelve undefined para cualquier par ausente", () => {
-    expect(findSprint1Transition("received", "accepted")).toBeUndefined();
-    expect(findSprint1Transition("accepted", "under_review")).toBeUndefined();
-    expect(findSprint1Transition("received", "received")).toBeUndefined();
-    expect(findSprint1Transition("under_review", "cancelled")).toBeUndefined();
+    expect(findRequestTransition("received", "accepted")).toBeUndefined();
+    expect(findRequestTransition("accepted", "under_review")).toBeUndefined();
+    expect(findRequestTransition("received", "received")).toBeUndefined();
+    expect(findRequestTransition("accepted", "cancelled")).toBeUndefined();
+    expect(findRequestTransition("received", "closed_without_accompaniment")).toBeUndefined();
+    expect(findRequestTransition("cancelled", "received")).toBeUndefined();
+    expect(findRequestTransition("under_review", "referred")).toBeUndefined();
   });
 });
 
 describe("transitionRequest", () => {
-  test("aplica cada transición de Sprint 1 registrando actor y fecha", () => {
-    for (const row of SPRINT_1_REQUEST_TRANSITIONS) {
+  test("aplica cada transición declarada registrando actor y fecha", () => {
+    for (const row of REQUEST_TRANSITIONS) {
       const result = transitionRequest({ ...actor, from: row.from, to: row.to, reason: "motivo" });
       expect(result).toMatchObject({
         status: "applied",
@@ -87,7 +100,7 @@ describe("transitionRequest", () => {
   });
 
   test("señala la apertura del acompañamiento solo al llegar a accepted", () => {
-    for (const row of SPRINT_1_REQUEST_TRANSITIONS) {
+    for (const row of REQUEST_TRANSITIONS) {
       const result = transitionRequest({ ...actor, from: row.from, to: row.to, reason: "motivo" });
       expect(result).toMatchObject({ opensAccompaniment: row.to === "accepted" });
     }
@@ -116,7 +129,7 @@ describe("transitionRequest", () => {
         else causes.add(result.cause);
       }
     }
-    const declared = SPRINT_1_REQUEST_TRANSITIONS.map((row) => `${row.from} -> ${row.to}`);
+    const declared = REQUEST_TRANSITIONS.map((row) => `${row.from} -> ${row.to}`);
     expect(applied.sort()).toEqual([...declared].sort());
     expect(causes).toEqual(new Set(["transition_not_allowed"]));
   });
@@ -157,7 +170,7 @@ describe("transitionRequest", () => {
   );
 
   test.each(FUTURE_REQUEST_STATES)(
-    "rechaza %s como destino desde todo estado de Sprint 1",
+    "rechaza %s, sin reglas acordadas, como destino desde todo estado de Sprint 1",
     (future) => {
       for (const from of SPRINT_1_REQUEST_STATES) {
         expect(transitionRequest({ ...actor, from, to: future, reason: "motivo" })).toStrictEqual({
@@ -177,7 +190,7 @@ describe("transitionRequest", () => {
     }
   });
 
-  test("exige motivo solo en el paso a espera", () => {
+  test("entre los pasos de Sprint 1, exige motivo solo en el paso a espera", () => {
     const toAwaiting = {
       ...actor,
       from: "under_review",
@@ -196,7 +209,7 @@ describe("transitionRequest", () => {
     });
   });
 
-  test.each(SPRINT_1_REQUEST_TRANSITIONS)(
+  test.each(REQUEST_TRANSITIONS)(
     "sin motivo, $from -> $to responde lo que la tabla declara",
     (row) => {
       expect(transitionRequest({ ...actor, from: row.from, to: row.to })).toMatchObject(
@@ -208,7 +221,7 @@ describe("transitionRequest", () => {
   );
 
   test("exige actor en toda transición", () => {
-    for (const row of SPRINT_1_REQUEST_TRANSITIONS) {
+    for (const row of REQUEST_TRANSITIONS) {
       for (const actorId of ["", "   "]) {
         expect(
           transitionRequest({ ...actor, actorId, from: row.from, to: row.to, reason: "motivo" }),
@@ -270,4 +283,65 @@ describe("transitionRequest", () => {
       expect(attempt).toStrictEqual(copy);
     }
   });
+});
+
+describe("cierres sin acompañamiento (TI2-85)", () => {
+  test.each(CLOSURE_REQUEST_TRANSITIONS)(
+    "$from -> $to se aplica con el motivo recortado y sin abrir acompañamiento",
+    (row) => {
+      const result = transitionRequest({
+        ...actor,
+        from: row.from,
+        to: row.to,
+        reason: "  Ya cuento con el apoyo por otra vía  ",
+      });
+      expect(result).toStrictEqual({
+        status: "applied",
+        change: {
+          from: row.from,
+          to: row.to,
+          ...actor,
+          reason: "Ya cuento con el apoyo por otra vía",
+        },
+        opensAccompaniment: false,
+      });
+    },
+  );
+
+  test.each(CLOSURE_REQUEST_TRANSITIONS)(
+    "$from -> $to sin motivo o con motivo en blanco se rechaza sin registro",
+    (row) => {
+      for (const reason of [undefined, "", "   "]) {
+        expect(transitionRequest({ ...actor, from: row.from, to: row.to, reason })).toStrictEqual({
+          status: "rejected",
+          cause: "reason_required",
+        });
+      }
+    },
+  );
+
+  test("desde la aceptación no se cancela ni se cierra", () => {
+    for (const to of CLOSURE_REQUEST_STATES) {
+      expect(
+        transitionRequest({ ...actor, from: ACCEPTANCE_STATE, to, reason: "motivo" }),
+      ).toStrictEqual({ status: "rejected", cause: "transition_not_allowed" });
+    }
+  });
+
+  /**
+   * Repetir: el segundo intento parte del estado que dejó el primero, como lo
+   * hará la capa de aplicación al leer el estado persistido.
+   */
+  test.each(CLOSURE_REQUEST_TRANSITIONS)(
+    "tras $from -> $to, ningún intento posterior procede desde el estado real",
+    (row) => {
+      const first = transitionRequest({ ...actor, from: row.from, to: row.to, reason: "motivo" });
+      assert(first.status === "applied");
+      for (const to of REQUEST_STATES) {
+        expect(
+          transitionRequest({ ...actor, from: first.change.to, to, reason: "motivo" }),
+        ).toStrictEqual({ status: "rejected", cause: "transition_not_allowed" });
+      }
+    },
+  );
 });
