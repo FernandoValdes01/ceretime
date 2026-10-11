@@ -1,8 +1,10 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import type { StudentRequest } from "@/application/student-area-models";
+import type { StudentAreaCollectionStatus } from "@/presentation/hooks/useStudentArea";
+import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
 import { useStudentAreaContext } from "./student-area-provider";
@@ -25,7 +27,6 @@ function StateMessage({
       <StudentText
         weight="semibold"
         accessibilityRole="header"
-        accessibilityLiveRegion="polite"
         className="text-student-text text-xl leading-[28px]"
         selectable
       >
@@ -83,16 +84,21 @@ function RequestCard({ request }: { request: StudentRequest }) {
   );
 }
 
+function listAnnouncement(status: StudentAreaCollectionStatus): string | null {
+  if (status === "loading") return "Cargando solicitudes.";
+  if (status === "error") return "No pudimos cargar tus solicitudes.";
+  if (status === "empty") return "Aún no tienes solicitudes.";
+  if (status === "success") return "Solicitudes cargadas.";
+  return null;
+}
+
 export default function StudentRequestsScreen() {
   const { requests } = useStudentAreaContext();
 
   return (
     <StudentScreen showIntroduction={false}>
-      {requests.status === "loading" ? (
-        <StateMessage title="Cargando solicitudes…">
-          <ActivityIndicator accessible={false} color="#00695b" />
-        </StateMessage>
-      ) : null}
+      <OperationAnnouncement message={listAnnouncement(requests.status)} />
+      {requests.status === "loading" ? <StateMessage title="Cargando solicitudes…" /> : null}
 
       {requests.status === "error" ? (
         <StateMessage title="No pudimos cargar tus solicitudes">

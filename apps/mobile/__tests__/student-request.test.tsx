@@ -14,6 +14,11 @@ import { fillRequiredStudentRequestFields } from "./student-request-test-helpers
 
 const appDirectory = path.resolve(__dirname, "../app");
 
+afterEach(() => {
+  jest.clearAllMocks();
+  jest.restoreAllMocks();
+});
+
 const testReceipt: StudentRequestSubmissionReceipt = {
   requestId: "SOL-DEMO-TEST",
   receivedAt: "2026-09-10T12:00:00.000Z",
@@ -228,6 +233,7 @@ describe("Formulario de solicitud del estudiante", () => {
   });
 
   test("conserva los datos después de un error y vuelve a enviar los valores visibles", async () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     const commands: SubmitStudentRequestCommand[] = [];
     let attempts = 0;
     const submitter: StudentRequestSubmitter = {
@@ -238,7 +244,7 @@ describe("Formulario de solicitud del estudiante", () => {
         return testReceipt;
       },
     };
-    render(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
+    const view = render(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
     fillRequiredStudentRequestFields();
     fireEvent.press(screen.getByRole("checkbox", { name: "Persona de apoyo" }));
 
@@ -246,12 +252,18 @@ describe("Formulario de solicitud del estudiante", () => {
 
     expect(await screen.findByText("No pudimos enviar la solicitud ficticia.")).toBeOnTheScreen();
     expect(screen.getByTestId("submission-error")).toHaveProp("entering");
+    expect(screen.getByTestId("submission-error")).toHaveProp("accessibilityLiveRegion", "none");
     expect(screen.getByTestId("submission-error")).toHaveStyle({ borderCurve: "continuous" });
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
     fireEvent.changeText(
       screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false }),
       "Necesito acceder a las lecturas actualizadas.",
     );
+    view.rerender(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
+    expect(announce.mock.calls.map(([message]) => message)).toEqual([
+      "Enviando solicitud ficticia.",
+      "No pudimos enviar la solicitud ficticia. Puedes reintentar.",
+    ]);
     fireEvent.press(screen.getByRole("button", { name: "Reintentar envío" }));
 
     expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
@@ -270,9 +282,21 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(commands[1]).toMatchObject({
       needSummary: "Necesito acceder a las lecturas actualizadas.",
     });
+    view.rerender(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
+    expect(announce.mock.calls.map(([message]) => message)).toEqual([
+      "Enviando solicitud ficticia.",
+      "No pudimos enviar la solicitud ficticia. Puedes reintentar.",
+      "Enviando solicitud ficticia.",
+      "Solicitud ficticia enviada.",
+    ]);
+    expect(screen.getByTestId("request-confirmation")).toHaveProp(
+      "accessibilityLiveRegion",
+      "none",
+    );
   });
 
   test("impide iniciar dos envíos mientras el primero sigue pendiente", async () => {
+    const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     let resolveSubmission!: (receipt: StudentRequestSubmissionReceipt) => void;
     const pending = new Promise<StudentRequestSubmissionReceipt>((resolve) => {
       resolveSubmission = resolve;
@@ -287,16 +311,22 @@ describe("Formulario de solicitud del estudiante", () => {
     const modality = screen.getByRole("radio", { name: "En línea" });
     const weekday = screen.getByRole("checkbox", { name: /Lunes/ });
 
-    fireEvent.press(action);
-    fireEvent.press(action);
+    act(() => {
+      fireEvent.press(action);
+      fireEvent.press(action);
+    });
 
     expect(submitStudentRequest).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(announce).toHaveBeenLastCalledWith("Enviando solicitud ficticia.");
     expect(screen.getByRole("button", { name: "Enviando solicitud…" })).toBeDisabled();
     expect(needSummary).toHaveProp("editable", false);
     expect(modality).toBeDisabled();
     expect(weekday).toBeDisabled();
     await act(async () => resolveSubmission(testReceipt));
     expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
+    expect(announce).toHaveBeenCalledTimes(2);
+    expect(announce).toHaveBeenLastCalledWith("Solicitud ficticia enviada.");
   });
 
   test("el formulario no conserva el borrador después de cerrar sesión", async () => {

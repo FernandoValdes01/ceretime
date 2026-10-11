@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Ref } from "react";
+import { useRef, useState, type Ref } from "react";
 import { AccessibilityInfo, Keyboard, Pressable, TextInput, View } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import type {
@@ -7,7 +7,11 @@ import type {
   SubmitStudentRequestCommand,
 } from "@/application/student-area-models";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
-import { useSubmitStudentRequest } from "@/presentation/hooks/use-submit-student-request";
+import {
+  useSubmitStudentRequest,
+  type StudentRequestSubmissionStatus,
+} from "@/presentation/hooks/use-submit-student-request";
+import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text, useStudentFont } from "./student-text";
 import { AppIcon } from "../components/app-icon";
@@ -103,13 +107,20 @@ function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCom
   };
 }
 
+function submissionAnnouncement(status: StudentRequestSubmissionStatus): string | null {
+  if (status === "submitting") return "Enviando solicitud ficticia.";
+  if (status === "error") return "No pudimos enviar la solicitud ficticia. Puedes reintentar.";
+  if (status === "success") return "Solicitud ficticia enviada.";
+  return null;
+}
+
 function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubmissionReceipt }) {
   return (
     <Animated.View
       testID="request-confirmation"
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
-      accessibilityLiveRegion="polite"
+      accessibilityLiveRegion="none"
       className="gap-5"
     >
       <View
@@ -201,23 +212,19 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
       AccessibilityInfo.announceForAccessibility(`Revisa el formulario. ${nextErrors[firstError]}`);
     } else {
       Keyboard.dismiss();
-      AccessibilityInfo.announceForAccessibility("Enviando solicitud ficticia.");
       void submission.submit(toSubmissionCommand(values));
     }
   }
 
-  useEffect(() => {
-    if (submission.status === "error") {
-      AccessibilityInfo.announceForAccessibility(
-        "No pudimos enviar la solicitud ficticia. Puedes reintentar.",
-      );
-    } else if (submission.status === "success") {
-      AccessibilityInfo.announceForAccessibility("Solicitud ficticia enviada.");
-    }
-  }, [submission.status]);
+  const announcement = submissionAnnouncement(submission.status);
 
   if (submission.status === "success" && submission.receipt) {
-    return <RequestConfirmation receipt={submission.receipt} />;
+    return (
+      <View className="gap-6">
+        <OperationAnnouncement message={announcement} />
+        <RequestConfirmation receipt={submission.receipt} />
+      </View>
+    );
   }
 
   function field(
@@ -296,6 +303,7 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
         formTop.current = event.nativeEvent.layout.y;
       }}
     >
+      <OperationAnnouncement message={announcement} />
       <View className="p-4 gap-2 bg-student-muted rounded-xl" style={{ borderCurve: "continuous" }}>
         <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
           Formulario de prueba
@@ -485,7 +493,7 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
           testID="submission-error"
           entering={FadeIn.duration(200)}
           exiting={FadeOut.duration(150)}
-          accessibilityLiveRegion="assertive"
+          accessibilityLiveRegion="none"
           className="gap-3 p-4 rounded-xl border-2 border-student-error bg-student-surface"
           style={{ borderCurve: "continuous" }}
         >
