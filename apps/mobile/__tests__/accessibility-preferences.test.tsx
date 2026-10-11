@@ -22,6 +22,7 @@ import {
   useAccessibilityPreferences,
   type AccessibilityPreferencesState,
 } from "@/presentation/accessibility/accessibility-preferences-provider";
+import { AccessibilityPreferencesScreen } from "@/presentation/accessibility/accessibility-preferences-screen";
 
 const enlargedPreferences: AccessibilityPreferences = {
   textScale: 2,
@@ -387,5 +388,115 @@ describe("proveedor único de preferencias", () => {
       await pendingAfterUnmount.promise;
     });
     expect(currentState).toBe(lastState);
+  });
+});
+
+describe("centro de preferencias", () => {
+  test("expone hidratación y valores almacenados antes de habilitar los controles", async () => {
+    const pending = deferred<Awaited<ReturnType<AccessibilityPreferencesPort["read"]>>>();
+    const port: AccessibilityPreferencesPort = {
+      read: () => pending.promise,
+      update: jest.fn(async () => ({ ok: false as const, error: "write-failed" as const })),
+    };
+
+    render(
+      <AccessibilityPreferencesProvider port={port}>
+        <AccessibilityPreferencesScreen />
+      </AccessibilityPreferencesProvider>,
+    );
+
+    expect(screen.getByText("Cargando tus preferencias…")).toBeOnTheScreen();
+    expect(
+      screen.getByRole("radio", { name: "Tamaño del texto: Seguir el sistema" }).props
+        .accessibilityState,
+    ).toMatchObject({ disabled: true });
+    await act(async () => {
+      pending.resolve({
+        preferences: { textScale: 1.5, highContrast: "on", reduceMotion: "on" },
+        source: "stored",
+        error: null,
+      });
+      await pending.promise;
+    });
+
+    expect(
+      await screen.findByText(
+        "Texto al 150 %, alto contraste activado y reducción de movimiento activada.",
+      ),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole("radio", { name: "Tamaño del texto: 150 %" }).props.accessibilityState,
+    ).toMatchObject({ checked: true, disabled: false });
+  });
+
+  test("actualiza el proveedor compartido y anuncia la configuración aplicada", async () => {
+    let preferences = defaultAccessibilityPreferences;
+    const port: AccessibilityPreferencesPort = {
+      read: jest.fn(async () => ({ preferences, source: "default" as const, error: null })),
+      update: jest.fn(async (patch) => {
+        preferences = { ...preferences, ...patch };
+        return { ok: true as const, preferences };
+      }),
+    };
+
+    render(
+      <AccessibilityPreferencesProvider port={port}>
+        <AccessibilityPreferencesScreen />
+      </AccessibilityPreferencesProvider>,
+    );
+
+    const enlargedText = await screen.findByRole("radio", {
+      name: "Tamaño del texto: 150 %",
+    });
+    await act(async () => {
+      fireEvent.press(enlargedText);
+    });
+
+    expect(port.update).toHaveBeenCalledWith({ textScale: 1.5 });
+    expect(
+      await screen.findByText(
+        "Texto al 150 %, alto contraste desactivado y reducción de movimiento desactivada.",
+      ),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole("radio", { name: "Tamaño del texto: 150 %" }).props.accessibilityState,
+    ).toMatchObject({ checked: true });
+    expect(screen.getByText("Preferencia guardada.")).toBeOnTheScreen();
+  });
+
+  test("expone el fallo de guardado sin marcar éxito ni cambiar el valor", async () => {
+    const port: AccessibilityPreferencesPort = {
+      read: jest.fn(async () => ({
+        preferences: defaultAccessibilityPreferences,
+        source: "default" as const,
+        error: null,
+      })),
+      update: jest.fn(async () => ({ ok: false as const, error: "write-failed" as const })),
+    };
+
+    render(
+      <AccessibilityPreferencesProvider port={port}>
+        <AccessibilityPreferencesScreen />
+      </AccessibilityPreferencesProvider>,
+    );
+
+    const enlargedText = await screen.findByRole("radio", {
+      name: "Tamaño del texto: 200 %",
+    });
+    await act(async () => {
+      fireEvent.press(enlargedText);
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No fue posible guardar tus preferencias. Se conservan los valores anteriores.",
+    );
+    expect(screen.queryByText("Preferencia guardada.")).not.toBeOnTheScreen();
+    expect(
+      screen.getByRole("radio", { name: "Tamaño del texto: Seguir el sistema" }).props
+        .accessibilityState,
+    ).toMatchObject({ checked: true });
+    expect(
+      screen.getByRole("radio", { name: "Tamaño del texto: 200 %" }).props.accessibilityState,
+    ).toMatchObject({ checked: false });
   });
 });
