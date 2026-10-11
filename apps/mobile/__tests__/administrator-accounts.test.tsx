@@ -7,6 +7,7 @@ import {
   type AdministratorAccountsState,
 } from "@/presentation/hooks/use-administrator-accounts";
 import { router } from "expo-router";
+import { AccessibilityInfo } from "react-native";
 import {
   act as routerAct,
   fireEvent,
@@ -222,19 +223,31 @@ describe("flujo administrativo", () => {
   });
 
   test("habilita una cuenta y confirma el nuevo estado", async () => {
+    const focusEvent = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent");
     renderRouter(appDirectory);
 
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Administrador" }));
     fireEvent.press(await screen.findByRole("button", { name: "Abrir habilitación de cuentas" }));
 
     expect(await screen.findByText("Camila Soto")).toBeOnTheScreen();
+    const pendingStatus = screen.getAllByLabelText("Estado: Pendiente")[0];
+    expect(pendingStatus).toBeDefined();
+    expect(pendingStatus.props.accessible).toBe(true);
+    expect(screen.getAllByText("Pendiente")[0]?.props.accessible).toBe(false);
+    expect(screen.getByText("C").props.accessible).toBe(false);
     fireEvent.press(screen.getByRole("button", { name: "Habilitar cuenta de Camila Soto" }));
 
     expect(await screen.findByText("Cuenta habilitada")).toBeOnTheScreen();
-    expect(screen.getByText("La cuenta institucional quedó habilitada.")).toBeOnTheScreen();
+    const successMessage = screen.getByLabelText("La cuenta institucional quedó habilitada.");
+    expect(successMessage.props.accessible).toBe(true);
+    expect(screen.getByText("La cuenta institucional quedó habilitada.").props.accessible).toBe(
+      false,
+    );
+    await waitFor(() => expect(focusEvent).toHaveBeenCalledWith(expect.anything(), "focus"));
     expect(
       screen.queryByRole("button", { name: "Habilitar cuenta de Camila Soto" }),
     ).not.toBeOnTheScreen();
+    focusEvent.mockRestore();
   });
 
   test("muestra un error controlado y permite reintentar la habilitación", async () => {

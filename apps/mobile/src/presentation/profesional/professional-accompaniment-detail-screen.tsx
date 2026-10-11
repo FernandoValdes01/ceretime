@@ -85,6 +85,7 @@ export function ProfessionalAccompanimentDetailContent({
         message={error instanceof Error ? error.message : "Intenta nuevamente."}
       >
         <Pressable
+          cssInterop={false}
           accessibilityLabel="Reintentar carga del acompañamiento"
           accessibilityRole="button"
           onPress={reload}
