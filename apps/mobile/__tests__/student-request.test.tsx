@@ -1,5 +1,5 @@
 import path from "node:path";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, Keyboard } from "react-native";
 import { render } from "@testing-library/react-native";
 import type {
   StudentRequestSubmissionReceipt,
@@ -144,10 +144,17 @@ describe("Formulario de solicitud del estudiante", () => {
   });
   test("el stack conserva el retorno desde Nueva solicitud", async () => {
     const navigation = await openForm();
-    expect(navigation.getPathname()).toBe("/estudiante/nueva-solicitud");
-    await act(async () => router.back());
-    expect(await screen.findByText("Inicio de Estudiante")).toBeOnTheScreen();
-    expect(navigation.getPathname()).toBe("/estudiante");
+    const dismissKeyboard = jest.spyOn(Keyboard, "dismiss").mockImplementation(() => {
+      expect(navigation.getPathname()).toBe("/estudiante/nueva-solicitud");
+    });
+    try {
+      await act(async () => fireEvent.press(screen.getByRole("button", { name: "Volver" })));
+      expect(dismissKeyboard).toHaveBeenCalledTimes(1);
+      expect(await screen.findByText("Inicio de Estudiante")).toBeOnTheScreen();
+      expect(navigation.getPathname()).toBe("/estudiante");
+    } finally {
+      dismissKeyboard.mockRestore();
+    }
   });
 
   test("muestra errores visibles y permite corregirlos sin perder valores", async () => {
