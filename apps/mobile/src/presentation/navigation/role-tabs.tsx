@@ -1,10 +1,13 @@
-import { Platform, Text, useWindowDimensions, type ColorValue } from "react-native";
+import { Platform, useWindowDimensions, type ColorValue } from "react-native";
 
 import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { AppIconName } from "../components/app-icon";
+import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
+import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
 import { AppIcon } from "../components/app-icon";
+import { StudentText } from "../estudiante/student-text";
 
 const baseRoleTabScreenOptions = {
   headerShown: false,
@@ -22,20 +25,29 @@ const baseRoleTabScreenOptions = {
 
 export function useRoleTabScreenOptions() {
   const { bottom } = useSafeAreaInsets();
-  const { fontScale } = useWindowDimensions();
+  const { fontScale: systemFontScale } = useWindowDimensions();
+  const accessibility = useOptionalAccessibilityPreferences();
+  const fontScale = accessibility?.effective.textScale ?? systemFontScale;
+  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
 
   return {
     ...baseRoleTabScreenOptions,
+    tabBarActiveTintColor: colors.primary,
+    tabBarInactiveTintColor: colors.secondary,
     tabBarLabelPosition: "below-icon" as const,
     tabBarLabel: ({ children, color }: { children: string; color: ColorValue }) => (
-      <Text style={[baseRoleTabScreenOptions.tabBarLabelStyle, { color, textAlign: "center" }]}>
+      <StudentText
+        style={[baseRoleTabScreenOptions.tabBarLabelStyle, { color, textAlign: "center" }]}
+      >
         {children}
-      </Text>
+      </StudentText>
     ),
     tabBarStyle: {
       ...baseRoleTabScreenOptions.tabBarStyle,
       height: 42 + 42 * Math.max(1, fontScale) + bottom,
       paddingBottom: Math.max(bottom, baseRoleTabScreenOptions.tabBarStyle.paddingBottom),
+      borderTopColor: colors.border,
+      backgroundColor: colors.surface,
     },
   };
 }

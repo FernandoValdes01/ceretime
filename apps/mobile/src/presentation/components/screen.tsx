@@ -1,6 +1,9 @@
 import { useState, type PropsWithChildren, type Ref } from "react";
-import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
+import { Pressable, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
+import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import { StudentText } from "../estudiante/student-text";
 import { AppHeader } from "./app-header";
 
 export function Screen({
@@ -17,9 +20,12 @@ export function Screen({
   showAppHeader?: boolean;
   headerTitle?: string;
 }>) {
+  const accessibility = useOptionalAccessibilityPreferences();
+  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+
   return (
     <SafeAreaView
-      style={styles.safeArea}
+      style={[styles.safeArea, { backgroundColor: colors.background }]}
       edges={showAppHeader ? ["top", "left", "right", "bottom"] : ["left", "right", "bottom"]}
     >
       {showAppHeader ? <AppHeader title={headerTitle} /> : null}
@@ -28,10 +34,14 @@ export function Screen({
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}
       >
-        <Text accessibilityRole="header" style={styles.title}>
+        <StudentText accessibilityRole="header" style={[styles.title, { color: colors.text }]}>
           {title}
-        </Text>
-        {description ? <Text style={styles.description}>{description}</Text> : null}
+        </StudentText>
+        {description ? (
+          <StudentText style={[styles.description, { color: colors.secondary }]}>
+            {description}
+          </StudentText>
+        ) : null}
         {children}
       </ScrollView>
     </SafeAreaView>
@@ -48,6 +58,8 @@ export function Action({
   disabled?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
+  const accessibility = useOptionalAccessibilityPreferences();
+  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
 
   return (
     <Pressable
@@ -61,12 +73,13 @@ export function Action({
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
-        focused && styles.focused,
+        focused && [styles.focused, { outlineColor: colors.focus }],
         pressed && styles.pressed,
         disabled && styles.disabled,
+        { backgroundColor: pressed ? colors.actionPressed : colors.action },
       ]}
     >
-      <Text style={styles.buttonLabel}>{label}</Text>
+      <StudentText style={[styles.buttonLabel, { color: colors.surface }]}>{label}</StudentText>
     </Pressable>
   );
 }
