@@ -49,7 +49,10 @@ export default function NewRequestScreen({
       >
         <StudentScreen
           scrollRef={scrollRef}
-          onBack={router.back}
+          onBack={() => {
+            Keyboard.dismiss();
+            router.back();
+          }}
           title="Solicitud de acompañamiento"
           description="Describe la necesidad que quieres abordar con CERETI. Esta solicitud no es un canal de urgencias."
         >
