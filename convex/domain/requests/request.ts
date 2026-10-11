@@ -19,7 +19,12 @@
  */
 
 import type { ApiResult } from "../errors/api_error";
-import { SPRINT_1_REQUEST_STATES, type Sprint1RequestState } from "./state";
+import {
+  isPersistableRequestState,
+  isSprint1RequestState,
+  type PersistableRequestState,
+  type Sprint1RequestState,
+} from "./state";
 
 /**
  * Tope del texto de necesidades de acceso en caracteres (TI2-23).
@@ -82,26 +87,27 @@ export function toAccessNeedsText(raw: string): string | null {
 }
 
 /**
- * Entidad pública de solicitud (TI2-8): espejo exacto de la fila de la tabla
+ * Entidad de solicitud (TI2-8): espejo exacto de la fila de la tabla
  * `requests` tal como la lee el Backend (`_id`, `studentId`, `status`,
  * `accessNeeds` como texto y `createdAt`). Un documento real de la tabla se
- * asigna directo a este tipo. Los identificadores son `string` plano para
- * no importar `convex/_generated`; los `Id` de Convex son asignables a
- * `string` y pasan directo al adaptador.
+ * asigna directo a este tipo, incluidas las cerradas o canceladas (TI2-85).
+ * Los identificadores son `string` plano para no importar
+ * `convex/_generated`; los `Id` de Convex son asignables a `string` y pasan
+ * directo al adaptador.
  */
 export interface AccompanimentRequest {
   readonly _id: string;
   readonly studentId: string;
-  readonly status: Sprint1RequestState;
+  readonly status: PersistableRequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
 }
 
 /**
- * Valida una fila persistida de `requests` y devuelve la entidad pública.
- * Rechaza un `status` que no sea un estado de Sprint 1 en vez de propagar
- * un literal desconocido: una fila con estado inválido es corrupción, no
- * una solicitud. El identificador es genérico para no importar
+ * Valida una fila persistida de `requests` y devuelve la entidad.
+ * Rechaza un `status` que no sea persistible en vez de propagar un literal
+ * desconocido: una fila con estado inválido es corrupción, no una
+ * solicitud. El identificador es genérico para no importar
  * `convex/_generated`: con `string` devuelve la entidad canónica y con un
  * `Id` de Convex preserva el tipo para los validadores de la API.
  * No transforma `AccompanimentRequestContent`: convertir el DTO de creación
@@ -114,16 +120,49 @@ export function toAccompanimentRequest<RowId extends string, StudentId extends s
   readonly accessNeeds: string;
   readonly createdAt: number;
 }): AccompanimentRequest & { readonly _id: RowId; readonly studentId: StudentId } {
-  if (!(SPRINT_1_REQUEST_STATES as readonly string[]).includes(row.status)) {
-    throw new Error(`Estado de solicitud desconocido en la fila ${row._id}: ${row.status}`);
+  const status = row.status;
+  if (!isPersistableRequestState(status)) {
+    throw new Error(`Estado de solicitud desconocido en la fila ${row._id}: ${status}`);
   }
   return {
     _id: row._id,
     studentId: row.studentId,
-    status: row.status as Sprint1RequestState,
+    status,
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   };
+}
+
+/**
+ * Solicitud tal como la entrega hoy `api.presentation.requests.*`: solo los
+ * cuatro estados de Sprint 1 (TI2-85).
+ *
+ * El contrato público no se amplió con los cierres porque Mobile deriva sus
+ * tipos de él y su mapeo de estados es exhaustivo: ampliarlo es un cambio
+ * incompatible que se coordina con TI4 en la tarea que publique cancelar y
+ * cerrar. Mientras tanto ninguna vía pública llega a un cierre, y una fila
+ * cerrada o cancelada se rechaza acá en vez de entregarse con un estado que
+ * los clientes no saben mostrar.
+ */
+export function toSprint1AccompanimentRequest<RowId extends string, StudentId extends string>(row: {
+  readonly _id: RowId;
+  readonly studentId: StudentId;
+  readonly status: string;
+  readonly accessNeeds: string;
+  readonly createdAt: number;
+}): AccompanimentRequest & {
+  readonly _id: RowId;
+  readonly studentId: StudentId;
+  readonly status: Sprint1RequestState;
+} {
+  const request = toAccompanimentRequest(row);
+  const status = request.status;
+  if (!isSprint1RequestState(status)) {
+    throw new Error(
+      `Estado de solicitud fuera del contrato público de Sprint 1 en la fila ${row._id}: ${status}`,
+    );
+  }
+  return { ...request, status };
 }
 
 /** Campos de la tabla `requests` que salen del contenido estructurado. */
