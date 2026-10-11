@@ -234,6 +234,7 @@ describe("Formulario de solicitud del estudiante", () => {
 
   test("conserva los datos después de un error y vuelve a enviar los valores visibles", async () => {
     const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
+    const focus = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent");
     const commands: SubmitStudentRequestCommand[] = [];
     let attempts = 0;
     const submitter: StudentRequestSubmitter = {
@@ -244,7 +245,8 @@ describe("Formulario de solicitud del estudiante", () => {
         return testReceipt;
       },
     };
-    const view = render(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
+    const revealGroup = jest.fn();
+    const view = render(<RequestForm submitter={submitter} onRevealGroup={revealGroup} />);
     fillRequiredStudentRequestFields();
     fireEvent.press(screen.getByRole("checkbox", { name: "Persona de apoyo" }));
 
@@ -253,6 +255,13 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(await screen.findByText("No pudimos enviar la solicitud ficticia.")).toBeOnTheScreen();
     expect(screen.getByTestId("submission-error")).toHaveProp("entering");
     expect(screen.getByTestId("submission-error")).toHaveProp("accessibilityLiveRegion", "none");
+    await waitFor(() => expect(focus).toHaveBeenCalledTimes(1));
+    expect(revealGroup).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByLabelText(
+        "No pudimos enviar la solicitud ficticia. Tus datos siguen en el formulario. Puedes reintentar.",
+      ),
+    ).toBeOnTheScreen();
     expect(screen.getByTestId("submission-error")).toHaveStyle({ borderCurve: "continuous" });
     expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
     fireEvent.changeText(
@@ -260,9 +269,9 @@ describe("Formulario de solicitud del estudiante", () => {
       "Necesito acceder a las lecturas actualizadas.",
     );
     view.rerender(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
+    expect(focus).toHaveBeenCalledTimes(1);
     expect(announce.mock.calls.map(([message]) => message)).toEqual([
       "Enviando solicitud ficticia.",
-      "No pudimos enviar la solicitud ficticia. Puedes reintentar.",
     ]);
     fireEvent.press(screen.getByRole("button", { name: "Reintentar envío" }));
 
@@ -285,7 +294,6 @@ describe("Formulario de solicitud del estudiante", () => {
     view.rerender(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
     expect(announce.mock.calls.map(([message]) => message)).toEqual([
       "Enviando solicitud ficticia.",
-      "No pudimos enviar la solicitud ficticia. Puedes reintentar.",
       "Enviando solicitud ficticia.",
       "Solicitud ficticia enviada.",
     ]);

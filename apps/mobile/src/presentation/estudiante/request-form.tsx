@@ -171,6 +171,8 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
   const accessControl = useRef<View>(null);
   const modalityControl = useRef<View>(null);
   const weekdayControl = useRef<View>(null);
+  const submissionError = useRef<View>(null);
+  const submissionErrorTop = useRef(0);
 
   function update<K extends keyof RequestFormValues>(key: K, value: RequestFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -303,7 +305,15 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
         formTop.current = event.nativeEvent.layout.y;
       }}
     >
-      <OperationAnnouncement message={announcement} />
+      <OperationAnnouncement
+        message={announcement}
+        focusTarget={submission.status === "error" ? submissionError : undefined}
+        onRevealTarget={
+          submission.status === "error"
+            ? () => onRevealGroup(formTop.current + submissionErrorTop.current)
+            : undefined
+        }
+      />
       <View className="p-4 gap-2 bg-student-muted rounded-xl" style={{ borderCurve: "continuous" }}>
         <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
           Formulario de prueba
@@ -494,15 +504,30 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
           entering={FadeIn.duration(200)}
           exiting={FadeOut.duration(150)}
           accessibilityLiveRegion="none"
+          onLayout={(event) => {
+            submissionErrorTop.current = event.nativeEvent.layout.y;
+          }}
           className="gap-3 p-4 rounded-xl border-2 border-student-error bg-student-surface"
           style={{ borderCurve: "continuous" }}
         >
-          <Text selectable weight="semibold" className="text-student-error text-lg leading-[29px]">
-            No pudimos enviar la solicitud ficticia.
-          </Text>
-          <Text selectable className="text-student-secondary text-base leading-[26px]">
-            Tus datos siguen en el formulario. Puedes intentar nuevamente.
-          </Text>
+          <View
+            ref={submissionError}
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel="No pudimos enviar la solicitud ficticia. Tus datos siguen en el formulario. Puedes reintentar."
+            className="gap-3"
+          >
+            <Text
+              selectable
+              weight="semibold"
+              className="text-student-error text-lg leading-[29px]"
+            >
+              No pudimos enviar la solicitud ficticia.
+            </Text>
+            <Text selectable className="text-student-secondary text-base leading-[26px]">
+              Tus datos siguen en el formulario. Puedes intentar nuevamente.
+            </Text>
+          </View>
           <StudentAction label="Reintentar envío" onPress={submit} />
         </Animated.View>
       )}
