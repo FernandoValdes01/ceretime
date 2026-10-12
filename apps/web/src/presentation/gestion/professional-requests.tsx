@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatPanelDate } from "../routes/student-panel-labels.ts";
@@ -177,10 +177,14 @@ function PageItems<Item extends RequestListItem>({
 }) {
   const page = usePage(cursor);
   const count = page === undefined ? 0 : page.page.length;
-  // Reporte en efecto (no en render): el ajuste en render dispara el aviso
-  // "Cannot update ... while rendering a different component". Con deps
-  // precisas solo corre cuando el conteo cambia.
-  useEffect(() => {
+  // Reporte en layout effect (no en render ni en efecto pasivo): en render
+  // dispara el aviso "Cannot update ... while rendering a different
+  // component", y con efecto pasivo el conteo llega después del paint — un
+  // frame donde conviven el aviso de vacío y las filas recién llegadas. El
+  // layout effect corre sincrónico antes del paint, sin parpadeo. Con deps
+  // precisas solo corre cuando el conteo cambia; el updater con guarda evita
+  // re-renders redundantes. Sin SSR en la app, no aplica su advertencia.
+  useLayoutEffect(() => {
     onCount(cursor, count);
   }, [cursor, count, onCount]);
   if (page === undefined) {
