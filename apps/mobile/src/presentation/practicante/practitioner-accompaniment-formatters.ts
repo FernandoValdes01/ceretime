@@ -13,12 +13,11 @@ export const practitionerAccompanimentStatusLabels: Record<
 export const practitionerAccompanimentStatusMeta: Record<
   PractitionerAccompanimentStatus,
   {
-    readonly backgroundColor: string;
-    readonly color: string;
     readonly icon: Extract<AppIconName, "circleCheck" | "clock" | "circleX">;
+    readonly tone: "success" | "warning" | "muted";
   }
 > = {
-  active: { backgroundColor: "#E8F4F1", color: "#087D70", icon: "circleCheck" },
-  paused: { backgroundColor: "#FFF3D8", color: "#8A5A00", icon: "clock" },
-  closed: { backgroundColor: "#EEF2F1", color: "#5B6C6E", icon: "circleX" },
+  active: { tone: "success", icon: "circleCheck" },
+  paused: { tone: "warning", icon: "clock" },
+  closed: { tone: "muted", icon: "circleX" },
 };

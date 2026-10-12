@@ -73,6 +73,7 @@ describe("pantalla de acompañamientos del Practicante", () => {
 
     expect(screen.getByText(accompaniment.objective)).toBeOnTheScreen();
     expect(screen.getByText("Activo")).toBeOnTheScreen();
+    expect(screen.getByLabelText("Estado: Activo")).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: /Acompañamiento/ })).toBeOnTheScreen();
     expect(screen.queryByText("Solo lectura")).not.toBeOnTheScreen();
     expect(screen.queryByText("studentId")).not.toBeOnTheScreen();
