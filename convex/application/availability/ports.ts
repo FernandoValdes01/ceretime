@@ -7,10 +7,11 @@ import type { ApiResult } from "../../domain/errors/api_error";
 /**
  * Puerto de persistencia de disponibilidad (TI2-95).
  *
- * Capa de Aplicación: fija lo que los casos de uso de TI2-97 leen de bloques
- * recurrentes y excepciones, sin Convex. Infraestructura lo cumple por forma
- * con `availabilityReader(ctx)` sin importar este archivo, y las pruebas de
- * los casos de uso pueden pasar un doble en memoria.
+ * Capa de Aplicación: fija lo que los casos de uso de TI2-97 leen y escriben
+ * de bloques recurrentes y excepciones, sin Convex. Infraestructura lo cumple
+ * por forma con `availabilityReader(ctx)` y `availabilityWriter(ctx)` sin
+ * importar este archivo, y las pruebas de los casos de uso pueden pasar un
+ * doble en memoria.
  *
  * Los tipos son los contratos de TI2-81/TI2-87 más lo que la persistencia
  * guarda y el contrato no trae: si el bloque sigue vigente y, en la
@@ -51,4 +52,29 @@ export interface AvailabilityReader {
   listExceptions(
     range: AvailabilityExceptionRange,
   ): Promise<ApiResult<readonly StoredAvailabilityException[]>>;
+}
+
+/**
+ * Escrituras de disponibilidad. Validan integridad, no autorización: el caso
+ * de uso llama antes a TI2-86. Responden `conflict` sin escribir cuando una
+ * referencia no existe (profesional, bloque, excepción o sala vigente), el
+ * bloque cancelado es de otro profesional, la excepción trae más de una
+ * ventana, lo guardado haría fallar la expansión de TI2-81 o superaría el
+ * tope que después impide leerlo.
+ */
+export interface AvailabilityWriter {
+  insertBlock(
+    block: Omit<AvailabilityBlock, "id" | "version">,
+  ): Promise<ApiResult<{ readonly blockId: string }>>;
+  /** Reemplaza la ventana; el profesional guardado no cambia. */
+  updateBlock(
+    blockId: string,
+    block: Omit<AvailabilityBlock, "id" | "professionalId" | "version">,
+  ): Promise<ApiResult<null>>;
+  /** Reactivar exige que la sala del bloque siga vigente. */
+  setBlockActive(blockId: string, isActive: boolean): Promise<ApiResult<null>>;
+  insertException(
+    exception: Omit<StoredAvailabilityException, "id" | "version">,
+  ): Promise<ApiResult<{ readonly exceptionId: string }>>;
+  removeException(exceptionId: string): Promise<ApiResult<null>>;
 }
