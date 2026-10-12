@@ -2,21 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatPanelDate, requestStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
-// Reutiliza el lenguaje visual del panel (listas, fichas, errores): una sola
-// fuente para no duplicar el sistema de diseño entre vistas.
-import "../routes/student-portal.css";
-import "./student-requests.css";
 import { useOwnRequestDetail, useOwnRequests } from "./student-requests-data.ts";
 
 /**
  * Listado y detalle de solicitudes propias del Estudiante (TI2-89).
  *
- * Lee solo queries públicas ya existentes; la autorización vive en Convex.
- * `listOwnRequests` devuelve solo filas propias y `getRequest` detalla la
- * solicitud del titular. Otra cuenta, otro rol o una cuenta pendiente de
- * habilitación reciben la denegación genérica del Backend sin filtrar
- * existencia ni titularidad. Sin acciones de crear ni operar: eso es de
- * otras entregas.
+ * Primera pantalla web en utilidades Tailwind (TI2-130): usa solo tokens del
+ * `@theme` de `index.css`, sin CSS propio. Lee solo queries públicas ya
+ * existentes; la autorización vive en Convex. `listOwnRequests` devuelve solo
+ * filas propias y `getRequest` detalla la solicitud del titular. Otra cuenta,
+ * otro rol o una cuenta pendiente de habilitación reciben la denegación
+ * genérica del Backend sin filtrar existencia ni titularidad. Sin acciones de
+ * crear ni operar: eso es de otras entregas.
  */
 export function StudentRequestsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -26,11 +23,18 @@ export function StudentRequestsPage() {
   }, []);
 
   return (
-    <section aria-labelledby="student-requests-page-title">
-      <h1 id="student-requests-page-title" ref={headingRef} tabIndex={-1}>
+    <section aria-labelledby="student-requests-page-title" className="flex flex-col gap-6">
+      <h1
+        id="student-requests-page-title"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-[1.75rem] leading-snug font-semibold text-primary"
+      >
         Mis solicitudes
       </h1>
-      <p>Consulta el estado de tus solicitudes registradas.</p>
+      <p className="text-base text-on-surface">
+        Consulta el estado de tus solicitudes registradas.
+      </p>
       <StudentPanelErrorBoundary subject="tus solicitudes" level="section">
         <OwnRequestsBody />
       </StudentPanelErrorBoundary>
@@ -107,7 +111,10 @@ function OwnRequestsBody() {
 
   if (pending && items.length === 0) {
     return (
-      <p role="status" className="student-portal__loading">
+      <p
+        role="status"
+        className="rounded-lg bg-surface-container-low p-6 text-lg text-on-surface-variant"
+      >
         Cargando tus solicitudes…
       </p>
     );
@@ -115,8 +122,8 @@ function OwnRequestsBody() {
 
   if (items.length === 0) {
     return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">Aún no tienes solicitudes registradas.</p>
+      <div className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
+        <p className="mb-2 font-semibold text-on-surface">Aún no tienes solicitudes registradas.</p>
         <p>Cuando envíes tu primera solicitud, aparecerá aquí con su estado.</p>
       </div>
     );
@@ -124,16 +131,21 @@ function OwnRequestsBody() {
 
   return (
     <>
-      <ul className="student-portal__list">
+      <ul className="grid gap-3 p-0">
         {items.map((request) => (
-          <li key={request._id} className="student-portal__item">
+          <li
+            key={request._id}
+            className="rounded-md border border-border-low bg-surface-container-lowest px-5 py-4"
+          >
             <Link
               to="/estudiante/solicitudes/$requestId"
               params={{ requestId: request._id }}
-              className="estudiante-request-link"
+              className="flex min-h-[44px] items-center gap-2 rounded-[0.5rem] px-3 py-2 no-underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             >
-              <span className="student-portal__chip">{requestStatusLabel(request.status)}</span>
-              <span className="student-portal__item-meta">
+              <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold text-on-surface">
+                {requestStatusLabel(request.status)}
+              </span>
+              <span className="text-base text-on-surface-variant">
                 Registrada el {formatPanelDate(request.createdAt)}
               </span>
             </Link>
@@ -141,10 +153,10 @@ function OwnRequestsBody() {
         ))}
       </ul>
       {done ? null : (
-        <div className="student-portal__cta">
+        <div className="mt-6 flex flex-col gap-4">
           <button
             type="button"
-            className="student-portal__btn student-portal__btn--primary"
+            className="inline-flex min-h-12 min-w-11 items-center justify-center gap-3 rounded-[0.5rem] bg-primary px-6 py-2.5 text-base font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-60 not-disabled:hover:bg-on-primary-fixed-variant focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
             disabled={pending}
             onClick={loadMore}
             aria-busy={pending}
@@ -152,7 +164,7 @@ function OwnRequestsBody() {
             {pending ? "Cargando…" : "Cargar más"}
           </button>
           {pending && (
-            <span role="status" aria-live="polite" className="student-portal__sr-only">
+            <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>
           )}
@@ -178,12 +190,20 @@ export function StudentRequestDetailPage({ requestId }: { requestId: string }) {
   }, []);
 
   return (
-    <section aria-labelledby="student-request-detail-title">
-      <h1 id="student-request-detail-title" ref={headingRef} tabIndex={-1}>
+    <section aria-labelledby="student-request-detail-title" className="flex flex-col gap-6">
+      <h1
+        id="student-request-detail-title"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-[1.75rem] leading-snug font-semibold text-primary"
+      >
         Detalle de la solicitud
       </h1>
       <p>
-        <Link to="/estudiante/solicitudes" className="estudiante-request-link">
+        <Link
+          to="/estudiante/solicitudes"
+          className="inline-flex min-h-[44px] items-center rounded-[0.5rem] px-3 py-2 no-underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+        >
           Volver a solicitudes
         </Link>
       </p>
@@ -199,25 +219,28 @@ function OwnRequestDetailBody({ requestId }: { requestId: string }) {
 
   if (request === undefined) {
     return (
-      <p role="status" className="student-portal__loading">
+      <p
+        role="status"
+        className="rounded-lg bg-surface-container-low p-6 text-lg text-on-surface-variant"
+      >
         Cargando el detalle…
       </p>
     );
   }
 
   return (
-    <dl>
-      <div>
-        <dt>Estado</dt>
-        <dd>{requestStatusLabel(request.status)}</dd>
+    <dl className="rounded-lg border border-border-low bg-surface-container-lowest p-8">
+      <div className="py-2">
+        <dt className="font-semibold text-on-surface">Estado</dt>
+        <dd className="m-0 text-on-surface">{requestStatusLabel(request.status)}</dd>
       </div>
-      <div>
-        <dt>Registrada</dt>
-        <dd>{formatPanelDate(request.createdAt)}</dd>
+      <div className="py-2">
+        <dt className="font-semibold text-on-surface">Registrada</dt>
+        <dd className="m-0 text-on-surface">{formatPanelDate(request.createdAt)}</dd>
       </div>
-      <div>
-        <dt>Necesidades de acceso</dt>
-        <dd>{request.accessNeeds}</dd>
+      <div className="py-2">
+        <dt className="font-semibold text-on-surface">Necesidades de acceso</dt>
+        <dd className="m-0 text-on-surface">{request.accessNeeds}</dd>
       </div>
     </dl>
   );
