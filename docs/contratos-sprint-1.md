@@ -110,6 +110,7 @@ La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo 
 
 - TI2-26 quedó integrada (PR #52): la validación y la documentación de esta superficie ya viven en este archivo y en `convex/tests/apiBackend.test.ts`.
 - TI4-12 cablea los hooks al Backend y resuelve las divergencias de valores.
+- TI2-85 habilitó cancelar (Estudiante) y cerrar sin acompañamiento (Profesional con toma) como casos de uso de Aplicación, sin entrada pública. El estado de `api.presentation.requests.*` sigue en los cuatro de Sprint 1. Agregar `closed_without_accompaniment` y `cancelled` es un cambio incompatible para Mobile, porque `mapCanonicalRequestStatus` en `apps/mobile/src/infrastructure/ti2-contract-mappers.ts` cubre solo cuatro estados y deja de compilar; se coordina con TI4 en la tarea que publique esas operaciones. El detalle está en [`state-model.md`](../convex/domain/requests/state-model.md#contrato-público).
 
 ## Evolución compatible de Sprint 2: disponibilidad, espacios y atención (TI2-87)
 

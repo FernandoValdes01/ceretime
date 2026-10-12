@@ -1614,7 +1614,7 @@ test("límites TI2-83: el esquema rechaza literales desconocidos y filas incompl
   ).rejects.toThrow("Validator error");
 });
 
-test("compatibilidad TI2-85: cancelación y cierre persisten y se leen como Sprint 1", async () => {
+test("compatibilidad TI2-85: cancelación y cierre persisten y se leen", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti83-comp-est",
@@ -1667,9 +1667,8 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen como Spri
     }).status,
   ).toBe("received");
 
-  // La cancelación y el cierre se persisten con los literales del dominio;
-  // su mapping a la proyección es de TI2-85, acá se comprueba el valor
-  // guardado tal cual.
+  // La cancelación y el cierre se persisten con los literales del dominio y
+  // la proyección de TI2-85 los lee tal cual.
   for (const [id, status] of [
     [cancelledId, "cancelled"],
     [closedId, "closed_without_accompaniment"],
@@ -1678,6 +1677,15 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen como Spri
       return await ctx.db.get(id);
     });
     expect(stored?.status).toBe(status);
+    expect(
+      toAccompanimentRequest({
+        _id: id,
+        studentId: student,
+        status: stored?.status ?? "",
+        accessNeeds: stored?.accessNeeds ?? "",
+        createdAt: stored?.createdAt ?? 0,
+      }).status,
+    ).toBe(status);
   }
 
   const storedTransition = await t.run(async (ctx) => {
@@ -1685,13 +1693,30 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen como Spri
   });
   expect(storedTransition?.to).toBe("cancelled");
 
-  // Sin reglas de TI2-85, el intento de transición se rechaza de forma segura.
+  // Con las reglas de TI2-85 el paso existe y exige motivo: sin él se
+  // rechaza de forma segura y con él se aplica sin abrir acompañamiento.
+  const cancelAttempt = {
+    from: "received",
+    to: "cancelled",
+    actorId: student,
+    occurredAt: 5,
+  } as const;
+  expect(transitionRequest(cancelAttempt)).toEqual({
+    status: "rejected",
+    cause: "reason_required",
+  });
+  expect(transitionRequest({ ...cancelAttempt, reason: "Motivo ficticio" })).toMatchObject({
+    status: "applied",
+    opensAccompaniment: false,
+  });
+  // Cerrar desde una recibida no existe: el Profesional la toma primero.
   expect(
     transitionRequest({
       from: "received",
-      to: "cancelled",
+      to: "closed_without_accompaniment",
       actorId: pro,
       occurredAt: 5,
+      reason: "Motivo ficticio",
     }),
   ).toEqual({ status: "rejected", cause: "transition_not_allowed" });
 
