@@ -89,6 +89,22 @@ describe("Navegación principal", () => {
     }
   });
 
+  test("divide visualmente las pestañas largas sin perder los nombres completos", async () => {
+    renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
+
+    expect(
+      await screen.findByText("Solicitudes".slice(0, 8) + "\u200B" + "Solicitudes".slice(8)),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByText("Acompañamientos".slice(0, 7) + "\u200B" + "Acompañamientos".slice(7)),
+    ).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 4" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Acompañamientos, pestaña, 3 de 4" }),
+    ).toBeOnTheScreen();
+  });
+
   test("una dirección inexistente ofrece volver al acceso", async () => {
     const navigation = renderRouter(appDirectory, { initialUrl: "/no-existe" });
     expect(await screen.findByRole("header", { name: "Página no encontrada" })).toBeOnTheScreen();

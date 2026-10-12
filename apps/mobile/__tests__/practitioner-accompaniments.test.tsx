@@ -2,6 +2,7 @@ import path from "node:path";
 import { router } from "expo-router";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { renderRouter } from "expo-router/testing-library";
+import { AccessibilityInfo } from "react-native";
 
 import type { PractitionerAccompaniment } from "../src/application/practitioner-accompaniment-models";
 import { PractitionerAccompanimentAccessDeniedError } from "../src/application/practitioner-accompaniment-port";
@@ -73,8 +74,12 @@ describe("pantalla de acompañamientos del Practicante", () => {
 
     expect(screen.getByText(accompaniment.objective)).toBeOnTheScreen();
     expect(screen.getByText("Activo")).toBeOnTheScreen();
-    expect(screen.getByLabelText("Estado: Activo")).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: /Acompañamiento/ })).toBeOnTheScreen();
+    expect(screen.queryByLabelText("Estado: Activo")).not.toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", {
+        name: "Acompañamiento: Organizar apoyos para participar en actividades académicas. Estado: Activo.",
+      }),
+    ).toBeOnTheScreen();
     expect(screen.queryByText("Solo lectura")).not.toBeOnTheScreen();
     expect(screen.queryByText("studentId")).not.toBeOnTheScreen();
     expect(screen.queryByText("Editar")).not.toBeOnTheScreen();
@@ -146,6 +151,7 @@ describe("pantalla de acompañamientos del Practicante", () => {
   });
 
   test("abre el detalle minimizado desde el listado", async () => {
+    const focusEvent = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent");
     const navigation = renderRouter(appDirectory);
     await act(async () => {
       fireEvent.press(screen.getByRole("button", { name: "Entrar como Practicante" }));
@@ -154,11 +160,15 @@ describe("pantalla de acompañamientos del Practicante", () => {
 
     fireEvent.press(
       await screen.findByRole("button", {
-        name: `Acompañamiento: ${accompaniment.objective}`,
+        name: "Acompañamiento: Organizar apoyos para participar en actividades académicas. Estado: Activo.",
       }),
     );
 
     expect(await screen.findByText("Detalle del acompañamiento")).toBeOnTheScreen();
+    expect(
+      screen.queryByRole("button", { name: /Abre el detalle del acompañamiento/ }),
+    ).not.toBeOnTheScreen();
+    expect(focusEvent).toHaveBeenCalledWith(expect.anything(), "focus");
     expect(navigation.getPathname()).toBe("/practicante/asignaciones/mock-accompaniment-1");
     expect(screen.getByText(accompaniment.objective)).toBeOnTheScreen();
     expect(screen.getByText("Activo")).toBeOnTheScreen();
@@ -170,6 +180,7 @@ describe("pantalla de acompañamientos del Practicante", () => {
 
     fireEvent.press(screen.getByRole("button", { name: "Volver" }));
     await waitFor(() => expect(navigation.getPathname()).toBe(practitionerRoutes.assigned));
+    focusEvent.mockRestore();
   });
 
   test("usa la misma denegación para un acompañamiento no asignado o inexistente", async () => {
