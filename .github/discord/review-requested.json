@@ -1,0 +1,11 @@
+{
+  "action": "review_requested",
+  "sender": { "login": "nunezpinillalucas435-dev" },
+  "requested_reviewer": { "login": "Juanfra272" },
+  "pull_request": {
+    "number": 92,
+    "html_url": "https://github.com/FernandoValdes01/ceretime/pull/92",
+    "user": { "login": "nunezpinillalucas435-dev" },
+    "base": { "ref": "main" }
+  }
+}
