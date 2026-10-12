@@ -47,6 +47,7 @@ export function StudentLayout() {
           <div className="student-portal__actions">
             <nav aria-label="Portal del Estudiante">
               <Link to="/estudiante">Inicio</Link>
+              <Link to="/estudiante/solicitudes">Solicitudes</Link>
               <Link to="/login">Sesión</Link>
             </nav>
             <AccessibilityMenu />
@@ -80,7 +81,7 @@ export function StudentHome() {
  * reintento acotado a su nivel, sin contenido protegido. El nivel `page`
  * titula con h1; el nivel `section` no repite encabezados.
  */
-class StudentPanelErrorBoundary extends Component<
+export class StudentPanelErrorBoundary extends Component<
   { children: ReactNode; subject: string; level: "page" | "section"; onError?: () => void },
   { hasError: boolean }
 > {
