@@ -7,6 +7,7 @@ export default function ProtectedLayout() {
       <Stack.Screen name="profesional" />
       <Stack.Screen name="practicante" />
       <Stack.Screen name="administrador" />
+      <Stack.Screen name="preferencias" />
     </Stack>
   );
 }

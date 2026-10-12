@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Pressable,
   ScrollView,
@@ -20,6 +21,7 @@ import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText, useStudentFont } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
 import { getStudentRequestStatusPresentation } from "@/presentation/estudiante/student-request-status-indicator";
+import type { ProfessionalReviewActionState } from "@/presentation/hooks/use-professional-review";
 import { useProfessionalReviewContext } from "./professional-review-provider";
 import { ProfessionalHeader } from "./professional-header";
 
@@ -45,7 +47,7 @@ interface ActionInputField {
 
 export function ProfessionalRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
-  const { status, requests, error, reload, performAction, getActionState } =
+  const { status, requests, error, reload, performAction, getActionState, getRequestFeedback } =
     useProfessionalReviewContext();
   const request = typeof requestId === "string" ? findRequest(requests, requestId) : undefined;
 
@@ -110,6 +112,7 @@ export function ProfessionalRequestDetailScreen() {
               request={request}
               onAction={performAction}
               getActionState={getActionState}
+              getRequestFeedback={getRequestFeedback}
             />
           ) : null}
         </ScrollView>
@@ -122,6 +125,7 @@ function RequestDetail({
   request,
   onAction,
   getActionState,
+  getRequestFeedback,
 }: {
   readonly request: ProfessionalRequest;
   readonly onAction: (
@@ -132,12 +136,28 @@ function RequestDetail({
   readonly getActionState: (
     requestId: string,
     action: ProfessionalRequestAction,
-  ) => { readonly status: string; readonly message: string | null; readonly error: unknown | null };
+  ) => ProfessionalReviewActionState;
+  readonly getRequestFeedback: (requestId: string) => ProfessionalReviewActionState;
 }) {
   const statusPresentation = getStudentRequestStatusPresentation(request.status);
   const fontFamily = useStudentFont();
+  const requestFeedback = getRequestFeedback(request.id);
+  const previousStatus = useRef(request.status);
+  const successFeedbackRef = useRef<View>(null);
   const [reason, setReason] = useState("");
   const [objective, setObjective] = useState("");
+
+  useEffect(() => {
+    if (
+      previousStatus.current !== "underReview" &&
+      request.status === "underReview" &&
+      requestFeedback.status === "success" &&
+      successFeedbackRef.current
+    ) {
+      AccessibilityInfo.sendAccessibilityEvent(successFeedbackRef.current, "focus");
+    }
+    previousStatus.current = request.status;
+  }, [request.status, requestFeedback.status]);
   const actionInputFields: Record<ProfessionalRequestAction, ActionInputField | null> = {
     startReview: null,
     requestInformation: {
@@ -256,6 +276,7 @@ function RequestDetail({
                   </View>
                 ) : null}
                 <Pressable
+                  accessibilityLabel={actionLabels[action]}
                   accessibilityHint={actionHints[action]}
                   accessibilityRole="button"
                   accessibilityState={{
@@ -268,11 +289,10 @@ function RequestDetail({
                 >
                   {isLoading ? (
                     <ActivityIndicator accessible={false} color="#FFFFFF" size="small" />
-                  ) : (
-                    <StudentText weight="semibold" style={styles.primaryButtonText}>
-                      {actionLabels[action]}
-                    </StudentText>
-                  )}
+                  ) : null}
+                  <StudentText weight="semibold" style={styles.primaryButtonText}>
+                    {actionLabels[action]}
+                  </StudentText>
                 </Pressable>
                 {actionState.status === "error" ? (
                   <StudentText accessibilityRole="alert" style={styles.errorText}>
@@ -284,6 +304,23 @@ function RequestDetail({
               </View>
             );
           })}
+        </View>
+      ) : null}
+
+      {request.status === "underReview" &&
+      requestFeedback.status === "success" &&
+      requestFeedback.message ? (
+        <View
+          ref={successFeedbackRef}
+          accessible
+          accessibilityLabel={requestFeedback.message}
+          accessibilityRole="text"
+          style={styles.successFeedback}
+          testID="professional-review-success"
+        >
+          <StudentText accessible={false} style={styles.successFeedbackText}>
+            {requestFeedback.message}
+          </StudentText>
         </View>
       ) : null}
 
@@ -440,14 +477,23 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     minHeight: 48,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
     paddingHorizontal: 16,
     borderRadius: 12,
     backgroundColor: "#087D70",
   },
   primaryButtonLoading: { opacity: 0.8 },
   primaryButtonText: { color: "#FFFFFF", fontSize: 15, lineHeight: 20 },
+  successFeedback: {
+    alignSelf: "stretch",
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#E8F4F1",
+  },
+  successFeedbackText: { color: "#087D70", fontSize: 15, lineHeight: 22 },
   buttonPressed: { opacity: 0.78 },
   errorText: { color: "#A33A2B", fontSize: 13, lineHeight: 18 },
   accompanimentCard: {
