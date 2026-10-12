@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatPanelDate } from "../routes/student-panel-labels.ts";
@@ -116,10 +116,12 @@ export function PagedItems<Item extends RequestListItem>({
   cursors,
   usePage,
   renderItem,
+  onCount,
 }: {
   cursors: ReadonlyArray<string | null>;
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
   renderItem: (item: Item) => ReactNode;
+  onCount: (cursor: string | null, count: number) => void;
 }) {
   return (
     <>
@@ -129,6 +131,7 @@ export function PagedItems<Item extends RequestListItem>({
           cursor={cursor}
           usePage={usePage}
           renderItem={renderItem}
+          onCount={onCount}
         />
       ))}
     </>
@@ -139,12 +142,25 @@ function PageItems<Item extends RequestListItem>({
   cursor,
   usePage,
   renderItem,
+  onCount,
 }: {
   cursor: string | null;
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
   renderItem: (item: Item) => ReactNode;
+  onCount: (cursor: string | null, count: number) => void;
 }) {
   const page = usePage(cursor);
+  const count = page === undefined ? 0 : page.page.length;
+  // Reporte en layout effect (no en render ni en efecto pasivo): en render
+  // dispara el aviso "Cannot update ... while rendering a different
+  // component", y con efecto pasivo el conteo llega después del paint — un
+  // frame donde conviven el aviso de vacío y las filas recién llegadas. El
+  // layout effect corre sincrónico antes del paint, sin parpadeo. Con deps
+  // precisas solo corre cuando el conteo cambia; el updater con guarda evita
+  // re-renders redundantes. Sin SSR en la app, no aplica su advertencia.
+  useLayoutEffect(() => {
+    onCount(cursor, count);
+  }, [cursor, count, onCount]);
   if (page === undefined) {
     return null;
   }
@@ -152,7 +168,16 @@ function PageItems<Item extends RequestListItem>({
 }
 
 function OpenInboxBody() {
-  const { cursors, firstPage, tailPending, tailDone, loadMore } = usePagedList(useOpenRequests);
+  const {
+    cursors,
+    firstPage,
+    hasItems,
+    allReported,
+    tailPending,
+    tailDone,
+    loadMore,
+    reportCount,
+  } = usePagedList(useOpenRequests);
 
   if (firstPage === undefined) {
     return (
@@ -162,17 +187,14 @@ function OpenInboxBody() {
     );
   }
 
-  if (firstPage.page.length === 0) {
-    return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No hay solicitudes por revisar.</p>
-        <p>Cuando un estudiante registre una solicitud, aparecerá aquí.</p>
-      </div>
-    );
-  }
-
   return (
     <>
+      {!hasItems && allReported && tailDone ? (
+        <div className="student-portal__empty">
+          <p className="student-portal__empty-title">No hay solicitudes por revisar.</p>
+          <p>Cuando un estudiante registre una solicitud, aparecerá aquí.</p>
+        </div>
+      ) : null}
       <ul className="student-portal__list">
         <PagedItems
           cursors={cursors}
@@ -180,6 +202,7 @@ function OpenInboxBody() {
           renderItem={(request) => (
             <RequestRow key={request._id} request={request} clickable={false} />
           )}
+          onCount={reportCount}
         />
       </ul>
       {tailDone ? null : (
@@ -205,8 +228,16 @@ function OpenInboxBody() {
 }
 
 function AuthorizedRequestsBody() {
-  const { cursors, firstPage, tailPending, tailDone, loadMore } =
-    usePagedList(useAuthorizedRequests);
+  const {
+    cursors,
+    firstPage,
+    hasItems,
+    allReported,
+    tailPending,
+    tailDone,
+    loadMore,
+    reportCount,
+  } = usePagedList(useAuthorizedRequests);
 
   if (firstPage === undefined) {
     return (
@@ -216,17 +247,14 @@ function AuthorizedRequestsBody() {
     );
   }
 
-  if (firstPage.page.length === 0) {
-    return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No tienes solicitudes tomadas.</p>
-        <p>Las solicitudes que tomes para revisión aparecerán aquí.</p>
-      </div>
-    );
-  }
-
   return (
     <>
+      {!hasItems && allReported && tailDone ? (
+        <div className="student-portal__empty">
+          <p className="student-portal__empty-title">No tienes solicitudes tomadas.</p>
+          <p>Las solicitudes que tomes para revisión aparecerán aquí.</p>
+        </div>
+      ) : null}
       <ul className="student-portal__list">
         <PagedItems
           cursors={cursors}
@@ -234,6 +262,7 @@ function AuthorizedRequestsBody() {
           renderItem={(request) => (
             <RequestRow key={request._id} request={request} clickable={true} />
           )}
+          onCount={reportCount}
         />
       </ul>
       {tailDone ? null : (

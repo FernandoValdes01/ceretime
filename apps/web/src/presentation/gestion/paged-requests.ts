@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 /** Fila mínima que muestran las listas: coincide con ambas vistas. */
 export type RequestListItem = {
@@ -19,25 +19,45 @@ export type RequestListPage<Item extends RequestListItem> = {
  *
  * Guarda la lista de cursores pedidos (solo crece). Cada cursor lo suscribe
  * por separado el componente <PagedItems>: así ninguna página cargada queda
- * congelada cuando Convex empuja cambios (p. ej. una toma que saca una
- * solicitud de la bandeja o cambia su estado en "Mis tomadas").
+ * congelada cuando Convex empuja cambios (p. ej. una toma que vacía la
+ * primera página mientras una posterior aún tiene filas, o un cambio de
+ * estado en "Mis tomadas").
  *
- * La primera página decide los estados de carga y vacío; la última (cola),
- * el botón "Cargar más". Sin setState en render: todo el estado vive en
- * useState y cambia solo desde el evento del botón.
+ * Cada página reporta su conteo vía onCount desde un efecto del hijo con
+ * dependencias ([cursor, count]): reportar en render dispara el aviso de
+ * React ("Cannot update ... while rendering a different component",
+ * verificado en consola de tests), y el setState directo en efectos lo
+ * prohíbe el lint del repo. El updater funcional con guarda por valor solo
+ * re-renderiza cuando un conteo cambia de verdad. Sin el conteo, una primera
+ * página vacía ocultaría filas que aún existen en páginas posteriores. La
+ * primera página decide la carga inicial; el vacío exige todas las páginas
+ * reportadas, sin filas y sin más por cargar; la última (cola), el botón
+ * "Cargar más".
  */
 export function usePagedList<Item extends RequestListItem>(
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
 ) {
   const [cursors, setCursors] = useState<readonly (string | null)[]>([null]);
+  const [counts, setCounts] = useState<ReadonlyMap<string, number>>(new Map());
   const firstPage = usePage(null);
   const tailPage = usePage(cursors[cursors.length - 1] ?? null);
+
+  const reportCount = useCallback((cursor: string | null, count: number) => {
+    const key = cursor ?? "first";
+    setCounts((prev) => (prev.get(key) === count ? prev : new Map(prev).set(key, count)));
+  }, []);
+
+  const allReported = cursors.every((cursor) => counts.has(cursor ?? "first"));
+  const hasItems = cursors.some((cursor) => (counts.get(cursor ?? "first") ?? 0) > 0);
 
   return {
     cursors,
     firstPage,
+    hasItems,
+    allReported,
     tailPending: tailPage === undefined,
     tailDone: tailPage?.isDone ?? false,
+    reportCount,
     loadMore: () => {
       if (tailPage === undefined || tailPage.isDone) {
         return;
