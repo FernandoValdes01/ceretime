@@ -104,7 +104,7 @@ function RequestRow({
         {take && (
           <button
             type="button"
-            className="student-portal__btn student-portal__btn--ghost"
+            className="student-portal__btn student-portal__btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
             disabled={take.disabled || take.busy}
             onClick={take.onTake}
             aria-busy={take.busy}

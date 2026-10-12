@@ -272,6 +272,22 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(takeRequestMock).toHaveBeenCalledTimes(1);
   });
 
+  test("tomar en curso se ve deshabilitado en la bandeja", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([filaAbierta({ _id: "req-1" })], true);
+    mockedAuthorized = paginaTomadas([], true);
+    takeRequestMock.mockImplementation(() => new Promise(() => {}));
+    renderAt("/profesional/solicitudes");
+
+    const tomarBtn = await screen.findByRole("button", { name: "Tomar" });
+    fireEvent.click(tomarBtn);
+
+    const ocupado = await screen.findByRole("button", { name: "Tomando…" });
+    expect(ocupado.hasAttribute("disabled")).toBe(true);
+    expect(ocupado.className).toMatch("disabled:opacity-60");
+    expect(ocupado.className).toMatch("disabled:cursor-not-allowed");
+  });
+
   test("bandeja vacía muestra el vacío explícito", async () => {
     comoProfesional();
     mockedOpen = paginaAbierta([], true);
