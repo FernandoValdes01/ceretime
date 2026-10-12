@@ -499,4 +499,41 @@ describe("centro de preferencias", () => {
       screen.getByRole("radio", { name: "Tamaño del texto: 200 %" }).props.accessibilityState,
     ).toMatchObject({ checked: false });
   });
+
+  test("permite reintentar una lectura fallida y refleja el valor persistido", async () => {
+    const storedPreferences = { textScale: 1.5, highContrast: "on", reduceMotion: "off" } as const;
+    const port: AccessibilityPreferencesPort = {
+      read: jest
+        .fn()
+        .mockRejectedValueOnce(new Error("fallo temporal"))
+        .mockResolvedValueOnce({
+          preferences: storedPreferences,
+          source: "stored" as const,
+          error: null,
+        }),
+      update: jest.fn(async () => ({ ok: false as const, error: "write-failed" as const })),
+    };
+
+    render(
+      <AccessibilityPreferencesProvider port={port}>
+        <AccessibilityPreferencesScreen />
+      </AccessibilityPreferencesProvider>,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "No fue posible leer tus preferencias. Puedes volver a intentarlo.",
+    );
+    fireEvent.press(screen.getByRole("button", { name: "Reintentar lectura de preferencias" }));
+
+    expect(
+      await screen.findByText(
+        "Texto al 150 %, alto contraste activado y reducción de movimiento desactivada.",
+      ),
+    ).toBeOnTheScreen();
+    expect(port.read).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeOnTheScreen();
+    expect(
+      screen.getByRole("radio", { name: "Tamaño del texto: 150 %" }).props.accessibilityState,
+    ).toMatchObject({ checked: true });
+  });
 });

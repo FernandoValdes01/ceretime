@@ -53,6 +53,10 @@ describe("Navegación principal", () => {
     expect(await screen.findByText("Preferencias de accesibilidad")).toBeOnTheScreen();
     expect(navigation.getPathname()).toBe("/preferencias");
     expect(screen.queryByRole("button", { name: "Preferencias de accesibilidad" })).toBeNull();
+
+    fireEvent.press(screen.getByRole("button", { name: "Volver" }));
+    await waitFor(() => expect(navigation.getPathname()).not.toBe("/preferencias"));
+    expect(navigation.getPathname()).toBe(roleCases.find(([role]) => role === label)?.[1]);
   });
 
   test("una ruta directa al centro de preferencias sin sesión vuelve al acceso", async () => {

@@ -11,6 +11,7 @@ export function Screen({
   description,
   children,
   scrollRef,
+  onBack,
   showAppHeader = false,
   showPreferencesAction = true,
   headerTitle = "CERETI",
@@ -18,6 +19,7 @@ export function Screen({
   title: string;
   description?: string;
   scrollRef?: Ref<ScrollView>;
+  onBack?: () => void;
   showAppHeader?: boolean;
   showPreferencesAction?: boolean;
   headerTitle?: string;
@@ -31,7 +33,11 @@ export function Screen({
       edges={showAppHeader ? ["top", "left", "right", "bottom"] : ["left", "right", "bottom"]}
     >
       {showAppHeader ? (
-        <AppHeader showPreferencesAction={showPreferencesAction} title={headerTitle} />
+        <AppHeader
+          onBack={onBack}
+          showPreferencesAction={showPreferencesAction}
+          title={headerTitle}
+        />
       ) : null}
       <ScrollView
         ref={scrollRef}

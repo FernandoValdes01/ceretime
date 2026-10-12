@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import type { AccessibilityPreferences } from "../../application/accessibility-preferences-models";
@@ -44,7 +45,7 @@ const motionOptions: readonly PreferenceOption<AccessibilityPreferences["reduceM
 ];
 
 export function AccessibilityPreferencesScreen() {
-  const { preferences, effective, status, error, updatePreferences } =
+  const { preferences, effective, status, error, errorCode, updatePreferences, reloadPreferences } =
     useAccessibilityPreferences();
   const [saved, setSaved] = useState(false);
   const isBusy = status !== "ready";
@@ -63,6 +64,7 @@ export function AccessibilityPreferencesScreen() {
     <Screen
       description="Estos ajustes se aplican en todas tus vistas y se guardan en este dispositivo."
       headerTitle="CERETI"
+      onBack={() => router.back()}
       showAppHeader
       showPreferencesAction={false}
       title="Preferencias de accesibilidad"
@@ -81,10 +83,10 @@ export function AccessibilityPreferencesScreen() {
         accessibilityLiveRegion="polite"
         style={[styles.summary, { backgroundColor: colors.muted, borderColor: colors.border }]}
       >
-        <StudentText weight="semibold" style={{ color: colors.text }}>
+        <StudentText weight="semibold" style={{ color: colors.text, fontSize: 20, lineHeight: 28 }}>
           Configuración aplicada
         </StudentText>
-        <StudentText style={{ color: colors.secondary }}>
+        <StudentText style={{ color: colors.secondary, fontSize: 16, lineHeight: 26 }}>
           Texto al {textScale}, alto contraste {highContrast} y reducción de movimiento{" "}
           {reducedMotion}.
         </StudentText>
@@ -132,6 +134,13 @@ export function AccessibilityPreferencesScreen() {
           Preferencia guardada.
         </StudentText>
       ) : null}
+      {errorCode === "read-failed" ? (
+        <Action
+          disabled={isBusy}
+          label="Reintentar lectura de preferencias"
+          onPress={reloadPreferences}
+        />
+      ) : null}
       <Action
         disabled={isBusy}
         label="Usar valores del sistema"
@@ -170,6 +179,7 @@ function PreferenceOptions<Value extends PreferenceValue>({
           return (
             <Pressable
               key={String(option.value)}
+              cssInterop={false}
               accessibilityLabel={`${accessibilityPrefix}: ${option.label}`}
               accessibilityRole="radio"
               accessibilityState={{ checked: selected, disabled }}
@@ -237,7 +247,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
   },
   radioSelected: { width: 10, height: 10, borderRadius: 5 },
-  optionLabel: { flex: 1, fontSize: 16, lineHeight: 22 },
-  feedback: { padding: 14, borderRadius: 10 },
+  optionLabel: { flex: 1, fontSize: 16, lineHeight: 26 },
+  feedback: { padding: 14, borderRadius: 10, fontSize: 16, lineHeight: 26 },
   disabled: { opacity: 0.55 },
 });
