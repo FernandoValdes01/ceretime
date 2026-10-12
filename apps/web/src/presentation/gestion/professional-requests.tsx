@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatPanelDate } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
@@ -6,7 +7,7 @@ import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 // fuente para no duplicar el sistema de diseño entre portales.
 import "../routes/student-portal.css";
 import { requestStatusLabel } from "./gestion-labels.ts";
-import { usePagedItems, type RequestListItem } from "./paged-requests.ts";
+import { usePagedList, type RequestListItem, type RequestListPage } from "./paged-requests.ts";
 
 /**
  * Clases Tailwind de las filas de gestión (TI2-91, migrado de
@@ -102,10 +103,58 @@ function RequestRow({
   );
 }
 
-function OpenInboxBody() {
-  const { items, done, pending, loadMore } = usePagedItems(useOpenRequests);
+/**
+ * Filas de cada página cargada, cada una con su propia suscripción (TI2-91).
+ *
+ * Un hijo <PageItems> por cursor pedido (identidad estable: los cursores solo
+ * se agregan): todas las páginas cargadas mantienen lectura reactiva aunque
+ * Convex actualice una anterior. El padre decide carga/vacío/botón con la
+ * primera y la última página. `renderItem` pone la `key` de cada fila.
+ * Se exporta para probar la reactividad por página de forma aislada.
+ */
+export function PagedItems<Item extends RequestListItem>({
+  cursors,
+  usePage,
+  renderItem,
+}: {
+  cursors: ReadonlyArray<string | null>;
+  usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
+  renderItem: (item: Item) => ReactNode;
+}) {
+  return (
+    <>
+      {cursors.map((cursor) => (
+        <PageItems
+          key={cursor ?? "first"}
+          cursor={cursor}
+          usePage={usePage}
+          renderItem={renderItem}
+        />
+      ))}
+    </>
+  );
+}
 
-  if (pending && items.length === 0) {
+function PageItems<Item extends RequestListItem>({
+  cursor,
+  usePage,
+  renderItem,
+}: {
+  cursor: string | null;
+  usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
+  renderItem: (item: Item) => ReactNode;
+}) {
+  const page = usePage(cursor);
+  if (page === undefined) {
+    return null;
+  }
+  return <>{page.page.map((item) => renderItem(item))}</>;
+}
+
+function OpenInboxBody() {
+  const { cursors, firstPage, tailPending, tailDone, loadMore } = usePagedList(useOpenRequests);
+
+  if (firstPage === undefined) {
     return (
       <p role="status" className="student-portal__loading">
         Cargando la bandeja…
@@ -113,7 +162,7 @@ function OpenInboxBody() {
     );
   }
 
-  if (items.length === 0) {
+  if (firstPage.page.length === 0) {
     return (
       <div className="student-portal__empty">
         <p className="student-portal__empty-title">No hay solicitudes por revisar.</p>
@@ -125,22 +174,26 @@ function OpenInboxBody() {
   return (
     <>
       <ul className="student-portal__list">
-        {items.map((request) => (
-          <RequestRow key={request._id} request={request} clickable={false} />
-        ))}
+        <PagedItems
+          cursors={cursors}
+          usePage={useOpenRequests}
+          renderItem={(request) => (
+            <RequestRow key={request._id} request={request} clickable={false} />
+          )}
+        />
       </ul>
-      {done ? null : (
+      {tailDone ? null : (
         <div className="student-portal__cta">
           <button
             type="button"
             className="student-portal__btn student-portal__btn--primary"
-            disabled={pending}
+            disabled={tailPending}
             onClick={loadMore}
-            aria-busy={pending}
+            aria-busy={tailPending}
           >
-            {pending ? "Cargando…" : "Cargar más"}
+            {tailPending ? "Cargando…" : "Cargar más"}
           </button>
-          {pending && (
+          {tailPending && (
             <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>
@@ -152,9 +205,10 @@ function OpenInboxBody() {
 }
 
 function AuthorizedRequestsBody() {
-  const { items, done, pending, loadMore } = usePagedItems(useAuthorizedRequests);
+  const { cursors, firstPage, tailPending, tailDone, loadMore } =
+    usePagedList(useAuthorizedRequests);
 
-  if (pending && items.length === 0) {
+  if (firstPage === undefined) {
     return (
       <p role="status" className="student-portal__loading">
         Cargando tus tomadas…
@@ -162,7 +216,7 @@ function AuthorizedRequestsBody() {
     );
   }
 
-  if (items.length === 0) {
+  if (firstPage.page.length === 0) {
     return (
       <div className="student-portal__empty">
         <p className="student-portal__empty-title">No tienes solicitudes tomadas.</p>
@@ -174,22 +228,26 @@ function AuthorizedRequestsBody() {
   return (
     <>
       <ul className="student-portal__list">
-        {items.map((request) => (
-          <RequestRow key={request._id} request={request} clickable={true} />
-        ))}
+        <PagedItems
+          cursors={cursors}
+          usePage={useAuthorizedRequests}
+          renderItem={(request) => (
+            <RequestRow key={request._id} request={request} clickable={true} />
+          )}
+        />
       </ul>
-      {done ? null : (
+      {tailDone ? null : (
         <div className="student-portal__cta">
           <button
             type="button"
             className="student-portal__btn student-portal__btn--primary"
-            disabled={pending}
+            disabled={tailPending}
             onClick={loadMore}
-            aria-busy={pending}
+            aria-busy={tailPending}
           >
-            {pending ? "Cargando…" : "Cargar más"}
+            {tailPending ? "Cargando…" : "Cargar más"}
           </button>
-          {pending && (
+          {tailPending && (
             <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>

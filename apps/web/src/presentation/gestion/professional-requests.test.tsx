@@ -18,7 +18,8 @@ import type {
   OpenRequestsPage,
   RequestDetail,
 } from "./professional-requests-data.ts";
-import { usePagedItems } from "./paged-requests.ts";
+import { usePagedList } from "./paged-requests.ts";
+import { PagedItems } from "./professional-requests.tsx";
 
 /**
  * Pruebas de bandeja y detalle del Profesional (TI2-91).
@@ -255,18 +256,61 @@ describe("bandeja del Profesional (TI2-91)", () => {
     const conMasPaginas = { page: [{ ...fila }], isDone: false, continueCursor: "c1" };
 
     const { result, rerender } = renderHook(
-      ({ page }: { page: typeof sinMasPaginas | undefined }) => usePagedItems(() => page),
+      ({ page }: { page: typeof sinMasPaginas | undefined }) => usePagedList(() => page),
       { initialProps: { page: sinMasPaginas as typeof sinMasPaginas | undefined } },
     );
 
-    expect(result.current.items).toHaveLength(1);
-    expect(result.current.done).toBe(true);
+    expect(result.current.firstPage?.page).toHaveLength(1);
+    expect(result.current.tailDone).toBe(true);
 
     // Equivale al push reactivo de Convex con mismos datos e isDone distinto.
     rerender({ page: conMasPaginas });
 
-    expect(result.current.items).toHaveLength(1);
-    expect(result.current.done).toBe(false);
+    expect(result.current.firstPage?.page).toHaveLength(1);
+    expect(result.current.tailDone).toBe(false);
+  });
+
+  test("todas las páginas cargadas mantienen lectura reactiva", () => {
+    const tomadaPrimera = { _id: "req-1", status: "received", createdAt: 1700000000000 };
+    const tomadaSegunda = { _id: "req-2", status: "under_review", createdAt: 1700000000000 };
+    const paginas: Record<
+      string,
+      { page: (typeof tomadaPrimera)[]; isDone: boolean; continueCursor: string }
+    > = {
+      first: { page: [tomadaPrimera], isDone: false, continueCursor: "c1" },
+      c1: { page: [tomadaSegunda], isDone: true, continueCursor: "c1" },
+    };
+    const usePage = (cursor: string | null) => paginas[cursor ?? "first"];
+    const vista = () => (
+      <ul>
+        <PagedItems
+          cursors={[null, "c1"]}
+          usePage={usePage}
+          renderItem={(request) => (
+            <li key={request._id}>
+              {request._id}:{request.status}
+            </li>
+          )}
+        />
+      </ul>
+    );
+
+    const { rerender } = render(vista());
+    expect(screen.getByText("req-1:received")).toBeDefined();
+    expect(screen.getByText("req-2:under_review")).toBeDefined();
+
+    // Convex empuja la primera página con la solicitud ya tomada: la vista de
+    // esa página se actualiza sin tocar la segunda ni recargar.
+    paginas.first = {
+      page: [{ ...tomadaPrimera, status: "under_review" }],
+      isDone: false,
+      continueCursor: "c1",
+    };
+    rerender(vista());
+
+    expect(screen.getByText("req-1:under_review")).toBeDefined();
+    expect(screen.queryByText("req-1:received")).toBeNull();
+    expect(screen.getByText("req-2:under_review")).toBeDefined();
   });
 });
 
