@@ -304,7 +304,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
       c1: { page: [tomadaSegunda], isDone: true, continueCursor: "c1" },
     };
     const usePage = (cursor: string | null) => paginas[cursor ?? "first"];
-    const vista = () => (
+    const vista = (idsByCursor: ReadonlyMap<string, ReadonlyArray<string>> = new Map()) => (
       <ul>
         <PagedItems
           cursors={[null, "c1"]}
@@ -314,7 +314,8 @@ describe("bandeja del Profesional (TI2-91)", () => {
               {request._id}:{request.status}
             </li>
           )}
-          onCount={() => {}}
+          onIds={() => {}}
+          idsByCursor={idsByCursor}
         />
       </ul>
     );
@@ -335,6 +336,45 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(screen.getByText("req-1:under_review")).toBeDefined();
     expect(screen.queryByText("req-1:received")).toBeNull();
     expect(screen.getByText("req-2:under_review")).toBeDefined();
+  });
+
+  test("una fila repetida en dos páginas se muestra una sola vez", () => {
+    const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
+    const filaB = { _id: "req-2", status: "received", createdAt: 1700000000000 };
+    const filaC = { _id: "req-3", status: "received", createdAt: 1700000000000 };
+    // Corrimiento por cambios concurrentes: req-2 quedó en ambas ventanas.
+    const paginas: Record<
+      string,
+      { page: (typeof filaA)[]; isDone: boolean; continueCursor: string }
+    > = {
+      first: { page: [filaA, filaB], isDone: false, continueCursor: "c1" },
+      c1: { page: [filaB, filaC], isDone: true, continueCursor: "c1" },
+    };
+    const usePage = (cursor: string | null) => paginas[cursor ?? "first"];
+    render(
+      <ul>
+        <PagedItems
+          cursors={[null, "c1"]}
+          usePage={usePage}
+          renderItem={(request) => (
+            <li key={request._id}>
+              {request._id}:{request.status}
+            </li>
+          )}
+          onIds={() => {}}
+          idsByCursor={
+            new Map([
+              ["first", ["req-1", "req-2"]],
+              ["c1", ["req-2", "req-3"]],
+            ])
+          }
+        />
+      </ul>,
+    );
+
+    expect(screen.getByText("req-1:received")).toBeDefined();
+    expect(screen.getAllByText("req-2:received")).toHaveLength(1);
+    expect(screen.getByText("req-3:received")).toBeDefined();
   });
 });
 
