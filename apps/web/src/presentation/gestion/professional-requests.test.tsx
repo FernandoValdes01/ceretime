@@ -48,6 +48,8 @@ let mockedBackendConfigured = true;
 let mockedOpen: OpenRequestsPage | undefined;
 let openByCursor: ((cursor: string | null) => OpenRequestsPage | undefined) | null = null;
 let mockedAuthorized: AuthorizedRequestsPage | undefined;
+let authorizedByCursor: ((cursor: string | null) => AuthorizedRequestsPage | undefined) | null =
+  null;
 let mockedDetail: RequestDetail | undefined;
 let detailThrows: Error | null = null;
 
@@ -64,7 +66,8 @@ vi.mock("../session/session-state", () => ({
 vi.mock("./professional-requests-data.ts", () => ({
   useOpenRequests: (cursor: string | null) =>
     openByCursor === null ? mockedOpen : openByCursor(cursor),
-  useAuthorizedRequests: () => mockedAuthorized,
+  useAuthorizedRequests: (cursor: string | null) =>
+    authorizedByCursor === null ? mockedAuthorized : authorizedByCursor(cursor),
   useRequestDetail: () => {
     if (detailThrows !== null) {
       throw detailThrows;
@@ -169,6 +172,7 @@ beforeEach(() => {
   mockedOpen = undefined;
   openByCursor = null;
   mockedAuthorized = undefined;
+  authorizedByCursor = null;
   mockedDetail = undefined;
   detailThrows = null;
   takeRequestMock.mockReset();
@@ -307,6 +311,25 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
   });
 
+  test("primera página vacía no oculta filas de páginas posteriores", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([], true);
+    authorizedByCursor = (cursor: string | null) =>
+      cursor === null
+        ? paginaTomadas([], false)
+        : paginaTomadas([filaTomada({ _id: "req-9", status: "under_review" })], true);
+    renderAt("/profesional/solicitudes");
+
+    // Hay más por cargar aunque la primera página venga vacía.
+    const cargarMas = await screen.findByRole("button", { name: "Cargar más" });
+    fireEvent.click(cargarMas);
+
+    // La segunda página trae la fila: ni el vacío aparece ni se pierde la fila.
+    expect(await screen.findByText("En revisión")).toBeDefined();
+    expect(screen.queryByText("No tienes solicitudes tomadas.")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
+  });
+
   test("isDone se sincroniza aunque filas y estados no cambien", () => {
     const fila = { _id: "req-9", status: "under_review", createdAt: 1700000000000 };
     const sinMasPaginas = { page: [fila], isDone: true, continueCursor: "c1" };
@@ -349,6 +372,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
               {request._id}:{request.status}
             </li>
           )}
+          onCount={() => {}}
         />
       </ul>
     );

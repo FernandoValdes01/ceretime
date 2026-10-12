@@ -142,10 +142,12 @@ export function PagedItems<Item extends RequestListItem>({
   cursors,
   usePage,
   renderItem,
+  onCount,
 }: {
   cursors: ReadonlyArray<string | null>;
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
   renderItem: (item: Item) => ReactNode;
+  onCount: (cursor: string | null, count: number) => void;
 }) {
   return (
     <>
@@ -155,6 +157,7 @@ export function PagedItems<Item extends RequestListItem>({
           cursor={cursor}
           usePage={usePage}
           renderItem={renderItem}
+          onCount={onCount}
         />
       ))}
     </>
@@ -165,12 +168,15 @@ function PageItems<Item extends RequestListItem>({
   cursor,
   usePage,
   renderItem,
+  onCount,
 }: {
   cursor: string | null;
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
   renderItem: (item: Item) => ReactNode;
+  onCount: (cursor: string | null, count: number) => void;
 }) {
   const page = usePage(cursor);
+  onCount(cursor, page === undefined ? 0 : page.page.length);
   if (page === undefined) {
     return null;
   }
@@ -178,7 +184,16 @@ function PageItems<Item extends RequestListItem>({
 }
 
 function OpenInboxBody() {
-  const { cursors, firstPage, tailPending, tailDone, loadMore } = usePagedList(useOpenRequests);
+  const {
+    cursors,
+    firstPage,
+    hasItems,
+    allReported,
+    tailPending,
+    tailDone,
+    loadMore,
+    reportCount,
+  } = usePagedList(useOpenRequests);
   const takeRequest = useTakeRequest();
   const [takingId, setTakingId] = useState<string | null>(null);
   const [takeError, setTakeError] = useState<string | null>(null);
@@ -209,15 +224,6 @@ function OpenInboxBody() {
     );
   }
 
-  if (firstPage.page.length === 0) {
-    return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No hay solicitudes por revisar.</p>
-        <p>Cuando un estudiante registre una solicitud, aparecerá aquí.</p>
-      </div>
-    );
-  }
-
   return (
     <>
       {takeError && (
@@ -225,6 +231,12 @@ function OpenInboxBody() {
           {takeError}
         </p>
       )}
+      {!hasItems && allReported ? (
+        <div className="student-portal__empty">
+          <p className="student-portal__empty-title">No hay solicitudes por revisar.</p>
+          <p>Cuando un estudiante registre una solicitud, aparecerá aquí.</p>
+        </div>
+      ) : null}
       <ul className="student-portal__list">
         <PagedItems
           cursors={cursors}
@@ -241,6 +253,7 @@ function OpenInboxBody() {
               }}
             />
           )}
+          onCount={reportCount}
         />
       </ul>
       {tailDone ? null : (
@@ -266,8 +279,16 @@ function OpenInboxBody() {
 }
 
 function AuthorizedRequestsBody() {
-  const { cursors, firstPage, tailPending, tailDone, loadMore } =
-    usePagedList(useAuthorizedRequests);
+  const {
+    cursors,
+    firstPage,
+    hasItems,
+    allReported,
+    tailPending,
+    tailDone,
+    loadMore,
+    reportCount,
+  } = usePagedList(useAuthorizedRequests);
 
   if (firstPage === undefined) {
     return (
@@ -277,17 +298,14 @@ function AuthorizedRequestsBody() {
     );
   }
 
-  if (firstPage.page.length === 0) {
-    return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No tienes solicitudes tomadas.</p>
-        <p>Las solicitudes que tomes para revisión aparecerán aquí.</p>
-      </div>
-    );
-  }
-
   return (
     <>
+      {!hasItems && allReported ? (
+        <div className="student-portal__empty">
+          <p className="student-portal__empty-title">No tienes solicitudes tomadas.</p>
+          <p>Las solicitudes que tomes para revisión aparecerán aquí.</p>
+        </div>
+      ) : null}
       <ul className="student-portal__list">
         <PagedItems
           cursors={cursors}
@@ -295,6 +313,7 @@ function AuthorizedRequestsBody() {
           renderItem={(request) => (
             <RequestRow key={request._id} request={request} clickable={true} />
           )}
+          onCount={reportCount}
         />
       </ul>
       {tailDone ? null : (
