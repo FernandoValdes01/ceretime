@@ -13,3 +13,13 @@
 ## Restauración
 
 Al terminar detuve Metro, desinstalé el cliente `.qa` y restauré los ajustes originales de TalkBack, exploración táctil y escala del sistema; el paquete institucional permaneció instalado.
+
+## Capturas de Android
+
+### Error de acceso
+
+<p><img src="./01-error-acceso.png" alt="Mensaje de error al iniciar sesión como estudiante" width="360"></p>
+
+### Reintento exitoso
+
+<p><img src="./02-reintento-estudiante.png" alt="Inicio de estudiante tras reintentar el acceso" width="360"></p>

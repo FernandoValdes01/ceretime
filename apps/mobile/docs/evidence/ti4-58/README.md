@@ -18,3 +18,13 @@ La pantalla común consume el proveedor de preferencias existente y ofrece una �
 ## Restauración
 
 Al terminar detuve Metro, restablecí las preferencias de la aplicación y los ajustes iniciales de TalkBack, exploración táctil y escala del sistema, y desinstalé solo el cliente `.qa`; `cl.rmv.ceretime` permaneció instalado.
+
+## Capturas de Android
+
+### Preferencias al 100 %
+
+<p><img src="./01-preferencias-100.png" alt="Preferencias de accesibilidad con el tamaño de texto al 100 %" width="360"></p>
+
+### Preferencias al 200 %
+
+<p><img src="./02-preferencias-200.png" alt="Preferencias de accesibilidad con el tamaño de texto al 200 %" width="360"></p>
