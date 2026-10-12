@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatPanelDate } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
@@ -7,7 +8,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 // fuente para no duplicar el sistema de diseño entre portales.
 import "../routes/student-portal.css";
 import { requestStatusLabel } from "./gestion-labels.ts";
-import { usePagedItems, type RequestListItem } from "./paged-requests.ts";
+import { usePagedList, type RequestListItem, type RequestListPage } from "./paged-requests.ts";
 
 /**
  * Clases Tailwind de las filas de gestión (TI2-91, migrado de
@@ -128,8 +129,56 @@ function RequestRow({
   );
 }
 
+/**
+ * Filas de cada página cargada, cada una con su propia suscripción (TI2-91).
+ *
+ * Un hijo <PageItems> por cursor pedido (identidad estable: los cursores solo
+ * se agregan): todas las páginas cargadas mantienen lectura reactiva aunque
+ * Convex actualice una anterior. El padre decide carga/vacío/botón con la
+ * primera y la última página. `renderItem` pone la `key` de cada fila.
+ * Se exporta para probar la reactividad por página de forma aislada.
+ */
+export function PagedItems<Item extends RequestListItem>({
+  cursors,
+  usePage,
+  renderItem,
+}: {
+  cursors: ReadonlyArray<string | null>;
+  usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
+  renderItem: (item: Item) => ReactNode;
+}) {
+  return (
+    <>
+      {cursors.map((cursor) => (
+        <PageItems
+          key={cursor ?? "first"}
+          cursor={cursor}
+          usePage={usePage}
+          renderItem={renderItem}
+        />
+      ))}
+    </>
+  );
+}
+
+function PageItems<Item extends RequestListItem>({
+  cursor,
+  usePage,
+  renderItem,
+}: {
+  cursor: string | null;
+  usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
+  renderItem: (item: Item) => ReactNode;
+}) {
+  const page = usePage(cursor);
+  if (page === undefined) {
+    return null;
+  }
+  return <>{page.page.map((item) => renderItem(item))}</>;
+}
+
 function OpenInboxBody() {
-  const { items, done, pending, loadMore } = usePagedItems(useOpenRequests);
+  const { cursors, firstPage, tailPending, tailDone, loadMore } = usePagedList(useOpenRequests);
   const takeRequest = useTakeRequest();
   const [takingId, setTakingId] = useState<string | null>(null);
   const [takeError, setTakeError] = useState<string | null>(null);
@@ -152,7 +201,7 @@ function OpenInboxBody() {
     }
   }
 
-  if (pending && items.length === 0) {
+  if (firstPage === undefined) {
     return (
       <p role="status" className="student-portal__loading">
         Cargando la bandeja…
@@ -160,7 +209,7 @@ function OpenInboxBody() {
     );
   }
 
-  if (items.length === 0) {
+  if (firstPage.page.length === 0) {
     return (
       <div className="student-portal__empty">
         <p className="student-portal__empty-title">No hay solicitudes por revisar.</p>
@@ -177,31 +226,35 @@ function OpenInboxBody() {
         </p>
       )}
       <ul className="student-portal__list">
-        {items.map((request) => (
-          <RequestRow
-            key={request._id}
-            request={request}
-            clickable={false}
-            take={{
-              disabled: takingId !== null,
-              busy: takingId === request._id,
-              onTake: () => handleTake(request._id),
-            }}
-          />
-        ))}
+        <PagedItems
+          cursors={cursors}
+          usePage={useOpenRequests}
+          renderItem={(request) => (
+            <RequestRow
+              key={request._id}
+              request={request}
+              clickable={false}
+              take={{
+                disabled: takingId !== null,
+                busy: takingId === request._id,
+                onTake: () => handleTake(request._id),
+              }}
+            />
+          )}
+        />
       </ul>
-      {done ? null : (
+      {tailDone ? null : (
         <div className="student-portal__cta">
           <button
             type="button"
             className="student-portal__btn student-portal__btn--primary"
-            disabled={pending}
+            disabled={tailPending}
             onClick={loadMore}
-            aria-busy={pending}
+            aria-busy={tailPending}
           >
-            {pending ? "Cargando…" : "Cargar más"}
+            {tailPending ? "Cargando…" : "Cargar más"}
           </button>
-          {pending && (
+          {tailPending && (
             <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>
@@ -213,9 +266,10 @@ function OpenInboxBody() {
 }
 
 function AuthorizedRequestsBody() {
-  const { items, done, pending, loadMore } = usePagedItems(useAuthorizedRequests);
+  const { cursors, firstPage, tailPending, tailDone, loadMore } =
+    usePagedList(useAuthorizedRequests);
 
-  if (pending && items.length === 0) {
+  if (firstPage === undefined) {
     return (
       <p role="status" className="student-portal__loading">
         Cargando tus tomadas…
@@ -223,7 +277,7 @@ function AuthorizedRequestsBody() {
     );
   }
 
-  if (items.length === 0) {
+  if (firstPage.page.length === 0) {
     return (
       <div className="student-portal__empty">
         <p className="student-portal__empty-title">No tienes solicitudes tomadas.</p>
@@ -235,22 +289,26 @@ function AuthorizedRequestsBody() {
   return (
     <>
       <ul className="student-portal__list">
-        {items.map((request) => (
-          <RequestRow key={request._id} request={request} clickable={true} />
-        ))}
+        <PagedItems
+          cursors={cursors}
+          usePage={useAuthorizedRequests}
+          renderItem={(request) => (
+            <RequestRow key={request._id} request={request} clickable={true} />
+          )}
+        />
       </ul>
-      {done ? null : (
+      {tailDone ? null : (
         <div className="student-portal__cta">
           <button
             type="button"
             className="student-portal__btn student-portal__btn--primary"
-            disabled={pending}
+            disabled={tailPending}
             onClick={loadMore}
-            aria-busy={pending}
+            aria-busy={tailPending}
           >
-            {pending ? "Cargando…" : "Cargar más"}
+            {tailPending ? "Cargando…" : "Cargar más"}
           </button>
-          {pending && (
+          {tailPending && (
             <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>
@@ -327,6 +385,8 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
+  // El estado es lo único estable del detalle ante cualquier transición.
+  const statusRef = useRef<HTMLElement>(null);
 
   // Foco del modal (TI2-92): al abrir va al motivo; al cerrar vuelve al botón
   // que lo abrió. El cierre se resuelve en efecto tras el commit (y no en el
@@ -338,7 +398,13 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
     if (showInfoModal) {
       reasonRef.current?.focus();
     } else if (prevShowInfoModal.current) {
-      openButtonRef.current?.focus();
+      // Al cerrar vuelve al botón que abrió; si la transición tras un éxito
+      // ya lo desmontó, cae al estado (estable en todo el detalle).
+      if (openButtonRef.current) {
+        openButtonRef.current.focus();
+      } else {
+        statusRef.current?.focus();
+      }
     }
     prevShowInfoModal.current = showInfoModal;
   }, [showInfoModal]);
@@ -473,7 +539,9 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
       <dl>
         <div>
           <dt>Estado</dt>
-          <dd>{requestStatusLabel(request.status)}</dd>
+          <dd ref={statusRef} tabIndex={-1}>
+            {requestStatusLabel(request.status)}
+          </dd>
         </div>
         <div>
           <dt>Registrada</dt>

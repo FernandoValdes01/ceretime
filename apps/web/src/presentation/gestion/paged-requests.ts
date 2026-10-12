@@ -15,64 +15,38 @@ export type RequestListPage<Item extends RequestListItem> = {
 };
 
 /**
- * Acumula páginas con cursor sin duplicar y refleja actualizaciones
- * reactivas (TI2-91).
+ * Paginación con lectura reactiva de todas las páginas cargadas (TI2-91).
  *
- * Guarda cada página una sola vez durante el render (patrón documentado de
- * React para ajustar estado en render): evita setState en efectos sin
- * perder páginas al avanzar el cursor. La clave es el cursor pedido.
- * Además, si Convex devuelve una página distinta para el mismo cursor
- * (actualización reactiva), se reemplaza ese segmento y se reconstruye
- * la lista completa en orden de cursor.
+ * Guarda la lista de cursores pedidos (solo crece). Cada cursor lo suscribe
+ * por separado el componente <PagedItems>: así ninguna página cargada queda
+ * congelada cuando Convex empuja cambios (p. ej. una toma que saca una
+ * solicitud de la bandeja o cambia su estado en "Mis tomadas").
+ *
+ * La primera página decide los estados de carga y vacío; la última (cola),
+ * el botón "Cargar más". Sin setState en render: todo el estado vive en
+ * useState y cambia solo desde el evento del botón.
  */
-export function usePagedItems<Item extends RequestListItem>(
+export function usePagedList<Item extends RequestListItem>(
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
 ) {
-  const [cursor, setCursor] = useState<string | null>(null);
-  const page = usePage(cursor);
-  const [pages, setPages] = useState<Map<string, { items: ReadonlyArray<Item>; hash: string }>>(
-    new Map(),
-  );
-  const [done, setDone] = useState(false);
-
-  if (page !== undefined) {
-    // Hash incluye _id y status para detectar cambios de datos con mismo ID.
-    const currentHash = page.page.map((item) => `${item._id}:${item.status}`).join(",");
-    const existing = pages.get(cursor ?? "first");
-
-    if (!existing || existing.hash !== currentHash) {
-      setPages((prev) => {
-        const next = new Map(prev);
-        next.set(cursor ?? "first", { items: page.page, hash: currentHash });
-        return next;
-      });
-    }
-    // Los metadatos de paginación se sincronizan aunque las filas no cambien:
-    // si isDone pasa a false, "Cargar más" debe aparecer. La comparación con
-    // el estado actual evita el set en cada render (sin ella, loop infinito).
-    if (done !== page.isDone) {
-      setDone(page.isDone);
-    }
-  }
-
-  // Reconstruye la lista concatenando páginas en orden de cursor:
-  // "first" (null) primero, luego el resto en orden de inserción.
-  const items = Array.from(pages.entries())
-    .sort(([a], [b]) => (a === "first" ? -1 : b === "first" ? 1 : 0))
-    .flatMap(([, v]) => v.items);
+  const [cursors, setCursors] = useState<readonly (string | null)[]>([null]);
+  const firstPage = usePage(null);
+  const tailPage = usePage(cursors[cursors.length - 1] ?? null);
 
   return {
-    items,
-    done,
-    pending: page === undefined,
-    // Sin página vigente o sin más páginas no hay a dónde avanzar: no toca
-    // el cursor (la UI además oculta el botón con done y lo deshabilita con
-    // pending; esto blinda la primitiva aunque se invoque programáticamente).
+    cursors,
+    firstPage,
+    tailPending: tailPage === undefined,
+    tailDone: tailPage?.isDone ?? false,
     loadMore: () => {
-      if (done || page === undefined) {
+      if (tailPage === undefined || tailPage.isDone) {
         return;
       }
-      setCursor(page.continueCursor);
+      const next = tailPage.continueCursor;
+      if (!next) {
+        return;
+      }
+      setCursors((prev) => (prev.includes(next) ? prev : [...prev, next]));
     },
   };
 }
