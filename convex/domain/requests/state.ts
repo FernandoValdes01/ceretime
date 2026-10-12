@@ -17,33 +17,41 @@ export const SPRINT_1_REQUEST_STATES = [
 ] as const;
 
 /**
- * Declarados para que nadie invente nombres alternativos, no habilitados:
- * ninguna transición de Sprint 1 llega a ellos. Sus transiciones de origen
- * siguen pendientes de definición en el documento de requerimientos.
+ * Declarado para que nadie invente un nombre alternativo, no habilitado:
+ * ninguna transición llega a él. La derivación exige contacto y aceptación
+ * del estudiante antes de abrir acompañamiento (RN-24) y su flujo sigue
+ * pendiente de definición en el documento de requerimientos.
  */
-export const FUTURE_REQUEST_STATES = [
-  "referred",
-  "closed_without_accompaniment",
-  "cancelled",
-] as const;
+export const FUTURE_REQUEST_STATES = ["referred"] as const;
 
-export const REQUEST_STATES = [...SPRINT_1_REQUEST_STATES, ...FUTURE_REQUEST_STATES] as const;
+/**
+ * Estados terminales que cierran la solicitud sin abrir acompañamiento
+ * (TI2-85): el Estudiante cancela la suya y el Profesional con toma activa la
+ * cierra. Operan en Dominio y Aplicación; `api.presentation.*` todavía no los
+ * entrega (ver `toSprint1AccompanimentRequest`).
+ */
+export const CLOSURE_REQUEST_STATES = ["closed_without_accompaniment", "cancelled"] as const;
+
+/** Conserva el orden previo a TI2-85: Sprint 1, derivación y cierres. */
+export const REQUEST_STATES = [
+  ...SPRINT_1_REQUEST_STATES,
+  ...FUTURE_REQUEST_STATES,
+  ...CLOSURE_REQUEST_STATES,
+] as const;
 
 export type Sprint1RequestState = (typeof SPRINT_1_REQUEST_STATES)[number];
 export type FutureRequestState = (typeof FUTURE_REQUEST_STATES)[number];
+export type ClosureRequestState = (typeof CLOSURE_REQUEST_STATES)[number];
 export type RequestState = (typeof REQUEST_STATES)[number];
 
 /**
- * Estados persistibles tras la ampliación de TI2-85 (TI2-83 adapta
- * validadores). Suma `closed_without_accompaniment` y `cancelled` a los
- * operativos de Sprint 1; `referred` sigue sin habilitarse porque no tiene
- * reglas ni proyección acordada. TI2-85 es dueño de las reglas y el mapping;
- * acá solo se declara qué valores puede traer una fila leída.
+ * Estados que puede traer una fila de `requests` o de `requestTransitions`:
+ * los operativos de Sprint 1 más los cierres de TI2-85. `referred` sigue sin
+ * habilitarse porque no tiene reglas ni proyección acordada.
  */
 export const PERSISTABLE_REQUEST_STATES = [
   ...SPRINT_1_REQUEST_STATES,
-  "closed_without_accompaniment",
-  "cancelled",
+  ...CLOSURE_REQUEST_STATES,
 ] as const;
 
 export type PersistableRequestState = (typeof PERSISTABLE_REQUEST_STATES)[number];
@@ -65,7 +73,15 @@ export const REQUEST_STATE_LABELS: Record<RequestState, string> = {
   cancelled: "Cancelada",
 };
 
-/** Evita exponer estados que todavía no tienen operación asociada. */
+/** Evita exponer estados que el contrato público todavía no entrega. */
 export function isSprint1RequestState(state: RequestState): state is Sprint1RequestState {
   return (SPRINT_1_REQUEST_STATES as readonly RequestState[]).includes(state);
+}
+
+/**
+ * Recibe `string` porque valida lo que trae una fila leída: un literal fuera
+ * de la lista es corrupción o un estado sin reglas, como `referred`.
+ */
+export function isPersistableRequestState(state: string): state is PersistableRequestState {
+  return (PERSISTABLE_REQUEST_STATES as readonly string[]).includes(state);
 }

@@ -110,9 +110,10 @@ export default defineSchema({
   // Tabla 'requests': solicitudes de acompañamiento. El estado usa los
   // literales persistibles del dominio (Sprint 1 de TI2-7 más la cancelación
   // y el cierre de TI2-85, sin `referred`); el contrato de presentación
-  // conserva los 4 estados hasta el mapping de TI2-85. `createdAt` es la
-  // fecha de creación como número. Solo persistencia: las transiciones las
-  // aplica TI2-21 y las reglas de cancelación son de TI2-85.
+  // conserva los 4 estados de Sprint 1 (ver `toSprint1AccompanimentRequest`).
+  // `createdAt` es la fecha de creación como número. Solo persistencia: las
+  // transiciones las aplica TI2-21 y las reglas de cancelación y cierre son
+  // de TI2-85.
   requests: defineTable({
     studentId: v.id("users"),
     status: persistableRequestStatusUnion,

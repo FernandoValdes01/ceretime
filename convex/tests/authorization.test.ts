@@ -4,6 +4,12 @@ import type { FunctionReturnType } from "convex/server";
 import { expect, test } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import {
+  authorizeAppointmentBook,
+  authorizeAppointmentRead,
+  authorizeAvailabilityRead,
+} from "../application/authorization/authorize";
+import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -979,4 +985,169 @@ test("tramo solo con referencias borradas avanza sin ciclarse", async () => {
   });
   expect(second.items).toHaveLength(0);
   expect(second.hasMore).toBe(false);
+});
+
+// Agenda (TI2-86): la política todavía no tiene entrada pública, así que se
+// invoca dentro de `t.run` con el adaptador real. `tokenIdentifier` es el que
+// Presentación tomará de `ctx.auth.getUserIdentity()`.
+
+const AGENDA_DENIED = {
+  status: "error",
+  error: { code: "unauthorized", message: "No autorizado" },
+} as const;
+
+test("agenda: revocar la asignación corta la consulta de cupos en la operación siguiente", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "s2-ag-est-1",
+    email: "agest1@alu.uct.cl",
+    fullName: "Estudiante Ficticio",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "s2-ag-pro-1",
+    email: "agpro1@uct.cl",
+    fullName: "Profesional Asignado",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "s2-ag-pro-2",
+    email: "agpro2@uct.cl",
+    fullName: "Profesional Asignador",
+    role: "professional",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  const assignment = {
+    accompanimentId,
+    userId: professional.id,
+    assignedRole: "professional" as const,
+  };
+  const assigner = { subject: "s2-ag-pro-2", email: "agpro2@uct.cl" };
+  await seedAssignment(t, assignment, assigner);
+  const request = { tokenIdentifier: professional.tokenIdentifier, accompanimentId };
+
+  expect(
+    await t.run((ctx) => authorizeAvailabilityRead(authorizationReader(ctx), request)),
+  ).toEqual({ status: "ok", data: { callerId: professional.id } });
+
+  await seedRevoke(t, assignment, assigner);
+
+  expect(
+    await t.run((ctx) => authorizeAvailabilityRead(authorizationReader(ctx), request)),
+  ).toEqual(AGENDA_DENIED);
+});
+
+test("agenda: ajeno, inexistente, habilitado sin asignación e inactivo se deniegan igual", async () => {
+  const t = convexTest(schema, modules);
+  const owner = await seedUser(t, {
+    subject: "s2-ag-est-2",
+    email: "agest2@alu.uct.cl",
+    fullName: "Estudiante Ficticio",
+    role: "student",
+  });
+  const other = await seedUser(t, {
+    subject: "s2-ag-est-3",
+    email: "agest3@alu.uct.cl",
+    fullName: "Otro Estudiante Ficticio",
+    role: "student",
+  });
+  const unassigned = await seedUser(t, {
+    subject: "s2-ag-pro-3",
+    email: "agpro3@uct.cl",
+    fullName: "Profesional Sin Asignación",
+    role: "professional",
+  });
+  const inactive = await seedUser(t, {
+    subject: "s2-ag-est-4",
+    email: "agest4@alu.uct.cl",
+    fullName: "Estudiante Inactivo",
+    role: "student",
+    accountStatus: "inactive",
+  });
+  const accompanimentId = await seedAccompaniment(t, owner.id);
+  const inactiveOwn = await seedAccompaniment(t, inactive.id);
+  const missingId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("accompaniments", {
+      studentId: owner.id,
+      status: "active",
+      objective: "Temporal ficticio",
+      accessNeeds: "Temporal ficticio",
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+  const read = (tokenIdentifier: string, id: string) =>
+    t.run((ctx) =>
+      authorizeAvailabilityRead(authorizationReader(ctx), { tokenIdentifier, accompanimentId: id }),
+    );
+
+  expect(await read(owner.tokenIdentifier, accompanimentId)).toEqual({
+    status: "ok",
+    data: { callerId: owner.id },
+  });
+  expect(await read(other.tokenIdentifier, accompanimentId)).toEqual(AGENDA_DENIED);
+  expect(await read(owner.tokenIdentifier, missingId)).toEqual(AGENDA_DENIED);
+  expect(await read(owner.tokenIdentifier, owner.id)).toEqual(AGENDA_DENIED);
+  expect(await read(unassigned.tokenIdentifier, accompanimentId)).toEqual(AGENDA_DENIED);
+  expect(await read(inactive.tokenIdentifier, inactiveOwn)).toEqual(AGENDA_DENIED);
+});
+
+test("agenda: el Practicante asignado lee atenciones minimizadas, pero no consulta cupos ni reserva", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "s2-ag-est-5",
+    email: "agest5@alu.uct.cl",
+    fullName: "Estudiante Ficticio",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "s2-ag-pro-4",
+    email: "agpro4@uct.cl",
+    fullName: "Profesional Asignado",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "s2-ag-pro-5",
+    email: "agpro5@uct.cl",
+    fullName: "Profesional Bootstrap",
+    role: "professional",
+  });
+  const intern = await seedUser(t, {
+    subject: "s2-ag-int-1",
+    email: "agint1@alu.uct.cl",
+    fullName: "Practicante Ficticio",
+    role: "intern",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  await seedAssignment(
+    t,
+    { accompanimentId, userId: professional.id, assignedRole: "professional" },
+    { subject: "s2-ag-pro-5", email: "agpro5@uct.cl" },
+  );
+  await seedAssignment(
+    t,
+    { accompanimentId, userId: intern.id, assignedRole: "intern" },
+    { subject: "s2-ag-pro-4", email: "agpro4@uct.cl" },
+  );
+  const as = (tokenIdentifier: string) => ({ tokenIdentifier, accompanimentId });
+
+  const results = await t.run(async (ctx) => {
+    const reader = authorizationReader(ctx);
+    return {
+      internAppointments: await authorizeAppointmentRead(reader, as(intern.tokenIdentifier)),
+      internSlots: await authorizeAvailabilityRead(reader, as(intern.tokenIdentifier)),
+      internBook: await authorizeAppointmentBook(reader, as(intern.tokenIdentifier)),
+      studentBook: await authorizeAppointmentBook(reader, as(student.tokenIdentifier)),
+      professionalBook: await authorizeAppointmentBook(reader, as(professional.tokenIdentifier)),
+    };
+  });
+
+  expect(results.internAppointments).toEqual({
+    status: "ok",
+    data: { callerId: intern.id, view: "minimized" },
+  });
+  expect(results.internSlots).toEqual(AGENDA_DENIED);
+  expect(results.internBook).toEqual(AGENDA_DENIED);
+  expect(results.studentBook).toEqual({ status: "ok", data: { callerId: student.id } });
+  expect(results.professionalBook).toEqual(AGENDA_DENIED);
 });
