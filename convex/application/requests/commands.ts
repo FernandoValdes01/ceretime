@@ -5,6 +5,7 @@ import {
   ACCESS_NEEDS_MAX_LENGTH,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toSprint1AccompanimentRequest,
 } from "../../domain/requests/request";
 import { transitionRequest } from "../../domain/requests/transition_policy";
 import type { Id } from "../../_generated/dataModel";
@@ -28,10 +29,10 @@ import {
 import { requireActiveProfessional, requireActiveStudent } from "./identity";
 
 /**
- * Casos de uso de escritura de solicitudes (TI2-9).
+ * Casos de uso de escritura de solicitudes (TI2-9, TI2-85).
  *
  * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
- * `ctx.auth.getUserIdentity()`, exige Estudiante con cuenta habilitada y
+ * `ctx.auth.getUserIdentity()`, exige el rol con cuenta habilitada y
  * vigente, y persiste con Infraestructura. Convertir el contenido
  * estructurado a la forma persistida es alcance de TI2-23: aquí solo se
  * guarda el texto de necesidades de acceso. Opera con datos ficticios.
@@ -71,7 +72,7 @@ export async function registerRequest(
   });
   const row = await getRequestById(ctx, requestId);
   if (row === null) deny();
-  return toAccompanimentRequest({
+  return toSprint1AccompanimentRequest({
     _id: row._id,
     studentId: row.studentId,
     status: row.status,
@@ -121,7 +122,7 @@ export async function requestAdditionalInformation(
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
-  return toAccompanimentRequest({
+  return toSprint1AccompanimentRequest({
     _id: row._id,
     studentId: row.studentId,
     status: result.change.to,
@@ -177,7 +178,7 @@ export async function takeRequest(
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
-  return toAccompanimentRequest({
+  return toSprint1AccompanimentRequest({
     _id: row._id,
     studentId: row.studentId,
     status: result.change.to,
@@ -263,4 +264,111 @@ export async function acceptRequest(
     accessNeeds: opened.accessNeeds,
     view: "full" as const,
   };
+}
+
+/**
+ * Cancela la solicitud propia del Estudiante (TI2-85): mueve `received`,
+ * `under_review` o `awaiting_information_or_acceptance` a `cancelled`
+ * aplicando la política de TI2-21. Solo el propio Estudiante con cuenta
+ * vigente; una solicitud ajena o inexistente recibe la misma denegación
+ * genérica, así no se revela que existe. El motivo es obligatorio. Si el
+ * estado no admite el paso, incluida una solicitud ya cancelada, se rechaza
+ * sin modificar nada. Persiste el estado y el registro del cambio (motivo,
+ * actor y fecha) en la misma transacción y nunca abre acompañamiento.
+ *
+ * Sin entrada pública todavía: la tarea que la publique amplía también el
+ * contrato de estados de `api.presentation.*` junto con TI4.
+ */
+export async function cancelRequest(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  input: { readonly requestId: Id<"requests">; readonly reason: string },
+) {
+  const student = await requireActiveStudent(ctx, identity);
+  const row = await getRequestById(ctx, input.requestId);
+  if (row === null) deny();
+  if (row.studentId !== student._id) deny();
+  const result = transitionRequest({
+    from: row.status,
+    to: "cancelled",
+    actorId: student._id,
+    occurredAt: Date.now(),
+    reason: input.reason,
+  });
+  if (result.status === "rejected") {
+    if (result.cause === "reason_required") {
+      throw new Error("Se requiere el motivo para cancelar la solicitud");
+    }
+    throw new Error("La solicitud no admite la cancelación en su estado actual");
+  }
+  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await logRequestTransition(ctx, {
+    requestId: input.requestId,
+    from: result.change.from,
+    to: result.change.to,
+    actorId: student._id,
+    ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
+    occurredAt: result.change.occurredAt,
+  });
+  return toAccompanimentRequest({
+    _id: row._id,
+    studentId: row.studentId,
+    status: result.change.to,
+    accessNeeds: row.accessNeeds,
+    createdAt: row.createdAt,
+  });
+}
+
+/**
+ * Cierra la solicitud sin abrir acompañamiento (TI2-85): mueve
+ * `under_review` o `awaiting_information_or_acceptance` a
+ * `closed_without_accompaniment` aplicando la política de TI2-21. Solo un
+ * Profesional con cuenta vigente y toma activa sobre la solicitud; cualquier
+ * otro caso recibe denegación genérica. El motivo es la razón comprensible
+ * que pide la especificación y es obligatorio. Si el estado no admite el
+ * paso, incluida una solicitud aceptada o ya cerrada, se rechaza sin
+ * modificar nada. Persiste el estado y el registro del cambio en la misma
+ * transacción; la toma queda tal cual, como rastro de quién revisó.
+ *
+ * Sin entrada pública todavía, por la misma razón que `cancelRequest`.
+ */
+export async function closeRequestWithoutAccompaniment(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  input: { readonly requestId: Id<"requests">; readonly reason: string },
+) {
+  const professional = await requireActiveProfessional(ctx, identity);
+  const row = await getRequestById(ctx, input.requestId);
+  if (row === null) deny();
+  const take = await findActiveTake(ctx, input.requestId, professional._id);
+  if (take === null) deny();
+  const result = transitionRequest({
+    from: row.status,
+    to: "closed_without_accompaniment",
+    actorId: professional._id,
+    occurredAt: Date.now(),
+    reason: input.reason,
+  });
+  if (result.status === "rejected") {
+    if (result.cause === "reason_required") {
+      throw new Error("Se requiere el motivo para cerrar la solicitud sin acompañamiento");
+    }
+    throw new Error("La solicitud no admite el cierre sin acompañamiento en su estado actual");
+  }
+  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await logRequestTransition(ctx, {
+    requestId: input.requestId,
+    from: result.change.from,
+    to: result.change.to,
+    actorId: professional._id,
+    ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
+    occurredAt: result.change.occurredAt,
+  });
+  return toAccompanimentRequest({
+    _id: row._id,
+    studentId: row.studentId,
+    status: result.change.to,
+    accessNeeds: row.accessNeeds,
+    createdAt: row.createdAt,
+  });
 }
