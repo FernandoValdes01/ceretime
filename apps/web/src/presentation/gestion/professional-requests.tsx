@@ -176,7 +176,13 @@ function PageItems<Item extends RequestListItem>({
   onCount: (cursor: string | null, count: number) => void;
 }) {
   const page = usePage(cursor);
-  onCount(cursor, page === undefined ? 0 : page.page.length);
+  const count = page === undefined ? 0 : page.page.length;
+  // Reporte en efecto (no en render): el ajuste en render dispara el aviso
+  // "Cannot update ... while rendering a different component". Con deps
+  // precisas solo corre cuando el conteo cambia.
+  useEffect(() => {
+    onCount(cursor, count);
+  }, [cursor, count, onCount]);
   if (page === undefined) {
     return null;
   }
@@ -231,7 +237,7 @@ function OpenInboxBody() {
           {takeError}
         </p>
       )}
-      {!hasItems && allReported ? (
+      {!hasItems && allReported && tailDone ? (
         <div className="student-portal__empty">
           <p className="student-portal__empty-title">No hay solicitudes por revisar.</p>
           <p>Cuando un estudiante registre una solicitud, aparecerá aquí.</p>
@@ -300,7 +306,7 @@ function AuthorizedRequestsBody() {
 
   return (
     <>
-      {!hasItems && allReported ? (
+      {!hasItems && allReported && tailDone ? (
         <div className="student-portal__empty">
           <p className="student-portal__empty-title">No tienes solicitudes tomadas.</p>
           <p>Las solicitudes que tomes para revisión aparecerán aquí.</p>
@@ -408,18 +414,24 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
   const statusRef = useRef<HTMLElement>(null);
 
   // Foco del modal (TI2-92): al abrir va al motivo; al cerrar vuelve al botón
-  // que lo abrió. El cierre se resuelve en efecto tras el commit (y no en el
-  // handler): al cerrar tras un envío el botón sigue deshabilitado hasta que
-  // se vacía isActionPending, y focus() sobre un botón deshabilitado no hace
-  // nada. Solo DOM, sin setState.
+  // que lo abrió, salvo tras un éxito (focusStatusOnClose), donde va directo
+  // al estado: el éxito cambia el estado y el botón puede desmontarse en
+  // cualquier momento después (o ya estar deshabilitado al cerrar), y el
+  // estado es lo único estable del detalle. El cierre se resuelve en efecto
+  // tras el commit (y no en el handler): focus() sobre un botón deshabilitado
+  // no hace nada. Solo DOM, sin setState.
   const prevShowInfoModal = useRef(showInfoModal);
+  const focusStatusOnClose = useRef(false);
   useEffect(() => {
     if (showInfoModal) {
       reasonRef.current?.focus();
     } else if (prevShowInfoModal.current) {
-      // Al cerrar vuelve al botón que abrió; si la transición tras un éxito
-      // ya lo desmontó, cae al estado (estable en todo el detalle).
-      if (openButtonRef.current) {
+      if (focusStatusOnClose.current) {
+        focusStatusOnClose.current = false;
+        statusRef.current?.focus();
+      } else if (openButtonRef.current) {
+        // Al cerrar vuelve al botón que abrió; si la transición tras un éxito
+        // ya lo desmontó, cae al estado (estable en todo el detalle).
         openButtonRef.current.focus();
       } else {
         statusRef.current?.focus();
@@ -512,6 +524,7 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
         requestId: requestId as Id<"requests">,
         reason: trimmed,
       });
+      focusStatusOnClose.current = true;
       closeInfoModal();
       // La query reactiva actualizará el estado automáticamente
     } catch (err) {

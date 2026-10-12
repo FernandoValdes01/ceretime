@@ -592,12 +592,13 @@ describe("acciones del Profesional (TI2-92)", () => {
       reason: "Falta información sobre horario",
     });
 
-    // Tras el éxito el modal cierra y el foco vuelve al botón que lo abrió
-    // (sigue montado: el cambio de estado reactivo llega después del cierre).
+    // Tras el éxito el modal cierra y el foco va al estado (estable ante la
+    // transición inminente), no al botón que puede desmontarse enseguida.
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull(),
     );
-    expect(document.activeElement?.textContent).toBe("Pedir información");
+    const estadoTrasExito = await screen.findByText("En revisión");
+    expect(document.activeElement).toBe(estadoTrasExito);
   });
 
   test("tras éxito con cambio de estado el foco va al estado estable", async () => {

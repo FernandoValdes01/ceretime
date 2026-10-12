@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 /** Fila mínima que muestran las listas: coincide con ambas vistas. */
 export type RequestListItem = {
@@ -23,12 +23,16 @@ export type RequestListPage<Item extends RequestListItem> = {
  * primera página mientras una posterior aún tiene filas, o un cambio de
  * estado en "Mis tomadas").
  *
- * Cada página reporta su conteo (onCount) con guarda por valor: sin el
- * conteo, una primera página vacía ocultaría filas que aún existen en
- * páginas posteriores. La primera página decide la carga inicial; el vacío
- * exige todas las páginas reportadas y sin filas; la última (cola), el botón
- * "Cargar más". Sin setState en efectos: los ajustes en render tienen
- * condición de salida y terminan.
+ * Cada página reporta su conteo vía onCount desde un efecto del hijo con
+ * dependencias ([cursor, count]): reportar en render dispara el aviso de
+ * React ("Cannot update ... while rendering a different component",
+ * verificado en consola de tests), y el setState directo en efectos lo
+ * prohíbe el lint del repo. El updater funcional con guarda por valor solo
+ * re-renderiza cuando un conteo cambia de verdad. Sin el conteo, una primera
+ * página vacía ocultaría filas que aún existen en páginas posteriores. La
+ * primera página decide la carga inicial; el vacío exige todas las páginas
+ * reportadas, sin filas y sin más por cargar; la última (cola), el botón
+ * "Cargar más".
  */
 export function usePagedList<Item extends RequestListItem>(
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
@@ -38,12 +42,10 @@ export function usePagedList<Item extends RequestListItem>(
   const firstPage = usePage(null);
   const tailPage = usePage(cursors[cursors.length - 1] ?? null);
 
-  const reportCount = (cursor: string | null, count: number) => {
+  const reportCount = useCallback((cursor: string | null, count: number) => {
     const key = cursor ?? "first";
-    if (counts.get(key) !== count) {
-      setCounts((prev) => new Map(prev).set(key, count));
-    }
-  };
+    setCounts((prev) => (prev.get(key) === count ? prev : new Map(prev).set(key, count)));
+  }, []);
 
   const allReported = cursors.every((cursor) => counts.has(cursor ?? "first"));
   const hasItems = cursors.some((cursor) => (counts.get(cursor ?? "first") ?? 0) > 0);
