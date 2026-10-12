@@ -3,7 +3,7 @@
  *
  * Dominio puro: no importa Convex ni `convex/_generated`, para que Web y
  * Mobile puedan consumirlo sin levantar el backend. Esta es la única fuente
- * de los literales de rol y estado; `convex/validators.ts` los convierte a
+ * de los literales de rol y estado; `convex/infrastructure/validators.ts` los convierte a
  * validadores en el borde que conecta con la base de datos y la API.
  */
 

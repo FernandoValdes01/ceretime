@@ -8,7 +8,6 @@
  * @module
  */
 
-import type * as accounts from "../accounts.js";
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
@@ -20,11 +19,10 @@ import type * as application_session_minimal_identity from "../application/sessi
 import type * as application_session_portal_role from "../application/session/portal_role.js";
 import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
-import type * as assignments from "../assignments.js";
 import type * as auth from "../auth.js";
-import type * as domain_accompaniment_accompaniment from "../domain/accompaniment/accompaniment.js";
-import type * as domain_accompaniment_practitioner_assignment from "../domain/accompaniment/practitioner_assignment.js";
+import type * as domain_accompaniments_accompaniment from "../domain/accompaniments/accompaniment.js";
 import type * as domain_accompaniments_intern_access from "../domain/accompaniments/intern_access.js";
+import type * as domain_accompaniments_practitioner_assignment from "../domain/accompaniments/practitioner_assignment.js";
 import type * as domain_accounts_enablement from "../domain/accounts/enablement.js";
 import type * as domain_appointments_appointment from "../domain/appointments/appointment.js";
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
@@ -33,23 +31,25 @@ import type * as domain_availability_availability from "../domain/availability/a
 import type * as domain_errors_api_error from "../domain/errors/api_error.js";
 import type * as domain_identity_roles from "../domain/identity/roles.js";
 import type * as domain_index from "../domain/index.js";
-import type * as domain_request_request from "../domain/request/request.js";
-import type * as domain_request_state from "../domain/request/state.js";
-import type * as domain_request_transition_policy from "../domain/request/transition_policy.js";
-import type * as domain_request_transitions from "../domain/request/transitions.js";
+import type * as domain_requests_request from "../domain/requests/request.js";
+import type * as domain_requests_state from "../domain/requests/state.js";
+import type * as domain_requests_transition_policy from "../domain/requests/transition_policy.js";
+import type * as domain_requests_transitions from "../domain/requests/transitions.js";
 import type * as domain_spaces_space from "../domain/spaces/space.js";
-import type * as fictitiousData from "../fictitiousData.js";
 import type * as http from "../http.js";
 import type * as infrastructure_accompaniments_repository from "../infrastructure/accompaniments/repository.js";
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
-import type * as migrations from "../migrations.js";
+import type * as infrastructure_validators from "../infrastructure/validators.js";
+import type * as operations_accounts from "../operations/accounts.js";
+import type * as operations_assignments from "../operations/assignments.js";
+import type * as operations_fictitiousData from "../operations/fictitiousData.js";
+import type * as operations_migrations from "../operations/migrations.js";
+import type * as operations_requests from "../operations/requests.js";
+import type * as operations_users from "../operations/users.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
-import type * as requests from "../requests.js";
-import type * as users from "../users.js";
-import type * as validators from "../validators.js";
 
 import type {
   ApiFromModules,
@@ -58,7 +58,6 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  accounts: typeof accounts;
   "application/accompaniments/commands": typeof application_accompaniments_commands;
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accounts/enablement": typeof application_accounts_enablement;
@@ -70,11 +69,10 @@ declare const fullApi: ApiFromModules<{
   "application/session/portal_role": typeof application_session_portal_role;
   "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
-  assignments: typeof assignments;
   auth: typeof auth;
-  "domain/accompaniment/accompaniment": typeof domain_accompaniment_accompaniment;
-  "domain/accompaniment/practitioner_assignment": typeof domain_accompaniment_practitioner_assignment;
+  "domain/accompaniments/accompaniment": typeof domain_accompaniments_accompaniment;
   "domain/accompaniments/intern_access": typeof domain_accompaniments_intern_access;
+  "domain/accompaniments/practitioner_assignment": typeof domain_accompaniments_practitioner_assignment;
   "domain/accounts/enablement": typeof domain_accounts_enablement;
   "domain/appointments/appointment": typeof domain_appointments_appointment;
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
@@ -83,23 +81,25 @@ declare const fullApi: ApiFromModules<{
   "domain/errors/api_error": typeof domain_errors_api_error;
   "domain/identity/roles": typeof domain_identity_roles;
   "domain/index": typeof domain_index;
-  "domain/request/request": typeof domain_request_request;
-  "domain/request/state": typeof domain_request_state;
-  "domain/request/transition_policy": typeof domain_request_transition_policy;
-  "domain/request/transitions": typeof domain_request_transitions;
+  "domain/requests/request": typeof domain_requests_request;
+  "domain/requests/state": typeof domain_requests_state;
+  "domain/requests/transition_policy": typeof domain_requests_transition_policy;
+  "domain/requests/transitions": typeof domain_requests_transitions;
   "domain/spaces/space": typeof domain_spaces_space;
-  fictitiousData: typeof fictitiousData;
   http: typeof http;
   "infrastructure/accompaniments/repository": typeof infrastructure_accompaniments_repository;
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
-  migrations: typeof migrations;
+  "infrastructure/validators": typeof infrastructure_validators;
+  "operations/accounts": typeof operations_accounts;
+  "operations/assignments": typeof operations_assignments;
+  "operations/fictitiousData": typeof operations_fictitiousData;
+  "operations/migrations": typeof operations_migrations;
+  "operations/requests": typeof operations_requests;
+  "operations/users": typeof operations_users;
   "presentation/accompaniments": typeof presentation_accompaniments;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
-  requests: typeof requests;
-  users: typeof users;
-  validators: typeof validators;
 }>;
 
 /**

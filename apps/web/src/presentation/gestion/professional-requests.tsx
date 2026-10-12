@@ -6,9 +6,28 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 // Reutiliza el lenguaje visual del panel (listas, fichas, errores): una sola
 // fuente para no duplicar el sistema de diseño entre portales.
 import "../routes/student-portal.css";
-import "./professional-requests.css";
 import { requestStatusLabel } from "./gestion-labels.ts";
 import { usePagedItems, type RequestListItem } from "./paged-requests.ts";
+
+/**
+ * Clases Tailwind de las filas de gestión (TI2-91, migrado de
+ * professional-requests.css por TI2-130): 44px de alto táctil mínimo y foco
+ * visible de 3px según DESIGN.md. El anillo usa el token --color-focus-ring
+ * del tema; el resto del lenguaje (listas, fichas, botones, avisos) sigue en
+ * student-portal.css hasta que su responsable lo migre.
+ */
+const GESTION_ROW = "flex items-center gap-2 min-h-[44px] px-3 py-2 text-inherit";
+const GESTION_FOCUS_VISIBLE =
+  "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
+/**
+ * Textarea del modal (TI2-92, migrado por TI2-130): el anillo de foco usa la
+ * variable de compatibilidad --ct-ring (igual que antes); no se cambia al
+ * token del tema para no alterar el color vigente.
+ */
+const GESTION_TEXTAREA =
+  "w-full min-h-32 resize-y rounded-[0.5rem] border border-(--ct-line) bg-(--ct-card) px-4 py-3 text-base leading-normal text-(--ct-ink) transition-[border-color,box-shadow] duration-150 focus-visible:border-(--ct-primary) focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-(--ct-ring) focus-visible:outline-offset-[2px]";
+const GESTION_TEXTAREA_ERROR =
+  "border-(--ct-danger) focus-visible:shadow-[0_0_0_3px_var(--ct-danger-bg)]";
 import {
   useAuthorizedRequests,
   useOpenRequests,
@@ -80,7 +99,7 @@ function RequestRow({
   if (!clickable) {
     return (
       <li className="student-portal__item">
-        <span className="gestion-request-row">{content}</span>
+        <span className={GESTION_ROW}>{content}</span>
         {take && (
           <button
             type="button"
@@ -101,7 +120,7 @@ function RequestRow({
       <Link
         to="/profesional/solicitudes/$requestId"
         params={{ requestId: request._id }}
-        className="gestion-request-link"
+        className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
       >
         {content}
       </Link>
@@ -183,7 +202,7 @@ function OpenInboxBody() {
             {pending ? "Cargando…" : "Cargar más"}
           </button>
           {pending && (
-            <span role="status" aria-live="polite" className="student-portal__sr-only">
+            <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>
           )}
@@ -232,7 +251,7 @@ function AuthorizedRequestsBody() {
             {pending ? "Cargando…" : "Cargar más"}
           </button>
           {pending && (
-            <span role="status" aria-live="polite" className="student-portal__sr-only">
+            <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>
           )}
@@ -262,7 +281,10 @@ export function ProfessionalRequestDetailPage({ requestId }: { requestId: string
         Detalle de la solicitud
       </h1>
       <p>
-        <Link to="/profesional/solicitudes" className="gestion-request-link">
+        <Link
+          to="/profesional/solicitudes"
+          className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
+        >
           Volver a solicitudes
         </Link>
       </p>
@@ -475,28 +497,31 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
       {showInfoModal && (
         <div
           ref={dialogRef}
-          className="student-portal__modal-overlay"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="info-modal-title"
           onKeyDown={handleDialogKeyDown}
         >
-          <div className="student-portal__modal">
-            <h2 id="info-modal-title" className="student-portal__modal-title">
+          <div className="w-full max-w-[28rem] rounded-lg border border-(--ct-line) bg-(--ct-card) p-6 shadow-[0_10px_25px_-5px_rgb(0_0_0/0.1),0_8px_10px_-6px_rgb(0_0_0/0.1)]">
+            <h2 id="info-modal-title" className="mb-2 text-xl font-semibold text-(--ct-ink)">
               Pedir información adicional
             </h2>
-            <p className="student-portal__modal-text">
+            <p className="mb-6 text-base leading-normal text-(--ct-muted)">
               El estudiante recibirá este motivo para completar su solicitud.
             </p>
             <form onSubmit={handleRequestInfoSubmit}>
-              <div className="student-portal__form-field">
-                <label htmlFor="info-reason" className="student-portal__label">
+              <div className="mb-6">
+                <label
+                  htmlFor="info-reason"
+                  className="mb-2 block text-sm font-semibold text-(--ct-ink)"
+                >
                   Motivo <span aria-hidden="true">*</span>
                 </label>
                 <textarea
                   id="info-reason"
                   ref={reasonRef}
-                  className={`student-portal__textarea ${infoReasonError ? "student-portal__textarea--error" : ""}`}
+                  className={`${GESTION_TEXTAREA} ${infoReasonError ? GESTION_TEXTAREA_ERROR : ""}`}
                   value={infoReason}
                   onChange={(e) => setInfoReason(e.target.value)}
                   maxLength={2000}
@@ -506,18 +531,22 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
                   disabled={isActionPending}
                 />
                 {infoReasonError && (
-                  <p id="info-reason-error" className="student-portal__field-error" role="alert">
+                  <p
+                    id="info-reason-error"
+                    className="mt-2 text-sm font-semibold text-(--ct-danger)"
+                    role="alert"
+                  >
                     {infoReasonError}
                   </p>
                 )}
-                <p id="info-reason-hint" className="student-portal__hint">
+                <p id="info-reason-hint" className="student-portal__hint mt-2">
                   Máximo 2000 caracteres ({infoReason.length}/2000)
                 </p>
               </div>
-              <div className="student-portal__modal-actions">
+              <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
-                  className="student-portal__btn student-portal__btn--ghost"
+                  className="student-portal__btn student-portal__btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
                   onClick={closeInfoModal}
                   disabled={isActionPending}
                 >
@@ -525,7 +554,7 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
                 </button>
                 <button
                   type="submit"
-                  className="student-portal__btn student-portal__btn--primary"
+                  className="student-portal__btn student-portal__btn--primary disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={isActionPending}
                   aria-busy={isActionPending}
                 >

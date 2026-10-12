@@ -5,7 +5,11 @@ import { resolveSessionAndRole } from "../application/session/portal_role";
 import { getMyProfileUseCase } from "../application/session/profile";
 import type { PublicApiError } from "../domain/errors/api_error";
 import { query } from "../_generated/server";
-import { accountStatusUnion, institutionalStatusUnion, roleUnion } from "../validators";
+import {
+  accountStatusUnion,
+  institutionalStatusUnion,
+  roleUnion,
+} from "../infrastructure/validators";
 
 /**
  * Traducción segura del borde Convex para endpoints nuevos (TI2-88).

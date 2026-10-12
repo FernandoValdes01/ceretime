@@ -5,6 +5,8 @@ import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
 import { formatRequestDate } from "./student-request-formatters";
 import { StudentRequestStatusIndicator } from "./student-request-status-indicator";
+import type { StudentAreaCollectionStatus } from "@/presentation/hooks/useStudentArea";
+import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { useStudentAreaContext } from "./student-area-provider";
 
 function DetailField({ label, value }: { label: string; value: string }) {
@@ -24,6 +26,13 @@ function DetailField({ label, value }: { label: string; value: string }) {
   );
 }
 
+function detailAnnouncement(status: StudentAreaCollectionStatus, found: boolean): string | null {
+  if (status === "loading") return "Cargando solicitud.";
+  if (status === "error") return "No pudimos cargar la solicitud.";
+  if (!found) return "Solicitud no encontrada.";
+  return "Solicitud cargada.";
+}
+
 export default function StudentRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
   const { requests, accompaniments } = useStudentAreaContext();
@@ -35,6 +44,7 @@ export default function StudentRequestDetailScreen() {
 
   return (
     <StudentScreen onBack={router.back} showIntroduction={false}>
+      <OperationAnnouncement message={detailAnnouncement(requests.status, Boolean(request))} />
       {requests.status === "loading" ? (
         <View
           className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
@@ -43,7 +53,6 @@ export default function StudentRequestDetailScreen() {
           <StudentText
             weight="semibold"
             accessibilityRole="header"
-            accessibilityLiveRegion="polite"
             className="text-student-text text-xl leading-[28px]"
             selectable
           >
@@ -60,7 +69,6 @@ export default function StudentRequestDetailScreen() {
           <StudentText
             weight="semibold"
             accessibilityRole="header"
-            accessibilityLiveRegion="polite"
             className="text-student-text text-xl leading-[28px]"
             selectable
           >

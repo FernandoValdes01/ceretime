@@ -7,7 +7,7 @@ import {
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
 import { query } from "../_generated/server";
-import { accompanimentStatusUnion } from "../validators";
+import { accompanimentStatusUnion } from "../infrastructure/validators";
 
 /**
  * Borde de Presentación: acompañamientos con autorización en Backend (S2).

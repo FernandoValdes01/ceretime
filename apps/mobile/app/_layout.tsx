@@ -9,6 +9,7 @@ import {
   useNavigationSession,
 } from "../src/presentation/navigation/session";
 import { appHeaderOptions } from "../src/presentation/navigation/app-header-options";
+import { AccessibilityPreferencesProvider } from "../src/presentation/accessibility/accessibility-preferences-provider";
 
 LogBox.ignoreLogs(["[Reanimated] Reduced motion setting is enabled on this device."]);
 
@@ -31,12 +32,14 @@ function RootNavigator() {
 
 export default function RootLayout() {
   return (
-    <NavigationSessionProvider
-      authPort={mobileDependencies.authPort}
-      demoCredentials={mobileDependencies.demoCredentials}
-    >
-      <StatusBar style="dark" />
-      <RootNavigator />
-    </NavigationSessionProvider>
+    <AccessibilityPreferencesProvider port={mobileDependencies.accessibilityPreferencesPort}>
+      <NavigationSessionProvider
+        authPort={mobileDependencies.authPort}
+        demoCredentials={mobileDependencies.demoCredentials}
+      >
+        <StatusBar style="dark" />
+        <RootNavigator />
+      </NavigationSessionProvider>
+    </AccessibilityPreferencesProvider>
   );
 }
