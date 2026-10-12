@@ -39,6 +39,32 @@ describe("Navegación principal", () => {
     },
   );
 
+  test.each(roleCases)("%s abre el centro común desde el header", async (label) => {
+    const navigation = renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${label}` }));
+    const preferencesButton = await screen.findByRole("button", {
+      name: "Preferencias de accesibilidad",
+    });
+    await act(async () => {
+      fireEvent.press(preferencesButton);
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("Preferencias de accesibilidad")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/preferencias");
+    expect(screen.queryByRole("button", { name: "Preferencias de accesibilidad" })).toBeNull();
+
+    fireEvent.press(screen.getByRole("button", { name: "Volver" }));
+    await waitFor(() => expect(navigation.getPathname()).not.toBe("/preferencias"));
+    expect(navigation.getPathname()).toBe(roleCases.find(([role]) => role === label)?.[1]);
+  });
+
+  test("una ruta directa al centro de preferencias sin sesión vuelve al acceso", async () => {
+    const navigation = renderRouter(appDirectory, { initialUrl: "/preferencias" });
+    expect(await screen.findByText("Explora la aplicación")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/login");
+  });
+
   test.each(roleCases)(
     "un enlace directo a %s sin sesión vuelve al acceso",
     async (_label, href) => {

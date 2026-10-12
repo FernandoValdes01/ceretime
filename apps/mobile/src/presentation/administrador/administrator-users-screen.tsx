@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type { PractitionerAccount } from "@/application/administrator-account-models";
+import { useOptionalAccessibilityPreferences } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { AppHeader } from "@/presentation/components/app-header";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
@@ -30,6 +31,8 @@ function AccountCard({
   readonly enablement: AccountEnablementState;
   readonly onEnable: () => void;
 }) {
+  const accessibility = useOptionalAccessibilityPreferences();
+  const avatarSize = 40 * (accessibility?.effective.textScale ?? 1);
   const isEnabled = account.status === "enabled";
   const isLoading = enablement.status === "loading";
   const shouldFocusEnablement = useRef(!isEnabled);
@@ -50,7 +53,12 @@ function AccountCard({
   return (
     <View style={styles.accountCard}>
       <View style={styles.accountHeading}>
-        <View style={styles.avatar}>
+        <View
+          style={[
+            styles.avatar,
+            { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 },
+          ]}
+        >
           <StudentText accessible={false} weight="semibold" style={styles.avatarText}>
             {account.displayName.slice(0, 1)}
           </StudentText>

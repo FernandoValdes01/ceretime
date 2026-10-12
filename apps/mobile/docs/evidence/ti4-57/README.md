@@ -39,3 +39,13 @@ La salida de Jest incluye avisos existentes de actualizaciones asíncronas del p
 ## Resultado
 
 La pasada nativa cubre H1, H5, H6, H7 y H8 en sus flujos principales; H2, H3, H4 y H9 siguen respaldados por las pruebas automatizadas y la inspección de código descritas arriba, sin una comprobación táctil individual en este dispositivo.
+
+## Capturas de Android
+
+### Cuentas pendientes
+
+<p><img src="./01-cuentas-pendientes.png" alt="Cuentas de Camila Soto y Alex Rojas pendientes de habilitación" width="360"></p>
+
+### Cuenta habilitada
+
+<p><img src="./02-cuenta-habilitada.png" alt="Confirmación visible después de habilitar la cuenta de Camila Soto" width="360"></p>
