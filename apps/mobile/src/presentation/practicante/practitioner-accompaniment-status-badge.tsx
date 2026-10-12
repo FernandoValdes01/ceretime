@@ -12,8 +12,10 @@ import { StudentText } from "../estudiante/student-text";
 
 export function PractitionerAccompanimentStatusBadge({
   status,
+  accessible = true,
 }: {
   readonly status: PractitionerAccompanimentStatus;
+  readonly accessible?: boolean;
 }) {
   const meta = practitionerAccompanimentStatusMeta[status];
   const accessibility = useOptionalAccessibilityPreferences();
@@ -26,8 +28,10 @@ export function PractitionerAccompanimentStatusBadge({
 
   return (
     <View
-      accessible
-      accessibilityLabel={`Estado: ${practitionerAccompanimentStatusLabels[status]}`}
+      accessible={accessible}
+      accessibilityLabel={
+        accessible ? `Estado: ${practitionerAccompanimentStatusLabels[status]}` : undefined
+      }
       style={[styles.badge, { backgroundColor: statusColors.background }]}
     >
       <AppIcon
@@ -37,7 +41,7 @@ export function PractitionerAccompanimentStatusBadge({
         size={15}
         strokeWidth={2.2}
       />
-      <StudentText style={[styles.text, { color: statusColors.foreground }]}>
+      <StudentText accessible={false} style={[styles.text, { color: statusColors.foreground }]}>
         {practitionerAccompanimentStatusLabels[status]}
       </StudentText>
     </View>

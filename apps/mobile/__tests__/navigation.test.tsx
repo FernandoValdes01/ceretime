@@ -39,6 +39,32 @@ describe("Navegación principal", () => {
     },
   );
 
+  test.each(roleCases)("%s abre el centro común desde el header", async (label) => {
+    const navigation = renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${label}` }));
+    const preferencesButton = await screen.findByRole("button", {
+      name: "Preferencias de accesibilidad",
+    });
+    await act(async () => {
+      fireEvent.press(preferencesButton);
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("Preferencias de accesibilidad")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/preferencias");
+    expect(screen.queryByRole("button", { name: "Preferencias de accesibilidad" })).toBeNull();
+
+    fireEvent.press(screen.getByRole("button", { name: "Volver" }));
+    await waitFor(() => expect(navigation.getPathname()).not.toBe("/preferencias"));
+    expect(navigation.getPathname()).toBe(roleCases.find(([role]) => role === label)?.[1]);
+  });
+
+  test("una ruta directa al centro de preferencias sin sesión vuelve al acceso", async () => {
+    const navigation = renderRouter(appDirectory, { initialUrl: "/preferencias" });
+    expect(await screen.findByText("Explora la aplicación")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/login");
+  });
+
   test.each(roleCases)(
     "un enlace directo a %s sin sesión vuelve al acceso",
     async (_label, href) => {
@@ -87,6 +113,22 @@ describe("Navegación principal", () => {
         }),
       ).toBeOnTheScreen();
     }
+  });
+
+  test("divide visualmente las pestañas largas sin perder los nombres completos", async () => {
+    renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
+
+    expect(
+      await screen.findByText("Solicitudes".slice(0, 8) + "\u200B" + "Solicitudes".slice(8)),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByText("Acompañamientos".slice(0, 7) + "\u200B" + "Acompañamientos".slice(7)),
+    ).toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 4" })).toBeOnTheScreen();
+    expect(
+      screen.getByRole("button", { name: "Acompañamientos, pestaña, 3 de 4" }),
+    ).toBeOnTheScreen();
   });
 
   test("una dirección inexistente ofrece volver al acceso", async () => {
