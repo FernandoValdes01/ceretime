@@ -24,8 +24,18 @@ Issue: [TI4-57](https://linear.app/ceretime/issue/TI4-57/corregir-nombres-estado
 
 La salida de Jest incluye avisos existentes de actualizaciones asíncronas del proveedor de preferencias fuera de `act`; no impiden que las suites terminen correctamente.
 
-## Verificación manual pendiente
+## Verificación Android nativa
 
-TalkBack, el tamaño de texto al 100 % y al 200 %, y el contraste deben repetirse en Android con un build de este commit. No se generó ni instaló ese build y no se inició Expo, Metro ni un servidor de desarrollo, según `apps/mobile/AGENTS.md`; por tanto, esta entrega no acredita lectura audible ni conformidad WCAG general.
+- Dispositivo: Samsung Galaxy S23 (`SM-S911B`), Android 16, API 36; TalkBack 16.2.00.12 con voz en español; escala del sistema restaurada a 100 % al terminar.
+- Cliente `cl.rmv.ceretime.qa`, versión 1.0.0; binario nativo compilado desde `641c967173f5acc02032a51ec0e35ce48431891a`, SHA-256 `b2dbe2bb281224ab59970294867306be416795a05fa43409c80af5f593eb09da` y JavaScript servido por Metro desde el árbol integrado.
+- Practicante: las tarjetas se exponen como botones cuyo nombre reúne objetivo y estado; con TalkBack abrí una tarjeta por doble toque y llegué al encabezado «Detalle del acompañamiento». Los estados Activo, En pausa y Cerrado aparecen como texto.
+- Profesional: la lista presenta cada solicitud como una acción con identificador y estado; en SOL-PRO-001 activé «Poner en revisión» con TalkBack y el resultado mostró «Estado: En revisión» junto con las acciones siguientes.
+- Administrador: la lista expone el estado como un grupo etiquetado y el botón incluye el nombre de la persona; con TalkBack activé una cuenta y apareció «Cuenta habilitada» junto con el mensaje de resultado.
+- Escala ampliada: seleccioné 200 % desde preferencias y comprobé la agenda/solicitudes profesionales, las tarjetas del Practicante y la lista del Administrador; los textos crecieron, las listas pudieron desplazarse y sus acciones conservaron nombres accesibles. A 100 % también probé las acciones y los cambios de estado anteriores.
+- El centro común se abrió desde Estudiante, Profesional, Practicante y Administrador; probé 100 %, 150 % y 200 %, contraste activado/desactivado y las opciones de movimiento. El valor 150 % sobrevivió al cierre forzado y reapertura y se compartió al cambiar entre Administrador y Estudiante.
+- La activación de cuenta y el cambio de solicitud modificaron solo datos ficticios del cliente `.qa`; el cliente se desinstaló al acabar, sin alterar la aplicación institucional.
+- No se grabó el audio de TalkBack; las pruebas confirman la navegación e interacción con el lector y el árbol expone nombre, rol y estado. Esta comprobación no declara conformidad WCAG general ni cubre todas las combinaciones de error.
 
-Al completar la comprobación, registrar dispositivo y versión de Android, SHA del build instalado, pasos por cada vista afectada y resultado audible/visual, incluyendo error y recuperación cuando corresponda.
+## Resultado
+
+La pasada nativa cubre H1, H5, H6, H7 y H8 en sus flujos principales; H2, H3, H4 y H9 siguen respaldados por las pruebas automatizadas y la inspección de código descritas arriba, sin una comprobación táctil individual en este dispositivo.
