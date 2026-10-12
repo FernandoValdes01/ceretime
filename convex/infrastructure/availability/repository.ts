@@ -11,6 +11,7 @@ import {
   type AvailabilityException,
 } from "../../domain/availability/availability";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
+import { getSpaceRow } from "../spaces/repository";
 
 /**
  * Repositorio de disponibilidad (TI2-95).
@@ -275,8 +276,7 @@ async function activeSpaceRef(
   if (spaceId === undefined) {
     return {};
   }
-  const id = ctx.db.normalizeId("spaces", spaceId);
-  const space = id === null ? null : await ctx.db.get(id);
+  const space = await getSpaceRow(ctx, spaceId);
   return space !== null && space.isActive ? { spaceId: space._id } : null;
 }
 
