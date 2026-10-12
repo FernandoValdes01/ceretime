@@ -136,30 +136,44 @@ function RequestRow({
  * se agregan): todas las páginas cargadas mantienen lectura reactiva aunque
  * Convex actualice una anterior. El padre decide carga/vacío/botón con la
  * primera y la última página. `renderItem` pone la `key` de cada fila.
- * Se exporta para probar la reactividad por página de forma aislada.
+ *
+ * Desduplicación: los cursores son posiciones fijas y un corrimiento por
+ * cambios concurrentes puede repetir una fila en dos páginas; cada página
+ * omite los IDs que ya mostraron las anteriores (registro idsByCursor del
+ * hook). Se exporta para probar la reactividad por página de forma aislada.
  */
 export function PagedItems<Item extends RequestListItem>({
   cursors,
   usePage,
   renderItem,
-  onCount,
+  onIds,
+  idsByCursor,
 }: {
   cursors: ReadonlyArray<string | null>;
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
   renderItem: (item: Item) => ReactNode;
-  onCount: (cursor: string | null, count: number) => void;
+  onIds: (cursor: string | null, ids: ReadonlyArray<string>) => void;
+  idsByCursor: ReadonlyMap<string, ReadonlyArray<string>>;
 }) {
+  const seen = new Set<string>();
   return (
     <>
-      {cursors.map((cursor) => (
-        <PageItems
-          key={cursor ?? "first"}
-          cursor={cursor}
-          usePage={usePage}
-          renderItem={renderItem}
-          onCount={onCount}
-        />
-      ))}
+      {cursors.map((cursor) => {
+        const exclude = new Set(seen);
+        for (const id of idsByCursor.get(cursor ?? "first") ?? []) {
+          seen.add(id);
+        }
+        return (
+          <PageItems
+            key={cursor ?? "first"}
+            cursor={cursor}
+            usePage={usePage}
+            renderItem={renderItem}
+            onIds={onIds}
+            exclude={exclude}
+          />
+        );
+      })}
     </>
   );
 }
@@ -168,29 +182,30 @@ function PageItems<Item extends RequestListItem>({
   cursor,
   usePage,
   renderItem,
-  onCount,
+  onIds,
+  exclude,
 }: {
   cursor: string | null;
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
   renderItem: (item: Item) => ReactNode;
-  onCount: (cursor: string | null, count: number) => void;
+  onIds: (cursor: string | null, ids: ReadonlyArray<string>) => void;
+  exclude: ReadonlySet<string>;
 }) {
   const page = usePage(cursor);
-  const count = page === undefined ? 0 : page.page.length;
   // Reporte en layout effect (no en render ni en efecto pasivo): en render
   // dispara el aviso "Cannot update ... while rendering a different
-  // component", y con efecto pasivo el conteo llega después del paint — un
+  // component", y con efecto pasivo el reporte llega después del paint — un
   // frame donde conviven el aviso de vacío y las filas recién llegadas. El
-  // layout effect corre sincrónico antes del paint, sin parpadeo. Con deps
-  // precisas solo corre cuando el conteo cambia; el updater con guarda evita
-  // re-renders redundantes. Sin SSR en la app, no aplica su advertencia.
+  // layout effect corre sincrónico antes del paint, sin parpadeo. La dep es
+  // el objeto página (identidad estable por dato) y el updater con guarda
+  // evita re-renders redundantes. Sin SSR en la app, no aplica su advertencia.
   useLayoutEffect(() => {
-    onCount(cursor, count);
-  }, [cursor, count, onCount]);
+    onIds(cursor, page === undefined ? [] : page.page.map((item) => item._id));
+  }, [cursor, page, onIds]);
   if (page === undefined) {
     return null;
   }
-  return <>{page.page.map((item) => renderItem(item))}</>;
+  return <>{page.page.filter((item) => !exclude.has(item._id)).map((item) => renderItem(item))}</>;
 }
 
 function OpenInboxBody() {
@@ -199,10 +214,11 @@ function OpenInboxBody() {
     firstPage,
     hasItems,
     allReported,
+    idsByCursor,
     tailPending,
     tailDone,
     loadMore,
-    reportCount,
+    reportIds,
   } = usePagedList(useOpenRequests);
   const takeRequest = useTakeRequest();
   const [takingId, setTakingId] = useState<string | null>(null);
@@ -263,7 +279,8 @@ function OpenInboxBody() {
               }}
             />
           )}
-          onCount={reportCount}
+          onIds={reportIds}
+          idsByCursor={idsByCursor}
         />
       </ul>
       {tailDone ? null : (
@@ -294,10 +311,11 @@ function AuthorizedRequestsBody() {
     firstPage,
     hasItems,
     allReported,
+    idsByCursor,
     tailPending,
     tailDone,
     loadMore,
-    reportCount,
+    reportIds,
   } = usePagedList(useAuthorizedRequests);
 
   if (firstPage === undefined) {
@@ -323,7 +341,8 @@ function AuthorizedRequestsBody() {
           renderItem={(request) => (
             <RequestRow key={request._id} request={request} clickable={true} />
           )}
-          onCount={reportCount}
+          onIds={reportIds}
+          idsByCursor={idsByCursor}
         />
       </ul>
       {tailDone ? null : (

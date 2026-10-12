@@ -19,45 +19,60 @@ export type RequestListPage<Item extends RequestListItem> = {
  *
  * Guarda la lista de cursores pedidos (solo crece). Cada cursor lo suscribe
  * por separado el componente <PagedItems>: así ninguna página cargada queda
- * congelada cuando Convex empuja cambios (p. ej. una toma que vacía la
- * primera página mientras una posterior aún tiene filas, o un cambio de
- * estado en "Mis tomadas").
+ * congelada cuando Convex empuja cambios.
  *
- * Cada página reporta su conteo vía onCount desde un efecto del hijo con
- * dependencias ([cursor, count]): reportar en render dispara el aviso de
- * React ("Cannot update ... while rendering a different component",
- * verificado en consola de tests), y el setState directo en efectos lo
- * prohíbe el lint del repo. El updater funcional con guarda por valor solo
- * re-renderiza cuando un conteo cambia de verdad. Sin el conteo, una primera
- * página vacía ocultaría filas que aún existen en páginas posteriores. La
- * primera página decide la carga inicial; el vacío exige todas las páginas
- * reportadas, sin filas y sin más por cargar; la última (cola), el botón
- * "Cargar más".
+ * Cada página reporta sus IDs vía onIds desde un efecto del hijo con
+ * dependencias ([cursor, page]): reportar en render dispara el aviso de React
+ * ("Cannot update ... while rendering a different component", verificado en
+ * consola de tests), el setState directo en efectos lo prohíbe el lint del
+ * repo, y el reporte pasivo llegaría después del paint. La dep es el objeto
+ * página (identidad estable por dato) y el updater funcional con guarda por
+ * contenido solo re-renderiza cuando los IDs cambian de verdad.
+ *
+ * El registro (idsByCursor) decide el vacío (todas reportadas, sin filas y
+ * sin más por cargar) y la desduplicación: los cursores son posiciones
+ * fijas, así que un corrimiento por cambios concurrentes puede repetir una
+ * fila en dos páginas; la posterior la omite y cada solicitud se muestra una
+ * sola vez. Una fila que no cae en ninguna ventana cargada reaparece con el
+ * siguiente push reactivo o al cargar más: todas siguen suscritas.
  */
 export function usePagedList<Item extends RequestListItem>(
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
 ) {
   const [cursors, setCursors] = useState<readonly (string | null)[]>([null]);
-  const [counts, setCounts] = useState<ReadonlyMap<string, number>>(new Map());
+  const [idsByCursor, setIdsByCursor] = useState<ReadonlyMap<string, ReadonlyArray<string>>>(
+    new Map(),
+  );
   const firstPage = usePage(null);
   const tailPage = usePage(cursors[cursors.length - 1] ?? null);
 
-  const reportCount = useCallback((cursor: string | null, count: number) => {
+  const reportIds = useCallback((cursor: string | null, ids: ReadonlyArray<string>) => {
     const key = cursor ?? "first";
-    setCounts((prev) => (prev.get(key) === count ? prev : new Map(prev).set(key, count)));
+    setIdsByCursor((prev) => {
+      const prevIds = prev.get(key);
+      if (
+        prevIds !== undefined &&
+        prevIds.length === ids.length &&
+        prevIds.every((id, i) => id === ids[i])
+      ) {
+        return prev;
+      }
+      return new Map(prev).set(key, ids);
+    });
   }, []);
 
-  const allReported = cursors.every((cursor) => counts.has(cursor ?? "first"));
-  const hasItems = cursors.some((cursor) => (counts.get(cursor ?? "first") ?? 0) > 0);
+  const allReported = cursors.every((cursor) => idsByCursor.has(cursor ?? "first"));
+  const hasItems = [...idsByCursor.values()].some((ids) => ids.length > 0);
 
   return {
     cursors,
     firstPage,
     hasItems,
     allReported,
+    idsByCursor,
     tailPending: tailPage === undefined,
     tailDone: tailPage?.isDone ?? false,
-    reportCount,
+    reportIds,
     loadMore: () => {
       if (tailPage === undefined || tailPage.isDone) {
         return;
