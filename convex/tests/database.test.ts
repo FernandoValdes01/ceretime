@@ -3,8 +3,15 @@ import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import type { AvailabilityReader } from "../application/availability/ports";
+import { expandAvailabilitySlots } from "../domain/availability/availability";
 import { toAccompanimentRequest } from "../domain/requests/request";
 import { transitionRequest } from "../domain/requests/transition_policy";
+import {
+  availabilityReader,
+  MAX_ACTIVE_BLOCKS,
+  MAX_EXCEPTIONS_IN_RANGE,
+} from "../infrastructure/availability/repository";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -1731,4 +1738,332 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen", async (
       });
     }),
   ).rejects.toThrow("Validator error");
+});
+
+/**
+ * Repositorio de disponibilidad (TI2-95): lecturas por profesional y rango
+ * con el adaptador real sobre las semillas de TI2-83. Declarar el adaptador
+ * como `AvailabilityReader` comprueba que cumple el puerto de Aplicación sin
+ * que Infraestructura lo importe.
+ */
+
+const TI95_DAY_MS = 86_400_000;
+
+const TI95_CONFLICT = {
+  status: "error",
+  error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
+} as const;
+
+async function seedTi95Professionals(t: ReturnType<typeof convexTest>) {
+  const proA = await seedUser(t, {
+    subject: "ti95-pro-a",
+    email: "ti95.proa@uct.cl",
+    role: "professional",
+  });
+  const proB = await seedUser(t, {
+    subject: "ti95-pro-b",
+    email: "ti95.prob@uct.cl",
+    role: "professional",
+  });
+  return { proA, proB };
+}
+
+test("repositorio de disponibilidad TI2-95: bloques vigentes en el contrato de TI2-81", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const monday = await seedTi83Block(t, { professionalId: proA, weekday: 1, spaceId: room });
+  const tuesday = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 2,
+    modality: "online",
+    slotMinutes: 30,
+  });
+  const retired = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 3,
+    modality: "online",
+    isActive: false,
+  });
+  await seedTi83Block(t, { professionalId: proB, weekday: 1, modality: "online" });
+  const deleted = await seedTi83Block(t, { professionalId: proA, weekday: 4, modality: "online" });
+  await t.run(async (ctx) => {
+    await ctx.db.delete(deleted);
+  });
+
+  await t.run(async (ctx) => {
+    const reader: AvailabilityReader = availabilityReader(ctx);
+    const blocks = await reader.listActiveBlocks(proA);
+    expect(blocks).toEqual({
+      status: "ok",
+      data: [
+        {
+          id: monday,
+          professionalId: proA,
+          weekday: 1,
+          startMinute: 540,
+          endMinute: 720,
+          slotMinutes: 60,
+          modality: "inPerson",
+          spaceId: room,
+          isActive: true,
+          version: "v1",
+        },
+        {
+          id: tuesday,
+          professionalId: proA,
+          weekday: 2,
+          startMinute: 540,
+          endMinute: 720,
+          slotMinutes: 30,
+          modality: "online",
+          isActive: true,
+          version: "v1",
+        },
+      ],
+    });
+    // El bloque en línea no arrastra una referencia a sala.
+    expect(blocks.status === "ok" && "spaceId" in blocks.data[1]!).toBe(false);
+    // El retirado no se lista, pero se lee por id para poder reactivarlo.
+    expect(await reader.getBlock(retired)).toMatchObject({ id: retired, isActive: false });
+    // Id borrado, de otra tabla o sin forma de id: igual que sin datos.
+    expect(await reader.getBlock(deleted)).toBe(null);
+    expect(await reader.getBlock(room)).toBe(null);
+    expect(await reader.getBlock("no-es-un-id")).toBe(null);
+    expect(await reader.listActiveBlocks(room)).toEqual({ status: "ok", data: [] });
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: excepciones por rango civil inclusivo", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const block = await seedTi83Block(t, { professionalId: proA, weekday: 1, spaceId: room });
+  const cancelled = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_MONDAY,
+    blockId: block,
+  });
+  const added = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_TUESDAY,
+    kind: "added",
+    startMinute: 600,
+    endMinute: 660,
+    slotMinutes: 30,
+    modality: "inPerson",
+    spaceId: room,
+  });
+  // Fuera del rango (miércoles) y de otro profesional: no se leen.
+  await seedTi83Exception(t, { professionalId: proA, date: TI83_TUESDAY + TI95_DAY_MS });
+  await seedTi83Exception(t, { professionalId: proB, date: TI83_MONDAY });
+
+  await t.run(async (ctx) => {
+    const reader: AvailabilityReader = availabilityReader(ctx);
+    const addedException = {
+      id: added,
+      professionalId: proA,
+      date: "2026-10-13",
+      kind: "added",
+      reason: "Motivo ficticio",
+      windows: [
+        { startMinute: 600, endMinute: 660, slotMinutes: 30, modality: "inPerson", spaceId: room },
+      ],
+      version: "v1",
+    };
+    expect(
+      await reader.listExceptions({ professionalId: proA, from: "2026-10-12", to: "2026-10-13" }),
+    ).toEqual({
+      status: "ok",
+      data: [
+        {
+          id: cancelled,
+          professionalId: proA,
+          date: "2026-10-12",
+          kind: "cancelled",
+          blockId: block,
+          reason: "Motivo ficticio",
+          version: "v1",
+        },
+        addedException,
+      ],
+    });
+    // Un solo día: el rango incluye sus dos extremos.
+    expect(
+      await reader.listExceptions({ professionalId: proA, from: "2026-10-13", to: "2026-10-13" }),
+    ).toEqual({ status: "ok", data: [addedException] });
+    expect(await reader.getException(added)).toEqual(addedException);
+    expect(await reader.getException(block)).toBe(null);
+    expect(
+      await reader.listExceptions({ professionalId: room, from: "2026-10-12", to: "2026-10-13" }),
+    ).toEqual({ status: "ok", data: [] });
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: rangos inválidos o mayores a 92 días responden conflict", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+
+  await t.run(async (ctx) => {
+    const reader: AvailabilityReader = availabilityReader(ctx);
+    const read = (from: string, to: string, professionalId: string = proA) =>
+      reader.listExceptions({ professionalId, from, to });
+    expect(await read("2026-10-13", "2026-10-12")).toEqual(TI95_CONFLICT);
+    expect(await read("2026-02-30", "2026-03-01")).toEqual(TI95_CONFLICT);
+    expect(await read("12-10-2026", "2026-10-13")).toEqual(TI95_CONFLICT);
+    // 92 días exactos se leen; 93 no.
+    expect(await read("2026-10-12", "2027-01-11")).toEqual({ status: "ok", data: [] });
+    expect(await read("2026-10-12", "2027-01-12")).toEqual(TI95_CONFLICT);
+    // Con un id inválido el rango se valida igual.
+    expect(await read("2026-10-13", "2026-10-12", "no-es-un-id")).toEqual(TI95_CONFLICT);
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: los topes de lectura fallan en vez de cortar la lista", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  await t.run(async (ctx) => {
+    for (let index = 0; index < MAX_ACTIVE_BLOCKS; index += 1) {
+      await ctx.db.insert("availabilityBlocks", {
+        professionalId: proA,
+        weekday: index % 7,
+        startMinute: 540,
+        endMinute: 720,
+        slotMinutes: 60,
+        modality: "online",
+        isActive: true,
+      });
+    }
+    // Los retirados no se leen ni consumen el tope.
+    for (let index = 0; index < 20; index += 1) {
+      await ctx.db.insert("availabilityBlocks", {
+        professionalId: proA,
+        weekday: index % 7,
+        startMinute: 540,
+        endMinute: 720,
+        slotMinutes: 60,
+        modality: "online",
+        isActive: false,
+      });
+    }
+    for (let index = 0; index < MAX_EXCEPTIONS_IN_RANGE; index += 1) {
+      await ctx.db.insert("availabilityExceptions", {
+        professionalId: proB,
+        date: TI83_MONDAY + (index % 92) * TI95_DAY_MS,
+        kind: "cancelled",
+      });
+    }
+  });
+  const range = { professionalId: proB, from: "2026-10-12", to: "2027-01-11" };
+
+  await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    const blocks = await reader.listActiveBlocks(proA);
+    expect(blocks.status === "ok" && blocks.data.length).toBe(MAX_ACTIVE_BLOCKS);
+    const exceptions = await reader.listExceptions(range);
+    expect(exceptions.status === "ok" && exceptions.data.length).toBe(MAX_EXCEPTIONS_IN_RANGE);
+  });
+
+  await seedTi83Block(t, { professionalId: proA, weekday: 6, modality: "online" });
+  await seedTi83Exception(t, { professionalId: proB, date: TI83_TUESDAY });
+  await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    expect(await reader.listActiveBlocks(proA)).toEqual(TI95_CONFLICT);
+    expect(await reader.listExceptions(range)).toEqual(TI95_CONFLICT);
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: una fila incompleta se entrega tal cual y la expansión la rechaza", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+  const broken = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_MONDAY,
+    kind: "added",
+    startMinute: 600,
+  });
+
+  const exceptions = await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    const exception = await reader.getException(broken);
+    expect(exception).toMatchObject({ id: broken, kind: "added" });
+    expect(exception?.windows).toBeUndefined();
+    return await reader.listExceptions({
+      professionalId: proA,
+      from: "2026-10-12",
+      to: "2026-10-12",
+    });
+  });
+  // Si se descartara en silencio, con una cancelación se ofrecerían cupos
+  // retirados. Las reglas de validez son de TI2-81 y no se repiten aquí.
+  expect(exceptions.status === "ok" && exceptions.data.map((item) => item.id)).toEqual([broken]);
+  expect(() =>
+    expandAvailabilitySlots({
+      professionalId: proA,
+      blocks: [],
+      exceptions: exceptions.status === "ok" ? exceptions.data : [],
+      from: "2026-10-12",
+      to: "2026-10-12",
+      timeZone: "UTC",
+    }),
+  ).toThrow("el agregado de un día requiere al menos una ventana");
+});
+
+test("repositorio de disponibilidad TI2-95: lo leído alimenta la expansión de TI2-81", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const block = await seedTi83Block(t, { professionalId: proA, weekday: 1, spaceId: room });
+  // La cancelación del lunes solo aplica si la fecha guardada vuelve como
+  // "2026-10-12"; si la conversión corriera un día, aparecerían sus cupos.
+  await seedTi83Exception(t, { professionalId: proA, date: TI83_MONDAY, blockId: block });
+  await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_TUESDAY,
+    kind: "added",
+    startMinute: 600,
+    endMinute: 660,
+    slotMinutes: 30,
+    modality: "online",
+  });
+
+  const slots = await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    const blocks = await reader.listActiveBlocks(proA);
+    const exceptions = await reader.listExceptions({
+      professionalId: proA,
+      from: "2026-10-12",
+      to: "2026-10-13",
+    });
+    if (blocks.status !== "ok" || exceptions.status !== "ok") {
+      throw new Error("Lectura de disponibilidad rechazada.");
+    }
+    return expandAvailabilitySlots({
+      professionalId: proA,
+      blocks: blocks.data,
+      exceptions: exceptions.data,
+      from: "2026-10-12",
+      to: "2026-10-13",
+      timeZone: "UTC",
+    });
+  });
+  expect(slots.map((slot) => [slot.date, slot.startAt, slot.modality])).toEqual([
+    ["2026-10-13", TI83_TUESDAY + 600 * 60_000, "online"],
+    ["2026-10-13", TI83_TUESDAY + 630 * 60_000, "online"],
+  ]);
 });
