@@ -5,9 +5,19 @@ import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 // Reutiliza el lenguaje visual del panel (listas, fichas, errores): una sola
 // fuente para no duplicar el sistema de diseño entre portales.
 import "../routes/student-portal.css";
-import "./professional-requests.css";
 import { requestStatusLabel } from "./gestion-labels.ts";
 import { usePagedItems, type RequestListItem } from "./paged-requests.ts";
+
+/**
+ * Clases Tailwind de las filas de gestión (TI2-91, migrado de
+ * professional-requests.css por TI2-130): 44px de alto táctil mínimo y foco
+ * visible de 3px según DESIGN.md. El anillo usa el token --color-focus-ring
+ * del tema; el resto del lenguaje (listas, fichas, botones, avisos) sigue en
+ * student-portal.css hasta que su responsable lo migre.
+ */
+const GESTION_ROW = "flex items-center gap-2 min-h-[44px] px-3 py-2 text-inherit";
+const GESTION_FOCUS_VISIBLE =
+  "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
 import {
   useAuthorizedRequests,
   useOpenRequests,
@@ -74,7 +84,7 @@ function RequestRow({
   if (!clickable) {
     return (
       <li className="student-portal__item">
-        <span className="gestion-request-row">{content}</span>
+        <span className={GESTION_ROW}>{content}</span>
       </li>
     );
   }
@@ -84,7 +94,7 @@ function RequestRow({
       <Link
         to="/profesional/solicitudes/$requestId"
         params={{ requestId: request._id }}
-        className="gestion-request-link"
+        className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
       >
         {content}
       </Link>
@@ -131,7 +141,7 @@ function OpenInboxBody() {
             {pending ? "Cargando…" : "Cargar más"}
           </button>
           {pending && (
-            <span role="status" aria-live="polite" className="student-portal__sr-only">
+            <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>
           )}
@@ -180,7 +190,7 @@ function AuthorizedRequestsBody() {
             {pending ? "Cargando…" : "Cargar más"}
           </button>
           {pending && (
-            <span role="status" aria-live="polite" className="student-portal__sr-only">
+            <span role="status" aria-live="polite" className="sr-only">
               Cargando más solicitudes…
             </span>
           )}
@@ -210,7 +220,10 @@ export function ProfessionalRequestDetailPage({ requestId }: { requestId: string
         Detalle de la solicitud
       </h1>
       <p>
-        <Link to="/profesional/solicitudes" className="gestion-request-link">
+        <Link
+          to="/profesional/solicitudes"
+          className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
+        >
           Volver a solicitudes
         </Link>
       </p>
