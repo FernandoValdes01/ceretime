@@ -12,14 +12,14 @@ Todo se corre con `bun run test:convex` y `bun run test:web`. La CI ejecuta los 
 
 | Nombre | Archivo |
 | --- | --- |
-| `session` | `convex/session.test.ts` |
-| `session_role` | `convex/session_role.test.ts` |
-| `authorization` | `convex/authorization.test.ts` |
-| `authorizationIntern` | `convex/authorizationIntern.test.ts` |
-| `internAccess` | `convex/internAccess.test.ts` |
-| `accounts` | `convex/accounts.test.ts` |
-| `requests` | `convex/requests.test.ts` |
-| `acceptance` | `convex/acceptance.test.ts` |
+| `session` | `convex/tests/session.test.ts` |
+| `session_role` | `convex/tests/session_role.test.ts` |
+| `authorization` | `convex/tests/authorization.test.ts` |
+| `authorizationIntern` | `convex/tests/authorizationIntern.test.ts` |
+| `internAccess` | `convex/tests/internAccess.test.ts` |
+| `accounts` | `convex/tests/accounts.test.ts` |
+| `requests` | `convex/tests/requests.test.ts` |
+| `acceptance` | `convex/tests/acceptance.test.ts` |
 | `reject_external_user` | `convex/application/session/reject_external_user.test.ts` |
 | `institutional_domain` | `convex/domain/auth/institutional_domain.test.ts` |
 | `student-routes` | `apps/web/src/presentation/routes/student-routes.test.tsx` |
@@ -28,9 +28,9 @@ Todo se corre con `bun run test:convex` y `bun run test:web`. La CI ejecuta los 
 | `auth-error` | `apps/web/src/presentation/auth/auth-error.test.ts` |
 | `institutional-login` | `apps/web/src/application/session/institutional-login.test.ts` |
 | `AuthScreen` | `apps/web/src/presentation/auth/AuthScreen.test.tsx` |
-| `sprint1Queries` | `convex/sprint1Queries.test.ts` |
-| `practitionerMinimization` | `convex/practitionerMinimization.test.ts` |
-| `role_permissions` | `convex/role_permissions.test.ts` |
+| `sprint1Queries` | `convex/tests/sprint1Queries.test.ts` |
+| `practitionerMinimization` | `convex/tests/practitionerMinimization.test.ts` |
+| `role_permissions` | `convex/tests/role_permissions.test.ts` |
 
 ## Login e identidad institucional
 

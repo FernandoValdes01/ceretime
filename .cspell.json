@@ -7,6 +7,14 @@
   "import": ["@cspell/dict-es-es/cspell-ext.json"],
   "ignorePaths": ["convex/_generated/**", "apps/web/public/icons.svg", "apps/web/src/assets/*.svg"],
   "words": [
+    "Adoptium",
+    "Temurin",
+    "gradlew",
+    "prebuild",
+    "androidx",
+    "gphone",
+    "screencap",
+    "uiautomator",
     "textconv",
     "Acompa",
     "acompanamiento",
@@ -51,8 +59,6 @@
     "Greptile",
     "greptile",
     "Gomez",
-    "Groq",
-    "groq",
     "gomez",
     "geolocalización",
     "mergear",
@@ -89,10 +95,6 @@
     "reagendar",
     "opencode",
     "rcks",
-    "DeepSeek",
-    "deepseek",
-    "OpenRouter",
-    "openrouter",
     "OpenAI",
     "openai",
     "Opencode",
@@ -172,6 +174,8 @@
     "numstat",
     "adrs",
     "lockfiles",
-    "returnallowed"
+    "returnallowed",
+    "counterevidence",
+    "HMAC"
   ]
 }

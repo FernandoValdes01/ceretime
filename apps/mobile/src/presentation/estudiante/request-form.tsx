@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Ref } from "react";
+import { useRef, useState, type Ref } from "react";
 import { AccessibilityInfo, Keyboard, Pressable, TextInput, View } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import type {
@@ -7,7 +7,11 @@ import type {
   SubmitStudentRequestCommand,
 } from "@/application/student-area-models";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
-import { useSubmitStudentRequest } from "@/presentation/hooks/use-submit-student-request";
+import {
+  useSubmitStudentRequest,
+  type StudentRequestSubmissionStatus,
+} from "@/presentation/hooks/use-submit-student-request";
+import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text, useStudentFont } from "./student-text";
 import { AppIcon } from "../components/app-icon";
@@ -35,6 +39,7 @@ function Choice({
   single = false,
   controlRef,
   disabled = false,
+  error,
 }: {
   label: string;
   selected: boolean;
@@ -42,13 +47,14 @@ function Choice({
   single?: boolean;
   controlRef?: Ref<View>;
   disabled?: boolean;
+  error?: string;
 }) {
   return (
     <Pressable
       ref={controlRef}
       tabIndex={disabled ? -1 : 0}
       accessibilityRole={single ? "radio" : "checkbox"}
-      accessibilityLabel={label}
+      accessibilityLabel={error ? `${label}. Error: ${error}` : label}
       accessibilityState={{ checked: selected, disabled }}
       onPress={onPress}
       disabled={disabled}
@@ -101,13 +107,20 @@ function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCom
   };
 }
 
+function submissionAnnouncement(status: StudentRequestSubmissionStatus): string | null {
+  if (status === "submitting") return "Enviando solicitud ficticia.";
+  if (status === "error") return "No pudimos enviar la solicitud ficticia. Puedes reintentar.";
+  if (status === "success") return "Solicitud ficticia enviada.";
+  return null;
+}
+
 function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubmissionReceipt }) {
   return (
     <Animated.View
       testID="request-confirmation"
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
-      accessibilityLiveRegion="polite"
+      accessibilityLiveRegion="none"
       className="gap-5"
     >
       <View
@@ -154,9 +167,12 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
   const inputs = useRef<Partial<Record<keyof RequestFormValues, TextInput | null>>>({});
   const errors: RequestFormErrors = reviewed ? validateRequestForm(values) : {};
   const formTop = useRef(0);
-  const groupTop = useRef({ modalityPreference: 0, preferredWeekdays: 0 });
+  const groupTop = useRef({ accessNeeds: 0, modalityPreference: 0, preferredWeekdays: 0 });
+  const accessControl = useRef<View>(null);
   const modalityControl = useRef<View>(null);
   const weekdayControl = useRef<View>(null);
+  const submissionError = useRef<View>(null);
+  const submissionErrorTop = useRef(0);
 
   function update<K extends keyof RequestFormValues>(key: K, value: RequestFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -167,9 +183,18 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
     setReviewed(true);
     const firstError = Object.keys(nextErrors)[0] as keyof RequestFormValues | undefined;
     if (firstError) {
-      if (firstError === "modalityPreference" || firstError === "preferredWeekdays") {
+      if (
+        firstError === "accessNeeds" ||
+        firstError === "modalityPreference" ||
+        firstError === "preferredWeekdays"
+      ) {
         Keyboard.dismiss();
-        const control = firstError === "modalityPreference" ? modalityControl : weekdayControl;
+        const control =
+          firstError === "accessNeeds"
+            ? accessControl
+            : firstError === "modalityPreference"
+              ? modalityControl
+              : weekdayControl;
         requestAnimationFrame(() => {
           onRevealGroup(formTop.current + groupTop.current[firstError]);
           if (control.current) {
@@ -177,27 +202,31 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
             else AccessibilityInfo.sendAccessibilityEvent(control.current, "focus");
           }
         });
-      } else inputs.current[firstError]?.focus();
+      } else {
+        requestAnimationFrame(() => {
+          const input = inputs.current[firstError];
+          input?.focus();
+          if (input && process.env.EXPO_OS !== "web") {
+            AccessibilityInfo.sendAccessibilityEvent(input, "focus");
+          }
+        });
+      }
       AccessibilityInfo.announceForAccessibility(`Revisa el formulario. ${nextErrors[firstError]}`);
     } else {
       Keyboard.dismiss();
-      AccessibilityInfo.announceForAccessibility("Enviando solicitud ficticia.");
       void submission.submit(toSubmissionCommand(values));
     }
   }
 
-  useEffect(() => {
-    if (submission.status === "error") {
-      AccessibilityInfo.announceForAccessibility(
-        "No pudimos enviar la solicitud ficticia. Puedes reintentar.",
-      );
-    } else if (submission.status === "success") {
-      AccessibilityInfo.announceForAccessibility("Solicitud ficticia enviada.");
-    }
-  }, [submission.status]);
+  const announcement = submissionAnnouncement(submission.status);
 
   if (submission.status === "success" && submission.receipt) {
-    return <RequestConfirmation receipt={submission.receipt} />;
+    return (
+      <View className="gap-6">
+        <OperationAnnouncement message={announcement} />
+        <RequestConfirmation receipt={submission.receipt} />
+      </View>
+    );
   }
 
   function field(
@@ -217,17 +246,25 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
         <Text
           weight="semibold"
           nativeID={`${key}-label`}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
           className="text-student-text text-lg leading-[26px]"
         >
           {label}
         </Text>
-        <Text className="text-student-secondary text-base leading-[26px]">{hint}</Text>
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          className="text-student-secondary text-base leading-[26px]"
+        >
+          {hint}
+        </Text>
         <TextInput
           ref={(input) => {
             inputs.current[key] = input;
           }}
-          accessibilityLabel={label}
-          accessibilityHint={errors[key] ?? hint}
+          accessibilityLabel={errors[key] ? `${label}. Error: ${errors[key]}` : label}
+          accessibilityHint={hint}
           aria-invalid={Boolean(errors[key])}
           aria-describedby={errors[key] ? `${key}-error` : undefined}
           value={values[key]}
@@ -268,6 +305,15 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
         formTop.current = event.nativeEvent.layout.y;
       }}
     >
+      <OperationAnnouncement
+        message={announcement}
+        focusTarget={submission.status === "error" ? submissionError : undefined}
+        onRevealTarget={
+          submission.status === "error"
+            ? () => onRevealGroup(formTop.current + submissionErrorTop.current)
+            : undefined
+        }
+      />
       <View className="p-4 gap-2 bg-student-muted rounded-xl" style={{ borderCurve: "continuous" }}>
         <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
           Formulario de prueba
@@ -301,6 +347,9 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
       <View
         className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
         style={{ borderCurve: "continuous" }}
+        onLayout={(event) => {
+          groupTop.current.accessNeeds = event.nativeEvent.layout.y;
+        }}
       >
         <Text
           weight="semibold"
@@ -312,10 +361,12 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
         <Text className="text-student-secondary text-base leading-[26px]">
           Selecciona un apoyo o describe otro para participar o comunicarte.
         </Text>
-        {accessOptions.map((option) => {
+        {accessOptions.map((option, index) => {
           const selected = values.accessNeeds.some((need) => need.id === option.id);
           return (
             <Choice
+              controlRef={index === 0 ? accessControl : undefined}
+              error={errors.accessNeeds}
               key={option.id}
               label={option.label}
               selected={selected}
@@ -355,6 +406,7 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
           Modalidad preferida *
         </Text>
         <Choice
+          error={errors.modalityPreference}
           controlRef={modalityControl}
           label="Presencial"
           single
@@ -363,6 +415,7 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
           onPress={() => update("modalityPreference", "inPerson")}
         />
         <Choice
+          error={errors.modalityPreference}
           label="En línea"
           single
           selected={values.modalityPreference === "online"}
@@ -395,6 +448,7 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
             const selected = values.preferredWeekdays.includes(day);
             return (
               <Choice
+                error={errors.preferredWeekdays}
                 controlRef={index === 0 ? weekdayControl : undefined}
                 key={label}
                 label={label}
@@ -449,16 +503,31 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
           testID="submission-error"
           entering={FadeIn.duration(200)}
           exiting={FadeOut.duration(150)}
-          accessibilityLiveRegion="assertive"
+          accessibilityLiveRegion="none"
+          onLayout={(event) => {
+            submissionErrorTop.current = event.nativeEvent.layout.y;
+          }}
           className="gap-3 p-4 rounded-xl border-2 border-student-error bg-student-surface"
           style={{ borderCurve: "continuous" }}
         >
-          <Text selectable weight="semibold" className="text-student-error text-lg leading-[29px]">
-            No pudimos enviar la solicitud ficticia.
-          </Text>
-          <Text selectable className="text-student-secondary text-base leading-[26px]">
-            Tus datos siguen en el formulario. Puedes intentar nuevamente.
-          </Text>
+          <View
+            ref={submissionError}
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel="No pudimos enviar la solicitud ficticia. Tus datos siguen en el formulario. Puedes reintentar."
+            className="gap-3"
+          >
+            <Text
+              selectable
+              weight="semibold"
+              className="text-student-error text-lg leading-[29px]"
+            >
+              No pudimos enviar la solicitud ficticia.
+            </Text>
+            <Text selectable className="text-student-secondary text-base leading-[26px]">
+              Tus datos siguen en el formulario. Puedes intentar nuevamente.
+            </Text>
+          </View>
           <StudentAction label="Reintentar envío" onPress={submit} />
         </Animated.View>
       )}

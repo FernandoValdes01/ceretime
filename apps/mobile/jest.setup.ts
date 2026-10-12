@@ -6,6 +6,10 @@ import "react-native-css-interop/dist/runtime/components";
 
 setUpTests();
 
+jest.mock("@react-native-async-storage/async-storage", () =>
+  require("@react-native-async-storage/async-storage/jest/async-storage-mock"),
+);
+
 // El transporte de desarrollo de Expo intenta abrir un WebSocket hacia Metro.
 // Las pruebas del router no necesitan un servidor de desarrollo.
 jest.mock("expo/src/async-require/messageSocket.native", () => ({}));

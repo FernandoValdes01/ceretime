@@ -4,7 +4,7 @@ Evidencia de TI2-29: qué prueba automatizada cubre cada punto del checklist de 
 
 ## Cómo leerla
 
-Cada prueba se nombra por archivo y título, tal como lo imprime `vitest`, para poder buscarla sin depender de números de línea. El archivo integrado de esta issue es `convex/practitionerContracts.test.ts`; las filas citan la cobertura previa que lo sostiene y la prueba nueva que cierra la evidencia integrada. Todo se corre con `bun run test:convex` y la CI lo ejecuta en el job "Verificación Backend"; cualquier archivo `*.test.ts` nuevo en `convex/` entra solo, sin tocar los workflows.
+Cada prueba se nombra por archivo y título, tal como lo imprime `vitest`, para poder buscarla sin depender de números de línea. El archivo integrado de esta issue es `convex/tests/practitionerContracts.test.ts`; las filas citan la cobertura previa que lo sostiene y la prueba nueva que cierra la evidencia integrada. Todo se corre con `bun run test:convex` y la CI lo ejecuta en el job "Verificación Backend"; cualquier archivo `*.test.ts` nuevo en `convex/` entra solo, sin tocar los workflows.
 
 ## Practicante en la ruta crítica
 

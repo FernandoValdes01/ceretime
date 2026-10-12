@@ -24,7 +24,7 @@ export {
   toAccessNeedsText,
   toAccompanimentRequest,
   toStoredRequestFields,
-} from "./request/request";
+} from "./requests/request";
 export type {
   AccessNeed,
   AccompanimentRequest,
@@ -32,23 +32,29 @@ export type {
   GeneralAvailability,
   ModalityPreference,
   StoredRequestFields,
-} from "./request/request";
+} from "./requests/request";
 export {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
   isSprint1RequestState,
+  PERSISTABLE_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
-} from "./request/state";
-export type { FutureRequestState, RequestState, Sprint1RequestState } from "./request/state";
+} from "./requests/state";
+export type {
+  FutureRequestState,
+  PersistableRequestState,
+  RequestState,
+  Sprint1RequestState,
+} from "./requests/state";
 
 // Acompañamiento y sus vistas de lectura.
 export {
   ACCOMPANIMENT_STATUS_VALUES,
   ACCOMPANIMENT_VIEW_VALUES,
   toAccompanimentProjection,
-} from "./accompaniment/accompaniment";
+} from "./accompaniments/accompaniment";
 export type {
   Accompaniment,
   AccompanimentProjection,
@@ -56,24 +62,48 @@ export type {
   AccompanimentStatus,
   AccompanimentView,
   MinimizedAccompaniment,
-} from "./accompaniment/accompaniment";
+} from "./accompaniments/accompaniment";
+
+// Vocabulario persistido de disponibilidad (TI2-83): la única fuente en
+// valores de modalidad para los validadores del borde. El resto de los
+// símbolos de este módulo (versión, clases de excepción, ventanas y
+// proyecciones) los exporta la sección TI2-87 de abajo sin duplicarlos.
+export { MODALITY_VALUES } from "./availability/availability";
 
 // Asignaciones de acceso y sus permisos de lectura.
 export {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
   ASSIGNMENT_VIEW_BY_ROLE,
-} from "./accompaniment/practitioner_assignment";
-export { toAssignmentReadPermission } from "./accompaniment/practitioner_assignment";
+} from "./accompaniments/practitioner_assignment";
+export { toAssignmentReadPermission } from "./accompaniments/practitioner_assignment";
 export type {
   AssignmentReadPermission,
   AssignmentRole,
   AssignmentStatus,
   PractitionerAssignment,
-} from "./accompaniment/practitioner_assignment";
+} from "./accompaniments/practitioner_assignment";
 
-// Errores públicos y estados de respuesta.
-export type { ApiResult, PublicApiError } from "./errors/api_error";
+// Errores públicos y estados de respuesta (TI2-8, TI2-88).
+export {
+  API_ERROR_CODE_VALUES,
+  API_ERROR_MESSAGES,
+  CONFLICT_ERROR_CODE,
+  CONFLICT_ERROR_MESSAGE,
+  NO_AVAILABILITY_ERROR_CODE,
+  NO_AVAILABILITY_ERROR_MESSAGE,
+  UNAUTHORIZED_ERROR_CODE,
+  UNAUTHORIZED_ERROR_MESSAGE,
+  conflictError,
+  errResult,
+  isApiErrorCode,
+  isErrorResult,
+  isOkResult,
+  noAvailabilityError,
+  okResult,
+  unauthorizedError,
+} from "./errors/api_error";
+export type { ApiErrorCode, ApiResult, PublicApiError } from "./errors/api_error";
 
 // Disponibilidad: entradas y salidas mínimas con identificadores genéricos (TI2-87).
 export {
@@ -100,16 +130,47 @@ export type {
   SpaceCatalogPage,
 } from "./spaces/space";
 
-// Atención reservada: reserva y atención en una sola entidad (TI2-87).
+// Compatibilidad de modalidad y espacio con necesidades de acceso (TI2-82).
+export {
+  COMPATIBILITY_ISSUE_VALUES,
+  assessCompatibility,
+  selectCompatibleOptions,
+} from "./spaces/compatibility";
+export type {
+  CompatibilityDecision,
+  CompatibilityIssue,
+  CompatibilityIssueCode,
+  CompatibilityOption,
+  CompatibilitySpace,
+} from "./spaces/compatibility";
+
+// Atención reservada: reserva y atención en una sola entidad (TI2-87, TI2-93, plazo TI2-94).
 export {
   APPOINTMENT_CONTRACT_VERSION,
+  APPOINTMENT_REJECTION_CAUSES,
   APPOINTMENT_STATUS_VALUES,
+  APPOINTMENT_TRANSITIONS,
+  findAppointmentTransition,
   INITIAL_APPOINTMENT_STATUS,
+  JUSTIFICATION_BUSINESS_DAYS,
+  NO_SHOW_PENDING_STATE,
+  calculateJustificationDeadline,
+  decideJustificationTimeliness,
+  transitionAppointment,
 } from "./appointments/appointment";
 export type {
   Appointment,
   AppointmentContractVersion,
   AppointmentPage,
+  AppointmentRejectionCause,
+  AppointmentStateChange,
+  AppointmentStateTransition,
   AppointmentStatus,
+  AppointmentTransitionAttempt,
+  AppointmentTransitionResult,
+  CalculateJustificationDeadlineInput,
+  DecideJustificationTimelinessInput,
+  JustificationDeadline,
+  JustificationTimeliness,
   ListAppointmentsInput,
 } from "./appointments/appointment";

@@ -1,30 +1,38 @@
 /**
- * Disponibilidad: contratos públicos compartidos v1 (TI2-87).
+ * Disponibilidad: contratos públicos compartidos v1 y reglas de expansión (TI2-87, TI2-81).
  *
- * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile
- * consuman la misma forma sin levantar el backend. Fija las entradas y
- * salidas mínimas con identificadores genéricos (`string` plano, sin
- * `Id`/`Doc` de Convex): bloques con profesionales y días, excepciones
- * puntuales, rango civil explícito y paginación.
+ * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile consuman la misma forma sin levantar el backend. Fija las entradas y salidas mínimas con identificadores genéricos (`string` plano, sin `Id`/`Doc` de Convex): bloques con profesionales y días, excepciones puntuales, rango civil explícito y paginación.
  *
- * Reutiliza `ModalityPreference` de la solicitud y las clases de excepción
- * de TI2-81 (`cancelled`/`added`) para no duplicar su representación; la
- * duración, la recurrencia efectiva, la expansión a cupos y los cruces
- * pertenecen a TI2-81/TI2-84 y la compatibilidad de modalidad y espacio a
- * TI2-82. Acá solo hay forma versionada, sin políticas propias.
+ * Reutiliza `ModalityPreference` de la solicitud para no duplicar su representación; la duración, la recurrencia efectiva y la expansión a cupos pertenecen a TI2-81, los cruces a TI2-84 y la compatibilidad de modalidad y espacio a TI2-82. La autorización contextual queda en Aplicación, la DB y los servicios externos en Infraestructura y las entradas públicas delgadas en Presentación.
+ *
+ * Las reglas de TI2-81 operan sobre estos mismos contratos: no existe otra representación de bloques, ventanas, excepciones ni cupos. La expansión exige el profesional dueño de los bloques y respeta la prioridad de las excepciones: la cancelación de un día elimina la recurrencia del día pero conserva los agregados, la cancelación con `blockId` descuenta solo ese bloque y conserva los demás, y el agregado convive con ambas. Las ventanas se procesan en orden estable y los cupos se ordenan por inicio con desempate por identificador, para que la identidad de cada cupo no dependa del orden de entrada. La expansión devuelve cupos con identidad determinista (`profesional:fecha:inicio`, con sufijo por orden de aparición ante inicios repetidos); la identidad es estable entre llamadas y la persistencia puede reemplazarla por identificadores de fila (TI2-83). Disponibilidad no equivale a ocupación: los cupos son candidatos y reservar pertenece a TI2-84/TI2-96.
  */
 
-import type { ModalityPreference } from "../request/request";
+import type { ModalityPreference } from "../requests/request";
 
 /** Versión del contrato público de disponibilidad. */
 export const AVAILABILITY_CONTRACT_VERSION = "v1" as const;
 
 export type AvailabilityContractVersion = typeof AVAILABILITY_CONTRACT_VERSION;
 
-/** Clases de excepción sobre la recurrencia, como en TI2-81. */
+/** Clases de excepción sobre la recurrencia, fuente única para contratos y reglas. */
 export const AVAILABILITY_EXCEPTION_KIND_VALUES = ["cancelled", "added"] as const;
 
 export type AvailabilityExceptionKind = (typeof AVAILABILITY_EXCEPTION_KIND_VALUES)[number];
+
+/**
+ * Modalidades admitidas por la especificación vigente (TI2-83, sin híbrida).
+ *
+ * Única fuente en valores para los validadores del borde
+ * (`convex/infrastructure/validators.ts`): restringida a `ModalityPreference` para no
+ * duplicar su representación. La semana (0–6, convención de `Date.getDay`)
+ * y los minutos del día (0–1440) quedan documentados en el esquema y sus
+ * reglas son de TI2-81.
+ */
+export const MODALITY_VALUES = [
+  "inPerson",
+  "online",
+] as const satisfies readonly ModalityPreference[];
 
 /** Ventana dentro de un día civil, en minutos desde las 00:00. */
 export interface AvailabilityWindow {
@@ -50,6 +58,10 @@ export interface AvailabilityException {
   /** Fecha civil en formato `YYYY-MM-DD`. */
   readonly date: string;
   readonly kind: AvailabilityExceptionKind;
+  /**
+   * Bloque afectado cuando `kind` es `cancelled`: cancela solo sus cupos y conserva los demás bloques del día. Ausente para cancelar el día completo y para `added`, que trae su propia ventana.
+   */
+  readonly blockId?: string;
   /** Ventanas del día cuando `kind` es `added`; ausente en `cancelled`. */
   readonly windows?: readonly AvailabilityWindow[];
   readonly version: AvailabilityContractVersion;
@@ -90,4 +102,416 @@ export interface AvailabilitySlotPage {
   readonly hasMore: boolean;
   readonly nextCursor: string | null;
   readonly version: AvailabilityContractVersion;
+}
+
+/** Primer día admitido en `weekday` (domingo, convención de `Date.getDay`). */
+export const WEEKDAY_MIN = 0;
+
+/** Último día admitido en `weekday` (sábado). */
+export const WEEKDAY_MAX = 6;
+
+/** Minuto inicial del día admitido como inicio de ventana. */
+export const DAY_START_MINUTE = 0;
+
+/** Minuto siguiente al último minuto del día (las 24:00 como cierre). */
+export const DAY_END_MINUTE = 1440;
+
+/**
+ * Días civiles máximos que cubre una expansión.
+ *
+ * La expansión exige un rango explícito y además lo acota: sin este tope un rango abierto podría publicar el calendario completo del profesional.
+ */
+export const MAX_EXPANSION_DAYS = 92;
+
+/** Entrada de la expansión: bloques de un profesional más rango civil y zona horaria explícitos. */
+export interface ExpandAvailabilityInput {
+  /** Profesional dueño de los bloques; cada bloque debe ser del mismo profesional. */
+  readonly professionalId: string;
+  readonly blocks: readonly AvailabilityBlock[];
+  readonly exceptions?: readonly AvailabilityException[];
+  /** Primera fecha civil incluida, en formato `YYYY-MM-DD`. */
+  readonly from: string;
+  /** Última fecha civil incluida, en formato `YYYY-MM-DD`. */
+  readonly to: string;
+  /** Zona horaria IANA del profesional (p. ej. `America/Santiago`). */
+  readonly timeZone: string;
+}
+
+/** Verdadero cuando el día cae entre domingo (0) y sábado (6). */
+export function isValidWeekday(weekday: number): boolean {
+  return Number.isInteger(weekday) && weekday >= WEEKDAY_MIN && weekday <= WEEKDAY_MAX;
+}
+
+/** Verdadero cuando la ventana cabe en el día y el inicio precede al fin. */
+export function isValidMinuteRange(startMinute: number, endMinute: number): boolean {
+  return (
+    Number.isInteger(startMinute) &&
+    Number.isInteger(endMinute) &&
+    startMinute >= DAY_START_MINUTE &&
+    endMinute <= DAY_END_MINUTE &&
+    startMinute < endMinute
+  );
+}
+
+/** Verdadero cuando el valor es una clase de excepción conocida. */
+export function isAvailabilityExceptionKind(value: string): value is AvailabilityExceptionKind {
+  return (AVAILABILITY_EXCEPTION_KIND_VALUES as readonly string[]).includes(value);
+}
+
+/** Verdadero cuando el texto es una fecha civil `YYYY-MM-DD` real del calendario. */
+export function isValidCivilDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return false;
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+  const roundTrip = new Date(Date.UTC(year, month - 1, day));
+  return (
+    roundTrip.getUTCFullYear() === year &&
+    roundTrip.getUTCMonth() === month - 1 &&
+    roundTrip.getUTCDate() === day
+  );
+}
+
+function assertDayWindow(window: AvailabilityWindow, where: string): void {
+  if (!isValidMinuteRange(window.startMinute, window.endMinute)) {
+    throw new Error(
+      `${where}: el inicio y el fin deben ser minutos enteros dentro del día con el fin posterior al inicio.`,
+    );
+  }
+  if (!Number.isInteger(window.slotMinutes) || window.slotMinutes <= 0) {
+    throw new Error(`${where}: la duración del cupo debe ser un entero positivo en minutos.`);
+  }
+  if (window.slotMinutes > window.endMinute - window.startMinute) {
+    throw new Error(`${where}: la duración del cupo no cabe en la ventana del bloque.`);
+  }
+  if (window.modality !== "inPerson" && window.modality !== "online") {
+    throw new Error(`${where}: la modalidad debe ser presencial o en línea.`);
+  }
+  const spaceId = window.spaceId?.trim() ?? "";
+  if (window.modality === "inPerson" && spaceId === "") {
+    throw new Error(`${where}: la atención presencial requiere referencia al espacio.`);
+  }
+  if (window.modality === "online" && spaceId !== "") {
+    throw new Error(`${where}: la atención en línea no lleva referencia a espacio.`);
+  }
+}
+
+function assertBlock(block: AvailabilityBlock, professionalId: string, index: number): void {
+  const where = `Bloque ${index}`;
+  if (block.professionalId !== professionalId) {
+    throw new Error(`${where}: los bloques deben ser del mismo profesional de la expansión.`);
+  }
+  if (!isValidWeekday(block.weekday)) {
+    throw new Error(`${where}: el día de la semana debe ser un entero entre 0 y 6.`);
+  }
+  assertDayWindow(block, where);
+}
+
+function assertException(exception: AvailabilityException, index: number): void {
+  const where = `Excepción ${index}`;
+  if (!isValidCivilDate(exception.date)) {
+    throw new Error(`${where}: la fecha debe ser una fecha civil válida YYYY-MM-DD.`);
+  }
+  if (!isAvailabilityExceptionKind(exception.kind)) {
+    throw new Error(`${where}: la clase de excepción debe ser cancelación o agregado.`);
+  }
+  if (exception.kind === "cancelled" && exception.windows !== undefined) {
+    throw new Error(`${where}: la cancelación de un día no trae ventanas.`);
+  }
+  if (exception.kind === "added" && exception.blockId !== undefined) {
+    throw new Error(`${where}: el agregado trae su propia ventana, no un bloque.`);
+  }
+  if (exception.kind === "added") {
+    if (exception.windows === undefined || exception.windows.length === 0) {
+      throw new Error(`${where}: el agregado de un día requiere al menos una ventana.`);
+    }
+    exception.windows.forEach((window, windowIndex) =>
+      assertDayWindow(window, `${where}, ventana ${windowIndex}`),
+    );
+  }
+}
+
+/** Componentes numéricos de una fecha civil `YYYY-MM-DD` ya validada. */
+function civilDateParts(date: string): { year: number; month: number; day: number } {
+  return {
+    year: Number(date.slice(0, 4)),
+    month: Number(date.slice(5, 7)),
+    day: Number(date.slice(8, 10)),
+  };
+}
+
+/**
+ * Conversión a zona horaria conservada entre llamadas.
+ *
+ * Se conserva una instancia por zona horaria: evita reconstruir el `Intl.DateTimeFormat` en cada instante calculado sin cambiar el resultado.
+ */
+const timeZoneFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  const cached = timeZoneFormatters.get(timeZone);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const created = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  timeZoneFormatters.set(timeZone, created);
+  return created;
+}
+
+/** Partes de fecha y hora de un instante en la zona horaria dada. */
+function zonedDateParts(epochMs: number, timeZone: string): Record<string, string> {
+  return formatterFor(timeZone)
+    .formatToParts(new Date(epochMs))
+    .reduce<Record<string, string>>((accumulator, part) => {
+      accumulator[part.type] = part.value;
+      return accumulator;
+    }, {});
+}
+
+/**
+ * Diferencia entre la hora local y UTC, en milésimas de segundo, para la zona horaria en un instante dado.
+ *
+ * Implementación propia sobre `Intl.DateTimeFormat` para no depender de bibliotecas externas: el dominio sigue siendo puro y la aritmética de instantes queda probada con fechas fijas de invierno y verano.
+ */
+function getTimeZoneOffsetMs(timeZone: string, utcMs: number): number {
+  const parts = zonedDateParts(utcMs, timeZone);
+  const asUtc = Date.UTC(
+    Number(parts["year"]),
+    Number(parts["month"]) - 1,
+    Number(parts["day"]),
+    Number(parts["hour"]) % 24,
+    Number(parts["minute"]),
+    Number(parts["second"]),
+  );
+  return asUtc - utcMs;
+}
+
+/** Convierte una fecha civil más un minuto del día a un instante epoch en la zona horaria dada. */
+function civilToEpochMs(date: string, minuteOfDay: number, timeZone: string): number {
+  const { year, month, day } = civilDateParts(date);
+  const targetLocal = Date.UTC(year, month - 1, day, 0, 0, 0) + minuteOfDay * 60_000;
+  const firstPass = targetLocal - getTimeZoneOffsetMs(timeZone, targetLocal);
+  return targetLocal - getTimeZoneOffsetMs(timeZone, firstPass);
+}
+
+/** Día de la semana (0 a 6) de una fecha civil, idéntico en todas las zonas horarias. */
+function civilWeekday(date: string): number {
+  const { year, month, day } = civilDateParts(date);
+  const days = Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+  return (((days + 4) % 7) + 7) % 7;
+}
+
+/** Fechas civiles del rango inclusivo, en orden, como textos `YYYY-MM-DD`. */
+function eachCivilDate(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const start = civilDateParts(from);
+  const end = civilDateParts(to);
+  const startMs = Date.UTC(start.year, start.month - 1, start.day);
+  const endMs = Date.UTC(end.year, end.month - 1, end.day);
+  for (let currentMs = startMs; currentMs <= endMs; currentMs += 86_400_000) {
+    const current = new Date(currentMs);
+    const year = current.getUTCFullYear();
+    const month = String(current.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(current.getUTCDate()).padStart(2, "0");
+    dates.push(`${year}-${month}-${day}`);
+  }
+  return dates;
+}
+
+/** Fecha civil `YYYY-MM-DD` de un instante en la zona horaria dada. */
+function civilDateOfInstant(epochMs: number, timeZone: string): string {
+  const parts = zonedDateParts(epochMs, timeZone);
+  return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
+}
+
+/** Minuto del día de un instante en la zona horaria dada; difiere del pedido si la hora civil no existe. */
+function civilMinuteOfInstant(epochMs: number, timeZone: string): number {
+  const parts = zonedDateParts(epochMs, timeZone);
+  return (Number(parts["hour"]) % 24) * 60 + Number(parts["minute"]);
+}
+
+/** Ventanas serializadas para distinguir agregados distintos en la misma fecha. */
+function windowsKey(windows: readonly AvailabilityWindow[] | undefined): string {
+  return (windows ?? [])
+    .map(
+      (window) =>
+        `${window.startMinute}-${window.endMinute}-${window.slotMinutes}-${window.modality}-${window.spaceId ?? ""}`,
+    )
+    .join(";");
+}
+
+/** Clave de unicidad de una excepción dentro de su fecha. */
+function exceptionKey(exception: AvailabilityException): string {
+  return `${exception.kind}|${exception.blockId ?? ""}|${windowsKey(exception.windows)}`;
+}
+
+/**
+ * Orden final de cupos: por inicio y, ante inicios repetidos, por identificador.
+ *
+ * El desempate explícito evita depender de la estabilidad del ordenamiento para la identidad determinista.
+ */
+function compareSlots(a: AvailabilitySlot, b: AvailabilitySlot): number {
+  if (a.startAt !== b.startAt) {
+    return a.startAt - b.startAt;
+  }
+  if (a.id !== b.id) {
+    return a.id < b.id ? -1 : 1;
+  }
+  return 0;
+}
+/**
+ * Orden estable de ventanas para que la identidad de cada cupo no dependa del orden de entrada.
+ */
+function compareWindows(a: AvailabilityWindow, b: AvailabilityWindow): number {
+  if (a.startMinute !== b.startMinute) {
+    return a.startMinute - b.startMinute;
+  }
+  if (a.endMinute !== b.endMinute) {
+    return a.endMinute - b.endMinute;
+  }
+  if (a.slotMinutes !== b.slotMinutes) {
+    return a.slotMinutes - b.slotMinutes;
+  }
+  if (a.modality !== b.modality) {
+    return a.modality < b.modality ? -1 : 1;
+  }
+  const aSpace = a.spaceId ?? "";
+  const bSpace = b.spaceId ?? "";
+  if (aSpace !== bSpace) {
+    return aSpace < bSpace ? -1 : 1;
+  }
+  return 0;
+}
+
+function expandWindow(
+  professionalId: string,
+  date: string,
+  window: AvailabilityWindow,
+  timeZone: string,
+  takenIds: Map<string, number>,
+): AvailabilitySlot[] {
+  const slots: AvailabilitySlot[] = [];
+  const length = window.endMinute - window.startMinute;
+  const count = Math.floor(length / window.slotMinutes);
+  for (let index = 0; index < count; index += 1) {
+    const startMinute = window.startMinute + index * window.slotMinutes;
+    const startAt = civilToEpochMs(date, startMinute, timeZone);
+    // Las horas civiles inexistentes (cambio de hora) no producen cupo: la ida y vuelta no coincide con lo pedido.
+    if (
+      civilDateOfInstant(startAt, timeZone) !== date ||
+      civilMinuteOfInstant(startAt, timeZone) !== startMinute
+    ) {
+      continue;
+    }
+    const baseId = `${professionalId}:${date}:${startAt}`;
+    const occurrence = takenIds.get(baseId) ?? 0;
+    takenIds.set(baseId, occurrence + 1);
+    slots.push({
+      id: occurrence === 0 ? baseId : `${baseId}#${occurrence}`,
+      professionalId,
+      date,
+      startAt,
+      // El fin deriva del inicio más la duración: cada cupo dura exacto aunque la hora civil no exista o se repita en un cambio de hora.
+      endAt: startAt + window.slotMinutes * 60_000,
+      modality: window.modality,
+      ...(window.spaceId === undefined ? {} : { spaceId: window.spaceId }),
+      version: AVAILABILITY_CONTRACT_VERSION,
+    });
+  }
+  return slots;
+}
+
+/**
+ * Expande bloques y excepciones a cupos concretos dentro del rango pedido.
+ *
+ * Reglas: cada bloque debe ser del mismo profesional de la expansión; la recurrencia aporta las ventanas de cada fecha según su día de semana; una excepción `cancelled` sin bloque elimina la recurrencia del día pero conserva los agregados, con bloque descuenta solo ese bloque, y una `added` suma sus ventanas a las del día. Los cupos salen alineados al inicio de cada ventana y ordenados por inicio con desempate por identificador, y el fin de cada cupo deriva del inicio más la duración para durar exacto aunque la hora civil no exista o se repita en un cambio de hora; las horas civiles inexistentes no producen cupo para no devolver instantes fuera del día pedido; el resto menor a la duración se descarta sin alterar la ventana. Los solapes entre bloques se preservan tal cual: resolverlos es ocupación (TI2-84/TI2-96), no disponibilidad.
+ *
+ * Rechaza datos no finitos, fin anterior al inicio, ventanas fuera del día, duraciones no positivas o que no caben, modalidades o espacios inconsistentes, bloques de otro profesional, agregado con bloque, fechas inválidas, rango invertido o mayor a `MAX_EXPANSION_DAYS`, zonas horarias desconocidas y excepciones repetidas en la misma fecha.
+ */
+export function expandAvailabilitySlots(input: ExpandAvailabilityInput): AvailabilitySlot[] {
+  if (input.professionalId.trim() === "") {
+    throw new Error("La expansión requiere el profesional dueño de los bloques.");
+  }
+  input.blocks.forEach((block, index) => assertBlock(block, input.professionalId, index));
+  (input.exceptions ?? []).forEach(assertException);
+  if (!isValidCivilDate(input.from) || !isValidCivilDate(input.to)) {
+    throw new Error("El rango de expansión requiere fechas civiles válidas YYYY-MM-DD.");
+  }
+  if (input.from > input.to) {
+    throw new Error("El fin del rango de expansión es anterior a su inicio.");
+  }
+  const rangeStart = civilDateParts(input.from);
+  const rangeEnd = civilDateParts(input.to);
+  const spanDays =
+    Math.round(
+      (Date.UTC(rangeEnd.year, rangeEnd.month - 1, rangeEnd.day) -
+        Date.UTC(rangeStart.year, rangeStart.month - 1, rangeStart.day)) /
+        86_400_000,
+    ) + 1;
+  if (spanDays > MAX_EXPANSION_DAYS) {
+    throw new Error(`El rango de expansión supera el máximo de ${MAX_EXPANSION_DAYS} días.`);
+  }
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone: input.timeZone });
+  } catch {
+    throw new Error("La zona horaria de la expansión es desconocida.");
+  }
+  const dates = eachCivilDate(input.from, input.to);
+
+  const exceptionsByDate = new Map<string, AvailabilityException[]>();
+  for (const exception of input.exceptions ?? []) {
+    const list = exceptionsByDate.get(exception.date) ?? [];
+    const key = exceptionKey(exception);
+    if (list.some((item) => exceptionKey(item) === key)) {
+      throw new Error(`La fecha ${exception.date} trae más de una excepción.`);
+    }
+    list.push(exception);
+    exceptionsByDate.set(exception.date, list);
+  }
+
+  const slots: AvailabilitySlot[] = [];
+  const takenIds = new Map<string, number>();
+  for (const date of dates) {
+    const dayExceptions = exceptionsByDate.get(date) ?? [];
+    const dayCancelled = dayExceptions.some(
+      (e) => e.kind === "cancelled" && e.blockId === undefined,
+    );
+    const cancelledBlocks = new Set(
+      dayExceptions.filter((e) => e.kind === "cancelled").map((e) => e.blockId as string),
+    );
+    const weekday = civilWeekday(date);
+    const dayWindows: AvailabilityWindow[] = [];
+    if (!dayCancelled) {
+      for (const block of input.blocks) {
+        if (block.weekday === weekday && !cancelledBlocks.has(block.id)) {
+          dayWindows.push(block);
+        }
+      }
+    }
+    for (const exception of dayExceptions) {
+      if (exception.kind === "added") {
+        dayWindows.push(...(exception.windows ?? []));
+      }
+    }
+    const ordered = [...dayWindows].sort(compareWindows);
+    for (const window of ordered) {
+      slots.push(...expandWindow(input.professionalId, date, window, input.timeZone, takenIds));
+    }
+  }
+  slots.sort(compareSlots);
+  return slots;
 }
