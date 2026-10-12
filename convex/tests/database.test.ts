@@ -13,6 +13,11 @@ import {
   MAX_ACTIVE_BLOCKS,
   MAX_EXCEPTIONS_IN_RANGE,
 } from "../infrastructure/availability/repository";
+import {
+  findSpaceRowByLocation,
+  getSpaceRow,
+  insertSpace,
+} from "../infrastructure/spaces/repository";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -2424,4 +2429,85 @@ test("repositorio de disponibilidad TI2-95: las escrituras respetan los topes qu
     });
     expect(exceptions.status === "ok" && exceptions.data.length).toBe(MAX_EXCEPTIONS_IN_RANGE);
   });
+});
+
+/**
+ * Repositorio de espacios (TI2-95): lecturas técnicas que usa disponibilidad
+ * y creación de salas sin repetir la ubicación. El catálogo publicado es de
+ * TI2-99.
+ */
+
+const TI95_C204 = { campus: "Norte", building: "C", floor: "2", room: "C-204" };
+
+test("repositorio de espacios TI2-95: lecturas técnicas con el catálogo vacío y con una sala retirada", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+
+  await t.run(async (ctx) => {
+    // Con el catálogo vacío ninguna lectura inventa una sala.
+    expect(await getSpaceRow(ctx, proA)).toBe(null);
+    expect(await getSpaceRow(ctx, "no-es-un-id")).toBe(null);
+    expect(await findSpaceRowByLocation(ctx, TI95_C204)).toBe(null);
+  });
+
+  const retired = await seedTi83Space(t, { ...TI95_C204, isActive: false });
+  const deleted = await seedTi83Space(t, { ...TI95_C204, room: "C-205" });
+  await t.run(async (ctx) => {
+    await ctx.db.delete(deleted);
+  });
+
+  await t.run(async (ctx) => {
+    // La lectura técnica también ve la sala retirada: disponibilidad decide
+    // con `isActive` que no sirve para un bloque.
+    expect(await getSpaceRow(ctx, retired)).toMatchObject({ _id: retired, isActive: false });
+    expect(await findSpaceRowByLocation(ctx, TI95_C204)).toMatchObject({ _id: retired });
+    expect(await getSpaceRow(ctx, deleted)).toBe(null);
+    expect(await findSpaceRowByLocation(ctx, { ...TI95_C204, room: "C-205" })).toBe(null);
+  });
+});
+
+test("repositorio de espacios TI2-95: crea salas vigentes sin repetir la ubicación", async () => {
+  const t = convexTest(schema, modules);
+  const retired = await seedTi83Space(t, { ...TI95_C204, room: "C-101", isActive: false });
+
+  await t.run(async (ctx) => {
+    const created = await insertSpace(ctx, {
+      ...TI95_C204,
+      accessConditions: "Rampa ficticia",
+      arrivalInstructions: "Instrucción de llegada ficticia",
+    });
+    if (created.status !== "ok") {
+      throw new Error("Creación válida rechazada.");
+    }
+    // El vocabulario del contrato se guarda con el del esquema.
+    expect(await getSpaceRow(ctx, created.data.spaceId)).toMatchObject({
+      ...TI95_C204,
+      accessConditions: "Rampa ficticia",
+      accessInstructions: "Instrucción de llegada ficticia",
+      isActive: true,
+    });
+
+    const sameRoom = {
+      ...TI95_C204,
+      accessConditions: "Otra condición ficticia",
+      arrivalInstructions: "Otra instrucción ficticia",
+    };
+    // Misma ubicación con otras condiciones, o la de una sala retirada: es la
+    // misma sala.
+    expect(await insertSpace(ctx, sameRoom)).toEqual(TI95_CONFLICT);
+    expect(await insertSpace(ctx, { ...sameRoom, room: "C-101" })).toEqual(TI95_CONFLICT);
+    // El rechazo no sobrescribe las salas que ya estaban.
+    expect(await getSpaceRow(ctx, created.data.spaceId)).toMatchObject({
+      accessConditions: "Rampa ficticia",
+      accessInstructions: "Instrucción de llegada ficticia",
+    });
+    expect(await getSpaceRow(ctx, retired)).toMatchObject({
+      accessConditions: "Condición de acceso ficticia",
+      accessInstructions: "Instrucción de llegada ficticia",
+      isActive: false,
+    });
+    // Otro piso es otra sala.
+    expect((await insertSpace(ctx, { ...sameRoom, floor: "3" })).status).toBe("ok");
+  });
+  expect(await t.run(async (ctx) => (await ctx.db.query("spaces").collect()).length)).toBe(3);
 });
