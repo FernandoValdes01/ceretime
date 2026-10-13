@@ -1,4 +1,5 @@
-import { StyleSheet, View } from "react-native";
+import { useEffect, useRef } from "react";
+import { AccessibilityInfo, StyleSheet, View } from "react-native";
 
 import type { AuthCredentials } from "../../application/auth-models";
 import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
@@ -17,6 +18,15 @@ export function LoginScreen({
   const isLoading = status === "loading";
   const accessibility = useOptionalAccessibilityPreferences();
   const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const errorRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (isLoading) {
+      AccessibilityInfo.announceForAccessibility("Preparando la experiencia…");
+    } else if (status === "error" && error && errorRef.current) {
+      AccessibilityInfo.sendAccessibilityEvent(errorRef.current, "focus");
+    }
+  }, [error, isLoading, status]);
 
   return (
     <Screen
@@ -52,9 +62,17 @@ export function LoginScreen({
           </StudentText>
         ) : null}
         {error ? (
-          <StudentText accessibilityRole="alert" style={[styles.error, { color: colors.error }]}>
-            {error}
-          </StudentText>
+          <View
+            ref={errorRef}
+            accessible
+            accessibilityLabel={error}
+            accessibilityRole="alert"
+            style={styles.errorContainer}
+          >
+            <StudentText accessible={false} style={[styles.error, { color: colors.error }]}>
+              {error}
+            </StudentText>
+          </View>
         ) : null}
       </View>
     </Screen>
@@ -65,6 +83,7 @@ const styles = StyleSheet.create({
   selector: { gap: 14 },
   selectorTitle: { color: "#182C31", fontSize: 22, fontWeight: "700" },
   status: { color: "#246259", fontSize: 16, textAlign: "center" },
+  errorContainer: { alignSelf: "stretch" },
   error: {
     color: "#8A1C13",
     fontSize: 16,
