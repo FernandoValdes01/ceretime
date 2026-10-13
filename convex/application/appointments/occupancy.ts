@@ -19,9 +19,10 @@ import type { ModalityPreference } from "../../domain/requests/request";
  * La versión del contrato la fija TI2-87 (`AppointmentContractVersion`); acá
  * no hay otra versión paralela. El rechazo por contienda usa `conflict`
  * (TI2-88); `no_availability` queda para la ausencia de cupo en búsqueda
- * (TI2-98), no para la carrera. Los cruces completos de
- * estudiante/profesional/sala los agrega TI2-96 sobre este mismo puerto y
- * los estados los completa TI2-107. Opera con datos ficticios.
+ * (TI2-98), no para la carrera. `conflict` no dice qué recurso estaba
+ * ocupado ni por quién. TI2-96 comprueba sobre este mismo puerto los cruces de estudiante,
+ * profesional y sala en `[startAt, endAt)`; los estados los completa
+ * TI2-107. Opera con datos ficticios.
  */
 
 /** Entrada mínima para ocupar un cupo con identificadores genéricos. */
