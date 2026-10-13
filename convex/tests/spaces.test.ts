@@ -143,7 +143,7 @@ test("sin identidad, sin perfil o sin vigencia responde denegación sin filtrar"
   }
 });
 
-test("la paginación recorre el catálogo sin truncar en silencio", async () => {
+test("el catálogo se recorre por páginas sin truncar en silencio", async () => {
   const t = convexTest(schema, modules);
   await seedCatalog(t);
   await seedUser(t, "ti99-est", "student");

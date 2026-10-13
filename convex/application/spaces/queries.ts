@@ -27,7 +27,7 @@ function deny(): never {
 }
 
 /**
- * Lista el catálogo de espacios permitido al llamante, paginado.
+ * Lista el catálogo de espacios que puede ver el solicitante, paginado.
  *
  * Solo trae salas vigentes (`isActive`) y solo campos del contrato `Space`:
  * el catálogo no concede acceso a acompañamientos. La versión debe ser la

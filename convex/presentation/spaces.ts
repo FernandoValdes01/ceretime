@@ -36,7 +36,7 @@ const spaceCatalogPageValidator = v.object({
 });
 
 /**
- * Lista el catálogo de espacios permitido al llamante, paginado.
+ * Lista el catálogo de espacios que puede ver el solicitante, paginado.
  * Basta una cuenta vigente de cualquier rol; el resto recibe denegación.
  */
 export const listSpaces = query({
