@@ -21,6 +21,15 @@ export type RequestListPage<Item extends RequestListItem> = {
  * por separado el componente <PagedItems>: así ninguna página cargada queda
  * congelada cuando Convex empuja cambios.
  *
+ * Rangos contiguos: los cursores son posiciones fijas; si la primera página
+ * cambia su contenido (p. ej. una toma insertada antes del límite desplaza
+ * filas) con más páginas cargadas, las ventanas fijas dejarían huecos. Ante
+ * ese cambio se reancla a ventana única ([null], dato fresco del servidor);
+ * "Cargar más" regenera cursores vigentes. Solo la primera página dispara el
+ * reanclaje: cambios en páginas posteriores no desplazan a las anteriores.
+ * Las lecturas (hasItems) se acotan siempre a los cursores vigentes, nunca a
+ * entradas huérfanas de ciclos anteriores.
+ *
  * Cada página reporta sus IDs vía onIds desde un efecto del hijo con
  * dependencias ([cursor, page]): reportar en render dispara el aviso de React
  * ("Cannot update ... while rendering a different component", verificado en
@@ -43,8 +52,20 @@ export function usePagedList<Item extends RequestListItem>(
   const [idsByCursor, setIdsByCursor] = useState<ReadonlyMap<string, ReadonlyArray<string>>>(
     new Map(),
   );
+  const [firstKey, setFirstKey] = useState<string | null>(null);
   const firstPage = usePage(null);
   const tailPage = usePage(cursors[cursors.length - 1] ?? null);
+
+  // Reanclaje ante cambio en la primera ventana con más cargadas: ajuste en
+  // render del mismo componente con condición de salida (clave igual y una
+  // sola ventana), sin loops y sin aviso de React.
+  const key = firstPage === undefined ? null : firstPage.page.map((item) => item._id).join(",");
+  if (key !== null && key !== firstKey) {
+    setFirstKey(key);
+    if (cursors.length > 1) {
+      setCursors([null]);
+    }
+  }
 
   const reportIds = useCallback((cursor: string | null, ids: ReadonlyArray<string>) => {
     const key = cursor ?? "first";
@@ -62,7 +83,7 @@ export function usePagedList<Item extends RequestListItem>(
   }, []);
 
   const allReported = cursors.every((cursor) => idsByCursor.has(cursor ?? "first"));
-  const hasItems = [...idsByCursor.values()].some((ids) => ids.length > 0);
+  const hasItems = cursors.some((cursor) => (idsByCursor.get(cursor ?? "first") ?? []).length > 0);
 
   return {
     cursors,

@@ -430,6 +430,10 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [infoReason, setInfoReason] = useState("");
   const [infoReasonError, setInfoReasonError] = useState<string | null>(null);
+  // Error del envío dentro del modal (no en la página): con aria-modal el
+  // lector no percibe lo que queda detrás de la capa, y al cerrar con éxito
+  // este estado muere con el modal en vez de conservar el banner anterior.
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const openButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const reasonRef = useRef<HTMLTextAreaElement>(null);
@@ -524,6 +528,7 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
     setShowInfoModal(true);
     setInfoReason("");
     setInfoReasonError(null);
+    setSubmitError(null);
   };
 
   const handleRequestInfoSubmit = async (e: React.FormEvent) => {
@@ -551,7 +556,7 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
       closeInfoModal();
       // La query reactiva actualizará el estado automáticamente
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "No se pudo pedir información");
+      setSubmitError(err instanceof Error ? err.message : "No se pudo pedir información");
     } finally {
       setIsActionPending(false);
     }
@@ -666,6 +671,11 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
                   Máximo 2000 caracteres ({infoReason.length}/2000)
                 </p>
               </div>
+              {submitError && (
+                <p className="student-portal__error" role="alert">
+                  {submitError}
+                </p>
+              )}
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"

@@ -7,6 +7,7 @@ import {
   renderHook,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -367,6 +368,42 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(result.current.tailDone).toBe(false);
   });
 
+  test("un cambio en la primera página con más cargadas reancla a ventana única", () => {
+    const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
+    const filaB = { _id: "req-2", status: "received", createdAt: 1700000000000 };
+    const paginas: Record<
+      string,
+      { page: (typeof filaA)[]; isDone: boolean; continueCursor: string }
+    > = {
+      first: { page: [filaA], isDone: false, continueCursor: "c1" },
+      c1: { page: [filaB], isDone: true, continueCursor: "c1" },
+    };
+    const { result, rerender } = renderHook(
+      ({ store }: { store: typeof paginas }) => usePagedList((c) => store[c ?? "first"]),
+      { initialProps: { store: paginas } },
+    );
+
+    // Carga la segunda página.
+    act(() => {
+      result.current.loadMore();
+    });
+    rerender({ store: paginas });
+    expect(result.current.cursors).toEqual([null, "c1"]);
+
+    // Una toma insertada antes del límite cambia la primera ventana: reancla.
+    const filaNueva = { _id: "req-0", status: "received", createdAt: 1700000000001 };
+    rerender({
+      store: {
+        first: { page: [filaNueva, filaA], isDone: false, continueCursor: "c1" },
+        c1: paginas.c1,
+      },
+    });
+
+    expect(result.current.cursors).toEqual([null]);
+    expect(result.current.firstPage?.page.map((item) => item._id)).toEqual(["req-0", "req-1"]);
+    expect(result.current.tailDone).toBe(false);
+  });
+
   test("todas las páginas cargadas mantienen lectura reactiva", () => {
     const tomadaPrimera = { _id: "req-1", status: "received", createdAt: 1700000000000 };
     const tomadaSegunda = { _id: "req-2", status: "under_review", createdAt: 1700000000000 };
@@ -687,9 +724,37 @@ describe("acciones del Profesional (TI2-92)", () => {
     fireEvent.change(textarea, { target: { value: "Motivo válido" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    expect(await screen.findByText("No autorizado")).toBeDefined();
-    const enviarBtn = screen.getByRole("button", { name: "Enviar" });
+    // El aviso vive DENTRO del diálogo abierto (aria-modal lo exige).
+    const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
+    expect(within(dialogo).getByText("No autorizado")).toBeDefined();
+    const enviarBtn = within(dialogo).getByRole("button", { name: "Enviar" });
     expect(enviarBtn.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("reintento exitoso cierra sin conservar el error anterior", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockRejectedValueOnce(new Error("No autorizado"));
+    requestInfoMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    fireEvent.change(screen.getByLabelText("Motivo *"), { target: { value: "Motivo válido" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    expect(await screen.findByText("No autorizado")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull(),
+    );
+    expect(screen.queryByText("No autorizado")).toBeNull();
+
+    // Al reabrir no queda el error anterior.
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Pedir información adicional" }),
+    ).toBeDefined();
+    expect(screen.queryByText("No autorizado")).toBeNull();
   });
 
   test("doble clic en tomar no duplica la llamada", async () => {
