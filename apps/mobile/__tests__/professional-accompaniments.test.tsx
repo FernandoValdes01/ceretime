@@ -121,7 +121,9 @@ describe("pantalla de acompañamientos del Profesional", () => {
       />,
     );
     expect(screen.getByText("Falla de prueba")).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("button", { name: "Reintentar" }));
+    const listRetry = screen.getByRole("button", { name: "Reintentar" });
+    expect(listRetry).toHaveStyle({ backgroundColor: "#087D70", minHeight: 44 });
+    fireEvent.press(listRetry);
     expect(reload).toHaveBeenCalledTimes(1);
 
     rerender(
@@ -154,7 +156,9 @@ describe("pantalla de acompañamientos del Profesional", () => {
       />,
     );
     expect(screen.getByText("Falla de detalle")).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("button", { name: "Reintentar carga del acompañamiento" }));
+    const detailRetry = screen.getByRole("button", { name: "Reintentar carga del acompañamiento" });
+    expect(detailRetry).toHaveStyle({ backgroundColor: "#087D70", minHeight: 44 });
+    fireEvent.press(detailRetry);
     expect(reload).toHaveBeenCalledTimes(1);
 
     rerender(
