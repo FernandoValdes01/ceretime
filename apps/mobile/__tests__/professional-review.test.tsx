@@ -3,7 +3,9 @@ import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
 import { router } from "expo-router";
 import { fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import path from "node:path";
+import { AccessibilityInfo } from "react-native";
 
+import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { createMockProfessionalReviewAdapter } from "../src/infrastructure/mock-professional-review-adapter";
 import type { ProfessionalRequest } from "../src/application/professional-review-models";
 import type { ProfessionalReviewPort } from "../src/application/professional-review-port";
@@ -202,6 +204,18 @@ describe("hook y vista de revisión profesional", () => {
   });
 
   test("abre el detalle de una solicitud recibida y registra que comienza la revisión", async () => {
+    const focusEvent = jest.spyOn(AccessibilityInfo, "sendAccessibilityEvent");
+    const port = mobileDependencies.professionalReviewPort;
+    const originalAction = port.performProfessionalRequestAction.bind(port);
+    const performAction = jest.spyOn(port, "performProfessionalRequestAction");
+    let finishAction!: () => void;
+    const pendingAction = new Promise<void>((resolve) => {
+      finishAction = resolve;
+    });
+    performAction.mockImplementation(async (...args) => {
+      await pendingAction;
+      return originalAction(...args);
+    });
     const navigation = renderRouter(appDirectory);
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
     await waitFor(() => expect(screen.getByText("Jueves, 24 de Octubre")).toBeOnTheScreen());
@@ -230,7 +244,16 @@ describe("hook y vista de revisión profesional", () => {
     expect(navigation.getPathname()).toBe("/profesional/estudiantes/SOL-PRO-001");
 
     fireEvent.press(screen.getByRole("button", { name: "Poner en revisión" }));
+    const busyAction = screen.getByRole("button", { name: "Poner en revisión" });
+    expect(busyAction).toBeDisabled();
+    expect(busyAction.props.accessibilityState).toMatchObject({ busy: true, disabled: true });
+    expect(screen.getByText("Poner en revisión")).toBeOnTheScreen();
+    finishAction();
     expect(await screen.findByText("En revisión")).toBeOnTheScreen();
+    const reviewSuccess = await screen.findByTestId("professional-review-success");
+    expect(reviewSuccess.props.accessible).toBe(true);
+    expect(reviewSuccess.props.accessibilityLabel).toMatch(/revisión/i);
+    expect(focusEvent).toHaveBeenCalledWith(expect.anything(), "focus");
     expect(screen.getByRole("button", { name: "Esperar información" })).toBeDisabled();
     expect(screen.getByText("Motivo para pedir información")).toHaveStyle({ fontSize: 16 });
     expect(screen.getByLabelText("Motivo para pedir información")).toHaveStyle({
@@ -256,6 +279,8 @@ describe("hook y vista de revisión profesional", () => {
     fireEvent.press(screen.getByRole("button", { name: "Aceptar solicitud" }));
     expect(await screen.findByText("Acompañamiento abierto")).toBeOnTheScreen();
     expect(screen.getByText("ACO-SOL-PRO-001")).toBeOnTheScreen();
+    focusEvent.mockRestore();
+    performAction.mockRestore();
   });
 
   test.each([
