@@ -23,6 +23,17 @@ const baseRoleTabScreenOptions = {
   },
 };
 
+const tabLabelBreaks: Readonly<Record<string, number>> = {
+  Solicitudes: 8,
+  Acompañamientos: 7,
+};
+
+function getVisibleTabLabel(label: string) {
+  const breakAt = tabLabelBreaks[label];
+  if (breakAt === undefined) return label;
+  return `${label.slice(0, breakAt)}\u200B${label.slice(breakAt)}`;
+}
+
 export function useRoleTabScreenOptions() {
   const { bottom } = useSafeAreaInsets();
   const { fontScale: systemFontScale } = useWindowDimensions();
@@ -37,9 +48,12 @@ export function useRoleTabScreenOptions() {
     tabBarLabelPosition: "below-icon" as const,
     tabBarLabel: ({ children, color }: { children: string; color: ColorValue }) => (
       <StudentText
-        style={[baseRoleTabScreenOptions.tabBarLabelStyle, { color, textAlign: "center" }]}
+        style={[
+          baseRoleTabScreenOptions.tabBarLabelStyle,
+          { color, textAlign: "center", maxWidth: "100%", flexShrink: 1 },
+        ]}
       >
-        {children}
+        {getVisibleTabLabel(children)}
       </StudentText>
     ),
     tabBarStyle: {
