@@ -368,40 +368,32 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(result.current.tailDone).toBe(false);
   });
 
-  test("un cambio en la primera página con más cargadas reancla a ventana única", () => {
+  test("un cambio en el conjunto visible con más cargadas reancla a ventana única", () => {
     const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
-    const filaB = { _id: "req-2", status: "received", createdAt: 1700000000000 };
-    const paginas: Record<
-      string,
-      { page: (typeof filaA)[]; isDone: boolean; continueCursor: string }
-    > = {
-      first: { page: [filaA], isDone: false, continueCursor: "c1" },
-      c1: { page: [filaB], isDone: true, continueCursor: "c1" },
-    };
-    const { result, rerender } = renderHook(
-      ({ store }: { store: typeof paginas }) => usePagedList((c) => store[c ?? "first"]),
-      { initialProps: { store: paginas } },
-    );
+    const pagina = { page: [filaA], isDone: false, continueCursor: "c1" };
 
-    // Carga la segunda página.
+    const { result } = renderHook(() => usePagedList(() => pagina));
+
+    // Carga la segunda página y reporta ambas ventanas (como harían los hijos).
     act(() => {
       result.current.loadMore();
     });
-    rerender({ store: paginas });
     expect(result.current.cursors).toEqual([null, "c1"]);
+    act(() => {
+      result.current.reportIds(null, ["req-1"]);
+      result.current.reportIds("c1", ["req-2"]);
+    });
+    // Conjunto memorizado sin colapso: el avance no es un cambio.
+    expect(result.current.cursors).toEqual([null, "c1"]);
+    expect(result.current.hasItems).toBe(true);
 
-    // Una toma insertada antes del límite cambia la primera ventana: reancla.
-    const filaNueva = { _id: "req-0", status: "received", createdAt: 1700000000001 };
-    rerender({
-      store: {
-        first: { page: [filaNueva, filaA], isDone: false, continueCursor: "c1" },
-        c1: paginas.c1,
-      },
+    // Toma insertada antes del límite: cambia el conjunto → reancla.
+    act(() => {
+      result.current.reportIds(null, ["req-0", "req-1"]);
     });
 
     expect(result.current.cursors).toEqual([null]);
-    expect(result.current.firstPage?.page.map((item) => item._id)).toEqual(["req-0", "req-1"]);
-    expect(result.current.tailDone).toBe(false);
+    expect(result.current.hasItems).toBe(true);
   });
 
   test("todas las páginas cargadas mantienen lectura reactiva", () => {

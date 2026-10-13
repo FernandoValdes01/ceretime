@@ -21,14 +21,16 @@ export type RequestListPage<Item extends RequestListItem> = {
  * por separado el componente <PagedItems>: así ninguna página cargada queda
  * congelada cuando Convex empuja cambios.
  *
- * Rangos contiguos: los cursores son posiciones fijas; si la primera página
- * cambia su contenido (p. ej. una toma insertada antes del límite desplaza
- * filas) con más páginas cargadas, las ventanas fijas dejarían huecos. Ante
- * ese cambio se reancla a ventana única ([null], dato fresco del servidor);
- * "Cargar más" regenera cursores vigentes. Solo la primera página dispara el
- * reanclaje: cambios en páginas posteriores no desplazan a las anteriores.
- * Las lecturas (hasItems) se acotan siempre a los cursores vigentes, nunca a
- * entradas huérfanas de ciclos anteriores.
+ * Rangos contiguos: los cursores son posiciones fijas; si el conjunto visible
+ * cambia (p. ej. una toma insertada en cualquier página desplaza filas) con
+ * más de una ventana cargada, las ventanas fijas dejarían huecos. Ante ese
+ * cambio se reancla a ventana única ([null], dato fresco del servidor);
+ * "Cargar más" regenera cursores vigentes (y limpia la referencia para no
+ * colapsar por el propio avance). Las lecturas (hasItems) se acotan siempre
+ * a los cursores vigentes, nunca a entradas huérfanas de ciclos anteriores.
+ * La firma es el multiconjunto ordenado: detecta cambios de pertenencia, no
+ * reordenamientos. Ajuste en render del mismo componente con condición de
+ * salida, sin loops ni aviso de React.
  *
  * Cada página reporta sus IDs vía onIds desde un efecto del hijo con
  * dependencias ([cursor, page]): reportar en render dispara el aviso de React
@@ -52,20 +54,11 @@ export function usePagedList<Item extends RequestListItem>(
   const [idsByCursor, setIdsByCursor] = useState<ReadonlyMap<string, ReadonlyArray<string>>>(
     new Map(),
   );
-  const [firstKey, setFirstKey] = useState<string | null>(null);
+  // Firma del conjunto visible (multiconjunto ordenado) la última vez que
+  // estuvo completo. Sin baseline no hay referencia: solo se memoriza.
+  const [baseline, setBaseline] = useState<string | null>(null);
   const firstPage = usePage(null);
   const tailPage = usePage(cursors[cursors.length - 1] ?? null);
-
-  // Reanclaje ante cambio en la primera ventana con más cargadas: ajuste en
-  // render del mismo componente con condición de salida (clave igual y una
-  // sola ventana), sin loops y sin aviso de React.
-  const key = firstPage === undefined ? null : firstPage.page.map((item) => item._id).join(",");
-  if (key !== null && key !== firstKey) {
-    setFirstKey(key);
-    if (cursors.length > 1) {
-      setCursors([null]);
-    }
-  }
 
   const reportIds = useCallback((cursor: string | null, ids: ReadonlyArray<string>) => {
     const key = cursor ?? "first";
@@ -85,6 +78,23 @@ export function usePagedList<Item extends RequestListItem>(
   const allReported = cursors.every((cursor) => idsByCursor.has(cursor ?? "first"));
   const hasItems = cursors.some((cursor) => (idsByCursor.get(cursor ?? "first") ?? []).length > 0);
 
+  // Firma del conjunto visible (multiconjunto ordenado: detecta cambios de
+  // pertenencia, no reordenamientos). Si cambia con más de una ventana
+  // cargada, los cursores fijos ya no son contiguos: se reancla a ventana
+  // única fresca y "Cargar más" regenera cursores vigentes. Ajuste en render
+  // del mismo componente con condición de salida, sin loops ni aviso.
+  const signature = [...idsByCursor.values()].flat().sort().join(",");
+  if (allReported) {
+    if (baseline === null) {
+      setBaseline(signature);
+    } else if (signature !== baseline) {
+      setBaseline(signature);
+      if (cursors.length > 1) {
+        setCursors([null]);
+      }
+    }
+  }
+
   return {
     cursors,
     firstPage,
@@ -99,10 +109,14 @@ export function usePagedList<Item extends RequestListItem>(
         return;
       }
       const next = tailPage.continueCursor;
-      if (!next) {
+      if (!next || cursors.includes(next)) {
         return;
       }
-      setCursors((prev) => (prev.includes(next) ? prev : [...prev, next]));
+      // Nueva ventana = nueva referencia: se limpia el baseline para
+      // memorizarlo de nuevo al completarse el reporte, sin colapsar por el
+      // propio avance. Idempotente ante doble clic (mismo resultado).
+      setBaseline(null);
+      setCursors([...cursors, next]);
     },
   };
 }
