@@ -156,9 +156,13 @@ function LoadMoreButton({ pending, onLoadMore }: { pending: boolean; onLoadMore:
  * La denegación del Backend es el mensaje genérico documentado: no revela
  * si la solicitud existe ni de quién es. También cubre la sesión expirada,
  * que se recupera desde el acceso (el layout enlaza la sesión).
+ *
+ * El valor canónico viaja en `error.data`: el SDK del cliente decora
+ * `error.message` con su contexto (query y request ID), así que comparar el
+ * mensaje falla contra el Backend real.
  */
 function isAuthorizationDenial(error: unknown): boolean {
-  return error instanceof ConvexError && error.message === UNAUTHORIZED_ERROR_MESSAGE;
+  return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
 }
 
 /**

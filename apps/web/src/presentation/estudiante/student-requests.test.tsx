@@ -272,7 +272,11 @@ describe("detalle propio del Estudiante (TI2-89)", () => {
   });
 
   test("la solicitud ajena muestra denegación permanente sin reintento ni contenido", async () => {
-    detailThrows = new ConvexError("No autorizado");
+    // El SDK decora el mensaje con su contexto; el valor canónico viaja en `data`.
+    const denial = new ConvexError("No autorizado");
+    denial.message =
+      "[CONVEX Q(presentation/requests:getRequest)] [Request ID: abc123] Server Error: No autorizado";
+    detailThrows = denial;
     renderAt("/estudiante/solicitudes/req-ajena");
 
     expect(await screen.findByText("No tienes acceso a esta solicitud.")).toBeDefined();
