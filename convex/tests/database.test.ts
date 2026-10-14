@@ -4,9 +4,11 @@ import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { AvailabilityReader, AvailabilityWriter } from "../application/availability/ports";
+import type { SpaceReader } from "../application/spaces/ports";
 import { expandAvailabilitySlots } from "../domain/availability/availability";
 import { toAccompanimentRequest } from "../domain/requests/request";
 import { transitionRequest } from "../domain/requests/transition_policy";
+import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
 import {
   availabilityReader,
   availabilityWriter,
@@ -17,6 +19,7 @@ import {
   findSpaceRowByLocation,
   getSpaceRow,
   insertSpace,
+  spaceReader,
 } from "../infrastructure/spaces/repository";
 import schema from "../schema";
 
@@ -2432,9 +2435,9 @@ test("repositorio de disponibilidad TI2-95: las escrituras respetan los topes qu
 });
 
 /**
- * Repositorio de espacios (TI2-95): lecturas técnicas que usa disponibilidad
- * y creación de salas sin repetir la ubicación. El catálogo publicado es de
- * TI2-99.
+ * Repositorio de espacios (TI2-95): lecturas técnicas que usa disponibilidad,
+ * el puerto que las entrega con el contrato `Space` y creación de salas sin
+ * repetir la ubicación. El catálogo publicado es de TI2-99.
  */
 
 const TI95_C204 = { campus: "Norte", building: "C", floor: "2", room: "C-204" };
@@ -2510,4 +2513,52 @@ test("repositorio de espacios TI2-95: crea salas vigentes sin repetir la ubicaci
     expect((await insertSpace(ctx, { ...sameRoom, floor: "3" })).status).toBe("ok");
   });
   expect(await t.run(async (ctx) => (await ctx.db.query("spaces").collect()).length)).toBe(3);
+});
+
+test("repositorio de espacios TI2-95: el puerto técnico entrega el contrato Space con su vigencia", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+  const active = await seedTi83Space(t, TI95_C204);
+  const retired = await seedTi83Space(t, { ...TI95_C204, room: "C-205", isActive: false });
+  const deleted = await seedTi83Space(t, { ...TI95_C204, room: "C-206" });
+  await t.run(async (ctx) => {
+    await ctx.db.delete(deleted);
+  });
+  const contract = {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    accessConditions: "Condición de acceso ficticia",
+    arrivalInstructions: "Instrucción de llegada ficticia",
+    version: SPACE_CATALOG_CONTRACT_VERSION,
+  };
+
+  await t.run(async (ctx) => {
+    const reader: SpaceReader = spaceReader(ctx);
+    // Claves exactas: el contrato de TI2-87 más `isActive`, sin `_id`,
+    // `_creationTime` ni el `accessInstructions` del esquema.
+    expect(await reader.getSpace(active)).toStrictEqual({
+      ...contract,
+      id: active,
+      room: "C-204",
+      isActive: true,
+    });
+    expect(await reader.findSpaceByLocation(TI95_C204)).toStrictEqual({
+      ...contract,
+      id: active,
+      room: "C-204",
+      isActive: true,
+    });
+    // La lectura técnica también ve la sala retirada.
+    const retiredSpace = { ...contract, id: retired, room: "C-205", isActive: false };
+    expect(await reader.getSpace(retired)).toStrictEqual(retiredSpace);
+    expect(await reader.findSpaceByLocation({ ...TI95_C204, room: "C-205" })).toStrictEqual(
+      retiredSpace,
+    );
+    // Borrada, de otra tabla o sin forma de id responde como una inexistente.
+    expect(await reader.getSpace(deleted)).toBe(null);
+    expect(await reader.getSpace(proA)).toBe(null);
+    expect(await reader.getSpace("no-es-un-id")).toBe(null);
+    expect(await reader.findSpaceByLocation({ ...TI95_C204, room: "C-206" })).toBe(null);
+  });
 });
