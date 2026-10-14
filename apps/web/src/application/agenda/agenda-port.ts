@@ -36,12 +36,29 @@ export type SlotSearchResult =
     }
   | { readonly status: "error"; readonly message: string };
 
-/** Selección que TI2-102 consume para el formulario de reserva. */
+/** Selección que el formulario de reserva consume (TI2-102). */
 export type AgendaSlotSelection = {
   readonly slotId: string;
 };
 
+/**
+ * Entrada única del comando de reserva (TI2-102). Definida una sola vez
+ * para búsqueda y formulario: no duplicar este comando.
+ */
+export type ReserveSlotInput = {
+  readonly slotId: string;
+};
+
+/** Respuesta tipada de la reserva: éxito simulado o fallo conservando todo. */
+export type ReserveSlotResult =
+  | {
+      readonly status: "confirmed";
+      readonly reservation: { readonly id: string; readonly slotId: string };
+    }
+  | { readonly status: "error"; readonly message: string };
+
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {
   searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult>;
+  reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult>;
 }

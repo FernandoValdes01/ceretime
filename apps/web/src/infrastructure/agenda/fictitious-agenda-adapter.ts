@@ -7,6 +7,8 @@ import {
 import {
   type AgendaPort,
   type AgendaSlot,
+  type ReserveSlotInput,
+  type ReserveSlotResult,
   type SlotModalityFilter,
   type SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
@@ -47,7 +49,8 @@ const FICTIONAL_SPACES: Record<string, Space> = {
     floor: "Piso 1",
     room: "Sala 101",
     accessConditions: "Acceso sin escaleras por rampa lateral.",
-    arrivalInstructions: "Entrar por el acceso norte y seguir la señalización podotáctil hasta la sala.",
+    arrivalInstructions:
+      "Entrar por el acceso norte y seguir la señalización podotáctil hasta la sala.",
     version: SPACE_CATALOG_CONTRACT_VERSION,
   },
   "esp-2": {
@@ -103,6 +106,14 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
         return { status: "empty" };
       }
       return { status: "ok", slots };
+    },
+    // Reserva simulada (TI2-102): confirma siempre con id ficticio; el fallo
+    // técnico se prueba con rechazo simulado y llegará con la API real.
+    async reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult> {
+      return {
+        status: "confirmed",
+        reservation: { id: `reserva-ficticia-${input.slotId}`, slotId: input.slotId },
+      };
     },
   };
 }
