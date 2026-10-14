@@ -1,4 +1,4 @@
-import { useQuery } from "convex/react";
+import { usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 // Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
 // el monorepo defina el alias o paquete interno compartido.
@@ -10,16 +10,24 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
  *
  * Cableado delgado, un hook por recurso: consume solo queries públicas ya
  * existentes (`listOwnRequests` y `getRequest`). Cada query responde
- * `undefined` mientras carga y la autorización vive en Convex. La paginación
- * avanza por cursor sin perder ni repetir filas.
+ * `undefined` mientras carga y la autorización vive en Convex.
+ *
+ * El listado usa la paginación reactiva de Convex: mantiene la suscripción
+ * de todas las páginas cargadas (los cambios de estado se reflejan sin
+ * caché local) y avanza por cursor aunque una página intermedia llegue
+ * vacía. Los errores se lanzan al límite de error que envuelve la vista.
  */
 /** Tamaño de página del listado; el Backend pagina con cursor. */
 export const PAGE_SIZE = 10;
 
-export function useOwnRequests(cursor: string | null) {
-  return useQuery(api.presentation.requests.listOwnRequests, {
-    paginationOpts: { numItems: PAGE_SIZE, cursor },
-  });
+export function useOwnRequestsPaginated() {
+  return usePaginatedQuery(
+    api.presentation.requests.listOwnRequests,
+    {},
+    {
+      initialNumItems: PAGE_SIZE,
+    },
+  );
 }
 
 export function useOwnRequestDetail(requestId: string) {
