@@ -226,7 +226,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(enlace.getAttribute("href")).toBe("/profesional/solicitudes/req-9");
   });
 
-  test("tomar desde la bandeja ejecuta takeRequest con el id de la fila", async () => {
+test("tomar desde la bandeja ejecuta takeRequest con el id de la fila", async () => {
     comoProfesional();
     mockedOpen = paginaAbierta([filaAbierta({ _id: "req-1" })], true);
     mockedAuthorized = paginaTomadas([], true);
@@ -595,6 +595,300 @@ describe("guard de las rutas de gestión (TI2-91)", () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
     expect(screen.queryByRole("heading", { name: "Detalle de la solicitud" })).toBeNull();
+  });
+});
+
+describe("acciones del Profesional (TI2-92)", () => {
+  const DETALLE_RECEIVED: RequestDetail = {
+    _id: "req-1" as Id<"requests">,
+    studentId: "stu-1" as Id<"users">,
+    status: "received",
+    accessNeeds: "Necesidad inicial",
+    createdAt: 1700000000000,
+  };
+
+  const DETALLE_UNDER_REVIEW: RequestDetail = {
+    _id: "req-9" as Id<"requests">,
+    studentId: "stu-1" as Id<"users">,
+    status: "under_review",
+    accessNeeds: "Necesidad ficticia de acceso",
+    createdAt: 1700000000000,
+  };
+
+  test("estado received muestra botón 'Tomar solicitud' y ejecuta takeRequest", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_RECEIVED;
+    takeRequestMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-1");
+
+    const tomarBtn = await screen.findByRole("button", { name: "Tomar solicitud" });
+    expect(tomarBtn.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(tomarBtn);
+
+    expect(takeRequestMock).toHaveBeenCalledTimes(1);
+    expect(takeRequestMock).toHaveBeenCalledWith({ requestId: "req-1" });
+  });
+
+  test("estado under_review muestra botón 'Pedir información' y abre modal", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    const pedirBtn = await screen.findByRole("button", { name: "Pedir información" });
+    expect(pedirBtn.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(pedirBtn);
+
+    expect(
+      await screen.findByRole("dialog", { name: "Pedir información adicional" }),
+    ).toBeDefined();
+    expect(await screen.findByLabelText("Motivo *")).toBeDefined();
+  });
+
+  test("pedir información valida motivo obligatorio", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    expect(await screen.findByText("El motivo es obligatorio")).toBeDefined();
+    expect(requestInfoMock).not.toHaveBeenCalled();
+  });
+
+  test("pedir información valida longitud máxima 2000 caracteres", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    const textarea = screen.getByLabelText("Motivo *");
+    const longReason = "a".repeat(2001);
+    fireEvent.change(textarea, { target: { value: longReason } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    expect(await screen.findByText("El motivo no puede exceder 2000 caracteres")).toBeDefined();
+    expect(requestInfoMock).not.toHaveBeenCalled();
+  });
+
+  test("pedir información ejecuta requestAdditionalInformation con motivo válido", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    const textarea = screen.getByLabelText("Motivo *");
+    fireEvent.change(textarea, { target: { value: "Falta información sobre horario" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    await waitFor(() => expect(requestInfoMock).toHaveBeenCalledTimes(1));
+    expect(requestInfoMock).toHaveBeenCalledWith({
+      requestId: "req-9",
+      reason: "Falta información sobre horario",
+    });
+
+    // Tras el éxito el modal cierra y el foco va al estado (estable ante la
+    // transición inminente), no al botón que puede desmontarse enseguida.
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull(),
+    );
+    const estadoTrasExito = await screen.findByText("En revisión");
+    expect(document.activeElement).toBe(estadoTrasExito);
+  });
+
+  test("tras éxito con cambio de estado el foco va al estado estable", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    fireEvent.change(screen.getByLabelText("Motivo *"), {
+      target: { value: "Falta información sobre horario" },
+    });
+    // El estado cambia DURANTE el envío: al cerrar, el botón ya no existe.
+    mockedDetail = { ...DETALLE_UNDER_REVIEW, status: "awaiting_information_or_acceptance" };
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    await waitFor(() => expect(requestInfoMock).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull(),
+    );
+    const estado = await screen.findByText("Esperando información o aceptación");
+    expect(document.activeElement).toBe(estado);
+  });
+
+  test("error en takeRequest muestra mensaje y permite reintento", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_RECEIVED;
+    takeRequestMock.mockRejectedValue(new Error("No autorizado"));
+    renderAt("/profesional/solicitudes/req-1");
+
+    const tomarBtn = await screen.findByRole("button", { name: "Tomar solicitud" });
+    fireEvent.click(tomarBtn);
+
+    expect(await screen.findByText("No autorizado")).toBeDefined();
+    expect(tomarBtn.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("error en requestAdditionalInformation muestra mensaje y permite reintento", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockRejectedValue(new Error("No autorizado"));
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    const textarea = screen.getByLabelText("Motivo *");
+    fireEvent.change(textarea, { target: { value: "Motivo válido" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+
+    // El aviso vive DENTRO del diálogo abierto (aria-modal lo exige).
+    const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
+    expect(within(dialogo).getByText("No autorizado")).toBeDefined();
+    const enviarBtn = within(dialogo).getByRole("button", { name: "Enviar" });
+    expect(enviarBtn.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("reintento exitoso cierra sin conservar el error anterior", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockRejectedValueOnce(new Error("No autorizado"));
+    requestInfoMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    fireEvent.change(screen.getByLabelText("Motivo *"), { target: { value: "Motivo válido" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    expect(await screen.findByText("No autorizado")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull(),
+    );
+    expect(screen.queryByText("No autorizado")).toBeNull();
+
+    // Al reabrir no queda el error anterior.
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Pedir información adicional" }),
+    ).toBeDefined();
+    expect(screen.queryByText("No autorizado")).toBeNull();
+  });
+
+  test("doble clic en tomar no duplica la llamada", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_RECEIVED;
+    takeRequestMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-1");
+
+    const tomarBtn = await screen.findByRole("button", { name: "Tomar solicitud" });
+    fireEvent.click(tomarBtn);
+    fireEvent.click(tomarBtn);
+
+    expect(takeRequestMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("doble clic en pedir información no duplica la llamada", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    const textarea = screen.getByLabelText("Motivo *");
+    fireEvent.change(textarea, { target: { value: "Motivo válido" } });
+    const enviarBtn = screen.getByRole("button", { name: "Enviar" });
+    fireEvent.click(enviarBtn);
+
+    // Tras el primer clic el botón se deshabilita; el segundo clic (misma
+    // referencia) lo frena el guard isActionPending del handler, no el DOM.
+    expect(enviarBtn.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(enviarBtn);
+
+    expect(requestInfoMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("modal se cierra con botón Cancelar", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Pedir información adicional" }),
+    ).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+    expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull();
+  });
+
+  test("abrir el modal mueve el foco al motivo", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    const motivo = await screen.findByLabelText("Motivo *");
+
+    await waitFor(() => expect(document.activeElement).toBe(motivo));
+  });
+
+  test("Escape cierra el modal y devuelve el foco al botón", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    const abrirBtn = await screen.findByRole("button", { name: "Pedir información" });
+    fireEvent.click(abrirBtn);
+    const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
+
+    fireEvent.keyDown(dialogo, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull();
+    expect(document.activeElement).toBe(abrirBtn);
+  });
+
+  test("Tab queda atrapado dentro del modal", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE_UNDER_REVIEW;
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
+    const motivo = screen.getByLabelText("Motivo *");
+
+    // Desde el último foco (Enviar), Tab envuelve al primero (motivo).
+    const enviarBtn = screen.getByRole("button", { name: "Enviar" });
+    enviarBtn.focus();
+    fireEvent.keyDown(dialogo, { key: "Tab" });
+    expect(document.activeElement).toBe(motivo);
+
+    // Desde el primero, Shift+Tab envuelve al último.
+    fireEvent.keyDown(dialogo, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(enviarBtn);
+  });
+
+  test("estados accepted y awaiting_information_or_acceptance no muestran acciones", async () => {
+    const detalleAccepted: RequestDetail = {
+      ...DETALLE_UNDER_REVIEW,
+      status: "accepted",
+    };
+    const detalleAwaiting: RequestDetail = {
+      ...DETALLE_UNDER_REVIEW,
+      status: "awaiting_information_or_acceptance",
+    };
+
+    for (const detalle of [detalleAccepted, detalleAwaiting]) {
+      comoProfesional();
+      mockedDetail = detalle;
+      renderAt("/profesional/solicitudes/req-9");
+
+      // Espera el detalle renderizado: sin esto la ausencia de botones sería
+      // vacuosa (el cuerpo aún no monta).
+      expect(await screen.findByText("Necesidad ficticia de acceso")).toBeDefined();
+      expect(screen.queryByRole("button", { name: /Tomar|Pedir información/ })).toBeNull();
+    }
   });
 });
 

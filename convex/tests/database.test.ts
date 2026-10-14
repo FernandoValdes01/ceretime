@@ -3,8 +3,24 @@ import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import type { AvailabilityReader, AvailabilityWriter } from "../application/availability/ports";
+import type { SpaceReader } from "../application/spaces/ports";
+import { expandAvailabilitySlots } from "../domain/availability/availability";
 import { toAccompanimentRequest } from "../domain/requests/request";
 import { transitionRequest } from "../domain/requests/transition_policy";
+import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
+import {
+  availabilityReader,
+  availabilityWriter,
+  MAX_ACTIVE_BLOCKS,
+  MAX_EXCEPTIONS_IN_RANGE,
+} from "../infrastructure/availability/repository";
+import {
+  findSpaceRowByLocation,
+  getSpaceRow,
+  insertSpace,
+  spaceReader,
+} from "../infrastructure/spaces/repository";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -1731,4 +1747,818 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen", async (
       });
     }),
   ).rejects.toThrow("Validator error");
+});
+
+/**
+ * Repositorio de disponibilidad (TI2-95): lecturas por profesional y rango
+ * con el adaptador real sobre las semillas de TI2-83. Declarar el adaptador
+ * como `AvailabilityReader` comprueba que cumple el puerto de Aplicación sin
+ * que Infraestructura lo importe.
+ */
+
+const TI95_DAY_MS = 86_400_000;
+
+const TI95_CONFLICT = {
+  status: "error",
+  error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
+} as const;
+
+async function seedTi95Professionals(t: ReturnType<typeof convexTest>) {
+  const proA = await seedUser(t, {
+    subject: "ti95-pro-a",
+    email: "ti95.proa@uct.cl",
+    role: "professional",
+  });
+  const proB = await seedUser(t, {
+    subject: "ti95-pro-b",
+    email: "ti95.prob@uct.cl",
+    role: "professional",
+  });
+  return { proA, proB };
+}
+
+test("repositorio de disponibilidad TI2-95: bloques vigentes en el contrato de TI2-81", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const monday = await seedTi83Block(t, { professionalId: proA, weekday: 1, spaceId: room });
+  const tuesday = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 2,
+    modality: "online",
+    slotMinutes: 30,
+  });
+  const retired = await seedTi83Block(t, {
+    professionalId: proA,
+    weekday: 3,
+    modality: "online",
+    isActive: false,
+  });
+  await seedTi83Block(t, { professionalId: proB, weekday: 1, modality: "online" });
+  const deleted = await seedTi83Block(t, { professionalId: proA, weekday: 4, modality: "online" });
+  await t.run(async (ctx) => {
+    await ctx.db.delete(deleted);
+  });
+
+  await t.run(async (ctx) => {
+    const reader: AvailabilityReader = availabilityReader(ctx);
+    const blocks = await reader.listActiveBlocks(proA);
+    expect(blocks).toEqual({
+      status: "ok",
+      data: [
+        {
+          id: monday,
+          professionalId: proA,
+          weekday: 1,
+          startMinute: 540,
+          endMinute: 720,
+          slotMinutes: 60,
+          modality: "inPerson",
+          spaceId: room,
+          isActive: true,
+          version: "v1",
+        },
+        {
+          id: tuesday,
+          professionalId: proA,
+          weekday: 2,
+          startMinute: 540,
+          endMinute: 720,
+          slotMinutes: 30,
+          modality: "online",
+          isActive: true,
+          version: "v1",
+        },
+      ],
+    });
+    // El bloque en línea no arrastra una referencia a sala.
+    expect(blocks.status === "ok" && "spaceId" in blocks.data[1]!).toBe(false);
+    // El retirado no se lista, pero se lee por id para poder reactivarlo.
+    expect(await reader.getBlock(retired)).toMatchObject({ id: retired, isActive: false });
+    // Id borrado, de otra tabla o sin forma de id: igual que sin datos.
+    expect(await reader.getBlock(deleted)).toBe(null);
+    expect(await reader.getBlock(room)).toBe(null);
+    expect(await reader.getBlock("no-es-un-id")).toBe(null);
+    expect(await reader.listActiveBlocks(room)).toEqual({ status: "ok", data: [] });
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: excepciones por rango civil inclusivo", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const block = await seedTi83Block(t, { professionalId: proA, weekday: 1, spaceId: room });
+  const cancelled = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_MONDAY,
+    blockId: block,
+  });
+  const added = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_TUESDAY,
+    kind: "added",
+    startMinute: 600,
+    endMinute: 660,
+    slotMinutes: 30,
+    modality: "inPerson",
+    spaceId: room,
+  });
+  // Fuera del rango (miércoles) y de otro profesional: no se leen.
+  await seedTi83Exception(t, { professionalId: proA, date: TI83_TUESDAY + TI95_DAY_MS });
+  await seedTi83Exception(t, { professionalId: proB, date: TI83_MONDAY });
+
+  await t.run(async (ctx) => {
+    const reader: AvailabilityReader = availabilityReader(ctx);
+    const addedException = {
+      id: added,
+      professionalId: proA,
+      date: "2026-10-13",
+      kind: "added",
+      reason: "Motivo ficticio",
+      windows: [
+        { startMinute: 600, endMinute: 660, slotMinutes: 30, modality: "inPerson", spaceId: room },
+      ],
+      version: "v1",
+    };
+    expect(
+      await reader.listExceptions({ professionalId: proA, from: "2026-10-12", to: "2026-10-13" }),
+    ).toEqual({
+      status: "ok",
+      data: [
+        {
+          id: cancelled,
+          professionalId: proA,
+          date: "2026-10-12",
+          kind: "cancelled",
+          blockId: block,
+          reason: "Motivo ficticio",
+          version: "v1",
+        },
+        addedException,
+      ],
+    });
+    // Un solo día: el rango incluye sus dos extremos.
+    expect(
+      await reader.listExceptions({ professionalId: proA, from: "2026-10-13", to: "2026-10-13" }),
+    ).toEqual({ status: "ok", data: [addedException] });
+    expect(await reader.getException(added)).toEqual(addedException);
+    expect(await reader.getException(block)).toBe(null);
+    expect(
+      await reader.listExceptions({ professionalId: room, from: "2026-10-12", to: "2026-10-13" }),
+    ).toEqual({ status: "ok", data: [] });
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: rangos inválidos o mayores a 92 días responden conflict", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+
+  await t.run(async (ctx) => {
+    const reader: AvailabilityReader = availabilityReader(ctx);
+    const read = (from: string, to: string, professionalId: string = proA) =>
+      reader.listExceptions({ professionalId, from, to });
+    expect(await read("2026-10-13", "2026-10-12")).toEqual(TI95_CONFLICT);
+    expect(await read("2026-02-30", "2026-03-01")).toEqual(TI95_CONFLICT);
+    expect(await read("12-10-2026", "2026-10-13")).toEqual(TI95_CONFLICT);
+    // 92 días exactos se leen; 93 no.
+    expect(await read("2026-10-12", "2027-01-11")).toEqual({ status: "ok", data: [] });
+    expect(await read("2026-10-12", "2027-01-12")).toEqual(TI95_CONFLICT);
+    // Con un id inválido el rango se valida igual.
+    expect(await read("2026-10-13", "2026-10-12", "no-es-un-id")).toEqual(TI95_CONFLICT);
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: los topes de lectura fallan en vez de cortar la lista", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  await t.run(async (ctx) => {
+    for (let index = 0; index < MAX_ACTIVE_BLOCKS; index += 1) {
+      await ctx.db.insert("availabilityBlocks", {
+        professionalId: proA,
+        weekday: index % 7,
+        startMinute: 540,
+        endMinute: 720,
+        slotMinutes: 60,
+        modality: "online",
+        isActive: true,
+      });
+    }
+    // Los retirados no se leen ni consumen el tope.
+    for (let index = 0; index < 20; index += 1) {
+      await ctx.db.insert("availabilityBlocks", {
+        professionalId: proA,
+        weekday: index % 7,
+        startMinute: 540,
+        endMinute: 720,
+        slotMinutes: 60,
+        modality: "online",
+        isActive: false,
+      });
+    }
+    for (let index = 0; index < MAX_EXCEPTIONS_IN_RANGE; index += 1) {
+      await ctx.db.insert("availabilityExceptions", {
+        professionalId: proB,
+        date: TI83_MONDAY + (index % 92) * TI95_DAY_MS,
+        kind: "cancelled",
+      });
+    }
+  });
+  const range = { professionalId: proB, from: "2026-10-12", to: "2027-01-11" };
+
+  await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    const blocks = await reader.listActiveBlocks(proA);
+    expect(blocks.status === "ok" && blocks.data.length).toBe(MAX_ACTIVE_BLOCKS);
+    const exceptions = await reader.listExceptions(range);
+    expect(exceptions.status === "ok" && exceptions.data.length).toBe(MAX_EXCEPTIONS_IN_RANGE);
+  });
+
+  await seedTi83Block(t, { professionalId: proA, weekday: 6, modality: "online" });
+  await seedTi83Exception(t, { professionalId: proB, date: TI83_TUESDAY });
+  await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    expect(await reader.listActiveBlocks(proA)).toEqual(TI95_CONFLICT);
+    expect(await reader.listExceptions(range)).toEqual(TI95_CONFLICT);
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: una fila incompleta se entrega tal cual y la expansión la rechaza", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+  const broken = await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_MONDAY,
+    kind: "added",
+    startMinute: 600,
+  });
+
+  const exceptions = await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    const exception = await reader.getException(broken);
+    expect(exception).toMatchObject({ id: broken, kind: "added" });
+    expect(exception?.windows).toBeUndefined();
+    return await reader.listExceptions({
+      professionalId: proA,
+      from: "2026-10-12",
+      to: "2026-10-12",
+    });
+  });
+  // Si se descartara en silencio, con una cancelación se ofrecerían cupos
+  // retirados. Las reglas de validez son de TI2-81 y no se repiten aquí.
+  expect(exceptions.status === "ok" && exceptions.data.map((item) => item.id)).toEqual([broken]);
+  expect(() =>
+    expandAvailabilitySlots({
+      professionalId: proA,
+      blocks: [],
+      exceptions: exceptions.status === "ok" ? exceptions.data : [],
+      from: "2026-10-12",
+      to: "2026-10-12",
+      timeZone: "UTC",
+    }),
+  ).toThrow("el agregado de un día requiere al menos una ventana");
+});
+
+test("repositorio de disponibilidad TI2-95: lo leído alimenta la expansión de TI2-81", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const block = await seedTi83Block(t, { professionalId: proA, weekday: 1, spaceId: room });
+  // La cancelación del lunes solo aplica si la fecha guardada vuelve como
+  // "2026-10-12"; si la conversión corriera un día, aparecerían sus cupos.
+  await seedTi83Exception(t, { professionalId: proA, date: TI83_MONDAY, blockId: block });
+  await seedTi83Exception(t, {
+    professionalId: proA,
+    date: TI83_TUESDAY,
+    kind: "added",
+    startMinute: 600,
+    endMinute: 660,
+    slotMinutes: 30,
+    modality: "online",
+  });
+
+  const slots = await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    const blocks = await reader.listActiveBlocks(proA);
+    const exceptions = await reader.listExceptions({
+      professionalId: proA,
+      from: "2026-10-12",
+      to: "2026-10-13",
+    });
+    if (blocks.status !== "ok" || exceptions.status !== "ok") {
+      throw new Error("Lectura de disponibilidad rechazada.");
+    }
+    return expandAvailabilitySlots({
+      professionalId: proA,
+      blocks: blocks.data,
+      exceptions: exceptions.data,
+      from: "2026-10-12",
+      to: "2026-10-13",
+      timeZone: "UTC",
+    });
+  });
+  expect(slots.map((slot) => [slot.date, slot.startAt, slot.modality])).toEqual([
+    ["2026-10-13", TI83_TUESDAY + 600 * 60_000, "online"],
+    ["2026-10-13", TI83_TUESDAY + 630 * 60_000, "online"],
+  ]);
+});
+
+async function countTi95Rows(
+  t: ReturnType<typeof convexTest>,
+  table: "availabilityBlocks" | "availabilityExceptions",
+) {
+  return await t.run(async (ctx) => (await ctx.db.query(table).collect()).length);
+}
+
+test("repositorio de disponibilidad TI2-95: guarda bloques que la expansión acepta y rechaza el resto sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const retiredRoom = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "1",
+    room: "C-101",
+    isActive: false,
+  });
+
+  await t.run(async (ctx) => {
+    const writer: AvailabilityWriter = availabilityWriter(ctx);
+    const reader = availabilityReader(ctx);
+    const valid = {
+      professionalId: proA,
+      weekday: 1,
+      startMinute: 540,
+      endMinute: 720,
+      slotMinutes: 60,
+      modality: "inPerson" as const,
+      spaceId: room,
+    };
+    const inPerson = await writer.insertBlock(valid);
+    const online = await writer.insertBlock({
+      professionalId: proA,
+      weekday: 2,
+      startMinute: 600,
+      endMinute: 660,
+      slotMinutes: 30,
+      modality: "online",
+    });
+    if (inPerson.status !== "ok" || online.status !== "ok") {
+      throw new Error("Escritura válida rechazada.");
+    }
+    expect(await reader.getBlock(inPerson.data.blockId)).toEqual({
+      id: inPerson.data.blockId,
+      ...valid,
+      isActive: true,
+      version: "v1",
+    });
+    expect("spaceId" in (await reader.getBlock(online.data.blockId))!).toBe(false);
+
+    const rejected = [
+      { ...valid, spaceId: undefined },
+      { ...valid, modality: "online" as const },
+      { ...valid, spaceId: retiredRoom },
+      { ...valid, spaceId: proB },
+      { ...valid, weekday: 7 },
+      { ...valid, startMinute: 720, endMinute: 540 },
+      { ...valid, slotMinutes: 240 },
+      { ...valid, professionalId: room },
+    ];
+    for (const block of rejected) {
+      expect(await writer.insertBlock(block)).toEqual(TI95_CONFLICT);
+    }
+  });
+  expect(await countTi95Rows(t, "availabilityBlocks")).toBe(2);
+});
+
+test("repositorio de disponibilidad TI2-95: editar, retirar y reactivar un bloque conserva a su dueño", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const retiredRoom = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "1",
+    room: "C-101",
+    isActive: false,
+  });
+  const inPerson = {
+    professionalId: proA,
+    weekday: 1,
+    startMinute: 540,
+    endMinute: 720,
+    slotMinutes: 60,
+    modality: "inPerson" as const,
+    spaceId: room,
+  };
+  const ids = await t.run(async (ctx) => {
+    const writer = availabilityWriter(ctx);
+    const first = await writer.insertBlock(inPerson);
+    const second = await writer.insertBlock({ ...inPerson, weekday: 3 });
+    if (first.status !== "ok" || second.status !== "ok") {
+      throw new Error("Escritura válida rechazada.");
+    }
+    return { first: first.data.blockId, second: second.data.blockId };
+  });
+
+  await t.run(async (ctx) => {
+    const writer = availabilityWriter(ctx);
+    const reader = availabilityReader(ctx);
+    // Pasar a en línea quita la sala; el dueño guardado no cambia.
+    expect(
+      await writer.updateBlock(ids.first, {
+        weekday: 2,
+        startMinute: 600,
+        endMinute: 720,
+        slotMinutes: 30,
+        modality: "online",
+      }),
+    ).toEqual({ status: "ok", data: null });
+    const updated = await reader.getBlock(ids.first);
+    expect(updated).toMatchObject({
+      professionalId: proA,
+      weekday: 2,
+      startMinute: 600,
+      endMinute: 720,
+      slotMinutes: 30,
+      modality: "online",
+    });
+    expect("spaceId" in updated!).toBe(false);
+    // Una edición inválida no toca la fila: en línea con sala, sala retirada
+    // o un id que no es de sala.
+    for (const spaceId of [room, retiredRoom, proA]) {
+      expect(
+        await writer.updateBlock(ids.first, {
+          weekday: 2,
+          startMinute: 600,
+          endMinute: 720,
+          slotMinutes: 30,
+          modality: spaceId === room ? "online" : "inPerson",
+          spaceId,
+        }),
+      ).toEqual(TI95_CONFLICT);
+    }
+    expect(await reader.getBlock(ids.first)).toEqual(updated);
+    expect(await writer.updateBlock(room, { ...inPerson, weekday: 2 })).toEqual(TI95_CONFLICT);
+    // Un `professionalId` que llegue junto a la ventana no cambia al dueño.
+    const withOtherOwner = { ...inPerson, weekday: 4, professionalId: proB };
+    expect(await writer.updateBlock(ids.first, withOtherOwner)).toEqual({
+      status: "ok",
+      data: null,
+    });
+    expect(await reader.getBlock(ids.first)).toMatchObject({ professionalId: proA, weekday: 4 });
+
+    expect(await writer.setBlockActive(ids.first, false)).toEqual({ status: "ok", data: null });
+    expect(await reader.getBlock(ids.first)).toMatchObject({ isActive: false });
+    expect(await writer.setBlockActive(ids.first, true)).toEqual({ status: "ok", data: null });
+    expect(await reader.getBlock(ids.first)).toMatchObject({ isActive: true });
+    expect(await writer.setBlockActive(room, false)).toEqual(TI95_CONFLICT);
+
+    // Con la sala vigente el bloque presencial vuelve; con la sala retirada
+    // del catálogo, no.
+    expect(await writer.setBlockActive(ids.second, false)).toEqual({ status: "ok", data: null });
+    expect(await writer.setBlockActive(ids.second, true)).toEqual({ status: "ok", data: null });
+    expect(await reader.getBlock(ids.second)).toMatchObject({ isActive: true });
+    expect(await writer.setBlockActive(ids.second, false)).toEqual({ status: "ok", data: null });
+    await ctx.db.patch(room, { isActive: false });
+    expect(await writer.setBlockActive(ids.second, true)).toEqual(TI95_CONFLICT);
+    expect(await reader.getBlock(ids.second)).toMatchObject({ isActive: false });
+  });
+});
+
+test("repositorio de disponibilidad TI2-95: guarda excepciones válidas y rechaza el resto sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  const room = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    room: "C-204",
+  });
+  const retiredRoom = await seedTi83Space(t, {
+    campus: "Norte",
+    building: "C",
+    floor: "1",
+    room: "C-101",
+    isActive: false,
+  });
+  const window = {
+    startMinute: 600,
+    endMinute: 660,
+    slotMinutes: 30,
+    modality: "inPerson" as const,
+    spaceId: room,
+  };
+
+  const ids = await t.run(async (ctx) => {
+    const writer: AvailabilityWriter = availabilityWriter(ctx);
+    const own = await writer.insertBlock({ professionalId: proA, weekday: 1, ...window });
+    const foreign = await writer.insertBlock({
+      professionalId: proB,
+      weekday: 1,
+      startMinute: 600,
+      endMinute: 660,
+      slotMinutes: 30,
+      modality: "online",
+    });
+    const dayCancel = await writer.insertException({
+      professionalId: proA,
+      date: "2026-10-12",
+      kind: "cancelled",
+      reason: "Motivo ficticio",
+    });
+    if (own.status !== "ok" || foreign.status !== "ok" || dayCancel.status !== "ok") {
+      throw new Error("Escritura válida rechazada.");
+    }
+    const blockCancel = await writer.insertException({
+      professionalId: proA,
+      date: "2026-10-19",
+      kind: "cancelled",
+      blockId: own.data.blockId,
+    });
+    const added = await writer.insertException({
+      professionalId: proA,
+      date: "2026-10-13",
+      kind: "added",
+      windows: [window],
+    });
+    expect(blockCancel.status).toBe("ok");
+    expect(added.status).toBe("ok");
+
+    const base = { professionalId: proA, date: "2026-10-14" };
+    const rejected = [
+      // Repite la cancelación del día completo ya guardada.
+      { ...base, date: "2026-10-12", kind: "cancelled" as const },
+      { ...base, kind: "cancelled" as const, blockId: foreign.data.blockId },
+      { ...base, kind: "cancelled" as const, blockId: room },
+      { ...base, kind: "cancelled" as const, windows: [window] },
+      { ...base, kind: "added" as const },
+      // Dos ventanas válidas: se rechaza por traer más de una, no por ellas.
+      {
+        ...base,
+        kind: "added" as const,
+        windows: [window, { ...window, startMinute: 700, endMinute: 760 }],
+      },
+      { ...base, kind: "added" as const, blockId: own.data.blockId, windows: [window] },
+      { ...base, kind: "added" as const, windows: [{ ...window, spaceId: undefined }] },
+      { ...base, kind: "added" as const, windows: [{ ...window, spaceId: retiredRoom }] },
+      { ...base, date: "2026-02-30", kind: "cancelled" as const },
+      { ...base, professionalId: room, kind: "cancelled" as const },
+    ];
+    for (const exception of rejected) {
+      expect(await writer.insertException(exception)).toEqual(TI95_CONFLICT);
+    }
+    return { dayCancel: dayCancel.data.exceptionId, own: own.data.blockId };
+  });
+  expect(await countTi95Rows(t, "availabilityExceptions")).toBe(3);
+
+  await t.run(async (ctx) => {
+    const reader = availabilityReader(ctx);
+    const blocks = await reader.listActiveBlocks(proA);
+    const exceptions = await reader.listExceptions({
+      professionalId: proA,
+      from: "2026-10-12",
+      to: "2026-10-19",
+    });
+    if (blocks.status !== "ok" || exceptions.status !== "ok") {
+      throw new Error("Lectura de disponibilidad rechazada.");
+    }
+    expect(exceptions.data.map((item) => [item.date, item.kind])).toEqual([
+      ["2026-10-12", "cancelled"],
+      ["2026-10-13", "added"],
+      ["2026-10-19", "cancelled"],
+    ]);
+    expect(exceptions.data[0]).toMatchObject({ reason: "Motivo ficticio" });
+    // Lo escrito siempre se puede expandir.
+    const slots = expandAvailabilitySlots({
+      professionalId: proA,
+      blocks: blocks.data,
+      exceptions: exceptions.data,
+      from: "2026-10-12",
+      to: "2026-10-19",
+      timeZone: "UTC",
+    });
+    expect(slots.map((slot) => slot.date)).toEqual(["2026-10-13", "2026-10-13"]);
+
+    const writer = availabilityWriter(ctx);
+    expect(await writer.removeException(ids.dayCancel)).toEqual({ status: "ok", data: null });
+    expect(await writer.removeException(ids.dayCancel)).toEqual(TI95_CONFLICT);
+    expect(await writer.removeException(ids.own)).toEqual(TI95_CONFLICT);
+  });
+  expect(await countTi95Rows(t, "availabilityExceptions")).toBe(2);
+});
+
+test("repositorio de disponibilidad TI2-95: las escrituras respetan los topes que después permiten leer", async () => {
+  const t = convexTest(schema, modules);
+  const { proA, proB } = await seedTi95Professionals(t);
+  const online = {
+    startMinute: 540,
+    endMinute: 600,
+    slotMinutes: 30,
+    modality: "online" as const,
+  };
+  const retired = await t.run(async (ctx) => {
+    for (let index = 0; index < MAX_ACTIVE_BLOCKS - 1; index += 1) {
+      await ctx.db.insert("availabilityBlocks", {
+        professionalId: proA,
+        weekday: index % 7,
+        ...online,
+        isActive: true,
+      });
+    }
+    // 299 excepciones en los 90 días anteriores a la fecha que se escribe.
+    for (let index = 0; index < MAX_EXCEPTIONS_IN_RANGE - 1; index += 1) {
+      await ctx.db.insert("availabilityExceptions", {
+        professionalId: proB,
+        date: TI83_MONDAY + (index % 90) * TI95_DAY_MS,
+        kind: "cancelled",
+      });
+    }
+    return await ctx.db.insert("availabilityBlocks", {
+      professionalId: proA,
+      weekday: 0,
+      ...online,
+      isActive: false,
+    });
+  });
+
+  await t.run(async (ctx) => {
+    const writer = availabilityWriter(ctx);
+    const reader = availabilityReader(ctx);
+    // Bloques: el que completa el tope entra; el siguiente y la reactivación no.
+    expect((await writer.insertBlock({ professionalId: proA, weekday: 1, ...online })).status).toBe(
+      "ok",
+    );
+    expect(await writer.insertBlock({ professionalId: proA, weekday: 2, ...online })).toEqual(
+      TI95_CONFLICT,
+    );
+    expect(await writer.setBlockActive(retired, true)).toEqual(TI95_CONFLICT);
+    const blocks = await reader.listActiveBlocks(proA);
+    expect(blocks.status === "ok" && blocks.data.length).toBe(MAX_ACTIVE_BLOCKS);
+
+    // Excepciones: la que completa el tope en 92 días entra y se sigue leyendo;
+    // la siguiente, a un día de distancia, no.
+    const day90 = { professionalId: proB, date: "2027-01-10", kind: "cancelled" as const };
+    expect((await writer.insertException(day90)).status).toBe("ok");
+    expect(await writer.insertException({ ...day90, date: "2027-01-11" })).toEqual(TI95_CONFLICT);
+    const exceptions = await reader.listExceptions({
+      professionalId: proB,
+      from: "2026-10-12",
+      to: "2027-01-11",
+    });
+    expect(exceptions.status === "ok" && exceptions.data.length).toBe(MAX_EXCEPTIONS_IN_RANGE);
+  });
+});
+
+/**
+ * Repositorio de espacios (TI2-95): lecturas técnicas que usa disponibilidad,
+ * el puerto que las entrega con el contrato `Space` y creación de salas sin
+ * repetir la ubicación. El catálogo publicado es de TI2-99.
+ */
+
+const TI95_C204 = { campus: "Norte", building: "C", floor: "2", room: "C-204" };
+
+test("repositorio de espacios TI2-95: lecturas técnicas con el catálogo vacío y con una sala retirada", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+
+  await t.run(async (ctx) => {
+    // Con el catálogo vacío ninguna lectura inventa una sala.
+    expect(await getSpaceRow(ctx, proA)).toBe(null);
+    expect(await getSpaceRow(ctx, "no-es-un-id")).toBe(null);
+    expect(await findSpaceRowByLocation(ctx, TI95_C204)).toBe(null);
+  });
+
+  const retired = await seedTi83Space(t, { ...TI95_C204, isActive: false });
+  const deleted = await seedTi83Space(t, { ...TI95_C204, room: "C-205" });
+  await t.run(async (ctx) => {
+    await ctx.db.delete(deleted);
+  });
+
+  await t.run(async (ctx) => {
+    // La lectura técnica también ve la sala retirada: disponibilidad decide
+    // con `isActive` que no sirve para un bloque.
+    expect(await getSpaceRow(ctx, retired)).toMatchObject({ _id: retired, isActive: false });
+    expect(await findSpaceRowByLocation(ctx, TI95_C204)).toMatchObject({ _id: retired });
+    expect(await getSpaceRow(ctx, deleted)).toBe(null);
+    expect(await findSpaceRowByLocation(ctx, { ...TI95_C204, room: "C-205" })).toBe(null);
+  });
+});
+
+test("repositorio de espacios TI2-95: crea salas vigentes sin repetir la ubicación", async () => {
+  const t = convexTest(schema, modules);
+  const retired = await seedTi83Space(t, { ...TI95_C204, room: "C-101", isActive: false });
+
+  await t.run(async (ctx) => {
+    const created = await insertSpace(ctx, {
+      ...TI95_C204,
+      accessConditions: "Rampa ficticia",
+      arrivalInstructions: "Instrucción de llegada ficticia",
+    });
+    if (created.status !== "ok") {
+      throw new Error("Creación válida rechazada.");
+    }
+    // El vocabulario del contrato se guarda con el del esquema.
+    expect(await getSpaceRow(ctx, created.data.spaceId)).toMatchObject({
+      ...TI95_C204,
+      accessConditions: "Rampa ficticia",
+      accessInstructions: "Instrucción de llegada ficticia",
+      isActive: true,
+    });
+
+    const sameRoom = {
+      ...TI95_C204,
+      accessConditions: "Otra condición ficticia",
+      arrivalInstructions: "Otra instrucción ficticia",
+    };
+    // Misma ubicación con otras condiciones, o la de una sala retirada: es la
+    // misma sala.
+    expect(await insertSpace(ctx, sameRoom)).toEqual(TI95_CONFLICT);
+    expect(await insertSpace(ctx, { ...sameRoom, room: "C-101" })).toEqual(TI95_CONFLICT);
+    // El rechazo no sobrescribe las salas que ya estaban.
+    expect(await getSpaceRow(ctx, created.data.spaceId)).toMatchObject({
+      accessConditions: "Rampa ficticia",
+      accessInstructions: "Instrucción de llegada ficticia",
+    });
+    expect(await getSpaceRow(ctx, retired)).toMatchObject({
+      accessConditions: "Condición de acceso ficticia",
+      accessInstructions: "Instrucción de llegada ficticia",
+      isActive: false,
+    });
+    // Otro piso es otra sala.
+    expect((await insertSpace(ctx, { ...sameRoom, floor: "3" })).status).toBe("ok");
+  });
+  expect(await t.run(async (ctx) => (await ctx.db.query("spaces").collect()).length)).toBe(3);
+});
+
+test("repositorio de espacios TI2-95: el puerto técnico entrega el contrato Space con su vigencia", async () => {
+  const t = convexTest(schema, modules);
+  const { proA } = await seedTi95Professionals(t);
+  const active = await seedTi83Space(t, TI95_C204);
+  const retired = await seedTi83Space(t, { ...TI95_C204, room: "C-205", isActive: false });
+  const deleted = await seedTi83Space(t, { ...TI95_C204, room: "C-206" });
+  await t.run(async (ctx) => {
+    await ctx.db.delete(deleted);
+  });
+  const contract = {
+    campus: "Norte",
+    building: "C",
+    floor: "2",
+    accessConditions: "Condición de acceso ficticia",
+    arrivalInstructions: "Instrucción de llegada ficticia",
+    version: SPACE_CATALOG_CONTRACT_VERSION,
+  };
+
+  await t.run(async (ctx) => {
+    const reader: SpaceReader = spaceReader(ctx);
+    // Claves exactas: el contrato de TI2-87 más `isActive`, sin `_id`,
+    // `_creationTime` ni el `accessInstructions` del esquema.
+    expect(await reader.getSpace(active)).toStrictEqual({
+      ...contract,
+      id: active,
+      room: "C-204",
+      isActive: true,
+    });
+    expect(await reader.findSpaceByLocation(TI95_C204)).toStrictEqual({
+      ...contract,
+      id: active,
+      room: "C-204",
+      isActive: true,
+    });
+    // La lectura técnica también ve la sala retirada.
+    const retiredSpace = { ...contract, id: retired, room: "C-205", isActive: false };
+    expect(await reader.getSpace(retired)).toStrictEqual(retiredSpace);
+    expect(await reader.findSpaceByLocation({ ...TI95_C204, room: "C-205" })).toStrictEqual(
+      retiredSpace,
+    );
+    // Borrada, de otra tabla o sin forma de id responde como una inexistente.
+    expect(await reader.getSpace(deleted)).toBe(null);
+    expect(await reader.getSpace(proA)).toBe(null);
+    expect(await reader.getSpace("no-es-un-id")).toBe(null);
+    expect(await reader.findSpaceByLocation({ ...TI95_C204, room: "C-206" })).toBe(null);
+  });
 });
