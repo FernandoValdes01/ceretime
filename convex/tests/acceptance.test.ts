@@ -890,6 +890,7 @@ test("TI2-96: el profesional no se cruza con otra atención y lo contiguo no cho
   expect(ti96Code(await occupyTi96(t, other, pro, 60, 120))).toBe("ok");
   expect(ti96Code(await occupyTi96(t, other, pro, -60, 0))).toBe("ok");
   expect(await listTi96Appointments(t)).toHaveLength(3);
+  await expectNoTi96Crossings(t);
 });
 
 test("TI2-96: el estudiante no se cruza consigo mismo aunque cambie de profesional", async () => {
@@ -915,6 +916,7 @@ test("TI2-96: el estudiante no se cruza consigo mismo aunque cambie de profesion
   expect(ti96Code(await occupyTi96(t, second, proB, 0, 60))).toBe("ok");
   expect(ti96Code(await occupyTi96(t, student, proB, 60, 120))).toBe("ok");
   expect(await listTi96Appointments(t)).toHaveLength(3);
+  await expectNoTi96Crossings(t);
 });
 
 test("TI2-96: la sala no se cruza entre profesionales y una atención en línea no usa sala", async () => {
@@ -948,6 +950,7 @@ test("TI2-96: la sala no se cruza entre profesionales y una atención en línea 
   expect(stored?.modality).toBe("online");
   expect(stored?.spaceId).toBeUndefined();
   expect(await listTi96Appointments(t)).toHaveLength(4);
+  await expectNoTi96Crossings(t);
 });
 
 test("TI2-96: solo las cancelaciones liberan el intervalo", async () => {
@@ -977,6 +980,8 @@ test("TI2-96: solo las cancelaciones liberan el intervalo", async () => {
       code: status.startsWith("cancelled_") ? "ok" : CONFLICT_ERROR_CODE,
     });
   }
+  // Las canceladas que se cruzan no cuentan como cruce: el invariante las ignora.
+  await expectNoTi96Crossings(t);
 });
 
 test("TI2-96: la duración máxima acota la lectura sin perder cruces", async () => {
@@ -1289,4 +1294,116 @@ test("TI2-96: solo se cambia una atención vigente del mismo estudiante y acompa
     expect(await moveTi96(t, moved, who, pro, 600, 660)).toEqual(errResult(conflictError()));
   }
   expect(await listTi96Appointments(t)).toEqual(before);
+});
+
+/**
+ * Invariante de TI2-96: ninguna pareja de atenciones que siguen ocupando su
+ * cupo se cruza en su estudiante, su profesional o su sala.
+ */
+async function expectNoTi96Crossings(t: ReturnType<typeof convexTest>) {
+  const rows = (await listTi96Appointments(t)).filter(
+    (row) => !row.status.startsWith("cancelled_"),
+  );
+  const crossings: string[] = [];
+  for (const [index, a] of rows.entries()) {
+    for (const b of rows.slice(index + 1)) {
+      const overlap = a.startsAt < b.endsAt && b.startsAt < a.endsAt;
+      const shared =
+        a.studentId === b.studentId ||
+        a.professionalId === b.professionalId ||
+        (a.spaceId !== undefined && a.spaceId === b.spaceId);
+      if (overlap && shared) crossings.push(`${a._id} × ${b._id}`);
+    }
+  }
+  expect(crossings).toEqual([]);
+}
+
+/*
+ * Contienda. convex-test@0.0.58 ejecuta en secuencia las transacciones de
+ * nivel superior y toma su candado en el orden de llamada: de dos intentos
+ * lanzados a la vez gana siempre el primero, y el segundo ya ve su atención.
+ * Por eso cada escenario se corre en los dos órdenes y se afirma quién gana.
+ * El solapamiento real lo resuelve el control optimista de Convex: cada
+ * intento lee por rango las ventanas que el otro escribiría, así que Convex
+ * obliga a reintentar uno de los dos y ese ya ve la atención del otro. No se
+ * ejecutó contra un deployment: la issue pide uno autorizado con datos
+ * ficticios.
+ */
+
+test("TI2-96: dos intentos en contienda que comparten un recurso dejan una sola atención", async () => {
+  for (const shared of ["professional", "student", "space"] as const) {
+    for (const reversed of [false, true]) {
+      const t = convexTest(schema, modules);
+      const proA = await seedProfessional(t, `ti96-occ-${shared}-pro-a`);
+      const proB = await seedProfessional(t, `ti96-occ-${shared}-pro-b`);
+      const studentA = await seedTi96Student(t, `ti96-occ-${shared}-est-a`);
+      const studentB = await seedTi96Student(t, `ti96-occ-${shared}-est-b`);
+      const room = await seedTi96Space(t, `C-occ-${shared}`);
+      const attempts = {
+        professional: [
+          [studentA, proA, undefined, 0, 60],
+          [studentB, proA, undefined, 30, 90],
+        ],
+        student: [
+          [studentA, proA, undefined, 0, 60],
+          [studentA, proB, undefined, 30, 90],
+        ],
+        space: [
+          [studentA, proA, room, 0, 60],
+          [studentB, proB, room, 30, 90],
+        ],
+      } as const;
+      const [first, second] = reversed
+        ? [attempts[shared][1], attempts[shared][0]]
+        : [attempts[shared][0], attempts[shared][1]];
+
+      const results = await Promise.all(
+        [first, second].map(([who, pro, space, from, to]) =>
+          occupyTi96(t, who, pro, from, to, space),
+        ),
+      );
+      expect(results.map(ti96Code)).toEqual(["ok", CONFLICT_ERROR_CODE]);
+
+      // El documento final es el del primero; el segundo no dejó nada.
+      const [who, pro, space, from, to] = first;
+      const rows = await listTi96Appointments(t);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        ...who,
+        professionalId: pro,
+        startsAt: ti96At(from),
+        endsAt: ti96At(to),
+        status: "scheduled",
+      });
+      expect(rows[0].spaceId).toBe(space);
+    }
+  }
+});
+
+test("TI2-96: un cambio y una creación en contienda no dejan cruces y el perdedor no escribe", async () => {
+  for (const moveFirst of [true, false]) {
+    const t = convexTest(schema, modules);
+    const pro = await seedProfessional(t, "ti96-occ-pro-c");
+    const student = await seedTi96Student(t, "ti96-occ-est-c");
+    const other = await seedTi96Student(t, "ti96-occ-est-d");
+    const own = await occupyTi96(t, student, pro, 0, 60);
+    if (!isOkResult(own)) throw new Error("Se esperaba ocupar el cupo");
+    const origin = await getTi96(t, own.data.appointmentId);
+
+    // El cambio a 100–160 y la creación en 120–180 se cruzan en el profesional.
+    const move = () => moveTi96(t, own.data.appointmentId, student, pro, 100, 160);
+    const create = () => occupyTi96(t, other, pro, 120, 180);
+    const results = await Promise.all(moveFirst ? [move(), create()] : [create(), move()]);
+    expect(results.map(ti96Code)).toEqual(["ok", CONFLICT_ERROR_CODE]);
+
+    // Si ganó el cambio, la atención está en el destino y la creación no escribió;
+    // si ganó la creación, el origen quedó íntegro y existe la atención nueva.
+    const rows = await listTi96Appointments(t);
+    expect({ rows: rows.length, own: await getTi96(t, own.data.appointmentId) }).toEqual(
+      moveFirst
+        ? { rows: 1, own: { ...origin, startsAt: ti96At(100), endsAt: ti96At(160) } }
+        : { rows: 2, own: origin },
+    );
+    await expectNoTi96Crossings(t);
+  }
 });
