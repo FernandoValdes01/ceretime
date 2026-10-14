@@ -396,6 +396,33 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(result.current.hasItems).toBe(true);
   });
 
+  test("una página en vuelo no establece referencia ni colapsa", () => {
+    const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
+    const pagina = { page: [filaA], isDone: false, continueCursor: "c1" };
+
+    const { result } = renderHook(() => usePagedList(() => pagina));
+    act(() => {
+      result.current.reportIds(null, ["req-1"]);
+    });
+    act(() => {
+      result.current.loadMore();
+    });
+    expect(result.current.cursors).toEqual([null, "c1"]);
+
+    // La nueva página aún carga (sin reporte): no hay referencia que comparar.
+    act(() => {
+      result.current.reportIds("c1", undefined);
+    });
+    expect(result.current.cursors).toEqual([null, "c1"]);
+
+    // Llegan sus filas: se memoriza sin colapsar por el propio avance.
+    act(() => {
+      result.current.reportIds("c1", ["req-2"]);
+    });
+    expect(result.current.cursors).toEqual([null, "c1"]);
+    expect(result.current.hasItems).toBe(true);
+  });
+
   test("todas las páginas cargadas mantienen lectura reactiva", () => {
     const tomadaPrimera = { _id: "req-1", status: "received", createdAt: 1700000000000 };
     const tomadaSegunda = { _id: "req-2", status: "under_review", createdAt: 1700000000000 };

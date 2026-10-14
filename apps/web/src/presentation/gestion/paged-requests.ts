@@ -51,21 +51,27 @@ export function usePagedList<Item extends RequestListItem>(
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
 ) {
   const [cursors, setCursors] = useState<readonly (string | null)[]>([null]);
-  const [idsByCursor, setIdsByCursor] = useState<ReadonlyMap<string, ReadonlyArray<string>>>(
-    new Map(),
-  );
+  const [idsByCursor, setIdsByCursor] = useState<
+    ReadonlyMap<string, ReadonlyArray<string> | undefined>
+  >(new Map());
   // Firma del conjunto visible (multiconjunto ordenado) la última vez que
   // estuvo completo. Sin baseline no hay referencia: solo se memoriza.
   const [baseline, setBaseline] = useState<string | null>(null);
   const firstPage = usePage(null);
   const tailPage = usePage(cursors[cursors.length - 1] ?? null);
 
-  const reportIds = useCallback((cursor: string | null, ids: ReadonlyArray<string>) => {
+  // undefined = suscrito pero aún cargando (distinto de vacío []): así una
+  // página en vuelo no establece referencia ni declara vacío prematuro.
+  const reportIds = useCallback((cursor: string | null, ids: ReadonlyArray<string> | undefined) => {
     const key = cursor ?? "first";
     setIdsByCursor((prev) => {
       const prevIds = prev.get(key);
+      if (prevIds === undefined && ids === undefined) {
+        return prev;
+      }
       if (
         prevIds !== undefined &&
+        ids !== undefined &&
         prevIds.length === ids.length &&
         prevIds.every((id, i) => id === ids[i])
       ) {
@@ -75,7 +81,8 @@ export function usePagedList<Item extends RequestListItem>(
     });
   }, []);
 
-  const allReported = cursors.every((cursor) => idsByCursor.has(cursor ?? "first"));
+  const isLoaded = (cursor: string | null) => idsByCursor.get(cursor ?? "first") !== undefined;
+  const allReported = cursors.every(isLoaded);
   const hasItems = cursors.some((cursor) => (idsByCursor.get(cursor ?? "first") ?? []).length > 0);
 
   // Firma del conjunto visible (multiconjunto ordenado: detecta cambios de
@@ -83,7 +90,12 @@ export function usePagedList<Item extends RequestListItem>(
   // cargada, los cursores fijos ya no son contiguos: se reancla a ventana
   // única fresca y "Cargar más" regenera cursores vigentes. Ajuste en render
   // del mismo componente con condición de salida, sin loops ni aviso.
-  const signature = [...idsByCursor.values()].flat().sort().join(",");
+  // Firma solo sobre cursores vigentes: reportes de ciclos anteriores (claves
+  // huérfanas) no cuentan como respuestas actuales.
+  const signature = cursors
+    .flatMap((cursor) => idsByCursor.get(cursor ?? "first") ?? [])
+    .sort()
+    .join(",");
   if (allReported) {
     if (baseline === null) {
       setBaseline(signature);
