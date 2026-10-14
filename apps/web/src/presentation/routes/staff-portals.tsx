@@ -3,7 +3,7 @@ import { Link, Outlet } from "@tanstack/react-router";
 import "./staff-portal.css";
 
 /**
- * Portales del personal con cuenta institucional (TI2-20).
+ * Portales del personal con cuenta institucional (TI2-20, TI2-103).
  *
  * Solo navegación y protección, como el portal del Estudiante de TI2-6: cada
  * layout enlaza su inicio y la sesión, y cada portada es temporal. Las
@@ -13,7 +13,8 @@ import "./staff-portal.css";
  * El portal de Administración no enlaza acompañamientos ni notas internas
  * (coherente con la matriz TI2-5, donde el Administrador no lista ni lee
  * esos recursos). El portal del Practicante no enlaza acompañamientos
- * concretos: solo verá los asignados cuando existan las vistas.
+ * concretos: solo verá los asignados cuando existan las vistas. El portal
+ * del Profesional enlaza solicitudes (TI2-91) y disponibilidad (TI2-103).
  */
 
 function StaffLayout({ title, home }: { title: string; home: ReactNode }) {
@@ -36,7 +37,8 @@ export function ProfessionalLayout() {
       home={
         <>
           <Link to="/profesional">Inicio</Link>{" "}
-          <Link to="/profesional/solicitudes">Solicitudes</Link>
+          <Link to="/profesional/solicitudes">Solicitudes</Link>{" "}
+          <Link to="/profesional/disponibilidad">Disponibilidad</Link>
         </>
       }
     />
