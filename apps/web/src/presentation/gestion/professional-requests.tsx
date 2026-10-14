@@ -126,8 +126,8 @@ export function PagedItems<Item extends RequestListItem>({
   cursors: ReadonlyArray<string | null>;
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
   renderItem: (item: Item) => ReactNode;
-  onIds: (cursor: string | null, ids: ReadonlyArray<string>) => void;
-  idsByCursor: ReadonlyMap<string, ReadonlyArray<string>>;
+  onIds: (cursor: string | null, ids: ReadonlyArray<string> | undefined) => void;
+  idsByCursor: ReadonlyMap<string, ReadonlyArray<string> | undefined>;
 }) {
   const seen = new Set<string>();
   return (
@@ -162,7 +162,7 @@ function PageItems<Item extends RequestListItem>({
   cursor: string | null;
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
   renderItem: (item: Item) => ReactNode;
-  onIds: (cursor: string | null, ids: ReadonlyArray<string>) => void;
+  onIds: (cursor: string | null, ids: ReadonlyArray<string> | undefined) => void;
   exclude: ReadonlySet<string>;
 }) {
   const page = usePage(cursor);
@@ -174,7 +174,7 @@ function PageItems<Item extends RequestListItem>({
   // el objeto página (identidad estable por dato) y el updater con guarda
   // evita re-renders redundantes. Sin SSR en la app, no aplica su advertencia.
   useLayoutEffect(() => {
-    onIds(cursor, page === undefined ? [] : page.page.map((item) => item._id));
+    onIds(cursor, page === undefined ? undefined : page.page.map((item) => item._id));
   }, [cursor, page, onIds]);
   if (page === undefined) {
     return null;

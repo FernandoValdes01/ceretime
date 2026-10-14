@@ -21,6 +21,17 @@ export type RequestListPage<Item extends RequestListItem> = {
  * por separado el componente <PagedItems>: así ninguna página cargada queda
  * congelada cuando Convex empuja cambios.
  *
+ * Rangos contiguos: los cursores son posiciones fijas; si el conjunto visible
+ * cambia (p. ej. una toma insertada en cualquier página desplaza filas) con
+ * más de una ventana cargada, las ventanas fijas dejarían huecos. Ante ese
+ * cambio se reancla a ventana única ([null], dato fresco del servidor);
+ * "Cargar más" regenera cursores vigentes (y limpia la referencia para no
+ * colapsar por el propio avance). Las lecturas (hasItems) se acotan siempre
+ * a los cursores vigentes, nunca a entradas huérfanas de ciclos anteriores.
+ * La firma es el multiconjunto ordenado: detecta cambios de pertenencia, no
+ * reordenamientos. Ajuste en render del mismo componente con condición de
+ * salida, sin loops ni aviso de React.
+ *
  * Cada página reporta sus IDs vía onIds desde un efecto del hijo con
  * dependencias ([cursor, page]): reportar en render dispara el aviso de React
  * ("Cannot update ... while rendering a different component", verificado en
@@ -40,18 +51,27 @@ export function usePagedList<Item extends RequestListItem>(
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
 ) {
   const [cursors, setCursors] = useState<readonly (string | null)[]>([null]);
-  const [idsByCursor, setIdsByCursor] = useState<ReadonlyMap<string, ReadonlyArray<string>>>(
-    new Map(),
-  );
+  const [idsByCursor, setIdsByCursor] = useState<
+    ReadonlyMap<string, ReadonlyArray<string> | undefined>
+  >(new Map());
+  // Firma del conjunto visible (multiconjunto ordenado) la última vez que
+  // estuvo completo. Sin baseline no hay referencia: solo se memoriza.
+  const [baseline, setBaseline] = useState<string | null>(null);
   const firstPage = usePage(null);
   const tailPage = usePage(cursors[cursors.length - 1] ?? null);
 
-  const reportIds = useCallback((cursor: string | null, ids: ReadonlyArray<string>) => {
+  // undefined = suscrito pero aún cargando (distinto de vacío []): así una
+  // página en vuelo no establece referencia ni declara vacío prematuro.
+  const reportIds = useCallback((cursor: string | null, ids: ReadonlyArray<string> | undefined) => {
     const key = cursor ?? "first";
     setIdsByCursor((prev) => {
       const prevIds = prev.get(key);
+      if (prevIds === undefined && ids === undefined) {
+        return prev;
+      }
       if (
         prevIds !== undefined &&
+        ids !== undefined &&
         prevIds.length === ids.length &&
         prevIds.every((id, i) => id === ids[i])
       ) {
@@ -61,8 +81,31 @@ export function usePagedList<Item extends RequestListItem>(
     });
   }, []);
 
-  const allReported = cursors.every((cursor) => idsByCursor.has(cursor ?? "first"));
-  const hasItems = [...idsByCursor.values()].some((ids) => ids.length > 0);
+  const isLoaded = (cursor: string | null) => idsByCursor.get(cursor ?? "first") !== undefined;
+  const allReported = cursors.every(isLoaded);
+  const hasItems = cursors.some((cursor) => (idsByCursor.get(cursor ?? "first") ?? []).length > 0);
+
+  // Firma del conjunto visible (multiconjunto ordenado: detecta cambios de
+  // pertenencia, no reordenamientos). Si cambia con más de una ventana
+  // cargada, los cursores fijos ya no son contiguos: se reancla a ventana
+  // única fresca y "Cargar más" regenera cursores vigentes. Ajuste en render
+  // del mismo componente con condición de salida, sin loops ni aviso.
+  // Firma solo sobre cursores vigentes: reportes de ciclos anteriores (claves
+  // huérfanas) no cuentan como respuestas actuales.
+  const signature = cursors
+    .flatMap((cursor) => idsByCursor.get(cursor ?? "first") ?? [])
+    .sort()
+    .join(",");
+  if (allReported) {
+    if (baseline === null) {
+      setBaseline(signature);
+    } else if (signature !== baseline) {
+      setBaseline(signature);
+      if (cursors.length > 1) {
+        setCursors([null]);
+      }
+    }
+  }
 
   return {
     cursors,
@@ -78,10 +121,14 @@ export function usePagedList<Item extends RequestListItem>(
         return;
       }
       const next = tailPage.continueCursor;
-      if (!next) {
+      if (!next || cursors.includes(next)) {
         return;
       }
-      setCursors((prev) => (prev.includes(next) ? prev : [...prev, next]));
+      // Nueva ventana = nueva referencia: se limpia el baseline para
+      // memorizarlo de nuevo al completarse el reporte, sin colapsar por el
+      // propio avance. Idempotente ante doble clic (mismo resultado).
+      setBaseline(null);
+      setCursors([...cursors, next]);
     },
   };
 }
