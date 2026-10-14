@@ -11,6 +11,7 @@ import {
   isErrorResult,
   isOkResult,
   NO_AVAILABILITY_ERROR_CODE,
+  okResult,
 } from "../domain/errors/api_error";
 import {
   MAX_APPOINTMENT_MS,
@@ -822,6 +823,7 @@ async function occupyTi96(
   from: number,
   to: number,
   spaceId?: Id<"spaces">,
+  movedAppointmentId?: Id<"appointments">,
 ) {
   const input: OccupySlotRow = {
     ...who,
@@ -830,8 +832,27 @@ async function occupyTi96(
     ...(spaceId === undefined ? {} : { spaceId }),
     startsAt: ti96At(from),
     endsAt: ti96At(to),
+    ...(movedAppointmentId === undefined ? {} : { movedAppointmentId }),
   };
   return await t.run(async (ctx) => await occupySlotAtomically(ctx, input));
+}
+
+/** Cambia la atención `moved` al destino indicado, con la misma regla de sala. */
+async function moveTi96(
+  t: ReturnType<typeof convexTest>,
+  moved: Id<"appointments">,
+  who: { studentId: Id<"users">; accompanimentId: Id<"accompaniments"> },
+  professionalId: Id<"users">,
+  from: number,
+  to: number,
+  spaceId?: Id<"spaces">,
+) {
+  return await occupyTi96(t, who, professionalId, from, to, spaceId, moved);
+}
+
+/** La atención guardada, para comparar el origen antes y después. */
+async function getTi96(t: ReturnType<typeof convexTest>, id: Id<"appointments">) {
+  return await t.run(async (ctx) => await ctx.db.get(id));
 }
 
 /** `ok` o el código estable del error. */
@@ -1082,4 +1103,190 @@ test("TI2-96: cada recurso aplica los mismos bordes, la misma ventana y el mismo
     expect(ti96Code(await occupy(contender, 10000, 10060))).toBe("ok");
     expect(await occupy(occupant, 10060, 10120)).toEqual(rejected);
   }
+});
+
+test("TI2-96: cambiar una atención solo descuenta sus propios cruces", async () => {
+  const t = convexTest(schema, modules);
+  const proA = await seedProfessional(t, "ti96-mov-pro-a");
+  const proB = await seedProfessional(t, "ti96-mov-pro-b");
+  const student = await seedTi96Student(t, "ti96-mov-est-1");
+  const other = await seedTi96Student(t, "ti96-mov-est-2");
+  const first = await occupyTi96(t, student, proA, 0, 60);
+  const second = await occupyTi96(t, student, proA, 120, 180);
+  if (!isOkResult(first) || !isOkResult(second)) throw new Error("Se esperaba ocupar ambos cupos");
+  const moved = first.data.appointmentId;
+
+  // Se cruza solo consigo misma: cambia en el mismo lugar, con el mismo id.
+  expect(await moveTi96(t, moved, student, proA, 30, 90)).toEqual(
+    okResult({ appointmentId: moved }),
+  );
+  // El cambio no la marca como reagendada: el estado y la fecha original son de TI2-109.
+  const shifted = await getTi96(t, moved);
+  expect(shifted).toMatchObject({
+    status: "scheduled",
+    startsAt: ti96At(30),
+    endsAt: ti96At(90),
+  });
+  expect(shifted?.originalStartsAt).toBeUndefined();
+  // La otra atención del mismo estudiante y profesional sí cuenta.
+  expect(await moveTi96(t, moved, student, proA, 100, 150)).toEqual(errResult(conflictError()));
+  expect(await getTi96(t, moved)).toMatchObject({ startsAt: ti96At(30), endsAt: ti96At(90) });
+
+  // Cambiar de profesional libera al anterior en ese horario.
+  expect(ti96Code(await moveTi96(t, moved, student, proB, 30, 90))).toBe("ok");
+  expect(await getTi96(t, moved)).toMatchObject({ professionalId: proB });
+  // Con proB libre, el destino choca solo con el estudiante (su atención con proA).
+  expect(await moveTi96(t, moved, student, proB, 150, 200)).toEqual(errResult(conflictError()));
+  expect(await getTi96(t, moved)).toMatchObject({
+    professionalId: proB,
+    startsAt: ti96At(30),
+    endsAt: ti96At(90),
+  });
+  expect(ti96Code(await occupyTi96(t, other, proA, 30, 90))).toBe("ok");
+  // Cambiar no crea filas: dos del estudiante y una del otro.
+  expect(await listTi96Appointments(t)).toHaveLength(3);
+});
+
+test("TI2-96: un destino ocupado conserva íntegro el origen y el cambio no toca el estado", async () => {
+  const t = convexTest(schema, modules);
+  const proA = await seedProfessional(t, "ti96-mov-pro-c");
+  const proB = await seedProfessional(t, "ti96-mov-pro-d");
+  const student = await seedTi96Student(t, "ti96-mov-est-3");
+  const other = await seedTi96Student(t, "ti96-mov-est-4");
+  const roomA = await seedTi96Space(t, "C-301");
+  const roomB = await seedTi96Space(t, "C-302");
+  // Atención ya reagendada una vez: su estado y su fecha original no son de esta operación.
+  const moved = await t.run(async (ctx) => {
+    return await ctx.db.insert("appointments", {
+      ...student,
+      professionalId: proA,
+      spaceId: roomA,
+      modality: "inPerson",
+      status: "rescheduled",
+      startsAt: ti96At(0),
+      endsAt: ti96At(60),
+      originalStartsAt: ti96At(-1440),
+      createdAt: 7,
+    });
+  });
+  expect(ti96Code(await occupyTi96(t, other, proB, 120, 180, roomB))).toBe("ok");
+  const before = await listTi96Appointments(t);
+
+  // La sala de destino está ocupada por otra atención: no cambia nada.
+  expect(await moveTi96(t, moved, student, proA, 150, 210, roomB)).toEqual(
+    errResult(conflictError()),
+  );
+  // En línea y con el estudiante libre, choca solo con el profesional de destino.
+  expect(await moveTi96(t, moved, student, proB, 150, 210)).toEqual(errResult(conflictError()));
+  expect(await listTi96Appointments(t)).toEqual(before);
+
+  // En su propia sala se cruza solo consigo misma.
+  expect(ti96Code(await moveTi96(t, moved, student, proA, 30, 90, roomA))).toBe("ok");
+  // A una hora libre en línea: cambian horario, modalidad y sala; lo demás se conserva.
+  expect(ti96Code(await moveTi96(t, moved, student, proA, 200, 260))).toBe("ok");
+  const after = await getTi96(t, moved);
+  expect(after).toMatchObject({
+    status: "rescheduled",
+    originalStartsAt: ti96At(-1440),
+    createdAt: 7,
+    modality: "online",
+    startsAt: ti96At(200),
+    endsAt: ti96At(260),
+  });
+  expect(after?.spaceId).toBeUndefined();
+  // La sala de origen quedó libre en su horario.
+  expect(ti96Code(await occupyTi96(t, other, proB, 0, 60, roomA))).toBe("ok");
+
+  // Cambiar solo de sala, en el mismo horario: ocupa la nueva y suelta la anterior.
+  const roomMove = await occupyTi96(t, student, proA, 500, 560, roomA);
+  if (!isOkResult(roomMove)) throw new Error("Se esperaba ocupar la sala");
+  const roomMoved = roomMove.data.appointmentId;
+  expect(ti96Code(await moveTi96(t, roomMoved, student, proA, 500, 560, roomB))).toBe("ok");
+  expect(await getTi96(t, roomMoved)).toMatchObject({ spaceId: roomB });
+  expect(ti96Code(await occupyTi96(t, other, proB, 500, 560, roomA))).toBe("ok");
+});
+
+test("TI2-96: al cambiar, la atención propia también ocupa lugar en el tope", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti96-mov-pro-f");
+  const student = await seedTi96Student(t, "ti96-mov-est-7");
+  const history = await seedTi96Student(t, "ti96-mov-est-8");
+  const active = await seedTi96Student(t, "ti96-mov-est-9");
+  const own = await occupyTi96(t, student, pro, 0, 60);
+  if (!isOkResult(own)) throw new Error("Se esperaba ocupar el cupo");
+  // En la ventana del destino (100–160) caben 200 cancelaciones previas, la
+  // propia y, al final del índice, una atención activa que se cruza.
+  await t.run(async (ctx) => {
+    for (let index = 0; index < MAX_APPOINTMENTS_IN_WINDOW; index += 1) {
+      await ctx.db.insert("appointments", {
+        ...history,
+        professionalId: pro,
+        modality: "online",
+        status: "cancelled_by_student",
+        startsAt: ti96At(index - 1300),
+        endsAt: ti96At(index - 1290),
+        createdAt: 1,
+      });
+    }
+    await ctx.db.insert("appointments", {
+      ...active,
+      professionalId: pro,
+      modality: "online",
+      status: "scheduled",
+      startsAt: ti96At(110),
+      endsAt: ti96At(170),
+      createdAt: 1,
+    });
+  });
+  const before = await listTi96Appointments(t);
+
+  // Sin contar la propia se decidiría con una lista cortada que no ve la activa.
+  expect(await moveTi96(t, own.data.appointmentId, student, pro, 100, 160)).toEqual(
+    errResult(conflictError()),
+  );
+  expect(await listTi96Appointments(t)).toEqual(before);
+});
+
+test("TI2-96: solo se cambia una atención vigente del mismo estudiante y acompañamiento", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti96-mov-pro-e");
+  const student = await seedTi96Student(t, "ti96-mov-est-5");
+  const other = await seedTi96Student(t, "ti96-mov-est-6");
+  const own = await occupyTi96(t, student, pro, 0, 60);
+  const foreign = await occupyTi96(t, other, pro, 120, 180);
+  const gone = await occupyTi96(t, student, pro, 400, 460);
+  if (!isOkResult(own) || !isOkResult(foreign) || !isOkResult(gone)) {
+    throw new Error("Se esperaba ocupar los cupos");
+  }
+  const cancelled = await t.run(async (ctx) => {
+    return await ctx.db.insert("appointments", {
+      ...student,
+      professionalId: pro,
+      modality: "online",
+      status: "cancelled_by_student",
+      startsAt: ti96At(300),
+      endsAt: ti96At(360),
+      createdAt: 1,
+    });
+  });
+  await t.run(async (ctx) => {
+    await ctx.db.delete(gone.data.appointmentId);
+  });
+  const otherAccompaniment = await seedAccompaniment(t, student.studentId);
+  const before = await listTi96Appointments(t);
+
+  // El destino está libre para todos: el rechazo viene solo del origen.
+  for (const [moved, who] of [
+    [foreign.data.appointmentId, student],
+    [own.data.appointmentId, other],
+    [own.data.appointmentId, { ...student, accompanimentId: otherAccompaniment }],
+    // Mismo acompañamiento con otro estudiante: buscaría cruces en otra agenda.
+    [own.data.appointmentId, { ...student, studentId: other.studentId }],
+    [cancelled, student],
+    [gone.data.appointmentId, student],
+    [pro as unknown as Id<"appointments">, student],
+  ] as const) {
+    expect(await moveTi96(t, moved, who, pro, 600, 660)).toEqual(errResult(conflictError()));
+  }
+  expect(await listTi96Appointments(t)).toEqual(before);
 });
