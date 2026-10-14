@@ -20,6 +20,7 @@ import type * as application_session_minimal_identity from "../application/sessi
 import type * as application_session_portal_role from "../application/session/portal_role.js";
 import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
+import type * as application_spaces_queries from "../application/spaces/queries.js";
 import type * as auth from "../auth.js";
 import type * as domain_accompaniments_accompaniment from "../domain/accompaniments/accompaniment.js";
 import type * as domain_accompaniments_intern_access from "../domain/accompaniments/intern_access.js";
@@ -43,6 +44,7 @@ import type * as infrastructure_accompaniments_repository from "../infrastructur
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as infrastructure_appointments_repository from "../infrastructure/appointments/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
+import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
 import type * as operations_accounts from "../operations/accounts.js";
 import type * as operations_assignments from "../operations/assignments.js";
@@ -53,6 +55,7 @@ import type * as operations_users from "../operations/users.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
+import type * as presentation_spaces from "../presentation/spaces.js";
 
 import type {
   ApiFromModules,
@@ -73,6 +76,7 @@ declare const fullApi: ApiFromModules<{
   "application/session/portal_role": typeof application_session_portal_role;
   "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
+  "application/spaces/queries": typeof application_spaces_queries;
   auth: typeof auth;
   "domain/accompaniments/accompaniment": typeof domain_accompaniments_accompaniment;
   "domain/accompaniments/intern_access": typeof domain_accompaniments_intern_access;
@@ -96,6 +100,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "infrastructure/appointments/repository": typeof infrastructure_appointments_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
+  "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
   "operations/accounts": typeof operations_accounts;
   "operations/assignments": typeof operations_assignments;
@@ -106,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/accompaniments": typeof presentation_accompaniments;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
+  "presentation/spaces": typeof presentation_spaces;
 }>;
 
 /**
