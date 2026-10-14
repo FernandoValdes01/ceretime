@@ -44,6 +44,9 @@ jobs:
       - name: Probar publicación de resultados de CI
         run: bun test ./.github/ci-publication.test.ts
 
+      - name: Probar notificaciones de Discord sin credenciales
+        run: bun test ./.github/discord/notifications.test.ts
+
   mobile:
     name: Validación Mobile
     runs-on: ubuntu-latest

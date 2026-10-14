@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
@@ -10,9 +11,11 @@ import { AppIcon } from "./app-icon";
 
 export function AppHeader({
   onBack,
+  showPreferencesAction = true,
   title = "CERETI",
 }: {
   readonly onBack?: () => void;
+  readonly showPreferencesAction?: boolean;
   readonly title?: string;
 }) {
   const [focusedControl, setFocusedControl] = useState<string | null>(null);
@@ -93,6 +96,31 @@ export function AppHeader({
               strokeWidth={2.1}
             />
           </Pressable>
+          {showPreferencesAction ? (
+            <Pressable
+              onFocus={() => setFocusedControl("preferences")}
+              onBlur={() => setFocusedControl(null)}
+              accessibilityHint="Abre los ajustes compartidos de texto, contraste y movimiento"
+              accessibilityLabel="Preferencias de accesibilidad"
+              accessibilityRole="button"
+              onPress={() => router.push("/preferencias")}
+              style={[
+                styles.logoutButton,
+                focusedControl === "preferences" && [
+                  styles.focused,
+                  { outlineColor: colors.focus },
+                ],
+              ]}
+            >
+              <AppIcon
+                accessible={false}
+                color={colors.primary}
+                name="settings"
+                size={22}
+                strokeWidth={2.1}
+              />
+            </Pressable>
+          ) : null}
           <Pressable
             onFocus={() => setFocusedControl("logout")}
             onBlur={() => setFocusedControl(null)}

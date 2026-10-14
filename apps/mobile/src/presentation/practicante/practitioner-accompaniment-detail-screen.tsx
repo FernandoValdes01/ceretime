@@ -1,5 +1,13 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useEffect, useRef } from "react";
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type { PractitionerAccompaniment } from "../../application/practitioner-accompaniment-models";
@@ -107,15 +115,29 @@ function AssignedPractitionerAccompanimentDetail() {
     session?.user.id ?? null,
     accompanimentId,
   );
+  const detailHeadingRef = useRef<View>(null);
   const onBack = () => router.replace("/practicante/asignaciones");
+
+  useEffect(() => {
+    if (detailHeadingRef.current) {
+      AccessibilityInfo.sendAccessibilityEvent(detailHeadingRef.current, "focus");
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
       <AppHeader onBack={onBack} />
       <ScrollView contentContainerStyle={styles.content}>
-        <StudentText accessibilityRole="header" style={styles.title}>
-          Detalle del acompañamiento
-        </StudentText>
+        <View
+          ref={detailHeadingRef}
+          accessible
+          accessibilityLabel="Detalle del acompañamiento"
+          accessibilityRole="header"
+        >
+          <StudentText accessible={false} style={styles.title}>
+            Detalle del acompañamiento
+          </StudentText>
+        </View>
         <PractitionerAccompanimentDetailContent {...state} onBack={onBack} />
       </ScrollView>
     </SafeAreaView>
