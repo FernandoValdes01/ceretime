@@ -6,11 +6,23 @@ import { getAgendaPort } from "./schedule-search-data.ts";
  * Lectura del cupo a confirmar (TI2-102).
  *
  * Reutiliza la búsqueda del puerto y elige por id: sin segundo almacén ni
- * nueva capacidad. `undefined` carga, `null` ausente (sin slotId o ya no
- * publicado). Los fallos de lectura caen al caso ausente con vuelta.
+ * nueva capacidad. Distingue carga, listo, ausente y fallo de lectura: un
+ * fallo técnico no se presenta como cupo inexistente y permite reintentar
+ * conservando el slotId de la URL.
  */
-export function useReservationSlot(slotId: string | undefined) {
+export type ReservationSlotState =
+  | { status: "loading" }
+  | { status: "ready"; slot: AgendaSlot }
+  | { status: "missing" }
+  | { status: "read-error" };
+
+export function useReservationSlot(slotId: string | undefined): {
+  state: ReservationSlotState;
+  retry: () => void;
+} {
   const [slots, setSlots] = useState<ReadonlyArray<AgendaSlot> | undefined>(undefined);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -18,12 +30,19 @@ export function useReservationSlot(slotId: string | undefined) {
       .searchSlots({ modality: "all" })
       .then(
         (result) => {
-          if (!cancelled) {
+          if (cancelled) {
+            return;
+          }
+          if (result.status === "error") {
+            setFailed(true);
+            setSlots([]);
+          } else {
             setSlots(result.status === "ok" ? result.slots : []);
           }
         },
         () => {
           if (!cancelled) {
+            setFailed(true);
             setSlots([]);
           }
         },
@@ -31,13 +50,25 @@ export function useReservationSlot(slotId: string | undefined) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
+
+  function retry() {
+    setFailed(false);
+    setAttempt((count) => count + 1);
+  }
 
   if (slotId === undefined) {
-    return null;
+    return { state: { status: "missing" }, retry };
+  }
+  if (failed) {
+    return { state: { status: "read-error" }, retry };
   }
   if (slots === undefined) {
-    return undefined;
+    return { state: { status: "loading" }, retry };
   }
-  return slots.find((slot) => slot.id === slotId) ?? null;
+  const slot = slots.find((item) => item.id === slotId) ?? null;
+  if (slot === null) {
+    return { state: { status: "missing" }, retry };
+  }
+  return { state: { status: "ready", slot }, retry };
 }

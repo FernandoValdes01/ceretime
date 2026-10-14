@@ -32,7 +32,11 @@ export function ReservationFormPage() {
       <p>
         <Link to="/estudiante/horarios">Volver a horarios</Link>
       </p>
-      <StudentPanelErrorBoundary subject="la confirmación de reserva" level="section">
+      <StudentPanelErrorBoundary
+        key={slotId ?? "sin-cupo"}
+        subject="la confirmación de reserva"
+        level="section"
+      >
         <ReservationFormBody slotId={slotId} />
       </StudentPanelErrorBoundary>
     </section>
@@ -40,7 +44,7 @@ export function ReservationFormPage() {
 }
 
 function ReservationFormBody({ slotId }: { slotId: string | undefined }) {
-  const slot = useReservationSlot(slotId);
+  const { state, retry } = useReservationSlot(slotId);
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
   const [reservationId, setReservationId] = useState<string | null>(null);
@@ -55,9 +59,10 @@ function ReservationFormBody({ slotId }: { slotId: string | undefined }) {
 
   async function handleConfirm(event: React.FormEvent) {
     event.preventDefault();
-    if (pending || slot === undefined || slot === null) {
+    if (pending || state.status !== "ready") {
       return;
     }
+    const slot = state.slot;
     setSubmitError(null);
     setPending(true);
     try {
@@ -65,7 +70,7 @@ function ReservationFormBody({ slotId }: { slotId: string | undefined }) {
       if (result.status === "confirmed") {
         setReservationId(result.reservation.id);
       } else {
-        setSubmitError(result.message);
+        setSubmitError(result.error.message);
       }
     } catch {
       setSubmitError("No pudimos confirmar la reserva. Inténtalo de nuevo.");
@@ -74,7 +79,7 @@ function ReservationFormBody({ slotId }: { slotId: string | undefined }) {
     }
   }
 
-  if (slot === undefined) {
+  if (state.status === "loading") {
     return (
       <p role="status" className="student-portal__loading">
         Cargando el cupo…
@@ -82,7 +87,26 @@ function ReservationFormBody({ slotId }: { slotId: string | undefined }) {
     );
   }
 
-  if (slot === null) {
+  if (state.status === "read-error") {
+    return (
+      <div>
+        <p role="alert" className="student-portal__error">
+          No pudimos cargar el cupo. Inténtalo de nuevo.
+        </p>
+        <div className="student-portal__cta">
+          <button
+            type="button"
+            className="student-portal__btn student-portal__btn--primary"
+            onClick={retry}
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state.status === "missing") {
     return (
       <div className="student-portal__empty">
         <p className="student-portal__empty-title">Cupo no disponible.</p>
@@ -90,6 +114,8 @@ function ReservationFormBody({ slotId }: { slotId: string | undefined }) {
       </div>
     );
   }
+
+  const slot = state.slot;
 
   if (reservationId !== null) {
     return (

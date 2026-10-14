@@ -107,12 +107,28 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
       }
       return { status: "ok", slots };
     },
-    // Reserva simulada (TI2-102): confirma siempre con id ficticio; el fallo
-    // técnico se prueba con rechazo simulado y llegará con la API real.
+    // Reserva simulada (TI2-102): confirma los cupos publicados con la
+    // proyección del contrato; un id ajeno responde falta de cupo con el
+    // código canónico. El fallo técnico se prueba con rechazo y llegará con
+    // la API real.
     async reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult> {
+      const slot = FICTIONAL_SLOTS.find((item) => item.id === input.slotId);
+      if (slot === undefined) {
+        return {
+          status: "error",
+          error: { code: NO_AVAILABILITY_ERROR_CODE, message: "El cupo ya no está disponible." },
+        };
+      }
       return {
         status: "confirmed",
-        reservation: { id: `reserva-ficticia-${input.slotId}`, slotId: input.slotId },
+        reservation: {
+          id: `reserva-ficticia-${slot.id}`,
+          slotId: slot.id,
+          professionalId: slot.professionalId,
+          modality: slot.modality,
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+        },
       };
     },
   };

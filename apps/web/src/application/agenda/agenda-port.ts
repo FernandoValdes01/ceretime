@@ -1,6 +1,8 @@
 import {
   NO_AVAILABILITY_ERROR_CODE,
+  type Appointment,
   type AvailabilitySlot,
+  type PublicApiError,
 } from "../../../../../convex/domain/index.ts";
 
 /**
@@ -49,13 +51,16 @@ export type ReserveSlotInput = {
   readonly slotId: string;
 };
 
-/** Respuesta tipada de la reserva: éxito simulado o fallo conservando todo. */
+/** Confirmación de reserva: proyección necesaria de `Appointment`. */
+export type ReservationConfirmation = Pick<
+  Appointment,
+  "id" | "slotId" | "professionalId" | "modality" | "startAt" | "endAt"
+>;
+
+/** Respuesta tipada de la reserva: usa el error público compartido. */
 export type ReserveSlotResult =
-  | {
-      readonly status: "confirmed";
-      readonly reservation: { readonly id: string; readonly slotId: string };
-    }
-  | { readonly status: "error"; readonly message: string };
+  | { readonly status: "confirmed"; readonly reservation: ReservationConfirmation }
+  | { readonly status: "error"; readonly error: PublicApiError };
 
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {

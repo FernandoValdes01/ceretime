@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
@@ -142,7 +142,14 @@ describe("formulario de reserva (TI2-102)", () => {
     comoEstudiante();
     reserveSlotMock.mockResolvedValue({
       status: "confirmed",
-      reservation: { id: "reserva-ficticia-cupo-1", slotId: "cupo-1" },
+      reservation: {
+        id: "reserva-ficticia-cupo-1",
+        slotId: "cupo-1",
+        professionalId: "pro-ficticio-1",
+        modality: "inPerson",
+        startAt: 1760925600000,
+        endAt: 1760929200000,
+      },
     });
     renderAt("/estudiante/reservar?slotId=cupo-1");
 
@@ -165,7 +172,14 @@ describe("formulario de reserva (TI2-102)", () => {
     reserveSlotMock.mockRejectedValueOnce(new Error("No autorizado"));
     reserveSlotMock.mockResolvedValue({
       status: "confirmed",
-      reservation: { id: "reserva-ficticia-cupo-1", slotId: "cupo-1" },
+      reservation: {
+        id: "reserva-ficticia-cupo-1",
+        slotId: "cupo-1",
+        professionalId: "pro-ficticio-1",
+        modality: "inPerson",
+        startAt: 1760925600000,
+        endAt: 1760929200000,
+      },
     });
     renderAt("/estudiante/reservar?slotId=cupo-1");
 
@@ -188,7 +202,14 @@ describe("formulario de reserva (TI2-102)", () => {
     comoEstudiante();
     reserveSlotMock.mockResolvedValue({
       status: "confirmed",
-      reservation: { id: "reserva-ficticia-cupo-1", slotId: "cupo-1" },
+      reservation: {
+        id: "reserva-ficticia-cupo-1",
+        slotId: "cupo-1",
+        professionalId: "pro-ficticio-1",
+        modality: "inPerson",
+        startAt: 1760925600000,
+        endAt: 1760929200000,
+      },
     });
     renderAt("/estudiante/reservar?slotId=cupo-1");
 
@@ -198,6 +219,145 @@ describe("formulario de reserva (TI2-102)", () => {
     fireEvent.click(confirmar);
 
     expect(reserveSlotMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("error tipado muestra mensaje y permite reintento conservando todo", async () => {
+    comoEstudiante();
+    reserveSlotMock.mockResolvedValue({
+      status: "error",
+      error: { code: "conflict", message: "El cupo ya fue tomado." },
+    });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+
+    expect(await screen.findByText("El cupo ya fue tomado.")).toBeDefined();
+    const casilla = screen.getByRole("checkbox", { name: /Confirmo que deseo reservar/ });
+    expect((casilla as HTMLInputElement).checked).toBe(true);
+
+    reserveSlotMock.mockResolvedValue({
+      status: "confirmed",
+      reservation: {
+        id: "reserva-ficticia-cupo-1",
+        slotId: "cupo-1",
+        professionalId: "pro-ficticio-1",
+        modality: "inPerson",
+        startAt: 1760925600000,
+        endAt: 1760929200000,
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+    expect(await screen.findByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
+    expect(reserveSlotMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("cambio de cupo antes de confirmar reinicia el formulario", async () => {
+    comoEstudiante();
+    searchSlotsMock.mockResolvedValue({
+      status: "ok",
+      slots: [
+        cupoFicticio(),
+        {
+          ...cupoFicticio(),
+          id: "cupo-2",
+          modality: "online" as const,
+          spaceLabel: undefined,
+        },
+      ],
+    });
+    const { router } = renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    const casilla = await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ });
+    fireEvent.click(casilla);
+    expect((casilla as HTMLInputElement).checked).toBe(true);
+
+    await act(async () => {
+      router.history.push("/estudiante/reservar?slotId=cupo-2");
+    });
+
+    const casillaNueva = await screen.findByRole("checkbox", {
+      name: /Confirmo que deseo reservar/,
+    });
+    expect((casillaNueva as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByRole("heading", { name: "Reserva confirmada" })).toBeNull();
+  });
+
+  test("envío pendiente no actualiza el cupo nuevo al resolverse", async () => {
+    comoEstudiante();
+    searchSlotsMock.mockResolvedValue({
+      status: "ok",
+      slots: [
+        cupoFicticio(),
+        {
+          ...cupoFicticio(),
+          id: "cupo-2",
+          modality: "online" as const,
+          spaceLabel: undefined,
+        },
+      ],
+    });
+    let resolveReserve!: (value: unknown) => void;
+    reserveSlotMock.mockImplementation(
+      () => new Promise((resolve) => (resolveReserve = resolve as (value: unknown) => void)),
+    );
+    const { router } = renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+
+    await act(async () => {
+      router.history.push("/estudiante/reservar?slotId=cupo-2");
+    });
+    expect(
+      await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }),
+    ).toBeDefined();
+
+    await act(async () => {
+      resolveReserve({
+        status: "confirmed",
+        reservation: {
+          id: "reserva-ficticia-cupo-1",
+          slotId: "cupo-1",
+          professionalId: "pro-ficticio-1",
+          modality: "inPerson",
+          startAt: 1760925600000,
+          endAt: 1760929200000,
+        },
+      });
+    });
+
+    expect(screen.queryByRole("heading", { name: "Reserva confirmada" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Confirmar reserva" })).toBeDefined();
+  });
+
+  test("fallo de lectura muestra error con reintento conservando slotId", async () => {
+    comoEstudiante();
+    searchSlotsMock.mockRejectedValueOnce(new Error("caída de red"));
+    searchSlotsMock.mockResolvedValue({ status: "ok", slots: [cupoFicticio()] });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    expect(await screen.findByText("No pudimos cargar el cupo. Inténtalo de nuevo.")).toBeDefined();
+    expect(screen.queryByText("Cupo no disponible.")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(
+      await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }),
+    ).toBeDefined();
+  });
+
+  test("respuesta de error de lectura muestra error con reintento", async () => {
+    comoEstudiante();
+    searchSlotsMock.mockResolvedValueOnce({ status: "error", message: "Fallo interno." });
+    searchSlotsMock.mockResolvedValue({ status: "ok", slots: [cupoFicticio()] });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    expect(await screen.findByText("No pudimos cargar el cupo. Inténtalo de nuevo.")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    expect(
+      await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }),
+    ).toBeDefined();
   });
 
   test("sin cupo muestra mensaje y vuelta sin formulario", async () => {
@@ -226,6 +386,9 @@ describe("guard del formulario (TI2-102)", () => {
     const { router } = renderAt("/estudiante/reservar?slotId=cupo-1");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+    expect(router.state.location.search).toMatchObject({
+      redirect: "/estudiante/reservar?slotId=cupo-1",
+    });
     expect(screen.queryByRole("heading", { name: "Confirmar reserva" })).toBeNull();
   });
 
