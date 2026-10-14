@@ -80,7 +80,7 @@ export function StudentHome() {
  * reintento acotado a su nivel, sin contenido protegido. El nivel `page`
  * titula con h1; el nivel `section` no repite encabezados.
  */
-class StudentPanelErrorBoundary extends Component<
+export class StudentPanelErrorBoundary extends Component<
   { children: ReactNode; subject: string; level: "page" | "section"; onError?: () => void },
   { hasError: boolean }
 > {
