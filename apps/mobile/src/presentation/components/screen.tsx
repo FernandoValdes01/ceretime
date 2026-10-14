@@ -11,13 +11,17 @@ export function Screen({
   description,
   children,
   scrollRef,
+  onBack,
   showAppHeader = false,
+  showPreferencesAction = true,
   headerTitle = "CERETI",
 }: PropsWithChildren<{
   title: string;
   description?: string;
   scrollRef?: Ref<ScrollView>;
+  onBack?: () => void;
   showAppHeader?: boolean;
+  showPreferencesAction?: boolean;
   headerTitle?: string;
 }>) {
   const accessibility = useOptionalAccessibilityPreferences();
@@ -28,7 +32,13 @@ export function Screen({
       style={[styles.safeArea, { backgroundColor: colors.background }]}
       edges={showAppHeader ? ["top", "left", "right", "bottom"] : ["left", "right", "bottom"]}
     >
-      {showAppHeader ? <AppHeader title={headerTitle} /> : null}
+      {showAppHeader ? (
+        <AppHeader
+          onBack={onBack}
+          showPreferencesAction={showPreferencesAction}
+          title={headerTitle}
+        />
+      ) : null}
       <ScrollView
         ref={scrollRef}
         keyboardShouldPersistTaps="handled"

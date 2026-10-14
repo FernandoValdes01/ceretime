@@ -11,6 +11,7 @@ import { usePractitionerAccompaniments } from "../hooks/use-practitioner-accompa
 import { PractitionerAssignmentGuard } from "../navigation/practitioner-assignment-guard";
 import { useNavigationSession } from "../navigation/session";
 import { PractitionerAccompanimentStatusBadge } from "./practitioner-accompaniment-status-badge";
+import { practitionerAccompanimentStatusLabels } from "./practitioner-accompaniment-formatters";
 
 function StateMessage({
   title,
@@ -41,10 +42,12 @@ function AccompanimentCard({
 }: {
   readonly accompaniment: PractitionerAccompaniment;
 }) {
+  const objective = accompaniment.objective.replace(/[.!?]+$/u, "");
+
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Acompañamiento: ${accompaniment.objective}`}
+      accessibilityLabel={`Acompañamiento: ${objective}. Estado: ${practitionerAccompanimentStatusLabels[accompaniment.status]}.`}
       accessibilityHint="Abre el detalle del acompañamiento"
       onPress={() =>
         router.push({
@@ -59,7 +62,7 @@ function AccompanimentCard({
           {accompaniment.objective}
         </StudentText>
         <View style={styles.cardFooter}>
-          <PractitionerAccompanimentStatusBadge status={accompaniment.status} />
+          <PractitionerAccompanimentStatusBadge accessible={false} status={accompaniment.status} />
           <AppIcon
             accessible={false}
             color="#5B6C6E"

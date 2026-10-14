@@ -32,6 +32,7 @@ export interface AccessibilityPreferencesState {
   readonly status: "loading" | "ready" | "saving";
   readonly source: AccessibilityPreferencesReadResult["source"];
   readonly error: string | null;
+  readonly errorCode: AccessibilityPreferencesError | null;
   readonly effective: ReturnType<typeof resolveAccessibilitySettings>;
   readonly reloadPreferences: () => void;
   readonly updatePreferences: (patch: Partial<AccessibilityPreferences>) => Promise<boolean>;
@@ -59,6 +60,7 @@ export function AccessibilityPreferencesProvider({
   const [status, setStatus] = useState<AccessibilityPreferencesState["status"]>("loading");
   const [source, setSource] = useState<AccessibilityPreferencesState["source"]>("default");
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<AccessibilityPreferencesError | null>(null);
   const [reload, setReload] = useState(0);
   const [loadedPort, setLoadedPort] = useState<AccessibilityPreferencesPort | null>(null);
   const busy = useRef(true);
@@ -138,11 +140,13 @@ export function AccessibilityPreferencesProvider({
         setPreferences(result.preferences);
         setSource(result.source);
         setError(result.error ? errorMessages[result.error] : null);
+        setErrorCode(result.error);
       } catch {
         if (!operation.active) return;
         setPreferences(defaultAccessibilityPreferences);
         setSource("default");
         setError(errorMessages["read-failed"]);
+        setErrorCode("read-failed");
       } finally {
         if (operation.active) {
           busy.current = false;
@@ -163,18 +167,24 @@ export function AccessibilityPreferencesProvider({
     busy.current = true;
     setStatus("saving");
     setError(null);
+    setErrorCode(null);
     try {
       const result = await port.update(patch);
       if (!operation.active) return false;
       if (!result.ok) {
         setError(errorMessages[result.error]);
+        setErrorCode(result.error);
         return false;
       }
       setPreferences(result.preferences);
       setSource("stored");
+      setErrorCode(null);
       return true;
     } catch {
-      if (operation.active) setError(errorMessages["write-failed"]);
+      if (operation.active) {
+        setError(errorMessages["write-failed"]);
+        setErrorCode("write-failed");
+      }
       return false;
     } finally {
       if (operation.active) {
@@ -189,6 +199,7 @@ export function AccessibilityPreferencesProvider({
     busy.current = true;
     setStatus("loading");
     setError(null);
+    setErrorCode(null);
     setReload((value) => value + 1);
   }
 
@@ -237,6 +248,7 @@ export function AccessibilityPreferencesProvider({
         status: loadedPort === port ? status : "loading",
         source: loadedPort === port ? source : "default",
         error: loadedPort === port ? error : null,
+        errorCode: loadedPort === port ? errorCode : null,
         effective,
         updatePreferences,
         reloadPreferences,
