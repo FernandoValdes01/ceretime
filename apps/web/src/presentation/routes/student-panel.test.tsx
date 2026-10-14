@@ -27,7 +27,10 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
     children: ReactNode;
     [key: string]: unknown;
   }) => {
-    const href = to.replace(/\$([A-Za-z0-9_]+)/g, (_match: string, key: string) => params?.[key] ?? "");
+    const href = to.replace(
+      /\$([A-Za-z0-9_]+)/g,
+      (_match: string, key: string) => params?.[key] ?? "",
+    );
     return (
       <a href={href} {...rest}>
         {children}

@@ -135,8 +135,9 @@ describe("detalle del acompañamiento propio (TI2-90)", () => {
     mockedDetail = detallePropio({ _id: "acc-1" });
     renderAt("/estudiante/acompanamientos/acc-1");
 
-    expect(await screen.findByRole("heading", { name: "Detalle del acompañamiento" }))
-      .toBeDefined();
+    expect(
+      await screen.findByRole("heading", { name: "Detalle del acompañamiento" }),
+    ).toBeDefined();
     expect(screen.getByText("Activo")).toBeDefined();
     expect(screen.getByText("Objetivo ficticio del acompañamiento")).toBeDefined();
     expect(screen.getByText("Apoyo ficticio para la prueba")).toBeDefined();
@@ -158,8 +159,9 @@ describe("detalle del acompañamiento propio (TI2-90)", () => {
     mockedDetail = detallePropio({ _id: "acc-1", status: "closed" });
     renderAt("/estudiante/acompanamientos/acc-1");
 
-    expect(await screen.findByRole("heading", { name: "Detalle del acompañamiento" }))
-      .toBeDefined();
+    expect(
+      await screen.findByRole("heading", { name: "Detalle del acompañamiento" }),
+    ).toBeDefined();
     expect(screen.getByText("Cerrado")).toBeDefined();
     expect(screen.getByText(/solo lectura/i)).toBeDefined();
     expect(screen.getByText("Objetivo ficticio del acompañamiento")).toBeDefined();
