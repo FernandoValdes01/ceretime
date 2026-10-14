@@ -85,11 +85,12 @@ type DbReader = QueryCtx | MutationCtx;
 // ── TI2-95: escritura y lecturas técnicas ─────────────────────────────────
 //
 // Lo que disponibilidad necesita de una sala: resolverla por id para validar
-// bloques y excepciones, y crearla sin repetir la misma ubicación. Devuelve
-// filas: el mapeo al contrato `Space` es el de la sección del catálogo. Retirar
-// una sala del catálogo no está aquí: exige decidir qué pasa con los bloques,
-// excepciones y atenciones que la usan, y esa gestión no tiene productor en
-// S2 (TI2-104).
+// bloques y excepciones, y crearla sin repetir la misma ubicación. Las
+// funciones de filas son para Infraestructura; Aplicación lee con
+// `spaceReader(ctx)`, que entrega el contrato `Space` mapeado con `toSpace`.
+// Retirar una sala del catálogo no está aquí: exige decidir qué pasa con los
+// bloques, excepciones y atenciones que la usan, y esa gestión no tiene
+// productor en S2 (TI2-104).
 
 /** Sala por id, vigente o retirada; `null` si no existe o el id es de otra tabla. */
 export async function getSpaceRow(ctx: DbReader, spaceId: string): Promise<Doc<"spaces"> | null> {
@@ -137,4 +138,29 @@ export async function insertSpace(
     isActive: true,
   });
   return okResult({ spaceId });
+}
+
+/** Contrato `Space` más la vigencia, que el contrato no trae. */
+function toStoredSpace(row: Doc<"spaces">) {
+  return { ...toSpace(row), isActive: row.isActive };
+}
+
+/**
+ * Lecturas técnicas de espacios para Aplicación. A diferencia del catálogo
+ * publicado, también entregan salas retiradas con `isActive: false`: quien
+ * valida una referencia necesita distinguir la retirada de la inexistente.
+ */
+export function spaceReader(ctx: DbReader) {
+  return {
+    getSpace: async (spaceId: string) => {
+      const row = await getSpaceRow(ctx, spaceId);
+      return row === null ? null : toStoredSpace(row);
+    },
+    findSpaceByLocation: async (
+      location: Pick<Space, "campus" | "building" | "floor" | "room">,
+    ) => {
+      const row = await findSpaceRowByLocation(ctx, location);
+      return row === null ? null : toStoredSpace(row);
+    },
+  };
 }
