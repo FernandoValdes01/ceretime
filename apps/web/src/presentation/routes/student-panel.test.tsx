@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider";
 import { StudentHome } from "./student-portal";
@@ -8,6 +9,33 @@ import {
   formatPanelDate,
   requestStatusLabel,
 } from "./student-panel-labels";
+
+// El portal enlaza cada acompañamiento con su detalle (TI2-90) mediante el
+// `Link` de TanStack, que exige contexto de router. Este harness monta
+// `StudentHome` sin proveedor, así que el enlace se degrada a ancla simple
+// solo aquí; la navegación real la cubren las pruebas con router de TI2-90.
+vi.mock("@tanstack/react-router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
+  const TestLink = ({
+    to,
+    params,
+    children,
+    ...rest
+  }: {
+    to: string;
+    params?: Record<string, string>;
+    children: ReactNode;
+    [key: string]: unknown;
+  }) => {
+    const href = to.replace(/\$([A-Za-z0-9_]+)/g, (_match: string, key: string) => params?.[key] ?? "");
+    return (
+      <a href={href} {...rest}>
+        {children}
+      </a>
+    );
+  };
+  return { ...actual, Link: TestLink };
+});
 
 // El mock responde por hook: es puro entre renders (React puede reintentar
 // un render tras un error y un mock con consumo rompería ese flujo).
