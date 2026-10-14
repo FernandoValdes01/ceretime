@@ -65,7 +65,7 @@ const FICTIONAL_SPACES: Record<string, Space> = {
     room: "Sala 101",
     accessConditions: "Acceso sin escaleras por rampa lateral.",
     arrivalInstructions:
-      "Entrar por el acceso norte y seguir la señalización podotáctil hasta la sala.",
+      "Entrar por el acceso norte y seguir la señalización táctil hasta la sala.",
     version: SPACE_CATALOG_CONTRACT_VERSION,
   },
   "esp-2": {
