@@ -18,6 +18,7 @@ import {
   RootComponent,
   StudentIndexRouteComponent,
   StudentLayoutRouteComponent,
+  StudentScheduleRouteComponent,
 } from "./route-components.tsx";
 
 /**
@@ -74,6 +75,12 @@ const studentIndexRoute = createRoute({
   component: StudentIndexRouteComponent,
 });
 
+const studentScheduleRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "/horarios",
+  component: StudentScheduleRouteComponent,
+});
+
 const professionalLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profesional",
@@ -114,7 +121,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   deniedRoute,
-  studentLayoutRoute.addChildren([studentIndexRoute]),
+  studentLayoutRoute.addChildren([studentIndexRoute, studentScheduleRoute]),
   professionalLayoutRoute.addChildren([professionalIndexRoute]),
   practitionerLayoutRoute.addChildren([practitionerIndexRoute]),
   adminLayoutRoute.addChildren([adminIndexRoute]),
