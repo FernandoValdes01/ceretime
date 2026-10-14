@@ -37,9 +37,18 @@ export interface OccupySlotInput {
   readonly startAt: number;
   /** Fin del cupo como milisegundos epoch (vocabulario TI2-87). */
   readonly endAt: number;
+  /**
+   * Atención que se cambia de horario o de recursos (TI2-96). Tiene que seguir
+   * ocupando su cupo y ser del mismo estudiante y acompañamiento; si no, la
+   * respuesta es el mismo `conflict`, sin escribir. El resto de la entrada es
+   * el destino completo: reemplaza profesional, modalidad y sala (sin
+   * `spaceId` queda sin sala). Sus propios cruces no cuentan; si el destino
+   * está ocupado queda intacta. Sin ella se crea una atención nueva.
+   */
+  readonly movedAppointmentId?: string;
 }
 
-/** Éxito de la ocupación: la atención creada, con identificador genérico. */
+/** Éxito de la ocupación: la atención creada o cambiada, con identificador genérico. */
 export interface OccupySlotSuccess {
   readonly appointmentId: string;
 }
