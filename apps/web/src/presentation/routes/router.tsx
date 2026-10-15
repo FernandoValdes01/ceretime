@@ -13,6 +13,7 @@ import {
   NotFoundRedirect,
   PractitionerIndexRouteComponent,
   PractitionerLayoutRouteComponent,
+  ProfessionalAvailabilityRouteComponent,
   ProfessionalIndexRouteComponent,
   ProfessionalLayoutRouteComponent,
   ProfessionalRequestDetailRouteComponent,
@@ -25,7 +26,7 @@ import {
 } from "./route-components.tsx";
 
 /**
- * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-91, Sprint 1 y 2).
+ * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-91, TI2-103, Sprint 1 y 2).
  *
  * - `/` índice: acceso sin sesión (preserva callback OAuth de TI2-3),
  *   portal según sesión y rol, denegado sin portal conocido.
@@ -43,6 +44,10 @@ import {
  * - `/profesional/solicitudes`: bandeja minimizada y tomadas del Profesional
  *   (TI2-91); `/profesional/solicitudes/$requestId`: detalle completo solo
  *   con toma activa, denegado por el Backend en otro caso.
+ * - `/profesional/disponibilidad`: editor tipado de bloques recurrentes y
+ *   excepciones del Profesional con guardado simulado (TI2-103); composición
+ *   reservada para `/estudiante/horarios` (TI2-101) y `/estudiante/reservar`
+ *   (TI2-102) sin editar sus páginas.
  * - Ruta desconocida: vuelve al índice, que deriva según sesión.
  */
 
@@ -120,6 +125,12 @@ const professionalRequestDetailRoute = createRoute({
   component: ProfessionalRequestDetailRouteComponent,
 });
 
+const professionalAvailabilityRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "disponibilidad",
+  component: ProfessionalAvailabilityRouteComponent,
+});
+
 const practitionerLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/practicante",
@@ -157,6 +168,7 @@ const routeTree = rootRoute.addChildren([
     professionalIndexRoute,
     professionalRequestsRoute,
     professionalRequestDetailRoute,
+    professionalAvailabilityRoute,
   ]),
   practitionerLayoutRoute.addChildren([practitionerIndexRoute]),
   adminLayoutRoute.addChildren([adminIndexRoute]),
