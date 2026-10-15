@@ -1,9 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
+import { ConvexError } from "convex/values";
+// Fuente canónica del contrato de errores (TI2-23, TI2-88): el Backend
+// responde toda denegación con este mensaje genérico, sin motivo ni
+// existencia del recurso. Se importa del barrel, no se duplica el literal.
+import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
 import { formatPanelDate, requestStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
-import { useOwnRequestDetail, useOwnRequests } from "./student-requests-data.ts";
+import {
+  PAGE_SIZE,
+  useOwnRequestDetail,
+  useOwnRequestsPaginated,
+  type OwnRequestDetail,
+} from "./student-requests-data.ts";
 
 /**
  * Listado y detalle de solicitudes propias del Estudiante (TI2-89).
@@ -43,129 +52,44 @@ export function StudentRequestsPage() {
   );
 }
 
-/** Fila mínima que muestra la lista: coincide con la vista completa. */
-type RequestListItem = {
-  readonly _id: string;
-  readonly status: string;
-  readonly createdAt: number;
-};
-
-/** Página tal como la devuelve el Backend: claves `page`, `isDone` y cursor. */
-type RequestListPage<Item extends RequestListItem> = {
-  readonly page: ReadonlyArray<Item>;
-  readonly isDone: boolean;
-  readonly continueCursor: string;
-};
-
-/** Segmento de página con su firma de datos y su cursor. */
-type PageSegment<Item extends RequestListItem> = {
-  readonly items: ReadonlyArray<Item>;
-  readonly hash: string;
-  readonly continueCursor: string;
-};
-
-/** Firma de datos y avance de un segmento. */
-function pageHash<Item extends RequestListItem>(page: RequestListPage<Item>): string {
-  return [
-    page.isDone ? "done" : "more",
-    ...page.page.map((item) => `${item._id}:${item.status}`),
-  ].join(",");
-}
-
 /**
- * Sonda de suscripción de un cursor fijo (TI2-89).
+ * Lista propia con la paginación reactiva de Convex (TI2-89).
  *
- * Mantiene viva la suscripción de su página para que los pushes reactivos
- * actualicen cada segmento cargado, no solo la cola. No muestra nada;
- * entrega el segmento al mapa compartido. La guarda por contenido evita
- * trabajo de más cuando nada cambió.
+ * Sin caché local: lo mostrado es siempre lo último recibido, así los
+ * cambios de estado se reflejan aunque lleguen después de avanzar de
+ * página. Una página vacía no termina el listado: mientras el estado no
+ * sea `Exhausted` se ofrece seguir cargando y el vacío definitivo aparece
+ * solo al agotar las páginas. Los errores se lanzan al límite que envuelve
+ * la vista, con reintento acotado.
  */
-function PageProbe<Item extends RequestListItem>(props: {
-  readonly usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
-  readonly cursor: string | null;
-  readonly onSegment: (key: string, page: RequestListPage<Item>) => void;
-}) {
-  const page = props.usePage(props.cursor);
-  if (page !== undefined) {
-    props.onSegment(props.cursor ?? "first", page);
-  }
-  return null;
-}
-
-/**
- * Acumula páginas con cursor sin duplicar y refleja actualizaciones
- * reactivas (TI2-89).
- *
- * Suscribe todos los cursores cargados, uno por sonda fija: un push
- * reactivo actualiza cualquier página, no solo la cola. Converge con
- * `usePaginatedQuery` de TI2-92 (resultados siempre frescos, avance por
- * cursor); al integrar esa tarea se conserva un solo mecanismo. Guarda
- * cada segmento una sola vez durante el render (patrón documentado de
- * React para ajustar estado en render): evita setState en efectos sin
- * perder páginas al avanzar el cursor. La clave es el cursor pedido.
- * Además, si Convex devuelve una página distinta para el mismo cursor
- * (actualización reactiva), se reemplaza ese segmento y se reconstruye
- * la lista completa en orden de cursor.
- */
-function usePagedItems<Item extends RequestListItem>(
-  usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
-) {
-  const [cursors, setCursors] = useState<readonly (string | null)[]>([null]);
-  const [segments, setSegments] = useState<ReadonlyMap<string, PageSegment<Item>>>(new Map());
-  const [done, setDone] = useState(false);
-
-  const mergeSegment = (key: string, page: RequestListPage<Item>) => {
-    const hash = pageHash(page);
-    setSegments((prev) => {
-      const existing = prev.get(key);
-      if (existing !== undefined && existing.hash === hash) {
-        return prev;
-      }
-      const next = new Map(prev);
-      next.set(key, {
-        items: page.page,
-        hash,
-        continueCursor: page.continueCursor,
-      });
-      return next;
-    });
-    if (key === (cursors[cursors.length - 1] ?? "first") && page.isDone !== done) {
-      setDone(page.isDone);
-    }
-  };
-
-  const probes = cursors.map((cursor) => (
-    <PageProbe key={cursor ?? "first"} usePage={usePage} cursor={cursor} onSegment={mergeSegment} />
-  ));
-
-  // Reconstruye la lista concatenando segmentos en orden de cursor.
-  const items = cursors.flatMap((cursor) => segments.get(cursor ?? "first")?.items ?? []);
-  const tailKey = cursors[cursors.length - 1] ?? "first";
-  const pending = !segments.has(tailKey);
-
-  const loadMore = () => {
-    const next = segments.get(tailKey)?.continueCursor ?? null;
-    if (next === null || next === "") {
-      return;
-    }
-    setCursors((prev) => (prev.includes(next) ? prev : [...prev, next]));
-  };
-
-  return {
-    items,
-    done,
-    pending,
-    loadMore,
-    probes,
-  };
-}
-
 function OwnRequestsBody() {
-  const { items, done, pending, loadMore, probes } = usePagedItems(useOwnRequests);
+  const { results, status, loadMore } = useOwnRequestsPaginated();
+  const loadingMore = status === "LoadingMore";
+  const canLoadMore = status === "CanLoadMore" || loadingMore;
+  const exhausted = status === "Exhausted";
 
-  let content: ReactNode;
-  if (pending && items.length === 0) {
-    content = (
+  if (results.length === 0) {
+    if (exhausted) {
+      return (
+        <div className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
+          <p className="mb-2 font-semibold text-on-surface">
+            Aún no tienes solicitudes registradas.
+          </p>
+          <p>Cuando envíes tu primera solicitud, aparecerá aquí con su estado.</p>
+        </div>
+      );
+    }
+    if (canLoadMore) {
+      return (
+        <div className="flex flex-col gap-4">
+          <p role="status" className="text-base text-on-surface-variant">
+            Todavía no se cargaron solicitudes.
+          </p>
+          <LoadMoreButton pending={loadingMore} onLoadMore={() => loadMore(PAGE_SIZE)} />
+        </div>
+      );
+    }
+    return (
       <p
         role="status"
         className="rounded-lg bg-surface-container-low p-6 text-lg text-on-surface-variant"
@@ -173,67 +97,72 @@ function OwnRequestsBody() {
         Cargando tus solicitudes…
       </p>
     );
-  } else if (items.length === 0) {
-    content = (
-      <div className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
-        <p className="mb-2 font-semibold text-on-surface">Aún no tienes solicitudes registradas.</p>
-        <p>Cuando envíes tu primera solicitud, aparecerá aquí con su estado.</p>
-      </div>
-    );
-  } else {
-    content = (
-      <>
-        <ul className="grid gap-3 p-0">
-          {items.map((request) => (
-            <li
-              key={request._id}
-              className="rounded-md border border-border-low bg-surface-container-lowest px-5 py-4"
-            >
-              <Link
-                to="/estudiante/solicitudes/$requestId"
-                params={{ requestId: request._id }}
-                className="flex min-h-[44px] items-center gap-2 rounded-[0.5rem] px-3 py-2 no-underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-              >
-                <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold text-on-surface">
-                  {requestStatusLabel(request.status)}
-                </span>
-                <span className="text-base text-on-surface-variant">
-                  Registrada el {formatPanelDate(request.createdAt)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-        {done ? null : (
-          <div className="mt-6 flex flex-col gap-4">
-            <button
-              type="button"
-              className="inline-flex min-h-12 min-w-11 items-center justify-center gap-3 rounded-[0.5rem] bg-primary px-6 py-2.5 text-base font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-60 not-disabled:hover:bg-on-primary-fixed-variant focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-              disabled={pending}
-              onClick={loadMore}
-              aria-busy={pending}
-            >
-              {pending ? "Cargando…" : "Cargar más"}
-            </button>
-            {pending && (
-              <span role="status" aria-live="polite" className="sr-only">
-                Cargando más solicitudes…
-              </span>
-            )}
-          </div>
-        )}
-      </>
-    );
   }
 
-  // Las sondas sostienen la suscripción de cada página cargada sin
-  // mostrar nada: van siempre montadas, también en carga y vacío.
   return (
     <>
-      {probes}
-      {content}
+      <ul className="grid gap-3 p-0">
+        {results.map((request) => (
+          <li
+            key={request._id}
+            className="rounded-md border border-border-low bg-surface-container-lowest px-5 py-4"
+          >
+            <Link
+              to="/estudiante/solicitudes/$requestId"
+              params={{ requestId: request._id }}
+              className="flex min-h-[44px] items-center gap-2 rounded-[0.5rem] px-3 py-2 no-underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+            >
+              <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold text-on-surface">
+                {requestStatusLabel(request.status)}
+              </span>
+              <span className="text-base text-on-surface-variant">
+                Registrada el {formatPanelDate(request.createdAt)}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {canLoadMore ? (
+        <div className="mt-6 flex flex-col gap-4">
+          <LoadMoreButton pending={loadingMore} onLoadMore={() => loadMore(PAGE_SIZE)} />
+        </div>
+      ) : null}
     </>
   );
+}
+
+function LoadMoreButton({ pending, onLoadMore }: { pending: boolean; onLoadMore: () => void }) {
+  return (
+    <>
+      <button
+        type="button"
+        className="inline-flex min-h-12 min-w-11 items-center justify-center gap-3 rounded-[0.5rem] bg-primary px-6 py-2.5 text-base font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-60 not-disabled:hover:bg-on-primary-fixed-variant focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+        disabled={pending}
+        onClick={onLoadMore}
+        aria-busy={pending}
+      >
+        {pending ? "Cargando…" : "Cargar más"}
+      </button>
+      {pending ? (
+        <span role="status" aria-live="polite" className="sr-only">
+          Cargando más solicitudes…
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * La denegación del Backend es el mensaje genérico documentado: no revela
+ * si la solicitud existe ni de quién es. También cubre la sesión expirada,
+ * que se recupera desde el acceso (el layout enlaza la sesión).
+ *
+ * El valor canónico viaja en `error.data`: el SDK del cliente decora
+ * `error.message` con su contexto (query y request ID), así que comparar el
+ * mensaje falla contra el Backend real.
+ */
+function isAuthorizationDenial(error: unknown): boolean {
+  return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
 }
 
 /**
@@ -241,8 +170,9 @@ function OwnRequestsBody() {
  *
  * La fila completa —incluidas las necesidades de acceso— solo llega por
  * `getRequest`, que el Backend deniega sin filtrar existencia cuando la
- * solicitud es ajena o inexistente. Ante denegación se muestra el aviso
- * genérico del límite.
+ * solicitud es ajena o inexistente. La denegación muestra un estado
+ * permanente sin reintento; los errores recuperables se lanzan al límite,
+ * que ofrece reintento acotado.
  */
 export function StudentRequestDetailPage({ requestId }: { requestId: string }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -277,7 +207,25 @@ export function StudentRequestDetailPage({ requestId }: { requestId: string }) {
 }
 
 function OwnRequestDetailBody({ requestId }: { requestId: string }) {
-  const request = useOwnRequestDetail(requestId);
+  let request: OwnRequestDetail | undefined;
+  try {
+    // El hook se invoca primero y en todos los renders: el orden es estable
+    // y el try solo clasifica el error ya lanzado, no condiciona la llamada.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    request = useOwnRequestDetail(requestId);
+  } catch (error) {
+    if (isAuthorizationDenial(error)) {
+      return (
+        <div className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
+          <p role="alert" className="mb-2 font-semibold text-on-surface">
+            No tienes acceso a esta solicitud.
+          </p>
+          <p>Si crees que deberías verla, contáctanos por los canales oficiales.</p>
+        </div>
+      );
+    }
+    throw error;
+  }
 
   if (request === undefined) {
     return (
