@@ -45,7 +45,7 @@ jobs:
         run: bun test ./.github/ci-publication.test.ts
 
       - name: Probar notificaciones de Discord sin credenciales
-        run: bun test ./.github/discord/notifications.test.ts
+        run: bun test ./.github/discord
 
   mobile:
     name: Validación Mobile

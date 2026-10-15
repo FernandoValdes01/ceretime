@@ -15,6 +15,8 @@ import {
   PractitionerLayoutRouteComponent,
   ProfessionalIndexRouteComponent,
   ProfessionalLayoutRouteComponent,
+  ProfessionalRequestDetailRouteComponent,
+  ProfessionalRequestsRouteComponent,
   RootComponent,
   StudentAccompanimentDetailRouteComponent,
   StudentIndexRouteComponent,
@@ -24,7 +26,7 @@ import {
 } from "./route-components.tsx";
 
 /**
- * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, Sprint 1 y 2).
+ * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, Sprint 1 y 2).
  *
  * - `/` índice: acceso sin sesión (preserva callback OAuth de TI2-3),
  *   portal según sesión y rol, denegado sin portal conocido.
@@ -43,6 +45,9 @@ import {
  *   por rol con portada temporal; sin sesión van al acceso, con otro rol
  *   van a denegado. El portal de Administración no enlaza acompañamientos
  *   ni notas internas.
+ * - `/profesional/solicitudes`: bandeja minimizada y tomadas del Profesional
+ *   (TI2-91); `/profesional/solicitudes/$requestId`: detalle completo solo
+ *   con toma activa, denegado por el Backend en otro caso.
  * - Ruta desconocida: vuelve al índice, que deriva según sesión.
  */
 
@@ -114,6 +119,18 @@ const professionalIndexRoute = createRoute({
   component: ProfessionalIndexRouteComponent,
 });
 
+const professionalRequestsRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "solicitudes",
+  component: ProfessionalRequestsRouteComponent,
+});
+
+const professionalRequestDetailRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "solicitudes/$requestId",
+  component: ProfessionalRequestDetailRouteComponent,
+});
+
 const practitionerLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/practicante",
@@ -148,7 +165,11 @@ const routeTree = rootRoute.addChildren([
     studentRequestDetailRoute,
     studentAccompanimentDetailRoute,
   ]),
-  professionalLayoutRoute.addChildren([professionalIndexRoute]),
+  professionalLayoutRoute.addChildren([
+    professionalIndexRoute,
+    professionalRequestsRoute,
+    professionalRequestDetailRoute,
+  ]),
   practitionerLayoutRoute.addChildren([practitionerIndexRoute]),
   adminLayoutRoute.addChildren([adminIndexRoute]),
 ]);
