@@ -235,6 +235,36 @@ describe("listado propio del Estudiante (TI2-89)", () => {
     expect(screen.queryByText("Recibida")).toBeNull();
   });
 
+  test("la primera página sigue suscrita tras cargar la segunda", async () => {
+    let estadoPrimera: "received" | "under_review" = "received";
+    listByCursor = (cursor) =>
+      cursor === null
+        ? paginaPropia([filaPropia({ _id: "req-1", status: estadoPrimera })], {
+            isDone: false,
+            continueCursor: "cursor-1",
+          })
+        : paginaPropia([filaPropia({ _id: "req-2", status: "under_review" })], {
+            isDone: true,
+            continueCursor: "",
+          });
+    renderAt("/estudiante/solicitudes");
+
+    expect(await screen.findByText("Recibida")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Cargar más" }));
+    expect(await screen.findByText("En revisión")).toBeDefined();
+    expect(screen.getByText("Recibida")).toBeDefined();
+
+    // El backend empuja la solicitud de la primera página con su estado
+    // nuevo: ambas sondas siguen suscritas y la lista no se duplica.
+    estadoPrimera = "under_review";
+    act(() => {
+      emitListPush();
+    });
+
+    await waitFor(() => expect(screen.queryAllByText("En revisión")).toHaveLength(2));
+    expect(screen.queryByText("Recibida")).toBeNull();
+  });
+
   test("la página vacía muestra el vacío explícito", async () => {
     mockedList = paginaPropia([]);
     renderAt("/estudiante/solicitudes");

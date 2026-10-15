@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatPanelDate, requestStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
@@ -56,11 +57,50 @@ type RequestListPage<Item extends RequestListItem> = {
   readonly continueCursor: string;
 };
 
+/** Segmento de página con su firma de datos y su cursor. */
+type PageSegment<Item extends RequestListItem> = {
+  readonly items: ReadonlyArray<Item>;
+  readonly hash: string;
+  readonly continueCursor: string;
+};
+
+/** Firma de datos y avance de un segmento. */
+function pageHash<Item extends RequestListItem>(page: RequestListPage<Item>): string {
+  return [
+    page.isDone ? "done" : "more",
+    ...page.page.map((item) => `${item._id}:${item.status}`),
+  ].join(",");
+}
+
+/**
+ * Sonda de suscripción de un cursor fijo (TI2-89).
+ *
+ * Mantiene viva la suscripción de su página para que los pushes reactivos
+ * actualicen cada segmento cargado, no solo la cola. No muestra nada;
+ * entrega el segmento al mapa compartido. La guarda por contenido evita
+ * trabajo de más cuando nada cambió.
+ */
+function PageProbe<Item extends RequestListItem>(props: {
+  readonly usePage: (cursor: string | null) => RequestListPage<Item> | undefined;
+  readonly cursor: string | null;
+  readonly onSegment: (key: string, page: RequestListPage<Item>) => void;
+}) {
+  const page = props.usePage(props.cursor);
+  if (page !== undefined) {
+    props.onSegment(props.cursor ?? "first", page);
+  }
+  return null;
+}
+
 /**
  * Acumula páginas con cursor sin duplicar y refleja actualizaciones
  * reactivas (TI2-89).
  *
- * Guarda cada página una sola vez durante el render (patrón documentado de
+ * Suscribe todos los cursores cargados, uno por sonda fija: un push
+ * reactivo actualiza cualquier página, no solo la cola. Converge con
+ * `usePaginatedQuery` de TI2-92 (resultados siempre frescos, avance por
+ * cursor); al integrar esa tarea se conserva un solo mecanismo. Guarda
+ * cada segmento una sola vez durante el render (patrón documentado de
  * React para ajustar estado en render): evita setState en efectos sin
  * perder páginas al avanzar el cursor. La clave es el cursor pedido.
  * Además, si Convex devuelve una página distinta para el mismo cursor
@@ -70,53 +110,62 @@ type RequestListPage<Item extends RequestListItem> = {
 function usePagedItems<Item extends RequestListItem>(
   usePage: (cursor: string | null) => RequestListPage<Item> | undefined,
 ) {
-  const [cursor, setCursor] = useState<string | null>(null);
-  const page = usePage(cursor);
-  const [pages, setPages] = useState<Map<string, { items: ReadonlyArray<Item>; hash: string }>>(
-    new Map(),
-  );
+  const [cursors, setCursors] = useState<readonly (string | null)[]>([null]);
+  const [segments, setSegments] = useState<ReadonlyMap<string, PageSegment<Item>>>(new Map());
   const [done, setDone] = useState(false);
 
-  if (page !== undefined) {
-    // La firma cubre datos y avance de página: el mismo ID con
-    // otro estado o con `isDone` distinto reemplaza el segmento en vez de
-    // conservar la vista anterior.
-    const currentHash = [
-      page.isDone ? "done" : "more",
-      ...page.page.map((item) => `${item._id}:${item.status}`),
-    ].join(",");
-    const existing = pages.get(cursor ?? "first");
-    const pageChanged = !existing || existing.hash !== currentHash;
-
-    if (pageChanged) {
-      setPages((prev) => {
-        const next = new Map(prev);
-        next.set(cursor ?? "first", { items: page.page, hash: currentHash });
-        return next;
+  const mergeSegment = (key: string, page: RequestListPage<Item>) => {
+    const hash = pageHash(page);
+    setSegments((prev) => {
+      const existing = prev.get(key);
+      if (existing !== undefined && existing.hash === hash) {
+        return prev;
+      }
+      const next = new Map(prev);
+      next.set(key, {
+        items: page.page,
+        hash,
+        continueCursor: page.continueCursor,
       });
+      return next;
+    });
+    if (key === (cursors[cursors.length - 1] ?? "first") && page.isDone !== done) {
       setDone(page.isDone);
     }
-  }
+  };
 
-  // Reconstruye la lista concatenando páginas en orden de cursor:
-  // "first" (null) primero, luego el resto en orden de inserción.
-  const items = Array.from(pages.entries())
-    .sort(([a], [b]) => (a === "first" ? -1 : b === "first" ? 1 : 0))
-    .flatMap(([, v]) => v.items);
+  const probes = cursors.map((cursor) => (
+    <PageProbe key={cursor ?? "first"} usePage={usePage} cursor={cursor} onSegment={mergeSegment} />
+  ));
+
+  // Reconstruye la lista concatenando segmentos en orden de cursor.
+  const items = cursors.flatMap((cursor) => segments.get(cursor ?? "first")?.items ?? []);
+  const tailKey = cursors[cursors.length - 1] ?? "first";
+  const pending = !segments.has(tailKey);
+
+  const loadMore = () => {
+    const next = segments.get(tailKey)?.continueCursor ?? null;
+    if (next === null || next === "") {
+      return;
+    }
+    setCursors((prev) => (prev.includes(next) ? prev : [...prev, next]));
+  };
 
   return {
     items,
     done,
-    pending: page === undefined,
-    loadMore: () => setCursor(page?.continueCursor ?? null),
+    pending,
+    loadMore,
+    probes,
   };
 }
 
 function OwnRequestsBody() {
-  const { items, done, pending, loadMore } = usePagedItems(useOwnRequests);
+  const { items, done, pending, loadMore, probes } = usePagedItems(useOwnRequests);
 
+  let content: ReactNode;
   if (pending && items.length === 0) {
-    return (
+    content = (
       <p
         role="status"
         className="rounded-lg bg-surface-container-low p-6 text-lg text-on-surface-variant"
@@ -124,58 +173,65 @@ function OwnRequestsBody() {
         Cargando tus solicitudes…
       </p>
     );
-  }
-
-  if (items.length === 0) {
-    return (
+  } else if (items.length === 0) {
+    content = (
       <div className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
         <p className="mb-2 font-semibold text-on-surface">Aún no tienes solicitudes registradas.</p>
         <p>Cuando envíes tu primera solicitud, aparecerá aquí con su estado.</p>
       </div>
     );
+  } else {
+    content = (
+      <>
+        <ul className="grid gap-3 p-0">
+          {items.map((request) => (
+            <li
+              key={request._id}
+              className="rounded-md border border-border-low bg-surface-container-lowest px-5 py-4"
+            >
+              <Link
+                to="/estudiante/solicitudes/$requestId"
+                params={{ requestId: request._id }}
+                className="flex min-h-[44px] items-center gap-2 rounded-[0.5rem] px-3 py-2 no-underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              >
+                <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold text-on-surface">
+                  {requestStatusLabel(request.status)}
+                </span>
+                <span className="text-base text-on-surface-variant">
+                  Registrada el {formatPanelDate(request.createdAt)}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        {done ? null : (
+          <div className="mt-6 flex flex-col gap-4">
+            <button
+              type="button"
+              className="inline-flex min-h-12 min-w-11 items-center justify-center gap-3 rounded-[0.5rem] bg-primary px-6 py-2.5 text-base font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-60 not-disabled:hover:bg-on-primary-fixed-variant focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              disabled={pending}
+              onClick={loadMore}
+              aria-busy={pending}
+            >
+              {pending ? "Cargando…" : "Cargar más"}
+            </button>
+            {pending && (
+              <span role="status" aria-live="polite" className="sr-only">
+                Cargando más solicitudes…
+              </span>
+            )}
+          </div>
+        )}
+      </>
+    );
   }
 
+  // Las sondas sostienen la suscripción de cada página cargada sin
+  // mostrar nada: van siempre montadas, también en carga y vacío.
   return (
     <>
-      <ul className="grid gap-3 p-0">
-        {items.map((request) => (
-          <li
-            key={request._id}
-            className="rounded-md border border-border-low bg-surface-container-lowest px-5 py-4"
-          >
-            <Link
-              to="/estudiante/solicitudes/$requestId"
-              params={{ requestId: request._id }}
-              className="flex min-h-[44px] items-center gap-2 rounded-[0.5rem] px-3 py-2 no-underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-            >
-              <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold text-on-surface">
-                {requestStatusLabel(request.status)}
-              </span>
-              <span className="text-base text-on-surface-variant">
-                Registrada el {formatPanelDate(request.createdAt)}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
-      {done ? null : (
-        <div className="mt-6 flex flex-col gap-4">
-          <button
-            type="button"
-            className="inline-flex min-h-12 min-w-11 items-center justify-center gap-3 rounded-[0.5rem] bg-primary px-6 py-2.5 text-base font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-60 not-disabled:hover:bg-on-primary-fixed-variant focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-            disabled={pending}
-            onClick={loadMore}
-            aria-busy={pending}
-          >
-            {pending ? "Cargando…" : "Cargar más"}
-          </button>
-          {pending && (
-            <span role="status" aria-live="polite" className="sr-only">
-              Cargando más solicitudes…
-            </span>
-          )}
-        </div>
-      )}
+      {probes}
+      {content}
     </>
   );
 }
