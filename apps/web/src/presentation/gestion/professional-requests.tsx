@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatPanelDate } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 // Reutiliza el lenguaje visual del panel (listas, fichas, errores): una sola
 // fuente para no duplicar el sistema de diseño entre portales.
 import "../routes/student-portal.css";
@@ -19,10 +20,21 @@ import { usePagedList, type RequestListItem, type RequestListPage } from "./page
 const GESTION_ROW = "flex items-center gap-2 min-h-[44px] px-3 py-2 text-inherit";
 const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
+/**
+ * Textarea del modal (TI2-92, migrado por TI2-130): el anillo de foco usa la
+ * variable de compatibilidad --ct-ring (igual que antes); no se cambia al
+ * token del tema para no alterar el color vigente.
+ */
+const GESTION_TEXTAREA =
+  "w-full min-h-32 resize-y rounded-[0.5rem] border border-(--ct-line) bg-(--ct-card) px-4 py-3 text-base leading-normal text-(--ct-ink) transition-[border-color,box-shadow] duration-150 focus-visible:border-(--ct-primary) focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-(--ct-ring) focus-visible:outline-offset-[2px]";
+const GESTION_TEXTAREA_ERROR =
+  "border-(--ct-danger) focus-visible:shadow-[0_0_0_3px_var(--ct-danger-bg)]";
 import {
   useAuthorizedRequests,
   useOpenRequests,
+  useRequestAdditionalInformation,
   useRequestDetail,
+  useTakeRequest,
 } from "./professional-requests-data.ts";
 
 /**
@@ -69,9 +81,12 @@ export function ProfessionalRequestsPage() {
 function RequestRow({
   request,
   clickable = true,
+  take,
 }: {
   request: RequestListItem;
   clickable?: boolean;
+  /** Solo bandeja: tomar sin pasar por el detalle (denegado sin toma). */
+  take?: { disabled: boolean; busy: boolean; onTake: () => void };
 }) {
   const content = (
     <>
@@ -86,6 +101,17 @@ function RequestRow({
     return (
       <li className="student-portal__item">
         <span className={GESTION_ROW}>{content}</span>
+        {take && (
+          <button
+            type="button"
+            className="student-portal__btn student-portal__btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={take.disabled || take.busy}
+            onClick={take.onTake}
+            aria-busy={take.busy}
+          >
+            {take.busy ? "Tomando…" : "Tomar"}
+          </button>
+        )}
       </li>
     );
   }
@@ -194,6 +220,27 @@ function OpenInboxBody() {
     loadMore,
     reportIds,
   } = usePagedList(useOpenRequests);
+  const takeRequest = useTakeRequest();
+  const [takingId, setTakingId] = useState<string | null>(null);
+  const [takeError, setTakeError] = useState<string | null>(null);
+
+  // La toma vive en la bandeja porque el detalle exige toma activa
+  // (getRequest deniega sin ella): sin este botón la acción sería inalcanzable.
+  async function handleTake(requestId: string) {
+    if (takingId !== null) {
+      return;
+    }
+    setTakeError(null);
+    setTakingId(requestId);
+    try {
+      await takeRequest({ requestId: requestId as Id<"requests"> });
+      // Las queries reactivas mueven la solicitud a "Mis tomadas" solas.
+    } catch (err) {
+      setTakeError(err instanceof Error ? err.message : "No se pudo tomar la solicitud");
+    } finally {
+      setTakingId(null);
+    }
+  }
 
   if (firstPage === undefined) {
     return (
@@ -205,6 +252,11 @@ function OpenInboxBody() {
 
   return (
     <>
+      {takeError && (
+        <p role="alert" className="student-portal__error">
+          {takeError}
+        </p>
+      )}
       {!hasItems && allReported && tailDone ? (
         <div className="student-portal__empty">
           <p className="student-portal__empty-title">No hay solicitudes por revisar.</p>
@@ -216,7 +268,16 @@ function OpenInboxBody() {
           cursors={cursors}
           usePage={useOpenRequests}
           renderItem={(request) => (
-            <RequestRow key={request._id} request={request} clickable={false} />
+            <RequestRow
+              key={request._id}
+              request={request}
+              clickable={false}
+              take={{
+                disabled: takingId !== null,
+                busy: takingId === request._id,
+                onTake: () => handleTake(request._id),
+              }}
+            />
           )}
           onIds={reportIds}
           idsByCursor={idsByCursor}
@@ -344,8 +405,100 @@ export function ProfessionalRequestDetailPage({ requestId }: { requestId: string
   );
 }
 
+/** Acciones disponibles según el estado de la solicitud (TI2-92). */
+type RequestAction = { type: "take" } | { type: "requestInfo" } | { type: "none" };
+
+function getAvailableAction(status: string): RequestAction {
+  switch (status) {
+    case "received":
+      return { type: "take" };
+    case "under_review":
+      return { type: "requestInfo" };
+    default:
+      return { type: "none" };
+  }
+}
+
 function RequestDetailBody({ requestId }: { requestId: string }) {
   const request = useRequestDetail(requestId);
+  const takeRequest = useTakeRequest();
+  const requestAdditionalInformation = useRequestAdditionalInformation();
+
+  // Estado local para la UI de acciones (TI2-92)
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isActionPending, setIsActionPending] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [infoReason, setInfoReason] = useState("");
+  const [infoReasonError, setInfoReasonError] = useState<string | null>(null);
+  // Error del envío dentro del modal (no en la página): con aria-modal el
+  // lector no percibe lo que queda detrás de la capa, y al cerrar con éxito
+  // este estado muere con el modal en vez de conservar el banner anterior.
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  // El estado es lo único estable del detalle ante cualquier transición.
+  const statusRef = useRef<HTMLElement>(null);
+
+  // Foco del modal (TI2-92): al abrir va al motivo; al cerrar vuelve al botón
+  // que lo abrió, salvo tras un éxito (focusStatusOnClose), donde va directo
+  // al estado: el éxito cambia el estado y el botón puede desmontarse en
+  // cualquier momento después (o ya estar deshabilitado al cerrar), y el
+  // estado es lo único estable del detalle. El cierre se resuelve en efecto
+  // tras el commit (y no en el handler): focus() sobre un botón deshabilitado
+  // no hace nada. Solo DOM, sin setState.
+  const prevShowInfoModal = useRef(showInfoModal);
+  const focusStatusOnClose = useRef(false);
+  useEffect(() => {
+    if (showInfoModal) {
+      reasonRef.current?.focus();
+    } else if (prevShowInfoModal.current) {
+      if (focusStatusOnClose.current) {
+        focusStatusOnClose.current = false;
+        statusRef.current?.focus();
+      } else if (openButtonRef.current) {
+        // Al cerrar vuelve al botón que abrió; si la transición tras un éxito
+        // ya lo desmontó, cae al estado (estable en todo el detalle).
+        openButtonRef.current.focus();
+      } else {
+        statusRef.current?.focus();
+      }
+    }
+    prevShowInfoModal.current = showInfoModal;
+  }, [showInfoModal]);
+
+  function closeInfoModal() {
+    setShowInfoModal(false);
+  }
+
+  // Trampa de Tab dentro del diálogo y cierre con Escape.
+  function handleDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeInfoModal();
+      return;
+    }
+    if (event.key !== "Tab" || dialogRef.current === null) {
+      return;
+    }
+    const focusables = Array.from(
+      dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    if (focusables.length === 0) {
+      return;
+    }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   if (request === undefined) {
     return (
@@ -355,20 +508,196 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
     );
   }
 
+  const availableAction = getAvailableAction(request.status);
+
+  const handleTake = async () => {
+    if (isActionPending) return;
+    setActionError(null);
+    setIsActionPending(true);
+    try {
+      await takeRequest({ requestId: requestId as Id<"requests"> });
+      // La query reactiva (useRequestDetail) actualizará el estado automáticamente
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "No se pudo tomar la solicitud");
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
+  const handleRequestInfoOpen = () => {
+    setShowInfoModal(true);
+    setInfoReason("");
+    setInfoReasonError(null);
+    setSubmitError(null);
+  };
+
+  const handleRequestInfoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isActionPending) return;
+
+    const trimmed = infoReason.trim();
+    if (!trimmed) {
+      setInfoReasonError("El motivo es obligatorio");
+      return;
+    }
+    if (trimmed.length > 2000) {
+      setInfoReasonError("El motivo no puede exceder 2000 caracteres");
+      return;
+    }
+
+    setInfoReasonError(null);
+    setIsActionPending(true);
+    try {
+      await requestAdditionalInformation({
+        requestId: requestId as Id<"requests">,
+        reason: trimmed,
+      });
+      focusStatusOnClose.current = true;
+      closeInfoModal();
+      // La query reactiva actualizará el estado automáticamente
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "No se pudo pedir información");
+    } finally {
+      setIsActionPending(false);
+    }
+  };
+
+  const actionButton = (() => {
+    if (availableAction.type === "take") {
+      return (
+        <button
+          type="button"
+          className="student-portal__btn student-portal__btn--primary"
+          disabled={isActionPending}
+          onClick={handleTake}
+          aria-busy={isActionPending}
+        >
+          {isActionPending ? "Tomando…" : "Tomar solicitud"}
+        </button>
+      );
+    }
+    if (availableAction.type === "requestInfo") {
+      return (
+        <button
+          type="button"
+          ref={openButtonRef}
+          className="student-portal__btn student-portal__btn--primary"
+          disabled={isActionPending}
+          onClick={handleRequestInfoOpen}
+          aria-busy={isActionPending}
+          aria-haspopup="dialog"
+        >
+          {isActionPending ? "Enviando…" : "Pedir información"}
+        </button>
+      );
+    }
+    return null;
+  })();
+
   return (
-    <dl>
-      <div>
-        <dt>Estado</dt>
-        <dd>{requestStatusLabel(request.status)}</dd>
-      </div>
-      <div>
-        <dt>Registrada</dt>
-        <dd>{formatPanelDate(request.createdAt)}</dd>
-      </div>
-      <div>
-        <dt>Necesidades de acceso</dt>
-        <dd>{request.accessNeeds}</dd>
-      </div>
-    </dl>
+    <>
+      <dl>
+        <div>
+          <dt>Estado</dt>
+          <dd ref={statusRef} tabIndex={-1}>
+            {requestStatusLabel(request.status)}
+          </dd>
+        </div>
+        <div>
+          <dt>Registrada</dt>
+          <dd>{formatPanelDate(request.createdAt)}</dd>
+        </div>
+        <div>
+          <dt>Necesidades de acceso</dt>
+          <dd>{request.accessNeeds}</dd>
+        </div>
+      </dl>
+
+      {actionError && (
+        <div className="student-portal__error" role="alert" aria-live="assertive">
+          {actionError}
+        </div>
+      )}
+
+      {actionButton && <div className="student-portal__cta">{actionButton}</div>}
+
+      {/* Modal para pedir información (TI2-92) */}
+      {showInfoModal && (
+        <div
+          ref={dialogRef}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="info-modal-title"
+          onKeyDown={handleDialogKeyDown}
+        >
+          <div className="w-full max-w-[28rem] rounded-lg border border-(--ct-line) bg-(--ct-card) p-6 shadow-[0_10px_25px_-5px_rgb(0_0_0/0.1),0_8px_10px_-6px_rgb(0_0_0/0.1)]">
+            <h2 id="info-modal-title" className="mb-2 text-xl font-semibold text-(--ct-ink)">
+              Pedir información adicional
+            </h2>
+            <p className="mb-6 text-base leading-normal text-(--ct-muted)">
+              El estudiante recibirá este motivo para completar su solicitud.
+            </p>
+            <form onSubmit={handleRequestInfoSubmit}>
+              <div className="mb-6">
+                <label
+                  htmlFor="info-reason"
+                  className="mb-2 block text-sm font-semibold text-(--ct-ink)"
+                >
+                  Motivo <span aria-hidden="true">*</span>
+                </label>
+                <textarea
+                  id="info-reason"
+                  ref={reasonRef}
+                  className={`${GESTION_TEXTAREA} ${infoReasonError ? GESTION_TEXTAREA_ERROR : ""}`}
+                  value={infoReason}
+                  onChange={(e) => setInfoReason(e.target.value)}
+                  maxLength={2000}
+                  rows={4}
+                  aria-describedby={infoReasonError ? "info-reason-error" : "info-reason-hint"}
+                  aria-invalid={infoReasonError ? "true" : "false"}
+                  disabled={isActionPending}
+                />
+                {infoReasonError && (
+                  <p
+                    id="info-reason-error"
+                    className="mt-2 text-sm font-semibold text-(--ct-danger)"
+                    role="alert"
+                  >
+                    {infoReasonError}
+                  </p>
+                )}
+                <p id="info-reason-hint" className="student-portal__hint mt-2">
+                  Máximo 2000 caracteres ({infoReason.length}/2000)
+                </p>
+              </div>
+              {submitError && (
+                <p className="student-portal__error" role="alert">
+                  {submitError}
+                </p>
+              )}
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  className="student-portal__btn student-portal__btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={closeInfoModal}
+                  disabled={isActionPending}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="student-portal__btn student-portal__btn--primary disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isActionPending}
+                  aria-busy={isActionPending}
+                >
+                  {isActionPending ? "Enviando…" : "Enviar"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
