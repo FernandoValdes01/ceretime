@@ -297,6 +297,7 @@ export async function searchAvailabilitySlots(
     const occupied = await deps.occupancy.isSlotOccupied({
       professionalId: input.professionalId,
       startAt: slot.startAt,
+      endAt: slot.endAt,
     });
     if (occupied) continue;
     const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, slot);

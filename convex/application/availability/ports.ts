@@ -108,13 +108,16 @@ export interface AccompanimentNeedsReader {
 
 /**
  * Ocupación mínima para la búsqueda (TI2-84, cruces de TI2-96). Informa si
- * el instante ya está ocupado por una atención no cancelada; la reserva
- * atómica sigue siendo la única vía que ocupa.
+ * el intervalo del cupo se cruza con una atención no cancelada; la reserva
+ * atómica sigue siendo la única vía que ocupa. El intervalo sigue el mismo
+ * convenio semiabierto `[startAt, endAt)` de TI2-96: dos cupos con igual
+ * inicio y distinto fin generan consultas distintas.
  */
 export interface SlotOccupancyReader {
   isSlotOccupied(input: {
     readonly professionalId: string;
     readonly startAt: number;
+    readonly endAt: number;
   }): Promise<boolean>;
 }
 

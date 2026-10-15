@@ -165,14 +165,27 @@ function fakeNeeds(needs: readonly AccessNeed[]): AccompanimentNeedsReader {
   };
 }
 
-/** Ocupación mutable por instante: permite ocupar un cupo entre páginas. */
-function fakeOccupancy(data?: { readonly occupyAll?: boolean }): SlotOccupancyReader & {
+/** Ocupación mutable por inicio y por predicado de intervalo. */
+function fakeOccupancy(data?: {
+  readonly occupyAll?: boolean;
+  readonly overlaps?: (startAt: number, endAt: number) => boolean;
+}): SlotOccupancyReader & {
   readonly occupiedStarts: Set<number>;
+  readonly received: Array<{ readonly startAt: number; readonly endAt: number }>;
 } {
   const occupiedStarts = new Set<number>();
+  const received: Array<{ readonly startAt: number; readonly endAt: number }> = [];
   return {
     occupiedStarts,
-    isSlotOccupied: async ({ startAt }) => data?.occupyAll === true || occupiedStarts.has(startAt),
+    received,
+    isSlotOccupied: async ({ startAt, endAt }) => {
+      received.push({ startAt, endAt });
+      return (
+        data?.occupyAll === true ||
+        occupiedStarts.has(startAt) ||
+        data?.overlaps?.(startAt, endAt) === true
+      );
+    },
   };
 }
 
@@ -497,6 +510,59 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
     const deps = searchDeps(auth, { occupancy: fakeOccupancy({ occupyAll: true }) });
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
+  });
+
+  test("el intervalo decide: conserva el cupo contiguo y descarta el solapado con igual inicio", async () => {
+    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const windows: StoredAvailabilityBlock[] = [0, 1, 2, 3, 4, 5, 6].flatMap((weekday) => [
+      {
+        id: `block-corto-${weekday}`,
+        professionalId: "user-pro",
+        weekday,
+        startMinute: 540,
+        endMinute: 570,
+        slotMinutes: 30,
+        modality: "online",
+        isActive: true,
+        version: AVAILABILITY_CONTRACT_VERSION,
+      },
+      {
+        id: `block-largo-${weekday}`,
+        professionalId: "user-pro",
+        weekday,
+        startMinute: 540,
+        endMinute: 600,
+        slotMinutes: 60,
+        modality: "online",
+        isActive: true,
+        version: AVAILABILITY_CONTRACT_VERSION,
+      },
+    ]);
+    const availability = fakeAvailability({ blocks: windows });
+    const probe = searchDeps(auth, { availability });
+    const first = requireOk(await searchAvailabilitySlots(probe, searchInput()));
+    expect(first.items).toHaveLength(2);
+    const ordered = [...first.items].sort((a, b) => a.endAt - b.endAt);
+    const short = ordered[0];
+    const long = ordered[1];
+    if (short === undefined || long === undefined) throw new Error("Se esperaban dos cupos");
+    expect(short.startAt).toBe(long.startAt);
+
+    // La atención ocupa desde el fin del cupo corto hasta el fin del largo:
+    // el corto queda contiguo y el largo se cruza.
+    const appointment = { start: short.endAt, end: long.endAt };
+    const occupancy = fakeOccupancy({
+      overlaps: (startAt, endAt) => startAt < appointment.end && appointment.start < endAt,
+    });
+    const deps = searchDeps(auth, { availability, occupancy });
+    const second = requireOk(await searchAvailabilitySlots(deps, searchInput()));
+    expect(second.items).toHaveLength(1);
+    expect(second.items[0]?.endAt).toBe(short.endAt);
+
+    // Igual inicio con distinto fin genera consultas distintas.
+    expect(occupancy.received).toHaveLength(2);
+    expect(occupancy.received[0]?.startAt).toBe(occupancy.received[1]?.startAt);
+    expect(occupancy.received[0]?.endAt).not.toBe(occupancy.received[1]?.endAt);
   });
 
   test("la necesidad sin cobertura no se rebaja: responde ausencia de cupo", async () => {
