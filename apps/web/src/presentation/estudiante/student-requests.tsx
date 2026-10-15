@@ -78,7 +78,13 @@ function usePagedItems<Item extends RequestListItem>(
   const [done, setDone] = useState(false);
 
   if (page !== undefined) {
-    const currentHash = page.page.map((item) => item._id).join(",");
+    // La firma cubre datos e información de paginación: el mismo ID con
+    // otro estado o con `isDone` distinto reemplaza el segmento en vez de
+    // conservar la vista anterior.
+    const currentHash = [
+      page.isDone ? "done" : "more",
+      ...page.page.map((item) => `${item._id}:${item.status}`),
+    ].join(",");
     const existing = pages.get(cursor ?? "first");
     const pageChanged = !existing || existing.hash !== currentHash;
 

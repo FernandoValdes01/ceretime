@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useSyncExternalStore } from "react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
@@ -33,6 +34,25 @@ let listThrows: Error | null = null;
 let mockedDetail: OwnRequestDetail | undefined;
 let detailThrows: Error | null = null;
 
+// Suscripción que simula el push reactivo de Convex: `useOwnRequests`
+// se re-renderiza cuando el backend empuja datos nuevos, igual que
+// `useQuery` real. Sin esto el mock sería una foto fija y ningún cambio
+// posterior llegaría a la vista.
+let pushVersion = 0;
+const pushListeners = new Set<() => void>();
+
+function emitListPush() {
+  pushVersion += 1;
+  pushListeners.forEach((notify) => notify());
+}
+
+function subscribeToListPush(notify: () => void) {
+  pushListeners.add(notify);
+  return () => {
+    pushListeners.delete(notify);
+  };
+}
+
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
 vi.mock("../session/session-state", () => ({
@@ -43,6 +63,11 @@ vi.mock("../session/session-state", () => ({
 vi.mock("./student-requests-data.ts", () => ({
   PAGE_SIZE: 10,
   useOwnRequests: (cursor: string | null) => {
+    useSyncExternalStore(
+      subscribeToListPush,
+      () => pushVersion,
+      () => pushVersion,
+    );
     if (listThrows !== null) {
       throw listThrows;
     }
@@ -147,6 +172,8 @@ beforeEach(() => {
   listThrows = null;
   mockedDetail = undefined;
   detailThrows = null;
+  pushVersion = 0;
+  pushListeners.clear();
 });
 
 afterEach(() => {
@@ -187,6 +214,25 @@ describe("listado propio del Estudiante (TI2-89)", () => {
     expect(await screen.findByText("En revisión")).toBeDefined();
     expect(screen.getByText("Recibida")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
+  });
+
+  test("la actualización reactiva del estado conserva el ID y actualiza la etiqueta", async () => {
+    let estado: "received" | "under_review" = "received";
+    listByCursor = () => paginaPropia([filaPropia({ _id: "req-1", status: estado })]);
+    renderAt("/estudiante/solicitudes");
+
+    expect(await screen.findByText("Recibida")).toBeDefined();
+    expect(screen.queryByText("En revisión")).toBeNull();
+
+    // El backend empuja la misma solicitud con su estado nuevo: la vista
+    // del segmento se reemplaza sin remontar ni duplicar la lista.
+    estado = "under_review";
+    act(() => {
+      emitListPush();
+    });
+
+    expect(await screen.findByText("En revisión")).toBeDefined();
+    expect(screen.queryByText("Recibida")).toBeNull();
   });
 
   test("la página vacía muestra el vacío explícito", async () => {

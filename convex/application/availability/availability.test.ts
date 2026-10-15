@@ -3,14 +3,25 @@ import type { ApiResult } from "../../domain/errors/api_error";
 import {
   AVAILABILITY_CONTRACT_VERSION,
   type AvailabilityBlock,
-  type AvailabilitySlot,
 } from "../../domain/availability/availability";
+import type { AccessNeed } from "../../domain/requests/request";
+import type { CompatibilitySpace } from "../../domain/spaces/compatibility";
+import type { Space } from "../../domain/spaces/space";
 import type {
   AuthorizableAgendaAccompaniment,
   AuthorizableAssignment,
   AuthorizableProfile,
   AuthorizationReader,
 } from "../authorization/authorize";
+import type {
+  AccompanimentNeedsReader,
+  AvailabilityReader,
+  AvailabilityWriter,
+  CompatibilitySpaceSource,
+  SlotOccupancyReader,
+  StoredAvailabilityBlock,
+  StoredAvailabilityException,
+} from "./ports";
 import {
   publishAvailabilityBlock,
   publishAvailabilityException,
@@ -19,14 +30,7 @@ import {
   searchAvailabilitySlots,
   setAvailabilityBlockActive,
   updateAvailabilityBlock,
-  type AccompanimentNeedsSource,
-  type AvailabilityReader,
-  type AvailabilityWriter,
   type SearchAvailabilityDeps,
-  type SlotCompatibilitySource,
-  type SlotOccupancySource,
-  type StoredAvailabilityBlock,
-  type StoredAvailabilityException,
 } from "./availability";
 
 type FakeProfile = AuthorizableProfile & { readonly tokenIdentifier: string };
@@ -110,6 +114,16 @@ function dailyOnlineBlocks(professionalId: string): StoredAvailabilityBlock[] {
   }));
 }
 
+/** Bloques presenciales para cada día de la semana, todos en la misma sala. */
+function dailyInPersonBlocks(professionalId: string, spaceId: string): StoredAvailabilityBlock[] {
+  return dailyOnlineBlocks(professionalId).map((block, weekday) => ({
+    ...block,
+    id: `block-room-${weekday}`,
+    modality: "inPerson",
+    spaceId,
+  }));
+}
+
 function fakeAvailability(data: {
   readonly blocks?: ReadonlyArray<StoredAvailabilityBlock>;
   readonly exceptions?: ReadonlyArray<StoredAvailabilityException>;
@@ -143,28 +157,58 @@ function fakeAvailability(data: {
   };
 }
 
-const emptyNeeds: AccompanimentNeedsSource = {
-  getAccompanimentNeeds: async () => [],
+/** Necesidades vigentes del acompañamiento `acc-1`; otro acompañamiento no existe. */
+function fakeNeeds(needs: readonly AccessNeed[]): AccompanimentNeedsReader {
+  return {
+    findAccompanimentNeeds: async (accompanimentId) =>
+      accompanimentId === "acc-1" ? { _id: accompanimentId, needs } : null,
+  };
+}
+
+/** Ocupación mutable por instante: permite ocupar un cupo entre páginas. */
+function fakeOccupancy(data?: { readonly occupyAll?: boolean }): SlotOccupancyReader & {
+  readonly occupiedStarts: Set<number>;
+} {
+  const occupiedStarts = new Set<number>();
+  return {
+    occupiedStarts,
+    isSlotOccupied: async ({ startAt }) => data?.occupyAll === true || occupiedStarts.has(startAt),
+  };
+}
+
+/** Catálogo mínimo: salas por identificador y apoyos de la plataforma en línea. */
+function fakeCompatibility(data?: {
+  readonly spaces?: Readonly<Record<string, CompatibilitySpace>>;
+  readonly onlineSupports?: readonly AccessNeed[];
+}): CompatibilitySpaceSource {
+  return {
+    findCompatibilitySpace: async (spaceId) => data?.spaces?.[spaceId] ?? null,
+    listOnlineSupports: async () => data?.onlineSupports ?? [],
+  };
+}
+
+const fictitiousSpace: Space = {
+  id: "space-1",
+  campus: "Campus ficticio",
+  building: "Edificio ficticio",
+  floor: "Piso 1",
+  room: "Sala 101",
+  accessConditions: "Acceso ficticio sin barreras",
+  arrivalInstructions: "Instrucciones ficticias de llegada",
+  version: "v1",
 };
 
-const onlineCompatible: SlotCompatibilitySource = {
-  resolveCompatibilityOption: async (slot: AvailabilitySlot) => ({
-    modality: slot.modality,
-    onlineSupports: [],
-  }),
-};
-
-const emptyOccupancy: SlotOccupancySource = {
-  listOccupiedIntervals: async () => [],
-};
-
-function searchDeps(auth: AuthorizationReader): SearchAvailabilityDeps {
+function searchDeps(
+  auth: AuthorizationReader,
+  overrides: Partial<Omit<SearchAvailabilityDeps, "auth">> = {},
+): SearchAvailabilityDeps {
   return {
     auth,
     availability: fakeAvailability({ blocks: dailyOnlineBlocks("user-pro") }),
-    needs: emptyNeeds,
-    compatibility: onlineCompatible,
-    occupancy: emptyOccupancy,
+    needs: fakeNeeds([]),
+    compatibility: fakeCompatibility(),
+    occupancy: fakeOccupancy(),
+    ...overrides,
   };
 }
 
@@ -362,9 +406,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     });
     const proResult = await searchAvailabilitySlots(
       searchDeps(proAuth),
-      searchInput({
-        tokenIdentifier: "token-pro",
-      }),
+      searchInput({ tokenIdentifier: "token-pro" }),
     );
     expect(proResult.status).toBe("ok");
   });
@@ -421,28 +463,45 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
 
   test("sin bloques el vacío responde ausencia de cupo para coordinar por el canal oficial", async () => {
     const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
-    const deps: SearchAvailabilityDeps = {
-      ...searchDeps(auth),
-      availability: fakeAvailability({ blocks: [] }),
-    };
+    const deps = searchDeps(auth, { availability: fakeAvailability({ blocks: [] }) });
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
   });
 
   test("el cupo ocupado se descuenta y el vacío responde ausencia de cupo", async () => {
     const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
-    const deps: SearchAvailabilityDeps = {
-      ...searchDeps(auth),
-      occupancy: { listOccupiedIntervals: async () => [{ startAt: 0, endAt: 9_999_999_999_999 }] },
-    };
+    const deps = searchDeps(auth, { occupancy: fakeOccupancy({ occupyAll: true }) });
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
   });
 
   test("la necesidad sin cobertura no se rebaja: responde ausencia de cupo", async () => {
     const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
-    const deps: SearchAvailabilityDeps = {
-      ...searchDeps(auth),
-      needs: { getAccompanimentNeeds: async () => [{ id: "need-1", label: "Sala accesible" }] },
-    };
+    const deps = searchDeps(auth, {
+      needs: fakeNeeds([{ id: "need-1", label: "Sala accesible" }]),
+    });
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
+  });
+
+  test("el cupo presencial con sala vigente que cubre las necesidades se ofrece", async () => {
+    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const need = { id: "need-1", label: "Sala accesible" };
+    const deps = searchDeps(auth, {
+      availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
+      needs: fakeNeeds([need]),
+      compatibility: fakeCompatibility({
+        spaces: { "space-1": { space: fictitiousSpace, isActive: true, satisfiedNeeds: [need] } },
+      }),
+    });
+    const data = requireOk(await searchAvailabilitySlots(deps, searchInput()));
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0]?.spaceId).toBe("space-1");
+  });
+
+  test("la sala retirada no se ofrece y el vacío responde ausencia de cupo", async () => {
+    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const deps = searchDeps(auth, {
+      availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
+      compatibility: fakeCompatibility(),
+    });
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
   });
 
@@ -480,5 +539,22 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(second.items).toHaveLength(1);
     expect(second.hasMore).toBe(false);
     expect(second.nextCursor).toBeNull();
+  });
+
+  test("el cursor ocupado entre páginas responde conflicto sin repetir resultados", async () => {
+    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const occupancy = fakeOccupancy();
+    const deps = searchDeps(auth, { occupancy });
+    const range = searchInput({ from: "2026-10-26", to: "2026-10-27", limit: 1 });
+    const first = requireOk(await searchAvailabilitySlots(deps, range));
+    expect(first.items).toHaveLength(1);
+    expect(first.hasMore).toBe(true);
+
+    const cursorSlot = first.items[0];
+    if (cursorSlot === undefined) throw new Error("La primera página debe traer un cupo");
+    occupancy.occupiedStarts.add(cursorSlot.startAt);
+    expect(await searchAvailabilitySlots(deps, { ...range, cursor: cursorSlot.id })).toEqual(
+      CONFLICT,
+    );
   });
 });

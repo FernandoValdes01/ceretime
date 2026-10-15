@@ -3,7 +3,6 @@ import {
   expandAvailabilitySlots,
   isValidCivilDate,
   type AvailabilityBlock,
-  type AvailabilityException,
   type AvailabilitySlot,
   type AvailabilitySlotPage,
 } from "../../domain/availability/availability";
@@ -22,6 +21,14 @@ import {
   authorizeAvailabilityRead,
   type AuthorizationReader,
 } from "../authorization/authorize";
+import type {
+  AccompanimentNeedsReader,
+  AvailabilityReader,
+  AvailabilityWriter,
+  CompatibilitySpaceSource,
+  SlotOccupancyReader,
+  StoredAvailabilityException,
+} from "./ports";
 
 /**
  * Casos de uso de disponibilidad (TI2-97).
@@ -30,116 +37,28 @@ import {
  * consulta cupos compatibles para un acompañamiento activo. No crea
  * entrada pública (`query`/`mutation` de TI2-111) ni toca `ctx.db`
  * (repositorios de TI2-95): recibe puertos por parámetro y se prueba con
- * dobles en memoria. Opera con datos ficticios.
+ * dobles en memoria. La única definición de cada puerto vive en
+ * `./ports` (acordada con TI2-95); acá solo se consumen. Opera con datos
+ * ficticios.
  *
  * Autorización (TI2-86): escribir exige profesional vigente sobre su
  * propia disponibilidad; leer exige acompañamiento activo con pertenencia
  * (estudiante dueño) o asignación vigente (profesional asignado). Toda
  * denegación responde el mismo error genérico, sin revelar existencia.
  *
- * Búsqueda: combina recurrencia y excepciones (TI2-81), compatibilidad de
- * modalidad y espacio con las necesidades vigentes sin rebajarlas (TI2-82),
- * ocupación por puerto (TI2-84/TI2-96) y ausencia de cupo con coordinación
- * por el canal oficial (TI2-88, referencia mínima `accompanimentId`).
- * El rango se acota a `MAX_EXPANSION_DAYS` y la página a
- * `SEARCH_AVAILABILITY_PAGE_LIMIT_MAX`: nunca se expone el calendario
- * completo en una sola respuesta.
+ * Búsqueda: combina recurrencia y excepciones (TI2-81), ocupación por
+ * puerto (TI2-84/TI2-96) y compatibilidad de modalidad y espacio con las
+ * necesidades vigentes sin rebajarlas (TI2-82). Sin opción compatible y
+ * libre responde `no_availability` (TI2-88) con la referencia mínima
+ * `accompanimentId` de la entrada, sin crear reserva incompatible. Rango
+ * y página acotados: la consulta nunca expone el calendario completo. Un
+ * cursor que ya no figura (cupo ocupado o incompatible entre consultas)
+ * responde `conflict` para reiniciar la búsqueda, nunca repite resultados
+ * en silencio.
  */
 
 /** Tope de cupos por página: se rechaza el exceso, nunca se trunca en silencio. */
 export const SEARCH_AVAILABILITY_PAGE_LIMIT_MAX = 50;
-
-/** Bloque guardado: contrato de TI2-87 más la vigencia que persiste TI2-95. */
-export type StoredAvailabilityBlock = AvailabilityBlock & { readonly isActive: boolean };
-
-/** Excepción guardada: contrato más identificador, profesional y motivo. */
-export type StoredAvailabilityException = AvailabilityException & {
-  readonly id: string;
-  readonly professionalId: string;
-  readonly reason?: string;
-};
-
-/** Rango civil inclusivo para listar excepciones de un profesional. */
-export interface AvailabilityExceptionRange {
-  readonly professionalId: string;
-  readonly from: string;
-  readonly to: string;
-}
-
-/**
- * Lecturas de disponibilidad. Un identificador inexistente o de otra tabla
- * responde igual que uno sin datos. Las listas fallan con `conflict` cuando
- * superan su tope o el rango es inválido, en vez de devolver una lista
- * cortada. Lo cumple TI2-95; acá solo se fija la firma para los dobles.
- */
-export interface AvailabilityReader {
-  getBlock(blockId: string): Promise<StoredAvailabilityBlock | null>;
-  listActiveBlocks(professionalId: string): Promise<ApiResult<readonly StoredAvailabilityBlock[]>>;
-  getException(exceptionId: string): Promise<StoredAvailabilityException | null>;
-  listExceptions(
-    range: AvailabilityExceptionRange,
-  ): Promise<ApiResult<readonly StoredAvailabilityException[]>>;
-}
-
-/**
- * Escrituras de disponibilidad. Validan integridad, no autorización: el
- * caso de uso llama antes a TI2-86. Responden `conflict` sin escribir
- * cuando una referencia no existe o lo guardado haría fallar la expansión
- * de TI2-81. Lo cumple TI2-95.
- */
-export interface AvailabilityWriter {
-  insertBlock(
-    block: Omit<AvailabilityBlock, "id" | "version">,
-  ): Promise<ApiResult<{ readonly blockId: string }>>;
-  updateBlock(
-    blockId: string,
-    block: Omit<AvailabilityBlock, "id" | "professionalId" | "version">,
-  ): Promise<ApiResult<null>>;
-  setBlockActive(blockId: string, isActive: boolean): Promise<ApiResult<null>>;
-  insertException(
-    exception: Omit<StoredAvailabilityException, "id" | "version">,
-  ): Promise<ApiResult<{ readonly exceptionId: string }>>;
-  removeException(exceptionId: string): Promise<ApiResult<null>>;
-}
-
-/**
- * Necesidades vigentes del acompañamiento, resueltas por Infraestructura
- * desde el acompañamiento. `null` cuando el acompañamiento no existe.
- * Provisional: el acompañamiento persiste las necesidades como texto y su
- * resolución a identificadores la concreta TI2-95; acá solo se consumen
- * sin rebajarlas.
- */
-export interface AccompanimentNeedsSource {
-  getAccompanimentNeeds(accompanimentId: string): Promise<readonly AccessNeed[] | null>;
-}
-
-/**
- * Opción de compatibilidad de un cupo, resuelta desde el catálogo: el
- * espacio con vigencia y condiciones para lo presencial, los apoyos de la
- * plataforma para lo en línea. `null` cuando el espacio falta o se retiró.
- * Lo concreta TI2-95/TI2-99; la política es de TI2-82.
- */
-export interface SlotCompatibilitySource {
-  resolveCompatibilityOption(slot: AvailabilitySlot): Promise<CompatibilityOption | null>;
-}
-
-/** Intervalo ocupado en vocabulario TI2-87 (milisegundos epoch). */
-export interface OccupiedInterval {
-  readonly startAt: number;
-  readonly endAt: number;
-}
-
-/**
- * Ocupación del profesional en el rango, en vocabulario TI2-87. Los cruces
- * completos los agrega TI2-96 sobre este mismo puerto. Lo cumple TI2-84.
- */
-export interface SlotOccupancySource {
-  listOccupiedIntervals(
-    professionalId: string,
-    from: string,
-    to: string,
-  ): Promise<readonly OccupiedInterval[]>;
-}
 
 function denied<T>(): ApiResult<T> {
   return errResult(unauthorizedError());
@@ -285,17 +204,31 @@ export interface SearchAvailabilityInput {
   readonly version: string;
 }
 
-/** Dependencias de la búsqueda, todas por puerto para probar con dobles. */
+/** Dependencias de la búsqueda, todas por puerto de `./ports` para probar con dobles. */
 export interface SearchAvailabilityDeps {
   readonly auth: AuthorizationReader;
   readonly availability: AvailabilityReader;
-  readonly needs: AccompanimentNeedsSource;
-  readonly compatibility: SlotCompatibilitySource;
-  readonly occupancy: SlotOccupancySource;
+  readonly needs: AccompanimentNeedsReader;
+  readonly compatibility: CompatibilitySpaceSource;
+  readonly occupancy: SlotOccupancyReader;
 }
 
-function overlaps(slot: AvailabilitySlot, interval: OccupiedInterval): boolean {
-  return slot.startAt < interval.endAt && interval.startAt < slot.endAt;
+/**
+ * Opción de compatibilidad de un cupo desde el catálogo: el espacio con
+ * vigencia y condiciones para lo presencial, los apoyos de la plataforma
+ * para lo en línea. `null` cuando el cupo presencial no trae sala o la
+ * sala se retiró del catálogo.
+ */
+async function resolveCompatibilityOption(
+  compatibility: CompatibilitySpaceSource,
+  onlineSupports: readonly AccessNeed[],
+  slot: AvailabilitySlot,
+): Promise<CompatibilityOption | null> {
+  if (slot.modality === "online") return { modality: "online", onlineSupports };
+  if (slot.spaceId === undefined) return null;
+  const space = await compatibility.findCompatibilitySpace(slot.spaceId);
+  if (space === null) return null;
+  return { modality: "inPerson", space };
 }
 
 /**
@@ -308,7 +241,8 @@ function overlaps(slot: AvailabilitySlot, interval: OccupiedInterval): boolean {
  * (TI2-82). Sin opción compatible y libre responde `no_availability`
  * (TI2-88) con la referencia mínima `accompanimentId` de la entrada, sin
  * crear reserva incompatible. Rango y página acotados: la consulta nunca
- * expone el calendario completo.
+ * expone el calendario completo. Un cursor ausente en la lista vigente
+ * responde `conflict` para reiniciar la búsqueda.
  */
 export async function searchAvailabilitySlots(
   deps: SearchAvailabilityDeps,
@@ -329,19 +263,20 @@ export async function searchAvailabilitySlots(
   });
   if (grant.status === "error") return denied();
 
-  const [blocksResult, exceptionsResult, needs] = await Promise.all([
+  const [blocksResult, exceptionsResult, needsEntry, onlineSupports] = await Promise.all([
     deps.availability.listActiveBlocks(input.professionalId),
     deps.availability.listExceptions({
       professionalId: input.professionalId,
       from: input.from,
       to: input.to,
     }),
-    deps.needs.getAccompanimentNeeds(input.accompanimentId),
+    deps.needs.findAccompanimentNeeds(input.accompanimentId),
+    deps.compatibility.listOnlineSupports(),
   ]);
   if (blocksResult.status === "error" || exceptionsResult.status === "error") {
     return conflict();
   }
-  if (needs === null) return conflict();
+  if (needsEntry === null) return conflict();
 
   let expanded: AvailabilitySlot[];
   try {
@@ -357,24 +292,23 @@ export async function searchAvailabilitySlots(
     return conflict();
   }
 
-  const occupied = await deps.occupancy.listOccupiedIntervals(
-    input.professionalId,
-    input.from,
-    input.to,
-  );
-  const free = expanded.filter((slot) => !occupied.some((interval) => overlaps(slot, interval)));
-
   const compatible: AvailabilitySlot[] = [];
-  for (const slot of free) {
-    const option = await deps.compatibility.resolveCompatibilityOption(slot);
+  for (const slot of expanded) {
+    const occupied = await deps.occupancy.isSlotOccupied({
+      professionalId: input.professionalId,
+      startAt: slot.startAt,
+    });
+    if (occupied) continue;
+    const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, slot);
     if (option === null) continue;
-    if (assessCompatibility(needs, option).compatible) compatible.push(slot);
+    if (assessCompatibility(needsEntry.needs, option).compatible) compatible.push(slot);
   }
 
   let startIndex = 0;
   if (input.cursor !== undefined) {
     const found = compatible.findIndex((slot) => slot.id === input.cursor);
-    startIndex = found === -1 ? 0 : found + 1;
+    if (found === -1) return conflict();
+    startIndex = found + 1;
   }
   const window = compatible.slice(startIndex, startIndex + input.limit + 1);
   const items = window.slice(0, input.limit);
