@@ -124,6 +124,18 @@ export function usePagedList<Item extends RequestListItem>(
       if (!next || cursors.includes(next)) {
         return;
       }
+      // Invalidar IDs previos de esta ventana ANTES de cargar:
+      // si la página cambió mientras estaba desmontada, los IDs antiguos
+      // no deben servir de baseline al volver a llegar los datos.
+      setIdsByCursor((prev) => {
+        const key = next;
+        if (!prev.has(key)) {
+          return prev;
+        }
+        const nextMap = new Map(prev);
+        nextMap.delete(key);
+        return nextMap;
+      });
       // Nueva ventana = nueva referencia: se limpia el baseline para
       // memorizarlo de nuevo al completarse el reporte, sin colapsar por el
       // propio avance. Idempotente ante doble clic (mismo resultado).
