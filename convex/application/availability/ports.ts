@@ -3,6 +3,8 @@ import type {
   AvailabilityException,
 } from "../../domain/availability/availability";
 import type { ApiResult } from "../../domain/errors/api_error";
+import type { AccessNeed } from "../../domain/requests/request";
+import type { CompatibilitySpace } from "../../domain/spaces/compatibility";
 
 /**
  * Puerto de persistencia de disponibilidad (TI2-95).
@@ -12,6 +14,11 @@ import type { ApiResult } from "../../domain/errors/api_error";
  * por forma con `availabilityReader(ctx)` y `availabilityWriter(ctx)` sin
  * importar este archivo, y las pruebas de los casos de uso pueden pasar un
  * doble en memoria.
+ *
+ * Los puertos de búsqueda de este mismo archivo (necesidades, ocupación y
+ * espacios) son las firmas acordadas para probar con dobles: todavía sin
+ * adaptador en Infraestructura, que los cumple en su tarea sin cambiar
+ * estas firmas.
  *
  * Los tipos son los contratos de TI2-81/TI2-87 más lo que la persistencia
  * guarda y el contrato no trae: si el bloque sigue vigente y, en la
@@ -77,4 +84,48 @@ export interface AvailabilityWriter {
     exception: Omit<StoredAvailabilityException, "id" | "version">,
   ): Promise<ApiResult<{ readonly exceptionId: string }>>;
   removeException(exceptionId: string): Promise<ApiResult<null>>;
+}
+
+/**
+ * Necesidades vigentes del acompañamiento para la búsqueda (TI2-97), ya
+ * resueltas a identificadores. La persistencia guarda el texto declarado;
+ * la resolución a identificadores vive en Infraestructura junto al
+ * catálogo, no en el caso de uso, para no inventar un mapeo en Aplicación.
+ */
+export interface AccompanimentNeeds {
+  readonly _id: string;
+  readonly needs: readonly AccessNeed[];
+}
+
+/**
+ * Lectura mínima del acompañamiento para buscar cupos. La pertenencia, la
+ * asignación y el estado activo ya los exige `authorizeAvailabilityRead`
+ * (TI2-86); acá solo se resuelven las necesidades vigentes.
+ */
+export interface AccompanimentNeedsReader {
+  findAccompanimentNeeds(accompanimentId: string): Promise<AccompanimentNeeds | null>;
+}
+
+/**
+ * Ocupación mínima para la búsqueda (TI2-84, cruces de TI2-96). Informa si
+ * el intervalo del cupo se cruza con una atención no cancelada; la reserva
+ * atómica sigue siendo la única vía que ocupa. El intervalo sigue el mismo
+ * convenio semiabierto `[startAt, endAt)` de TI2-96: dos cupos con igual
+ * inicio y distinto fin generan consultas distintas.
+ */
+export interface SlotOccupancyReader {
+  isSlotOccupied(input: {
+    readonly professionalId: string;
+    readonly startAt: number;
+    readonly endAt: number;
+  }): Promise<boolean>;
+}
+
+/**
+ * Espacios para la compatibilidad de TI2-82. La sala retirada (`null`) no se
+ * ofrece; los apoyos en línea cubren las necesidades de esa modalidad.
+ */
+export interface CompatibilitySpaceSource {
+  findCompatibilitySpace(spaceId: string): Promise<CompatibilitySpace | null>;
+  listOnlineSupports(): Promise<readonly AccessNeed[]>;
 }

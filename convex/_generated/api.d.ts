@@ -13,6 +13,7 @@ import type * as application_accompaniments_queries from "../application/accompa
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
 import type * as application_appointments_occupancy from "../application/appointments/occupancy.js";
 import type * as application_authorization_authorize from "../application/authorization/authorize.js";
+import type * as application_availability_availability from "../application/availability/availability.js";
 import type * as application_availability_ports from "../application/availability/ports.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_identity from "../application/requests/identity.js";
@@ -72,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   "application/accounts/enablement": typeof application_accounts_enablement;
   "application/appointments/occupancy": typeof application_appointments_occupancy;
   "application/authorization/authorize": typeof application_authorization_authorize;
+  "application/availability/availability": typeof application_availability_availability;
   "application/availability/ports": typeof application_availability_ports;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/identity": typeof application_requests_identity;
