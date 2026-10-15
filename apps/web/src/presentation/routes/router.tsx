@@ -20,11 +20,13 @@ import {
   RootComponent,
   StudentIndexRouteComponent,
   StudentLayoutRouteComponent,
+  StudentRequestDetailRouteComponent,
+  StudentRequestsRouteComponent,
   StudentScheduleRouteComponent,
 } from "./route-components.tsx";
 
 /**
- * Mapa de rutas web (TI2-6, TI2-20, TI2-91, Sprint 1 y 2).
+ * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-91, Sprint 1 y 2).
  *
  * - `/` índice: acceso sin sesión (preserva callback OAuth de TI2-3),
  *   portal según sesión y rol, denegado sin portal conocido.
@@ -32,6 +34,9 @@ import {
  * - `/denegado` estado público de acceso denegado, sin contenido protegido.
  * - `/estudiante` layout protegido (sesión de Estudiante) con portada
  *   temporal; las vistas funcionales de Sprint 2 cuelgan de este layout.
+ * - `/estudiante/solicitudes`: listado propio paginado del Estudiante
+ *   (TI2-89); `/estudiante/solicitudes/$requestId`: detalle propio solo del
+ *   titular, denegado por el Backend en otro caso.
  * - `/profesional`, `/practicante` y `/administrador`: layouts protegidos
  *   por rol con portada temporal; sin sesión van al acceso, con otro rol
  *   van a denegado. El portal de Administración no enlaza acompañamientos
@@ -86,6 +91,18 @@ const studentScheduleRoute = createRoute({
   component: StudentScheduleRouteComponent,
 });
 
+const studentRequestsRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "solicitudes",
+  component: StudentRequestsRouteComponent,
+});
+
+const studentRequestDetailRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "solicitudes/$requestId",
+  component: StudentRequestDetailRouteComponent,
+});
+
 const professionalLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profesional",
@@ -138,7 +155,12 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   deniedRoute,
-  studentLayoutRoute.addChildren([studentIndexRoute, studentScheduleRoute]),
+  studentLayoutRoute.addChildren([
+    studentIndexRoute,
+    studentScheduleRoute,
+    studentRequestsRoute,
+    studentRequestDetailRoute,
+  ]),
   professionalLayoutRoute.addChildren([
     professionalIndexRoute,
     professionalRequestsRoute,
