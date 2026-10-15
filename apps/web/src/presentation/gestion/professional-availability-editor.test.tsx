@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
@@ -101,7 +101,29 @@ function puertoOk(): AgendaPort {
             version: "v1",
           },
         ],
-        exceptions: [{ date: "2026-05-04", kind: "cancelled", version: "v1" }],
+        exceptions: [
+          { date: "2026-05-04", kind: "cancelled", version: "v1" },
+          {
+            date: "2026-05-05",
+            kind: "cancelled",
+            blockId: "bloque-ficticio-1",
+            version: "v1",
+          },
+          {
+            date: "2026-05-06",
+            kind: "added",
+            windows: [
+              {
+                startMinute: 600,
+                endMinute: 660,
+                slotMinutes: 30,
+                modality: "inPerson",
+                spaceId: "esp-2",
+              },
+            ],
+            version: "v1",
+          },
+        ],
       }),
     saveBlock: (input) =>
       Promise.resolve({
@@ -357,7 +379,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     ).toBeDefined();
   });
 
-  test("excepción válida confirma con nota ficticia", async () => {
+  test("excepción válida confirma con nota ficticia y conserva el detalle", async () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
 
@@ -365,17 +387,65 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByLabelText("Fecha (AAAA-MM-DD)"), {
-      target: { value: "2026-05-06" },
+      target: { value: "2026-05-07" },
     });
     fireEvent.change(screen.getByLabelText("Clase"), { target: { value: "cancelled" } });
     fireEvent.click(screen.getByRole("button", { name: "Guardar excepción" }));
 
-    expect(await screen.findByText("Excepción guardada")).toBeDefined();
-    expect(
-      await screen.findByText("Fecha 2026-05-06. Guardado simulado con datos ficticios.", {
-        exact: false,
-      }),
-    ).toBeDefined();
+    const confirmationHeading = await screen.findByText("Excepción guardada");
+    const confirmation = confirmationHeading.closest("div");
+    if (confirmation === null) {
+      throw new Error("Se esperaba el bloque de confirmación de la excepción");
+    }
+    const view = within(confirmation);
+    // El detalle sobrevive al limpiarse el formulario.
+    expect(view.getByText("2026-05-07")).toBeDefined();
+    expect(view.getByText("Día completo")).toBeDefined();
+    expect(view.getByText("Guardado simulado con datos ficticios.")).toBeDefined();
+  });
+
+  test("distingue el alcance de las cancelaciones y detalla el agregado", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    const heading = await screen.findByRole("heading", { name: "Excepciones" });
+    const section = heading.closest("section");
+    if (section === null) {
+      throw new Error("Se esperaba la sección de excepciones");
+    }
+    const view = within(section);
+
+    expect(view.getByText("2026-05-04")).toBeDefined();
+    expect(view.getByText("Día completo")).toBeDefined();
+    expect(view.getByText("2026-05-05")).toBeDefined();
+    expect(view.getByText("Bloque bloque-ficticio-1")).toBeDefined();
+    expect(view.getByText("2026-05-06")).toBeDefined();
+    expect(view.getByText("10:00 – 11:00", { exact: false })).toBeDefined();
+    expect(view.getByText("30 minutos", { exact: false })).toBeDefined();
+    expect(view.getByText("Presencial", { exact: false })).toBeDefined();
+    expect(view.getByText("Espacio esp-2", { exact: false })).toBeDefined();
+  });
+
+  test("controles cumplen alto táctil, foco por teclado y ancho fluido", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    await screen.findByRole("heading", { name: "Nuevo bloque recurrente" });
+    // Revela los campos del agregado para cubrir ambos formularios.
+    fireEvent.change(screen.getByLabelText("Clase"), { target: { value: "added" } });
+
+    const fields = [...screen.getAllByRole("textbox"), ...screen.getAllByRole("combobox")];
+    expect(fields.length).toBe(14);
+    for (const field of fields) {
+      // Alto táctil de 44px según DESIGN.md mediante la clase compartida.
+      expect(field.className).toContain("min-h-[44px]");
+      // Ancho fluido sin anchos fijos para refluir en ventanas estrechas.
+      expect(field.className).toContain("w-full");
+      expect(field.getAttribute("style") ?? "").not.toContain("width");
+      // Operable por teclado.
+      field.focus();
+      expect(document.activeElement).toBe(field);
+    }
   });
 });
 

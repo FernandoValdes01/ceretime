@@ -32,7 +32,8 @@ import {
  * filtrar por esa modalidad responde `no_availability` (código canónico);
  * el resto filtra las filas por modalidad y responde `empty` sin filas. La
  * reserva confirma los cupos publicados y responde falta de cupo ante un id
- * ajeno. La lectura del editor trae dos bloques y una excepción ficticios;
+ * ajeno. La lectura del editor trae dos bloques y tres excepciones ficticios
+ * (cancelación del día, cancelación de un bloque y agregado con ventana);
  * el guardado asigna identidad ficticia sin validar propiedad.
  */
 
@@ -135,6 +136,26 @@ const FICTIONAL_EXCEPTIONS: ReadonlyArray<AvailabilityException> = [
   {
     date: dateKey(4),
     kind: "cancelled",
+    version: AVAILABILITY_CONTRACT_VERSION,
+  },
+  {
+    date: dateKey(5),
+    kind: "cancelled",
+    blockId: "bloque-ficticio-1",
+    version: AVAILABILITY_CONTRACT_VERSION,
+  },
+  {
+    date: dateKey(6),
+    kind: "added",
+    windows: [
+      {
+        startMinute: 600,
+        endMinute: 660,
+        slotMinutes: 30,
+        modality: "inPerson",
+        spaceId: "esp-2",
+      },
+    ],
     version: AVAILABILITY_CONTRACT_VERSION,
   },
 ];

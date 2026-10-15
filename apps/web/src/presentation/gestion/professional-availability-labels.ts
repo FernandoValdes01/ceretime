@@ -1,6 +1,7 @@
 import {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
   MODALITY_VALUES,
+  type AvailabilityException,
 } from "../../../../../convex/domain/index.ts";
 
 /**
@@ -66,4 +67,26 @@ export function formatMinuteOfDay(minute: number): string {
 /** Rango de ventana como texto legible `HH:MM – HH:MM`. */
 export function formatWindowRange(startMinute: number, endMinute: number): string {
   return `${formatMinuteOfDay(startMinute)} – ${formatMinuteOfDay(endMinute)}`;
+}
+
+/** Duración del cupo como texto legible (`30 minutos`). */
+export function formatSlotDuration(slotMinutes: number): string {
+  return `${slotMinutes} minutos`;
+}
+
+/**
+ * Alcance visible de una cancelación: día completo o bloque concreto.
+ *
+ * Sin `blockId` la recurrencia del día queda cancelada pero los agregados
+ * se conservan; con `blockId` solo se descuentan los cupos de ese bloque.
+ * Para `added` no hay alcance que resumir: la excepción trae sus ventanas.
+ */
+export function exceptionScopeLabel(
+  exception: Pick<AvailabilityException, "kind" | "blockId">,
+): string {
+  if (exception.kind !== "cancelled") {
+    return "Ventanas del día";
+  }
+  const blockId = exception.blockId?.trim() ?? "";
+  return blockId === "" ? "Día completo" : `Bloque ${blockId}`;
 }

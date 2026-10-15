@@ -4,6 +4,8 @@ import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import "../routes/student-portal.css";
 import {
   exceptionKindLabel,
+  exceptionScopeLabel,
+  formatSlotDuration,
   formatWindowRange,
   weekdayLabel,
   availabilityModalityLabel,
@@ -32,6 +34,14 @@ import type {
 const GESTION_ROW = "flex items-center gap-2 min-h-[44px] px-3 py-2 text-inherit";
 const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
+
+/**
+ * Campos de gestión (TI2-103): alto táctil mínimo de 44px y ancho fluido
+ * según DESIGN.md, con el mismo foco visible de las filas. Los formularios
+ * apilan los campos en columna para refluir en ventanas estrechas.
+ */
+const GESTION_FIELD = "min-h-[44px] w-full box-border px-3 py-2 text-base text-inherit";
+const GESTION_FIELD_CLASS = `${GESTION_FIELD} ${GESTION_FOCUS_VISIBLE}`;
 
 /**
  * Editor de bloques recurrentes y excepciones del Profesional (TI2-103).
@@ -155,10 +165,7 @@ function AvailabilityBody({ attempt, onRetry }: { attempt: number; onRetry: () =
           <ul className="student-portal__list">
             {exceptions.map((exception, index) => (
               <li key={`${exception.date}-${index}`} className="student-portal__item">
-                <span className={GESTION_ROW}>
-                  <span>{exception.date}</span>
-                  <span>{exceptionKindLabel(exception.kind)}</span>
-                </span>
+                <ExceptionDetails exception={exception} />
               </li>
             ))}
           </ul>
@@ -169,6 +176,37 @@ function AvailabilityBody({ attempt, onRetry }: { attempt: number; onRetry: () =
         onSaved={(exception) => setExtraExceptions((prev) => [...prev, exception])}
       />
     </>
+  );
+}
+
+/**
+ * Detalle visible de una excepción (TI2-103): fecha, clase y alcance de la
+ * cancelación (día completo o bloque concreto) o ventanas del agregado con
+ * horario, duración, modalidad y espacio. Sin el alcance, una cancelación
+ * del día y otra de un bloque son indistinguibles, y el agregado pierde sus
+ * detalles al limpiarse el formulario.
+ */
+function ExceptionDetails({ exception }: { exception: AvailabilityException }) {
+  return (
+    <div>
+      <span className={GESTION_ROW}>
+        <span>{exception.date}</span>
+        <span>{exceptionKindLabel(exception.kind)}</span>
+        <span>{exceptionScopeLabel(exception)}</span>
+      </span>
+      {exception.kind === "added" ? (
+        <ul className="student-portal__list">
+          {(exception.windows ?? []).map((window, windowIndex) => (
+            <li key={windowIndex} className="student-portal__item-meta">
+              {formatWindowRange(window.startMinute, window.endMinute)} ·{" "}
+              {formatSlotDuration(window.slotMinutes)} ·{" "}
+              {availabilityModalityLabel(window.modality)}
+              {window.spaceId === undefined ? null : <> · Espacio {window.spaceId}</>}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -234,6 +272,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-weekday">Día de la semana</label>
           <select
+            className={GESTION_FIELD_CLASS}
             id="block-weekday"
             value={form.weekday}
             onChange={(event) => setField("weekday", event.target.value)}
@@ -259,6 +298,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-start">Inicio (HH:MM)</label>
           <input
+            className={GESTION_FIELD_CLASS}
             id="block-start"
             type="text"
             inputMode="numeric"
@@ -278,6 +318,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-end">Término (HH:MM)</label>
           <input
+            className={GESTION_FIELD_CLASS}
             id="block-end"
             type="text"
             inputMode="numeric"
@@ -297,6 +338,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-duration">Duración del cupo (minutos)</label>
           <input
+            className={GESTION_FIELD_CLASS}
             id="block-duration"
             type="text"
             inputMode="numeric"
@@ -318,6 +360,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-modality">Modalidad</label>
           <select
+            className={GESTION_FIELD_CLASS}
             id="block-modality"
             value={form.modality}
             onChange={(event) => setField("modality", event.target.value)}
@@ -340,6 +383,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-space">Referencia al espacio (solo presencial)</label>
           <input
+            className={GESTION_FIELD_CLASS}
             id="block-space"
             type="text"
             placeholder="esp-1"
@@ -396,16 +440,16 @@ function ExceptionFormSection({
   const [form, setForm] = useState<ExceptionFormState>(EMPTY_EXCEPTION_FORM);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
-  const [savedDate, setSavedDate] = useState<string | null>(null);
+  const [savedException, setSavedException] = useState<AvailabilityException | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   const confirmationRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    if (savedDate !== null) {
+    if (savedException !== null) {
       confirmationRef.current?.focus();
     }
-  }, [savedDate]);
+  }, [savedException]);
 
   function setField<Key extends keyof ExceptionFormState>(key: Key, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -420,7 +464,7 @@ function ExceptionFormSection({
     setFieldErrors(errors);
     setSaveError(null);
     setDenied(false);
-    setSavedDate(null);
+    setSavedException(null);
     if (Object.keys(errors).length > 0) {
       return;
     }
@@ -429,7 +473,7 @@ function ExceptionFormSection({
       const result = await getAgendaPort().saveException(toSaveExceptionInput(form));
       if (result.status === "saved") {
         onSaved(result.exception);
-        setSavedDate(result.exception.date);
+        setSavedException(result.exception);
         setForm(EMPTY_EXCEPTION_FORM);
         setFieldErrors({});
       } else if (result.status === "denied") {
@@ -456,6 +500,7 @@ function ExceptionFormSection({
         <div>
           <label htmlFor="exception-date">Fecha (AAAA-MM-DD)</label>
           <input
+            className={GESTION_FIELD_CLASS}
             id="exception-date"
             type="text"
             inputMode="numeric"
@@ -475,6 +520,7 @@ function ExceptionFormSection({
         <div>
           <label htmlFor="exception-kind">Clase</label>
           <select
+            className={GESTION_FIELD_CLASS}
             id="exception-kind"
             value={form.kind}
             onChange={(event) => setField("kind", event.target.value)}
@@ -495,6 +541,7 @@ function ExceptionFormSection({
         <div>
           <label htmlFor="exception-block">Bloque afectado (solo cancelación puntual)</label>
           <input
+            className={GESTION_FIELD_CLASS}
             id="exception-block"
             type="text"
             placeholder="bloque-ficticio-1"
@@ -517,6 +564,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-start">Inicio del agregado (HH:MM)</label>
               <input
+                className={GESTION_FIELD_CLASS}
                 id="exception-start"
                 type="text"
                 inputMode="numeric"
@@ -538,6 +586,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-end">Término del agregado (HH:MM)</label>
               <input
+                className={GESTION_FIELD_CLASS}
                 id="exception-end"
                 type="text"
                 inputMode="numeric"
@@ -559,6 +608,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-duration">Duración del cupo (minutos)</label>
               <input
+                className={GESTION_FIELD_CLASS}
                 id="exception-duration"
                 type="text"
                 inputMode="numeric"
@@ -580,6 +630,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-modality">Modalidad del agregado</label>
               <select
+                className={GESTION_FIELD_CLASS}
                 id="exception-modality"
                 value={form.modality}
                 onChange={(event) => setField("modality", event.target.value)}
@@ -602,6 +653,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-space">Referencia al espacio (solo presencial)</label>
               <input
+                className={GESTION_FIELD_CLASS}
                 id="exception-space"
                 type="text"
                 placeholder="esp-1"
@@ -631,12 +683,13 @@ function ExceptionFormSection({
             {saveError}
           </p>
         ) : null}
-        {savedDate !== null ? (
+        {savedException !== null ? (
           <div>
             <h3 ref={confirmationRef} tabIndex={-1}>
               Excepción guardada
             </h3>
-            <p>Fecha {savedDate}. Guardado simulado con datos ficticios.</p>
+            <ExceptionDetails exception={savedException} />
+            <p>Guardado simulado con datos ficticios.</p>
           </div>
         ) : null}
         <div className="student-portal__cta">
