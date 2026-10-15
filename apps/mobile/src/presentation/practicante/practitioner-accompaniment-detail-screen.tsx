@@ -1,10 +1,19 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef } from "react";
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type { PractitionerAccompaniment } from "../../application/practitioner-accompaniment-models";
 import { mobileDependencies } from "../../composition/mobile-dependencies";
 import { AppHeader } from "../components/app-header";
+import { StudentText } from "../estudiante/student-text";
 import { usePractitionerAccompaniment } from "../hooks/use-practitioner-accompaniment";
 import { PractitionerAssignmentGuard } from "../navigation/practitioner-assignment-guard";
 import { useNavigationSession } from "../navigation/session";
@@ -22,10 +31,14 @@ function StateMessage({
 }) {
   return (
     <View style={styles.stateCard}>
-      <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={styles.stateTitle}>
+      <StudentText
+        accessibilityRole="header"
+        accessibilityLiveRegion="polite"
+        style={styles.stateTitle}
+      >
         {title}
-      </Text>
-      {message ? <Text style={styles.stateMessage}>{message}</Text> : null}
+      </StudentText>
+      {message ? <StudentText style={styles.stateMessage}>{message}</StudentText> : null}
       {children}
     </View>
   );
@@ -35,12 +48,12 @@ function DetailCard({ accompaniment }: { readonly accompaniment: PractitionerAcc
   return (
     <View style={styles.detailCard}>
       <View style={styles.detailHeader}>
-        <Text style={styles.fieldLabel}>Objetivo</Text>
+        <StudentText style={styles.fieldLabel}>Objetivo</StudentText>
         <PractitionerAccompanimentStatusBadge status={accompaniment.status} />
       </View>
-      <Text selectable style={styles.objective}>
+      <StudentText selectable style={styles.objective}>
         {accompaniment.objective}
-      </Text>
+      </StudentText>
     </View>
   );
 }
@@ -72,7 +85,7 @@ export function PractitionerAccompanimentDetailContent({
           onPress={reload}
           style={({ pressed }) => [styles.retry, pressed && styles.pressed]}
         >
-          <Text style={styles.retryText}>Reintentar</Text>
+          <StudentText style={styles.retryText}>Reintentar</StudentText>
         </Pressable>
       </StateMessage>
     );
@@ -102,15 +115,29 @@ function AssignedPractitionerAccompanimentDetail() {
     session?.user.id ?? null,
     accompanimentId,
   );
+  const detailHeadingRef = useRef<View>(null);
   const onBack = () => router.replace("/practicante/asignaciones");
+
+  useEffect(() => {
+    if (detailHeadingRef.current) {
+      AccessibilityInfo.sendAccessibilityEvent(detailHeadingRef.current, "focus");
+    }
+  }, []);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
       <AppHeader onBack={onBack} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text accessibilityRole="header" style={styles.title}>
-          Detalle del acompañamiento
-        </Text>
+        <View
+          ref={detailHeadingRef}
+          accessible
+          accessibilityLabel="Detalle del acompañamiento"
+          accessibilityRole="header"
+        >
+          <StudentText accessible={false} style={styles.title}>
+            Detalle del acompañamiento
+          </StudentText>
+        </View>
         <PractitionerAccompanimentDetailContent {...state} onBack={onBack} />
       </ScrollView>
     </SafeAreaView>

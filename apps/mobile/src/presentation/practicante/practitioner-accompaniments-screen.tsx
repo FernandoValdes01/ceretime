@@ -1,15 +1,17 @@
 import { router } from "expo-router";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import type { ReactNode } from "react";
 
 import type { PractitionerAccompaniment } from "../../application/practitioner-accompaniment-models";
 import { mobileDependencies } from "../../composition/mobile-dependencies";
 import { AppIcon } from "../components/app-icon";
 import { RoleHome } from "../components/role-home";
+import { StudentText } from "../estudiante/student-text";
 import { usePractitionerAccompaniments } from "../hooks/use-practitioner-accompaniments";
 import { PractitionerAssignmentGuard } from "../navigation/practitioner-assignment-guard";
 import { useNavigationSession } from "../navigation/session";
 import { PractitionerAccompanimentStatusBadge } from "./practitioner-accompaniment-status-badge";
+import { practitionerAccompanimentStatusLabels } from "./practitioner-accompaniment-formatters";
 
 function StateMessage({
   title,
@@ -22,10 +24,14 @@ function StateMessage({
 }) {
   return (
     <View style={[styles.surface, styles.stateCard]}>
-      <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={styles.stateTitle}>
+      <StudentText
+        accessibilityRole="header"
+        accessibilityLiveRegion="polite"
+        style={styles.stateTitle}
+      >
         {title}
-      </Text>
-      {message ? <Text style={styles.stateMessage}>{message}</Text> : null}
+      </StudentText>
+      {message ? <StudentText style={styles.stateMessage}>{message}</StudentText> : null}
       {children}
     </View>
   );
@@ -36,10 +42,12 @@ function AccompanimentCard({
 }: {
   readonly accompaniment: PractitionerAccompaniment;
 }) {
+  const objective = accompaniment.objective.replace(/[.!?]+$/u, "");
+
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Acompañamiento: ${accompaniment.objective}`}
+      accessibilityLabel={`Acompañamiento: ${objective}. Estado: ${practitionerAccompanimentStatusLabels[accompaniment.status]}.`}
       accessibilityHint="Abre el detalle del acompañamiento"
       onPress={() =>
         router.push({
@@ -50,11 +58,11 @@ function AccompanimentCard({
       style={({ pressed }) => [styles.cardPressable, pressed && styles.cardPressed]}
     >
       <View style={styles.card}>
-        <Text accessibilityRole="header" style={styles.cardTitle}>
+        <StudentText accessibilityRole="header" style={styles.cardTitle}>
           {accompaniment.objective}
-        </Text>
+        </StudentText>
         <View style={styles.cardFooter}>
-          <PractitionerAccompanimentStatusBadge status={accompaniment.status} />
+          <PractitionerAccompanimentStatusBadge accessible={false} status={accompaniment.status} />
           <AppIcon
             accessible={false}
             color="#5B6C6E"
@@ -94,7 +102,7 @@ export function PractitionerAccompanimentsContent({
           onPress={reload}
           style={styles.retry}
         >
-          <Text style={styles.retryText}>Reintentar</Text>
+          <StudentText style={styles.retryText}>Reintentar</StudentText>
         </Pressable>
       </StateMessage>
     );

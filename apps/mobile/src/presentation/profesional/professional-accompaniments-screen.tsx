@@ -39,6 +39,7 @@ function StateMessage({
       {children}
       {action ? (
         <Pressable
+          cssInterop={false}
           accessibilityRole="button"
           onPress={action.onPress}
           style={({ pressed }) => [styles.retryButton, pressed && styles.buttonPressed]}

@@ -1,12 +1,14 @@
 /**
- * Atención reservada: contratos públicos compartidos v1 (TI2-87, extendido TI2-93).
+ * Atención reservada: contratos públicos compartidos v1 (TI2-87, extendido TI2-93, plazo TI2-94).
  *
  * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile
  * consuman la misma forma sin levantar el backend. Reserva y atención son
  * una sola entidad (`appointments` es la única representación: no existe un
  * `domain/reservations` paralelo); la inasistencia es un estado de la
  * atención y su justificación se representa por estado, sin sanción
- * automática. El plazo de cinco días hábiles lo calcula TI2-94.
+ * automática. El plazo de cinco días hábiles lo calcula TI2-94 en este mismo
+ * módulo, sin persistir la explicación (la persistencia y la revisión son
+ * TI2-119).
  *
  * Reutiliza los literales de TI2-83 y `ModalityPreference` de la solicitud
  * para no duplicar su representación. TI2-93 agrega la política de
@@ -17,6 +19,7 @@
  */
 
 import type { ModalityPreference } from "../requests/request";
+import { isValidCivilDate } from "../availability/availability";
 
 /** Versión del contrato público de la atención reservada. */
 export const APPOINTMENT_CONTRACT_VERSION = "v1" as const;
@@ -337,6 +340,254 @@ export function transitionAppointment(
     effectiveEndAt: attempt.newEndAt,
     originalStartAt,
   };
+}
+
+/**
+ * Plazo de justificación de cinco días hábiles (TI2-94, RF-20/RN-14/CA-07).
+ *
+ * Política provisional pendiente de validación PV-11 (CERETI + UCT): no afirma
+ * aprobación institucional. Días hábiles provisorios: lunes a viernes civiles
+ * en la zona horaria dada, excluyendo feriados explícitos. Fin de semana y
+ * feriados no cuentan; la fecha civil de la inasistencia es el día 0
+ * exclusivo y el conteo empieza al día siguiente, aunque la inasistencia caiga
+ * en fin de semana o feriado. El reloj, el calendario y los feriados son datos
+ * de entrada: no hay `Date.now`, ni zona implícita del servidor, ni proveedor
+ * externo de feriados (fuera de alcance: certificados, sanción automática y
+ * cron). Mismos inputs dan el mismo plazo.
+ *
+ * Límite exclusivo: el plazo vence al inicio del día civil siguiente a la
+ * fecha límite en la zona horaria dada (`deadlineAt`). Una entrega en el
+ * instante exacto del vencimiento queda fuera; un milisegundo antes queda
+ * dentro. La comparación usa instantes epoch en milisegundos, como Convex.
+ */
+
+/** Días hábiles posteriores a la inasistencia que abarca el plazo. */
+export const JUSTIFICATION_BUSINESS_DAYS = 5 as const;
+
+/** Entrada del cálculo del plazo: inasistencia más calendario explícito. */
+export interface CalculateJustificationDeadlineInput {
+  /** Instante epoch en milisegundos de la inasistencia ya ocurrida. */
+  readonly missedAt: number;
+  /** Zona horaria IANA explícita (p. ej. `America/Santiago`). */
+  readonly timeZone: string;
+  /** Feriados civiles explícitos `YYYY-MM-DD`; fin de semana siempre descansa. */
+  readonly holidays?: readonly string[];
+}
+
+/** Plazo calculado: fechas civiles más instante exclusivo de vencimiento. */
+export interface JustificationDeadline {
+  /** Fecha civil `YYYY-MM-DD` de la inasistencia en la zona horaria dada. */
+  readonly absenceDate: string;
+  /** Quinto día hábil posterior, `YYYY-MM-DD` en la zona horaria dada. */
+  readonly deadlineDate: string;
+  /** Vencimiento exclusivo: 00:00 local del día siguiente a `deadlineDate`. */
+  readonly deadlineAt: number;
+  /** Días hábiles contados; siempre `JUSTIFICATION_BUSINESS_DAYS`. */
+  readonly businessDays: number;
+  readonly timeZone: string;
+  /** Feriados normalizados (únicos y ordenados) usados en el cálculo. */
+  readonly holidays: readonly string[];
+}
+
+/** Entrada de la decisión: cálculo más instante de entrega a evaluar. */
+export interface DecideJustificationTimelinessInput extends CalculateJustificationDeadlineInput {
+  /** Instante epoch en milisegundos de entrega de la explicación. */
+  readonly submittedAt: number;
+}
+
+/** Cálculo más decisión para TI2-119, sin persistir la explicación. */
+export interface JustificationTimeliness extends JustificationDeadline {
+  readonly submittedAt: number;
+  /** Fecha civil de la entrega en la zona horaria dada. */
+  readonly submittedDate: string;
+  /** Verdadero cuando la entrega cae dentro del plazo exclusivo. */
+  readonly withinDeadline: boolean;
+}
+
+const JUSTIFICATION_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
+
+function justificationFormatterFor(timeZone: string): Intl.DateTimeFormat {
+  const cached = JUSTIFICATION_FORMATTER_CACHE.get(timeZone);
+  if (cached !== undefined) return cached;
+  const created = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  JUSTIFICATION_FORMATTER_CACHE.set(timeZone, created);
+  return created;
+}
+
+function justificationParts(epochMs: number, timeZone: string): Record<string, string> {
+  return justificationFormatterFor(timeZone)
+    .formatToParts(new Date(epochMs))
+    .reduce<Record<string, string>>((accumulator, part) => {
+      accumulator[part.type] = part.value;
+      return accumulator;
+    }, {});
+}
+
+function justificationOffsetMs(timeZone: string, utcMs: number): number {
+  const parts = justificationParts(utcMs, timeZone);
+  const asUtc = Date.UTC(
+    Number(parts["year"]),
+    Number(parts["month"]) - 1,
+    Number(parts["day"]),
+    Number(parts["hour"]) % 24,
+    Number(parts["minute"]),
+    Number(parts["second"]),
+  );
+  return asUtc - utcMs;
+}
+
+function justificationMidnightToEpochMs(date: string, timeZone: string): number {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const targetLocal = Date.UTC(year, month - 1, day, 0, 0, 0);
+  const firstPass = targetLocal - justificationOffsetMs(timeZone, targetLocal);
+  return targetLocal - justificationOffsetMs(timeZone, firstPass);
+}
+
+function justificationCivilDateOfInstant(epochMs: number, timeZone: string): string {
+  const parts = justificationParts(epochMs, timeZone);
+  return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
+}
+
+function justificationCivilWeekday(date: string): number {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const days = Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+  return (((days + 4) % 7) + 7) % 7;
+}
+
+function justificationNextCivilDate(date: string): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const next = new Date(Date.UTC(year, month - 1, day) + 86_400_000);
+  const nextYear = next.getUTCFullYear();
+  const nextMonth = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const nextDay = String(next.getUTCDate()).padStart(2, "0");
+  return `${nextYear}-${nextMonth}-${nextDay}`;
+}
+
+/**
+ * Verdadero cuando el instante es representable como fecha (`new Date` válido).
+ *
+ * `isValidInstant` (TI2-93) solo exige finito positivo; magnitudes absurdas
+ * como `1e30` lo pasan pero `Intl` lanzaría `RangeError`. Este resguardo las
+ * convierte en el error propio del plazo para no filtrar excepciones crudas.
+ */
+function assertUsableJustificationInstant(value: number, message: string): void {
+  if (!isValidInstant(value) || Number.isNaN(new Date(value).getTime())) {
+    throw new Error(message);
+  }
+}
+
+function assertJustificationTimeZone(timeZone: string): void {
+  if (typeof timeZone !== "string" || timeZone.trim() === "") {
+    throw new Error("El plazo requiere una zona horaria IANA explícita.");
+  }
+  try {
+    new Intl.DateTimeFormat(undefined, { timeZone });
+  } catch {
+    throw new Error("La zona horaria del plazo es desconocida.");
+  }
+}
+
+function normalizeJustificationHolidays(
+  holidays: readonly string[] | undefined,
+): readonly string[] {
+  if (holidays === undefined) return [];
+  const seen = new Set<string>();
+  for (const holiday of holidays) {
+    if (typeof holiday !== "string" || !isValidCivilDate(holiday)) {
+      throw new Error(`El feriado ${String(holiday)} no es una fecha civil válida YYYY-MM-DD.`);
+    }
+    seen.add(holiday);
+  }
+  return [...seen].sort();
+}
+
+/**
+ * Calcula el plazo de cinco días hábiles posteriores a una inasistencia.
+ *
+ * Dominio puro y determinista: mismos inputs, mismo plazo. Cuenta desde la
+ * fecha civil de `missedAt` (día 0 exclusivo), no desde la reserva ni en días
+ * corridos. Valida el instante, la zona horaria y cada feriado explícito.
+ */
+export function calculateJustificationDeadline(
+  input: CalculateJustificationDeadlineInput,
+): JustificationDeadline {
+  assertUsableJustificationInstant(
+    input.missedAt,
+    "La inasistencia requiere un instante válido en milisegundos.",
+  );
+  assertJustificationTimeZone(input.timeZone);
+  const holidays = normalizeJustificationHolidays(input.holidays);
+  const holidaySet = new Set(holidays);
+
+  const absenceDate = justificationCivilDateOfInstant(input.missedAt, input.timeZone);
+  let counted = 0;
+  let current = absenceDate;
+  let deadlineDate = absenceDate;
+  for (let step = 0; step < 370; step += 1) {
+    current = justificationNextCivilDate(current);
+    const weekday = justificationCivilWeekday(current);
+    const isWeekend = weekday === 0 || weekday === 6;
+    if (!isWeekend && !holidaySet.has(current)) {
+      counted += 1;
+      if (counted === JUSTIFICATION_BUSINESS_DAYS) {
+        deadlineDate = current;
+        break;
+      }
+    }
+  }
+  if (counted !== JUSTIFICATION_BUSINESS_DAYS) {
+    throw new Error("El plazo no encontró cinco días hábiles en el horizonte de búsqueda.");
+  }
+
+  const deadlineAt = justificationMidnightToEpochMs(
+    justificationNextCivilDate(deadlineDate),
+    input.timeZone,
+  );
+
+  return {
+    absenceDate,
+    deadlineDate,
+    deadlineAt,
+    businessDays: JUSTIFICATION_BUSINESS_DAYS,
+    timeZone: input.timeZone,
+    holidays,
+  };
+}
+
+/**
+ * Devuelve cálculo y decisión de puntualidad para TI2-119.
+ *
+ * `withinDeadline` es verdadero cuando `submittedAt` cae dentro del plazo
+ * exclusivo (`submittedAt < deadlineAt`) y no es anterior a la inasistencia.
+ * No persiste nada: TI2-119 decide entrega, revisión y persistencia.
+ */
+export function decideJustificationTimeliness(
+  input: DecideJustificationTimelinessInput,
+): JustificationTimeliness {
+  assertUsableJustificationInstant(
+    input.submittedAt,
+    "La entrega requiere un instante válido en milisegundos.",
+  );
+  const deadline = calculateJustificationDeadline(input);
+  const submittedDate = justificationCivilDateOfInstant(input.submittedAt, input.timeZone);
+  const withinDeadline =
+    input.submittedAt >= input.missedAt && input.submittedAt < deadline.deadlineAt;
+  return { ...deadline, submittedAt: input.submittedAt, submittedDate, withinDeadline };
 }
 
 /** Entrada mínima para listar atenciones: filtros opcionales y paginación. */

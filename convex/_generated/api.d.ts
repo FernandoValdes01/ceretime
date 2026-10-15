@@ -11,7 +11,9 @@
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
+import type * as application_appointments_occupancy from "../application/appointments/occupancy.js";
 import type * as application_authorization_authorize from "../application/authorization/authorize.js";
+import type * as application_availability_ports from "../application/availability/ports.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_identity from "../application/requests/identity.js";
 import type * as application_requests_queries from "../application/requests/queries.js";
@@ -19,6 +21,8 @@ import type * as application_session_minimal_identity from "../application/sessi
 import type * as application_session_portal_role from "../application/session/portal_role.js";
 import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
+import type * as application_spaces_ports from "../application/spaces/ports.js";
+import type * as application_spaces_queries from "../application/spaces/queries.js";
 import type * as auth from "../auth.js";
 import type * as domain_accompaniments_accompaniment from "../domain/accompaniments/accompaniment.js";
 import type * as domain_accompaniments_intern_access from "../domain/accompaniments/intern_access.js";
@@ -35,11 +39,15 @@ import type * as domain_requests_request from "../domain/requests/request.js";
 import type * as domain_requests_state from "../domain/requests/state.js";
 import type * as domain_requests_transition_policy from "../domain/requests/transition_policy.js";
 import type * as domain_requests_transitions from "../domain/requests/transitions.js";
+import type * as domain_spaces_compatibility from "../domain/spaces/compatibility.js";
 import type * as domain_spaces_space from "../domain/spaces/space.js";
 import type * as http from "../http.js";
 import type * as infrastructure_accompaniments_repository from "../infrastructure/accompaniments/repository.js";
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
+import type * as infrastructure_appointments_repository from "../infrastructure/appointments/repository.js";
+import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
+import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
 import type * as operations_accounts from "../operations/accounts.js";
 import type * as operations_assignments from "../operations/assignments.js";
@@ -50,6 +58,7 @@ import type * as operations_users from "../operations/users.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
+import type * as presentation_spaces from "../presentation/spaces.js";
 
 import type {
   ApiFromModules,
@@ -61,7 +70,9 @@ declare const fullApi: ApiFromModules<{
   "application/accompaniments/commands": typeof application_accompaniments_commands;
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accounts/enablement": typeof application_accounts_enablement;
+  "application/appointments/occupancy": typeof application_appointments_occupancy;
   "application/authorization/authorize": typeof application_authorization_authorize;
+  "application/availability/ports": typeof application_availability_ports;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/identity": typeof application_requests_identity;
   "application/requests/queries": typeof application_requests_queries;
@@ -69,6 +80,8 @@ declare const fullApi: ApiFromModules<{
   "application/session/portal_role": typeof application_session_portal_role;
   "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
+  "application/spaces/ports": typeof application_spaces_ports;
+  "application/spaces/queries": typeof application_spaces_queries;
   auth: typeof auth;
   "domain/accompaniments/accompaniment": typeof domain_accompaniments_accompaniment;
   "domain/accompaniments/intern_access": typeof domain_accompaniments_intern_access;
@@ -85,11 +98,15 @@ declare const fullApi: ApiFromModules<{
   "domain/requests/state": typeof domain_requests_state;
   "domain/requests/transition_policy": typeof domain_requests_transition_policy;
   "domain/requests/transitions": typeof domain_requests_transitions;
+  "domain/spaces/compatibility": typeof domain_spaces_compatibility;
   "domain/spaces/space": typeof domain_spaces_space;
   http: typeof http;
   "infrastructure/accompaniments/repository": typeof infrastructure_accompaniments_repository;
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
+  "infrastructure/appointments/repository": typeof infrastructure_appointments_repository;
+  "infrastructure/availability/repository": typeof infrastructure_availability_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
+  "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
   "operations/accounts": typeof operations_accounts;
   "operations/assignments": typeof operations_assignments;
@@ -100,6 +117,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/accompaniments": typeof presentation_accompaniments;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
+  "presentation/spaces": typeof presentation_spaces;
 }>;
 
 /**

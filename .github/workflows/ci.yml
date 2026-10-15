@@ -44,8 +44,8 @@ jobs:
       - name: Probar publicación de resultados de CI
         run: bun test ./.github/ci-publication.test.ts
 
-      - name: Probar el score de AI Review
-        run: bun test ./.github/ai-review-score.test.ts
+      - name: Probar notificaciones de Discord sin credenciales
+        run: bun test ./.github/discord
 
   mobile:
     name: Validación Mobile

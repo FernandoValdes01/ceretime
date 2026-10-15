@@ -1,7 +1,16 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useEffect, useRef } from "react";
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type { PractitionerAccount } from "@/application/administrator-account-models";
+import { useOptionalAccessibilityPreferences } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { AppHeader } from "@/presentation/components/app-header";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
@@ -22,14 +31,35 @@ function AccountCard({
   readonly enablement: AccountEnablementState;
   readonly onEnable: () => void;
 }) {
+  const accessibility = useOptionalAccessibilityPreferences();
+  const avatarSize = 40 * (accessibility?.effective.textScale ?? 1);
   const isEnabled = account.status === "enabled";
   const isLoading = enablement.status === "loading";
+  const shouldFocusEnablement = useRef(!isEnabled);
+  const successMessageRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (
+      shouldFocusEnablement.current &&
+      isEnabled &&
+      enablement.status === "success" &&
+      successMessageRef.current
+    ) {
+      AccessibilityInfo.sendAccessibilityEvent(successMessageRef.current, "focus");
+      shouldFocusEnablement.current = false;
+    }
+  }, [enablement.status, isEnabled]);
 
   return (
     <View style={styles.accountCard}>
       <View style={styles.accountHeading}>
-        <View style={styles.avatar}>
-          <StudentText weight="semibold" style={styles.avatarText}>
+        <View
+          style={[
+            styles.avatar,
+            { width: avatarSize, height: avatarSize, borderRadius: avatarSize / 2 },
+          ]}
+        >
+          <StudentText accessible={false} weight="semibold" style={styles.avatarText}>
             {account.displayName.slice(0, 1)}
           </StudentText>
         </View>
@@ -42,6 +72,7 @@ function AccountCard({
       </View>
 
       <View
+        accessible
         accessibilityLabel={isEnabled ? "Estado: Cuenta habilitada" : "Estado: Pendiente"}
         style={[styles.statusBadge, isEnabled && styles.enabledBadge]}
       >
@@ -52,6 +83,7 @@ function AccountCard({
           size={17}
         />
         <StudentText
+          accessible={false}
           weight="semibold"
           style={[styles.statusText, isEnabled && styles.enabledStatusText]}
         >
@@ -60,8 +92,16 @@ function AccountCard({
       </View>
 
       {enablement.status === "success" && enablement.message ? (
-        <View accessibilityLiveRegion="polite" style={styles.successMessage}>
-          <StudentText style={styles.successText}>{enablement.message}</StudentText>
+        <View
+          ref={successMessageRef}
+          accessible
+          accessibilityLabel={enablement.message}
+          accessibilityRole="text"
+          style={styles.successMessage}
+        >
+          <StudentText accessible={false} style={styles.successText}>
+            {enablement.message}
+          </StudentText>
         </View>
       ) : null}
       {enablement.status === "error" ? (

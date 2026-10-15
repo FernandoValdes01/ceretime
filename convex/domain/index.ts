@@ -130,7 +130,21 @@ export type {
   SpaceCatalogPage,
 } from "./spaces/space";
 
-// Atención reservada: reserva y atención en una sola entidad (TI2-87, TI2-93).
+// Compatibilidad de modalidad y espacio con necesidades de acceso (TI2-82).
+export {
+  COMPATIBILITY_ISSUE_VALUES,
+  assessCompatibility,
+  selectCompatibleOptions,
+} from "./spaces/compatibility";
+export type {
+  CompatibilityDecision,
+  CompatibilityIssue,
+  CompatibilityIssueCode,
+  CompatibilityOption,
+  CompatibilitySpace,
+} from "./spaces/compatibility";
+
+// Atención reservada: reserva y atención en una sola entidad (TI2-87, TI2-93, plazo TI2-94).
 export {
   APPOINTMENT_CONTRACT_VERSION,
   APPOINTMENT_REJECTION_CAUSES,
@@ -138,7 +152,10 @@ export {
   APPOINTMENT_TRANSITIONS,
   findAppointmentTransition,
   INITIAL_APPOINTMENT_STATUS,
+  JUSTIFICATION_BUSINESS_DAYS,
   NO_SHOW_PENDING_STATE,
+  calculateJustificationDeadline,
+  decideJustificationTimeliness,
   transitionAppointment,
 } from "./appointments/appointment";
 export type {
@@ -151,5 +168,9 @@ export type {
   AppointmentStatus,
   AppointmentTransitionAttempt,
   AppointmentTransitionResult,
+  CalculateJustificationDeadlineInput,
+  DecideJustificationTimelinessInput,
+  JustificationDeadline,
+  JustificationTimeliness,
   ListAppointmentsInput,
 } from "./appointments/appointment";

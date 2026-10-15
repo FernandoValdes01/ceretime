@@ -1,11 +1,16 @@
+import { AccessibilityInfo, AppState, Platform, useWindowDimensions } from "react-native";
+import { vars } from "nativewind";
 import {
   createContext,
   useContext,
   useEffect,
   useRef,
   useState,
+  type ComponentType,
   type PropsWithChildren,
 } from "react";
+import { View } from "react-native";
+import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
 import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
@@ -15,12 +20,20 @@ import type {
   AccessibilityPreferencesPort,
   AccessibilityPreferencesReadResult,
 } from "../../application/accessibility-preferences-port";
+import {
+  getNativeFontSize,
+  resolveAccessibilitySettings,
+  type SystemAccessibilitySettings,
+} from "./accessibility-preferences-policy";
+import { getAccessibilityColorVariables } from "./accessibility-color-palette";
 
 export interface AccessibilityPreferencesState {
   readonly preferences: AccessibilityPreferences;
   readonly status: "loading" | "ready" | "saving";
   readonly source: AccessibilityPreferencesReadResult["source"];
   readonly error: string | null;
+  readonly errorCode: AccessibilityPreferencesError | null;
+  readonly effective: ReturnType<typeof resolveAccessibilitySettings>;
   readonly reloadPreferences: () => void;
   readonly updatePreferences: (patch: Partial<AccessibilityPreferences>) => Promise<boolean>;
 }
@@ -36,14 +49,85 @@ export function AccessibilityPreferencesProvider({
   port,
   children,
 }: PropsWithChildren<{ readonly port: AccessibilityPreferencesPort }>) {
+  const { fontScale } = useWindowDimensions();
+  const [systemSettings, setSystemSettings] = useState<
+    Omit<SystemAccessibilitySettings, "fontScale">
+  >(() => ({
+    highContrast: false,
+    reduceMotion: false,
+  }));
   const [preferences, setPreferences] = useState(defaultAccessibilityPreferences);
   const [status, setStatus] = useState<AccessibilityPreferencesState["status"]>("loading");
   const [source, setSource] = useState<AccessibilityPreferencesState["source"]>("default");
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<AccessibilityPreferencesError | null>(null);
   const [reload, setReload] = useState(0);
   const [loadedPort, setLoadedPort] = useState<AccessibilityPreferencesPort | null>(null);
   const busy = useRef(true);
   const lifetime = useRef<{ active: boolean; port: AccessibilityPreferencesPort } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let queryVersion = 0;
+    let motionEventVersion = 0;
+    let contrastEventVersion = 0;
+
+    async function refreshSystemSettings() {
+      const version = ++queryVersion;
+      const motionVersionAtStart = motionEventVersion;
+      const contrastVersionAtStart = contrastEventVersion;
+      const contrastQuery =
+        Platform.OS === "android"
+          ? AccessibilityInfo.isHighTextContrastEnabled()
+          : Platform.OS === "ios"
+            ? AccessibilityInfo.isDarkerSystemColorsEnabled()
+            : Promise.resolve(false);
+      const [reduceMotion, highContrast] = await Promise.all([
+        AccessibilityInfo.isReduceMotionEnabled().catch(() => false),
+        contrastQuery.catch(() => false),
+      ]);
+
+      if (!active || version !== queryVersion) return;
+      setSystemSettings((current) => ({
+        ...current,
+        reduceMotion:
+          motionVersionAtStart === motionEventVersion ? reduceMotion : current.reduceMotion,
+        highContrast:
+          contrastVersionAtStart === contrastEventVersion ? highContrast : current.highContrast,
+      }));
+    }
+
+    function updateHighContrast(highContrast: boolean) {
+      contrastEventVersion += 1;
+      if (active) setSystemSettings((current) => ({ ...current, highContrast }));
+    }
+
+    const motionSubscription = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      (reduceMotion) => {
+        motionEventVersion += 1;
+        if (active) setSystemSettings((current) => ({ ...current, reduceMotion }));
+      },
+    );
+    const contrastSubscription =
+      Platform.OS === "android"
+        ? AccessibilityInfo.addEventListener("highTextContrastChanged", updateHighContrast)
+        : Platform.OS === "ios"
+          ? AccessibilityInfo.addEventListener("darkerSystemColorsChanged", updateHighContrast)
+          : null;
+    const appStateSubscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshSystemSettings();
+    });
+    void refreshSystemSettings();
+
+    return () => {
+      active = false;
+      queryVersion += 1;
+      motionSubscription.remove();
+      contrastSubscription?.remove();
+      appStateSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const operation = { active: true, port };
@@ -56,11 +140,13 @@ export function AccessibilityPreferencesProvider({
         setPreferences(result.preferences);
         setSource(result.source);
         setError(result.error ? errorMessages[result.error] : null);
+        setErrorCode(result.error);
       } catch {
         if (!operation.active) return;
         setPreferences(defaultAccessibilityPreferences);
         setSource("default");
         setError(errorMessages["read-failed"]);
+        setErrorCode("read-failed");
       } finally {
         if (operation.active) {
           busy.current = false;
@@ -81,18 +167,24 @@ export function AccessibilityPreferencesProvider({
     busy.current = true;
     setStatus("saving");
     setError(null);
+    setErrorCode(null);
     try {
       const result = await port.update(patch);
       if (!operation.active) return false;
       if (!result.ok) {
         setError(errorMessages[result.error]);
+        setErrorCode(result.error);
         return false;
       }
       setPreferences(result.preferences);
       setSource("stored");
+      setErrorCode(null);
       return true;
     } catch {
-      if (operation.active) setError(errorMessages["write-failed"]);
+      if (operation.active) {
+        setError(errorMessages["write-failed"]);
+        setErrorCode("write-failed");
+      }
       return false;
     } finally {
       if (operation.active) {
@@ -107,8 +199,47 @@ export function AccessibilityPreferencesProvider({
     busy.current = true;
     setStatus("loading");
     setError(null);
+    setErrorCode(null);
     setReload((value) => value + 1);
   }
+
+  const effective = resolveAccessibilitySettings(
+    loadedPort === port ? preferences : defaultAccessibilityPreferences,
+    { ...systemSettings, fontScale },
+  );
+  const textScaleVariables = Object.fromEntries(
+    [
+      ["--ceretime-font-xs", 12],
+      ["--ceretime-font-sm", 14],
+      ["--ceretime-font-base", 16],
+      ["--ceretime-font-lg", 18],
+      ["--ceretime-font-xl", 20],
+      ["--ceretime-font-2xl", 24],
+      ["--ceretime-font-3xl", 30],
+      ["--ceretime-font-4xl", 36],
+      ["--ceretime-font-28", 28],
+      ["--ceretime-line-xs", 16],
+      ["--ceretime-line-sm", 20],
+      ["--ceretime-line-base", 24],
+      ["--ceretime-line-lg", 28],
+      ["--ceretime-line-xl", 28],
+      ["--ceretime-line-2xl", 32],
+      ["--ceretime-line-3xl", 36],
+      ["--ceretime-line-4xl", 40],
+      ...[20, 25, 26, 28, 29, 34, 37].map((size) => [`--ceretime-line-${size}`, size]),
+    ].map(([name, size]) => [
+      String(name),
+      getNativeFontSize(
+        Number(size),
+        effective.textScale,
+        fontScale,
+        Platform.OS,
+        Platform.Version,
+      ),
+    ]),
+  );
+  const MotionConfig = ReducedMotionConfig as ComponentType<{ mode: ReduceMotion }> | undefined;
+  const reduceMotionModes = ReduceMotion as typeof ReduceMotion | undefined;
 
   return (
     <PreferencesContext
@@ -117,11 +248,28 @@ export function AccessibilityPreferencesProvider({
         status: loadedPort === port ? status : "loading",
         source: loadedPort === port ? source : "default",
         error: loadedPort === port ? error : null,
+        errorCode: loadedPort === port ? errorCode : null,
+        effective,
         updatePreferences,
         reloadPreferences,
       }}
     >
-      {children}
+      <View
+        style={[
+          { flex: 1 },
+          vars({
+            ...textScaleVariables,
+            ...getAccessibilityColorVariables(effective.highContrast),
+          }),
+        ]}
+      >
+        {MotionConfig && reduceMotionModes ? (
+          <MotionConfig
+            mode={effective.reduceMotion ? reduceMotionModes.Always : reduceMotionModes.Never}
+          />
+        ) : null}
+        {children}
+      </View>
     </PreferencesContext>
   );
 }
@@ -130,4 +278,8 @@ export function useAccessibilityPreferences() {
   const state = useContext(PreferencesContext);
   if (!state) throw new Error("Las preferencias necesitan AccessibilityPreferencesProvider.");
   return state;
+}
+
+export function useOptionalAccessibilityPreferences() {
+  return useContext(PreferencesContext);
 }
