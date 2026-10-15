@@ -216,7 +216,7 @@ describe("Publicación REST", () => {
       let calls = 0;
       await expect(
         publishMessage(message, env, {
-          fetch: (async () => {
+          fetch: (async (_url: RequestInfo | URL, _init?: RequestInit) => {
             calls++;
             return new Response(env.DISCORD_BOT_TOKEN, { status });
           }) as typeof fetch,
@@ -248,7 +248,7 @@ describe("Publicación REST", () => {
       let calls = 0;
       await expect(
         publishMessage(message, env, {
-          fetch: (async () => {
+          fetch: (async (_url: RequestInfo | URL, _init?: RequestInit) => {
             calls++;
             return new Response('{"retry_after":0}', { status });
           }) as typeof fetch,
@@ -262,7 +262,7 @@ describe("Publicación REST", () => {
     for (const retry_after of [-1, 61, "1", null]) {
       await expect(
         publishMessage(message, env, {
-          fetch: (async () =>
+          fetch: (async (_url: RequestInfo | URL, _init?: RequestInit) =>
             new Response(JSON.stringify({ retry_after }), { status: 429 })) as typeof fetch,
           sleep: async () => {
             throw new Error("No debe esperar");
@@ -274,7 +274,7 @@ describe("Publicación REST", () => {
   test("oculta errores de red que pueden contener credenciales", async () => {
     await expect(
       publishMessage(message, env, {
-        fetch: (async () => {
+        fetch: (async (_url: RequestInfo | URL, _init?: RequestInit): Promise<Response> => {
           throw new Error(env.DISCORD_BOT_TOKEN);
         }) as typeof fetch,
         sleep: async () => {},
@@ -300,6 +300,15 @@ describe("Ejecución", () => {
   test("configuración de evento ausente falla", async () => {
     await expect(run({}, true)).rejects.toThrow("Faltan GITHUB_EVENT_PATH");
   });
+  test("un push a main no publica ni necesita credenciales de Discord", async () => {
+    await run(
+      {
+        GITHUB_EVENT_NAME: "push",
+        GITHUB_EVENT_PATH: `${import.meta.dir}/review-requested.json`,
+      },
+      false,
+    );
+  });
   test("workflow solo usa los eventos pedidos y código de main", async () => {
     const yaml = await Bun.file(`${import.meta.dir}/../workflows/discord-notifications.yml`).text();
     expect(yaml).toContain("types: [review_requested, closed]");
@@ -308,7 +317,8 @@ describe("Ejecución", () => {
     expect(yaml).toContain("persist-credentials: false");
     expect(yaml).not.toContain("bun install");
     expect(yaml).not.toContain("pull_request.head.sha");
-    expect(yaml).not.toContain("workflow_dispatch:");
+    expect(yaml).toContain("workflow_dispatch:");
+    expect(yaml).toContain('cron: "3-59/5 * * * *"');
     expect(yaml).not.toContain("push:");
     expect(yaml).toContain("contents: read");
   });
@@ -321,7 +331,12 @@ test("condición de Actions filtra bots, forks y cierres sin merge", async () =>
     on: Record<string, unknown>;
     jobs: { notify: { if: string } };
   };
-  expect(Object.keys(workflow.on).sort()).toEqual(["pull_request_review", "pull_request_target"]);
+  expect(Object.keys(workflow.on).sort()).toEqual([
+    "pull_request_review",
+    "pull_request_target",
+    "schedule",
+    "workflow_dispatch",
+  ]);
   const evaluate = new Function("github", `return (${workflow.jobs.notify.if});`);
   const context = (eventName: string, payload: GitHubEvent, fork = false) => ({
     event_name: eventName,
@@ -334,6 +349,10 @@ test("condición de Actions filtra bots, forks y cierres sin merge", async () =>
       },
     },
   });
+  expect(evaluate(context("schedule", {}))).toBeTruthy();
+  expect(evaluate(context("workflow_dispatch", {}))).toBeTruthy();
+  expect(evaluate(context("push", {}))).toBeFalsy();
+  expect(workflow.jobs.notify.if).not.toContain("github.event_name == 'push'");
   expect(evaluate(context("pull_request_target", event(), true))).toBeTruthy();
   expect(
     evaluate(context("pull_request_target", event({ requested_reviewer: undefined }))),

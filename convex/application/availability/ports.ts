@@ -7,21 +7,19 @@ import type { AccessNeed } from "../../domain/requests/request";
 import type { CompatibilitySpace } from "../../domain/spaces/compatibility";
 
 /**
- * Puertos de disponibilidad (TI2-95 persistencia, TI2-97 búsqueda).
+ * Puerto de persistencia de disponibilidad (TI2-95).
  *
- * Capa de Aplicación: fija lo que los casos de uso leen y escriben de
- * bloques recurrentes y excepciones, lo que la búsqueda necesita del
- * acompañamiento, la ocupación y los espacios, sin Convex. Infraestructura
- * los cumple por forma sin importarlos (TI2-95) y las pruebas pasan un doble
- * en memoria.
+ * Capa de Aplicación: fija lo que los casos de uso de TI2-97 leen y escriben
+ * de bloques recurrentes y excepciones, sin Convex. Infraestructura lo cumple
+ * por forma con `availabilityReader(ctx)` y `availabilityWriter(ctx)` sin
+ * importar este archivo, y las pruebas de los casos de uso pueden pasar un
+ * doble en memoria.
  *
- * La forma de persistencia es la acordada con TI2-95: los tipos son los
- * contratos de TI2-81/TI2-87 más lo que la persistencia guarda y el contrato
- * no trae (vigencia del bloque y, en la excepción, identificador,
- * profesional y motivo). Ese `professionalId` guardado es el que recibe
- * `authorizeAvailabilityEdit` (TI2-86) al editar; nunca sale del cliente.
- *
- * Opera con datos ficticios.
+ * Los tipos son los contratos de TI2-81/TI2-87 más lo que la persistencia
+ * guarda y el contrato no trae: si el bloque sigue vigente y, en la
+ * excepción, su identificador, su profesional y el motivo. Ese
+ * `professionalId` guardado es el que recibe `authorizeAvailabilityEdit`
+ * (TI2-86) al editar; nunca sale del cliente.
  */
 
 export type StoredAvailabilityBlock = AvailabilityBlock & { readonly isActive: boolean };
@@ -64,8 +62,7 @@ export interface AvailabilityReader {
  * referencia no existe (profesional, bloque, excepción o sala vigente), el
  * bloque cancelado es de otro profesional, la excepción trae más de una
  * ventana, lo guardado haría fallar la expansión de TI2-81 o superaría el
- * tope que después impide leerlo. La versión del contrato la fija el
- * escritor al persistir; el caso de uso no la envía.
+ * tope que después impide leerlo.
  */
 export interface AvailabilityWriter {
   insertBlock(
@@ -85,10 +82,10 @@ export interface AvailabilityWriter {
 }
 
 /**
- * Necesidades vigentes del acompañamiento para la búsqueda, ya resueltas a
- * identificadores. La persistencia guarda el texto declarado; la resolución
- * a identificadores vive en Infraestructura junto al catálogo, no en el caso
- * de uso, para no inventar un mapeo en Aplicación.
+ * Necesidades vigentes del acompañamiento para la búsqueda (TI2-97), ya
+ * resueltas a identificadores. La persistencia guarda el texto declarado;
+ * la resolución a identificadores vive en Infraestructura junto al
+ * catálogo, no en el caso de uso, para no inventar un mapeo en Aplicación.
  */
 export interface AccompanimentNeeds {
   readonly _id: string;

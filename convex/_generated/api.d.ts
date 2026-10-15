@@ -22,6 +22,7 @@ import type * as application_session_minimal_identity from "../application/sessi
 import type * as application_session_portal_role from "../application/session/portal_role.js";
 import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
+import type * as application_spaces_ports from "../application/spaces/ports.js";
 import type * as application_spaces_queries from "../application/spaces/queries.js";
 import type * as auth from "../auth.js";
 import type * as domain_accompaniments_accompaniment from "../domain/accompaniments/accompaniment.js";
@@ -45,6 +46,7 @@ import type * as http from "../http.js";
 import type * as infrastructure_accompaniments_repository from "../infrastructure/accompaniments/repository.js";
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as infrastructure_appointments_repository from "../infrastructure/appointments/repository.js";
+import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
@@ -80,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "application/session/portal_role": typeof application_session_portal_role;
   "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
+  "application/spaces/ports": typeof application_spaces_ports;
   "application/spaces/queries": typeof application_spaces_queries;
   auth: typeof auth;
   "domain/accompaniments/accompaniment": typeof domain_accompaniments_accompaniment;
@@ -103,6 +106,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/accompaniments/repository": typeof infrastructure_accompaniments_repository;
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "infrastructure/appointments/repository": typeof infrastructure_appointments_repository;
+  "infrastructure/availability/repository": typeof infrastructure_availability_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
