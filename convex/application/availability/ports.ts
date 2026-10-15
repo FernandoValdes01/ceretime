@@ -15,6 +15,11 @@ import type { CompatibilitySpace } from "../../domain/spaces/compatibility";
  * importar este archivo, y las pruebas de los casos de uso pueden pasar un
  * doble en memoria.
  *
+ * Los puertos de búsqueda de este mismo archivo (necesidades, ocupación y
+ * espacios) son las firmas acordadas para probar con dobles: todavía sin
+ * adaptador en Infraestructura, que los cumple en su tarea sin cambiar
+ * estas firmas.
+ *
  * Los tipos son los contratos de TI2-81/TI2-87 más lo que la persistencia
  * guarda y el contrato no trae: si el bloque sigue vigente y, en la
  * excepción, su identificador, su profesional y el motivo. Ese

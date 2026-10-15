@@ -461,6 +461,32 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(missing).toEqual(DENIED);
   });
 
+  test("sin necesidades resueltas la búsqueda responde conflicto sin filtrar", async () => {
+    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const deps = searchDeps(auth, {
+      needs: { findAccompanimentNeeds: async () => null },
+    });
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(CONFLICT);
+  });
+
+  test("el tope de lectura superado responde conflicto sin lista cortada", async () => {
+    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const availability = fakeAvailability({ blocks: dailyOnlineBlocks("user-pro") });
+    const deps = searchDeps(auth, {
+      availability: {
+        ...availability,
+        listActiveBlocks: async () => ({
+          status: "error",
+          error: {
+            code: "conflict",
+            message: "La solicitud entra en conflicto con el estado actual.",
+          },
+        }),
+      },
+    });
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(CONFLICT);
+  });
+
   test("sin bloques el vacío responde ausencia de cupo para coordinar por el canal oficial", async () => {
     const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
     const deps = searchDeps(auth, { availability: fakeAvailability({ blocks: [] }) });

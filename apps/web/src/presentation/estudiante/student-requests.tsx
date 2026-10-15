@@ -78,7 +78,7 @@ function usePagedItems<Item extends RequestListItem>(
   const [done, setDone] = useState(false);
 
   if (page !== undefined) {
-    // La firma cubre datos e información de paginación: el mismo ID con
+    // La firma cubre datos y avance de página: el mismo ID con
     // otro estado o con `isDone` distinto reemplaza el segmento en vez de
     // conservar la vista anterior.
     const currentHash = [
