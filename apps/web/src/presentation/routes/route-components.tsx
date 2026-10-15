@@ -1,5 +1,6 @@
 import { getRouteApi, Navigate, Outlet } from "@tanstack/react-router";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
+import { StudentRequestDetailPage, StudentRequestsPage } from "../estudiante/student-requests.tsx";
 import {
   ProfessionalRequestDetailPage,
   ProfessionalRequestsPage,
@@ -23,7 +24,7 @@ import { ScheduleSearchPage } from "../estudiante/schedule-search.tsx";
 import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 
 /**
- * Componentes de ruta (TI2-6, TI2-20, TI2-91): puentes delgados entre las
+ * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-91): puentes delgados entre las
  * definiciones de `router.tsx` y las páginas. Viven acá para que `router.tsx`
  * no mezcle componentes con objetos de ruta (regla de fast refresh).
  */
@@ -67,6 +68,17 @@ export function StudentScheduleRouteComponent() {
 
 export function StudentReservationRouteComponent() {
   return <ReservationFormPage />;
+}
+
+const studentRequestDetailApi = getRouteApi("/estudiante/solicitudes/$requestId");
+
+export function StudentRequestsRouteComponent() {
+  return <StudentRequestsPage />;
+}
+
+export function StudentRequestDetailRouteComponent() {
+  const { requestId } = studentRequestDetailApi.useParams();
+  return <StudentRequestDetailPage requestId={requestId} />;
 }
 
 export function ProfessionalLayoutRouteComponent() {

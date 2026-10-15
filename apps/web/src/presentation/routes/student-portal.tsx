@@ -48,6 +48,7 @@ export function StudentLayout() {
             <nav aria-label="Portal del Estudiante">
               <Link to="/estudiante">Inicio</Link>
               <Link to="/estudiante/horarios">Horarios</Link>
+              <Link to="/estudiante/solicitudes">Solicitudes</Link>
               <Link to="/login">Sesión</Link>
             </nav>
             <AccessibilityMenu />
