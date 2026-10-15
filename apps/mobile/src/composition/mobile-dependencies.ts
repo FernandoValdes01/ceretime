@@ -10,6 +10,7 @@ import { createMockProfessionalAccompanimentStore } from "../infrastructure/mock
 import { createMockProfessionalReviewAdapter } from "../infrastructure/mock-professional-review-adapter";
 import { createMockPractitionerAccompanimentReader } from "../infrastructure/mock-practitioner-accompaniment-reader";
 import { createLocalAccessibilityPreferencesAdapter } from "../infrastructure/local-accessibility-preferences-adapter";
+import { createNativeSpeechAdapter } from "../infrastructure/native-speech-adapter";
 
 const professionalAccompanimentStore = createMockProfessionalAccompanimentStore();
 
@@ -35,6 +36,7 @@ const professionalAccompanimentDemoDelay =
 
 export const mobileDependencies = {
   accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
+  speechPort: createNativeSpeechAdapter(),
   administratorAccountsPort: createMockAdministratorAccountsAdapter(),
   authPort: createMockAuthenticationPort(),
   demoCredentials: mockAuthCredentials,
