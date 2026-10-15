@@ -1,10 +1,14 @@
 import { interpretEvent } from "./events";
-import { publishMessage } from "./publish";
+import { notifyEvents } from "./recovery";
 
 export async function run(
   env = process.env,
   dryRun = process.argv.includes("--dry-run"),
 ): Promise<void> {
+  if (env.GITHUB_EVENT_NAME === "schedule" || env.GITHUB_EVENT_NAME === "workflow_dispatch") {
+    await notifyEvents(env, undefined, undefined, dryRun);
+    return;
+  }
   if (!env.GITHUB_EVENT_PATH || !env.GITHUB_EVENT_NAME)
     throw new Error("Faltan GITHUB_EVENT_PATH o GITHUB_EVENT_NAME.");
   const event = await Bun.file(env.GITHUB_EVENT_PATH).json();
@@ -17,8 +21,7 @@ export async function run(
     console.log(JSON.stringify(message, null, 2));
     return;
   }
-  await publishMessage(message, env);
-  console.log("Notificación enviada a Discord.");
+  await notifyEvents(env, event);
 }
 
 if (import.meta.main) {
