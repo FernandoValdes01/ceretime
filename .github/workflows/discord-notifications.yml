@@ -5,13 +5,23 @@ on:
     types: [review_requested, closed]
   pull_request_review:
     types: [submitted]
+  schedule:
+    - cron: "3-59/5 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
+
+# Serialize immediate delivery and recovery against the same Discord history.
+concurrency:
+  group: HoloNet-notifications
+  cancel-in-progress: false
 
 jobs:
   notify:
     if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request_target' &&
        (github.event.action == 'review_requested' && github.event.requested_reviewer != null ||
         github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main')) ||
@@ -41,3 +51,4 @@ jobs:
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
           DISCORD_CHANNEL_ID: ${{ vars.DISCORD_CHANNEL_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
