@@ -1,6 +1,6 @@
 # TI4-55: especificación y evidencia de síntesis de voz
 
-Estado: implementación y pruebas automatizadas preparadas; validación nativa Android con TTS y TalkBack pendiente. Ningún escenario nativo sin completar en el registro de abajo constituye evidencia de ejecución.
+Estado: implementación terminada; pruebas automatizadas y recorridos nativos Android ejecutados. La [PR #117](https://github.com/FernandoValdes01/ceretime/pull/117) permanece en Draft; falta su integración y queda pendiente inducir un fallo real del motor TTS en Android.
 
 Fuente operativa: [TI4-55 en Linear](https://linear.app/ceretime/issue/TI4-55). Responsable: Fernando Valdés. Entrega: 22 de octubre de 2026. Estimación registrada: 2 prismas. No tiene bloqueos registrados y desbloquea TI4-60.
 
@@ -10,7 +10,7 @@ Base local de preparación: `main`, commit `36a2524`. La descripción de Linear 
 
 La documentación oficial de [Expo Speech para SDK 57](https://docs.expo.dev/versions/v57.0.0/sdk/speech/) recomienda `expo-speech ~57.0.3`, que lista las voces disponibles, permite seleccionar una por idioma, detener la lectura y recibir eventos de finalización/error. En Android `speak` agrega textos a la cola, `stop` corta la locución y vacía la cola, y pausa/reanudación no están disponibles. Se instaló `~57.0.3`; la biblioteca no requiere permisos de micrófono ni una entrada de plugin o configuración Android para TTS.
 
-La decisión de producto depende de concluir la prueba Android. El adaptador prefiere `es-CL`, después `es-ES` y luego otra voz cuyo idioma comience con `es`; devuelve voz española no disponible sin intentar leer. Antes de iniciar una lectura limpia la anterior. Los controles suspenden el TTS propio cuando React Native detecta un lector de pantalla y mantienen el texto disponible para TalkBack.
+En el emulador Medium_Phone (Android 17, API 37), Google Text-to-Speech ofreció voces `es-ES` y `es-US`, pero no `es-CL`; el adaptador seleccionó una voz local `es-ES`. La salida capturada desde el monitor del altavoz contiene audio durante la lectura y se incluye como `android-tts.mp3`. El adaptador prefiere `es-CL`, después `es-ES` y luego otra voz cuyo idioma comience con `es`; devuelve voz española no disponible sin intentar leer. Antes de iniciar una lectura limpia la anterior. Los controles suspenden el TTS propio cuando React Native detecta un lector de pantalla y mantienen el texto disponible para TalkBack.
 
 ## Resultado esperado
 
@@ -45,7 +45,7 @@ No es obligatorio editar cada archivo listado. Mantener Application e Infrastruc
 
 ## Criterios de aceptación verificables
 
-Los siguientes escenarios concretan los requisitos de Linear sin ampliar la tarea. Todos están pendientes.
+Los siguientes escenarios concretan los requisitos de Linear sin ampliar la tarea. El resultado de cada criterio aparece en la matriz de ejecución que sigue.
 
 | ID    | Escenario                       | Resultado exigido                                                                                                                                                                                                    | Evidencia necesaria                                                                                             |
 | ----- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
@@ -62,13 +62,34 @@ Los siguientes escenarios concretan los requisitos de Linear sin ampliar la tare
 
 No afirmar conformidad WCAG general por superar estos casos. Identificar los criterios aplicables y los pendientes según las matrices existentes.
 
+## Resultados de ejecución Android
+
+| ID    | Estado   | Resultado observado                                                                                                                                                            |
+| ----- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CA-01 | Aprobado | `expo-speech 57.0.3` quedó enlazado en `:app:installDebug` bajo Expo 57; Android 17/API 37 cargó el módulo sin permisos de micrófono ni configuración adicional.               |
+| CA-02 | Aprobado | El toque explícito leyó texto ficticio en español; el callback terminó en `completed` y el botón volvió a `Leer en voz alta`. El clip `android-tts.mp3` contiene audio.        |
+| CA-03 | Aprobado | Un segundo toque durante una lectura larga devolvió `stopped`; una lectura posterior completó el texto desde el inicio. No se observó audio antiguo en cola.                   |
+| CA-04 | Aprobado | Salir con el botón Atrás durante una lectura cerró la pantalla; AudioFlinger reportó cero pistas activas después de la salida.                                                 |
+| CA-05 | Parcial  | Voz no disponible, error del proveedor y texto sobre el límite están cubiertos con simulaciones; no se indujo un fallo real del motor en Android.                              |
+| CA-06 | Aprobado | Con TalkBack enlazado y `touchExplorationEnabled=true`, el control se deshabilitó visualmente, apareció la indicación del texto visible y el doble toque no inició TTS propio. |
+| CA-07 | Aprobado | Con `font_scale=1.4`, texto y botón siguieron visibles y el objetivo táctil respondió; evidencia en `android-font-scale.png`.                                                  |
+| CA-08 | Aprobado | Application depende solo de `SpeechPort`; la composición instala un único adaptador nativo. Verificado por tipos y revisión del diff.                                          |
+| CA-09 | Aprobado | Se usó texto ficticio y la voz local del sistema; no se añadieron permisos, servicios remotos ni registros con contenido sensible.                                             |
+| CA-10 | Parcial  | La [PR #117](https://github.com/FernandoValdes01/ceretime/pull/117) está abierta en Draft. La integración queda pendiente; el estado de CI está enlazado en la PR.             |
+
+El entorno fue `Medium_Phone` (imagen `sdk_gphone16k_x86_64`), Android 17/API 37, Expo SDK 57 y `com.google.android.tts`. La lista nativa incluyó voces `es-ES` y `es-US`; no incluyó `es-CL`. Los identificadores locales `es-es-x-eef-local` y `es-es-x-eee-local` aparecieron en consultas distintas, por lo que la prueba verifica preferencia de idioma, no un identificador fijo.
+
+La captura de audio se hizo desde el monitor del altavoz del host mientras la app pronunciaba el texto ficticio. El PCM tuvo 25.94 segundos, `mean_volume=-33.3 dB` y `max_volume=-13.3 dB`; se detectó señal en los intervalos 8.80–12.62 y 13.35–15.97 segundos, coincidentes con la locución iniciada desde el botón. El MP3 es un recorte de 8 segundos para revisión manual.
+
+Las capturas `android-TalkBack.png` y `android-font-scale.png` corresponden a una ruta de diagnóstico temporal, no a una pantalla de producto. El código que la genera está en `native-probe.tsx`; para repetir la prueba, coloca temporalmente ese archivo en `apps/mobile/app/ti4-55-probe.tsx`, instala la build Android desde `apps/mobile/android` con `./gradlew :app:installDebug`, abre `ceretime://ti4-55-probe` y elimina la ruta al terminar.
+
 ## Plan de ejecución
 
-1. Contrastar documentación oficial de Expo 57 y del proveedor con las versiones instaladas; registrar la elección y sus requisitos nativos.
-2. Añadir el puerto mínimo, el adaptador y su composición. Incorporar controles de prueba solo si son necesarios para verificar la capacidad.
-3. Probar lectura, finalización, error, interrupción y limpieza con simulaciones controladas. Si hay invocaciones consecutivas, comprobar que no queda audio pendiente ni un estado incoherente.
-4. Ejecutar la matriz en Android con TalkBack desactivado y activado y con texto ampliado. Registrar por separado lo observado y lo simulado.
-5. Completar evidencia y decisión, verificar el diff y los controles de calidad, y entregar la PR para su integración.
+1. Contrastar documentación oficial de Expo 57 y del proveedor con las versiones instaladas; elección y requisitos nativos registrados.
+2. Añadir el puerto mínimo, el adaptador y su composición; el control visual queda reutilizable y mantiene el texto visible.
+3. Probar lectura, finalización, error, interrupción y limpieza con simulaciones controladas; las lecturas consecutivas no dejan una cola antigua.
+4. Ejecutar la matriz en Android con TalkBack desactivado y activado y con texto ampliado; resultados observados y simulados separados.
+5. Completar evidencia, verificar el diff y los controles de calidad, y entregar la PR #117 en Draft para revisión.
 
 ## Validaciones de la implementación
 
@@ -84,21 +105,18 @@ bunx --package cspell --package @cspell/dict-es-es cspell lint --no-progress <ar
 
 Sustituir los marcadores por rutas existentes al implementar. Si falla el formato, ejecutar `bun run format` y repetir lint y formato. Ejecutar la revisión ortográfica sobre los archivos de texto editados. No se requiere una compilación Web o modificación de Backend para esta tarea.
 
-La validación de voz exige Android nativo, nunca Expo Web como sustituto. Usar el entorno activo si existe. Según `apps/mobile/AGENTS.md`, iniciar o reiniciar Expo, Metro o un servidor requiere una solicitud explícita del usuario; si falta el entorno, registrar el impedimento y solicitarla antes de iniciarlo. Este documento no acredita pruebas Android ni autoriza a iniciarlo.
+La validación de voz exige Android nativo, nunca Expo Web como sustituto. El 15 de octubre de 2026 se ejecutó con el emulador Medium_Phone y Metro de esta rama, tras recibir autorización explícita para probarla. El primer arranque detectó un cliente Android instalado antes de añadir ExpoSpeech; `./gradlew :app:installDebug` instaló la build actual y permitió completar el recorrido.
 
-## Registro de evidencia pendiente
+## Validaciones realizadas
 
-- Pruebas focalizadas: `bun run --cwd apps/mobile test --runTestsByPath __tests__/speech.test.tsx`, 9 pruebas aprobadas.
-- Suite Mobile: `bun run --cwd apps/mobile test`, 17 suites y 163 pruebas aprobadas.
-- Tipos: `bun run --cwd apps/mobile typecheck`, aprobado.
-- Lint, formato y ortografía del diff: aprobados localmente.
-- `./gradlew :app:assembleDebug` desde `apps/mobile/android`: aprobado; compilación local del APK Android.
-- Dispositivo/emulador, versión de Android, versión de TalkBack, motor y voz española: pendiente de prueba nativa.
-- Commit probado en Android, identificador de compilación, fecha y verificación audible: pendiente.
-- Por escenario nativo: precondiciones, texto ficticio, pasos, resultado observado y artefacto: pendiente.
-- Decisión de viabilidad confirmada en dispositivo y limitaciones para TI4-60: pendiente.
-- PR, integración y CI: pendiente; esta entrega se abrirá como Draft.
+- Pruebas focalizadas actuales: `bun run --cwd apps/mobile test --runTestsByPath __tests__/speech.test.tsx`, 11 pruebas aprobadas, incluida la carrera entre la consulta asíncrona y el evento de TalkBack.
+- Build Android nativa: `./gradlew :app:installDebug` desde `apps/mobile/android`, BUILD SUCCESSFUL; APK instalado en Medium_Phone.
+- Suite Mobile completa: 17 suites y 165 pruebas aprobadas; quedan warnings `act(...)` preexistentes en `professional-accompaniments.test.tsx`.
+- Typecheck, `bun run lint` y `bun run format:check`: aprobados.
+- Ortografía de la evidencia: `bunx cspell lint --no-progress .../README.md .../native-probe.tsx`, sin hallazgos.
+- Evidencia: `android-tts.mp3`, `android-TalkBack.png` y `android-font-scale.png`; el código de probe se conserva en `native-probe.tsx` y no queda registrado como ruta de producto.
+- Compatibilidad probada para Android 17/API 37; no se afirma compatibilidad de runtime con otras versiones Android que no se ejecutaron.
+- Fallo real del motor TTS en Android no inducido; la falta de voz, excepción y texto fuera del límite se cubren solo con mocks.
+- [PR #117](https://github.com/FernandoValdes01/ceretime/pull/117) sigue en Draft y no está integrada; el estado de los checks del commit publicado queda visible en esa página.
 
-La validación audible aún no se ejecutó porque el puerto Metro `8081` del emulador está conectado a otro worktree. El atajo `ceretime-mobile` reutiliza ese puerto, por lo que conectarlo aquí probaría el código de ese checkout. Para completar los escenarios Android hace falta un entorno aislado o liberar `8081` sin interrumpir la otra sesión.
-
-La tarea no está terminada mientras falte evidencia de idioma, interrupción, TalkBack o fallo. Un entorno sin ejecutar se registra como bloqueo de validación, no como resultado negativo del proveedor.
+La prueba confirma viabilidad para síntesis explícita en el emulador y deja las limitaciones anteriores acotadas. No equivale a certificación WCAG ni a validación en dispositivos físicos o versiones Android no probadas.
