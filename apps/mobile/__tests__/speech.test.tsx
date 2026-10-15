@@ -162,6 +162,21 @@ describe("SpeechControls", () => {
     expect(speechPort.stop).toHaveBeenCalled();
   });
 
+  it("does not let a stale screen reader query override a newer TalkBack event", async () => {
+    let resolveInitialQuery: ((enabled: boolean) => void) | undefined;
+    jest
+      .spyOn(AccessibilityInfo, "isScreenReaderEnabled")
+      .mockReturnValue(new Promise((resolve) => (resolveInitialQuery = resolve)));
+    const speechPort = { speak: jest.fn(), stop: jest.fn().mockResolvedValue(undefined) };
+    const view = render(<SpeechControls speechPort={speechPort} text={testText} />);
+
+    act(() => screenReaderChanged?.(true));
+    await act(async () => resolveInitialQuery?.(false));
+
+    expect(view.getByRole("button", { name: "Leer en voz alta" })).toBeDisabled();
+    expect(speechPort.stop).toHaveBeenCalled();
+  });
+
   it("stops playback when the controls leave the focused route", async () => {
     const speechPort = { speak: jest.fn(), stop: jest.fn().mockResolvedValue(undefined) };
     const view = render(<SpeechControls speechPort={speechPort} text={testText} />);

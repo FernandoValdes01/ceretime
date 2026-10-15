@@ -16,12 +16,15 @@ export function SpeechControls({
   const [status, setStatus] = useState<"idle" | "speaking" | "failed">("idle");
   const mounted = useRef(false);
   const request = useRef(0);
+  const screenReaderEventVersion = useRef(0);
 
   const stopSpeech = useCallback(() => speechPort.stop(), [speechPort]);
 
   useEffect(() => {
     mounted.current = true;
+    const queryVersion = screenReaderEventVersion.current;
     const subscription = AccessibilityInfo.addEventListener("screenReaderChanged", (enabled) => {
+      screenReaderEventVersion.current += 1;
       setReaderEnabled(enabled);
       if (enabled) {
         request.current += 1;
@@ -33,10 +36,12 @@ export function SpeechControls({
     });
     void AccessibilityInfo.isScreenReaderEnabled()
       .then((enabled) => {
-        if (mounted.current) setReaderEnabled(enabled);
+        if (mounted.current && screenReaderEventVersion.current === queryVersion)
+          setReaderEnabled(enabled);
       })
       .catch(() => {
-        if (mounted.current) setReaderEnabled(true);
+        if (mounted.current && screenReaderEventVersion.current === queryVersion)
+          setReaderEnabled(true);
       });
 
     return () => {
@@ -90,11 +95,8 @@ export function SpeechControls({
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={handlePress}
-        style={({ pressed }) => [
-          styles.button,
-          pressed && styles.pressed,
-          disabled && styles.disabled,
-        ]}
+        android_ripple={{ color: "#17483F" }}
+        style={[styles.button, disabled && styles.disabled]}
       >
         <Text style={styles.buttonLabel}>{status === "speaking" ? "Detener lectura" : label}</Text>
       </Pressable>
@@ -123,7 +125,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "#246259",
   },
-  pressed: { backgroundColor: "#17483F" },
   disabled: { opacity: 0.55 },
   buttonLabel: { color: "#FFFFFF", fontSize: 17, fontWeight: "600", textAlign: "center" },
   message: { color: "#42565B", fontSize: 16, lineHeight: 24 },
