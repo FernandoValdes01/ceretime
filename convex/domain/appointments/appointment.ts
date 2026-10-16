@@ -606,3 +606,79 @@ export interface AppointmentPage {
   readonly nextCursor: string | null;
   readonly version: AppointmentContractVersion;
 }
+
+/** Vistas de lectura de la atención: completa o minimizada según el rol (TI2-100). */
+export const APPOINTMENT_VIEW_VALUES = ["full", "minimized"] as const;
+
+export type AppointmentView = (typeof APPOINTMENT_VIEW_VALUES)[number];
+
+/**
+ * Atención minimizada: oculta vínculos e historial interno.
+ *
+ * Omite `accompanimentId`, `professionalId`, `spaceId`, `slotId`,
+ * `originalStartAt` y `cancelReason`: componer calendario, exportar o avisar
+ * fuera de sesión no requiere esos datos y la autorización de cada vista
+ * vive en Aplicación, no acá.
+ */
+export interface MinimizedAppointment {
+  readonly id: string;
+  readonly status: AppointmentStatus;
+  readonly startAt: number;
+  readonly endAt: number;
+  readonly modality: ModalityPreference;
+  readonly view: "minimized";
+}
+
+/** Proyección de lectura de la atención según la vista autorizada. */
+export type AppointmentProjection =
+  | (Appointment & { readonly view: "full" })
+  | MinimizedAppointment;
+
+/**
+ * Adaptador explícito de atención a vista de lectura. La vista ya viene
+ * decidida por la capa de autorización; acá solo se recorta la forma.
+ * La vista minimizada nunca expone vínculos, fechas originales ni motivos,
+ * aunque la entidad los traiga.
+ */
+export function toAppointmentProjection(
+  appointment: Appointment,
+  view: AppointmentView,
+): AppointmentProjection {
+  if (view === "minimized") {
+    return {
+      id: appointment.id,
+      status: appointment.status,
+      startAt: appointment.startAt,
+      endAt: appointment.endAt,
+      modality: appointment.modality,
+      view: "minimized",
+    };
+  }
+  return { ...appointment, view: "full" };
+}
+
+/** Revisión de la justificación de inasistencia (TI2-100). */
+export const JUSTIFICATION_REVIEW_VALUES = ["pending", "accepted", "rejected"] as const;
+
+export type JustificationReview = (typeof JUSTIFICATION_REVIEW_VALUES)[number];
+
+/** Verdadero cuando el valor es una revisión de justificación conocida. */
+export function isJustificationReview(value: string): value is JustificationReview {
+  return (JUSTIFICATION_REVIEW_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * Constancia de justificación de inasistencia: recepción y revisión (TI2-100).
+ *
+ * Registra que la explicación se entregó y cómo se resolvió, más la sola
+ * constancia de que un respaldo se recibió por un canal institucional
+ * autorizado (`supportingDocumentReceived`). No trae certificado, diagnóstico
+ * ni nota interna: esos contenidos nunca viven en este contrato.
+ */
+export interface JustificationReceipt {
+  readonly appointmentId: string;
+  readonly submittedAt: number;
+  readonly supportingDocumentReceived: boolean;
+  readonly review: JustificationReview;
+  readonly version: AppointmentContractVersion;
+}

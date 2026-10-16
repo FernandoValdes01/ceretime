@@ -150,27 +150,50 @@ export {
   APPOINTMENT_REJECTION_CAUSES,
   APPOINTMENT_STATUS_VALUES,
   APPOINTMENT_TRANSITIONS,
+  APPOINTMENT_VIEW_VALUES,
   findAppointmentTransition,
   INITIAL_APPOINTMENT_STATUS,
+  isJustificationReview,
   JUSTIFICATION_BUSINESS_DAYS,
+  JUSTIFICATION_REVIEW_VALUES,
   NO_SHOW_PENDING_STATE,
   calculateJustificationDeadline,
   decideJustificationTimeliness,
+  toAppointmentProjection,
   transitionAppointment,
 } from "./appointments/appointment";
 export type {
   Appointment,
   AppointmentContractVersion,
   AppointmentPage,
+  AppointmentProjection,
   AppointmentRejectionCause,
   AppointmentStateChange,
   AppointmentStateTransition,
   AppointmentStatus,
   AppointmentTransitionAttempt,
   AppointmentTransitionResult,
+  AppointmentView,
   CalculateJustificationDeadlineInput,
   DecideJustificationTimelinessInput,
   JustificationDeadline,
+  JustificationReceipt,
+  JustificationReview,
   JustificationTimeliness,
   ListAppointmentsInput,
+  MinimizedAppointment,
 } from "./appointments/appointment";
+
+// Evento de notificación: forma mínima para consumidores (TI2-100).
+export {
+  NOTIFICATION_CONTRACT_VERSION,
+  NOTIFICATION_EVENT_KIND_VALUES,
+  isNotificationEventKind,
+  toExternalNotification,
+} from "./notifications/notification";
+export type {
+  ExternalNotification,
+  NotificationContractVersion,
+  NotificationEvent,
+  NotificationEventKind,
+} from "./notifications/notification";
