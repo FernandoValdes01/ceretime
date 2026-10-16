@@ -22,6 +22,7 @@ import {
   StudentLayoutRouteComponent,
   StudentRequestDetailRouteComponent,
   StudentRequestsRouteComponent,
+  StudentReservationRouteComponent,
   StudentScheduleRouteComponent,
 } from "./route-components.tsx";
 
@@ -91,6 +92,15 @@ const studentScheduleRoute = createRoute({
   component: StudentScheduleRouteComponent,
 });
 
+const studentReservationRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "/reservar",
+  validateSearch: (search: Record<string, unknown>): { slotId?: string } => ({
+    slotId: typeof search.slotId === "string" ? search.slotId : undefined,
+  }),
+  component: StudentReservationRouteComponent,
+});
+
 const studentRequestsRoute = createRoute({
   getParentRoute: () => studentLayoutRoute,
   path: "solicitudes",
@@ -158,6 +168,7 @@ const routeTree = rootRoute.addChildren([
   studentLayoutRoute.addChildren([
     studentIndexRoute,
     studentScheduleRoute,
+    studentReservationRoute,
     studentRequestsRoute,
     studentRequestDetailRoute,
   ]),
