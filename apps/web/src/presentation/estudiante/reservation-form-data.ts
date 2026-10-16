@@ -54,6 +54,9 @@ export function useReservationSlot(slotId: string | undefined): {
 
   function retry() {
     setFailed(false);
+    // Vuelve a carga: sin esto la lista vacía del fallo anterior se leería
+    // como cupo ausente mientras la nueva búsqueda está pendiente.
+    setSlots(undefined);
     setAttempt((count) => count + 1);
   }
 

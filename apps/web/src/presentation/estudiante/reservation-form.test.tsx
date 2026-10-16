@@ -346,6 +346,31 @@ describe("formulario de reserva (TI2-102)", () => {
     ).toBeDefined();
   });
 
+  test("reintento pendiente muestra carga y no cupo ausente", async () => {
+    comoEstudiante();
+    searchSlotsMock.mockRejectedValueOnce(new Error("caída de red"));
+    let resolveRetry!: (value: unknown) => void;
+    searchSlotsMock.mockImplementationOnce(
+      () => new Promise((resolve) => (resolveRetry = resolve as (value: unknown) => void)),
+    );
+    searchSlotsMock.mockResolvedValue({ status: "ok", slots: [cupoFicticio()] });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    expect(await screen.findByText("No pudimos cargar el cupo. Inténtalo de nuevo.")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+
+    expect(await screen.findByText("Cargando el cupo…")).toBeDefined();
+    expect(screen.queryByText("Cupo no disponible.")).toBeNull();
+
+    await act(async () => {
+      resolveRetry({ status: "ok", slots: [cupoFicticio()] });
+    });
+    expect(
+      await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }),
+    ).toBeDefined();
+  });
+
   test("respuesta de error de lectura muestra error con reintento", async () => {
     comoEstudiante();
     searchSlotsMock.mockResolvedValueOnce({ status: "error", message: "Fallo interno." });
