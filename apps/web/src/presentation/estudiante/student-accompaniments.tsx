@@ -1,15 +1,23 @@
 import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
+import { ConvexError } from "convex/values";
+// Fuente canónica del contrato de errores (TI2-23, TI2-88): el Backend
+// responde toda denegación con este mensaje genérico, sin motivo ni
+// existencia del recurso. Se importa del barrel, no se duplica el literal.
+import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
 import { accompanimentStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import { useOwnAccompanimentDetail } from "./student-accompaniments-data.ts";
+import type { OwnAccompanimentDetail } from "./student-accompaniments-data.ts";
 
 /**
  * Detalle del acompañamiento propio del Estudiante (TI2-90).
  *
  * Lee solo la query pública ya existente `getAccompaniment`, que el Backend
  * deniega sin filtrar existencia cuando el acompañamiento es ajeno o no
- * existe. Muestra el estado con texto (nunca solo con color), el objetivo y
+ * existe. La denegación muestra un estado permanente sin reintento; los
+ * errores recuperables se lanzan al límite, que ofrece reintento acotado.
+ * Muestra el estado con texto (nunca solo con color), el objetivo y
  * las necesidades de acceso propias cuando el contrato las entrega; la vista
  * minimizada no las trae y la fila se omite sin inventar contenido. Un
  * acompañamiento cerrado conserva su vista en solo lectura. No hay UI, texto
@@ -49,8 +57,39 @@ export function StudentAccompanimentDetailPage({ accompanimentId }: { accompanim
   );
 }
 
+/**
+ * La denegación del Backend es el mensaje genérico documentado: no revela
+ * si el acompañamiento existe ni de quién es. También cubre la sesión
+ * expirada, que se recupera desde el acceso (el layout enlaza la sesión).
+ *
+ * El valor canónico viaja en `error.data`: el SDK del cliente decora
+ * `error.message` con su contexto (query y request ID), así que comparar el
+ * mensaje falla contra el Backend real.
+ */
+function isAuthorizationDenial(error: unknown): boolean {
+  return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
+}
+
 function OwnAccompanimentDetailBody({ accompanimentId }: { accompanimentId: string }) {
-  const accompaniment = useOwnAccompanimentDetail(accompanimentId);
+  let accompaniment: OwnAccompanimentDetail | undefined;
+  try {
+    // El hook se invoca primero y en todos los renders: el orden es estable
+    // y el try solo clasifica el error ya lanzado, no condiciona la llamada.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    accompaniment = useOwnAccompanimentDetail(accompanimentId);
+  } catch (error) {
+    if (isAuthorizationDenial(error)) {
+      return (
+        <div className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
+          <p role="alert" className="mb-2 font-semibold text-on-surface">
+            No tienes acceso a este acompañamiento.
+          </p>
+          <p>Si crees que deberías verlo, consulta los canales oficiales de CERETI.</p>
+        </div>
+      );
+    }
+    throw error;
+  }
 
   if (accompaniment === undefined) {
     return (
