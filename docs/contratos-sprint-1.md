@@ -120,7 +120,9 @@ Contratos públicos compartidos v1 para Sprint 2, sin otra API ni tipos locales 
 | --------------------------------------------------------------- | ------- | -------------------------------------------- |
 | Disponibilidad (bloques, excepciones, rango y paginación)       | `v1`    | `convex/domain/availability/availability.ts` |
 | Espacios (campus, edificio, piso, sala, acceso e instrucciones) | `v1`    | `convex/domain/spaces/space.ts`              |
-| Atención reservada (una sola entidad, seis estados)             | `v1`    | `convex/domain/appointments/appointment.ts`  |
+| Atención reservada (una sola entidad, ocho estados)             | `v1`    | `convex/domain/appointments/appointment.ts`  |
+| Proyección de atención por rol y constancia de justificación    | `v1`    | `convex/domain/appointments/appointment.ts`  |
+| Evento de notificación (forma mínima y variante externa)        | `v1`    | `convex/domain/notifications/notification.ts` |
 
 Contrato propuesto frente a endpoint disponible: estos DTO llevan identificadores genéricos (`string` plano) y campo `version`; las entradas nuevas se entregarán bajo `api.presentation.availability`/`appointments`/`spaces` en las tareas de endpoints (TI2-97/TI2-98/TI2-99/TI2-111), fuera de esta tarea, que no crea endpoints, casos de uso, repositorios, esquema ni adaptadores de calendario. Los clientes siguen compilando sin cambios: Web y Mobile aún no consumen estos DTO y Mobile conserva sus mocks tipados durante Sprint 2; todo dato es ficticio y la autorización contextual queda en Aplicación con la DB y los servicios externos en Infraestructura. Comprobación: espejo manual de los modelos provisionales de Mobile en `convex/domain/availability/availability.test.ts`, ida y vuelta JSON de cada DTO ficticio y regresión de `test:convex`, `test:web`, `build` Web y `typecheck`/`test` Mobile.
 

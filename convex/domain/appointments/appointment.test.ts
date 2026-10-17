@@ -2,22 +2,30 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import {
   APPOINTMENT_CONTRACT_VERSION,
   APPOINTMENT_STATUS_VALUES,
+  APPOINTMENT_VIEW_VALUES,
   INITIAL_APPOINTMENT_STATUS,
   JUSTIFICATION_BUSINESS_DAYS,
+  JUSTIFICATION_REVIEW_VALUES,
   NO_SHOW_PENDING_STATE,
   calculateJustificationDeadline,
   decideJustificationTimeliness,
+  isJustificationReview,
+  toAppointmentProjection,
   transitionAppointment,
   type Appointment,
   type AppointmentPage,
+  type AppointmentProjection,
+  type JustificationReceipt,
 } from "./appointment";
 import {
   APPOINTMENT_CONTRACT_VERSION as BARREL_VERSION,
   JUSTIFICATION_BUSINESS_DAYS as BARREL_BUSINESS_DAYS,
   calculateJustificationDeadline as barrelDeadline,
   decideJustificationTimeliness as barrelTimeliness,
+  toAppointmentProjection as barrelProjection,
   transitionAppointment as barrelTransition,
   type Appointment as BarrelAppointment,
+  type AppointmentProjection as BarrelProjection,
 } from "../index";
 
 describe("Contratos públicos de la atención reservada (TI2-87, TI2-93)", () => {
@@ -699,5 +707,82 @@ describe("Plazo de cinco días hábiles de justificación (TI2-94)", () => {
         timeZone: TIME_ZONE,
       }),
     ).toThrow("entrega");
+  });
+});
+
+describe("Proyección y constancia de la atención (TI2-100)", () => {
+  const appointment: Appointment = {
+    id: "atencion-ficticia-1",
+    accompanimentId: "acompanamiento-ficticio-1",
+    professionalId: "profesional-ficticio-1",
+    modality: "inPerson",
+    spaceId: "espacio-ficticio-c204",
+    slotId: "cupo-ficticio-1",
+    startAt: 1000,
+    endAt: 2000,
+    originalStartAt: 500,
+    status: "completed",
+    version: "v1",
+  };
+
+  test("las vistas son completa y minimizada", () => {
+    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "minimized"]);
+  });
+
+  test("la vista completa conserva la entidad y marca la vista", () => {
+    const projected = toAppointmentProjection(appointment, "full");
+
+    expect(projected).toEqual({ ...appointment, view: "full" });
+    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{ readonly view: "full" | "minimized" }>();
+  });
+
+  test("la vista minimizada omite vínculos, fechas originales y motivos", () => {
+    const projected = toAppointmentProjection(appointment, "minimized");
+
+    expect(projected).toEqual({
+      id: "atencion-ficticia-1",
+      status: "completed",
+      startAt: 1000,
+      endAt: 2000,
+      modality: "inPerson",
+      view: "minimized",
+    });
+    expect(projected).not.toHaveProperty("accompanimentId");
+    expect(projected).not.toHaveProperty("professionalId");
+    expect(projected).not.toHaveProperty("spaceId");
+    expect(projected).not.toHaveProperty("slotId");
+    expect(projected).not.toHaveProperty("originalStartAt");
+    expect(projected).not.toHaveProperty("cancelReason");
+    expect(JSON.parse(JSON.stringify(projected))).toEqual(projected);
+  });
+
+  test("la constancia registra recepción y revisión sin contenidos sensibles", () => {
+    const receipt: JustificationReceipt = {
+      appointmentId: "atencion-ficticia-1",
+      submittedAt: 3000,
+      supportingDocumentReceived: true,
+      review: "pending",
+      version: "v1",
+    };
+
+    expect([...JUSTIFICATION_REVIEW_VALUES]).toEqual(["pending", "accepted", "rejected"]);
+    expect(isJustificationReview("accepted")).toBe(true);
+    expect(isJustificationReview("archived")).toBe(false);
+    expect(Object.keys(receipt).sort()).toEqual([
+      "appointmentId",
+      "review",
+      "submittedAt",
+      "supportingDocumentReceived",
+      "version",
+    ]);
+    expect(receipt).not.toHaveProperty("certificate");
+    expect(receipt).not.toHaveProperty("diagnosis");
+    expect(receipt).not.toHaveProperty("internalNote");
+    expect(JSON.parse(JSON.stringify(receipt))).toEqual(receipt);
+  });
+
+  test("la proyección sale por el barrel sin duplicar la fuente", () => {
+    expect(barrelProjection).toBe(toAppointmentProjection);
+    expectTypeOf<BarrelProjection>().toEqualTypeOf<AppointmentProjection>();
   });
 });
