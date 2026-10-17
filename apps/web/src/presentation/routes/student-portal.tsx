@@ -404,10 +404,16 @@ function StudentAccompanimentsBody() {
       <ul className="student-portal__list">
         {accompaniments.page.map((accompaniment) => (
           <li key={accompaniment._id} className="student-portal__item">
-            <span className="student-portal__chip">
-              {accompanimentStatusLabel(accompaniment.status)}
-            </span>
-            <span className="student-portal__item-meta">{accompaniment.objective}</span>
+            <Link
+              to="/estudiante/acompanamientos/$accompanimentId"
+              params={{ accompanimentId: accompaniment._id }}
+              className="student-portal__item-link"
+            >
+              <span className="student-portal__chip">
+                {accompanimentStatusLabel(accompaniment.status)}
+              </span>
+              <span className="student-portal__item-meta">{accompaniment.objective}</span>
+            </Link>
           </li>
         ))}
       </ul>
