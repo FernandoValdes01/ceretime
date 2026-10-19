@@ -68,8 +68,8 @@ const EXTERNAL_NOTIFICATION_TEXTS: Record<NotificationEventKind, ExternalNotific
     body: "Revisa la información en la aplicación.",
   },
   appointment_no_show: {
-    title: "Se registró una inasistencia",
-    body: "Revisa cómo justificarla en la aplicación.",
+    title: "Tienes una actualización pendiente",
+    body: "Revisa las novedades en la aplicación.",
   },
   appointment_reminder: {
     title: "Tienes una atención programada",

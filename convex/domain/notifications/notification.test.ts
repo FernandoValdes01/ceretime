@@ -61,8 +61,8 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
         body: "Revisa la información en la aplicación.",
       },
       appointment_no_show: {
-        title: "Se registró una inasistencia",
-        body: "Revisa cómo justificarla en la aplicación.",
+        title: "Tienes una actualización pendiente",
+        body: "Revisa las novedades en la aplicación.",
       },
       appointment_reminder: {
         title: "Tienes una atención programada",
@@ -73,7 +73,17 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
       const external = toExternalNotification(event(kind));
       expect(external).toEqual(texts[kind]);
       expect(`${external.title} ${external.body}`).not.toContain("atencion-ficticia-1");
+      expect(`${external.title} ${external.body}`).not.toContain("inasistencia");
+      expect(`${external.title} ${external.body}`).not.toContain("justific");
     }
+  });
+
+  test("la inasistencia no se revela fuera de sesión", () => {
+    const external = toExternalNotification(event("appointment_no_show"));
+    expect(external.title).toBe("Tienes una actualización pendiente");
+    expect(external.body).toBe("Revisa las novedades en la aplicación.");
+    expect(`${external.title} ${external.body}`).not.toContain("inasistencia");
+    expect(`${external.title} ${external.body}`).not.toContain("justific");
   });
 
   test("una clase desconocida es error, no texto libre", () => {
