@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
+import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
@@ -145,14 +146,20 @@ describe("detalle del acompañamiento propio (TI2-90)", () => {
     expect(screen.getByText(/historial básico/i)).toBeDefined();
   });
 
-  test("el acompañamiento ajeno se deniega sin revelar su contenido", async () => {
-    detailThrows = new Error("No autorizado");
+  test("el acompañamiento ajeno muestra denegación permanente sin reintento ni contenido", async () => {
+    // El SDK decora el mensaje con su contexto; el valor canónico viaja en `data`.
+    const denial = new ConvexError("No autorizado");
+    denial.message =
+      "[CONVEX Q(presentation/accompaniments:getAccompaniment)] [Request ID: abc123] Server Error: No autorizado";
+    detailThrows = denial;
     renderAt("/estudiante/acompanamientos/acc-ajeno");
 
-    expect(await screen.findByRole("alert")).toBeDefined();
-    expect(screen.getByText(/no pudimos cargar el detalle/i)).toBeDefined();
+    expect(await screen.findByText("No tienes acceso a este acompañamiento.")).toBeDefined();
+    expect(screen.getByRole("alert").textContent).toMatch(/no tienes acceso/i);
     expect(screen.queryByText(/objetivo ficticio/i)).toBeNull();
     expect(screen.queryByText(/apoyo ficticio/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Volver al inicio" })).toBeDefined();
   });
 
   test("el acompañamiento cerrado conserva su vista en solo lectura", async () => {
