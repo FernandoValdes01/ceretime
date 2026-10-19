@@ -18,6 +18,7 @@ import {
   ProfessionalRequestDetailRouteComponent,
   ProfessionalRequestsRouteComponent,
   RootComponent,
+  StudentAccompanimentDetailRouteComponent,
   StudentIndexRouteComponent,
   StudentLayoutRouteComponent,
   StudentRequestDetailRouteComponent,
@@ -25,7 +26,7 @@ import {
 } from "./route-components.tsx";
 
 /**
- * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-91, Sprint 1 y 2).
+ * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, Sprint 1 y 2).
  *
  * - `/` índice: acceso sin sesión (preserva callback OAuth de TI2-3),
  *   portal según sesión y rol, denegado sin portal conocido.
@@ -36,6 +37,10 @@ import {
  * - `/estudiante/solicitudes`: listado propio paginado del Estudiante
  *   (TI2-89); `/estudiante/solicitudes/$requestId`: detalle propio solo del
  *   titular, denegado por el Backend en otro caso.
+ * - `/estudiante/acompanamientos/$accompanimentId`: detalle del
+ *   acompañamiento propio solo del titular (TI2-90), denegado por el Backend
+ *   en otro caso; los cerrados se muestran en solo lectura, sin notas
+ *   internas.
  * - `/profesional`, `/practicante` y `/administrador`: layouts protegidos
  *   por rol con portada temporal; sin sesión van al acceso, con otro rol
  *   van a denegado. El portal de Administración no enlaza acompañamientos
@@ -96,6 +101,12 @@ const studentRequestDetailRoute = createRoute({
   component: StudentRequestDetailRouteComponent,
 });
 
+const studentAccompanimentDetailRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "acompanamientos/$accompanimentId",
+  component: StudentAccompanimentDetailRouteComponent,
+});
+
 const professionalLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/profesional",
@@ -152,6 +163,7 @@ const routeTree = rootRoute.addChildren([
     studentIndexRoute,
     studentRequestsRoute,
     studentRequestDetailRoute,
+    studentAccompanimentDetailRoute,
   ]),
   professionalLayoutRoute.addChildren([
     professionalIndexRoute,
