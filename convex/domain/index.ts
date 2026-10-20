@@ -204,3 +204,31 @@ export type {
   NotificationEventKind,
   NotificationReference,
 } from "./notifications/notification";
+
+// Registro de seguimiento: acuerdos, tareas y proyección compartida (TI2-106).
+export {
+  FOLLOW_UP_CONTRACT_VERSION,
+  FOLLOW_UP_ENTRIES_MAX,
+  FOLLOW_UP_REJECTION_CAUSES,
+  FOLLOW_UP_RESPONSIBLE_VALUES,
+  FOLLOW_UP_TASK_STATUS_VALUES,
+  FOLLOW_UP_TEXT_MAX_LENGTH,
+  isFollowUpResponsible,
+  isFollowUpTaskStatus,
+  toSharedFollowUpProjection,
+  validateFollowUpRecord,
+} from "./follow_up/follow_up";
+export type {
+  FollowUpAgreement,
+  FollowUpAgreementInput,
+  FollowUpContractVersion,
+  FollowUpRecord,
+  FollowUpRecordInput,
+  FollowUpRejectionCause,
+  FollowUpResponsible,
+  FollowUpTask,
+  FollowUpTaskInput,
+  FollowUpTaskStatus,
+  FollowUpValidationResult,
+  SharedFollowUpProjection,
+} from "./follow_up/follow_up";
