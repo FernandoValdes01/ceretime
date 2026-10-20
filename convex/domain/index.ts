@@ -187,20 +187,21 @@ export type {
 // Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105).
 export {
   NOTIFICATION_CONTRACT_VERSION,
-  NOTIFICATION_EMITTING_KIND_BY_STATUS,
   NOTIFICATION_EVENT_KIND_VALUES,
   isNotificationEventKind,
-  notificationEventForCreation,
-  notificationEventForTransition,
+  notificationEventsForCreation,
+  notificationEventsForTransition,
   notificationIdempotencyKey,
   toExternalNotification,
   toNotificationEvent,
 } from "./notifications/notification";
 export type {
   ExternalNotification,
+  NotificationAudience,
   NotificationContractVersion,
   NotificationEvent,
   NotificationEventInput,
   NotificationEventKind,
   NotificationReference,
+  NotificationSubject,
 } from "./notifications/notification";
