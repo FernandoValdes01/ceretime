@@ -33,9 +33,9 @@ export interface OccupySlotInput {
   readonly modality: ModalityPreference;
   /** Referencia opaca al espacio; ausente en modalidad en línea. */
   readonly spaceId?: string;
-  /** Inicio del cupo como milisegundos epoch (vocabulario TI2-87). */
+  /** Inicio del cupo como milésimas de segundo epoch (vocabulario TI2-87). */
   readonly startAt: number;
-  /** Fin del cupo como milisegundos epoch (vocabulario TI2-87). */
+  /** Fin del cupo como milésimas de segundo epoch (vocabulario TI2-87). */
   readonly endAt: number;
   /**
    * Atención que se cambia de horario o de recursos (TI2-96). Tiene que seguir
@@ -55,3 +55,15 @@ export interface OccupySlotSuccess {
 
 /** Resultado estable de la ocupación según TI2-88. */
 export type OccupySlotResult = ApiResult<OccupySlotSuccess>;
+
+/**
+ * Puerto de escritura atómica que consume el caso de uso de reserva (TI2-98).
+ *
+ * Infraestructura lo cumple con un adaptador sobre `occupySlotAtomically`: el
+ * caso de uso no importa Convex y las pruebas pasan un doble en memoria. Cada
+ * llamada lee la ocupación y escribe la atención en la misma transacción; el
+ * rechazo por contienda es `conflict` y ocurre antes de cualquier escritura.
+ */
+export interface AppointmentOccupier {
+  occupySlot(input: OccupySlotInput): Promise<OccupySlotResult>;
+}
