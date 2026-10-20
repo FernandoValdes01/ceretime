@@ -21,6 +21,7 @@ import {
 } from "./staff-portals.tsx";
 import { RequireStaffRole } from "./staff-guard.tsx";
 import { StudentHome, StudentLayout } from "./student-portal.tsx";
+import { ScheduleSearchPage } from "../estudiante/schedule-search.tsx";
 
 /**
  * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91): puentes delgados entre las
@@ -59,6 +60,10 @@ export function StudentLayoutRouteComponent() {
 
 export function StudentIndexRouteComponent() {
   return <StudentHome />;
+}
+
+export function StudentScheduleRouteComponent() {
+  return <ScheduleSearchPage />;
 }
 
 const studentRequestDetailApi = getRouteApi("/estudiante/solicitudes/$requestId");
