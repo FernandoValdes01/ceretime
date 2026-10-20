@@ -74,7 +74,6 @@ describe("Registro de seguimiento (TI2-106)", () => {
     expect(record).toEqual({
       appointmentId: "atencion-ficticia-1",
       accompanimentId: "acompanamiento-ficticio-1",
-      appointmentStatus: "completed",
       agreements: [{ id: "acuerdo-1", description: "Continuar con el plan acordado." }],
       tasks: [
         {
@@ -93,20 +92,20 @@ describe("Registro de seguimiento (TI2-106)", () => {
       "accompanimentId",
       "agreements",
       "appointmentId",
-      "appointmentStatus",
       "internalNote",
       "nextSteps",
       "suggestedNextAppointmentDate",
       "tasks",
       "version",
     ]);
+    expect("appointmentStatus" in record).toBe(false);
     expect("diagnosis" in record).toBe(false);
     expect("clinicalEvaluation" in record).toBe(false);
   });
 
   test("la proyección compartida no incluye la nota interna", () => {
     const record = recordOf(validInput);
-    const shared = toSharedFollowUpProjection(record);
+    const shared = toSharedFollowUpProjection(record, "completed");
     expect(Object.keys(shared).sort()).toEqual([
       "accompanimentId",
       "agreements",
@@ -123,9 +122,17 @@ describe("Registro de seguimiento (TI2-106)", () => {
     expect(shared.tasks).toEqual(record.tasks);
   });
 
+  test("la proyección muestra el estado vigente de la atención", () => {
+    const record = recordOf({ ...validInput, appointmentStatus: "completed" });
+    expect("appointmentStatus" in record).toBe(false);
+    const shared = toSharedFollowUpProjection(record, "no_show_justified");
+    expect(shared.appointmentStatus).toBe("no_show_justified");
+  });
+
   test("sin fecha sugerida la proyección tampoco inventa la clave", () => {
     const shared = toSharedFollowUpProjection(
       recordOf({ ...validInput, suggestedNextAppointmentDate: undefined }),
+      "completed",
     );
     expect("suggestedNextAppointmentDate" in shared).toBe(false);
   });
@@ -143,11 +150,21 @@ describe("Registro de seguimiento (TI2-106)", () => {
     ]);
   });
 
-  test("el estado de la atención debe ser uno declarado", () => {
+  test("solo se registra seguimiento posterior a una atención", () => {
     expect(causesOf({ ...validInput, appointmentStatus: "diagnosed" })).toEqual([
       "appointment_status_unknown",
     ]);
-    for (const status of ["scheduled", "completed", "no_show_unjustified"]) {
+    for (const status of [
+      "scheduled",
+      "rescheduled",
+      "cancelled_by_student",
+      "cancelled_by_cereti",
+    ]) {
+      expect(causesOf({ ...validInput, appointmentStatus: status })).toEqual([
+        "follow_up_not_admissible",
+      ]);
+    }
+    for (const status of ["completed", "no_show", "no_show_justified", "no_show_unjustified"]) {
       expect(validateFollowUpRecord({ ...validInput, appointmentStatus: status }).status).toBe(
         "valid",
       );
@@ -197,6 +214,12 @@ describe("Registro de seguimiento (TI2-106)", () => {
       validateFollowUpRecord({
         ...validInput,
         nextSteps: "Continuar el seguimiento operativo acordado.",
+      }).status,
+    ).toBe("valid");
+    expect(
+      validateFollowUpRecord({
+        ...validInput,
+        nextSteps: "Recordar que no se necesita certificado ni diagnóstico.",
       }).status,
     ).toBe("valid");
   });
@@ -252,7 +275,14 @@ describe("Registro de seguimiento (TI2-106)", () => {
         appointmentId: "",
         appointmentStatus: "diagnosed",
         nextSteps: " ",
-        tasks: [{ id: "", description: "Diagnóstico", responsible: "tutor", status: "unknown" }],
+        tasks: [
+          {
+            id: "",
+            description: "Diagnóstico: ansiedad",
+            responsible: "tutor",
+            status: "unknown",
+          },
+        ],
       }),
     ).toEqual([
       "appointment_reference_required",

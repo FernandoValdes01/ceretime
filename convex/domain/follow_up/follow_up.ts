@@ -2,10 +2,14 @@
  * Registro de seguimiento: acuerdos, tareas y próximos pasos (TI2-106).
  *
  * Dominio puro: no importa Convex, React ni Expo. Modela el contenido mínimo
- * posterior a una atención sin convertirlo en ficha clínica: estado de la
- * atención, acuerdos, tareas con responsable y estado, próximos pasos y una
- * fecha sugerida. No hay diagnósticos, evaluaciones psicológicas ni historial
- * clínico; la validación rechaza esas etiquetas explícitas.
+ * posterior a una atención sin convertirlo en ficha clínica: acuerdos, tareas
+ * con responsable y estado, próximos pasos y una fecha sugerida. No hay
+ * diagnósticos, evaluaciones psicológicas ni historial clínico; la validación
+ * rechaza esas etiquetas explícitas.
+ *
+ * El estado de la atención no se copia: vive en la atención y la vista lo
+ * combina al leer. La validación recibe el estado vigente solo para decidir
+ * si el seguimiento procede, con una lista explícita de estados posteriores.
  *
  * La nota interna breve no se duplica acá como entidad: `followUpNotes` sigue
  * siendo la única tabla de notas internas. El registro solo la acompaña para
@@ -69,6 +73,8 @@ export interface FollowUpTask {
 /**
  * Registro de seguimiento validado: vista profesional del contenido.
  *
+ * No guarda el estado de la atención: ese dato pertenece a la atención y la
+ * proyección lo recibe al leer, para que las dos copias no puedan divergir.
  * `internalNote` representa la nota breve de `followUpNotes`, no una segunda
  * entidad. Solo la proyección compartida decide qué sale hacia el estudiante;
  * este tipo nunca debe entregarse tal cual a una vista de estudiante.
@@ -76,7 +82,6 @@ export interface FollowUpTask {
 export interface FollowUpRecord {
   readonly appointmentId: string;
   readonly accompanimentId: string;
-  readonly appointmentStatus: AppointmentStatus;
   readonly agreements: readonly FollowUpAgreement[];
   readonly tasks: readonly FollowUpTask[];
   readonly nextSteps: string;
@@ -89,8 +94,10 @@ export interface FollowUpRecord {
 /**
  * Proyección compartida con el estudiante: acuerdos, tareas y próximos pasos.
  *
- * Omite `internalNote` por construcción. La autorización de cada vista vive
- * en Aplicación; acá solo se recorta la forma.
+ * Omite `internalNote` por construcción. `appointmentStatus` es el estado
+ * vigente que la aplicación lee de la atención al proyectar, no una copia
+ * guardada en el seguimiento. La autorización de cada vista vive en
+ * Aplicación; acá solo se recorta la forma.
  */
 export interface SharedFollowUpProjection {
   readonly appointmentId: string;
@@ -117,7 +124,12 @@ export interface FollowUpTaskInput {
   readonly status: string;
 }
 
-/** Entrada del registro: los estados se validan en tiempo de ejecución. */
+/**
+ * Entrada del registro: los estados se validan en tiempo de ejecución.
+ *
+ * `appointmentStatus` es el estado vigente de la atención y solo decide si el
+ * seguimiento procede; no se copia al registro devuelto.
+ */
 export interface FollowUpRecordInput {
   readonly appointmentId: string;
   readonly accompanimentId: string;
@@ -134,6 +146,7 @@ export const FOLLOW_UP_REJECTION_CAUSES = [
   "appointment_reference_required",
   "accompaniment_reference_required",
   "appointment_status_unknown",
+  "follow_up_not_admissible",
   "entry_id_required",
   "duplicate_entry_id",
   "text_required",
@@ -151,6 +164,19 @@ export type FollowUpValidationResult =
   | { readonly status: "valid"; readonly record: FollowUpRecord }
   | { readonly status: "invalid"; readonly causes: readonly FollowUpRejectionCause[] };
 
+/**
+ * Estados posteriores a la atención que admiten registro de seguimiento.
+ *
+ * La atención realizada y sus desenlaces de inasistencia dejan constancia
+ * operativa; una reserva pendiente, un reagendamiento o una cancelación no.
+ */
+const FOLLOW_UP_ADMISSIBLE_STATUSES: ReadonlySet<AppointmentStatus> = new Set([
+  "completed",
+  "no_show",
+  "no_show_justified",
+  "no_show_unjustified",
+]);
+
 /** Minúsculas sin tildes, para comparar etiquetas sin depender de la tilde. */
 function withoutDiacritics(value: string): string {
   return value
@@ -160,14 +186,16 @@ function withoutDiacritics(value: string): string {
 }
 
 /**
- * Etiquetas clínicas explícitas que el registro no admite.
+ * Marcadores que declaran contenido clínico, no simples menciones.
  *
  * Es un resguardo contra diagnósticos, fichas e informes, no un clasificador
  * de contenido: el texto libre sigue siendo responsabilidad de quien escribe.
- * Se guardan normalizadas para compararlas sin depender de la tilde.
+ * Por eso solo se rechaza el diagnóstico cuando aparece como etiqueta con dos
+ * puntos (`Diagnóstico:`), y los documentos clínicos por su nombre. Una frase
+ * que niega la etiqueta, como «no se necesita diagnóstico», sigue siendo
+ * válida. Se comparan sin tildes para no depender de ellas.
  */
-const CLINICAL_CONTENT_MARKERS = [
-  "diagnóstico",
+const CLINICAL_DOCUMENT_MARKERS = [
   "ficha clínica",
   "informe psicológico",
   "evaluación psicológica",
@@ -177,6 +205,9 @@ const CLINICAL_CONTENT_MARKERS = [
   "dsm 5",
 ].map(withoutDiacritics);
 
+/** Etiqueta de diagnóstico con dos puntos: declara contenido, no lo menciona. */
+const CLINICAL_DIAGNOSIS_LABEL = /\bdiagnostico\s*:/;
+
 /** Verdadero cuando el valor es un estado de atención declarado. */
 function isAppointmentStatus(value: string): value is AppointmentStatus {
   return (APPOINTMENT_STATUS_VALUES as readonly string[]).includes(value);
@@ -185,7 +216,8 @@ function isAppointmentStatus(value: string): value is AppointmentStatus {
 /** Verdadero cuando el texto declara una etiqueta clínica explícita. */
 function hasClinicalLabel(value: string): boolean {
   const comparable = withoutDiacritics(value);
-  return CLINICAL_CONTENT_MARKERS.some((marker) => comparable.includes(marker));
+  if (CLINICAL_DIAGNOSIS_LABEL.test(comparable)) return true;
+  return CLINICAL_DOCUMENT_MARKERS.some((marker) => comparable.includes(marker));
 }
 
 /**
@@ -243,7 +275,11 @@ export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpVali
   const accompanimentId = input.accompanimentId.trim();
   if (accompanimentId === "") found.add("accompaniment_reference_required");
 
-  if (!isAppointmentStatus(input.appointmentStatus)) found.add("appointment_status_unknown");
+  if (!isAppointmentStatus(input.appointmentStatus)) {
+    found.add("appointment_status_unknown");
+  } else if (!FOLLOW_UP_ADMISSIBLE_STATUSES.has(input.appointmentStatus)) {
+    found.add("follow_up_not_admissible");
+  }
 
   const agreements = input.agreements.map((agreement) => ({
     id: agreement.id.trim(),
@@ -289,7 +325,6 @@ export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpVali
     record: {
       appointmentId,
       accompanimentId,
-      appointmentStatus: input.appointmentStatus as AppointmentStatus,
       agreements,
       tasks: tasks.map((task) => ({
         ...task,
@@ -308,14 +343,18 @@ export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpVali
  * Proyección compartida con el estudiante.
  *
  * Arma el objeto campo por campo: aunque el registro traiga la nota interna,
- * la salida no puede incluirla ni por accidente. Acuerdos y tareas se copian
- * con su forma mínima.
+ * la salida no puede incluirla ni por accidente. `appointmentStatus` lo aporta
+ * la atención vigente al leer; el seguimiento no guarda una copia. Acuerdos y
+ * tareas se copian con su forma mínima.
  */
-export function toSharedFollowUpProjection(record: FollowUpRecord): SharedFollowUpProjection {
+export function toSharedFollowUpProjection(
+  record: FollowUpRecord,
+  appointmentStatus: AppointmentStatus,
+): SharedFollowUpProjection {
   return {
     appointmentId: record.appointmentId,
     accompanimentId: record.accompanimentId,
-    appointmentStatus: record.appointmentStatus,
+    appointmentStatus,
     agreements: record.agreements.map(({ id, description }) => ({ id, description })),
     tasks: record.tasks.map(({ id, description, responsible, status }) => ({
       id,
