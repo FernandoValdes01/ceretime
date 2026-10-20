@@ -14,13 +14,12 @@ import { useSlotSearch } from "./schedule-search-data.ts";
 type Busqueda = { resolve: (value: SlotSearchResult) => void };
 
 const mocks = vi.hoisted(() => ({
-  searchSlots: (_filter: { modality: string }) =>
-    Promise.resolve({ status: "empty" } as SlotSearchResult),
+  searchSlots: () => Promise.resolve({ status: "empty" } as SlotSearchResult),
 }));
 
 vi.mock("../../infrastructure/agenda/fictitious-agenda-adapter.ts", () => ({
   createFictitiousAgendaAdapter: () => ({
-    searchSlots: (filter: { modality: string }) => mocks.searchSlots(filter),
+    searchSlots: () => mocks.searchSlots(),
   }),
 }));
 
