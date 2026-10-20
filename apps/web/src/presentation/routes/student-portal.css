@@ -267,6 +267,20 @@
   font-weight: 700;
 }
 
+/* El chip también es etiqueta de filtro: como control necesita 44 × 44 px. */
+.student-portal__chip--control {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.875rem;
+  cursor: pointer;
+}
+
+/* Etiqueta de selección de un cupo: área activable completa de 44 px. */
+.student-portal__slot {
+  min-height: 2.75rem;
+  padding: 0.5rem 0;
+}
+
 .student-portal__list {
   list-style: none;
   margin: 1rem 0 0;
