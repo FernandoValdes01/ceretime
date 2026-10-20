@@ -87,7 +87,6 @@ function slot(
 const FICTIONAL_SLOTS: ReadonlyArray<AgendaSlot> = [
   slot("cupo-1", 2, 10, 0, 60, "inPerson", "esp-1"),
   slot("cupo-2", 3, 15, 0, 60, "inPerson", "esp-2"),
-  slot("cupo-3", 2, 12, 0, 45, "online"),
 ];
 
 export function createFictitiousAgendaAdapter(): AgendaPort {

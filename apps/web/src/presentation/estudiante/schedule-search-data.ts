@@ -26,7 +26,16 @@ export function getAgendaPort(): AgendaPort {
 }
 
 export function useSlotSearch(modality: SlotModalityFilter, attempt: number) {
-  const [result, setResult] = useState<SlotSearchResult | undefined>(undefined);
+  // El resultado guardado recuerda a qué búsqueda pertenece: al cambiar de
+  // modalidad o reintentar se deriva `loading` en el render, sin conservar los
+  // cupos del filtro anterior mientras llega la respuesta nueva.
+  const [entry, setEntry] = useState<{
+    modality: SlotModalityFilter;
+    attempt: number;
+    result?: SlotSearchResult;
+  }>({ modality, attempt });
+  const result =
+    entry.modality === modality && entry.attempt === attempt ? entry.result : undefined;
 
   useEffect(() => {
     let cancelled = false;
@@ -35,14 +44,18 @@ export function useSlotSearch(modality: SlotModalityFilter, attempt: number) {
       .then(
         (next) => {
           if (!cancelled) {
-            setResult(next);
+            setEntry({ modality, attempt, result: next });
           }
         },
         () => {
           if (!cancelled) {
-            setResult({
-              status: "error",
-              message: "No pudimos cargar los horarios. Inténtalo de nuevo.",
+            setEntry({
+              modality,
+              attempt,
+              result: {
+                status: "error",
+                message: "No pudimos cargar los horarios. Inténtalo de nuevo.",
+              },
             });
           }
         },

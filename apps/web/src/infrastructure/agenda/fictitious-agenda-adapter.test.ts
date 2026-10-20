@@ -33,4 +33,24 @@ describe("adaptador ficticio de agenda (TI2-101)", () => {
 
     expect(resultado).toMatchObject({ status: "no_availability", code: "no_availability" });
   });
+
+  test("cada modalidad coincide con lo ofrecido en todas", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const todas = await adapter.searchSlots({ modality: "all" });
+    if (todas.status !== "ok") {
+      throw new Error("Se esperaban cupos en la vista general");
+    }
+
+    for (const modality of ["inPerson", "online"] as const) {
+      const esperados = todas.slots
+        .filter((item) => item.modality === modality)
+        .map((item) => item.id);
+      const filtrado = await adapter.searchSlots({ modality });
+      const ofrecidos = filtrado.status === "ok" ? filtrado.slots.map((item) => item.id) : [];
+
+      expect(filtrado.status).toBe(esperados.length === 0 ? "no_availability" : "ok");
+      expect(ofrecidos).toEqual(esperados);
+    }
+  });
 });

@@ -168,6 +168,19 @@ describe("búsqueda de horarios (TI2-101)", () => {
     renderAt("/estudiante/horarios");
 
     expect(await screen.findByText("Cargando horarios…")).toBeDefined();
+    expect(screen.getByRole("status").textContent?.trim()).toBe("Buscando horarios disponibles.");
+  });
+
+  test("anuncia la cantidad de cupos en la región de estado", async () => {
+    comoEstudiante();
+    mockedResult = {
+      status: "ok",
+      slots: [cupoFicticio({ id: "cupo-1" }), cupoFicticio({ id: "cupo-2" })],
+    };
+    renderAt("/estudiante/horarios");
+
+    expect(await screen.findByRole("status")).toBeDefined();
+    expect(screen.getByRole("status").textContent?.trim()).toBe("2 cupos disponibles.");
   });
 
   test("vacío muestra mensaje distinto del fallo técnico", async () => {
@@ -177,6 +190,9 @@ describe("búsqueda de horarios (TI2-101)", () => {
 
     expect(await screen.findByText("No hay horarios para esta modalidad.")).toBeDefined();
     expect(screen.queryByText("No pudimos cargar los horarios. Inténtalo de nuevo.")).toBeNull();
+    expect(screen.getByRole("status").textContent?.trim()).toBe(
+      "Sin resultados para la modalidad elegida.",
+    );
   });
 
   test("falta de cupo no se presenta como fallo técnico", async () => {
@@ -186,6 +202,9 @@ describe("búsqueda de horarios (TI2-101)", () => {
 
     expect(await screen.findByText("No hay cupos compatibles por ahora.")).toBeDefined();
     expect(screen.queryByText("No pudimos cargar los horarios. Inténtalo de nuevo.")).toBeNull();
+    expect(screen.getByRole("status").textContent?.trim()).toBe(
+      "Sin cupos compatibles en este momento.",
+    );
   });
 
   test("fallo técnico muestra mensaje y permite reintentar", async () => {
@@ -200,6 +219,7 @@ describe("búsqueda de horarios (TI2-101)", () => {
       await screen.findByText("No pudimos cargar los horarios. Inténtalo de nuevo."),
     ).toBeDefined();
     expect(screen.getByRole("button", { name: "Reintentar" })).toBeDefined();
+    expect(screen.getByRole("status").textContent?.trim()).toBe("Error al cargar los horarios.");
   });
 });
 
