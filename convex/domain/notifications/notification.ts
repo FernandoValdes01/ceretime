@@ -6,13 +6,12 @@
  * con referencias mínimas (atención y destinatario), la variante externa
  * genérica que puede salir de una sesión autenticada sin revelar CERETI,
  * profesional, tipo de acompañamiento, necesidades ni motivo, y la política
- * que traduce el ciclo de la atención a eventos.
+ * que traduce el ciclo de la atención a eventos y destinatarios.
  *
- * Una sola fuente: no existe un evento por canal ni un segundo contrato.
- * TI2-105 completa v1 con la referencia al destinatario y la emisión antes
- * de que exista consumidor; no hay v2. Sin envío (TI2-122) y sin registro
- * persistente (TI2-110): la entrega y el registro sin duplicados son de esas
- * issues.
+ * La política decide a quién avisa cada cambio, para que la capa que persiste
+ * la transición (TI2-110) y la que envía (TI2-122) no elijan destinatarios por
+ * su cuenta. Una sola fuente: no existe un evento por canal ni un segundo
+ * contrato. TI2-105 completa v1 antes de que exista consumidor; no hay v2.
  */
 
 import {
@@ -72,6 +71,21 @@ export interface NotificationEventInput extends NotificationReference {
   readonly occurredAt: number;
 }
 
+/**
+ * Participantes de la atención que la política puede avisar.
+ *
+ * La aplicación los obtiene de la atención y su acompañamiento; acá son
+ * referencias opacas, sin nombres ni correos.
+ */
+export interface NotificationSubject {
+  readonly appointmentId: string;
+  readonly studentId: string;
+  readonly professionalId: string;
+}
+
+/** Destinatario posible de un evento, identificado por su vínculo. */
+export type NotificationAudience = "student" | "professional";
+
 /** Verdadero cuando el instante es un epoch válido. */
 function isValidInstant(value: number): boolean {
   return Number.isFinite(value) && value > 0;
@@ -108,67 +122,108 @@ export function toNotificationEvent(input: NotificationEventInput): Notification
   };
 }
 
-/**
- * Destinos que emiten evento, por estado resultante de la atención.
- *
- * La confirmación sale de la creación, que deja la atención en `scheduled`;
- * los demás destinos salen de una transición declarada. `completed` y la
- * resolución de la justificación no emiten aviso externo: el estudiante ve
- * la atención realizada en la aplicación y la revisión de la inasistencia es
- * TI2-119. El recordatorio no nace de una transición (TI2-122).
- */
-export const NOTIFICATION_EMITTING_KIND_BY_STATUS: Readonly<
-  Partial<Record<AppointmentStatus, NotificationEventKind>>
-> = {
-  scheduled: "appointment_scheduled",
-  rescheduled: "appointment_rescheduled",
-  cancelled_by_student: "appointment_cancelled",
-  cancelled_by_cereti: "appointment_cancelled",
-  no_show: "appointment_no_show",
-};
+/** Política de un estado resultante: clase a emitir y destinatarios. */
+interface NotificationPolicyEntry {
+  readonly kind: NotificationEventKind | null;
+  readonly audiences: readonly NotificationAudience[];
+}
+
+/** La creación confirma la atención al estudiante que la reservó. */
+const CREATION_AUDIENCES: readonly NotificationAudience[] = ["student"];
 
 /**
- * Evento de confirmación de una atención recién creada.
+ * Política por estado resultante de la atención.
  *
- * `occurredAt` es el instante persistido de la reserva. La creación siempre
- * deja la atención en `scheduled`, así que no recibe un estado como entrada.
+ * `Record<AppointmentStatus, …>` obliga a decidir para cada estado declarado:
+ * uno nuevo no puede quedar en silencio por omisión. `completed` y la
+ * resolución de la justificación no emiten aviso externo; el recordatorio no
+ * nace de una transición (TI2-122). La audiencia de `rescheduled` depende de
+ * quién hizo el cambio y se resuelve en `audiencesForTransition`.
  */
-export function notificationEventForCreation(
-  reference: NotificationReference,
+const NOTIFICATION_POLICY_BY_STATUS: Record<AppointmentStatus, NotificationPolicyEntry> = {
+  scheduled: { kind: "appointment_scheduled", audiences: CREATION_AUDIENCES },
+  completed: { kind: null, audiences: [] },
+  cancelled_by_student: { kind: "appointment_cancelled", audiences: ["professional"] },
+  cancelled_by_cereti: { kind: "appointment_cancelled", audiences: ["student"] },
+  rescheduled: { kind: "appointment_rescheduled", audiences: [] },
+  no_show: { kind: "appointment_no_show", audiences: ["student"] },
+  no_show_justified: { kind: null, audiences: [] },
+  no_show_unjustified: { kind: null, audiences: [] },
+};
+
+/** Referencia del destinatario según su vínculo con la atención. */
+function recipientIdFor(subject: NotificationSubject, audience: NotificationAudience): string {
+  return audience === "student" ? subject.studentId : subject.professionalId;
+}
+
+/** Arma un evento por destinatario, sin duplicar la clase ni los textos. */
+function eventsFor(
+  kind: NotificationEventKind,
+  subject: NotificationSubject,
+  audiences: readonly NotificationAudience[],
   occurredAt: number,
-): NotificationEvent {
-  return toNotificationEvent({
-    kind: "appointment_scheduled",
-    appointmentId: reference.appointmentId,
-    recipientId: reference.recipientId,
-    occurredAt,
-  });
+): readonly NotificationEvent[] {
+  return audiences.map((audience) =>
+    toNotificationEvent({
+      kind,
+      appointmentId: subject.appointmentId,
+      recipientId: recipientIdFor(subject, audience),
+      occurredAt,
+    }),
+  );
 }
 
 /**
- * Evento de una transición de la atención, o `null` si esa transición no avisa.
+ * Reagendar avisa a la contraparte de quien lo hizo.
+ *
+ * Si el actor no coincide con ninguno de los dos participantes (por ejemplo,
+ * una coordinación), avisa a ambos: la política no deja el aviso a criterio
+ * de la capa que persiste.
+ */
+function audiencesForTransition(
+  subject: NotificationSubject,
+  change: AppointmentStateChange,
+  fallback: readonly NotificationAudience[],
+): readonly NotificationAudience[] {
+  if (change.to !== "rescheduled") return fallback;
+  const actor = change.actorId.trim();
+  if (actor === subject.studentId.trim()) return ["professional"];
+  if (actor === subject.professionalId.trim()) return ["student"];
+  return ["student", "professional"];
+}
+
+/**
+ * Eventos de confirmación de una atención recién creada.
+ *
+ * `occurredAt` es el instante persistido de la reserva. La creación siempre
+ * deja la atención en `scheduled`; el estudiante que reservó recibe la
+ * confirmación y el profesional ve la atención en su agenda.
+ */
+export function notificationEventsForCreation(
+  subject: NotificationSubject,
+  occurredAt: number,
+): readonly NotificationEvent[] {
+  return eventsFor("appointment_scheduled", subject, CREATION_AUDIENCES, occurredAt);
+}
+
+/**
+ * Eventos de una transición de la atención, vacío si esa transición no avisa.
  *
  * Solo acepta pares declarados en `APPOINTMENT_TRANSITIONS`: un par ausente
  * es un error de programación, no una notificación silenciosa. El instante
  * sale del cambio persistido para que un reintento produzca la misma clave.
  */
-export function notificationEventForTransition(
-  reference: NotificationReference,
+export function notificationEventsForTransition(
+  subject: NotificationSubject,
   change: AppointmentStateChange,
-): NotificationEvent | null {
+): readonly NotificationEvent[] {
   if (findAppointmentTransition(change.from, change.to) === undefined) {
     throw new Error("La transición de la atención no está declarada y no puede notificarse.");
   }
-  const kind = NOTIFICATION_EMITTING_KIND_BY_STATUS[change.to];
-  if (kind === undefined) {
-    return null;
-  }
-  return toNotificationEvent({
-    kind,
-    appointmentId: reference.appointmentId,
-    recipientId: reference.recipientId,
-    occurredAt: change.occurredAt,
-  });
+  const policy = NOTIFICATION_POLICY_BY_STATUS[change.to];
+  if (policy.kind === null) return [];
+  const audiences = audiencesForTransition(subject, change, policy.audiences);
+  return eventsFor(policy.kind, subject, audiences, change.occurredAt);
 }
 
 /**
