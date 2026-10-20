@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { formatSlotDateTime, modalityFilterOptions, modalityLabel } from "./agenda-labels.ts";
 import { useSlotSearch } from "./schedule-search-data.ts";
-import { type AgendaSlot, type SlotModalityFilter } from "../../application/agenda/agenda-port.ts";
+import {
+  type AgendaSlot,
+  type SlotModalityFilter,
+  type SlotSearchResult,
+} from "../../application/agenda/agenda-port.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import "../routes/student-portal.css";
 
@@ -51,7 +55,10 @@ function ScheduleSearchBody() {
         <legend>Modalidad</legend>
         <div className="flex flex-wrap gap-2">
           {modalityFilterOptions().map((option) => (
-            <label key={option.value} className="student-portal__chip">
+            <label
+              key={option.value}
+              className="student-portal__chip student-portal__chip--control"
+            >
               <input
                 type="radio"
                 name="modalidad"
@@ -85,12 +92,56 @@ function SlotSearchContent({
   onSelect: (slotId: string) => void;
   onRetry: () => void;
 }) {
+  return (
+    <>
+      <span role="status" aria-live="polite" className="sr-only">
+        {searchAnnouncement(result)}
+      </span>
+      <SlotSearchResult
+        result={result}
+        selectedSlotId={selectedSlotId}
+        onSelect={onSelect}
+        onRetry={onRetry}
+      />
+    </>
+  );
+}
+
+/**
+ * Anuncia el desenlace de cada búsqueda sin duplicar el texto visible: el foco
+ * sigue en el filtro, así que el cambio solo llega por esta región viva.
+ */
+function searchAnnouncement(result: SlotSearchResult | undefined): string {
   if (result === undefined) {
-    return (
-      <p role="status" className="student-portal__loading">
-        Cargando horarios…
-      </p>
-    );
+    return "Buscando horarios disponibles.";
+  }
+  if (result.status === "error") {
+    return "Error al cargar los horarios.";
+  }
+  if (result.status === "empty") {
+    return "Sin resultados para la modalidad elegida.";
+  }
+  if (result.status === "no_availability") {
+    return "Sin cupos compatibles en este momento.";
+  }
+  return result.slots.length === 1
+    ? "1 cupo disponible."
+    : `${result.slots.length} cupos disponibles.`;
+}
+
+function SlotSearchResult({
+  result,
+  selectedSlotId,
+  onSelect,
+  onRetry,
+}: {
+  result: ReturnType<typeof useSlotSearch>;
+  selectedSlotId: string | null;
+  onSelect: (slotId: string) => void;
+  onRetry: () => void;
+}) {
+  if (result === undefined) {
+    return <p className="student-portal__loading">Cargando horarios…</p>;
   }
 
   if (result.status === "error") {
@@ -137,7 +188,7 @@ function SlotSearchContent({
       <ul className="student-portal__list">
         {result.slots.map((slot) => (
           <li key={slot.id} className="student-portal__item">
-            <label className="flex cursor-pointer items-start gap-2">
+            <label className="student-portal__slot flex cursor-pointer items-start gap-2">
               <input
                 type="radio"
                 name="cupo"
