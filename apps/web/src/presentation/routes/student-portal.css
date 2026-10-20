@@ -285,6 +285,22 @@
   padding: 1rem 1.25rem;
 }
 
+.student-portal__item-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  justify-content: center;
+  min-height: 44px;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.student-portal__item-link:focus-visible {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+}
+
 .student-portal__item-meta {
   font-size: 1rem;
   color: var(--ct-muted);
