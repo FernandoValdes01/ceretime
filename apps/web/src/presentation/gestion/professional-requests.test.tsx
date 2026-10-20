@@ -396,6 +396,66 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(result.current.hasItems).toBe(true);
   });
 
+  test("recargar una página descartada no la vuelve a colapsar", () => {
+    const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
+    const pagina = { page: [filaA], isDone: false, continueCursor: "c1" };
+
+    const { result } = renderHook(() => usePagedList(() => pagina));
+    act(() => {
+      result.current.reportIds(null, ["req-1"]);
+    });
+    act(() => {
+      result.current.loadMore();
+    });
+    act(() => {
+      result.current.reportIds("c1", ["req-2"]);
+    });
+    expect(result.current.cursors).toEqual([null, "c1"]);
+
+    // Toma insertada antes del límite: reancla a ventana única.
+    act(() => {
+      result.current.reportIds(null, ["req-0", "req-1"]);
+    });
+    expect(result.current.cursors).toEqual([null]);
+
+    // "Cargar más" vuelve a pedir el mismo cursor. El cliente responde primero
+    // con la copia en caché y después con la página actual: la ventana nueva
+    // debe mantenerse en ambos reportes.
+    act(() => {
+      result.current.loadMore();
+    });
+    act(() => {
+      result.current.reportIds("c1", ["req-2"]);
+    });
+    act(() => {
+      result.current.reportIds("c1", ["req-9"]);
+    });
+
+    expect(result.current.cursors).toEqual([null, "c1"]);
+  });
+
+  test("un cambio en la última página no reancla: no deja huecos detrás", () => {
+    const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
+    const pagina = { page: [filaA], isDone: false, continueCursor: "c1" };
+
+    const { result } = renderHook(() => usePagedList(() => pagina));
+    act(() => {
+      result.current.reportIds(null, ["req-1"]);
+      result.current.loadMore();
+    });
+    act(() => {
+      result.current.reportIds("c1", ["req-2"]);
+    });
+    expect(result.current.cursors).toEqual([null, "c1"]);
+
+    // La cola cambia: no hay ventana posterior que desplazar.
+    act(() => {
+      result.current.reportIds("c1", ["req-3"]);
+    });
+
+    expect(result.current.cursors).toEqual([null, "c1"]);
+  });
+
   test("una página en vuelo no establece referencia ni colapsa", () => {
     const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
     const pagina = { page: [filaA], isDone: false, continueCursor: "c1" };

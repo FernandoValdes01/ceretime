@@ -26,11 +26,13 @@ export type RequestListPage<Item extends RequestListItem> = {
  * más de una ventana cargada, las ventanas fijas dejarían huecos. Ante ese
  * cambio se reancla a ventana única ([null], dato fresco del servidor);
  * "Cargar más" regenera cursores vigentes (y limpia la referencia para no
- * colapsar por el propio avance). Las lecturas (hasItems) se acotan siempre
- * a los cursores vigentes, nunca a entradas huérfanas de ciclos anteriores.
- * La firma es el multiconjunto ordenado: detecta cambios de pertenencia, no
- * reordenamientos. Ajuste en render del mismo componente con condición de
- * salida, sin loops ni aviso de React.
+ * colapsar por el propio avance). La comparación cubre solo las ventanas que
+ * tienen otra detrás: un cambio en la última no deja huecos y su primer
+ * reporte al recargar puede ser la copia en caché del cliente. Las lecturas
+ * (hasItems) se acotan siempre a los cursores vigentes, nunca a entradas
+ * huérfanas de ciclos anteriores. La firma es el multiconjunto ordenado:
+ * detecta cambios de pertenencia, no reordenamientos. Ajuste en render del
+ * mismo componente con condición de salida, sin loops ni aviso de React.
  *
  * Cada página reporta sus IDs vía onIds desde un efecto del hijo con
  * dependencias ([cursor, page]): reportar en render dispara el aviso de React
@@ -90,9 +92,14 @@ export function usePagedList<Item extends RequestListItem>(
   // cargada, los cursores fijos ya no son contiguos: se reancla a ventana
   // única fresca y "Cargar más" regenera cursores vigentes. Ajuste en render
   // del mismo componente con condición de salida, sin loops ni aviso.
+  // Firma de las ventanas estables (todas menos la última). La última no tiene
+  // otra detrás, así que su cambio no puede abrir huecos; compararla de más
+  // colapsaría al recargar una página descartada, porque el cliente puede
+  // responder primero con su copia en caché y después con la página actual.
   // Firma solo sobre cursores vigentes: reportes de ciclos anteriores (claves
   // huérfanas) no cuentan como respuestas actuales.
-  const signature = cursors
+  const stableCursors = cursors.slice(0, -1);
+  const signature = stableCursors
     .flatMap((cursor) => idsByCursor.get(cursor ?? "first") ?? [])
     .sort()
     .join(",");
