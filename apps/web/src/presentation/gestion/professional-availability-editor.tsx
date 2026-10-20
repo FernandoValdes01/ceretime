@@ -29,18 +29,21 @@ import type {
 
 /**
  * Clases Tailwind de las filas de gestión (TI2-91, migrado por TI2-130):
- * 44px de alto táctil mínimo y foco visible de 3px según DESIGN.md.
+ * 44px de alto táctil mínimo, foco visible de 3px según DESIGN.md y
+ * reflujo en ventanas estrechas (TI2-103). `flex-wrap` evita que la fila
+ * imponga su ancho de contenido y `min-w-0` permite que la cuadrícula del
+ * portal la contraiga sin desbordar la página.
  */
-const GESTION_ROW = "flex items-center gap-2 min-h-[44px] px-3 py-2 text-inherit";
+const GESTION_ROW = "flex flex-wrap items-center gap-2 min-h-[44px] min-w-0 px-3 py-2 text-inherit";
 const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
 
 /**
- * Campos de gestión (TI2-103): alto táctil mínimo de 44px y ancho fluido
- * según DESIGN.md, con el mismo foco visible de las filas. Los formularios
- * apilan los campos en columna para refluir en ventanas estrechas.
+ * Campos de gestión (TI2-103): alto táctil mínimo de 44px, ancho fluido y
+ * `min-w-0` para que la cuadrícula estrecha los contraiga, con el mismo
+ * foco visible de las filas. Los formularios apilan los campos en columna.
  */
-const GESTION_FIELD = "min-h-[44px] w-full box-border px-3 py-2 text-base text-inherit";
+const GESTION_FIELD = "min-h-[44px] w-full min-w-0 box-border px-3 py-2 text-base text-inherit";
 const GESTION_FIELD_CLASS = `${GESTION_FIELD} ${GESTION_FOCUS_VISIBLE}`;
 
 /**

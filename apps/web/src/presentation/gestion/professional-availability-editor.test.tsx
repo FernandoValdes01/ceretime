@@ -439,12 +439,31 @@ describe("editor de disponibilidad (TI2-103)", () => {
     for (const field of fields) {
       // Alto táctil de 44px según DESIGN.md mediante la clase compartida.
       expect(field.className).toContain("min-h-[44px]");
-      // Ancho fluido sin anchos fijos para refluir en ventanas estrechas.
+      // Ancho fluido y min-w-0 para refluir dentro de la cuadrícula estrecha.
       expect(field.className).toContain("w-full");
+      expect(field.className).toContain("min-w-0");
       expect(field.getAttribute("style") ?? "").not.toContain("width");
       // Operable por teclado.
       field.focus();
       expect(document.activeElement).toBe(field);
+    }
+  });
+
+  test("navegación del profesional conserva enlaces visibles y operables por teclado", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    const nav = await screen.findByRole("navigation", { name: "Portal del Profesional" });
+    const links = within(nav).getAllByRole("link");
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      "Inicio",
+      "Solicitudes",
+      "Disponibilidad",
+      "Sesión",
+    ]);
+    for (const link of links) {
+      link.focus();
+      expect(document.activeElement).toBe(link);
     }
   });
 });
