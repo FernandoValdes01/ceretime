@@ -234,6 +234,9 @@ export async function occupySlotAtomically(
       modality: input.modality,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
+      // Conservar la fecha original del primer agendamiento; si es el primer
+      // reagendamiento, usar la fecha actual como referencia original.
+      originalStartsAt: moved.originalStartsAt ?? moved.startsAt,
     });
     return okResult({ appointmentId: moved._id });
   }
