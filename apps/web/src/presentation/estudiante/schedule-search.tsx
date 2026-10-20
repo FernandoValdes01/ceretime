@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { formatSlotDateTime, modalityFilterOptions, modalityLabel } from "./agenda-labels.ts";
 import { useSlotSearch } from "./schedule-search-data.ts";
 import {
@@ -231,6 +232,11 @@ function SelectedSlotSummary({ slot }: { slot: AgendaSlot }) {
           </div>
         )}
       </dl>
+      <p>
+        <Link to="/estudiante/reservar" search={{ slotId: slot.id }}>
+          Continuar
+        </Link>
+      </p>
     </section>
   );
 }

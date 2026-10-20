@@ -1,6 +1,8 @@
 import {
   NO_AVAILABILITY_ERROR_CODE,
+  type Appointment,
   type AvailabilitySlot,
+  type PublicApiError,
 } from "../../../../../convex/domain/index.ts";
 
 /**
@@ -36,12 +38,32 @@ export type SlotSearchResult =
     }
   | { readonly status: "error"; readonly message: string };
 
-/** Selección que TI2-102 consume para el formulario de reserva. */
+/** Selección que el formulario de reserva consume (TI2-102). */
 export type AgendaSlotSelection = {
   readonly slotId: string;
 };
 
+/**
+ * Entrada única del comando de reserva (TI2-102). Definida una sola vez
+ * para búsqueda y formulario: no duplicar este comando.
+ */
+export type ReserveSlotInput = {
+  readonly slotId: string;
+};
+
+/** Confirmación de reserva: proyección necesaria de `Appointment`. */
+export type ReservationConfirmation = Pick<
+  Appointment,
+  "id" | "slotId" | "professionalId" | "modality" | "startAt" | "endAt"
+>;
+
+/** Respuesta tipada de la reserva: usa el error público compartido. */
+export type ReserveSlotResult =
+  | { readonly status: "confirmed"; readonly reservation: ReservationConfirmation }
+  | { readonly status: "error"; readonly error: PublicApiError };
+
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {
   searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult>;
+  reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult>;
 }

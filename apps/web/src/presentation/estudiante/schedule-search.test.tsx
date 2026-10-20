@@ -160,6 +160,8 @@ describe("búsqueda de horarios (TI2-101)", () => {
 
     expect(await screen.findByRole("heading", { name: "Cupo elegido" })).toBeDefined();
     expect(await screen.findAllByText("Sala 101", { exact: false })).toHaveLength(2);
+    const continuar = screen.getByRole("link", { name: "Continuar" });
+    expect(continuar.getAttribute("href")).toBe("/estudiante/reservar?slotId=cupo-1");
   });
 
   test("cargando muestra el aviso explícito", async () => {
