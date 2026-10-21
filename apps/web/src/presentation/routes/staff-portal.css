@@ -2,12 +2,14 @@
 
 .staff-portal {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   padding: 1rem;
 }
 
 .staff-portal__header nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 

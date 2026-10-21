@@ -1,26 +1,40 @@
 import {
+  AVAILABILITY_CONTRACT_VERSION,
   NO_AVAILABILITY_ERROR_CODE,
   SPACE_CATALOG_CONTRACT_VERSION,
   toSpaceLabel,
+  type AvailabilityBlock,
+  type AvailabilityException,
   type Space,
 } from "../../../../../convex/domain/index.ts";
 import {
   type AgendaPort,
   type AgendaSlot,
+  type ListAvailabilityResult,
   type ReserveSlotInput,
   type ReserveSlotResult,
+  type SaveBlockInput,
+  type SaveBlockResult,
+  type SaveExceptionInput,
+  type SaveExceptionResult,
   type SlotModalityFilter,
   type SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
 
 /**
- * Adaptador ficticio de agenda (TI2-101).
+ * Adaptador ficticio de agenda (TI2-101, extendido TI2-102 y TI2-103).
  *
- * Temporal hasta TI2-123: devuelve fixtures con la forma del contrato, sin
- * reglas de compatibilidad ni persistencia. Todo es inventado. Regla
- * ficticia documentada: no hay cupos en línea publicados, así que filtrar
- * por esa modalidad responde `no_availability` (código canónico); el resto
- * filtra las filas por modalidad y responde `empty` sin filas.
+ * Temporal hasta TI2-123/TI2-125: devuelve fixtures con la forma del
+ * contrato, sin reglas de compatibilidad, cruces, autorización ni
+ * persistencia. Todo es inventado y se declara como tal en la interfaz.
+ *
+ * Reglas ficticias documentadas: no hay cupos en línea publicados, así que
+ * filtrar por esa modalidad responde `no_availability` (código canónico);
+ * el resto filtra las filas por modalidad y responde `empty` sin filas. La
+ * reserva confirma los cupos publicados y responde falta de cupo ante un id
+ * ajeno. La lectura del editor trae dos bloques y tres excepciones ficticios
+ * (cancelación del día, cancelación de un bloque y agregado con ventana);
+ * el guardado asigna identidad ficticia sin validar propiedad.
  */
 
 function midnightPlus(days: number): number {
@@ -41,6 +55,8 @@ function dateKey(days: number): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
+const FICTIONAL_PROFESSIONAL_ID = "pro-ficticio-1";
+
 const FICTIONAL_SPACES: Record<string, Space> = {
   "esp-1": {
     id: "esp-1",
@@ -50,7 +66,7 @@ const FICTIONAL_SPACES: Record<string, Space> = {
     room: "Sala 101",
     accessConditions: "Acceso sin escaleras por rampa lateral.",
     arrivalInstructions:
-      "Entrar por el acceso norte y seguir la señalización podotáctil hasta la sala.",
+      "Entrar por el acceso norte y seguir la señalización táctil hasta la sala.",
     version: SPACE_CATALOG_CONTRACT_VERSION,
   },
   "esp-2": {
@@ -77,7 +93,7 @@ function slot(
   const startAt = atDayHour(days, startHour, startMinute);
   return {
     id,
-    professionalId: "pro-ficticio-1",
+    professionalId: FICTIONAL_PROFESSIONAL_ID,
     date: dateKey(days),
     startAt,
     endAt: startAt + durationMinutes * 60_000,
@@ -91,7 +107,60 @@ const FICTIONAL_SLOTS: ReadonlyArray<AgendaSlot> = [
   slot("cupo-2", 3, 15, 0, 60, "inPerson", "esp-2"),
 ];
 
+const FICTIONAL_BLOCKS: ReadonlyArray<AvailabilityBlock> = [
+  {
+    id: "bloque-ficticio-1",
+    professionalId: FICTIONAL_PROFESSIONAL_ID,
+    weekday: 1,
+    startMinute: 540,
+    endMinute: 720,
+    slotMinutes: 60,
+    modality: "inPerson",
+    spaceId: "esp-1",
+    version: AVAILABILITY_CONTRACT_VERSION,
+  },
+  {
+    id: "bloque-ficticio-2",
+    professionalId: FICTIONAL_PROFESSIONAL_ID,
+    weekday: 3,
+    startMinute: 840,
+    endMinute: 960,
+    slotMinutes: 30,
+    modality: "online",
+    version: AVAILABILITY_CONTRACT_VERSION,
+  },
+];
+
+const FICTIONAL_EXCEPTIONS: ReadonlyArray<AvailabilityException> = [
+  {
+    date: dateKey(4),
+    kind: "cancelled",
+    version: AVAILABILITY_CONTRACT_VERSION,
+  },
+  {
+    date: dateKey(5),
+    kind: "cancelled",
+    blockId: "bloque-ficticio-1",
+    version: AVAILABILITY_CONTRACT_VERSION,
+  },
+  {
+    date: dateKey(6),
+    kind: "added",
+    windows: [
+      {
+        startMinute: 600,
+        endMinute: 660,
+        slotMinutes: 30,
+        modality: "inPerson",
+        spaceId: "esp-2",
+      },
+    ],
+    version: AVAILABILITY_CONTRACT_VERSION,
+  },
+];
+
 export function createFictitiousAgendaAdapter(): AgendaPort {
+  let blockCounter = FICTIONAL_BLOCKS.length;
   return {
     async searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult> {
       if (filter.modality === "online") {
@@ -111,8 +180,8 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
     // código canónico. El fallo técnico se prueba con rechazo y llegará con
     // la API real.
     async reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult> {
-      const slot = FICTIONAL_SLOTS.find((item) => item.id === input.slotId);
-      if (slot === undefined) {
+      const found = FICTIONAL_SLOTS.find((item) => item.id === input.slotId);
+      if (found === undefined) {
         return {
           status: "error",
           error: { code: NO_AVAILABILITY_ERROR_CODE, message: "El cupo ya no está disponible." },
@@ -121,12 +190,42 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
       return {
         status: "confirmed",
         reservation: {
-          id: `reserva-ficticia-${slot.id}`,
-          slotId: slot.id,
-          professionalId: slot.professionalId,
-          modality: slot.modality,
-          startAt: slot.startAt,
-          endAt: slot.endAt,
+          id: `reserva-ficticia-${found.id}`,
+          slotId: found.id,
+          professionalId: found.professionalId,
+          modality: found.modality,
+          startAt: found.startAt,
+          endAt: found.endAt,
+        },
+      };
+    },
+    async listAvailability(): Promise<ListAvailabilityResult> {
+      return { status: "ok", blocks: FICTIONAL_BLOCKS, exceptions: FICTIONAL_EXCEPTIONS };
+    },
+    async saveBlock(input: SaveBlockInput): Promise<SaveBlockResult> {
+      blockCounter += 1;
+      const block: AvailabilityBlock = {
+        id: `bloque-ficticio-${blockCounter}`,
+        professionalId: FICTIONAL_PROFESSIONAL_ID,
+        weekday: input.weekday,
+        startMinute: input.startMinute,
+        endMinute: input.endMinute,
+        slotMinutes: input.slotMinutes,
+        modality: input.modality,
+        ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
+        version: AVAILABILITY_CONTRACT_VERSION,
+      };
+      return { status: "saved", block };
+    },
+    async saveException(input: SaveExceptionInput): Promise<SaveExceptionResult> {
+      return {
+        status: "saved",
+        exception: {
+          date: input.date,
+          kind: input.kind,
+          ...(input.blockId === undefined ? {} : { blockId: input.blockId }),
+          ...(input.windows === undefined ? {} : { windows: input.windows }),
+          version: AVAILABILITY_CONTRACT_VERSION,
         },
       };
     },
