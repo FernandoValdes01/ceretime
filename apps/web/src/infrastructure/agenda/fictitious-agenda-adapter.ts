@@ -105,7 +105,6 @@ function slot(
 const FICTIONAL_SLOTS: ReadonlyArray<AgendaSlot> = [
   slot("cupo-1", 2, 10, 0, 60, "inPerson", "esp-1"),
   slot("cupo-2", 3, 15, 0, 60, "inPerson", "esp-2"),
-  slot("cupo-3", 2, 12, 0, 45, "online"),
 ];
 
 const FICTIONAL_BLOCKS: ReadonlyArray<AvailabilityBlock> = [
@@ -162,7 +161,6 @@ const FICTIONAL_EXCEPTIONS: ReadonlyArray<AvailabilityException> = [
 
 export function createFictitiousAgendaAdapter(): AgendaPort {
   let blockCounter = FICTIONAL_BLOCKS.length;
-  let exceptionCounter = FICTIONAL_EXCEPTIONS.length;
   return {
     async searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult> {
       if (filter.modality === "online") {
@@ -220,8 +218,6 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
       return { status: "saved", block };
     },
     async saveException(input: SaveExceptionInput): Promise<SaveExceptionResult> {
-      exceptionCounter += 1;
-      void exceptionCounter;
       return {
         status: "saved",
         exception: {
