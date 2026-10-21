@@ -152,6 +152,20 @@ export interface OccupySlotRow {
    * se crea una atención nueva.
    */
   readonly movedAppointmentId?: Id<"appointments">;
+  /**
+   * Fecha original del primer agendamiento ya calculada por la política de
+   * TI2-93 (`transitionAppointment`) y entregada por quien la aplicó. Ausente,
+   * el campo que hubiera en la fila no se toca: un cambio de recursos no marca
+   * reagendamiento, y en reagendamientos encadenados quien aplica la política
+   * entrega siempre la primera fecha.
+   */
+  readonly originalStartsAt?: number;
+  /**
+   * Estado resultante de la transición ya aplicada por el caso de uso. Ausente,
+   * el estado vigente se conserva: marcar `rescheduled` es de quien aplica la
+   * política, no del repositorio.
+   */
+  readonly nextStatus?: Doc<"appointments">["status"];
 }
 
 /**
@@ -192,9 +206,13 @@ async function findMovedAppointment(
  * Con `movedAppointmentId` cambia esa atención en el mismo lugar: la busca,
  * valida el destino sin contarla a ella y recién entonces le escribe el
  * horario, el profesional, la modalidad y la sala nuevos. Conserva su
- * identificador, estado, fecha original y fecha de creación: qué estado
- * admite el cambio y cómo queda lo decide la política de TI2-93 en el caso
- * de uso de TI2-109. Una atención inexistente, cancelada o de otro
+ * identificador y fecha de creación. La fecha original (`originalStartsAt`) y
+ * el estado resultante solo se guardan si quien llamó los entrega, tras
+ * aplicar la política de TI2-93 (`transitionAppointment`): un cambio de
+ * recursos sin reagendamiento no los toca, así Web y Mobile no muestran una
+ * atención reagendada que no lo está. La política decide qué transición
+ * admite el cambio; la conciliación con la persistencia la completa
+ * TI2-107/TI2-109. Una atención inexistente, cancelada o de otro
  * estudiante o acompañamiento responde `conflict` sin escribir.
  */
 export async function occupySlotAtomically(
@@ -209,6 +227,9 @@ export async function occupySlotAtomically(
   }
   if (input.endsAt - input.startsAt > MAX_APPOINTMENT_MS) {
     throw new Error("El cupo no puede durar más de 1440 minutos");
+  }
+  if (input.originalStartsAt !== undefined && !Number.isFinite(input.originalStartsAt)) {
+    throw new Error("La fecha original del cupo debe ser un instante finito");
   }
   const resources: OccupiedResource[] = [
     { kind: "professional", id: input.professionalId },
@@ -234,9 +255,12 @@ export async function occupySlotAtomically(
       modality: input.modality,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
-      // Conservar la fecha original del primer agendamiento; si es el primer
-      // reagendamiento, usar la fecha actual como referencia original.
-      originalStartsAt: moved.originalStartsAt ?? moved.startsAt,
+      // La fecha original y el estado ya los calculó la política de TI2-93 en
+      // el caso de uso; acá se guardan tal cual, y sin ellos la fila conserva
+      // lo suyo: un cambio de recursos no marca reagendamiento ni toca la
+      // fecha original que exista.
+      ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
+      ...(input.nextStatus === undefined ? {} : { status: input.nextStatus }),
     });
     return okResult({ appointmentId: moved._id });
   }
@@ -252,4 +276,47 @@ export async function occupySlotAtomically(
     createdAt: Date.now(),
   });
   return okResult({ appointmentId });
+}
+
+/**
+ * Valida que la cadena sea un identificador de `appointments` sin revelar
+ * existencia: `null` cuando no pertenece a la tabla.
+ */
+export function normalizeAppointmentId(ctx: DbReader, raw: string): Id<"appointments"> | null {
+  return ctx.db.normalizeId("appointments", raw);
+}
+
+/** La atención con ese identificador, o `null` cuando no existe. */
+export async function getAppointmentById(
+  ctx: DbReader,
+  id: Id<"appointments">,
+): Promise<Doc<"appointments"> | null> {
+  return await ctx.db.get(id);
+}
+
+/** Campos de la transición ya aplicada: solo los que la política produjo. */
+export interface PersistedAppointmentTransition {
+  readonly status: Doc<"appointments">["status"];
+  readonly cancelReason?: string;
+  readonly originalStartsAt?: number;
+}
+
+/**
+ * Guarda el resultado de una transición ya aplicada por la política de
+ * TI2-93: el estado y, solo si la política los produjo, el motivo de
+ * cancelación y la fecha original. Única vía de escritura de cambio de
+ * estado fuera de la ocupación (`occupySlotAtomically`); la llamada la hace
+ * el caso de uso de TI2-107 tras aplicar `transitionAppointment`, así ningún
+ * consumidor decide qué campos cuadrar.
+ */
+export async function persistAppointmentTransition(
+  ctx: MutationCtx,
+  id: Id<"appointments">,
+  fields: PersistedAppointmentTransition,
+): Promise<void> {
+  await ctx.db.patch(id, {
+    status: fields.status,
+    ...(fields.cancelReason === undefined ? {} : { cancelReason: fields.cancelReason }),
+    ...(fields.originalStartsAt === undefined ? {} : { originalStartsAt: fields.originalStartsAt }),
+  });
 }
