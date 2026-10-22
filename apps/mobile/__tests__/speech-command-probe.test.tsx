@@ -70,6 +70,7 @@ describe("SpeechCommandProbe", () => {
 
     await waitFor(() => expect(recognitionPort.stop).toHaveBeenCalledTimes(1));
     expect(view.queryByText(/Comando reconocido/)).toBeNull();
+    expect(view.getByText("Reconocimiento detenido.")).toBeTruthy();
   });
 
   it("stops on unmount and ignores late results", async () => {
