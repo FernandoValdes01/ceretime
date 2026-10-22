@@ -85,6 +85,7 @@ describe("createNativeSpeechRecognitionAdapter", () => {
       maxAlternatives: 1,
       requiresOnDeviceRecognition: true,
       recordingOptions: { persist: false },
+      androidIntentOptions: { EXTRA_LANGUAGE_MODEL: "web_search" },
     });
     native.emit("result", { isFinal: false, results: [{ transcript: "ignorado" }] });
     native.emit("result", { isFinal: true, results: [{ transcript: "  volver  " }] });

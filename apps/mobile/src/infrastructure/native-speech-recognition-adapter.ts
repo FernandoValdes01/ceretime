@@ -176,6 +176,7 @@ export function createNativeSpeechRecognitionAdapter(
               maxAlternatives: 1,
               requiresOnDeviceRecognition: true,
               recordingOptions: { persist: false },
+              androidIntentOptions: { EXTRA_LANGUAGE_MODEL: "web_search" },
             });
             session.recognitionTimeout = setTimeout(() => {
               if (activeSession !== session) return;
