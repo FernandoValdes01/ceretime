@@ -1,56 +1,23 @@
-# Evidencia TI4-61: comandos de voz locales
+# Evidencia TI4-61: comandos locales probados en Android
 
-Esta entrega limita la navegación por voz a las intenciones `open-requests`, `back` y `cancel` que reconoce el parser compartido con TI4-56; los botones equivalentes permanecen disponibles durante la escucha y ante silencio, permiso denegado, frase desconocida, falta de disponibilidad o fallo.
+La PR draft [#125](https://github.com/FernandoValdes01/ceretime/pull/125) apila TI4-61 sobre la PR draft [#124 de TI4-56](https://github.com/FernandoValdes01/ceretime/pull/124). Esta evidencia registra recorridos nativos en el emulador Android y separa las observaciones de las limitaciones de reconocimiento.
 
-## Probe de navegación
+## Resultado
 
-La integración por callbacks conserva las rutas existentes y no modifica las vistas del estudiante; el botón táctil y el reconocimiento confirmado usan exactamente el mismo callback.
+En Android 17/API 37, el comando sintético «abrir solicitudes» abrió la lista canónica con fixtures, «regresar» ejecutó `router.back()` y «cancelar» cerró solo los controles locales. La frase sintética «volver» quedó como desconocida en esta ejecución; no se afirma reconocimiento fiable de voz humana ni exactitud general para esa frase.
 
-```tsx
-const router = useRouter();
+El permiso denegado y la frase desconocida conservaron visibles los controles táctiles; una cancelación táctil durante la escucha impidió que el audio posterior abriera solicitudes. Con TalkBack activo, texto ampliado y foco de navegación se verificaron los controles visibles; el alcance observado y sus límites están en [native-evidence.md](./native-evidence.md).
 
-<SpeechCommandControls
-  speechPort={speechRecognitionPort}
-  onOpenRequests={() => router.push("/estudiante/solicitudes")}
-  onBack={() => router.back()}
-  onCancel={closeVoiceControls}
-/>;
-```
+La prueba de silencio de 12 segundos pertenece al puerto y límite de escucha compartidos con TI4-56; agotó el tiempo sin ejecutar acciones. La evidencia visual y la traza reproducible están en [native-evidence.md](./native-evidence.md).
 
-`closeVoiceControls` solo cierra la interfaz local de comandos; el componente invalida la generación activa antes de detener el reconocimiento y no ejecuta mutaciones, envíos ni cancelaciones de una solicitud o reserva.
+## Alcance y privacidad
 
-La ruta `/estudiante/solicitudes` ya existe en `app/(protected)/estudiante/index.tsx`, y el uso de `router.back()` ya existe en `src/presentation/accessibility/accessibility-preferences-screen.tsx`; ambas referencias se usan como destino de integración sin editar esas vistas.
+El cambio reutiliza `speech-port.ts`, `speech-command-parser.ts`, `native-speech-recognition-adapter.ts`, `speech-controls.tsx` y `mobile-dependencies.ts`; el plugin y parche del proveedor mantienen el reconocimiento local y sin registros de transcripciones. La navegación se limita a `open-requests`, `back` y `cancel`. Los probes de `apps/mobile/app/ti4-56-probe.tsx` y `apps/mobile/app/ti4-61-probe.tsx` fueron rutas temporales y se retiraron del árbol de producto después de capturar evidencia.
+
+Se usó voz sintética enviada en vivo al micrófono del emulador; no se guardaron archivos de audio ni transcripciones. La implementación nativa elimina los registros del proveedor que podían escribir transcripciones en el registro del sistema Android.
+
+La compilación y prueba descritas corresponden a un emulador Android, a un modelo local español instalado y a entrada de voz sintética; no validan dispositivos físicos, iOS, otros modelos/versiones Android ni la pronunciación de personas.
 
 ## Validación automatizada
 
-`__tests__/speech-command-controls.test.tsx` verifica el mapeo aislado de las tres intenciones, la ausencia de navegación para unknown y resultados de error, la disponibilidad de los botones mientras se escucha, la invalidación de resultados tardíos y la ejecución local de cancelar aunque falle `stop()`.
-
-Las pruebas usan un puerto falso; no capturan audio ni conservan transcripciones. Resultado ejecutado: `bun run --cwd apps/mobile test --runTestsByPath __tests__/speech-command-controls.test.tsx` pasó con 12 pruebas.
-
-## Probe nativo reproducible
-
-`native-probe.tsx` consume `mobileDependencies.speechRecognitionPort` de la composición existente y conecta los callbacks a la ruta `/estudiante/solicitudes`, `router.back()` y un cierre local que no ejecuta acciones de negocio.
-
-Para probarlo después de integrar la composición de TI4-56, copia temporalmente este archivo como `apps/mobile/app/ti4-61-probe.tsx`, instala la compilación con `./gradlew :app:installDebug` desde `apps/mobile/android`, y abre la ruta con `adb shell am start -a android.intent.action.VIEW -d ceretime://ti4-61-probe` mientras el servidor de desarrollo autorizado ya está activo; elimina el archivo temporal al terminar y no conserves esta ruta en el producto.
-
-Prueba cada frase con datos ficticios, confirma que solo activa su callback, detén la escucha y prueba los botones durante la escucha; repite con permiso de micrófono denegado y con TalkBack y texto ampliado, registrando por separado lo que realmente observes en Android.
-
-El probe mantiene instrucciones visibles, no registra el texto reconocido y no escribe audio, transcripciones ni datos de solicitudes; la frase reconocida se procesa solo en memoria para seleccionar una de las tres intenciones.
-
-## Validación en Android pendiente
-
-`bun run --cwd apps/mobile typecheck`, `bun run lint`, `bun run format:check` y CSpell para los cuatro archivos del incremento pasaron en la validación automatizada previa a integrar TI4-56; el probe Android no se ejecutó.
-
-No se inició Metro ni un emulador en esta ejecución, por lo que TalkBack, permiso real de micrófono, reconocimiento nativo y texto ampliado siguen pendientes de comprobar en dispositivo Android; no se afirma evidencia de hardware.
-
-## Apilamiento y revisión
-
-[PR draft #125](https://github.com/FernandoValdes01/ceretime/pull/125), con base en [TI4-56, PR #124](https://github.com/FernandoValdes01/ceretime/pull/124). El incremento de controles se registró en `a61cdc1`; la base TI4-56 quedó incorporada hasta `026999e`. La instalación `bun install --frozen-lockfile` aplicó el parche nativo en este segundo checkout.
-
-El diff contra TI4-56 conserva un único parser, puerto y adaptador. No cambia vistas estudiantiles ni formularios; el punto de integración es el módulo reutilizable y el probe temporal documentado. El llamador conserva las acciones existentes y cancelar solo cierra la interacción local.
-
-La revisión manual de Luna y la supervisión contrastaron el orden nativo de eventos, la barrera entre sesiones, los botones durante errores y la invalidación anterior a detener. La evidencia automatizada usa datos ficticios; no demuestra reconocimiento con micrófono real.
-
-La compilación Android de TI4-56 pasó con el mismo proveedor y parche nativo que reutiliza esta PR. No se inició Metro ni el emulador; la autorización explícita exigida por `apps/mobile/AGENTS.md` seguía pendiente.
-
-La suite Mobile completa se ejecutó después de combinar ambas tareas con `bun run --cwd apps/mobile test`: 25 suites y 248 pruebas aprobadas. Emitió advertencias de Reanimated y de `act` en pruebas ajenas al diff; no hubo suites fallidas.
+La suite Mobile combinada se ejecutó con `bun run --cwd apps/mobile test`: 25 suites y 252 pruebas aprobadas. El resultado comprueba los casos automatizados de parser, adaptador y controles; la evidencia nativa por separado está resumida en [native-evidence.md](./native-evidence.md).
