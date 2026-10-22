@@ -186,6 +186,9 @@
     "nunezpinillalucas",
     "Baeza",
     "speechrecognition",
-    "googlequicksearchbox"
+    "googlequicksearchbox",
+    "espeak",
+    "adelay",
+    "pacat"
   ]
 }
