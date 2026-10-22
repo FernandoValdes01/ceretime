@@ -23,7 +23,10 @@ export function NativeSpeechProbe({
 
   const stopRecognition = useCallback(async () => {
     request.current += 1;
-    if (mounted.current) setListening(false);
+    if (mounted.current) {
+      setListening(false);
+      setMessage("Reconocimiento detenido.");
+    }
     try {
       await recognitionPort.stop();
     } catch {
