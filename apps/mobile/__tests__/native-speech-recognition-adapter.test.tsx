@@ -100,6 +100,71 @@ describe("createNativeSpeechRecognitionAdapter", () => {
     await expect(result).resolves.toEqual({ status: "silence" });
   });
 
+  it("aborts silent recognition after 12 seconds and fails closed if end never arrives", async () => {
+    jest.useFakeTimers();
+    try {
+      const native = createSdk();
+      const recognition = createRecognition(native.sdk);
+      const result = recognition.recognize();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(native.start).toHaveBeenCalledTimes(1);
+
+      await jest.advanceTimersByTimeAsync(11_999);
+      expect(native.abort).not.toHaveBeenCalled();
+      await jest.advanceTimersByTimeAsync(1);
+      await expect(result).resolves.toEqual({ status: "silence" });
+      expect(native.abort).toHaveBeenCalledTimes(1);
+      expect(await recognition.recognize()).toEqual({ status: "failed" });
+
+      await jest.advanceTimersByTimeAsync(3_000);
+      expect(await recognition.recognize()).toEqual({ status: "unavailable" });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("clears the silence timeout when end arrives", async () => {
+    jest.useFakeTimers();
+    try {
+      const native = createSdk();
+      const result = createRecognition(native.sdk).recognize();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      native.emit("end");
+      await expect(result).resolves.toEqual({ status: "silence" });
+
+      await jest.advanceTimersByTimeAsync(12_000);
+      expect(native.abort).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("clears the silence timeout on stop and ignores late results", async () => {
+    jest.useFakeTimers();
+    try {
+      const native = createSdk();
+      const recognition = createRecognition(native.sdk);
+      const result = recognition.recognize();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await recognition.stop();
+      await expect(result).resolves.toEqual({ status: "stopped" });
+      expect(native.abort).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(12_000);
+      expect(native.abort).toHaveBeenCalledTimes(1);
+      native.emit("result", { isFinal: true, results: [{ transcript: "cancelar" }] });
+      native.emit("end");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("aborts and ignores late results after stop", async () => {
     const native = createSdk();
     const recognition = createRecognition(native.sdk);
@@ -206,6 +271,22 @@ describe("createNativeSpeechRecognitionAdapter", () => {
     grantPermission({ granted: true });
     await expect(result).resolves.toEqual({ status: "stopped" });
     expect(native.start).not.toHaveBeenCalled();
+  });
+
+  it("does not apply the recognition timeout while permission is pending", async () => {
+    jest.useFakeTimers();
+    try {
+      const native = createSdk();
+      native.sdk.requestPermissionsAsync.mockImplementation(() => new Promise(() => undefined));
+      const result = createRecognition(native.sdk).recognize();
+
+      await jest.advanceTimersByTimeAsync(12_000);
+      expect(native.abort).not.toHaveBeenCalled();
+      expect(native.start).not.toHaveBeenCalled();
+      expect(await Promise.race([result, Promise.resolve("pending")])).toBe("pending");
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it("does not start if stop happens while checking installed locales", async () => {

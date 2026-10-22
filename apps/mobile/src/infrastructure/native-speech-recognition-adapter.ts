@@ -7,12 +7,16 @@ import { Platform } from "react-native";
 import type { SpeechRecognitionPort, SpeechRecognitionResult } from "../application/speech-port";
 
 type Subscription = { remove(): void };
+const RECOGNITION_TIMEOUT_MS = 12_000;
+const STOP_TIMEOUT_MS = 3_000;
+
 type RecognitionSession = {
   readonly id: number;
   readonly resolve: (result: SpeechRecognitionResult) => void;
   subscriptions: Subscription[];
   result?: SpeechRecognitionResult;
   settled: boolean;
+  recognitionTimeout?: ReturnType<typeof setTimeout>;
   stopTimeout?: ReturnType<typeof setTimeout>;
 };
 
@@ -63,6 +67,7 @@ export function createNativeSpeechRecognitionAdapter(
     if (activeSession?.id !== id) return;
     const session = activeSession;
     activeSession = undefined;
+    if (session.recognitionTimeout) clearTimeout(session.recognitionTimeout);
     if (session.stopTimeout) clearTimeout(session.stopTimeout);
     session.subscriptions.forEach((subscription) => subscription.remove());
     if (!session.settled) session.resolve(result);
@@ -72,6 +77,28 @@ export function createNativeSpeechRecognitionAdapter(
     if (session.settled) return;
     session.settled = true;
     session.resolve(result);
+  }
+
+  function scheduleAbortClose(session: RecognitionSession): void {
+    if (session.stopTimeout) clearTimeout(session.stopTimeout);
+    session.stopTimeout = setTimeout(() => {
+      if (activeSession !== session) return;
+      nativeAbortFailed = true;
+      finish(session.id, { status: "failed" });
+    }, STOP_TIMEOUT_MS);
+  }
+
+  function abortSession(session: RecognitionSession, recognitionSdk: SpeechRecognitionSdk): void {
+    scheduleAbortClose(session);
+    try {
+      void Promise.resolve(recognitionSdk.abort()).catch(() => {
+        nativeAbortFailed = true;
+        finish(session.id, { status: "failed" });
+      });
+    } catch {
+      nativeAbortFailed = true;
+      finish(session.id, { status: "failed" });
+    }
   }
 
   return {
@@ -150,6 +177,12 @@ export function createNativeSpeechRecognitionAdapter(
               requiresOnDeviceRecognition: true,
               recordingOptions: { persist: false },
             });
+            session.recognitionTimeout = setTimeout(() => {
+              if (activeSession !== session) return;
+              session.recognitionTimeout = undefined;
+              resolveSession(session, { status: "silence" });
+              abortSession(session, recognitionSdk);
+            }, RECOGNITION_TIMEOUT_MS);
           } catch {
             nativeAbortFailed = true;
             finish(id, { status: "failed" });
@@ -174,21 +207,18 @@ export function createNativeSpeechRecognitionAdapter(
       pendingId = undefined;
       const session = activeSession;
       if (!session) return;
+      if (session.recognitionTimeout) {
+        clearTimeout(session.recognitionTimeout);
+        session.recognitionTimeout = undefined;
+      }
       resolveSession(session, { status: "stopped" });
-      try {
-        await (sdk ?? loadSpeechRecognitionSdk())?.abort();
-        if (activeSession === session) {
-          if (session.stopTimeout) clearTimeout(session.stopTimeout);
-          session.stopTimeout = setTimeout(() => {
-            if (activeSession !== session) return;
-            nativeAbortFailed = true;
-            finish(session.id, { status: "failed" });
-          }, 3000);
-        }
-      } catch {
+      const recognitionSdk = sdk ?? loadSpeechRecognitionSdk();
+      if (!recognitionSdk) {
         nativeAbortFailed = true;
         finish(session.id, { status: "failed" });
+        return;
       }
+      abortSession(session, recognitionSdk);
     },
   };
 }
