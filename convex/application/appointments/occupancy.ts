@@ -21,8 +21,10 @@ import type { ModalityPreference } from "../../domain/requests/request";
  * (TI2-88); `no_availability` queda para la ausencia de cupo en búsqueda
  * (TI2-98), no para la carrera. `conflict` no dice qué recurso estaba
  * ocupado ni por quién. TI2-96 comprueba sobre este mismo puerto los cruces de estudiante,
- * profesional y sala en `[startAt, endAt)`; los estados los completa
- * TI2-107. Opera con datos ficticios.
+ * profesional y sala en `[startAt, endAt)`; el estado lo persiste
+ * `persistAppointmentTransition` (Infraestructura) tras aplicar la política
+ * (`applyAppointmentTransition`), y el reagendamiento con fecha nueva queda
+ * pendiente de TI2-109. Opera con datos ficticios.
  */
 
 /** Entrada mínima para ocupar un cupo con identificadores genéricos. */

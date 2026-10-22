@@ -20,7 +20,10 @@ import { conflictError, errResult, okResult, type ApiResult } from "../../domain
  * del recurso, sea cual sea su acompañamiento o profesional. Cambiar de
  * horario o de recursos usa la misma operación: valida el destino sin contar
  * la atención que se mueve y solo entonces la actualiza, así un destino
- * ocupado deja el origen intacto. Los estados los completa TI2-107. El rechazo devuelve `conflict` (TI2-88) sin decir
+ * ocupado deja el origen intacto. El estado lo persiste
+ * `persistAppointmentTransition` tras aplicar la política
+ * (`applyAppointmentTransition`); el reagendamiento con fecha nueva queda
+ * pendiente del caso de uso de cambio de TI2-109. El rechazo devuelve `conflict` (TI2-88) sin decir
  * qué recurso estaba ocupado ni por quién; `no_availability` queda para la
  * ausencia de cupo en búsqueda (TI2-98). No hay API pública ni tabla
  * `locks`/`reservations` paralela: la única representación es
@@ -51,8 +54,10 @@ export const MAX_APPOINTMENTS_IN_WINDOW = 200;
 
 /**
  * Estados que ocupan el cupo: todo salvo las cancelaciones, que lo liberan.
- * La lista exacta de estados la completa TI2-107; acá basta distinguir
- * cancelado de no cancelado para que un cupo liberado se pueda volver a ocupar.
+ * El conjunto completo de estados ya vive en el dominio
+ * (`APPOINTMENT_STATUS_VALUES` de TI2-93, persistido por
+ * `persistAppointmentTransition`); acá basta distinguir cancelado de no
+ * cancelado para que un cupo liberado se pueda volver a ocupar.
  */
 const CANCELLED_APPOINTMENT_STATUSES: ReadonlySet<Doc<"appointments">["status"]> = new Set([
   "cancelled_by_student",
@@ -211,9 +216,11 @@ async function findMovedAppointment(
  * aplicar la política de TI2-93 (`transitionAppointment`): un cambio de
  * recursos sin reagendamiento no los toca, así Web y Mobile no muestran una
  * atención reagendada que no lo está. La política decide qué transición
- * admite el cambio; la conciliación con la persistencia la completa
- * TI2-107/TI2-109. Una atención inexistente, cancelada o de otro
- * estudiante o acompañamiento responde `conflict` sin escribir.
+ * admite el cambio y el estado que produce lo persiste
+ * `persistAppointmentTransition` (estado, `cancelReason` y
+ * `originalStartsAt`); el reagendamiento con fecha nueva queda pendiente del
+ * caso de uso de cambio de TI2-109. Una atención inexistente, cancelada o de
+ * otro estudiante o acompañamiento responde `conflict` sin escribir.
  */
 export async function occupySlotAtomically(
   ctx: MutationCtx,
