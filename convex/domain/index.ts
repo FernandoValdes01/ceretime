@@ -184,16 +184,52 @@ export type {
   MinimizedAppointment,
 } from "./appointments/appointment";
 
-// Evento de notificación: forma mínima para consumidores (TI2-100).
+// Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105).
 export {
   NOTIFICATION_CONTRACT_VERSION,
   NOTIFICATION_EVENT_KIND_VALUES,
   isNotificationEventKind,
+  notificationEventsForCreation,
+  notificationEventsForTransition,
+  notificationIdempotencyKey,
   toExternalNotification,
+  toNotificationEvent,
 } from "./notifications/notification";
 export type {
   ExternalNotification,
+  NotificationAudience,
   NotificationContractVersion,
   NotificationEvent,
+  NotificationEventInput,
   NotificationEventKind,
+  NotificationReference,
+  NotificationSubject,
 } from "./notifications/notification";
+
+// Registro de seguimiento: acuerdos, tareas y proyección compartida (TI2-106).
+export {
+  FOLLOW_UP_CONTRACT_VERSION,
+  FOLLOW_UP_ENTRIES_MAX,
+  FOLLOW_UP_REJECTION_CAUSES,
+  FOLLOW_UP_RESPONSIBLE_VALUES,
+  FOLLOW_UP_TASK_STATUS_VALUES,
+  FOLLOW_UP_TEXT_MAX_LENGTH,
+  isFollowUpResponsible,
+  isFollowUpTaskStatus,
+  toSharedFollowUpProjection,
+  validateFollowUpRecord,
+} from "./follow_up/follow_up";
+export type {
+  FollowUpAgreement,
+  FollowUpAgreementInput,
+  FollowUpContractVersion,
+  FollowUpRecord,
+  FollowUpRecordInput,
+  FollowUpRejectionCause,
+  FollowUpResponsible,
+  FollowUpTask,
+  FollowUpTaskInput,
+  FollowUpTaskStatus,
+  FollowUpValidationResult,
+  SharedFollowUpProjection,
+} from "./follow_up/follow_up";
