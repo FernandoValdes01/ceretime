@@ -19,6 +19,9 @@ import {
   occupySlotAtomically,
   type OccupySlotRow,
 } from "../infrastructure/appointments/repository";
+import { bookAppointment, type BookAppointmentDeps } from "../application/appointments/booking";
+import { authorizationReader } from "../infrastructure/accompaniments/repository";
+import { availabilityReader } from "../infrastructure/availability/repository";
 import { cancelRequest, closeRequestWithoutAccompaniment } from "../application/requests/commands";
 import schema from "../schema";
 
@@ -81,10 +84,10 @@ async function seedAccompaniment(t: ReturnType<typeof convexTest>, studentId: Id
   });
 }
 
-/** Lunes 2026-10-12 09:00 UTC en milisegundos de época. */
+/** Lunes 2026-10-12 09:00 UTC en milésimas de segundo de época. */
 const TI84_SLOT_START = Date.UTC(2026, 9, 12, 9);
 
-/** Lunes 2026-10-12 10:00 UTC en milisegundos de época. */
+/** Lunes 2026-10-12 10:00 UTC en milésimas de segundo de época. */
 const TI84_SLOT_END = Date.UTC(2026, 9, 12, 10);
 
 /** Solicitud recibida lista para tomar por la vía pública. */
@@ -1406,4 +1409,111 @@ test("TI2-96: un cambio y una creación en contienda no dejan cruces y el perded
     );
     await expectNoTi96Crossings(t);
   }
+});
+
+/** Lunes 2026-10-26 09:00 UTC, dentro del bloque ficticio de TI2-98. */
+const TI98_SLOT_START = Date.UTC(2026, 9, 26, 9);
+
+/** Fin del cupo ficticio de TI2-98. */
+const TI98_SLOT_END = Date.UTC(2026, 9, 26, 10);
+
+/** Bloque en línea semanal del profesional para el lunes de la prueba. */
+async function seedTi98Block(t: ReturnType<typeof convexTest>, professionalId: Id<"users">) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("availabilityBlocks", {
+      professionalId,
+      weekday: 1,
+      startMinute: 540,
+      endMinute: 600,
+      slotMinutes: 60,
+      modality: "online",
+      isActive: true,
+    });
+  });
+}
+
+/**
+ * Ejecuta el caso de uso TI2-98 con los lectores reales de Convex y un
+ * ocupador local sobre el mismo `ctx`. Necesidades y compatibilidad siguen
+ * siendo dobles porque sus adaptadores pertenecen a TI2-111; las necesidades
+ * vacías permiten reservar en línea sin alterar la revalidación de cupo.
+ */
+async function bookTi98(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    readonly tokenIdentifier: string;
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly professionalId: Id<"users">;
+  },
+) {
+  return await t.run(async (ctx) => {
+    const deps: BookAppointmentDeps = {
+      auth: authorizationReader(ctx),
+      availability: availabilityReader(ctx),
+      needs: {
+        findAccompanimentNeeds: async (accompanimentId) =>
+          accompanimentId === input.accompanimentId ? { _id: accompanimentId, needs: [] } : null,
+      },
+      compatibility: {
+        findCompatibilitySpace: async () => null,
+        listOnlineSupports: async () => [],
+      },
+      occupier: {
+        occupySlot: (slot) =>
+          occupySlotAtomically(ctx, {
+            accompanimentId: slot.accompanimentId as Id<"accompaniments">,
+            studentId: slot.studentId as Id<"users">,
+            professionalId: slot.professionalId as Id<"users">,
+            modality: slot.modality,
+            ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId as Id<"spaces"> }),
+            startsAt: slot.startAt,
+            endsAt: slot.endAt,
+          }),
+      },
+    };
+
+    return await bookAppointment(deps, {
+      tokenIdentifier: input.tokenIdentifier,
+      accompanimentId: input.accompanimentId,
+      professionalId: input.professionalId,
+      modality: "online",
+      startAt: TI98_SLOT_START,
+      endAt: TI98_SLOT_END,
+      timeZone: "UTC",
+    });
+  });
+}
+
+test("TI2-98: la reserva guarda una atención y el segundo intento no duplica", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti98-pro-1");
+  const student = await seedStudent(t, "ti98-est-1");
+  const accompaniment = await seedAccompaniment(t, student);
+  await seedTi98Block(t, pro);
+  const input = {
+    tokenIdentifier: identityFor("ti98-est-1", "ti98-est-1@alu.uct.cl").tokenIdentifier,
+    accompanimentId: accompaniment,
+    professionalId: pro,
+  };
+
+  const first = await bookTi98(t, input);
+  if (!isOkResult(first)) throw new Error("Se esperaba reservar el cupo");
+
+  const second = await bookTi98(t, input);
+  if (!isErrorResult(second)) throw new Error("Se esperaba rechazar el segundo intento");
+  expect(second.error.code).toBe(CONFLICT_ERROR_CODE);
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("appointments").take(10));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    _id: first.data.appointmentId,
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    modality: "online",
+    status: "scheduled",
+    startsAt: TI98_SLOT_START,
+    endsAt: TI98_SLOT_END,
+  });
+  expect(rows[0]?.spaceId).toBeUndefined();
 });

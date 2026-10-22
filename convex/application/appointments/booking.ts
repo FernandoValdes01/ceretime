@@ -10,8 +10,9 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import type { ModalityPreference } from "../../domain/requests/request";
-import { assessCompatibility, type CompatibilityOption } from "../../domain/spaces/compatibility";
+import { assessCompatibility } from "../../domain/spaces/compatibility";
 import { authorizeAppointmentBook, type AuthorizationReader } from "../authorization/authorize";
+import { isValidTimeZone, resolveCompatibilityOption } from "../availability/availability";
 import type {
   AccompanimentNeedsReader,
   AvailabilityReader,
@@ -91,16 +92,6 @@ function civilDateOfInstant(epochMs: number, timeZone: string): string {
   return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
 }
 
-function isValidTimeZone(timeZone: string): boolean {
-  if (timeZone.trim() === "") return false;
-  try {
-    new Intl.DateTimeFormat(undefined, { timeZone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function isUsableInstant(value: number): boolean {
   return Number.isFinite(value) && value > 0 && !Number.isNaN(new Date(value).getTime());
 }
@@ -172,23 +163,6 @@ async function findCurrentSlot(
 }
 
 /**
- * Resuelve la opción de compatibilidad del cupo desde el catálogo vigente.
- * Una sala retirada o inexistente no se ofrece; los apoyos en línea cubren
- * las necesidades de esa modalidad. `null` significa que no hay opción.
- */
-async function resolveCompatibilityOption(
-  deps: BookAppointmentDeps,
-  slot: AvailabilitySlot,
-): Promise<CompatibilityOption | null> {
-  if (slot.modality === "online") {
-    return { modality: "online", onlineSupports: await deps.compatibility.listOnlineSupports() };
-  }
-  if (slot.spaceId === undefined) return null;
-  const space = await deps.compatibility.findCompatibilitySpace(slot.spaceId);
-  return space === null ? null : { modality: "inPerson", space };
-}
-
-/**
  * Reserva un cupo propio, activo y compatible.
  *
  * Valida la forma de la entrada, autoriza con TI2-86, revalida la
@@ -234,7 +208,9 @@ export async function bookAppointment(
   const needs = await deps.needs.findAccompanimentNeeds(input.accompanimentId);
   if (needs === null) return conflict();
 
-  const option = await resolveCompatibilityOption(deps, current.data);
+  const onlineSupports =
+    current.data.modality === "online" ? await deps.compatibility.listOnlineSupports() : [];
+  const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, current.data);
   if (option === null) return noAvailability();
   if (!assessCompatibility(needs.needs, option).compatible) return noAvailability();
 
