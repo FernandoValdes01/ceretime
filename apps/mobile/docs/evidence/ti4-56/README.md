@@ -2,7 +2,7 @@
 
 ## Estado de viabilidad
 
-El proveedor elegido es `expo-speech-recognition` 57.1.1, compatible con Expo SDK 57 y compilado en Android; la viabilidad de reconocimiento real queda pendiente de prueba en dispositivo.
+El proveedor elegido es `expo-speech-recognition` 57.1.1, compatible con Expo SDK 57 y compilado en Android; se comprobó reconocimiento local en un emulador Android 17/API 37 sin red. La viabilidad queda condicionada al modelo español instalado y al reconocimiento de frases breves; véase la [matriz nativa](native-evidence.md).
 
 El adaptador solicita permiso explícito, exige un modelo español instalado y activa `requiresOnDeviceRecognition`; no usa resultados parciales, no guarda audio y conserva el texto reconocido solo mientras interpreta el comando.
 
@@ -56,22 +56,18 @@ El reconocimiento de estos tres comandos no es dictado de campos, no envía soli
 
 El build nativo Android `assembleDebug` para x86_64 terminó correctamente en 12 segundos después de aplicar el parche; se compiló el módulo nativo con el config plugin Expo.
 
-## Evidencia de dispositivo pendiente
+## Evidencia nativa
 
-No había un dispositivo Android conectado al ejecutar `adb devices -l`; por ello no se afirma que se haya reconocido voz real ni que el paquete de idioma español esté instalado en un dispositivo.
-
-Antes de habilitar el comando en una distribución, confirmar en un dispositivo Android API 33 o superior que el servicio local ofrece español instalado, conceder permiso de micrófono, probar las tres frases y repetir sin conexión de red; si falta el modelo, el comportamiento esperado es `unavailable` y la alternativa táctil permanece disponible.
-
-No se probó iOS en dispositivo. El proveedor y la política de rechazo remoto están cableados, pero la disponibilidad del modelo español on-device depende del dispositivo y de la versión del sistema.
+La [matriz nativa del 22 de octubre de 2026](native-evidence.md) registra permisos reales, modelo ausente, instalación de español, reconocimiento sin red, silencio y controles accesibles. Las tres intenciones se ejecutaron en el consumidor de TI4-61: abrir solicitudes, regresar y cancelar. La frase literal «volver» produjo un comando desconocido en una muestra sintética; no se afirma fiabilidad general ni validación en un teléfono físico o iOS.
 
 ## Evidencia de la entrega
 
 [PR draft #124](https://github.com/FernandoValdes01/ceretime/pull/124). El puerto y parser se registraron en `5ddea1d`; el adaptador, su configuración y el parche nativo se registraron en `ee4e943`.
 
-Se ejecutaron 13 pruebas del parser, 16 del adaptador y 7 del probe. Las 11 pruebas existentes de TTS también pasaron. Typecheck, lint, formato y ortografía pasaron; el comando de ortografía con dos paquetes no es compatible con Bun 1.4, por lo que se ejecutó CSpell con ambos paquetes instalados en un directorio temporal y la misma configuración del repositorio.
+Se ejecutaron 13 pruebas del parser, 20 del adaptador y 7 del probe. Las 11 pruebas existentes de TTS también pasaron. Typecheck, lint, formato y ortografía pasaron; el comando de ortografía con dos paquetes no es compatible con Bun 1.4, por lo que se ejecutó CSpell con ambos paquetes instalados en un directorio temporal y la misma configuración del repositorio.
 
 La compilación del checkpoint `ee4e943` se repitió con `ANDROID_HOME=/home/corvo/Android/Sdk JAVA_HOME=/usr/lib/jvm/java-21-openjdk ./gradlew :app:assembleDebug -PreactNativeArchitectures=x86_64 --console=plain` desde `apps/mobile/android`: `BUILD SUCCESSFUL in 8s`, 515 tareas, 19 ejecutadas y 496 actualizadas. Esto comprueba compilación nativa; no sustituye una prueba de micrófono.
 
-No se inició Metro ni el emulador porque `apps/mobile/AGENTS.md` exige autorización explícita para iniciar servidores y la consulta de autorización seguía pendiente. Quedan por registrar TalkBack, texto ampliado, permiso real y reconocimiento local español con la red desconectada.
+Con autorización explícita del usuario se iniciaron Expo/Metro y Medium_Phone. El build limpio de esta sesión terminó en 2 min 59 s con 515 tareas ejecutadas. La suite final de la integración con TI4-61 pasó: 25 suites y 252 pruebas. La evidencia nativa incluye la fuente base `efb46e8` y el consumidor integrado `f3b95c6`; las rutas temporales se retiraron después de las pruebas.
 
 Referencias consultadas: [Expo SDK 57](https://docs.expo.dev/versions/v57.0.0/) y [documentación del proveedor](https://github.com/jamsch/expo-speech-recognition#readme). La compatibilidad del build y el orden de eventos se contrastaron con la versión 57.1.1 instalada.
