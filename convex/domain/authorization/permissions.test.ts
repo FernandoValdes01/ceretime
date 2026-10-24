@@ -7,6 +7,7 @@ import {
   canReadInternalNote,
   canReadSpaceCatalog,
   getAccompanimentView,
+  isProfessionalBookable,
   isProfileActive,
   PERMISSION_MATRIX,
   type AgendaAuthorizationContext,
@@ -268,6 +269,29 @@ describe("canBookAppointment", () => {
       expect(
         canBookAppointment(agendaContext({ role: "student", isOwner: true, ...account })),
       ).toBe(false);
+    }
+  });
+});
+
+describe("isProfessionalBookable", () => {
+  const bookableProfessional = {
+    role: "professional",
+    institutionalStatus: "enabled",
+    accountStatus: "active",
+    hasActiveProfessionalAssignment: true,
+  } as const;
+
+  test("exige rol profesional, cuenta vigente y asignación activa", () => {
+    expect(isProfessionalBookable(bookableProfessional)).toBe(true);
+    expect(isProfessionalBookable({ ...bookableProfessional, role: "intern" })).toBe(false);
+    expect(
+      isProfessionalBookable({
+        ...bookableProfessional,
+        hasActiveProfessionalAssignment: false,
+      }),
+    ).toBe(false);
+    for (const account of INACTIVE_ACCOUNTS) {
+      expect(isProfessionalBookable({ ...bookableProfessional, ...account })).toBe(false);
     }
   });
 });

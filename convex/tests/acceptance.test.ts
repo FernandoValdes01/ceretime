@@ -58,15 +58,19 @@ async function seedStudent(t: ReturnType<typeof convexTest>, subject: string) {
   });
 }
 
-/** Profesional ficticio con cuenta habilitada y vigente. */
-async function seedProfessional(t: ReturnType<typeof convexTest>, subject: string) {
+/** Profesional ficticio con cuenta habilitada y, por defecto, vigente. */
+async function seedProfessional(
+  t: ReturnType<typeof convexTest>,
+  subject: string,
+  accountStatus: "active" | "inactive" = "active",
+) {
   return await t.run(async (ctx) => {
     return await ctx.db.insert("users", {
       email: `${subject}@uct.cl`,
       fullName: "Profesional Ficticio",
       role: "professional",
       institutionalStatus: "enabled",
-      accountStatus: "active",
+      accountStatus,
       tokenIdentifier: `${ISSUER}|${subject}`,
     });
   });
@@ -1417,6 +1421,23 @@ const TI98_SLOT_START = Date.UTC(2026, 9, 26, 9);
 /** Fin del cupo ficticio de TI2-98. */
 const TI98_SLOT_END = Date.UTC(2026, 9, 26, 10);
 
+/** Asignación profesional del acompañamiento para el profesional elegido. */
+async function seedTi98Assignment(
+  t: ReturnType<typeof convexTest>,
+  accompanimentId: Id<"accompaniments">,
+  professionalId: Id<"users">,
+  status: "active" | "revoked" = "active",
+) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("accompanimentAssignments", {
+      accompanimentId,
+      userId: professionalId,
+      assignedRole: "professional",
+      status,
+    });
+  });
+}
+
 /** Bloque en línea semanal del profesional para el lunes de la prueba. */
 async function seedTi98Block(t: ReturnType<typeof convexTest>, professionalId: Id<"users">) {
   return await t.run(async (ctx) => {
@@ -1489,6 +1510,7 @@ test("TI2-98: la reserva guarda una atención y el segundo intento no duplica", 
   const pro = await seedProfessional(t, "ti98-pro-1");
   const student = await seedStudent(t, "ti98-est-1");
   const accompaniment = await seedAccompaniment(t, student);
+  await seedTi98Assignment(t, accompaniment, pro);
   await seedTi98Block(t, pro);
   const input = {
     tokenIdentifier: identityFor("ti98-est-1", "ti98-est-1@alu.uct.cl").tokenIdentifier,
@@ -1516,4 +1538,38 @@ test("TI2-98: la reserva guarda una atención y el segundo intento no duplica", 
     endsAt: TI98_SLOT_END,
   });
   expect(rows[0]?.spaceId).toBeUndefined();
+});
+
+test("TI2-98: no reserva sin asignación activa o con cuenta profesional inactiva", async () => {
+  const cases = [
+    { label: "sin asignación", assignment: null, accountStatus: "active" as const },
+    {
+      label: "asignación revocada",
+      assignment: "revoked" as const,
+      accountStatus: "active" as const,
+    },
+    { label: "cuenta inactiva", assignment: "active" as const, accountStatus: "inactive" as const },
+  ];
+
+  for (const { label, assignment, accountStatus } of cases) {
+    const t = convexTest(schema, modules);
+    const subject = `ti98-${assignment ?? "none"}-${accountStatus}`;
+    const pro = await seedProfessional(t, `pro-${subject}`, accountStatus);
+    const student = await seedStudent(t, `est-${subject}`);
+    const accompaniment = await seedAccompaniment(t, student);
+    await seedTi98Block(t, pro);
+    if (assignment !== null) {
+      await seedTi98Assignment(t, accompaniment, pro, assignment);
+    }
+
+    const result = await bookTi98(t, {
+      tokenIdentifier: identityFor(`est-${subject}`, `est-${subject}@alu.uct.cl`).tokenIdentifier,
+      accompanimentId: accompaniment,
+      professionalId: pro,
+    });
+
+    if (!isErrorResult(result)) throw new Error(`Se esperaba rechazar: ${label}`);
+    expect(result.error.code).toBe(NO_AVAILABILITY_ERROR_CODE);
+    expect(await t.run(async (ctx) => await ctx.db.query("appointments").take(10))).toHaveLength(0);
+  }
 });

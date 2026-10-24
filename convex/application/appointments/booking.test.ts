@@ -46,6 +46,16 @@ const professional: FakeProfile = {
   tokenIdentifier: "token-pro",
 };
 
+const inactiveProfessional: FakeProfile = {
+  ...professional,
+  accountStatus: "inactive",
+};
+
+const disabledProfessional: FakeProfile = {
+  ...professional,
+  institutionalStatus: "disabled",
+};
+
 const activeAccompaniment: AuthorizableAgendaAccompaniment = {
   _id: "acc-1",
   studentId: "user-student",
@@ -60,6 +70,7 @@ function fakeAuth(data: {
   return {
     findProfileByTokenIdentifier: async (tokenIdentifier) =>
       data.profiles.find((row) => row.tokenIdentifier === tokenIdentifier) ?? null,
+    getProfileById: async (userId) => data.profiles.find((row) => row._id === userId) ?? null,
     getAccompaniment: async (accompanimentId) =>
       data.accompaniments?.find((row) => row._id === accompanimentId) ?? null,
     findActiveAssignments: async (accompanimentId, userId) =>
@@ -67,6 +78,26 @@ function fakeAuth(data: {
         (row) => row.accompanimentId === accompanimentId && row.userId === userId,
       ),
   };
+}
+
+function activeProfessionalAssignment(
+  overrides: Partial<AuthorizableAssignment> = {},
+): AuthorizableAssignment {
+  return {
+    accompanimentId: "acc-1",
+    userId: "user-pro",
+    assignedRole: "professional",
+    status: "active",
+    ...overrides,
+  };
+}
+
+function authorizedAuth(): AuthorizationReader {
+  return fakeAuth({
+    profiles: [student, professional],
+    accompaniments: [activeAccompaniment],
+    assignments: [activeProfessionalAssignment()],
+  });
 }
 
 /** Bloques en línea para cada día de la semana: cubren la fecha fija de las pruebas. */
@@ -228,12 +259,9 @@ function requireOk<T>(result: ApiResult<T>): T {
 describe("reserva de un cupo compatible (TI2-98)", () => {
   test("el estudiante dueño reserva y la atención usa su identidad de sesión", async () => {
     const occupier = fakeOccupier();
-    const deps = bookingDeps(
-      fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] }),
-      {
-        occupier,
-      },
-    );
+    const deps = bookingDeps(authorizedAuth(), {
+      occupier,
+    });
 
     const result = await bookAppointment(deps, bookingInput());
 
@@ -254,7 +282,7 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
     const occupier = fakeOccupier();
     const cases = [
       {
-        auth: fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] }),
+        auth: authorizedAuth(),
         input: bookingInput({ tokenIdentifier: null }),
       },
       {
@@ -306,7 +334,7 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
 
   test("un bloque retirado o una excepción cancelada dejan el cupo sin disponibilidad", async () => {
     const occupier = fakeOccupier();
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = authorizedAuth();
     const withoutBlocks = bookingDeps(auth, {
       availability: fakeAvailability({ blocks: [] }),
       occupier,
@@ -334,7 +362,7 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
 
   test("un horario, modalidad o sala distintos del cupo vigente no se reservan", async () => {
     const occupier = fakeOccupier();
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = authorizedAuth();
     const deps = bookingDeps(auth, { occupier });
 
     expect(await bookAppointment(deps, bookingInput({ startAt: SLOT_START + 1 }))).toEqual(
@@ -349,7 +377,7 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
 
   test("una sala retirada o una necesidad no cubierta responde sin disponibilidad", async () => {
     const occupier = fakeOccupier();
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = authorizedAuth();
     const need: AccessNeed = { id: "access-ramp", label: "Rampa de acceso" };
     const retiredSpace = bookingDeps(auth, {
       availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
@@ -372,7 +400,7 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
   });
 
   test("la sala vigente y los apoyos en línea que cubren las necesidades permiten reservar", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = authorizedAuth();
     const need: AccessNeed = { id: "access-ramp", label: "Rampa de acceso" };
     const inPersonOccupier = fakeOccupier();
     const inPerson = bookingDeps(auth, {
@@ -404,10 +432,7 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
       status: "error",
       error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
     });
-    const deps = bookingDeps(
-      fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] }),
-      { occupier },
-    );
+    const deps = bookingDeps(authorizedAuth(), { occupier });
 
     expect(await bookAppointment(deps, bookingInput())).toEqual(CONFLICT);
     expect(occupier.calls).toHaveLength(1);
@@ -429,10 +454,7 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
             };
       },
     };
-    const deps = bookingDeps(
-      fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] }),
-      { occupier },
-    );
+    const deps = bookingDeps(authorizedAuth(), { occupier });
 
     expect(await bookAppointment(deps, bookingInput())).toEqual({
       status: "ok",
@@ -444,7 +466,7 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
 
   test("las lecturas truncadas y la falta de necesidades responden conflicto sin escribir", async () => {
     const occupier = fakeOccupier();
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = authorizedAuth();
     const readFailure = bookingDeps(auth, {
       availability: fakeAvailability({ readError: true }),
       occupier,
@@ -459,12 +481,41 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
     expect(occupier.calls).toHaveLength(0);
   });
 
+  test("un profesional sin asignación, revocado o con cuenta no vigente no recibe el cupo", async () => {
+    const cases = [
+      {
+        profiles: [student, professional],
+        assignments: [],
+      },
+      {
+        profiles: [student, professional],
+        assignments: [activeProfessionalAssignment({ status: "revoked" })],
+      },
+      {
+        profiles: [student, inactiveProfessional],
+        assignments: [activeProfessionalAssignment()],
+      },
+      {
+        profiles: [student, disabledProfessional],
+        assignments: [activeProfessionalAssignment()],
+      },
+    ];
+
+    for (const { profiles, assignments } of cases) {
+      const occupier = fakeOccupier();
+      const deps = bookingDeps(
+        fakeAuth({ profiles, accompaniments: [activeAccompaniment], assignments }),
+        { occupier },
+      );
+
+      expect(await bookAppointment(deps, bookingInput())).toEqual(NO_AVAILABILITY);
+      expect(occupier.calls).toHaveLength(0);
+    }
+  });
+
   test("una entrada inválida se rechaza antes de autorizar o escribir", async () => {
     const occupier = fakeOccupier();
-    const deps = bookingDeps(
-      fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] }),
-      { occupier },
-    );
+    const deps = bookingDeps(authorizedAuth(), { occupier });
 
     expect(await bookAppointment(deps, bookingInput({ startAt: SLOT_END }))).toEqual(CONFLICT);
     expect(await bookAppointment(deps, bookingInput({ timeZone: "No/Existe" }))).toEqual(CONFLICT);

@@ -2,6 +2,7 @@ import {
   expandAvailabilitySlots,
   type AvailabilitySlot,
 } from "../../domain/availability/availability";
+import { isProfessionalBookable } from "../../domain/authorization/permissions";
 import {
   conflictError,
   errResult,
@@ -30,14 +31,16 @@ import type { AppointmentOccupier, OccupySlotSuccess } from "./occupancy";
  * prueba con dobles en memoria. Reserva y atención son la misma entidad
  * (`appointments`), sin tabla ni contrato paralelo.
  *
- * La selección del cliente no es prueba de nada: el horario, la modalidad y
- * la sala se vuelven a derivar de los bloques y excepciones vigentes dentro
- * de la misma operación transaccional que escribe. Una sala retirada, un
- * bloque desactivado, una excepción cancelada o una necesidad no cubierta
- * responden `no_availability` sin escribir. La contención de estudiante,
- * profesional o sala la decide la ocupación atómica y responde `conflict`
- * sin revelar qué recurso estaba ocupado. Toda denegación de autorización
- * usa el mismo error genérico, sin filtrar existencia.
+ * La selección del cliente no es prueba de nada: el Profesional debe seguir
+ * asignado activamente al acompañamiento y tener cuenta habilitada y vigente,
+ * y el horario, la modalidad y la sala se vuelven a derivar de los bloques y
+ * excepciones vigentes dentro de la misma operación transaccional que escribe.
+ * Un Profesional no reservable, una sala retirada, un bloque desactivado, una
+ * excepción cancelada o una necesidad no cubierta responden `no_availability`
+ * sin escribir. La contención de estudiante, profesional o sala la decide la
+ * ocupación atómica y responde `conflict` sin revelar qué recurso estaba
+ * ocupado. Toda denegación de autorización usa el mismo error genérico, sin
+ * filtrar existencia.
  *
  * Opera con datos ficticios.
  */
@@ -200,6 +203,28 @@ export async function bookAppointment(
     accompanimentId: input.accompanimentId,
   });
   if (grant.status === "error") return denied();
+
+  const [professionalProfile, professionalAssignments] = await Promise.all([
+    deps.auth.getProfileById(input.professionalId),
+    deps.auth.findActiveAssignments(input.accompanimentId, input.professionalId),
+  ]);
+  if (
+    professionalProfile === null ||
+    !isProfessionalBookable({
+      role: professionalProfile.role,
+      institutionalStatus: professionalProfile.institutionalStatus,
+      accountStatus: professionalProfile.accountStatus,
+      hasActiveProfessionalAssignment: professionalAssignments.some(
+        (assignment) =>
+          assignment.accompanimentId === input.accompanimentId &&
+          assignment.userId === professionalProfile._id &&
+          assignment.assignedRole === "professional" &&
+          assignment.status === "active",
+      ),
+    })
+  ) {
+    return noAvailability();
+  }
 
   const date = civilDateOfInstant(input.startAt, input.timeZone);
   const current = await findCurrentSlot(deps, input, spaceId, date);
