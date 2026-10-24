@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from "react-native";
-import type { SpeechPort } from "../../application/speech-port";
+import { parseSpeechCommand, type SpeechCommand } from "../../application/speech-command-parser";
+import type { SpeechPort, SpeechRecognitionPort } from "../../application/speech-port";
 
 export function SpeechControls({
   speechPort,
@@ -113,6 +114,161 @@ export function SpeechControls({
   );
 }
 
+type SpeechCommandStatus =
+  | "idle"
+  | "listening"
+  | "silence"
+  | "denied"
+  | "unavailable"
+  | "unknown"
+  | "failed";
+
+export function SpeechCommandControls({
+  speechPort,
+  onOpenRequests,
+  onBack,
+  onCancel,
+}: {
+  readonly speechPort: SpeechRecognitionPort;
+  readonly onOpenRequests: () => void;
+  readonly onBack: () => void;
+  readonly onCancel: () => void;
+}) {
+  const [status, setStatus] = useState<SpeechCommandStatus>("idle");
+  const mounted = useRef(false);
+  const listening = useRef(false);
+  const generation = useRef(0);
+
+  const stopRecognition = useCallback(() => {
+    generation.current += 1;
+    listening.current = false;
+    if (mounted.current) setStatus("idle");
+    void speechPort.stop().catch(() => undefined);
+  }, [speechPort]);
+
+  const runCommand = useCallback(
+    (command: SpeechCommand) => {
+      stopRecognition();
+      if (command === "open-requests") onOpenRequests();
+      if (command === "back") onBack();
+      if (command === "cancel") onCancel();
+    },
+    [onBack, onCancel, onOpenRequests, stopRecognition],
+  );
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      listening.current = false;
+      generation.current += 1;
+    };
+  }, [speechPort]);
+
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        listening.current = false;
+        generation.current += 1;
+        if (mounted.current) setStatus("idle");
+        void speechPort.stop().catch(() => undefined);
+      },
+      [speechPort],
+    ),
+  );
+
+  async function handleVoicePress() {
+    if (listening.current) {
+      stopRecognition();
+      return;
+    }
+
+    const requestId = ++generation.current;
+    listening.current = true;
+    setStatus("listening");
+    try {
+      const result = await speechPort.recognize();
+      if (!mounted.current || generation.current !== requestId) return;
+      listening.current = false;
+      if (result.status === "recognized") {
+        const command = parseSpeechCommand(result.transcript);
+        if (command.type === "unknown") {
+          setStatus("unknown");
+          return;
+        }
+        runCommand(command.type);
+        return;
+      }
+      setStatus(result.status === "stopped" ? "idle" : result.status);
+    } catch {
+      if (mounted.current && generation.current === requestId) {
+        listening.current = false;
+        setStatus("failed");
+      }
+    }
+  }
+
+  const statusMessage: Record<SpeechCommandStatus, string | null> = {
+    idle: null,
+    listening: "Escuchando. También puedes usar los botones en cualquier momento.",
+    silence: "No se detectó voz. Puedes usar los botones.",
+    denied: "No hay permiso para usar el micrófono. Puedes usar los botones.",
+    unavailable: "El reconocimiento de voz no está disponible. Puedes usar los botones.",
+    unknown: "No reconocí ese comando. Prueba abrir solicitudes, volver o cancelar.",
+    failed: "Falló el reconocimiento. Puedes volver a intentarlo o usar los botones.",
+  };
+
+  return (
+    <View style={commandStyles.container}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={
+          status === "listening" ? "Detener reconocimiento" : "Usar comando de voz"
+        }
+        accessibilityState={{ disabled: false }}
+        onPress={handleVoicePress}
+        android_ripple={{ color: "#17483F" }}
+        style={styles.button}
+      >
+        <Text style={styles.buttonLabel}>
+          {status === "listening" ? "Detener escucha" : "Usar comando de voz"}
+        </Text>
+      </Pressable>
+      <View style={commandStyles.actions}>
+        <CommandButton label="Abrir solicitudes" onPress={() => runCommand("open-requests")} />
+        <CommandButton label="Volver" onPress={() => runCommand("back")} />
+        <CommandButton label="Cancelar" onPress={() => runCommand("cancel")} />
+      </View>
+      {statusMessage[status] ? (
+        <Text accessibilityLiveRegion="polite" style={commandStyles.message}>
+          {statusMessage[status]}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function CommandButton({
+  label,
+  onPress,
+}: {
+  readonly label: string;
+  readonly onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: false }}
+      onPress={onPress}
+      android_ripple={{ color: "#D3E4DF" }}
+      style={commandStyles.secondaryButton}
+    >
+      <Text style={commandStyles.secondaryLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { gap: 12 },
   button: {
@@ -128,4 +284,23 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.55 },
   buttonLabel: { color: "#FFFFFF", fontSize: 17, fontWeight: "600", textAlign: "center" },
   message: { color: "#42565B", fontSize: 16, lineHeight: 24 },
+});
+
+const commandStyles = StyleSheet.create({
+  container: { gap: 12 },
+  actions: { gap: 8 },
+  secondaryButton: {
+    minHeight: 52,
+    minWidth: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderWidth: 2,
+    borderColor: "#246259",
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+  },
+  secondaryLabel: { color: "#17483F", fontSize: 17, fontWeight: "600", textAlign: "center" },
+  message: { color: "#334745", fontSize: 16, lineHeight: 24 },
 });
