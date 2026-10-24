@@ -750,3 +750,262 @@ test("TI2-111: el cliente no fija el dueño ni otra versión del contrato", asyn
   ).rejects.toThrow("Expected `v1`, got `v2`");
   expect(await ti111Rows(t)).toEqual({ blocks: [], exceptions: [] });
 });
+
+// ── TI2-111: búsqueda y reserva por la API ───────────────────────────────────
+//
+// Agenda ficticia del lunes 2026-11-02 en UTC: un bloque presencial de 09:00
+// a 11:00 en una sala que cubre la necesidad del Estudiante, un bloque en
+// línea de 12:00 a 13:00 y una atención de otro Estudiante que ya ocupa las
+// 09:00. Solo queda libre y compatible el cupo de las 10:00.
+
+const TI111_DAY = "2026-11-02";
+const ti111At = (hour: number) => Date.UTC(2026, 10, 2, hour);
+
+async function ti111SeedAgenda(t: ReturnType<typeof convexTest>) {
+  const studentId = await seedUser(t, {
+    subject: "ti111-ag-est-1",
+    email: "ti111-ag-est-1@alu.uct.cl",
+    role: "student",
+  });
+  const otherStudentId = await seedUser(t, {
+    subject: "ti111-ag-est-2",
+    email: "ti111-ag-est-2@alu.uct.cl",
+    role: "student",
+  });
+  const professionalId = await seedUser(t, {
+    subject: "ti111-ag-pro-1",
+    email: "ti111-ag-pro-1@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti111-ag-pro-2",
+    email: "ti111-ag-pro-2@uct.cl",
+    role: "professional",
+  });
+  return await t.run(async (ctx) => {
+    const accompanimentId = await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Sala físicamente accesible",
+    });
+    const otherAccompanimentId = await ctx.db.insert("accompaniments", {
+      studentId: otherStudentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Persona de apoyo\nIntérprete de lengua de señas",
+    });
+    for (const id of [accompanimentId, otherAccompanimentId]) {
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId: id,
+        userId: professionalId,
+        assignedRole: "professional",
+        status: "active",
+      });
+    }
+    const spaceId = await ctx.db.insert("spaces", {
+      campus: "Campus ficticio",
+      building: "A",
+      floor: "1",
+      room: "Sala accesible",
+      accessConditions: "Sala físicamente accesible\nReducción de estímulos",
+      accessInstructions: "Instrucciones ficticias",
+      isActive: true,
+    });
+    await ctx.db.insert("availabilityBlocks", {
+      professionalId,
+      weekday: 1,
+      startMinute: 540,
+      endMinute: 660,
+      slotMinutes: 60,
+      modality: "inPerson",
+      spaceId,
+      isActive: true,
+    });
+    await ctx.db.insert("availabilityBlocks", {
+      professionalId,
+      weekday: 1,
+      startMinute: 720,
+      endMinute: 780,
+      slotMinutes: 60,
+      modality: "online",
+      isActive: true,
+    });
+    await ctx.db.insert("appointments", {
+      accompanimentId: otherAccompanimentId,
+      studentId: otherStudentId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: ti111At(9),
+      endsAt: ti111At(10),
+      createdAt: 1,
+    });
+    return { studentId, professionalId, accompanimentId, otherAccompanimentId, spaceId };
+  });
+}
+
+function ti111Search(accompanimentId: string, professionalId: string) {
+  return {
+    accompanimentId,
+    professionalId,
+    from: TI111_DAY,
+    to: TI111_DAY,
+    timeZone: "UTC",
+    limit: 10,
+    version: "v1" as const,
+  };
+}
+
+async function ti111Appointments(t: ReturnType<typeof convexTest>) {
+  return await t.run(async (ctx) => await ctx.db.query("appointments").take(20));
+}
+
+test("TI2-111: la búsqueda entrega solo cupos libres y compatibles a quien puede ver la agenda", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await ti111SeedAgenda(t);
+  const search = ti111Search(agenda.accompanimentId, agenda.professionalId);
+  const expected = {
+    items: [
+      {
+        id: `${agenda.professionalId}:${TI111_DAY}:${ti111At(10)}`,
+        professionalId: agenda.professionalId,
+        date: TI111_DAY,
+        startAt: ti111At(10),
+        endAt: ti111At(11),
+        modality: "inPerson",
+        spaceId: agenda.spaceId,
+        version: "v1",
+      },
+    ],
+    hasMore: false,
+    nextCursor: null,
+    version: "v1",
+  };
+
+  const asStudent = t.withIdentity(identityFor("ti111-ag-est-1", "ti111-ag-est-1@alu.uct.cl"));
+  const asAssigned = t.withIdentity(identityFor("ti111-ag-pro-1", "ti111-ag-pro-1@uct.cl"));
+  expect(await asStudent.query(api.presentation.availability.searchSlots, search)).toStrictEqual(
+    expected,
+  );
+  expect(await asAssigned.query(api.presentation.availability.searchSlots, search)).toStrictEqual(
+    expected,
+  );
+
+  const denied = { code: "unauthorized", message: "No autorizado" };
+  for (const caller of [
+    t,
+    t.withIdentity(identityFor("ti111-ag-est-2", "ti111-ag-est-2@alu.uct.cl")),
+    t.withIdentity(identityFor("ti111-ag-pro-2", "ti111-ag-pro-2@uct.cl")),
+  ]) {
+    expect(
+      await ti111PublicError(caller.query(api.presentation.availability.searchSlots, search)),
+    ).toStrictEqual(denied);
+  }
+
+  // Sus necesidades no las cubre ninguna sala ni la plataforma en línea.
+  const asOther = t.withIdentity(identityFor("ti111-ag-est-2", "ti111-ag-est-2@alu.uct.cl"));
+  expect(
+    await ti111PublicError(
+      asOther.query(
+        api.presentation.availability.searchSlots,
+        ti111Search(agenda.otherAccompanimentId, agenda.professionalId),
+      ),
+    ),
+  ).toStrictEqual({ code: "no_availability", message: noAvailabilityError().message });
+
+  const otherVersion = { ...search, version: "v2" } as unknown as typeof search;
+  await expect(
+    asStudent.query(api.presentation.availability.searchSlots, otherVersion),
+  ).rejects.toThrow("Expected `v1`, got `v2`");
+});
+
+test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await ti111SeedAgenda(t);
+  const asStudent = t.withIdentity(identityFor("ti111-ag-est-1", "ti111-ag-est-1@alu.uct.cl"));
+  const slot = {
+    accompanimentId: agenda.accompanimentId as string,
+    professionalId: agenda.professionalId as string,
+    modality: "inPerson" as const,
+    spaceId: agenda.spaceId as string,
+    startAt: ti111At(10),
+    endAt: ti111At(11),
+    timeZone: "UTC",
+    version: "v1" as const,
+  };
+  const before = await ti111Appointments(t);
+
+  // Quien no es el Estudiante dueño no reserva, aunque sea el profesional.
+  const denied = { code: "unauthorized", message: "No autorizado" };
+  for (const caller of [
+    t,
+    t.withIdentity(identityFor("ti111-ag-est-2", "ti111-ag-est-2@alu.uct.cl")),
+    t.withIdentity(identityFor("ti111-ag-pro-1", "ti111-ag-pro-1@uct.cl")),
+  ]) {
+    expect(
+      await ti111PublicError(caller.mutation(api.presentation.appointments.bookAppointment, slot)),
+    ).toStrictEqual(denied);
+  }
+  // Un horario que no existe y uno en línea que no cubre su necesidad.
+  const noAvailability = { code: "no_availability", message: noAvailabilityError().message };
+  const { spaceId: _spaceId, ...withoutSpace } = slot;
+  for (const other of [
+    { ...slot, startAt: ti111At(11), endAt: ti111At(12) },
+    { ...withoutSpace, modality: "online" as const, startAt: ti111At(12), endAt: ti111At(13) },
+  ]) {
+    expect(
+      await ti111PublicError(
+        asStudent.mutation(api.presentation.appointments.bookAppointment, other),
+      ),
+    ).toStrictEqual(noAvailability);
+  }
+  // El cupo de las 09:00 ya lo ocupa otra atención.
+  const conflict = { code: "conflict", message: conflictError().message };
+  expect(
+    await ti111PublicError(
+      asStudent.mutation(api.presentation.appointments.bookAppointment, {
+        ...slot,
+        startAt: ti111At(9),
+        endAt: ti111At(10),
+      }),
+    ),
+  ).toStrictEqual(conflict);
+  expect(await ti111Appointments(t)).toEqual(before);
+
+  const booked = await asStudent.mutation(api.presentation.appointments.bookAppointment, slot);
+  expect(Object.keys(booked)).toEqual(["appointmentId"]);
+  const row = await t.run(
+    async (ctx) => await ctx.db.get(booked.appointmentId as Id<"appointments">),
+  );
+  expect(row).toMatchObject({
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.studentId,
+    professionalId: agenda.professionalId,
+    modality: "inPerson",
+    spaceId: agenda.spaceId,
+    status: "scheduled",
+    startsAt: ti111At(10),
+    endsAt: ti111At(11),
+  });
+
+  // Repetir la reserva choca consigo misma, y la búsqueda ya no ofrece el cupo.
+  const afterBooking = await ti111Appointments(t);
+  expect(
+    await ti111PublicError(asStudent.mutation(api.presentation.appointments.bookAppointment, slot)),
+  ).toStrictEqual(conflict);
+  expect(await ti111Appointments(t)).toEqual(afterBooking);
+  expect(
+    await ti111PublicError(
+      asStudent.query(
+        api.presentation.availability.searchSlots,
+        ti111Search(agenda.accompanimentId, agenda.professionalId),
+      ),
+    ),
+  ).toStrictEqual(noAvailability);
+
+  const otherVersion = { ...slot, version: "v2" } as unknown as typeof slot;
+  await expect(
+    asStudent.mutation(api.presentation.appointments.bookAppointment, otherVersion),
+  ).rejects.toThrow("Expected `v1`, got `v2`");
+});
