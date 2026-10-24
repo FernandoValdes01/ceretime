@@ -60,6 +60,7 @@ import type * as operations_migrations from "../operations/migrations.js";
 import type * as operations_requests from "../operations/requests.js";
 import type * as operations_users from "../operations/users.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
+import type * as presentation_appointments from "../presentation/appointments.js";
 import type * as presentation_availability from "../presentation/availability.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
@@ -124,6 +125,7 @@ declare const fullApi: ApiFromModules<{
   "operations/requests": typeof operations_requests;
   "operations/users": typeof operations_users;
   "presentation/accompaniments": typeof presentation_accompaniments;
+  "presentation/appointments": typeof presentation_appointments;
   "presentation/availability": typeof presentation_availability;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
