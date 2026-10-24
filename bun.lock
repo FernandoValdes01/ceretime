@@ -35,6 +35,7 @@
         "expo-linking": "~57.0.11",
         "expo-router": "~57.0.24",
         "expo-speech": "~57.0.3",
+        "expo-speech-recognition": "57.1.1",
         "expo-status-bar": "~57.0.1",
         "expo-system-ui": "~57.0.3",
         "lucide-react-native": "^1.47.0",
@@ -97,6 +98,9 @@
         "vite": "^8.2.2",
       },
     },
+  },
+  "patchedDependencies": {
+    "expo-speech-recognition@57.1.1": "patches/expo-speech-recognition@57.1.1.patch",
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.3.0", "", {}, "sha512-U4+70Pc5ZS9osnCBCE5Jha/ciHM+Yp+CNMNC/7HvYbNRk1Ldd+f7qO65W5qfhu/TCv+/ozljlXXe9Nj8419DMA=="],
@@ -1242,6 +1246,8 @@
     "expo-server": ["expo-server@57.0.3", "", {}, "sha512-aK+LdKzauHSGmsOStZtyxdzv0zWssCkxTw3m4QuOhfDSJsZaMRTd9O41d8ixU/QfELTbaJ0oRNcF7JFV/7O9YQ=="],
 
     "expo-speech": ["expo-speech@57.0.3", "", { "peerDependencies": { "expo": "*" } }, "sha512-rcO8izKziksrV4X3qQ5g+prFNTZmLYDEGEVnTvuvpOZDwjzP9nsdoaFymhY+qj9AJfMcpvR7Wshm+zpislyJBg=="],
+
+    "expo-speech-recognition": ["expo-speech-recognition@57.1.1", "", { "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-e1RalFEvc7yui9Jnf1NiEYHT0jSPeH4hbMTafj1yjvcKN7HhZ7VrQigGUhBDB9AnDNjtPugbyPuCIjwHBBOCyw=="],
 
     "expo-status-bar": ["expo-status-bar@57.0.1", "", { "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-Xwaq1gAoVRWx5dPG5VhT5RSbnI9OilhZnO5qoPBnUaBAa5VzRzfdS8q0/bsPt0jR2DKLtGuP0bQ6efMJ4RIMDg=="],
 
