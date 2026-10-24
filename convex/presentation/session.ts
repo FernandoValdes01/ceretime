@@ -3,7 +3,7 @@ import { AUTHORIZATION_DENIED_MESSAGE } from "../application/authorization/autho
 import { toMinimalIdentity } from "../application/session/minimal_identity";
 import { resolveSessionAndRole } from "../application/session/portal_role";
 import { getMyProfileUseCase } from "../application/session/profile";
-import type { PublicApiError } from "../domain/errors/api_error";
+import type { ApiResult, PublicApiError } from "../domain/errors/api_error";
 import { query } from "../_generated/server";
 import {
   accountStatusUnion,
@@ -49,6 +49,15 @@ export function denyUnauthorized(): never {
  */
 export function throwPublicApiError(error: PublicApiError): never {
   throw toSecureConvexError(error);
+}
+
+/**
+ * Entrega el dato de un `ApiResult` de Aplicación o lanza su error con
+ * `throwPublicApiError`, sin cambiarlo (TI2-111).
+ */
+export function unwrapApiResult<T>(result: ApiResult<T>): T {
+  if (result.status === "error") throwPublicApiError(result.error);
+  return result.data;
 }
 
 /**

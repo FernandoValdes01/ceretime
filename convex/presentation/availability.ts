@@ -3,16 +3,21 @@ import {
   publishAvailabilityBlock,
   publishAvailabilityException,
   removeAvailabilityException,
+  searchAvailabilitySlots,
   setAvailabilityBlockActive,
   updateAvailabilityBlock,
 } from "../application/availability/availability";
-import { mutation } from "../_generated/server";
+import { mutation, query } from "../_generated/server";
 import { AVAILABILITY_CONTRACT_VERSION } from "../domain/availability/availability";
-import type { ApiResult } from "../domain/errors/api_error";
-import { authorizationReader } from "../infrastructure/accompaniments/repository";
+import {
+  accompanimentNeedsReader,
+  authorizationReader,
+} from "../infrastructure/accompaniments/repository";
+import { slotOccupancyReader } from "../infrastructure/appointments/repository";
 import { availabilityReader, availabilityWriter } from "../infrastructure/availability/repository";
+import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import { availabilityExceptionKindUnion, modalityUnion } from "../infrastructure/validators";
-import { throwPublicApiError } from "./session";
+import { unwrapApiResult as unwrap } from "./session";
 
 /**
  * Borde de Presentación: bloques y excepciones de disponibilidad (TI2-111).
@@ -27,7 +32,8 @@ import { throwPublicApiError } from "./session";
  * Los identificadores viajan como texto plano, igual que en el contrato:
  * uno ajeno, inexistente o de otra tabla recibe la misma denegación. Los
  * errores se lanzan con `throwPublicApiError` (TI2-88): solo `code` y
- * `message`. Opera con datos ficticios.
+ * `message`. La búsqueda sin cupo compatible y libre responde
+ * `no_availability`. Opera con datos ficticios.
  */
 
 const windowFields = {
@@ -41,12 +47,6 @@ const windowFields = {
 const blockFields = { ...windowFields, weekday: v.number() };
 
 const version = v.literal(AVAILABILITY_CONTRACT_VERSION);
-
-/** Entrega el dato del caso de uso o lanza su error público sin cambiarlo. */
-function unwrap<T>(result: ApiResult<T>): T {
-  if (result.status === "error") throwPublicApiError(result.error);
-  return result.data;
-}
 
 /** Publica un bloque semanal propio. Solo un Profesional con cuenta vigente. */
 export const publishBlock = mutation({
@@ -133,5 +133,57 @@ export const removeException = mutation({
         { tokenIdentifier: identity?.tokenIdentifier ?? null, exceptionId },
       ),
     );
+  },
+});
+
+const slotValidator = v.object({
+  id: v.string(),
+  professionalId: v.string(),
+  date: v.string(),
+  startAt: v.number(),
+  endAt: v.number(),
+  modality: modalityUnion,
+  spaceId: v.optional(v.string()),
+  version,
+});
+
+/**
+ * Cupos compatibles y libres de un profesional para un acompañamiento
+ * activo, paginados (TI2-97). Solo el Estudiante dueño o el Profesional
+ * asignado pueden buscar; el rango y la página están acotados.
+ */
+export const searchSlots = query({
+  args: {
+    accompanimentId: v.string(),
+    professionalId: v.string(),
+    from: v.string(),
+    to: v.string(),
+    timeZone: v.string(),
+    limit: v.number(),
+    cursor: v.optional(v.string()),
+    version,
+  },
+  returns: v.object({
+    items: v.array(slotValidator),
+    hasMore: v.boolean(),
+    nextCursor: v.union(v.string(), v.null()),
+    version,
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const page = unwrap(
+      await searchAvailabilitySlots(
+        {
+          auth: authorizationReader(ctx),
+          availability: availabilityReader(ctx),
+          needs: accompanimentNeedsReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          occupancy: slotOccupancyReader(ctx),
+        },
+        { ...args, tokenIdentifier: identity?.tokenIdentifier ?? null },
+      ),
+    );
+    // La página del dominio es de solo lectura; el validador espera un arreglo.
+    return { ...page, items: [...page.items] };
   },
 });
