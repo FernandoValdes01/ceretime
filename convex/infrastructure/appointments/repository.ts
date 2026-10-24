@@ -250,3 +250,83 @@ export async function occupySlotAtomically(
   });
   return okResult({ appointmentId });
 }
+
+// ── TI2-111: adaptadores de los puertos de búsqueda y reserva ───────────────
+//
+// Cumplen por forma `SlotOccupancyReader` (TI2-97) y `AppointmentOccupier`
+// (TI2-84) sin importar Aplicación. Traducen el vocabulario del contrato
+// (`startAt`/`endAt` e identificadores de texto) al de este repositorio.
+
+/**
+ * Ocupación para la búsqueda: el cupo está ocupado cuando el profesional ya
+ * tiene una atención que lo cruza, con la misma lectura por ventana que la
+ * reserva. Una ventana sobre el tope cuenta como ocupada, así la búsqueda no
+ * ofrece un cupo que la reserva rechazaría.
+ */
+export function slotOccupancyReader(ctx: DbReader) {
+  return {
+    isSlotOccupied: async (slot: {
+      readonly professionalId: string;
+      readonly startAt: number;
+      readonly endAt: number;
+    }) => {
+      const professionalId = ctx.db.normalizeId("users", slot.professionalId);
+      if (professionalId === null) return false;
+      return await isResourceTaken(
+        ctx,
+        { kind: "professional", id: professionalId },
+        { startsAt: slot.startAt, endsAt: slot.endAt },
+        null,
+      );
+    },
+  };
+}
+
+/**
+ * Escritura atómica para la reserva sobre `occupySlotAtomically`. Un
+ * identificador que no es de su tabla responde `conflict` sin escribir, en
+ * vez de llegar a la base con otra forma.
+ */
+export function appointmentOccupier(ctx: MutationCtx) {
+  return {
+    occupySlot: async (slot: {
+      readonly accompanimentId: string;
+      readonly studentId: string;
+      readonly professionalId: string;
+      readonly modality: Doc<"appointments">["modality"];
+      readonly spaceId?: string;
+      readonly startAt: number;
+      readonly endAt: number;
+      readonly movedAppointmentId?: string;
+    }): Promise<ApiResult<{ appointmentId: string }>> => {
+      const accompanimentId = ctx.db.normalizeId("accompaniments", slot.accompanimentId);
+      const studentId = ctx.db.normalizeId("users", slot.studentId);
+      const professionalId = ctx.db.normalizeId("users", slot.professionalId);
+      const spaceId =
+        slot.spaceId === undefined ? undefined : ctx.db.normalizeId("spaces", slot.spaceId);
+      const movedAppointmentId =
+        slot.movedAppointmentId === undefined
+          ? undefined
+          : ctx.db.normalizeId("appointments", slot.movedAppointmentId);
+      if (
+        accompanimentId === null ||
+        studentId === null ||
+        professionalId === null ||
+        spaceId === null ||
+        movedAppointmentId === null
+      ) {
+        return errResult(conflictError());
+      }
+      return await occupySlotAtomically(ctx, {
+        accompanimentId,
+        studentId,
+        professionalId,
+        modality: slot.modality,
+        ...(spaceId === undefined ? {} : { spaceId }),
+        startsAt: slot.startAt,
+        endsAt: slot.endAt,
+        ...(movedAppointmentId === undefined ? {} : { movedAppointmentId }),
+      });
+    },
+  };
+}

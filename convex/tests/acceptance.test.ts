@@ -14,11 +14,15 @@ import {
   okResult,
 } from "../domain/errors/api_error";
 import {
+  appointmentOccupier,
   MAX_APPOINTMENT_MS,
   MAX_APPOINTMENTS_IN_WINDOW,
   occupySlotAtomically,
+  slotOccupancyReader,
   type OccupySlotRow,
 } from "../infrastructure/appointments/repository";
+import type { AppointmentOccupier } from "../application/appointments/occupancy";
+import type { SlotOccupancyReader } from "../application/availability/ports";
 import { bookAppointment, type BookAppointmentDeps } from "../application/appointments/booking";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import { availabilityReader } from "../infrastructure/availability/repository";
@@ -1572,4 +1576,145 @@ test("TI2-98: no reserva sin asignación activa o con cuenta profesional inactiv
     expect(result.error.code).toBe(NO_AVAILABILITY_ERROR_CODE);
     expect(await t.run(async (ctx) => await ctx.db.query("appointments").take(10))).toHaveLength(0);
   }
+});
+
+// ── TI2-111: adaptadores de ocupación para la búsqueda y la reserva ──────────
+//
+// `slotOccupancyReader` y `appointmentOccupier` cumplen los puertos de TI2-97
+// y TI2-84 sobre el repositorio de TI2-96. Las reglas de cruce ya están
+// probadas arriba; acá se prueba que el adaptador las reutiliza y traduce el
+// contrato sin perder nada.
+
+test("TI2-111: la búsqueda ve ocupado lo mismo que la reserva rechazaría", async () => {
+  const t = convexTest(schema, modules);
+  const proA = await seedProfessional(t, "ti111-occ-pro-a");
+  const proB = await seedProfessional(t, "ti111-occ-pro-b");
+  const proC = await seedProfessional(t, "ti111-occ-pro-c");
+  const who = await seedTi96Student(t, "ti111-occ-est-1");
+  expect(ti96Code(await occupyTi96(t, who, proA, 0, 60))).toBe("ok");
+  const cancelled = await occupyTi96(t, who, proA, 200, 260);
+  if (!isOkResult(cancelled)) throw new Error("Se esperaba ocupar");
+  await t.run(async (ctx) => {
+    await ctx.db.patch(cancelled.data.appointmentId, { status: "cancelled_by_student" });
+  });
+  // Más filas que el tope en la ventana de proC, todas canceladas.
+  await t.run(async (ctx) => {
+    for (let i = 0; i <= MAX_APPOINTMENTS_IN_WINDOW; i++) {
+      await ctx.db.insert("appointments", {
+        ...who,
+        professionalId: proC,
+        modality: "online",
+        status: "cancelled_by_cereti",
+        startsAt: ti96At(-60),
+        endsAt: ti96At(-30),
+        createdAt: 1,
+      });
+    }
+  });
+
+  const occupied = await t.run(async (ctx) => {
+    const reader: SlotOccupancyReader = slotOccupancyReader(ctx);
+    const at = (professionalId: string, from: number, to: number) =>
+      reader.isSlotOccupied({ professionalId, startAt: ti96At(from), endAt: ti96At(to) });
+    return {
+      cruce: await at(proA, 30, 90),
+      contiguoPosterior: await at(proA, 60, 120),
+      contiguoAnterior: await at(proA, -60, 0),
+      otroProfesional: await at(proB, 30, 90),
+      cancelada: await at(proA, 200, 260),
+      sobreElTope: await at(proC, 0, 30),
+      inexistente: await at("no-existe", 30, 90),
+      otraTabla: await at(who.accompanimentId, 30, 90),
+    };
+  });
+  expect(occupied).toEqual({
+    cruce: true,
+    contiguoPosterior: false,
+    contiguoAnterior: false,
+    otroProfesional: false,
+    cancelada: false,
+    sobreElTope: true,
+    inexistente: false,
+    otraTabla: false,
+  });
+});
+
+test("TI2-111: la reserva traduce el contrato y rechaza identificadores sin forma sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti111-occ-pro-d");
+  const who = await seedTi96Student(t, "ti111-occ-est-2");
+  const spaceId = await seedTi96Space(t, "Sala TI2-111");
+  const slot = {
+    accompanimentId: who.accompanimentId as string,
+    studentId: who.studentId as string,
+    professionalId: pro as string,
+    modality: "inPerson" as const,
+    spaceId: spaceId as string,
+    startAt: ti96At(0),
+    endAt: ti96At(60),
+  };
+  const occupy = async (input: typeof slot & { movedAppointmentId?: string }) =>
+    await t.run(async (ctx) => {
+      const occupier: AppointmentOccupier = appointmentOccupier(ctx);
+      return await occupier.occupySlot(input);
+    });
+
+  const created = await occupy(slot);
+  if (!isOkResult(created)) throw new Error("Se esperaba ocupar");
+  const appointmentId = created.data.appointmentId as Id<"appointments">;
+  expect(await getTi96(t, appointmentId)).toMatchObject({
+    accompanimentId: who.accompanimentId,
+    studentId: who.studentId,
+    professionalId: pro,
+    modality: "inPerson",
+    spaceId,
+    status: "scheduled",
+    startsAt: ti96At(0),
+    endsAt: ti96At(60),
+  });
+  const before = await listTi96Appointments(t);
+
+  const rejected = [
+    await occupy({ ...slot, startAt: ti96At(30), endAt: ti96At(90) }),
+    await occupy({
+      ...slot,
+      startAt: ti96At(100),
+      endAt: ti96At(160),
+      accompanimentId: "no-existe",
+    }),
+    await occupy({
+      ...slot,
+      startAt: ti96At(100),
+      endAt: ti96At(160),
+      studentId: slot.accompanimentId,
+    }),
+    await occupy({
+      ...slot,
+      startAt: ti96At(100),
+      endAt: ti96At(160),
+      professionalId: "no-existe",
+    }),
+    await occupy({ ...slot, startAt: ti96At(100), endAt: ti96At(160), spaceId: slot.studentId }),
+    await occupy({
+      ...slot,
+      startAt: ti96At(100),
+      endAt: ti96At(160),
+      movedAppointmentId: "no-existe",
+    }),
+  ];
+  expect(rejected).toEqual(rejected.map(() => errResult(conflictError())));
+  expect(await listTi96Appointments(t)).toEqual(before);
+
+  // Con la atención propia, el mismo adaptador cambia en el lugar.
+  const moved = await occupy({
+    ...slot,
+    startAt: ti96At(120),
+    endAt: ti96At(180),
+    movedAppointmentId: appointmentId,
+  });
+  expect(moved).toEqual(okResult({ appointmentId }));
+  expect(await getTi96(t, appointmentId)).toMatchObject({
+    startsAt: ti96At(120),
+    endsAt: ti96At(180),
+  });
 });
