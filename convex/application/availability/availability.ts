@@ -68,7 +68,8 @@ function conflict<T>(): ApiResult<T> {
   return errResult(conflictError());
 }
 
-function isValidTimeZone(timeZone: string): boolean {
+/** Valida una zona horaria IANA no vacía, compartida por búsqueda y reserva. */
+export function isValidTimeZone(timeZone: string): boolean {
   if (timeZone.trim() === "") return false;
   try {
     new Intl.DateTimeFormat(undefined, { timeZone });
@@ -218,8 +219,11 @@ export interface SearchAvailabilityDeps {
  * vigencia y condiciones para lo presencial, los apoyos de la plataforma
  * para lo en línea. `null` cuando el cupo presencial no trae sala o la
  * sala se retiró del catálogo.
+ *
+ * La comparten la búsqueda (TI2-97) y la reserva (TI2-98): ambas evalúan
+ * la misma opción con `assessCompatibility` y no rebajan necesidades.
  */
-async function resolveCompatibilityOption(
+export async function resolveCompatibilityOption(
   compatibility: CompatibilitySpaceSource,
   onlineSupports: readonly AccessNeed[],
   slot: AvailabilitySlot,

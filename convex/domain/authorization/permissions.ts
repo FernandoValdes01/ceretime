@@ -160,6 +160,23 @@ export function canBookAppointment(context: AgendaAuthorizationContext): boolean
 }
 
 /**
+ * Profesional elegido para un cupo: rol profesional, cuenta habilitada y
+ * vigente y asignación activa sobre el acompañamiento. Que el Estudiante
+ * pueda reservar no basta; el recurso profesional se revalida en la misma
+ * operación antes de ocupar el cupo.
+ */
+export function isProfessionalBookable(input: {
+  readonly role: Role;
+  readonly institutionalStatus: InstitutionalStatus;
+  readonly accountStatus: AccountStatus;
+  readonly hasActiveProfessionalAssignment: boolean;
+}): boolean {
+  return (
+    input.role === "professional" && isProfileActive(input) && input.hasActiveProfessionalAssignment
+  );
+}
+
+/**
  * Catálogo de espacios: cualquier rol con cuenta habilitada y vigente. No
  * trae datos personales ni da acceso a acompañamientos, pero el dominio
  * institucional por sí solo no basta (RN-06).

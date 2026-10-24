@@ -157,10 +157,12 @@ export type AuthorizableAgendaAccompaniment = AuthorizableAccompaniment & {
  * de disponibilidad y reserva lo reciben por parámetro, así que se prueban
  * con un doble sin esperar los repositorios de agenda. Cada llamada vuelve a
  * leer las asignaciones vigentes: una revocación corta el acceso en la
- * operación siguiente.
+ * operación siguiente. La reserva usa `getProfileById` para revalidar al
+ * Profesional elegido, no solo al usuario que llama.
  */
 export interface AuthorizationReader {
   findProfileByTokenIdentifier(tokenIdentifier: string): Promise<AuthorizableProfile | null>;
+  getProfileById(userId: string): Promise<AuthorizableProfile | null>;
   getAccompaniment(accompanimentId: string): Promise<AuthorizableAgendaAccompaniment | null>;
   findActiveAssignments(
     accompanimentId: string,

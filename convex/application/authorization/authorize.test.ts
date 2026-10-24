@@ -140,6 +140,7 @@ function fakeReader(data: {
   return {
     findProfileByTokenIdentifier: async (tokenIdentifier) =>
       data.profiles.find((row) => row.tokenIdentifier === tokenIdentifier) ?? null,
+    getProfileById: async (userId) => data.profiles.find((row) => row._id === userId) ?? null,
     getAccompaniment: async (accompanimentId) =>
       data.accompaniments?.find((row) => row._id === accompanimentId) ?? null,
     findActiveAssignments: async (accompanimentId, userId) =>

@@ -11,6 +11,7 @@
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
+import type * as application_appointments_booking from "../application/appointments/booking.js";
 import type * as application_appointments_occupancy from "../application/appointments/occupancy.js";
 import type * as application_authorization_authorize from "../application/authorization/authorize.js";
 import type * as application_availability_availability from "../application/availability/availability.js";
@@ -74,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   "application/accompaniments/commands": typeof application_accompaniments_commands;
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accounts/enablement": typeof application_accounts_enablement;
+  "application/appointments/booking": typeof application_appointments_booking;
   "application/appointments/occupancy": typeof application_appointments_occupancy;
   "application/authorization/authorize": typeof application_authorization_authorize;
   "application/availability/availability": typeof application_availability_availability;
