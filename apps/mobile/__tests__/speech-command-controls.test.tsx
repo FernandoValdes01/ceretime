@@ -1,6 +1,9 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import type { SpeechRecognitionPort, SpeechRecognitionResult } from "@/application/speech-port";
-import { SpeechCommandControls } from "@/presentation/accessibility/speech-controls";
+import {
+  SpeechCommandControls,
+  SpeechCommandLauncher,
+} from "@/presentation/accessibility/speech-controls";
 
 jest.mock("expo-router", () => {
   const React = jest.requireActual<typeof import("react")>("react");
@@ -161,5 +164,68 @@ describe("SpeechCommandControls", () => {
     expect(result.onBack).not.toHaveBeenCalled();
     expect(result.onCancel).not.toHaveBeenCalled();
     expect(speechPort.stop).toHaveBeenCalled();
+  });
+});
+
+describe("SpeechCommandLauncher", () => {
+  function setupLauncher(speechPort: SpeechRecognitionPort) {
+    const onOpenRequests = jest.fn();
+    const onBack = jest.fn();
+    const view = render(
+      <SpeechCommandLauncher
+        speechPort={speechPort}
+        onOpenRequests={onOpenRequests}
+        onBack={onBack}
+      />,
+    );
+    return { view, onOpenRequests, onBack };
+  }
+
+  it("opens the three tactile commands from the student application", () => {
+    const { view } = setupLauncher({
+      recognize: jest.fn().mockResolvedValue({ status: "silence" }),
+      stop: jest.fn().mockResolvedValue(undefined),
+    });
+
+    fireEvent.press(view.getByRole("button", { name: "Comandos de voz" }));
+
+    for (const label of ["Usar comando de voz", "Abrir solicitudes", "Volver", "Cancelar"]) {
+      expect(view.getByRole("button", { name: label })).toBeEnabled();
+    }
+  });
+
+  it.each([
+    ["abrir solicitudes", "onOpenRequests"],
+    ["volver", "onBack"],
+  ] as const)("closes the local panel before running %s", async (transcript, callback) => {
+    const speechPort = {
+      recognize: jest.fn().mockResolvedValue({ status: "recognized", transcript }),
+      stop: jest.fn().mockResolvedValue(undefined),
+    };
+    const result = setupLauncher(speechPort);
+
+    fireEvent.press(result.view.getByRole("button", { name: "Comandos de voz" }));
+    await act(async () =>
+      fireEvent.press(result.view.getByRole("button", { name: "Usar comando de voz" })),
+    );
+
+    expect(result[callback]).toHaveBeenCalledTimes(1);
+    expect(result.onOpenRequests).toHaveBeenCalledTimes(callback === "onOpenRequests" ? 1 : 0);
+    expect(result.onBack).toHaveBeenCalledTimes(callback === "onBack" ? 1 : 0);
+    expect(result.view.queryByRole("button", { name: "Usar comando de voz" })).toBeNull();
+  });
+
+  it("closes only the local panel with cancel", () => {
+    const { view, onOpenRequests, onBack } = setupLauncher({
+      recognize: jest.fn().mockResolvedValue({ status: "silence" }),
+      stop: jest.fn().mockResolvedValue(undefined),
+    });
+
+    fireEvent.press(view.getByRole("button", { name: "Comandos de voz" }));
+    fireEvent.press(view.getByRole("button", { name: "Cancelar" }));
+
+    expect(onOpenRequests).not.toHaveBeenCalled();
+    expect(onBack).not.toHaveBeenCalled();
+    expect(view.getByRole("button", { name: "Comandos de voz" })).toBeOnTheScreen();
   });
 });

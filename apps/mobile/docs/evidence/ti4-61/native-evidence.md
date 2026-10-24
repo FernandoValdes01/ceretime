@@ -29,7 +29,7 @@ No se probaron gestos manuales de TalkBack ni el doble toque de activación; la 
 
 ## Reproducir el entorno
 
-Después de integrar los cambios y retirar las rutas temporales, una nueva ejecución requiere agregar temporalmente las rutas de diagnóstico desde sus wrappers documentados en [TI4-56](../ti4-56/README.md) y el componente de probe de esta ruta. Para TI4-61, copiar `apps/mobile/docs/evidence/ti4-61/native-probe.tsx` directamente a `apps/mobile/app/ti4-61-probe.tsx`; retirar ambos archivos de `apps/mobile/app/` después de la prueba.
+La captura registrada arriba se tomó con el probe temporal, antes de montar el control en el producto. A partir de esta corrección, el botón «Comandos de voz» se monta en el layout del estudiante y la misma verificación puede repetirse desde `/estudiante` sin copiar rutas de diagnóstico. No se repitió la captura nativa después de esa integración; la comprobación de la ruta normal es automatizada y está descrita en [README.md](./README.md).
 
 En el checkout con dependencias instaladas, el build x86_64 se ejecutó desde `apps/mobile/android` con:
 
