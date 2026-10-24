@@ -263,6 +263,10 @@ export function authorizationReader(ctx: DbReader) {
   return {
     findProfileByTokenIdentifier: (tokenIdentifier: string) =>
       findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getProfileById: async (userId: string) => {
+      const id = ctx.db.normalizeId("users", userId);
+      return id === null ? null : await getUserById(ctx, id);
+    },
     getAccompaniment: async (accompanimentId: string) => {
       const id = ctx.db.normalizeId("accompaniments", accompanimentId);
       return id === null ? null : await getAccompanimentById(ctx, id);
