@@ -35,6 +35,7 @@ import type * as domain_auth_institutional_domain from "../domain/auth/instituti
 import type * as domain_authorization_permissions from "../domain/authorization/permissions.js";
 import type * as domain_availability_availability from "../domain/availability/availability.js";
 import type * as domain_errors_api_error from "../domain/errors/api_error.js";
+import type * as domain_follow_up_follow_up from "../domain/follow_up/follow_up.js";
 import type * as domain_identity_roles from "../domain/identity/roles.js";
 import type * as domain_index from "../domain/index.js";
 import type * as domain_notifications_notification from "../domain/notifications/notification.js";
@@ -59,6 +60,7 @@ import type * as operations_migrations from "../operations/migrations.js";
 import type * as operations_requests from "../operations/requests.js";
 import type * as operations_users from "../operations/users.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
+import type * as presentation_availability from "../presentation/availability.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as presentation_spaces from "../presentation/spaces.js";
@@ -97,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   "domain/authorization/permissions": typeof domain_authorization_permissions;
   "domain/availability/availability": typeof domain_availability_availability;
   "domain/errors/api_error": typeof domain_errors_api_error;
+  "domain/follow_up/follow_up": typeof domain_follow_up_follow_up;
   "domain/identity/roles": typeof domain_identity_roles;
   "domain/index": typeof domain_index;
   "domain/notifications/notification": typeof domain_notifications_notification;
@@ -121,6 +124,7 @@ declare const fullApi: ApiFromModules<{
   "operations/requests": typeof operations_requests;
   "operations/users": typeof operations_users;
   "presentation/accompaniments": typeof presentation_accompaniments;
+  "presentation/availability": typeof presentation_availability;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   "presentation/spaces": typeof presentation_spaces;

@@ -1,0 +1,137 @@
+import { v } from "convex/values";
+import {
+  publishAvailabilityBlock,
+  publishAvailabilityException,
+  removeAvailabilityException,
+  setAvailabilityBlockActive,
+  updateAvailabilityBlock,
+} from "../application/availability/availability";
+import { mutation } from "../_generated/server";
+import { AVAILABILITY_CONTRACT_VERSION } from "../domain/availability/availability";
+import type { ApiResult } from "../domain/errors/api_error";
+import { authorizationReader } from "../infrastructure/accompaniments/repository";
+import { availabilityReader, availabilityWriter } from "../infrastructure/availability/repository";
+import { availabilityExceptionKindUnion, modalityUnion } from "../infrastructure/validators";
+import { throwPublicApiError } from "./session";
+
+/**
+ * Borde de Presentación: bloques y excepciones de disponibilidad (TI2-111).
+ *
+ * Adaptador delgado bajo `api.presentation.availability`: valida la forma
+ * del contrato v1 de TI2-87, resuelve la identidad en el servidor con
+ * `ctx.auth.getUserIdentity()` y delega en los casos de uso de TI2-97,
+ * compuestos con los adaptadores de TI2-86 y TI2-95. No toca `ctx.db` ni
+ * decide reglas: el dueño de cada bloque o excepción sale del actor
+ * autorizado o de la fila guardada, nunca del cliente.
+ *
+ * Los identificadores viajan como texto plano, igual que en el contrato:
+ * uno ajeno, inexistente o de otra tabla recibe la misma denegación. Los
+ * errores se lanzan con `throwPublicApiError` (TI2-88): solo `code` y
+ * `message`. Opera con datos ficticios.
+ */
+
+const windowFields = {
+  startMinute: v.number(),
+  endMinute: v.number(),
+  slotMinutes: v.number(),
+  modality: modalityUnion,
+  spaceId: v.optional(v.string()),
+};
+
+const blockFields = { ...windowFields, weekday: v.number() };
+
+const version = v.literal(AVAILABILITY_CONTRACT_VERSION);
+
+/** Entrega el dato del caso de uso o lanza su error público sin cambiarlo. */
+function unwrap<T>(result: ApiResult<T>): T {
+  if (result.status === "error") throwPublicApiError(result.error);
+  return result.data;
+}
+
+/** Publica un bloque semanal propio. Solo un Profesional con cuenta vigente. */
+export const publishBlock = mutation({
+  args: { ...blockFields, version },
+  returns: v.object({ blockId: v.string() }),
+  handler: async (ctx, { version: _version, ...block }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrap(
+      await publishAvailabilityBlock(authorizationReader(ctx), availabilityWriter(ctx), {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        block,
+      }),
+    );
+  },
+});
+
+/** Reemplaza la ventana de un bloque propio sin cambiar a su dueño. */
+export const updateBlock = mutation({
+  args: { blockId: v.string(), ...blockFields, version },
+  returns: v.null(),
+  handler: async (ctx, { blockId, version: _version, ...block }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrap(
+      await updateAvailabilityBlock(
+        authorizationReader(ctx),
+        { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, block },
+      ),
+    );
+  },
+});
+
+/** Retira o reactiva un bloque propio sin borrarlo. */
+export const setBlockActive = mutation({
+  args: { blockId: v.string(), isActive: v.boolean(), version },
+  returns: v.null(),
+  handler: async (ctx, { blockId, isActive }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrap(
+      await setAvailabilityBlockActive(
+        authorizationReader(ctx),
+        { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, isActive },
+      ),
+    );
+  },
+});
+
+/**
+ * Publica una excepción propia: cancela el día o un bloque, o agrega una
+ * ventana. El motivo es opcional y solo lo guarda el repositorio.
+ */
+export const publishException = mutation({
+  args: {
+    date: v.string(),
+    kind: availabilityExceptionKindUnion,
+    blockId: v.optional(v.string()),
+    windows: v.optional(v.array(v.object(windowFields))),
+    reason: v.optional(v.string()),
+    version,
+  },
+  returns: v.object({ exceptionId: v.string() }),
+  handler: async (ctx, { version: _version, ...exception }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrap(
+      await publishAvailabilityException(authorizationReader(ctx), availabilityWriter(ctx), {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        exception,
+      }),
+    );
+  },
+});
+
+/** Retira una excepción propia. */
+export const removeException = mutation({
+  args: { exceptionId: v.string(), version },
+  returns: v.null(),
+  handler: async (ctx, { exceptionId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrap(
+      await removeAvailabilityException(
+        authorizationReader(ctx),
+        { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, exceptionId },
+      ),
+    );
+  },
+});
