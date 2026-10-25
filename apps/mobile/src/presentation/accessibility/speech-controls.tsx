@@ -11,6 +11,29 @@ import {
 } from "react-native";
 import { parseSpeechCommand, type SpeechCommand } from "../../application/speech-command-parser";
 import type { SpeechPort, SpeechRecognitionPort } from "../../application/speech-port";
+import type { StudentRequestSubmissionState } from "../hooks/use-submit-student-request";
+import { StudentText } from "../estudiante/student-text";
+import { useOptionalAccessibilityPreferences } from "./accessibility-preferences-provider";
+import { getAccessibilityColorPalette } from "./accessibility-color-palette";
+
+export function StudentRequestSpeechControls({
+  speechPort,
+  submission,
+}: {
+  readonly speechPort: SpeechPort;
+  readonly submission: Pick<StudentRequestSubmissionState, "status" | "receipt">;
+}) {
+  const text =
+    submission.status === "submitting"
+      ? "Enviando solicitud ficticia."
+      : submission.status === "error"
+        ? "No pudimos enviar la solicitud ficticia. Puedes reintentar."
+        : submission.status === "success" && submission.receipt
+          ? `Solicitud ficticia enviada. Referencia: ${submission.receipt.requestId}.`
+          : "";
+
+  return <SpeechControls speechPort={speechPort} text={text} />;
+}
 
 export function SpeechControls({
   speechPort,
@@ -23,11 +46,26 @@ export function SpeechControls({
 }) {
   const [readerEnabled, setReaderEnabled] = useState(true);
   const [status, setStatus] = useState<"idle" | "speaking" | "failed">("idle");
+  const [message, setMessage] = useState(text);
+  if (message !== text) {
+    setMessage(text);
+    setStatus("idle");
+  }
   const mounted = useRef(false);
   const request = useRef(0);
   const screenReaderEventVersion = useRef(0);
 
+  const preferences = useOptionalAccessibilityPreferences();
+  const palette = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
   const stopSpeech = useCallback(() => speechPort.stop(), [speechPort]);
+
+  // Cambiar el mensaje invalida la lectura anterior sin iniciar otra automáticamente.
+  useEffect(() => {
+    return () => {
+      request.current += 1;
+      void stopSpeech().catch(() => undefined);
+    };
+  }, [text, stopSpeech]);
 
   useEffect(() => {
     mounted.current = true;
@@ -36,10 +74,10 @@ export function SpeechControls({
       screenReaderEventVersion.current += 1;
       setReaderEnabled(enabled);
       if (enabled) {
-        request.current += 1;
+        const id = ++request.current;
         setStatus("idle");
         void stopSpeech().catch(() => {
-          if (mounted.current) setStatus("failed");
+          if (mounted.current && request.current === id) setStatus("failed");
         });
       }
     });
@@ -73,12 +111,12 @@ export function SpeechControls({
   async function handlePress() {
     if (readerEnabled) return;
     if (status === "speaking") {
-      request.current += 1;
+      const id = ++request.current;
       setStatus("idle");
       try {
         await stopSpeech();
       } catch {
-        if (mounted.current) setStatus("failed");
+        if (mounted.current && request.current === id) setStatus("failed");
       }
       return;
     }
@@ -97,26 +135,34 @@ export function SpeechControls({
   const disabled = readerEnabled || !text.trim();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.surface }]}>
+      <StudentText selectable style={[styles.message, { color: palette.text }]}>
+        {text}
+      </StudentText>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={status === "speaking" ? "Detener lectura" : label}
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={handlePress}
-        android_ripple={{ color: "#17483F" }}
-        style={[styles.button, disabled && styles.disabled]}
+        android_ripple={{ color: palette.actionPressed }}
+        style={[styles.button, { backgroundColor: palette.action }, disabled && styles.disabled]}
       >
-        <Text style={styles.buttonLabel}>{status === "speaking" ? "Detener lectura" : label}</Text>
+        <StudentText weight="semibold" style={styles.buttonLabel}>
+          {status === "speaking" ? "Detener lectura" : label}
+        </StudentText>
       </Pressable>
       {readerEnabled ? (
-        <Text style={styles.message}>
+        <StudentText style={[styles.message, { color: palette.secondary }]}>
           El lector de pantalla del sistema puede leer el texto visible.
-        </Text>
+        </StudentText>
       ) : status === "failed" ? (
-        <Text accessibilityLiveRegion="polite" style={styles.message}>
+        <StudentText
+          accessibilityLiveRegion="polite"
+          style={[styles.message, { color: palette.secondary }]}
+        >
           No se pudo reproducir el audio. Revisa el texto en pantalla y vuelve a intentarlo.
-        </Text>
+        </StudentText>
       ) : null}
     </View>
   );
