@@ -751,6 +751,61 @@ test("TI2-111: el cliente no fija el dueño ni otra versión del contrato", asyn
   expect(await ti111Rows(t)).toEqual({ blocks: [], exceptions: [] });
 });
 
+test("TI2-111: cada mutation de disponibilidad exige la versión v1 del contrato", async () => {
+  const t = convexTest(schema, modules);
+  await seedUser(t, {
+    subject: "ti111-pro-10",
+    email: "ti111-pro-10@uct.cl",
+    role: "professional",
+  });
+  const asPro = t.withIdentity(identityFor("ti111-pro-10", "ti111-pro-10@uct.cl"));
+  const { blockId } = await asPro.mutation(api.presentation.availability.publishBlock, ti111Block);
+  const { exceptionId } = await asPro.mutation(api.presentation.availability.publishException, {
+    date: "2026-11-02",
+    kind: "cancelled",
+    version: "v1",
+  });
+  const before = await ti111Rows(t);
+
+  // Cada llamada sería válida con `version: "v1"`; solo cambia la versión.
+  const calls = {
+    publishBlock: (version?: string) =>
+      asPro.mutation(api.presentation.availability.publishBlock, {
+        ...ti111Block,
+        version,
+      } as never),
+    updateBlock: (version?: string) =>
+      asPro.mutation(api.presentation.availability.updateBlock, {
+        ...ti111Block,
+        blockId,
+        startMinute: 480,
+        version,
+      } as never),
+    setBlockActive: (version?: string) =>
+      asPro.mutation(api.presentation.availability.setBlockActive, {
+        blockId,
+        isActive: false,
+        version,
+      } as never),
+    publishException: (version?: string) =>
+      asPro.mutation(api.presentation.availability.publishException, {
+        date: "2026-11-09",
+        kind: "cancelled",
+        version,
+      } as never),
+    removeException: (version?: string) =>
+      asPro.mutation(api.presentation.availability.removeException, {
+        exceptionId,
+        version,
+      } as never),
+  };
+  for (const call of Object.values(calls)) {
+    await expect(call("v2")).rejects.toThrow("Expected `v1`, got `v2`");
+    await expect(call(undefined)).rejects.toThrow("Missing required field `version`");
+  }
+  expect(await ti111Rows(t)).toEqual(before);
+});
+
 // ── TI2-111: búsqueda y reserva por la API ───────────────────────────────────
 //
 // Agenda ficticia del lunes 2026-11-02 en UTC: un bloque presencial de 09:00
@@ -918,6 +973,10 @@ test("TI2-111: la búsqueda entrega solo cupos libres y compatibles a quien pued
   await expect(
     asStudent.query(api.presentation.availability.searchSlots, otherVersion),
   ).rejects.toThrow("Expected `v1`, got `v2`");
+  const { version: _searchVersion, ...withoutVersion } = search;
+  await expect(
+    asStudent.query(api.presentation.availability.searchSlots, withoutVersion as never),
+  ).rejects.toThrow("Missing required field `version`");
 });
 
 test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", async () => {
@@ -1008,4 +1067,9 @@ test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", a
   await expect(
     asStudent.mutation(api.presentation.appointments.bookAppointment, otherVersion),
   ).rejects.toThrow("Expected `v1`, got `v2`");
+  const { version: _slotVersion, ...slotWithoutVersion } = slot;
+  await expect(
+    asStudent.mutation(api.presentation.appointments.bookAppointment, slotWithoutVersion as never),
+  ).rejects.toThrow("Missing required field `version`");
+  expect(await ti111Appointments(t)).toEqual(afterBooking);
 });
