@@ -1,6 +1,8 @@
 # TI4-60: lectura optativa de estados y confirmaciones
 
-Issue: [TI4-60](https://linear.app/ceretime/issue/TI4-60/leer-estados-y-confirmaciones-mediante-tts-sin-duplicar-anuncios-de). Preparación del 25 de octubre de 2026 sobre `main` `45d0cca`. Estado: implementación y comprobaciones locales disponibles; entrega en PR Draft, sin integración ni validación Android de este incremento.
+<!-- cspell:words googletts -->
+
+Issue: [TI4-60](https://linear.app/ceretime/issue/TI4-60/leer-estados-y-confirmaciones-mediante-tts-sin-duplicar-anuncios-de). Preparación del 25 de octubre de 2026 sobre `main` `45d0cca`. Estado: implementación y comprobaciones locales disponibles; PR #127 en Draft. Implementación y evaluación Android completadas el 25 de octubre de 2026 con autorización y confirmación auditiva del usuario. Quedan revisión independiente e integración; la PR permanece en Draft por instrucción del usuario.
 
 ## Qué se pidió y qué se entrega
 
@@ -32,19 +34,57 @@ Las pruebas de voz cubren el adaptador existente, selección de español, ausenc
 
 La [matriz única WCAG](../../accessibility/wcag-matrix.md) conserva resultados por pantalla, criterio y versión. Hay evidencia histórica, criterios sin probar y barreras pendientes de repetición en TI4-64. Este incremento no cambia sus veredictos ni declara conformidad global.
 
-El texto activo y la paleta se verifican contra 4.5:1 mediante `contrastRatio`. Esto aporta comprobación automatizada acotada para [1.4.3, contraste mínimo](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). El botón mantiene un objetivo mínimo de 44 por 52 unidades y altura flexible; faltan recorrido nativo, foco y texto ampliado para evaluar la presentación final.
+El texto activo y la paleta se verifican contra 4.5:1 mediante `contrastRatio`. Esto aporta comprobación automatizada acotada para [1.4.3, contraste mínimo](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). El botón mantiene un objetivo mínimo de 44 por 52 unidades y altura flexible; el recorrido nativo de este módulo y el texto ampliado se documentan abajo, sin extender el resultado a otras pantallas.
 
-La política evita audio automático y ofrece detención, en línea con la orientación de [1.4.2, control del audio](https://www.w3.org/WAI/WCAG22/Understanding/audio-control.html). No se atribuye aprobación de [4.1.3, mensajes de estado](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html) a un botón de lectura: los anuncios automáticos existentes siguen siendo responsabilidad de TI4-59 y deben verificarse en Android.
+La política evita audio automático y ofrece detención, en línea con la orientación de [1.4.2, control del audio](https://www.w3.org/WAI/WCAG22/Understanding/audio-control.html). No se atribuye aprobación de [4.1.3, mensajes de estado](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html) a un botón de lectura: los anuncios automáticos existentes siguen siendo responsabilidad de TI4-59 y su evaluación integral corresponde a la matriz por pantalla.
 
-No se ejecutó validación nativa nueva. `adb devices`, usando `/home/corvo/Android/Sdk/platform-tools/adb`, no encontró dispositivos; la inspección de puertos no encontró Metro en 8081/8082. No se inició emulador, Expo ni Metro. `apps/mobile/AGENTS.md` y la propia issue exigen una petición explícita para iniciar servidores; la instrucción de trabajo autónomo no menciona iniciarlos. La evidencia de TI4-55 pertenece a otro incremento y no se reutiliza como aprobación de este.
+Se inició la validación nativa el 25 de octubre de 2026 después de que el usuario pidiera ejecutar las evaluaciones y ofreciera escuchar TalkBack. El entorno se abrió con `ceretime-mobile`, Medium_Phone con GPU host y Metro del checkout. La primera comprobación sin entorno activo queda sustituida por esta ejecución, no por la evidencia antigua de TI4-55.
 
-Antes de solicitar revisión final, validar el consumidor de prueba en Android con el mismo motor de TI4-55 y datos ficticios:
+## Evaluación Android de este incremento
 
-1. Registrar commit completo, estado del árbol, APK, dispositivo, Android, TalkBack, escala de fuente y configuración.
-2. Con TalkBack apagado, cambiar envío a confirmación y error. Comprobar texto idéntico a la lectura explícita y ausencia de audio automático.
-3. Leer y detener, cambiar el mensaje durante lectura, salir y desmontar. Confirmar auditivamente que cesa y no reaparece la voz anterior.
-4. Activar TalkBack antes y durante una lectura. Confirmar que se detiene el TTS propio y que el texto y controles se recorren con gestos reales sin voces simultáneas.
-5. Probar texto al 200 %, alto contraste y ausencia/fallo del motor. Verificar que detener sigue visible y operable y que el mensaje se conserva. Adjuntar pasos, observado y evidencia auditiva/visual revisada.
+Se usa el consumidor de diagnóstico [native-probe.tsx](./native-probe.tsx), copiado temporalmente a `apps/mobile/app/ti4-60-probe.tsx` y abierto con `ceretime://ti4-60-probe`. El hook `useSubmitStudentRequest`, el componente y el adaptador TTS son los reales. El envío es el adaptador ficticio existente, con espera de 9 segundos y primer intento fallido. Las acciones adicionales de preferencias, desmontaje y motor no disponible pertenecen al diagnóstico, no al producto.
+
+Versión del código evaluado: `6d4556266a4cba644f612e67680c05bda435fa4a` más el consumidor temporal. Cliente Android `cl.rmv.ceretime` 1.0.0, versionCode 1, instalado el 23 de octubre de 2026; APK instalado SHA-256 `d708133823e6551b655a59320505e567029d6f586031450c5731b3eb9cc0c8d3`, obtenido al extraer el paquete instalado mediante ADB. El JavaScript se sirve desde Metro, por lo que la fecha del APK no identifica la versión del componente.
+
+Dispositivo: Medium_Phone, `sdk_gphone16k_x86_64`, Android 17/API 37, resolución 1080 por 2400. TalkBack `17.0.0.889642762`. Motor `com.google.android.tts`, versión `googletts.google-speech-apk_20260914.02_p2.986315744`. Voces españolas disponibles de España y Estados Unidos; no se encontró voz `es-CL`. Escala inicial del sistema 1.15; se comprobó además la preferencia de texto al 200 % y alto contraste.
+
+| Escenario                        | Resultado observado                                                                                                                                                                                                                                                        | Límite                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Envío en curso a fallo           | El hook pasa de submitting a error. El adaptador recibe stop al cambiar el mensaje y devuelve stopped a la lectura anterior. No se solicita lectura del mensaje nuevo.                                                                                                     | La respuesta de envío es ficticia.                                                         |
+| Lectura y detener                | La lectura se inicia solo por pulsación y detener resuelve stopped. El texto permanece.                                                                                                                                                                                    | Eventos nativos más audio capturado; no se atribuye audición propia al agente.             |
+| Leer mensaje de error completo   | El adaptador devuelve completed para el texto visible. Se capturó señal de audio del altavoz.                                                                                                                                                                              | No equivale a verificar TalkBack.                                                          |
+| Reintento y confirmación         | El mismo hook pasa por submitting y success, con referencia SOL-DEMO. Leer y volver a enviar cancela la voz anterior, sin lectura automática.                                                                                                                              | Datos ficticios.                                                                           |
+| Desmontaje                       | Durante lectura, desmontar produce stop y resultado stopped. Montar no inicia audio.                                                                                                                                                                                       | Se comprueba el módulo aislado.                                                            |
+| Texto al 200 % y alto contraste  | Mensaje y botón se amplían, la etiqueta Detener lectura permanece completa y los controles se desplazan verticalmente.                                                                                                                                                     | Solo el dispositivo y escenario descritos.                                                 |
+| Motor no disponible simulado     | El diagnóstico inyecta locale-voice-unavailable, conserva la confirmación y muestra el mensaje de recuperación.                                                                                                                                                            | Inyección explícita, separada del escenario nativo siguiente.                              |
+| Motor nativo ausente             | Se deshabilitó temporalmente com.google.android.tts y se reinició la app. Expo devolvió una lista vacía y leer devolvió locale-voice-unavailable; el mensaje original y el aviso de recuperación quedaron visibles. Después se habilitó el motor y se reinició el cliente. | Prueba real de ausencia del motor, no de todas las averías internas posibles.              |
+| TalkBack activo                  | Android informa lector activo y el componente deshabilita su TTS manteniendo el texto visible. El usuario confirmó español comprensible y una sola voz.                                                                                                                    | Confirmación del recorrido del mensaje de error, control y explicación, no de toda la app. |
+| Activar TalkBack durante lectura | read-request nativo a las 20:42:27.861; evento screen-reader true y stop a las 20:42:27.964; resultado stopped a las 20:42:28.018.                                                                                                                                         | No se inició otra lectura propia.                                                          |
+| Salir de la ruta durante lectura | read-request a las 20:43:00.258; salir a las 20:43:02.482 provoca stop y resultado stopped a las 20:43:02.639.                                                                                                                                                             | La salida usa navegación real de Expo Router.                                              |
+
+### Idioma de TalkBack
+
+El primer entorno tenía `system_locales=en-US` y no tenía `tts_default_locale` ni `tts_default_synth` fijados. El usuario informó que TalkBack pronunciaba español con acento inglés. Se ajustó el emulador a `es-CL` mediante `cmd locale set-device-locale es-CL`, el motor a `com.google.android.tts`, su idioma a `com.google.android.tts:es-ES` y velocidad a 100. Es un ajuste del emulador; la app no cambia las preferencias de voz del usuario. La voz propia de la app ya seleccionaba una voz española mediante el adaptador de TI4-55.
+
+Se repitió el mensaje de error con TalkBack activo, usando exploración táctil del mensaje, el botón de lectura inhabilitado y la explicación del lector. El usuario confirmó: "Sí, ahora se entiende en español y hay una sola voz". Esta confirmación corresponde al mensaje "No pudimos enviar la solicitud ficticia. Puedes reintentar", el control de lectura y la explicación del lector del sistema. No se atribuye una reparación de un teléfono físico: el único dispositivo conectado es el emulador. Android permite elegir motor e idioma desde los [ajustes de salida de texto a voz](https://support.google.com/accessibility/android/answer/6006983).
+
+### Capturas
+
+- [Lectura explícita del mensaje de error](./android-error-reading.png).
+- [Texto al 200 % y alto contraste durante lectura](./android-contrast-200-reading.png).
+- [Fallo real por motor ausente](./android-native-engine-unavailable.png).
+- [TalkBack con idioma español](./android-talkback-spanish.png) y [texto al 200 % con TalkBack](./android-talkback-text-200.png).
+- [Fragmento TTS](./android-tts.mp3), [recorrido de TalkBack en español](./android-talkback-spanish.mp3) y [eventos nativos](./native-events.txt).
+
+### Evidencia y repetición
+
+La captura de audio inicial se tomó del monitor del altavoz del host, con duración de 45 segundos, volumen medio de -30.6 dB y máximo de -9.5 dB. Contiene los escenarios de lectura y detención del texto ficticio; se conserva solo el fragmento relevante. Una señal de audio o captura de pantalla no demuestra por sí sola el contenido oído.
+
+Para evaluar TalkBack se usan gestos táctiles y capturas. `uiautomator dump` interrumpe temporalmente los servicios de accesibilidad en este entorno y produjo eventos false/true durante la preparación; esos cambios no se atribuyen a una acción de la app ni se usan como evidencia de convivencia. No se ejecuta esa herramienta durante el recorrido auditivo.
+
+Al repetir, registrar versión completa, hash del consumidor servido, configuración y pasos. Separar lo oído por una persona, lo observado en pantalla, los eventos nativos y los fallos inyectados. La ruta temporal se retiró al finalizar y el consumidor queda conservado junto a esta evidencia. Se restauró la escala de texto de la app al sistema y el contraste al sistema, con font_scale del dispositivo conservado en 1.15. El motor quedó habilitado y TalkBack apagado tras las pruebas. Se conserva Español (Chile) y la voz española por petición del usuario.
+
+El consumidor inicial tenía SHA-256 `c86b8ab50c3e93d91638ac8e292700d1ce097f76f5c41b1a68b0d7876b0bf130`; después de normalizar formato, el servido en la repetición final y conservado en esta carpeta tiene SHA-256 `bd197ac077d9d2e1b0cfa6a44f432372a5d012d4d946cdf13e3335e5a26c30b0`. El componente de producto permanece en el commit evaluado; el formato del consumidor no cambió su comportamiento.
 
 ## Revisión del impacto
 
