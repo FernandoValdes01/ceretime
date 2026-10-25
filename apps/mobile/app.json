@@ -30,6 +30,18 @@
         "projectId": "ff9003db-9d48-429f-9461-ad924f4bd6fc"
       }
     },
-    "plugins": ["expo-status-bar", "expo-router", "expo-font"]
+    "plugins": [
+      "expo-status-bar",
+      "expo-router",
+      "expo-font",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "CERETI usa el micrófono para reconocer comandos cuando lo solicitas.",
+          "speechRecognitionPermission": "CERETI reconoce comandos de voz en el dispositivo cuando lo solicitas.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ]
+    ]
   }
 }
