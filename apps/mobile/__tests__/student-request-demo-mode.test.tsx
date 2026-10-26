@@ -11,7 +11,7 @@ test("el modo fail-once muestra el error y confirma el reintento en la ruta real
   fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
   fillRequiredStudentRequestFields();
 
-  fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+  fireEvent.press(screen.getByRole("button", { name: "Confirmar y enviar solicitud" }));
 
   expect(await screen.findByText("No pudimos enviar la solicitud ficticia.")).toBeOnTheScreen();
   fireEvent.press(screen.getByRole("button", { name: "Reintentar envío" }));
