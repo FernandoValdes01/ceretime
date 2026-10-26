@@ -1,9 +1,15 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
-import { AccessibilityInfo } from "react-native";
+import { AccessibilityInfo, Button } from "react-native";
 import * as NativeSpeech from "expo-speech";
 import type { SpeechResult } from "@/application/speech-port";
 import { createNativeSpeechAdapter } from "@/infrastructure/native-speech-adapter";
-import { SpeechControls } from "@/presentation/accessibility/speech-controls";
+import {
+  SpeechControls,
+  StudentRequestSpeechControls,
+} from "@/presentation/accessibility/speech-controls";
+import { useSubmitStudentRequest } from "@/presentation/hooks/use-submit-student-request";
+import type { StudentRequestSubmitter } from "@/application/student-area-port";
+import { contrastRatio } from "@/presentation/accessibility/accessibility-color-palette";
 
 jest.mock("expo-router", () => {
   const React = jest.requireActual<typeof import("react")>("react");
@@ -118,6 +124,28 @@ describe("createNativeSpeechAdapter", () => {
     await expect(second).resolves.toEqual({ status: "stopped" });
   });
 
+  it("cancels voice discovery before playback starts", async () => {
+    let resolveVoices: ((value: NativeSpeech.Voice[]) => void) | undefined;
+    jest
+      .mocked(NativeSpeech.getAvailableVoicesAsync)
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveVoices = resolve)));
+    const port = createNativeSpeechAdapter();
+    const result = port.speak(testText);
+    await port.stop();
+    resolveVoices?.(voices);
+    await expect(result).resolves.toEqual({ status: "stopped" });
+    expect(NativeSpeech.speak).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed native stop and never starts another utterance", async () => {
+    jest.mocked(NativeSpeech.stop).mockRejectedValueOnce(new Error("native detail"));
+    await expect(createNativeSpeechAdapter().speak(testText)).resolves.toEqual({
+      status: "failed",
+      reason: "speech-failed",
+    });
+    expect(NativeSpeech.speak).not.toHaveBeenCalled();
+  });
+
   it("turns native errors into a safe failure result", async () => {
     const port = createNativeSpeechAdapter();
     const result = port.speak(testText);
@@ -227,6 +255,149 @@ describe("SpeechControls", () => {
         "No se pudo reproducir el audio. Revisa el texto en pantalla y vuelve a intentarlo.",
       ),
     ).toBeTruthy();
+    expect(view.getByText(testText)).toBeTruthy();
     expect(view.getByRole("button", { name: "Leer en voz alta" })).toBeEnabled();
+  });
+
+  it("cancels stale messages and ignores their delayed completion", async () => {
+    let finishOldRead: ((value: SpeechResult) => void) | undefined;
+    const speechPort = {
+      speak: jest.fn(() => new Promise<SpeechResult>((resolve) => (finishOldRead = resolve))),
+      stop: jest.fn().mockResolvedValue(undefined),
+    };
+    const view = render(<SpeechControls speechPort={speechPort} text={testText} />);
+    await waitFor(() => expect(view.getByRole("button")).toBeEnabled());
+    fireEvent.press(view.getByRole("button"));
+    expect(speechPort.speak).toHaveBeenCalledTimes(1);
+
+    view.rerender(<SpeechControls speechPort={speechPort} text="Solicitud ficticia enviada." />);
+    expect(speechPort.stop).toHaveBeenCalled();
+    expect(view.queryByText(testText)).toBeNull();
+    expect(speechPort.speak).toHaveBeenCalledTimes(1);
+    await act(async () => finishOldRead?.({ status: "failed", reason: "speech-failed" }));
+    expect(view.queryByText(/No se pudo reproducir/)).toBeNull();
+    expect(view.getByRole("button", { name: "Leer en voz alta" })).toBeEnabled();
+  });
+
+  it("stops an active read when TalkBack turns on without starting a second voice", async () => {
+    const speechPort = {
+      speak: jest.fn(() => new Promise<SpeechResult>(() => {})),
+      stop: jest.fn().mockResolvedValue(undefined),
+    };
+    const view = render(<SpeechControls speechPort={speechPort} text={testText} />);
+    await waitFor(() => expect(view.getByRole("button")).toBeEnabled());
+    fireEvent.press(view.getByRole("button"));
+    act(() => screenReaderChanged?.(true));
+    expect(view.getByRole("button", { name: "Leer en voz alta" })).toBeDisabled();
+    expect(speechPort.stop).toHaveBeenCalledTimes(1);
+    expect(speechPort.speak).toHaveBeenCalledTimes(1);
+    expect(view.getByText(testText)).toBeTruthy();
+  });
+
+  it("consumes real submission hook transitions without speaking automatically or exposing errors", async () => {
+    let completeSubmission:
+      | ((value: { requestId: string; receivedAt: string }) => void)
+      | undefined;
+    const submitter: StudentRequestSubmitter = {
+      submitStudentRequest: jest.fn(() => new Promise((resolve) => (completeSubmission = resolve))),
+    };
+    const speechPort = {
+      speak: jest.fn().mockResolvedValue({ status: "completed" }),
+      stop: jest.fn().mockResolvedValue(undefined),
+    };
+    function Consumer() {
+      const submission = useSubmitStudentRequest(submitter);
+      return (
+        <>
+          <Button
+            title="Enviar ejemplo"
+            onPress={() =>
+              void submission.submit({
+                needSummary: "Material ficticio.",
+                expectedOutcome: "Leer material ficticio.",
+                accessNeeds: [{ id: "writtenCommunication", label: "Comunicación escrita" }],
+                generalAvailability: { preferredWeekdays: [1] },
+                modalityPreference: "online",
+                preferredAccessibleInformationChannel: "Correo accesible",
+              })
+            }
+          />
+          <StudentRequestSpeechControls speechPort={speechPort} submission={submission} />
+        </>
+      );
+    }
+    const view = render(<Consumer />);
+    await waitFor(() =>
+      expect(view.getByRole("button", { name: "Leer en voz alta" })).toBeDisabled(),
+    );
+    fireEvent.press(view.getByText("Enviar ejemplo"));
+    expect(view.getByText("Enviando solicitud ficticia.")).toBeTruthy();
+    expect(speechPort.speak).not.toHaveBeenCalled();
+    fireEvent.press(view.getByRole("button", { name: "Leer en voz alta" }));
+    await waitFor(() =>
+      expect(speechPort.speak).toHaveBeenCalledWith("Enviando solicitud ficticia."),
+    );
+    await act(async () =>
+      completeSubmission?.({ requestId: "SOL-DEMO-60", receivedAt: "2026-10-25T12:00:00Z" }),
+    );
+    expect(view.getByText("Solicitud ficticia enviada. Referencia: SOL-DEMO-60.")).toBeTruthy();
+    expect(speechPort.speak).toHaveBeenCalledTimes(1);
+    fireEvent.press(view.getByRole("button", { name: "Leer en voz alta" }));
+    await waitFor(() =>
+      expect(speechPort.speak).toHaveBeenLastCalledWith(
+        "Solicitud ficticia enviada. Referencia: SOL-DEMO-60.",
+      ),
+    );
+
+    jest
+      .mocked(submitter.submitStudentRequest)
+      .mockRejectedValueOnce(new Error("detalle sensible"));
+    fireEvent.press(view.getByText("Enviar ejemplo"));
+    expect(
+      await view.findByText("No pudimos enviar la solicitud ficticia. Puedes reintentar."),
+    ).toBeTruthy();
+    expect(view.queryByText(/detalle sensible/)).toBeNull();
+    expect(view.queryByText(/SOL-DEMO-60/)).toBeNull();
+  });
+
+  it("keeps speech disabled when screen reader detection fails", async () => {
+    jest
+      .spyOn(AccessibilityInfo, "isScreenReaderEnabled")
+      .mockRejectedValueOnce(new Error("query failed"));
+    const speechPort = { speak: jest.fn(), stop: jest.fn().mockResolvedValue(undefined) };
+    const view = render(<SpeechControls speechPort={speechPort} text={testText} />);
+    await act(async () => {});
+    expect(view.getByRole("button")).toBeDisabled();
+    expect(view.getByText(testText)).toBeTruthy();
+    expect(speechPort.speak).not.toHaveBeenCalled();
+  });
+
+  it("ignores a failed stop from a previous message while the new message is speaking", async () => {
+    let rejectStop: ((error: Error) => void) | undefined;
+    const speechPort = {
+      speak: jest.fn(() => new Promise<SpeechResult>(() => {})),
+      stop: jest.fn().mockResolvedValue(undefined),
+    };
+    const view = render(<SpeechControls speechPort={speechPort} text={testText} />);
+    await waitFor(() => expect(view.getByRole("button")).toBeEnabled());
+    fireEvent.press(view.getByRole("button"));
+    speechPort.stop.mockImplementationOnce(
+      () => new Promise((_resolve, reject) => (rejectStop = reject)),
+    );
+    fireEvent.press(view.getByRole("button", { name: "Detener lectura" }));
+    view.rerender(<SpeechControls speechPort={speechPort} text="Mensaje vigente." />);
+    fireEvent.press(view.getByRole("button", { name: "Leer en voz alta" }));
+    await act(async () => rejectStop?.(new Error("late error")));
+    expect(view.getByRole("button", { name: "Detener lectura" })).toBeEnabled();
+    expect(view.queryByText(/No se pudo reproducir/)).toBeNull();
+  });
+
+  it("keeps readable active colors and a touch target without fixed text height", async () => {
+    const speechPort = { speak: jest.fn(), stop: jest.fn().mockResolvedValue(undefined) };
+    const view = render(<SpeechControls speechPort={speechPort} text={testText} />);
+    await waitFor(() => expect(view.getByRole("button")).toBeEnabled());
+    expect(view.getByRole("button")).toHaveStyle({ minHeight: 52, minWidth: 44 });
+    expect(contrastRatio("#FFFFFF", "#246259")).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio("#1B1C1C", "#FFFFFF")).toBeGreaterThanOrEqual(4.5);
   });
 });
