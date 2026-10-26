@@ -327,3 +327,44 @@ export async function persistAppointmentTransition(
     ...(fields.originalStartsAt === undefined ? {} : { originalStartsAt: fields.originalStartsAt }),
   });
 }
+
+/**
+ * Adaptador de lectura y persistencia de transiciones de atención para la capa de Aplicación.
+ */
+export function appointmentTransitionRepository(ctx: MutationCtx) {
+  return {
+    reader: {
+      normalizeAppointmentId: (raw: string) => {
+        const id = normalizeAppointmentId(ctx, raw);
+        return id === null ? null : (id as unknown as string);
+      },
+      getAppointmentById: async (id: string) => {
+        const convexId = normalizeAppointmentId(ctx, id);
+        if (convexId === null) return null;
+        const doc = await getAppointmentById(ctx, convexId);
+        if (doc === null) return null;
+        return {
+          status: doc.status,
+          startsAt: doc.startsAt,
+          ...(doc.originalStartsAt === undefined ? {} : { originalStartsAt: doc.originalStartsAt }),
+        };
+      },
+    },
+    persister: {
+      persistAppointmentTransition: async (
+        id: string,
+        fields: {
+          readonly status: Doc<"appointments">["status"];
+          readonly cancelReason?: string;
+          readonly originalStartsAt?: number;
+        },
+      ) => {
+        const convexId = normalizeAppointmentId(ctx, id);
+        if (convexId === null) {
+          throw new Error("Invalid appointment ID");
+        }
+        await persistAppointmentTransition(ctx, convexId, fields);
+      },
+    },
+  };
+}

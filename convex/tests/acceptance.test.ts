@@ -19,6 +19,7 @@ import {
 import {
   MAX_APPOINTMENT_MS,
   MAX_APPOINTMENTS_IN_WINDOW,
+  appointmentTransitionRepository,
   occupySlotAtomically,
   type OccupySlotRow,
 } from "../infrastructure/appointments/repository";
@@ -830,7 +831,7 @@ test("Cancelar atención conserva historial y motivo (TI2-107)", async () => {
   // el caso de uso de TI2-107, con el código estable de conflicto y sin
   // escribir nada en la fila.
   const rejected = await t.run(async (ctx) => {
-    return await applyAppointmentTransition(ctx, {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
       appointmentId: created.data.appointmentId,
       to: "cancelled_by_cereti",
       actorId: pro,
@@ -847,7 +848,7 @@ test("Cancelar atención conserva historial y motivo (TI2-107)", async () => {
   // Cancelar por CERETI con motivo: el caso de uso aplica la política y
   // persiste su resultado
   const cancelled = await t.run(async (ctx) => {
-    return await applyAppointmentTransition(ctx, {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
       appointmentId: created.data.appointmentId,
       to: "cancelled_by_cereti",
       actorId: pro,
@@ -896,7 +897,7 @@ test("Inasistencia (no_show) se persiste como estado de la atención (TI2-107)",
   // Registrar la inasistencia por el caso de uso: la política exige que el
   // registro no sea anterior al inicio vigente, así ocurrió ya la sesión
   const noShow = await t.run(async (ctx) => {
-    return await applyAppointmentTransition(ctx, {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
       appointmentId: created.data.appointmentId,
       to: "no_show",
       actorId: pro,
@@ -919,7 +920,7 @@ test("Inasistencia (no_show) se persiste como estado de la atención (TI2-107)",
   });
   if (!isOkResult(tooEarly)) throw new Error("Se esperaba ocupar el segundo cupo");
   const rejectedNoShow = await t.run(async (ctx) => {
-    return await applyAppointmentTransition(ctx, {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
       appointmentId: tooEarly.data.appointmentId,
       to: "no_show",
       actorId: pro,
@@ -951,52 +952,108 @@ test("Leer atenciones previas de un profesional por rango de fechas (TI2-107)", 
   const t = convexTest(schema, modules);
   const student = await seedStudent(t, "ti107-est-5");
   const pro = await seedProfessional(t, "ti107-pro-5");
+  const otherStudent = await seedStudent(t, "ti107-est-other");
+  const otherPro = await seedProfessional(t, "ti107-pro-other");
   const accompaniment = await seedAccompaniment(t, student);
+  const otherAccompaniment = await seedAccompaniment(t, otherStudent);
 
-  // Crear varias atenciones en distintos horarios del mismo profesional
-  const slotInputs = [
-    {
+  // 1. Scheduled en rango
+  const created1 = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
       startsAt: TI84_SLOT_START,
       endsAt: TI84_SLOT_END,
-      status: "scheduled" as const,
-    },
-    {
+    });
+  });
+  if (!isOkResult(created1)) throw new Error("Se esperaba ocupar el cupo");
+
+  // 2. Completed en rango (creado como scheduled y transicionado a completed)
+  const created2 = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
       startsAt: TI84_SLOT_START + 3_600_000,
       endsAt: TI84_SLOT_END + 3_600_000,
-      status: "completed" as const,
-    },
-    {
+    });
+  });
+  if (!isOkResult(created2)) throw new Error("Se esperaba ocupar el cupo");
+  await t.run(async (ctx) => {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
+      appointmentId: created2.data.appointmentId,
+      to: "completed",
+      actorId: pro,
+      occurredAt: TI84_SLOT_END + 3_600_000,
+    });
+  });
+
+  // 3. Cancelled by student en rango (creado como scheduled y transicionado)
+  const created3 = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
       startsAt: TI84_SLOT_START + 2 * 3_600_000,
       endsAt: TI84_SLOT_END + 2 * 3_600_000,
-      status: "cancelled_by_student" as const,
-    },
+    });
+  });
+  if (!isOkResult(created3)) throw new Error("Se esperaba ocupar el cupo");
+  await t.run(async (ctx) => {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
+      appointmentId: created3.data.appointmentId,
+      to: "cancelled_by_student",
+      actorId: student,
+      occurredAt: TI84_SLOT_START + 2 * 3_600_000,
+    });
+  });
+
+  // 4. Atención de OTRO profesional en el mismo rango (debe ser filtrada)
+  const otherProApp = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: otherAccompaniment,
+      studentId: otherStudent,
+      professionalId: otherPro,
+      modality: "online",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(otherProApp)) throw new Error("Se esperaba ocupar el cupo");
+
+  // 5. Atención del mismo profesional FUERA del rango de fechas (anterior)
+  const outOfRangeApp = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START - 86_400_000,
+      endsAt: TI84_SLOT_END - 86_400_000,
+    });
+  });
+  if (!isOkResult(outOfRangeApp)) throw new Error("Se esperaba ocupar el cupo");
+
+  const expectedIds = [
+    created1.data.appointmentId,
+    created2.data.appointmentId,
+    created3.data.appointmentId,
   ];
 
-  const createdIds: Id<"appointments">[] = [];
-  for (const slot of slotInputs) {
-    const result = await t.run(async (ctx) => {
-      return await occupySlotAtomically(ctx, {
-        accompanimentId: accompaniment,
-        studentId: student,
-        professionalId: pro,
-        modality: "online",
-        ...slot,
-      });
-    });
-    if (!isOkResult(result)) throw new Error("Se esperaba ocupar el cupo");
-    createdIds.push(result.data.appointmentId);
-  }
-
-  // Leer todas las atenciones del profesional (rango amplio)
+  // Leer atenciones del profesional por rango de fechas exacto
   const all = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointments")
       .withIndex("by_professionalId_and_startsAt", (q) =>
-        q.eq("professionalId", pro).gte("startsAt", TI84_SLOT_START - 3_600_000),
+        q.eq("professionalId", pro).gte("startsAt", TI84_SLOT_START),
       )
       .take(50);
   });
-  expect(all.map((row) => row._id).sort()).toEqual([...createdIds].sort());
+  expect(all.map((row) => row._id).sort()).toEqual([...expectedIds].sort());
 });
 
 test("Diez ciclos de reserva y cancelación no ocultan la atención activa (TI2-84)", async () => {

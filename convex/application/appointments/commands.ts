@@ -1,15 +1,8 @@
-import type { Id } from "../../_generated/dataModel";
-import type { MutationCtx } from "../../_generated/server";
 import {
   transitionAppointment,
   type AppointmentStatus,
 } from "../../domain/appointments/appointment";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
-import {
-  getAppointmentById,
-  normalizeAppointmentId,
-  persistAppointmentTransition,
-} from "../../infrastructure/appointments/repository";
 
 /**
  * Caso de uso de cambio de estado de la atención (TI2-107).
@@ -36,6 +29,37 @@ import {
  * expone y solo se ejercita en pruebas. Opera con datos ficticios.
  */
 
+/** Fila leída para el cambio de estado de la atención. */
+export interface StoredAppointmentTransitionRow {
+  readonly status: AppointmentStatus;
+  readonly startsAt: number;
+  readonly originalStartsAt?: number;
+}
+
+/** Puerto de lectura de atenciones para transiciones. */
+export interface AppointmentTransitionReader {
+  normalizeAppointmentId(rawId: string): string | null;
+  getAppointmentById(appointmentId: string): Promise<StoredAppointmentTransitionRow | null>;
+}
+
+/** Puerto de persistencia de transiciones de atención. */
+export interface AppointmentTransitionPersister {
+  persistAppointmentTransition(
+    appointmentId: string,
+    fields: {
+      readonly status: AppointmentStatus;
+      readonly cancelReason?: string;
+      readonly originalStartsAt?: number;
+    },
+  ): Promise<void>;
+}
+
+/** Dependencias del caso de uso de transición de atención, por puertos. */
+export interface ApplyAppointmentTransitionDeps {
+  readonly reader: AppointmentTransitionReader;
+  readonly persister: AppointmentTransitionPersister;
+}
+
 /** Entrada del cambio de estado, con la fila destino ya leída por Infraestructura. */
 export interface ApplyAppointmentTransitionInput {
   /** Atención a cambiar, como cadena validable sin revelar existencia. */
@@ -50,9 +74,9 @@ export interface ApplyAppointmentTransitionInput {
   readonly reason?: string;
 }
 
-/** Éxito del cambio de estado: la atención persistida, con identificador Convex. */
+/** Éxito del cambio de estado: la atención persistida, con identificador genérico. */
 export interface ApplyAppointmentTransitionSuccess {
-  readonly appointmentId: Id<"appointments">;
+  readonly appointmentId: string;
 }
 
 /** Resultado estable del cambio de estado según TI2-88. */
@@ -65,14 +89,14 @@ export type ApplyAppointmentTransitionResult = ApiResult<ApplyAppointmentTransit
  * reagendan, así el historial no se pierde aunque la fila cambie de estado.
  */
 export async function applyAppointmentTransition(
-  ctx: MutationCtx,
+  deps: ApplyAppointmentTransitionDeps,
   input: ApplyAppointmentTransitionInput,
 ): Promise<ApplyAppointmentTransitionResult> {
-  const appointmentId = normalizeAppointmentId(ctx, input.appointmentId);
+  const appointmentId = deps.reader.normalizeAppointmentId(input.appointmentId);
   if (appointmentId === null) {
     return errResult(conflictError());
   }
-  const row = await getAppointmentById(ctx, appointmentId);
+  const row = await deps.reader.getAppointmentById(appointmentId);
   if (row === null) {
     return errResult(conflictError());
   }
@@ -88,10 +112,10 @@ export async function applyAppointmentTransition(
   if (outcome.status === "rejected") {
     return errResult(conflictError());
   }
-  await persistAppointmentTransition(ctx, row._id, {
+  await deps.persister.persistAppointmentTransition(appointmentId, {
     status: outcome.change.to,
     cancelReason: outcome.cancelReason,
     originalStartsAt: outcome.originalStartAt,
   });
-  return okResult({ appointmentId: row._id });
+  return okResult({ appointmentId });
 }
