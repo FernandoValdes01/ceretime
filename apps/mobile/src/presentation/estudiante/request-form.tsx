@@ -34,7 +34,18 @@ const accessOptions: readonly AccessNeed[] = [
   { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
   { id: "support-person", label: "Persona de apoyo" },
 ];
-const weekdays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const weekdays = [
+  { label: "Lunes", value: 1 },
+  { label: "Martes", value: 2 },
+  { label: "Miércoles", value: 3 },
+  { label: "Jueves", value: 4 },
+  { label: "Viernes", value: 5 },
+  { label: "Sábado", value: 6 },
+  { label: "Domingo", value: 0 },
+] as const;
+const weekdayLabelByValue = new Map<number, string>(
+  weekdays.map(({ label, value }) => [value, label]),
+);
 const stepTitles: Record<RequestFormStepId, string> = {
   need: "Cuéntanos qué necesitas",
   access: "Necesidades de acceso",
@@ -374,7 +385,10 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
   }
 
   const preferredWeekdays = values.preferredWeekdays
-    .map((day) => weekdays[(day + 6) % 7])
+    .flatMap((day) => {
+      const label = weekdayLabelByValue.get(day);
+      return label ? [label] : [];
+    })
     .join(", ");
   const accessNeedsSummary = [
     ...values.accessNeeds.map(({ label }) => label),
@@ -579,9 +593,8 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
               Disponibilidad general *
             </Text>
             <View className="flex-row flex-wrap gap-2">
-              {weekdays.map((label, index) => {
-                const day = (index + 1) % 7;
-                const selected = values.preferredWeekdays.includes(day);
+              {weekdays.map(({ label, value }, index) => {
+                const selected = values.preferredWeekdays.includes(value);
                 return (
                   <Choice
                     error={errors.preferredWeekdays}
@@ -594,8 +607,8 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
                       update(
                         "preferredWeekdays",
                         selected
-                          ? values.preferredWeekdays.filter((value) => value !== day)
-                          : [...values.preferredWeekdays, day],
+                          ? values.preferredWeekdays.filter((day) => day !== value)
+                          : [...values.preferredWeekdays, value],
                       )
                     }
                   />

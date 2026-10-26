@@ -249,25 +249,68 @@ describe("Formulario de solicitud del estudiante", () => {
     });
   });
 
-  test("resume los días según el orden elegido y conserva la nota de la cuenta", async () => {
-    await openForm();
+  test("resume lo que se envía, respeta el orden elegido y conserva la nota de la cuenta", async () => {
+    const commands: SubmitStudentRequestCommand[] = [];
+    const submitter: StudentRequestSubmitter = {
+      async submitStudentRequest(command) {
+        commands.push(command);
+        return testReceipt;
+      },
+    };
+    render(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
     fillStudentRequestNeed();
     fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
     chooseStudentRequestAccess();
+    fireEvent.press(screen.getByRole("checkbox", { name: "Persona de apoyo" }));
+    fireEvent.changeText(
+      screen.getByLabelText("Otra necesidad de acceso", { exact: false }),
+      "Instrucciones por pasos.",
+    );
     fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
     fireEvent.press(screen.getByRole("radio", { name: /En línea/ }));
     fireEvent.press(screen.getByRole("checkbox", { name: /Domingo/ }));
     fireEvent.press(screen.getByRole("checkbox", { name: /Lunes/ }));
+    fireEvent.changeText(screen.getByLabelText("Desde", { exact: false }), "09:00");
+    fireEvent.changeText(screen.getByLabelText("Hasta", { exact: false }), "13:00");
     fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
     fillStudentRequestInformationChannel();
     fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
 
+    expect(screen.getByText("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
+    expect(screen.getByText("Aprender a usar un lector de pantalla.")).toBeOnTheScreen();
+    expect(
+      screen.getByText("Comunicación escrita, Persona de apoyo, Instrucciones por pasos."),
+    ).toBeOnTheScreen();
+    expect(screen.getByText("En línea")).toBeOnTheScreen();
     expect(screen.getByText("Domingo, Lunes")).toBeOnTheScreen();
+    expect(screen.getByText("09:00 a 13:00")).toBeOnTheScreen();
+    expect(screen.getByText("Correo con texto accesible")).toBeOnTheScreen();
     expect(
       screen.getByText(
         "El nombre y correo se obtendrán de la cuenta institucional cuando esté disponible el inicio de sesión.",
       ),
     ).toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole("button", { name: "Confirmar y enviar solicitud" }));
+
+    expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
+    expect(commands).toEqual([
+      {
+        needSummary: "Me cuesta leer los materiales del curso.",
+        expectedOutcome: "Aprender a usar un lector de pantalla.",
+        accessNeeds: [
+          { id: "written-communication", label: "Comunicación escrita" },
+          { id: "support-person", label: "Persona de apoyo" },
+        ],
+        otherAccessNeed: "Instrucciones por pasos.",
+        generalAvailability: {
+          preferredWeekdays: [0, 1],
+          preferredTimeRange: { from: "09:00", to: "13:00" },
+        },
+        modalityPreference: "online",
+        preferredAccessibleInformationChannel: "Correo con texto accesible",
+      },
+    ]);
   });
 
   test("conserva los datos después de un error y vuelve a enviar los valores visibles", async () => {
