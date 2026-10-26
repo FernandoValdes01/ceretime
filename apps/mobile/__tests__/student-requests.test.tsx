@@ -155,7 +155,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
     fillRequiredStudentRequestFields();
     announce.mockClear();
-    fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+    fireEvent.press(screen.getByRole("button", { name: "Confirmar y enviar solicitud" }));
 
     expect(await screen.findByText(/SOL-DEMO-006/)).toBeOnTheScreen();
     expect(announce.mock.calls).toEqual([
