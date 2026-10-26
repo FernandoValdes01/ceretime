@@ -1,0 +1,58 @@
+10-25 20:36:20.265  5870  6107 I ReactNativeJS: 'TI4-60 submission', 'idle'
+10-25 20:36:42.059  5870  6107 I ReactNativeJS: TI4-60 stop-request
+10-25 20:36:42.065  5870  6107 I ReactNativeJS: 'TI4-60 submission', 'submitting'
+10-25 20:36:42.066  5870  6107 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:36:51.073  5870  6107 I ReactNativeJS: TI4-60 stop-request
+10-25 20:36:51.079  5870  6107 I ReactNativeJS: 'TI4-60 submission', 'error'
+10-25 20:36:51.080  5870  6107 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:37:17.795  5870  6107 I ReactNativeJS: TI4-60 stop-request
+10-25 20:37:17.801  5870  6107 I ReactNativeJS: 'TI4-60 submission', 'submitting'
+10-25 20:37:17.802  5870  6107 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:37:26.809  5870  6107 I ReactNativeJS: TI4-60 stop-request
+10-25 20:37:26.819  5870  6107 I ReactNativeJS: 'TI4-60 submission', 'success'
+10-25 20:37:26.819  5870  6107 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:38:56.338  8156  8218 I ReactNativeJS: 'TI4-60 submission', 'idle'
+10-25 20:38:58.941  8156  8218 I ReactNativeJS: TI4-60 stop-request
+10-25 20:38:58.947  8156  8218 I ReactNativeJS: 'TI4-60 submission', 'submitting'
+10-25 20:38:58.948  8156  8218 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:39:07.956  8156  8218 I ReactNativeJS: TI4-60 stop-request
+10-25 20:39:07.964  8156  8218 I ReactNativeJS: 'TI4-60 submission', 'error'
+10-25 20:39:07.965  8156  8218 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:39:09.978  8156  8218 I ReactNativeJS: 'TI4-60 read-request', 'native'
+10-25 20:39:09.996  8156  8218 I ReactNativeJS: 'TI4-60 read-result', '{"status":"failed","reason":"locale-voice-unavailable"}'
+10-25 20:39:34.230  8370  8428 I ReactNativeJS: 'TI4-60 submission', 'idle'
+10-25 20:39:36.934  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:39:36.941  8370  8428 I ReactNativeJS: 'TI4-60 submission', 'submitting'
+10-25 20:39:36.941  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:39:38.202  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:39:38.204  8370  8428 I ReactNativeJS: 'TI4-60 screen-reader', true
+10-25 20:39:38.259  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:39:45.944  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:39:45.951  8370  8428 I ReactNativeJS: 'TI4-60 submission', 'error'
+10-25 20:39:45.952  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:40:02.818  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:40:02.819  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:40:02.823  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:40:02.823  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:41:52.802  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:41:52.803  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:41:52.809  8370  8428 I ReactNativeJS: 'TI4-60 submission', 'error'
+10-25 20:41:52.810  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:41:52.810  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:42:23.593  8370  8428 I ReactNativeJS: 'TI4-60 screen-reader', false
+10-25 20:42:27.861  8370  8428 I ReactNativeJS: 'TI4-60 read-request', 'native'
+10-25 20:42:27.963  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:42:27.964  8370  8428 I ReactNativeJS: 'TI4-60 screen-reader', true
+10-25 20:42:28.018  8370  8428 I ReactNativeJS: 'TI4-60 read-result', '{"status":"stopped"}'
+10-25 20:42:28.019  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:42:43.249  8370  8428 I ReactNativeJS: 'TI4-60 screen-reader', false
+10-25 20:42:45.615  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:42:45.616  8370  8428 I ReactNativeJS: 'TI4-60 screen-reader', true
+10-25 20:42:45.627  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:42:55.948  8370  8428 I ReactNativeJS: 'TI4-60 screen-reader', false
+10-25 20:43:00.258  8370  8428 I ReactNativeJS: 'TI4-60 read-request', 'native'
+10-25 20:43:02.482  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:43:02.484  8370  8428 I ReactNativeJS: TI4-60 stop-request
+10-25 20:43:02.639  8370  8428 I ReactNativeJS: 'TI4-60 read-result', '{"status":"stopped"}'
+10-25 20:43:02.640  8370  8428 I ReactNativeJS: TI4-60 stop-completed
+10-25 20:43:02.641  8370  8428 I ReactNativeJS: TI4-60 stop-completed
