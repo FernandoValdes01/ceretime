@@ -39,7 +39,7 @@ test("Tailwind conserva la tipografía y las medidas de los controles nativos", 
     fontSize: 16,
     lineHeight: 26,
   });
-  expect(screen.getByRole("button", { name: "Enviar solicitud" })).toHaveStyle({
+  expect(screen.getByRole("button", { name: "Continuar" })).toHaveStyle({
     minHeight: 52,
     padding: 16,
     borderCurve: "continuous",
@@ -68,6 +68,14 @@ test("el header nativo reserva el inset superior de las pantallas", () => {
 
 test("Tailwind distingue selección, foco y pulsación sin perder la selección", () => {
   render(<RequestForm submitter={submitter} onRevealGroup={() => {}} />);
+  fireEvent.changeText(
+    screen.getByLabelText("¿Qué necesidad quieres abordar? *"),
+    "Leer materiales.",
+  );
+  fireEvent.changeText(screen.getByLabelText("¿Qué esperas de CERETI? *"), "Usar un lector.");
+  fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
+  fireEvent.press(screen.getByRole("checkbox", { name: "Comunicación escrita" }));
+  fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
   const choice = screen.getByRole("checkbox", { name: "Lunes" });
   fireEvent.press(choice);
   expect(choice).toBeChecked();
@@ -88,7 +96,7 @@ test("Tailwind distingue selección, foco y pulsación sin perder la selección"
 
 test("el foco del campo tiene prioridad sobre el borde de error", () => {
   render(<RequestForm submitter={submitter} onRevealGroup={() => {}} />);
-  fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+  fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
   const input = screen.getByLabelText("¿Qué necesidad quieres abordar? *", { exact: false });
   expect(input).toHaveStyle({ borderColor: "#ba1a1a" });
   fireEvent(input, "focus");
