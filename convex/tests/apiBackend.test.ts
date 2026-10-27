@@ -979,6 +979,82 @@ test("TI2-111: la búsqueda entrega solo cupos libres y compatibles a quien pued
   ).rejects.toThrow("Missing required field `version`");
 });
 
+test("TI2-111: la búsqueda no expone cupos de un profesional no asignado, revocado o sin cuenta vigente", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await ti111SeedAgenda(t);
+  // Cuatro profesionales con el mismo bloque presencial de 15:00 a 16:00 en la
+  // sala accesible: solo el asignado y vigente lo puede ofrecer.
+  const professionals = await t.run(async (ctx) => {
+    const seed = async (
+      subject: string,
+      accountStatus: "active" | "inactive",
+      assignment: "active" | "revoked" | null,
+    ) => {
+      const id = await ctx.db.insert("users", {
+        email: `${subject}@uct.cl`,
+        fullName: "Ficticio",
+        role: "professional",
+        institutionalStatus: "enabled",
+        accountStatus,
+        tokenIdentifier: `${ISSUER}|${subject}`,
+      });
+      if (assignment !== null) {
+        await ctx.db.insert("accompanimentAssignments", {
+          accompanimentId: agenda.accompanimentId,
+          userId: id,
+          assignedRole: "professional",
+          status: assignment,
+        });
+      }
+      await ctx.db.insert("availabilityBlocks", {
+        professionalId: id,
+        weekday: 1,
+        startMinute: 900,
+        endMinute: 960,
+        slotMinutes: 60,
+        modality: "inPerson",
+        spaceId: agenda.spaceId,
+        isActive: true,
+      });
+      return id;
+    };
+    return {
+      assigned: await seed("ti111-ag-pro-3", "active", "active"),
+      unassigned: await seed("ti111-ag-pro-4", "active", null),
+      revoked: await seed("ti111-ag-pro-5", "active", "revoked"),
+      inactive: await seed("ti111-ag-pro-6", "inactive", "active"),
+    };
+  });
+  const asStudent = t.withIdentity(identityFor("ti111-ag-est-1", "ti111-ag-est-1@alu.uct.cl"));
+  const search = (professionalId: string) =>
+    asStudent.query(
+      api.presentation.availability.searchSlots,
+      ti111Search(agenda.accompanimentId, professionalId),
+    );
+
+  // Control: con asignación activa y cuenta vigente el cupo sí se ofrece.
+  expect((await search(professionals.assigned)).items).toStrictEqual([
+    {
+      id: `${professionals.assigned}:${TI111_DAY}:${ti111At(15)}`,
+      professionalId: professionals.assigned,
+      date: TI111_DAY,
+      startAt: ti111At(15),
+      endAt: ti111At(16),
+      modality: "inPerson",
+      spaceId: agenda.spaceId,
+      version: "v1",
+    },
+  ]);
+  const noAvailability = { code: "no_availability", message: noAvailabilityError().message };
+  for (const professionalId of [
+    professionals.unassigned,
+    professionals.revoked,
+    professionals.inactive,
+  ]) {
+    expect(await ti111PublicError(search(professionalId))).toStrictEqual(noAvailability);
+  }
+});
+
 test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", async () => {
   const t = convexTest(schema, modules);
   const agenda = await ti111SeedAgenda(t);
