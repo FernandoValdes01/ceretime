@@ -6,6 +6,7 @@ import {
   type AvailabilitySlot,
   type AvailabilitySlotPage,
 } from "../../domain/availability/availability";
+import { isProfessionalBookable } from "../../domain/authorization/permissions";
 import {
   conflictError,
   errResult,
@@ -46,9 +47,10 @@ import type {
  * (estudiante dueño) o asignación vigente (profesional asignado). Toda
  * denegación responde el mismo error genérico, sin revelar existencia.
  *
- * Búsqueda: combina recurrencia y excepciones (TI2-81), ocupación por
- * puerto (TI2-84/TI2-96) y compatibilidad de modalidad y espacio con las
- * necesidades vigentes sin rebajarlas (TI2-82). Sin opción compatible y
+ * Búsqueda: solo expone cupos de un profesional reservable para el
+ * acompañamiento (TI2-111), y combina recurrencia y excepciones (TI2-81),
+ * ocupación por puerto (TI2-84/TI2-96) y compatibilidad de modalidad y
+ * espacio con las necesidades vigentes sin rebajarlas (TI2-82). Sin opción compatible y
  * libre responde `no_availability` (TI2-88) con la referencia mínima
  * `accompanimentId` de la entrada, sin crear reserva incompatible. Rango
  * y página acotados: la consulta nunca expone el calendario completo. Un
@@ -236,11 +238,46 @@ export async function resolveCompatibilityOption(
 }
 
 /**
+ * Verdadero cuando el profesional buscado podría atender la reserva: rol
+ * profesional, cuenta habilitada y vigente, y asignación activa en este
+ * acompañamiento. Es la misma regla de dominio que revalida la reserva de
+ * TI2-98, así la búsqueda no expone la agenda de quien no atiende el
+ * acompañamiento ni ofrece cupos que la reserva rechazaría (TI2-111).
+ */
+async function isBookableProfessional(
+  auth: AuthorizationReader,
+  accompanimentId: string,
+  professionalId: string,
+): Promise<boolean> {
+  const [profile, assignments] = await Promise.all([
+    auth.getProfileById(professionalId),
+    auth.findActiveAssignments(accompanimentId, professionalId),
+  ]);
+  return (
+    profile !== null &&
+    isProfessionalBookable({
+      role: profile.role,
+      institutionalStatus: profile.institutionalStatus,
+      accountStatus: profile.accountStatus,
+      hasActiveProfessionalAssignment: assignments.some(
+        (assignment) =>
+          assignment.accompanimentId === accompanimentId &&
+          assignment.userId === profile._id &&
+          assignment.assignedRole === "professional" &&
+          assignment.status === "active",
+      ),
+    })
+  );
+}
+
+/**
  * Consulta cupos compatibles para un acompañamiento activo.
  *
  * Autoriza con TI2-86 (acompañamiento activo con pertenencia o asignación
  * vigente; pausado, cerrado, revocado, practicante o administrador se
- * deniegan), expande con TI2-81, descuenta ocupación (TI2-84/TI2-96) y
+ * deniegan), exige que el profesional buscado sea reservable para ese
+ * acompañamiento (si no, `no_availability` sin leer su disponibilidad),
+ * expande con TI2-81, descuenta ocupación (TI2-84/TI2-96) y
  * filtra por compatibilidad con las necesidades vigentes sin rebajarlas
  * (TI2-82). Sin opción compatible y libre responde `no_availability`
  * (TI2-88) con la referencia mínima `accompanimentId` de la entrada, sin
@@ -266,6 +303,11 @@ export async function searchAvailabilitySlots(
     accompanimentId: input.accompanimentId,
   });
   if (grant.status === "error") return denied();
+  // Un profesional no asignado, revocado o sin cuenta vigente responde igual
+  // que uno sin cupos, antes de leer su disponibilidad.
+  if (!(await isBookableProfessional(deps.auth, input.accompanimentId, input.professionalId))) {
+    return errResult(noAvailabilityError());
+  }
 
   const [blocksResult, exceptionsResult, needsEntry, onlineSupports] = await Promise.all([
     deps.availability.listActiveBlocks(input.professionalId),

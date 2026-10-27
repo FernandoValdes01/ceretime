@@ -100,6 +100,23 @@ function activeAssignment(): AuthorizableAssignment {
   };
 }
 
+/**
+ * Estudiante dueño de `acc-1` que busca al profesional `user-pro`, asignado y
+ * vigente: la búsqueda solo expone cupos de un profesional reservable.
+ */
+function studentSearchAuth(
+  overrides: {
+    readonly professional?: FakeProfile;
+    readonly assignments?: AuthorizableAssignment[];
+  } = {},
+): AuthorizationReader {
+  return fakeAuth({
+    profiles: [student, overrides.professional ?? professional],
+    accompaniments: [activeAccompaniment],
+    assignments: overrides.assignments ?? [activeAssignment()],
+  });
+}
+
 /** Bloques en línea para cada día de la semana: cubren cualquier fecha sin depender del calendario. */
 function dailyOnlineBlocks(professionalId: string): StoredAvailabilityBlock[] {
   return [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
@@ -406,7 +423,7 @@ describe("publicación de bloques propios (TI2-97)", () => {
 
 describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   test("el estudiante dueño y el profesional asignado consultan el día activo", async () => {
-    const studentAuth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const studentAuth = studentSearchAuth();
     const studentData = requireOk(
       await searchAvailabilitySlots(searchDeps(studentAuth), searchInput()),
     );
@@ -439,6 +456,77 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     ).toEqual(DENIED);
   });
 
+  test("el profesional buscado sin asignación activa o sin cuenta vigente no expone sus cupos", async () => {
+    const cases: Array<{ readonly label: string; readonly auth: AuthorizationReader }> = [
+      { label: "sin asignación", auth: studentSearchAuth({ assignments: [] }) },
+      {
+        label: "asignación revocada",
+        auth: studentSearchAuth({ assignments: [{ ...activeAssignment(), status: "revoked" }] }),
+      },
+      {
+        label: "asignado como practicante",
+        auth: studentSearchAuth({
+          assignments: [{ ...activeAssignment(), assignedRole: "intern" }],
+        }),
+      },
+      {
+        // El lector real ya filtra por acompañamiento y usuario; la regla no
+        // confía en eso y descarta igual una fila que no corresponde.
+        label: "el lector entrega una asignación de otro acompañamiento",
+        auth: {
+          ...studentSearchAuth(),
+          findActiveAssignments: async () => [{ ...activeAssignment(), accompanimentId: "acc-2" }],
+        },
+      },
+      {
+        label: "el lector entrega una asignación de otro usuario",
+        auth: {
+          ...studentSearchAuth(),
+          findActiveAssignments: async () => [{ ...activeAssignment(), userId: "user-other-pro" }],
+        },
+      },
+      {
+        label: "asignado en otro acompañamiento",
+        auth: studentSearchAuth({
+          assignments: [{ ...activeAssignment(), accompanimentId: "acc-2" }],
+        }),
+      },
+      {
+        label: "cuenta inactiva",
+        auth: studentSearchAuth({ professional: { ...professional, accountStatus: "inactive" } }),
+      },
+      {
+        label: "habilitación pendiente",
+        auth: studentSearchAuth({
+          professional: { ...professional, institutionalStatus: "pending" },
+        }),
+      },
+      {
+        label: "no es profesional",
+        auth: studentSearchAuth({ professional: { ...professional, role: "intern" } }),
+      },
+    ];
+    // Sin llegar a evaluar cupos: la disponibilidad del profesional no se expone.
+    const results: Record<string, unknown> = {};
+    for (const { label, auth } of cases) {
+      const occupancy = fakeOccupancy();
+      const result = await searchAvailabilitySlots(searchDeps(auth, { occupancy }), searchInput());
+      results[label] = { result, evaluated: occupancy.received.length };
+    }
+    expect(results).toEqual(
+      Object.fromEntries(
+        cases.map(({ label }) => [label, { result: NO_AVAILABILITY, evaluated: 0 }]),
+      ),
+    );
+    // El profesional inexistente responde igual.
+    expect(
+      await searchAvailabilitySlots(
+        searchDeps(studentSearchAuth()),
+        searchInput({ professionalId: "user-inexistente" }),
+      ),
+    ).toEqual(NO_AVAILABILITY);
+  });
+
   test("el acompañamiento pausado o cerrado no admite consulta, pero su historial sí se lee aparte", async () => {
     for (const status of ["paused", "closed"] as const) {
       const auth = fakeAuth({
@@ -466,7 +554,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
       searchDeps(internAuth),
       searchInput({ tokenIdentifier: "token-intern" }),
     );
-    const studentAuth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const studentAuth = studentSearchAuth();
     const missing = await searchAvailabilitySlots(
       searchDeps(studentAuth),
       searchInput({ accompanimentId: "acc-inexistente" }),
@@ -476,7 +564,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("sin necesidades resueltas la búsqueda responde conflicto sin filtrar", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const deps = searchDeps(auth, {
       needs: { findAccompanimentNeeds: async () => null },
     });
@@ -484,7 +572,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("el tope de lectura superado responde conflicto sin lista cortada", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const availability = fakeAvailability({ blocks: dailyOnlineBlocks("user-pro") });
     const deps = searchDeps(auth, {
       availability: {
@@ -502,19 +590,19 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("sin bloques el vacío responde ausencia de cupo para coordinar por el canal oficial", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const deps = searchDeps(auth, { availability: fakeAvailability({ blocks: [] }) });
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
   });
 
   test("el cupo ocupado se descuenta y el vacío responde ausencia de cupo", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const deps = searchDeps(auth, { occupancy: fakeOccupancy({ occupyAll: true }) });
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
   });
 
   test("el intervalo decide: conserva el cupo contiguo y descarta el solapado con igual inicio", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const windows: StoredAvailabilityBlock[] = [0, 1, 2, 3, 4, 5, 6].flatMap((weekday) => [
       {
         id: `block-corto-${weekday}`,
@@ -567,7 +655,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("la necesidad sin cobertura no se rebaja: responde ausencia de cupo", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const deps = searchDeps(auth, {
       needs: fakeNeeds([{ id: "need-1", label: "Sala accesible" }]),
     });
@@ -575,7 +663,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("el cupo presencial con sala vigente que cubre las necesidades se ofrece", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const need = { id: "need-1", label: "Sala accesible" };
     const deps = searchDeps(auth, {
       availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
@@ -590,7 +678,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("la sala retirada no se ofrece y el vacío responde ausencia de cupo", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const deps = searchDeps(auth, {
       availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
       compatibility: fakeCompatibility(),
@@ -599,7 +687,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("versión, límite, rango y zona inválidos responden conflicto sin filtrar", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const deps = searchDeps(auth);
     expect(await searchAvailabilitySlots(deps, searchInput({ version: "v9" }))).toEqual(CONFLICT);
     expect(await searchAvailabilitySlots(deps, searchInput({ limit: 0 }))).toEqual(CONFLICT);
@@ -618,7 +706,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("la página acota resultados y el cursor avanza sin exponer el calendario completo", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const deps = searchDeps(auth);
     const range = searchInput({ from: "2026-10-26", to: "2026-10-28", limit: 2 });
     const first = requireOk(await searchAvailabilitySlots(deps, range));
@@ -635,7 +723,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   });
 
   test("el cursor ocupado entre páginas responde conflicto sin repetir resultados", async () => {
-    const auth = fakeAuth({ profiles: [student], accompaniments: [activeAccompaniment] });
+    const auth = studentSearchAuth();
     const occupancy = fakeOccupancy();
     const deps = searchDeps(auth, { occupancy });
     const range = searchInput({ from: "2026-10-26", to: "2026-10-27", limit: 1 });
