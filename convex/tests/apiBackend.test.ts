@@ -896,7 +896,14 @@ async function ti111SeedAgenda(t: ReturnType<typeof convexTest>) {
       endsAt: ti111At(10),
       createdAt: 1,
     });
-    return { studentId, professionalId, accompanimentId, otherAccompanimentId, spaceId };
+    return {
+      studentId,
+      otherStudentId,
+      professionalId,
+      accompanimentId,
+      otherAccompanimentId,
+      spaceId,
+    };
   });
 }
 
@@ -1053,6 +1060,79 @@ test("TI2-111: la búsqueda no expone cupos de un profesional no asignado, revoc
   ]) {
     expect(await ti111PublicError(search(professionalId))).toStrictEqual(noAvailability);
   }
+});
+
+test("TI2-111: la búsqueda no ofrece un cupo que choca con el estudiante o la sala, y la reserva tampoco lo acepta", async () => {
+  // El único cupo libre y compatible de la agenda es el de las 10:00 en la
+  // sala accesible. Cada escenario lo ocupa por otro recurso que no es el
+  // profesional buscado: una atención del mismo estudiante con otro
+  // profesional, o una atención de otro estudiante en la misma sala.
+  const scenarios = ["estudiante", "sala"] as const;
+  const results: Record<string, unknown> = {};
+  for (const scenario of scenarios) {
+    const t = convexTest(schema, modules);
+    const agenda = await ti111SeedAgenda(t);
+    await t.run(async (ctx) => {
+      const otherProfessional = await ctx.db.insert("users", {
+        email: `ti111-ag-otro-${scenario}@uct.cl`,
+        fullName: "Ficticio",
+        role: "professional",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+        tokenIdentifier: `${ISSUER}|ti111-ag-otro-${scenario}`,
+      });
+      const taken =
+        scenario === "estudiante"
+          ? {
+              accompanimentId: agenda.accompanimentId,
+              studentId: agenda.studentId,
+              modality: "online" as const,
+            }
+          : {
+              accompanimentId: agenda.otherAccompanimentId,
+              studentId: agenda.otherStudentId,
+              modality: "inPerson" as const,
+              spaceId: agenda.spaceId,
+            };
+      await ctx.db.insert("appointments", {
+        ...taken,
+        professionalId: otherProfessional,
+        status: "scheduled",
+        startsAt: ti111At(10),
+        endsAt: ti111At(11),
+        createdAt: 1,
+      });
+    });
+    const asStudent = t.withIdentity(identityFor("ti111-ag-est-1", "ti111-ag-est-1@alu.uct.cl"));
+    const before = await ti111Appointments(t);
+    results[scenario] = {
+      consulta: await ti111PublicError(
+        asStudent.query(
+          api.presentation.availability.searchSlots,
+          ti111Search(agenda.accompanimentId, agenda.professionalId),
+        ),
+      ),
+      reserva: await ti111PublicError(
+        asStudent.mutation(api.presentation.appointments.bookAppointment, {
+          accompanimentId: agenda.accompanimentId,
+          professionalId: agenda.professionalId,
+          modality: "inPerson",
+          spaceId: agenda.spaceId,
+          startAt: ti111At(10),
+          endAt: ti111At(11),
+          timeZone: "UTC",
+          version: "v1",
+        }),
+      ),
+      sinEscribir: (await ti111Appointments(t)).length === before.length,
+    };
+  }
+  const expected = {
+    consulta: { code: "no_availability", message: noAvailabilityError().message },
+    reserva: { code: "conflict", message: conflictError().message },
+    sinEscribir: true,
+  };
+  expect(results).toEqual({ estudiante: expected, sala: expected });
 });
 
 test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", async () => {
