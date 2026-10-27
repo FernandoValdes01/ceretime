@@ -571,6 +571,21 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(CONFLICT);
   });
 
+  test("sin el acompañamiento para resolver al estudiante la búsqueda responde conflicto", async () => {
+    // La autorización ya lo leyó; si la segunda lectura no lo encuentra, no
+    // se decide la ocupación sin el estudiante.
+    let reads = 0;
+    const base = studentSearchAuth();
+    const auth: AuthorizationReader = {
+      ...base,
+      getAccompaniment: async (accompanimentId) => {
+        reads += 1;
+        return reads === 1 ? await base.getAccompaniment(accompanimentId) : null;
+      },
+    };
+    expect(await searchAvailabilitySlots(searchDeps(auth), searchInput())).toEqual(CONFLICT);
+  });
+
   test("el tope de lectura superado responde conflicto sin lista cortada", async () => {
     const auth = studentSearchAuth();
     const availability = fakeAvailability({ blocks: dailyOnlineBlocks("user-pro") });
@@ -675,6 +690,73 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     const data = requireOk(await searchAvailabilitySlots(deps, searchInput()));
     expect(data.items).toHaveLength(1);
     expect(data.items[0]?.spaceId).toBe("space-1");
+  });
+
+  test("la ocupación se consulta con el profesional, el estudiante del acompañamiento y la sala del cupo", async () => {
+    type OccupancyQuery = Parameters<SlotOccupancyReader["isSlotOccupied"]>[0];
+    const recordingOccupancy = () => {
+      const received: OccupancyQuery[] = [];
+      const occupancy: SlotOccupancyReader = {
+        isSlotOccupied: async (query) => {
+          received.push(query);
+          return false;
+        },
+      };
+      return { occupancy, received };
+    };
+    const inPersonDeps = (auth: AuthorizationReader, occupancy: SlotOccupancyReader) =>
+      searchDeps(auth, {
+        availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
+        compatibility: fakeCompatibility({
+          spaces: { "space-1": { space: fictitiousSpace, isActive: true, satisfiedNeeds: [] } },
+        }),
+        occupancy,
+      });
+
+    // Presencial: lleva la sala del cupo.
+    const inPerson = recordingOccupancy();
+    requireOk(
+      await searchAvailabilitySlots(
+        inPersonDeps(studentSearchAuth(), inPerson.occupancy),
+        searchInput(),
+      ),
+    );
+    expect(inPerson.received).toHaveLength(1);
+    expect(inPerson.received[0]).toEqual({
+      professionalId: "user-pro",
+      studentId: "user-student",
+      spaceId: "space-1",
+      startAt: expect.any(Number),
+      endAt: expect.any(Number),
+    });
+
+    // En línea: sin sala.
+    const online = recordingOccupancy();
+    requireOk(
+      await searchAvailabilitySlots(
+        searchDeps(studentSearchAuth(), { occupancy: online.occupancy }),
+        searchInput(),
+      ),
+    );
+    expect(online.received).toHaveLength(1);
+    expect(online.received[0]).not.toHaveProperty("spaceId");
+    expect(online.received[0]?.studentId).toBe("user-student");
+
+    // Cuando busca el profesional asignado, el estudiante sigue siendo el del
+    // acompañamiento, no quien llama.
+    const byProfessional = recordingOccupancy();
+    const proAuth = fakeAuth({
+      profiles: [professional],
+      accompaniments: [activeAccompaniment],
+      assignments: [activeAssignment()],
+    });
+    requireOk(
+      await searchAvailabilitySlots(
+        inPersonDeps(proAuth, byProfessional.occupancy),
+        searchInput({ tokenIdentifier: "token-pro" }),
+      ),
+    );
+    expect(byProfessional.received[0]?.studentId).toBe("user-student");
   });
 
   test("la sala retirada no se ofrece y el vacío responde ausencia de cupo", async () => {

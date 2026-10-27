@@ -277,7 +277,8 @@ async function isBookableProfessional(
  * vigente; pausado, cerrado, revocado, practicante o administrador se
  * deniegan), exige que el profesional buscado sea reservable para ese
  * acompañamiento (si no, `no_availability` sin leer su disponibilidad),
- * expande con TI2-81, descuenta ocupación (TI2-84/TI2-96) y
+ * expande con TI2-81, descuenta la ocupación del profesional, del
+ * estudiante y de la sala (TI2-84/TI2-96) y
  * filtra por compatibilidad con las necesidades vigentes sin rebajarlas
  * (TI2-82). Sin opción compatible y libre responde `no_availability`
  * (TI2-88) con la referencia mínima `accompanimentId` de la entrada, sin
@@ -309,20 +310,22 @@ export async function searchAvailabilitySlots(
     return errResult(noAvailabilityError());
   }
 
-  const [blocksResult, exceptionsResult, needsEntry, onlineSupports] = await Promise.all([
-    deps.availability.listActiveBlocks(input.professionalId),
-    deps.availability.listExceptions({
-      professionalId: input.professionalId,
-      from: input.from,
-      to: input.to,
-    }),
-    deps.needs.findAccompanimentNeeds(input.accompanimentId),
-    deps.compatibility.listOnlineSupports(),
-  ]);
+  const [blocksResult, exceptionsResult, needsEntry, onlineSupports, accompaniment] =
+    await Promise.all([
+      deps.availability.listActiveBlocks(input.professionalId),
+      deps.availability.listExceptions({
+        professionalId: input.professionalId,
+        from: input.from,
+        to: input.to,
+      }),
+      deps.needs.findAccompanimentNeeds(input.accompanimentId),
+      deps.compatibility.listOnlineSupports(),
+      deps.auth.getAccompaniment(input.accompanimentId),
+    ]);
   if (blocksResult.status === "error" || exceptionsResult.status === "error") {
     return conflict();
   }
-  if (needsEntry === null) return conflict();
+  if (needsEntry === null || accompaniment === null) return conflict();
 
   let expanded: AvailabilitySlot[];
   try {
@@ -340,8 +343,13 @@ export async function searchAvailabilitySlots(
 
   const compatible: AvailabilitySlot[] = [];
   for (const slot of expanded) {
+    // Los mismos recursos que comprueba la reserva: el profesional, el
+    // estudiante del acompañamiento (también cuando busca el profesional) y
+    // la sala del cupo presencial.
     const occupied = await deps.occupancy.isSlotOccupied({
       professionalId: input.professionalId,
+      studentId: accompaniment.studentId,
+      ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
       startAt: slot.startAt,
       endAt: slot.endAt,
     });
