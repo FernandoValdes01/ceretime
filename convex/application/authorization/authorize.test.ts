@@ -2,7 +2,9 @@ import { describe, expect, test } from "vitest";
 import {
   authorizeAccompanimentRead,
   authorizeAppointmentBook,
+  authorizeAppointmentCancel,
   authorizeAppointmentRead,
+  authorizeAppointmentReschedule,
   authorizeAvailabilityEdit,
   authorizeAvailabilityRead,
   authorizeInternalNoteRead,
@@ -10,12 +12,19 @@ import {
   AUTHORIZATION_DENIED_MESSAGE,
   listingScopeForRole,
   type AuthorizableAgendaAccompaniment,
+  type AuthorizableAppointment,
   type AuthorizableAssignment,
   type AuthorizableProfile,
   type AuthorizationReader,
 } from "./authorize";
 
 const accompaniment = { _id: "acc-1", studentId: "user-student" };
+const appointment: AuthorizableAppointment = {
+  _id: "appointment-1",
+  accompanimentId: "acc-1",
+  studentId: "user-student",
+  professionalId: "user-pro",
+};
 
 function profile(overrides: Partial<AuthorizableProfile>): AuthorizableProfile {
   return {
@@ -272,6 +281,119 @@ describe("authorizeAppointmentBook", () => {
       accompaniments: [{ ...activeAccompaniment, status: "paused" }],
     });
     expect(await authorizeAppointmentBook(paused, request("token-student"))).toEqual(DENIED);
+  });
+});
+
+describe("authorizeAppointmentCancel y authorizeAppointmentReschedule", () => {
+  const request = (tokenIdentifier: string | null, row: AuthorizableAppointment = appointment) => ({
+    tokenIdentifier,
+    appointment: row,
+  });
+
+  test("el Estudiante dueño cancela como estudiante y reagenda la misma atención", async () => {
+    const reader = fakeReader({
+      profiles: [student],
+      accompaniments: [activeAccompaniment],
+    });
+    expect(await authorizeAppointmentCancel(reader, request("token-student"))).toEqual({
+      status: "ok",
+      data: {
+        callerId: "user-student",
+        actor: "student",
+        target: "cancelled_by_student",
+      },
+    });
+    expect(await authorizeAppointmentReschedule(reader, request("token-student"))).toEqual({
+      status: "ok",
+      data: { callerId: "user-student", actor: "student" },
+    });
+  });
+
+  test("el Profesional de la atención cancela como CERETI y reagenda su propia fila", async () => {
+    const reader = fakeReader({
+      profiles: [professional],
+      accompaniments: [activeAccompaniment],
+      assignments: [assignment({})],
+    });
+    expect(await authorizeAppointmentCancel(reader, request("token-pro"))).toEqual({
+      status: "ok",
+      data: { callerId: "user-pro", actor: "professional", target: "cancelled_by_cereti" },
+    });
+    expect(await authorizeAppointmentReschedule(reader, request("token-pro"))).toEqual({
+      status: "ok",
+      data: { callerId: "user-pro", actor: "professional" },
+    });
+  });
+
+  test("una asignación revocada, la atención de otro profesional o un acompañamiento pausado se deniegan", async () => {
+    const revoked = fakeReader({
+      profiles: [professional],
+      accompaniments: [activeAccompaniment],
+      assignments: [assignment({ status: "revoked" })],
+    });
+    expect(await authorizeAppointmentCancel(revoked, request("token-pro"))).toEqual(DENIED);
+    expect(await authorizeAppointmentReschedule(revoked, request("token-pro"))).toEqual(DENIED);
+
+    const assigned = fakeReader({
+      profiles: [professional],
+      accompaniments: [activeAccompaniment],
+      assignments: [assignment({})],
+    });
+    const foreignAppointment = { ...appointment, professionalId: "user-pro-2" };
+    expect(
+      await authorizeAppointmentCancel(assigned, request("token-pro", foreignAppointment)),
+    ).toEqual(DENIED);
+    expect(
+      await authorizeAppointmentReschedule(assigned, request("token-pro", foreignAppointment)),
+    ).toEqual(DENIED);
+
+    const paused = fakeReader({
+      profiles: [student, professional],
+      accompaniments: [{ ...activeAccompaniment, status: "paused" }],
+      assignments: [assignment({})],
+    });
+    expect(await authorizeAppointmentCancel(paused, request("token-student"))).toEqual(DENIED);
+    expect(await authorizeAppointmentReschedule(paused, request("token-pro"))).toEqual(DENIED);
+  });
+
+  test("otro Estudiante, Practicante, Administrador y la falta de sesión se deniegan", async () => {
+    const reader = fakeReader({
+      profiles: [otherStudent, intern, admin],
+      accompaniments: [activeAccompaniment],
+      assignments: [assignment({ userId: "user-intern", assignedRole: "intern" })],
+    });
+    for (const tokenIdentifier of ["token-other", "token-intern", "token-admin", null]) {
+      expect(await authorizeAppointmentCancel(reader, request(tokenIdentifier))).toEqual(DENIED);
+      expect(await authorizeAppointmentReschedule(reader, request(tokenIdentifier))).toEqual(
+        DENIED,
+      );
+    }
+  });
+
+  test("la atención debe pertenecer al acompañamiento y a la identidad de la fila", async () => {
+    const reader = fakeReader({
+      profiles: [student, professional],
+      accompaniments: [activeAccompaniment],
+      assignments: [assignment({})],
+    });
+    const otherStudentAppointment = { ...appointment, studentId: "user-other" };
+    expect(
+      await authorizeAppointmentCancel(reader, request("token-student", otherStudentAppointment)),
+    ).toEqual(DENIED);
+    expect(
+      await authorizeAppointmentReschedule(
+        reader,
+        request("token-student", otherStudentAppointment),
+      ),
+    ).toEqual(DENIED);
+
+    const missingAccompaniment = fakeReader({ profiles: [student] });
+    expect(
+      await authorizeAppointmentCancel(missingAccompaniment, request("token-student")),
+    ).toEqual(DENIED);
+    expect(
+      await authorizeAppointmentReschedule(missingAccompaniment, request("token-student")),
+    ).toEqual(DENIED);
   });
 });
 
