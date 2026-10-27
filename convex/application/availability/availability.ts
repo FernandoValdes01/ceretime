@@ -34,8 +34,8 @@ import type {
 /**
  * Casos de uso de disponibilidad (TI2-97).
  *
- * Capa de Aplicación: publica bloques y excepciones del profesional y
- * consulta cupos compatibles para un acompañamiento activo. No crea
+ * Capa de Aplicación: publica y lee los bloques y excepciones propios del
+ * profesional y consulta cupos compatibles para un acompañamiento activo. No crea
  * entrada pública (`query`/`mutation` de TI2-111) ni toca `ctx.db`
  * (repositorios de TI2-95): recibe puertos por parámetro y se prueba con
  * dobles en memoria. La única definición de cada puerto vive en
@@ -192,6 +192,42 @@ export async function removeAvailabilityException(
   });
   if (grant.status === "error") return denied();
   return store.removeException(input.exceptionId);
+}
+
+/** Disponibilidad propia: bloques vigentes y excepciones del rango pedido. */
+export interface OwnAvailability {
+  readonly blocks: readonly AvailabilityBlock[];
+  readonly exceptions: readonly StoredAvailabilityException[];
+}
+
+/**
+ * Lee la disponibilidad propia para editarla (TI2-111): los bloques vigentes
+ * y las excepciones de un rango civil inclusivo de hasta `MAX_EXPANSION_DAYS`
+ * días. El profesional sale del actor autorizado, nunca del cliente, así que
+ * solo lee lo suyo; requiere profesional vigente como la escritura (TI2-86).
+ * Un rango inválido o un tope de lectura superado responde `conflict` sin
+ * lista cortada. Los bloques salen en la forma del contrato, sin la vigencia:
+ * todos los listados están vigentes.
+ */
+export async function listOwnAvailability(
+  auth: AuthorizationReader,
+  store: AvailabilityReader,
+  input: { readonly tokenIdentifier: string | null; readonly from: string; readonly to: string },
+): Promise<ApiResult<OwnAvailability>> {
+  const grant = await authorizeAvailabilityEdit(auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    professionalId: null,
+  });
+  if (grant.status === "error") return denied();
+  const [blocks, exceptions] = await Promise.all([
+    store.listActiveBlocks(grant.data.callerId),
+    store.listExceptions({ professionalId: grant.data.callerId, from: input.from, to: input.to }),
+  ]);
+  if (blocks.status === "error" || exceptions.status === "error") return conflict();
+  return okResult({
+    blocks: blocks.data.map(({ isActive: _isActive, ...block }) => block),
+    exceptions: exceptions.data,
+  });
 }
 
 /** Entrada de búsqueda de cupos para un acompañamiento activo. */

@@ -23,6 +23,7 @@ import type {
   StoredAvailabilityException,
 } from "./ports";
 import {
+  listOwnAvailability,
   publishAvailabilityBlock,
   publishAvailabilityException,
   removeAvailabilityException,
@@ -819,5 +820,120 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(await searchAvailabilitySlots(deps, { ...range, cursor: cursorSlot.id })).toEqual(
       CONFLICT,
     );
+  });
+});
+
+describe("lectura de la disponibilidad propia (TI2-111)", () => {
+  const ownException: StoredAvailabilityException = {
+    id: "exc-1",
+    professionalId: "user-pro",
+    date: "2026-11-02",
+    kind: "cancelled",
+    reason: "Motivo ficticio",
+    version: AVAILABILITY_CONTRACT_VERSION,
+  };
+
+  /** Lector que registra con qué profesional y rango se le consulta. */
+  function recordingStore(data: {
+    readonly exceptionsResult?: ApiResult<readonly StoredAvailabilityException[]>;
+  }) {
+    const base = fakeAvailability({ blocks: dailyOnlineBlocks("user-pro").slice(0, 2) });
+    const queries: unknown[] = [];
+    const store: AvailabilityReader = {
+      ...base,
+      listActiveBlocks: async (professionalId) => {
+        queries.push({ blocksOf: professionalId });
+        return await base.listActiveBlocks(professionalId);
+      },
+      listExceptions: async (range) => {
+        queries.push({ exceptionsOf: range });
+        return data.exceptionsResult ?? { status: "ok", data: [ownException] };
+      },
+    };
+    return { store, queries };
+  }
+
+  test("el profesional lee sus bloques vigentes en la forma del contrato y sus excepciones del rango", async () => {
+    const { store, queries } = recordingStore({});
+    const result = requireOk(
+      await listOwnAvailability(fakeAuth({ profiles: [professional] }), store, {
+        tokenIdentifier: "token-pro",
+        from: "2026-11-01",
+        to: "2026-11-30",
+      }),
+    );
+    // Sin `isActive`: todo lo listado está vigente.
+    expect(result.blocks).toEqual(
+      dailyOnlineBlocks("user-pro")
+        .slice(0, 2)
+        .map(({ isActive: _isActive, ...block }) => block),
+    );
+    expect(result.blocks.every((block) => !("isActive" in block))).toBe(true);
+    expect(result.exceptions).toEqual([ownException]);
+    // El profesional sale de la identidad del servidor, nunca de la entrada.
+    expect(queries).toEqual([
+      { blocksOf: "user-pro" },
+      { exceptionsOf: { professionalId: "user-pro", from: "2026-11-01", to: "2026-11-30" } },
+    ]);
+  });
+
+  test("quien no es profesional vigente no lee nada", async () => {
+    const callers = [
+      { auth: fakeAuth({ profiles: [student] }), tokenIdentifier: "token-student" },
+      { auth: fakeAuth({ profiles: [intern] }), tokenIdentifier: "token-intern" },
+      {
+        auth: fakeAuth({ profiles: [{ ...professional, accountStatus: "inactive" }] }),
+        tokenIdentifier: "token-pro",
+      },
+      { auth: fakeAuth({ profiles: [professional] }), tokenIdentifier: null },
+    ];
+    for (const caller of callers) {
+      const { store, queries } = recordingStore({});
+      expect(
+        await listOwnAvailability(caller.auth, store, {
+          tokenIdentifier: caller.tokenIdentifier,
+          from: "2026-11-01",
+          to: "2026-11-30",
+        }),
+      ).toEqual(DENIED);
+      expect(queries).toEqual([]);
+    }
+  });
+
+  test("un rango inválido o un tope superado responde conflicto sin lista cortada", async () => {
+    const { store } = recordingStore({
+      exceptionsResult: {
+        status: "error",
+        error: {
+          code: "conflict",
+          message: "La solicitud entra en conflicto con el estado actual.",
+        },
+      },
+    });
+    expect(
+      await listOwnAvailability(fakeAuth({ profiles: [professional] }), store, {
+        tokenIdentifier: "token-pro",
+        from: "2026-11-30",
+        to: "2026-11-01",
+      }),
+    ).toEqual(CONFLICT);
+    // Más bloques vigentes que el tope: tampoco se entrega una lista cortada.
+    const { store: overCap } = recordingStore({});
+    expect(
+      await listOwnAvailability(
+        fakeAuth({ profiles: [professional] }),
+        {
+          ...overCap,
+          listActiveBlocks: async () => ({
+            status: "error",
+            error: {
+              code: "conflict",
+              message: "La solicitud entra en conflicto con el estado actual.",
+            },
+          }),
+        },
+        { tokenIdentifier: "token-pro", from: "2026-11-01", to: "2026-11-30" },
+      ),
+    ).toEqual(CONFLICT);
   });
 });
