@@ -1,5 +1,6 @@
 import { getRouteApi, Navigate, Outlet } from "@tanstack/react-router";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
+import { AdminSpaceEditorPage } from "../gestion/admin-space-editor.tsx";
 import { ProfessionalAvailabilityPage } from "../gestion/professional-availability-editor.tsx";
 import { StudentAccompanimentDetailPage } from "../estudiante/student-accompaniments.tsx";
 import { StudentRequestDetailPage, StudentRequestsPage } from "../estudiante/student-requests.tsx";
@@ -26,9 +27,10 @@ import { ScheduleSearchPage } from "../estudiante/schedule-search.tsx";
 import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 
 /**
- * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103): puentes delgados entre las
- * definiciones de `router.tsx` y las páginas. Viven acá para que `router.tsx`
- * no mezcle componentes con objetos de ruta (regla de fast refresh).
+ * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04):
+ * puentes delgados entre las definiciones de `router.tsx` y las páginas. Viven
+ * acá para que `router.tsx` no mezcle componentes con objetos de ruta (regla
+ * de fast refresh).
  */
 export function RootComponent() {
   return (
@@ -151,4 +153,8 @@ export function AdminLayoutRouteComponent() {
 
 export function AdminIndexRouteComponent() {
   return <AdminHome />;
+}
+
+export function AdminSpacesRouteComponent() {
+  return <AdminSpaceEditorPage />;
 }
