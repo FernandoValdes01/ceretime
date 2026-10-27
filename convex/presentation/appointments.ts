@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { bookAppointment as bookAppointmentUseCase } from "../application/appointments/booking";
 import { mutation } from "../_generated/server";
 import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
+import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
 import {
   accompanimentNeedsReader,
   authorizationReader,
@@ -20,7 +21,9 @@ import { unwrapApiResult } from "./session";
  * el caso de uso de TI2-98, compuesto con los adaptadores de TI2-86, TI2-95 y
  * TI2-96. No toca `ctx.db` ni decide reglas: el estudiante de la atención es
  * el de la sesión, y el horario, la modalidad y la sala se vuelven a derivar
- * de la disponibilidad vigente dentro de la misma transacción.
+ * de la disponibilidad vigente dentro de la misma transacción, siempre en la
+ * zona de la agenda (`AGENDA_TIME_ZONE`) que fija el servidor: el cliente no
+ * envía zona horaria y no puede correr un cupo fuera del horario publicado.
  *
  * Los errores se lanzan con `throwPublicApiError` (TI2-88): `unauthorized`
  * sin permiso sobre el acompañamiento, `no_availability` cuando el cupo ya no
@@ -38,7 +41,6 @@ export const bookAppointment = mutation({
     spaceId: v.optional(v.string()),
     startAt: v.number(),
     endAt: v.number(),
-    timeZone: v.string(),
     version: v.literal(APPOINTMENT_CONTRACT_VERSION),
   },
   returns: v.object({ appointmentId: v.string() }),
@@ -53,7 +55,7 @@ export const bookAppointment = mutation({
           compatibility: compatibilitySpaceSource(ctx),
           occupier: appointmentOccupier(ctx),
         },
-        { ...slot, tokenIdentifier: identity?.tokenIdentifier ?? null },
+        { ...slot, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );
   },

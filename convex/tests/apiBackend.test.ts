@@ -808,13 +808,15 @@ test("TI2-111: cada mutation de disponibilidad exige la versión v1 del contrato
 
 // ── TI2-111: búsqueda y reserva por la API ───────────────────────────────────
 //
-// Agenda ficticia del lunes 2026-11-02 en UTC: un bloque presencial de 09:00
-// a 11:00 en una sala que cubre la necesidad del Estudiante, un bloque en
-// línea de 12:00 a 13:00 y una atención de otro Estudiante que ya ocupa las
-// 09:00. Solo queda libre y compatible el cupo de las 10:00.
+// Agenda ficticia del lunes 2026-11-02 en la zona de la agenda
+// (`America/Santiago`): un bloque presencial de 09:00 a 11:00 en una sala que
+// cubre la necesidad del Estudiante, un bloque en línea de 12:00 a 13:00 y una
+// atención de otro Estudiante que ya ocupa las 09:00. Solo queda libre y
+// compatible el cupo de las 10:00.
 
 const TI111_DAY = "2026-11-02";
-const ti111At = (hour: number) => Date.UTC(2026, 10, 2, hour);
+/** Instante de una hora de Santiago ese lunes (UTC−3 por el horario de verano). */
+const ti111At = (hour: number) => Date.UTC(2026, 10, 2, hour + 3);
 
 async function ti111SeedAgenda(t: ReturnType<typeof convexTest>) {
   const studentId = await seedUser(t, {
@@ -913,7 +915,6 @@ function ti111Search(accompanimentId: string, professionalId: string) {
     professionalId,
     from: TI111_DAY,
     to: TI111_DAY,
-    timeZone: "UTC",
     limit: 10,
     version: "v1" as const,
   };
@@ -1120,7 +1121,6 @@ test("TI2-111: la búsqueda no ofrece un cupo que choca con el estudiante o la s
           spaceId: agenda.spaceId,
           startAt: ti111At(10),
           endAt: ti111At(11),
-          timeZone: "UTC",
           version: "v1",
         }),
       ),
@@ -1135,6 +1135,60 @@ test("TI2-111: la búsqueda no ofrece un cupo que choca con el estudiante o la s
   expect(results).toEqual({ estudiante: expected, sala: expected });
 });
 
+test("TI2-111: la zona horaria la fija el servidor y otra zona no corre la reserva fuera del horario", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await ti111SeedAgenda(t);
+  const asStudent = t.withIdentity(identityFor("ti111-ag-est-1", "ti111-ag-est-1@alu.uct.cl"));
+  const search = ti111Search(agenda.accompanimentId, agenda.professionalId);
+  const slot = {
+    accompanimentId: agenda.accompanimentId as string,
+    professionalId: agenda.professionalId as string,
+    modality: "inPerson" as const,
+    spaceId: agenda.spaceId as string,
+    startAt: ti111At(10),
+    endAt: ti111At(11),
+    version: "v1" as const,
+  };
+  const before = await ti111Appointments(t);
+
+  // El cliente no puede enviar otra zona.
+  await expect(
+    asStudent.query(api.presentation.availability.searchSlots, {
+      ...search,
+      timeZone: "UTC",
+    } as never),
+  ).rejects.toThrow("Unexpected field `timeZone`");
+  await expect(
+    asStudent.mutation(api.presentation.appointments.bookAppointment, {
+      ...slot,
+      timeZone: "UTC",
+    } as never),
+  ).rejects.toThrow("Unexpected field `timeZone`");
+
+  // El bloque de 09:00 a 11:00 leído en UTC daría un cupo a las 10:00 UTC,
+  // las 07:00 de Santiago, fuera del horario publicado: no se reserva.
+  expect(
+    await ti111PublicError(
+      asStudent.mutation(api.presentation.appointments.bookAppointment, {
+        ...slot,
+        startAt: Date.UTC(2026, 10, 2, 10),
+        endAt: Date.UTC(2026, 10, 2, 11),
+      }),
+    ),
+  ).toStrictEqual({ code: "no_availability", message: noAvailabilityError().message });
+  expect(await ti111Appointments(t)).toEqual(before);
+
+  // Las 10:00 de Santiago sí se reservan, con el instante de esa zona.
+  const booked = await asStudent.mutation(api.presentation.appointments.bookAppointment, slot);
+  const row = await t.run(
+    async (ctx) => await ctx.db.get(booked.appointmentId as Id<"appointments">),
+  );
+  expect(row).toMatchObject({
+    startsAt: Date.UTC(2026, 10, 2, 13),
+    endsAt: Date.UTC(2026, 10, 2, 14),
+  });
+});
+
 test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", async () => {
   const t = convexTest(schema, modules);
   const agenda = await ti111SeedAgenda(t);
@@ -1146,7 +1200,6 @@ test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", a
     spaceId: agenda.spaceId as string,
     startAt: ti111At(10),
     endAt: ti111At(11),
-    timeZone: "UTC",
     version: "v1" as const,
   };
   const before = await ti111Appointments(t);

@@ -8,7 +8,10 @@ import {
   updateAvailabilityBlock,
 } from "../application/availability/availability";
 import { mutation, query } from "../_generated/server";
-import { AVAILABILITY_CONTRACT_VERSION } from "../domain/availability/availability";
+import {
+  AGENDA_TIME_ZONE,
+  AVAILABILITY_CONTRACT_VERSION,
+} from "../domain/availability/availability";
 import {
   accompanimentNeedsReader,
   authorizationReader,
@@ -150,7 +153,9 @@ const slotValidator = v.object({
 /**
  * Cupos compatibles y libres de un profesional para un acompañamiento
  * activo, paginados (TI2-97). Solo el Estudiante dueño o el Profesional
- * asignado pueden buscar; el rango y la página están acotados.
+ * asignado pueden buscar; el rango y la página están acotados. Las fechas se
+ * leen en la zona de la agenda (`AGENDA_TIME_ZONE`), que fija el servidor: el
+ * cliente no la envía.
  */
 export const searchSlots = query({
   args: {
@@ -158,7 +163,6 @@ export const searchSlots = query({
     professionalId: v.string(),
     from: v.string(),
     to: v.string(),
-    timeZone: v.string(),
     limit: v.number(),
     cursor: v.optional(v.string()),
     version,
@@ -180,7 +184,7 @@ export const searchSlots = query({
           compatibility: compatibilitySpaceSource(ctx),
           occupancy: slotOccupancyReader(ctx),
         },
-        { ...args, tokenIdentifier: identity?.tokenIdentifier ?? null },
+        { ...args, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );
     // La página del dominio es de solo lectura; el validador espera un arreglo.
