@@ -612,7 +612,7 @@ describe("reagendamiento de una atención (TI2-109)", () => {
     expect(world.row.originalStartAt).toBeUndefined();
   });
 
-  test("dos reagendamientos conservan la primera fecha original", async () => {
+  test("reagendar dos veces conserva la primera fecha original", async () => {
     const world = changeWorld();
     const deps = rescheduleDeps(authorizedAuth(), world);
 
@@ -644,7 +644,7 @@ describe("reagendamiento de una atención (TI2-109)", () => {
     });
   });
 
-  test("una atención cancelada no se reagenda aunque el destino exista", async () => {
+  test("una atención cancelada no se mueve aunque el destino exista", async () => {
     const world = changeWorld({ status: "cancelled_by_student" });
     const deps = rescheduleDeps(authorizedAuth(), world);
 
@@ -680,7 +680,7 @@ describe("reagendamiento de una atención (TI2-109)", () => {
     expect(world.transitions).toHaveLength(0);
   });
 
-  test("ajenos, revocados, Practicante y Administrador no reagendan", async () => {
+  test("ajenos, revocados, Practicante y Administrador no mueven la atención", async () => {
     const cases: ReadonlyArray<{
       readonly label: string;
       readonly auth: AuthorizationReader;

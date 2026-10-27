@@ -202,7 +202,7 @@ export async function cancelAppointment(
 }
 
 /**
- * Reagenda una atención existente a un cupo vigente y compatible.
+ * Reagendar una atención existente a un cupo vigente y compatible.
  *
  * El Estudiante dueño puede elegir cualquier Profesional reservable del
  * acompañamiento; el Profesional solo puede mover su propia atención a su

@@ -290,7 +290,7 @@ describe("authorizeAppointmentCancel y authorizeAppointmentReschedule", () => {
     appointment: row,
   });
 
-  test("el Estudiante dueño cancela como estudiante y reagenda la misma atención", async () => {
+  test("el Estudiante dueño cancela como estudiante y mueve la misma atención", async () => {
     const reader = fakeReader({
       profiles: [student],
       accompaniments: [activeAccompaniment],
@@ -309,7 +309,7 @@ describe("authorizeAppointmentCancel y authorizeAppointmentReschedule", () => {
     });
   });
 
-  test("el Profesional de la atención cancela como CERETI y reagenda su propia fila", async () => {
+  test("el Profesional de la atención cancela como CERETI y mueve su propia fila", async () => {
     const reader = fakeReader({
       profiles: [professional],
       accompaniments: [activeAccompaniment],
