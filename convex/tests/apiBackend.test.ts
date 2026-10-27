@@ -806,6 +806,168 @@ test("TI2-111: cada mutation de disponibilidad exige la versión v1 del contrato
   expect(await ti111Rows(t)).toEqual(before);
 });
 
+test("TI2-111: el profesional lee solo sus bloques vigentes y sus excepciones del rango", async () => {
+  const t = convexTest(schema, modules);
+  const proA = await seedUser(t, {
+    subject: "ti111-own-a",
+    email: "ti111-own-a@uct.cl",
+    role: "professional",
+  });
+  const proB = await seedUser(t, {
+    subject: "ti111-own-b",
+    email: "ti111-own-b@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti111-own-est",
+    email: "ti111-own-est@alu.uct.cl",
+    role: "student",
+  });
+  await seedUser(t, {
+    subject: "ti111-own-int",
+    email: "ti111-own-int@alu.uct.cl",
+    role: "intern",
+  });
+  await seedUser(t, { subject: "ti111-own-adm", email: "ti111-own-adm@uct.cl", role: "admin" });
+  await seedUser(t, {
+    subject: "ti111-own-off",
+    email: "ti111-own-off@uct.cl",
+    role: "professional",
+    institutionalStatus: "disabled",
+  });
+  const asA = t.withIdentity(identityFor("ti111-own-a", "ti111-own-a@uct.cl"));
+  const asB = t.withIdentity(identityFor("ti111-own-b", "ti111-own-b@uct.cl"));
+
+  // A: un bloque vigente, uno retirado y tres excepciones, una fuera del rango.
+  const { blockId: activeBlock } = await asA.mutation(
+    api.presentation.availability.publishBlock,
+    ti111Block,
+  );
+  const { blockId: retiredBlock } = await asA.mutation(api.presentation.availability.publishBlock, {
+    ...ti111Block,
+    weekday: 3,
+  });
+  await asA.mutation(api.presentation.availability.setBlockActive, {
+    blockId: retiredBlock,
+    isActive: false,
+    version: "v1",
+  });
+  const { exceptionId: dayOff } = await asA.mutation(
+    api.presentation.availability.publishException,
+    {
+      date: "2026-11-02",
+      kind: "cancelled",
+      reason: "Motivo ficticio",
+      version: "v1",
+    },
+  );
+  const window = { startMinute: 600, endMinute: 660, slotMinutes: 30, modality: "online" as const };
+  const { exceptionId: extra } = await asA.mutation(
+    api.presentation.availability.publishException,
+    {
+      date: "2026-11-04",
+      kind: "added",
+      windows: [window],
+      version: "v1",
+    },
+  );
+  await asA.mutation(api.presentation.availability.publishException, {
+    date: "2027-03-01",
+    kind: "cancelled",
+    version: "v1",
+  });
+  // B: lo suyo, que A nunca debe ver.
+  const { blockId: blockOfB } = await asB.mutation(api.presentation.availability.publishBlock, {
+    ...ti111Block,
+    weekday: 2,
+  });
+  const { exceptionId: dayOffOfB } = await asB.mutation(
+    api.presentation.availability.publishException,
+    { date: "2026-11-03", kind: "cancelled", version: "v1" },
+  );
+
+  const noviembre = { from: "2026-11-01", to: "2026-11-30", version: "v1" as const };
+  const { version: _blockVersion, ...blockFields } = ti111Block;
+  expect(
+    await asA.query(api.presentation.availability.listOwnAvailability, noviembre),
+  ).toStrictEqual({
+    blocks: [{ id: activeBlock, professionalId: proA, ...blockFields, version: "v1" }],
+    exceptions: [
+      {
+        id: dayOff,
+        professionalId: proA,
+        date: "2026-11-02",
+        kind: "cancelled",
+        reason: "Motivo ficticio",
+        version: "v1",
+      },
+      {
+        id: extra,
+        professionalId: proA,
+        date: "2026-11-04",
+        kind: "added",
+        windows: [window],
+        version: "v1",
+      },
+    ],
+    version: "v1",
+  });
+  expect(
+    await asB.query(api.presentation.availability.listOwnAvailability, noviembre),
+  ).toStrictEqual({
+    blocks: [{ id: blockOfB, professionalId: proB, ...blockFields, weekday: 2, version: "v1" }],
+    exceptions: [
+      { id: dayOffOfB, professionalId: proB, date: "2026-11-03", kind: "cancelled", version: "v1" },
+    ],
+    version: "v1",
+  });
+
+  const denied = { code: "unauthorized", message: "No autorizado" };
+  for (const caller of [
+    t,
+    t.withIdentity(identityFor("ti111-own-est", "ti111-own-est@alu.uct.cl")),
+    t.withIdentity(identityFor("ti111-own-int", "ti111-own-int@alu.uct.cl")),
+    t.withIdentity(identityFor("ti111-own-adm", "ti111-own-adm@uct.cl")),
+    t.withIdentity(identityFor("ti111-own-off", "ti111-own-off@uct.cl")),
+  ]) {
+    expect(
+      await ti111PublicError(
+        caller.query(api.presentation.availability.listOwnAvailability, noviembre),
+      ),
+    ).toStrictEqual(denied);
+  }
+
+  // Rango invertido o de más de 92 días: conflicto, nunca una lista cortada.
+  const conflict = { code: "conflict", message: conflictError().message };
+  for (const range of [
+    { from: "2026-11-30", to: "2026-11-01" },
+    { from: "2026-11-01", to: "2027-02-15" },
+  ]) {
+    expect(
+      await ti111PublicError(
+        asA.query(api.presentation.availability.listOwnAvailability, { ...range, version: "v1" }),
+      ),
+    ).toStrictEqual(conflict);
+  }
+  // Ni otro profesional ni otra versión del contrato.
+  await expect(
+    asA.query(api.presentation.availability.listOwnAvailability, {
+      ...noviembre,
+      professionalId: proB,
+    } as never),
+  ).rejects.toThrow("Unexpected field `professionalId`");
+  await expect(
+    asA.query(api.presentation.availability.listOwnAvailability, {
+      ...noviembre,
+      version: "v2",
+    } as never),
+  ).rejects.toThrow("Expected `v1`, got `v2`");
+  const { version: _rangeVersion, ...withoutVersion } = noviembre;
+  await expect(
+    asA.query(api.presentation.availability.listOwnAvailability, withoutVersion as never),
+  ).rejects.toThrow("Missing required field `version`");
+});
+
 // ── TI2-111: búsqueda y reserva por la API ───────────────────────────────────
 //
 // Agenda ficticia del lunes 2026-11-02 en la zona de la agenda

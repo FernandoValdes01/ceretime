@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import {
+  listOwnAvailability as listOwnAvailabilityUseCase,
   publishAvailabilityBlock,
   publishAvailabilityException,
   removeAvailabilityException,
@@ -189,5 +190,56 @@ export const searchSlots = query({
     );
     // La página del dominio es de solo lectura; el validador espera un arreglo.
     return { ...page, items: [...page.items] };
+  },
+});
+
+const ownBlockValidator = v.object({
+  id: v.string(),
+  professionalId: v.string(),
+  weekday: v.number(),
+  ...windowFields,
+  version,
+});
+
+const ownExceptionValidator = v.object({
+  id: v.string(),
+  professionalId: v.string(),
+  date: v.string(),
+  kind: availabilityExceptionKindUnion,
+  blockId: v.optional(v.string()),
+  windows: v.optional(v.array(v.object(windowFields))),
+  reason: v.optional(v.string()),
+  version,
+});
+
+/**
+ * Bloques vigentes y excepciones propias en un rango civil inclusivo de
+ * hasta 92 días, para que el editor los muestre y edite. Solo un Profesional
+ * vigente, y siempre los suyos: no hay argumento para pedir los de otro.
+ */
+export const listOwnAvailability = query({
+  args: { from: v.string(), to: v.string(), version },
+  returns: v.object({
+    blocks: v.array(ownBlockValidator),
+    exceptions: v.array(ownExceptionValidator),
+    version,
+  }),
+  handler: async (ctx, { from, to }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const own = unwrap(
+      await listOwnAvailabilityUseCase(authorizationReader(ctx), availabilityReader(ctx), {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        from,
+        to,
+      }),
+    );
+    // Las listas del dominio son de solo lectura; el validador espera arreglos.
+    return {
+      blocks: [...own.blocks],
+      exceptions: own.exceptions.map(({ windows, ...exception }) =>
+        windows === undefined ? exception : { ...exception, windows: [...windows] },
+      ),
+      version: AVAILABILITY_CONTRACT_VERSION,
+    };
   },
 });
