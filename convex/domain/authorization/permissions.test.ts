@@ -1,16 +1,20 @@
 import { describe, expect, test } from "vitest";
 import {
+  appointmentCancellationTarget,
   AUTHORIZATION_ACTIONS,
   canBookAppointment,
+  canCancelAppointment,
   canEditAvailability,
   canReadAvailability,
   canReadInternalNote,
   canReadSpaceCatalog,
+  canRescheduleAppointment,
   getAccompanimentView,
   isProfessionalBookable,
   isProfileActive,
   PERMISSION_MATRIX,
   type AgendaAuthorizationContext,
+  type AppointmentChangeAuthorizationContext,
   type AuthorizationContext,
   type AvailabilityAuthorizationContext,
 } from "./permissions";
@@ -29,6 +33,17 @@ function activeContext(overrides: Partial<AuthorizationContext>): AuthorizationC
 
 function agendaContext(overrides: Partial<AgendaAuthorizationContext>): AgendaAuthorizationContext {
   return { ...activeContext({}), accompanimentStatus: "active", ...overrides };
+}
+
+function changeContext(
+  overrides: Partial<AppointmentChangeAuthorizationContext>,
+): AppointmentChangeAuthorizationContext {
+  return {
+    ...agendaContext({}),
+    isAppointmentStudent: false,
+    isAppointmentProfessional: false,
+    ...overrides,
+  };
 }
 
 function availabilityContext(
@@ -269,6 +284,107 @@ describe("canBookAppointment", () => {
       expect(
         canBookAppointment(agendaContext({ role: "student", isOwner: true, ...account })),
       ).toBe(false);
+    }
+  });
+});
+
+describe("canCancelAppointment y canRescheduleAppointment", () => {
+  test("el Estudiante dueño cambia solo su propia atención activa", () => {
+    const ownAppointment = changeContext({
+      role: "student",
+      isOwner: true,
+      isAppointmentStudent: true,
+    });
+    expect(canCancelAppointment(ownAppointment)).toBe(true);
+    expect(canRescheduleAppointment(ownAppointment)).toBe(true);
+    expect(appointmentCancellationTarget(ownAppointment)).toBe("cancelled_by_student");
+
+    expect(
+      canCancelAppointment(
+        changeContext({
+          role: "student",
+          isOwner: true,
+          isAppointmentStudent: false,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      canRescheduleAppointment(
+        changeContext({
+          role: "student",
+          isOwner: false,
+          isAppointmentStudent: true,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("el Profesional asignado cambia solo la atención que tiene a su cargo", () => {
+    const ownAppointment = changeContext({
+      role: "professional",
+      hasActiveProfessionalAssignment: true,
+      isAppointmentProfessional: true,
+    });
+    expect(canCancelAppointment(ownAppointment)).toBe(true);
+    expect(canRescheduleAppointment(ownAppointment)).toBe(true);
+    expect(appointmentCancellationTarget(ownAppointment)).toBe("cancelled_by_cereti");
+
+    expect(
+      canCancelAppointment(
+        changeContext({
+          role: "professional",
+          hasActiveProfessionalAssignment: true,
+          isAppointmentProfessional: false,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      canRescheduleAppointment(
+        changeContext({
+          role: "professional",
+          hasActiveProfessionalAssignment: false,
+          isAppointmentProfessional: true,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("Practicante y Administrador no cambian atenciones aunque la fila los nombre", () => {
+    for (const role of ["intern", "admin"] as const) {
+      const context = changeContext({
+        role,
+        isOwner: true,
+        hasActiveProfessionalAssignment: true,
+        hasActiveInternAssignment: true,
+        isAppointmentStudent: true,
+        isAppointmentProfessional: true,
+      });
+      expect(canCancelAppointment(context)).toBe(false);
+      expect(canRescheduleAppointment(context)).toBe(false);
+      expect(appointmentCancellationTarget(context)).toBe(null);
+    }
+  });
+
+  test("acompañamiento no activo y cuenta no vigente no cambian la atención", () => {
+    for (const accompanimentStatus of ["paused", "closed"] as const) {
+      const context = changeContext({
+        role: "student",
+        isOwner: true,
+        isAppointmentStudent: true,
+        accompanimentStatus,
+      });
+      expect(canCancelAppointment(context)).toBe(false);
+      expect(canRescheduleAppointment(context)).toBe(false);
+    }
+    for (const account of INACTIVE_ACCOUNTS) {
+      const context = changeContext({
+        role: "student",
+        isOwner: true,
+        isAppointmentStudent: true,
+        ...account,
+      });
+      expect(canCancelAppointment(context)).toBe(false);
+      expect(canRescheduleAppointment(context)).toBe(false);
     }
   });
 });

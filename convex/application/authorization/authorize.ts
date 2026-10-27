@@ -1,14 +1,18 @@
 import type { AccompanimentStatus } from "../../domain/accompaniments/accompaniment";
 import {
+  appointmentCancellationTarget,
   canBookAppointment,
   canEditAvailability,
   canReadAvailability,
   canReadInternalNote,
   canReadSpaceCatalog,
+  canRescheduleAppointment,
   getAccompanimentView,
   type AccompanimentView,
   type AccountStatus,
   type AgendaAuthorizationContext,
+  type AppointmentCancellationTarget,
+  type AppointmentChangeAuthorizationContext,
   type AuthorizationContext,
   type InstitutionalStatus,
   type Role,
@@ -181,6 +185,37 @@ export type AgendaGrant = { readonly callerId: string };
 export type AppointmentReadGrant = AgendaGrant & { readonly view: AccompanimentView };
 
 /**
+ * Atención concreta que se quiere cambiar. `_id`, `studentId` y
+ * `professionalId` salen de la fila leída en el servidor, nunca del cliente:
+ * son la pertenencia que la autorización contextual revalida.
+ */
+export type AuthorizableAppointment = {
+  readonly _id: string;
+  readonly accompanimentId: string;
+  readonly studentId: string;
+  readonly professionalId: string;
+};
+
+/** Rol efectivo del actor en el cambio: decide el destino de la cancelación. */
+export type AppointmentChangeActor = "student" | "professional";
+
+/** Cambio concedido: el actor sale siempre de la sesión del servidor. */
+export type AppointmentChangeGrant = AgendaGrant & {
+  readonly actor: AppointmentChangeActor;
+};
+
+/** Cancelación concedida, con el estado destino que corresponde al actor. */
+export type AppointmentCancellationGrant = AppointmentChangeGrant & {
+  readonly target: AppointmentCancellationTarget;
+};
+
+/** Cambio de una atención concreta: identidad de sesión más la fila leída. */
+export type AppointmentChangeRequest = {
+  readonly tokenIdentifier: string | null;
+  readonly appointment: AuthorizableAppointment;
+};
+
+/**
  * `tokenIdentifier` sale de `ctx.auth.getUserIdentity()` en el servidor, o es
  * `null` sin sesión.
  */
@@ -284,6 +319,82 @@ export async function authorizeAppointmentBook(
   const loaded = await loadAgendaContext(reader, request);
   if (loaded === null || !canBookAppointment(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Contexto de cambio de una atención concreta. La fila leída en el servidor
+ * aporta la pertenencia: el Estudiante solo opera su propia atención y el
+ * Profesional solo la que tiene asignada. Un acompañamiento inexistente,
+ * una atención de otro acompañamiento o una identidad sin perfil se deniegan
+ * igual, sin revelar cuál faltó.
+ */
+async function loadAppointmentChangeContext(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<{
+  readonly callerId: string;
+  readonly context: AppointmentChangeAuthorizationContext;
+} | null> {
+  const profile = await findCaller(reader, request.tokenIdentifier);
+  if (profile === null) return null;
+  const accompaniment = await reader.getAccompaniment(request.appointment.accompanimentId);
+  if (accompaniment === null) return null;
+  if (request.appointment.accompanimentId !== accompaniment._id) return null;
+  const assignments = await reader.findActiveAssignments(accompaniment._id, profile._id);
+  const base = buildAuthorizationContext({ profile, accompaniment, assignments });
+  return {
+    callerId: profile._id,
+    context: {
+      ...base,
+      accompanimentStatus: accompaniment.status,
+      isAppointmentStudent:
+        request.appointment.studentId === profile._id &&
+        accompaniment.studentId === request.appointment.studentId,
+      isAppointmentProfessional: request.appointment.professionalId === profile._id,
+    },
+  };
+}
+
+/** Verdadero solo para los roles que pueden cambiar una atención. */
+function appointmentChangeActorForRole(role: Role): AppointmentChangeActor | null {
+  switch (role) {
+    case "student":
+      return "student";
+    case "professional":
+      return "professional";
+    case "intern":
+    case "admin":
+      return null;
+  }
+}
+
+/**
+ * Cancelación de una atención: Estudiante dueño o Profesional que la tiene a
+ * su cargo, con acompañamiento activo. El destino (`cancelled_by_student` o
+ * `cancelled_by_cereti`) lo decide el rol, no el cliente.
+ */
+export async function authorizeAppointmentCancel(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AppointmentCancellationGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null) return denied();
+  const target = appointmentCancellationTarget(loaded.context);
+  const actor = appointmentChangeActorForRole(loaded.context.role);
+  if (target === null || actor === null) return denied();
+  return okResult({ callerId: loaded.callerId, actor, target });
+}
+
+/** Reagendamiento de una atención, con la misma pertenencia y vigencia. */
+export async function authorizeAppointmentReschedule(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AppointmentChangeGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canRescheduleAppointment(loaded.context)) return denied();
+  const actor = appointmentChangeActorForRole(loaded.context.role);
+  if (actor === null) return denied();
+  return okResult({ callerId: loaded.callerId, actor });
 }
 
 /** Lectura del catálogo de espacios: basta una cuenta vigente de cualquier rol. */

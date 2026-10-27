@@ -22,7 +22,7 @@ import type {
 import type { AppointmentOccupier, OccupySlotSuccess } from "./occupancy";
 
 /**
- * Caso de uso único de reserva de un cupo compatible (TI2-98).
+ * Reserva de un cupo compatible (TI2-98).
  *
  * Capa de Aplicación: autoriza al Estudiante dueño del acompañamiento,
  * revalida el cupo contra la disponibilidad vigente y consume la ocupación
@@ -42,13 +42,15 @@ import type { AppointmentOccupier, OccupySlotSuccess } from "./occupancy";
  * ocupado. Toda denegación de autorización usa el mismo error genérico, sin
  * filtrar existencia.
  *
+ * `resolveBookableSlot` es la revalidación compartida con el reagendamiento
+ * de TI2-109: ambos casos de uso aceptan solo un cupo vigente y compatible,
+ * sin duplicar la regla en dos módulos.
+ *
  * Opera con datos ficticios.
  */
 
-/** Entrada de reserva: el cupo elegido más la identidad de la sesión. */
-export interface BookAppointmentInput {
-  readonly tokenIdentifier: string | null;
-  readonly accompanimentId: string;
+/** Forma del cupo elegido, sin identidad ni acompañamiento. */
+export interface SlotSelectionShape {
   readonly professionalId: string;
   readonly modality: ModalityPreference;
   /** Referencia opaca al espacio; obligatoria en presencial y ausente en línea. */
@@ -61,12 +63,26 @@ export interface BookAppointmentInput {
   readonly timeZone: string;
 }
 
-/** Dependencias de la reserva, todas por puerto para probar con dobles. */
-export interface BookAppointmentDeps {
+/** Cupo elegido más el acompañamiento que lo admite. */
+export interface SlotSelectionInput extends SlotSelectionShape {
+  readonly accompanimentId: string;
+}
+
+/** Entrada de reserva: el cupo elegido más la identidad de la sesión. */
+export interface BookAppointmentInput extends SlotSelectionInput {
+  readonly tokenIdentifier: string | null;
+}
+
+/** Dependencias de la revalidación de cupo, compartidas con TI2-109. */
+export interface SlotSelectionDeps {
   readonly auth: AuthorizationReader;
   readonly availability: AvailabilityReader;
   readonly needs: AccompanimentNeedsReader;
   readonly compatibility: CompatibilitySpaceSource;
+}
+
+/** Dependencias de la reserva, todas por puerto para probar con dobles. */
+export interface BookAppointmentDeps extends SlotSelectionDeps {
   readonly occupier: AppointmentOccupier;
 }
 
@@ -118,14 +134,30 @@ function noAvailability<T>(): ApiResult<T> {
 }
 
 /**
+ * Verdadero cuando la forma del cupo es inválida antes de autorizar. La
+ * relación entre modalidad y sala se comprueba en `resolveBookableSlot`, para
+ * que una petición sin identidad no reciba detalles de forma.
+ */
+export function slotSelectionProblem(input: SlotSelectionShape): boolean {
+  return (
+    input.professionalId.trim() === "" ||
+    (input.modality !== "inPerson" && input.modality !== "online") ||
+    !isUsableInstant(input.startAt) ||
+    !isUsableInstant(input.endAt) ||
+    input.startAt >= input.endAt ||
+    !isValidTimeZone(input.timeZone)
+  );
+}
+
+/**
  * Relee disponibilidad y devuelve el cupo vigente que coincide exactamente
  * con la selección. Un bloque retirado, una excepción cancelada, un horario
  * que ya no existe o una modalidad/sala distinta responden `no_availability`;
  * una lectura truncada o inválida responde `conflict`.
  */
 async function findCurrentSlot(
-  deps: BookAppointmentDeps,
-  input: BookAppointmentInput,
+  deps: SlotSelectionDeps,
+  input: SlotSelectionInput,
   spaceId: string | undefined,
   date: string,
 ): Promise<ApiResult<AvailabilitySlot>> {
@@ -166,30 +198,15 @@ async function findCurrentSlot(
 }
 
 /**
- * Reserva un cupo propio, activo y compatible.
- *
- * Valida la forma de la entrada, autoriza con TI2-86, revalida la
- * disponibilidad y la compatibilidad con las necesidades vigentes, y solo
- * entonces pide la ocupación atómica. La atención creada usa el estudiante
- * de la sesión, nunca un identificador enviado por el cliente, y conserva
- * como fecha efectiva el inicio del cupo revalidado.
+ * Revalida el Profesional, el cupo y la compatibilidad con las necesidades
+ * vigentes. Es la parte común de reservar y reagendar: el cliente elige, pero
+ * solo se escribe lo que sigue disponible y cubre las necesidades actuales.
+ * La sala se exige en presencial y se prohíbe en línea antes de leer nada.
  */
-export async function bookAppointment(
-  deps: BookAppointmentDeps,
-  input: BookAppointmentInput,
-): Promise<ApiResult<OccupySlotSuccess>> {
-  if (
-    input.accompanimentId.trim() === "" ||
-    input.professionalId.trim() === "" ||
-    (input.modality !== "inPerson" && input.modality !== "online") ||
-    !isUsableInstant(input.startAt) ||
-    !isUsableInstant(input.endAt) ||
-    input.startAt >= input.endAt ||
-    !isValidTimeZone(input.timeZone)
-  ) {
-    return conflict();
-  }
-
+export async function resolveBookableSlot(
+  deps: SlotSelectionDeps,
+  input: SlotSelectionInput,
+): Promise<ApiResult<AvailabilitySlot>> {
   const spaceId = normalizeSpaceId(input.spaceId);
   if (
     (input.modality === "inPerson" && spaceId === undefined) ||
@@ -197,12 +214,6 @@ export async function bookAppointment(
   ) {
     return conflict();
   }
-
-  const grant = await authorizeAppointmentBook(deps.auth, {
-    tokenIdentifier: input.tokenIdentifier,
-    accompanimentId: input.accompanimentId,
-  });
-  if (grant.status === "error") return denied();
 
   const [professionalProfile, professionalAssignments] = await Promise.all([
     deps.auth.getProfileById(input.professionalId),
@@ -239,13 +250,42 @@ export async function bookAppointment(
   if (option === null) return noAvailability();
   if (!assessCompatibility(needs.needs, option).compatible) return noAvailability();
 
+  return { status: "ok", data: current.data };
+}
+
+/**
+ * Reserva un cupo propio, activo y compatible.
+ *
+ * Valida la forma de la entrada, autoriza con TI2-86, revalida la
+ * disponibilidad y la compatibilidad con las necesidades vigentes, y solo
+ * entonces pide la ocupación atómica. La atención creada usa el estudiante
+ * de la sesión, nunca un identificador enviado por el cliente, y conserva
+ * como fecha efectiva el inicio del cupo revalidado.
+ */
+export async function bookAppointment(
+  deps: BookAppointmentDeps,
+  input: BookAppointmentInput,
+): Promise<ApiResult<OccupySlotSuccess>> {
+  if (input.accompanimentId.trim() === "" || slotSelectionProblem(input)) {
+    return conflict();
+  }
+
+  const grant = await authorizeAppointmentBook(deps.auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    accompanimentId: input.accompanimentId,
+  });
+  if (grant.status === "error") return denied();
+
+  const slot = await resolveBookableSlot(deps, input);
+  if (slot.status === "error") return slot;
+
   return await deps.occupier.occupySlot({
     accompanimentId: input.accompanimentId,
     studentId: grant.data.callerId,
-    professionalId: current.data.professionalId,
-    modality: current.data.modality,
-    ...(current.data.spaceId === undefined ? {} : { spaceId: current.data.spaceId }),
-    startAt: current.data.startAt,
-    endAt: current.data.endAt,
+    professionalId: slot.data.professionalId,
+    modality: slot.data.modality,
+    ...(slot.data.spaceId === undefined ? {} : { spaceId: slot.data.spaceId }),
+    startAt: slot.data.startAt,
+    endAt: slot.data.endAt,
   });
 }

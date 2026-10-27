@@ -29,6 +29,8 @@ export const AUTHORIZATION_ACTIONS = [
   "availability:read",
   "appointment:read",
   "appointment:book",
+  "appointment:cancel",
+  "appointment:reschedule",
   "space:read",
 ] as const;
 
@@ -57,6 +59,21 @@ export type AuthorizationContext = {
 export type AgendaAuthorizationContext = AuthorizationContext & {
   readonly accompanimentStatus: AccompanimentStatus;
 };
+
+/**
+ * Operación sobre una atención concreta: el contexto de agenda más la
+ * pertenencia de la fila. `isAppointmentStudent` exige que la atención sea del
+ * mismo estudiante dueño del acompañamiento; `isAppointmentProfessional`, que
+ * el Profesional asignado sea el de esa atención. Un Profesional asignado al
+ * acompañamiento no opera la atención de otro profesional.
+ */
+export type AppointmentChangeAuthorizationContext = AgendaAuthorizationContext & {
+  readonly isAppointmentStudent: boolean;
+  readonly isAppointmentProfessional: boolean;
+};
+
+/** Destino de una cancelación permitida, decidido por el rol del actor. */
+export type AppointmentCancellationTarget = "cancelled_by_student" | "cancelled_by_cereti";
 
 /**
  * Edición de disponibilidad, que no depende de un acompañamiento.
@@ -160,6 +177,48 @@ export function canBookAppointment(context: AgendaAuthorizationContext): boolean
 }
 
 /**
+ * Cambio de una atención existente (cancelar o reagendar): el Estudiante dueño
+ * de esa atención o el Profesional asignado que la tiene a su cargo, siempre
+ * con el acompañamiento activo. Practicante y Administrador no cambian
+ * atenciones. La fila se revalida en la misma operación para que una
+ * asignación revocada o una atención de otro profesional dejen de autorizar.
+ */
+function canChangeAppointment(context: AppointmentChangeAuthorizationContext): boolean {
+  if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
+  switch (context.role) {
+    case "student":
+      return context.isOwner && context.isAppointmentStudent;
+    case "professional":
+      return context.hasActiveProfessionalAssignment && context.isAppointmentProfessional;
+    case "intern":
+    case "admin":
+      return false;
+  }
+}
+
+/** Verdadero solo cuando el actor puede cancelar esta atención. */
+export function canCancelAppointment(context: AppointmentChangeAuthorizationContext): boolean {
+  return canChangeAppointment(context);
+}
+
+/**
+ * Destino de la cancelación según el rol: el Estudiante cancela como
+ * `cancelled_by_student` y el Profesional como `cancelled_by_cereti`. `null`
+ * cuando la operación no está permitida.
+ */
+export function appointmentCancellationTarget(
+  context: AppointmentChangeAuthorizationContext,
+): AppointmentCancellationTarget | null {
+  if (!canCancelAppointment(context)) return null;
+  return context.role === "student" ? "cancelled_by_student" : "cancelled_by_cereti";
+}
+
+/** Verdadero solo cuando el actor puede reagendar esta atención. */
+export function canRescheduleAppointment(context: AppointmentChangeAuthorizationContext): boolean {
+  return canChangeAppointment(context);
+}
+
+/**
  * Profesional elegido para un cupo: rol profesional, cuenta habilitada y
  * vigente y asignación activa sobre el acompañamiento. Que el Estudiante
  * pueda reservar no basta; el recurso profesional se revalida en la misma
@@ -238,6 +297,20 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     action: "appointment:book",
     student: "permitido solo propios con acompañamiento activo",
     professional: "denegado",
+    intern: "denegado",
+    admin: "denegado",
+  },
+  {
+    action: "appointment:cancel",
+    student: "permitido solo sus propias atenciones con acompañamiento activo",
+    professional: "permitido solo la atención propia asignada, con acompañamiento activo",
+    intern: "denegado",
+    admin: "denegado",
+  },
+  {
+    action: "appointment:reschedule",
+    student: "permitido solo sus propias atenciones con acompañamiento activo",
+    professional: "permitido solo la atención propia asignada, con acompañamiento activo",
     intern: "denegado",
     admin: "denegado",
   },
