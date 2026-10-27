@@ -1591,17 +1591,24 @@ test("TI2-111: la búsqueda ve ocupado lo mismo que la reserva rechazaría", asy
   const proB = await seedProfessional(t, "ti111-occ-pro-b");
   const proC = await seedProfessional(t, "ti111-occ-pro-c");
   const who = await seedTi96Student(t, "ti111-occ-est-1");
+  const other = await seedTi96Student(t, "ti111-occ-est-2");
+  const capOwner = await seedTi96Student(t, "ti111-occ-est-3");
+  const roomX = await seedTi96Space(t, "Sala X TI2-111");
+  const roomY = await seedTi96Space(t, "Sala Y TI2-111");
+  // `who` con proA de 0 a 60; `other` con proB en la sala X de 100 a 160.
   expect(ti96Code(await occupyTi96(t, who, proA, 0, 60))).toBe("ok");
+  expect(ti96Code(await occupyTi96(t, other, proB, 100, 160, roomX))).toBe("ok");
   const cancelled = await occupyTi96(t, who, proA, 200, 260);
   if (!isOkResult(cancelled)) throw new Error("Se esperaba ocupar");
   await t.run(async (ctx) => {
     await ctx.db.patch(cancelled.data.appointmentId, { status: "cancelled_by_student" });
   });
-  // Más filas que el tope en la ventana de proC, todas canceladas.
+  // Más filas que el tope en la ventana de proC, todas canceladas y de un
+  // estudiante aparte, para no ocupar la ventana de los demás casos.
   await t.run(async (ctx) => {
     for (let i = 0; i <= MAX_APPOINTMENTS_IN_WINDOW; i++) {
       await ctx.db.insert("appointments", {
-        ...who,
+        ...capOwner,
         professionalId: proC,
         modality: "online",
         status: "cancelled_by_cereti",
@@ -1614,28 +1621,50 @@ test("TI2-111: la búsqueda ve ocupado lo mismo que la reserva rechazaría", asy
 
   const occupied = await t.run(async (ctx) => {
     const reader: SlotOccupancyReader = slotOccupancyReader(ctx);
-    const at = (professionalId: string, from: number, to: number) =>
-      reader.isSlotOccupied({ professionalId, startAt: ti96At(from), endAt: ti96At(to) });
+    const at = (
+      professionalId: string,
+      studentId: string,
+      from: number,
+      to: number,
+      spaceId?: string,
+    ) =>
+      reader.isSlotOccupied({
+        professionalId,
+        studentId,
+        ...(spaceId === undefined ? {} : { spaceId }),
+        startAt: ti96At(from),
+        endAt: ti96At(to),
+      });
     return {
-      cruce: await at(proA, 30, 90),
-      contiguoPosterior: await at(proA, 60, 120),
-      contiguoAnterior: await at(proA, -60, 0),
-      otroProfesional: await at(proB, 30, 90),
-      cancelada: await at(proA, 200, 260),
-      sobreElTope: await at(proC, 0, 30),
-      inexistente: await at("no-existe", 30, 90),
-      otraTabla: await at(who.accompanimentId, 30, 90),
+      cruceProfesional: await at(proA, other.studentId, 30, 90),
+      cruceEstudiante: await at(proB, who.studentId, 30, 90),
+      cruceSala: await at(proA, who.studentId, 120, 180, roomX),
+      contiguoProfesionalYEstudiante: await at(proA, who.studentId, 60, 100),
+      contiguoSala: await at(proA, who.studentId, 160, 200, roomX),
+      otraSala: await at(proA, who.studentId, 120, 180, roomY),
+      cancelada: await at(proA, who.studentId, 200, 260),
+      sobreElTope: await at(proC, who.studentId, 0, 30),
+      libre: await at(proB, who.studentId, 300, 360, roomY),
+      profesionalInexistente: await at("no-existe", who.studentId, 300, 360),
+      estudianteDeOtraTabla: await at(proA, who.accompanimentId, 300, 360),
+      salaInexistente: await at(proA, who.studentId, 300, 360, "no-existe"),
     };
   });
   expect(occupied).toEqual({
-    cruce: true,
-    contiguoPosterior: false,
-    contiguoAnterior: false,
-    otroProfesional: false,
+    cruceProfesional: true,
+    cruceEstudiante: true,
+    cruceSala: true,
+    contiguoProfesionalYEstudiante: false,
+    contiguoSala: false,
+    otraSala: false,
     cancelada: false,
     sobreElTope: true,
-    inexistente: false,
-    otraTabla: false,
+    libre: false,
+    // Un identificador que no es de su tabla cuenta como ocupado: la reserva
+    // lo rechazaría con `conflict`.
+    profesionalInexistente: true,
+    estudianteDeOtraTabla: true,
+    salaInexistente: true,
   });
 });
 

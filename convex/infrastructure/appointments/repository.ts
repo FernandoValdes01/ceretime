@@ -258,26 +258,38 @@ export async function occupySlotAtomically(
 // (`startAt`/`endAt` e identificadores de texto) al de este repositorio.
 
 /**
- * Ocupación para la búsqueda: el cupo está ocupado cuando el profesional ya
- * tiene una atención que lo cruza, con la misma lectura por ventana que la
- * reserva. Una ventana sobre el tope cuenta como ocupada, así la búsqueda no
- * ofrece un cupo que la reserva rechazaría.
+ * Ocupación para la búsqueda: el cupo está ocupado cuando el profesional, el
+ * estudiante o la sala ya tienen una atención que lo cruza, los mismos
+ * recursos y la misma lectura por ventana que `occupySlotAtomically`. Una
+ * ventana sobre el tope o un identificador que no es de su tabla cuentan como
+ * ocupados, así la búsqueda no ofrece un cupo que la reserva rechazaría.
  */
 export function slotOccupancyReader(ctx: DbReader) {
   return {
     isSlotOccupied: async (slot: {
       readonly professionalId: string;
+      readonly studentId: string;
+      readonly spaceId?: string;
       readonly startAt: number;
       readonly endAt: number;
     }) => {
       const professionalId = ctx.db.normalizeId("users", slot.professionalId);
-      if (professionalId === null) return false;
-      return await isResourceTaken(
-        ctx,
+      const studentId = ctx.db.normalizeId("users", slot.studentId);
+      const spaceId =
+        slot.spaceId === undefined ? undefined : ctx.db.normalizeId("spaces", slot.spaceId);
+      if (professionalId === null || studentId === null || spaceId === null) return true;
+      const resources: OccupiedResource[] = [
         { kind: "professional", id: professionalId },
-        { startsAt: slot.startAt, endsAt: slot.endAt },
-        null,
-      );
+        { kind: "student", id: studentId },
+      ];
+      if (spaceId !== undefined) {
+        resources.push({ kind: "space", id: spaceId });
+      }
+      const interval = { startsAt: slot.startAt, endsAt: slot.endAt };
+      for (const resource of resources) {
+        if (await isResourceTaken(ctx, resource, interval, null)) return true;
+      }
+      return false;
     },
   };
 }
