@@ -14,7 +14,14 @@ describe("applyAppointmentTransition use case", () => {
     >();
     rows.set("app-1", { status: "scheduled", startsAt: 1000 });
 
-    const persisted: Array<{ readonly id: string; readonly fields: any }> = [];
+    const persisted: Array<{
+      readonly id: string;
+      readonly fields: {
+        readonly status: AppointmentStatus;
+        readonly cancelReason?: string;
+        readonly originalStartsAt?: number;
+      };
+    }> = [];
 
     const deps: ApplyAppointmentTransitionDeps = {
       reader: {
@@ -46,7 +53,9 @@ describe("applyAppointmentTransition use case", () => {
     });
 
     expect(result.status).toBe("ok");
-    expect((result as any).data.appointmentId).toBe("app-1");
+    expect((result as Extract<typeof result, { readonly status: "ok" }>).data.appointmentId).toBe(
+      "app-1",
+    );
     expect(persisted).toHaveLength(1);
     expect(persisted[0].fields.status).toBe("completed");
   });
