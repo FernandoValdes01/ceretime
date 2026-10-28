@@ -45,6 +45,10 @@ export function useRoleTabScreenOptions() {
     ...baseRoleTabScreenOptions,
     tabBarActiveTintColor: colors.primary,
     tabBarInactiveTintColor: colors.secondary,
+    tabBarIconStyle: {
+      width: 21 * Math.min(1.5, Math.max(1, fontScale)),
+      height: 21 * Math.min(1.5, Math.max(1, fontScale)),
+    },
     tabBarLabelPosition: "below-icon" as const,
     tabBarLabel: ({ children, color }: { children: string; color: ColorValue }) => (
       <StudentText
@@ -77,7 +81,10 @@ export function RoleTabIcon({
   readonly color: string;
   readonly name: AppIconName;
 }) {
-  return <AppIcon color={color} name={name} size={21} strokeWidth={2.1} />;
+  const preferences = useOptionalAccessibilityPreferences();
+  const { fontScale } = useWindowDimensions();
+  const scale = Math.min(1.5, Math.max(1, preferences?.effective.textScale ?? fontScale));
+  return <AppIcon color={color} name={name} size={21 * scale} strokeWidth={2.1} />;
 }
 
 export { Tabs };

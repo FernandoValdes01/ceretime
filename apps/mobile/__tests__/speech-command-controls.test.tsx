@@ -1,9 +1,21 @@
+import { defaultAccessibilityPreferences } from "@/application/accessibility-preferences-models";
+import { AccessibilityPreferencesProvider } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import type { SpeechRecognitionPort, SpeechRecognitionResult } from "@/application/speech-port";
 import {
   SpeechCommandControls,
   SpeechCommandLauncher,
 } from "@/presentation/accessibility/speech-controls";
+
+jest.mock("react-native/Libraries/Utilities/useWindowDimensions", () => ({
+  __esModule: true,
+  default: () => ({ width: 360, height: 800, scale: 3, fontScale: 1 }),
+}));
+
+jest.mock(
+  "react-native-safe-area-context",
+  () => jest.requireActual("react-native-safe-area-context/jest/mock").default,
+);
 
 jest.mock("expo-router", () => {
   const React = jest.requireActual<typeof import("react")>("react");
@@ -165,6 +177,34 @@ describe("SpeechCommandControls", () => {
     expect(result.onCancel).not.toHaveBeenCalled();
     expect(speechPort.stop).toHaveBeenCalled();
   });
+});
+
+it("amplía los comandos según la preferencia y conserva la cancelación local", async () => {
+  const preferences = { ...defaultAccessibilityPreferences, textScale: 2 as const };
+  const onBack = jest.fn();
+  const onOpenRequests = jest.fn();
+  const view = render(
+    <AccessibilityPreferencesProvider
+      port={{
+        read: async () => ({ preferences, source: "stored", error: null }),
+        update: async () => ({ ok: true, preferences }),
+      }}
+    >
+      <SpeechCommandLauncher
+        speechPort={{ recognize: jest.fn(), stop: jest.fn().mockResolvedValue(undefined) }}
+        onBack={onBack}
+        onOpenRequests={onOpenRequests}
+      />
+    </AccessibilityPreferencesProvider>,
+  );
+  await waitFor(() => expect(view.getByText("Comandos de voz")).toHaveStyle({ fontSize: 32 }));
+  fireEvent.press(view.getByRole("button", { name: "Comandos de voz" }));
+  expect(view.getByRole("header", { name: "Comandos de voz" })).toBeOnTheScreen();
+  expect(view.getByText("Cancelar")).toHaveStyle({ fontSize: 34 });
+  fireEvent.press(view.getByRole("button", { name: "Cancelar" }));
+  expect(view.queryByRole("button", { name: "Usar comando de voz" })).toBeNull();
+  expect(onBack).not.toHaveBeenCalled();
+  expect(onOpenRequests).not.toHaveBeenCalled();
 });
 
 describe("SpeechCommandLauncher", () => {

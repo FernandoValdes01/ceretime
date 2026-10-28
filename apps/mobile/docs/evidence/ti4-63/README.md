@@ -2,7 +2,7 @@
 
 <!-- cspell:words samsung -->
 
-Issue: [TI4-63](https://linear.app/ceretime/issue/TI4-63). Evaluación del 28 de octubre de 2026 sobre `ca097570cd0152d1a53d2d4b431b9e339cc51b17`, que incluye TI4-62. Se usaron exclusivamente datos ficticios y el envío simulado; no se modificaron implementación, contratos, backend ni estados de Linear.
+Issue: [TI4-63](https://linear.app/ceretime/issue/TI4-63). Evaluación del 28 de octubre de 2026 sobre `ca097570cd0152d1a53d2d4b431b9e339cc51b17`, que incluye TI4-62. La evaluación inicial usó exclusivamente datos ficticios y el envío simulado, sin modificar implementación, contratos, backend ni estados de Linear. Las correcciones de UI solicitadas después por el usuario se registran al final.
 
 ## Resultado
 
@@ -86,3 +86,20 @@ bunx --package cspell --package @cspell/dict-es-es cspell lint --no-progress app
 Typecheck y las tres suites solicitadas aprobaron: 46 pruebas. Se reutilizaron sus escenarios de validación, foco, resumen frente al comando, edición tras fallo, reintento, dos envíos concurrentes, descarte del borrador y navegación; no se duplicaron suites ni se reescribió la implementación. Jest emitió avisos de Reanimated sobre reducción de movimiento, que no se interpretan como evidencia nativa. La suite de paleta aprobó sus tres pruebas de contraste de tokens. Los resultados finales de lint, formato y ortografía se registran en la PR.
 
 La [evidencia TI4-30](../ti4-30/README.md) describe el envío previo y no sustituye este recorrido. Las comprobaciones de esta entrega cubren el commit indicado, el teléfono y el cliente descritos; no acreditan otras versiones, dispositivos ni datos reales. El cierre requiere revisión, CI e integración mediante PR; no se marca la issue como terminada desde esta sesión.
+
+## Correcciones de UI solicitadas después de la evaluación
+
+Tras revisar las capturas, el usuario pidió corregir los iconos pequeños frente al texto ampliado, la alternancia entre CERETI y CERETIME, el nombre partido y el botón Cancelar del panel parcialmente cubierto por la navegación de Android. Ese pedido amplía el alcance original de evidencia a estas correcciones de presentación. No se cambian reconocimiento, contratos, preferencias almacenadas ni acciones de negocio.
+
+Se conservan los módulos existentes. La cabecera nativa y la compartida muestran CERETI; con texto ampliado o poco ancho, la identidad y las acciones ocupan filas separadas. Avatar e iconos crecen de forma moderada, con límite de 1.5 veces su tamaño base; los iconos de pestañas reservan el espacio correspondiente. El texto sigue usando la escala solicitada. El panel usa área segura dentro del modal, conserva desplazamiento y consume el texto, contraste y reducción de movimiento de las preferencias compartidas. No se elimina el foco visible del lector.
+
+Se repitió la comprobación en el mismo Samsung y cliente de desarrollo, con la corrección sobre la base documental `674fa3517af70e345b48fd9cfa9755bf1f9dc4c0`. Metro se ejecutó bajo protección de recursos; para la conexión USB se usó resolución local IPv4. No se compiló otro APK ni se habilitó TalkBack durante esta repetición visual.
+
+- [Panel al 100 %](./17-comandos-corregidos-100.png): Cancelar aparece completo por encima de la navegación del sistema y cierra el panel.
+- [Cabecera e iconos al 200 %](./18-cabecera-corregida-200.png): CERETI aparece completo en inicio; los iconos de cabecera y pestañas aumentan de tamaño.
+- [Panel al 200 %](./19-comandos-corregidos-200.png): el título se distribuye en dos líneas, Cerrar sigue accesible y los cuatro botones permanecen completos. El límite inferior de Cancelar fue 2141 píxeles en ambas escalas, frente al inicio de la barra del sistema en 2214 píxeles.
+- [Cabecera con Volver al 200 %](./20-cabecera-volver-corregida-200.png): CERETI permanece completo también en Nueva solicitud. El acceso inicial con cabecera nativa mostró el mismo nombre.
+
+La prueba de regresión de comandos carga la preferencia al 200 % con sistema al 100 %, abre el panel, comprueba el texto ampliado y activa Cancelar: no se llama a volver ni a abrir solicitudes. Las suites existentes verifican además los comandos, su cancelación, la navegación entre roles y el envío. La prueba de opciones de cabecera se ejecuta explícitamente con su patrón `.test.ts`, porque el patrón general de Mobile solo incluye `.test.tsx`.
+
+Las capturas 01–16 conservan sus resultados históricos y no se presentan como pruebas de la corrección. El hallazgo de reapertura del comprobante y los límites del recorrido inicial siguen pendientes. Al terminar esta repetición se restauró Seguir el sistema, se cerró el cliente, se retiró la redirección USB y se detuvo Metro. Los resultados de comprobaciones y la revisión del nuevo diff quedan en la PR.
