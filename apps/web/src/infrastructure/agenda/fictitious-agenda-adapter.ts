@@ -3,13 +3,19 @@ import {
   NO_AVAILABILITY_ERROR_CODE,
   SPACE_CATALOG_CONTRACT_VERSION,
   toSpaceLabel,
+  transitionAppointment,
   type AvailabilityBlock,
   type AvailabilityException,
   type Space,
 } from "../../../../../convex/domain/index.ts";
 import {
+  type AgendaAppointment,
+  type AgendaAppointmentResult,
   type AgendaPort,
   type AgendaSlot,
+  type ChangeAppointmentStatusInput,
+  type ChangeAppointmentStatusResult,
+  type ListAppointmentsResult,
   type ListAvailabilityResult,
   type ReserveSlotInput,
   type ReserveSlotResult,
@@ -22,11 +28,11 @@ import {
 } from "../../application/agenda/agenda-port.ts";
 
 /**
- * Adaptador ficticio de agenda (TI2-101, extendido TI2-102 y TI2-103).
+ * Adaptador ficticio de agenda (TI2-101, extendido TI2-102, TI2-103 y TI2-115).
  *
  * Temporal hasta TI2-123/TI2-125: devuelve fixtures con la forma del
- * contrato, sin reglas de compatibilidad, cruces, autorización ni
- * persistencia. Todo es inventado y se declara como tal en la interfaz.
+ * contrato, sin compatibilidad, persistencia ni autorización. Todo es
+ * inventado y se declara como tal en la interfaz.
  *
  * Reglas ficticias documentadas: no hay cupos en línea publicados, así que
  * filtrar por esa modalidad responde `no_availability` (código canónico);
@@ -35,6 +41,14 @@ import {
  * ajeno. La lectura del editor trae dos bloques y tres excepciones ficticios
  * (cancelación del día, cancelación de un bloque y agregado con ventana);
  * el guardado asigna identidad ficticia sin validar propiedad.
+ *
+ * Agenda del Profesional (TI2-115): seis atenciones ficticias del mismo
+ * profesional con estados variados del contrato. El cambio de estado no
+ * agrega política local: valida con `transitionAppointment` del dominio (la
+ * misma función que usará el Backend) y solo simula identidad y reloj.
+ * Un identificador ajeno responde denegación genérica sin filtrar
+ * existencia. Los cambios viven en memoria mientras dura el adaptador, sin
+ * persistencia productiva.
  */
 
 function midnightPlus(days: number): number {
@@ -159,8 +173,84 @@ const FICTIONAL_EXCEPTIONS: ReadonlyArray<AvailabilityException> = [
   },
 ];
 
+/** Instante relativo al reloj ficticio: `hours` puede ser negativo (pasado). */
+function fromNow(hours: number): number {
+  return Date.now() + hours * 3_600_000;
+}
+
+/**
+ * Atenciones ficticias de la agenda del Profesional (TI2-115).
+ *
+ * Todos con el mismo profesional ficticio: la página no expone
+ * acompañamientos de otros profesionales. Estados variados del contrato
+ * para mostrar agenda y cambios: una programada futura, una programada ya
+ * ocurrida (admite cierre), una reagendada con su fecha original, una
+ * realizada, una inasistencia pendiente de justificación y una cancelación
+ * por CERETI con motivo propio.
+ */
+const FICTIONAL_APPOINTMENTS: ReadonlyArray<AgendaAppointment> = [
+  {
+    id: "aten-ficticio-1",
+    status: "scheduled",
+    modality: "inPerson",
+    spaceId: "esp-1",
+    startAt: fromNow(24),
+    endAt: fromNow(25),
+  },
+  {
+    id: "aten-ficticio-2",
+    status: "scheduled",
+    modality: "inPerson",
+    spaceId: "esp-2",
+    startAt: fromNow(-26),
+    endAt: fromNow(-25),
+  },
+  {
+    id: "aten-ficticio-3",
+    status: "rescheduled",
+    modality: "online",
+    startAt: fromNow(48),
+    endAt: fromNow(49),
+    originalStartAt: fromNow(4),
+  },
+  {
+    id: "aten-ficticio-4",
+    status: "completed",
+    modality: "inPerson",
+    spaceId: "esp-1",
+    startAt: fromNow(-50),
+    endAt: fromNow(-49),
+  },
+  {
+    id: "aten-ficticio-5",
+    status: "no_show",
+    modality: "inPerson",
+    spaceId: "esp-2",
+    startAt: fromNow(-74),
+    endAt: fromNow(-73),
+  },
+  {
+    id: "aten-ficticio-6",
+    status: "cancelled_by_cereti",
+    modality: "inPerson",
+    spaceId: "esp-1",
+    startAt: fromNow(-122),
+    endAt: fromNow(-121),
+    cancelReason: "Jornada de capacitación del equipo.",
+  },
+];
+
+function appointmentsSorted(
+  appointments: ReadonlyArray<AgendaAppointment>,
+): ReadonlyArray<AgendaAppointment> {
+  return [...appointments].sort((a, b) => a.startAt - b.startAt);
+}
+
 export function createFictitiousAgendaAdapter(): AgendaPort {
   let blockCounter = FICTIONAL_BLOCKS.length;
+  // Estado simulado en memoria: la lista es la "respuesta" del Backend
+  // ficticio; un cambio de estado la actualiza dentro del mismo adaptador.
+  let appointments: ReadonlyArray<AgendaAppointment> = FICTIONAL_APPOINTMENTS;
   return {
     async searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult> {
       if (filter.modality === "online") {
@@ -228,6 +318,61 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
           version: AVAILABILITY_CONTRACT_VERSION,
         },
       };
+    },
+    // Agenda del Profesional (TI2-115): lectura y cambio de estado
+    // simulados. La política de transición aplica `transitionAppointment`
+    // del dominio compartido (no hay reglas locales); la identidad y el
+    // reloj se simulan en el adaptador, como lo hará el Backend real.
+    async listAppointments(): Promise<ListAppointmentsResult> {
+      if (appointments.length === 0) {
+        return { status: "empty" };
+      }
+      return { status: "ok", appointments: appointmentsSorted(appointments) };
+    },
+    async getAppointment(appointmentId: string): Promise<AgendaAppointmentResult> {
+      const found = appointments.find((item) => item.id === appointmentId);
+      if (found === undefined) {
+        // Denegación genérica: un id desconocido o ajeno no filtra existencia.
+        return { status: "denied" };
+      }
+      return { status: "ok", appointment: found };
+    },
+    async changeAppointmentStatus(
+      input: ChangeAppointmentStatusInput,
+    ): Promise<ChangeAppointmentStatusResult> {
+      const index = appointments.findIndex((item) => item.id === input.appointmentId);
+      if (index === -1) {
+        return { status: "denied" };
+      }
+      const current = appointments[index];
+      const result = transitionAppointment({
+        from: current.status,
+        to: input.to,
+        // Identidad ficticia "derivada" acá, como el Backend real lo hará
+        // desde la sesión; el cliente nunca envía autoridad.
+        actorId: FICTIONAL_PROFESSIONAL_ID,
+        occurredAt: Date.now(),
+        ...(input.reason === undefined ? {} : { reason: input.reason }),
+        currentStartAt: current.startAt,
+        ...(current.originalStartAt === undefined
+          ? {}
+          : { currentOriginalStartAt: current.originalStartAt }),
+      });
+      if (result.status === "rejected") {
+        return { status: "rejected", cause: result.cause };
+      }
+      const updated: AgendaAppointment = {
+        ...current,
+        status: input.to,
+        startAt: result.effectiveStartAt,
+        endAt: result.effectiveEndAt ?? current.endAt,
+        ...(result.originalStartAt === undefined
+          ? {}
+          : { originalStartAt: result.originalStartAt }),
+        ...(result.cancelReason === undefined ? {} : { cancelReason: result.cancelReason }),
+      };
+      appointments = appointments.map((item, position) => (position === index ? updated : item));
+      return { status: "changed", appointment: updated };
     },
   };
 }
