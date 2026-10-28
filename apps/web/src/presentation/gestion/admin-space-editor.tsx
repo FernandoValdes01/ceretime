@@ -96,9 +96,22 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
   const [savedSpaces, setSavedSpaces] = useState<ReadonlyArray<Space>>([]);
   const [editing, setEditing] = useState<Space | null>(null);
   const [savedSpace, setSavedSpace] = useState<Space | null>(null);
+  // Generación del formulario en modo nuevo: cada creación confirmada avanza
+  // el contador y remonta el formulario vacío, así el reenvío posterior ya
+  // no lleva los datos de la creación anterior.
+  const [formGeneration, setFormGeneration] = useState(0);
+  // Espejo del modo de edición vigente: la respuesta de un guardado puede
+  // llegar cuando la edición activa ya cambió, y la comparación por
+  // identidad debe usar el estado vigente, no el capturado por la llamada
+  // pendiente de una instancia remontada.
+  const editingRef = useRef<Space | null>(editing);
   const formHeadingRef = useRef<HTMLHeadingElement>(null);
   const confirmationRef = useRef<HTMLHeadingElement>(null);
   const mounted = useRef(false);
+
+  useEffect(() => {
+    editingRef.current = editing;
+  }, [editing]);
 
   // El cambio de modo (nuevo/editar) se anuncia moviendo el foco al
   // encabezado del formulario una vez actualizado su texto; el montaje
@@ -222,15 +235,23 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
       ) : null}
       <SpaceFormSection
         // El cambio de modo remonta el formulario: nuevo parte vacío y la
-        // edición parte de los campos del contrato del espacio elegido.
-        key={editing === null ? "nuevo" : editing.id}
+        // edición parte de los campos del contrato del espacio elegido. La
+        // generación avanza al confirmar una creación para que el siguiente
+        // envío también parta vacío sin abandonar el modo nuevo.
+        key={editing === null ? `nuevo-${formGeneration}` : editing.id}
         editing={editing}
         formHeadingRef={formHeadingRef}
         onSaveStart={() => setSavedSpace(null)}
-        onSaved={(space) => {
+        onSaved={(space, savedFor) => {
           setSavedSpaces((prev) => applySavedSpace(prev, space));
-          setSavedSpace(space);
-          setEditing(null);
+          // La confirmación y la salida del modo edición solo aplican cuando
+          // la respuesta corresponde a la edición vigente: la respuesta
+          // tardía de un guardado anterior no descarta el borrador activo.
+          if (savedFor === (editingRef.current?.id ?? null)) {
+            setSavedSpace(space);
+            setEditing(null);
+            setFormGeneration((value) => value + 1);
+          }
         }}
         onCancelEdit={() => setEditing(null)}
       />
@@ -260,7 +281,7 @@ function SpaceFormSection({
   editing: Space | null;
   formHeadingRef: React.RefObject<HTMLHeadingElement | null>;
   onSaveStart: () => void;
-  onSaved: (space: Space) => void;
+  onSaved: (space: Space, savedFor: string | null) => void;
   onCancelEdit: () => void;
 }) {
   const [form, setForm] = useState<SpaceFormState>(() =>
@@ -268,6 +289,9 @@ function SpaceFormSection({
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
+  // Bloqueo síncrono de envíos: el estado de espera aún no se aplica dentro
+  // del mismo tick, así que el reenvío simultáneo se corta por referencia.
+  const pendingRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
 
@@ -277,7 +301,7 @@ function SpaceFormSection({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (pending) {
+    if (pendingRef.current) {
       return;
     }
     // Cada envío parte de cero: limpia la confirmación anterior del cuerpo
@@ -290,11 +314,15 @@ function SpaceFormSection({
     if (Object.keys(errors).length > 0) {
       return;
     }
+    // El envío declara a qué edición responde: el cuerpo compara esa
+    // identidad con el modo de edición vigente al llegar la respuesta.
+    const savedFor = editing?.id ?? null;
+    pendingRef.current = true;
     setPending(true);
     try {
-      const result = await getAgendaPort().saveSpace(toSaveSpaceInput(form, editing?.id ?? null));
+      const result = await getAgendaPort().saveSpace(toSaveSpaceInput(form, savedFor));
       if (result.status === "saved") {
-        onSaved(result.space);
+        onSaved(result.space, savedFor);
       } else if (result.status === "denied") {
         setDenied(true);
       } else {
@@ -303,6 +331,7 @@ function SpaceFormSection({
     } catch {
       setSaveError("No pudimos guardar el espacio. Inténtalo de nuevo.");
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   }

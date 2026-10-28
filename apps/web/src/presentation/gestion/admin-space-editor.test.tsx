@@ -289,6 +289,45 @@ describe("editor de espacios (TI2-04)", () => {
     ).toBeDefined();
   });
 
+  test("reenviar tras crear no duplica el registro: el formulario parte vacío", async () => {
+    const port = puertoOk();
+    let guardados = 0;
+    const guardadoBase = port.saveSpace;
+    port.saveSpace = (input) => {
+      guardados += 1;
+      return guardadoBase(input);
+    };
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    completarEspacioValido();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
+
+    expect(await screen.findByText("Espacio guardado")).toBeDefined();
+    // Tras confirmar la creación el formulario remonta vacío en modo nuevo.
+    expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
+    const campus = screen.getByLabelText("Campus") as HTMLInputElement;
+    expect(campus.value).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
+
+    // El reenvío parte de un formulario vacío: queda en validación y no
+    // envía otra creación sin identidad al puerto.
+    expect(await screen.findByText("Indica el campus del espacio.")).toBeDefined();
+    expect(guardados).toBe(1);
+    const catalogo = screen
+      .getByRole("heading", { name: "Espacios registrados" })
+      .closest("section");
+    if (catalogo === null) {
+      throw new Error("Se esperaba la sección del catálogo");
+    }
+    expect(
+      within(catalogo).getAllByText("Campus Sur · Edificio C · Piso 3 · Sala 310").length,
+    ).toBe(1);
+  });
+
   test("editar un espacio completa el formulario, conserva identidad y actualiza la lista", async () => {
     comoAdministrador();
     renderAt("/administrador/espacios");
@@ -325,6 +364,59 @@ describe("editor de espacios (TI2-04)", () => {
     expect(
       within(catalogo).getByText("Campus Norte · Edificio A · Piso 1 · Sala 101"),
     ).toBeDefined();
+  });
+
+  test("la respuesta de un guardado anterior no descarta el borrador de otra edición", async () => {
+    let resolveSave!: (value: Awaited<ReturnType<AgendaPort["saveSpace"]>>) => void;
+    const pendiente = new Promise<Awaited<ReturnType<AgendaPort["saveSpace"]>>>((resolve) => {
+      resolveSave = resolve;
+    });
+    const port = puertoOk();
+    port.saveSpace = () => pendiente;
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    completarEspacioValido();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
+
+    expect(await screen.findByText("Guardando…")).toBeDefined();
+
+    // Con la creación aún pendiente se entra a editar otro espacio y se
+    // escribe un borrador distinto.
+    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-2" }));
+    expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
+    const borrador = "Ascensor amplio y pasillo despejado en el hall del piso 2.";
+    fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
+      target: { value: borrador },
+    });
+
+    resolveSave({
+      status: "saved",
+      space: {
+        id: "esp-ficticio-9",
+        campus: "Campus Sur",
+        building: "Edificio C",
+        floor: "Piso 3",
+        room: "Sala 310",
+        accessConditions: "Rampa lateral y señalización contrastada.",
+        arrivalInstructions: "Entrar por el acceso sur y seguir la línea guía hasta el ascensor.",
+        version: "v1",
+      },
+    });
+
+    // La respuesta se aplica al catálogo, pero no toca la edición vigente:
+    // el borrador de esp-2 sobrevive y no aparece la confirmación de la
+    // creación anterior.
+    expect(await screen.findByText("Campus Sur · Edificio C · Piso 3 · Sala 310")).toBeDefined();
+    const acceso = screen.getByLabelText("Condiciones de acceso") as HTMLTextAreaElement;
+    expect(acceso.value).toBe(borrador);
+    expect(screen.getByRole("heading", { name: "Editar espacio" })).toBeDefined();
+    expect(
+      screen.getByText(/Estás editando Campus Norte · Edificio B · Piso 2 · Sala 205/),
+    ).toBeDefined();
+    expect(screen.queryByText("Espacio guardado")).toBeNull();
   });
 
   test("cancelar la edición vuelve al modo nuevo sin datos del espacio", async () => {
