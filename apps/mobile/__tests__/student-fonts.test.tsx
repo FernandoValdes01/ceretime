@@ -35,7 +35,7 @@ test("cargar la tipografía no borra los valores ingresados", () => {
 test("un fallo de la fuente no bloquea la revisión del formulario", () => {
   jest.mocked(useFonts).mockReturnValue([false, new Error("Fuente no disponible")]);
   render(form);
-  fireEvent.press(screen.getByRole("button", { name: "Enviar solicitud" }));
+  fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
   expect(screen.getByText("Describe la necesidad que quieres abordar.")).toBeOnTheScreen();
   expect(screen.getByRole("header", { name: "Solicitud" })).toHaveStyle({
     fontFamily: undefined,

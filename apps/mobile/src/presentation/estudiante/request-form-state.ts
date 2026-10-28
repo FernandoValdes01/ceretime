@@ -28,6 +28,22 @@ export const initialRequestValues: RequestFormValues = {
 
 export type RequestFormErrors = Partial<Record<keyof RequestFormValues, string>>;
 
+export const requestFormSteps = [
+  { id: "need", fields: ["needSummary", "expectedOutcome"] },
+  { id: "access", fields: ["accessNeeds", "otherAccessNeed"] },
+  {
+    id: "availability",
+    fields: ["modalityPreference", "preferredWeekdays", "availableFrom", "availableTo"],
+  },
+  { id: "information", fields: ["preferredAccessibleInformationChannel"] },
+  { id: "review", fields: [] },
+] as const satisfies readonly {
+  id: string;
+  fields: readonly (keyof RequestFormValues)[];
+}[];
+
+export type RequestFormStepId = (typeof requestFormSteps)[number]["id"];
+
 export function validateRequestForm(values: RequestFormValues): RequestFormErrors {
   const errors: RequestFormErrors = {};
   if (!values.needSummary.trim()) errors.needSummary = "Describe la necesidad que quieres abordar.";
@@ -57,4 +73,24 @@ export function validateRequestForm(values: RequestFormValues): RequestFormError
     }
   }
   return errors;
+}
+
+export function validateRequestFormStep(
+  values: RequestFormValues,
+  stepId: RequestFormStepId,
+): RequestFormErrors {
+  const step = requestFormSteps.find(({ id }) => id === stepId);
+  if (!step) return {};
+
+  const allErrors = validateRequestForm(values);
+  return Object.fromEntries(
+    step.fields.flatMap((field) => (allErrors[field] ? [[field, allErrors[field]]] : [])),
+  );
+}
+
+export function getRequestFormStepForField(field: keyof RequestFormValues): RequestFormStepId {
+  return (
+    requestFormSteps.find(({ fields }) => fields.some((candidate) => candidate === field))?.id ??
+    "review"
+  );
 }

@@ -1,4 +1,4 @@
-import { useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useRef, useState, type Ref } from "react";
 import { AccessibilityInfo, Keyboard, Pressable, TextInput, View } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import type {
@@ -17,8 +17,12 @@ import { StudentText as Text, useStudentFont } from "./student-text";
 import { AppIcon } from "../components/app-icon";
 import {
   initialRequestValues,
+  getRequestFormStepForField,
+  requestFormSteps,
   validateRequestForm,
+  validateRequestFormStep,
   type RequestFormErrors,
+  type RequestFormStepId,
   type RequestFormValues,
 } from "./request-form-state";
 
@@ -30,7 +34,32 @@ const accessOptions: readonly AccessNeed[] = [
   { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
   { id: "support-person", label: "Persona de apoyo" },
 ];
-const weekdays = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+const weekdays = [
+  { label: "Lunes", value: 1 },
+  { label: "Martes", value: 2 },
+  { label: "Miércoles", value: 3 },
+  { label: "Jueves", value: 4 },
+  { label: "Viernes", value: 5 },
+  { label: "Sábado", value: 6 },
+  { label: "Domingo", value: 0 },
+] as const;
+const weekdayLabelByValue = new Map<number, string>(
+  weekdays.map(({ label, value }) => [value, label]),
+);
+const stepTitles: Record<RequestFormStepId, string> = {
+  need: "Cuéntanos qué necesitas",
+  access: "Necesidades de acceso",
+  availability: "Modalidad y disponibilidad",
+  information: "Cómo prefieres recibir información",
+  review: "Revisa tu solicitud",
+};
+const stepDescriptions: Record<RequestFormStepId, string> = {
+  need: "Describe la barrera que quieres abordar y qué esperas del acompañamiento.",
+  access: "Selecciona o describe los apoyos que necesitas para participar y comunicarte.",
+  availability: "Indica una modalidad y los días que te acomodan. Esto no reserva una atención.",
+  information: "Elige cómo prefieres que CERETI se comunique contigo.",
+  review: "Confirma que los datos estén correctos antes de enviar la solicitud.",
+};
 
 function Choice({
   label,
@@ -161,11 +190,18 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
   const fontFamily = useStudentFont();
   const [focusedField, setFocusedField] = useState<keyof RequestFormValues | null>(null);
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
-  const [reviewed, setReviewed] = useState(false);
+  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [validatedSteps, setValidatedSteps] = useState<RequestFormStepId[]>([]);
   const submission = useSubmitStudentRequest(submitter);
   const isSubmitting = submission.status === "submitting";
   const inputs = useRef<Partial<Record<keyof RequestFormValues, TextInput | null>>>({});
-  const errors: RequestFormErrors = reviewed ? validateRequestForm(values) : {};
+  const stepHeading = useRef<View>(null);
+  const stepFocusTarget = useRef<keyof RequestFormValues | null>(null);
+  const focusHeadingOnStepChange = useRef(false);
+  const currentStep = requestFormSteps[currentStepIndex];
+  const errors: RequestFormErrors = validatedSteps.includes(currentStep.id)
+    ? validateRequestFormStep(values, currentStep.id)
+    : {};
   const formTop = useRef(0);
   const groupTop = useRef({ accessNeeds: 0, modalityPreference: 0, preferredWeekdays: 0 });
   const accessControl = useRef<View>(null);
@@ -174,43 +210,93 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
   const submissionError = useRef<View>(null);
   const submissionErrorTop = useRef(0);
 
+  const focusInvalidField = useCallback(
+    (key: keyof RequestFormValues) => {
+      if (key === "accessNeeds" || key === "modalityPreference" || key === "preferredWeekdays") {
+        Keyboard.dismiss();
+        const control =
+          key === "accessNeeds"
+            ? accessControl
+            : key === "modalityPreference"
+              ? modalityControl
+              : weekdayControl;
+        requestAnimationFrame(() => {
+          onRevealGroup(formTop.current + groupTop.current[key]);
+          if (control.current) {
+            if (process.env.EXPO_OS === "web") control.current.focus();
+            else AccessibilityInfo.sendAccessibilityEvent(control.current, "focus");
+          }
+        });
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        const input = inputs.current[key];
+        input?.focus();
+        if (input && process.env.EXPO_OS !== "web") {
+          AccessibilityInfo.sendAccessibilityEvent(input, "focus");
+        }
+      });
+    },
+    [onRevealGroup],
+  );
+
+  useEffect(() => {
+    const focusTarget = stepFocusTarget.current;
+    const focusHeading = focusHeadingOnStepChange.current;
+    if (focusTarget === null && !focusHeading) return;
+
+    stepFocusTarget.current = null;
+    focusHeadingOnStepChange.current = false;
+    const frame = requestAnimationFrame(() => {
+      if (focusTarget !== null) {
+        focusInvalidField(focusTarget);
+      } else if (stepHeading.current) {
+        AccessibilityInfo.sendAccessibilityEvent(stepHeading.current, "focus");
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [currentStepIndex, focusInvalidField]);
+
+  function markStepValidated(stepId: RequestFormStepId) {
+    setValidatedSteps((current) => (current.includes(stepId) ? current : [...current, stepId]));
+  }
+
+  function showStep(index: number, focusTarget?: keyof RequestFormValues) {
+    Keyboard.dismiss();
+    stepFocusTarget.current = focusTarget ?? null;
+    focusHeadingOnStepChange.current = focusTarget === undefined;
+    setCurrentStepIndex(index);
+  }
+
+  function continueToNextStep() {
+    markStepValidated(currentStep.id);
+    const stepErrors = validateRequestFormStep(values, currentStep.id);
+    const firstError = currentStep.fields.find((key) => stepErrors[key]);
+    if (firstError) {
+      focusInvalidField(firstError);
+      AccessibilityInfo.announceForAccessibility(`Revisa este paso. ${stepErrors[firstError]}`);
+      return;
+    }
+    showStep(currentStepIndex + 1);
+  }
+
   function update<K extends keyof RequestFormValues>(key: K, value: RequestFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
   }
 
   function submit() {
     const nextErrors = validateRequestForm(values);
-    setReviewed(true);
-    const firstError = Object.keys(nextErrors)[0] as keyof RequestFormValues | undefined;
+    const firstError = requestFormSteps
+      .slice(0, -1)
+      .flatMap(({ fields }) => fields)
+      .find((key) => nextErrors[key]);
     if (firstError) {
-      if (
-        firstError === "accessNeeds" ||
-        firstError === "modalityPreference" ||
-        firstError === "preferredWeekdays"
-      ) {
-        Keyboard.dismiss();
-        const control =
-          firstError === "accessNeeds"
-            ? accessControl
-            : firstError === "modalityPreference"
-              ? modalityControl
-              : weekdayControl;
-        requestAnimationFrame(() => {
-          onRevealGroup(formTop.current + groupTop.current[firstError]);
-          if (control.current) {
-            if (process.env.EXPO_OS === "web") control.current.focus();
-            else AccessibilityInfo.sendAccessibilityEvent(control.current, "focus");
-          }
-        });
-      } else {
-        requestAnimationFrame(() => {
-          const input = inputs.current[firstError];
-          input?.focus();
-          if (input && process.env.EXPO_OS !== "web") {
-            AccessibilityInfo.sendAccessibilityEvent(input, "focus");
-          }
-        });
-      }
+      const targetStepId = getRequestFormStepForField(firstError);
+      const targetStepIndex = requestFormSteps.findIndex(({ id }) => id === targetStepId);
+      markStepValidated(targetStepId);
+      if (targetStepIndex === currentStepIndex) focusInvalidField(firstError);
+      else showStep(targetStepIndex, firstError);
       AccessibilityInfo.announceForAccessibility(`Revisa el formulario. ${nextErrors[firstError]}`);
     } else {
       Keyboard.dismiss();
@@ -298,6 +384,33 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
     );
   }
 
+  const preferredWeekdays = values.preferredWeekdays
+    .flatMap((day) => {
+      const label = weekdayLabelByValue.get(day);
+      return label ? [label] : [];
+    })
+    .join(", ");
+  const accessNeedsSummary = [
+    ...values.accessNeeds.map(({ label }) => label),
+    ...(values.otherAccessNeed.trim() ? [values.otherAccessNeed.trim()] : []),
+  ].join(", ");
+  const timeRangeSummary = values.availableFrom.trim()
+    ? `${values.availableFrom.trim()} a ${values.availableTo.trim()}`
+    : "Sin preferencia de horario";
+
+  function summaryItem(label: string, value: string) {
+    return (
+      <View key={label} className="gap-1 border-b border-student-border py-3">
+        <Text weight="semibold" className="text-student-secondary text-base leading-[26px]">
+          {label}
+        </Text>
+        <Text selectable className="text-student-text text-lg leading-[29px]">
+          {value}
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View
       className="gap-6"
@@ -323,182 +436,247 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
           cambios se perderán al salir.
         </Text>
       </View>
-      <Text className="text-student-secondary text-base leading-[26px]">
-        Los campos marcados con * son obligatorios. No incluyas diagnósticos, RUT ni certificados.
-      </Text>
-      <View
-        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-        style={{ borderCurve: "continuous" }}
-      >
-        {field(
-          "needSummary",
-          "¿Qué necesidad quieres abordar? *",
-          "Describe la barrera o dificultad que encuentras.",
-          true,
-        )}
-        {field(
-          "expectedOutcome",
-          "¿Qué esperas de CERETI? *",
-          "Cuéntanos qué te gustaría lograr con el acompañamiento.",
-          true,
-        )}
+      <View className="gap-2">
+        <View
+          ref={stepHeading}
+          accessible
+          accessibilityRole="header"
+          accessibilityLabel={`${stepTitles[currentStep.id]}. Paso ${currentStepIndex + 1} de ${requestFormSteps.length}.`}
+          className="gap-2"
+        >
+          <Text weight="semibold" className="text-student-text text-2xl leading-[34px]">
+            {stepTitles[currentStep.id]}
+          </Text>
+          <Text className="text-student-secondary text-base leading-[26px]">
+            {stepDescriptions[currentStep.id]}
+          </Text>
+        </View>
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          className="text-student-secondary text-base leading-[26px]"
+        >
+          Paso {currentStepIndex + 1} de {requestFormSteps.length}
+        </Text>
+        <View
+          accessible={false}
+          className="h-2 overflow-hidden rounded-full bg-student-border"
+          style={{ borderCurve: "continuous" }}
+        >
+          <View
+            className="h-full rounded-full bg-student-primary"
+            style={{ width: `${((currentStepIndex + 1) / requestFormSteps.length) * 100}%` }}
+          />
+        </View>
       </View>
 
-      <View
-        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-        style={{ borderCurve: "continuous" }}
-        onLayout={(event) => {
-          groupTop.current.accessNeeds = event.nativeEvent.layout.y;
-        }}
-      >
-        <Text
-          weight="semibold"
-          accessibilityRole="header"
-          className="text-student-text text-lg leading-[26px]"
-        >
-          Necesidades de acceso *
-        </Text>
-        <Text className="text-student-secondary text-base leading-[26px]">
-          Selecciona un apoyo o describe otro para participar o comunicarte.
-        </Text>
-        {accessOptions.map((option, index) => {
-          const selected = values.accessNeeds.some((need) => need.id === option.id);
-          return (
-            <Choice
-              controlRef={index === 0 ? accessControl : undefined}
-              error={errors.accessNeeds}
-              key={option.id}
-              label={option.label}
-              selected={selected}
-              disabled={isSubmitting}
-              onPress={() =>
-                update(
-                  "accessNeeds",
-                  selected
-                    ? values.accessNeeds.filter((need) => need.id !== option.id)
-                    : [...values.accessNeeds, option],
-                )
-              }
-            />
-          );
-        })}
-        {field(
-          "otherAccessNeed",
-          "Otra necesidad de acceso",
-          "Opcional. Puedes describir un apoyo que no aparezca en la lista.",
-          true,
-        )}
-        <ErrorText message={errors.accessNeeds} />
-      </View>
+      {currentStep.id === "need" && (
+        <>
+          <Text className="text-student-secondary text-base leading-[26px]">
+            Los campos marcados con * son obligatorios. No incluyas diagnósticos, RUT ni
+            certificados.
+          </Text>
+          <View
+            className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+            style={{ borderCurve: "continuous" }}
+          >
+            {field(
+              "needSummary",
+              "¿Qué necesidad quieres abordar? *",
+              "Describe la barrera o dificultad que encuentras.",
+              true,
+            )}
+            {field(
+              "expectedOutcome",
+              "¿Qué esperas de CERETI? *",
+              "Cuéntanos qué te gustaría lograr con el acompañamiento.",
+              true,
+            )}
+          </View>
+        </>
+      )}
 
-      <View
-        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-        style={{ borderCurve: "continuous" }}
-        onLayout={(event) => {
-          groupTop.current.modalityPreference = event.nativeEvent.layout.y;
-        }}
-      >
-        <Text
-          weight="semibold"
-          accessibilityRole="header"
-          className="text-student-text text-lg leading-[26px]"
+      {currentStep.id === "access" && (
+        <View
+          className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+          style={{ borderCurve: "continuous" }}
+          onLayout={(event) => {
+            groupTop.current.accessNeeds = event.nativeEvent.layout.y;
+          }}
         >
-          Modalidad preferida *
-        </Text>
-        <Choice
-          error={errors.modalityPreference}
-          controlRef={modalityControl}
-          label="Presencial"
-          single
-          selected={values.modalityPreference === "inPerson"}
-          disabled={isSubmitting}
-          onPress={() => update("modalityPreference", "inPerson")}
-        />
-        <Choice
-          error={errors.modalityPreference}
-          label="En línea"
-          single
-          selected={values.modalityPreference === "online"}
-          disabled={isSubmitting}
-          onPress={() => update("modalityPreference", "online")}
-        />
-        <ErrorText message={errors.modalityPreference} />
-      </View>
-
-      <View
-        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-        style={{ borderCurve: "continuous" }}
-        onLayout={(event) => {
-          groupTop.current.preferredWeekdays = event.nativeEvent.layout.y;
-        }}
-      >
-        <Text
-          weight="semibold"
-          accessibilityRole="header"
-          className="text-student-text text-lg leading-[26px]"
-        >
-          Disponibilidad general *
-        </Text>
-        <Text className="text-student-secondary text-base leading-[26px]">
-          Selecciona los días que te acomodan. Esta preferencia no reserva una hora.
-        </Text>
-        <View className="flex-row flex-wrap gap-2">
-          {weekdays.map((label, index) => {
-            const day = (index + 1) % 7;
-            const selected = values.preferredWeekdays.includes(day);
+          <Text
+            weight="semibold"
+            accessibilityRole="header"
+            className="text-student-text text-lg leading-[26px]"
+          >
+            Necesidades de acceso *
+          </Text>
+          {accessOptions.map((option, index) => {
+            const selected = values.accessNeeds.some((need) => need.id === option.id);
             return (
               <Choice
-                error={errors.preferredWeekdays}
-                controlRef={index === 0 ? weekdayControl : undefined}
-                key={label}
-                label={label}
+                controlRef={index === 0 ? accessControl : undefined}
+                error={errors.accessNeeds}
+                key={option.id}
+                label={option.label}
                 selected={selected}
                 disabled={isSubmitting}
                 onPress={() =>
                   update(
-                    "preferredWeekdays",
+                    "accessNeeds",
                     selected
-                      ? values.preferredWeekdays.filter((value) => value !== day)
-                      : [...values.preferredWeekdays, day],
+                      ? values.accessNeeds.filter((need) => need.id !== option.id)
+                      : [...values.accessNeeds, option],
                   )
                 }
               />
             );
           })}
+          {field(
+            "otherAccessNeed",
+            "Otra necesidad de acceso",
+            "Opcional. Puedes describir un apoyo que no aparezca en la lista.",
+            true,
+          )}
+          <ErrorText message={errors.accessNeeds} />
         </View>
-        <ErrorText message={errors.preferredWeekdays} />
-        <Text className="text-student-secondary text-base leading-[26px]">
-          Opcional. Indica una franja común para los días seleccionados, usando el formato de 24
-          horas.
-        </Text>
-        {field("availableFrom", "Desde", "Formato HH:MM, por ejemplo 09:00.")}
-        {field("availableTo", "Hasta", "Formato HH:MM, por ejemplo 13:00.")}
-      </View>
-      <View
-        className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-        style={{ borderCurve: "continuous" }}
-      >
-        {field(
-          "preferredAccessibleInformationChannel",
-          "¿Cómo prefieres recibir información? *",
-          "Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.",
-          true,
-        )}
-      </View>
-      <Text className="text-student-secondary text-base leading-[26px]">
-        El nombre y correo se obtendrán de la cuenta institucional cuando esté disponible el inicio
-        de sesión.
-      </Text>
-      {reviewed && Object.keys(errors).length > 0 && (
+      )}
+
+      {currentStep.id === "availability" && (
+        <>
+          <View
+            className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+            style={{ borderCurve: "continuous" }}
+            onLayout={(event) => {
+              groupTop.current.modalityPreference = event.nativeEvent.layout.y;
+            }}
+          >
+            <Text
+              weight="semibold"
+              accessibilityRole="header"
+              className="text-student-text text-lg leading-[26px]"
+            >
+              Modalidad preferida *
+            </Text>
+            <Choice
+              error={errors.modalityPreference}
+              controlRef={modalityControl}
+              label="Presencial"
+              single
+              selected={values.modalityPreference === "inPerson"}
+              disabled={isSubmitting}
+              onPress={() => update("modalityPreference", "inPerson")}
+            />
+            <Choice
+              error={errors.modalityPreference}
+              label="En línea"
+              single
+              selected={values.modalityPreference === "online"}
+              disabled={isSubmitting}
+              onPress={() => update("modalityPreference", "online")}
+            />
+            <ErrorText message={errors.modalityPreference} />
+          </View>
+
+          <View
+            className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+            style={{ borderCurve: "continuous" }}
+            onLayout={(event) => {
+              groupTop.current.preferredWeekdays = event.nativeEvent.layout.y;
+            }}
+          >
+            <Text
+              weight="semibold"
+              accessibilityRole="header"
+              className="text-student-text text-lg leading-[26px]"
+            >
+              Disponibilidad general *
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              {weekdays.map(({ label, value }, index) => {
+                const selected = values.preferredWeekdays.includes(value);
+                return (
+                  <Choice
+                    error={errors.preferredWeekdays}
+                    controlRef={index === 0 ? weekdayControl : undefined}
+                    key={label}
+                    label={label}
+                    selected={selected}
+                    disabled={isSubmitting}
+                    onPress={() =>
+                      update(
+                        "preferredWeekdays",
+                        selected
+                          ? values.preferredWeekdays.filter((day) => day !== value)
+                          : [...values.preferredWeekdays, value],
+                      )
+                    }
+                  />
+                );
+              })}
+            </View>
+            <ErrorText message={errors.preferredWeekdays} />
+            <Text className="text-student-secondary text-base leading-[26px]">
+              Opcional. Indica una franja común para los días seleccionados, usando el formato de 24
+              horas.
+            </Text>
+            {field("availableFrom", "Desde", "Formato HH:MM, por ejemplo 09:00.")}
+            {field("availableTo", "Hasta", "Formato HH:MM, por ejemplo 13:00.")}
+          </View>
+        </>
+      )}
+
+      {currentStep.id === "information" && (
+        <View
+          className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
+          style={{ borderCurve: "continuous" }}
+        >
+          {field(
+            "preferredAccessibleInformationChannel",
+            "¿Cómo prefieres recibir información? *",
+            "Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.",
+            true,
+          )}
+        </View>
+      )}
+
+      {currentStep.id === "review" && (
+        <>
+          <View
+            className="gap-1 p-4 rounded-xl border border-student-border bg-student-surface"
+            style={{ borderCurve: "continuous" }}
+          >
+            {summaryItem("Necesidad que quieres abordar", values.needSummary.trim())}
+            {summaryItem("Resultado esperado", values.expectedOutcome.trim())}
+            {summaryItem("Necesidades de acceso", accessNeedsSummary)}
+            {summaryItem(
+              "Modalidad preferida",
+              values.modalityPreference === "inPerson" ? "Presencial" : "En línea",
+            )}
+            {summaryItem("Días preferidos", preferredWeekdays)}
+            {summaryItem("Franja horaria", timeRangeSummary)}
+            {summaryItem(
+              "Medio preferido para recibir información",
+              values.preferredAccessibleInformationChannel.trim(),
+            )}
+          </View>
+          <Text className="text-student-secondary text-base leading-[26px]">
+            El nombre y correo se obtendrán de la cuenta institucional cuando esté disponible el
+            inicio de sesión.
+          </Text>
+        </>
+      )}
+
+      {Object.keys(errors).length > 0 && (
         <Text
           selectable
           accessibilityRole="alert"
           className="text-student-error text-base leading-[26px]"
         >
-          Hay campos por revisar. Corrige los mensajes indicados arriba.
+          Corrige los campos indicados para continuar.
         </Text>
       )}
-      {submission.status === "error" && (
+      {currentStep.id === "review" && submission.status === "error" && (
         <Animated.View
           testID="submission-error"
           entering={FadeIn.duration(200)}
@@ -531,11 +709,25 @@ export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestF
           <StudentAction label="Reintentar envío" onPress={submit} />
         </Animated.View>
       )}
-      <StudentAction
-        label={submission.status === "submitting" ? "Enviando solicitud…" : "Enviar solicitud"}
-        disabled={submission.status === "submitting"}
-        onPress={submit}
-      />
+      {currentStepIndex > 0 && (
+        <StudentAction
+          label="Volver al paso anterior"
+          secondary
+          disabled={isSubmitting}
+          onPress={() => showStep(currentStepIndex - 1)}
+        />
+      )}
+      {currentStep.id === "review" ? (
+        submission.status === "error" ? null : (
+          <StudentAction
+            label={isSubmitting ? "Enviando solicitud…" : "Confirmar y enviar solicitud"}
+            disabled={isSubmitting}
+            onPress={submit}
+          />
+        )
+      ) : (
+        <StudentAction label="Continuar" disabled={isSubmitting} onPress={continueToNextStep} />
+      )}
     </View>
   );
 }
