@@ -1,6 +1,8 @@
 import {
   NO_AVAILABILITY_ERROR_CODE,
   type Appointment,
+  type AppointmentRejectionCause,
+  type AppointmentStatus,
   type AvailabilityBlock,
   type AvailabilityException,
   type AvailabilityExceptionKind,
@@ -10,13 +12,15 @@ import {
 } from "../../../../../convex/domain/index.ts";
 
 /**
- * Contrato de capacidades de agenda del cliente Web (TI2-101, TI2-102, TI2-103).
+ * Contrato de capacidades de agenda del cliente Web (TI2-101, TI2-102,
+ * TI2-103, TI2-115).
  *
  * Es únicamente el contrato para poder sustituir el adaptador ficticio por
  * la API real (TI2-123/TI2-125): deriva tipos compartidos y no implementa
- * reglas de disponibilidad, cruces ni autorización. TI2-102 extiende este
- * mismo archivo con la reserva y TI2-103 con bloques y excepciones; no crear
- * otro puerto por operación.
+ * reglas de disponibilidad, cruces, transiciones ni autorización. TI2-102
+ * extiende este mismo archivo con la reserva, TI2-103 con bloques y
+ * excepciones y TI2-115 con la agenda del Profesional; no crear otro puerto
+ * por operación.
  */
 
 /** Filtro de modalidad de la búsqueda; `all` es solo vista del cliente. */
@@ -119,6 +123,67 @@ export type EditorWindow = AvailabilityWindow;
 /** Clase de excepción derivada del contrato, sin duplicar literales. */
 export type EditorExceptionKind = AvailabilityExceptionKind;
 
+/**
+ * Atención leída por la agenda del Profesional (TI2-115).
+ *
+ * Proyección mínima derivada del contrato de atención, sin duplicar su
+ * forma: campos de agenda más los que la propia vista necesita (fecha
+ * original conservada y motivo de cancelación propios). No trae identidad
+ * del estudiante: el Backend decide qué datos de acompañamiento aparecen y
+ * nunca se filtran necesidades de acceso de terceros ni notas internas.
+ */
+export type AgendaAppointment = Pick<
+  Appointment,
+  | "id"
+  | "status"
+  | "modality"
+  | "startAt"
+  | "endAt"
+  | "spaceId"
+  | "originalStartAt"
+  | "cancelReason"
+>;
+
+/** Lista simulada de las atenciones del Profesional vigente. */
+export type ListAppointmentsResult =
+  | { readonly status: "ok"; readonly appointments: ReadonlyArray<AgendaAppointment> }
+  | { readonly status: "empty" }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly message: string };
+
+/** Lectura de una atención por identificador. Un id ajeno o desconocido es denegación genérica, sin filtrar existencia. */
+export type AgendaAppointmentResult =
+  | { readonly status: "ok"; readonly appointment: AgendaAppointment }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly message: string };
+
+/**
+ * Entrada del cambio de estado de una atención (TI2-115).
+ *
+ * El destino es un estado del contrato de dominio y la política de
+ * transiciones vive ahí (`APPOINTMENT_TRANSITIONS`): este puerto no decide
+ * transiciones ni autorización. El motivo viaja solo cuando el destino de
+ * dominio lo exige (cancelación CERETI); el Backend lo exige de nuevo.
+ */
+export type ChangeAppointmentStatusInput = {
+  readonly appointmentId: string;
+  readonly to: AppointmentStatus;
+  readonly reason?: string;
+};
+
+/**
+ * Resultado del cambio de estado simulado.
+ *
+ * `rejected` trae la causa canónica del dominio
+ * (`APPOINTMENT_REJECTION_CAUSES`), `denied` la denegación del Backend y
+ * `error` el error público compartido.
+ */
+export type ChangeAppointmentStatusResult =
+  | { readonly status: "changed"; readonly appointment: AgendaAppointment }
+  | { readonly status: "rejected"; readonly cause: AppointmentRejectionCause }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly error: PublicApiError };
+
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {
   searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult>;
@@ -126,4 +191,9 @@ export interface AgendaPort {
   listAvailability(): Promise<ListAvailabilityResult>;
   saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>;
   saveException(input: SaveExceptionInput): Promise<SaveExceptionResult>;
+  listAppointments(): Promise<ListAppointmentsResult>;
+  getAppointment(appointmentId: string): Promise<AgendaAppointmentResult>;
+  changeAppointmentStatus(
+    input: ChangeAppointmentStatusInput,
+  ): Promise<ChangeAppointmentStatusResult>;
 }
