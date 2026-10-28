@@ -1615,7 +1615,7 @@ test("TI2-111: la búsqueda ve ocupado lo mismo que la reserva rechazaría", asy
     await ctx.db.patch(cancelled.data.appointmentId, { status: "cancelled_by_student" });
   });
   // Más filas que el tope en la ventana de proC, todas canceladas y de un
-  // estudiante aparte, para no ocupar la ventana de los demás casos.
+  // estudiante aparte, para no ocupar la ventana de las demás comprobaciones.
   await t.run(async (ctx) => {
     for (let i = 0; i <= MAX_APPOINTMENTS_IN_WINDOW; i++) {
       await ctx.db.insert("appointments", {
@@ -1654,7 +1654,7 @@ test("TI2-111: la búsqueda ve ocupado lo mismo que la reserva rechazaría", asy
       contiguoSala: await at(proA, who.studentId, 160, 200, roomX),
       otraSala: await at(proA, who.studentId, 120, 180, roomY),
       cancelada: await at(proA, who.studentId, 200, 260),
-      sobreElTope: await at(proC, who.studentId, 0, 30),
+      sobreElTope: await at(proC, other.studentId, 0, 30),
       libre: await at(proB, who.studentId, 300, 360, roomY),
       profesionalInexistente: await at("no-existe", who.studentId, 300, 360),
       estudianteDeOtraTabla: await at(proA, who.accompanimentId, 300, 360),
