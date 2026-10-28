@@ -31,6 +31,7 @@ export const AUTHORIZATION_ACTIONS = [
   "appointment:book",
   "appointment:cancel",
   "appointment:reschedule",
+  "appointment:recordAttendance",
   "space:read",
 ] as const;
 
@@ -219,6 +220,24 @@ export function canRescheduleAppointment(context: AppointmentChangeAuthorization
 }
 
 /**
+ * Registro de realización o inasistencia (TI2-110): solo el Profesional
+ * asignado que tiene la atención a su cargo, con perfil vigente y
+ * acompañamiento activo. El Estudiante dueño no registra el resultado de su
+ * propia atención, y Practicante y Administrador tampoco, aunque la fila los
+ * nombre: el resultado lo declara quien realizó el encuentro.
+ */
+export function canRecordAppointmentAttendance(
+  context: AppointmentChangeAuthorizationContext,
+): boolean {
+  if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
+  return (
+    context.role === "professional" &&
+    context.hasActiveProfessionalAssignment &&
+    context.isAppointmentProfessional
+  );
+}
+
+/**
  * Profesional elegido para un cupo: rol profesional, cuenta habilitada y
  * vigente y asignación activa sobre el acompañamiento. Que el Estudiante
  * pueda reservar no basta; el recurso profesional se revalida en la misma
@@ -310,6 +329,13 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   {
     action: "appointment:reschedule",
     student: "permitido solo sus propias atenciones con acompañamiento activo",
+    professional: "permitido solo la atención propia asignada, con acompañamiento activo",
+    intern: "denegado",
+    admin: "denegado",
+  },
+  {
+    action: "appointment:recordAttendance",
+    student: "denegado aunque sea dueño de la atención",
     professional: "permitido solo la atención propia asignada, con acompañamiento activo",
     intern: "denegado",
     admin: "denegado",
