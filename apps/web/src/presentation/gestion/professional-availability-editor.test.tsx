@@ -140,6 +140,13 @@ function puertoOk(): AgendaPort {
         status: "saved",
         exception: { ...input, version: "v1" },
       }),
+    listAppointments: () => Promise.resolve({ status: "empty" }),
+    getAppointment: () => Promise.resolve({ status: "denied" }),
+    changeAppointmentStatus: () =>
+      Promise.resolve({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      }),
   };
 }
 
@@ -458,6 +465,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Inicio",
       "Solicitudes",
+      "Agenda",
       "Disponibilidad",
       "Sesión",
     ]);

@@ -13,6 +13,8 @@ import {
   NotFoundRedirect,
   PractitionerIndexRouteComponent,
   PractitionerLayoutRouteComponent,
+  ProfessionalAgendaDetailRouteComponent,
+  ProfessionalAgendaRouteComponent,
   ProfessionalAvailabilityRouteComponent,
   ProfessionalIndexRouteComponent,
   ProfessionalLayoutRouteComponent,
@@ -29,7 +31,7 @@ import {
 } from "./route-components.tsx";
 
 /**
- * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, Sprint 1 y 2).
+ * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-115, Sprint 1, 2 y 3).
  *
  * - `/` índice: acceso sin sesión (preserva callback OAuth de TI2-3),
  *   portal según sesión y rol, denegado sin portal conocido.
@@ -55,6 +57,11 @@ import {
  *   excepciones del Profesional con guardado simulado (TI2-103); composición
  *   reservada para `/estudiante/horarios` (TI2-101) y `/estudiante/reservar`
  *   (TI2-102) sin editar sus páginas.
+ * - `/profesional/agenda`: atenciones reservadas del Profesional con lectura
+ *   y cambios de estado simulados (TI2-115);
+ *   `/profesional/agenda/$appointmentId`: detalle de una atención propia,
+ *   denegado por el Backend en otro caso. La autorización efectiva sigue
+ *   viva en Convex; el modo simulado se declara en la página.
  * - Ruta desconocida: vuelve al índice, que deriva según sesión.
  */
 
@@ -159,6 +166,18 @@ const professionalAvailabilityRoute = createRoute({
   component: ProfessionalAvailabilityRouteComponent,
 });
 
+const professionalAgendaRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "agenda",
+  component: ProfessionalAgendaRouteComponent,
+});
+
+const professionalAgendaDetailRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "agenda/$appointmentId",
+  component: ProfessionalAgendaDetailRouteComponent,
+});
+
 const practitionerLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/practicante",
@@ -200,6 +219,8 @@ const routeTree = rootRoute.addChildren([
     professionalRequestsRoute,
     professionalRequestDetailRoute,
     professionalAvailabilityRoute,
+    professionalAgendaRoute,
+    professionalAgendaDetailRoute,
   ]),
   practitionerLayoutRoute.addChildren([practitionerIndexRoute]),
   adminLayoutRoute.addChildren([adminIndexRoute]),

@@ -14,7 +14,8 @@ import "./staff-portal.css";
  * (coherente con la matriz TI2-5, donde el Administrador no lista ni lee
  * esos recursos). El portal del Practicante no enlaza acompañamientos
  * concretos: solo verá los asignados cuando existan las vistas. El portal
- * del Profesional enlaza solicitudes (TI2-91) y disponibilidad (TI2-103).
+ * del Profesional enlaza solicitudes (TI2-91), agenda (TI2-115) y
+ * disponibilidad (TI2-103).
  */
 
 function StaffLayout({ title, home }: { title: string; home: ReactNode }) {
@@ -38,6 +39,7 @@ export function ProfessionalLayout() {
         <>
           <Link to="/profesional">Inicio</Link>{" "}
           <Link to="/profesional/solicitudes">Solicitudes</Link>{" "}
+          <Link to="/profesional/agenda">Agenda</Link>{" "}
           <Link to="/profesional/disponibilidad">Disponibilidad</Link>
         </>
       }
