@@ -181,18 +181,27 @@ function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubm
 }
 
 export interface RequestFormProps {
+  readonly onSubmitted?: () => void;
   readonly onRevealGroup: (y: number) => void;
   readonly onFieldFocus?: (inputHandle: number) => void;
   readonly submitter: StudentRequestSubmitter;
 }
 
-export function RequestForm({ onFieldFocus, onRevealGroup, submitter }: RequestFormProps) {
+export function RequestForm({
+  onSubmitted,
+  onFieldFocus,
+  onRevealGroup,
+  submitter,
+}: RequestFormProps) {
   const fontFamily = useStudentFont();
   const [focusedField, setFocusedField] = useState<keyof RequestFormValues | null>(null);
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [validatedSteps, setValidatedSteps] = useState<RequestFormStepId[]>([]);
   const submission = useSubmitStudentRequest(submitter);
+  useEffect(() => {
+    if (submission.status === "success") onSubmitted?.();
+  }, [submission.status, onSubmitted]);
   const isSubmitting = submission.status === "submitting";
   const inputs = useRef<Partial<Record<keyof RequestFormValues, TextInput | null>>>({});
   const stepHeading = useRef<View>(null);
