@@ -15,10 +15,12 @@ import type {
 } from "../availability/ports";
 import {
   cancelAppointment,
+  recordAppointmentAttendance,
   rescheduleAppointment,
   type AppointmentChangeReader,
   type AppointmentTransitionPersister,
   type CancelAppointmentDeps,
+  type RecordAppointmentAttendanceDeps,
   type RescheduleAppointmentDeps,
   type StoredAppointmentForChange,
 } from "./changes";
@@ -265,6 +267,14 @@ type ChangeRescheduleDeps = Omit<RescheduleAppointmentDeps, "occupier"> & {
 
 function cancelDeps(auth: AuthorizationReader, world: ChangeWorld): CancelAppointmentDeps {
   return { auth, appointments: world.reader, persister: world.persister, now: () => NOW };
+}
+
+function recordDeps(
+  auth: AuthorizationReader,
+  world: ChangeWorld,
+  now: number = NOW,
+): RecordAppointmentAttendanceDeps {
+  return { auth, appointments: world.reader, persister: world.persister, now: () => now };
 }
 
 function rescheduleDeps(
@@ -757,6 +767,233 @@ describe("reagendamiento de una atención (TI2-109)", () => {
       expect(await rescheduleAppointment(deps, input)).toEqual(CONFLICT);
     }
     expect(deps.occupier.calls).toHaveLength(0);
+    expect(world.transitions).toHaveLength(0);
+    expect(world.row.status).toBe("scheduled");
+  });
+});
+
+describe("registro de atención e inasistencia (TI2-110)", () => {
+  test("el Profesional de la atención registra la realización sin crear otra atención", async () => {
+    const world = changeWorld();
+
+    const result = await recordAppointmentAttendance(recordDeps(authorizedAuth(), world), {
+      tokenIdentifier: "token-pro",
+      appointmentId: "appointment-1",
+      outcome: "completed",
+    });
+
+    expect(result).toEqual(OK_APPOINTMENT);
+    expect(world.transitions).toEqual([
+      { appointmentId: "appointment-1", fields: { status: "completed" } },
+    ]);
+    expect(world.row).toMatchObject({
+      status: "completed",
+      startAt: CURRENT_START,
+      endAt: CURRENT_END,
+      professionalId: "user-pro",
+    });
+  });
+
+  test("el Profesional registra la inasistencia pendiente de justificación", async () => {
+    const world = changeWorld();
+
+    const result = await recordAppointmentAttendance(recordDeps(authorizedAuth(), world), {
+      tokenIdentifier: "token-pro",
+      appointmentId: "appointment-1",
+      outcome: "no_show",
+    });
+
+    expect(result).toEqual(OK_APPOINTMENT);
+    expect(world.transitions).toEqual([
+      { appointmentId: "appointment-1", fields: { status: "no_show" } },
+    ]);
+    expect(world.row.status).toBe("no_show");
+  });
+
+  test("el registro conserva la fecha original de un reagendamiento previo", async () => {
+    const originalStartAt = Date.UTC(2026, 8, 1, 9);
+    const world = changeWorld({ status: "rescheduled", originalStartAt });
+
+    const result = await recordAppointmentAttendance(recordDeps(authorizedAuth(), world), {
+      tokenIdentifier: "token-pro",
+      appointmentId: "appointment-1",
+      outcome: "completed",
+    });
+
+    expect(result).toEqual(OK_APPOINTMENT);
+    expect(world.transitions[0]?.fields).toEqual({
+      status: "completed",
+      originalStartsAt: originalStartAt,
+    });
+    expect(world.row.originalStartAt).toBe(originalStartAt);
+  });
+
+  test("Estudiante dueño, Practicante, Administrador, ajenos y revocados no registran", async () => {
+    const cases: ReadonlyArray<{
+      readonly label: string;
+      readonly auth: AuthorizationReader;
+      readonly tokenIdentifier: string | null;
+      readonly appointmentId?: string;
+    }> = [
+      {
+        label: "estudiante dueño",
+        auth: authorizedAuth(),
+        tokenIdentifier: "token-student",
+      },
+      {
+        label: "practicante asignado",
+        auth: fakeAuth({
+          profiles: [intern],
+          accompaniments: [activeAccompaniment],
+          assignments: [assignment({ userId: "user-intern", assignedRole: "intern" })],
+        }),
+        tokenIdentifier: "token-intern",
+      },
+      {
+        label: "administrador",
+        auth: fakeAuth({ profiles: [admin], accompaniments: [activeAccompaniment] }),
+        tokenIdentifier: "token-admin",
+      },
+      {
+        label: "profesional de otra atención",
+        auth: authorizedAuth(),
+        tokenIdentifier: "token-pro-2",
+      },
+      {
+        label: "profesional sin asignación",
+        auth: fakeAuth({ profiles: [professional], accompaniments: [activeAccompaniment] }),
+        tokenIdentifier: "token-pro",
+      },
+      {
+        label: "asignación revocada",
+        auth: fakeAuth({
+          profiles: [professional],
+          accompaniments: [activeAccompaniment],
+          assignments: [assignment({ status: "revoked" })],
+        }),
+        tokenIdentifier: "token-pro",
+      },
+      {
+        label: "profesional con cuenta inactiva",
+        auth: fakeAuth({
+          profiles: [{ ...professional, accountStatus: "inactive" }],
+          accompaniments: [activeAccompaniment],
+          assignments: [assignment({})],
+        }),
+        tokenIdentifier: "token-pro",
+      },
+      {
+        label: "acompañamiento pausado",
+        auth: fakeAuth({
+          profiles: [professional],
+          accompaniments: [{ ...activeAccompaniment, status: "paused" }],
+          assignments: [assignment({})],
+        }),
+        tokenIdentifier: "token-pro",
+      },
+      {
+        label: "sin identidad",
+        auth: authorizedAuth(),
+        tokenIdentifier: null,
+      },
+      {
+        label: "atención inexistente",
+        auth: authorizedAuth(),
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-inexistente",
+      },
+    ];
+
+    for (const { label, auth, tokenIdentifier, appointmentId } of cases) {
+      const world = changeWorld();
+      const result = await recordAppointmentAttendance(recordDeps(auth, world), {
+        tokenIdentifier,
+        appointmentId: appointmentId ?? "appointment-1",
+        outcome: "completed",
+      });
+      expect({ label, result }).toEqual({ label, result: DENIED });
+      expect({ label, transitions: world.transitions.length }).toEqual({
+        label,
+        transitions: 0,
+      });
+      expect({ label, status: world.row.status }).toEqual({ label, status: "scheduled" });
+    }
+  });
+
+  test("rechaza repeticiones, saltos y estados terminales sin escribir", async () => {
+    const cases: ReadonlyArray<{
+      readonly label: string;
+      readonly world: ChangeWorld;
+      readonly outcome: "completed" | "no_show";
+      readonly now?: number;
+    }> = [
+      {
+        label: "repetir realizada",
+        world: changeWorld({ status: "completed" }),
+        outcome: "completed",
+      },
+      {
+        label: "realizada a inasistencia",
+        world: changeWorld({ status: "completed" }),
+        outcome: "no_show",
+      },
+      {
+        label: "inasistencia a realizada",
+        world: changeWorld({ status: "no_show" }),
+        outcome: "completed",
+      },
+      {
+        label: "atención cancelada",
+        world: changeWorld({ status: "cancelled_by_student" }),
+        outcome: "completed",
+      },
+      {
+        label: "inasistencia ya resuelta",
+        world: changeWorld({ status: "no_show_justified" }),
+        outcome: "no_show",
+      },
+      {
+        label: "registro antes del inicio",
+        world: changeWorld(),
+        outcome: "completed",
+        now: CURRENT_START - 1,
+      },
+    ];
+
+    for (const { label, world, outcome, now } of cases) {
+      const statusBefore = world.row.status;
+      const result = await recordAppointmentAttendance(recordDeps(authorizedAuth(), world, now), {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        outcome,
+      });
+      expect({ label, result }).toEqual({ label, result: CONFLICT });
+      expect({ label, transitions: world.transitions.length }).toEqual({
+        label,
+        transitions: 0,
+      });
+      expect({ label, status: world.row.status }).toEqual({ label, status: statusBefore });
+    }
+  });
+
+  test("una entrada inválida se rechaza antes de leer o persistir", async () => {
+    const world = changeWorld();
+    const deps = recordDeps(authorizedAuth(), world);
+
+    expect(
+      await recordAppointmentAttendance(deps, {
+        tokenIdentifier: "token-pro",
+        appointmentId: "   ",
+        outcome: "completed",
+      }),
+    ).toEqual(CONFLICT);
+    expect(
+      await recordAppointmentAttendance(deps, {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        outcome: "no_show_justified" as unknown as "completed",
+      }),
+    ).toEqual(CONFLICT);
     expect(world.transitions).toHaveLength(0);
     expect(world.row.status).toBe("scheduled");
   });

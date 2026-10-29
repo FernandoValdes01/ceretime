@@ -6,6 +6,7 @@ import {
   canReadAvailability,
   canReadInternalNote,
   canReadSpaceCatalog,
+  canRecordAppointmentAttendance,
   canRescheduleAppointment,
   getAccompanimentView,
   type AccompanimentView,
@@ -395,6 +396,21 @@ export async function authorizeAppointmentReschedule(
   const actor = appointmentChangeActorForRole(loaded.context.role);
   if (actor === null) return denied();
   return okResult({ callerId: loaded.callerId, actor });
+}
+
+/**
+ * Registro de realización o inasistencia (TI2-110): solo el Profesional
+ * asignado que tiene la atención a su cargo. La identidad y la pertenencia
+ * salen de la sesión y de la fila leída en el servidor, nunca de la entrada
+ * del cliente; Estudiante, Practicante y Administrador se deniegan igual.
+ */
+export async function authorizeAppointmentAttendance(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canRecordAppointmentAttendance(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
 }
 
 /** Lectura del catálogo de espacios: basta una cuenta vigente de cualquier rol. */
