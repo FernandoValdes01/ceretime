@@ -8,7 +8,7 @@ Issue: [TI4-63](https://linear.app/ceretime/issue/TI4-63). Evaluación del 28 de
 
 Se completó la guía nativa de cinco pasos con TalkBack, resumen, retorno para editar, fallo y reintento. El usuario confirmó auditivamente el error del medio de información, el anuncio del resumen, el fallo con opción de reintentar, la relectura de la confirmación y, en una repetición pausada, el anuncio automático de éxito. Se completó también la ruta mediante pulsaciones y desplazamientos con TalkBack apagado, texto al 200 %, alto contraste y reducción de movimiento seleccionada.
 
-La evaluación detectó que Nueva solicitud podía reabrir el comprobante anterior dentro de la misma sesión. Se registra para TI4-62 y no se corrige desde esta issue de evidencia. El informe distingue comprobaciones aprobadas, fallos y capacidades no probadas; no declara conformidad WCAG general ni sustituye la [matriz compartida](../../accessibility/wcag-matrix.md). La entrega permanece en borrador para revisar el hallazgo y los límites descritos abajo.
+La evaluación detectó que Nueva solicitud podía reabrir el comprobante anterior dentro de la misma sesión. Ese hallazgo quedó corregido y repetido en Android el 29 de octubre, según el [cierre técnico](#cierre-técnico-y-regresión-de-reapertura). El informe distingue comprobaciones aprobadas, fallos históricos y capacidades no probadas; no declara conformidad WCAG general ni sustituye la [matriz compartida](../../accessibility/wcag-matrix.md). La implementación y la evidencia se entregan para revisión independiente; la aprobación e integración mediante PR siguen siendo necesarias para cerrar la issue.
 
 ## Entorno y versión
 
@@ -56,11 +56,11 @@ La confirmación produjo [SOL-DEMO-007 al 200 %](./11-confirmacion-tactil-200.pn
 
 En un proceso nuevo, con preferencias del sistema y TalkBack apagado, se completó otra solicitud ficticia. Se enviaron dos pulsaciones consecutivas sobre Confirmar y enviar solicitud. **Probado:** terminó en el [único fallo previsto por el modo de fallo único](./14-doble-confirmacion-fallo.png); no apareció una confirmación por un segundo intento concurrente. Tras un único reintento apareció SOL-DEMO-006 y el [listado mostró una sola solicitud nueva](./16-listado-doble-confirmacion.png). La suite automatizada complementa la observación con el conteo del puerto de envío mientras la primera promesa está pendiente.
 
-## Hallazgo para TI4-62
+## Hallazgo inicial de reapertura
 
 **Fallido: reapertura de Nueva solicitud después de un envío confirmado.** En la misma sesión, regresar desde el comprobante al inicio y pulsar Nueva solicitud volvió a mostrar SOL-DEMO-006 en lugar de los campos iniciales. [Evidencia al 200 %](./09-nueva-solicitud-conserva-confirmacion.png). Fue necesario cerrar y volver a abrir la sesión simulada para comenzar la pasada táctil con un formulario vacío.
 
-Repetir sobre la ruta canónica `/estudiante/nueva-solicitud`, sin usar el botón de herramientas del cliente. Revisar la conservación de la pantalla oculta en `student-layout.tsx` y del estado de éxito en `use-submit-student-request.ts`. Atribución propuesta: TI4-62, responsable del flujo guiado; coordinar la corrección y repetir este escenario sin crear otro formulario, almacén o contrato. Esta evidencia no modifica la issue ni implementa una corrección fuera de alcance.
+La atribución inicial fue TI4-62, responsable del flujo guiado. La corrección se incorporó por ampliación explícita del alcance en la revisión final y se verificó sobre la ruta canónica `/estudiante/nueva-solicitud`, sin usar las herramientas del cliente para navegar. Se conserva la captura 09 como evidencia histórica del fallo; las capturas 21–24 y las pruebas de integración documentan la corrección.
 
 ## Límites y entrega
 
@@ -102,4 +102,30 @@ Se repitió la comprobación en el mismo Samsung y cliente de desarrollo, con la
 
 La prueba de regresión de comandos carga la preferencia al 200 % con sistema al 100 %, abre el panel, comprueba el texto ampliado y activa Cancelar: no se llama a volver ni a abrir solicitudes. Las suites existentes verifican además los comandos, su cancelación, la navegación entre roles y el envío. La prueba de opciones de cabecera se ejecuta explícitamente con su patrón `.test.ts`, porque el patrón general de Mobile solo incluye `.test.tsx`.
 
-Las capturas 01–16 conservan sus resultados históricos y no se presentan como pruebas de la corrección. El hallazgo de reapertura del comprobante y los límites del recorrido inicial siguen pendientes. Al terminar esta repetición se restauró Seguir el sistema, se cerró el cliente, se retiró la redirección USB y se detuvo Metro. Los resultados de comprobaciones y la revisión del nuevo diff quedan en la PR.
+Las capturas 01–16 conservan sus resultados históricos y no se presentan como pruebas de la corrección. La reapertura se resolvió en la repetición del 29 de octubre descrita a continuación. Los límites del recorrido inicial siguen explícitos. Al terminar esta repetición se restauró Seguir el sistema, se cerró el cliente, se retiró la redirección USB y se detuvo Metro.
+
+## Cierre técnico y regresión de reapertura
+
+Repetición del 29 de octubre de 2026 en el mismo Samsung SM-S911B, Android 16/API 36 y cliente `cl.rmv.ceretime.debug`, con JavaScript del commit `6656b0314ecd0c0567c4e072c25f86057a0f5686`. Se reutilizó el APK instalado y Metro se ejecutó bajo protección de recursos, con conexión USB local IPv4 y el modo de fallo único. La repetición fue táctil, con TalkBack desactivado; las confirmaciones auditivas del recorrido inicial se conservan como evidencia de esa pasada.
+
+La causa era la conservación de la pestaña oculta y de su formulario completado. Ahora el formulario notifica el éxito a su pantalla; al volver desde un comprobante al área del estudiante, la pantalla inicia una nueva instancia del formulario existente. Los borradores, los errores y los intentos pendientes mantienen su estado. Consultar las preferencias mantiene el comprobante, porque esa ruta compartida no inicia otra solicitud. No se cambia el puerto de envío, el almacén simulado ni el contrato de solicitud.
+
+1. Abrir Nueva solicitud y completar los cinco pasos con datos ficticios: Materiales accesibles de prueba, Leer los materiales del curso, Comunicación escrita, En línea, Lunes y Correo con texto accesible. Confirmar, observar el fallo simulado y activar Reintentar envío. **Probado:** apareció [SOL-DEMO-006](./21-comprobante-antes-de-volver.png).
+2. Abrir Preferencias de accesibilidad, seleccionar texto al 200 % y volver. **Probado:** se conservó la [confirmación visible al 200 %](./22-comprobante-tras-preferencias-200.png).
+3. Activar la pestaña Inicio y volver a Nueva solicitud. Desplazarse hasta los campos. **Probado:** necesidad y resultado estaban [vacíos al 200 %](./23-nueva-solicitud-vacia-200.png); apareció el formulario inicial en lugar del comprobante. No se cerró ni reinició la sesión para conseguirlo.
+4. Escribir Borrador de prueba en resultado esperado, volver a Inicio y abrir Nueva solicitud. **Probado:** el [borrador se conservó al 200 %](./24-borrador-conservado-200.png). Esta solicitud no se envió.
+5. Restaurar Tamaño del texto: Seguir el sistema. **Probado:** preferencias mostraba texto al 100 %, alto contraste desactivado y reducción de movimiento desactivada. Se cerró el cliente de pruebas, se retiró la redirección USB y se detuvo Metro. TalkBack siguió desactivado y la escala del sistema siguió en 1.0.
+
+La regresión automatizada se añadió a `student-request.test.tsx`, con el router y los módulos reales. El caso de reapertura falló antes del cambio y pasó después. También pasaron los casos de conservación del borrador y del comprobante al consultar preferencias. La suite completa de Mobile pasó con 26 suites y 271 pruebas; tipos, lint, formato y ortografía de los archivos modificados también pasaron. Los avisos de Reanimated no se usan como evidencia nativa.
+
+### Cobertura de las responsabilidades de TI4-63
+
+| Responsabilidad                                                             | Resultado y evidencia                                                                                                                                                                            |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Guía, resumen, volver/corregir, confirmar y resultado con TalkBack          | Recorrido inicial y confirmaciones auditivas explícitas del usuario; capturas 01–07 y 15. Se distinguen relectura y anuncio automático.                                                          |
+| Texto ampliado, contraste, movimiento y carga de preferencias               | Ruta táctil completa al 200 %, persistencia tras reiniciar y capturas 08, 10–13 y 17–24. La selección de movimiento y contraste no se presenta como medición de todas las animaciones o estados. |
+| Fallo/reintento, doble toque, teclado, desplazamiento y alternativa sin voz | Recorridos nativos descritos, capturas 06–07, 10–12, 14, 16 y 21; cliente sin micrófono disponible. El diálogo explícito de denegación sigue marcado como no probado.                            |
+| Commit, dispositivo, pasos y resultados reproducibles                       | Entorno inicial y cierre técnico identifican las versiones de código y cliente; cada escenario distingue probado, fallido o no probado.                                                          |
+| Atribución de pendientes y reutilización                                    | Límites coordinados con TI4-53/57/58/60/61/64 según responsabilidad; matriz compartida conservada. La reapertura quedó resuelta reutilizando la pantalla y el formulario.                        |
+
+El alcance de evaluación admite registrar límites de cobertura y atribuirlos a las tareas existentes. Las comprobaciones no ejecutadas de la sección Límites y entrega no se convierten en aprobadas ni en una declaración de conformidad general. La aprobación humana y la integración de la PR corresponden al cierre del workflow, no a otra implementación pendiente del formulario.
