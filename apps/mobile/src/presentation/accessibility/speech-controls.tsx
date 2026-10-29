@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import {
-  AccessibilityInfo,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { AccessibilityInfo, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { parseSpeechCommand, type SpeechCommand } from "../../application/speech-command-parser";
 import type { SpeechPort, SpeechRecognitionPort } from "../../application/speech-port";
 import type { StudentRequestSubmissionState } from "../hooks/use-submit-student-request";
@@ -189,6 +182,8 @@ export function SpeechCommandControls({
   readonly onCancel: () => void;
 }) {
   const [status, setStatus] = useState<SpeechCommandStatus>("idle");
+  const preferences = useOptionalAccessibilityPreferences();
+  const palette = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
   const mounted = useRef(false);
   const listening = useRef(false);
   const generation = useRef(0);
@@ -282,11 +277,11 @@ export function SpeechCommandControls({
         accessibilityState={{ disabled: false }}
         onPress={handleVoicePress}
         android_ripple={{ color: "#17483F" }}
-        style={styles.button}
+        style={[styles.button, { backgroundColor: palette.action }]}
       >
-        <Text style={styles.buttonLabel}>
+        <StudentText weight="semibold" style={styles.buttonLabel}>
           {status === "listening" ? "Detener escucha" : "Usar comando de voz"}
-        </Text>
+        </StudentText>
       </Pressable>
       <View style={commandStyles.actions}>
         <CommandButton label="Abrir solicitudes" onPress={() => runCommand("open-requests")} />
@@ -294,9 +289,12 @@ export function SpeechCommandControls({
         <CommandButton label="Cancelar" onPress={() => runCommand("cancel")} />
       </View>
       {statusMessage[status] ? (
-        <Text accessibilityLiveRegion="polite" style={commandStyles.message}>
+        <StudentText
+          accessibilityLiveRegion="polite"
+          style={[commandStyles.message, { color: palette.text }]}
+        >
           {statusMessage[status]}
-        </Text>
+        </StudentText>
       ) : null}
     </View>
   );
@@ -314,6 +312,8 @@ export function SpeechCommandLauncher({
   readonly bottomOffset?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const preferences = useOptionalAccessibilityPreferences();
+  const palette = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
 
   function closeThen(action: () => void) {
     setOpen(false);
@@ -328,46 +328,65 @@ export function SpeechCommandLauncher({
         accessibilityHint="Abre los comandos abrir solicitudes, volver y cancelar"
         onPress={() => setOpen(true)}
         android_ripple={{ color: "#D3E4DF" }}
-        style={[styles.launcher, { bottom: bottomOffset }]}
+        style={[styles.launcher, { bottom: bottomOffset, backgroundColor: palette.action }]}
       >
-        <Text style={styles.launcherLabel}>Comandos de voz</Text>
+        <StudentText weight="semibold" style={styles.launcherLabel}>
+          Comandos de voz
+        </StudentText>
       </Pressable>
       {open ? (
         <Modal
           transparent
           visible
-          animationType="fade"
+          animationType={preferences?.effective.reduceMotion ? "none" : "fade"}
           statusBarTranslucent
+          navigationBarTranslucent
           onRequestClose={() => setOpen(false)}
         >
-          <View style={styles.modalBackdrop}>
-            <View accessibilityViewIsModal style={styles.modalSheet}>
-              <View style={styles.modalHeader}>
-                <Text accessibilityRole="header" style={styles.modalTitle}>
-                  Comandos de voz
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Cerrar comandos de voz"
-                  onPress={() => setOpen(false)}
-                  style={styles.modalClose}
-                >
-                  <Text style={styles.modalCloseLabel}>Cerrar</Text>
-                </Pressable>
-              </View>
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.modalContent}
+          <SafeAreaProvider>
+            <View style={styles.modalBackdrop}>
+              <SafeAreaView
+                edges={["bottom", "left", "right"]}
+                accessibilityViewIsModal
+                style={[styles.modalSheet, { backgroundColor: palette.surface }]}
               >
-                <SpeechCommandControls
-                  speechPort={speechPort}
-                  onOpenRequests={() => closeThen(onOpenRequests)}
-                  onBack={() => closeThen(onBack)}
-                  onCancel={() => setOpen(false)}
-                />
-              </ScrollView>
+                <View style={styles.modalHeader}>
+                  <StudentText
+                    weight="bold"
+                    accessibilityRole="header"
+                    style={[styles.modalTitle, { color: palette.text }]}
+                  >
+                    Comandos de voz
+                  </StudentText>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Cerrar comandos de voz"
+                    onPress={() => setOpen(false)}
+                    style={styles.modalClose}
+                  >
+                    <StudentText
+                      weight="semibold"
+                      style={[styles.modalCloseLabel, { color: palette.primary }]}
+                    >
+                      Cerrar
+                    </StudentText>
+                  </Pressable>
+                </View>
+                <ScrollView
+                  style={styles.modalScroll}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.modalContent}
+                >
+                  <SpeechCommandControls
+                    speechPort={speechPort}
+                    onOpenRequests={() => closeThen(onOpenRequests)}
+                    onBack={() => closeThen(onBack)}
+                    onCancel={() => setOpen(false)}
+                  />
+                </ScrollView>
+              </SafeAreaView>
             </View>
-          </View>
+          </SafeAreaProvider>
         </Modal>
       ) : null}
     </>
@@ -381,6 +400,8 @@ function CommandButton({
   readonly label: string;
   readonly onPress: () => void;
 }) {
+  const preferences = useOptionalAccessibilityPreferences();
+  const palette = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
   return (
     <Pressable
       accessibilityRole="button"
@@ -388,9 +409,17 @@ function CommandButton({
       accessibilityState={{ disabled: false }}
       onPress={onPress}
       android_ripple={{ color: "#D3E4DF" }}
-      style={commandStyles.secondaryButton}
+      style={[
+        commandStyles.secondaryButton,
+        { borderColor: palette.action, backgroundColor: palette.surface },
+      ]}
     >
-      <Text style={commandStyles.secondaryLabel}>{label}</Text>
+      <StudentText
+        weight="semibold"
+        style={[commandStyles.secondaryLabel, { color: palette.primary }]}
+      >
+        {label}
+      </StudentText>
     </Pressable>
   );
 }
@@ -413,6 +442,7 @@ const styles = StyleSheet.create({
   launcher: {
     position: "absolute",
     right: 16,
+    maxWidth: "90%",
     minHeight: 48,
     minWidth: 44,
     alignItems: "center",
@@ -433,8 +463,8 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     backgroundColor: "#FFFFFF",
   },
-  modalHeader: { flexDirection: "row", alignItems: "center", gap: 12 },
-  modalTitle: { flex: 1, color: "#18312E", fontSize: 22, fontWeight: "700" },
+  modalHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12, padding: 4 },
+  modalTitle: { flex: 1, minWidth: 0, color: "#18312E", fontSize: 22, fontWeight: "700" },
   modalClose: {
     minHeight: 44,
     minWidth: 44,
@@ -443,6 +473,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   modalCloseLabel: { color: "#17483F", fontSize: 16, fontWeight: "600" },
+  modalScroll: { flexShrink: 1 },
   modalContent: { gap: 12, paddingBottom: 8 },
 });
 

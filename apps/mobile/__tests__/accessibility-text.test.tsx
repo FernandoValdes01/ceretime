@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react-native";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import * as ReactNative from "react-native";
-import { TextInput } from "react-native";
+import { TextInput, View } from "react-native";
+import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 import type { PropsWithChildren } from "react";
 import {
   defaultAccessibilityPreferences,
@@ -11,8 +12,45 @@ import { AccessibilityPreferencesProvider } from "@/presentation/accessibility/a
 import { Screen } from "@/presentation/components/screen";
 import { StudentScreen } from "@/presentation/estudiante/student-screen";
 import { StudentText } from "@/presentation/estudiante/student-text";
+import { useRoleTabScreenOptions } from "@/presentation/navigation/role-tabs";
 
 jest.mock("expo-font", () => ({ useFonts: () => [true, null] }));
+
+function TabPreview({ textScale }: { textScale: 1 | 2 }) {
+  return (
+    <SafeAreaInsetsContext.Provider value={{ top: 0, left: 0, right: 0, bottom: 34 }}>
+      <Provider textScale={textScale}>
+        <TabBar />
+      </Provider>
+    </SafeAreaInsetsContext.Provider>
+  );
+}
+
+function TabBar() {
+  const options = useRoleTabScreenOptions();
+  return (
+    <View testID="tab-bar" style={options.tabBarStyle}>
+      {options.tabBarLabel({ children: "Acompañamientos", color: "#000000" })}
+    </View>
+  );
+}
+
+test("las pestañas reservan el área inferior una sola vez sin espacio sobrante", async () => {
+  render(<TabPreview textScale={1} />);
+  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 97 }));
+  expect(screen.getByTestId("tab-bar")).toHaveStyle({ paddingTop: 0, paddingBottom: 34 });
+});
+
+test("las pestañas crecen con las líneas reales y se compactan al reducir el texto", async () => {
+  const view = render(<TabPreview textScale={2} />);
+  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 140 }));
+  fireEvent(screen.getByText(/Acompaña/), "textLayout", {
+    nativeEvent: { lines: [0, 32, 64].map((y) => ({ y, height: 32 })) },
+  });
+  expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 172 });
+  view.rerender(<TabPreview textScale={1} />);
+  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 97 }));
+});
 
 afterEach(() => jest.restoreAllMocks());
 

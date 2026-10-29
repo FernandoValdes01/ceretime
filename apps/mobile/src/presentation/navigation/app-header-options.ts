@@ -2,7 +2,7 @@ import type { NativeStackNavigationOptions } from "expo-router";
 
 export const appHeaderOptions = {
   headerShown: true,
-  headerTitle: "CERETIME",
+  headerTitle: "CERETI",
   headerBackTitle: "Volver",
   headerBackButtonDisplayMode: "minimal",
   headerBackVisible: false,

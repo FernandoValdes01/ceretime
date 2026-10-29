@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { router } from "expo-router";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 
 import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
 import { StudentText } from "../estudiante/student-text";
@@ -26,60 +26,75 @@ export function AppHeader({
   const initial = session?.user.displayName.slice(0, 1).toUpperCase() ?? "C";
   const isSigningOut = status === "loading";
   const accessibilityPreferences = useOptionalAccessibilityPreferences();
-  const textScale = accessibilityPreferences?.effective.textScale ?? 1;
+  const { width, fontScale } = useWindowDimensions();
+  const textScale = accessibilityPreferences?.effective.textScale ?? fontScale;
+  const iconScale = Math.min(1.5, Math.max(1, textScale));
+  const expanded = textScale > 1.3 || width < 400;
   const isHighContrast = accessibilityPreferences?.effective.highContrast ?? false;
   const colors = getAccessibilityColorPalette(isHighContrast);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.background }]}>
-        {onBack ? (
-          <Pressable
-            onFocus={() => setFocusedControl("Volver")}
-            onBlur={() => setFocusedControl(null)}
-            accessibilityLabel="Volver"
-            accessibilityRole="button"
-            onPress={onBack}
-            style={[
-              styles.backButton,
-              focusedControl === "Volver" && [styles.focused, { outlineColor: colors.focus }],
-            ]}
-          >
-            <AppIcon
-              accessible={false}
-              color={colors.secondary}
-              name="chevronLeft"
-              size={26}
-              strokeWidth={2.2}
-            />
-          </Pressable>
-        ) : null}
-        <View style={styles.identity}>
-          <View
-            accessible
-            accessibilityLabel={`Perfil de ${session?.user.displayName ?? "usuario"}`}
-            style={[
-              styles.avatar,
-              isHighContrast && { backgroundColor: colors.muted, borderColor: colors.text },
-              {
-                width: 34 * textScale,
-                height: 34 * textScale,
-                borderRadius: 17 * textScale,
-              },
-            ]}
-          >
-            <StudentText
-              weight="semibold"
-              style={[styles.avatarText, isHighContrast && { color: colors.text }]}
+      <View
+        style={[
+          styles.header,
+          expanded && styles.expandedHeader,
+          { backgroundColor: colors.background },
+        ]}
+      >
+        <View style={[styles.headerIdentity, expanded && styles.expandedIdentity]}>
+          {onBack ? (
+            <Pressable
+              onFocus={() => setFocusedControl("Volver")}
+              onBlur={() => setFocusedControl(null)}
+              accessibilityLabel="Volver"
+              accessibilityRole="button"
+              onPress={onBack}
+              style={[
+                styles.backButton,
+                focusedControl === "Volver" && [styles.focused, { outlineColor: colors.focus }],
+              ]}
             >
-              {initial}
+              <AppIcon
+                accessible={false}
+                color={colors.secondary}
+                name="chevronLeft"
+                size={26 * iconScale}
+                strokeWidth={2.2}
+              />
+            </Pressable>
+          ) : null}
+          <View style={styles.identity}>
+            <View
+              accessible
+              accessibilityLabel={`Perfil de ${session?.user.displayName ?? "usuario"}`}
+              style={[
+                styles.avatar,
+                isHighContrast && { backgroundColor: colors.muted, borderColor: colors.text },
+                {
+                  width: 34 * iconScale,
+                  height: 34 * iconScale,
+                  borderRadius: 17 * iconScale,
+                },
+              ]}
+            >
+              <StudentText
+                weight="semibold"
+                style={[styles.avatarText, isHighContrast && { color: colors.text }]}
+              >
+                {initial}
+              </StudentText>
+            </View>
+            <StudentText
+              numberOfLines={1}
+              weight="bold"
+              style={[styles.brand, { color: colors.primary }]}
+            >
+              {title}
             </StudentText>
           </View>
-          <StudentText weight="bold" style={[styles.brand, { color: colors.primary }]}>
-            {title}
-          </StudentText>
         </View>
-        <View style={styles.actions}>
+        <View style={[styles.actions, expanded && styles.expandedActions]}>
           <Pressable
             accessibilityHint="Las notificaciones estarán disponibles próximamente"
             accessibilityLabel="Notificaciones"
@@ -92,7 +107,7 @@ export function AppHeader({
               accessible={false}
               color={colors.primary}
               name="bell"
-              size={22}
+              size={22 * iconScale}
               strokeWidth={2.1}
             />
           </Pressable>
@@ -116,7 +131,7 @@ export function AppHeader({
                 accessible={false}
                 color={colors.primary}
                 name="settings"
-                size={22}
+                size={22 * iconScale}
                 strokeWidth={2.1}
               />
             </Pressable>
@@ -139,7 +154,7 @@ export function AppHeader({
               accessible={false}
               color={colors.secondary}
               name="logOut"
-              size={21}
+              size={21 * iconScale}
               strokeWidth={2.1}
             />
           </Pressable>
@@ -189,7 +204,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#F7FAF9",
   },
-  identity: { flex: 1, flexDirection: "row", alignItems: "center", gap: 9 },
+  expandedHeader: { flexDirection: "column", alignItems: "stretch", paddingVertical: 8, gap: 4 },
+  headerIdentity: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center" },
+  expandedIdentity: { flex: 0, width: "100%" },
+  expandedActions: { width: "100%", justifyContent: "flex-end" },
+  identity: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 9 },
   avatar: {
     width: 34,
     height: 34,
