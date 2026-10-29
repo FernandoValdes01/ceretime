@@ -129,3 +129,31 @@ La regresión automatizada se añadió a `student-request.test.tsx`, con el rout
 | Atribución de pendientes y reutilización                                    | Límites coordinados con TI4-53/57/58/60/61/64 según responsabilidad; matriz compartida conservada. La reapertura quedó resuelta reutilizando la pantalla y el formulario.                        |
 
 El alcance de evaluación admite registrar límites de cobertura y atribuirlos a las tareas existentes. Las comprobaciones no ejecutadas de la sección Límites y entrega no se convierten en aprobadas ni en una declaración de conformidad general. La aprobación humana y la integración de la PR corresponden al cierre del workflow, no a otra implementación pendiente del formulario.
+
+## Pestañas compactas y compartidas entre roles
+
+Por solicitud de la revisión visual se corrigió el espacio inferior de la barra y se comprobaron los cuatro roles. La repetición del 29 de octubre usó el mismo Samsung, cliente de desarrollo y datos ficticios, con el código `bfd60b44477d92a02cf3cb6467056b65210c3e52`. Se reutilizó Metro, que ya estaba activo, sin iniciarlo ni reiniciarlo.
+
+La barra reservaba 84 puntos antes del área inferior del sistema. Ahora reserva normalmente 63 puntos al 100 %, que incluyen icono, dos líneas de etiqueta y relleno del botón. El área de navegación de Android se añade una sola vez. Las etiquetas que necesitan más líneas amplían la barra mediante su medida nativa; reducir el texto o cambiar el ancho descarta las medidas anteriores. Se conserva el texto ampliado y el nombre completo de cada destino.
+
+Los cuatro navegadores de rol consumen `Tabs`, `RoleTabIcon` y `useRoleTabScreenOptions` del módulo `role-tabs.tsx`. El navegador profesional también importa Tabs desde ese módulo común. Los destinos y su número corresponden a cada rol; tamaño, espaciado, tipografía, colores y adaptación al texto proceden de la misma implementación. Los Stack internos conservan el navegador de pestañas del rol. Acceso y Preferencias son rutas fuera de esos navegadores y mantienen su navegación propia.
+
+| Rol           | Ventanas comprobadas mediante pulsaciones en Android al 100 %                       | Resultado                                                                 |
+| ------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Profesional   | Agenda, Solicitudes, Acompañamientos, Perfil y detalle de una atención desde Agenda | Cuatro pestañas conservadas; mismo tamaño y posición en las cinco vistas. |
+| Estudiante    | Inicio, Solicitudes, Perfil y Nueva solicitud                                       | Tres pestañas conservadas; mismo tamaño y posición en las cuatro vistas.  |
+| Practicante   | Asignaciones e Inicio, Perfil                                                       | Dos pestañas conservadas; mismo tamaño y posición.                        |
+| Administrador | Inicio, Usuarios y Perfil                                                           | Tres pestañas conservadas; mismo tamaño y posición en las tres vistas.    |
+
+En las vistas comprobadas al 100 %, todos los botones de pestaña ocuparon la misma franja vertical, de y=2050 a y=2214. Antes del ajuste, los botones del profesional empezaban en y=2011 y el borde superior de la barra estaba aproximadamente 55 píxeles más arriba. La comparación acredita una reducción de 21 puntos en la altura total, con el área del sistema conservada. En el profesional al 200 %, las etiquetas ocuparon hasta tres líneas y los botones se ampliaron a la franja y=1882–2214; el texto quedó dentro de la barra. La revisión del código incluye además los Stack de solicitudes y acompañamientos del estudiante, agenda y acompañamientos del profesional, y asignaciones del practicante, que no declaran otra barra.
+
+- [Antes, profesional al 100 %](./25-tabs-profesional-antes-100.png).
+- [Barra compacta, profesional al 100 %](./26-tabs-profesional-compactas-100.png).
+- [Etiquetas completas, profesional al 200 %](./27-tabs-profesional-ampliadas-200.png).
+- [Misma barra, estudiante al 100 %](./28-tabs-estudiante-100.png).
+- [Misma barra, practicante al 100 %](./29-tabs-practicante-100.png).
+- [Misma barra, administrador al 100 %](./30-tabs-administrador-100.png).
+
+La suite completa pasó con 26 suites y 273 pruebas. Dos regresiones de `accessibility-text.test.tsx` comprueban que el área inferior se cuenta una vez, que una etiqueta de tres líneas amplía la barra y que reducir el texto elimina la altura anterior. Las pruebas existentes de navegación verifican los destinos de los cuatro roles y sus nombres accesibles. Tipos, lint, formato y ortografía de los archivos modificados también pasaron.
+
+Al finalizar se restauró Seguir el sistema y la sesión Profesional en Agenda. TalkBack permaneció desactivado y la escala del sistema siguió en 1.0. El botón flotante de herramientas del cliente se ocultó temporalmente para no cubrir los controles y se restauró después. El cliente y el Metro preexistentes se dejaron activos.
