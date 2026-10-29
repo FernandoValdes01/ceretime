@@ -1,6 +1,6 @@
 # TI4-63: validación del flujo guiado en Android
 
-<!-- cspell:words samsung -->
+<!-- cspell:words samsung talkback -->
 
 Issue: [TI4-63](https://linear.app/ceretime/issue/TI4-63). Evaluación del 28 de octubre de 2026 sobre `ca097570cd0152d1a53d2d4b431b9e339cc51b17`, que incluye TI4-62. La evaluación inicial usó exclusivamente datos ficticios y el envío simulado, sin modificar implementación, contratos, backend ni estados de Linear. Las correcciones de UI solicitadas después por el usuario se registran al final.
 
