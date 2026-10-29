@@ -19,6 +19,9 @@ async function snapshot(t: ReturnType<typeof convexTest>) {
     transitions: await ctx.db.query("requestTransitions").collect(),
     accompaniments: await ctx.db.query("accompaniments").collect(),
     assignments: await ctx.db.query("accompanimentAssignments").collect(),
+    spaces: await ctx.db.query("spaces").collect(),
+    availabilityBlocks: await ctx.db.query("availabilityBlocks").collect(),
+    appointments: await ctx.db.query("appointments").collect(),
   }));
 }
 
@@ -84,6 +87,15 @@ test("carga una solicitud por estado del Sprint 1 y un acompañamiento con Pract
       .map((assignment) => assignment.assignedRole)
       .sort(),
   ).toEqual(["intern", "professional"]);
+
+  expect(data.spaces.length).toBeGreaterThan(0);
+  expect(data.availabilityBlocks.length).toBeGreaterThan(0);
+  expect(data.appointments.map((a) => a.status).sort()).toEqual([
+    "cancelled_by_student",
+    "completed",
+    "no_show",
+    "scheduled",
+  ]);
 });
 
 test("una segunda carga no escribe nada", async () => {
