@@ -1,9 +1,8 @@
-import { Tabs } from "expo-router";
-
 import { mobileDependencies } from "../../../src/composition/mobile-dependencies";
 import {
   RoleTabIcon,
   roleTabAccessibilityLabel,
+  Tabs,
   useRoleTabScreenOptions,
 } from "../../../src/presentation/navigation/role-tabs";
 import { RoleGuard } from "../../../src/presentation/navigation/role-guard";
