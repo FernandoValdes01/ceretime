@@ -419,6 +419,117 @@ describe("editor de espacios (TI2-04)", () => {
     expect(screen.queryByText("Espacio guardado")).toBeNull();
   });
 
+  test("la respuesta de un guardado anterior no descarta el borrador al reeditar el mismo espacio", async () => {
+    let resolveSave!: (value: Awaited<ReturnType<AgendaPort["saveSpace"]>>) => void;
+    const pendiente = new Promise<Awaited<ReturnType<AgendaPort["saveSpace"]>>>((resolve) => {
+      resolveSave = resolve;
+    });
+    const port = puertoOk();
+    port.saveSpace = () => pendiente;
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
+
+    expect(await screen.findByText("Guardando…")).toBeDefined();
+
+    // Con el guardado pendiente, cancelar y volver a editar el mismo espacio
+    // abre una sesión nueva con un borrador distinto.
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
+    expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
+    const borrador = "Ventana amplia y hall reservado para sillas de ruedas.";
+    fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
+      target: { value: borrador },
+    });
+
+    resolveSave({
+      status: "saved",
+      space: {
+        id: "esp-1",
+        campus: "Campus Norte",
+        building: "Edificio A",
+        floor: "Piso 1",
+        room: "Sala 101",
+        accessConditions: "Rampa lateral con aviso sonoro en el acceso.",
+        arrivalInstructions: "Entrar por el acceso norte y seguir la señalización táctil.",
+        version: "v1",
+      },
+    });
+
+    // La respuesta anterior se refleja en el catálogo, pero la sesión
+    // vigente sigue en edición: el borrador sobrevive y no hay confirmación.
+    expect(
+      await screen.findByText(/Condiciones de acceso: Rampa lateral con aviso sonoro/),
+    ).toBeDefined();
+    const acceso = screen.getByLabelText("Condiciones de acceso") as HTMLTextAreaElement;
+    expect(acceso.value).toBe(borrador);
+    expect(screen.getByRole("heading", { name: "Editar espacio" })).toBeDefined();
+    expect(
+      screen.getByText(/Estás editando Campus Norte · Edificio A · Piso 1 · Sala 101/),
+    ).toBeDefined();
+    expect(screen.queryByText("Espacio guardado")).toBeNull();
+  });
+
+  test("la respuesta de una creación anterior no descarta el borrador del modo nuevo", async () => {
+    let resolveSave!: (value: Awaited<ReturnType<AgendaPort["saveSpace"]>>) => void;
+    const pendiente = new Promise<Awaited<ReturnType<AgendaPort["saveSpace"]>>>((resolve) => {
+      resolveSave = resolve;
+    });
+    const port = puertoOk();
+    port.saveSpace = () => pendiente;
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    completarEspacioValido();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
+
+    expect(await screen.findByText("Guardando…")).toBeDefined();
+
+    // Con la creación pendiente, entrar a editar y cancelar retoma el modo
+    // nuevo, donde se escribe un borrador distinto.
+    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-2" }));
+    expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
+    expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
+    const borradorCampus = "Campus Centro";
+    fireEvent.change(screen.getByLabelText("Campus"), {
+      target: { value: borradorCampus },
+    });
+    fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
+      target: { value: "Puerta ancha y apoyo del personal en el hall." },
+    });
+
+    resolveSave({
+      status: "saved",
+      space: {
+        id: "esp-ficticio-9",
+        campus: "Campus Sur",
+        building: "Edificio C",
+        floor: "Piso 3",
+        room: "Sala 310",
+        accessConditions: "Rampa lateral y señalización contrastada.",
+        arrivalInstructions: "Entrar por el acceso sur y seguir la línea guía hasta el ascensor.",
+        version: "v1",
+      },
+    });
+
+    // La creación anterior se agrega al catálogo, pero la sesión vigente no
+    // se confirma ni remonta: el borrador del modo nuevo sobrevive.
+    expect(await screen.findByText("Campus Sur · Edificio C · Piso 3 · Sala 310")).toBeDefined();
+    const campus = screen.getByLabelText("Campus") as HTMLInputElement;
+    expect(campus.value).toBe(borradorCampus);
+    expect(screen.getByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
+    expect(screen.queryByText("Espacio guardado")).toBeNull();
+  });
+
   test("cancelar la edición vuelve al modo nuevo sin datos del espacio", async () => {
     comoAdministrador();
     renderAt("/administrador/espacios");

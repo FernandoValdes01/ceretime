@@ -96,22 +96,22 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
   const [savedSpaces, setSavedSpaces] = useState<ReadonlyArray<Space>>([]);
   const [editing, setEditing] = useState<Space | null>(null);
   const [savedSpace, setSavedSpace] = useState<Space | null>(null);
-  // Generación del formulario en modo nuevo: cada creación confirmada avanza
-  // el contador y remonta el formulario vacío, así el reenvío posterior ya
-  // no lleva los datos de la creación anterior.
-  const [formGeneration, setFormGeneration] = useState(0);
-  // Espejo del modo de edición vigente: la respuesta de un guardado puede
-  // llegar cuando la edición activa ya cambió, y la comparación por
-  // identidad debe usar el estado vigente, no el capturado por la llamada
-  // pendiente de una instancia remontada.
-  const editingRef = useRef<Space | null>(editing);
+  // Sesión del formulario: cada apertura de edición, cancelación o creación
+  // confirmada avanza el contador y remonta el formulario. La respuesta de
+  // un guardado solo confirma si corresponde a la sesión vigente, así una
+  // respuesta anterior no descarta el borrador actual, ni siquiera al
+  // reeditar el mismo espacio o reanudar el modo nuevo.
+  const [formSession, setFormSession] = useState(0);
+  // Espejo de la sesión vigente para leerla al llegar una respuesta fuera
+  // del ciclo de render, por ejemplo desde un envío pendiente anterior.
+  const formSessionRef = useRef(0);
   const formHeadingRef = useRef<HTMLHeadingElement>(null);
   const confirmationRef = useRef<HTMLHeadingElement>(null);
   const mounted = useRef(false);
 
   useEffect(() => {
-    editingRef.current = editing;
-  }, [editing]);
+    formSessionRef.current = formSession;
+  }, [formSession]);
 
   // El cambio de modo (nuevo/editar) se anuncia moviendo el foco al
   // encabezado del formulario una vez actualizado su texto; el montaje
@@ -205,7 +205,10 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
                   <button
                     type="button"
                     className="student-portal__btn student-portal__btn--ghost"
-                    onClick={() => setEditing(space)}
+                    onClick={() => {
+                      setEditing(space);
+                      setFormSession((value) => value + 1);
+                    }}
                   >
                     Editar espacio {space.id}
                   </button>
@@ -234,26 +237,31 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
         </div>
       ) : null}
       <SpaceFormSection
-        // El cambio de modo remonta el formulario: nuevo parte vacío y la
-        // edición parte de los campos del contrato del espacio elegido. La
-        // generación avanza al confirmar una creación para que el siguiente
-        // envío también parta vacío sin abandonar el modo nuevo.
-        key={editing === null ? `nuevo-${formGeneration}` : editing.id}
+        // El cambio de modo o de sesión remonta el formulario: nuevo parte
+        // vacío y la edición parte de los campos del contrato del espacio
+        // elegido; una creación confirmada también remonta vacío sin
+        // abandonar el modo nuevo.
+        key={editing === null ? `nuevo-${formSession}` : editing.id}
         editing={editing}
         formHeadingRef={formHeadingRef}
+        formSession={formSession}
         onSaveStart={() => setSavedSpace(null)}
-        onSaved={(space, savedFor) => {
+        onSaved={(space, session) => {
           setSavedSpaces((prev) => applySavedSpace(prev, space));
           // La confirmación y la salida del modo edición solo aplican cuando
-          // la respuesta corresponde a la edición vigente: la respuesta
-          // tardía de un guardado anterior no descarta el borrador activo.
-          if (savedFor === (editingRef.current?.id ?? null)) {
+          // la respuesta corresponde a la sesión vigente: cancelar, editar
+          // otro espacio o reanudar el modo nuevo abre una sesión distinta
+          // y deja sin efecto la respuesta de un guardado anterior.
+          if (session === formSessionRef.current) {
             setSavedSpace(space);
             setEditing(null);
-            setFormGeneration((value) => value + 1);
+            setFormSession((value) => value + 1);
           }
         }}
-        onCancelEdit={() => setEditing(null)}
+        onCancelEdit={() => {
+          setEditing(null);
+          setFormSession((value) => value + 1);
+        }}
       />
     </>
   );
@@ -274,14 +282,16 @@ function applySavedSpace(current: ReadonlyArray<Space>, saved: Space): ReadonlyA
 function SpaceFormSection({
   editing,
   formHeadingRef,
+  formSession,
   onSaveStart,
   onSaved,
   onCancelEdit,
 }: {
   editing: Space | null;
   formHeadingRef: React.RefObject<HTMLHeadingElement | null>;
+  formSession: number;
   onSaveStart: () => void;
-  onSaved: (space: Space, savedFor: string | null) => void;
+  onSaved: (space: Space, session: number) => void;
   onCancelEdit: () => void;
 }) {
   const [form, setForm] = useState<SpaceFormState>(() =>
@@ -314,15 +324,14 @@ function SpaceFormSection({
     if (Object.keys(errors).length > 0) {
       return;
     }
-    // El envío declara a qué edición responde: el cuerpo compara esa
-    // identidad con el modo de edición vigente al llegar la respuesta.
-    const savedFor = editing?.id ?? null;
+    // El envío declara la sesión del formulario que lo inició: el cuerpo
+    // solo confirma la respuesta cuando esa sesión sigue vigente.
     pendingRef.current = true;
     setPending(true);
     try {
-      const result = await getAgendaPort().saveSpace(toSaveSpaceInput(form, savedFor));
+      const result = await getAgendaPort().saveSpace(toSaveSpaceInput(form, editing?.id ?? null));
       if (result.status === "saved") {
-        onSaved(result.space, savedFor);
+        onSaved(result.space, formSession);
       } else if (result.status === "denied") {
         setDenied(true);
       } else {
