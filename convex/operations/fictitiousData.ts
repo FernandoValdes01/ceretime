@@ -85,8 +85,8 @@ export const load = internalMutation({
       return { loaded: false };
     }
 
-    const createProfile = (key: AccountKey) =>
-      ctx.runMutation(internal.operations.users.createTestUser, {
+    const createProfile = async (key: AccountKey) =>
+      await ctx.runMutation(internal.operations.users.createTestUser, {
         email: ACCOUNTS[key].email,
         fullName: ACCOUNTS[key].fullName,
         role: ACCOUNTS[key].role,
@@ -94,16 +94,45 @@ export const load = internalMutation({
         accountStatus: "active",
         tokenIdentifier: identityOf(key).tokenIdentifier,
       });
-    for (const key of [
-      "studentReceived",
-      "studentUnderReview",
-      "studentAwaiting",
-      "studentAccepted",
-      "professional",
-    ] as const) {
-      await createProfile(key);
-    }
+
+    await createProfile("studentReceived");
+    await createProfile("studentUnderReview");
+    await createProfile("studentAwaiting");
+    const studentAcceptedId = await createProfile("studentAccepted");
+    const professionalId = await createProfile("professional");
     const internId = await createProfile("intern");
+
+    // Espacios ficticios de agenda
+    const spaceId = await ctx.db.insert("spaces", {
+      campus: "Norte",
+      building: "C",
+      floor: "2",
+      room: "C-107",
+      accessConditions: "Acceso universal habilitado sin escaleras.",
+      accessInstructions: "Entrada principal por el pasillo central del segundo piso.",
+      isActive: true,
+    });
+
+    // Bloques de disponibilidad del profesional ficticio
+    await ctx.db.insert("availabilityBlocks", {
+      professionalId,
+      weekday: 1, // Lunes
+      startMinute: 540,
+      endMinute: 600,
+      slotMinutes: 60,
+      modality: "online",
+      isActive: true,
+    });
+    await ctx.db.insert("availabilityBlocks", {
+      professionalId,
+      weekday: 1,
+      startMinute: 600,
+      endMinute: 660,
+      slotMinutes: 60,
+      modality: "inPerson",
+      spaceId,
+      isActive: true,
+    });
 
     // Las solicitudes pasan por los casos de uso reales, con las identidades
     // ficticias: el dataset cumple las mismas reglas que el flujo del cliente.
@@ -138,6 +167,57 @@ export const load = internalMutation({
       accompanimentId: accompaniment._id,
       userId: internId,
       assignedRole: "intern",
+    });
+
+    // Atenciones ficticias con estados variados (programada, completada, cancelada, inasistencia)
+    const slotStart = Date.UTC(2026, 9, 12, 9);
+    const slotEnd = Date.UTC(2026, 9, 12, 10);
+    const now = Date.now();
+
+    await ctx.db.insert("appointments", {
+      accompanimentId: accompaniment._id,
+      studentId: studentAcceptedId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: slotStart,
+      endsAt: slotEnd,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("appointments", {
+      accompanimentId: accompaniment._id,
+      studentId: studentAcceptedId,
+      professionalId,
+      modality: "inPerson",
+      spaceId,
+      status: "completed",
+      startsAt: slotStart + 3_600_000,
+      endsAt: slotEnd + 3_600_000,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("appointments", {
+      accompanimentId: accompaniment._id,
+      studentId: studentAcceptedId,
+      professionalId,
+      modality: "online",
+      status: "cancelled_by_student",
+      cancelReason: "Conflicto de horario imprevisto con otra actividad académica.",
+      startsAt: slotStart + 2 * 3_600_000,
+      endsAt: slotEnd + 2 * 3_600_000,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("appointments", {
+      accompanimentId: accompaniment._id,
+      studentId: studentAcceptedId,
+      professionalId,
+      modality: "online",
+      status: "no_show",
+      startsAt: slotStart + 3 * 3_600_000,
+      endsAt: slotEnd + 3 * 3_600_000,
+      createdAt: now,
     });
 
     return { loaded: true };

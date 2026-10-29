@@ -1,6 +1,6 @@
-# Dataset ficticio del Sprint 1 (TI2-30)
+# Dataset ficticio de Agenda y Solicitudes (TI2-30 / TI2-108)
 
-Datos mínimos para mostrar el entorno TI2 con cada rol y cada estado de solicitud del Sprint 1. Todo es inventado: ningún nombre, correo ni necesidad de acceso corresponde a una persona real, como exige la Ley 21.719 para el prototipo.
+Datos mínimos para mostrar el entorno TI2 con cada rol, cada estado de solicitud del Sprint 1 y la agenda de atenciones. Todo es inventado: ningún nombre, correo ni necesidad de acceso corresponde a una persona real, como exige la Ley 21.719 para el prototipo.
 
 ## Cómo se carga
 
@@ -35,10 +35,17 @@ Una por cada estado del Sprint 1. Las que avanzan las toma el Profesional Fictic
 
 El historial de cambios de estado queda con 5 registros: tres tomas, el pedido de información (con el motivo "Falta indicar en qué asignaturas se necesita el apoyo.") y la aceptación.
 
-## Acompañamiento
+## Acompañamiento y Agenda
 
-Uno solo, abierto por la aceptación de la solicitud del Estudiante Cuatro, con el objetivo "Coordinar los apoyos de acceso para las clases prácticas del semestre." Tiene dos asignaciones vigentes: el Profesional Ficticio, que la recibe al aceptar, y el Practicante Ficticio, asignado por ese Profesional.
+- **Acompañamiento:** Uno solo, abierto por la aceptación de la solicitud del Estudiante Cuatro, con el objetivo "Coordinar los apoyos de acceso para las clases prácticas del semestre." Tiene dos asignaciones vigentes: el Profesional Ficticio y el Practicante Ficticio.
+- **Espacios:** Sala C-107 (Campus Norte, Edificio C, Piso 2) habilitada con acceso universal.
+- **Disponibilidad:** Bloques recurrentes online y presenciales (sala C-107) los lunes para el Profesional Ficticio.
+- **Atenciones:** Cuatro atenciones vinculadas al acompañamiento con fechas deterministas que demuestran el ciclo de vida:
+  1. `scheduled` (Programada)
+  2. `completed` (Realizada)
+  3. `cancelled_by_student` (Cancelada por el estudiante con motivo)
+  4. `no_show` (Inasistencia registrada)
 
 ## Comprobación
 
-`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial y el acompañamiento de este inventario, y que una segunda carga no escriba nada. Corre con `bun run test:convex`.
+`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial, los espacios, la disponibilidad, las atenciones y el acompañamiento de este inventario, y que una segunda carga no escriba nada. Corre con `bun run test:convex`.
