@@ -369,12 +369,54 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
   };
 }
 
-// ── TI2-121: adaptadores de lectura y ocupación para los cambios ───────────
+// ── TI2-111: adaptadores de los puertos de búsqueda y reserva ───────────────
 //
-// Cumplen por forma los puertos `AppointmentChangeReader` (TI2-109/TI2-110) y
-// `AppointmentOccupier` (TI2-84) sin importar Aplicación. Traducen el
-// vocabulario del contrato (`startAt`/`endAt` e identificadores de texto) al
-// de este repositorio.
+// Cumplen por forma `SlotOccupancyReader` (TI2-97) y `AppointmentOccupier`
+// (TI2-84) sin importar Aplicación. Traducen el vocabulario del contrato
+// (`startAt`/`endAt` e identificadores de texto) al de este repositorio.
+
+/**
+ * Ocupación para la búsqueda: el cupo está ocupado cuando el profesional, el
+ * estudiante o la sala ya tienen una atención que lo cruza, los mismos
+ * recursos y la misma lectura por ventana que `occupySlotAtomically`. Una
+ * ventana sobre el tope o un identificador que no es de su tabla cuentan como
+ * ocupados, así la búsqueda no ofrece un cupo que la reserva rechazaría.
+ */
+export function slotOccupancyReader(ctx: DbReader) {
+  return {
+    isSlotOccupied: async (slot: {
+      readonly professionalId: string;
+      readonly studentId: string;
+      readonly spaceId?: string;
+      readonly startAt: number;
+      readonly endAt: number;
+    }) => {
+      const professionalId = ctx.db.normalizeId("users", slot.professionalId);
+      const studentId = ctx.db.normalizeId("users", slot.studentId);
+      const spaceId =
+        slot.spaceId === undefined ? undefined : ctx.db.normalizeId("spaces", slot.spaceId);
+      if (professionalId === null || studentId === null || spaceId === null) return true;
+      const resources: OccupiedResource[] = [
+        { kind: "professional", id: professionalId },
+        { kind: "student", id: studentId },
+      ];
+      if (spaceId !== undefined) {
+        resources.push({ kind: "space", id: spaceId });
+      }
+      const interval = { startsAt: slot.startAt, endsAt: slot.endAt };
+      for (const resource of resources) {
+        if (await isResourceTaken(ctx, resource, interval, null)) return true;
+      }
+      return false;
+    },
+  };
+}
+
+// ── TI2-121: lectura de la atención que se cambia ─────────────────────────
+//
+// Cumple por forma el puerto `AppointmentChangeReader` (TI2-109/TI2-110) sin
+// importar Aplicación. Traduce el vocabulario del contrato (`startAt`/`endAt`
+// e identificadores de texto) al de este repositorio.
 
 /**
  * Lectura de la atención que se cambia. Un identificador que no pertenece a

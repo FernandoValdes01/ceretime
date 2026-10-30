@@ -166,17 +166,16 @@ export function spaceReader(ctx: DbReader) {
   };
 }
 
-// ── TI2-121: necesidades y condiciones para la compatibilidad ──────────────
+// ── TI2-111/TI2-121: necesidades y condiciones para la compatibilidad ─────────────
 //
-// Decisión provisional compartida con TI2-111: el esquema guarda las
-// necesidades del acompañamiento (`accessNeeds`) y las condiciones de la sala
-// (`accessConditions`) como texto, y la compatibilidad de TI2-82 compara
-// identificadores. Cada línea no vacía es una necesidad cuyo identificador es
-// su propio texto, la misma forma en que la solicitud une sus etiquetas
-// (`toStoredRequestFields`). Una sala cubre una necesidad solo si trae la
-// misma línea: lo que no calza queda sin cubrir y la opción se descarta, nunca
-// se rebaja. La plataforma en línea no declara apoyos porque el esquema no
-// tiene dónde guardarlos.
+// Decisión provisional: el esquema guarda las necesidades del acompañamiento
+// (`accessNeeds`) y las condiciones de la sala (`accessConditions`) como
+// texto, y la compatibilidad de TI2-82 compara identificadores. Cada línea
+// no vacía es una necesidad cuyo identificador es su propio texto, la misma
+// forma en que la solicitud une sus etiquetas (`toStoredRequestFields`). Una
+// sala cubre una necesidad solo si trae la misma línea: lo que no calza
+// queda sin cubrir y la opción se descarta, nunca se rebaja. La plataforma
+// en línea no declara apoyos porque el esquema no tiene dónde guardarlos.
 
 /** Necesidades de un texto guardado, una por línea, sin repetir ni vacías. */
 export function accessNeedsFromLines(text: string): AccessNeed[] {
