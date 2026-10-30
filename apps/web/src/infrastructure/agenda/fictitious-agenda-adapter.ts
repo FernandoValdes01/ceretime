@@ -11,18 +11,21 @@ import {
   type AgendaPort,
   type AgendaSlot,
   type ListAvailabilityResult,
+  type ListSpacesResult,
   type ReserveSlotInput,
   type ReserveSlotResult,
   type SaveBlockInput,
   type SaveBlockResult,
   type SaveExceptionInput,
   type SaveExceptionResult,
+  type SaveSpaceInput,
+  type SaveSpaceResult,
   type SlotModalityFilter,
   type SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
 
 /**
- * Adaptador ficticio de agenda (TI2-101, extendido TI2-102 y TI2-103).
+ * Adaptador ficticio de agenda (TI2-101, extendido TI2-102, TI2-103 y TI2-04).
  *
  * Temporal hasta TI2-123/TI2-125: devuelve fixtures con la forma del
  * contrato, sin reglas de compatibilidad, cruces, autorización ni
@@ -35,6 +38,12 @@ import {
  * ajeno. La lectura del editor trae dos bloques y tres excepciones ficticios
  * (cancelación del día, cancelación de un bloque y agregado con ventana);
  * el guardado asigna identidad ficticia sin validar propiedad.
+ *
+ * El catálogo de espacios (TI2-04) es ficticio y en memoria: la lectura
+ * devuelve los espacios con su contrato v1 y el guardado actualiza un
+ * espacio conocido o crea uno nuevo con identidad ficticia, sin validar
+ * propiedad ni persistir nada. La escritura real del catálogo no está
+ * entregada: TI2-99 entrega lectura, no escritura.
  */
 
 function midnightPlus(days: number): number {
@@ -81,6 +90,9 @@ const FICTIONAL_SPACES: Record<string, Space> = {
   },
 };
 
+/** Espacios vigentes del catálogo ficticio: el guardado simulado los actualiza. */
+const fictionalSpaces: Record<string, Space> = { ...FICTIONAL_SPACES };
+
 function slot(
   id: string,
   days: number,
@@ -98,7 +110,7 @@ function slot(
     startAt,
     endAt: startAt + durationMinutes * 60_000,
     modality,
-    ...(spaceId === undefined ? {} : { spaceLabel: toSpaceLabel(FICTIONAL_SPACES[spaceId]) }),
+    ...(spaceId === undefined ? {} : { spaceLabel: toSpaceLabel(fictionalSpaces[spaceId]) }),
   };
 }
 
@@ -161,6 +173,7 @@ const FICTIONAL_EXCEPTIONS: ReadonlyArray<AvailabilityException> = [
 
 export function createFictitiousAgendaAdapter(): AgendaPort {
   let blockCounter = FICTIONAL_BLOCKS.length;
+  let spaceCounter = Object.keys(FICTIONAL_SPACES).length;
   return {
     async searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult> {
       if (filter.modality === "online") {
@@ -228,6 +241,32 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
           version: AVAILABILITY_CONTRACT_VERSION,
         },
       };
+    },
+    async listSpaces(): Promise<ListSpacesResult> {
+      const spaces = Object.values(fictionalSpaces).sort((a, b) => (a.id < b.id ? -1 : 1));
+      return { status: "ok", spaces };
+    },
+    // Guardado simulado del catálogo (TI2-04): con id conocido actualiza el
+    // espacio ficticio conservando su identidad; con id desconocido o sin id
+    // crea uno con identidad ficticia. Sin validación de propiedad ni
+    // persistencia real: la escritura del catálogo no está entregada.
+    async saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult> {
+      const id =
+        input.id !== undefined && fictionalSpaces[input.id] !== undefined
+          ? input.id
+          : `esp-ficticio-${(spaceCounter += 1)}`;
+      const space: Space = {
+        id,
+        campus: input.campus,
+        building: input.building,
+        floor: input.floor,
+        room: input.room,
+        accessConditions: input.accessConditions,
+        arrivalInstructions: input.arrivalInstructions,
+        version: SPACE_CATALOG_CONTRACT_VERSION,
+      };
+      fictionalSpaces[id] = space;
+      return { status: "saved", space };
     },
   };
 }
