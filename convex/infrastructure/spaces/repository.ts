@@ -166,9 +166,9 @@ export function spaceReader(ctx: DbReader) {
   };
 }
 
-// ── TI2-111/TI2-121: necesidades y condiciones para la compatibilidad ─────────────
+// ── TI2-111/TI2-121: necesidades y condiciones de compatibilidad ──────────
 //
-// Decisión provisional: el esquema guarda las necesidades del acompañamiento
+// Decisión provisional compartida: el esquema guarda las necesidades del acompañamiento
 // (`accessNeeds`) y las condiciones de la sala (`accessConditions`) como
 // texto, y la compatibilidad de TI2-82 compara identificadores. Cada línea
 // no vacía es una necesidad cuyo identificador es su propio texto, la misma
