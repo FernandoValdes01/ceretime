@@ -147,6 +147,7 @@ export type {
 
 // Atención reservada: reserva y atención en una sola entidad (TI2-87, TI2-93, plazo TI2-94).
 export {
+  APPOINTMENT_ATTENDANCE_OUTCOME_VALUES,
   APPOINTMENT_CONTRACT_VERSION,
   APPOINTMENT_REJECTION_CAUSES,
   APPOINTMENT_STATUS_VALUES,
@@ -165,6 +166,7 @@ export {
 } from "./appointments/appointment";
 export type {
   Appointment,
+  AppointmentAttendanceOutcome,
   AppointmentContractVersion,
   AppointmentPage,
   AppointmentProjection,

@@ -412,10 +412,41 @@ export function slotOccupancyReader(ctx: DbReader) {
   };
 }
 
+// ── TI2-121: lectura de la atención que se cambia ─────────────────────────
+//
+// Cumple por forma el puerto `AppointmentChangeReader` (TI2-109/TI2-110) sin
+// importar Aplicación. Traduce el vocabulario del contrato (`startAt`/`endAt`
+// e identificadores de texto) al de este repositorio.
+
 /**
- * Escritura atómica para la reserva sobre `occupySlotAtomically`. Un
- * identificador que no es de su tabla responde `conflict` sin escribir, en
- * vez de llegar a la base con otra forma.
+ * Lectura de la atención que se cambia. Un identificador que no pertenece a
+ * `appointments` responde igual que uno inexistente: `null`.
+ */
+export function appointmentChangeReader(ctx: DbReader) {
+  return {
+    getAppointment: async (appointmentId: string) => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      const doc = id === null ? null : await getAppointmentById(ctx, id);
+      if (doc === null) return null;
+      return {
+        id: doc._id,
+        accompanimentId: doc.accompanimentId,
+        studentId: doc.studentId,
+        professionalId: doc.professionalId,
+        status: doc.status,
+        startAt: doc.startsAt,
+        endAt: doc.endsAt,
+        ...(doc.originalStartsAt === undefined ? {} : { originalStartAt: doc.originalStartsAt }),
+      };
+    },
+  };
+}
+
+/**
+ * Escritura atómica para la reserva y el reagendamiento sobre
+ * `occupySlotAtomically`. Un identificador que no es de su tabla responde
+ * `conflict` sin escribir, en vez de llegar a la base con otra forma. El
+ * reagendamiento mueve la misma fila con `movedAppointmentId`.
  */
 export function appointmentOccupier(ctx: MutationCtx) {
   return {

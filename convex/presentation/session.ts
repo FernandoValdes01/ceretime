@@ -53,7 +53,9 @@ export function throwPublicApiError(error: PublicApiError): never {
 
 /**
  * Entrega el dato de un `ApiResult` de Aplicación o lanza su error con
- * `throwPublicApiError`, sin cambiarlo (TI2-111).
+ * `throwPublicApiError`, sin cambiarlo (TI2-111 y TI2-121). Así las mutations
+ * públicas de disponibilidad, reserva y atención no repiten la misma traducción
+ * ni exponen detalles internos.
  */
 export function unwrapApiResult<T>(result: ApiResult<T>): T {
   if (result.status === "error") throwPublicApiError(result.error);

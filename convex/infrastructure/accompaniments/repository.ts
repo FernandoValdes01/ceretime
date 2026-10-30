@@ -283,10 +283,10 @@ export function authorizationReader(ctx: DbReader) {
 }
 
 /**
- * Necesidades vigentes del acompañamiento para la búsqueda y la reserva
- * (puerto `AccompanimentNeedsReader` de TI2-97), una por línea del texto
- * guardado con `accessNeedsFromLines`. La pertenencia y el estado activo ya
- * los exige la autorización de TI2-86; un identificador de otra tabla
+ * Necesidades vigentes del acompañamiento para la búsqueda, la reserva y el
+ * reagendamiento (puerto `AccompanimentNeedsReader` de TI2-97), una por línea
+ * del texto guardado con `accessNeedsFromLines`. La pertenencia y el estado
+ * activo ya los exige la autorización de TI2-86; un identificador de otra tabla
  * responde igual que uno inexistente.
  */
 export function accompanimentNeedsReader(ctx: DbReader) {
