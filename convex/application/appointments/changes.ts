@@ -1,5 +1,6 @@
 import {
   transitionAppointment,
+  type AppointmentAttendanceOutcome,
   type AppointmentStatus,
 } from "../../domain/appointments/appointment";
 import {
@@ -137,7 +138,7 @@ export interface RescheduleAppointmentInput extends SlotSelectionShape {
  * así que este caso de uso no acepta `no_show_justified` ni
  * `no_show_unjustified`; y `no_show` no es una realización.
  */
-export type AppointmentAttendanceOutcome = Extract<AppointmentStatus, "completed" | "no_show">;
+export type { AppointmentAttendanceOutcome };
 
 /** Dependencias del registro de atención, todas por puerto. */
 export interface RecordAppointmentAttendanceDeps {

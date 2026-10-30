@@ -107,6 +107,7 @@ export type { ApiErrorCode, ApiResult, PublicApiError } from "./errors/api_error
 
 // Disponibilidad: entradas y salidas mínimas con identificadores genéricos (TI2-87).
 export {
+  AGENDA_TIME_ZONE,
   AVAILABILITY_CONTRACT_VERSION,
   AVAILABILITY_EXCEPTION_KIND_VALUES,
 } from "./availability/availability";
@@ -146,6 +147,7 @@ export type {
 
 // Atención reservada: reserva y atención en una sola entidad (TI2-87, TI2-93, plazo TI2-94).
 export {
+  APPOINTMENT_ATTENDANCE_OUTCOME_VALUES,
   APPOINTMENT_CONTRACT_VERSION,
   APPOINTMENT_REJECTION_CAUSES,
   APPOINTMENT_STATUS_VALUES,
@@ -164,6 +166,7 @@ export {
 } from "./appointments/appointment";
 export type {
   Appointment,
+  AppointmentAttendanceOutcome,
   AppointmentContractVersion,
   AppointmentPage,
   AppointmentProjection,

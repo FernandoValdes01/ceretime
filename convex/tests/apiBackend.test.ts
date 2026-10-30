@@ -5,6 +5,8 @@ import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { deniedPublicError } from "../application/authorization/authorize";
+import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
+import { AGENDA_TIME_ZONE, expandAvailabilitySlots } from "../domain/availability/availability";
 import {
   conflictError,
   errResult,
@@ -414,4 +416,740 @@ test("Contrato TI2-88: identificador ajeno e inexistente responden igual sin fil
     expect(message).not.toContain("Necesidad de acceso ficticia");
   }
   expect(foreignAccompaniment).toBe(missingAccompaniment);
+});
+
+// ── TI2-121: API pública de cancelación, reagendamiento y atención ─────────
+
+const TI121_HOUR = 60 * 60_000;
+const TI121_DAY = 24 * TI121_HOUR;
+
+/** Lunes futuro de la agenda ficticia, con al menos dos semanas de margen. */
+function ti121NextMonday(): string {
+  const base = new Date(Date.now() + 14 * TI121_DAY);
+  const untilMonday = (8 - base.getUTCDay()) % 7;
+  return new Date(
+    Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + untilMonday),
+  )
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
+ * Cupos del bloque ficticio en la zona de la agenda. Se calculan con la misma
+ * expansión de Dominio para que el instante enviado coincida exactamente con
+ * el que el servidor revalida en `AGENDA_TIME_ZONE`.
+ */
+function ti121FutureSlots(professionalId: Id<"users">) {
+  const date = ti121NextMonday();
+  const slots = expandAvailabilitySlots({
+    professionalId,
+    blocks: [
+      {
+        id: "ti121-block",
+        professionalId,
+        weekday: 1,
+        startMinute: 540,
+        endMinute: 660,
+        slotMinutes: 60,
+        modality: "online",
+        version: "v1",
+      },
+    ],
+    from: date,
+    to: date,
+    timeZone: AGENDA_TIME_ZONE,
+  });
+  if (slots.length < 2) throw new Error("Se esperaban al menos dos cupos ficticios");
+  return slots;
+}
+
+/** Agenda mínima: Profesional asignado, Estudiante dueño y acompañamiento. */
+async function seedTi121Agenda(t: ReturnType<typeof convexTest>, label: string) {
+  const pro = await seedUser(t, {
+    subject: `ti121-pro-${label}`,
+    email: `ti121-pro-${label}@uct.cl`,
+    role: "professional",
+  });
+  const student = await seedUser(t, {
+    subject: `ti121-est-${label}`,
+    email: `ti121-est-${label}@alu.uct.cl`,
+    role: "student",
+  });
+  const accompanimentId = await t.run(async (ctx) =>
+    ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "",
+    }),
+  );
+  await t.run(async (ctx) =>
+    ctx.db.insert("accompanimentAssignments", {
+      accompanimentId,
+      userId: pro,
+      assignedRole: "professional",
+      status: "active",
+    }),
+  );
+  return {
+    pro,
+    student,
+    accompanimentId,
+    proIdentity: identityFor(`ti121-pro-${label}`, `ti121-pro-${label}@uct.cl`),
+    studentIdentity: identityFor(`ti121-est-${label}`, `ti121-est-${label}@alu.uct.cl`),
+  };
+}
+
+/** Bloque en línea del lunes futuro: 09:00–11:00 local, cupos de 60 minutos. */
+async function seedTi121Block(t: ReturnType<typeof convexTest>, professionalId: Id<"users">) {
+  return await t.run(async (ctx) =>
+    ctx.db.insert("availabilityBlocks", {
+      professionalId,
+      weekday: 1,
+      startMinute: 540,
+      endMinute: 660,
+      slotMinutes: 60,
+      modality: "online",
+      isActive: true,
+    }),
+  );
+}
+
+/** Atención ficticia sobre la agenda sembrada. */
+async function seedTi121Appointment(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly studentId: Id<"users">;
+    readonly professionalId: Id<"users">;
+    readonly startsAt: number;
+    readonly endsAt: number;
+    readonly status?: "scheduled" | "completed" | "cancelled_by_student" | "rescheduled";
+  },
+) {
+  return await t.run(async (ctx) =>
+    ctx.db.insert("appointments", {
+      accompanimentId: input.accompanimentId,
+      studentId: input.studentId,
+      professionalId: input.professionalId,
+      modality: "online",
+      status: input.status ?? "scheduled",
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      createdAt: Date.now(),
+    }),
+  );
+}
+
+/** Atención por identificador opaco, como la lee el adaptador real. */
+async function getTi121(t: ReturnType<typeof convexTest>, appointmentId: string) {
+  return await t.run(async (ctx) => {
+    const id = ctx.db.normalizeId("appointments", appointmentId);
+    return id === null ? null : await ctx.db.get(id);
+  });
+}
+
+/** Datos públicos del error, sin asumir la clase concreta que envuelve Convex. */
+async function publicErrorData(promise: Promise<unknown>): Promise<unknown> {
+  return await promise.then(
+    () => {
+      throw new Error("Se esperaba un error público");
+    },
+    (error: unknown) => {
+      if (error instanceof ConvexError) return error.data;
+      if (typeof error === "object" && error !== null && "data" in error) {
+        return (error as { readonly data?: unknown }).data;
+      }
+      throw error;
+    },
+  );
+}
+
+/** Usuarios ajenos a la agenda para comprobar las denegaciones por rol. */
+async function seedTi121DeniedUsers(t: ReturnType<typeof convexTest>) {
+  await seedUser(t, {
+    subject: "ti121-est-denied",
+    email: "ti121-est-denied@alu.uct.cl",
+    role: "student",
+  });
+  await seedUser(t, {
+    subject: "ti121-pro-denied",
+    email: "ti121-pro-denied@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti121-int-denied",
+    email: "ti121-int-denied@alu.uct.cl",
+    role: "intern",
+  });
+  await seedUser(t, {
+    subject: "ti121-adm-denied",
+    email: "ti121-adm-denied@uct.cl",
+    role: "admin",
+  });
+}
+
+/** Usuarios que nunca deben operar una atención de la agenda. */
+function ti121DeniedCallers() {
+  return [
+    { label: "anónimo", identity: null },
+    {
+      label: "estudiante ajeno",
+      identity: identityFor("ti121-est-denied", "ti121-est-denied@alu.uct.cl"),
+    },
+    {
+      label: "profesional ajeno",
+      identity: identityFor("ti121-pro-denied", "ti121-pro-denied@uct.cl"),
+    },
+    {
+      label: "practicante",
+      identity: identityFor("ti121-int-denied", "ti121-int-denied@alu.uct.cl"),
+    },
+    {
+      label: "administrador",
+      identity: identityFor("ti121-adm-denied", "ti121-adm-denied@uct.cl"),
+    },
+  ];
+}
+
+/** Identificador de atención que existió y ya no existe, sin inventar forma. */
+async function ti121MissingAppointment(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly studentId: Id<"users">;
+    readonly professionalId: Id<"users">;
+  },
+) {
+  return await t.run(async (ctx) => {
+    const id = await ctx.db.insert("appointments", {
+      accompanimentId: input.accompanimentId,
+      studentId: input.studentId,
+      professionalId: input.professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: 1,
+      endsAt: 2,
+      createdAt: 1,
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+}
+
+test("TI2-121: el Estudiante cancela su atención y una repetición no la modifica", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "cancel-est");
+  const startsAt = Date.now() + TI121_DAY;
+  const appointmentId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + TI121_HOUR,
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+
+  const canceled = await asStudent.mutation(api.presentation.appointments.cancelAppointment, {
+    appointmentId,
+    reason: "  Motivo ficticio  ",
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(canceled).toEqual({ appointmentId });
+
+  const row = await getTi121(t, appointmentId);
+  expect(row).toMatchObject({
+    status: "cancelled_by_student",
+    cancelReason: "Motivo ficticio",
+    startsAt,
+  });
+
+  const repeated = await publicErrorData(
+    asStudent.mutation(api.presentation.appointments.cancelAppointment, {
+      appointmentId,
+      reason: "Otro motivo ficticio",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  expect(repeated).toEqual({ code: "conflict", message: conflictError().message });
+  expect(await getTi121(t, appointmentId)).toEqual(row);
+});
+
+test("TI2-121: el Profesional asignado cancela como CERETI y el motivo es obligatorio", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "cancel-pro");
+  const startsAt = Date.now() + TI121_DAY;
+  const appointmentId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + TI121_HOUR,
+  });
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  const withoutReason = await publicErrorData(
+    asPro.mutation(api.presentation.appointments.cancelAppointment, {
+      appointmentId,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  expect(withoutReason).toEqual({ code: "conflict", message: conflictError().message });
+  expect((await getTi121(t, appointmentId))?.status).toBe("scheduled");
+
+  const canceled = await asPro.mutation(api.presentation.appointments.cancelAppointment, {
+    appointmentId,
+    reason: "Reagendamiento institucional ficticio",
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(canceled).toEqual({ appointmentId });
+  expect(await getTi121(t, appointmentId)).toMatchObject({
+    status: "cancelled_by_cereti",
+    cancelReason: "Reagendamiento institucional ficticio",
+    startsAt,
+  });
+});
+
+test("TI2-121: cancelación ajena, anónima o de rol ajeno responde la misma denegación", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "cancel-denied");
+  await seedTi121DeniedUsers(t);
+  const startsAt = Date.now() + TI121_DAY;
+  const appointmentId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + TI121_HOUR,
+  });
+
+  for (const { label, identity } of ti121DeniedCallers()) {
+    const caller = identity === null ? t : t.withIdentity(identity);
+    const data = await publicErrorData(
+      caller.mutation(api.presentation.appointments.cancelAppointment, {
+        appointmentId,
+        reason: "Motivo ficticio",
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    );
+    expect({ label, data }).toEqual({
+      label,
+      data: { code: "unauthorized", message: "No autorizado" },
+    });
+  }
+  expect((await getTi121(t, appointmentId))?.status).toBe("scheduled");
+
+  const missingId = await ti121MissingAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+  });
+  const asStranger = t.withIdentity(identityFor("ti121-est-denied", "ti121-est-denied@alu.uct.cl"));
+  const foreign = await publicErrorData(
+    asStranger.mutation(api.presentation.appointments.cancelAppointment, {
+      appointmentId,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  const missing = await publicErrorData(
+    asStranger.mutation(api.presentation.appointments.cancelAppointment, {
+      appointmentId: missingId,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  expect(foreign).toEqual(missing);
+  expect(foreign).toEqual({ code: "unauthorized", message: "No autorizado" });
+});
+
+test("TI2-121: el Estudiante mueve su atención a un cupo vigente y conserva la fecha original", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "move-est");
+  await seedTi121Block(t, agenda.pro);
+  const slots = ti121FutureSlots(agenda.pro);
+  const appointmentId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: slots[0]!.startAt,
+    endsAt: slots[0]!.endAt,
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+
+  const moved = await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, {
+    appointmentId,
+    professionalId: agenda.pro,
+    modality: "online",
+    startAt: slots[1]!.startAt,
+    endAt: slots[1]!.endAt,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(moved).toEqual({ appointmentId });
+  expect(await getTi121(t, appointmentId)).toMatchObject({
+    startsAt: slots[1]!.startAt,
+    endsAt: slots[1]!.endAt,
+    status: "rescheduled",
+    originalStartsAt: slots[0]!.startAt,
+  });
+
+  const chained = await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, {
+    appointmentId,
+    professionalId: agenda.pro,
+    modality: "online",
+    startAt: slots[0]!.startAt,
+    endAt: slots[0]!.endAt,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(chained).toEqual({ appointmentId });
+  expect(await getTi121(t, appointmentId)).toMatchObject({
+    startsAt: slots[0]!.startAt,
+    status: "rescheduled",
+    originalStartsAt: slots[0]!.startAt,
+  });
+  expect(await t.run(async (ctx) => await ctx.db.query("appointments").take(10))).toHaveLength(1);
+});
+
+test("TI2-121: el Profesional mueve su atención y no la ajena ni a otra agenda", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "move-pro");
+  await seedTi121Block(t, agenda.pro);
+  const slots = ti121FutureSlots(agenda.pro);
+  const appointmentId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: slots[0]!.startAt,
+    endsAt: slots[0]!.endAt,
+  });
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  const moved = await asPro.mutation(api.presentation.appointments.rescheduleAppointment, {
+    appointmentId,
+    professionalId: agenda.pro,
+    modality: "online",
+    startAt: slots[1]!.startAt,
+    endAt: slots[1]!.endAt,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(moved).toEqual({ appointmentId });
+  expect((await getTi121(t, appointmentId))?.startsAt).toBe(slots[1]!.startAt);
+
+  const asOtherPro = t.withIdentity(identityFor("ti121-pro-denied", "ti121-pro-denied@uct.cl"));
+  await seedUser(t, {
+    subject: "ti121-pro-denied",
+    email: "ti121-pro-denied@uct.cl",
+    role: "professional",
+  });
+  const foreign = await publicErrorData(
+    asOtherPro.mutation(api.presentation.appointments.rescheduleAppointment, {
+      appointmentId,
+      professionalId: agenda.pro,
+      modality: "online",
+      startAt: slots[1]!.startAt,
+      endAt: slots[1]!.endAt,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  expect(foreign).toEqual({ code: "unauthorized", message: "No autorizado" });
+
+  const otherPro = await seedUser(t, {
+    subject: "ti121-pro-other-agenda",
+    email: "ti121-pro-other-agenda@uct.cl",
+    role: "professional",
+  });
+  await seedTi121Block(t, otherPro);
+  const otherSlots = ti121FutureSlots(otherPro);
+  const toOtherAgenda = await publicErrorData(
+    asPro.mutation(api.presentation.appointments.rescheduleAppointment, {
+      appointmentId,
+      professionalId: otherPro,
+      modality: "online",
+      startAt: otherSlots[1]!.startAt,
+      endAt: otherSlots[1]!.endAt,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  expect(toOtherAgenda).toEqual({ code: "unauthorized", message: "No autorizado" });
+  expect(await getTi121(t, appointmentId)).toMatchObject({
+    professionalId: agenda.pro,
+    startsAt: slots[1]!.startAt,
+  });
+});
+
+test("TI2-121: reagendar una atención cancelada o a un cupo ocupado no cambia nada", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "move-conflict");
+  await seedTi121Block(t, agenda.pro);
+  const slots = ti121FutureSlots(agenda.pro);
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+
+  const canceledId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: slots[0]!.startAt,
+    endsAt: slots[0]!.endAt,
+    status: "cancelled_by_student",
+  });
+  const invalidState = await publicErrorData(
+    asStudent.mutation(api.presentation.appointments.rescheduleAppointment, {
+      appointmentId: canceledId,
+      professionalId: agenda.pro,
+      modality: "online",
+      startAt: slots[1]!.startAt,
+      endAt: slots[1]!.endAt,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  expect(invalidState).toEqual({ code: "conflict", message: conflictError().message });
+  expect(await getTi121(t, canceledId)).toMatchObject({
+    status: "cancelled_by_student",
+    startsAt: slots[0]!.startAt,
+  });
+
+  const originId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: slots[0]!.startAt,
+    endsAt: slots[0]!.endAt,
+  });
+  const otherStudent = await seedUser(t, {
+    subject: "ti121-est-blocker",
+    email: "ti121-est-blocker@alu.uct.cl",
+    role: "student",
+  });
+  const otherAccompaniment = await t.run(async (ctx) =>
+    ctx.db.insert("accompaniments", {
+      studentId: otherStudent,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "",
+    }),
+  );
+  const blockerId = await seedTi121Appointment(t, {
+    accompanimentId: otherAccompaniment,
+    studentId: otherStudent,
+    professionalId: agenda.pro,
+    startsAt: slots[1]!.startAt,
+    endsAt: slots[1]!.endAt,
+  });
+
+  const occupied = await publicErrorData(
+    asStudent.mutation(api.presentation.appointments.rescheduleAppointment, {
+      appointmentId: originId,
+      professionalId: agenda.pro,
+      modality: "online",
+      startAt: slots[1]!.startAt,
+      endAt: slots[1]!.endAt,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  expect(occupied).toEqual({ code: "conflict", message: conflictError().message });
+  expect(await getTi121(t, originId)).toMatchObject({
+    status: "scheduled",
+    startsAt: slots[0]!.startAt,
+  });
+  expect((await getTi121(t, blockerId))?.startsAt).toBe(slots[1]!.startAt);
+});
+
+test("TI2-121: reagendar fuera de la disponibilidad vigente responde no_availability", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "move-unavailable");
+  await seedTi121Block(t, agenda.pro);
+  const slots = ti121FutureSlots(agenda.pro);
+  const appointmentId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: slots[0]!.startAt,
+    endsAt: slots[0]!.endAt,
+  });
+  const targetStart = slots[1]!.startAt + 2 * TI121_HOUR;
+
+  const result = await publicErrorData(
+    t
+      .withIdentity(agenda.studentIdentity)
+      .mutation(api.presentation.appointments.rescheduleAppointment, {
+        appointmentId,
+        professionalId: agenda.pro,
+        modality: "online",
+        startAt: targetStart,
+        endAt: targetStart + TI121_HOUR,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+  );
+  expect(result).toEqual({
+    code: "no_availability",
+    message: noAvailabilityError().message,
+  });
+  expect(await getTi121(t, appointmentId)).toMatchObject({
+    status: "scheduled",
+    startsAt: slots[0]!.startAt,
+  });
+});
+
+test("TI2-121: el Profesional registra realización e inasistencia y el resto se deniega", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "attendance");
+  await seedTi121DeniedUsers(t);
+  const startsAt = Date.now() - 2 * TI121_HOUR;
+  const base = {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + TI121_HOUR,
+  };
+  const completedId = await seedTi121Appointment(t, base);
+  const noShowId = await seedTi121Appointment(t, base);
+  const pendingId = await seedTi121Appointment(t, base);
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  expect(
+    await asPro.mutation(api.presentation.appointments.recordAppointmentAttendance, {
+      appointmentId: completedId,
+      outcome: "completed",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  ).toEqual({ appointmentId: completedId });
+  expect((await getTi121(t, completedId))?.status).toBe("completed");
+
+  expect(
+    await asPro.mutation(api.presentation.appointments.recordAppointmentAttendance, {
+      appointmentId: noShowId,
+      outcome: "no_show",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  ).toEqual({ appointmentId: noShowId });
+  expect((await getTi121(t, noShowId))?.status).toBe("no_show");
+
+  for (const { label, identity } of ti121DeniedCallers()) {
+    const caller = identity === null ? t : t.withIdentity(identity);
+    const data = await publicErrorData(
+      caller.mutation(api.presentation.appointments.recordAppointmentAttendance, {
+        appointmentId: pendingId,
+        outcome: "completed",
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    );
+    expect({ label, data }).toEqual({
+      label,
+      data: { code: "unauthorized", message: "No autorizado" },
+    });
+  }
+  expect((await getTi121(t, pendingId))?.status).toBe("scheduled");
+
+  const missingId = await ti121MissingAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+  });
+  const asOtherPro = t.withIdentity(identityFor("ti121-pro-denied", "ti121-pro-denied@uct.cl"));
+  const foreign = await publicErrorData(
+    asOtherPro.mutation(api.presentation.appointments.recordAppointmentAttendance, {
+      appointmentId: pendingId,
+      outcome: "completed",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  const missing = await publicErrorData(
+    asOtherPro.mutation(api.presentation.appointments.recordAppointmentAttendance, {
+      appointmentId: missingId,
+      outcome: "completed",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  );
+  expect(foreign).toEqual(missing);
+  expect(foreign).toEqual({ code: "unauthorized", message: "No autorizado" });
+});
+
+test("TI2-121: el registro rechaza estados inválidos y resultados fuera del contrato", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "attendance-invalid");
+  const pastStart = Date.now() - 2 * TI121_HOUR;
+  const base = {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: pastStart,
+    endsAt: pastStart + TI121_HOUR,
+  };
+  const completedId = await seedTi121Appointment(t, { ...base, status: "completed" });
+  const canceledId = await seedTi121Appointment(t, { ...base, status: "cancelled_by_student" });
+  const futureId = await seedTi121Appointment(t, {
+    ...base,
+    startsAt: Date.now() + TI121_DAY,
+    endsAt: Date.now() + TI121_DAY + TI121_HOUR,
+  });
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  for (const appointmentId of [completedId, canceledId, futureId]) {
+    const data = await publicErrorData(
+      asPro.mutation(api.presentation.appointments.recordAppointmentAttendance, {
+        appointmentId,
+        outcome: "no_show",
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    );
+    expect(data).toEqual({ code: "conflict", message: conflictError().message });
+  }
+  expect((await getTi121(t, completedId))?.status).toBe("completed");
+  expect((await getTi121(t, canceledId))?.status).toBe("cancelled_by_student");
+  expect((await getTi121(t, futureId))?.status).toBe("scheduled");
+
+  await expect(
+    asPro.mutation(api.presentation.appointments.recordAppointmentAttendance, {
+      appointmentId: futureId,
+      // @ts-expect-error `no_show_justified` no forma parte del contrato público: la justificación es TI2-119.
+      outcome: "no_show_justified",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  ).rejects.toThrow(/no_show_justified/);
+  expect((await getTi121(t, futureId))?.status).toBe("scheduled");
+});
+
+test("TI2-121: la zona horaria la fija el servidor y no viaja en la entrada", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedTi121Agenda(t, "move-zone");
+  await seedTi121Block(t, agenda.pro);
+  const slots = ti121FutureSlots(agenda.pro);
+  const appointmentId = await seedTi121Appointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: slots[0]!.startAt,
+    endsAt: slots[0]!.endAt,
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+
+  await expect(
+    asStudent.mutation(api.presentation.appointments.rescheduleAppointment, {
+      appointmentId,
+      professionalId: agenda.pro,
+      modality: "online",
+      startAt: slots[1]!.startAt,
+      endAt: slots[1]!.endAt,
+      // @ts-expect-error `timeZone` no forma parte de la entrada: la fija `AGENDA_TIME_ZONE` en el servidor.
+      timeZone: "UTC",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  ).rejects.toThrow(/timeZone/);
+  expect(await getTi121(t, appointmentId)).toMatchObject({
+    status: "scheduled",
+    startsAt: slots[0]!.startAt,
+  });
+
+  const moved = await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, {
+    appointmentId,
+    professionalId: agenda.pro,
+    modality: "online",
+    startAt: slots[1]!.startAt,
+    endAt: slots[1]!.endAt,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(moved).toEqual({ appointmentId });
+  expect(await getTi121(t, appointmentId)).toMatchObject({
+    startsAt: slots[1]!.startAt,
+    status: "rescheduled",
+  });
 });
