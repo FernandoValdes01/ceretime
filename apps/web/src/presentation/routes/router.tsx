@@ -8,6 +8,7 @@ import { DeniedPage } from "./denied-page.tsx";
 import {
   AdminIndexRouteComponent,
   AdminLayoutRouteComponent,
+  AdminSpacesRouteComponent,
   IndexRouteComponent,
   LoginRouteComponent,
   NotFoundRedirect,
@@ -29,7 +30,7 @@ import {
 } from "./route-components.tsx";
 
 /**
- * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, Sprint 1 y 2).
+ * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04, Sprint 1 y 2).
  *
  * - `/` índice: acceso sin sesión (preserva callback OAuth de TI2-3),
  *   portal según sesión y rol, denegado sin portal conocido.
@@ -48,6 +49,9 @@ import {
  *   por rol con portada temporal; sin sesión van al acceso, con otro rol
  *   van a denegado. El portal de Administración no enlaza acompañamientos
  *   ni notas internas.
+ * - `/administrador/espacios`: editor de espacios del Administrador con los
+ *   campos del contrato y guardado simulado (TI2-04); la escritura real del
+ *   catálogo no está entregada (TI2-99 entrega lectura, no escritura).
  * - `/profesional/solicitudes`: bandeja minimizada y tomadas del Profesional
  *   (TI2-91); `/profesional/solicitudes/$requestId`: detalle completo solo
  *   con toma activa, denegado por el Backend en otro caso.
@@ -183,6 +187,12 @@ const adminIndexRoute = createRoute({
   component: AdminIndexRouteComponent,
 });
 
+const adminSpacesRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: "espacios",
+  component: AdminSpacesRouteComponent,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
@@ -202,7 +212,7 @@ const routeTree = rootRoute.addChildren([
     professionalAvailabilityRoute,
   ]),
   practitionerLayoutRoute.addChildren([practitionerIndexRoute]),
-  adminLayoutRoute.addChildren([adminIndexRoute]),
+  adminLayoutRoute.addChildren([adminIndexRoute, adminSpacesRoute]),
 ]);
 
 /** Router de la app; acepta historial inyectado para probar navegación. */

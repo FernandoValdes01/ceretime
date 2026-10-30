@@ -53,6 +53,43 @@ async function openForm() {
 }
 
 describe("Formulario de solicitud del estudiante", () => {
+  test("inicia otra solicitud vacía después de volver al inicio desde el comprobante", async () => {
+    await openForm();
+    fillRequiredStudentRequestFields();
+    fireEvent.press(screen.getByRole("button", { name: "Confirmar y enviar solicitud" }));
+    await screen.findByText("Solicitud enviada");
+    await act(async () => router.navigate("/estudiante"));
+    fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("¿Qué necesidad quieres abordar? *")).toHaveDisplayValue(""),
+    );
+    expect(screen.getByLabelText("¿Qué esperas de CERETI? *")).toHaveDisplayValue("");
+    expect(screen.queryByText("Solicitud enviada")).toBeNull();
+  });
+
+  test("conserva el borrador al volver al inicio antes de enviar", async () => {
+    await openForm();
+    fillStudentRequestNeed();
+    await act(async () => router.navigate("/estudiante"));
+    fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("Me cuesta leer los materiales del curso."),
+      ).toBeOnTheScreen(),
+    );
+  });
+
+  test("conserva el comprobante mientras se consultan las preferencias", async () => {
+    await openForm();
+    fillRequiredStudentRequestFields();
+    fireEvent.press(screen.getByRole("button", { name: "Confirmar y enviar solicitud" }));
+    await screen.findByText("Solicitud enviada");
+    await act(async () => router.push("/preferencias"));
+    await screen.findByText("Preferencias de accesibilidad");
+    await act(async () => router.back());
+    expect(await screen.findByText("Solicitud enviada")).toBeOnTheScreen();
+  });
+
   test.each([
     ["Desde", "Formato HH:MM, por ejemplo 09:00."],
     ["Hasta", "Formato HH:MM, por ejemplo 13:00."],

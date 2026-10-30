@@ -3,18 +3,19 @@ import { Link, Outlet } from "@tanstack/react-router";
 import "./staff-portal.css";
 
 /**
- * Portales del personal con cuenta institucional (TI2-20, TI2-103).
+ * Portales del personal con cuenta institucional (TI2-20, TI2-103, TI2-04).
  *
  * Solo navegación y protección, como el portal del Estudiante de TI2-6: cada
  * layout enlaza su inicio y la sesión, y cada portada es temporal. Las
- * vistas funcionales (bandejas, agenda, administración) llegan en Sprint 2
- * y cuelgan de estos layouts tras el mismo guard.
+ * vistas funcionales (bandejas, agenda, administración) cuelgan de estos
+ * layouts tras el mismo guard.
  *
- * El portal de Administración no enlaza acompañamientos ni notas internas
- * (coherente con la matriz TI2-5, donde el Administrador no lista ni lee
- * esos recursos). El portal del Practicante no enlaza acompañamientos
- * concretos: solo verá los asignados cuando existan las vistas. El portal
- * del Profesional enlaza solicitudes (TI2-91) y disponibilidad (TI2-103).
+ * El portal de Administración enlaza el editor de espacios (TI2-04) y no
+ * enlaza acompañamientos ni notas internas (coherente con la matriz TI2-5,
+ * donde el Administrador no lista ni lee esos recursos). El portal del
+ * Practicante no enlaza acompañamientos concretos: solo verá los asignados
+ * cuando existan las vistas. El portal del Profesional enlaza solicitudes
+ * (TI2-91) y disponibilidad (TI2-103).
  */
 
 function StaffLayout({ title, home }: { title: string; home: ReactNode }) {
@@ -53,7 +54,14 @@ export function PractitionerLayout() {
 
 export function AdminLayout() {
   return (
-    <StaffLayout title="Portal de Administración" home={<Link to="/administrador">Inicio</Link>} />
+    <StaffLayout
+      title="Portal de Administración"
+      home={
+        <>
+          <Link to="/administrador">Inicio</Link> <Link to="/administrador/espacios">Espacios</Link>
+        </>
+      }
+    />
   );
 }
 
@@ -79,7 +87,7 @@ export function AdminHome() {
   return (
     <section aria-labelledby="admin-home-title">
       <h1 id="admin-home-title">Portal de Administración</h1>
-      <p>La gestión administrativa estará disponible aquí.</p>
+      <p>Gestiona los espacios de atención desde el editor de espacios.</p>
     </section>
   );
 }
