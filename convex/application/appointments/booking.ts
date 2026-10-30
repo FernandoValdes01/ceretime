@@ -2,7 +2,6 @@ import {
   expandAvailabilitySlots,
   type AvailabilitySlot,
 } from "../../domain/availability/availability";
-import { isProfessionalBookable } from "../../domain/authorization/permissions";
 import {
   conflictError,
   errResult,
@@ -12,7 +11,11 @@ import {
 } from "../../domain/errors/api_error";
 import type { ModalityPreference } from "../../domain/requests/request";
 import { assessCompatibility } from "../../domain/spaces/compatibility";
-import { authorizeAppointmentBook, type AuthorizationReader } from "../authorization/authorize";
+import {
+  authorizeAppointmentBook,
+  isBookableProfessional,
+  type AuthorizationReader,
+} from "../authorization/authorize";
 import { isValidTimeZone, resolveCompatibilityOption } from "../availability/availability";
 import type {
   AccompanimentNeedsReader,
@@ -215,24 +218,11 @@ export async function resolveBookableSlot(
     return conflict();
   }
 
-  const [professionalProfile, professionalAssignments] = await Promise.all([
-    deps.auth.getProfileById(input.professionalId),
-    deps.auth.findActiveAssignments(input.accompanimentId, input.professionalId),
-  ]);
   if (
-    professionalProfile === null ||
-    !isProfessionalBookable({
-      role: professionalProfile.role,
-      institutionalStatus: professionalProfile.institutionalStatus,
-      accountStatus: professionalProfile.accountStatus,
-      hasActiveProfessionalAssignment: professionalAssignments.some(
-        (assignment) =>
-          assignment.accompanimentId === input.accompanimentId &&
-          assignment.userId === professionalProfile._id &&
-          assignment.assignedRole === "professional" &&
-          assignment.status === "active",
-      ),
-    })
+    !(await isBookableProfessional(deps.auth, {
+      accompanimentId: input.accompanimentId,
+      professionalId: input.professionalId,
+    }))
   ) {
     return noAvailability();
   }

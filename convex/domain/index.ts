@@ -107,6 +107,7 @@ export type { ApiErrorCode, ApiResult, PublicApiError } from "./errors/api_error
 
 // Disponibilidad: entradas y salidas mínimas con identificadores genéricos (TI2-87).
 export {
+  AGENDA_TIME_ZONE,
   AVAILABILITY_CONTRACT_VERSION,
   AVAILABILITY_EXCEPTION_KIND_VALUES,
 } from "./availability/availability";

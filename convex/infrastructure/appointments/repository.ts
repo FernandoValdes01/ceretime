@@ -368,3 +368,95 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
     },
   };
 }
+
+// ── TI2-111: adaptadores de los puertos de búsqueda y reserva ───────────────
+//
+// Cumplen por forma `SlotOccupancyReader` (TI2-97) y `AppointmentOccupier`
+// (TI2-84) sin importar Aplicación. Traducen el vocabulario del contrato
+// (`startAt`/`endAt` e identificadores de texto) al de este repositorio.
+
+/**
+ * Ocupación para la búsqueda: el cupo está ocupado cuando el profesional, el
+ * estudiante o la sala ya tienen una atención que lo cruza, los mismos
+ * recursos y la misma lectura por ventana que `occupySlotAtomically`. Una
+ * ventana sobre el tope o un identificador que no es de su tabla cuentan como
+ * ocupados, así la búsqueda no ofrece un cupo que la reserva rechazaría.
+ */
+export function slotOccupancyReader(ctx: DbReader) {
+  return {
+    isSlotOccupied: async (slot: {
+      readonly professionalId: string;
+      readonly studentId: string;
+      readonly spaceId?: string;
+      readonly startAt: number;
+      readonly endAt: number;
+    }) => {
+      const professionalId = ctx.db.normalizeId("users", slot.professionalId);
+      const studentId = ctx.db.normalizeId("users", slot.studentId);
+      const spaceId =
+        slot.spaceId === undefined ? undefined : ctx.db.normalizeId("spaces", slot.spaceId);
+      if (professionalId === null || studentId === null || spaceId === null) return true;
+      const resources: OccupiedResource[] = [
+        { kind: "professional", id: professionalId },
+        { kind: "student", id: studentId },
+      ];
+      if (spaceId !== undefined) {
+        resources.push({ kind: "space", id: spaceId });
+      }
+      const interval = { startsAt: slot.startAt, endsAt: slot.endAt };
+      for (const resource of resources) {
+        if (await isResourceTaken(ctx, resource, interval, null)) return true;
+      }
+      return false;
+    },
+  };
+}
+
+/**
+ * Escritura atómica para la reserva sobre `occupySlotAtomically`. Un
+ * identificador que no es de su tabla responde `conflict` sin escribir, en
+ * vez de llegar a la base con otra forma.
+ */
+export function appointmentOccupier(ctx: MutationCtx) {
+  return {
+    occupySlot: async (slot: {
+      readonly accompanimentId: string;
+      readonly studentId: string;
+      readonly professionalId: string;
+      readonly modality: Doc<"appointments">["modality"];
+      readonly spaceId?: string;
+      readonly startAt: number;
+      readonly endAt: number;
+      readonly movedAppointmentId?: string;
+    }): Promise<ApiResult<{ appointmentId: string }>> => {
+      const accompanimentId = ctx.db.normalizeId("accompaniments", slot.accompanimentId);
+      const studentId = ctx.db.normalizeId("users", slot.studentId);
+      const professionalId = ctx.db.normalizeId("users", slot.professionalId);
+      const spaceId =
+        slot.spaceId === undefined ? undefined : ctx.db.normalizeId("spaces", slot.spaceId);
+      const movedAppointmentId =
+        slot.movedAppointmentId === undefined
+          ? undefined
+          : ctx.db.normalizeId("appointments", slot.movedAppointmentId);
+      if (
+        accompanimentId === null ||
+        studentId === null ||
+        professionalId === null ||
+        spaceId === null ||
+        movedAppointmentId === null
+      ) {
+        return errResult(conflictError());
+      }
+      return await occupySlotAtomically(ctx, {
+        accompanimentId,
+        studentId,
+        professionalId,
+        modality: slot.modality,
+        ...(spaceId === undefined ? {} : { spaceId }),
+        startsAt: slot.startAt,
+        endsAt: slot.endAt,
+        ...(movedAppointmentId === undefined ? {} : { movedAppointmentId }),
+      });
+    },
+  };
+}

@@ -15,6 +15,16 @@ export const AVAILABILITY_CONTRACT_VERSION = "v1" as const;
 
 export type AvailabilityContractVersion = typeof AVAILABILITY_CONTRACT_VERSION;
 
+/**
+ * Zona horaria de la agenda (decisión provisional de TI2-111): CERETI atiende
+ * en la UCT de Temuco. Los bloques guardan minutos del día en esta zona, y la
+ * búsqueda y la reserva expanden siempre con ella en el servidor, nunca con
+ * una zona enviada por el cliente: otra zona correría los cupos fuera del
+ * horario publicado. Se reemplaza si algún día se guarda la zona de cada
+ * profesional.
+ */
+export const AGENDA_TIME_ZONE = "America/Santiago";
+
 /** Clases de excepción sobre la recurrencia, fuente única para contratos y reglas. */
 export const AVAILABILITY_EXCEPTION_KIND_VALUES = ["cancelled", "added"] as const;
 

@@ -3,12 +3,19 @@ import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import type { AvailabilityReader, AvailabilityWriter } from "../application/availability/ports";
+import type {
+  AccompanimentNeedsReader,
+  AvailabilityReader,
+  AvailabilityWriter,
+  CompatibilitySpaceSource,
+} from "../application/availability/ports";
 import type { SpaceReader } from "../application/spaces/ports";
 import { expandAvailabilitySlots } from "../domain/availability/availability";
 import { toAccompanimentRequest } from "../domain/requests/request";
 import { transitionRequest } from "../domain/requests/transition_policy";
+import { assessCompatibility } from "../domain/spaces/compatibility";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
+import { accompanimentNeedsReader } from "../infrastructure/accompaniments/repository";
 import {
   availabilityReader,
   availabilityWriter,
@@ -16,6 +23,8 @@ import {
   MAX_EXCEPTIONS_IN_RANGE,
 } from "../infrastructure/availability/repository";
 import {
+  accessNeedsFromLines,
+  compatibilitySpaceSource,
   findSpaceRowByLocation,
   getSpaceRow,
   insertSpace,
@@ -2560,5 +2569,122 @@ test("repositorio de espacios TI2-95: el puerto técnico entrega el contrato Spa
     expect(await reader.getSpace(proA)).toBe(null);
     expect(await reader.getSpace("no-es-un-id")).toBe(null);
     expect(await reader.findSpaceByLocation({ ...TI95_C204, room: "C-206" })).toBe(null);
+  });
+});
+
+// ── TI2-111: necesidades y condiciones como líneas de texto ──────────────────
+//
+// Decisión provisional de TI2-111: cada línea guardada es una necesidad con
+// su texto como identificador, y una sala cubre solo las líneas que repite.
+// Estas pruebas fijan esa traducción y que nunca rebaja una necesidad.
+
+test("TI2-111: cada línea del texto guardado es una necesidad, sin vacías ni repetidas", () => {
+  expect(accessNeedsFromLines("  Sala físicamente accesible \n\nPersona de apoyo\r\n")).toEqual([
+    { id: "Sala físicamente accesible", label: "Sala físicamente accesible" },
+    { id: "Persona de apoyo", label: "Persona de apoyo" },
+  ]);
+  expect(accessNeedsFromLines("Persona de apoyo\nPersona de apoyo")).toHaveLength(1);
+  expect(accessNeedsFromLines("   \n")).toEqual([]);
+  // El texto libre de la solicitud también es una necesidad: no se descarta.
+  expect(accessNeedsFromLines("Necesidad descrita con palabras propias")).toEqual([
+    {
+      id: "Necesidad descrita con palabras propias",
+      label: "Necesidad descrita con palabras propias",
+    },
+  ]);
+});
+
+test("TI2-111: los adaptadores entregan necesidades y salas vigentes con la misma traducción", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, {
+    subject: "ti111-db-est-1",
+    email: "ti111-db-est-1@alu.uct.cl",
+    role: "student",
+  });
+  const accompanimentId = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Sala físicamente accesible\nPersona de apoyo",
+    });
+  });
+  const roomFields = {
+    campus: "Campus ficticio",
+    building: "B",
+    floor: "1",
+    accessInstructions: "Instrucción de llegada ficticia",
+  };
+  const coveringRoom = await t.run(async (ctx) => {
+    return await ctx.db.insert("spaces", {
+      ...roomFields,
+      room: "Cubre todo",
+      accessConditions: "Persona de apoyo\nSala físicamente accesible\nReducción de estímulos",
+      isActive: true,
+    });
+  });
+  const partialRoom = await t.run(async (ctx) => {
+    return await ctx.db.insert("spaces", {
+      ...roomFields,
+      room: "Cubre una",
+      accessConditions: "Sala físicamente accesible",
+      isActive: true,
+    });
+  });
+  const retiredRoom = await t.run(async (ctx) => {
+    return await ctx.db.insert("spaces", {
+      ...roomFields,
+      room: "Retirada",
+      accessConditions: "Sala físicamente accesible\nPersona de apoyo",
+      isActive: false,
+    });
+  });
+
+  const result = await t.run(async (ctx) => {
+    const needsReader: AccompanimentNeedsReader = accompanimentNeedsReader(ctx);
+    const spaces: CompatibilitySpaceSource = compatibilitySpaceSource(ctx);
+    const entry = await needsReader.findAccompanimentNeeds(accompanimentId);
+    if (entry === null) throw new Error("Se esperaban necesidades");
+    const decide = async (spaceId: string) => {
+      const space = await spaces.findCompatibilitySpace(spaceId);
+      return space === null
+        ? "sin sala"
+        : assessCompatibility(entry.needs, { modality: "inPerson", space }).compatible;
+    };
+    return {
+      entry,
+      ajena: await needsReader.findAccompanimentNeeds(studentId),
+      inexistente: await needsReader.findAccompanimentNeeds("no-existe"),
+      cubreTodo: await decide(coveringRoom),
+      cubreUna: await decide(partialRoom),
+      retirada: await decide(retiredRoom),
+      otraTabla: await decide(accompanimentId),
+      enLinea: assessCompatibility(entry.needs, {
+        modality: "online",
+        onlineSupports: await spaces.listOnlineSupports(),
+      }).compatible,
+      enLineaSinNecesidades: assessCompatibility([], {
+        modality: "online",
+        onlineSupports: await spaces.listOnlineSupports(),
+      }).compatible,
+    };
+  });
+
+  expect(result.entry).toEqual({
+    _id: accompanimentId,
+    needs: [
+      { id: "Sala físicamente accesible", label: "Sala físicamente accesible" },
+      { id: "Persona de apoyo", label: "Persona de apoyo" },
+    ],
+  });
+  expect(result).toMatchObject({
+    ajena: null,
+    inexistente: null,
+    cubreTodo: true,
+    cubreUna: false,
+    retirada: "sin sala",
+    otraTabla: "sin sala",
+    enLinea: false,
+    enLineaSinNecesidades: true,
   });
 });
