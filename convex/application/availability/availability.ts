@@ -6,7 +6,6 @@ import {
   type AvailabilitySlot,
   type AvailabilitySlotPage,
 } from "../../domain/availability/availability";
-import { isProfessionalBookable } from "../../domain/authorization/permissions";
 import {
   conflictError,
   errResult,
@@ -20,6 +19,7 @@ import { assessCompatibility, type CompatibilityOption } from "../../domain/spac
 import {
   authorizeAvailabilityEdit,
   authorizeAvailabilityRead,
+  isBookableProfessional,
   type AuthorizationReader,
 } from "../authorization/authorize";
 import type {
@@ -274,39 +274,6 @@ export async function resolveCompatibilityOption(
 }
 
 /**
- * Verdadero cuando el profesional buscado podría atender la reserva: rol
- * profesional, cuenta habilitada y vigente, y asignación activa en este
- * acompañamiento. Es la misma regla de dominio que revalida la reserva de
- * TI2-98, así la búsqueda no expone la agenda de quien no atiende el
- * acompañamiento ni ofrece cupos que la reserva rechazaría (TI2-111).
- */
-async function isBookableProfessional(
-  auth: AuthorizationReader,
-  accompanimentId: string,
-  professionalId: string,
-): Promise<boolean> {
-  const [profile, assignments] = await Promise.all([
-    auth.getProfileById(professionalId),
-    auth.findActiveAssignments(accompanimentId, professionalId),
-  ]);
-  return (
-    profile !== null &&
-    isProfessionalBookable({
-      role: profile.role,
-      institutionalStatus: profile.institutionalStatus,
-      accountStatus: profile.accountStatus,
-      hasActiveProfessionalAssignment: assignments.some(
-        (assignment) =>
-          assignment.accompanimentId === accompanimentId &&
-          assignment.userId === profile._id &&
-          assignment.assignedRole === "professional" &&
-          assignment.status === "active",
-      ),
-    })
-  );
-}
-
-/**
  * Consulta cupos compatibles para un acompañamiento activo.
  *
  * Autoriza con TI2-86 (acompañamiento activo con pertenencia o asignación
@@ -342,7 +309,12 @@ export async function searchAvailabilitySlots(
   if (grant.status === "error") return denied();
   // Un profesional no asignado, revocado o sin cuenta vigente responde igual
   // que uno sin cupos, antes de leer su disponibilidad.
-  if (!(await isBookableProfessional(deps.auth, input.accompanimentId, input.professionalId))) {
+  if (
+    !(await isBookableProfessional(deps.auth, {
+      accompanimentId: input.accompanimentId,
+      professionalId: input.professionalId,
+    }))
+  ) {
     return errResult(noAvailabilityError());
   }
 
