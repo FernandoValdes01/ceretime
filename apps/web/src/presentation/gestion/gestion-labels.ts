@@ -1,4 +1,4 @@
-import { REQUEST_STATE_LABELS } from "../../../../../convex/domain/index.ts";
+import { AGENDA_TIME_ZONE, REQUEST_STATE_LABELS } from "../../../../../convex/domain/index.ts";
 import type { AppointmentRejectionCause } from "../../../../../convex/domain/index.ts";
 
 /**
@@ -81,15 +81,20 @@ export function appointmentChangeLabel(to: string): string {
   return APPOINTMENT_CHANGE_LABELS[to] ?? appointmentStatusLabel(to);
 }
 
+// Las fechas se muestran en la zona de la agenda del dominio y no en la del
+// navegador: así el Profesional ve la misma hora que publicó y que revalida
+// el Backend, aunque abra la agenda desde otra zona.
 const APPOINTMENT_WINDOW_FORMAT = new Intl.DateTimeFormat("es-CL", {
   weekday: "long",
   day: "numeric",
   month: "long",
+  timeZone: AGENDA_TIME_ZONE,
 });
 
 const APPOINTMENT_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", {
   hour: "numeric",
   minute: "2-digit",
+  timeZone: AGENDA_TIME_ZONE,
 });
 
 /** Fecha y hora legible de una atención (epoch en milisegundos). */

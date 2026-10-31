@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { AgendaPort } from "../../application/agenda/agenda-port.ts";
+import { formatAppointmentInstant, formatAppointmentWindow } from "./gestion-labels.ts";
 import { setAgendaPortForTests } from "./professional-agenda-data.ts";
 
 /**
@@ -399,6 +400,16 @@ describe("detalles visibles con contrato conservado (TI2-115)", () => {
 
     expect(await screen.findByText("Cancelada por CERETI")).toBeDefined();
     expect(screen.getByText("Jornada de capacitación del equipo.")).toBeDefined();
+  });
+
+  test("las fechas se leen en la zona de la agenda y no en la del navegador", () => {
+    // 14:00 UTC es 10:00 en Santiago; 02:30 UTC del 13 sigue siendo el 12 allá.
+    expect(formatAppointmentWindow(ATENCION_BASE.startAt, ATENCION_BASE.endAt)).toMatch(
+      /^martes, 12 de mayo, 10:00\sa\.\sm\.\s–\s11:00\sa\.\sm\.$/u,
+    );
+    expect(formatAppointmentInstant(Date.UTC(2026, 4, 13, 2, 30))).toMatch(
+      /^martes, 12 de mayo, 10:30\sp\.\sm\.$/u,
+    );
   });
 });
 
