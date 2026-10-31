@@ -291,5 +291,7 @@ export default defineSchema({
     // cruces por sala.
     .index("by_spaceId_and_startsAt", ["spaceId", "startsAt"])
     // Atenciones del acompañamiento.
-    .index("by_accompanimentId", ["accompanimentId"]),
+    .index("by_accompanimentId", ["accompanimentId"])
+    // Atenciones del acompañamiento por rango de inicio, sin filtrar en memoria.
+    .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"]),
 });

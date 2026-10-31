@@ -325,6 +325,17 @@ function civilWeekday(date: string): number {
   return (((days + 4) % 7) + 7) % 7;
 }
 
+/** Días civiles que cubre un rango inclusivo, idéntico en todas las zonas horarias. */
+function civilSpanDays(from: string, to: string): number {
+  const start = civilDateParts(from);
+  const end = civilDateParts(to);
+  const days =
+    (Date.UTC(end.year, end.month - 1, end.day) -
+      Date.UTC(start.year, start.month - 1, start.day)) /
+    86_400_000;
+  return Math.round(days) + 1;
+}
+
 /** Fechas civiles del rango inclusivo, en orden, como textos `YYYY-MM-DD`. */
 function eachCivilDate(from: string, to: string): string[] {
   const dates: string[] = [];
@@ -464,15 +475,7 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
   if (input.from > input.to) {
     throw new Error("El fin del rango de expansión es anterior a su inicio.");
   }
-  const rangeStart = civilDateParts(input.from);
-  const rangeEnd = civilDateParts(input.to);
-  const spanDays =
-    Math.round(
-      (Date.UTC(rangeEnd.year, rangeEnd.month - 1, rangeEnd.day) -
-        Date.UTC(rangeStart.year, rangeStart.month - 1, rangeStart.day)) /
-        86_400_000,
-    ) + 1;
-  if (spanDays > MAX_EXPANSION_DAYS) {
+  if (civilSpanDays(input.from, input.to) > MAX_EXPANSION_DAYS) {
     throw new Error(`El rango de expansión supera el máximo de ${MAX_EXPANSION_DAYS} días.`);
   }
   try {
@@ -524,4 +527,37 @@ export function expandAvailabilitySlots(input: ExpandAvailabilityInput): Availab
   }
   slots.sort(compareSlots);
   return slots;
+}
+
+/** Intervalo `[startAt, endAt)` en milisegundos epoch: incluye el inicio y excluye el fin. */
+export interface InstantRange {
+  readonly startAt: number;
+  readonly endAt: number;
+}
+
+/**
+ * Convierte un rango civil inclusivo de hasta `MAX_EXPANSION_DAYS` días al intervalo de instantes `[inicio, fin)` de la zona horaria dada.
+ *
+ * El fin es la medianoche que cierra el último día, la misma que abre el día siguiente: dos rangos contiguos no dejan huecos ni se solapan, aunque un cambio de hora vuelva inexistente esa medianoche. Entonces la hora previa al cambio pertenece al día que empieza con él.
+ *
+ * Rechaza fechas inválidas, rango invertido o mayor al máximo y zonas horarias desconocidas.
+ */
+export function civilRangeToInstantRange(input: {
+  readonly from: string;
+  readonly to: string;
+  readonly timeZone: string;
+}): InstantRange {
+  if (!isValidCivilDate(input.from) || !isValidCivilDate(input.to)) {
+    throw new Error("El rango civil requiere fechas válidas YYYY-MM-DD.");
+  }
+  if (input.from > input.to) {
+    throw new Error("El fin del rango civil es anterior a su inicio.");
+  }
+  if (civilSpanDays(input.from, input.to) > MAX_EXPANSION_DAYS) {
+    throw new Error(`El rango civil supera el máximo de ${MAX_EXPANSION_DAYS} días.`);
+  }
+  return {
+    startAt: civilToEpochMs(input.from, DAY_START_MINUTE, input.timeZone),
+    endAt: civilToEpochMs(input.to, DAY_END_MINUTE, input.timeZone),
+  };
 }
