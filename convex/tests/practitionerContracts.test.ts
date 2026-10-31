@@ -1,8 +1,10 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import { ConvexError } from "convex/values";
 import { expect, test } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { unauthorizedError } from "../domain/errors/api_error";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -91,7 +93,7 @@ async function seedCriticalPathWithIntern(t: ReturnType<typeof convexTest>, pref
     email: `${studentSubject}@alu.uct.cl`,
     role: "student",
   });
-  await seedUser(t, {
+  const proId = await seedUser(t, {
     subject: proSubject,
     email: `${proSubject}@uct.cl`,
     role: "professional",
@@ -119,7 +121,16 @@ async function seedCriticalPathWithIntern(t: ReturnType<typeof convexTest>, pref
     assignedRole: "intern",
   });
 
-  return { requestId, accompanimentId, internId, proSubject, internSubject, opened, studentId };
+  return {
+    requestId,
+    accompanimentId,
+    internId,
+    proId,
+    proSubject,
+    internSubject,
+    opened,
+    studentId,
+  };
 }
 
 /**
@@ -434,4 +445,155 @@ test("apertura única no duplica ante aceptación repetida", async () => {
   expect(await countAccompanimentsFor(t, requestId)).toBe(1);
   const accepted = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(accepted?.status).toBe("accepted");
+});
+
+// TI2-112: el Practicante lee atenciones solo por acompañamiento asignado. Un
+// `ConvexError` con objeto pone el JSON en `message`, así que el error público
+// se compara en `data` y no con `DENIED`.
+
+const TI112_WEEK = { from: "2026-07-06", to: "2026-07-12", limit: 10, version: "v1" as const };
+
+const TI112_MINIMIZED_KEYS = ["endAt", "id", "modality", "startAt", "status", "view"];
+
+/** Datos del error público lanzado, o falla si la operación fue permitida. */
+async function ti112PublicError(promise: Promise<unknown>) {
+  return await promise.then(
+    () => {
+      throw new Error("Se esperaba denegación y la operación fue permitida");
+    },
+    (error: unknown) => (error instanceof ConvexError ? error.data : error),
+  );
+}
+
+/** Atención con todos los datos que la vista minimizada debe recortar. */
+async function ti112SeedAppointment(
+  t: ReturnType<typeof convexTest>,
+  path: Awaited<ReturnType<typeof seedCriticalPathWithIntern>>,
+) {
+  return await t.run(async (ctx) => {
+    const spaceId = await ctx.db.insert("spaces", {
+      campus: "Campus ficticio",
+      building: "A",
+      floor: "1",
+      room: "Sala ficticia",
+      accessConditions: "Sala físicamente accesible",
+      accessInstructions: "Instrucciones ficticias",
+      isActive: true,
+    });
+    return await ctx.db.insert("appointments", {
+      accompanimentId: path.accompanimentId,
+      studentId: path.studentId,
+      professionalId: path.proId,
+      spaceId,
+      modality: "inPerson",
+      status: "cancelled_by_cereti",
+      startsAt: Date.UTC(2026, 6, 7, 14),
+      endsAt: Date.UTC(2026, 6, 7, 15),
+      originalStartsAt: Date.UTC(2026, 6, 6, 14),
+      cancelReason: "Motivo ficticio",
+      createdAt: 1,
+    });
+  });
+}
+
+test("TI2-112: el Practicante asignado lista y lee la atención minimizada con claves exactas", async () => {
+  const t = convexTest(schema, modules);
+  const path = await seedCriticalPathWithIntern(t, "ti112-1");
+  const appointmentId = await ti112SeedAppointment(t, path);
+  const asIntern = t.withIdentity(
+    identityFor(path.internSubject, `${path.internSubject}@alu.uct.cl`),
+  );
+
+  const page = await asIntern.query(api.presentation.appointments.listAppointments, {
+    ...TI112_WEEK,
+    accompanimentId: path.accompanimentId,
+  });
+  expect(page.items).toHaveLength(1);
+  const detail = await asIntern.query(api.presentation.appointments.getAppointment, {
+    appointmentId,
+    version: "v1",
+  });
+  for (const view of [page.items[0], detail]) {
+    expect(Object.keys(view ?? {}).sort()).toEqual(TI112_MINIMIZED_KEYS);
+    expect(view).toStrictEqual({
+      id: appointmentId,
+      status: "cancelled_by_cereti",
+      startAt: Date.UTC(2026, 6, 7, 14),
+      endAt: Date.UTC(2026, 6, 7, 15),
+      modality: "inPerson",
+      view: "minimized",
+    });
+  }
+});
+
+test("TI2-112: el Practicante no tiene agenda propia", async () => {
+  const t = convexTest(schema, modules);
+  const path = await seedCriticalPathWithIntern(t, "ti112-2");
+  await ti112SeedAppointment(t, path);
+  const asIntern = t.withIdentity(
+    identityFor(path.internSubject, `${path.internSubject}@alu.uct.cl`),
+  );
+  expect(
+    await ti112PublicError(
+      asIntern.query(api.presentation.appointments.listAppointments, TI112_WEEK),
+    ),
+  ).toStrictEqual(unauthorizedError());
+});
+
+test("TI2-112: una atención de un acompañamiento no asignado se rechaza sin filtrar el id", async () => {
+  const t = convexTest(schema, modules);
+  const path = await seedCriticalPathWithIntern(t, "ti112-3");
+  const other = await seedCriticalPathWithIntern(t, "ti112-4");
+  const otherAppointmentId = await ti112SeedAppointment(t, other);
+  const asIntern = t.withIdentity(
+    identityFor(path.internSubject, `${path.internSubject}@alu.uct.cl`),
+  );
+
+  const calls = [
+    asIntern.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      accompanimentId: other.accompanimentId,
+    }),
+    asIntern.query(api.presentation.appointments.getAppointment, {
+      appointmentId: otherAppointmentId,
+      version: "v1",
+    }),
+  ];
+  for (const call of calls) {
+    const data = await ti112PublicError(call);
+    expect(data).toStrictEqual(unauthorizedError());
+    expect(JSON.stringify(data)).not.toContain(other.accompanimentId);
+    expect(JSON.stringify(data)).not.toContain(otherAppointmentId);
+  }
+});
+
+test("TI2-112: la revocación corta la lista y el detalle del Practicante en la llamada siguiente", async () => {
+  const t = convexTest(schema, modules);
+  const path = await seedCriticalPathWithIntern(t, "ti112-5");
+  const appointmentId = await ti112SeedAppointment(t, path);
+  const asIntern = t.withIdentity(
+    identityFor(path.internSubject, `${path.internSubject}@alu.uct.cl`),
+  );
+  const list = () =>
+    asIntern.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      accompanimentId: path.accompanimentId,
+    });
+  const detail = () =>
+    asIntern.query(api.presentation.appointments.getAppointment, {
+      appointmentId,
+      version: "v1",
+    });
+  expect((await list()).items).toHaveLength(1);
+  expect((await detail()).view).toBe("minimized");
+
+  const asPro = t.withIdentity(identityFor(path.proSubject, `${path.proSubject}@uct.cl`));
+  await asPro.mutation(internal.operations.assignments.revoke, {
+    accompanimentId: path.accompanimentId,
+    userId: path.internId,
+    assignedRole: "intern",
+  });
+
+  expect(await ti112PublicError(list())).toStrictEqual(unauthorizedError());
+  expect(await ti112PublicError(detail())).toStrictEqual(unauthorizedError());
 });
