@@ -15,6 +15,7 @@ import type * as application_appointments_booking from "../application/appointme
 import type * as application_appointments_changes from "../application/appointments/changes.js";
 import type * as application_appointments_commands from "../application/appointments/commands.js";
 import type * as application_appointments_occupancy from "../application/appointments/occupancy.js";
+import type * as application_appointments_queries from "../application/appointments/queries.js";
 import type * as application_authorization_authorize from "../application/authorization/authorize.js";
 import type * as application_availability_availability from "../application/availability/availability.js";
 import type * as application_availability_ports from "../application/availability/ports.js";
@@ -82,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   "application/appointments/changes": typeof application_appointments_changes;
   "application/appointments/commands": typeof application_appointments_commands;
   "application/appointments/occupancy": typeof application_appointments_occupancy;
+  "application/appointments/queries": typeof application_appointments_queries;
   "application/authorization/authorize": typeof application_authorization_authorize;
   "application/availability/availability": typeof application_availability_availability;
   "application/availability/ports": typeof application_availability_ports;
