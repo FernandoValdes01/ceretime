@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import { SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
 import schema from "../schema";
 
@@ -19,6 +19,9 @@ async function snapshot(t: ReturnType<typeof convexTest>) {
     transitions: await ctx.db.query("requestTransitions").collect(),
     accompaniments: await ctx.db.query("accompaniments").collect(),
     assignments: await ctx.db.query("accompanimentAssignments").collect(),
+    spaces: await ctx.db.query("spaces").collect(),
+    availabilityBlocks: await ctx.db.query("availabilityBlocks").collect(),
+    appointments: await ctx.db.query("appointments").collect(),
   }));
 }
 
@@ -84,6 +87,15 @@ test("carga una solicitud por estado del Sprint 1 y un acompañamiento con Pract
       .map((assignment) => assignment.assignedRole)
       .sort(),
   ).toEqual(["intern", "professional"]);
+
+  expect(data.spaces.length).toBeGreaterThan(0);
+  expect(data.availabilityBlocks.length).toBeGreaterThan(0);
+  expect(data.appointments.map((a) => a.status).sort()).toEqual([
+    "cancelled_by_student",
+    "completed",
+    "no_show",
+    "scheduled",
+  ]);
 });
 
 test("una segunda carga no escribe nada", async () => {
@@ -94,4 +106,54 @@ test("una segunda carga no escribe nada", async () => {
 
   expect(await t.mutation(internal.operations.fictitiousData.load, {})).toEqual({ loaded: false });
   expect(await snapshot(t)).toEqual(first);
+});
+
+test("consultas por rol respetan aislamiento sobre el dataset cargado", async () => {
+  vi.stubEnv("TEST_SEEDS_ENABLED", "true");
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.operations.fictitiousData.load, {});
+
+  // Estudiante propio (Estudiante Cuatro, dueño del acompañamiento y atenciones)
+  const asStudent = t.withIdentity({
+    issuer: "dataset-ficticio",
+    subject: "estudiante-4",
+    tokenIdentifier: "dataset-ficticio|estudiante-4",
+  });
+  const studentAccompaniment = await asStudent.query(
+    api.presentation.accompaniments.getAccompaniment,
+    {
+      accompanimentId: (await t.run(
+        async (ctx) => (await ctx.db.query("accompaniments").first())?._id,
+      ))!,
+    },
+  );
+  expect(studentAccompaniment.view).toBe("full");
+
+  // Profesional asignado
+  const asProfessional = t.withIdentity({
+    issuer: "dataset-ficticio",
+    subject: "profesional-1",
+    tokenIdentifier: "dataset-ficticio|profesional-1",
+  });
+  const proAccompaniment = await asProfessional.query(
+    api.presentation.accompaniments.getAccompaniment,
+    {
+      accompanimentId: studentAccompaniment._id,
+    },
+  );
+  expect(proAccompaniment.view).toBe("full");
+
+  // Practicante asignado (ve vista minimizada o según asignación)
+  const asIntern = t.withIdentity({
+    issuer: "dataset-ficticio",
+    subject: "practicante-1",
+    tokenIdentifier: "dataset-ficticio|practicante-1",
+  });
+  const internAccompaniment = await asIntern.query(
+    api.presentation.accompaniments.getAccompaniment,
+    {
+      accompanimentId: studentAccompaniment._id,
+    },
+  );
+  expect(internAccompaniment.view).toBe("minimized");
 });
