@@ -9,18 +9,19 @@ import {
   type AvailabilitySlot,
   type AvailabilityWindow,
   type PublicApiError,
+  type Space,
 } from "../../../../../convex/domain/index.ts";
 
 /**
  * Contrato de capacidades de agenda del cliente Web (TI2-101, TI2-102,
- * TI2-103, TI2-115).
+ * TI2-103, TI2-04, TI2-115).
  *
  * Es únicamente el contrato para poder sustituir el adaptador ficticio por
  * la API real (TI2-123/TI2-125): deriva tipos compartidos y no implementa
  * reglas de disponibilidad, cruces, transiciones ni autorización. TI2-102
  * extiende este mismo archivo con la reserva, TI2-103 con bloques y
- * excepciones y TI2-115 con la agenda del Profesional; no crear otro puerto
- * por operación.
+ * excepciones, TI2-04 con espacios y TI2-115 con la agenda del Profesional;
+ * no crear otro puerto por operación.
  */
 
 /** Filtro de modalidad de la búsqueda; `all` es solo vista del cliente. */
@@ -117,6 +118,32 @@ export type SaveExceptionResult =
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
 
+/**
+ * Entrada del editor de espacios (TI2-04): campos del contrato del catálogo
+ * sin identidad propia ni versión. El adaptador vigente asigna `id` y
+ * `version`; el identificador opcional solo referencia qué espacio ficticio
+ * se actualiza y nunca prueba propiedad ni autorización del cliente.
+ */
+export type SaveSpaceInput = Pick<
+  Space,
+  "campus" | "building" | "floor" | "room" | "accessConditions" | "arrivalInstructions"
+> & {
+  readonly id?: string;
+};
+
+/** Lectura simulada del catálogo de espacios visible al Administrador. */
+export type ListSpacesResult =
+  | { readonly status: "ok"; readonly spaces: ReadonlyArray<Space> }
+  | { readonly status: "empty" }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly message: string };
+
+/** Guardado simulado de un espacio: éxito tipado o error público compartido. */
+export type SaveSpaceResult =
+  | { readonly status: "saved"; readonly space: Space }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly error: PublicApiError };
+
 /** Ventana del editor derivada del contrato, sin duplicar su forma. */
 export type EditorWindow = AvailabilityWindow;
 
@@ -196,4 +223,6 @@ export interface AgendaPort {
   changeAppointmentStatus(
     input: ChangeAppointmentStatusInput,
   ): Promise<ChangeAppointmentStatusResult>;
+  listSpaces(): Promise<ListSpacesResult>;
+  saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult>;
 }

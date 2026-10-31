@@ -1,5 +1,6 @@
 import {
   transitionAppointment,
+  type AppointmentAttendanceOutcome,
   type AppointmentStatus,
 } from "../../domain/appointments/appointment";
 import {
@@ -10,6 +11,7 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import {
+  authorizeAppointmentAttendance,
   authorizeAppointmentCancel,
   authorizeAppointmentReschedule,
   type AuthorizableAppointment,
@@ -24,7 +26,8 @@ import {
 import type { AppointmentOccupier } from "./occupancy";
 
 /**
- * Casos de uso de cancelación y reagendamiento de una atención (TI2-109).
+ * Casos de uso de cambio de una atención: cancelación y reagendamiento
+ * (TI2-109) y registro de realización o inasistencia (TI2-110).
  *
  * Capa de Aplicación: autoriza la atención concreta (TI2-86), aplica la
  * política de estados de TI2-93 y persiste solo lo que esa política produce.
@@ -127,6 +130,29 @@ export interface RescheduleAppointmentDeps extends SlotSelectionDeps {
 export interface RescheduleAppointmentInput extends SlotSelectionShape {
   readonly tokenIdentifier: string | null;
   readonly appointmentId: string;
+}
+
+/**
+ * Resultado registrable de la atención: realizada (`completed`) o
+ * inasistencia pendiente (`no_show`). La justificación posterior es TI2-119,
+ * así que este caso de uso no acepta `no_show_justified` ni
+ * `no_show_unjustified`; y `no_show` no es una realización.
+ */
+export type { AppointmentAttendanceOutcome };
+
+/** Dependencias del registro de atención, todas por puerto. */
+export interface RecordAppointmentAttendanceDeps {
+  readonly auth: AuthorizationReader;
+  readonly appointments: AppointmentChangeReader;
+  readonly persister: AppointmentTransitionPersister;
+  readonly now?: AppointmentChangeClock;
+}
+
+/** Entrada del registro: identidad de sesión, atención y resultado declarado. */
+export interface RecordAppointmentAttendanceInput {
+  readonly tokenIdentifier: string | null;
+  readonly appointmentId: string;
+  readonly outcome: AppointmentAttendanceOutcome;
 }
 
 /** Éxito de un cambio: la misma atención, con identificador genérico. */
@@ -279,4 +305,58 @@ export async function rescheduleAppointment(
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
   });
   return okResult({ appointmentId: occupied.data.appointmentId });
+}
+
+/** Verdadero solo para los dos resultados que registra TI2-110. */
+function isAttendanceOutcome(value: string): value is AppointmentAttendanceOutcome {
+  return value === "completed" || value === "no_show";
+}
+
+/**
+ * Registra que la atención se realizó o que el Estudiante no asistió.
+ *
+ * Solo el Profesional asignado que tiene la atención a su cargo puede
+ * declararlo: la autorización la decide TI2-86 y la identidad del actor sale
+ * de la sesión, nunca de un parámetro. Sobre la misma fila se aplica la
+ * política de TI2-93 con el instante del servidor (`occurredAt`) y un actor
+ * no vacío; un salto de estado, una repetición, una atención ya terminal o un
+ * registro anterior al inicio se rechazan con `conflict` antes de escribir.
+ * El resultado se guarda por el puerto de TI2-107, junto con la fecha original
+ * ya conservada si existía; no se crea acompañamiento, atención ni historial
+ * paralelo. La justificación de la inasistencia queda para TI2-119.
+ */
+export async function recordAppointmentAttendance(
+  deps: RecordAppointmentAttendanceDeps,
+  input: RecordAppointmentAttendanceInput,
+): Promise<ApiResult<AppointmentChangeSuccess>> {
+  if (input.appointmentId.trim() === "" || !isAttendanceOutcome(input.outcome)) {
+    return conflict();
+  }
+
+  const stored = await deps.appointments.getAppointment(input.appointmentId);
+  if (stored === null) return denied();
+
+  const grant = await authorizeAppointmentAttendance(deps.auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    appointment: toAuthorizableAppointment(stored),
+  });
+  if (grant.status === "error") return denied();
+
+  const outcome = transitionAppointment({
+    from: stored.status,
+    to: input.outcome,
+    actorId: grant.data.callerId,
+    occurredAt: occurredNow(deps),
+    currentStartAt: stored.startAt,
+    ...(stored.originalStartAt === undefined
+      ? {}
+      : { currentOriginalStartAt: stored.originalStartAt }),
+  });
+  if (outcome.status === "rejected") return conflict();
+
+  await deps.persister.persistAppointmentTransition(stored.id, {
+    status: outcome.change.to,
+    ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  return okResult({ appointmentId: stored.id });
 }

@@ -8,6 +8,7 @@ import {
   canReadAvailability,
   canReadInternalNote,
   canReadSpaceCatalog,
+  canRecordAppointmentAttendance,
   canRescheduleAppointment,
   getAccompanimentView,
   isProfessionalBookable,
@@ -385,6 +386,87 @@ describe("canCancelAppointment y canRescheduleAppointment", () => {
       });
       expect(canCancelAppointment(context)).toBe(false);
       expect(canRescheduleAppointment(context)).toBe(false);
+    }
+  });
+});
+
+describe("canRecordAppointmentAttendance", () => {
+  test("solo el Profesional asignado de la propia atención registra el resultado", () => {
+    expect(
+      canRecordAppointmentAttendance(
+        changeContext({
+          role: "professional",
+          hasActiveProfessionalAssignment: true,
+          isAppointmentProfessional: true,
+        }),
+      ),
+    ).toBe(true);
+
+    expect(
+      canRecordAppointmentAttendance(
+        changeContext({
+          role: "professional",
+          hasActiveProfessionalAssignment: true,
+          isAppointmentProfessional: false,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      canRecordAppointmentAttendance(
+        changeContext({
+          role: "professional",
+          hasActiveProfessionalAssignment: false,
+          isAppointmentProfessional: true,
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("Estudiante dueño, Practicante y Administrador no registran aunque la fila los nombre", () => {
+    const studentOwner = changeContext({
+      role: "student",
+      isOwner: true,
+      isAppointmentStudent: true,
+    });
+    expect(canRecordAppointmentAttendance(studentOwner)).toBe(false);
+
+    for (const role of ["intern", "admin"] as const) {
+      const context = changeContext({
+        role,
+        isOwner: true,
+        hasActiveProfessionalAssignment: true,
+        hasActiveInternAssignment: true,
+        isAppointmentStudent: true,
+        isAppointmentProfessional: true,
+      });
+      expect(canRecordAppointmentAttendance(context)).toBe(false);
+    }
+  });
+
+  test("acompañamiento no activo y cuenta no vigente no registran la atención", () => {
+    for (const accompanimentStatus of ["paused", "closed"] as const) {
+      expect(
+        canRecordAppointmentAttendance(
+          changeContext({
+            role: "professional",
+            hasActiveProfessionalAssignment: true,
+            isAppointmentProfessional: true,
+            accompanimentStatus,
+          }),
+        ),
+      ).toBe(false);
+    }
+    for (const account of INACTIVE_ACCOUNTS) {
+      expect(
+        canRecordAppointmentAttendance(
+          changeContext({
+            role: "professional",
+            hasActiveProfessionalAssignment: true,
+            isAppointmentProfessional: true,
+            ...account,
+          }),
+        ),
+      ).toBe(false);
     }
   });
 });

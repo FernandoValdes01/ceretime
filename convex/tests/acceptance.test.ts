@@ -5,6 +5,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
   APPOINTMENT_STATUS_VALUES,
+  transitionAppointment,
   type AppointmentStatus,
 } from "../domain/appointments/appointment";
 import {
@@ -17,23 +18,31 @@ import {
   okResult,
 } from "../domain/errors/api_error";
 import {
+  appointmentOccupier,
   MAX_APPOINTMENT_MS,
   MAX_APPOINTMENTS_IN_WINDOW,
+  appointmentTransitionRepository,
   occupySlotAtomically,
+  slotOccupancyReader,
   type OccupySlotRow,
 } from "../infrastructure/appointments/repository";
+import type { AppointmentOccupier } from "../application/appointments/occupancy";
+import type { SlotOccupancyReader } from "../application/availability/ports";
 import { bookAppointment, type BookAppointmentDeps } from "../application/appointments/booking";
 import {
   cancelAppointment,
+  recordAppointmentAttendance,
   rescheduleAppointment,
   type AppointmentChangeReader,
   type AppointmentTransitionPersister,
   type CancelAppointmentDeps,
+  type RecordAppointmentAttendanceDeps,
   type RescheduleAppointmentDeps,
 } from "../application/appointments/changes";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import { availabilityReader } from "../infrastructure/availability/repository";
 import { cancelRequest, closeRequestWithoutAccompaniment } from "../application/requests/commands";
+import { applyAppointmentTransition } from "../application/appointments/commands";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -598,8 +607,471 @@ test("El cupo liberado por cancelación se puede volver a ocupar (TI2-84)", asyn
   expect(stored?.status).toBe("scheduled");
 });
 
+test("Persistir atención: fecha original, motivo de cancelación e inasistencia (TI2-107)", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti107-est-1");
+  const pro = await seedProfessional(t, "ti107-pro-1");
+  const accompaniment = await seedAccompaniment(t, student);
+
+  // Primera atención programada
+  const created = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "inPerson",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(created)) throw new Error("Se esperaba ocupar el cupo");
+
+  const stored = await t.run(async (ctx) => {
+    return await ctx.db.get(created.data.appointmentId);
+  });
+  expect(stored?.status).toBe("scheduled");
+  expect(stored?.studentId).toEqual(student);
+  expect(stored?.professionalId).toEqual(pro);
+  expect(stored?.modality).toBe("inPerson");
+  expect(stored?.startsAt).toBe(TI84_SLOT_START);
+  expect(stored?.endsAt).toBe(TI84_SLOT_END);
+  expect(stored?.originalStartsAt).toBeUndefined(); // sin reagendar aún
+  expect(stored?.cancelReason).toBeUndefined(); // sin cancelación aún
+  expect(stored?.accompanimentId).toEqual(accompaniment);
+});
+
+test("Reagendar atención conserva fecha original (TI2-107)", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti107-est-2");
+  const pro = await seedProfessional(t, "ti107-pro-2");
+  const accompaniment = await seedAccompaniment(t, student);
+
+  // Primera atención: lunes 09:00-10:00
+  const created = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "inPerson",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(created)) throw new Error("Se esperaba ocupar el cupo");
+
+  // Reagendar a martes 09:00-10:00 (mismo día de la semana siguiente). La
+  // política de TI2-93 calcula la fecha original y el estado resultante; el
+  // repositorio solo guarda lo que el caso de uso le entrega.
+  const movedStart = TI84_SLOT_START + 86_400_000; // +1 día
+  const movedEnd = TI84_SLOT_END + 86_400_000;
+  const outcome = transitionAppointment({
+    from: "scheduled",
+    to: "rescheduled",
+    actorId: pro,
+    occurredAt: TI84_SLOT_END,
+    currentStartAt: TI84_SLOT_START,
+    newStartAt: movedStart,
+    newEndAt: movedEnd,
+  });
+  if (outcome.status !== "applied") throw new Error("Se esperaba aplicar el reagendamiento");
+
+  const rescheduled = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "inPerson",
+      startsAt: movedStart,
+      endsAt: movedEnd,
+      movedAppointmentId: created.data.appointmentId,
+      originalStartsAt: outcome.originalStartAt,
+      nextStatus: outcome.change.to,
+    });
+  });
+  if (!isOkResult(rescheduled)) throw new Error("Se esperaba reagendar el cupo");
+
+  const stored = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_accompanimentId", (q) => q.eq("accompanimentId", accompaniment))
+      .take(10);
+  });
+  const rescheduledRow = stored.find((row) => row.startsAt === movedStart);
+  expect(rescheduledRow).toBeDefined();
+  // El estado resultante es el que la política entregó
+  expect(rescheduledRow?.status).toBe("rescheduled");
+  // La fecha original se conserva (no se sobrescribe)
+  expect(rescheduledRow?.originalStartsAt).toBe(TI84_SLOT_START);
+  // La fecha efectiva se actualiza al nuevo horario
+  expect(rescheduledRow?.startsAt).toBe(movedStart);
+  expect(rescheduledRow?.endsAt).toBe(movedEnd);
+  expect(rescheduledRow?.accompanimentId).toEqual(accompaniment);
+});
+
+test("Cambiar solo la sala no marca reagendamiento y dos reagendas conservan la primera fecha (TI2-107)", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti107-est-6");
+  const pro = await seedProfessional(t, "ti107-pro-6");
+  const accompaniment = await seedAccompaniment(t, student);
+  const roomA = await seedTi96Space(t, "C-107-a");
+  const roomB = await seedTi96Space(t, "C-107-b");
+
+  const created = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "inPerson",
+      spaceId: roomA,
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(created)) throw new Error("Se esperaba ocupar el cupo");
+
+  // Cambiar solo la sala, en la misma hora: el caso de uso no aplica
+  // `transitionAppointment`, así que no entrega fecha original ni estado.
+  const roomMoved = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "inPerson",
+      spaceId: roomB,
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+      movedAppointmentId: created.data.appointmentId,
+    });
+  });
+  if (!isOkResult(roomMoved)) throw new Error("Se esperaba cambiar la sala");
+  const roomRow = await t.run(async (ctx) => {
+    return await ctx.db.get(created.data.appointmentId);
+  });
+  expect(roomRow?.status).toBe("scheduled");
+  expect(roomRow?.originalStartsAt).toBeUndefined();
+  expect(roomRow?.startsAt).toBe(TI84_SLOT_START);
+  expect(roomRow?.spaceId).toEqual(roomB);
+
+  // Primera reagenda: la política entrega la fecha original (la vigente antes
+  // de mover) y el estado `rescheduled`; el repositorio los guarda tal cual.
+  const firstMoveStart = TI84_SLOT_START + 86_400_000;
+  const firstOutcome = transitionAppointment({
+    from: "scheduled",
+    to: "rescheduled",
+    actorId: pro,
+    occurredAt: TI84_SLOT_END,
+    currentStartAt: TI84_SLOT_START,
+    newStartAt: firstMoveStart,
+    newEndAt: TI84_SLOT_END + 86_400_000,
+  });
+  if (firstOutcome.status !== "applied") throw new Error("Se esperaba la primera reagenda");
+  const firstMoved = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "inPerson",
+      startsAt: firstMoveStart,
+      endsAt: TI84_SLOT_END + 86_400_000,
+      movedAppointmentId: created.data.appointmentId,
+      originalStartsAt: firstOutcome.originalStartAt,
+      nextStatus: firstOutcome.change.to,
+    });
+  });
+  if (!isOkResult(firstMoved)) throw new Error("Se esperaba la primera reagenda");
+  const firstRow = await t.run(async (ctx) => {
+    return await ctx.db.get(created.data.appointmentId);
+  });
+  expect(firstRow?.status).toBe("rescheduled");
+  expect(firstRow?.originalStartsAt).toBe(TI84_SLOT_START);
+  expect(firstRow?.startsAt).toBe(firstMoveStart);
+
+  // Segunda reagenda: la política conserva la primera fecha original y el
+  // repositorio no la sobrescribe.
+  const secondMoveStart = TI84_SLOT_START + 2 * 86_400_000;
+  const secondOutcome = transitionAppointment({
+    from: "rescheduled",
+    to: "rescheduled",
+    actorId: pro,
+    occurredAt: TI84_SLOT_END,
+    currentStartAt: firstMoveStart,
+    currentOriginalStartAt: TI84_SLOT_START,
+    newStartAt: secondMoveStart,
+    newEndAt: TI84_SLOT_END + 2 * 86_400_000,
+  });
+  if (secondOutcome.status !== "applied") throw new Error("Se esperaba la segunda reagenda");
+  expect(secondOutcome.originalStartAt).toBe(TI84_SLOT_START);
+  const secondMoved = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "inPerson",
+      startsAt: secondMoveStart,
+      endsAt: TI84_SLOT_END + 2 * 86_400_000,
+      movedAppointmentId: created.data.appointmentId,
+      originalStartsAt: secondOutcome.originalStartAt,
+      nextStatus: secondOutcome.change.to,
+    });
+  });
+  if (!isOkResult(secondMoved)) throw new Error("Se esperaba la segunda reagenda");
+  const secondRow = await t.run(async (ctx) => {
+    return await ctx.db.get(created.data.appointmentId);
+  });
+  expect(secondRow?.status).toBe("rescheduled");
+  expect(secondRow?.originalStartsAt).toBe(TI84_SLOT_START);
+  expect(secondRow?.startsAt).toBe(secondMoveStart);
+  expect(secondRow?.accompanimentId).toEqual(accompaniment);
+});
+
+test("Cancelar atención conserva historial y motivo (TI2-107)", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti107-est-3");
+  const pro = await seedProfessional(t, "ti107-pro-3");
+  const accompaniment = await seedAccompaniment(t, student);
+
+  const created = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "inPerson",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(created)) throw new Error("Se esperaba ocupar el cupo");
+
+  // La cancelación de CERETI sin motivo la rechaza la política de TI2-93 vía
+  // el caso de uso de TI2-107, con el código estable de conflicto y sin
+  // escribir nada en la fila.
+  const rejected = await t.run(async (ctx) => {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
+      appointmentId: created.data.appointmentId,
+      to: "cancelled_by_cereti",
+      actorId: pro,
+      occurredAt: TI84_SLOT_START,
+    });
+  });
+  expect(rejected).toEqual(errResult(conflictError()));
+  const intact = await t.run(async (ctx) => {
+    return await ctx.db.get(created.data.appointmentId);
+  });
+  expect(intact?.status).toBe("scheduled");
+  expect(intact?.cancelReason).toBeUndefined();
+
+  // Cancelar por CERETI con motivo: el caso de uso aplica la política y
+  // persiste su resultado
+  const cancelled = await t.run(async (ctx) => {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
+      appointmentId: created.data.appointmentId,
+      to: "cancelled_by_cereti",
+      actorId: pro,
+      occurredAt: TI84_SLOT_START,
+      reason: "Sala no disponible",
+    });
+  });
+  if (!isOkResult(cancelled)) throw new Error("Se esperaba aplicar la cancelación");
+  expect(cancelled).toEqual(okResult({ appointmentId: created.data.appointmentId }));
+
+  const stored = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_accompanimentId", (q) => q.eq("accompanimentId", accompaniment))
+      .take(10);
+  });
+  const cancelledRow = stored.find((row) => row.status === "cancelled_by_cereti");
+  expect(cancelledRow).toBeDefined();
+  expect(cancelledRow?.cancelReason).toBe("Sala no disponible");
+  expect(cancelledRow?.startsAt).toBe(TI84_SLOT_START);
+  expect(cancelledRow?.endsAt).toBe(TI84_SLOT_END);
+  expect(cancelledRow?.accompanimentId).toEqual(accompaniment);
+
+  // El historial no se borra: sigue existiendo la fila
+  expect(cancelledRow?._id).toEqual(created.data.appointmentId);
+});
+
+test("Inasistencia (no_show) se persiste como estado de la atención (TI2-107)", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti107-est-4");
+  const pro = await seedProfessional(t, "ti107-pro-4");
+  const accompaniment = await seedAccompaniment(t, student);
+
+  const created = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(created)) throw new Error("Se esperaba ocupar el cupo");
+
+  // Registrar la inasistencia por el caso de uso: la política exige que el
+  // registro no sea anterior al inicio vigente, así ocurrió ya la sesión
+  const noShow = await t.run(async (ctx) => {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
+      appointmentId: created.data.appointmentId,
+      to: "no_show",
+      actorId: pro,
+      occurredAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(noShow)) throw new Error("Se esperaba aplicar la inasistencia");
+
+  // La política rechaza una inasistencia registrada antes de la sesión: es
+  // un conflicto con el estado actual, sin escribir nada
+  const tooEarly = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START + 86_400_000,
+      endsAt: TI84_SLOT_END + 86_400_000,
+    });
+  });
+  if (!isOkResult(tooEarly)) throw new Error("Se esperaba ocupar el segundo cupo");
+  const rejectedNoShow = await t.run(async (ctx) => {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
+      appointmentId: tooEarly.data.appointmentId,
+      to: "no_show",
+      actorId: pro,
+      occurredAt: TI84_SLOT_START,
+    });
+  });
+  expect(rejectedNoShow).toEqual(errResult(conflictError()));
+  const untouchedSecond = await t.run(async (ctx) => {
+    return await ctx.db.get(tooEarly.data.appointmentId);
+  });
+  expect(untouchedSecond?.status).toBe("scheduled");
+
+  const stored = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_accompanimentId", (q) => q.eq("accompanimentId", accompaniment))
+      .take(10);
+  });
+  const noShowRow = stored.find((row) => row.status === "no_show");
+  expect(noShowRow).toBeDefined();
+  expect(noShowRow?.status).toBe("no_show");
+  expect(noShowRow?.startsAt).toBe(TI84_SLOT_START);
+  expect(noShowRow?.endsAt).toBe(TI84_SLOT_END);
+  expect(noShowRow?.accompanimentId).toEqual(accompaniment);
+  expect(noShowRow?._id).toEqual(created.data.appointmentId);
+});
+
+test("Leer atenciones previas de un profesional por rango de fechas (TI2-107)", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedStudent(t, "ti107-est-5");
+  const pro = await seedProfessional(t, "ti107-pro-5");
+  const otherStudent = await seedStudent(t, "ti107-est-other");
+  const otherPro = await seedProfessional(t, "ti107-pro-other");
+  const accompaniment = await seedAccompaniment(t, student);
+  const otherAccompaniment = await seedAccompaniment(t, otherStudent);
+
+  // 1. Scheduled en rango
+  const created1 = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(created1)) throw new Error("Se esperaba ocupar el cupo");
+
+  // 2. Completed en rango (creado como scheduled y transicionado a completed)
+  const created2 = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START + 3_600_000,
+      endsAt: TI84_SLOT_END + 3_600_000,
+    });
+  });
+  if (!isOkResult(created2)) throw new Error("Se esperaba ocupar el cupo");
+  await t.run(async (ctx) => {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
+      appointmentId: created2.data.appointmentId,
+      to: "completed",
+      actorId: pro,
+      occurredAt: TI84_SLOT_END + 3_600_000,
+    });
+  });
+
+  // 3. Cancelled by student en rango (creado como scheduled y transicionado)
+  const created3 = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START + 2 * 3_600_000,
+      endsAt: TI84_SLOT_END + 2 * 3_600_000,
+    });
+  });
+  if (!isOkResult(created3)) throw new Error("Se esperaba ocupar el cupo");
+  await t.run(async (ctx) => {
+    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
+      appointmentId: created3.data.appointmentId,
+      to: "cancelled_by_student",
+      actorId: student,
+      occurredAt: TI84_SLOT_START + 2 * 3_600_000,
+    });
+  });
+
+  // 4. Atención de OTRO profesional en el mismo rango (debe ser filtrada)
+  const otherProApp = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: otherAccompaniment,
+      studentId: otherStudent,
+      professionalId: otherPro,
+      modality: "online",
+      startsAt: TI84_SLOT_START,
+      endsAt: TI84_SLOT_END,
+    });
+  });
+  if (!isOkResult(otherProApp)) throw new Error("Se esperaba ocupar el cupo");
+
+  // 5. Atención del mismo profesional FUERA del rango de fechas (anterior)
+  const outOfRangeApp = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      startsAt: TI84_SLOT_START - 86_400_000,
+      endsAt: TI84_SLOT_END - 86_400_000,
+    });
+  });
+  if (!isOkResult(outOfRangeApp)) throw new Error("Se esperaba ocupar el cupo");
+
+  const expectedIds = [
+    created1.data.appointmentId,
+    created2.data.appointmentId,
+    created3.data.appointmentId,
+  ];
+
+  // Leer atenciones del profesional por rango de fechas exacto
+  const all = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointments")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", pro).gte("startsAt", TI84_SLOT_START),
+      )
+      .take(50);
+  });
+  expect(all.map((row) => row._id).sort()).toEqual([...expectedIds].sort());
+});
+
 test("Diez ciclos de reserva y cancelación no ocultan la atención activa (TI2-84)", async () => {
-  // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const student = await seedStudent(t, "ti84-est-e");
   const pro = await seedProfessional(t, "ti84-pro-4");
@@ -1143,7 +1615,8 @@ test("TI2-96: cambiar una atención solo descuenta sus propios cruces", async ()
   expect(await moveTi96(t, moved, student, proA, 30, 90)).toEqual(
     okResult({ appointmentId: moved }),
   );
-  // El cambio no la marca como reagendada: el estado y la fecha original son de TI2-109.
+  // El cambio no la marca como reagendada: el estado y la fecha original los
+  // entrega el caso de uso que aplica `transitionAppointment` (TI2-93).
   const shifted = await getTi96(t, moved);
   expect(shifted).toMatchObject({
     status: "scheduled",
@@ -1419,7 +1892,14 @@ test("TI2-96: un cambio y una creación en contienda no dejan cruces y el perded
     const rows = await listTi96Appointments(t);
     expect({ rows: rows.length, own: await getTi96(t, own.data.appointmentId) }).toEqual(
       moveFirst
-        ? { rows: 1, own: { ...origin, startsAt: ti96At(100), endsAt: ti96At(160) } }
+        ? {
+            rows: 1,
+            own: {
+              ...origin,
+              startsAt: ti96At(100),
+              endsAt: ti96At(160),
+            },
+          }
         : { rows: 2, own: origin },
     );
     await expectNoTi96Crossings(t);
@@ -1583,6 +2063,176 @@ test("TI2-98: no reserva sin asignación activa o con cuenta profesional inactiv
     expect(result.error.code).toBe(NO_AVAILABILITY_ERROR_CODE);
     expect(await t.run(async (ctx) => await ctx.db.query("appointments").take(10))).toHaveLength(0);
   }
+});
+
+// ── TI2-111: adaptadores de ocupación para la búsqueda y la reserva ──────────
+//
+// `slotOccupancyReader` y `appointmentOccupier` cumplen los puertos de TI2-97
+// y TI2-84 sobre el repositorio de TI2-96. Las reglas de cruce ya están
+// probadas arriba; acá se prueba que el adaptador las reutiliza y traduce el
+// contrato sin perder nada.
+
+test("TI2-111: la búsqueda ve ocupado lo mismo que la reserva rechazaría", async () => {
+  const t = convexTest(schema, modules);
+  const proA = await seedProfessional(t, "ti111-occ-pro-a");
+  const proB = await seedProfessional(t, "ti111-occ-pro-b");
+  const proC = await seedProfessional(t, "ti111-occ-pro-c");
+  const who = await seedTi96Student(t, "ti111-occ-est-1");
+  const other = await seedTi96Student(t, "ti111-occ-est-2");
+  const capOwner = await seedTi96Student(t, "ti111-occ-est-3");
+  const roomX = await seedTi96Space(t, "Sala X TI2-111");
+  const roomY = await seedTi96Space(t, "Sala Y TI2-111");
+  // `who` con proA de 0 a 60; `other` con proB en la sala X de 100 a 160.
+  expect(ti96Code(await occupyTi96(t, who, proA, 0, 60))).toBe("ok");
+  expect(ti96Code(await occupyTi96(t, other, proB, 100, 160, roomX))).toBe("ok");
+  const cancelled = await occupyTi96(t, who, proA, 200, 260);
+  if (!isOkResult(cancelled)) throw new Error("Se esperaba ocupar");
+  await t.run(async (ctx) => {
+    await ctx.db.patch(cancelled.data.appointmentId, { status: "cancelled_by_student" });
+  });
+  // Más filas que el tope en la ventana de proC, todas canceladas y de un
+  // estudiante aparte, para no ocupar la ventana de las demás comprobaciones.
+  await t.run(async (ctx) => {
+    for (let i = 0; i <= MAX_APPOINTMENTS_IN_WINDOW; i++) {
+      await ctx.db.insert("appointments", {
+        ...capOwner,
+        professionalId: proC,
+        modality: "online",
+        status: "cancelled_by_cereti",
+        startsAt: ti96At(-60),
+        endsAt: ti96At(-30),
+        createdAt: 1,
+      });
+    }
+  });
+
+  const occupied = await t.run(async (ctx) => {
+    const reader: SlotOccupancyReader = slotOccupancyReader(ctx);
+    const at = (
+      professionalId: string,
+      studentId: string,
+      from: number,
+      to: number,
+      spaceId?: string,
+    ) =>
+      reader.isSlotOccupied({
+        professionalId,
+        studentId,
+        ...(spaceId === undefined ? {} : { spaceId }),
+        startAt: ti96At(from),
+        endAt: ti96At(to),
+      });
+    return {
+      cruceProfesional: await at(proA, other.studentId, 30, 90),
+      cruceEstudiante: await at(proB, who.studentId, 30, 90),
+      cruceSala: await at(proA, who.studentId, 120, 180, roomX),
+      contiguoProfesionalYEstudiante: await at(proA, who.studentId, 60, 100),
+      contiguoSala: await at(proA, who.studentId, 160, 200, roomX),
+      otraSala: await at(proA, who.studentId, 120, 180, roomY),
+      cancelada: await at(proA, who.studentId, 200, 260),
+      sobreElTope: await at(proC, other.studentId, 0, 30),
+      libre: await at(proB, who.studentId, 300, 360, roomY),
+      profesionalInexistente: await at("no-existe", who.studentId, 300, 360),
+      estudianteDeOtraTabla: await at(proA, who.accompanimentId, 300, 360),
+      salaInexistente: await at(proA, who.studentId, 300, 360, "no-existe"),
+    };
+  });
+  expect(occupied).toEqual({
+    cruceProfesional: true,
+    cruceEstudiante: true,
+    cruceSala: true,
+    contiguoProfesionalYEstudiante: false,
+    contiguoSala: false,
+    otraSala: false,
+    cancelada: false,
+    sobreElTope: true,
+    libre: false,
+    // Un identificador que no es de su tabla cuenta como ocupado: la reserva
+    // lo rechazaría con `conflict`.
+    profesionalInexistente: true,
+    estudianteDeOtraTabla: true,
+    salaInexistente: true,
+  });
+});
+
+test("TI2-111: la reserva traduce el contrato y rechaza identificadores sin forma sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti111-occ-pro-d");
+  const who = await seedTi96Student(t, "ti111-occ-est-2");
+  const spaceId = await seedTi96Space(t, "Sala TI2-111");
+  const slot = {
+    accompanimentId: who.accompanimentId as string,
+    studentId: who.studentId as string,
+    professionalId: pro as string,
+    modality: "inPerson" as const,
+    spaceId: spaceId as string,
+    startAt: ti96At(0),
+    endAt: ti96At(60),
+  };
+  const occupy = async (input: typeof slot & { movedAppointmentId?: string }) =>
+    await t.run(async (ctx) => {
+      const occupier: AppointmentOccupier = appointmentOccupier(ctx);
+      return await occupier.occupySlot(input);
+    });
+
+  const created = await occupy(slot);
+  if (!isOkResult(created)) throw new Error("Se esperaba ocupar");
+  const appointmentId = created.data.appointmentId as Id<"appointments">;
+  expect(await getTi96(t, appointmentId)).toMatchObject({
+    accompanimentId: who.accompanimentId,
+    studentId: who.studentId,
+    professionalId: pro,
+    modality: "inPerson",
+    spaceId,
+    status: "scheduled",
+    startsAt: ti96At(0),
+    endsAt: ti96At(60),
+  });
+  const before = await listTi96Appointments(t);
+
+  const rejected = [
+    await occupy({ ...slot, startAt: ti96At(30), endAt: ti96At(90) }),
+    await occupy({
+      ...slot,
+      startAt: ti96At(100),
+      endAt: ti96At(160),
+      accompanimentId: "no-existe",
+    }),
+    await occupy({
+      ...slot,
+      startAt: ti96At(100),
+      endAt: ti96At(160),
+      studentId: slot.accompanimentId,
+    }),
+    await occupy({
+      ...slot,
+      startAt: ti96At(100),
+      endAt: ti96At(160),
+      professionalId: "no-existe",
+    }),
+    await occupy({ ...slot, startAt: ti96At(100), endAt: ti96At(160), spaceId: slot.studentId }),
+    await occupy({
+      ...slot,
+      startAt: ti96At(100),
+      endAt: ti96At(160),
+      movedAppointmentId: "no-existe",
+    }),
+  ];
+  expect(rejected).toEqual(rejected.map(() => errResult(conflictError())));
+  expect(await listTi96Appointments(t)).toEqual(before);
+
+  // Con la atención propia, el mismo adaptador cambia en el lugar.
+  const moved = await occupy({
+    ...slot,
+    startAt: ti96At(120),
+    endAt: ti96At(180),
+    movedAppointmentId: appointmentId,
+  });
+  expect(moved).toEqual(okResult({ appointmentId }));
+  expect(await getTi96(t, appointmentId)).toMatchObject({
+    startsAt: ti96At(120),
+    endsAt: ti96At(180),
+  });
 });
 
 /** Instante fijo de las pruebas TI2-109, lunes 2026-10-26 08:00 UTC. */
@@ -1970,4 +2620,243 @@ test("TI2-109: reagendar mueve la misma fila y conserva la primera fecha origina
   });
   expect(moved.spaceId).toBeUndefined();
   expect(await t.run(async (ctx) => await ctx.db.query("appointments").take(10))).toHaveLength(1);
+});
+
+/** Instante fijo de TI2-110, media hora después del inicio del cupo. */
+const TI110_NOW = Date.UTC(2026, 9, 26, 9, 30);
+
+/** Atención ficticia de TI2-110 con la fila que lee el caso de uso. */
+async function seedTi110Appointment(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly studentId: Id<"users">;
+    readonly professionalId: Id<"users">;
+    readonly status?: "scheduled" | "rescheduled";
+    readonly originalStartsAt?: number;
+  },
+) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("appointments", {
+      accompanimentId: input.accompanimentId,
+      studentId: input.studentId,
+      professionalId: input.professionalId,
+      modality: "online",
+      status: input.status ?? "scheduled",
+      startsAt: TI98_SLOT_START,
+      endsAt: TI98_SLOT_END,
+      ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
+      createdAt: 1,
+    });
+  });
+}
+
+/** Ejecuta el registro de TI2-110 con los adaptadores reales de Convex. */
+async function recordTi110(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    readonly tokenIdentifier: string;
+    readonly appointmentId: string;
+    readonly outcome: "completed" | "no_show";
+    readonly transitions?: PersistedTransition[];
+  },
+) {
+  return await t.run(async (ctx) => {
+    const deps: RecordAppointmentAttendanceDeps = {
+      auth: authorizationReader(ctx),
+      appointments: appointmentChangeReader(ctx),
+      persister: appointmentTransitionPersister(ctx, input.transitions),
+      now: () => TI110_NOW,
+    };
+    return await recordAppointmentAttendance(deps, {
+      tokenIdentifier: input.tokenIdentifier,
+      appointmentId: input.appointmentId,
+      outcome: input.outcome,
+    });
+  });
+}
+
+test("TI2-110: el Profesional registra la realización sobre la única atención", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti110-complete-pro");
+  const student = await seedStudent(t, "ti110-complete-est");
+  const accompaniment = await seedAccompaniment(t, student);
+  await seedTi98Assignment(t, accompaniment, pro);
+  const appointmentId = await seedTi110Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+  });
+
+  const transitions: PersistedTransition[] = [];
+  const result = await recordTi110(t, {
+    tokenIdentifier: identityFor("ti110-complete-pro", "ti110-complete-pro@uct.cl").tokenIdentifier,
+    appointmentId,
+    outcome: "completed",
+    transitions,
+  });
+  if (!isOkResult(result)) throw new Error("Se esperaba registrar la realización");
+  expect(result.data.appointmentId).toBe(appointmentId);
+  expect(transitions).toEqual([{ appointmentId, fields: { status: "completed" } }]);
+
+  const row = await getTi109(t, appointmentId);
+  if (row === null) throw new Error("Se esperaba la atención registrada");
+  expect(row).toMatchObject({
+    _id: appointmentId,
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    modality: "online",
+    status: "completed",
+    startsAt: TI98_SLOT_START,
+    endsAt: TI98_SLOT_END,
+  });
+  expect(row.originalStartsAt).toBeUndefined();
+
+  const [appointments, accompaniments, assignments] = await t.run(async (ctx) => [
+    await ctx.db.query("appointments").take(10),
+    await ctx.db.query("accompaniments").take(10),
+    await ctx.db.query("accompanimentAssignments").take(10),
+  ]);
+  expect(appointments).toHaveLength(1);
+  expect(accompaniments).toHaveLength(1);
+  expect(assignments).toHaveLength(1);
+});
+
+test("TI2-110: inasistencia repetida o salto a realizada no alteran el historial", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti110-no-show-pro");
+  const student = await seedStudent(t, "ti110-no-show-est");
+  const accompaniment = await seedAccompaniment(t, student);
+  await seedTi98Assignment(t, accompaniment, pro);
+  const appointmentId = await seedTi110Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+  });
+  const tokenIdentifier = identityFor(
+    "ti110-no-show-pro",
+    "ti110-no-show-pro@uct.cl",
+  ).tokenIdentifier;
+
+  const transitions: PersistedTransition[] = [];
+  const first = await recordTi110(t, {
+    tokenIdentifier,
+    appointmentId,
+    outcome: "no_show",
+    transitions,
+  });
+  if (!isOkResult(first)) throw new Error("Se esperaba registrar la inasistencia");
+
+  const repeated = await recordTi110(t, {
+    tokenIdentifier,
+    appointmentId,
+    outcome: "no_show",
+    transitions,
+  });
+  if (!isErrorResult(repeated)) throw new Error("Se esperaba rechazar la repetición");
+  expect(repeated.error.code).toBe(CONFLICT_ERROR_CODE);
+
+  const jump = await recordTi110(t, {
+    tokenIdentifier,
+    appointmentId,
+    outcome: "completed",
+    transitions,
+  });
+  if (!isErrorResult(jump)) throw new Error("Se esperaba rechazar el salto a realizada");
+  expect(jump.error.code).toBe(CONFLICT_ERROR_CODE);
+
+  expect(transitions).toEqual([{ appointmentId, fields: { status: "no_show" } }]);
+  const row = await getTi109(t, appointmentId);
+  if (row === null) throw new Error("Se esperaba la atención con inasistencia");
+  expect(row).toMatchObject({
+    status: "no_show",
+    startsAt: TI98_SLOT_START,
+    endsAt: TI98_SLOT_END,
+  });
+  expect(row.originalStartsAt).toBeUndefined();
+  expect(await t.run(async (ctx) => await ctx.db.query("appointments").take(10))).toHaveLength(1);
+});
+
+test("TI2-110: Estudiante dueño y Profesional revocado no registran la atención", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti110-denied-pro");
+  const student = await seedStudent(t, "ti110-denied-est");
+  const accompaniment = await seedAccompaniment(t, student);
+  await seedTi98Assignment(t, accompaniment, pro, "revoked");
+  const appointmentId = await seedTi110Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+  });
+
+  const transitions: PersistedTransition[] = [];
+  const asStudent = await recordTi110(t, {
+    tokenIdentifier: identityFor("ti110-denied-est", "ti110-denied-est@alu.uct.cl").tokenIdentifier,
+    appointmentId,
+    outcome: "completed",
+    transitions,
+  });
+  if (!isErrorResult(asStudent)) throw new Error("Se esperaba denegar al Estudiante");
+  expect(asStudent.error.code).toBe("unauthorized");
+
+  const asRevokedProfessional = await recordTi110(t, {
+    tokenIdentifier: identityFor("ti110-denied-pro", "ti110-denied-pro@uct.cl").tokenIdentifier,
+    appointmentId,
+    outcome: "completed",
+    transitions,
+  });
+  if (!isErrorResult(asRevokedProfessional)) {
+    throw new Error("Se esperaba denegar al Profesional revocado");
+  }
+  expect(asRevokedProfessional.error.code).toBe("unauthorized");
+
+  expect(transitions).toHaveLength(0);
+  const row = await getTi109(t, appointmentId);
+  if (row === null) throw new Error("Se esperaba la atención intacta");
+  expect(row).toMatchObject({
+    status: "scheduled",
+    startsAt: TI98_SLOT_START,
+    endsAt: TI98_SLOT_END,
+  });
+  expect(await t.run(async (ctx) => await ctx.db.query("appointments").take(10))).toHaveLength(1);
+});
+
+test("TI2-110: el registro conserva la fecha original de una atención reagendada", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedProfessional(t, "ti110-original-pro");
+  const student = await seedStudent(t, "ti110-original-est");
+  const accompaniment = await seedAccompaniment(t, student);
+  await seedTi98Assignment(t, accompaniment, pro);
+  const appointmentId = await seedTi110Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: pro,
+    status: "rescheduled",
+    originalStartsAt: TI109_ORIGINAL_START,
+  });
+
+  const transitions: PersistedTransition[] = [];
+  const result = await recordTi110(t, {
+    tokenIdentifier: identityFor("ti110-original-pro", "ti110-original-pro@uct.cl").tokenIdentifier,
+    appointmentId,
+    outcome: "completed",
+    transitions,
+  });
+  if (!isOkResult(result)) throw new Error("Se esperaba registrar la realización");
+
+  expect(transitions).toEqual([
+    {
+      appointmentId,
+      fields: { status: "completed", originalStartsAt: TI109_ORIGINAL_START },
+    },
+  ]);
+  const row = await getTi109(t, appointmentId);
+  if (row === null) throw new Error("Se esperaba la atención registrada");
+  expect(row).toMatchObject({
+    status: "completed",
+    originalStartsAt: TI109_ORIGINAL_START,
+    startsAt: TI98_SLOT_START,
+    endsAt: TI98_SLOT_END,
+  });
 });

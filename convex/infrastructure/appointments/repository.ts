@@ -20,7 +20,10 @@ import { conflictError, errResult, okResult, type ApiResult } from "../../domain
  * del recurso, sea cual sea su acompañamiento o profesional. Cambiar de
  * horario o de recursos usa la misma operación: valida el destino sin contar
  * la atención que se mueve y solo entonces la actualiza, así un destino
- * ocupado deja el origen intacto. Los estados los completa TI2-107. El rechazo devuelve `conflict` (TI2-88) sin decir
+ * ocupado deja el origen intacto. El estado lo persiste
+ * `persistAppointmentTransition` tras aplicar la política
+ * (`applyAppointmentTransition`); el reagendamiento con fecha nueva queda
+ * pendiente del caso de uso de cambio de TI2-109. El rechazo devuelve `conflict` (TI2-88) sin decir
  * qué recurso estaba ocupado ni por quién; `no_availability` queda para la
  * ausencia de cupo en búsqueda (TI2-98). No hay API pública ni tabla
  * `locks`/`reservations` paralela: la única representación es
@@ -51,8 +54,10 @@ export const MAX_APPOINTMENTS_IN_WINDOW = 200;
 
 /**
  * Estados que ocupan el cupo: todo salvo las cancelaciones, que lo liberan.
- * La lista exacta de estados la completa TI2-107; acá basta distinguir
- * cancelado de no cancelado para que un cupo liberado se pueda volver a ocupar.
+ * El conjunto completo de estados ya vive en el dominio
+ * (`APPOINTMENT_STATUS_VALUES` de TI2-93, persistido por
+ * `persistAppointmentTransition`); acá basta distinguir cancelado de no
+ * cancelado para que un cupo liberado se pueda volver a ocupar.
  */
 const CANCELLED_APPOINTMENT_STATUSES: ReadonlySet<Doc<"appointments">["status"]> = new Set([
   "cancelled_by_student",
@@ -152,6 +157,20 @@ export interface OccupySlotRow {
    * se crea una atención nueva.
    */
   readonly movedAppointmentId?: Id<"appointments">;
+  /**
+   * Fecha original del primer agendamiento ya calculada por la política de
+   * TI2-93 (`transitionAppointment`) y entregada por quien la aplicó. Ausente,
+   * el campo que hubiera en la fila no se toca: un cambio de recursos no marca
+   * reagendamiento, y en reagendamientos encadenados quien aplica la política
+   * entrega siempre la primera fecha.
+   */
+  readonly originalStartsAt?: number;
+  /**
+   * Estado resultante de la transición ya aplicada por el caso de uso. Ausente,
+   * el estado vigente se conserva: marcar `rescheduled` es de quien aplica la
+   * política, no del repositorio.
+   */
+  readonly nextStatus?: Doc<"appointments">["status"];
 }
 
 /**
@@ -192,10 +211,16 @@ async function findMovedAppointment(
  * Con `movedAppointmentId` cambia esa atención en el mismo lugar: la busca,
  * valida el destino sin contarla a ella y recién entonces le escribe el
  * horario, el profesional, la modalidad y la sala nuevos. Conserva su
- * identificador, estado, fecha original y fecha de creación: qué estado
- * admite el cambio y cómo queda lo decide la política de TI2-93 en el caso
- * de uso de TI2-109. Una atención inexistente, cancelada o de otro
- * estudiante o acompañamiento responde `conflict` sin escribir.
+ * identificador y fecha de creación. La fecha original (`originalStartsAt`) y
+ * el estado resultante solo se guardan si quien llamó los entrega, tras
+ * aplicar la política de TI2-93 (`transitionAppointment`): un cambio de
+ * recursos sin reagendamiento no los toca, así Web y Mobile no muestran una
+ * atención reagendada que no lo está. La política decide qué transición
+ * admite el cambio y el estado que produce lo persiste
+ * `persistAppointmentTransition` (estado, `cancelReason` y
+ * `originalStartsAt`); el reagendamiento con fecha nueva queda pendiente del
+ * caso de uso de cambio de TI2-109. Una atención inexistente, cancelada o de
+ * otro estudiante o acompañamiento responde `conflict` sin escribir.
  */
 export async function occupySlotAtomically(
   ctx: MutationCtx,
@@ -209,6 +234,9 @@ export async function occupySlotAtomically(
   }
   if (input.endsAt - input.startsAt > MAX_APPOINTMENT_MS) {
     throw new Error("El cupo no puede durar más de 1440 minutos");
+  }
+  if (input.originalStartsAt !== undefined && !Number.isFinite(input.originalStartsAt)) {
+    throw new Error("La fecha original del cupo debe ser un instante finito");
   }
   const resources: OccupiedResource[] = [
     { kind: "professional", id: input.professionalId },
@@ -234,6 +262,12 @@ export async function occupySlotAtomically(
       modality: input.modality,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
+      // La fecha original y el estado ya los calculó la política de TI2-93 en
+      // el caso de uso; acá se guardan tal cual, y sin ellos la fila conserva
+      // lo suyo: un cambio de recursos no marca reagendamiento ni toca la
+      // fecha original que exista.
+      ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
+      ...(input.nextStatus === undefined ? {} : { status: input.nextStatus }),
     });
     return okResult({ appointmentId: moved._id });
   }
@@ -249,4 +283,211 @@ export async function occupySlotAtomically(
     createdAt: Date.now(),
   });
   return okResult({ appointmentId });
+}
+
+/**
+ * Valida que la cadena sea un identificador de `appointments` sin revelar
+ * existencia: `null` cuando no pertenece a la tabla.
+ */
+export function normalizeAppointmentId(ctx: DbReader, raw: string): Id<"appointments"> | null {
+  return ctx.db.normalizeId("appointments", raw);
+}
+
+/** La atención con ese identificador, o `null` cuando no existe. */
+export async function getAppointmentById(
+  ctx: DbReader,
+  id: Id<"appointments">,
+): Promise<Doc<"appointments"> | null> {
+  return await ctx.db.get(id);
+}
+
+/** Campos de la transición ya aplicada: solo los que la política produjo. */
+export interface PersistedAppointmentTransition {
+  readonly status: Doc<"appointments">["status"];
+  readonly cancelReason?: string;
+  readonly originalStartsAt?: number;
+}
+
+/**
+ * Guarda el resultado de una transición ya aplicada por la política de
+ * TI2-93: el estado y, solo si la política los produjo, el motivo de
+ * cancelación y la fecha original. Única vía de escritura de cambio de
+ * estado fuera de la ocupación (`occupySlotAtomically`); la llamada la hace
+ * el caso de uso de TI2-107 tras aplicar `transitionAppointment`, así ningún
+ * consumidor decide qué campos cuadrar.
+ */
+export async function persistAppointmentTransition(
+  ctx: MutationCtx,
+  id: Id<"appointments">,
+  fields: PersistedAppointmentTransition,
+): Promise<void> {
+  await ctx.db.patch(id, {
+    status: fields.status,
+    ...(fields.cancelReason === undefined ? {} : { cancelReason: fields.cancelReason }),
+    ...(fields.originalStartsAt === undefined ? {} : { originalStartsAt: fields.originalStartsAt }),
+  });
+}
+
+/**
+ * Adaptador de lectura y persistencia de transiciones de atención para la capa de Aplicación.
+ */
+export function appointmentTransitionRepository(ctx: MutationCtx) {
+  return {
+    reader: {
+      normalizeAppointmentId: (raw: string) => {
+        const id = normalizeAppointmentId(ctx, raw);
+        return id === null ? null : (id as unknown as string);
+      },
+      getAppointmentById: async (id: string) => {
+        const convexId = normalizeAppointmentId(ctx, id);
+        if (convexId === null) return null;
+        const doc = await getAppointmentById(ctx, convexId);
+        if (doc === null) return null;
+        return {
+          status: doc.status,
+          startsAt: doc.startsAt,
+          ...(doc.originalStartsAt === undefined ? {} : { originalStartsAt: doc.originalStartsAt }),
+        };
+      },
+    },
+    persister: {
+      persistAppointmentTransition: async (
+        id: string,
+        fields: {
+          readonly status: Doc<"appointments">["status"];
+          readonly cancelReason?: string;
+          readonly originalStartsAt?: number;
+        },
+      ) => {
+        const convexId = normalizeAppointmentId(ctx, id);
+        if (convexId === null) {
+          throw new Error("Invalid appointment ID");
+        }
+        await persistAppointmentTransition(ctx, convexId, fields);
+      },
+    },
+  };
+}
+
+// ── TI2-111: adaptadores de los puertos de búsqueda y reserva ───────────────
+//
+// Cumplen por forma `SlotOccupancyReader` (TI2-97) y `AppointmentOccupier`
+// (TI2-84) sin importar Aplicación. Traducen el vocabulario del contrato
+// (`startAt`/`endAt` e identificadores de texto) al de este repositorio.
+
+/**
+ * Ocupación para la búsqueda: el cupo está ocupado cuando el profesional, el
+ * estudiante o la sala ya tienen una atención que lo cruza, los mismos
+ * recursos y la misma lectura por ventana que `occupySlotAtomically`. Una
+ * ventana sobre el tope o un identificador que no es de su tabla cuentan como
+ * ocupados, así la búsqueda no ofrece un cupo que la reserva rechazaría.
+ */
+export function slotOccupancyReader(ctx: DbReader) {
+  return {
+    isSlotOccupied: async (slot: {
+      readonly professionalId: string;
+      readonly studentId: string;
+      readonly spaceId?: string;
+      readonly startAt: number;
+      readonly endAt: number;
+    }) => {
+      const professionalId = ctx.db.normalizeId("users", slot.professionalId);
+      const studentId = ctx.db.normalizeId("users", slot.studentId);
+      const spaceId =
+        slot.spaceId === undefined ? undefined : ctx.db.normalizeId("spaces", slot.spaceId);
+      if (professionalId === null || studentId === null || spaceId === null) return true;
+      const resources: OccupiedResource[] = [
+        { kind: "professional", id: professionalId },
+        { kind: "student", id: studentId },
+      ];
+      if (spaceId !== undefined) {
+        resources.push({ kind: "space", id: spaceId });
+      }
+      const interval = { startsAt: slot.startAt, endsAt: slot.endAt };
+      for (const resource of resources) {
+        if (await isResourceTaken(ctx, resource, interval, null)) return true;
+      }
+      return false;
+    },
+  };
+}
+
+// ── TI2-121: lectura de la atención que se cambia ─────────────────────────
+//
+// Cumple por forma el puerto `AppointmentChangeReader` (TI2-109/TI2-110) sin
+// importar Aplicación. Traduce el vocabulario del contrato (`startAt`/`endAt`
+// e identificadores de texto) al de este repositorio.
+
+/**
+ * Lectura de la atención que se cambia. Un identificador que no pertenece a
+ * `appointments` responde igual que uno inexistente: `null`.
+ */
+export function appointmentChangeReader(ctx: DbReader) {
+  return {
+    getAppointment: async (appointmentId: string) => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      const doc = id === null ? null : await getAppointmentById(ctx, id);
+      if (doc === null) return null;
+      return {
+        id: doc._id,
+        accompanimentId: doc.accompanimentId,
+        studentId: doc.studentId,
+        professionalId: doc.professionalId,
+        status: doc.status,
+        startAt: doc.startsAt,
+        endAt: doc.endsAt,
+        ...(doc.originalStartsAt === undefined ? {} : { originalStartAt: doc.originalStartsAt }),
+      };
+    },
+  };
+}
+
+/**
+ * Escritura atómica para la reserva y el reagendamiento sobre
+ * `occupySlotAtomically`. Un identificador que no es de su tabla responde
+ * `conflict` sin escribir, en vez de llegar a la base con otra forma. El
+ * reagendamiento mueve la misma fila con `movedAppointmentId`.
+ */
+export function appointmentOccupier(ctx: MutationCtx) {
+  return {
+    occupySlot: async (slot: {
+      readonly accompanimentId: string;
+      readonly studentId: string;
+      readonly professionalId: string;
+      readonly modality: Doc<"appointments">["modality"];
+      readonly spaceId?: string;
+      readonly startAt: number;
+      readonly endAt: number;
+      readonly movedAppointmentId?: string;
+    }): Promise<ApiResult<{ appointmentId: string }>> => {
+      const accompanimentId = ctx.db.normalizeId("accompaniments", slot.accompanimentId);
+      const studentId = ctx.db.normalizeId("users", slot.studentId);
+      const professionalId = ctx.db.normalizeId("users", slot.professionalId);
+      const spaceId =
+        slot.spaceId === undefined ? undefined : ctx.db.normalizeId("spaces", slot.spaceId);
+      const movedAppointmentId =
+        slot.movedAppointmentId === undefined
+          ? undefined
+          : ctx.db.normalizeId("appointments", slot.movedAppointmentId);
+      if (
+        accompanimentId === null ||
+        studentId === null ||
+        professionalId === null ||
+        spaceId === null ||
+        movedAppointmentId === null
+      ) {
+        return errResult(conflictError());
+      }
+      return await occupySlotAtomically(ctx, {
+        accompanimentId,
+        studentId,
+        professionalId,
+        modality: slot.modality,
+        ...(spaceId === undefined ? {} : { spaceId }),
+        startsAt: slot.startAt,
+        endsAt: slot.endAt,
+        ...(movedAppointmentId === undefined ? {} : { movedAppointmentId }),
+      });
+    },
+  };
 }

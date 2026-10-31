@@ -17,7 +17,7 @@ import {
 test("mantiene visible el header de las pantallas del estudiante", () => {
   expect(studentLayoutScreenOptions).toMatchObject({
     headerShown: true,
-    headerTitle: "CERETIME",
+    headerTitle: "CERETI",
     headerBackVisible: false,
   });
 });
@@ -25,7 +25,7 @@ test("mantiene visible el header de las pantallas del estudiante", () => {
 test("habilita el retorno nativo en nueva solicitud sin título duplicado", () => {
   expect(studentRequestScreenOptions).toMatchObject({
     headerShown: true,
-    headerTitle: "CERETIME",
+    headerTitle: "CERETI",
     headerBackTitle: "Volver",
     headerBackButtonDisplayMode: "minimal",
     headerBackVisible: true,

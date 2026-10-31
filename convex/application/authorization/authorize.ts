@@ -6,8 +6,10 @@ import {
   canReadAvailability,
   canReadInternalNote,
   canReadSpaceCatalog,
+  canRecordAppointmentAttendance,
   canRescheduleAppointment,
   getAccompanimentView,
+  isProfessionalBookable,
   type AccompanimentView,
   type AccountStatus,
   type AgendaAuthorizationContext,
@@ -79,6 +81,27 @@ export type AuthorizableAssignment = {
   readonly status: "active" | "revoked";
 };
 
+/**
+ * Verdadero cuando alguna fila es una asignación activa de `userId` en el rol
+ * pedido sobre este acompañamiento. El filtro se mantiene aunque el puerto ya
+ * devuelva solo las vigentes de esa combinación: una fila de otro
+ * acompañamiento, de otro usuario o revocada nunca autoriza.
+ */
+function hasActiveAssignment(
+  assignments: ReadonlyArray<AuthorizableAssignment>,
+  accompanimentId: string,
+  userId: string,
+  assignedRole: AuthorizableAssignment["assignedRole"],
+): boolean {
+  return assignments.some(
+    (assignment) =>
+      assignment.accompanimentId === accompanimentId &&
+      assignment.userId === userId &&
+      assignment.assignedRole === assignedRole &&
+      assignment.status === "active",
+  );
+}
+
 export function buildAuthorizationContext(input: {
   readonly profile: AuthorizableProfile;
   readonly accompaniment: AuthorizableAccompaniment;
@@ -91,19 +114,17 @@ export function buildAuthorizationContext(input: {
     institutionalStatus: input.profile.institutionalStatus,
     accountStatus: input.profile.accountStatus,
     isOwner: input.accompaniment.studentId === callerId,
-    hasActiveProfessionalAssignment: input.assignments.some(
-      (assignment) =>
-        assignment.accompanimentId === accompanimentId &&
-        assignment.userId === callerId &&
-        assignment.assignedRole === "professional" &&
-        assignment.status === "active",
+    hasActiveProfessionalAssignment: hasActiveAssignment(
+      input.assignments,
+      accompanimentId,
+      callerId,
+      "professional",
     ),
-    hasActiveInternAssignment: input.assignments.some(
-      (assignment) =>
-        assignment.accompanimentId === accompanimentId &&
-        assignment.userId === callerId &&
-        assignment.assignedRole === "intern" &&
-        assignment.status === "active",
+    hasActiveInternAssignment: hasActiveAssignment(
+      input.assignments,
+      accompanimentId,
+      callerId,
+      "intern",
     ),
   };
 }
@@ -322,6 +343,39 @@ export async function authorizeAppointmentBook(
 }
 
 /**
+ * Verdadero cuando el Profesional buscado o elegido puede atender este
+ * acompañamiento: rol profesional, cuenta habilitada y vigente y asignación
+ * activa como profesional. La usan la búsqueda (TI2-111), la reserva (TI2-98)
+ * y el reagendamiento (TI2-109), así la búsqueda no ofrece cupos que la
+ * reserva rechazaría ni expone la agenda de quien no atiende el
+ * acompañamiento. No autoriza al actor: cada llamador traduce `false` a
+ * `no_availability`.
+ */
+export async function isBookableProfessional(
+  reader: AuthorizationReader,
+  request: { readonly accompanimentId: string; readonly professionalId: string },
+): Promise<boolean> {
+  const [profile, assignments] = await Promise.all([
+    reader.getProfileById(request.professionalId),
+    reader.findActiveAssignments(request.accompanimentId, request.professionalId),
+  ]);
+  return (
+    profile !== null &&
+    isProfessionalBookable({
+      role: profile.role,
+      institutionalStatus: profile.institutionalStatus,
+      accountStatus: profile.accountStatus,
+      hasActiveProfessionalAssignment: hasActiveAssignment(
+        assignments,
+        request.accompanimentId,
+        profile._id,
+        "professional",
+      ),
+    })
+  );
+}
+
+/**
  * Contexto de cambio de una atención concreta. La fila leída en el servidor
  * aporta la pertenencia: el Estudiante solo opera su propia atención y el
  * Profesional solo la que tiene asignada. Un acompañamiento inexistente,
@@ -395,6 +449,21 @@ export async function authorizeAppointmentReschedule(
   const actor = appointmentChangeActorForRole(loaded.context.role);
   if (actor === null) return denied();
   return okResult({ callerId: loaded.callerId, actor });
+}
+
+/**
+ * Registro de realización o inasistencia (TI2-110): solo el Profesional
+ * asignado que tiene la atención a su cargo. La identidad y la pertenencia
+ * salen de la sesión y de la fila leída en el servidor, nunca de la entrada
+ * del cliente; Estudiante, Practicante y Administrador se deniegan igual.
+ */
+export async function authorizeAppointmentAttendance(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canRecordAppointmentAttendance(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
 }
 
 /** Lectura del catálogo de espacios: basta una cuenta vigente de cualquier rol. */

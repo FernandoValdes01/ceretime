@@ -121,6 +121,11 @@ function puertoAgendaBase(): AgendaPort {
         status: "changed",
         appointment: { ...ATENCION_BASE, status: input.to },
       }),
+    listSpaces: () => Promise.resolve({ status: "empty" }),
+    saveSpace: () =>
+      Promise.resolve({
+        status: "denied",
+      }),
   };
 }
 

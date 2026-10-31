@@ -147,6 +147,21 @@ function puertoOk(): AgendaPort {
         status: "rejected",
         cause: "transition_not_allowed",
       }),
+    listSpaces: () => Promise.resolve({ status: "empty" }),
+    saveSpace: (input) =>
+      Promise.resolve({
+        status: "saved",
+        space: {
+          id: input.id ?? "esp-ficticio-9",
+          campus: input.campus,
+          building: input.building,
+          floor: input.floor,
+          room: input.room,
+          accessConditions: input.accessConditions,
+          arrivalInstructions: input.arrivalInstructions,
+          version: "v1",
+        },
+      }),
   };
 }
 

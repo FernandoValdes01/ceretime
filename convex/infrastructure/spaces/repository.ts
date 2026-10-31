@@ -1,6 +1,7 @@
 import type { Doc } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
+import type { AccessNeed } from "../../domain/requests/request";
 import type { Space } from "../../domain/spaces/space";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../../domain/spaces/space";
 
@@ -162,5 +163,49 @@ export function spaceReader(ctx: DbReader) {
       const row = await findSpaceRowByLocation(ctx, location);
       return row === null ? null : toStoredSpace(row);
     },
+  };
+}
+
+// ── TI2-111/TI2-121: necesidades y condiciones de compatibilidad ──────────
+//
+// Decisión provisional compartida: el esquema guarda las necesidades del acompañamiento
+// (`accessNeeds`) y las condiciones de la sala (`accessConditions`) como
+// texto, y la compatibilidad de TI2-82 compara identificadores. Cada línea
+// no vacía es una necesidad cuyo identificador es su propio texto, la misma
+// forma en que la solicitud une sus etiquetas (`toStoredRequestFields`). Una
+// sala cubre una necesidad solo si trae la misma línea: lo que no calza
+// queda sin cubrir y la opción se descarta, nunca se rebaja. La plataforma
+// en línea no declara apoyos porque el esquema no tiene dónde guardarlos.
+
+/** Necesidades de un texto guardado, una por línea, sin repetir ni vacías. */
+export function accessNeedsFromLines(text: string): AccessNeed[] {
+  const seen = new Set<string>();
+  const needs: AccessNeed[] = [];
+  for (const line of text.split("\n")) {
+    const label = line.trim();
+    if (label === "" || seen.has(label)) continue;
+    seen.add(label);
+    needs.push({ id: label, label });
+  }
+  return needs;
+}
+
+/**
+ * Espacios para la compatibilidad (puerto `CompatibilitySpaceSource` de
+ * TI2-97). Una sala retirada, inexistente o de otra tabla responde `null` y
+ * no se ofrece.
+ */
+export function compatibilitySpaceSource(ctx: DbReader) {
+  return {
+    findCompatibilitySpace: async (spaceId: string) => {
+      const row = await getSpaceRow(ctx, spaceId);
+      if (row === null || !row.isActive) return null;
+      return {
+        space: toSpace(row),
+        isActive: row.isActive,
+        satisfiedNeeds: accessNeedsFromLines(row.accessConditions),
+      };
+    },
+    listOnlineSupports: async (): Promise<readonly AccessNeed[]> => [],
   };
 }

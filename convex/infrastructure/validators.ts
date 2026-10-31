@@ -1,6 +1,9 @@
 ﻿import { v } from "convex/values";
 import { ACCOMPANIMENT_STATUS_VALUES } from "../domain/accompaniments/accompaniment";
-import { APPOINTMENT_STATUS_VALUES } from "../domain/appointments/appointment";
+import {
+  APPOINTMENT_ATTENDANCE_OUTCOME_VALUES,
+  APPOINTMENT_STATUS_VALUES,
+} from "../domain/appointments/appointment";
 import {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
   MODALITY_VALUES,
@@ -89,4 +92,13 @@ export const availabilityExceptionKindUnion = v.union(
  */
 export const appointmentStatusUnion = v.union(
   ...APPOINTMENT_STATUS_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Resultados que el registro de atención puede declarar (TI2-110),
+ * derivados del dominio. Deja fuera la justificación de inasistencia, que
+ * pertenece a TI2-119.
+ */
+export const appointmentAttendanceOutcomeUnion = v.union(
+  ...APPOINTMENT_ATTENDANCE_OUTCOME_VALUES.map((value) => v.literal(value)),
 );
