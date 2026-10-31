@@ -1913,3 +1913,33 @@ test("TI2-112: el Administrador y una llamada sin sesión no leen agenda, acompa
     expect(await ti111PublicError(call)).toStrictEqual(unauthorizedError());
   }
 });
+
+test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  // 22:00 del domingo 12 y 21:00 del domingo 5 en Santiago: del otro lado de la medianoche UTC.
+  const { lateLastDay, lateDayBefore } = await t.run(async (ctx) => {
+    const insert = (startsAt: number) =>
+      ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId,
+        professionalId,
+        modality: "online",
+        status: "scheduled",
+        startsAt,
+        endsAt: startsAt + 3_600_000,
+        createdAt: 1,
+      });
+    return {
+      lateLastDay: await insert(ti112At(12, 22)),
+      lateDayBefore: await insert(ti112At(5, 21)),
+    };
+  });
+  const week = await ti112Caller(t, "est-1").query(
+    api.presentation.appointments.listAppointments,
+    TI112_WEEK,
+  );
+  const ids = week.items.map((item) => item.id);
+  expect(ids).toContain(lateLastDay);
+  expect(ids).not.toContain(lateDayBefore);
+});
