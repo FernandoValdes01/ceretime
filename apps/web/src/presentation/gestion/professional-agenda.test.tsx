@@ -13,9 +13,9 @@ import { setAgendaPortForTests } from "./professional-agenda-data.ts";
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Profesional, salvo los casos de denegación. El puerto de agenda se inyecta
- * por pruebas porque el adaptador ficticio no distingue referencias; el
- * cableado real puerto→adaptador lo cubren las pruebas del adaptador, `tsc`
- * y el build. Todos los datos son ficticios y el modo se declara simulado.
+ * por pruebas para fijar respuestas; el cableado real puerto→adaptador lo
+ * cubren las pruebas del adaptador, `tsc` y el build. Todos los datos son
+ * ficticios y la página declara que consulta la API.
  */
 
 let mockedSession: WebSessionState;
@@ -227,11 +227,13 @@ describe("agenda del Profesional (TI2-115)", () => {
     expect(screen.queryByText("Presencial")).toBeNull();
   });
 
-  test("el modo simulado se declara en la página", async () => {
+  test("la página declara que consulta la API y que autoriza el Backend", async () => {
     comoProfesional();
     renderAt("/profesional/agenda");
 
-    expect(await screen.findByText(/Lectura simulada con datos ficticios/)).toBeDefined();
+    expect(
+      await screen.findByText("Agenda consultada a la API; la autorización la decide el Backend."),
+    ).toBeDefined();
   });
 });
 
@@ -259,7 +261,7 @@ describe("detalle de la atención (TI2-115)", () => {
     if (confirmation === null) {
       throw new Error("Se esperaba el bloque de confirmación del cambio");
     }
-    expect(within(confirmation).getByText(/Cambio simulado con datos ficticios/)).toBeDefined();
+    expect(within(confirmation).getByText(/Cambio registrado por el Backend/)).toBeDefined();
     // El estado visible del detalle cambia con la misma representación.
     expect(screen.getByText("Realizada")).toBeDefined();
   });

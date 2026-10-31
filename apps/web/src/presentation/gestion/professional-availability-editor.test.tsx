@@ -12,9 +12,9 @@ import { setAgendaPortForTests } from "./professional-availability-data.ts";
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Profesional, salvo los casos de denegación. El puerto de agenda se inyecta
- * por pruebas porque el adaptador ficticio no distingue referencias; el
- * cableado real puerto→adaptador lo cubren `tsc`, el build y la verificación
- * manual contra el entorno ficticio de TI2-30. Todos los datos son ficticios.
+ * por pruebas para fijar respuestas; el cableado real puerto→adaptador lo
+ * cubren las pruebas del adaptador, `tsc` y el build. Todos los datos son
+ * ficticios y la confirmación visible la emite el Backend.
  */
 
 let mockedSession: WebSessionState;
@@ -317,7 +317,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     ).toBeDefined();
   });
 
-  test("guardado válido confirma con nota ficticia por teclado", async () => {
+  test("guardado válido confirma con la respuesta del Backend por teclado", async () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
 
@@ -332,7 +332,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
 
     expect(await screen.findByText("Bloque guardado")).toBeDefined();
     expect(
-      await screen.findByText("Código bloque-ficticio-9. Guardado simulado con datos ficticios.", {
+      await screen.findByText("Código bloque-ficticio-9. Guardado confirmado por el Backend.", {
         exact: false,
       }),
     ).toBeDefined();
@@ -401,7 +401,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     ).toBeDefined();
   });
 
-  test("excepción válida confirma con nota ficticia y conserva el detalle", async () => {
+  test("excepción válida confirma con la respuesta del Backend y conserva el detalle", async () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
 
@@ -423,7 +423,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     // El detalle sobrevive al limpiarse el formulario.
     expect(view.getByText("2026-05-07")).toBeDefined();
     expect(view.getByText("Día completo")).toBeDefined();
-    expect(view.getByText("Guardado simulado con datos ficticios.")).toBeDefined();
+    expect(view.getByText("Guardado confirmado por el Backend.")).toBeDefined();
   });
 
   test("distingue el alcance de las cancelaciones y detalla el agregado", async () => {

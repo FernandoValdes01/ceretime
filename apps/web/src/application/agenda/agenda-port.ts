@@ -211,6 +211,9 @@ export type ChangeAppointmentStatusResult =
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
 
+/** Cancela una suscripción reactiva del puerto. */
+export type AgendaUnsubscribe = () => void;
+
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {
   searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult>;
@@ -225,4 +228,15 @@ export interface AgendaPort {
   ): Promise<ChangeAppointmentStatusResult>;
   listSpaces(): Promise<ListSpacesResult>;
   saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult>;
+  /**
+   * Suscripción opcional a la agenda. La implementa la API real para reflejar
+   * cambios sin recargar la vista; el adaptador ficticio puede omitirla y las
+   * páginas caen a la lectura puntual.
+   */
+  watchAppointments?(onChange: (result: ListAppointmentsResult) => void): AgendaUnsubscribe;
+  /** Suscripción opcional al detalle de una atención. */
+  watchAppointment?(
+    appointmentId: string,
+    onChange: (result: AgendaAppointmentResult) => void,
+  ): AgendaUnsubscribe;
 }

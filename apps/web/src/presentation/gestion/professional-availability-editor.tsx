@@ -47,14 +47,14 @@ const GESTION_FIELD = "min-h-[44px] w-full min-w-0 box-border px-3 py-2 text-bas
 const GESTION_FIELD_CLASS = `${GESTION_FIELD} ${GESTION_FOCUS_VISIBLE}`;
 
 /**
- * Editor de bloques recurrentes y excepciones del Profesional (TI2-103).
+ * Editor de bloques recurrentes y excepciones del Profesional
+ * (TI2-103/TI2-125).
  *
- * Interfaz tipada con validación de formato y resultados simulados, sin
- * duplicar reglas del Backend. Lee y guarda por el puerto común de agenda
- * con el adaptador ficticio hasta TI2-125; no escribe base de datos, no
- * resuelve compatibilidad ni autorización local y nunca envía identidad del
- * cliente como prueba de propiedad. Todo guardado se identifica como
- * simulado con datos ficticios.
+ * Interfaz tipada con validación de formato, sin duplicar reglas del Backend.
+ * Lee y guarda por el puerto común de agenda contra `api.presentation.availability`;
+ * no escribe base de datos, no resuelve compatibilidad ni autorización local y
+ * nunca envía identidad del cliente como prueba de propiedad. El catálogo de
+ * espacios que se referencia sigue siendo simulado hasta TI2-104.
  */
 export function ProfessionalAvailabilityPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -270,7 +270,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
       <div className="student-portal__section-head">
         <h2 id="block-form-title">Nuevo bloque recurrente</h2>
       </div>
-      <p>Guardado simulado con datos ficticios.</p>
+      <p>Guardado confirmado por el Backend.</p>
       <form onSubmit={handleSubmit} noValidate>
         <div>
           <label htmlFor="block-weekday">Día de la semana</label>
@@ -417,7 +417,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
             <h3 ref={confirmationRef} tabIndex={-1}>
               Bloque guardado
             </h3>
-            <p>Código {savedId}. Guardado simulado con datos ficticios.</p>
+            <p>Código {savedId}. Guardado confirmado por el Backend.</p>
           </div>
         ) : null}
         <div className="student-portal__cta">
@@ -498,7 +498,7 @@ function ExceptionFormSection({
       <div className="student-portal__section-head">
         <h2 id="exception-form-title">Nueva excepción</h2>
       </div>
-      <p>Guardado simulado con datos ficticios.</p>
+      <p>Guardado confirmado por el Backend.</p>
       <form onSubmit={handleSubmit} noValidate>
         <div>
           <label htmlFor="exception-date">Fecha (AAAA-MM-DD)</label>
@@ -692,7 +692,7 @@ function ExceptionFormSection({
               Excepción guardada
             </h3>
             <ExceptionDetails exception={savedException} />
-            <p>Guardado simulado con datos ficticios.</p>
+            <p>Guardado confirmado por el Backend.</p>
           </div>
         ) : null}
         <div className="student-portal__cta">
