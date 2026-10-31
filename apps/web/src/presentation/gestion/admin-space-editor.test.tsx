@@ -130,6 +130,13 @@ function puertoOk(): AgendaPort {
           version: "v1",
         },
       }),
+    listAppointments: () => Promise.resolve({ status: "empty" }),
+    getAppointment: () => Promise.resolve({ status: "denied" }),
+    changeAppointmentStatus: () =>
+      Promise.resolve({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      }),
   };
 }
 

@@ -211,3 +211,145 @@ describe("catálogo ficticio de espacios (TI2-04)", () => {
     expect(resultado.space.id).toMatch(/^esp-ficticio-\d+$/);
   });
 });
+
+describe("agenda ficticia del profesional (TI2-115)", () => {
+  test("lista atenciones con estados del contrato, ordenadas y del mismo profesional", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const resultado = await adapter.listAppointments();
+
+    if (resultado.status !== "ok") {
+      throw new Error("Se esperaba lectura ficticia de la agenda");
+    }
+    expect(resultado.appointments.length).toBeGreaterThan(0);
+    for (let index = 1; index < resultado.appointments.length; index += 1) {
+      expect(resultado.appointments[index].startAt).toBeGreaterThanOrEqual(
+        resultado.appointments[index - 1].startAt,
+      );
+      expect(resultado.appointments[index].endAt).toBeGreaterThan(
+        resultado.appointments[index].startAt,
+      );
+    }
+    const estados = new Set(resultado.appointments.map((item) => item.status));
+    expect(estados.has("scheduled")).toBe(true);
+    expect(estados.has("completed")).toBe(true);
+  });
+
+  test("lee una atención por identificador y deniega un id ajeno sin filtrar", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const propia = await adapter.getAppointment("aten-ficticio-1");
+    const ajena = await adapter.getAppointment("aten-ficticio-999");
+
+    expect(propia.status).toBe("ok");
+    expect(ajena.status).toBe("denied");
+    if (propia.status !== "ok") {
+      throw new Error("Se esperaba lectura ficticia de la atención propia");
+    }
+    expect(propia.appointment).toMatchObject({
+      id: "aten-ficticio-1",
+      status: "scheduled",
+      modality: "inPerson",
+    });
+  });
+
+  test("cambio a un destino válido aplica la política de dominio y se refleja en la lista", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+    const pasadas = await adapter.listAppointments();
+    if (pasadas.status !== "ok") {
+      throw new Error("Se esperaba lectura ficticia de la agenda");
+    }
+    const programada = pasadas.appointments.find((item) => item.id === "aten-ficticio-2");
+    if (programada === undefined) {
+      throw new Error("Se esperaba la atención programada ficticia");
+    }
+
+    const cambio = await adapter.changeAppointmentStatus({
+      appointmentId: "aten-ficticio-2",
+      to: "completed",
+    });
+
+    if (cambio.status !== "changed") {
+      throw new Error(`Se esperaba el cambio aplicado y llegó: ${JSON.stringify(cambio)}`);
+    }
+    expect(cambio.appointment.status).toBe("completed");
+
+    const posterior = await adapter.listAppointments();
+    if (posterior.status !== "ok") {
+      throw new Error("Se esperaba lectura posterior ficticia de la agenda");
+    }
+    expect(posterior.appointments.find((item) => item.id === "aten-ficticio-2")?.status).toBe(
+      "completed",
+    );
+  });
+
+  test("salto inválido devuelve la causa canónica sin cambiar la atención", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const cambio = await adapter.changeAppointmentStatus({
+      appointmentId: "aten-ficticio-1",
+      to: "no_show_justified",
+    });
+
+    expect(cambio).toMatchObject({ status: "rejected", cause: "transition_not_allowed" });
+    const posterior = await adapter.listAppointments();
+    if (posterior.status !== "ok") {
+      throw new Error("Se esperaba lectura posterior ficticia de la agenda");
+    }
+    expect(posterior.appointments.find((item) => item.id === "aten-ficticio-1")?.status).toBe(
+      "scheduled",
+    );
+  });
+
+  test("cancelación por CERETI exige motivo y ocurrencia posterior al inicio", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const sinMotivo = await adapter.changeAppointmentStatus({
+      appointmentId: "aten-ficticio-1",
+      to: "cancelled_by_cereti",
+    });
+    const antesDeHora = await adapter.changeAppointmentStatus({
+      appointmentId: "aten-ficticio-1",
+      to: "completed",
+    });
+
+    expect(sinMotivo).toMatchObject({ status: "rejected", cause: "reason_required" });
+    expect(antesDeHora).toMatchObject({ status: "rejected", cause: "occurred_before_start" });
+  });
+
+  test("reagendar sin nuevas fechas devuelve la causa canónica del dominio", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const cambio = await adapter.changeAppointmentStatus({
+      appointmentId: "aten-ficticio-1",
+      to: "rescheduled",
+    });
+
+    expect(cambio).toMatchObject({ status: "rejected", cause: "reschedule_required" });
+  });
+
+  test("resuelve la justificación de una inasistencia pendiente", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const cambio = await adapter.changeAppointmentStatus({
+      appointmentId: "aten-ficticio-5",
+      to: "no_show_justified",
+    });
+
+    if (cambio.status !== "changed") {
+      throw new Error(`Se esperaba la justificación resuelta y llegó: ${JSON.stringify(cambio)}`);
+    }
+    expect(cambio.appointment.status).toBe("no_show_justified");
+  });
+
+  test("un id ajeno al cambiar estado responde denegación genérica", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const cambio = await adapter.changeAppointmentStatus({
+      appointmentId: "aten-ficticio-999",
+      to: "completed",
+    });
+
+    expect(cambio).toMatchObject({ status: "denied" });
+  });
+});
