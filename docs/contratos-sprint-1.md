@@ -212,6 +212,6 @@ Errores: `unauthorized` (`No autorizado`) responde igual sin identidad, sin perf
 
 Modelo de datos: se agrega el índice `by_accompanimentId_and_startsAt` a `appointments`. Es aditivo: no cambia filas ni requiere migración. `AppointmentPage.items` pasa de `Appointment[]` a `AppointmentProjection[]`; ningún cliente importaba ese tipo. `ListAppointmentsInput` de TI2-87 no cambia, aunque esta API no use su `professionalId`.
 
-Impacto en los clientes: Web puede usar estas queries en TI2-114 y TI2-125, y debe ramificar por `view` antes de leer los campos de `full`. Las horas se muestran con `AGENDA_TIME_ZONE`. Los errores llegan como `ConvexError` con `data: { code, message }`. Mobile no cambia: sigue con sus datos ficticios tipados durante el Sprint 2.
+Impacto en los clientes: Web puede conectar estas queries en TI2-123 (lista y detalle del Estudiante) y TI2-125 (agenda del Profesional), sobre las pantallas de TI2-114 y TI2-115, y debe ramificar por `view` antes de leer los campos de `full`. Las horas se muestran con `AGENDA_TIME_ZONE`. Los errores llegan como `ConvexError` con `data: { code, message }`. Mobile no cambia: sigue con sus datos ficticios tipados durante el Sprint 2.
 
 Comprobación: pruebas «TI2-112: …» en `convex/tests/apiBackend.test.ts` y `convex/tests/practitionerContracts.test.ts`; reglas y paginación por rol en `convex/application/appointments/queries.test.ts`; el rango civil en `convex/domain/availability/availability.test.ts`.
