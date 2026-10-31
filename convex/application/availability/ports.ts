@@ -108,14 +108,20 @@ export interface AccompanimentNeedsReader {
 
 /**
  * Ocupación mínima para la búsqueda (TI2-84, cruces de TI2-96). Informa si
- * el intervalo del cupo se cruza con una atención no cancelada; la reserva
- * atómica sigue siendo la única vía que ocupa. El intervalo sigue el mismo
- * convenio semiabierto `[startAt, endAt)` de TI2-96: dos cupos con igual
- * inicio y distinto fin generan consultas distintas.
+ * el intervalo del cupo se cruza con una atención no cancelada del
+ * profesional, del estudiante del acompañamiento o de la sala del cupo: los
+ * mismos recursos que comprueba la reserva, así la búsqueda no ofrece un cupo
+ * que la reserva rechazaría (TI2-111). La reserva atómica sigue siendo la
+ * única vía que ocupa. El intervalo sigue el mismo convenio semiabierto
+ * `[startAt, endAt)` de TI2-96: dos cupos con igual inicio y distinto fin
+ * generan consultas distintas.
  */
 export interface SlotOccupancyReader {
   isSlotOccupied(input: {
     readonly professionalId: string;
+    readonly studentId: string;
+    /** Sala del cupo presencial; ausente en línea. */
+    readonly spaceId?: string;
     readonly startAt: number;
     readonly endAt: number;
   }): Promise<boolean>;

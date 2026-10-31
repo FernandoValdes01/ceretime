@@ -19,6 +19,7 @@ import { assessCompatibility, type CompatibilityOption } from "../../domain/spac
 import {
   authorizeAvailabilityEdit,
   authorizeAvailabilityRead,
+  isBookableProfessional,
   type AuthorizationReader,
 } from "../authorization/authorize";
 import type {
@@ -33,8 +34,8 @@ import type {
 /**
  * Casos de uso de disponibilidad (TI2-97).
  *
- * Capa de Aplicación: publica bloques y excepciones del profesional y
- * consulta cupos compatibles para un acompañamiento activo. No crea
+ * Capa de Aplicación: publica y lee los bloques y excepciones propios del
+ * profesional y consulta cupos compatibles para un acompañamiento activo. No crea
  * entrada pública (`query`/`mutation` de TI2-111) ni toca `ctx.db`
  * (repositorios de TI2-95): recibe puertos por parámetro y se prueba con
  * dobles en memoria. La única definición de cada puerto vive en
@@ -46,9 +47,10 @@ import type {
  * (estudiante dueño) o asignación vigente (profesional asignado). Toda
  * denegación responde el mismo error genérico, sin revelar existencia.
  *
- * Búsqueda: combina recurrencia y excepciones (TI2-81), ocupación por
- * puerto (TI2-84/TI2-96) y compatibilidad de modalidad y espacio con las
- * necesidades vigentes sin rebajarlas (TI2-82). Sin opción compatible y
+ * Búsqueda: solo expone cupos de un profesional reservable para el
+ * acompañamiento (TI2-111), y combina recurrencia y excepciones (TI2-81),
+ * ocupación por puerto (TI2-84/TI2-96) y compatibilidad de modalidad y
+ * espacio con las necesidades vigentes sin rebajarlas (TI2-82). Sin opción compatible y
  * libre responde `no_availability` (TI2-88) con la referencia mínima
  * `accompanimentId` de la entrada, sin crear reserva incompatible. Rango
  * y página acotados: la consulta nunca expone el calendario completo. Un
@@ -192,6 +194,42 @@ export async function removeAvailabilityException(
   return store.removeException(input.exceptionId);
 }
 
+/** Disponibilidad propia: bloques vigentes y excepciones del rango pedido. */
+export interface OwnAvailability {
+  readonly blocks: readonly AvailabilityBlock[];
+  readonly exceptions: readonly StoredAvailabilityException[];
+}
+
+/**
+ * Lee la disponibilidad propia para editarla (TI2-111): los bloques vigentes
+ * y las excepciones de un rango civil inclusivo de hasta `MAX_EXPANSION_DAYS`
+ * días. El profesional sale del actor autorizado, nunca del cliente, así que
+ * solo lee lo suyo; requiere profesional vigente como la escritura (TI2-86).
+ * Un rango inválido o un tope de lectura superado responde `conflict` sin
+ * lista cortada. Los bloques salen en la forma del contrato, sin la vigencia:
+ * todos los listados están vigentes.
+ */
+export async function listOwnAvailability(
+  auth: AuthorizationReader,
+  store: AvailabilityReader,
+  input: { readonly tokenIdentifier: string | null; readonly from: string; readonly to: string },
+): Promise<ApiResult<OwnAvailability>> {
+  const grant = await authorizeAvailabilityEdit(auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    professionalId: null,
+  });
+  if (grant.status === "error") return denied();
+  const [blocks, exceptions] = await Promise.all([
+    store.listActiveBlocks(grant.data.callerId),
+    store.listExceptions({ professionalId: grant.data.callerId, from: input.from, to: input.to }),
+  ]);
+  if (blocks.status === "error" || exceptions.status === "error") return conflict();
+  return okResult({
+    blocks: blocks.data.map(({ isActive: _isActive, ...block }) => block),
+    exceptions: exceptions.data,
+  });
+}
+
 /** Entrada de búsqueda de cupos para un acompañamiento activo. */
 export interface SearchAvailabilityInput {
   readonly tokenIdentifier: string | null;
@@ -240,7 +278,10 @@ export async function resolveCompatibilityOption(
  *
  * Autoriza con TI2-86 (acompañamiento activo con pertenencia o asignación
  * vigente; pausado, cerrado, revocado, practicante o administrador se
- * deniegan), expande con TI2-81, descuenta ocupación (TI2-84/TI2-96) y
+ * deniegan), exige que el profesional buscado sea reservable para ese
+ * acompañamiento (si no, `no_availability` sin leer su disponibilidad),
+ * expande con TI2-81, descuenta la ocupación del profesional, del
+ * estudiante y de la sala (TI2-84/TI2-96) y
  * filtra por compatibilidad con las necesidades vigentes sin rebajarlas
  * (TI2-82). Sin opción compatible y libre responde `no_availability`
  * (TI2-88) con la referencia mínima `accompanimentId` de la entrada, sin
@@ -266,21 +307,33 @@ export async function searchAvailabilitySlots(
     accompanimentId: input.accompanimentId,
   });
   if (grant.status === "error") return denied();
-
-  const [blocksResult, exceptionsResult, needsEntry, onlineSupports] = await Promise.all([
-    deps.availability.listActiveBlocks(input.professionalId),
-    deps.availability.listExceptions({
+  // Un profesional no asignado, revocado o sin cuenta vigente responde igual
+  // que uno sin cupos, antes de leer su disponibilidad.
+  if (
+    !(await isBookableProfessional(deps.auth, {
+      accompanimentId: input.accompanimentId,
       professionalId: input.professionalId,
-      from: input.from,
-      to: input.to,
-    }),
-    deps.needs.findAccompanimentNeeds(input.accompanimentId),
-    deps.compatibility.listOnlineSupports(),
-  ]);
+    }))
+  ) {
+    return errResult(noAvailabilityError());
+  }
+
+  const [blocksResult, exceptionsResult, needsEntry, onlineSupports, accompaniment] =
+    await Promise.all([
+      deps.availability.listActiveBlocks(input.professionalId),
+      deps.availability.listExceptions({
+        professionalId: input.professionalId,
+        from: input.from,
+        to: input.to,
+      }),
+      deps.needs.findAccompanimentNeeds(input.accompanimentId),
+      deps.compatibility.listOnlineSupports(),
+      deps.auth.getAccompaniment(input.accompanimentId),
+    ]);
   if (blocksResult.status === "error" || exceptionsResult.status === "error") {
     return conflict();
   }
-  if (needsEntry === null) return conflict();
+  if (needsEntry === null || accompaniment === null) return conflict();
 
   let expanded: AvailabilitySlot[];
   try {
@@ -298,8 +351,13 @@ export async function searchAvailabilitySlots(
 
   const compatible: AvailabilitySlot[] = [];
   for (const slot of expanded) {
+    // Los mismos recursos que comprueba la reserva: el profesional, el
+    // estudiante del acompañamiento (también cuando busca el profesional) y
+    // la sala del cupo presencial.
     const occupied = await deps.occupancy.isSlotOccupied({
       professionalId: input.professionalId,
+      studentId: accompaniment.studentId,
+      ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
       startAt: slot.startAt,
       endAt: slot.endAt,
     });

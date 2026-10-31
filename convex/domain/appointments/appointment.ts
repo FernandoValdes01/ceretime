@@ -53,6 +53,15 @@ export const INITIAL_APPOINTMENT_STATUS: AppointmentStatus = "scheduled";
 /** Inasistencia pendiente de justificación (valor histórico `no_show`). */
 export const NO_SHOW_PENDING_STATE: AppointmentStatus = "no_show";
 
+/**
+ * Resultados que el registro de atención de TI2-110 puede declarar: realizada
+ * o inasistencia pendiente. La justificación posterior (TI2-119) no forma
+ * parte de esta superficie.
+ */
+export const APPOINTMENT_ATTENDANCE_OUTCOME_VALUES = ["completed", "no_show"] as const;
+
+export type AppointmentAttendanceOutcome = (typeof APPOINTMENT_ATTENDANCE_OUTCOME_VALUES)[number];
+
 /** Atención reservada vinculada a un acompañamiento, con identificadores genéricos. */
 export interface Appointment {
   readonly id: string;

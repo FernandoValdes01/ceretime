@@ -123,7 +123,7 @@ describe("Navegación principal", () => {
       await screen.findByText("Solicitudes".slice(0, 8) + "\u200B" + "Solicitudes".slice(8)),
     ).toBeOnTheScreen();
     expect(
-      screen.getByText("Acompañamientos".slice(0, 7) + "\u200B" + "Acompañamientos".slice(7)),
+      screen.getByText("Acompañamientos".slice(0, 8) + "\u200B" + "Acompañamientos".slice(8)),
     ).toBeOnTheScreen();
     expect(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 4" })).toBeOnTheScreen();
     expect(
