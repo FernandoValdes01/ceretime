@@ -71,6 +71,18 @@ const PAR_INTERN = {
   role: { status: "authenticated", role: "intern", email: "intern@uct.cl" },
 } as const;
 
+const SESION_ADMIN: WebSessionState = {
+  status: "authenticated",
+  email: "admin@uct.cl",
+  name: "Administrador Ficticio",
+  population: "personal",
+};
+
+const PAR_ADMIN = {
+  session: SESION_ADMIN,
+  role: { status: "authenticated", role: "admin", email: "admin@uct.cl" },
+} as const;
+
 const SIN_SESION: WebSessionState = { status: "unauthenticated" };
 
 const PAR_SIN_SESION = {
@@ -484,6 +496,28 @@ describe("guards de la agenda (TI2-115)", () => {
   test("otro rol va a denegado sin contenido del detalle", async () => {
     mockedSession = SESION_INTERN;
     mockedPair = PAR_INTERN;
+    const { router } = renderAt("/profesional/agenda/aten-ficticio-1");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(screen.queryByRole("heading", { name: "Detalle de la atención" })).toBeNull();
+  });
+
+  // TI2-126: la agenda y el detalle son del Profesional asignado. El
+  // Administrador no lee atenciones ni acompañamientos (matriz TI2-5), así
+  // que ambas rutas se deniegan en la Web y el Backend las vuelve a negar.
+  test("el Administrador ve denegada la agenda sin contenido", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
+    const { router } = renderAt("/profesional/agenda");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Agenda" })).toBeNull();
+  });
+
+  test("el Administrador ve denegado el detalle sin contenido", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
     const { router } = renderAt("/profesional/agenda/aten-ficticio-1");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));

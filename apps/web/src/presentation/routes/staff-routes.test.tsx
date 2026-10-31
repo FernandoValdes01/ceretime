@@ -403,6 +403,172 @@ describe("transiciones de sesión con el guard montado (TI2-20)", () => {
   });
 });
 
+// TI2-126: permisos de gestión del Practicante y del Administrador. El guard
+// solo elige portal; la denegación efectiva de datos vive en Convex (matriz
+// `convex/domain/authorization/permissions.ts`). Estas pruebas fijan lo que la
+// Web puede garantizar sin duplicar la autorización del Backend.
+const PORTALES_CON_PERMISOS = [
+  {
+    nombre: "Practicante",
+    ruta: "/practicante",
+    titulo: "Portal del Practicante",
+    rol: "intern" as const,
+  },
+  {
+    nombre: "Administración",
+    ruta: "/administrador",
+    titulo: "Portal de Administración",
+    rol: "admin" as const,
+  },
+] as const;
+
+const RUTAS_DEL_PROFESIONAL = [
+  "/profesional/solicitudes",
+  "/profesional/solicitudes/req-1",
+  "/profesional/disponibilidad",
+  "/profesional/agenda",
+  "/profesional/agenda/aten-1",
+] as const;
+
+const ENCABEZADOS_PROFESIONAL = [
+  "Solicitudes",
+  "Detalle de la solicitud",
+  "Disponibilidad",
+  "Agenda",
+  "Detalle de la atención",
+] as const;
+
+describe.each(PORTALES_CON_PERMISOS)(
+  "$nombre: sesión expirada y cambio de cuenta (TI2-126)",
+  ({ ruta, titulo, rol }) => {
+    function comoRolPermitido() {
+      sessionMocks.setPair({
+        session: sesionPersonal(`${rol}@uct.cl`),
+        role: rolDe(rol, `${rol}@uct.cl`),
+      });
+    }
+
+    test("la sesión expirada oculta el portal y vuelve al acceso conservando el retorno", async () => {
+      comoRolPermitido();
+      const { router } = renderAt(ruta);
+
+      expect(await screen.findByRole("heading", { name: titulo })).toBeDefined();
+
+      // El token vence: la sesión pasa a no autenticada antes que el par, que
+      // todavía conserva el rol anterior. El portal no debe seguir visible.
+      act(() => {
+        sessionMocks.setPair({
+          session: SIN_SESION,
+          role: rolDe(rol, `${rol}@uct.cl`),
+        });
+      });
+
+      await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
+      expect(router.state.location.search).toMatchObject({ redirect: ruta });
+      expect(screen.queryByRole("heading", { name: titulo })).toBeNull();
+    });
+
+    test("el cambio de cuenta no expone el portal del rol anterior", async () => {
+      comoRolPermitido();
+      const { router } = renderAt(ruta);
+
+      expect(await screen.findByRole("heading", { name: titulo })).toBeDefined();
+
+      const otroRol = rol === "intern" ? "admin" : "intern";
+      const otroEmail = `${otroRol}@uct.cl`;
+      act(() => {
+        sessionMocks.setPair({
+          session: sesionPersonal(otroEmail),
+          role: rolDe(otroRol, otroEmail),
+        });
+      });
+
+      await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+      expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
+      expect(screen.queryByRole("heading", { name: titulo })).toBeNull();
+    });
+  },
+);
+
+describe.each([
+  ["Practicante", "intern", "intern@uct.cl"],
+  ["Administración", "admin", "admin@uct.cl"],
+] as const)("%s no abre rutas de gestión del Profesional (TI2-126)", (_nombre, rol, email) => {
+  test.each(RUTAS_DEL_PROFESIONAL)("%s va a denegado sin contenido", async (ruta) => {
+    sessionMocks.setPair({ session: sesionPersonal(email), role: rolDe(rol, email) });
+    const { router } = renderAt(ruta);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
+    for (const tituloProfesional of ENCABEZADOS_PROFESIONAL) {
+      expect(screen.queryByRole("heading", { name: tituloProfesional })).toBeNull();
+    }
+  });
+});
+
+describe("Practicante sin asignación o con asignación revocada (TI2-126)", () => {
+  // La vista minimizada del Practicante es TI2-116 y todavía no existe. Hasta
+  // entonces la Web solo puede garantizar que no expone datos: el Backend es
+  // quien devuelve `minimized` con asignación activa y deniega sin asignación
+  // o con la asignación revocada (TI2-5). Esta prueba documenta ese contraste
+  // y evita prometer una pantalla que aún no filtra nada.
+  test("la portada no expone acompañamientos ni datos de la asignación", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("intern@uct.cl"),
+      role: rolDe("intern", "intern@uct.cl"),
+    });
+    renderAt("/practicante");
+
+    expect(await screen.findByRole("heading", { name: "Portal del Practicante" })).toBeDefined();
+    expect(
+      screen.getByText("Tus acompañamientos asignados estarán disponibles aquí."),
+    ).toBeDefined();
+
+    const hrefs = portalHrefs();
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) {
+      expect(href === "/practicante" || href === "/login").toBe(true);
+    }
+    const textos = [...document.querySelectorAll("a")].map((anchor) =>
+      (anchor.textContent ?? "").toLowerCase(),
+    );
+    expect(textos.some((texto) => texto.includes("acompañamiento"))).toBe(false);
+    expect(textos.some((texto) => texto.includes("nota"))).toBe(false);
+  });
+
+  test("la ruta de acompañamientos del Practicante no existe y no filtra el identificador", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("intern@uct.cl"),
+      role: rolDe("intern", "intern@uct.cl"),
+    });
+    const { router } = renderAt("/practicante/acompanamientos/acompanamiento-ajeno");
+
+    // Sin vista entregada, la ruta desconocida vuelve al índice y el índice
+    // deriva al portal del rol: no hay lectura ni eco del identificador.
+    await waitFor(() => expect(router.state.location.pathname).toBe("/practicante"));
+    expect(await screen.findByRole("heading", { name: "Portal del Practicante" })).toBeDefined();
+    expect(screen.queryByText(/acompanamiento-ajeno/)).toBeNull();
+  });
+});
+
+describe("Administrador sin acceso a acompañamientos ni notas internas (TI2-126)", () => {
+  test("la portada no enlaza acompañamientos ni notas internas", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("admin@uct.cl"),
+      role: rolDe("admin", "admin@uct.cl"),
+    });
+    renderAt("/administrador");
+
+    expect(await screen.findByRole("heading", { name: "Portal de Administración" })).toBeDefined();
+    const textos = [...document.querySelectorAll("a")].map((anchor) =>
+      (anchor.textContent ?? "").toLowerCase(),
+    );
+    expect(textos.some((texto) => texto.includes("acompañamiento"))).toBe(false);
+    expect(textos.some((texto) => texto.includes("nota"))).toBe(false);
+    expect(textos.some((texto) => texto.includes("solicitud"))).toBe(false);
+  });
+});
+
 describe("par inconsistente rol staff y correo estudiante (TI2-20)", () => {
   const SESION_ESTUDIANTE: SesionFija = {
     status: "authenticated",

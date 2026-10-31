@@ -70,6 +70,18 @@ const PAR_INTERN = {
   role: { status: "authenticated", role: "intern", email: "intern@uct.cl" },
 } as const;
 
+const SESION_ADMIN: WebSessionState = {
+  status: "authenticated",
+  email: "admin@uct.cl",
+  name: "Administrador Ficticio",
+  population: "personal",
+};
+
+const PAR_ADMIN = {
+  session: SESION_ADMIN,
+  role: { status: "authenticated", role: "admin", email: "admin@uct.cl" },
+} as const;
+
 const SIN_SESION: WebSessionState = { status: "unauthenticated" };
 
 const PAR_SIN_SESION = {
@@ -510,6 +522,18 @@ describe("guard de la ruta de disponibilidad (TI2-103)", () => {
     const { router } = renderAt("/profesional/disponibilidad");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(screen.queryByRole("heading", { name: "Disponibilidad" })).toBeNull();
+  });
+
+  // TI2-126: editar disponibilidad es exclusivo del Profesional dueño de sus
+  // bloques. El Administrador no la edita (matriz TI2-5) y la ruta se deniega.
+  test("el Administrador ve denegado sin contenido del editor", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
+    const { router } = renderAt("/profesional/disponibilidad");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
     expect(screen.queryByRole("heading", { name: "Disponibilidad" })).toBeNull();
   });
 });
