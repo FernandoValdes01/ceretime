@@ -27,6 +27,7 @@ vi.mock("../../infrastructure/auth/auth-client", () => ({
 vi.mock("../../infrastructure/convex/convex-client", () => ({
   convexUrl: "https://test.convex.cloud",
   convexSiteUrl: "https://test.convex.site",
+  siteUrl: "",
   isBackendConfigured: true,
   convexClient: {},
 }));
