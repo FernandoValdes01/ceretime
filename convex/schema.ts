@@ -273,6 +273,10 @@ export default defineSchema({
     endsAt: v.number(),
     originalStartsAt: v.optional(v.number()),
     cancelReason: v.optional(v.string()),
+    justificationExplanation: v.optional(v.string()),
+    justificationSubmittedAt: v.optional(v.number()),
+    justificationReview: v.optional(v.string()),
+    supportingDocumentReceived: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     // Atenciones propias del estudiante.

@@ -1,5 +1,7 @@
 import {
   transitionAppointment,
+  decideJustificationTimeliness,
+  NO_SHOW_PENDING_STATE,
   type AppointmentAttendanceOutcome,
   type AppointmentStatus,
 } from "../../domain/appointments/appointment";
@@ -10,10 +12,13 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
 import {
   authorizeAppointmentAttendance,
   authorizeAppointmentCancel,
   authorizeAppointmentReschedule,
+  authorizeAppointmentJustificationSubmit,
+  authorizeAppointmentJustificationReview,
   type AuthorizableAppointment,
   type AuthorizationReader,
 } from "../authorization/authorize";
@@ -356,6 +361,115 @@ export async function recordAppointmentAttendance(
 
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
+    ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  return okResult({ appointmentId: stored.id });
+}
+
+export interface SubmitAppointmentJustificationDeps {
+  readonly auth: AuthorizationReader;
+  readonly appointments: AppointmentChangeReader;
+  readonly persister: AppointmentTransitionPersister;
+  readonly now?: AppointmentChangeClock;
+}
+
+export interface SubmitAppointmentJustificationInput {
+  readonly tokenIdentifier: string | null;
+  readonly appointmentId: string;
+  readonly explanation: string;
+  readonly supportingDocumentReceived: boolean;
+}
+
+export async function submitAppointmentJustification(
+  deps: SubmitAppointmentJustificationDeps,
+  input: SubmitAppointmentJustificationInput,
+): Promise<ApiResult<AppointmentChangeSuccess>> {
+  if (input.appointmentId.trim() === "" || input.explanation.trim() === "") {
+    return conflict();
+  }
+
+  const stored = await deps.appointments.getAppointment(input.appointmentId);
+  if (stored === null) return denied();
+
+  const grant = await authorizeAppointmentJustificationSubmit(deps.auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    appointment: toAuthorizableAppointment(stored),
+  });
+  if (grant.status === "error") return denied();
+
+  if (stored.status !== NO_SHOW_PENDING_STATE) {
+    return conflict();
+  }
+
+  const now = occurredNow(deps);
+  const timeliness = decideJustificationTimeliness({
+    missedAt: stored.startAt,
+    submittedAt: now,
+    timeZone: AGENDA_TIME_ZONE,
+  });
+  if (!timeliness.withinDeadline) {
+    return conflict();
+  }
+
+  await deps.persister.persistAppointmentTransition(stored.id, {
+    status: stored.status,
+    justificationExplanation: input.explanation.trim(),
+    justificationSubmittedAt: now,
+    justificationReview: "pending",
+    supportingDocumentReceived: input.supportingDocumentReceived,
+  });
+  return okResult({ appointmentId: stored.id });
+}
+
+export interface ReviewAppointmentJustificationDeps {
+  readonly auth: AuthorizationReader;
+  readonly appointments: AppointmentChangeReader;
+  readonly persister: AppointmentTransitionPersister;
+  readonly now?: AppointmentChangeClock;
+}
+
+export interface ReviewAppointmentJustificationInput {
+  readonly tokenIdentifier: string | null;
+  readonly appointmentId: string;
+  readonly review: "accepted" | "rejected";
+}
+
+export async function reviewAppointmentJustification(
+  deps: ReviewAppointmentJustificationDeps,
+  input: ReviewAppointmentJustificationInput,
+): Promise<ApiResult<AppointmentChangeSuccess>> {
+  if (
+    input.appointmentId.trim() === "" ||
+    (input.review !== "accepted" && input.review !== "rejected")
+  ) {
+    return conflict();
+  }
+
+  const stored = await deps.appointments.getAppointment(input.appointmentId);
+  if (stored === null) return denied();
+
+  const grant = await authorizeAppointmentJustificationReview(deps.auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    appointment: toAuthorizableAppointment(stored),
+  });
+  if (grant.status === "error") return denied();
+
+  const targetStatus = input.review === "accepted" ? "no_show_justified" : "no_show_unjustified";
+  const outcome = transitionAppointment({
+    from: stored.status,
+    to: targetStatus,
+    actorId: grant.data.callerId,
+    occurredAt: occurredNow(deps),
+    currentStartAt: stored.startAt,
+    ...(stored.originalStartAt === undefined
+      ? {}
+      : { currentOriginalStartAt: stored.originalStartAt }),
+  });
+  if (outcome.status === "rejected") return conflict();
+
+  await deps.persister.persistAppointmentTransition(stored.id, {
+    status: outcome.change.to,
+    justificationReview: input.review,
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
   });
   return okResult({ appointmentId: stored.id });

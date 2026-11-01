@@ -466,6 +466,44 @@ export async function authorizeAppointmentAttendance(
   return okResult({ callerId: loaded.callerId });
 }
 
+/**
+ * Entrega de explicación e inasistencia (TI2-119): solo el Estudiante dueño
+ * de la atención.
+ */
+export async function authorizeAppointmentJustificationSubmit(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (
+    loaded === null ||
+    loaded.context.role !== "student" ||
+    !loaded.context.isAppointmentStudent
+  ) {
+    return denied();
+  }
+  return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Revisión de la justificación de inasistencia (TI2-119): solo el Profesional
+ * asignado que tiene la atención a su cargo.
+ */
+export async function authorizeAppointmentJustificationReview(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (
+    loaded === null ||
+    loaded.context.role !== "professional" ||
+    !loaded.context.isAppointmentProfessional
+  ) {
+    return denied();
+  }
+  return okResult({ callerId: loaded.callerId });
+}
+
 /** Lectura del catálogo de espacios: basta una cuenta vigente de cualquier rol. */
 export async function authorizeSpaceCatalogRead(
   reader: AuthorizationReader,

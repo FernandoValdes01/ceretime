@@ -4,6 +4,8 @@ import {
   cancelAppointment as cancelAppointmentUseCase,
   recordAppointmentAttendance as recordAppointmentAttendanceUseCase,
   rescheduleAppointment as rescheduleAppointmentUseCase,
+  submitAppointmentJustification as submitAppointmentJustificationUseCase,
+  reviewAppointmentJustification as reviewAppointmentJustificationUseCase,
 } from "../application/appointments/changes";
 import { mutation } from "../_generated/server";
 import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
@@ -19,7 +21,11 @@ import {
 } from "../infrastructure/appointments/repository";
 import { availabilityReader } from "../infrastructure/availability/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
-import { appointmentAttendanceOutcomeUnion, modalityUnion } from "../infrastructure/validators";
+import {
+  appointmentAttendanceOutcomeUnion,
+  justificationReviewUnion,
+  modalityUnion,
+} from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
 
 /**
@@ -179,6 +185,69 @@ export const recordAppointmentAttendance = mutation({
           tokenIdentifier: identity?.tokenIdentifier ?? null,
           appointmentId,
           outcome,
+        },
+      ),
+    );
+  },
+});
+
+/**
+ * El estudiante propio entrega la explicación y el respaldo de la inasistencia dentro de plazo (TI2-119).
+ */
+export const submitAppointmentJustification = mutation({
+  args: {
+    appointmentId: v.string(),
+    explanation: v.string(),
+    supportingDocumentReceived: v.boolean(),
+    version: v.literal(APPOINTMENT_CONTRACT_VERSION),
+  },
+  returns: appointmentResultValidator,
+  handler: async (
+    ctx,
+    { version: _version, appointmentId, explanation, supportingDocumentReceived },
+  ) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await submitAppointmentJustificationUseCase(
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentChangeReader(ctx),
+          persister: appointmentTransitionRepository(ctx).persister,
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          appointmentId,
+          explanation,
+          supportingDocumentReceived,
+        },
+      ),
+    );
+  },
+});
+
+/**
+ * El profesional asignado revisa la justificación y decide aceptarla o rechazarla (TI2-119).
+ */
+export const reviewAppointmentJustification = mutation({
+  args: {
+    appointmentId: v.string(),
+    review: justificationReviewUnion,
+    version: v.literal(APPOINTMENT_CONTRACT_VERSION),
+  },
+  returns: appointmentResultValidator,
+  handler: async (ctx, { version: _version, appointmentId, review }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await reviewAppointmentJustificationUseCase(
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentChangeReader(ctx),
+          persister: appointmentTransitionRepository(ctx).persister,
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          appointmentId,
+          review,
         },
       ),
     );

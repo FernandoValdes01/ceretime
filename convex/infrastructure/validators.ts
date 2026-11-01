@@ -3,6 +3,7 @@ import { ACCOMPANIMENT_STATUS_VALUES } from "../domain/accompaniments/accompanim
 import {
   APPOINTMENT_ATTENDANCE_OUTCOME_VALUES,
   APPOINTMENT_STATUS_VALUES,
+  JUSTIFICATION_REVIEW_VALUES,
 } from "../domain/appointments/appointment";
 import {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
@@ -101,4 +102,11 @@ export const appointmentStatusUnion = v.union(
  */
 export const appointmentAttendanceOutcomeUnion = v.union(
   ...APPOINTMENT_ATTENDANCE_OUTCOME_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Revisiones de la justificación de inasistencia (TI2-119), derivadas del dominio.
+ */
+export const justificationReviewUnion = v.union(
+  ...JUSTIFICATION_REVIEW_VALUES.map((value) => v.literal(value)),
 );

@@ -17,6 +17,8 @@ import {
   cancelAppointment,
   recordAppointmentAttendance,
   rescheduleAppointment,
+  submitAppointmentJustification,
+  reviewAppointmentJustification,
   type AppointmentChangeReader,
   type AppointmentTransitionPersister,
   type CancelAppointmentDeps,
@@ -221,6 +223,14 @@ function changeWorld(overrides: Partial<WorldRow> = {}): ChangeWorld {
       transitions.push({ appointmentId, fields });
       row.status = fields.status;
       if (fields.originalStartsAt !== undefined) row.originalStartAt = fields.originalStartsAt;
+      if (fields.justificationExplanation !== undefined)
+        row.justificationExplanation = fields.justificationExplanation;
+      if (fields.justificationSubmittedAt !== undefined)
+        row.justificationSubmittedAt = fields.justificationSubmittedAt;
+      if (fields.justificationReview !== undefined)
+        row.justificationReview = fields.justificationReview;
+      if (fields.supportingDocumentReceived !== undefined)
+        row.supportingDocumentReceived = fields.supportingDocumentReceived;
     },
   };
   return { row, reader, persister, transitions };
@@ -412,6 +422,139 @@ describe("cancelación de una atención (TI2-109)", () => {
       expect(world.transitions).toHaveLength(0);
       expect(world.row.status).toBe("scheduled");
     }
+  });
+
+  describe("Justificación de inasistencia (TI2-119)", () => {
+    test("el Estudiante dueño entrega la explicación dentro del plazo de 5 días hábiles", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+      const deps = {
+        auth: authorizedAuth(),
+        appointments: world.reader,
+        persister: world.persister,
+        now: () => CURRENT_START + 86_400_000,
+      };
+
+      const result = await submitAppointmentJustification(deps, {
+        tokenIdentifier: "token-student",
+        appointmentId: "appointment-1",
+        explanation: "Motivo médico justificado",
+        supportingDocumentReceived: true,
+      });
+
+      expect(result).toEqual({ status: "ok", data: { appointmentId: "appointment-1" } });
+      expect(world.row.status).toBe("no_show");
+      expect(world.row.justificationExplanation).toBe("Motivo médico justificado");
+      expect(world.row.justificationReview).toBe("pending");
+      expect(world.row.supportingDocumentReceived).toBe(true);
+    });
+
+    test("rechaza la entrega de justificación fuera del plazo de 5 días hábiles", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+      const lateTime = CURRENT_START + 10 * 86_400_000;
+      const deps = {
+        auth: authorizedAuth(),
+        appointments: world.reader,
+        persister: world.persister,
+        now: () => lateTime,
+      };
+
+      const result = await submitAppointmentJustification(deps, {
+        tokenIdentifier: "token-student",
+        appointmentId: "appointment-1",
+        explanation: "Entrega tardía",
+        supportingDocumentReceived: true,
+      });
+
+      expect(result).toEqual({
+        status: "error",
+        error: {
+          code: "conflict",
+          message: "La solicitud entra en conflicto con el estado actual.",
+        },
+      });
+      expect(world.transitions).toHaveLength(0);
+    });
+
+    test("el Profesional asignado acepta la justificación y la lleva a no_show_justified", async () => {
+      const world = changeWorld({
+        status: "no_show",
+        startAt: CURRENT_START,
+        justificationExplanation: "Explicación previa",
+        justificationReview: "pending",
+      });
+      const deps = {
+        auth: authorizedAuth(),
+        appointments: world.reader,
+        persister: world.persister,
+        now: () => CURRENT_START + 86_400_000,
+      };
+
+      const result = await reviewAppointmentJustification(deps, {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        review: "accepted",
+      });
+
+      expect(result).toEqual({ status: "ok", data: { appointmentId: "appointment-1" } });
+      expect(world.row.status).toBe("no_show_justified");
+      expect(world.row.justificationReview).toBe("accepted");
+    });
+
+    test("el Profesional asignado rechaza la justificación y la lleva a no_show_unjustified", async () => {
+      const world = changeWorld({
+        status: "no_show",
+        startAt: CURRENT_START,
+        justificationExplanation: "Explicación previa",
+        justificationReview: "pending",
+      });
+      const deps = {
+        auth: authorizedAuth(),
+        appointments: world.reader,
+        persister: world.persister,
+        now: () => CURRENT_START + 86_400_000,
+      };
+
+      const result = await reviewAppointmentJustification(deps, {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        review: "rejected",
+      });
+
+      expect(result).toEqual({ status: "ok", data: { appointmentId: "appointment-1" } });
+      expect(world.row.status).toBe("no_show_unjustified");
+      expect(world.row.justificationReview).toBe("rejected");
+    });
+
+    test("terceros o roles incorrectos no pueden entregar ni revisar justificación", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+      const deps = {
+        auth: authorizedAuth(),
+        appointments: world.reader,
+        persister: world.persister,
+        now: () => CURRENT_START + 86_400_000,
+      };
+
+      const proSubmit = await submitAppointmentJustification(deps, {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        explanation: "Intento profesional",
+        supportingDocumentReceived: true,
+      });
+      expect(proSubmit).toEqual({
+        status: "error",
+        error: { code: "unauthorized", message: "No autorizado" },
+      });
+
+      const studentReview = await reviewAppointmentJustification(deps, {
+        tokenIdentifier: "token-student",
+        appointmentId: "appointment-1",
+        review: "accepted",
+      });
+      expect(studentReview).toEqual({
+        status: "error",
+        error: { code: "unauthorized", message: "No autorizado" },
+      });
+    });
   });
 
   test("ajenos, sin asignación vigente, Practicante y Administrador no cancelan", async () => {
