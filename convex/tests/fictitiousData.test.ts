@@ -119,15 +119,28 @@ test("consultas por rol respetan aislamiento sobre el dataset cargado", async ()
     subject: "estudiante-4",
     tokenIdentifier: "dataset-ficticio|estudiante-4",
   });
+  const accompanimentId = (await t.run(
+    async (ctx) => (await ctx.db.query("accompaniments").first())?._id,
+  ))!;
   const studentAccompaniment = await asStudent.query(
     api.presentation.accompaniments.getAccompaniment,
     {
-      accompanimentId: (await t.run(
-        async (ctx) => (await ctx.db.query("accompaniments").first())?._id,
-      ))!,
+      accompanimentId,
     },
   );
   expect(studentAccompaniment.view).toBe("full");
+
+  // Estudiante ajeno (Estudiante Uno no debe tener acceso al acompañamiento de Cuatro)
+  const asStrangerStudent = t.withIdentity({
+    issuer: "dataset-ficticio",
+    subject: "estudiante-1",
+    tokenIdentifier: "dataset-ficticio|estudiante-1",
+  });
+  await expect(
+    asStrangerStudent.query(api.presentation.accompaniments.getAccompaniment, {
+      accompanimentId,
+    }),
+  ).rejects.toThrow("No autorizado");
 
   // Profesional asignado
   const asProfessional = t.withIdentity({
@@ -138,12 +151,12 @@ test("consultas por rol respetan aislamiento sobre el dataset cargado", async ()
   const proAccompaniment = await asProfessional.query(
     api.presentation.accompaniments.getAccompaniment,
     {
-      accompanimentId: studentAccompaniment._id,
+      accompanimentId,
     },
   );
   expect(proAccompaniment.view).toBe("full");
 
-  // Practicante asignado (ve vista minimizada o según asignación)
+  // Practicante asignado (ve vista minimizada)
   const asIntern = t.withIdentity({
     issuer: "dataset-ficticio",
     subject: "practicante-1",
@@ -152,8 +165,30 @@ test("consultas por rol respetan aislamiento sobre el dataset cargado", async ()
   const internAccompaniment = await asIntern.query(
     api.presentation.accompaniments.getAccompaniment,
     {
-      accompanimentId: studentAccompaniment._id,
+      accompanimentId,
     },
   );
   expect(internAccompaniment.view).toBe("minimized");
+
+  // Administrador sin acceso general a acompañamientos individuales sin rol clínico/asignación
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "admin.ficticio@uct.cl",
+      fullName: "Administrador Ficticio",
+      role: "admin",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: "dataset-ficticio|admin-1",
+    });
+  });
+  const asAdmin = t.withIdentity({
+    issuer: "dataset-ficticio",
+    subject: "admin-1",
+    tokenIdentifier: "dataset-ficticio|admin-1",
+  });
+  await expect(
+    asAdmin.query(api.presentation.accompaniments.getAccompaniment, {
+      accompanimentId,
+    }),
+  ).rejects.toThrow("No autorizado");
 });

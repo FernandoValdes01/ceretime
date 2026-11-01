@@ -113,12 +113,12 @@ export const load = internalMutation({
       isActive: true,
     });
 
-    // Bloques de disponibilidad del profesional ficticio
+    // Bloques de disponibilidad del profesional ficticio (09:00 a 11:00 UTC alineados con los slots de atención)
     await ctx.db.insert("availabilityBlocks", {
       professionalId,
       weekday: 1, // Lunes
-      startMinute: 540,
-      endMinute: 600,
+      startMinute: 540, // 09:00 UTC
+      endMinute: 600, // 10:00 UTC
       slotMinutes: 60,
       modality: "online",
       isActive: true,
@@ -126,12 +126,21 @@ export const load = internalMutation({
     await ctx.db.insert("availabilityBlocks", {
       professionalId,
       weekday: 1,
-      startMinute: 600,
-      endMinute: 660,
+      startMinute: 600, // 10:00 UTC
+      endMinute: 660, // 11:00 UTC
       slotMinutes: 60,
       modality: "inPerson",
       spaceId,
       isActive: true,
+    });
+
+    // Excepción de disponibilidad de prueba (fecha civil 2026-10-12)
+    const exceptionDate = Date.UTC(2026, 9, 12);
+    await ctx.db.insert("availabilityExceptions", {
+      professionalId,
+      date: exceptionDate,
+      kind: "cancelled",
+      reason: "Excepción programada de prueba para escenario incompatible.",
     });
 
     // Las solicitudes pasan por los casos de uso reales, con las identidades
