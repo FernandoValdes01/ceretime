@@ -68,6 +68,10 @@ export interface StoredAppointmentForChange {
   readonly endAt: number;
   /** Primera fecha conservada; ausente hasta el primer reagendamiento. */
   readonly originalStartAt?: number;
+  readonly justificationExplanation?: string;
+  readonly justificationSubmittedAt?: number;
+  readonly justificationReview?: string;
+  readonly supportingDocumentReceived?: boolean;
 }
 
 /**
