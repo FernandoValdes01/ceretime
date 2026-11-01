@@ -23,7 +23,7 @@ import { availabilityReader } from "../infrastructure/availability/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   appointmentAttendanceOutcomeUnion,
-  justificationReviewUnion,
+  justificationDecisionUnion,
   modalityUnion,
 } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
@@ -231,7 +231,7 @@ export const submitAppointmentJustification = mutation({
 export const reviewAppointmentJustification = mutation({
   args: {
     appointmentId: v.string(),
-    review: justificationReviewUnion,
+    review: justificationDecisionUnion,
     version: v.literal(APPOINTMENT_CONTRACT_VERSION),
   },
   returns: appointmentResultValidator,

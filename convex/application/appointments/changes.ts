@@ -94,6 +94,10 @@ export interface AppointmentTransitionPersister {
       readonly status: AppointmentStatus;
       readonly cancelReason?: string;
       readonly originalStartsAt?: number;
+      readonly justificationExplanation?: string;
+      readonly justificationSubmittedAt?: number;
+      readonly justificationReview?: string;
+      readonly supportingDocumentReceived?: boolean;
     },
   ): Promise<void>;
 }

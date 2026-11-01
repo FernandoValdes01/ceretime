@@ -110,3 +110,8 @@ export const appointmentAttendanceOutcomeUnion = v.union(
 export const justificationReviewUnion = v.union(
   ...JUSTIFICATION_REVIEW_VALUES.map((value) => v.literal(value)),
 );
+
+/**
+ * Decisiones de revisión de justificación (TI2-119): aceptar o rechazar.
+ */
+export const justificationDecisionUnion = v.union(v.literal("accepted"), v.literal("rejected"));
