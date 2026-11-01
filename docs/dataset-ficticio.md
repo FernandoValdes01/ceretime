@@ -5,7 +5,7 @@ Datos mínimos para mostrar el entorno TI2 con cada rol, cada estado de solicitu
 ## Cómo se carga
 
 - La carga es `internal.operations.fictitiousData.load`, en `convex/operations/fictitiousData.ts`. Solo opera con `TEST_SEEDS_ENABLED=true` en el deployment, igual que `createTestUser`; en producción la variable permanece ausente y la carga se rechaza.
-- Es repetible e idempotente: si el dataset ya existe (verificando por el marcador del primer estudiante), no vuelve a escribir duplicados. Si se requiere recrear tras actualizar la estructura de agenda, se debe limpiar el almacenamiento o usar un entorno limpio de prueba.
+- Es repetible e idempotente: si el dataset ya existe (verificando por el marcador del primer estudiante), no vuelve a escribir duplicados. Si se requiere recrear tras actualizar la estructura de agenda, se debe utilizar un entorno limpio de prueba.
 - Se carga a mano en un deployment de desarrollo propio con `bunx convex run operations/fictitiousData:load`, después de configurar sus variables según la guía de arranque del [README](../README.md). Ningún despliegue la ejecuta automáticamente.
 - Los perfiles se crean con `createTestUser` y las solicitudes pasan por los casos de uso reales (registrar, tomar, pedir información, aceptar y asignar), así que el dataset cumple las mismas reglas que el flujo del cliente.
 
@@ -48,4 +48,4 @@ El historial de cambios de estado queda con 5 registros: tres tomas, el pedido d
 
 ## Comprobación
 
-`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial, los espacios, la disponibilidad, las excepciones, las atenciones, el aislamiento por rol y el acompañamiento de este inventario, y que una segunda carga no escriba nada. Corre con `bun run test:convex`.
+`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial, los espacios, la disponibilidad, las excepciones, las atenciones, el aislamiento por rol y el acompañamiento de este inventario, y que una segunda carga no escribe nada. Corre con `bun run test:convex`.
