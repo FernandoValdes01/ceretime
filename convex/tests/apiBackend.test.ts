@@ -1942,6 +1942,37 @@ test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () =>
   expect(ids).not.toContain(lateDayBefore);
 });
 
+test("TI2-112: la atención de las 23:30 antes del cambio de hora aparece solo en el sábado", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  // 23:30 del sábado 5 de septiembre en Santiago: el domingo 6 no tiene medianoche.
+  const startsAt = Date.UTC(2026, 8, 6, 3, 30);
+  const lateSaturday = await t.run(async (ctx) =>
+    ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt,
+      endsAt: startsAt + 1_800_000,
+      createdAt: 1,
+    }),
+  );
+  const { listAppointments } = api.presentation.appointments;
+  const idsIn = async (day: string) => {
+    const range = { from: day, to: day, limit: 10, version: "v1" as const };
+    const pages = [
+      await ti112Caller(t, "est-1").query(listAppointments, range),
+      await ti112Caller(t, "est-1").query(listAppointments, { ...range, accompanimentId }),
+      await ti112Caller(t, "pro-1").query(listAppointments, range),
+    ];
+    return pages.map((page) => page.items.map((item) => item.id));
+  };
+  expect(await idsIn("2026-09-05")).toEqual([[lateSaturday], [lateSaturday], [lateSaturday]]);
+  expect(await idsIn("2026-09-06")).toEqual([[], [], []]);
+});
+
 test("TI2-112: una atención creada después entra por su inicio en los tres alcances", async () => {
   const t = convexTest(schema, modules);
   const { accompanimentId, appointments, professionalId, studentId } = await ti112SeedAgenda(t);
