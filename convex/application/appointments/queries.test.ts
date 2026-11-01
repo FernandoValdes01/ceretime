@@ -365,11 +365,15 @@ describe("atenciones de un acompañamiento", () => {
 describe("entrada y paginación de la lista", () => {
   const rows = ["a-1", "a-2", "a-3"].map((id) => appointmentRow(id));
 
-  test("un límite fuera de rango responde conflicto sin leer", async () => {
+  test("un límite fuera de rango responde conflicto sin leer, aunque no haya sesión", async () => {
     for (const limit of [0, -1, 1.5, LIST_APPOINTMENTS_PAGE_LIMIT_MAX + 1]) {
-      const { deps, log } = worldDeps({ rows });
-      expect(await listAppointments(deps, listInput({ limit }))).toEqual(conflict);
-      expect(log.rangeReads).toEqual([]);
+      for (const tokenIdentifier of [student.tokenIdentifier, null]) {
+        const { deps, log } = worldDeps({ rows });
+        expect(await listAppointments(deps, listInput({ limit, tokenIdentifier }))).toEqual(
+          conflict,
+        );
+        expect(log.rangeReads).toEqual([]);
+      }
     }
     const { deps } = worldDeps({ rows });
     expect(okIds(await listAppointments(deps, listInput({ limit: 50 })))).toHaveLength(3);
@@ -422,7 +426,10 @@ describe("entrada y paginación de la lista", () => {
 
   test("un cursor inexistente o fuera de lo visible responde conflicto", async () => {
     const { deps } = worldDeps({
-      assignments: [assignment(accompaniment._id, professional, { status: "revoked" })],
+      assignments: [
+        assignment(accompaniment._id, professional, { status: "revoked" }),
+        assignment(secondAccompaniment._id, professional),
+      ],
       rows: [
         appointmentRow("revocada"),
         appointmentRow("vigente", { accompanimentId: secondAccompaniment._id }),

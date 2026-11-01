@@ -1455,22 +1455,6 @@ const TI112_WEEK = { from: "2026-07-06", to: "2026-07-12", limit: 10, version: "
 /** Instante de un día de julio de 2026 a la hora dada en Santiago (UTC-4). */
 const ti112At = (day: number, hour: number) => Date.UTC(2026, 6, day, hour + 4);
 
-const TI112_FULL_KEYS = [
-  "accompanimentId",
-  "endAt",
-  "id",
-  "modality",
-  "professionalId",
-  "startAt",
-  "status",
-  "version",
-  "view",
-];
-
-function ti112Keys(value: object) {
-  return Object.keys(value).sort();
-}
-
 function ti112Caller(t: ReturnType<typeof convexTest>, name: string) {
   return t.withIdentity(identityFor(`ti112-${name}`, `ti112-${name}@uct.cl`));
 }
@@ -1591,10 +1575,34 @@ async function ti112SeedAgenda(t: ReturnType<typeof convexTest>) {
   });
 }
 
-test("TI2-112: la agenda y el detalle entregan las claves exactas de Estudiante y Profesional", async () => {
+test("TI2-112: la agenda y el detalle entregan las claves y los valores exactos de Estudiante y Profesional", async () => {
   const t = convexTest(schema, modules);
-  const { accompanimentId, appointments } = await ti112SeedAgenda(t);
-  const withOptionals = [...TI112_FULL_KEYS, "cancelReason", "originalStartAt", "spaceId"].sort();
+  const { accompanimentId, appointments, professionalId, spaceId } = await ti112SeedAgenda(t);
+  const plainView = {
+    id: appointments.plain,
+    accompanimentId,
+    professionalId,
+    modality: "online",
+    startAt: ti112At(6, 10),
+    endAt: ti112At(6, 11),
+    status: "scheduled",
+    version: "v1",
+    view: "full",
+  };
+  const cancelledView = {
+    id: appointments.cancelled,
+    accompanimentId,
+    professionalId,
+    spaceId,
+    modality: "inPerson",
+    startAt: ti112At(7, 10),
+    endAt: ti112At(7, 11),
+    originalStartAt: ti112At(6, 15),
+    cancelReason: "Motivo ficticio",
+    status: "cancelled_by_cereti",
+    version: "v1",
+    view: "full",
+  };
 
   for (const name of ["est-1", "pro-1"]) {
     const caller = ti112Caller(t, name);
@@ -1604,28 +1612,18 @@ test("TI2-112: la agenda y el detalle entregan las claves exactas de Estudiante 
       accompanimentId,
     });
     for (const page of [own, scoped]) {
-      const [plain, cancelled] = page.items;
-      expect(plain?.id).toBe(appointments.plain);
-      expect(ti112Keys(plain ?? {})).toEqual(TI112_FULL_KEYS);
-      expect(cancelled?.id).toBe(appointments.cancelled);
-      expect(ti112Keys(cancelled ?? {})).toEqual(withOptionals);
+      expect(page.items.slice(0, 2)).toStrictEqual([plainView, cancelledView]);
     }
     const plainDetail = await caller.query(api.presentation.appointments.getAppointment, {
       appointmentId: appointments.plain,
       version: "v1",
     });
-    expect(ti112Keys(plainDetail)).toEqual(TI112_FULL_KEYS);
+    expect(plainDetail).toStrictEqual(plainView);
     const cancelledDetail = await caller.query(api.presentation.appointments.getAppointment, {
       appointmentId: appointments.cancelled,
       version: "v1",
     });
-    expect(ti112Keys(cancelledDetail)).toEqual(withOptionals);
-    expect(cancelledDetail).toMatchObject({
-      status: "cancelled_by_cereti",
-      cancelReason: "Motivo ficticio",
-      originalStartAt: ti112At(6, 15),
-      view: "full",
-    });
+    expect(cancelledDetail).toStrictEqual(cancelledView);
   }
 });
 
@@ -1917,7 +1915,7 @@ test("TI2-112: el Administrador y una llamada sin sesión no leen agenda, acompa
 test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () => {
   const t = convexTest(schema, modules);
   const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
-  // 22:00 del domingo 12 y 21:00 del domingo 5 en Santiago: del otro lado de la medianoche UTC.
+  // 23:00 del domingo 12 y del domingo 5 en Santiago: ya es lunes en UTC y también en UTC-3.
   const { lateLastDay, lateDayBefore } = await t.run(async (ctx) => {
     const insert = (startsAt: number) =>
       ctx.db.insert("appointments", {
@@ -1931,8 +1929,8 @@ test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () =>
         createdAt: 1,
       });
     return {
-      lateLastDay: await insert(ti112At(12, 22)),
-      lateDayBefore: await insert(ti112At(5, 21)),
+      lateLastDay: await insert(ti112At(12, 23)),
+      lateDayBefore: await insert(ti112At(5, 23)),
     };
   });
   const week = await ti112Caller(t, "est-1").query(
@@ -1942,4 +1940,43 @@ test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () =>
   const ids = week.items.map((item) => item.id);
   expect(ids).toContain(lateLastDay);
   expect(ids).not.toContain(lateDayBefore);
+});
+
+test("TI2-112: una atención creada después entra por su inicio en los tres alcances", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, appointments, professionalId, studentId } = await ti112SeedAgenda(t);
+  // Se crea al final con el inicio más temprano: el orden no sale de la creación.
+  const earliest = await t.run(async (ctx) =>
+    ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: ti112At(6, 8),
+      endsAt: ti112At(6, 9),
+      createdAt: 1,
+    }),
+  );
+  const { listAppointments } = api.presentation.appointments;
+  const pages = [
+    await ti112Caller(t, "est-1").query(listAppointments, TI112_WEEK),
+    await ti112Caller(t, "est-1").query(listAppointments, { ...TI112_WEEK, accompanimentId }),
+    await ti112Caller(t, "pro-1").query(listAppointments, TI112_WEEK),
+  ];
+  for (const page of pages) {
+    expect(page.items.slice(0, 2).map((item) => item.id)).toEqual([earliest, appointments.plain]);
+  }
+});
+
+test("TI2-112: el Profesional revocado no lee por id la atención que sigue a su nombre", async () => {
+  const t = convexTest(schema, modules);
+  const { appointments } = await ti112SeedAgenda(t);
+  const data = await ti111PublicError(
+    ti112Caller(t, "pro-1").query(api.presentation.appointments.getAppointment, {
+      appointmentId: appointments.revoked,
+      version: "v1",
+    }),
+  );
+  expect(data).toStrictEqual(unauthorizedError());
 });
