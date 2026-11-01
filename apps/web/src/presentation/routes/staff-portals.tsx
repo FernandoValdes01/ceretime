@@ -3,7 +3,8 @@ import { Link, Outlet } from "@tanstack/react-router";
 import "./staff-portal.css";
 
 /**
- * Portales del personal con cuenta institucional (TI2-20, TI2-103, TI2-04).
+ * Portales del personal con cuenta institucional (TI2-20, TI2-103, TI2-04,
+ * TI2-116).
  *
  * Solo navegación y protección, como el portal del Estudiante de TI2-6: cada
  * layout enlaza su inicio y la sesión, y cada portada es temporal. Las
@@ -13,8 +14,8 @@ import "./staff-portal.css";
  * El portal de Administración enlaza el editor de espacios (TI2-04) y no
  * enlaza acompañamientos ni notas internas (coherente con la matriz TI2-5,
  * donde el Administrador no lista ni lee esos recursos). El portal del
- * Practicante no enlaza acompañamientos concretos: solo verá los asignados
- * cuando existan las vistas. El portal del Profesional enlaza solicitudes
+ * Practicante enlaza solo su listado de acompañamientos asignados (TI2-116),
+ * en solo lectura; el Backend decide qué acompañamientos incluye. El portal del Profesional enlaza solicitudes
  * (TI2-91), agenda (TI2-115) y disponibilidad (TI2-103).
  */
 
@@ -49,7 +50,15 @@ export function ProfessionalLayout() {
 
 export function PractitionerLayout() {
   return (
-    <StaffLayout title="Portal del Practicante" home={<Link to="/practicante">Inicio</Link>} />
+    <StaffLayout
+      title="Portal del Practicante"
+      home={
+        <>
+          <Link to="/practicante">Inicio</Link>{" "}
+          <Link to="/practicante/acompanamientos">Acompañamientos</Link>
+        </>
+      }
+    />
   );
 }
 
@@ -79,7 +88,10 @@ export function PractitionerHome() {
   return (
     <section aria-labelledby="practitioner-home-title">
       <h1 id="practitioner-home-title">Portal del Practicante</h1>
-      <p>Tus acompañamientos asignados estarán disponibles aquí.</p>
+      <p>
+        Consulta en solo lectura tus acompañamientos asignados desde{" "}
+        <Link to="/practicante/acompanamientos">Acompañamientos</Link>.
+      </p>
     </section>
   );
 }
