@@ -19,15 +19,16 @@ import {
 } from "./professional-agenda-data.ts";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
 
-/**
- * Clases Tailwind de las filas de gestión (TI2-91, TI2-103): 44px de alto
- * táctil mínimo, foco visible de 3px según DESIGN.md y reflujo en ventanas
- * estrechas. Comparte las mismas constantes que el resto del portal para
- * no duplicar el lenguaje visual.
- */
-const GESTION_ROW = "flex flex-wrap items-center gap-2 min-h-[44px] min-w-0 px-3 py-2 text-inherit";
+/** Foco visible de 3px según DESIGN.md, compartido por enlaces y campos. */
 const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
+
+/**
+ * Enlace de retorno al listado: verde y subrayado como "Ver detalle", con el
+ * ancho de su contenido para que no parezca ocupar toda la fila, y 44px de
+ * alto táctil mínimo.
+ */
+const AGENDA_BACK_LINK = `inline-flex min-h-[44px] w-fit items-center gap-1 rounded-[0.5rem] text-base font-semibold text-primary underline ${GESTION_FOCUS_VISIBLE}`;
 
 /**
  * Campos de gestión según DESIGN.md: etiqueta visible arriba, borde de 1px
@@ -78,13 +79,22 @@ export function ProfessionalAgendaPage() {
       <p>Tus atenciones reservadas con la fecha vigente y su estado.</p>
       <p>Lectura simulada con datos ficticios hasta integrar la API real.</p>
       <StudentPanelErrorBoundary subject="la agenda" level="section">
-        <AgendaBody attempt={attempt} onRetry={() => setAttempt((value) => value + 1)} />
+        <AgendaBody
+          attempt={attempt}
+          onRetry={() => setAttempt((value) => value + 1)}
+        />
       </StudentPanelErrorBoundary>
     </section>
   );
 }
 
-function AgendaBody({ attempt, onRetry }: { attempt: number; onRetry: () => void }) {
+function AgendaBody({
+  attempt,
+  onRetry,
+}: {
+  attempt: number;
+  onRetry: () => void;
+}) {
   const result = useProfessionalAgenda(attempt);
   const spaceLabels = useSpaceLabels();
 
@@ -126,7 +136,9 @@ function AgendaBody({ attempt, onRetry }: { attempt: number; onRetry: () => void
   if (result.status === "empty") {
     return (
       <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No tienes atenciones agendadas.</p>
+        <p className="student-portal__empty-title">
+          No tienes atenciones agendadas.
+        </p>
         <p>Cuando se reserve una atención contigo, aparecerá aquí.</p>
       </div>
     );
@@ -156,7 +168,9 @@ function spaceLabelOf(
   appointment: AgendaAppointment,
   spaceLabels: ReadonlyMap<string, string>,
 ): string | undefined {
-  return appointment.spaceId === undefined ? undefined : spaceLabels.get(appointment.spaceId);
+  return appointment.spaceId === undefined
+    ? undefined
+    : spaceLabels.get(appointment.spaceId);
 }
 
 /**
@@ -205,7 +219,11 @@ function AppointmentRowContent({
  * desconocido llega como denegación genérica del Backend, sin filtrar
  * existencia. Los cambios visibles quedan anotados con foco al confirmar.
  */
-export function ProfessionalAgendaDetailPage({ appointmentId }: { appointmentId: string }) {
+export function ProfessionalAgendaDetailPage({
+  appointmentId,
+}: {
+  appointmentId: string;
+}) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -219,11 +237,8 @@ export function ProfessionalAgendaDetailPage({ appointmentId }: { appointmentId:
         Detalle de la atención
       </h1>
       <p>
-        <Link
-          to="/profesional/agenda"
-          className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
-        >
-          Volver a la agenda
+        <Link to="/profesional/agenda" className={AGENDA_BACK_LINK}>
+          <span aria-hidden="true"></span> Volver a la agenda
         </Link>
       </p>
       <StudentPanelErrorBoundary
@@ -254,7 +269,9 @@ function AppointmentDetailBody({
   const spaceLabels = useSpaceLabels();
   // El estado local mantiene el detalle vigente tras un cambio simulado:
   // la respuesta del puerto ya trae la atención actualizada.
-  const [current, setCurrent] = useState<AgendaAppointment | undefined>(undefined);
+  const [current, setCurrent] = useState<AgendaAppointment | undefined>(
+    undefined,
+  );
   const appointment = result?.status === "ok" ? result.appointment : undefined;
   const shown = current ?? appointment;
 
@@ -300,7 +317,9 @@ function AppointmentDetailBody({
       <dl>
         <div>
           <dt>Estado</dt>
-          <dd className="student-portal__item-meta">{appointmentStatusLabel(shown.status)}</dd>
+          <dd className="student-portal__item-meta">
+            {appointmentStatusLabel(shown.status)}
+          </dd>
         </div>
         <div>
           <dt>Fecha vigente</dt>
@@ -414,29 +433,40 @@ function StatusChangeSection({
   }
 
   return (
-    <section aria-labelledby="status-change-title" className="student-portal__section">
+    <section
+      aria-labelledby="status-change-title"
+      className="student-portal__section"
+    >
       <div className="student-portal__section-head">
         <h2 id="status-change-title">Cambiar estado</h2>
       </div>
-      <p>Cambio simulado con datos ficticios; la autorización la decide el Backend.</p>
+      <p>
+        Cambio simulado con datos ficticios; la autorización la decide el
+        Backend.
+      </p>
       {confirmedLabel !== null ? (
         <div>
           <h3 ref={confirmationRef} tabIndex={-1}>
             Cambio registrado
           </h3>
           <p role="status">
-            {confirmedLabel}. Estado actual: {appointmentStatusLabel(appointment.status)}. Cambio
-            simulado con datos ficticios.
+            {confirmedLabel}. Estado actual:{" "}
+            {appointmentStatusLabel(appointment.status)}. Cambio simulado con
+            datos ficticios.
           </p>
         </div>
       ) : null}
       {options.length === 0 ? (
         <p>
-          No hay cambios disponibles desde {appointmentStatusLabel(appointment.status)}: este estado
-          es final.
+          No hay cambios disponibles desde{" "}
+          {appointmentStatusLabel(appointment.status)}: este estado es final.
         </p>
       ) : (
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          className="flex flex-col gap-4"
+        >
           <div>
             <label htmlFor="status-change-target" className={GESTION_LABEL}>
               Cambiar a
@@ -471,11 +501,17 @@ function StatusChangeSection({
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 aria-invalid={fieldError !== null}
-                aria-describedby={fieldError !== null ? "status-change-reason-error" : undefined}
+                aria-describedby={
+                  fieldError !== null ? "status-change-reason-error" : undefined
+                }
                 disabled={pending}
               />
               {fieldError !== null ? (
-                <p id="status-change-reason-error" role="alert" className="student-portal__error">
+                <p
+                  id="status-change-reason-error"
+                  role="alert"
+                  className="student-portal__error"
+                >
                   {fieldError}
                 </p>
               ) : null}

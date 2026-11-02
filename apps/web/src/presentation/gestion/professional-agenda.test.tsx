@@ -494,6 +494,16 @@ describe("navegación del portal con agenda (TI2-115)", () => {
     );
     expect(await screen.findByRole("heading", { name: "Detalle de la atención" })).toBeDefined();
   });
+
+  test("el detalle vuelve a la agenda con un enlace de nombre claro", async () => {
+    comoProfesional();
+    const { router } = renderAt("/profesional/agenda/aten-ficticio-1");
+
+    fireEvent.click(await screen.findByRole("link", { name: "Volver a la agenda" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/profesional/agenda"));
+    expect(await screen.findByRole("heading", { name: "Agenda" })).toBeDefined();
+  });
 });
 
 describe("guards de la agenda (TI2-115)", () => {
