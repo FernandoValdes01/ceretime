@@ -7,8 +7,13 @@ import {
   assignmentRoleUnion,
   assignmentStatusUnion,
   availabilityExceptionKindUnion,
+  followUpContractVersionLiteral,
+  followUpResponsibleUnion,
+  followUpTaskStatusUnion,
   institutionalStatusUnion,
   modalityUnion,
+  notificationContractVersionLiteral,
+  notificationEventKindUnion,
   persistableRequestStatusUnion,
   roleUnion,
 } from "./infrastructure/validators";
@@ -294,4 +299,66 @@ export default defineSchema({
     .index("by_accompanimentId", ["accompanimentId"])
     // Atenciones del acompañamiento por rango de inicio, sin filtrar en memoria.
     .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"]),
+
+  // Tabla 'notificationEvents': eventos de notificación de la atención
+  // (forma de TI2-105, persistida por TI2-118). Cada fila guarda solo las
+  // referencias mínimas del evento (atención y destinatario), la clase, el
+  // instante persistido del cambio y la versión del contrato: no hay títulos,
+  // motivos, notas ni datos del acompañamiento. `idempotencyKey` es la clave
+  // de `notificationIdempotencyKey`; un reintento del mismo cambio la repite y
+  // el repositorio devuelve la fila existente en vez de crear otra. Sin envío
+  // ni estado de entrega: el envío es TI2-122.
+  notificationEvents: defineTable({
+    kind: notificationEventKindUnion,
+    appointmentId: v.id("appointments"),
+    recipientId: v.id("users"),
+    occurredAt: v.number(),
+    version: notificationContractVersionLiteral,
+    idempotencyKey: v.string(),
+  })
+    // Reintento del mismo cambio: una fila basta para decidir.
+    .index("by_idempotencyKey", ["idempotencyKey"])
+    // Eventos del destinatario, del más reciente al más antiguo.
+    .index("by_recipientId_and_occurredAt", ["recipientId", "occurredAt"])
+    // Eventos de la atención en orden de ocurrencia.
+    .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"]),
+
+  // Tabla 'followUpRecords': registro de seguimiento posterior a una atención
+  // (forma de TI2-106, persistida por TI2-118), como máximo uno por atención.
+  // Guarda los próximos pasos y la fecha civil sugerida; acuerdos y tareas
+  // viven en sus propias tablas para no crecer como arrays del documento. El
+  // estado y el acompañamiento de la atención no se copian: se leen de
+  // `appointments`. La nota interna no se copia: `internalNoteId` apunta a la
+  // fila de `followUpNotes`, la única tabla de notas internas. Sin
+  // diagnósticos ni datos clínicos.
+  followUpRecords: defineTable({
+    appointmentId: v.id("appointments"),
+    authorId: v.id("users"),
+    nextSteps: v.string(),
+    suggestedNextAppointmentDate: v.optional(v.string()),
+    internalNoteId: v.optional(v.id("followUpNotes")),
+    version: followUpContractVersionLiteral,
+    updatedAt: v.number(),
+  })
+    // El registro de la atención: una fila basta para decidir.
+    .index("by_appointmentId", ["appointmentId"]),
+
+  // Tabla 'followUpAgreements': acuerdos de un registro de seguimiento.
+  // `entryId` es el identificador estable del acuerdo dentro del registro.
+  followUpAgreements: defineTable({
+    recordId: v.id("followUpRecords"),
+    entryId: v.string(),
+    description: v.string(),
+  }).index("by_recordId", ["recordId"]),
+
+  // Tabla 'followUpTasks': tareas de un registro de seguimiento, con
+  // responsable por vínculo (estudiante, profesional o CERETI, sin identidad)
+  // y estado operativo.
+  followUpTasks: defineTable({
+    recordId: v.id("followUpRecords"),
+    entryId: v.string(),
+    description: v.string(),
+    responsible: followUpResponsibleUnion,
+    status: followUpTaskStatusUnion,
+  }).index("by_recordId", ["recordId"]),
 });
