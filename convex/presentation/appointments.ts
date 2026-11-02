@@ -274,7 +274,7 @@ export const listAppointments = query({
   },
 });
 
-/** Detalle de una atención con la vista de su acompañamiento. */
+/** Detalle de una atención con la vista de `appointment:read`. */
 export const getAppointment = query({
   args: { appointmentId: v.string(), version },
   returns: appointmentProjectionValidator,
