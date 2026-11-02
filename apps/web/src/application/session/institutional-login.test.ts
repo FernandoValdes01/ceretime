@@ -15,12 +15,24 @@ describe("POPULATION_LOGINS", () => {
 });
 
 describe("getLoginRequest", () => {
-  test("usa el mismo proveedor Google con retorno controlado a la SPA", () => {
-    expect(getLoginRequest()).toEqual({
-      provider: "google",
+  test("cada población usa el proveedor de su dominio con retorno controlado a la SPA", () => {
+    expect(getLoginRequest("estudiante")).toEqual({
+      providerId: "google-alu",
       callbackURL: "/",
       errorCallbackURL: "/?auth=error",
     });
+    expect(getLoginRequest("personal")).toEqual({
+      providerId: "google-uct",
+      callbackURL: "/",
+      errorCallbackURL: "/?auth=error",
+    });
+  });
+
+  test("el proveedor de cada botón coincide con el sufijo que muestra", () => {
+    const providerBySuffix = Object.fromEntries(
+      POPULATION_LOGINS.map((entry) => [entry.emailSuffix, getLoginRequest(entry.id).providerId]),
+    );
+    expect(providerBySuffix).toEqual({ "@alu.uct.cl": "google-alu", "@uct.cl": "google-uct" });
   });
 });
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   getInstitutionalPopulation,
+  isAcceptedGoogleIdentity,
   isInstitutionalEmail,
   normalizeEmail,
 } from "./institutional_domain";
@@ -47,5 +48,46 @@ describe("getInstitutionalPopulation", () => {
 
   test("devuelve null fuera de la institución", () => {
     expect(getInstitutionalPopulation("a@gmail.com")).toBe(null);
+  });
+});
+
+describe("isAcceptedGoogleIdentity", () => {
+  const student = { email: "a@alu.uct.cl", emailVerified: true, hostedDomain: "alu.uct.cl" };
+  const staff = { email: "b@uct.cl", emailVerified: true, hostedDomain: "uct.cl" };
+
+  test("acepta la cuenta verificada del dominio de su población", () => {
+    expect(isAcceptedGoogleIdentity(student, "estudiante")).toBe(true);
+    expect(isAcceptedGoogleIdentity(staff, "personal")).toBe(true);
+  });
+
+  test("rechaza la cuenta de la otra población", () => {
+    expect(isAcceptedGoogleIdentity(student, "personal")).toBe(false);
+    expect(isAcceptedGoogleIdentity(staff, "estudiante")).toBe(false);
+  });
+
+  test("rechaza el correo sin verificar o personal", () => {
+    expect(isAcceptedGoogleIdentity({ ...student, emailVerified: false }, "estudiante")).toBe(
+      false,
+    );
+    expect(isAcceptedGoogleIdentity({ ...student, emailVerified: "true" }, "estudiante")).toBe(
+      false,
+    );
+    const personal = { email: "a@gmail.com", emailVerified: true, hostedDomain: undefined };
+    expect(isAcceptedGoogleIdentity(personal, "estudiante")).toBe(false);
+    expect(isAcceptedGoogleIdentity(personal, "personal")).toBe(false);
+  });
+
+  test("rechaza un claim hd distinto al de la población", () => {
+    expect(isAcceptedGoogleIdentity({ ...student, hostedDomain: "uct.cl" }, "estudiante")).toBe(
+      false,
+    );
+    expect(isAcceptedGoogleIdentity({ ...staff, hostedDomain: "evil.com" }, "personal")).toBe(
+      false,
+    );
+    expect(isAcceptedGoogleIdentity({ ...staff, hostedDomain: "" }, "personal")).toBe(false);
+  });
+
+  test("sin claim hd decide el sufijo verificado", () => {
+    expect(isAcceptedGoogleIdentity({ ...staff, hostedDomain: undefined }, "personal")).toBe(true);
   });
 });

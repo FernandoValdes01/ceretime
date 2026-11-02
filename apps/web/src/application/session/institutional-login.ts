@@ -1,16 +1,21 @@
+import {
+  GOOGLE_PROVIDER_ID_BY_POPULATION,
+  type InstitutionalPopulation,
+} from "../../../../../convex/domain/index.ts";
+
 /**
- * Caso de uso del cliente: inicio institucional (TI2-3).
+ * Caso de uso del cliente: inicio institucional (TI2-3, TI2-131).
  *
- * Puro y sin dependencias de React o Convex: describe los dos inicios
- * lógicos sobre el mismo OAuth Client de Google, uno por población. Los
- * botones orientan a elegir la cuenta correcta (`prompt: select_account` en
- * el servidor); la garantía real es el rechazo de dominios en el backend
- * (`databaseHooks` en `convex/auth.ts`), nunca un parámetro del cliente.
+ * Puro y sin dependencias de React: describe los dos inicios lógicos sobre el
+ * mismo OAuth Client de Google, uno por población. Cada botón abre su propio
+ * proveedor (`google-alu` o `google-uct`), que pide a Google solo cuentas de
+ * su dominio (`hd`); la garantía real es la validación del backend
+ * (`convex/auth.ts`), nunca un parámetro del cliente.
  *
  * No define roles ni autorizaciones: eso pertenece a TI2-4 / TI2-5.
  */
 
-export type InstitutionalPopulation = "estudiante" | "personal";
+export type { InstitutionalPopulation };
 
 type PopulationLogin = {
   id: InstitutionalPopulation;
@@ -33,16 +38,18 @@ export const POPULATION_LOGINS: readonly PopulationLogin[] = [
 ];
 
 /**
- * Flujo de retorno del login social.
+ * Solicitud de inicio de una población.
  *
- * `callbackURL` es navegación post-login dentro de la SPA (no el redirect
- * OAuth, que siempre es `/api/auth/callback/google` en el Site URL de
- * Convex). `errorCallbackURL` recibe los fallos con `?auth=error`, que la
- * pantalla traduce a un mensaje genérico sin detalles sensibles.
+ * `providerId` es el proveedor de su dominio. `callbackURL` es navegación
+ * post-login dentro de la SPA (no el redirect OAuth, que es
+ * `/api/auth/oauth2/callback/<providerId>` en el Site URL de Convex).
+ * `errorCallbackURL` recibe los fallos con `?auth=error`, que la pantalla
+ * traduce a un mensaje genérico sin detalles sensibles, también cuando el
+ * backend rechaza una cuenta de otro dominio.
  */
-export function getLoginRequest() {
+export function getLoginRequest(population: InstitutionalPopulation) {
   return {
-    provider: "google" as const,
+    providerId: GOOGLE_PROVIDER_ID_BY_POPULATION[population],
     callbackURL: "/",
     errorCallbackURL: "/?auth=error",
   };
