@@ -46,13 +46,32 @@ export const POPULATION_LOGINS: readonly PopulationLogin[] = [
  * `errorCallbackURL` recibe los fallos con `?auth=error`, que la pantalla
  * traduce a un mensaje genérico sin detalles sensibles, también cuando el
  * backend rechaza una cuenta de otro dominio.
+ *
+ * Una ruta relativa la resuelve el plugin `crossDomain` contra `SITE_URL`
+ * del deployment, así que el login siempre vuelve a ese origen. Con
+ * `siteUrl` (el `VITE_SITE_URL` del entorno) el retorno es absoluto y vuelve
+ * a la SPA de ese entorno, por ejemplo localhost, aunque `SITE_URL` apunte a
+ * Vercel; Better Auth solo lo acepta si es un origen de confianza del
+ * deployment. Sin `siteUrl` o con un valor inválido se conserva la ruta
+ * relativa.
  */
-export function getLoginRequest(population: InstitutionalPopulation) {
+export function getLoginRequest(population: InstitutionalPopulation, siteUrl?: string) {
+  const origin = parseOrigin(siteUrl);
   return {
     providerId: GOOGLE_PROVIDER_ID_BY_POPULATION[population],
-    callbackURL: "/",
-    errorCallbackURL: "/?auth=error",
+    callbackURL: `${origin}/`,
+    errorCallbackURL: `${origin}/?auth=error`,
   };
+}
+
+function parseOrigin(siteUrl: string | undefined): string {
+  if (siteUrl === undefined || siteUrl.trim().length === 0) return "";
+  try {
+    const url = new URL(siteUrl.trim());
+    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : "";
+  } catch {
+    return "";
+  }
 }
 
 /** Mensajes genéricos: nunca revelan motivo, unidad ni datos del apoyo. */

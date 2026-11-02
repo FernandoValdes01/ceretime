@@ -34,6 +34,30 @@ describe("getLoginRequest", () => {
     );
     expect(providerBySuffix).toEqual({ "@alu.uct.cl": "google-alu", "@uct.cl": "google-uct" });
   });
+
+  test("con origen del entorno vuelve a esa SPA y no al SITE_URL del deployment", () => {
+    expect(getLoginRequest("estudiante", "http://localhost:5173")).toEqual({
+      providerId: "google-alu",
+      callbackURL: "http://localhost:5173/",
+      errorCallbackURL: "http://localhost:5173/?auth=error",
+    });
+  });
+
+  test("usa solo el origen aunque la variable traiga ruta o barra final", () => {
+    expect(getLoginRequest("personal", " https://ceretime.vercel.app/inicio/ ").callbackURL).toBe(
+      "https://ceretime.vercel.app/",
+    );
+  });
+
+  test("sin origen válido conserva la ruta relativa de siempre", () => {
+    for (const value of ["", "   ", "localhost:5173-no-es-url", "no es una url"]) {
+      expect(getLoginRequest("estudiante", value)).toEqual({
+        providerId: "google-alu",
+        callbackURL: "/",
+        errorCallbackURL: "/?auth=error",
+      });
+    }
+  });
 });
 
 describe("GENERIC_AUTH_MESSAGES", () => {
