@@ -430,6 +430,12 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
 
     expect(await screen.findByText(/Conflicto al confirmar la reserva/)).toBeDefined();
+    // El desenlace entra a la página como un solo elemento anunciable con
+    // role="alert": se anuncia una vez al aparecer y no se reanuncia al reenviar.
+    const alertasDeConflicto = screen
+      .getAllByRole("alert")
+      .filter((alerta) => (alerta.textContent ?? "").includes("Conflicto al confirmar la reserva"));
+    expect(alertasDeConflicto).toHaveLength(1);
     // La selección sigue íntegra y sin botón alternativo: el mismo comando de
     // reserva vuelve a intentarse, sin rehacer búsqueda ni formulario.
     const casilla = screen.getByRole("checkbox", { name: /Confirmo que deseo reservar/ });
