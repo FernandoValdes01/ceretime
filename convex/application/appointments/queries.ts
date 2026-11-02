@@ -177,10 +177,26 @@ async function readOwnAgenda(
 }
 
 /**
- * Lista atenciones por rango civil y con paginación. El cursor es el
- * identificador de la última atención entregada; uno que no figura en lo
- * visible responde `conflict` para reiniciar la consulta, nunca repite
- * resultados en silencio. Sin atenciones responde una página vacía.
+ * Cursor de cada posición de la lista: el identificador de la atención y una
+ * huella FNV-1a de los identificadores hasta ella. Si el tramo entregado
+ * conserva sus atenciones y su orden, lo pendiente sigue después de esa
+ * posición. La huella detecta un cambio de orden, no protege un secreto.
+ */
+function positionCursors(items: readonly AppointmentProjection[]): readonly string[] {
+  let hash = 0x811c9dc5;
+  return items.map((item) => {
+    for (const char of `${item.id};`) {
+      hash = Math.imul(hash ^ char.charCodeAt(0), 0x01000193) >>> 0;
+    }
+    return `${item.id}.${hash.toString(36)}`;
+  });
+}
+
+/**
+ * Lista atenciones por rango civil y con paginación. El cursor es opaco y
+ * describe el tramo ya entregado: si ese tramo cambió o el cursor no figura en
+ * lo visible, responde `conflict` para reiniciar la consulta, nunca omite
+ * atenciones en silencio. Sin atenciones responde una página vacía.
  */
 export async function listAppointments(
   deps: AppointmentQueryDeps,
@@ -198,9 +214,10 @@ export async function listAppointments(
       : await readAccompanimentAgenda(deps, input.tokenIdentifier, input.accompanimentId, range);
   if (visible.status === "error") return visible;
 
+  const cursors = positionCursors(visible.data);
   let startIndex = 0;
   if (input.cursor !== undefined) {
-    const found = visible.data.findIndex((item) => item.id === input.cursor);
+    const found = cursors.indexOf(input.cursor);
     if (found === -1) return conflict();
     startIndex = found + 1;
   }
@@ -210,7 +227,7 @@ export async function listAppointments(
   return okResult({
     items,
     hasMore,
-    nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null,
+    nextCursor: hasMore ? (cursors[startIndex + items.length - 1] ?? null) : null,
     version: APPOINTMENT_CONTRACT_VERSION,
   });
 }

@@ -629,9 +629,9 @@ test("TI2-112: el Practicante recorre por páginas su acompañamiento en vista m
     });
 
   const pageOne = await next();
-  expect(pageOne).toMatchObject({ hasMore: true, nextCursor: first });
+  expect(pageOne).toMatchObject({ hasMore: true });
   const pageTwo = await next(pageOne.nextCursor ?? undefined);
-  expect(pageTwo).toMatchObject({ hasMore: true, nextCursor: second });
+  expect(pageTwo).toMatchObject({ hasMore: true });
   const pageThree = await next(pageTwo.nextCursor ?? undefined);
   expect(pageThree).toMatchObject({ hasMore: false, nextCursor: null });
   const items = [...pageOne.items, ...pageTwo.items, ...pageThree.items];
