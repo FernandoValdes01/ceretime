@@ -22,6 +22,30 @@ describe("getLoginRequest", () => {
       errorCallbackURL: "/?auth=error",
     });
   });
+
+  test("con origen del entorno vuelve a esa SPA y no al SITE_URL del deployment", () => {
+    expect(getLoginRequest("http://localhost:5173")).toEqual({
+      provider: "google",
+      callbackURL: "http://localhost:5173/",
+      errorCallbackURL: "http://localhost:5173/?auth=error",
+    });
+  });
+
+  test("usa solo el origen aunque la variable traiga ruta o barra final", () => {
+    expect(getLoginRequest(" https://ceretime.vercel.app/inicio/ ").callbackURL).toBe(
+      "https://ceretime.vercel.app/",
+    );
+  });
+
+  test("sin origen válido conserva la ruta relativa de siempre", () => {
+    for (const value of ["", "   ", "localhost:5173-no-es-url", "no es una url"]) {
+      expect(getLoginRequest(value)).toEqual({
+        provider: "google",
+        callbackURL: "/",
+        errorCallbackURL: "/?auth=error",
+      });
+    }
+  });
 });
 
 describe("GENERIC_AUTH_MESSAGES", () => {

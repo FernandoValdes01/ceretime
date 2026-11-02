@@ -11,7 +11,7 @@ import {
 } from "../../application/session/institutional-login";
 import { readAuthErrorNotice, removeAuthErrorParams } from "./auth-error";
 import { authClient } from "../../infrastructure/auth/auth-client";
-import { isBackendConfigured } from "../../infrastructure/convex/convex-client";
+import { isBackendConfigured, siteUrl } from "../../infrastructure/convex/convex-client";
 import "./auth.css";
 
 /** Lee el aviso inicial de error una sola vez al montar (TI2-14). Retira solo los parámetros de auth sin exponer el motivo ni borrar el resto de la URL. */
@@ -77,7 +77,7 @@ export function AuthScreen() {
       setPendingPopulation(null);
     };
     try {
-      await authClient.signIn.social(getLoginRequest(), {
+      await authClient.signIn.social(getLoginRequest(siteUrl), {
         onError: reset,
       });
     } catch {
