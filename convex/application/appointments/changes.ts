@@ -17,6 +17,7 @@ import {
   type AuthorizableAppointment,
   type AuthorizationReader,
 } from "../authorization/authorize";
+import { auditAppointmentChange, type AppointmentAuditRecorder } from "./audit";
 import {
   resolveBookableSlot,
   slotSelectionProblem,
@@ -46,6 +47,11 @@ import type { AppointmentOccupier } from "./occupancy";
  * atención que se mueve y recién entonces la actualiza; después se persiste
  * el estado `rescheduled` y la primera fecha original, que la política no
  * sobrescribe en cambios encadenados.
+ *
+ * Cada cambio exitoso deja un evento mínimo de auditoría (TI2-128) por el
+ * puerto `audit`, después de persistir y en la misma mutation: actor de la
+ * sesión, instante del servidor, acción, atención y estado resultante, sin el
+ * motivo. Los rechazos no se auditan porque abortan la mutation.
  *
  * Opera con datos ficticios.
  */
@@ -107,6 +113,7 @@ export interface CancelAppointmentDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
+  readonly audit: AppointmentAuditRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -123,6 +130,7 @@ export interface RescheduleAppointmentDeps extends SlotSelectionDeps {
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
   readonly occupier: AppointmentOccupier;
+  readonly audit: AppointmentAuditRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -145,6 +153,7 @@ export interface RecordAppointmentAttendanceDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
+  readonly audit: AppointmentAuditRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -206,11 +215,12 @@ export async function cancelAppointment(
   });
   if (grant.status === "error") return denied();
 
+  const occurredAt = occurredNow(deps);
   const outcome = transitionAppointment({
     from: stored.status,
     to: grant.data.target,
     actorId: grant.data.callerId,
-    occurredAt: occurredNow(deps),
+    occurredAt,
     ...(input.reason === undefined ? {} : { reason: input.reason }),
     currentStartAt: stored.startAt,
     ...(stored.originalStartAt === undefined
@@ -223,6 +233,13 @@ export async function cancelAppointment(
     status: outcome.change.to,
     ...(outcome.cancelReason === undefined ? {} : { cancelReason: outcome.cancelReason }),
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  await auditAppointmentChange(deps.audit, {
+    action: "cancelled",
+    actorId: grant.data.callerId,
+    appointmentId: stored.id,
+    result: outcome.change.to,
+    occurredAt,
   });
   return okResult({ appointmentId: stored.id });
 }
@@ -263,11 +280,12 @@ export async function rescheduleAppointment(
   // La política se aplica antes de releer disponibilidad: una atención ya
   // cancelada o un destino inválido se rechazan sin depender de qué cupos
   // existan, y el origen no se toca.
+  const occurredAt = occurredNow(deps);
   const outcome = transitionAppointment({
     from: stored.status,
     to: "rescheduled",
     actorId: grant.data.callerId,
-    occurredAt: occurredNow(deps),
+    occurredAt,
     currentStartAt: stored.startAt,
     ...(stored.originalStartAt === undefined
       ? {}
@@ -303,6 +321,13 @@ export async function rescheduleAppointment(
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  await auditAppointmentChange(deps.audit, {
+    action: "rescheduled",
+    actorId: grant.data.callerId,
+    appointmentId: occupied.data.appointmentId,
+    result: outcome.change.to,
+    occurredAt,
   });
   return okResult({ appointmentId: occupied.data.appointmentId });
 }
@@ -342,11 +367,12 @@ export async function recordAppointmentAttendance(
   });
   if (grant.status === "error") return denied();
 
+  const occurredAt = occurredNow(deps);
   const outcome = transitionAppointment({
     from: stored.status,
     to: input.outcome,
     actorId: grant.data.callerId,
-    occurredAt: occurredNow(deps),
+    occurredAt,
     currentStartAt: stored.startAt,
     ...(stored.originalStartAt === undefined
       ? {}
@@ -357,6 +383,13 @@ export async function recordAppointmentAttendance(
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  await auditAppointmentChange(deps.audit, {
+    action: "attendance_recorded",
+    actorId: grant.data.callerId,
+    appointmentId: stored.id,
+    result: outcome.change.to,
+    occurredAt,
   });
   return okResult({ appointmentId: stored.id });
 }
