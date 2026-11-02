@@ -174,10 +174,13 @@ describe("formulario de reserva (TI2-102)", () => {
 
     expect(reserveSlotMock).toHaveBeenCalledTimes(1);
     expect(reserveSlotMock).toHaveBeenCalledWith({ slotId: "cupo-1" });
-    expect(await screen.findByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
+    const confirmado = await screen.findByRole("heading", { name: "Reserva confirmada" });
     expect(screen.getByText("reserva-ficticia-cupo-1")).toBeDefined();
+    // El foco cae una sola vez en el encabezado del estado; la única salida a
+    // horarios vive al final de la tarjeta sin duplicarse.
+    expect(document.activeElement).toBe(confirmado);
     const volverLinks = screen.getAllByRole("link", { name: "Volver a horarios" });
-    expect(volverLinks).toHaveLength(2);
+    expect(volverLinks).toHaveLength(1);
     for (const volver of volverLinks) {
       expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
     }
@@ -429,13 +432,15 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
 
-    expect(await screen.findByText(/Conflicto al confirmar la reserva/)).toBeDefined();
-    // El desenlace entra a la página como un solo elemento anunciable con
-    // role="alert": se anuncia una vez al aparecer y no se reanuncia al reenviar.
-    const alertasDeConflicto = screen
-      .getAllByRole("alert")
-      .filter((alerta) => (alerta.textContent ?? "").includes("Conflicto al confirmar la reserva"));
-    expect(alertasDeConflicto).toHaveLength(1);
+    // Un solo elemento anunciable con el texto canónico del contrato y una
+    // salida clara de la comprensible para elegir otro horario.
+    await screen.findByRole("alert");
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    const alerta = screen.getByRole("alert");
+    expect(alerta.textContent).toContain("La solicitud entra en conflicto con el estado actual.");
+    const salida = screen.getByRole("link", { name: "Elegir otro horario" });
+    expect(salida.getAttribute("href")).toBe("/estudiante/horarios");
+
     // La selección sigue íntegra y sin botón alternativo: el mismo comando de
     // reserva vuelve a intentarse, sin rehacer búsqueda ni formulario.
     const casilla = screen.getByRole("checkbox", { name: /Confirmo que deseo reservar/ });
@@ -459,15 +464,19 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
 
-    expect(
-      await screen.findByText("No tienes acceso a esta reserva.", { exact: false }),
-    ).toBeDefined();
+    // El foco no se pierde al desaparecer el botón: el encabezado del panel
+    // lo recoge y es el único anuncio de este desenlace (sin alerta extra).
+    const denegado = await screen.findByRole("heading", {
+      name: "No tienes acceso a esta reserva.",
+    });
+    expect(document.activeElement).toBe(denegado);
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(reserveSlotMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Confirmar reserva" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
 
     const volverLinks = screen.getAllByRole("link", { name: "Volver a horarios" });
-    expect(volverLinks).toHaveLength(2);
+    expect(volverLinks).toHaveLength(1);
     for (const volver of volverLinks) {
       expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
     }
@@ -481,11 +490,16 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
 
-    expect(await screen.findByText("Sin cupo disponible.", { exact: false })).toBeDefined();
+    // El foco también recibe este desenlace: encabezado del panel y mensaje
+    // canónico, sin ningún anuncio duplicado.
+    const sinCupo = await screen.findByRole("heading", { name: "Cupo no disponible." });
+    expect(document.activeElement).toBe(sinCupo);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText("Sin cupo disponible.", { exact: false })).toBeDefined();
     expect(screen.queryByRole("button", { name: "Confirmar reserva" })).toBeNull();
 
     const volverLinks = screen.getAllByRole("link", { name: "Volver a horarios" });
-    expect(volverLinks).toHaveLength(2);
+    expect(volverLinks).toHaveLength(1);
     for (const volver of volverLinks) {
       expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
     }
@@ -500,11 +514,16 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
     expect(await screen.findByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
-
     fireEvent.click(screen.getByRole("button", { name: "Cancelar esta reserva" }));
 
     expect(await screen.findByRole("heading", { name: "Reserva cancelada" })).toBeDefined();
-    expect(screen.getByText(/Cancelación simulada con datos ficticios/)).toBeDefined();
+    // Tras cancelar el encabezado del estado queda con el foco y es la única
+    // salida a horarios de la tarjeta.
+    const cancelado = screen.getByRole("heading", { name: "Reserva cancelada" });
+    expect(document.activeElement).toBe(cancelado);
+    expect(
+      screen.getByText("Esta es una demostración. No se canceló ninguna reserva real."),
+    ).toBeDefined();
     expect(screen.getByText("reserva-ficticia-cupo-1")).toBeDefined();
     expect(cancelReservationMock).toHaveBeenCalledTimes(1);
     expect(cancelReservationMock).toHaveBeenCalledWith({
@@ -524,9 +543,13 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
     fireEvent.click(await screen.findByRole("button", { name: "Cancelar esta reserva" }));
 
-    expect(
-      await screen.findByText("No tienes acceso a esta reserva.", { exact: false }),
-    ).toBeDefined();
+    // El foco no se pierde al desaparecer el botón de cancelación: el
+    // encabezado del panel lo recoge como anuncio único del desenlace.
+    const denegadoCancel = await screen.findByRole("heading", {
+      name: "No tienes acceso a esta reserva.",
+    });
+    expect(document.activeElement).toBe(denegadoCancel);
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(cancelReservationMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Cancelar esta reserva" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
