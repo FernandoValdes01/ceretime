@@ -4,6 +4,8 @@ import {
   authorizeAppointmentBook,
   authorizeAppointmentCancel,
   authorizeAppointmentRead,
+  authorizeFollowUpRead,
+  authorizeFollowUpWrite,
   authorizeAppointmentReschedule,
   authorizeAvailabilityEdit,
   authorizeAvailabilityRead,
@@ -242,6 +244,66 @@ describe("authorizeAvailabilityRead", () => {
   });
 });
 
+describe("seguimiento del acompañamiento", () => {
+  const request = (tokenIdentifier: string) => ({ tokenIdentifier, accompanimentId: "acc-1" });
+  const professional = {
+    ...student,
+    _id: "user-professional",
+    role: "professional" as const,
+    tokenIdentifier: "token-professional",
+  };
+  const world = (status: "active" | "closed", assignmentStatus: "active" | "revoked") =>
+    fakeReader({
+      profiles: [student, professional, intern, admin],
+      accompaniments: [{ ...activeAccompaniment, status }],
+      assignments: [
+        assignment({ userId: "user-professional", assignedRole: "professional" }),
+        assignment({ userId: "user-intern", assignedRole: "intern", status: assignmentStatus }),
+      ],
+    });
+
+  test("la vista sigue al rol, también con el acompañamiento cerrado", async () => {
+    const reader = world("closed", "active");
+    const views = [
+      ["token-student", "user-student", "shared"],
+      ["token-professional", "user-professional", "professional"],
+      ["token-intern", "user-intern", "minimized"],
+    ] as const;
+    for (const [token, callerId, view] of views) {
+      expect(await authorizeFollowUpRead(reader, request(token))).toEqual({
+        status: "ok",
+        data: { callerId, view },
+      });
+    }
+  });
+
+  test("revocación, Administrador e identificador inexistente reciben la misma denegación", async () => {
+    const reader = world("active", "revoked");
+    expect(await authorizeFollowUpRead(reader, request("token-intern"))).toEqual(DENIED);
+    expect(await authorizeFollowUpRead(reader, request("token-admin"))).toEqual(DENIED);
+    expect(
+      await authorizeFollowUpRead(reader, {
+        tokenIdentifier: "token-student",
+        accompanimentId: "x",
+      }),
+    ).toEqual(DENIED);
+  });
+
+  test("solo el Profesional asignado escribe, y solo con el acompañamiento activo", async () => {
+    const active = world("active", "active");
+    expect(await authorizeFollowUpWrite(active, request("token-professional"))).toEqual({
+      status: "ok",
+      data: { callerId: "user-professional" },
+    });
+    for (const token of ["token-student", "token-intern", "token-admin"]) {
+      expect(await authorizeFollowUpWrite(active, request(token))).toEqual(DENIED);
+    }
+    expect(
+      await authorizeFollowUpWrite(world("closed", "active"), request("token-professional")),
+    ).toEqual(DENIED);
+  });
+});
+
 describe("authorizeAppointmentRead", () => {
   test("la vista sigue al rol y el historial de un acompañamiento cerrado se lee", async () => {
     const reader = fakeReader({
@@ -252,7 +314,7 @@ describe("authorizeAppointmentRead", () => {
     const request = (tokenIdentifier: string) => ({ tokenIdentifier, accompanimentId: "acc-1" });
     expect(await authorizeAppointmentRead(reader, request("token-student"))).toEqual({
       status: "ok",
-      data: { callerId: "user-student", view: "full" },
+      data: { callerId: "user-student", view: "shared" },
     });
     expect(await authorizeAppointmentRead(reader, request("token-intern"))).toEqual({
       status: "ok",

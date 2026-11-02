@@ -1604,7 +1604,16 @@ test("TI2-112: la agenda y el detalle entregan las claves y los valores exactos 
     view: "full",
   };
 
-  for (const name of ["est-1", "pro-1"]) {
+  const { cancelReason: _omitted, ...cancelledWithoutReason } = cancelledView;
+  const views = {
+    "est-1": [
+      { ...plainView, view: "shared" },
+      { ...cancelledWithoutReason, view: "shared" },
+    ],
+    "pro-1": [plainView, cancelledView],
+  };
+  for (const name of ["est-1", "pro-1"] as const) {
+    const [expectedPlain, expectedCancelled] = views[name];
     const caller = ti112Caller(t, name);
     const own = await caller.query(api.presentation.appointments.listAppointments, TI112_WEEK);
     const scoped = await caller.query(api.presentation.appointments.listAppointments, {
@@ -1612,18 +1621,18 @@ test("TI2-112: la agenda y el detalle entregan las claves y los valores exactos 
       accompanimentId,
     });
     for (const page of [own, scoped]) {
-      expect(page.items.slice(0, 2)).toStrictEqual([plainView, cancelledView]);
+      expect(page.items.slice(0, 2)).toStrictEqual([expectedPlain, expectedCancelled]);
     }
     const plainDetail = await caller.query(api.presentation.appointments.getAppointment, {
       appointmentId: appointments.plain,
       version: "v1",
     });
-    expect(plainDetail).toStrictEqual(plainView);
+    expect(plainDetail).toStrictEqual(expectedPlain);
     const cancelledDetail = await caller.query(api.presentation.appointments.getAppointment, {
       appointmentId: appointments.cancelled,
       version: "v1",
     });
-    expect(cancelledDetail).toStrictEqual(cancelledView);
+    expect(cancelledDetail).toStrictEqual(expectedCancelled);
   }
 });
 
