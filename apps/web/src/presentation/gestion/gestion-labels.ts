@@ -113,8 +113,3 @@ export function formatAppointmentTime(instantAt: number): string {
 export function formatAppointmentTimeRange(startAt: number, endAt: number): string {
   return `${formatAppointmentTime(startAt)} – ${formatAppointmentTime(endAt)}`;
 }
-
-/** Fecha y horario en una sola línea, para las filas de la agenda. */
-export function formatAppointmentWindow(startAt: number, endAt: number): string {
-  return `${formatAppointmentDate(startAt)}, ${formatAppointmentTimeRange(startAt, endAt)}`;
-}

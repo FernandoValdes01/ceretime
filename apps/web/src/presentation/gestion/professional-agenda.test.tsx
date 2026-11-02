@@ -8,7 +8,7 @@ import type { AgendaPort } from "../../application/agenda/agenda-port.ts";
 import {
   formatAppointmentDate,
   formatAppointmentTime,
-  formatAppointmentWindow,
+  formatAppointmentTimeRange,
 } from "./gestion-labels.ts";
 import { setAgendaPortForTests } from "./professional-agenda-data.ts";
 
@@ -329,6 +329,9 @@ describe("detalle de la atención (TI2-115)", () => {
     const motivo = screen.getByLabelText("Motivo (obligatorio)");
     fireEvent.click(screen.getByRole("button", { name: "Registrar cambio" }));
     expect(await screen.findByText("El motivo es obligatorio para este cambio.")).toBeDefined();
+    // El rojo no compite con el borde normal: se aplica una sola clase de color.
+    expect(motivo.className).toContain("border-error");
+    expect(motivo.className).not.toContain("border-outline");
 
     fireEvent.change(motivo, { target: { value: "Bloqueo de la sala." } });
     fireEvent.click(screen.getByRole("button", { name: "Registrar cambio" }));
@@ -459,8 +462,9 @@ describe("detalles visibles con contrato conservado (TI2-115)", () => {
 
   test("las fechas se leen en la zona de la agenda y no en la del navegador", () => {
     // 14:00 UTC es 10:00 en Santiago; 02:30 UTC del 13 sigue siendo el 12 allá.
-    expect(formatAppointmentWindow(ATENCION_BASE.startAt, ATENCION_BASE.endAt)).toMatch(
-      /^martes, 12 de mayo de 2026, 10:00\sa\.\sm\.\s–\s11:00\sa\.\sm\.$/u,
+    expect(formatAppointmentDate(ATENCION_BASE.startAt)).toBe("martes, 12 de mayo de 2026");
+    expect(formatAppointmentTimeRange(ATENCION_BASE.startAt, ATENCION_BASE.endAt)).toMatch(
+      /^10:00\sa\.\sm\.\s–\s11:00\sa\.\sm\.$/u,
     );
     const cruceDeDia = Date.UTC(2026, 4, 13, 2, 30);
     expect(formatAppointmentDate(cruceDeDia)).toBe("martes, 12 de mayo de 2026");
