@@ -13,8 +13,9 @@
  *
  * La nota interna breve no se duplica acá como entidad: `followUpNotes` sigue
  * siendo la única tabla de notas internas. El registro solo la acompaña para
- * que la proyección compartida con el estudiante la omita. Sin persistencia
- * (TI2-118), sin política de acceso (TI2-127) y sin segunda tabla de notas.
+ * que la proyección compartida con el estudiante la omita. La persistencia
+ * vive en el repositorio de seguimiento (TI2-118); sin política de acceso
+ * (TI2-127) y sin segunda tabla de notas.
  */
 
 import { APPOINTMENT_STATUS_VALUES, type AppointmentStatus } from "../appointments/appointment";
@@ -289,7 +290,7 @@ function validateEntries(
  * Devuelve todas las causas únicas en el orden declarado, no solo la primera,
  * para que un formulario pueda señalarlas juntas. Un registro válido sale con
  * textos e identificadores recortados y con la versión vigente. No persiste
- * nada: TI2-118 decide el almacenamiento.
+ * nada: el repositorio de seguimiento (TI2-118) guarda el registro válido.
  */
 export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpValidationResult {
   const found = new Set<FollowUpRejectionCause>();

@@ -9,6 +9,15 @@ import {
   MODALITY_VALUES,
 } from "../domain/availability/availability";
 import {
+  FOLLOW_UP_CONTRACT_VERSION,
+  FOLLOW_UP_RESPONSIBLE_VALUES,
+  FOLLOW_UP_TASK_STATUS_VALUES,
+} from "../domain/follow_up/follow_up";
+import {
+  NOTIFICATION_CONTRACT_VERSION,
+  NOTIFICATION_EVENT_KIND_VALUES,
+} from "../domain/notifications/notification";
+import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
 } from "../domain/accompaniments/practitioner_assignment";
@@ -102,3 +111,27 @@ export const appointmentStatusUnion = v.union(
 export const appointmentAttendanceOutcomeUnion = v.union(
   ...APPOINTMENT_ATTENDANCE_OUTCOME_VALUES.map((value) => v.literal(value)),
 );
+
+/**
+ * Clases de evento de notificación (TI2-105, persistidas por TI2-118),
+ * derivadas del dominio, y versión vigente del contrato del evento.
+ */
+export const notificationEventKindUnion = v.union(
+  ...NOTIFICATION_EVENT_KIND_VALUES.map((value) => v.literal(value)),
+);
+
+export const notificationContractVersionLiteral = v.literal(NOTIFICATION_CONTRACT_VERSION);
+
+/**
+ * Estados y responsables de las tareas de seguimiento (TI2-106, persistidos
+ * por TI2-118), derivados del dominio, y versión vigente del registro.
+ */
+export const followUpTaskStatusUnion = v.union(
+  ...FOLLOW_UP_TASK_STATUS_VALUES.map((value) => v.literal(value)),
+);
+
+export const followUpResponsibleUnion = v.union(
+  ...FOLLOW_UP_RESPONSIBLE_VALUES.map((value) => v.literal(value)),
+);
+
+export const followUpContractVersionLiteral = v.literal(FOLLOW_UP_CONTRACT_VERSION);
