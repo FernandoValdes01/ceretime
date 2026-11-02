@@ -1,5 +1,6 @@
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { APPOINTMENT_CONTRACT_VERSION } from "../../domain/appointments/appointment";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
 
 /**
@@ -488,6 +489,99 @@ export function appointmentOccupier(ctx: MutationCtx) {
         endsAt: slot.endAt,
         ...(movedAppointmentId === undefined ? {} : { movedAppointmentId }),
       });
+    },
+  };
+}
+
+// ── TI2-112: lectura de la agenda y del detalle ─────────────────────────────
+//
+// Cumple por forma `AppointmentAgendaReader` sin importar Aplicación. Traduce
+// al vocabulario del contrato (`startAt`/`endAt` e identificadores de texto),
+// no decide autorización y no entrega `studentId`.
+
+/**
+ * Tope de atenciones por rango. Superarlo responde `conflict` en vez de
+ * truncar: una agenda cortada escondería atenciones sin aviso. Es provisional,
+ * igual que el rango de hasta `MAX_EXPANSION_DAYS` días que acota.
+ */
+export const MAX_APPOINTMENTS_IN_RANGE = 300;
+
+/** Atención en el vocabulario del contrato, sin claves `undefined`. */
+function toAgendaAppointment(doc: Doc<"appointments">) {
+  return {
+    id: doc._id,
+    accompanimentId: doc.accompanimentId,
+    professionalId: doc.professionalId,
+    modality: doc.modality,
+    ...(doc.spaceId === undefined ? {} : { spaceId: doc.spaceId }),
+    startAt: doc.startsAt,
+    endAt: doc.endsAt,
+    ...(doc.originalStartsAt === undefined ? {} : { originalStartAt: doc.originalStartsAt }),
+    ...(doc.cancelReason === undefined ? {} : { cancelReason: doc.cancelReason }),
+    status: doc.status,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  };
+}
+
+/** Las lecturas piden una fila de más: si llega, el rango superó el tope. */
+function agendaRangeResult(
+  rows: readonly Doc<"appointments">[],
+): ApiResult<ReadonlyArray<ReturnType<typeof toAgendaAppointment>>> {
+  if (rows.length > MAX_APPOINTMENTS_IN_RANGE) return errResult(conflictError());
+  return okResult(rows.map(toAgendaAppointment));
+}
+
+/** Intervalo `[startAt, endAt)` de la lectura, con el fin excluido. */
+type AgendaRange = { readonly startAt: number; readonly endAt: number };
+
+/**
+ * Atenciones que empiezan dentro del intervalo, en orden de inicio, por
+ * estudiante, profesional o acompañamiento, más la lectura por id. Un
+ * identificador que no pertenece a su tabla responde igual que uno sin
+ * atenciones.
+ */
+export function appointmentAgendaReader(ctx: DbReader) {
+  return {
+    listByStudent: async (studentId: string, range: AgendaRange) => {
+      const id = ctx.db.normalizeId("users", studentId);
+      if (id === null) return agendaRangeResult([]);
+      return agendaRangeResult(
+        await ctx.db
+          .query("appointments")
+          .withIndex("by_studentId_and_startsAt", (q) =>
+            q.eq("studentId", id).gte("startsAt", range.startAt).lt("startsAt", range.endAt),
+          )
+          .take(MAX_APPOINTMENTS_IN_RANGE + 1),
+      );
+    },
+    listByProfessional: async (professionalId: string, range: AgendaRange) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return agendaRangeResult([]);
+      return agendaRangeResult(
+        await ctx.db
+          .query("appointments")
+          .withIndex("by_professionalId_and_startsAt", (q) =>
+            q.eq("professionalId", id).gte("startsAt", range.startAt).lt("startsAt", range.endAt),
+          )
+          .take(MAX_APPOINTMENTS_IN_RANGE + 1),
+      );
+    },
+    listByAccompaniment: async (accompanimentId: string, range: AgendaRange) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return agendaRangeResult([]);
+      return agendaRangeResult(
+        await ctx.db
+          .query("appointments")
+          .withIndex("by_accompanimentId_and_startsAt", (q) =>
+            q.eq("accompanimentId", id).gte("startsAt", range.startAt).lt("startsAt", range.endAt),
+          )
+          .take(MAX_APPOINTMENTS_IN_RANGE + 1),
+      );
+    },
+    getAppointment: async (appointmentId: string) => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      const doc = id === null ? null : await getAppointmentById(ctx, id);
+      return doc === null ? null : toAgendaAppointment(doc);
     },
   };
 }

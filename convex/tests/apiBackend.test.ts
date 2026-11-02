@@ -15,6 +15,7 @@ import {
   unauthorizedError,
 } from "../domain/errors/api_error";
 import { ACCESS_NEEDS_MAX_LENGTH } from "../domain/requests/request";
+import { MAX_APPOINTMENTS_IN_RANGE } from "../infrastructure/appointments/repository";
 import {
   denyUnauthorized,
   throwPublicApiError,
@@ -1443,4 +1444,669 @@ test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", a
     asStudent.mutation(api.presentation.appointments.bookAppointment, slotWithoutVersion as never),
   ).rejects.toThrow("Missing required field `version`");
   expect(await ti111Appointments(t)).toEqual(afterBooking);
+});
+
+// TI2-112: agenda y detalle de las atenciones. Los roles, la paginación y el
+// tope por regla están en `queries.test.ts`; acá se prueba la API con el
+// adaptador real: claves exactas, lecturas por índice y errores públicos.
+
+const TI112_WEEK = { from: "2026-07-06", to: "2026-07-12", limit: 10, version: "v1" as const };
+
+/** Instante de un día de julio de 2026 a la hora dada en Santiago (UTC-4). */
+const ti112At = (day: number, hour: number) => Date.UTC(2026, 6, day, hour + 4);
+
+function ti112Caller(t: ReturnType<typeof convexTest>, name: string) {
+  return t.withIdentity(identityFor(`ti112-${name}`, `ti112-${name}@uct.cl`));
+}
+
+/**
+ * Dos acompañamientos con cinco atenciones. El profesional 1 atiende el
+ * acompañamiento del estudiante 1 y perdió la asignación en el del estudiante
+ * 2, donde conserva una atención a su nombre.
+ */
+async function ti112SeedAgenda(t: ReturnType<typeof convexTest>) {
+  const seed = (name: string, role: "student" | "professional" | "admin") =>
+    seedUser(t, { subject: `ti112-${name}`, email: `ti112-${name}@uct.cl`, role });
+  const studentId = await seed("est-1", "student");
+  const otherStudentId = await seed("est-2", "student");
+  const professionalId = await seed("pro-1", "professional");
+  const otherProfessionalId = await seed("pro-2", "professional");
+  await seed("adm-1", "admin");
+  return await t.run(async (ctx) => {
+    const accompanimentId = await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Necesidad ficticia",
+    });
+    const otherAccompanimentId = await ctx.db.insert("accompaniments", {
+      studentId: otherStudentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Necesidad ficticia",
+    });
+    const assign = (id: Id<"accompaniments">, userId: Id<"users">, status: "active" | "revoked") =>
+      ctx.db.insert("accompanimentAssignments", {
+        accompanimentId: id,
+        userId,
+        assignedRole: "professional",
+        status,
+      });
+    await assign(accompanimentId, professionalId, "active");
+    const otherProfessionalAssignment = await assign(
+      accompanimentId,
+      otherProfessionalId,
+      "active",
+    );
+    await assign(otherAccompanimentId, professionalId, "revoked");
+    await assign(otherAccompanimentId, otherProfessionalId, "active");
+    const spaceId = await ctx.db.insert("spaces", {
+      campus: "Campus ficticio",
+      building: "A",
+      floor: "1",
+      room: "Sala ficticia",
+      accessConditions: "Sala físicamente accesible",
+      accessInstructions: "Instrucciones ficticias",
+      isActive: true,
+    });
+    const insertAppointment = (fields: {
+      readonly accompanimentId: Id<"accompaniments">;
+      readonly studentId: Id<"users">;
+      readonly professionalId: Id<"users">;
+      readonly day: number;
+    }) =>
+      ctx.db.insert("appointments", {
+        accompanimentId: fields.accompanimentId,
+        studentId: fields.studentId,
+        professionalId: fields.professionalId,
+        modality: "online",
+        status: "scheduled",
+        startsAt: ti112At(fields.day, 10),
+        endsAt: ti112At(fields.day, 11),
+        createdAt: 1,
+      });
+    const plain = await insertAppointment({
+      accompanimentId,
+      studentId,
+      professionalId,
+      day: 6,
+    });
+    const cancelled = await ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId,
+      spaceId,
+      modality: "inPerson",
+      status: "cancelled_by_cereti",
+      startsAt: ti112At(7, 10),
+      endsAt: ti112At(7, 11),
+      originalStartsAt: ti112At(6, 15),
+      cancelReason: "Motivo ficticio",
+      createdAt: 1,
+    });
+    const withOtherProfessional = await insertAppointment({
+      accompanimentId,
+      studentId,
+      professionalId: otherProfessionalId,
+      day: 8,
+    });
+    const revoked = await insertAppointment({
+      accompanimentId: otherAccompanimentId,
+      studentId: otherStudentId,
+      professionalId,
+      day: 6,
+    });
+    const foreign = await insertAppointment({
+      accompanimentId: otherAccompanimentId,
+      studentId: otherStudentId,
+      professionalId: otherProfessionalId,
+      day: 7,
+    });
+    return {
+      studentId,
+      professionalId,
+      otherProfessionalId,
+      accompanimentId,
+      otherAccompanimentId,
+      otherProfessionalAssignment,
+      spaceId,
+      appointments: { plain, cancelled, withOtherProfessional, revoked, foreign },
+    };
+  });
+}
+
+test("TI2-112: la agenda y el detalle entregan las claves y los valores exactos de Estudiante y Profesional", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, appointments, professionalId, spaceId } = await ti112SeedAgenda(t);
+  const plainView = {
+    id: appointments.plain,
+    accompanimentId,
+    professionalId,
+    modality: "online",
+    startAt: ti112At(6, 10),
+    endAt: ti112At(6, 11),
+    status: "scheduled",
+    version: "v1",
+    view: "full",
+  };
+  const cancelledView = {
+    id: appointments.cancelled,
+    accompanimentId,
+    professionalId,
+    spaceId,
+    modality: "inPerson",
+    startAt: ti112At(7, 10),
+    endAt: ti112At(7, 11),
+    originalStartAt: ti112At(6, 15),
+    cancelReason: "Motivo ficticio",
+    status: "cancelled_by_cereti",
+    version: "v1",
+    view: "full",
+  };
+
+  for (const name of ["est-1", "pro-1"]) {
+    const caller = ti112Caller(t, name);
+    const own = await caller.query(api.presentation.appointments.listAppointments, TI112_WEEK);
+    const scoped = await caller.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      accompanimentId,
+    });
+    for (const page of [own, scoped]) {
+      expect(page.items.slice(0, 2)).toStrictEqual([plainView, cancelledView]);
+    }
+    const plainDetail = await caller.query(api.presentation.appointments.getAppointment, {
+      appointmentId: appointments.plain,
+      version: "v1",
+    });
+    expect(plainDetail).toStrictEqual(plainView);
+    const cancelledDetail = await caller.query(api.presentation.appointments.getAppointment, {
+      appointmentId: appointments.cancelled,
+      version: "v1",
+    });
+    expect(cancelledDetail).toStrictEqual(cancelledView);
+  }
+});
+
+test("TI2-112: la agenda propia no trae atenciones ajenas y la revocación la corta en la llamada siguiente", async () => {
+  const t = convexTest(schema, modules);
+  const { appointments, otherProfessionalAssignment } = await ti112SeedAgenda(t);
+  const ownIds = async (name: string) =>
+    (
+      await ti112Caller(t, name).query(api.presentation.appointments.listAppointments, TI112_WEEK)
+    ).items.map((item) => item.id);
+
+  expect(await ownIds("est-1")).toEqual([
+    appointments.plain,
+    appointments.cancelled,
+    appointments.withOtherProfessional,
+  ]);
+  expect(await ownIds("est-2")).toEqual([appointments.revoked, appointments.foreign]);
+  // La atención del acompañamiento con la asignación revocada queda fuera.
+  expect(await ownIds("pro-1")).toEqual([appointments.plain, appointments.cancelled]);
+  expect(await ownIds("pro-2")).toEqual([appointments.foreign, appointments.withOtherProfessional]);
+
+  await t.run(async (ctx) => {
+    await ctx.db.patch(otherProfessionalAssignment, { status: "revoked" });
+  });
+  expect(await ownIds("pro-2")).toEqual([appointments.foreign]);
+});
+
+test("TI2-112: el Profesional asignado ve en el acompañamiento las atenciones de otro profesional", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, appointments } = await ti112SeedAgenda(t);
+  const page = await ti112Caller(t, "pro-1").query(api.presentation.appointments.listAppointments, {
+    ...TI112_WEEK,
+    accompanimentId,
+  });
+  expect(page.items.map((item) => item.id)).toEqual([
+    appointments.plain,
+    appointments.cancelled,
+    appointments.withOtherProfessional,
+  ]);
+});
+
+test("TI2-112: un id ajeno, borrado, de otra tabla o sin forma responde el mismo error sin revelar el id", async () => {
+  const t = convexTest(schema, modules);
+  const { appointments, studentId } = await ti112SeedAgenda(t);
+  const deleted = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("appointments", {
+      accompanimentId: (await ctx.db.get(appointments.plain))!.accompanimentId,
+      studentId,
+      professionalId: (await ctx.db.get(appointments.plain))!.professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: ti112At(9, 10),
+      endsAt: ti112At(9, 11),
+      createdAt: 1,
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+
+  const asStudent = ti112Caller(t, "est-1");
+  for (const appointmentId of [appointments.foreign, deleted, studentId, "sin-forma"]) {
+    const data = await ti111PublicError(
+      asStudent.query(api.presentation.appointments.getAppointment, {
+        appointmentId,
+        version: "v1",
+      }),
+    );
+    expect(data).toStrictEqual(unauthorizedError());
+    expect(JSON.stringify(data)).not.toContain(appointmentId);
+  }
+});
+
+test("TI2-112: un acompañamiento ajeno, de otra tabla o sin forma se deniega en la lista", async () => {
+  const t = convexTest(schema, modules);
+  const { otherAccompanimentId, studentId } = await ti112SeedAgenda(t);
+  const asStudent = ti112Caller(t, "est-1");
+  const asRevoked = ti112Caller(t, "pro-1");
+  const denied = [
+    asStudent.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      accompanimentId: otherAccompanimentId,
+    }),
+    asStudent.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      accompanimentId: studentId,
+    }),
+    asStudent.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      accompanimentId: "sin-forma",
+    }),
+    asRevoked.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      accompanimentId: otherAccompanimentId,
+    }),
+  ];
+  for (const call of denied) {
+    expect(await ti111PublicError(call)).toStrictEqual(unauthorizedError());
+  }
+});
+
+test("TI2-112: tres páginas de una atención recorren la agenda sin repetir y en orden de inicio", async () => {
+  const t = convexTest(schema, modules);
+  const { appointments } = await ti112SeedAgenda(t);
+  const asStudent = ti112Caller(t, "est-1");
+  const next = (cursor?: string) =>
+    asStudent.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      limit: 1,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+
+  const first = await next();
+  expect(first).toMatchObject({ hasMore: true, version: "v1" });
+  const second = await next(first.nextCursor ?? undefined);
+  expect(second).toMatchObject({ hasMore: true });
+  const third = await next(second.nextCursor ?? undefined);
+  expect(third).toMatchObject({ hasMore: false, nextCursor: null });
+  expect([...first.items, ...second.items, ...third.items].map((item) => item.id)).toEqual([
+    appointments.plain,
+    appointments.cancelled,
+    appointments.withOtherProfessional,
+  ]);
+});
+
+test("TI2-112: un cursor de otra persona o una entrada inválida responden conflict", async () => {
+  const t = convexTest(schema, modules);
+  await ti112SeedAgenda(t);
+  const asStudent = ti112Caller(t, "est-1");
+  const list = (overrides: Partial<typeof TI112_WEEK> & { cursor?: string }) =>
+    asStudent.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      ...overrides,
+    });
+  const foreignPage = await ti112Caller(t, "est-2").query(
+    api.presentation.appointments.listAppointments,
+    { ...TI112_WEEK, limit: 1 },
+  );
+  expect(foreignPage.nextCursor).not.toBeNull();
+  const calls = [
+    list({ cursor: foreignPage.nextCursor ?? "" }),
+    list({ limit: 0 }),
+    list({ limit: 51 }),
+    list({ limit: 1.5 }),
+    list({ to: "2026-07-05" }),
+    list({ to: "2026-12-31" }),
+    list({ from: "2026-02-30" }),
+  ];
+  for (const call of calls) {
+    expect(await ti111PublicError(call)).toStrictEqual(conflictError());
+  }
+});
+
+test("TI2-112: una agenda sin atenciones en el rango es una página vacía", async () => {
+  const t = convexTest(schema, modules);
+  await ti112SeedAgenda(t);
+  expect(
+    await ti112Caller(t, "est-1").query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      from: "2026-08-03",
+      to: "2026-08-09",
+    }),
+  ).toStrictEqual({ items: [], hasMore: false, nextCursor: null, version: "v1" });
+});
+
+test("TI2-112: el rango incluye su inicio y excluye su fin en los tres alcances", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  const atNextMonday = await t.run(async (ctx) =>
+    ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: ti112At(13, 0),
+      endsAt: ti112At(13, 1),
+      createdAt: 1,
+    }),
+  );
+  const calls = [
+    { caller: "est-1", scope: {} },
+    { caller: "pro-1", scope: {} },
+    { caller: "est-1", scope: { accompanimentId } },
+  ];
+  for (const { caller, scope } of calls) {
+    const list = (from: string, to: string) =>
+      ti112Caller(t, caller).query(api.presentation.appointments.listAppointments, {
+        ...TI112_WEEK,
+        ...scope,
+        from,
+        to,
+      });
+    const week = await list(TI112_WEEK.from, TI112_WEEK.to);
+    expect(week.items.map((item) => item.id)).not.toContain(atNextMonday);
+    const nextDay = await list("2026-07-13", "2026-07-13");
+    expect(nextDay.items.map((item) => item.id)).toEqual([atNextMonday]);
+  }
+});
+
+test("TI2-112: el validador rechaza zona horaria, profesional, estudiante y otra versión", async () => {
+  const t = convexTest(schema, modules);
+  const { appointments, professionalId, studentId } = await ti112SeedAgenda(t);
+  const asStudent = ti112Caller(t, "est-1");
+  const { listAppointments, getAppointment } = api.presentation.appointments;
+  await expect(
+    asStudent.query(listAppointments, { ...TI112_WEEK, timeZone: "UTC" } as never),
+  ).rejects.toThrow("Unexpected field `timeZone`");
+  await expect(
+    asStudent.query(listAppointments, { ...TI112_WEEK, professionalId } as never),
+  ).rejects.toThrow("Unexpected field `professionalId`");
+  await expect(
+    asStudent.query(listAppointments, { ...TI112_WEEK, studentId } as never),
+  ).rejects.toThrow("Unexpected field `studentId`");
+  await expect(
+    asStudent.query(listAppointments, { ...TI112_WEEK, version: "v2" } as never),
+  ).rejects.toThrow("Expected `v1`, got `v2`");
+  await expect(
+    asStudent.query(getAppointment, {
+      appointmentId: appointments.plain,
+      version: "v2",
+    } as never),
+  ).rejects.toThrow("Expected `v1`, got `v2`");
+  await expect(
+    asStudent.query(getAppointment, {
+      appointmentId: appointments.plain,
+      version: "v1",
+      studentId,
+    } as never),
+  ).rejects.toThrow("Unexpected field `studentId`");
+});
+
+test("TI2-112: una fila sobre el tope responde conflict sin lista cortada en los tres alcances", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  const insertMany = (count: number) =>
+    t.run(async (ctx) => {
+      for (let index = 0; index < count; index += 1) {
+        await ctx.db.insert("appointments", {
+          accompanimentId,
+          studentId,
+          professionalId,
+          modality: "online",
+          status: "scheduled",
+          startsAt: ti112At(10, 8) + index * 60_000,
+          endsAt: ti112At(10, 8) + (index + 1) * 60_000,
+          createdAt: 1,
+        });
+      }
+    });
+  const listAll = ({ caller, scope }: { readonly caller: string; readonly scope: object }) =>
+    ti112Caller(t, caller).query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      ...scope,
+      limit: 50,
+    });
+  const calls = [
+    { caller: "est-1", scope: {} },
+    { caller: "pro-1", scope: {} },
+    { caller: "est-1", scope: { accompanimentId } },
+  ];
+
+  // Cada alcance parte con tres atenciones de la semilla en la semana.
+  await insertMany(MAX_APPOINTMENTS_IN_RANGE - 3);
+  for (const call of calls) {
+    expect(await listAll(call)).toMatchObject({ hasMore: true });
+  }
+
+  await insertMany(1);
+  for (const call of calls) {
+    expect(await ti111PublicError(listAll(call))).toStrictEqual(conflictError());
+  }
+});
+
+test("TI2-112: el Administrador y una llamada sin sesión no leen agenda, acompañamiento ni detalle", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, appointments } = await ti112SeedAgenda(t);
+  const asAdmin = ti112Caller(t, "adm-1");
+  const { getAppointment, listAppointments } = api.presentation.appointments;
+  const scoped = { ...TI112_WEEK, accompanimentId };
+  const detail = { appointmentId: appointments.plain, version: "v1" as const };
+  const calls = [
+    asAdmin.query(listAppointments, TI112_WEEK),
+    asAdmin.query(listAppointments, scoped),
+    asAdmin.query(getAppointment, detail),
+    t.query(listAppointments, TI112_WEEK),
+    t.query(listAppointments, scoped),
+    t.query(getAppointment, detail),
+  ];
+  for (const call of calls) {
+    expect(await ti111PublicError(call)).toStrictEqual(unauthorizedError());
+  }
+});
+
+test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  // 23:00 del domingo 12 y del domingo 5 en Santiago: ya es lunes en UTC y también en UTC-3.
+  const { lateLastDay, lateDayBefore } = await t.run(async (ctx) => {
+    const insert = (startsAt: number) =>
+      ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId,
+        professionalId,
+        modality: "online",
+        status: "scheduled",
+        startsAt,
+        endsAt: startsAt + 3_600_000,
+        createdAt: 1,
+      });
+    return {
+      lateLastDay: await insert(ti112At(12, 23)),
+      lateDayBefore: await insert(ti112At(5, 23)),
+    };
+  });
+  const week = await ti112Caller(t, "est-1").query(
+    api.presentation.appointments.listAppointments,
+    TI112_WEEK,
+  );
+  const ids = week.items.map((item) => item.id);
+  expect(ids).toContain(lateLastDay);
+  expect(ids).not.toContain(lateDayBefore);
+});
+
+test("TI2-112: la atención de las 23:30 antes del cambio de hora aparece solo en el sábado", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  // 23:30 del sábado 5 de septiembre en Santiago: el domingo 6 no tiene medianoche.
+  const startsAt = Date.UTC(2026, 8, 6, 3, 30);
+  const lateSaturday = await t.run(async (ctx) =>
+    ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt,
+      endsAt: startsAt + 1_800_000,
+      createdAt: 1,
+    }),
+  );
+  const { listAppointments } = api.presentation.appointments;
+  const idsIn = async (day: string) => {
+    const range = { from: day, to: day, limit: 10, version: "v1" as const };
+    const pages = [
+      await ti112Caller(t, "est-1").query(listAppointments, range),
+      await ti112Caller(t, "est-1").query(listAppointments, { ...range, accompanimentId }),
+      await ti112Caller(t, "pro-1").query(listAppointments, range),
+    ];
+    return pages.map((page) => page.items.map((item) => item.id));
+  };
+  expect(await idsIn("2026-09-05")).toEqual([[lateSaturday], [lateSaturday], [lateSaturday]]);
+  expect(await idsIn("2026-09-06")).toEqual([[], [], []]);
+});
+
+test("TI2-112: una atención creada después entra por su inicio en los tres alcances", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, appointments, professionalId, studentId } = await ti112SeedAgenda(t);
+  // Se crea al final con el inicio más temprano: el orden no sale de la creación.
+  const earliest = await t.run(async (ctx) =>
+    ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: ti112At(6, 8),
+      endsAt: ti112At(6, 9),
+      createdAt: 1,
+    }),
+  );
+  const { listAppointments } = api.presentation.appointments;
+  const pages = [
+    await ti112Caller(t, "est-1").query(listAppointments, TI112_WEEK),
+    await ti112Caller(t, "est-1").query(listAppointments, { ...TI112_WEEK, accompanimentId }),
+    await ti112Caller(t, "pro-1").query(listAppointments, TI112_WEEK),
+  ];
+  for (const page of pages) {
+    expect(page.items.slice(0, 2).map((item) => item.id)).toEqual([earliest, appointments.plain]);
+  }
+});
+
+test("TI2-112: reagendar una atención entregada pide reiniciar y no omite las pendientes", async () => {
+  const scopes = [
+    { caller: "est-1", byAccompaniment: false },
+    { caller: "est-1", byAccompaniment: true },
+    { caller: "pro-1", byAccompaniment: false },
+  ];
+  for (const { caller, byAccompaniment } of scopes) {
+    const t = convexTest(schema, modules);
+    const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+    const insertOn = (day: number) =>
+      t.run(async (ctx) =>
+        ctx.db.insert("appointments", {
+          accompanimentId,
+          studentId,
+          professionalId,
+          modality: "online",
+          status: "scheduled",
+          startsAt: ti112At(day, 10),
+          endsAt: ti112At(day, 11),
+          createdAt: 1,
+        }),
+      );
+    const first = await insertOn(20);
+    const second = await insertOn(21);
+    const third = await insertOn(22);
+    const list = (cursor?: string) =>
+      ti112Caller(t, caller).query(api.presentation.appointments.listAppointments, {
+        from: "2026-07-20",
+        to: "2026-07-26",
+        limit: 1,
+        version: "v1",
+        ...(byAccompaniment ? { accompanimentId } : {}),
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+
+    const delivered = await list();
+    expect(delivered.items.map((item) => item.id)).toEqual([first]);
+    // Reagendar escribe sobre la misma fila: conserva el id y cambia el inicio.
+    await t.run(async (ctx) =>
+      ctx.db.patch(first, { startsAt: ti112At(25, 10), endsAt: ti112At(25, 11) }),
+    );
+    expect(await ti111PublicError(list(delivered.nextCursor ?? undefined))).toStrictEqual(
+      conflictError(),
+    );
+
+    const restarted: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await list(cursor);
+      restarted.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor !== undefined);
+    expect(restarted).toEqual([second, third, first]);
+  }
+});
+
+test("TI2-112: una atención pendiente que pasa antes de lo entregado también pide reiniciar", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  const insertOn = (day: number) =>
+    t.run(async (ctx) =>
+      ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId,
+        professionalId,
+        modality: "online",
+        status: "scheduled",
+        startsAt: ti112At(day, 10),
+        endsAt: ti112At(day, 11),
+        createdAt: 1,
+      }),
+    );
+  await insertOn(20);
+  await insertOn(21);
+  const last = await insertOn(22);
+  const list = (cursor?: string) =>
+    ti112Caller(t, "est-1").query(api.presentation.appointments.listAppointments, {
+      from: "2026-07-20",
+      to: "2026-07-26",
+      limit: 2,
+      version: "v1",
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+
+  const delivered = await list();
+  expect(delivered.hasMore).toBe(true);
+  await t.run(async (ctx) =>
+    ctx.db.patch(last, { startsAt: ti112At(20, 8), endsAt: ti112At(20, 9) }),
+  );
+  expect(await ti111PublicError(list(delivered.nextCursor ?? undefined))).toStrictEqual(
+    conflictError(),
+  );
+});
+
+test("TI2-112: el Profesional revocado no lee por id la atención que sigue a su nombre", async () => {
+  const t = convexTest(schema, modules);
+  const { appointments } = await ti112SeedAgenda(t);
+  const data = await ti111PublicError(
+    ti112Caller(t, "pro-1").query(api.presentation.appointments.getAppointment, {
+      appointmentId: appointments.revoked,
+      version: "v1",
+    }),
+  );
+  expect(data).toStrictEqual(unauthorizedError());
 });
