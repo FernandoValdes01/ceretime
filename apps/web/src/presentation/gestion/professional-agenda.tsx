@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import "../routes/student-portal.css";
 import {
   appointmentRejectionMessage,
   appointmentStatusLabel,
-  formatAppointmentInstant,
+  formatAppointmentDate,
+  formatAppointmentTime,
+  formatAppointmentTimeRange,
   formatAppointmentWindow,
 } from "./gestion-labels.ts";
 import { availabilityModalityLabel } from "./professional-availability-labels.ts";
@@ -72,29 +74,23 @@ export function ProfessionalAgendaPage() {
   }, []);
 
   return (
-    <section aria-labelledby="professional-agenda-title">
+    <section
+      aria-labelledby="professional-agenda-title"
+      className="mx-auto w-full max-w-3xl text-left"
+    >
       <h1 id="professional-agenda-title" ref={headingRef} tabIndex={-1}>
         Agenda
       </h1>
       <p>Tus atenciones reservadas con la fecha vigente y su estado.</p>
       <p>Lectura simulada con datos ficticios hasta integrar la API real.</p>
       <StudentPanelErrorBoundary subject="la agenda" level="section">
-        <AgendaBody
-          attempt={attempt}
-          onRetry={() => setAttempt((value) => value + 1)}
-        />
+        <AgendaBody attempt={attempt} onRetry={() => setAttempt((value) => value + 1)} />
       </StudentPanelErrorBoundary>
     </section>
   );
 }
 
-function AgendaBody({
-  attempt,
-  onRetry,
-}: {
-  attempt: number;
-  onRetry: () => void;
-}) {
+function AgendaBody({ attempt, onRetry }: { attempt: number; onRetry: () => void }) {
   const result = useProfessionalAgenda(attempt);
   const spaceLabels = useSpaceLabels();
 
@@ -136,9 +132,7 @@ function AgendaBody({
   if (result.status === "empty") {
     return (
       <div className="student-portal__empty">
-        <p className="student-portal__empty-title">
-          No tienes atenciones agendadas.
-        </p>
+        <p className="student-portal__empty-title">No tienes atenciones agendadas.</p>
         <p>Cuando se reserve una atención contigo, aparecerá aquí.</p>
       </div>
     );
@@ -168,9 +162,7 @@ function spaceLabelOf(
   appointment: AgendaAppointment,
   spaceLabels: ReadonlyMap<string, string>,
 ): string | undefined {
-  return appointment.spaceId === undefined
-    ? undefined
-    : spaceLabels.get(appointment.spaceId);
+  return appointment.spaceId === undefined ? undefined : spaceLabels.get(appointment.spaceId);
 }
 
 /**
@@ -219,11 +211,7 @@ function AppointmentRowContent({
  * desconocido llega como denegación genérica del Backend, sin filtrar
  * existencia. Los cambios visibles quedan anotados con foco al confirmar.
  */
-export function ProfessionalAgendaDetailPage({
-  appointmentId,
-}: {
-  appointmentId: string;
-}) {
+export function ProfessionalAgendaDetailPage({ appointmentId }: { appointmentId: string }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -232,7 +220,10 @@ export function ProfessionalAgendaDetailPage({
   }, []);
 
   return (
-    <section aria-labelledby="professional-agenda-detail-title">
+    <section
+      aria-labelledby="professional-agenda-detail-title"
+      className="mx-auto w-full max-w-2xl text-left"
+    >
       <h1 id="professional-agenda-detail-title" ref={headingRef} tabIndex={-1}>
         Detalle de la atención
       </h1>
@@ -269,9 +260,7 @@ function AppointmentDetailBody({
   const spaceLabels = useSpaceLabels();
   // El estado local mantiene el detalle vigente tras un cambio simulado:
   // la respuesta del puerto ya trae la atención actualizada.
-  const [current, setCurrent] = useState<AgendaAppointment | undefined>(
-    undefined,
-  );
+  const [current, setCurrent] = useState<AgendaAppointment | undefined>(undefined);
   const appointment = result?.status === "ok" ? result.appointment : undefined;
   const shown = current ?? appointment;
 
@@ -314,42 +303,40 @@ function AppointmentDetailBody({
 
   return (
     <>
-      <dl>
-        <div>
-          <dt>Estado</dt>
-          <dd className="student-portal__item-meta">
-            {appointmentStatusLabel(shown.status)}
-          </dd>
-        </div>
-        <div>
-          <dt>Fecha vigente</dt>
-          <dd>{formatAppointmentWindow(shown.startAt, shown.endAt)}</dd>
-        </div>
-        <div>
-          <dt>Modalidad</dt>
-          <dd>{availabilityModalityLabel(shown.modality)}</dd>
-        </div>
-        {spaceLabel === undefined ? null : (
-          <div>
-            <dt>Espacio</dt>
-            <dd>{spaceLabel}</dd>
-          </div>
-        )}
+      <dl className="m-0 divide-y divide-(--ct-line)">
+        <DetailRow label="Estado">{appointmentStatusLabel(shown.status)}</DetailRow>
+        <DetailRow label="Fecha vigente">
+          <span className="block">{formatAppointmentDate(shown.startAt)}</span>
+          <span className="block">{formatAppointmentTimeRange(shown.startAt, shown.endAt)}</span>
+        </DetailRow>
+        <DetailRow label="Modalidad">{availabilityModalityLabel(shown.modality)}</DetailRow>
+        {spaceLabel === undefined ? null : <DetailRow label="Espacio">{spaceLabel}</DetailRow>}
         {shown.originalStartAt === undefined ? null : (
-          <div>
-            <dt>Fecha original conservada</dt>
-            <dd>{formatAppointmentInstant(shown.originalStartAt)}</dd>
-          </div>
+          <DetailRow label="Fecha original conservada">
+            <span className="block">{formatAppointmentDate(shown.originalStartAt)}</span>
+            <span className="block">{formatAppointmentTime(shown.originalStartAt)}</span>
+          </DetailRow>
         )}
         {shown.cancelReason === undefined ? null : (
-          <div>
-            <dt>Motivo de cancelación</dt>
-            <dd>{shown.cancelReason}</dd>
-          </div>
+          <DetailRow label="Motivo de cancelación">{shown.cancelReason}</DetailRow>
         )}
       </dl>
       <StatusChangeSection appointment={shown} onChanged={setCurrent} />
     </>
+  );
+}
+
+/**
+ * Dato del detalle con su etiqueta en negrita arriba. Una línea suave separa
+ * cada dato (la del tono `--ct-line`, que se refuerza en alto contraste) para
+ * que no se pierda el renglón al leer.
+ */
+function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="py-3">
+      <dt className="text-sm font-semibold text-on-surface">{label}</dt>
+      <dd className="m-0 text-base text-on-surface">{children}</dd>
+    </div>
   );
 }
 
@@ -433,40 +420,29 @@ function StatusChangeSection({
   }
 
   return (
-    <section
-      aria-labelledby="status-change-title"
-      className="student-portal__section"
-    >
+    <section aria-labelledby="status-change-title" className="student-portal__section">
       <div className="student-portal__section-head">
         <h2 id="status-change-title">Cambiar estado</h2>
       </div>
-      <p>
-        Cambio simulado con datos ficticios; la autorización la decide el
-        Backend.
-      </p>
+      <p>Cambio simulado con datos ficticios; la autorización la decide el Backend.</p>
       {confirmedLabel !== null ? (
         <div>
           <h3 ref={confirmationRef} tabIndex={-1}>
             Cambio registrado
           </h3>
           <p role="status">
-            {confirmedLabel}. Estado actual:{" "}
-            {appointmentStatusLabel(appointment.status)}. Cambio simulado con
-            datos ficticios.
+            {confirmedLabel}. Estado actual: {appointmentStatusLabel(appointment.status)}. Cambio
+            simulado con datos ficticios.
           </p>
         </div>
       ) : null}
       {options.length === 0 ? (
         <p>
-          No hay cambios disponibles desde{" "}
-          {appointmentStatusLabel(appointment.status)}: este estado es final.
+          No hay cambios disponibles desde {appointmentStatusLabel(appointment.status)}: este estado
+          es final.
         </p>
       ) : (
-        <form
-          onSubmit={handleSubmit}
-          noValidate
-          className="flex flex-col gap-4"
-        >
+        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
           <div>
             <label htmlFor="status-change-target" className={GESTION_LABEL}>
               Cambiar a
@@ -501,17 +477,11 @@ function StatusChangeSection({
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
                 aria-invalid={fieldError !== null}
-                aria-describedby={
-                  fieldError !== null ? "status-change-reason-error" : undefined
-                }
+                aria-describedby={fieldError !== null ? "status-change-reason-error" : undefined}
                 disabled={pending}
               />
               {fieldError !== null ? (
-                <p
-                  id="status-change-reason-error"
-                  role="alert"
-                  className="student-portal__error"
-                >
+                <p id="status-change-reason-error" role="alert" className="student-portal__error">
                   {fieldError}
                 </p>
               ) : null}
