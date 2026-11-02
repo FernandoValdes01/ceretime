@@ -83,11 +83,13 @@ export function appointmentChangeLabel(to: string): string {
 
 // Las fechas se muestran en la zona de la agenda del dominio y no en la del
 // navegador: así el Profesional ve la misma hora que publicó y que revalida
-// el Backend, aunque abra la agenda desde otra zona.
+// el Backend, aunque abra la agenda desde otra zona. Llevan el año para que
+// atenciones de años distintos no se confundan.
 const APPOINTMENT_WINDOW_FORMAT = new Intl.DateTimeFormat("es-CL", {
   weekday: "long",
   day: "numeric",
   month: "long",
+  year: "numeric",
   timeZone: AGENDA_TIME_ZONE,
 });
 

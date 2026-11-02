@@ -87,6 +87,19 @@ const ATENCION_BASE = {
   endAt: Date.UTC(2026, 4, 12, 15, 0),
 } as const;
 
+const ESPACIO_FICTICIO = {
+  id: "esp-1",
+  campus: "Campus San Juan Pablo II",
+  building: "Edificio A",
+  floor: "Piso 1",
+  room: "Sala 101",
+  accessConditions: "Acceso con rampa.",
+  arrivalInstructions: "Entrar por la puerta principal.",
+  version: "v1",
+} as const;
+
+const ETIQUETA_ESPACIO = "Campus San Juan Pablo II · Edificio A · Piso 1 · Sala 101";
+
 function puertoAgendaBase(): AgendaPort {
   return {
     searchSlots: () => Promise.resolve({ status: "empty" }),
@@ -122,7 +135,7 @@ function puertoAgendaBase(): AgendaPort {
         status: "changed",
         appointment: { ...ATENCION_BASE, status: input.to },
       }),
-    listSpaces: () => Promise.resolve({ status: "empty" }),
+    listSpaces: () => Promise.resolve({ status: "ok", spaces: [ESPACIO_FICTICIO] }),
     saveSpace: () =>
       Promise.resolve({
         status: "denied",
@@ -181,8 +194,42 @@ describe("agenda del Profesional (TI2-115)", () => {
 
     expect(await screen.findByText("Programada")).toBeDefined();
     expect(screen.getByText("Presencial")).toBeDefined();
-    expect(screen.getByText("Espacio esp-1")).toBeDefined();
-    expect(screen.getByRole("link", { name: /Programada/ })).toBeDefined();
+    expect(await screen.findByText(ETIQUETA_ESPACIO)).toBeDefined();
+    expect(screen.getByText(/martes, 12 de mayo de 2026/)).toBeDefined();
+    expect(screen.getByRole("link", { name: /Programada.*Ver detalle/ })).toBeDefined();
+  });
+
+  test("sin catálogo de espacios la fila omite el espacio y nunca muestra el id interno", async () => {
+    const port = puertoAgendaBase();
+    port.listSpaces = () => Promise.reject(new Error("fallo de red ficticio"));
+    comoProfesional(port);
+    renderAt("/profesional/agenda");
+
+    expect(await screen.findByText("Programada")).toBeDefined();
+    expect(screen.getByText("Presencial")).toBeDefined();
+    expect(screen.queryByText(/esp-1/)).toBeNull();
+  });
+
+  test("atenciones de años distintos muestran fechas distinguibles", async () => {
+    const port = puertoAgendaBase();
+    port.listAppointments = () =>
+      Promise.resolve({
+        status: "ok",
+        appointments: [
+          { ...ATENCION_BASE },
+          {
+            ...ATENCION_BASE,
+            id: "aten-ficticio-2",
+            startAt: Date.UTC(2027, 4, 12, 14, 0),
+            endAt: Date.UTC(2027, 4, 12, 15, 0),
+          },
+        ],
+      });
+    comoProfesional(port);
+    renderAt("/profesional/agenda");
+
+    expect(await screen.findByText(/12 de mayo de 2026/)).toBeDefined();
+    expect(screen.getByText(/12 de mayo de 2027/)).toBeDefined();
   });
 
   test("agenda vacía muestra el aviso de vacío sin filas", async () => {
@@ -382,6 +429,8 @@ describe("detalles visibles con contrato conservado (TI2-115)", () => {
 
     expect(await screen.findByText("Reagendada")).toBeDefined();
     expect(screen.getByText("Fecha original conservada")).toBeDefined();
+    expect(screen.getByText(/^martes, 12 de mayo de 2026, 10:00\sa\.\sm\.$/u)).toBeDefined();
+    expect(await screen.findByText(ETIQUETA_ESPACIO)).toBeDefined();
   });
 
   test("la cancelación por CERETI conserva el motivo propio sin notas internas", async () => {
@@ -405,10 +454,10 @@ describe("detalles visibles con contrato conservado (TI2-115)", () => {
   test("las fechas se leen en la zona de la agenda y no en la del navegador", () => {
     // 14:00 UTC es 10:00 en Santiago; 02:30 UTC del 13 sigue siendo el 12 allá.
     expect(formatAppointmentWindow(ATENCION_BASE.startAt, ATENCION_BASE.endAt)).toMatch(
-      /^martes, 12 de mayo, 10:00\sa\.\sm\.\s–\s11:00\sa\.\sm\.$/u,
+      /^martes, 12 de mayo de 2026, 10:00\sa\.\sm\.\s–\s11:00\sa\.\sm\.$/u,
     );
     expect(formatAppointmentInstant(Date.UTC(2026, 4, 13, 2, 30))).toMatch(
-      /^martes, 12 de mayo, 10:30\sp\.\sm\.$/u,
+      /^martes, 12 de mayo de 2026, 10:30\sp\.\sm\.$/u,
     );
   });
 });

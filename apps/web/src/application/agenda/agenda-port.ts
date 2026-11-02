@@ -131,7 +131,10 @@ export type SaveSpaceInput = Pick<
   readonly id?: string;
 };
 
-/** Lectura simulada del catálogo de espacios visible al Administrador. */
+/**
+ * Lectura simulada del catálogo de espacios: la edita el Administrador y la
+ * lee cualquier cuenta vigente (`space:read`), como la agenda del Profesional.
+ */
 export type ListSpacesResult =
   | { readonly status: "ok"; readonly spaces: ReadonlyArray<Space> }
   | { readonly status: "empty" }

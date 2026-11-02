@@ -14,6 +14,7 @@ import {
   statusChangeOptions,
   useAgendaAppointment,
   useProfessionalAgenda,
+  useSpaceLabels,
   type StatusChangeOption,
 } from "./professional-agenda-data.ts";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
@@ -28,9 +29,27 @@ const GESTION_ROW = "flex flex-wrap items-center gap-2 min-h-[44px] min-w-0 px-3
 const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
 
-/** Campos de gestión: alto táctil mínimo de 44px y foco visible compartido. */
-const GESTION_FIELD = "min-h-[44px] w-full min-w-0 box-border px-3 py-2 text-base text-inherit";
+/**
+ * Campos de gestión según DESIGN.md: etiqueta visible arriba, borde de 1px
+ * en el tono `outline` para que el campo se reconozca antes del foco, radio
+ * de 0.5rem, fondo blanco, alto táctil mínimo de 44px y foco visible. El
+ * error suma borde rojo al mensaje de texto, sin depender solo del color.
+ */
+const GESTION_LABEL = "mb-2 block text-sm font-semibold text-on-surface";
+const GESTION_FIELD =
+  "min-h-[44px] w-full min-w-0 box-border rounded-[0.5rem] border border-outline bg-surface-container-lowest px-3 py-2 text-base text-on-surface";
 const GESTION_FIELD_CLASS = `${GESTION_FIELD} ${GESTION_FOCUS_VISIBLE}`;
+const GESTION_TEXTAREA_CLASS = `${GESTION_FIELD_CLASS} min-h-32 resize-y`;
+const GESTION_FIELD_ERROR = "border-error";
+
+/**
+ * Fila de atención como tarjeta enlazada: la fecha encabeza en negrita, el
+ * estado va como etiqueta de texto y "Ver detalle" deja claro que abre la
+ * atención. El área completa es el enlace, con foco visible.
+ */
+const AGENDA_ITEM =
+  "rounded-lg border border-border-low bg-surface-container-lowest transition-colors hover:border-outline";
+const AGENDA_ITEM_LINK = `flex min-h-[44px] flex-col gap-2 rounded-lg px-5 py-4 text-on-surface no-underline ${GESTION_FOCUS_VISIBLE}`;
 
 /**
  * Agenda del Profesional (TI2-115): lista de atenciones reservadas con
@@ -67,6 +86,7 @@ export function ProfessionalAgendaPage() {
 
 function AgendaBody({ attempt, onRetry }: { attempt: number; onRetry: () => void }) {
   const result = useProfessionalAgenda(attempt);
+  const spaceLabels = useSpaceLabels();
 
   if (result === undefined) {
     return (
@@ -113,15 +133,18 @@ function AgendaBody({ attempt, onRetry }: { attempt: number; onRetry: () => void
   }
 
   return (
-    <ul className="student-portal__list">
+    <ul className="mt-4 grid list-none gap-3 p-0">
       {result.appointments.map((appointment) => (
-        <li key={appointment.id} className="student-portal__item">
+        <li key={appointment.id} className={AGENDA_ITEM}>
           <Link
             to="/profesional/agenda/$appointmentId"
             params={{ appointmentId: appointment.id }}
-            className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
+            className={AGENDA_ITEM_LINK}
           >
-            <AppointmentRowContent appointment={appointment} />
+            <AppointmentRowContent
+              appointment={appointment}
+              spaceLabel={spaceLabelOf(appointment, spaceLabels)}
+            />
           </Link>
         </li>
       ))}
@@ -129,16 +152,46 @@ function AgendaBody({ attempt, onRetry }: { attempt: number; onRetry: () => void
   );
 }
 
-/** Contenido mínimo de una fila: estado como texto, ventana y modalidad. */
-function AppointmentRowContent({ appointment }: { appointment: AgendaAppointment }) {
+function spaceLabelOf(
+  appointment: AgendaAppointment,
+  spaceLabels: ReadonlyMap<string, string>,
+): string | undefined {
+  return appointment.spaceId === undefined ? undefined : spaceLabels.get(appointment.spaceId);
+}
+
+/**
+ * Contenido de una fila en tres niveles: fecha y estado, modalidad y
+ * espacio como datos secundarios, y la acción de abrir el detalle.
+ */
+function AppointmentRowContent({
+  appointment,
+  spaceLabel,
+}: {
+  appointment: AgendaAppointment;
+  spaceLabel: string | undefined;
+}) {
   return (
     <>
-      <span className="student-portal__chip">{appointmentStatusLabel(appointment.status)}</span>
-      <span className="student-portal__item-meta">
-        {formatAppointmentWindow(appointment.startAt, appointment.endAt)}
+      <span className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-lg font-semibold">
+          {formatAppointmentWindow(appointment.startAt, appointment.endAt)}
+        </span>
+        <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold">
+          {appointmentStatusLabel(appointment.status)}
+        </span>
       </span>
-      <span>{availabilityModalityLabel(appointment.modality)}</span>
-      {appointment.spaceId === undefined ? null : <span>Espacio {appointment.spaceId}</span>}
+      <span className="flex flex-wrap gap-x-2 text-base text-on-surface-variant">
+        <span>{availabilityModalityLabel(appointment.modality)}</span>
+        {spaceLabel === undefined ? null : (
+          <>
+            <span aria-hidden="true">·</span>
+            <span>{spaceLabel}</span>
+          </>
+        )}
+      </span>
+      <span className="text-base font-semibold text-primary underline">
+        Ver detalle<span aria-hidden="true"> →</span>
+      </span>
     </>
   );
 }
@@ -198,6 +251,7 @@ function AppointmentDetailBody({
   onRetry: () => void;
 }) {
   const result = useAgendaAppointment(appointmentId, attempt);
+  const spaceLabels = useSpaceLabels();
   // El estado local mantiene el detalle vigente tras un cambio simulado:
   // la respuesta del puerto ya trae la atención actualizada.
   const [current, setCurrent] = useState<AgendaAppointment | undefined>(undefined);
@@ -239,6 +293,8 @@ function AppointmentDetailBody({
     );
   }
 
+  const spaceLabel = spaceLabelOf(shown, spaceLabels);
+
   return (
     <>
       <dl>
@@ -254,10 +310,10 @@ function AppointmentDetailBody({
           <dt>Modalidad</dt>
           <dd>{availabilityModalityLabel(shown.modality)}</dd>
         </div>
-        {shown.spaceId === undefined ? null : (
+        {spaceLabel === undefined ? null : (
           <div>
             <dt>Espacio</dt>
-            <dd>{shown.spaceId}</dd>
+            <dd>{spaceLabel}</dd>
           </div>
         )}
         {shown.originalStartAt === undefined ? null : (
@@ -380,9 +436,11 @@ function StatusChangeSection({
           es final.
         </p>
       ) : (
-        <form onSubmit={handleSubmit} noValidate>
+        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
           <div>
-            <label htmlFor="status-change-target">Cambiar a</label>
+            <label htmlFor="status-change-target" className={GESTION_LABEL}>
+              Cambiar a
+            </label>
             <select
               className={GESTION_FIELD_CLASS}
               id="status-change-target"
@@ -403,9 +461,12 @@ function StatusChangeSection({
           </div>
           {selected?.requiresReason ? (
             <div>
-              <label htmlFor="status-change-reason">Motivo (obligatorio)</label>
+              <label htmlFor="status-change-reason" className={GESTION_LABEL}>
+                Motivo (obligatorio)
+              </label>
               <textarea
-                className={GESTION_FIELD_CLASS}
+                className={`${GESTION_TEXTAREA_CLASS} ${fieldError !== null ? GESTION_FIELD_ERROR : ""}`}
+                rows={4}
                 id="status-change-reason"
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
