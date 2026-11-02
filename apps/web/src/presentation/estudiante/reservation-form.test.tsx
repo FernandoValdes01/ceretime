@@ -6,7 +6,8 @@ import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 
 /**
- * Pruebas del formulario de reserva del Estudiante (TI2-102).
+ * Pruebas del formulario de reserva del Estudiante (TI2-102, estados y
+ * cancelación TI2-113).
  *
  * Integración por el router real (incluye guards). El adaptador se mockea
  * por módulo con promesas controladas; el cableado real lo cubren `tsc`, el
@@ -24,6 +25,7 @@ let mockedBackendConfigured = true;
 
 const searchSlotsMock = vi.fn();
 const reserveSlotMock = vi.fn();
+const cancelReservationMock = vi.fn();
 
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
@@ -36,6 +38,7 @@ vi.mock("../../infrastructure/agenda/fictitious-agenda-adapter.ts", () => ({
   createFictitiousAgendaAdapter: () => ({
     searchSlots: searchSlotsMock,
     reserveSlot: reserveSlotMock,
+    cancelReservation: cancelReservationMock,
   }),
 }));
 
@@ -95,6 +98,18 @@ function cupoFicticio() {
   };
 }
 
+/** Confirmación ficticia del comprobante (fixture de TI2-102). */
+function reservaFicticia() {
+  return {
+    id: "reserva-ficticia-cupo-1",
+    slotId: "cupo-1",
+    professionalId: "pro-ficticio-1",
+    modality: "inPerson",
+    startAt: 1760925600000,
+    endAt: 1760929200000,
+  };
+}
+
 beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_URL", "https://test.convex.cloud");
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
@@ -104,6 +119,7 @@ beforeEach(() => {
   mockedBackendConfigured = true;
   searchSlotsMock.mockReset();
   reserveSlotMock.mockReset();
+  cancelReservationMock.mockReset();
   searchSlotsMock.mockResolvedValue({ status: "ok", slots: [cupoFicticio()] });
 });
 
@@ -401,6 +417,136 @@ describe("formulario de reserva (TI2-102)", () => {
     renderAt("/estudiante/reservar?slotId=cupo-ajeno");
 
     expect(await screen.findByText("Cupo no disponible.")).toBeDefined();
+  });
+});
+
+describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
+  test("conflicto conserva la selección y el reintento repite el mismo comando", async () => {
+    comoEstudiante();
+    reserveSlotMock.mockResolvedValue({ status: "conflict", code: "conflict" });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+
+    expect(await screen.findByText(/Conflicto al confirmar la reserva/)).toBeDefined();
+    // La selección sigue íntegra y sin botón alternativo: el mismo comando de
+    // reserva vuelve a intentarse, sin rehacer búsqueda ni formulario.
+    const casilla = screen.getByRole("checkbox", { name: /Confirmo que deseo reservar/ });
+    expect((casilla as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+
+    reserveSlotMock.mockResolvedValue({ status: "confirmed", reservation: reservaFicticia() });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+    expect(await screen.findByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
+    expect(reserveSlotMock).toHaveBeenCalledTimes(2);
+    for (const llamada of reserveSlotMock.mock.calls) {
+      expect(llamada).toEqual([{ slotId: "cupo-1" }]);
+    }
+  });
+
+  test("denegación de la reserva es permanente y sin reintento", async () => {
+    comoEstudiante();
+    reserveSlotMock.mockResolvedValue({ status: "denied" });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+
+    expect(
+      await screen.findByText("No tienes acceso a esta reserva.", { exact: false }),
+    ).toBeDefined();
+    expect(reserveSlotMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Confirmar reserva" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+
+    const volverLinks = screen.getAllByRole("link", { name: "Volver a horarios" });
+    expect(volverLinks).toHaveLength(2);
+    for (const volver of volverLinks) {
+      expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
+    }
+  });
+
+  test("falta de cupo tras el comando muestra la coordinación por canal oficial", async () => {
+    comoEstudiante();
+    reserveSlotMock.mockResolvedValue({ status: "no_availability", code: "no_availability" });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+
+    expect(await screen.findByText("Sin cupo disponible.", { exact: false })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Confirmar reserva" })).toBeNull();
+
+    const volverLinks = screen.getAllByRole("link", { name: "Volver a horarios" });
+    expect(volverLinks).toHaveLength(2);
+    for (const volver of volverLinks) {
+      expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
+    }
+  });
+
+  test("cancelación visible muestra el resultado tipado declarado como simulado", async () => {
+    comoEstudiante();
+    reserveSlotMock.mockResolvedValue({ status: "confirmed", reservation: reservaFicticia() });
+    cancelReservationMock.mockResolvedValue({ status: "cancelled" });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+    expect(await screen.findByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar esta reserva" }));
+
+    expect(await screen.findByRole("heading", { name: "Reserva cancelada" })).toBeDefined();
+    expect(screen.getByText(/Cancelación simulada con datos ficticios/)).toBeDefined();
+    expect(screen.getByText("reserva-ficticia-cupo-1")).toBeDefined();
+    expect(cancelReservationMock).toHaveBeenCalledTimes(1);
+    expect(cancelReservationMock).toHaveBeenCalledWith({
+      reservationId: "reserva-ficticia-cupo-1",
+    });
+    // La cancelación visible no repite el comando de reserva.
+    expect(reserveSlotMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("denegación de la cancelación es permanente y sin botón", async () => {
+    comoEstudiante();
+    reserveSlotMock.mockResolvedValue({ status: "confirmed", reservation: reservaFicticia() });
+    cancelReservationMock.mockResolvedValue({ status: "denied" });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar esta reserva" }));
+
+    expect(
+      await screen.findByText("No tienes acceso a esta reserva.", { exact: false }),
+    ).toBeDefined();
+    expect(cancelReservationMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Cancelar esta reserva" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
+  });
+
+  test("fallo técnico de la cancelación conserva el comprobante y permite reintentar", async () => {
+    comoEstudiante();
+    reserveSlotMock.mockResolvedValue({ status: "confirmed", reservation: reservaFicticia() });
+    cancelReservationMock.mockRejectedValueOnce(new Error("caída de red"));
+    cancelReservationMock.mockResolvedValue({ status: "cancelled" });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar esta reserva" }));
+
+    expect(
+      await screen.findByText("No pudimos cancelar la reserva. Inténtalo de nuevo."),
+    ).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar esta reserva" }));
+    expect(await screen.findByRole("heading", { name: "Reserva cancelada" })).toBeDefined();
+    expect(cancelReservationMock).toHaveBeenCalledTimes(2);
+    for (const llamada of cancelReservationMock.mock.calls) {
+      expect(llamada).toEqual([{ reservationId: "reserva-ficticia-cupo-1" }]);
+    }
   });
 });
 
