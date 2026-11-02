@@ -49,8 +49,10 @@ import {
  * La cancelación visible (TI2-113) es un escenario tipado del adaptador: la
  * reserva ficticia entregada por la propia confirmación responde
  * `cancelled` y un identificador ajeno responde denegación sin revelar
- * existencia. No aplica mutation real ni persiste nada: la cancelación
- * real del Backend no está entregada.
+ * existencia. No aplica mutation real ni persiste nada la API de cancelación
+ * ya existe en `convex/presentation/appointments.ts` (`cancelAppointment`,
+ * TI2-121): lo pendiente es conectar esta interfaz Web al endpoint
+ * (TI2-123/TI2-125), trabajo fuera del alcance de TI2-113.
  *
  * El catálogo de espacios (TI2-04) es ficticio y en memoria: la lectura
  * devuelve los espacios con su contrato v1 y el guardado actualiza un
