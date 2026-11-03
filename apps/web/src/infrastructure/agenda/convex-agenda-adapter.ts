@@ -518,7 +518,9 @@ export function createConvexAgendaAdapter(
       void listAppointments().then(onChange);
       return () => {};
     }
-    const watchQuery = client.watchQuery;
+    // `ConvexReactClient.watchQuery` usa `this.sync` internamente: se conserva
+    // el receptor o el cliente real falla al ejecutarlo como función suelta.
+    const watchQuery = client.watchQuery.bind(client);
     const args = appointmentsArgs(now());
     const pages = new Map<
       string,

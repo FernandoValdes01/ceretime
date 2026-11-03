@@ -73,7 +73,18 @@ function createFakeClient(options: FakeOptions = {}) {
     ...(options.watches === undefined && options.watchResult === undefined
       ? {}
       : {
-          watchQuery: (ref: FunctionReference<"query">, args: Record<string, unknown>) => {
+          // `ConvexReactClient.watchQuery` depende de `this`: el doble usa un
+          // método, no una función flecha, para detectar si se pierde el
+          // receptor al extraerlo.
+          sync: true,
+          watchQuery(
+            this: { sync?: boolean },
+            ref: FunctionReference<"query">,
+            args: Record<string, unknown>,
+          ) {
+            if (this?.sync !== true) {
+              throw new Error("watchQuery perdió el contexto del cliente");
+            }
             const name = getFunctionName(ref);
             calls.push({ name, kind: "query", args });
             return {
