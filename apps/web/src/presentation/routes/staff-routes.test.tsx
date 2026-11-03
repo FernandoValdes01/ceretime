@@ -207,7 +207,7 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
 });
 
 describe("límites de navegación por rol (TI2-20)", () => {
-  test("el Practicante no enlaza acompañamientos concretos", async () => {
+  test("el Practicante enlaza solo su listado asignado, no acompañamientos concretos", async () => {
     sessionMocks.setPair({
       session: sesionPersonal("intern@uct.cl"),
       role: rolDe("intern", "intern@uct.cl"),
@@ -218,7 +218,7 @@ describe("límites de navegación por rol (TI2-20)", () => {
     const hrefs = portalHrefs();
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
-      expect(href === "/practicante" || href === "/login").toBe(true);
+      expect(["/practicante", "/practicante/acompanamientos", "/login"]).toContain(href);
     }
   });
 
