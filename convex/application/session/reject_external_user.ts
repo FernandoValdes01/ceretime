@@ -17,6 +17,11 @@ export async function rejectExternalUser(email: unknown): Promise<false | undefi
   return undefined;
 }
 
+/** Lectura del usuario de una sesión, o `null` si el adaptador no está disponible. */
+export type FindSessionUser =
+  | ((userId: string) => Promise<{ readonly email?: unknown } | null>)
+  | null;
+
 /**
  * Guardia de sesión (TI2-131), cableada en `databaseHooks.session.create.before`.
  *
@@ -25,11 +30,16 @@ export async function rejectExternalUser(email: unknown): Promise<false | undefi
  * Si el usuario de la sesión no se puede leer, también se rechaza.
  */
 export async function rejectExternalSession(
-  user: { readonly email?: unknown } | null,
+  userId: string,
+  findUser: FindSessionUser,
 ): Promise<false | undefined> {
+  const user = findUser === null ? null : await findUser(userId);
   if (user === null || !isInstitutionalEmail(user.email)) return false;
   return undefined;
 }
+
+/** Emisores que Google declara en el claim `iss` de sus ID tokens. */
+const GOOGLE_ISSUERS: readonly unknown[] = ["https://accounts.google.com", "accounts.google.com"];
 
 /** Payload de un JWT sin verificar firma, o `null` si no tiene la forma esperada. */
 function decodeJwtPayload(token: string): Record<string, unknown> | null {
@@ -63,16 +73,28 @@ export interface InstitutionalGoogleUserInfo {
  *
  * Lee el ID token que Better Auth recibe directo del endpoint de tokens de
  * Google en el canje del código; no verifica la firma porque ese canal ya
- * autentica a Google. Devolver `null` hace que el proveedor cancele el ingreso
- * sin crear usuario ni sesión, y la Web muestra el error genérico. La regla de
- * qué cuenta se acepta vive en el dominio (`isAcceptedGoogleIdentity`).
+ * autentica a Google, pero sí que el token lo emitió Google (`iss`) para este
+ * OAuth Client (`aud`) y que no expiró (`exp`). Devolver `null` hace que el
+ * proveedor cancele el ingreso sin crear usuario ni sesión, y la Web muestra
+ * el error genérico. La regla de qué cuenta se acepta vive en el dominio
+ * (`isAcceptedGoogleIdentity`).
  */
 export function toInstitutionalGoogleUserInfo(
   idToken: string | undefined,
   population: InstitutionalPopulation,
+  clientId: string,
+  now: number = Date.now(),
 ): InstitutionalGoogleUserInfo | null {
   const claims = idToken === undefined ? null : decodeJwtPayload(idToken);
   if (claims === null || typeof claims.sub !== "string" || claims.sub === "") return null;
+  if (
+    !GOOGLE_ISSUERS.includes(claims.iss) ||
+    claims.aud !== clientId ||
+    typeof claims.exp !== "number" ||
+    claims.exp * 1000 <= now
+  ) {
+    return null;
+  }
   const accepted = isAcceptedGoogleIdentity(
     { email: claims.email, emailVerified: claims.email_verified, hostedDomain: claims.hd },
     population,

@@ -63,8 +63,6 @@ export const GOOGLE_PROVIDER_ID_BY_POPULATION = {
   personal: "google-uct",
 } as const satisfies Record<InstitutionalPopulation, string>;
 
-export type GoogleProviderId = (typeof GOOGLE_PROVIDER_ID_BY_POPULATION)[InstitutionalPopulation];
-
 /** Claims del ID token de Google que decide el ingreso, sin validar. */
 export interface GoogleIdentityClaims {
   readonly email: unknown;
@@ -75,12 +73,12 @@ export interface GoogleIdentityClaims {
 /**
  * Verdadero solo si la cuenta de Google corresponde a la población del inicio.
  *
- * Exige correo verificado por Google y sufijo institucional de esa población.
- * El claim `hd`, cuando viene, debe ser el dominio de la población: una cuenta
- * `@alu.uct.cl` declara `hd: "alu.uct.cl"` (verificado en TI2-131). La
- * ausencia de `hd` no basta para aceptar ni para rechazar, porque todavía no
- * se confirma que las cuentas `@uct.cl` lo traigan; el sufijo sigue siendo la
- * garantía y una cuenta personal (`@gmail.com`) no lo cumple.
+ * Exige correo verificado por Google, sufijo institucional de esa población y
+ * el claim `hd` de su dominio: una cuenta de consumo registrada con un correo
+ * institucional (por ejemplo, de quien ya egresó) no trae `hd` y se rechaza.
+ * Las cuentas `@alu.uct.cl` declaran `hd: "alu.uct.cl"` (verificado en
+ * TI2-131). Solo en personal se tolera la ausencia de `hd` mientras una cuenta
+ * `@uct.cl` real confirma su claim; entonces se exige en ambas poblaciones.
  */
 export function isAcceptedGoogleIdentity(
   claims: GoogleIdentityClaims,
@@ -91,8 +89,7 @@ export function isAcceptedGoogleIdentity(
   if (!isInstitutionalEmail(email) || getInstitutionalPopulation(email) !== population) {
     return false;
   }
-  return (
-    claims.hostedDomain === undefined ||
-    claims.hostedDomain === HOSTED_DOMAIN_BY_POPULATION[population]
-  );
+  if (claims.hostedDomain === HOSTED_DOMAIN_BY_POPULATION[population]) return true;
+  // Pendiente de TI2-131: quitar cuando una cuenta @uct.cl real confirme `hd`.
+  return population === "personal" && claims.hostedDomain === undefined;
 }

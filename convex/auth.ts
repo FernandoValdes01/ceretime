@@ -1,21 +1,20 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
 import { betterAuth } from "better-auth/minimal";
-import { genericOAuth, type GenericOAuthConfig } from "better-auth/plugins/generic-oauth";
+import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { env } from "./_generated/server";
 import {
   rejectExternalSession,
   rejectExternalUser,
-  toInstitutionalGoogleUserInfo,
 } from "./application/session/reject_external_user";
 import authConfig from "./auth.config";
+import { GOOGLE_PROVIDER_ID_BY_POPULATION } from "./domain/auth/institutional_domain";
 import {
-  GOOGLE_PROVIDER_ID_BY_POPULATION,
-  HOSTED_DOMAIN_BY_POPULATION,
-  type InstitutionalPopulation,
-} from "./domain/auth/institutional_domain";
+  googleWorkspaceProvider,
+  rejectClientScopes,
+} from "./infrastructure/auth/google_providers";
 
 /**
  * Infraestructura de autenticación (TI2-3).
@@ -41,38 +40,15 @@ function resolveTrustedOrigins(siteUrl: string): string[] {
   return [...origins];
 }
 
-/**
- * Inicio de Google de una población (TI2-131), sobre el mismo OAuth Client.
- *
- * Better Auth 1.6.x solo lee `hd` de la configuración global del proveedor
- * `google` y no admite dos proveedores con ese id, así que cada población usa
- * su propio proveedor `genericOAuth`. `hd` en la URL hace que Google ofrezca
- * solo cuentas de ese dominio, pero es una pista de UX: la garantía es
- * `getUserInfo`, que rechaza (devuelve `null`) la cuenta sin correo verificado,
- * de otro sufijo o con otro claim `hd`. El callback es
- * `{CONVEX_SITE_URL}/api/auth/oauth2/callback/<providerId>` y debe
- * registrarse en Google Cloud Console.
- */
-function googleWorkspaceProvider(population: InstitutionalPopulation): GenericOAuthConfig {
-  return {
-    providerId: GOOGLE_PROVIDER_ID_BY_POPULATION[population],
-    discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration",
+export const createAuth = (ctx: GenericCtx<DataModel>) => {
+  const googleCredentials = {
     clientId: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
-    // Solo identidad: pedir Calendar, Drive o correo queda prohibido.
-    scopes: ["openid", "email", "profile"],
-    prompt: "select_account",
-    pkce: true,
-    authorizationUrlParams: { hd: HOSTED_DOMAIN_BY_POPULATION[population] },
-    getUserInfo: async (tokens) => toInstitutionalGoogleUserInfo(tokens.idToken, population),
   };
-}
-
-export const createAuth = (ctx: GenericCtx<DataModel>) => {
   return betterAuth({
-    // Base de `/api/auth/*`: el Site URL de Convex. El callback OAuth de
-    // Google es `{CONVEX_SITE_URL}/api/auth/callback/google` y debe
-    // registrarse exacto en Google Cloud Console.
+    // Base de `/api/auth/*`: el Site URL de Convex. Los callbacks OAuth de
+    // Google son `{CONVEX_SITE_URL}/api/auth/oauth2/callback/google-alu` y
+    // `.../google-uct`, y deben registrarse exactos en Google Cloud Console.
     baseURL: env.CONVEX_SITE_URL,
     trustedOrigins: resolveTrustedOrigins(env.SITE_URL),
     // Página de error controlada (TI2-14): los callbacks inválidos que no
@@ -95,39 +71,32 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       // obtiene sesión nueva, sea cual sea el proveedor que la pida.
       session: {
         create: {
-          before: async (session, context) => {
-            const user =
+          before: (session, context) =>
+            rejectExternalSession(
+              session.userId,
               context === null
                 ? null
-                : await context.context.internalAdapter.findUserById(session.userId);
-            return rejectExternalSession(user);
-          },
+                : (userId) => context.context.internalAdapter.findUserById(userId),
+            ),
         },
       },
     },
-    // Las cuentas creadas con el proveedor `google` se vinculan por correo al
-    // volver a ingresar por `google-alu` o `google-uct`, y conservan su perfil.
+    // Las cuentas creadas con el proveedor `google` de TI2-3 (ya retirado) se
+    // vinculan por correo al volver a ingresar por `google-alu` o
+    // `google-uct`, y conservan su perfil.
     account: {
       accountLinking: {
         trustedProviders: Object.values(GOOGLE_PROVIDER_ID_BY_POPULATION),
       },
     },
-    socialProviders: {
-      // Proveedor heredado de TI2-3, mientras se verifican los callbacks de
-      // `google-alu` y `google-uct` en Google Cloud Console; la Web ya no lo
-      // usa y se retira cuando ambos funcionen. `hd: "*"` rechaza tokens sin
-      // dominio de Workspace (cuentas personales) aunque se invoque a mano;
-      // el sufijo lo siguen exigiendo los `databaseHooks`.
-      google: {
-        clientId: env.GOOGLE_CLIENT_ID,
-        clientSecret: env.GOOGLE_CLIENT_SECRET,
-        prompt: "select_account",
-        hd: "*",
-      },
-    },
+    // El cliente no puede ampliar los alcances de Google (solo identidad).
+    hooks: { before: rejectClientScopes },
     plugins: [
       genericOAuth({
-        config: [googleWorkspaceProvider("estudiante"), googleWorkspaceProvider("personal")],
+        config: [
+          googleWorkspaceProvider("estudiante", googleCredentials),
+          googleWorkspaceProvider("personal", googleCredentials),
+        ],
       }),
       // Requerido para SPA (Vite): permite cookies entre el origen web y el
       // Site URL de Convex.

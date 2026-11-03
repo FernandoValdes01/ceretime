@@ -87,7 +87,13 @@ describe("isAcceptedGoogleIdentity", () => {
     expect(isAcceptedGoogleIdentity({ ...staff, hostedDomain: "" }, "personal")).toBe(false);
   });
 
-  test("sin claim hd decide el sufijo verificado", () => {
+  test("rechaza la cuenta de estudiante sin claim hd", () => {
+    expect(isAcceptedGoogleIdentity({ ...student, hostedDomain: undefined }, "estudiante")).toBe(
+      false,
+    );
+  });
+
+  test("tolera personal sin claim hd mientras se confirma @uct.cl", () => {
     expect(isAcceptedGoogleIdentity({ ...staff, hostedDomain: undefined }, "personal")).toBe(true);
   });
 });
