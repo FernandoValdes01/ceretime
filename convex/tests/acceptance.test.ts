@@ -40,6 +40,7 @@ import {
   type RescheduleAppointmentDeps,
 } from "../application/appointments/changes";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
+import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
 import { availabilityReader } from "../infrastructure/availability/repository";
 import { cancelRequest, closeRequestWithoutAccompaniment } from "../application/requests/commands";
 import { applyAppointmentTransition } from "../application/appointments/commands";
@@ -1961,6 +1962,7 @@ async function bookTi98(
   return await t.run(async (ctx) => {
     const deps: BookAppointmentDeps = {
       auth: authorizationReader(ctx),
+      audit: appointmentAuditRecorder(ctx),
       availability: availabilityReader(ctx),
       needs: {
         findAccompanimentNeeds: async (accompanimentId) =>
@@ -2345,6 +2347,7 @@ async function cancelTi109(
   return await t.run(async (ctx) => {
     const deps: CancelAppointmentDeps = {
       auth: authorizationReader(ctx),
+      audit: appointmentAuditRecorder(ctx),
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       now: () => TI109_NOW,
@@ -2372,6 +2375,7 @@ async function rescheduleTi109(
   return await t.run(async (ctx) => {
     const deps: RescheduleAppointmentDeps = {
       auth: authorizationReader(ctx),
+      audit: appointmentAuditRecorder(ctx),
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       occupier: {
@@ -2664,6 +2668,7 @@ async function recordTi110(
   return await t.run(async (ctx) => {
     const deps: RecordAppointmentAttendanceDeps = {
       auth: authorizationReader(ctx),
+      audit: appointmentAuditRecorder(ctx),
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       now: () => TI110_NOW,
