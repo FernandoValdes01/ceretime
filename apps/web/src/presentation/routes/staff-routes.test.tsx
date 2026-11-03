@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
+import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
+import type { Id } from "../../../../../convex/_generated/dataModel";
+import type { AssignedAccompanimentsPage } from "../gestion/practitioner-accompaniments-data.ts";
 import { createAppRouter } from "./router.tsx";
 import type {
   WebSessionAndRole,
@@ -56,7 +60,78 @@ const sessionMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("convex/react", () => ({ useQuery: () => sessionMocks.getSession() }));
+/**
+ * Respuestas ficticias de las lecturas del Practicante (TI2-116) para probar
+ * los permisos de la ruta con asignación vigente, sin asignación y con la
+ * asignación revocada. El Backend real decide esas respuestas; aquí solo se
+ * fija qué ve la Web cuando la API entrega la vista minimizada o la denegación
+ * genérica. Un `Error` guardado se lanza como lo haría la query real.
+ */
+const assignmentMocks = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  let version = 0;
+  return {
+    pages: new Map<string, unknown>(),
+    details: new Map<string, unknown>(),
+    queries: [] as Array<{ name: string; args: unknown }>,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getVersion: () => version,
+    notify: () => {
+      version += 1;
+      listeners.forEach((listener) => listener());
+    },
+    reset() {
+      this.pages.clear();
+      this.details.clear();
+      this.queries.length = 0;
+      listeners.clear();
+    },
+  };
+});
+
+vi.mock("convex/react", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const { getFunctionName } = await import("convex/server");
+  function resolve<T>(outcome: T | Error | undefined): T | undefined {
+    if (outcome instanceof Error) {
+      throw outcome;
+    }
+    return outcome;
+  }
+  return {
+    useQuery: (
+      reference: Parameters<typeof getFunctionName>[0],
+      args?: Record<string, unknown>,
+    ) => {
+      // Las lecturas del Practicante son reactivas: una asignación revocada
+      // vuelve a pintar la fila igual que con la suscripción real de Convex.
+      useSyncExternalStore(assignmentMocks.subscribe, assignmentMocks.getVersion);
+      const name = getFunctionName(reference);
+      if (name === "presentation/accompaniments:listAssignedAccompaniments") {
+        assignmentMocks.queries.push({ name, args });
+        const after = (args?.after as string | undefined) ?? "first";
+        return resolve(
+          assignmentMocks.pages.get(after) as AssignedAccompanimentsPage | Error | undefined,
+        );
+      }
+      if (name === "presentation/accompaniments:getAccompaniment") {
+        assignmentMocks.queries.push({ name, args });
+        return resolve(
+          assignmentMocks.details.get(args?.accompanimentId as string) as
+            | AssignedAccompanimentsPage["items"][number]
+            | Error
+            | undefined,
+        );
+      }
+      return sessionMocks.getSession();
+    },
+  };
+});
 
 vi.mock("../session/session-state", async () => {
   const { useSyncExternalStore } = await import("react");
@@ -98,6 +173,7 @@ beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
   sessionStorage.clear();
   sessionMocks.reset();
+  assignmentMocks.reset();
 });
 
 afterEach(() => {
@@ -506,49 +582,162 @@ describe.each([
   });
 });
 
-describe("Practicante sin asignación o con asignación revocada (TI2-126)", () => {
-  // La vista minimizada del Practicante es TI2-116 y todavía no existe. Hasta
-  // entonces la Web solo puede garantizar que no expone datos: el Backend es
-  // quien devuelve `minimized` con asignación activa y deniega sin asignación
-  // o con la asignación revocada (TI2-5). Esta prueba documenta ese contraste
-  // y evita prometer una pantalla que aún no filtra nada.
-  test("la portada no expone acompañamientos ni datos de la asignación", async () => {
-    sessionMocks.setPair({
-      session: sesionPersonal("intern@uct.cl"),
-      role: rolDe("intern", "intern@uct.cl"),
-    });
-    renderAt("/practicante");
+type AccompanimentView = AssignedAccompanimentsPage["items"][number];
 
-    expect(await screen.findByRole("heading", { name: "Portal del Practicante" })).toBeDefined();
+const OBJETIVO_ASIGNADO = "Acompañar a la biblioteca.";
+const NECESIDAD_SENSIBLE = "Necesidad ficticia que no debe verse.";
+const DENEGACIÓN = new ConvexError(UNAUTHORIZED_ERROR_MESSAGE);
+
+/** Vista minimizada tal como la entrega el Backend con asignación vigente. */
+function asignado(id: string, objective: string): AccompanimentView {
+  return { _id: id as Id<"accompaniments">, status: "active", objective, view: "minimized" };
+}
+
+/** Vista completa ficticia: la superficie no debe propagar sus campos. */
+function vistaCompleta(id: string, objective: string): AccompanimentView {
+  return {
+    _id: id as Id<"accompaniments">,
+    studentId: "estudiante-ficticio" as Id<"users">,
+    status: "paused",
+    objective,
+    accessNeeds: NECESIDAD_SENSIBLE,
+    view: "full",
+  };
+}
+
+function paginaAsignada(items: AccompanimentView[]): AssignedAccompanimentsPage {
+  return { items, hasMore: false, lastId: items.at(-1)?._id ?? null };
+}
+
+function comoPracticante() {
+  sessionMocks.setPair({
+    session: sesionPersonal("intern@uct.cl"),
+    role: rolDe("intern", "intern@uct.cl"),
+  });
+}
+
+function revocarAsignacion() {
+  act(() => {
+    assignmentMocks.pages.set("first", paginaAsignada([]));
+    assignmentMocks.notify();
+  });
+}
+
+describe("asignaciones del Practicante en la Web (TI2-126)", () => {
+  test("con asignación vigente ve el listado minimizado y su detalle en solo lectura", async () => {
+    const item = asignado("acompanamiento-ficticio-1", OBJETIVO_ASIGNADO);
+    assignmentMocks.pages.set("first", paginaAsignada([item]));
+    assignmentMocks.details.set(item._id, item);
+    comoPracticante();
+
+    renderAt("/practicante/acompanamientos");
+
+    expect(await screen.findByRole("heading", { name: "Acompañamientos asignados" })).toBeDefined();
+    const fila = await screen.findByRole("link", { name: new RegExp(OBJETIVO_ASIGNADO) });
+    expect(fila.getAttribute("href")).toBe(`/practicante/acompanamientos/${item._id}`);
+    expect(screen.getByText("Activo")).toBeDefined();
+    // La primera página se pide con el cursor vacío y el tope de la vista.
+    expect(assignmentMocks.queries[0]).toEqual({
+      name: "presentation/accompaniments:listAssignedAccompaniments",
+      args: { limit: 10, after: undefined },
+    });
+
+    cleanup();
+    renderAt(`/practicante/acompanamientos/${item._id}`);
+
     expect(
-      screen.getByText("Tus acompañamientos asignados estarán disponibles aquí."),
+      await screen.findByRole("heading", { name: "Detalle del acompañamiento" }),
     ).toBeDefined();
+    expect(screen.getByText(OBJETIVO_ASIGNADO)).toBeDefined();
+    expect(screen.getByText(/Vista de solo lectura/)).toBeDefined();
+  });
 
-    const hrefs = portalHrefs();
-    expect(hrefs.length).toBeGreaterThan(0);
-    for (const href of hrefs) {
-      expect(href === "/practicante" || href === "/login").toBe(true);
+  test("una vista completa del Backend se muestra solo con estado y objetivo", async () => {
+    const item = vistaCompleta("acompanamiento-ficticio-2", OBJETIVO_ASIGNADO);
+    assignmentMocks.pages.set("first", paginaAsignada([item]));
+    assignmentMocks.details.set(item._id, item);
+    comoPracticante();
+
+    renderAt(`/practicante/acompanamientos/${item._id}`);
+
+    expect(await screen.findByText(OBJETIVO_ASIGNADO)).toBeDefined();
+    expect(screen.getByText("Pausado")).toBeDefined();
+    expect(screen.queryByText(/estudiante-ficticio/)).toBeNull();
+    expect(screen.queryByText(new RegExp(NECESIDAD_SENSIBLE))).toBeNull();
+    // Sin acciones profesionales: el Practicante no hereda permisos.
+    for (const acción of ["Tomar", "Registrar", "Cancelar", "Notas internas"]) {
+      expect(screen.queryByRole("button", { name: acción })).toBeNull();
     }
-    const textos = [...document.querySelectorAll("a")].map((anchor) =>
-      (anchor.textContent ?? "").toLowerCase(),
-    );
-    expect(textos.some((texto) => texto.includes("acompañamiento"))).toBe(false);
-    expect(textos.some((texto) => texto.includes("nota"))).toBe(false);
   });
 
-  test("la ruta de acompañamientos del Practicante no existe y no filtra el identificador", async () => {
-    sessionMocks.setPair({
-      session: sesionPersonal("intern@uct.cl"),
-      role: rolDe("intern", "intern@uct.cl"),
-    });
-    const { router } = renderAt("/practicante/acompanamientos/acompanamiento-ajeno");
+  test("sin asignación vigente ve el vacío y ninguna fila", async () => {
+    assignmentMocks.pages.set("first", paginaAsignada([]));
+    comoPracticante();
 
-    // Sin vista entregada, la ruta desconocida vuelve al índice y el índice
-    // deriva al portal del rol: no hay lectura ni eco del identificador.
-    await waitFor(() => expect(router.state.location.pathname).toBe("/practicante"));
-    expect(await screen.findByRole("heading", { name: "Portal del Practicante" })).toBeDefined();
-    expect(screen.queryByText(/acompanamiento-ajeno/)).toBeNull();
+    renderAt("/practicante/acompanamientos");
+
+    expect(await screen.findByText("No tienes acompañamientos asignados.")).toBeDefined();
+    expect(screen.queryByRole("link", { name: /Ver detalle/ })).toBeNull();
   });
+
+  test("una asignación revocada retira la fila sin dejar datos en pantalla", async () => {
+    const item = asignado("acompanamiento-ficticio-3", OBJETIVO_ASIGNADO);
+    assignmentMocks.pages.set("first", paginaAsignada([item]));
+    comoPracticante();
+
+    renderAt("/practicante/acompanamientos");
+
+    expect(await screen.findByText(OBJETIVO_ASIGNADO)).toBeDefined();
+
+    revocarAsignacion();
+
+    expect(await screen.findByText("No tienes acompañamientos asignados.")).toBeDefined();
+    expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+  });
+
+  test("con la asignación revocada el detalle responde denegación genérica sin filtrar existencia", async () => {
+    const item = asignado("acompanamiento-ficticio-4", OBJETIVO_ASIGNADO);
+    assignmentMocks.details.set(item._id, DENEGACIÓN);
+    comoPracticante();
+
+    const { router } = renderAt(`/practicante/acompanamientos/${item._id}`);
+
+    expect(await screen.findByText("No tienes acceso a este acompañamiento.")).toBeDefined();
+    expect(router.state.location.pathname).toBe(`/practicante/acompanamientos/${item._id}`);
+    expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+    expect(screen.queryByText(new RegExp(item._id))).toBeNull();
+  });
+
+  test("la denegación del listado no se distingue de la de otra cuenta", async () => {
+    assignmentMocks.pages.set("first", DENEGACIÓN);
+    comoPracticante();
+
+    renderAt("/practicante/acompanamientos");
+
+    expect(await screen.findByText("No tienes acceso a acompañamientos asignados.")).toBeDefined();
+    expect(screen.queryByText(/acompañamiento-ficticio/)).toBeNull();
+  });
+});
+
+describe("el Administrador no hereda la vista del Practicante (TI2-126)", () => {
+  test.each(["/practicante/acompanamientos", "/practicante/acompanamientos/acompanamiento-ajeno"])(
+    "%s va a denegado sin consultar las lecturas del Practicante",
+    async (ruta) => {
+      assignmentMocks.pages.set("first", paginaAsignada([asignado("ajeno", OBJETIVO_ASIGNADO)]));
+      assignmentMocks.details.set("acompanamiento-ajeno", asignado("ajeno", OBJETIVO_ASIGNADO));
+      sessionMocks.setPair({
+        session: sesionPersonal("admin@uct.cl"),
+        role: rolDe("admin", "admin@uct.cl"),
+      });
+
+      const { router } = renderAt(ruta);
+
+      await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+      expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
+      expect(assignmentMocks.queries).toEqual([]);
+      expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+    },
+  );
 });
 
 describe("Administrador sin acceso a acompañamientos ni notas internas (TI2-126)", () => {
