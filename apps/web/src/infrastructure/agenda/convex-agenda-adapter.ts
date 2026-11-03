@@ -7,11 +7,13 @@ import {
   APPOINTMENT_CONTRACT_VERSION,
   AVAILABILITY_CONTRACT_VERSION,
   CONFLICT_ERROR_CODE,
+  SPACE_CATALOG_CONTRACT_VERSION,
   UNAUTHORIZED_ERROR_CODE,
   UNAUTHORIZED_ERROR_MESSAGE,
   type AvailabilityBlock,
   type AvailabilityException,
   type PublicApiError,
+  type Space,
 } from "../../../../../convex/domain/index.ts";
 import type {
   AgendaAppointment,
@@ -40,11 +42,13 @@ import { createFictitiousAgendaAdapter } from "./fictitious-agenda-adapter.ts";
  * Adaptador Convex del puerto de agenda (TI2-125).
  *
  * Un solo adaptador vigente para las operaciones ya publicadas: el editor de
- * disponibilidad (TI2-111) y la agenda/detalle del Profesional (TI2-112) leen y
- * escriben contra `api.presentation.*`. La búsqueda y la reserva del Estudiante
- * (TI2-123) y el catálogo de espacios (TI2-104) siguen delegados al adaptador
- * ficticio mientras no tengan productor real; sus fixtures se identifican como
- * tales en la interfaz.
+ * disponibilidad (TI2-111), la agenda/detalle del Profesional (TI2-112) y la
+ * lectura del catálogo de espacios (TI2-99) leen contra
+ * `api.presentation.*`; los guardados y la agenda escriben donde hay mutation
+ * publicada. La búsqueda y la reserva del Estudiante (TI2-123) y la escritura
+ * del catálogo de espacios (TI2-104) siguen delegadas al adaptador ficticio
+ * mientras no tengan productor real; sus fixtures se identifican como tales
+ * en la interfaz.
  *
  * El adaptador no decide autorización ni transiciones: resuelve la identidad en
  * el Backend, que también recorta la vista de cada atención. El cliente nunca
@@ -72,12 +76,23 @@ const AGENDA_PAGE_LIMIT = 50;
  */
 const AGENDA_MAX_PAGES = 40;
 
+/**
+ * Tope de espacios por página que acepta el catálogo (TI2-99) y tope de
+ * páginas que la vista acumula. Con 100 por página cubre 1.000 salas; si se
+ * supera se muestra un error, no un catálogo cortado en silencio.
+ */
+const SPACE_CATALOG_PAGE_LIMIT = 100;
+const SPACE_CATALOG_MAX_PAGES = 10;
+
 const TOO_MANY_APPOINTMENTS_MESSAGE =
   "La agenda tiene más atenciones de las que esta vista puede cargar en este rango.";
+const TOO_MANY_SPACES_MESSAGE =
+  "El catálogo de espacios tiene más salas de las que esta vista puede cargar.";
 
 const LOAD_AVAILABILITY_FALLBACK = "No pudimos cargar la disponibilidad. Inténtalo de nuevo.";
 const LOAD_AGENDA_FALLBACK = "No pudimos cargar la agenda. Inténtalo de nuevo.";
 const LOAD_APPOINTMENT_FALLBACK = "No pudimos cargar la atención. Inténtalo de nuevo.";
+const LOAD_SPACES_FALLBACK = "No pudimos cargar el catálogo de espacios. Inténtalo de nuevo.";
 const SAVE_BLOCK_FALLBACK = "No pudimos guardar el bloque. Inténtalo de nuevo.";
 const SAVE_EXCEPTION_FALLBACK = "No pudimos guardar la excepción. Inténtalo de nuevo.";
 const CHANGE_STATUS_FALLBACK = "No pudimos registrar el cambio. Inténtalo de nuevo.";
@@ -96,6 +111,7 @@ export interface ConvexAgendaClient {
 
 type AppointmentsPage = FunctionReturnType<typeof api.presentation.appointments.listAppointments>;
 type AppointmentProjection = AppointmentsPage["items"][number];
+type SpacesPage = FunctionReturnType<typeof api.presentation.spaces.listSpaces>;
 type OwnAvailability = FunctionReturnType<typeof api.presentation.availability.listOwnAvailability>;
 type AppointmentsArgs = {
   readonly from: string;
@@ -358,6 +374,43 @@ export function createConvexAgendaAdapter(
     }
   }
 
+  /**
+   * Catálogo de espacios del Backend, completo por cursor.
+   *
+   * La agenda ya recibe identificadores reales de sala, así que las etiquetas
+   * solo resuelven si el catálogo es el mismo que publica TI2-99. La escritura
+   * sigue simulada porque no hay mutation publicada (TI2-104).
+   */
+  async function readSpaces(): Promise<ListSpacesResult> {
+    try {
+      const spaces: Space[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      for (;;) {
+        const page: SpacesPage = await client.query(api.presentation.spaces.listSpaces, {
+          limit: SPACE_CATALOG_PAGE_LIMIT,
+          ...(cursor === undefined ? {} : { cursor }),
+          version: SPACE_CATALOG_CONTRACT_VERSION,
+        });
+        spaces.push(...page.items);
+        pages += 1;
+        if (!page.hasMore || page.nextCursor === null) {
+          break;
+        }
+        if (pages >= SPACE_CATALOG_MAX_PAGES) {
+          return { status: "error", message: TOO_MANY_SPACES_MESSAGE };
+        }
+        cursor = page.nextCursor;
+      }
+      return spaces.length === 0 ? { status: "empty" } : { status: "ok", spaces };
+    } catch (error) {
+      const classified = classifyError(error, LOAD_SPACES_FALLBACK);
+      return "denied" in classified
+        ? { status: "denied" }
+        : { status: "error", message: classified.error.message };
+    }
+  }
+
   async function readAppointment(appointmentId: string): Promise<AgendaAppointmentResult> {
     try {
       const projection = await client.query(api.presentation.appointments.getAppointment, {
@@ -450,6 +503,14 @@ export function createConvexAgendaAdapter(
     }
   }
 
+  /**
+   * Suscripción de la agenda completa, página por página.
+   *
+   * Cada página cargada se suscribe con su propio cursor: un cambio en una
+   * atención posterior a la primera página también llega a la vista. Las
+   * páginas que dejan de usarse se dan de baja para no acumular
+   * suscripciones cuando el rango se acorta.
+   */
   function watchAppointments(
     onChange: (result: ListAppointmentsResult) => void,
   ): AgendaUnsubscribe {
@@ -457,36 +518,92 @@ export function createConvexAgendaAdapter(
       void listAppointments().then(onChange);
       return () => {};
     }
+    const watchQuery = client.watchQuery;
     const args = appointmentsArgs(now());
-    const watch = client.watchQuery(api.presentation.appointments.listAppointments, args);
+    const pages = new Map<
+      string,
+      { readonly unsubscribe: () => void; readonly local: () => AppointmentsPage | undefined }
+    >();
     let cancelled = false;
-    let generation = 0;
-    const emit = () => {
-      let first: AppointmentsPage;
+    let emitting = false;
+
+    function stop(key: string) {
+      const page = pages.get(key);
+      if (page === undefined) {
+        return;
+      }
+      page.unsubscribe();
+      pages.delete(key);
+    }
+
+    function subscribe(cursor: string | undefined): AppointmentsPage | undefined {
+      const key = cursor ?? "";
+      const existing = pages.get(key);
+      if (existing !== undefined) {
+        return existing.local();
+      }
+      const watch = watchQuery(
+        api.presentation.appointments.listAppointments,
+        cursor === undefined ? args : { ...args, cursor },
+      );
+      const local = (): AppointmentsPage | undefined => {
+        const value: AppointmentsPage | undefined = watch.localQueryResult();
+        return value;
+      };
+      const unsubscribe = watch.onUpdate(emit);
+      pages.set(key, { unsubscribe, local });
+      return local();
+    }
+
+    function emit() {
+      if (cancelled || emitting) {
+        return;
+      }
+      emitting = true;
       try {
-        const local = watch.localQueryResult();
-        if (local === undefined) {
-          return;
+        const items: AppointmentProjection[] = [];
+        const used = new Set<string>();
+        let cursor: string | undefined;
+        let loaded = 0;
+        for (;;) {
+          const key = cursor ?? "";
+          const page = subscribe(cursor);
+          used.add(key);
+          if (page === undefined) {
+            return;
+          }
+          items.push(...page.items);
+          loaded += 1;
+          if (!page.hasMore || page.nextCursor === null) {
+            break;
+          }
+          if (loaded >= AGENDA_MAX_PAGES) {
+            onChange({ status: "error", message: TOO_MANY_APPOINTMENTS_MESSAGE });
+            return;
+          }
+          cursor = page.nextCursor;
         }
-        first = local;
+        for (const key of Array.from(pages.keys())) {
+          if (!used.has(key)) {
+            stop(key);
+          }
+        }
+        onChange(toAppointmentsResult(items));
       } catch (error) {
         if (!cancelled) {
           onChange(mapAppointmentsError(error));
         }
-        return;
+      } finally {
+        emitting = false;
       }
-      const current = ++generation;
-      void readAllAppointmentPages(first, args).then((result) => {
-        if (!cancelled && current === generation) {
-          onChange(result);
-        }
-      });
-    };
-    const unsubscribe = watch.onUpdate(emit);
+    }
+
     emit();
     return () => {
       cancelled = true;
-      unsubscribe();
+      for (const key of Array.from(pages.keys())) {
+        stop(key);
+      }
     };
   }
 
@@ -527,17 +644,15 @@ export function createConvexAgendaAdapter(
   }
 
   return {
-    // Sin API real todavía: se conserva el comportamiento simulado declarado
-    // por cada pantalla (TI2-123 y TI2-104).
+    // Sin API real todavía: búsqueda y reserva del Estudiante (TI2-123) y
+    // escritura del catálogo (TI2-104) conservan los fixtures declarados.
     searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult> {
       return simulated.searchSlots(filter);
     },
     reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult> {
       return simulated.reserveSlot(input);
     },
-    listSpaces(): Promise<ListSpacesResult> {
-      return simulated.listSpaces();
-    },
+    listSpaces: readSpaces,
     saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult> {
       return simulated.saveSpace(input);
     },

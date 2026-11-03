@@ -11,9 +11,10 @@ import { createConvexAgendaAdapter } from "../../infrastructure/agenda/convex-ag
 /**
  * Lectura y validación de formato del editor de disponibilidad (TI2-103).
  *
- * Un solo adaptador vigente: el de Convex (TI2-125) expone disponibilidad y
- * agenda contra `api.presentation.*`; la búsqueda, la reserva y el catálogo de
- * espacios siguen delegados a fixtures hasta TI2-123/TI2-104. La lectura
+ * Un solo adaptador vigente: el de Convex (TI2-125) expone disponibilidad,
+ * agenda y la lectura del catálogo de espacios contra `api.presentation.*`;
+ * la búsqueda y la reserva siguen delegadas a fixtures hasta TI2-123, y del
+ * catálogo solo queda simulada la escritura hasta TI2-104. La lectura
  * responde `undefined` mientras carga; los fallos técnicos se traducen al
  * estado `error` tipado y la denegación al estado `denied` genérico sin
  * detalles sensibles.
