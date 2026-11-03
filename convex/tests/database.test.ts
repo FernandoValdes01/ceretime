@@ -15,7 +15,17 @@ import { toAccompanimentRequest } from "../domain/requests/request";
 import { transitionRequest } from "../domain/requests/transition_policy";
 import { assessCompatibility } from "../domain/spaces/compatibility";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
-import { accompanimentNeedsReader } from "../infrastructure/accompaniments/repository";
+import { toSharedFollowUpProjection } from "../domain/follow_up/follow_up";
+import {
+  notificationEventsForCreation,
+  notificationEventsForTransition,
+  notificationIdempotencyKey,
+  type NotificationEvent,
+} from "../domain/notifications/notification";
+import {
+  accompanimentNeedsReader,
+  paginateInternalNotes,
+} from "../infrastructure/accompaniments/repository";
 import {
   availabilityReader,
   availabilityWriter,
@@ -30,6 +40,16 @@ import {
   insertSpace,
   spaceReader,
 } from "../infrastructure/spaces/repository";
+import {
+  findFollowUpRecordByAppointment,
+  saveFollowUpRecord,
+} from "../infrastructure/follow_up/repository";
+import {
+  paginateNotificationEventsForAppointment,
+  paginateNotificationEventsForRecipient,
+  recordNotificationEvent,
+  recordNotificationEvents,
+} from "../infrastructure/notifications/repository";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -2687,4 +2707,359 @@ test("TI2-111: los adaptadores entregan necesidades y salas vigentes con la mism
     enLinea: false,
     enLineaSinNecesidades: true,
   });
+});
+
+// ── TI2-118: eventos de notificación y registro de seguimiento ──────────────
+
+/** Estudiante, profesional y atención ficticios para TI2-118. */
+async function seedTi118Appointment(
+  t: ReturnType<typeof convexTest>,
+  suffix: string,
+  status: "scheduled" | "completed" | "no_show" = "completed",
+) {
+  const student = await seedUser(t, {
+    subject: `ti118-est-${suffix}`,
+    email: `ti118est${suffix}@alu.uct.cl`,
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: `ti118-pro-${suffix}`,
+    email: `ti118pro${suffix}@uct.cl`,
+    role: "professional",
+  });
+  const accompanimentId = await seedAccompaniment(t, student);
+  const appointmentId = await seedTi83Appointment(t, {
+    accompanimentId,
+    studentId: student,
+    professionalId: professional,
+    modality: "online",
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+    status,
+  });
+  return { student, professional, accompanimentId, appointmentId };
+}
+
+/** Todas las filas de seguimiento y notas, para comprobar qué se escribió. */
+async function readTi118FollowUpTables(t: ReturnType<typeof convexTest>) {
+  return await t.run(async (ctx) => ({
+    records: await ctx.db.query("followUpRecords").take(10),
+    agreements: await ctx.db.query("followUpAgreements").take(10),
+    tasks: await ctx.db.query("followUpTasks").take(10),
+    notes: await ctx.db.query("followUpNotes").take(10),
+  }));
+}
+
+test("TI2-118: el evento guarda solo sus referencias mínimas y el reintento no lo duplica", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "a");
+  const [event] = notificationEventsForCreation(
+    { appointmentId, studentId: student, professionalId: professional },
+    TI83_MONDAY,
+  );
+
+  const first = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  const retry = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  expect(first.status).toBe("recorded");
+  expect(retry).toEqual({
+    status: "duplicate",
+    eventId: first.status === "recorded" ? first.eventId : null,
+  });
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
+  expect(rows).toHaveLength(1);
+  const { _id, _creationTime, ...stored } = rows[0];
+  expect(stored).toEqual({
+    kind: "appointment_scheduled",
+    appointmentId,
+    recipientId: student,
+    occurredAt: TI83_MONDAY,
+    version: "v1",
+    idempotencyKey: notificationIdempotencyKey(event),
+  });
+});
+
+test("TI2-118: un campo extra con texto libre no llega a la fila del evento", async () => {
+  const t = convexTest(schema, modules);
+  const { student, appointmentId } = await seedTi118Appointment(t, "b");
+  const smuggled = {
+    kind: "appointment_cancelled",
+    appointmentId,
+    recipientId: student,
+    occurredAt: TI83_MONDAY,
+    version: "v1",
+    cancelReason: "Motivo libre ficticio",
+    body: "Nota interna ficticia",
+  } as NotificationEvent;
+
+  await t.run(async (ctx) => await recordNotificationEvent(ctx, smuggled));
+  const rows = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
+  expect(rows).toHaveLength(1);
+  expect(Object.keys(rows[0]).sort()).toEqual(
+    [
+      "_creationTime",
+      "_id",
+      "appointmentId",
+      "idempotencyKey",
+      "kind",
+      "occurredAt",
+      "recipientId",
+      "version",
+    ].sort(),
+  );
+  expect(JSON.stringify(rows[0])).not.toMatch(/Motivo libre|Nota interna/);
+
+  // El esquema tampoco acepta un texto libre insertado por otra vía.
+  const { _id, _creationTime, ...fields } = rows[0];
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("notificationEvents", {
+        ...fields,
+        idempotencyKey: "otra-clave",
+        reason: "Motivo libre ficticio",
+      } as never);
+    }),
+  ).rejects.toThrow(/reason/);
+});
+
+test("TI2-118: cada destinatario y cada cambio tienen su propio evento", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "c");
+  const subject = { appointmentId, studentId: student, professionalId: professional };
+  const coordinated = notificationEventsForTransition(subject, {
+    from: "scheduled",
+    to: "rescheduled",
+    actorId: "actor-ficticio",
+    occurredAt: TI83_MONDAY,
+  });
+  expect(coordinated).toHaveLength(2);
+
+  await t.run(async (ctx) => await recordNotificationEvents(ctx, coordinated));
+  const retried = await t.run(async (ctx) => await recordNotificationEvents(ctx, coordinated));
+  expect(retried.map((result) => result.status)).toEqual(["duplicate", "duplicate"]);
+  // Otro instante es otro cambio, aunque la clase y el destinatario coincidan.
+  const later = await t.run(
+    async (ctx) =>
+      await recordNotificationEvent(ctx, { ...coordinated[0], occurredAt: TI83_MONDAY + 1 }),
+  );
+  expect(later.status).toBe("recorded");
+
+  const studentPage = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipient(ctx, student, { numItems: 10, cursor: null }),
+  );
+  expect(studentPage.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 1, TI83_MONDAY]);
+  expect(studentPage.page[0]).not.toHaveProperty("idempotencyKey");
+
+  const appointmentPage = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForAppointment(ctx, appointmentId, {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  expect(appointmentPage.page).toHaveLength(3);
+  expect(new Set(appointmentPage.page.map((event) => event.recipientId))).toEqual(
+    new Set([student, professional]),
+  );
+});
+
+test("TI2-118: referencias inválidas del evento no escriben", async () => {
+  const t = convexTest(schema, modules);
+  const { student, appointmentId } = await seedTi118Appointment(t, "d");
+  const outsider = await seedUser(t, {
+    subject: "ti118-ajeno",
+    email: "ti118ajeno@alu.uct.cl",
+    role: "student",
+  });
+  const gone = await seedTi118Appointment(t, "e");
+  await t.run(async (ctx) => {
+    await ctx.db.delete(gone.appointmentId);
+  });
+  const base = {
+    kind: "appointment_no_show",
+    appointmentId,
+    recipientId: student,
+    occurredAt: TI83_MONDAY,
+    version: "v1",
+  } as const;
+
+  const results = await t.run(async (ctx) => [
+    // El destinatario no participa de la atención.
+    await recordNotificationEvent(ctx, { ...base, recipientId: outsider }),
+    // La atención ya no existe.
+    await recordNotificationEvent(ctx, {
+      ...base,
+      appointmentId: gone.appointmentId,
+      recipientId: gone.student,
+    }),
+    // Identificadores de otra tabla.
+    await recordNotificationEvent(ctx, { ...base, appointmentId: student }),
+    await recordNotificationEvent(ctx, { ...base, recipientId: appointmentId }),
+  ]);
+  expect(results).toEqual(Array(4).fill({ status: "invalid_reference" }));
+  const rows = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
+  expect(rows).toHaveLength(0);
+});
+
+/** Registro ficticio válido de TI2-106 para una atención. */
+function ti118RecordInput(
+  appointmentId: Id<"appointments">,
+  accompanimentId: Id<"accompaniments">,
+  authorId: Id<"users">,
+) {
+  return {
+    appointmentId,
+    accompanimentId,
+    authorId,
+    agreements: [{ id: "a1", description: "Usar lector de pantalla en la próxima sesión" }],
+    tasks: [
+      {
+        id: "t1",
+        description: "Enviar el material en formato accesible",
+        responsible: "professional",
+        status: "pending",
+      },
+      {
+        id: "t2",
+        description: "Probar el material antes de la sesión",
+        responsible: "student",
+        status: "in_progress",
+      },
+    ],
+    nextSteps: "Revisar el avance en la próxima atención",
+    suggestedNextAppointmentDate: "2026-10-19",
+    internalNote: "Nota interna ficticia del profesional",
+  };
+}
+
+test("TI2-118: el seguimiento guarda acuerdos y tareas en filas propias y la nota solo en followUpNotes", async () => {
+  const t = convexTest(schema, modules);
+  const { professional, accompanimentId, appointmentId } = await seedTi118Appointment(t, "f");
+  const input = ti118RecordInput(appointmentId, accompanimentId, professional);
+
+  const saved = await t.run(async (ctx) => await saveFollowUpRecord(ctx, input));
+  expect(saved).toMatchObject({ status: "saved", created: true });
+
+  const tables = await readTi118FollowUpTables(t);
+  expect(tables.records).toHaveLength(1);
+  expect(tables.agreements).toHaveLength(1);
+  expect(tables.tasks).toHaveLength(2);
+  expect(tables.notes).toHaveLength(1);
+  expect(tables.notes[0]).toMatchObject({
+    accompanimentId,
+    authorId: professional,
+    body: input.internalNote,
+  });
+  expect(tables.records[0].internalNoteId).toBe(tables.notes[0]._id);
+  // El texto de la nota no se copia al registro ni a sus filas.
+  const shared = JSON.stringify([tables.records, tables.agreements, tables.tasks]);
+  expect(shared).not.toContain(input.internalNote);
+
+  const stored = await t.run(
+    async (ctx) => await findFollowUpRecordByAppointment(ctx, appointmentId),
+  );
+  if (stored === null) throw new Error("El registro guardado debe leerse.");
+  expect(stored.record).not.toHaveProperty("internalNote");
+  expect(stored.internalNoteId).toBe(tables.notes[0]._id);
+  expect(toSharedFollowUpProjection(stored.record, stored.appointmentStatus)).toEqual({
+    appointmentId,
+    accompanimentId,
+    appointmentStatus: "completed",
+    agreements: input.agreements,
+    tasks: input.tasks,
+    nextSteps: input.nextSteps,
+    suggestedNextAppointmentDate: input.suggestedNextAppointmentDate,
+    version: "v1",
+  });
+
+  // La nota se sigue leyendo por la vía existente de notas internas.
+  const notes = await t.run(
+    async (ctx) =>
+      await paginateInternalNotes(ctx, accompanimentId, { numItems: 10, cursor: null }),
+  );
+  expect(notes.page.map((note) => note.body)).toEqual([input.internalNote]);
+});
+
+test("TI2-118: guardar de nuevo reemplaza el registro de la atención sin duplicar filas ni notas", async () => {
+  const t = convexTest(schema, modules);
+  const { professional, accompanimentId, appointmentId } = await seedTi118Appointment(t, "g");
+  const input = ti118RecordInput(appointmentId, accompanimentId, professional);
+  const first = await t.run(async (ctx) => await saveFollowUpRecord(ctx, input));
+  const retry = await t.run(async (ctx) => await saveFollowUpRecord(ctx, input));
+  expect(retry).toEqual({
+    status: "saved",
+    recordId: first.status === "saved" ? first.recordId : null,
+    created: false,
+  });
+
+  const edited = await t.run(
+    async (ctx) =>
+      await saveFollowUpRecord(ctx, {
+        ...input,
+        agreements: [],
+        tasks: [{ ...input.tasks[0], status: "done" }],
+        suggestedNextAppointmentDate: undefined,
+        internalNote: "Nota interna ficticia corregida",
+      }),
+  );
+  expect(edited.status).toBe("saved");
+
+  const after = await readTi118FollowUpTables(t);
+  expect(after.records).toHaveLength(1);
+  expect(after.records[0]).not.toHaveProperty("suggestedNextAppointmentDate");
+  expect(after.agreements).toHaveLength(0);
+  expect(after.tasks.map((task) => [task.entryId, task.status])).toEqual([["t1", "done"]]);
+  expect(after.notes.map((note) => note.body)).toEqual(["Nota interna ficticia corregida"]);
+
+  // Sin nota, el registro deja de apuntar a ella y la nota queda en el historial.
+  await t.run(async (ctx) => await saveFollowUpRecord(ctx, { ...input, internalNote: undefined }));
+  const unlinked = await readTi118FollowUpTables(t);
+  expect(unlinked.records[0]).not.toHaveProperty("internalNoteId");
+  expect(unlinked.notes).toHaveLength(1);
+});
+
+test("TI2-118: el seguimiento rechaza diagnósticos, atenciones pendientes y referencias inválidas sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const { professional, accompanimentId, appointmentId } = await seedTi118Appointment(t, "h");
+  const pending = await seedTi118Appointment(t, "i", "scheduled");
+  const input = ti118RecordInput(appointmentId, accompanimentId, professional);
+  const gone = await seedTi118Appointment(t, "j");
+  await t.run(async (ctx) => {
+    await ctx.db.delete(gone.professional);
+  });
+
+  const results = await t.run(async (ctx) => ({
+    clinical: await saveFollowUpRecord(ctx, { ...input, nextSteps: "Diagnóstico: ficticio" }),
+    pending: await saveFollowUpRecord(
+      ctx,
+      ti118RecordInput(pending.appointmentId, pending.accompanimentId, pending.professional),
+    ),
+    foreignAccompaniment: await saveFollowUpRecord(ctx, {
+      ...input,
+      accompanimentId: pending.accompanimentId,
+    }),
+    missingAppointment: await saveFollowUpRecord(ctx, { ...input, appointmentId: professional }),
+    missingAuthor: await saveFollowUpRecord(
+      ctx,
+      ti118RecordInput(gone.appointmentId, gone.accompanimentId, gone.professional),
+    ),
+  }));
+  expect(results).toEqual({
+    clinical: { status: "invalid", causes: ["clinical_content_not_allowed"] },
+    pending: { status: "invalid", causes: ["follow_up_not_admissible"] },
+    foreignAccompaniment: { status: "invalid_reference" },
+    missingAppointment: { status: "invalid_reference" },
+    missingAuthor: { status: "invalid_reference" },
+  });
+
+  expect(await readTi118FollowUpTables(t)).toEqual({
+    records: [],
+    agreements: [],
+    tasks: [],
+    notes: [],
+  });
+  expect(
+    await t.run(async (ctx) => await findFollowUpRecordByAppointment(ctx, appointmentId)),
+  ).toBeNull();
 });

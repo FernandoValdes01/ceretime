@@ -609,8 +609,8 @@ export interface ListAppointmentsInput {
 }
 
 /**
- * Página de atenciones con la vista que autorizó el servidor. El cursor es el
- * identificador de la última atención entregada.
+ * Página de atenciones con la vista que autorizó el servidor. El cursor es
+ * opaco: se devuelve tal cual para pedir la página siguiente.
  */
 export interface AppointmentPage {
   readonly items: readonly AppointmentProjection[];

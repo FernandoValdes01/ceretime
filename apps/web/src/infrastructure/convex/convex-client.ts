@@ -9,6 +9,8 @@ import { ConvexReactClient } from "convex/react";
 
 export const convexUrl = import.meta.env.VITE_CONVEX_URL ?? "";
 export const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL ?? "";
+/** Origen público de la SPA en este entorno; el login vuelve aquí si existe. */
+export const siteUrl = import.meta.env.VITE_SITE_URL ?? "";
 
 export const isBackendConfigured = convexUrl.length > 0 && convexSiteUrl.length > 0;
 

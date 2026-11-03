@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   APPOINTMENT_TRANSITIONS,
+  toSpaceLabel,
   type AppointmentStatus,
 } from "../../../../../convex/domain/index.ts";
 import type {
@@ -96,6 +97,39 @@ export function useAgendaAppointment(
   }, [appointmentId, attempt]);
 
   return result;
+}
+
+/**
+ * Etiquetas legibles de los espacios del catálogo, por identificador.
+ *
+ * El catálogo es de lectura para cualquier cuenta vigente (`space:read`) y
+ * la etiqueta sale de `toSpaceLabel` del dominio. Mientras carga, o si la
+ * lectura falla, el mapa queda vacío y la vista omite el espacio en vez de
+ * mostrar un identificador interno.
+ */
+export function useSpaceLabels(): ReadonlyMap<string, string> {
+  const [labels, setLabels] = useState<ReadonlyMap<string, string>>(() => new Map());
+
+  useEffect(() => {
+    let cancelled = false;
+    getAgendaPort()
+      .listSpaces()
+      .then(
+        (result) => {
+          if (!cancelled && result.status === "ok") {
+            setLabels(new Map(result.spaces.map((space) => [space.id, toSpaceLabel(space)])));
+          }
+        },
+        () => {
+          // Sin catálogo la agenda sigue siendo útil: el espacio se omite.
+        },
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return labels;
 }
 
 /** Cambio de estado ofertado al Profesional, derivado de la tabla canónica. */

@@ -837,9 +837,35 @@ describe("civilRangeToInstantRange (TI2-112)", () => {
     });
     expect(beforeChange.endAt).toBe(afterChange.startAt);
     expect(beforeChange.startAt).toBe(Date.UTC(2026, 8, 5, 4));
-    // Las 24:00 del sábado no existen: su última hora cae en el domingo.
-    expect(beforeChange.endAt - beforeChange.startAt).toBe(23 * HOUR_MS);
-    expect(afterChange.endAt - afterChange.startAt).toBe(24 * HOUR_MS);
+    // El salto borra de 00:00 a 01:00 del domingo: la frontera es el instante del salto.
+    expect(beforeChange.endAt).toBe(Date.UTC(2026, 8, 6, 4));
+    expect(beforeChange.endAt - beforeChange.startAt).toBe(24 * HOUR_MS);
+    expect(afterChange.endAt - afterChange.startAt).toBe(23 * HOUR_MS);
+  });
+
+  test("las 23:30 de la víspera del cambio de hora quedan solo en el rango del sábado", () => {
+    const lateSaturday = Date.UTC(2026, 8, 6, 3, 30);
+    expect(localDateTime(lateSaturday)).toBe("2026-09-05 23:30");
+    const beforeChange = civilRangeToInstantRange({
+      from: "2026-09-05",
+      to: "2026-09-05",
+      timeZone,
+    });
+    const afterChange = civilRangeToInstantRange({
+      from: "2026-09-06",
+      to: "2026-09-06",
+      timeZone,
+    });
+    expect(lateSaturday).toBeGreaterThanOrEqual(beforeChange.startAt);
+    expect(lateSaturday).toBeLessThan(beforeChange.endAt);
+    expect(lateSaturday).toBeLessThan(afterChange.startAt);
+  });
+
+  test("un rango que empieza o termina junto al salto usa la misma frontera", () => {
+    const fromSunday = civilRangeToInstantRange({ from: "2026-09-06", to: "2026-09-07", timeZone });
+    expect(fromSunday.startAt).toBe(Date.UTC(2026, 8, 6, 4));
+    const toSaturday = civilRangeToInstantRange({ from: "2026-09-04", to: "2026-09-05", timeZone });
+    expect(toSaturday.endAt).toBe(Date.UTC(2026, 8, 6, 4));
   });
 
   test("los días contiguos no se solapan cuando el cambio de hora repite una hora", () => {

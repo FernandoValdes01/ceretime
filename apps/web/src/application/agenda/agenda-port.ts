@@ -95,7 +95,7 @@ export type SaveExceptionInput = Pick<AvailabilityException, "date" | "kind"> & 
   readonly windows?: ReadonlyArray<AvailabilityWindow>;
 };
 
-/** Lectura simulada del editor: bloques y excepciones del profesional vigente. */
+/** Lectura del editor: bloques y excepciones del profesional vigente. */
 export type ListAvailabilityResult =
   | {
       readonly status: "ok";
@@ -106,13 +106,13 @@ export type ListAvailabilityResult =
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly message: string };
 
-/** Guardado simulado de un bloque: éxito tipado o error público compartido. */
+/** Guardado de un bloque: éxito tipado o error público compartido. */
 export type SaveBlockResult =
   | { readonly status: "saved"; readonly block: AvailabilityBlock }
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
 
-/** Guardado simulado de una excepción: éxito tipado o error público compartido. */
+/** Guardado de una excepción: éxito tipado o error público compartido. */
 export type SaveExceptionResult =
   | { readonly status: "saved"; readonly exception: AvailabilityException }
   | { readonly status: "denied" }
@@ -131,7 +131,10 @@ export type SaveSpaceInput = Pick<
   readonly id?: string;
 };
 
-/** Lectura simulada del catálogo de espacios visible al Administrador. */
+/**
+ * Lectura simulada del catálogo de espacios: la edita el Administrador y la
+ * lee cualquier cuenta vigente (`space:read`), como la agenda del Profesional.
+ */
 export type ListSpacesResult =
   | { readonly status: "ok"; readonly spaces: ReadonlyArray<Space> }
   | { readonly status: "empty" }
@@ -171,7 +174,7 @@ export type AgendaAppointment = Pick<
   | "cancelReason"
 >;
 
-/** Lista simulada de las atenciones del Profesional vigente. */
+/** Lista de las atenciones del Profesional vigente. */
 export type ListAppointmentsResult =
   | { readonly status: "ok"; readonly appointments: ReadonlyArray<AgendaAppointment> }
   | { readonly status: "empty" }
@@ -199,7 +202,7 @@ export type ChangeAppointmentStatusInput = {
 };
 
 /**
- * Resultado del cambio de estado simulado.
+ * Resultado del cambio de estado.
  *
  * `rejected` trae la causa canónica del dominio
  * (`APPOINTMENT_REJECTION_CAUSES`), `denied` la denegación del Backend y

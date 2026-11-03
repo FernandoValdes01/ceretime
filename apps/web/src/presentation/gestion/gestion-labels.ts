@@ -83,11 +83,13 @@ export function appointmentChangeLabel(to: string): string {
 
 // Las fechas se muestran en la zona de la agenda del dominio y no en la del
 // navegador: así el Profesional ve la misma hora que publicó y que revalida
-// el Backend, aunque abra la agenda desde otra zona.
+// el Backend, aunque abra la agenda desde otra zona. Llevan el año para que
+// atenciones de años distintos no se confundan.
 const APPOINTMENT_WINDOW_FORMAT = new Intl.DateTimeFormat("es-CL", {
   weekday: "long",
   day: "numeric",
   month: "long",
+  year: "numeric",
   timeZone: AGENDA_TIME_ZONE,
 });
 
@@ -97,16 +99,17 @@ const APPOINTMENT_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", {
   timeZone: AGENDA_TIME_ZONE,
 });
 
-/** Fecha y hora legible de una atención (epoch en milisegundos). */
-export function formatAppointmentWindow(startAt: number, endAt: number): string {
-  return `${APPOINTMENT_WINDOW_FORMAT.format(startAt)}, ${APPOINTMENT_TIME_FORMAT.format(
-    startAt,
-  )} – ${APPOINTMENT_TIME_FORMAT.format(endAt)}`;
+/** Fecha legible de una atención, sin la hora (epoch en milisegundos). */
+export function formatAppointmentDate(instantAt: number): string {
+  return APPOINTMENT_WINDOW_FORMAT.format(instantAt);
 }
 
-/** Instante legible de una fecha original conservada (epoch en milisegundos). */
-export function formatAppointmentInstant(instantAt: number): string {
-  return `${APPOINTMENT_WINDOW_FORMAT.format(instantAt)}, ${APPOINTMENT_TIME_FORMAT.format(
-    instantAt,
-  )}`;
+/** Hora legible de un instante de la atención (epoch en milisegundos). */
+export function formatAppointmentTime(instantAt: number): string {
+  return APPOINTMENT_TIME_FORMAT.format(instantAt);
+}
+
+/** Horario legible de una atención, de inicio a término (epoch en milisegundos). */
+export function formatAppointmentTimeRange(startAt: number, endAt: number): string {
+  return `${formatAppointmentTime(startAt)} – ${formatAppointmentTime(endAt)}`;
 }

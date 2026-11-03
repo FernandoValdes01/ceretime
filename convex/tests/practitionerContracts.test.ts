@@ -597,3 +597,46 @@ test("TI2-112: la revocación corta la lista y el detalle del Practicante en la 
   expect(await ti112PublicError(list())).toStrictEqual(unauthorizedError());
   expect(await ti112PublicError(detail())).toStrictEqual(unauthorizedError());
 });
+
+test("TI2-112: el Practicante recorre por páginas su acompañamiento en vista minimizada", async () => {
+  const t = convexTest(schema, modules);
+  const path = await seedCriticalPathWithIntern(t, "ti112-6");
+  const first = await ti112SeedAppointment(t, path);
+  const insertOn = (day: number) =>
+    t.run(async (ctx) =>
+      ctx.db.insert("appointments", {
+        accompanimentId: path.accompanimentId,
+        studentId: path.studentId,
+        professionalId: path.proId,
+        modality: "online",
+        status: "scheduled",
+        startsAt: Date.UTC(2026, 6, day, 14),
+        endsAt: Date.UTC(2026, 6, day, 15),
+        createdAt: 1,
+      }),
+    );
+  const second = await insertOn(8);
+  const third = await insertOn(9);
+  const asIntern = t.withIdentity(
+    identityFor(path.internSubject, `${path.internSubject}@alu.uct.cl`),
+  );
+  const next = (cursor?: string) =>
+    asIntern.query(api.presentation.appointments.listAppointments, {
+      ...TI112_WEEK,
+      accompanimentId: path.accompanimentId,
+      limit: 1,
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+
+  const pageOne = await next();
+  expect(pageOne).toMatchObject({ hasMore: true });
+  const pageTwo = await next(pageOne.nextCursor ?? undefined);
+  expect(pageTwo).toMatchObject({ hasMore: true });
+  const pageThree = await next(pageTwo.nextCursor ?? undefined);
+  expect(pageThree).toMatchObject({ hasMore: false, nextCursor: null });
+  const items = [...pageOne.items, ...pageTwo.items, ...pageThree.items];
+  expect(items.map((item) => item.id)).toEqual([first, second, third]);
+  for (const item of items) {
+    expect(Object.keys(item).sort()).toEqual(TI112_MINIMIZED_KEYS);
+  }
+});
