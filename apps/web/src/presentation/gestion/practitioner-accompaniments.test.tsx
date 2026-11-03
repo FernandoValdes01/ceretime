@@ -1,5 +1,13 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -12,11 +20,11 @@ import type { AssignedAccompanimentsPage } from "./practitioner-accompaniments-d
 /**
  * Pruebas de la vista de solo lectura del Practicante (TI2-116).
  *
- * Integración por el router real (incluye guards). Las queries de datos se
- * simulan por módulo con un store reactivo: `convex/react` no distingue
- * referencias del `api` generado, así que el cableado real query→referencia
- * lo cubren `tsc`, el build y la verificación manual contra el entorno
- * ficticio de TI2-30. Todos los datos son fixtures ficticios. La
+ * Integración por el router real (incluye guards). Las páginas leen sus datos
+ * de un módulo simulado con un store reactivo; aparte, el módulo real se prueba
+ * contra `convex/react` simulado para fijar qué queries y argumentos usa. La
+ * respuesta real la cubre la verificación manual contra el entorno ficticio de
+ * TI2-30. Todos los datos son fixtures ficticios. La
  * autorización efectiva vive en Convex (cubierta por
  * `convex/tests/practitionerMinimization.test.ts`); acá se prueba que la
  * superficie muestra solo lo minimizado y traduce la denegación genérica.
@@ -32,6 +40,7 @@ const store = vi.hoisted(() => {
     pages: new Map<string, unknown>(),
     details: new Map<string, unknown>(),
     afterCalls: [] as Array<string | undefined>,
+    queries: [] as Array<{ name: string; args: unknown }>,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => {
@@ -47,6 +56,7 @@ const store = vi.hoisted(() => {
       this.pages.clear();
       this.details.clear();
       this.afterCalls.length = 0;
+      this.queries.length = 0;
       listeners.clear();
     },
   };
@@ -55,7 +65,15 @@ const store = vi.hoisted(() => {
 let mockedSession: WebSessionState;
 let mockedPair: { session: WebSessionState; role: WebSessionRole } | undefined;
 
-vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
+vi.mock("convex/react", async () => {
+  const { getFunctionName } = await import("convex/server");
+  return {
+    useQuery: (reference: Parameters<typeof getFunctionName>[0], args: unknown) => {
+      store.queries.push({ name: getFunctionName(reference), args });
+      return mockedSession;
+    },
+  };
+});
 
 vi.mock("../session/session-state", () => ({
   useSessionState: () => mockedSession,
@@ -233,14 +251,39 @@ describe("listado asignado del Practicante (TI2-116)", () => {
     setPage(undefined, pagina([minimizado("acc-1", OBJETIVO_1)], true));
     renderAt("/practicante/acompanamientos");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Cargar más" }));
+    const button = await screen.findByRole("button", { name: "Cargar más" });
+    button.focus();
+    fireEvent.click(button);
     expect(store.afterCalls).toContain("acc-1");
-    expect(screen.getByRole("button", { name: "Cargando…" })).toBeDefined();
+    const pending = screen.getByRole("button", { name: "Cargando…" });
+    expect(pending.getAttribute("aria-disabled")).toBe("true");
+    expect(pending.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(pending);
 
     update(() => setPage("acc-1", pagina([minimizado("acc-2", OBJETIVO_2)])));
-    expect(await screen.findByText(OBJETIVO_2)).toBeDefined();
+    const newRow = await screen.findByRole("link", { name: /Objetivo ficticio dos/ });
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /Cargar/ })).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(newRow));
+  });
+
+  test("con más páginas por cargar, el foco también pasa a la primera fila nueva", async () => {
+    setPage(undefined, pagina([minimizado("acc-1", OBJETIVO_1)], true));
+    setPage("acc-1", pagina([minimizado("acc-2", OBJETIVO_2)], true));
+    renderAt("/practicante/acompanamientos");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cargar más" }));
+    const newRow = await screen.findByRole("link", { name: /Objetivo ficticio dos/ });
+    await waitFor(() => expect(document.activeElement).toBe(newRow));
+    expect(screen.getByRole("button", { name: "Cargar más" })).toBeDefined();
+  });
+
+  test("la fila muestra la acción de abrir el detalle", async () => {
+    setPage(undefined, pagina([minimizado("acc-1", OBJETIVO_1)]));
+    renderAt("/practicante/acompanamientos");
+
+    const link = await screen.findByRole("link", { name: /Objetivo ficticio uno/ });
+    expect(link.textContent).toContain("Ver detalle");
   });
 
   test("una revocación reactiva retira la fila del listado", async () => {
@@ -304,5 +347,32 @@ describe("detalle minimizado del Practicante (TI2-116)", () => {
       "No tienes acceso a este acompañamiento.",
     );
     expect(screen.queryByText(OBJETIVO_1)).toBeNull();
+  });
+});
+
+describe("cableado de queries del Practicante (TI2-116)", () => {
+  test("solo consulta el listado asignado y el detalle, nunca notas internas", async () => {
+    const actual = await vi.importActual<typeof import("./practitioner-accompaniments-data.ts")>(
+      "./practitioner-accompaniments-data.ts",
+    );
+
+    renderHook(() => actual.useAssignedAccompaniments(undefined));
+    renderHook(() => actual.useAssignedAccompaniments("acc-1"));
+    renderHook(() => actual.useAssignedAccompanimentDetail("acc-2"));
+
+    expect(store.queries).toEqual([
+      {
+        name: "presentation/accompaniments:listAssignedAccompaniments",
+        args: { limit: actual.ASSIGNED_PAGE_SIZE, after: undefined },
+      },
+      {
+        name: "presentation/accompaniments:listAssignedAccompaniments",
+        args: { limit: actual.ASSIGNED_PAGE_SIZE, after: "acc-1" },
+      },
+      {
+        name: "presentation/accompaniments:getAccompaniment",
+        args: { accompanimentId: "acc-2" },
+      },
+    ]);
   });
 });

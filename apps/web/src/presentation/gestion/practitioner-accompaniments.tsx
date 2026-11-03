@@ -30,10 +30,22 @@ import {
  * hereda permisos del Profesional.
  */
 
-/** Mismas clases de fila que la gestión del Profesional (DESIGN.md: 44px y foco de 3px). */
-const GESTION_ROW = "flex items-center gap-2 min-h-[44px] px-3 py-2 text-inherit";
+/** Foco visible de 3px según DESIGN.md, compartido por enlaces y filas. */
 const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
+
+/**
+ * Mismo lenguaje que la agenda del Profesional (TI2-115). El título fija su
+ * interlineado porque el heredado de `:root` superpone dos líneas; el enlace
+ * de retorno se reconoce por el subrayado, sin depender solo del color; la
+ * fila es un enlace completo con el objetivo como dato principal, el estado
+ * como etiqueta de texto y "Ver detalle" como acción visible.
+ */
+const PRACTITIONER_TITLE = "leading-[1.2]";
+const PRACTITIONER_BACK_LINK = `flex min-h-[44px] w-fit items-center gap-1 rounded-[0.5rem] text-base font-semibold text-primary underline ${GESTION_FOCUS_VISIBLE}`;
+const PRACTITIONER_ITEM =
+  "rounded-lg border border-border-low bg-surface-container-lowest transition-colors hover:border-outline";
+const PRACTITIONER_ITEM_LINK = `flex min-h-[44px] flex-col gap-2 rounded-lg px-5 py-4 text-left text-on-surface no-underline ${GESTION_FOCUS_VISIBLE}`;
 
 /**
  * El valor canónico viaja en `error.data`: el SDK del cliente decora
@@ -64,7 +76,12 @@ export function PractitionerAccompanimentsPage() {
 
   return (
     <section aria-labelledby="practitioner-accompaniments-title">
-      <h1 id="practitioner-accompaniments-title" ref={headingRef} tabIndex={-1}>
+      <h1
+        id="practitioner-accompaniments-title"
+        ref={headingRef}
+        tabIndex={-1}
+        className={PRACTITIONER_TITLE}
+      >
         Acompañamientos asignados
       </h1>
       <p>
@@ -84,6 +101,22 @@ function AssignedAccompanimentsBody() {
   // Páginas pedidas; solo crece con "Cargar más".
   const [pageCount, setPageCount] = useState(1);
   const [tail, setTail] = useState<TailState>({ pending: false, hasMore: false });
+  const listRef = useRef<HTMLUListElement>(null);
+  // Filas visibles al pedir otra página; `null` sin una carga pedida con el botón.
+  const rowsBeforeLoad = useRef<number | null>(null);
+
+  // Al terminar "Cargar más" el foco pasa a la primera fila nueva. Si la carga
+  // no trajo filas y el botón desaparece, queda en la última para no perderlo.
+  useLayoutEffect(() => {
+    if (tail.pending || rowsBeforeLoad.current === null) {
+      return;
+    }
+    const links = listRef.current?.querySelectorAll("a");
+    const target =
+      links?.[rowsBeforeLoad.current] ?? (tail.hasMore ? undefined : links?.[links.length - 1]);
+    rowsBeforeLoad.current = null;
+    target?.focus();
+  }, [tail]);
 
   let firstPage: AssignedAccompanimentsPage | undefined;
   try {
@@ -117,17 +150,25 @@ function AssignedAccompanimentsBody() {
 
   return (
     <>
-      <ul className="student-portal__list">
+      <ul ref={listRef} className="mt-4 grid list-none gap-3 p-0">
         <AssignedPageLevel page={firstPage} index={0} pageCount={pageCount} onTail={setTail} />
       </ul>
       {tail.hasMore ? (
         <div className="student-portal__cta">
           <button
             type="button"
-            className="student-portal__btn student-portal__btn--primary"
-            disabled={tail.pending}
-            onClick={() => setPageCount((count) => count + 1)}
+            className="student-portal__btn student-portal__btn--primary aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+            // `aria-disabled` y no `disabled`: un botón deshabilitado pierde el
+            // foco del teclado mientras carga la página siguiente.
+            aria-disabled={tail.pending}
             aria-busy={tail.pending}
+            onClick={() => {
+              if (tail.pending) {
+                return;
+              }
+              rowsBeforeLoad.current = listRef.current?.querySelectorAll("a").length ?? 0;
+              setPageCount((count) => count + 1);
+            }}
           >
             {tail.pending ? "Cargando…" : "Cargar más"}
           </button>
@@ -216,16 +257,21 @@ function AssignedPageFetcher({
 
 function AssignedAccompanimentRow({ accompaniment }: { accompaniment: MinimizedAccompaniment }) {
   return (
-    <li className="student-portal__item">
+    <li className={PRACTITIONER_ITEM}>
       <Link
         to="/practicante/acompanamientos/$accompanimentId"
         params={{ accompanimentId: accompaniment._id }}
-        className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
+        className={PRACTITIONER_ITEM_LINK}
       >
-        <span className="student-portal__chip">
-          {accompanimentStatusLabel(accompaniment.status)}
+        <span className="flex flex-wrap items-center justify-between gap-2">
+          <span className="min-w-0 text-lg font-semibold">{accompaniment.objective}</span>
+          <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold">
+            {accompanimentStatusLabel(accompaniment.status)}
+          </span>
         </span>
-        <span className="student-portal__item-meta">{accompaniment.objective}</span>
+        <span className="text-base font-semibold text-primary underline">
+          Ver detalle<span aria-hidden="true"> →</span>
+        </span>
       </Link>
     </li>
   );
@@ -253,15 +299,17 @@ export function PractitionerAccompanimentDetailPage({
 
   return (
     <section aria-labelledby="practitioner-accompaniment-detail-title">
-      <h1 id="practitioner-accompaniment-detail-title" ref={headingRef} tabIndex={-1}>
+      <h1
+        id="practitioner-accompaniment-detail-title"
+        ref={headingRef}
+        tabIndex={-1}
+        className={PRACTITIONER_TITLE}
+      >
         Detalle del acompañamiento
       </h1>
       <p>
-        <Link
-          to="/practicante/acompanamientos"
-          className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
-        >
-          Volver a acompañamientos
+        <Link to="/practicante/acompanamientos" className={PRACTITIONER_BACK_LINK}>
+          <span aria-hidden="true">←</span> Volver a acompañamientos
         </Link>
       </p>
       <StudentPanelErrorBoundary
@@ -276,12 +324,11 @@ export function PractitionerAccompanimentDetailPage({
 }
 
 function AssignedAccompanimentDetailBody({ accompanimentId }: { accompanimentId: string }) {
-  let accompaniment: MinimizedAccompaniment | undefined;
+  let view: ReturnType<typeof useAssignedAccompanimentDetail>;
   try {
     // Mismo patrón que el listado: hook primero y en todos los renders.
     // eslint-disable-next-line react-hooks/rules-of-hooks
-    const view = useAssignedAccompanimentDetail(accompanimentId);
-    accompaniment = view === undefined ? undefined : toMinimizedAccompaniment(view);
+    view = useAssignedAccompanimentDetail(accompanimentId);
   } catch (error) {
     if (isAuthorizationDenial(error)) {
       return <DeniedNotice title="No tienes acceso a este acompañamiento." />;
@@ -289,7 +336,7 @@ function AssignedAccompanimentDetailBody({ accompanimentId }: { accompanimentId:
     throw error;
   }
 
-  if (accompaniment === undefined) {
+  if (view === undefined) {
     return (
       <p role="status" className="student-portal__loading">
         Cargando el detalle…
@@ -297,20 +344,24 @@ function AssignedAccompanimentDetailBody({ accompanimentId }: { accompanimentId:
     );
   }
 
+  const accompaniment = toMinimizedAccompaniment(view);
+
   return (
     <>
       <p className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
         Vista de solo lectura: como Practicante consultas el estado y el objetivo del acompañamiento
         asignado.
       </p>
-      <dl className="rounded-lg border border-border-low bg-surface-container-lowest p-8">
-        <div className="py-2">
-          <dt className="font-semibold text-on-surface">Estado</dt>
-          <dd className="m-0 text-on-surface">{accompanimentStatusLabel(accompaniment.status)}</dd>
+      <dl className="m-0 divide-y divide-(--ct-line)">
+        <div className="py-3">
+          <dt className="text-sm font-semibold text-on-surface">Estado</dt>
+          <dd className="m-0 text-base text-on-surface">
+            {accompanimentStatusLabel(accompaniment.status)}
+          </dd>
         </div>
-        <div className="py-2">
-          <dt className="font-semibold text-on-surface">Objetivo</dt>
-          <dd className="m-0 text-on-surface">{accompaniment.objective}</dd>
+        <div className="py-3">
+          <dt className="text-sm font-semibold text-on-surface">Objetivo</dt>
+          <dd className="m-0 text-base text-on-surface">{accompaniment.objective}</dd>
         </div>
       </dl>
     </>
