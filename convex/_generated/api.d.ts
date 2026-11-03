@@ -56,6 +56,8 @@ import type * as infrastructure_accounts_repository from "../infrastructure/acco
 import type * as infrastructure_appointments_repository from "../infrastructure/appointments/repository.js";
 import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
 import type * as infrastructure_calendar_google_calendar from "../infrastructure/calendar/google_calendar.js";
+import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
+import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
@@ -128,6 +130,8 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/appointments/repository": typeof infrastructure_appointments_repository;
   "infrastructure/availability/repository": typeof infrastructure_availability_repository;
   "infrastructure/calendar/google_calendar": typeof infrastructure_calendar_google_calendar;
+  "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;
+  "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
