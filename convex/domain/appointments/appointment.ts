@@ -608,9 +608,12 @@ export interface ListAppointmentsInput {
   readonly version: AppointmentContractVersion;
 }
 
-/** Página de atenciones con paginación keyset sobre el identificador. */
+/**
+ * Página de atenciones con la vista que autorizó el servidor. El cursor es
+ * opaco: se devuelve tal cual para pedir la página siguiente.
+ */
 export interface AppointmentPage {
-  readonly items: readonly Appointment[];
+  readonly items: readonly AppointmentProjection[];
   readonly hasMore: boolean;
   readonly nextCursor: string | null;
   readonly version: AppointmentContractVersion;
