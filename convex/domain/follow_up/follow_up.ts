@@ -111,6 +111,31 @@ export interface SharedFollowUpProjection {
   readonly version: FollowUpContractVersion;
 }
 
+/** Vistas de lectura del seguimiento según el rol (TI2-127). */
+export const FOLLOW_UP_VIEW_VALUES = ["professional", "shared", "minimized"] as const;
+
+export type FollowUpView = (typeof FOLLOW_UP_VIEW_VALUES)[number];
+
+/**
+ * Proyección minimizada para el Practicante: estado y fecha sugerida.
+ *
+ * Omite todo texto libre y el vínculo con el acompañamiento: acuerdos, tareas
+ * y próximos pasos pueden mencionar necesidades de acceso.
+ */
+export interface MinimizedFollowUpProjection {
+  readonly appointmentId: string;
+  readonly appointmentStatus: AppointmentStatus;
+  readonly suggestedNextAppointmentDate?: string;
+  readonly version: FollowUpContractVersion;
+  readonly view: "minimized";
+}
+
+/** Proyección de lectura del seguimiento según la vista autorizada. */
+export type FollowUpProjection =
+  | (SharedFollowUpProjection & { readonly internalNote?: string; readonly view: "professional" })
+  | (SharedFollowUpProjection & { readonly view: "shared" })
+  | MinimizedFollowUpProjection;
+
 /** Acuerdo de entrada: el adaptador puede traer texto sin normalizar. */
 export interface FollowUpAgreementInput {
   readonly id: string;
@@ -368,5 +393,35 @@ export function toSharedFollowUpProjection(
       ? {}
       : { suggestedNextAppointmentDate: record.suggestedNextAppointmentDate }),
     version: record.version,
+  };
+}
+
+/**
+ * Adaptador explícito de registro a vista de lectura. La vista ya viene
+ * decidida por la autorización; acá solo se recorta la forma. Cada rama arma
+ * su salida desde cero para que la nota no pueda colarse por una copia.
+ */
+export function toFollowUpProjection(
+  record: FollowUpRecord,
+  appointmentStatus: AppointmentStatus,
+  view: FollowUpView,
+): FollowUpProjection {
+  if (view === "minimized") {
+    return {
+      appointmentId: record.appointmentId,
+      appointmentStatus,
+      ...(record.suggestedNextAppointmentDate === undefined
+        ? {}
+        : { suggestedNextAppointmentDate: record.suggestedNextAppointmentDate }),
+      version: record.version,
+      view,
+    };
+  }
+  const shared = toSharedFollowUpProjection(record, appointmentStatus);
+  if (view === "shared") return { ...shared, view };
+  return {
+    ...shared,
+    ...(record.internalNote === undefined ? {} : { internalNote: record.internalNote }),
+    view,
   };
 }
