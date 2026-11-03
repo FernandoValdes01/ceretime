@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { AgendaPort } from "../../application/agenda/agenda-port.ts";
-import { formatAppointmentInstant, formatAppointmentWindow } from "./gestion-labels.ts";
+import {
+  formatAppointmentDate,
+  formatAppointmentTime,
+  formatAppointmentTimeRange,
+} from "./gestion-labels.ts";
 import { setAgendaPortForTests } from "./professional-agenda-data.ts";
 
 /**
@@ -99,6 +103,19 @@ const ATENCION_BASE = {
   endAt: Date.UTC(2026, 4, 12, 15, 0),
 } as const;
 
+const ESPACIO_FICTICIO = {
+  id: "esp-1",
+  campus: "Campus San Juan Pablo II",
+  building: "Edificio A",
+  floor: "Piso 1",
+  room: "Sala 101",
+  accessConditions: "Acceso con rampa.",
+  arrivalInstructions: "Entrar por la puerta principal.",
+  version: "v1",
+} as const;
+
+const ETIQUETA_ESPACIO = "Campus San Juan Pablo II · Edificio A · Piso 1 · Sala 101";
+
 function puertoAgendaBase(): AgendaPort {
   return {
     searchSlots: () => Promise.resolve({ status: "empty" }),
@@ -134,7 +151,7 @@ function puertoAgendaBase(): AgendaPort {
         status: "changed",
         appointment: { ...ATENCION_BASE, status: input.to },
       }),
-    listSpaces: () => Promise.resolve({ status: "empty" }),
+    listSpaces: () => Promise.resolve({ status: "ok", spaces: [ESPACIO_FICTICIO] }),
     saveSpace: () =>
       Promise.resolve({
         status: "denied",
@@ -193,8 +210,42 @@ describe("agenda del Profesional (TI2-115)", () => {
 
     expect(await screen.findByText("Programada")).toBeDefined();
     expect(screen.getByText("Presencial")).toBeDefined();
-    expect(screen.getByText("Espacio esp-1")).toBeDefined();
-    expect(screen.getByRole("link", { name: /Programada/ })).toBeDefined();
+    expect(await screen.findByText(ETIQUETA_ESPACIO)).toBeDefined();
+    expect(screen.getByText(/martes, 12 de mayo de 2026/)).toBeDefined();
+    expect(screen.getByRole("link", { name: /Programada.*Ver detalle/ })).toBeDefined();
+  });
+
+  test("sin catálogo de espacios la fila omite el espacio y nunca muestra el id interno", async () => {
+    const port = puertoAgendaBase();
+    port.listSpaces = () => Promise.reject(new Error("fallo de red ficticio"));
+    comoProfesional(port);
+    renderAt("/profesional/agenda");
+
+    expect(await screen.findByText("Programada")).toBeDefined();
+    expect(screen.getByText("Presencial")).toBeDefined();
+    expect(screen.queryByText(/esp-1/)).toBeNull();
+  });
+
+  test("atenciones de años distintos muestran fechas distinguibles", async () => {
+    const port = puertoAgendaBase();
+    port.listAppointments = () =>
+      Promise.resolve({
+        status: "ok",
+        appointments: [
+          { ...ATENCION_BASE },
+          {
+            ...ATENCION_BASE,
+            id: "aten-ficticio-2",
+            startAt: Date.UTC(2027, 4, 12, 14, 0),
+            endAt: Date.UTC(2027, 4, 12, 15, 0),
+          },
+        ],
+      });
+    comoProfesional(port);
+    renderAt("/profesional/agenda");
+
+    expect(await screen.findByText(/12 de mayo de 2026/)).toBeDefined();
+    expect(screen.getByText(/12 de mayo de 2027/)).toBeDefined();
   });
 
   test("agenda vacía muestra el aviso de vacío sin filas", async () => {
@@ -292,6 +343,9 @@ describe("detalle de la atención (TI2-115)", () => {
     const motivo = screen.getByLabelText("Motivo (obligatorio)");
     fireEvent.click(screen.getByRole("button", { name: "Registrar cambio" }));
     expect(await screen.findByText("El motivo es obligatorio para este cambio.")).toBeDefined();
+    // El rojo no compite con el borde normal: se aplica una sola clase de color.
+    expect(motivo.className).toContain("border-error");
+    expect(motivo.className).not.toContain("border-outline");
 
     fireEvent.change(motivo, { target: { value: "Bloqueo de la sala." } });
     fireEvent.click(screen.getByRole("button", { name: "Registrar cambio" }));
@@ -396,6 +450,10 @@ describe("detalles visibles con contrato conservado (TI2-115)", () => {
 
     expect(await screen.findByText("Reagendada")).toBeDefined();
     expect(screen.getByText("Fecha original conservada")).toBeDefined();
+    // La fecha vigente y la original caen el mismo día; la hora original es la propia.
+    expect(screen.getAllByText("martes, 12 de mayo de 2026")).toHaveLength(2);
+    expect(screen.getByText(/^10:00\sa\.\sm\.$/u)).toBeDefined();
+    expect(await screen.findByText(ETIQUETA_ESPACIO)).toBeDefined();
   });
 
   test("la cancelación por CERETI conserva el motivo propio sin notas internas", async () => {
@@ -418,12 +476,22 @@ describe("detalles visibles con contrato conservado (TI2-115)", () => {
 
   test("las fechas se leen en la zona de la agenda y no en la del navegador", () => {
     // 14:00 UTC es 10:00 en Santiago; 02:30 UTC del 13 sigue siendo el 12 allá.
-    expect(formatAppointmentWindow(ATENCION_BASE.startAt, ATENCION_BASE.endAt)).toMatch(
-      /^martes, 12 de mayo, 10:00\sa\.\sm\.\s–\s11:00\sa\.\sm\.$/u,
+    expect(formatAppointmentDate(ATENCION_BASE.startAt)).toBe("martes, 12 de mayo de 2026");
+    expect(formatAppointmentTimeRange(ATENCION_BASE.startAt, ATENCION_BASE.endAt)).toMatch(
+      /^10:00\sa\.\sm\.\s–\s11:00\sa\.\sm\.$/u,
     );
-    expect(formatAppointmentInstant(Date.UTC(2026, 4, 13, 2, 30))).toMatch(
-      /^martes, 12 de mayo, 10:30\sp\.\sm\.$/u,
-    );
+    const cruceDeDia = Date.UTC(2026, 4, 13, 2, 30);
+    expect(formatAppointmentDate(cruceDeDia)).toBe("martes, 12 de mayo de 2026");
+    expect(formatAppointmentTime(cruceDeDia)).toMatch(/^10:30\sp\.\sm\.$/u);
+  });
+
+  test("el detalle muestra la fecha y el horario en líneas separadas", async () => {
+    comoProfesional();
+    renderAt("/profesional/agenda/aten-ficticio-1");
+
+    expect(await screen.findByText("martes, 12 de mayo de 2026")).toBeDefined();
+    expect(screen.getByText(/^10:00\sa\.\sm\.\s–\s11:00\sa\.\sm\.$/u)).toBeDefined();
+    expect(screen.getByText("Fecha vigente").tagName).toBe("DT");
   });
 });
 
@@ -458,6 +526,16 @@ describe("navegación del portal con agenda (TI2-115)", () => {
       expect(router.state.location.pathname).toBe("/profesional/agenda/aten-ficticio-1"),
     );
     expect(await screen.findByRole("heading", { name: "Detalle de la atención" })).toBeDefined();
+  });
+
+  test("el detalle vuelve a la agenda con un enlace de nombre claro", async () => {
+    comoProfesional();
+    const { router } = renderAt("/profesional/agenda/aten-ficticio-1");
+
+    fireEvent.click(await screen.findByRole("link", { name: "Volver a la agenda" }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/profesional/agenda"));
+    expect(await screen.findByRole("heading", { name: "Agenda" })).toBeDefined();
   });
 });
 

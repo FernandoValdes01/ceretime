@@ -1455,22 +1455,6 @@ const TI112_WEEK = { from: "2026-07-06", to: "2026-07-12", limit: 10, version: "
 /** Instante de un día de julio de 2026 a la hora dada en Santiago (UTC-4). */
 const ti112At = (day: number, hour: number) => Date.UTC(2026, 6, day, hour + 4);
 
-const TI112_FULL_KEYS = [
-  "accompanimentId",
-  "endAt",
-  "id",
-  "modality",
-  "professionalId",
-  "startAt",
-  "status",
-  "version",
-  "view",
-];
-
-function ti112Keys(value: object) {
-  return Object.keys(value).sort();
-}
-
 function ti112Caller(t: ReturnType<typeof convexTest>, name: string) {
   return t.withIdentity(identityFor(`ti112-${name}`, `ti112-${name}@uct.cl`));
 }
@@ -1591,10 +1575,34 @@ async function ti112SeedAgenda(t: ReturnType<typeof convexTest>) {
   });
 }
 
-test("TI2-112: la agenda y el detalle entregan las claves exactas de Estudiante y Profesional", async () => {
+test("TI2-112: la agenda y el detalle entregan las claves y los valores exactos de Estudiante y Profesional", async () => {
   const t = convexTest(schema, modules);
-  const { accompanimentId, appointments } = await ti112SeedAgenda(t);
-  const withOptionals = [...TI112_FULL_KEYS, "cancelReason", "originalStartAt", "spaceId"].sort();
+  const { accompanimentId, appointments, professionalId, spaceId } = await ti112SeedAgenda(t);
+  const plainView = {
+    id: appointments.plain,
+    accompanimentId,
+    professionalId,
+    modality: "online",
+    startAt: ti112At(6, 10),
+    endAt: ti112At(6, 11),
+    status: "scheduled",
+    version: "v1",
+    view: "full",
+  };
+  const cancelledView = {
+    id: appointments.cancelled,
+    accompanimentId,
+    professionalId,
+    spaceId,
+    modality: "inPerson",
+    startAt: ti112At(7, 10),
+    endAt: ti112At(7, 11),
+    originalStartAt: ti112At(6, 15),
+    cancelReason: "Motivo ficticio",
+    status: "cancelled_by_cereti",
+    version: "v1",
+    view: "full",
+  };
 
   for (const name of ["est-1", "pro-1"]) {
     const caller = ti112Caller(t, name);
@@ -1604,28 +1612,18 @@ test("TI2-112: la agenda y el detalle entregan las claves exactas de Estudiante 
       accompanimentId,
     });
     for (const page of [own, scoped]) {
-      const [plain, cancelled] = page.items;
-      expect(plain?.id).toBe(appointments.plain);
-      expect(ti112Keys(plain ?? {})).toEqual(TI112_FULL_KEYS);
-      expect(cancelled?.id).toBe(appointments.cancelled);
-      expect(ti112Keys(cancelled ?? {})).toEqual(withOptionals);
+      expect(page.items.slice(0, 2)).toStrictEqual([plainView, cancelledView]);
     }
     const plainDetail = await caller.query(api.presentation.appointments.getAppointment, {
       appointmentId: appointments.plain,
       version: "v1",
     });
-    expect(ti112Keys(plainDetail)).toEqual(TI112_FULL_KEYS);
+    expect(plainDetail).toStrictEqual(plainView);
     const cancelledDetail = await caller.query(api.presentation.appointments.getAppointment, {
       appointmentId: appointments.cancelled,
       version: "v1",
     });
-    expect(ti112Keys(cancelledDetail)).toEqual(withOptionals);
-    expect(cancelledDetail).toMatchObject({
-      status: "cancelled_by_cereti",
-      cancelReason: "Motivo ficticio",
-      originalStartAt: ti112At(6, 15),
-      view: "full",
-    });
+    expect(cancelledDetail).toStrictEqual(cancelledView);
   }
 });
 
@@ -1738,9 +1736,9 @@ test("TI2-112: tres páginas de una atención recorren la agenda sin repetir y e
     });
 
   const first = await next();
-  expect(first).toMatchObject({ hasMore: true, nextCursor: appointments.plain, version: "v1" });
+  expect(first).toMatchObject({ hasMore: true, version: "v1" });
   const second = await next(first.nextCursor ?? undefined);
-  expect(second).toMatchObject({ hasMore: true, nextCursor: appointments.cancelled });
+  expect(second).toMatchObject({ hasMore: true });
   const third = await next(second.nextCursor ?? undefined);
   expect(third).toMatchObject({ hasMore: false, nextCursor: null });
   expect([...first.items, ...second.items, ...third.items].map((item) => item.id)).toEqual([
@@ -1752,15 +1750,20 @@ test("TI2-112: tres páginas de una atención recorren la agenda sin repetir y e
 
 test("TI2-112: un cursor de otra persona o una entrada inválida responden conflict", async () => {
   const t = convexTest(schema, modules);
-  const { appointments } = await ti112SeedAgenda(t);
+  await ti112SeedAgenda(t);
   const asStudent = ti112Caller(t, "est-1");
   const list = (overrides: Partial<typeof TI112_WEEK> & { cursor?: string }) =>
     asStudent.query(api.presentation.appointments.listAppointments, {
       ...TI112_WEEK,
       ...overrides,
     });
+  const foreignPage = await ti112Caller(t, "est-2").query(
+    api.presentation.appointments.listAppointments,
+    { ...TI112_WEEK, limit: 1 },
+  );
+  expect(foreignPage.nextCursor).not.toBeNull();
   const calls = [
-    list({ cursor: appointments.foreign }),
+    list({ cursor: foreignPage.nextCursor ?? "" }),
     list({ limit: 0 }),
     list({ limit: 51 }),
     list({ limit: 1.5 }),
@@ -1917,7 +1920,7 @@ test("TI2-112: el Administrador y una llamada sin sesión no leen agenda, acompa
 test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () => {
   const t = convexTest(schema, modules);
   const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
-  // 22:00 del domingo 12 y 21:00 del domingo 5 en Santiago: del otro lado de la medianoche UTC.
+  // 23:00 del domingo 12 y del domingo 5 en Santiago: ya es lunes en UTC y también en UTC-3.
   const { lateLastDay, lateDayBefore } = await t.run(async (ctx) => {
     const insert = (startsAt: number) =>
       ctx.db.insert("appointments", {
@@ -1931,8 +1934,8 @@ test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () =>
         createdAt: 1,
       });
     return {
-      lateLastDay: await insert(ti112At(12, 22)),
-      lateDayBefore: await insert(ti112At(5, 21)),
+      lateLastDay: await insert(ti112At(12, 23)),
+      lateDayBefore: await insert(ti112At(5, 23)),
     };
   });
   const week = await ti112Caller(t, "est-1").query(
@@ -1942,4 +1945,168 @@ test("TI2-112: el rango se lee en la zona de la agenda y no en UTC", async () =>
   const ids = week.items.map((item) => item.id);
   expect(ids).toContain(lateLastDay);
   expect(ids).not.toContain(lateDayBefore);
+});
+
+test("TI2-112: la atención de las 23:30 antes del cambio de hora aparece solo en el sábado", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  // 23:30 del sábado 5 de septiembre en Santiago: el domingo 6 no tiene medianoche.
+  const startsAt = Date.UTC(2026, 8, 6, 3, 30);
+  const lateSaturday = await t.run(async (ctx) =>
+    ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt,
+      endsAt: startsAt + 1_800_000,
+      createdAt: 1,
+    }),
+  );
+  const { listAppointments } = api.presentation.appointments;
+  const idsIn = async (day: string) => {
+    const range = { from: day, to: day, limit: 10, version: "v1" as const };
+    const pages = [
+      await ti112Caller(t, "est-1").query(listAppointments, range),
+      await ti112Caller(t, "est-1").query(listAppointments, { ...range, accompanimentId }),
+      await ti112Caller(t, "pro-1").query(listAppointments, range),
+    ];
+    return pages.map((page) => page.items.map((item) => item.id));
+  };
+  expect(await idsIn("2026-09-05")).toEqual([[lateSaturday], [lateSaturday], [lateSaturday]]);
+  expect(await idsIn("2026-09-06")).toEqual([[], [], []]);
+});
+
+test("TI2-112: una atención creada después entra por su inicio en los tres alcances", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, appointments, professionalId, studentId } = await ti112SeedAgenda(t);
+  // Se crea al final con el inicio más temprano: el orden no sale de la creación.
+  const earliest = await t.run(async (ctx) =>
+    ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: ti112At(6, 8),
+      endsAt: ti112At(6, 9),
+      createdAt: 1,
+    }),
+  );
+  const { listAppointments } = api.presentation.appointments;
+  const pages = [
+    await ti112Caller(t, "est-1").query(listAppointments, TI112_WEEK),
+    await ti112Caller(t, "est-1").query(listAppointments, { ...TI112_WEEK, accompanimentId }),
+    await ti112Caller(t, "pro-1").query(listAppointments, TI112_WEEK),
+  ];
+  for (const page of pages) {
+    expect(page.items.slice(0, 2).map((item) => item.id)).toEqual([earliest, appointments.plain]);
+  }
+});
+
+test("TI2-112: reagendar una atención entregada pide reiniciar y no omite las pendientes", async () => {
+  const scopes = [
+    { caller: "est-1", byAccompaniment: false },
+    { caller: "est-1", byAccompaniment: true },
+    { caller: "pro-1", byAccompaniment: false },
+  ];
+  for (const { caller, byAccompaniment } of scopes) {
+    const t = convexTest(schema, modules);
+    const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+    const insertOn = (day: number) =>
+      t.run(async (ctx) =>
+        ctx.db.insert("appointments", {
+          accompanimentId,
+          studentId,
+          professionalId,
+          modality: "online",
+          status: "scheduled",
+          startsAt: ti112At(day, 10),
+          endsAt: ti112At(day, 11),
+          createdAt: 1,
+        }),
+      );
+    const first = await insertOn(20);
+    const second = await insertOn(21);
+    const third = await insertOn(22);
+    const list = (cursor?: string) =>
+      ti112Caller(t, caller).query(api.presentation.appointments.listAppointments, {
+        from: "2026-07-20",
+        to: "2026-07-26",
+        limit: 1,
+        version: "v1",
+        ...(byAccompaniment ? { accompanimentId } : {}),
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+
+    const delivered = await list();
+    expect(delivered.items.map((item) => item.id)).toEqual([first]);
+    // Reagendar escribe sobre la misma fila: conserva el id y cambia el inicio.
+    await t.run(async (ctx) =>
+      ctx.db.patch(first, { startsAt: ti112At(25, 10), endsAt: ti112At(25, 11) }),
+    );
+    expect(await ti111PublicError(list(delivered.nextCursor ?? undefined))).toStrictEqual(
+      conflictError(),
+    );
+
+    const restarted: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await list(cursor);
+      restarted.push(...page.items.map((item) => item.id));
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor !== undefined);
+    expect(restarted).toEqual([second, third, first]);
+  }
+});
+
+test("TI2-112: una atención pendiente que pasa antes de lo entregado también pide reiniciar", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, professionalId, studentId } = await ti112SeedAgenda(t);
+  const insertOn = (day: number) =>
+    t.run(async (ctx) =>
+      ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId,
+        professionalId,
+        modality: "online",
+        status: "scheduled",
+        startsAt: ti112At(day, 10),
+        endsAt: ti112At(day, 11),
+        createdAt: 1,
+      }),
+    );
+  await insertOn(20);
+  await insertOn(21);
+  const last = await insertOn(22);
+  const list = (cursor?: string) =>
+    ti112Caller(t, "est-1").query(api.presentation.appointments.listAppointments, {
+      from: "2026-07-20",
+      to: "2026-07-26",
+      limit: 2,
+      version: "v1",
+      ...(cursor === undefined ? {} : { cursor }),
+    });
+
+  const delivered = await list();
+  expect(delivered.hasMore).toBe(true);
+  await t.run(async (ctx) =>
+    ctx.db.patch(last, { startsAt: ti112At(20, 8), endsAt: ti112At(20, 9) }),
+  );
+  expect(await ti111PublicError(list(delivered.nextCursor ?? undefined))).toStrictEqual(
+    conflictError(),
+  );
+});
+
+test("TI2-112: el Profesional revocado no lee por id la atención que sigue a su nombre", async () => {
+  const t = convexTest(schema, modules);
+  const { appointments } = await ti112SeedAgenda(t);
+  const data = await ti111PublicError(
+    ti112Caller(t, "pro-1").query(api.presentation.appointments.getAppointment, {
+      appointmentId: appointments.revoked,
+      version: "v1",
+    }),
+  );
+  expect(data).toStrictEqual(unauthorizedError());
 });

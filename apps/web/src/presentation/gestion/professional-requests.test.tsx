@@ -599,6 +599,10 @@ describe("detalle del Profesional (TI2-91)", () => {
     expect(screen.getByText("Necesidad ficticia de acceso")).toBeDefined();
     const volver = screen.getByRole("link", { name: "Volver a solicitudes" });
     expect(volver.getAttribute("href")).toBe("/profesional/solicitudes");
+    // Se distingue del texto normal por el subrayado, no solo por el color.
+    expect(volver.className).toContain("underline");
+    expect(volver.className).not.toContain("no-underline");
+    expect(volver.className).toContain("text-primary");
   });
 
   test("otra cuenta sin toma ve denegación sin filtrar el contenido", async () => {

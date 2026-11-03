@@ -161,6 +161,12 @@ function okIds(result: Awaited<ReturnType<typeof listAppointments>>): readonly s
   return result.data.items.map((item) => item.id);
 }
 
+function okCursor(result: Awaited<ReturnType<typeof listAppointments>>): string {
+  if (result.status === "error") throw new Error(`Se esperaba éxito: ${result.error.code}`);
+  if (result.data.nextCursor === null) throw new Error("Se esperaba otra página");
+  return result.data.nextCursor;
+}
+
 describe("agenda propia", () => {
   test("el Estudiante lee sus atenciones en vista completa", async () => {
     const { deps, log } = worldDeps({ rows: [appointmentRow("a-1"), appointmentRow("a-2")] });
@@ -365,11 +371,15 @@ describe("atenciones de un acompañamiento", () => {
 describe("entrada y paginación de la lista", () => {
   const rows = ["a-1", "a-2", "a-3"].map((id) => appointmentRow(id));
 
-  test("un límite fuera de rango responde conflicto sin leer", async () => {
+  test("un límite fuera de rango responde conflicto sin leer, aunque no haya sesión", async () => {
     for (const limit of [0, -1, 1.5, LIST_APPOINTMENTS_PAGE_LIMIT_MAX + 1]) {
-      const { deps, log } = worldDeps({ rows });
-      expect(await listAppointments(deps, listInput({ limit }))).toEqual(conflict);
-      expect(log.rangeReads).toEqual([]);
+      for (const tokenIdentifier of [student.tokenIdentifier, null]) {
+        const { deps, log } = worldDeps({ rows });
+        expect(await listAppointments(deps, listInput({ limit, tokenIdentifier }))).toEqual(
+          conflict,
+        );
+        expect(log.rangeReads).toEqual([]);
+      }
     }
     const { deps } = worldDeps({ rows });
     expect(okIds(await listAppointments(deps, listInput({ limit: 50 })))).toHaveLength(3);
@@ -413,16 +423,82 @@ describe("entrada y paginación de la lista", () => {
   test("el cursor avanza sin repetir y la última página cierra", async () => {
     const { deps } = worldDeps({ rows });
     const first = await listAppointments(deps, listInput({ limit: 2 }));
-    expect(first).toMatchObject({ status: "ok", data: { hasMore: true, nextCursor: "a-2" } });
+    expect(first).toMatchObject({ status: "ok", data: { hasMore: true } });
     expect(okIds(first)).toEqual(["a-1", "a-2"]);
-    const last = await listAppointments(deps, listInput({ limit: 2, cursor: "a-2" }));
+    const last = await listAppointments(deps, listInput({ limit: 2, cursor: okCursor(first) }));
     expect(last).toMatchObject({ status: "ok", data: { hasMore: false, nextCursor: null } });
     expect(okIds(last)).toEqual(["a-3"]);
   });
 
+  test("el cursor no admite el identificador suelto ni una huella alterada", async () => {
+    const { deps } = worldDeps({ rows });
+    const cursor = okCursor(await listAppointments(deps, listInput({ limit: 1 })));
+    expect(cursor).not.toBe("a-1");
+    for (const forged of ["a-1", "a-1.", `${cursor}0`]) {
+      expect(await listAppointments(deps, listInput({ cursor: forged }))).toEqual(conflict);
+    }
+  });
+
+  test("una atención entregada que pasa detrás de las pendientes pide reiniciar", async () => {
+    const before = worldDeps({ rows });
+    const cursor = okCursor(await listAppointments(before.deps, listInput({ limit: 1 })));
+    const moved = ["a-2", "a-3", "a-1"].map((id) => appointmentRow(id));
+    const after = worldDeps({ rows: moved });
+    expect(await listAppointments(after.deps, listInput({ limit: 1, cursor }))).toEqual(conflict);
+    expect(okIds(await listAppointments(after.deps, listInput()))).toEqual(["a-2", "a-3", "a-1"]);
+  });
+
+  test("una atención pendiente que pasa antes de lo entregado pide reiniciar", async () => {
+    const before = worldDeps({ rows });
+    const cursor = okCursor(await listAppointments(before.deps, listInput({ limit: 2 })));
+    const moved = ["a-3", "a-1", "a-2"].map((id) => appointmentRow(id));
+    const after = worldDeps({ rows: moved });
+    expect(await listAppointments(after.deps, listInput({ limit: 2, cursor }))).toEqual(conflict);
+  });
+
+  test("dos atenciones que se cruzan en el tramo entregado piden reiniciar", async () => {
+    const extended = [...rows, appointmentRow("a-4")];
+    const before = worldDeps({ rows: extended });
+    const cursor = okCursor(await listAppointments(before.deps, listInput({ limit: 3 })));
+    // a-3 sigue en la misma posición, pero a-4 entró al tramo y a-1 salió de él.
+    const crossed = ["a-4", "a-2", "a-3", "a-1"].map((id) => appointmentRow(id));
+    const after = worldDeps({ rows: crossed });
+    expect(await listAppointments(after.deps, listInput({ limit: 3, cursor }))).toEqual(conflict);
+  });
+
+  test("un cambio que no altera lo entregado deja seguir el recorrido", async () => {
+    const before = worldDeps({ rows });
+    const cursor = okCursor(await listAppointments(before.deps, listInput({ limit: 1 })));
+    const cancelled = appointmentRow("a-1", { status: "cancelled_by_student" });
+    const pendingMoved = [cancelled, appointmentRow("a-3"), appointmentRow("a-2")];
+    const after = worldDeps({ rows: pendingMoved });
+    const next = await listAppointments(after.deps, listInput({ limit: 2, cursor }));
+    expect(okIds(next)).toEqual(["a-3", "a-2"]);
+    expect(next).toMatchObject({ status: "ok", data: { hasMore: false, nextCursor: null } });
+  });
+
+  test("el cursor de una lista no sirve en otra", async () => {
+    const shared = [
+      appointmentRow("a-1", { accompanimentId: secondAccompaniment._id }),
+      appointmentRow("a-2"),
+      appointmentRow("a-3"),
+    ];
+    const { deps } = worldDeps({ rows: shared });
+    const cursor = okCursor(await listAppointments(deps, listInput({ limit: 2 })));
+    expect(
+      await listAppointments(
+        deps,
+        listInput({ limit: 2, cursor, accompanimentId: accompaniment._id }),
+      ),
+    ).toEqual(conflict);
+  });
+
   test("un cursor inexistente o fuera de lo visible responde conflicto", async () => {
     const { deps } = worldDeps({
-      assignments: [assignment(accompaniment._id, professional, { status: "revoked" })],
+      assignments: [
+        assignment(accompaniment._id, professional, { status: "revoked" }),
+        assignment(secondAccompaniment._id, professional),
+      ],
       rows: [
         appointmentRow("revocada"),
         appointmentRow("vigente", { accompanimentId: secondAccompaniment._id }),

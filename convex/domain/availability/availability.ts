@@ -318,6 +318,15 @@ function civilToEpochMs(date: string, minuteOfDay: number, timeZone: string): nu
   return targetLocal - getTimeZoneOffsetMs(timeZone, firstPass);
 }
 
+/**
+ * Instante en que empieza una medianoche civil. Si un cambio de hora la borra, `civilToEpochMs` cae antes del salto, y el desfase de ese instante lleva al salto, el primero válido del día.
+ */
+function civilMidnightToEpochMs(date: string, minuteOfDay: number, timeZone: string): number {
+  const { year, month, day } = civilDateParts(date);
+  const targetLocal = Date.UTC(year, month - 1, day, 0, 0, 0) + minuteOfDay * 60_000;
+  return targetLocal - getTimeZoneOffsetMs(timeZone, civilToEpochMs(date, minuteOfDay, timeZone));
+}
+
 /** Día de la semana (0 a 6) de una fecha civil, idéntico en todas las zonas horarias. */
 function civilWeekday(date: string): number {
   const { year, month, day } = civilDateParts(date);
@@ -538,7 +547,7 @@ export interface InstantRange {
 /**
  * Convierte un rango civil inclusivo de hasta `MAX_EXPANSION_DAYS` días al intervalo de instantes `[inicio, fin)` de la zona horaria dada.
  *
- * El fin es la medianoche que cierra el último día, la misma que abre el día siguiente: dos rangos contiguos no dejan huecos ni se solapan, aunque un cambio de hora vuelva inexistente esa medianoche. Entonces la hora previa al cambio pertenece al día que empieza con él.
+ * El fin es la medianoche que cierra el último día, la misma que abre el día siguiente: dos rangos contiguos no dejan huecos ni se solapan. Si un cambio de hora vuelve inexistente esa medianoche, la frontera es el primer instante válido del día siguiente, y cada atención queda en la fecha civil en que empieza.
  *
  * Rechaza fechas inválidas, rango invertido o mayor al máximo y zonas horarias desconocidas.
  */
@@ -557,7 +566,7 @@ export function civilRangeToInstantRange(input: {
     throw new Error(`El rango civil supera el máximo de ${MAX_EXPANSION_DAYS} días.`);
   }
   return {
-    startAt: civilToEpochMs(input.from, DAY_START_MINUTE, input.timeZone),
-    endAt: civilToEpochMs(input.to, DAY_END_MINUTE, input.timeZone),
+    startAt: civilMidnightToEpochMs(input.from, DAY_START_MINUTE, input.timeZone),
+    endAt: civilMidnightToEpochMs(input.to, DAY_END_MINUTE, input.timeZone),
   };
 }
