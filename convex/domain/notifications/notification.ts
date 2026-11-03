@@ -234,7 +234,7 @@ export function notificationEventsForTransition(
  * (otra clase, otra atención, otro destinatario u otro instante) produce otra.
  * La tupla se representa como lista para que ningún identificador pueda
  * colisionar con un separador. La comparación para evitar duplicados y el
- * registro son de TI2-110.
+ * registro los hace el repositorio de notificaciones (TI2-118).
  */
 export function notificationIdempotencyKey(event: NotificationEvent): string {
   return JSON.stringify([
