@@ -20,6 +20,7 @@ const LIST_APPOINTMENTS = "presentation/appointments:listAppointments";
 const GET_APPOINTMENT = "presentation/appointments:getAppointment";
 const CANCEL_APPOINTMENT = "presentation/appointments:cancelAppointment";
 const RECORD_ATTENDANCE = "presentation/appointments:recordAppointmentAttendance";
+const LIST_SPACES = "presentation/spaces:listSpaces";
 
 /** 2026-10-31 09:00 en America/Santiago (UTC-3 en esa fecha). */
 const NOW = Date.UTC(2026, 9, 31, 12, 0);
@@ -41,6 +42,8 @@ type FakeOptions = {
   readonly query?: Readonly<Record<string, Handler>>;
   readonly mutation?: Readonly<Record<string, Handler>>;
   readonly watches?: () => Readonly<Record<string, unknown>>;
+  /** Resultado local por función y argumentos: distingue páginas por cursor. */
+  readonly watchResult?: (name: string, args: Record<string, unknown>) => unknown;
 };
 
 function createFakeClient(options: FakeOptions = {}) {
@@ -67,14 +70,17 @@ function createFakeClient(options: FakeOptions = {}) {
       run("query", ref, args, options.query),
     mutation: (ref: FunctionReference<"mutation">, args: Record<string, unknown> = {}) =>
       run("mutation", ref, args, options.mutation),
-    ...(options.watches === undefined
+    ...(options.watches === undefined && options.watchResult === undefined
       ? {}
       : {
           watchQuery: (ref: FunctionReference<"query">, args: Record<string, unknown>) => {
             const name = getFunctionName(ref);
             calls.push({ name, kind: "query", args });
             return {
-              localQueryResult: () => options.watches?.()[name],
+              localQueryResult: () =>
+                options.watchResult !== undefined
+                  ? options.watchResult(name, args)
+                  : options.watches?.()[name],
               onUpdate: (callback: () => void) => {
                 updates.push(callback);
                 return () => {
@@ -423,10 +429,11 @@ describe("agenda y detalle contra la API (TI2-125)", () => {
   });
 
   test("la suscripción de agenda emite la primera página y luego los cambios", async () => {
-    let localPage: unknown = firstPage;
+    let localFirst: unknown = firstPage;
+    let localSecond: unknown = secondPage;
     const fake = createFakeClient({
       query: { [LIST_APPOINTMENTS]: () => secondPage },
-      watches: () => ({ [LIST_APPOINTMENTS]: localPage }),
+      watchResult: (_name, args) => (args.cursor === undefined ? localFirst : localSecond),
     });
     const results: string[] = [];
     const unsubscribe = fake.adapter().watchAppointments?.((result) => {
@@ -436,10 +443,49 @@ describe("agenda y detalle contra la API (TI2-125)", () => {
     await flush();
     expect(results).toEqual(["ok"]);
 
-    localPage = { items: [], hasMore: false, nextCursor: null, version: "v1" };
+    localFirst = { items: [], hasMore: false, nextCursor: null, version: "v1" };
+    localSecond = { items: [], hasMore: false, nextCursor: null, version: "v1" };
     fake.notify();
     await flush();
-    expect(results).toEqual(["ok", "empty"]);
+    expect(results.at(-1)).toBe("empty");
+
+    unsubscribe?.();
+  });
+
+  test("la suscripción cubre las páginas cargadas y reacciona a un cambio de la segunda", async () => {
+    let second = secondPage;
+    const fake = createFakeClient({
+      query: {
+        [LIST_APPOINTMENTS]: (args) => (args.cursor === undefined ? firstPage : secondPage),
+      },
+      watchResult: (_name, args) => (args.cursor === undefined ? firstPage : second),
+    });
+    const emissions: Array<ReadonlyArray<string>> = [];
+    const unsubscribe = fake.adapter().watchAppointments?.((result) => {
+      if (result.status === "ok") {
+        emissions.push(result.appointments.map((item) => `${item.id}:${item.status}`));
+      }
+    });
+
+    await flush();
+    expect(emissions.at(-1)).toEqual(["aten-1:scheduled", "aten-2:scheduled"]);
+    // La segunda página se suscribe con su propio cursor.
+    expect(fake.calls.some((call) => call.args.cursor === "aten-2")).toBe(true);
+
+    second = {
+      ...secondPage,
+      items: [
+        fullProjection({
+          id: "aten-1",
+          status: "completed",
+          startAt: Date.UTC(2026, 10, 1, 14, 0),
+        }),
+      ],
+    };
+    fake.notify();
+    await flush();
+
+    expect(emissions.at(-1)).toEqual(["aten-1:completed", "aten-2:scheduled"]);
 
     unsubscribe?.();
   });
@@ -460,6 +506,66 @@ describe("agenda y detalle contra la API (TI2-125)", () => {
   });
 });
 
+describe("catálogo de espacios contra la API (TI2-125)", () => {
+  const SPACE = {
+    id: "esp-backend-1",
+    campus: "Campus San Juan Pablo II",
+    building: "Edificio A",
+    floor: "Piso 1",
+    room: "Sala 101",
+    accessConditions: "Acceso con rampa.",
+    arrivalInstructions: "Entrar por la puerta principal.",
+    version: "v1",
+  } as const;
+
+  test("lee el catálogo paginado del Backend con el tope de 100 por página", async () => {
+    const fake = createFakeClient({
+      query: {
+        [LIST_SPACES]: (args) =>
+          args.cursor === undefined
+            ? { items: [SPACE], hasMore: true, nextCursor: "esp-backend-1", version: "v1" }
+            : {
+                items: [{ ...SPACE, id: "esp-backend-2", room: "Sala 102" }],
+                hasMore: false,
+                nextCursor: null,
+                version: "v1",
+              },
+      },
+    });
+
+    const result = await fake.adapter().listSpaces();
+
+    expect(result).toEqual({
+      status: "ok",
+      spaces: [SPACE, { ...SPACE, id: "esp-backend-2", room: "Sala 102" }],
+    });
+    expect(fake.calls[0].args).toEqual({ limit: 100, version: "v1" });
+    expect(fake.calls[1].args).toMatchObject({ cursor: "esp-backend-1", limit: 100 });
+  });
+
+  test("sin salas vigentes responde vacío, no error", async () => {
+    const fake = createFakeClient({
+      query: {
+        [LIST_SPACES]: () => ({ items: [], hasMore: false, nextCursor: null, version: "v1" }),
+      },
+    });
+
+    await expect(fake.adapter().listSpaces()).resolves.toEqual({ status: "empty" });
+  });
+
+  test("una denegación del catálogo se traduce a denied sin detalles", async () => {
+    const fake = createFakeClient({
+      query: {
+        [LIST_SPACES]: () => {
+          throw new ConvexError({ code: "unauthorized", message: "No autorizado" });
+        },
+      },
+    });
+
+    await expect(fake.adapter().listSpaces()).resolves.toEqual({ status: "denied" });
+  });
+});
+
 describe("operaciones aún simuladas (TI2-125)", () => {
   test("la búsqueda en línea sigue devolviendo la falta de cupo ficticia", async () => {
     const fake = createFakeClient();
@@ -471,12 +577,19 @@ describe("operaciones aún simuladas (TI2-125)", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
-  test("el catálogo de espacios sigue leyéndose de fixtures", async () => {
+  test("la escritura del catálogo sigue delegada a fixtures", async () => {
     const fake = createFakeClient();
 
-    const result = await fake.adapter().listSpaces();
+    const result = await fake.adapter().saveSpace({
+      campus: "Campus San Juan Pablo II",
+      building: "Edificio A",
+      floor: "Piso 9",
+      room: "Sala 901",
+      accessConditions: "",
+      arrivalInstructions: "",
+    });
 
-    expect(result.status).toBe("ok");
+    expect(result.status).not.toBe("error");
     expect(fake.calls).toHaveLength(0);
   });
 });

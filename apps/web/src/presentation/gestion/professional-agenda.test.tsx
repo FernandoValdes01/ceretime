@@ -226,6 +226,34 @@ describe("agenda del Profesional (TI2-115)", () => {
     expect(screen.queryByText(/esp-1/)).toBeNull();
   });
 
+  test("una atención con una sala del catálogo del Backend muestra su ubicación", async () => {
+    const port = puertoAgendaBase();
+    const espacioBackend = {
+      id: "jd7space001",
+      campus: "Campus San Juan Pablo II",
+      building: "Edificio B",
+      floor: "Piso 2",
+      room: "Sala 204",
+      accessConditions: "Ascensor disponible.",
+      arrivalInstructions: "Subir por el ascensor principal.",
+      version: "v1",
+    } as const;
+    port.listSpaces = () => Promise.resolve({ status: "ok", spaces: [espacioBackend] });
+    port.listAppointments = () =>
+      Promise.resolve({
+        status: "ok",
+        appointments: [{ ...ATENCION_BASE, spaceId: espacioBackend.id }],
+      });
+    comoProfesional(port);
+    renderAt("/profesional/agenda");
+
+    expect(
+      await screen.findByText("Campus San Juan Pablo II · Edificio B · Piso 2 · Sala 204"),
+    ).toBeDefined();
+    // La etiqueta reemplaza al identificador interno del Backend.
+    expect(screen.queryByText(new RegExp(espacioBackend.id))).toBeNull();
+  });
+
   test("atenciones de años distintos muestran fechas distinguibles", async () => {
     const port = puertoAgendaBase();
     port.listAppointments = () =>
