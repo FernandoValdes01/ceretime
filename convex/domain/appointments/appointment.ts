@@ -619,8 +619,12 @@ export interface AppointmentPage {
   readonly version: AppointmentContractVersion;
 }
 
-/** Vistas de lectura de la atención: completa o minimizada según el rol (TI2-100). */
-export const APPOINTMENT_VIEW_VALUES = ["full", "minimized"] as const;
+/**
+ * Vistas de lectura de la atención según el rol (TI2-100, TI2-127): completa
+ * para el Profesional, compartida para el Estudiante y minimizada para el
+ * Practicante.
+ */
+export const APPOINTMENT_VIEW_VALUES = ["full", "shared", "minimized"] as const;
 
 export type AppointmentView = (typeof APPOINTMENT_VIEW_VALUES)[number];
 
@@ -641,9 +645,18 @@ export interface MinimizedAppointment {
   readonly view: "minimized";
 }
 
+/**
+ * Atención compartida con el Estudiante: la fila sin `cancelReason`.
+ *
+ * El motivo queda en la vista profesional hasta que CERETI valide qué parte
+ * puede compartirse: es texto libre y puede traer datos sensibles.
+ */
+export type SharedAppointment = Omit<Appointment, "cancelReason"> & { readonly view: "shared" };
+
 /** Proyección de lectura de la atención según la vista autorizada. */
 export type AppointmentProjection =
   | (Appointment & { readonly view: "full" })
+  | SharedAppointment
   | MinimizedAppointment;
 
 /**
@@ -665,6 +678,10 @@ export function toAppointmentProjection(
       modality: appointment.modality,
       view: "minimized",
     };
+  }
+  if (view === "shared") {
+    const { cancelReason: _omitted, ...shared } = appointment;
+    return { ...shared, view: "shared" };
   }
   return { ...appointment, view: "full" };
 }

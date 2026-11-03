@@ -750,17 +750,24 @@ describe("Proyección y constancia de la atención (TI2-100)", () => {
   };
 
   test("las vistas son completa y minimizada", () => {
-    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "minimized"]);
+    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "shared", "minimized"]);
   });
 
   test("la vista completa conserva la entidad y marca la vista", () => {
     const projected = toAppointmentProjection(appointment, "full");
 
     expect(projected).toEqual({ ...appointment, view: "full" });
-    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{ readonly view: "full" | "minimized" }>();
+    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{
+      readonly view: "full" | "shared" | "minimized";
+    }>();
   });
 
   test("la vista minimizada omite vínculos, fechas originales y motivos", () => {
+    const shared = toAppointmentProjection(appointment, "shared");
+    const { cancelReason: _omitted, ...withoutReason } = appointment;
+    expect(shared).toEqual({ ...withoutReason, view: "shared" });
+    expect(shared).not.toHaveProperty("cancelReason");
+
     const projected = toAppointmentProjection(appointment, "minimized");
 
     expect(projected).toEqual({
