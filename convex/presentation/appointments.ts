@@ -219,6 +219,19 @@ const appointmentProjectionValidator = v.union(
   }),
   v.object({
     id: v.string(),
+    accompanimentId: v.string(),
+    professionalId: v.string(),
+    modality: modalityUnion,
+    spaceId: v.optional(v.string()),
+    startAt: v.number(),
+    endAt: v.number(),
+    originalStartAt: v.optional(v.number()),
+    status: appointmentStatusUnion,
+    version,
+    view: v.literal("shared"),
+  }),
+  v.object({
+    id: v.string(),
     status: appointmentStatusUnion,
     startAt: v.number(),
     endAt: v.number(),
@@ -261,7 +274,7 @@ export const listAppointments = query({
   },
 });
 
-/** Detalle de una atención con la vista de su acompañamiento. */
+/** Detalle de una atención con la vista de `appointment:read`. */
 export const getAppointment = query({
   args: { appointmentId: v.string(), version },
   returns: appointmentProjectionValidator,

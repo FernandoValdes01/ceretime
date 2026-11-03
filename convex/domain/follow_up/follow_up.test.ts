@@ -7,6 +7,7 @@ import {
   FOLLOW_UP_TEXT_MAX_LENGTH,
   isFollowUpResponsible,
   isFollowUpTaskStatus,
+  toFollowUpProjection,
   toSharedFollowUpProjection,
   validateFollowUpRecord,
   type FollowUpRecord,
@@ -293,5 +294,57 @@ describe("Registro de seguimiento (TI2-106)", () => {
       "task_status_unknown",
       "clinical_content_not_allowed",
     ]);
+  });
+});
+
+describe("toFollowUpProjection", () => {
+  const record = recordOf({
+    ...validInput,
+    suggestedNextAppointmentDate: "2026-11-20",
+    internalNote: "Nota interna ficticia",
+  });
+  const sharedKeys = [
+    "accompanimentId",
+    "agreements",
+    "appointmentId",
+    "appointmentStatus",
+    "nextSteps",
+    "suggestedNextAppointmentDate",
+    "tasks",
+    "version",
+    "view",
+  ];
+
+  test("la vista profesional es la única con la nota interna", () => {
+    const projected = toFollowUpProjection(record, "completed", "professional");
+    expect(Object.keys(projected).sort()).toEqual([...sharedKeys, "internalNote"].sort());
+    expect(projected).toMatchObject({ internalNote: "Nota interna ficticia" });
+  });
+
+  test("la vista compartida omite la nota", () => {
+    const projected = toFollowUpProjection(record, "completed", "shared");
+    expect(Object.keys(projected).sort()).toEqual(sharedKeys);
+    expect(JSON.stringify(projected)).not.toContain("Nota interna ficticia");
+  });
+
+  test("la vista minimizada entrega solo estado y fecha, sin textos libres ni vínculo", () => {
+    expect(toFollowUpProjection(record, "no_show", "minimized")).toEqual({
+      appointmentId: record.appointmentId,
+      appointmentStatus: "no_show",
+      suggestedNextAppointmentDate: "2026-11-20",
+      version: FOLLOW_UP_CONTRACT_VERSION,
+      view: "minimized",
+    });
+  });
+
+  test("sin fecha ni nota, las claves opcionales no aparecen", () => {
+    const bare = recordOf(validInput);
+    const { suggestedNextAppointmentDate: _date, internalNote: _note, ...plain } = bare;
+    expect(toFollowUpProjection(plain, "completed", "minimized")).not.toHaveProperty(
+      "suggestedNextAppointmentDate",
+    );
+    expect(toFollowUpProjection(plain, "completed", "professional")).not.toHaveProperty(
+      "internalNote",
+    );
   });
 });
