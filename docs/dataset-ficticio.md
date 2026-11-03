@@ -38,14 +38,15 @@ El historial de cambios de estado queda con 5 registros: tres tomas, el pedido d
 ## Acompañamiento y Agenda
 
 - **Acompañamiento:** Uno solo, abierto por la aceptación de la solicitud del Estudiante Cuatro, con el objetivo "Coordinar los apoyos de acceso para las clases prácticas del semestre." Tiene dos asignaciones vigentes: el Profesional Ficticio y el Practicante Ficticio.
-- **Espacios:** Sala C-107 (Campus Norte, Edificio C, Piso 2) habilitada con acceso universal.
-- **Disponibilidad y Excepciones:** Bloques recurrentes online y presenciales (sala C-107) de lunes (09:00 a 11:00 UTC) y excepción puntual de cancelación de bloque para escenarios compatibles e incompatibles con fechas deterministas.
-- **Atenciones:** Cuatro atenciones vinculadas al acompañamiento con fechas deterministas que demuestran el ciclo de vida alineado con los bloques:
-  1. `scheduled` (Programada)
-  2. `completed` (Realizada)
-  3. `cancelled_by_student` (Cancelada por el estudiante con motivo)
-  4. `no_show` (Inasistencia registrada)
+- **Espacios:** Sala C-107 (Campus Norte, Edificio C, Piso 2) con la condición "Sala con acceso sin escaleras para las clases prácticas.", la misma línea de la necesidad del acompañamiento, para que los cupos presenciales resulten compatibles en la búsqueda real.
+- **Disponibilidad:** Bloques recurrentes del Profesional Ficticio los lunes, en la zona de la agenda (`America/Santiago`): en línea de 09:00 a 10:00 y presencial en la sala C-107 de 10:00 a 11:00. Los instantes se generan desde esa zona civil, no desde UTC.
+- **Excepciones:** Una cancelación del bloque presencial del lunes 2026-10-12, que deja ese día sin cupo compatible, y una ventana agregada el sábado 2026-10-17 de 10:00 a 11:00 en la sala C-107, que demuestra el escenario compatible fuera de la recurrencia.
+- **Atenciones:** Cuatro atenciones presenciales vinculadas al acompañamiento, todas en el cupo de las 10:00 civiles de un lunes, con fechas deterministas:
+  1. `no_show` (Inasistencia registrada) el 2026-09-28.
+  2. `completed` (Realizada) el 2026-10-05.
+  3. `cancelled_by_student` (Cancelada por el estudiante con motivo) el 2026-10-12, el mismo día del bloque cancelado por la excepción.
+  4. `scheduled` (Programada) el 2026-10-19.
 
 ## Comprobación
 
-`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial, los espacios, la disponibilidad, las excepciones, las atenciones, el aislamiento por rol y el acompañamiento de este inventario, y que una segunda carga no escribe nada. Corre con `bun run test:convex`.
+`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial, los espacios, la disponibilidad, las excepciones, las atenciones, el aislamiento por rol y el acompañamiento de este inventario, y que una segunda carga no escribe nada. Sobre la agenda, verifica que las atenciones se consultan con la vista de cada rol (compartida para el Estudiante, completa para el Profesional y minimizada para el Practicante), que la revocación del Practicante corta el acceso, que las respuestas no exponen motivos ni notas, y que el bloque cancelado y la ventana agregada se reflejan en la búsqueda de cupos. Corre con `bun run test:convex`.

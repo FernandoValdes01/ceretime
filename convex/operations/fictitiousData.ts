@@ -8,6 +8,7 @@ import {
   requestAdditionalInformation,
   takeRequest,
 } from "../application/requests/commands";
+import { AGENDA_TIME_ZONE, civilRangeToInstantRange } from "../domain/availability/availability";
 import { findProfileByTokenIdentifier } from "../infrastructure/accompaniments/repository";
 
 /**
@@ -69,6 +70,16 @@ function identityOf(key: AccountKey): UserIdentity {
 }
 
 /**
+ * Instante de una fecha y minuto civiles en la zona de la agenda que fija el
+ * servidor. Las semillas no usan UTC directo: así los bloques, las excepciones
+ * y las atenciones caen en el mismo horario civil que muestra la API.
+ */
+function agendaInstant(day: string, minuteOfDay: number): number {
+  const { startAt } = civilRangeToInstantRange({ from: day, to: day, timeZone: AGENDA_TIME_ZONE });
+  return startAt + minuteOfDay * 60_000;
+}
+
+/**
  * Carga el dataset una sola vez por deployment: si ya existe, no escribe
  * nada. Exige `TEST_SEEDS_ENABLED === "true"`, igual que `createTestUser`,
  * así que en producción se rechaza aunque alguien la ejecute a mano. No crea
@@ -102,45 +113,62 @@ export const load = internalMutation({
     const professionalId = await createProfile("professional");
     const internId = await createProfile("intern");
 
-    // Espacios ficticios de agenda
+    // Espacios ficticios de agenda. Las condiciones repiten, línea por línea,
+    // la necesidad de acceso de la solicitud aceptada: así los cupos
+    // presenciales son compatibles en la búsqueda real (TI2-82/TI2-97).
     const spaceId = await ctx.db.insert("spaces", {
       campus: "Norte",
       building: "C",
       floor: "2",
       room: "C-107",
-      accessConditions: "Acceso universal habilitado sin escaleras.",
+      accessConditions: "Sala con acceso sin escaleras para las clases prácticas.",
       accessInstructions: "Entrada principal por el pasillo central del segundo piso.",
       isActive: true,
     });
 
-    // Bloques de disponibilidad del profesional ficticio (09:00 a 11:00 UTC alineados con los slots de atención)
+    // Bloques recurrentes del profesional ficticio, en minutos civiles de la
+    // zona de la agenda: lunes de 09:00 a 10:00 en línea y de 10:00 a 11:00
+    // presencial en la sala C-107.
     await ctx.db.insert("availabilityBlocks", {
       professionalId,
       weekday: 1, // Lunes
-      startMinute: 540, // 09:00 UTC
-      endMinute: 600, // 10:00 UTC
+      startMinute: 540, // 09:00 civil
+      endMinute: 600, // 10:00 civil
       slotMinutes: 60,
       modality: "online",
       isActive: true,
     });
-    await ctx.db.insert("availabilityBlocks", {
+    const inPersonBlockId = await ctx.db.insert("availabilityBlocks", {
       professionalId,
       weekday: 1,
-      startMinute: 600, // 10:00 UTC
-      endMinute: 660, // 11:00 UTC
+      startMinute: 600, // 10:00 civil
+      endMinute: 660, // 11:00 civil
       slotMinutes: 60,
       modality: "inPerson",
       spaceId,
       isActive: true,
     });
 
-    // Excepción de disponibilidad de prueba (fecha civil 2026-10-12)
-    const exceptionDate = Date.UTC(2026, 9, 12);
+    // Excepciones deterministas: una cancela el bloque presencial del lunes
+    // 2026-10-12 (escenario incompatible) y otra agrega el sábado 2026-10-17
+    // una ventana presencial de 10:00 a 11:00 (escenario compatible extra).
     await ctx.db.insert("availabilityExceptions", {
       professionalId,
-      date: exceptionDate,
+      date: Date.UTC(2026, 9, 12),
       kind: "cancelled",
-      reason: "Excepción programada de prueba para escenario incompatible.",
+      blockId: inPersonBlockId,
+      reason: "Bloque presencial cancelado para la demostración de excepciones.",
+    });
+    await ctx.db.insert("availabilityExceptions", {
+      professionalId,
+      date: Date.UTC(2026, 9, 17),
+      kind: "added",
+      startMinute: 600,
+      endMinute: 660,
+      slotMinutes: 60,
+      modality: "inPerson",
+      spaceId,
+      reason: "Ventana adicional para la demostración de excepciones.",
     });
 
     // Las solicitudes pasan por los casos de uso reales, con las identidades
@@ -178,55 +206,40 @@ export const load = internalMutation({
       assignedRole: "intern",
     });
 
-    // Atenciones ficticias con estados variados (programada, completada, cancelada, inasistencia)
-    const slotStart = Date.UTC(2026, 9, 12, 9);
-    const slotEnd = Date.UTC(2026, 9, 12, 10);
-    const now = Date.now();
-
-    await ctx.db.insert("appointments", {
+    // Atenciones deterministas, una por estado, en el cupo presencial de las
+    // 10:00 civiles de cada lunes. La del 2026-10-12 coincide con el bloque
+    // cancelado por la excepción; las demás, con el bloque recurrente.
+    const seededAt = agendaInstant("2026-09-21", 8 * 60);
+    const attendance = (day: string) => ({
       accompanimentId: accompaniment._id,
       studentId: studentAcceptedId,
       professionalId,
-      modality: "online",
-      status: "scheduled",
-      startsAt: slotStart,
-      endsAt: slotEnd,
-      createdAt: now,
-    });
-
-    await ctx.db.insert("appointments", {
-      accompanimentId: accompaniment._id,
-      studentId: studentAcceptedId,
-      professionalId,
-      modality: "inPerson",
       spaceId,
-      status: "completed",
-      startsAt: slotStart + 3_600_000,
-      endsAt: slotEnd + 3_600_000,
-      createdAt: now,
+      modality: "inPerson" as const,
+      startsAt: agendaInstant(day, 600),
+      endsAt: agendaInstant(day, 660),
+      createdAt: seededAt,
     });
 
     await ctx.db.insert("appointments", {
-      accompanimentId: accompaniment._id,
-      studentId: studentAcceptedId,
-      professionalId,
-      modality: "online",
+      ...attendance("2026-09-28"),
+      status: "no_show",
+    });
+
+    await ctx.db.insert("appointments", {
+      ...attendance("2026-10-05"),
+      status: "completed",
+    });
+
+    await ctx.db.insert("appointments", {
+      ...attendance("2026-10-12"),
       status: "cancelled_by_student",
       cancelReason: "Conflicto de horario imprevisto con otra actividad académica.",
-      startsAt: slotStart + 2 * 3_600_000,
-      endsAt: slotEnd + 2 * 3_600_000,
-      createdAt: now,
     });
 
     await ctx.db.insert("appointments", {
-      accompanimentId: accompaniment._id,
-      studentId: studentAcceptedId,
-      professionalId,
-      modality: "online",
-      status: "no_show",
-      startsAt: slotStart + 3 * 3_600_000,
-      endsAt: slotEnd + 3 * 3_600_000,
-      createdAt: now,
+      ...attendance("2026-10-19"),
+      status: "scheduled",
     });
 
     return { loaded: true };
