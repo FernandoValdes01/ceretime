@@ -217,8 +217,10 @@ export {
   FOLLOW_UP_RESPONSIBLE_VALUES,
   FOLLOW_UP_TASK_STATUS_VALUES,
   FOLLOW_UP_TEXT_MAX_LENGTH,
+  FOLLOW_UP_VIEW_VALUES,
   isFollowUpResponsible,
   isFollowUpTaskStatus,
+  toFollowUpProjection,
   toSharedFollowUpProjection,
   validateFollowUpRecord,
 } from "./follow_up/follow_up";
@@ -226,6 +228,7 @@ export type {
   FollowUpAgreement,
   FollowUpAgreementInput,
   FollowUpContractVersion,
+  FollowUpProjection,
   FollowUpRecord,
   FollowUpRecordInput,
   FollowUpRejectionCause,
@@ -234,5 +237,7 @@ export type {
   FollowUpTaskInput,
   FollowUpTaskStatus,
   FollowUpValidationResult,
+  FollowUpView,
+  MinimizedFollowUpProjection,
   SharedFollowUpProjection,
 } from "./follow_up/follow_up";
