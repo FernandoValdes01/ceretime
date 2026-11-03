@@ -168,14 +168,14 @@ function okCursor(result: Awaited<ReturnType<typeof listAppointments>>): string 
 }
 
 describe("agenda propia", () => {
-  test("el Estudiante lee sus atenciones en vista completa", async () => {
+  test("el Estudiante lee sus atenciones en vista compartida", async () => {
     const { deps, log } = worldDeps({ rows: [appointmentRow("a-1"), appointmentRow("a-2")] });
     const result = await listAppointments(deps, listInput());
     expect(okIds(result)).toEqual(["a-1", "a-2"]);
     expect(log.rangeReads).toEqual(["student"]);
-    expect(result.status === "ok" && result.data.items.every((item) => item.view === "full")).toBe(
-      true,
-    );
+    expect(
+      result.status === "ok" && result.data.items.every((item) => item.view === "shared"),
+    ).toBe(true);
   });
 
   test("el Profesional lee las atenciones a su cargo", async () => {
@@ -277,20 +277,20 @@ describe("atenciones de un acompañamiento", () => {
   ];
   const scoped = listInput({ accompanimentId: accompaniment._id });
 
-  test("Estudiante dueño y Profesional asignado reciben la vista completa", async () => {
-    for (const caller of [student, professional]) {
+  test("el Profesional asignado recibe la vista completa y el Estudiante, la compartida", async () => {
+    const { cancelReason: _omitted, ...withoutReason } = rows[0];
+    const cases = [
+      [professional, { ...rows[0], view: "full" }],
+      [student, { ...withoutReason, view: "shared" }],
+    ] as const;
+    for (const [caller, item] of cases) {
       const { deps } = worldDeps({ rows });
       const result = await listAppointments(deps, {
         ...scoped,
         tokenIdentifier: caller.tokenIdentifier,
       });
       expect(result).toEqual(
-        okResult({
-          items: [{ ...rows[0], view: "full" }],
-          hasMore: false,
-          nextCursor: null,
-          version: "v1",
-        }),
+        okResult({ items: [item], hasMore: false, nextCursor: null, version: "v1" }),
       );
     }
   });
@@ -518,12 +518,16 @@ describe("detalle de una atención", () => {
   const row = appointmentRow("a-1", { spaceId: "espacio-1", modality: "inPerson" });
   const detail = { appointmentId: "a-1", version: "v1" as const };
 
-  test("Estudiante dueño y Profesional asignado reciben la vista completa", async () => {
-    for (const caller of [student, professional]) {
+  test("el Profesional asignado recibe la vista completa y el Estudiante, la compartida", async () => {
+    const views = [
+      [professional, "full"],
+      [student, "shared"],
+    ] as const;
+    for (const [caller, view] of views) {
       const { deps } = worldDeps({ rows: [row] });
       expect(
         await getAppointment(deps, { ...detail, tokenIdentifier: caller.tokenIdentifier }),
-      ).toEqual(okResult({ ...row, view: "full" }));
+      ).toEqual(okResult({ ...row, view }));
     }
   });
 

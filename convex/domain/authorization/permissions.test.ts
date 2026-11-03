@@ -10,7 +10,10 @@ import {
   canReadSpaceCatalog,
   canRecordAppointmentAttendance,
   canRescheduleAppointment,
+  canWriteFollowUp,
   getAccompanimentView,
+  getAppointmentView,
+  getFollowUpView,
   isProfessionalBookable,
   isProfileActive,
   PERMISSION_MATRIX,
@@ -140,6 +143,75 @@ describe("getAccompanimentView", () => {
         }),
       ),
     ).toBe(null);
+  });
+});
+
+describe("vistas de atención y seguimiento", () => {
+  const professional = activeContext({
+    role: "professional",
+    hasActiveProfessionalAssignment: true,
+  });
+  const intern = activeContext({ role: "intern", hasActiveInternAssignment: true });
+  const owner = activeContext({ role: "student", isOwner: true });
+
+  test("cada rol recibe su vista de atención y de seguimiento", () => {
+    expect(getAppointmentView(owner)).toBe("shared");
+    expect(getAppointmentView(professional)).toBe("full");
+    expect(getAppointmentView(intern)).toBe("minimized");
+    expect(getFollowUpView(owner)).toBe("shared");
+    expect(getFollowUpView(professional)).toBe("professional");
+    expect(getFollowUpView(intern)).toBe("minimized");
+  });
+
+  test("sin relación vigente o con Administrador no hay vista", () => {
+    const denied = [
+      activeContext({ role: "student", isOwner: false }),
+      activeContext({ role: "professional", hasActiveProfessionalAssignment: false }),
+      activeContext({ role: "intern", hasActiveInternAssignment: false }),
+      activeContext({ role: "admin", isOwner: true, hasActiveProfessionalAssignment: true }),
+      activeContext({ role: "intern", hasActiveProfessionalAssignment: true }),
+    ];
+    for (const context of denied) {
+      expect(getAppointmentView(context)).toBe(null);
+      expect(getFollowUpView(context)).toBe(null);
+    }
+  });
+
+  test("una cuenta sin habilitar o sin vigencia pierde la vista", () => {
+    for (const account of INACTIVE_ACCOUNTS) {
+      expect(getFollowUpView({ ...professional, ...account })).toBe(null);
+      expect(getAppointmentView({ ...owner, ...account })).toBe(null);
+    }
+  });
+});
+
+describe("canWriteFollowUp", () => {
+  const writer = agendaContext({ role: "professional", hasActiveProfessionalAssignment: true });
+
+  test("solo el Profesional asignado con el acompañamiento activo", () => {
+    expect(canWriteFollowUp(writer)).toBe(true);
+    expect(canWriteFollowUp({ ...writer, accompanimentStatus: "closed" })).toBe(false);
+    expect(canWriteFollowUp({ ...writer, accompanimentStatus: "paused" })).toBe(false);
+    expect(canWriteFollowUp({ ...writer, hasActiveProfessionalAssignment: false })).toBe(false);
+  });
+
+  test("Estudiante, Practicante y Administrador no escriben aunque tengan relación", () => {
+    for (const role of ["student", "intern", "admin"] as const) {
+      expect(
+        canWriteFollowUp({
+          ...writer,
+          role,
+          isOwner: true,
+          hasActiveInternAssignment: true,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  test("una cuenta sin habilitar o sin vigencia no escribe", () => {
+    for (const account of INACTIVE_ACCOUNTS) {
+      expect(canWriteFollowUp({ ...writer, ...account })).toBe(false);
+    }
   });
 });
 

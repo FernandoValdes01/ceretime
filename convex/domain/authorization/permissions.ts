@@ -1,6 +1,6 @@
 /**
  * Matriz de permisos por rol y caso de uso: acompañamientos y notas internas
- * (base S2) y agenda (TI2-86).
+ * (base S2), agenda (TI2-86) y seguimiento (TI2-127).
  *
  * Dominio puro: no importa Convex, React ni variables de entorno, para poder
  * probarse sin levantar el backend (RNF-19).
@@ -16,6 +16,8 @@
  */
 
 import type { AccompanimentStatus, AccompanimentView } from "../accompaniments/accompaniment";
+import type { AppointmentView } from "../appointments/appointment";
+import type { FollowUpView } from "../follow_up/follow_up";
 import type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
 
 export type { AccompanimentView } from "../accompaniments/accompaniment";
@@ -32,6 +34,8 @@ export const AUTHORIZATION_ACTIONS = [
   "appointment:cancel",
   "appointment:reschedule",
   "appointment:recordAttendance",
+  "followUp:read",
+  "followUp:write",
   "space:read",
 ] as const;
 
@@ -106,9 +110,9 @@ export function isProfileActive(input: {
  *   vista minimizada (sin necesidades de acceso ni notas internas).
  * - Administrador: siempre denegado, sin acceso general a acompañamientos.
  *
- * Las atenciones del acompañamiento (`appointment:read`) usan esta misma
- * vista, sin regla propia. No mira el estado: el historial de un
- * acompañamiento pausado o cerrado se sigue leyendo.
+ * Las atenciones y el seguimiento derivan su vista de esta decisión, sin
+ * regla de acceso propia. No mira el estado: el historial de un acompañamiento
+ * pausado o cerrado se sigue leyendo.
  */
 export function getAccompanimentView(context: AuthorizationContext): AccompanimentView | null {
   if (!isProfileActive(context)) return null;
@@ -122,6 +126,38 @@ export function getAccompanimentView(context: AuthorizationContext): Accompanime
     case "admin":
       return null;
   }
+}
+
+/**
+ * Vista de las atenciones del acompañamiento (`appointment:read`): la misma
+ * decisión de acceso, con la vista compartida para el Estudiante, que no
+ * recibe el motivo de cancelación.
+ */
+export function getAppointmentView(context: AuthorizationContext): AppointmentView | null {
+  const view = getAccompanimentView(context);
+  if (view === null) return null;
+  return context.role === "student" ? "shared" : view;
+}
+
+/**
+ * Vista del seguimiento: la misma decisión de acceso del acompañamiento. La
+ * vista `professional` trae la nota, así que exige también `canReadInternalNote`.
+ */
+export function getFollowUpView(context: AuthorizationContext): FollowUpView | null {
+  const view = getAccompanimentView(context);
+  if (view === null) return null;
+  if (view === "minimized") return "minimized";
+  return canReadInternalNote(context) ? "professional" : "shared";
+}
+
+/**
+ * Registro de seguimiento: solo el Profesional con asignación activa y con el
+ * acompañamiento activo, porque el cierre deja el historial en solo lectura.
+ * El Estudiante y el Practicante leen su vista, pero no escriben.
+ */
+export function canWriteFollowUp(context: AgendaAuthorizationContext): boolean {
+  if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
+  return context.role === "professional" && context.hasActiveProfessionalAssignment;
 }
 
 /**
@@ -307,7 +343,7 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   },
   {
     action: "appointment:read",
-    student: "full solo propios",
+    student: "shared solo propios, sin motivo de cancelación",
     professional: "full solo asignados activos",
     intern: "minimized solo asignados activos",
     admin: "denegado sin acceso general",
@@ -338,6 +374,20 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     student: "denegado aunque sea dueño de la atención",
     professional: "permitido solo la atención propia asignada, con acompañamiento activo",
     intern: "denegado",
+    admin: "denegado",
+  },
+  {
+    action: "followUp:read",
+    student: "shared solo propios, sin nota interna",
+    professional: "professional solo asignados activos, con nota interna",
+    intern: "minimized solo asignados activos, sin textos libres",
+    admin: "denegado sin acceso general",
+  },
+  {
+    action: "followUp:write",
+    student: "denegado aunque sea dueño",
+    professional: "permitido solo asignados activos con acompañamiento activo",
+    intern: "denegado aunque tenga asignación",
     admin: "denegado",
   },
   {

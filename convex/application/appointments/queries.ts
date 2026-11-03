@@ -29,9 +29,10 @@ import {
  * Consulta de la agenda y del detalle de las atenciones (TI2-112).
  *
  * Capa de Aplicación: lee por puertos, no toca `ctx.db` y se prueba con dobles.
- * La vista de cada atención sale siempre de `authorizeAppointmentRead`, la
- * misma regla del acompañamiento (TI2-86), sin una política propia de agenda.
- * `toAppointmentProjection` recorta la fila antes de entregarla.
+ * La vista de cada atención sale siempre de `authorizeAppointmentRead`, que
+ * deriva del acceso al acompañamiento (TI2-86, TI2-127), sin una política
+ * propia de agenda. `toAppointmentProjection` recorta la fila antes de
+ * entregarla.
  *
  * Con `accompanimentId` se leen las atenciones de ese acompañamiento. Sin él se
  * lee la agenda propia, que solo tienen el Estudiante y el Profesional: el
@@ -233,7 +234,7 @@ export async function listAppointments(
 }
 
 /**
- * Detalle de una atención con la vista de su acompañamiento. Una fila
+ * Detalle de una atención con la vista de `appointment:read`. Una fila
  * inexistente, un identificador de otra tabla o sin forma y una atención sin
  * vista responden el mismo `unauthorized`.
  */
