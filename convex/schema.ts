@@ -260,8 +260,12 @@ export default defineSchema({
   // el estudiante; la distinción la aplica la capa de aplicación, no el
   // esquema). La cola de inasistencias por estado (`no_show`) para la
   // justificación con plazo de cinco días hábiles queda para la extensión
-  // futura de justificación, no para este esquema. Solo persistencia: la
-  // ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
+  // futura de justificación, no para este esquema. `calendarEventId` y
+  // `calendarEventAddedAt` guardan la referencia del evento creado por
+  // TI2-122; el identificador es determinista y ausente hasta la primera
+  // creación exitosa, así un reintento no duplica el evento. Solo
+  // persistencia: la ocupación atómica de cupo es TI2-84 y los repositorios
+  // son TI2-95.
   appointments: defineTable({
     accompanimentId: v.id("accompaniments"),
     studentId: v.id("users"),
@@ -273,6 +277,8 @@ export default defineSchema({
     endsAt: v.number(),
     originalStartsAt: v.optional(v.number()),
     cancelReason: v.optional(v.string()),
+    calendarEventId: v.optional(v.string()),
+    calendarEventAddedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     // Atenciones propias del estudiante.
@@ -291,5 +297,8 @@ export default defineSchema({
     // cruces por sala.
     .index("by_spaceId_and_startsAt", ["spaceId", "startsAt"])
     // Atenciones del acompañamiento.
-    .index("by_accompanimentId", ["accompanimentId"]),
+    .index("by_accompanimentId", ["accompanimentId"])
+    // Atenciones del acompañamiento ordenadas por inicio: listado acotado del
+    // detalle del Estudiante para las acciones de calendario (TI2-122).
+    .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"]),
 });

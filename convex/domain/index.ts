@@ -187,6 +187,29 @@ export type {
   MinimizedAppointment,
 } from "./appointments/appointment";
 
+// Evento de calendario por atención y alternativa .ics (TI2-122).
+export {
+  buildCalendarEvent,
+  CALENDAR_EVENT_CONTRACT_VERSION,
+  CALENDAR_EVENT_FALLBACK_REASON_VALUES,
+  CALENDAR_EVENT_OUTCOME_VALUES,
+  CALENDAR_EVENT_TITLE,
+  CALENDAR_EVENTS_SCOPE,
+  CALENDAR_FILE_NAME,
+  deriveCalendarEventKey,
+  escapeIcsText,
+  foldIcsLine,
+  serializeCalendarEventIcs,
+  toCalendarFile,
+} from "./calendar/calendar_event";
+export type {
+  CalendarEventContractVersion,
+  CalendarEventDraft,
+  CalendarEventFallbackReason,
+  CalendarEventOutcome,
+  CalendarFile,
+} from "./calendar/calendar_event";
+
 // Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105).
 export {
   NOTIFICATION_CONTRACT_VERSION,

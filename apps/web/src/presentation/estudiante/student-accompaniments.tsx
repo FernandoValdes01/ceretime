@@ -5,8 +5,10 @@ import { ConvexError } from "convex/values";
 // responde toda denegación con este mensaje genérico, sin motivo ni
 // existencia del recurso. Se importa del barrel, no se duplica el literal.
 import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
+import { toCalendarCallbackStatus } from "../../application/calendar/calendar-link.ts";
 import { accompanimentStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
+import { StudentAppointmentsSection } from "./student-appointments.tsx";
 import { useOwnAccompanimentDetail } from "./student-accompaniments-data.ts";
 import type { OwnAccompanimentDetail } from "./student-accompaniments-data.ts";
 
@@ -25,7 +27,13 @@ import type { OwnAccompanimentDetail } from "./student-accompaniments-data.ts";
  * Estudiante. El historial básico se limita a la información disponible del
  * acompañamiento; el aviso final registra ese límite sin fabricar eventos.
  */
-export function StudentAccompanimentDetailPage({ accompanimentId }: { accompanimentId: string }) {
+export function StudentAccompanimentDetailPage({
+  accompanimentId,
+  calendarStatus,
+}: {
+  accompanimentId: string;
+  calendarStatus?: unknown;
+}) {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -51,7 +59,10 @@ export function StudentAccompanimentDetailPage({ accompanimentId }: { accompanim
         </Link>
       </p>
       <StudentPanelErrorBoundary subject="el detalle del acompañamiento" level="section">
-        <OwnAccompanimentDetailBody accompanimentId={accompanimentId} />
+        <OwnAccompanimentDetailBody
+          accompanimentId={accompanimentId}
+          calendarStatus={toCalendarCallbackStatus(calendarStatus)}
+        />
       </StudentPanelErrorBoundary>
     </section>
   );
@@ -70,7 +81,13 @@ function isAuthorizationDenial(error: unknown): boolean {
   return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
 }
 
-function OwnAccompanimentDetailBody({ accompanimentId }: { accompanimentId: string }) {
+function OwnAccompanimentDetailBody({
+  accompanimentId,
+  calendarStatus,
+}: {
+  accompanimentId: string;
+  calendarStatus?: "connected" | "error";
+}) {
   let accompaniment: OwnAccompanimentDetail | undefined;
   try {
     // El hook se invoca primero y en todos los renders: el orden es estable
@@ -127,10 +144,11 @@ function OwnAccompanimentDetailBody({ accompanimentId }: { accompanimentId: stri
           </div>
         ) : null}
       </dl>
-      <p className="text-base text-on-surface-variant">
-        Historial básico: aquí ves el estado y el objetivo de tus acompañamientos. El detalle de
-        atenciones y seguimiento aún no está disponible en el portal.
-      </p>
+      <StudentAppointmentsSection
+        accompanimentId={accompanimentId}
+        calendarStatus={calendarStatus}
+        readOnly={closed}
+      />
     </>
   );
 }

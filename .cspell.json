@@ -201,6 +201,26 @@
     "tipada",
     "tipado",
     "tipados",
-    "renderiza"
+    "renderiza",
+    "agendamiento",
+    "reagendamientos",
+    "milisegundos",
+    "listarlo",
+    "persistable",
+    "persistibles",
+    "Persistable",
+    "PERSISTABLE",
+    "atencion",
+    "Atencion",
+    "ATENCION",
+    "prac",
+    "DTSTART",
+    "DTEND",
+    "DTSTAMP",
+    "VTIMEZONE",
+    "VCALENDAR",
+    "VEVENT",
+    "PRODID",
+    "CALSCALE"
   ]
 }

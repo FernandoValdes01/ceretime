@@ -130,6 +130,14 @@ const studentRequestDetailRoute = createRoute({
 const studentAccompanimentDetailRoute = createRoute({
   getParentRoute: () => studentLayoutRoute,
   path: "acompanamientos/$accompanimentId",
+  validateSearch: (search: Record<string, unknown>): { calendar?: "connected" | "error" } => ({
+    calendar:
+      search.calendar === "connected"
+        ? "connected"
+        : search.calendar === "error"
+          ? "error"
+          : undefined,
+  }),
   component: StudentAccompanimentDetailRouteComponent,
 });
 

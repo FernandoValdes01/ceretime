@@ -32,6 +32,7 @@ export const AUTHORIZATION_ACTIONS = [
   "appointment:cancel",
   "appointment:reschedule",
   "appointment:recordAttendance",
+  "appointment:calendar",
   "space:read",
 ] as const;
 
@@ -238,6 +239,20 @@ export function canRecordAppointmentAttendance(
 }
 
 /**
+ * Evento de calendario de una atención (TI2-122): solo el Estudiante dueño de
+ * la atención, con perfil vigente y acompañamiento activo. El Profesional
+ * asignado no agrega la atención de otra persona a su calendario, y Practicante
+ * y Administrador tampoco. El consentimiento de Google Calendar es personal y
+ * se pide por separado del inicio institucional.
+ */
+export function canAddAppointmentToCalendar(
+  context: AppointmentChangeAuthorizationContext,
+): boolean {
+  if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
+  return context.role === "student" && context.isAppointmentStudent;
+}
+
+/**
  * Profesional elegido para un cupo: rol profesional, cuenta habilitada y
  * vigente y asignación activa sobre el acompañamiento. Que el Estudiante
  * pueda reservar no basta; el recurso profesional se revalida en la misma
@@ -337,6 +352,13 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     action: "appointment:recordAttendance",
     student: "denegado aunque sea dueño de la atención",
     professional: "permitido solo la atención propia asignada, con acompañamiento activo",
+    intern: "denegado",
+    admin: "denegado",
+  },
+  {
+    action: "appointment:calendar",
+    student: "permitido solo sus propias atenciones con acompañamiento activo",
+    professional: "denegado",
     intern: "denegado",
     admin: "denegado",
   },

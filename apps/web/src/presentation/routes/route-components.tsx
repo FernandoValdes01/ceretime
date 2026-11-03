@@ -89,7 +89,12 @@ export function StudentRequestDetailRouteComponent() {
 
 export function StudentAccompanimentDetailRouteComponent() {
   const { accompanimentId } = studentAccompanimentDetailApi.useParams();
-  return <StudentAccompanimentDetailPage accompanimentId={accompanimentId} />;
+  // Marcador de retorno del consentimiento de Calendar (TI2-122). La ruta ya
+  // lo valida; acá solo se pasa a la página para mostrar el aviso genérico.
+  const { calendar } = studentAccompanimentDetailApi.useSearch();
+  return (
+    <StudentAccompanimentDetailPage accompanimentId={accompanimentId} calendarStatus={calendar} />
+  );
 }
 
 export function ProfessionalLayoutRouteComponent() {

@@ -1,11 +1,21 @@
 import { v } from "convex/values";
+import { internal } from "../_generated/api";
+import { action, mutation, query } from "../_generated/server";
+import {
+  addAppointmentToGoogleCalendar as addAppointmentToGoogleCalendarUseCase,
+  getAppointmentCalendarFile as getAppointmentCalendarFileUseCase,
+  getCalendarConnection as getCalendarConnectionUseCase,
+  loadCalendarAppointment,
+  type AppointmentCalendarResult,
+  type CalendarAppointmentContext,
+} from "../application/calendar/calendar";
 import { bookAppointment as bookAppointmentUseCase } from "../application/appointments/booking";
 import {
   cancelAppointment as cancelAppointmentUseCase,
   recordAppointmentAttendance as recordAppointmentAttendanceUseCase,
   rescheduleAppointment as rescheduleAppointmentUseCase,
 } from "../application/appointments/changes";
-import { mutation } from "../_generated/server";
+import { listAccompanimentAppointmentsUseCase } from "../application/appointments/queries";
 import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
 import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
 import {
@@ -13,13 +23,23 @@ import {
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
 import {
+  appointmentCalendarReader,
   appointmentChangeReader,
+  appointmentListReader,
   appointmentOccupier,
   appointmentTransitionRepository,
 } from "../infrastructure/appointments/repository";
 import { availabilityReader } from "../infrastructure/availability/repository";
+import {
+  googleCalendarConnectionReader,
+  googleCalendarGateway,
+} from "../infrastructure/calendar/google_calendar";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
-import { appointmentAttendanceOutcomeUnion, modalityUnion } from "../infrastructure/validators";
+import {
+  appointmentAttendanceOutcomeUnion,
+  appointmentStatusUnion,
+  modalityUnion,
+} from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
 
 /**
@@ -179,6 +199,171 @@ export const recordAppointmentAttendance = mutation({
           tokenIdentifier: identity?.tokenIdentifier ?? null,
           appointmentId,
           outcome,
+        },
+      ),
+    );
+  },
+});
+
+// ── TI2-122: calendario por atención y alternativa `.ics` ──────────────────
+//
+// El Estudiante dueño de la atención es el único que puede descargar el
+// archivo o agregar el evento. La autorización se resuelve en Aplicación con
+// la fila leída en el servidor; el consentimiento de Google Calendar es un
+// alcance OAuth aparte del inicio institucional. Ninguna respuesta incluye
+// tokens, correo de Google ni detalles del proveedor.
+
+/** Contenido del archivo `.ics`; es el mismo en la descarga y en el respaldo. */
+const calendarFileContentValidator = v.object({
+  fileName: v.string(),
+  content: v.string(),
+});
+
+/** Archivo `.ics` de una atención y si ya tiene evento registrado. */
+const appointmentCalendarFileValidator = v.object({
+  fileName: v.string(),
+  content: v.string(),
+  alreadyAdded: v.boolean(),
+});
+
+/** Resultado de agregar la atención: éxito, ya existente o respaldo `.ics`. */
+const appointmentCalendarResultValidator = v.union(
+  v.object({
+    status: v.literal("created"),
+    eventId: v.string(),
+    ics: calendarFileContentValidator,
+  }),
+  v.object({
+    status: v.literal("already_created"),
+    eventId: v.string(),
+    ics: calendarFileContentValidator,
+  }),
+  v.object({
+    status: v.literal("fallback"),
+    reason: v.union(v.literal("not_connected"), v.literal("unavailable")),
+    ics: calendarFileContentValidator,
+  }),
+);
+
+/** Resumen mínimo de una atención propia para las acciones de calendario. */
+const appointmentCalendarSummaryValidator = v.object({
+  appointmentId: v.string(),
+  status: appointmentStatusUnion,
+  startAt: v.number(),
+  endAt: v.number(),
+  modality: modalityUnion,
+  calendarAdded: v.boolean(),
+});
+
+/**
+ * Lista acotada de atenciones del acompañamiento. Usa la misma autorización de
+ * `appointment:read`; no expone profesional, sala, notas ni necesidades.
+ */
+export const listAccompanimentAppointments = query({
+  args: { accompanimentId: v.string() },
+  returns: v.array(appointmentCalendarSummaryValidator),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await listAccompanimentAppointmentsUseCase(
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentListReader(ctx),
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          accompanimentId: args.accompanimentId,
+        },
+      ),
+    );
+  },
+});
+
+/**
+ * Descarga el `.ics` de una atención propia. Es la alternativa que no depende
+ * de Google Calendar ni de un consentimiento adicional: funciona aunque la
+ * cuenta no esté vinculada o el proveedor esté caído.
+ */
+export const getAppointmentCalendarFile = query({
+  args: { appointmentId: v.string() },
+  returns: appointmentCalendarFileValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await getAppointmentCalendarFileUseCase(
+        {
+          loadAppointment: (input) =>
+            loadCalendarAppointment(
+              {
+                auth: authorizationReader(ctx),
+                appointments: appointmentCalendarReader(ctx),
+              },
+              input,
+            ),
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          appointmentId: args.appointmentId,
+          timeZone: AGENDA_TIME_ZONE,
+        },
+      ),
+    );
+  },
+});
+
+/**
+ * Indica si la sesión ya concedió el alcance mínimo de Calendar. Solo devuelve
+ * un booleano: ni tokens ni la cuenta de Google.
+ */
+export const getCalendarConnection = query({
+  args: {},
+  returns: v.object({ connected: v.boolean() }),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await getCalendarConnectionUseCase(
+        {
+          auth: authorizationReader(ctx),
+          connection: googleCalendarConnectionReader(ctx),
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null },
+      ),
+    );
+  },
+});
+
+/**
+ * Agrega la atención al Google Calendar personal con una acción explícita.
+ *
+ * La acción no tiene acceso a la base: primero lee y autoriza la atención con
+ * la query interna y luego llama al proveedor. Un fallo externo no revierte la
+ * reserva: responde `fallback` con el `.ics` genérico. El identificador
+ * determinista del evento evita duplicados en reintentos y dobles clics.
+ */
+export const addAppointmentToGoogleCalendar = action({
+  args: { appointmentId: v.string() },
+  returns: appointmentCalendarResultValidator,
+  handler: async (ctx, args): Promise<AppointmentCalendarResult> => {
+    const identity = await ctx.auth.getUserIdentity();
+    const tokenIdentifier = identity?.tokenIdentifier ?? null;
+    const appointment: CalendarAppointmentContext | null = await ctx.runQuery(
+      internal.operations.calendar.loadAppointmentCalendarContext,
+      { tokenIdentifier, appointmentId: args.appointmentId },
+    );
+    return unwrapApiResult(
+      await addAppointmentToGoogleCalendarUseCase(
+        {
+          loadAppointment: async () => appointment,
+          recordEvent: async (input) => {
+            await ctx.runMutation(internal.operations.calendar.recordCalendarEventReference, input);
+          },
+          google: googleCalendarGateway(ctx),
+          now: () => Date.now(),
+        },
+        {
+          tokenIdentifier,
+          appointmentId: args.appointmentId,
+          timeZone: AGENDA_TIME_ZONE,
         },
       ),
     );

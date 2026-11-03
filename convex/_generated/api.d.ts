@@ -15,9 +15,11 @@ import type * as application_appointments_booking from "../application/appointme
 import type * as application_appointments_changes from "../application/appointments/changes.js";
 import type * as application_appointments_commands from "../application/appointments/commands.js";
 import type * as application_appointments_occupancy from "../application/appointments/occupancy.js";
+import type * as application_appointments_queries from "../application/appointments/queries.js";
 import type * as application_authorization_authorize from "../application/authorization/authorize.js";
 import type * as application_availability_availability from "../application/availability/availability.js";
 import type * as application_availability_ports from "../application/availability/ports.js";
+import type * as application_calendar_calendar from "../application/calendar/calendar.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_identity from "../application/requests/identity.js";
 import type * as application_requests_queries from "../application/requests/queries.js";
@@ -36,6 +38,7 @@ import type * as domain_appointments_appointment from "../domain/appointments/ap
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
 import type * as domain_authorization_permissions from "../domain/authorization/permissions.js";
 import type * as domain_availability_availability from "../domain/availability/availability.js";
+import type * as domain_calendar_calendar_event from "../domain/calendar/calendar_event.js";
 import type * as domain_errors_api_error from "../domain/errors/api_error.js";
 import type * as domain_follow_up_follow_up from "../domain/follow_up/follow_up.js";
 import type * as domain_identity_roles from "../domain/identity/roles.js";
@@ -52,11 +55,13 @@ import type * as infrastructure_accompaniments_repository from "../infrastructur
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as infrastructure_appointments_repository from "../infrastructure/appointments/repository.js";
 import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
+import type * as infrastructure_calendar_google_calendar from "../infrastructure/calendar/google_calendar.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
 import type * as operations_accounts from "../operations/accounts.js";
 import type * as operations_assignments from "../operations/assignments.js";
+import type * as operations_calendar from "../operations/calendar.js";
 import type * as operations_fictitiousData from "../operations/fictitiousData.js";
 import type * as operations_migrations from "../operations/migrations.js";
 import type * as operations_requests from "../operations/requests.js";
@@ -82,9 +87,11 @@ declare const fullApi: ApiFromModules<{
   "application/appointments/changes": typeof application_appointments_changes;
   "application/appointments/commands": typeof application_appointments_commands;
   "application/appointments/occupancy": typeof application_appointments_occupancy;
+  "application/appointments/queries": typeof application_appointments_queries;
   "application/authorization/authorize": typeof application_authorization_authorize;
   "application/availability/availability": typeof application_availability_availability;
   "application/availability/ports": typeof application_availability_ports;
+  "application/calendar/calendar": typeof application_calendar_calendar;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/identity": typeof application_requests_identity;
   "application/requests/queries": typeof application_requests_queries;
@@ -103,6 +110,7 @@ declare const fullApi: ApiFromModules<{
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
   "domain/authorization/permissions": typeof domain_authorization_permissions;
   "domain/availability/availability": typeof domain_availability_availability;
+  "domain/calendar/calendar_event": typeof domain_calendar_calendar_event;
   "domain/errors/api_error": typeof domain_errors_api_error;
   "domain/follow_up/follow_up": typeof domain_follow_up_follow_up;
   "domain/identity/roles": typeof domain_identity_roles;
@@ -119,11 +127,13 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "infrastructure/appointments/repository": typeof infrastructure_appointments_repository;
   "infrastructure/availability/repository": typeof infrastructure_availability_repository;
+  "infrastructure/calendar/google_calendar": typeof infrastructure_calendar_google_calendar;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
   "operations/accounts": typeof operations_accounts;
   "operations/assignments": typeof operations_assignments;
+  "operations/calendar": typeof operations_calendar;
   "operations/fictitiousData": typeof operations_fictitiousData;
   "operations/migrations": typeof operations_migrations;
   "operations/requests": typeof operations_requests;

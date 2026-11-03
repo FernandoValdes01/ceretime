@@ -442,6 +442,90 @@ export function appointmentChangeReader(ctx: DbReader) {
   };
 }
 
+// ── TI2-122: lectura y referencia del evento de calendario ─────────────────
+//
+// Cumplen por forma los puertos de calendario de Aplicación sin importarla.
+// La lectura de la atención devuelve la pertenencia que autoriza el caso de
+// uso y la referencia ya guardada; el listado se acota por el índice del
+// acompañamiento y no expone profesional, sala ni notas.
+
+/**
+ * Lectura de una atención para el calendario. Un identificador que no
+ * pertenece a `appointments` responde igual que uno inexistente: `null`.
+ */
+export function appointmentCalendarReader(ctx: DbReader) {
+  return {
+    getAppointment: async (appointmentId: string) => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      const doc = id === null ? null : await getAppointmentById(ctx, id);
+      if (doc === null) return null;
+      return {
+        _id: doc._id,
+        accompanimentId: doc.accompanimentId,
+        studentId: doc.studentId,
+        professionalId: doc.professionalId,
+        startAt: doc.startsAt,
+        endAt: doc.endsAt,
+        createdAt: doc.createdAt,
+        ...(doc.calendarEventId === undefined ? {} : { calendarEventId: doc.calendarEventId }),
+        ...(doc.calendarEventAddedAt === undefined
+          ? {}
+          : { calendarEventAddedAt: doc.calendarEventAddedAt }),
+      };
+    },
+  };
+}
+
+/**
+ * Listado acotado de atenciones del acompañamiento, de la más reciente a la
+ * más antigua. La autorización ya la resolvió Aplicación con
+ * `appointment:read`; acá solo se recorta la forma para el portal.
+ */
+export function appointmentListReader(ctx: DbReader) {
+  return {
+    listByAccompaniment: async (input: {
+      readonly accompanimentId: string;
+      readonly limit: number;
+    }) => {
+      const accompanimentId = ctx.db.normalizeId("accompaniments", input.accompanimentId);
+      if (accompanimentId === null) return [];
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_accompanimentId_and_startsAt", (q) =>
+          q.eq("accompanimentId", accompanimentId),
+        )
+        .order("desc")
+        .take(input.limit);
+      return rows.map((row) => ({
+        appointmentId: row._id,
+        status: row.status,
+        startAt: row.startsAt,
+        endAt: row.endsAt,
+        modality: row.modality,
+        calendarAdded: row.calendarEventId !== undefined,
+      }));
+    },
+  };
+}
+
+/**
+ * Guarda la referencia del evento creado por TI2-122. Solo la llama la
+ * mutación interna que compone la acción después de un resultado exitoso del
+ * proveedor; un reintento con el mismo identificador determinista no duplica
+ * el evento aunque esta escritura se repita.
+ */
+export async function recordCalendarEvent(
+  ctx: MutationCtx,
+  appointmentId: Id<"appointments">,
+  eventId: string,
+  addedAt: number,
+): Promise<void> {
+  await ctx.db.patch(appointmentId, {
+    calendarEventId: eventId,
+    calendarEventAddedAt: addedAt,
+  });
+}
+
 /**
  * Escritura atómica para la reserva y el reagendamiento sobre
  * `occupySlotAtomically`. Un identificador que no es de su tabla responde
