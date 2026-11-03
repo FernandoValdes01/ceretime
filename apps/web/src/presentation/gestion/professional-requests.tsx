@@ -20,6 +20,14 @@ import { usePagedList, type RequestListItem, type RequestListPage } from "./page
 const GESTION_ROW = "flex items-center gap-2 min-h-[44px] px-3 py-2 text-inherit";
 const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
+
+/**
+ * Enlace de retorno: verde y subrayado como el de la agenda. El subrayado es
+ * lo que lo distingue del texto normal, porque el color solo no alcanza a
+ * separarlo con visión borrosa o bajo contraste. Mide lo que su contenido y
+ * mantiene 44px de alto táctil mínimo.
+ */
+const GESTION_BACK_LINK = `flex min-h-[44px] w-fit items-center gap-1 rounded-[0.5rem] text-base font-semibold text-primary underline ${GESTION_FOCUS_VISIBLE}`;
 /**
  * Textarea del modal (TI2-92, migrado por TI2-130): el anillo de foco usa la
  * variable de compatibilidad --ct-ring (igual que antes); no se cambia al
@@ -387,11 +395,8 @@ export function ProfessionalRequestDetailPage({ requestId }: { requestId: string
         Detalle de la solicitud
       </h1>
       <p>
-        <Link
-          to="/profesional/solicitudes"
-          className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
-        >
-          Volver a solicitudes
+        <Link to="/profesional/solicitudes" className={GESTION_BACK_LINK}>
+          <span aria-hidden="true">←</span> Volver a solicitudes
         </Link>
       </p>
       <StudentPanelErrorBoundary
