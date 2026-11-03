@@ -1,3 +1,4 @@
+import { INITIAL_APPOINTMENT_STATUS } from "../../domain/appointments/appointment";
 import {
   expandAvailabilitySlots,
   type AvailabilitySlot,
@@ -22,6 +23,7 @@ import type {
   AvailabilityReader,
   CompatibilitySpaceSource,
 } from "../availability/ports";
+import { auditAppointmentChange, type AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotSuccess } from "./occupancy";
 
 /**
@@ -87,6 +89,9 @@ export interface SlotSelectionDeps {
 /** Dependencias de la reserva, todas por puerto para probar con dobles. */
 export interface BookAppointmentDeps extends SlotSelectionDeps {
   readonly occupier: AppointmentOccupier;
+  readonly audit: AppointmentAuditRecorder;
+  /** Reloj del servidor para el evento de auditoría; las pruebas lo fijan. */
+  readonly now?: () => number;
 }
 
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
@@ -250,7 +255,8 @@ export async function resolveBookableSlot(
  * disponibilidad y la compatibilidad con las necesidades vigentes, y solo
  * entonces pide la ocupación atómica. La atención creada usa el estudiante
  * de la sesión, nunca un identificador enviado por el cliente, y conserva
- * como fecha efectiva el inicio del cupo revalidado.
+ * como fecha efectiva el inicio del cupo revalidado. Una reserva exitosa
+ * deja su evento mínimo de auditoría (TI2-128) en la misma mutation.
  */
 export async function bookAppointment(
   deps: BookAppointmentDeps,
@@ -269,7 +275,7 @@ export async function bookAppointment(
   const slot = await resolveBookableSlot(deps, input);
   if (slot.status === "error") return slot;
 
-  return await deps.occupier.occupySlot({
+  const occupied = await deps.occupier.occupySlot({
     accompanimentId: input.accompanimentId,
     studentId: grant.data.callerId,
     professionalId: slot.data.professionalId,
@@ -278,4 +284,14 @@ export async function bookAppointment(
     startAt: slot.data.startAt,
     endAt: slot.data.endAt,
   });
+  if (occupied.status === "error") return occupied;
+
+  await auditAppointmentChange(deps.audit, {
+    action: "booked",
+    actorId: grant.data.callerId,
+    appointmentId: occupied.data.appointmentId,
+    result: INITIAL_APPOINTMENT_STATUS,
+    occurredAt: deps.now === undefined ? Date.now() : deps.now(),
+  });
+  return occupied;
 }

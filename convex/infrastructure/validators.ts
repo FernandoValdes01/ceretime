@@ -4,6 +4,7 @@ import {
   APPOINTMENT_ATTENDANCE_OUTCOME_VALUES,
   APPOINTMENT_STATUS_VALUES,
 } from "../domain/appointments/appointment";
+import { APPOINTMENT_AUDIT_ACTION_VALUES } from "../domain/appointments/audit";
 import {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
   MODALITY_VALUES,
@@ -110,6 +111,13 @@ export const appointmentStatusUnion = v.union(
  */
 export const appointmentAttendanceOutcomeUnion = v.union(
   ...APPOINTMENT_ATTENDANCE_OUTCOME_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Acciones auditadas de la agenda (TI2-128), derivadas del dominio.
+ */
+export const appointmentAuditActionUnion = v.union(
+  ...APPOINTMENT_AUDIT_ACTION_VALUES.map((value) => v.literal(value)),
 );
 
 /**
