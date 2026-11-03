@@ -284,6 +284,7 @@ describe("addAppointmentToGoogleCalendar", () => {
 
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
+    if (result.data.status === "fallback") throw new Error("Se esperaba un evento creado");
     expect(result.data.status).toBe("created");
     expect(result.data.eventId).toBe("event-1");
     expect(result.data.ics.content).toContain("BEGIN:VCALENDAR");
@@ -308,7 +309,10 @@ describe("addAppointmentToGoogleCalendar", () => {
     );
 
     expect(result.status === "ok" && result.data.status).toBe("already_created");
-    expect(result.status === "ok" && result.data.eventId).toBe("event-1");
+    if (result.status !== "ok" || result.data.status === "fallback") {
+      throw new Error("Se esperaba un evento ya creado");
+    }
+    expect(result.data.eventId).toBe("event-1");
     expect(google.calls).toHaveLength(0);
   });
 
