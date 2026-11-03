@@ -1,11 +1,20 @@
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
 import { betterAuth } from "better-auth/minimal";
+import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import { env } from "./_generated/server";
-import { rejectExternalUser } from "./application/session/reject_external_user";
+import {
+  rejectExternalSession,
+  rejectExternalUser,
+} from "./application/session/reject_external_user";
 import authConfig from "./auth.config";
+import { GOOGLE_PROVIDER_ID_BY_POPULATION } from "./domain/auth/institutional_domain";
+import {
+  googleWorkspaceProvider,
+  rejectClientScopes,
+} from "./infrastructure/auth/google_providers";
 
 /**
  * Infraestructura de autenticación (TI2-3).
@@ -32,10 +41,14 @@ function resolveTrustedOrigins(siteUrl: string): string[] {
 }
 
 export const createAuth = (ctx: GenericCtx<DataModel>) => {
+  const googleCredentials = {
+    clientId: env.GOOGLE_CLIENT_ID,
+    clientSecret: env.GOOGLE_CLIENT_SECRET,
+  };
   return betterAuth({
-    // Base de `/api/auth/*`: el Site URL de Convex. El callback OAuth de
-    // Google es `{CONVEX_SITE_URL}/api/auth/callback/google` y debe
-    // registrarse exacto en Google Cloud Console.
+    // Base de `/api/auth/*`: el Site URL de Convex. Los callbacks OAuth de
+    // Google son `{CONVEX_SITE_URL}/api/auth/oauth2/callback/google-alu` y
+    // `.../google-uct`, y deben registrarse exactos en Google Cloud Console.
     baseURL: env.CONVEX_SITE_URL,
     trustedOrigins: resolveTrustedOrigins(env.SITE_URL),
     // Página de error controlada (TI2-14): los callbacks inválidos que no
@@ -54,21 +67,37 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
           before: (user) => rejectExternalUser(user.email),
         },
       },
-    },
-    socialProviders: {
-      google: {
-        clientId: env.GOOGLE_CLIENT_ID,
-        clientSecret: env.GOOGLE_CLIENT_SECRET,
-        // Solo identidad (openid, email, profile). Pedir Calendar, Drive o
-        // correo queda prohibido en Sprint 1.
-        prompt: "select_account",
-        // Sin `hd`: esta versión de Better Auth (1.6.x) no acepta parámetros
-        // por llamada (`additionalParams` no existe en `/sign-in/social` y
-        // zod los recorta en silencio) y el proveedor solo admite un dominio
-        // global. La garantía es el `databaseHooks` de arriba, no Google.
+      // TI2-131: un usuario existente con correo no institucional tampoco
+      // obtiene sesión nueva, sea cual sea el proveedor que la pida.
+      session: {
+        create: {
+          before: (session, context) =>
+            rejectExternalSession(
+              session.userId,
+              context === null
+                ? null
+                : (userId) => context.context.internalAdapter.findUserById(userId),
+            ),
+        },
       },
     },
+    // Las cuentas creadas con el proveedor `google` de TI2-3 (ya retirado) se
+    // vinculan por correo al volver a ingresar por `google-alu` o
+    // `google-uct`, y conservan su perfil.
+    account: {
+      accountLinking: {
+        trustedProviders: Object.values(GOOGLE_PROVIDER_ID_BY_POPULATION),
+      },
+    },
+    // El cliente no puede ampliar los alcances de Google (solo identidad).
+    hooks: { before: rejectClientScopes },
     plugins: [
+      genericOAuth({
+        config: [
+          googleWorkspaceProvider("estudiante", googleCredentials),
+          googleWorkspaceProvider("personal", googleCredentials),
+        ],
+      }),
       // Requerido para SPA (Vite): permite cookies entre el origen web y el
       // Site URL de Convex.
       crossDomain({ siteUrl: env.SITE_URL }),

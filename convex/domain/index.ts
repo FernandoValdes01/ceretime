@@ -17,6 +17,10 @@ export type {
   Role,
 } from "./identity/roles";
 
+// Inicio institucional con Google: proveedor de cada población (TI2-131).
+export { GOOGLE_PROVIDER_ID_BY_POPULATION } from "./auth/institutional_domain";
+export type { InstitutionalPopulation } from "./auth/institutional_domain";
+
 // Solicitud de acompañamiento y sus estados.
 export {
   ACCESS_NEEDS_MAX_LENGTH,
