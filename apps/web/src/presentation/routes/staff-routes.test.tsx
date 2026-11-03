@@ -708,14 +708,24 @@ describe("asignaciones del Practicante en la Web (TI2-126)", () => {
     expect(screen.queryByText(new RegExp(item._id))).toBeNull();
   });
 
-  test("la denegación del listado no se distingue de la de otra cuenta", async () => {
-    assignmentMocks.pages.set("first", DENEGACIÓN);
+  test("la denegación del listado retira filas e identificadores ya pintados", async () => {
+    const item = asignado("acompanamiento-ficticio-5", OBJETIVO_ASIGNADO);
+    assignmentMocks.pages.set("first", paginaAsignada([item]));
     comoPracticante();
 
     renderAt("/practicante/acompanamientos");
 
+    expect(await screen.findByText(OBJETIVO_ASIGNADO)).toBeDefined();
+
+    act(() => {
+      assignmentMocks.pages.set("first", DENEGACIÓN);
+      assignmentMocks.notify();
+    });
+
     expect(await screen.findByText("No tienes acceso a acompañamientos asignados.")).toBeDefined();
-    expect(screen.queryByText(/acompañamiento-ficticio/)).toBeNull();
+    expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+    expect(screen.queryByText(/acompanamiento-ficticio/)).toBeNull();
+    expect(screen.queryByRole("link", { name: /Ver detalle/ })).toBeNull();
   });
 });
 
