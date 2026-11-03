@@ -5,6 +5,10 @@ import {
   ProfessionalAgendaDetailPage,
   ProfessionalAgendaPage,
 } from "../gestion/professional-agenda.tsx";
+import {
+  PractitionerAccompanimentDetailPage,
+  PractitionerAccompanimentsPage,
+} from "../gestion/practitioner-accompaniments.tsx";
 import { ProfessionalAvailabilityPage } from "../gestion/professional-availability-editor.tsx";
 import { StudentAccompanimentDetailPage } from "../estudiante/student-accompaniments.tsx";
 import { StudentRequestDetailPage, StudentRequestsPage } from "../estudiante/student-requests.tsx";
@@ -32,7 +36,7 @@ import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 
 /**
  * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04,
- * TI2-115): puentes delgados entre las definiciones de `router.tsx` y las
+ * TI2-115, TI2-116): puentes delgados entre las definiciones de `router.tsx` y las
  * páginas. Viven acá para que `router.tsx` no mezcle componentes con objetos
  * de ruta (regla de fast refresh).
  */
@@ -152,6 +156,19 @@ export function PractitionerLayoutRouteComponent() {
 
 export function PractitionerIndexRouteComponent() {
   return <PractitionerHome />;
+}
+
+const practitionerAccompanimentDetailApi = getRouteApi(
+  "/practicante/acompanamientos/$accompanimentId",
+);
+
+export function PractitionerAccompanimentsRouteComponent() {
+  return <PractitionerAccompanimentsPage />;
+}
+
+export function PractitionerAccompanimentDetailRouteComponent() {
+  const { accompanimentId } = practitionerAccompanimentDetailApi.useParams();
+  return <PractitionerAccompanimentDetailPage accompanimentId={accompanimentId} />;
 }
 
 export function AdminLayoutRouteComponent() {

@@ -12,6 +12,8 @@ import {
   IndexRouteComponent,
   LoginRouteComponent,
   NotFoundRedirect,
+  PractitionerAccompanimentDetailRouteComponent,
+  PractitionerAccompanimentsRouteComponent,
   PractitionerIndexRouteComponent,
   PractitionerLayoutRouteComponent,
   ProfessionalAgendaDetailRouteComponent,
@@ -32,7 +34,7 @@ import {
 } from "./route-components.tsx";
 
 /**
- * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04, TI2-115, Sprint 1, 2 y 3).
+ * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04, TI2-115, TI2-116, Sprint 1, 2 y 3).
  *
  * - `/` índice: acceso sin sesión (preserva callback OAuth de TI2-3),
  *   portal según sesión y rol, denegado sin portal conocido.
@@ -66,6 +68,10 @@ import {
  *   `/profesional/agenda/$appointmentId`: detalle de una atención propia,
  *   denegado por el Backend en otro caso. La autorización efectiva sigue
  *   viva en Convex; la página declara que consulta la API.
+ * - `/practicante/acompanamientos`: acompañamientos con asignación vigente
+ *   del Practicante en vista minimizada y solo lectura (TI2-116);
+ *   `/practicante/acompanamientos/$accompanimentId`: detalle minimizado,
+ *   denegado por el Backend sin asignación vigente aunque se conserve la URL.
  * - Ruta desconocida: vuelve al índice, que deriva según sesión.
  */
 
@@ -194,6 +200,18 @@ const practitionerIndexRoute = createRoute({
   component: PractitionerIndexRouteComponent,
 });
 
+const practitionerAccompanimentsRoute = createRoute({
+  getParentRoute: () => practitionerLayoutRoute,
+  path: "acompanamientos",
+  component: PractitionerAccompanimentsRouteComponent,
+});
+
+const practitionerAccompanimentDetailRoute = createRoute({
+  getParentRoute: () => practitionerLayoutRoute,
+  path: "acompanamientos/$accompanimentId",
+  component: PractitionerAccompanimentDetailRouteComponent,
+});
+
 const adminLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/administrador",
@@ -232,7 +250,11 @@ const routeTree = rootRoute.addChildren([
     professionalAgendaRoute,
     professionalAgendaDetailRoute,
   ]),
-  practitionerLayoutRoute.addChildren([practitionerIndexRoute]),
+  practitionerLayoutRoute.addChildren([
+    practitionerIndexRoute,
+    practitionerAccompanimentsRoute,
+    practitionerAccompanimentDetailRoute,
+  ]),
   adminLayoutRoute.addChildren([adminIndexRoute, adminSpacesRoute]),
 ]);
 
