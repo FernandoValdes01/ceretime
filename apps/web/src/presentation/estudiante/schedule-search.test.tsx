@@ -36,13 +36,13 @@ vi.mock("../session/session-state", () => ({
   useSessionAndRole: () => mockedPair,
 }));
 
-vi.mock("./student-booking-context.tsx", () => ({
-  BookingContextGate: ({
-    children,
-  }: {
-    children: (context: { accompanimentId: string; professionalId: string }) => ReactNode;
-  }) => children({ accompanimentId: "acompanamiento-1", professionalId: "pro-1" }),
-}));
+vi.mock("./student-booking-context.tsx", () => {
+  const context = { accompanimentId: "acompanamiento-1", professionalIds: ["pro-1"] };
+  return {
+    BookingContextGate: ({ children }: { children: (value: typeof context) => ReactNode }) =>
+      children(context),
+  };
+});
 
 vi.mock("./schedule-search-data.ts", () => ({
   useSlotSearch: () => {
@@ -98,15 +98,21 @@ const PAR_SIN_SESION = {
 } as const;
 
 function cupoFicticio(
-  overrides: Partial<{ id: string; modality: "inPerson" | "online"; spaceLabel: string }> = {},
+  overrides: Partial<{
+    id: string;
+    modality: "inPerson" | "online";
+    spaceLabel: string;
+    date: string;
+    startAt: number;
+  }> = {},
 ) {
   const modality = overrides.modality ?? ("inPerson" as const);
   return {
     id: overrides.id ?? "cupo-1",
     professionalId: "pro-ficticio-1",
-    date: "2026-10-20",
-    startAt: 1760925600000,
-    endAt: 1760929200000,
+    date: overrides.date ?? "2026-10-20",
+    startAt: overrides.startAt ?? 1760925600000,
+    endAt: (overrides.startAt ?? 1760925600000) + 3_600_000,
     modality,
     spaceLabel:
       overrides.spaceLabel ??
@@ -160,19 +166,57 @@ describe("búsqueda de horarios (TI2-101)", () => {
     expect(screen.getByText("Sala 101", { exact: false })).toBeDefined();
   });
 
-  test("seleccionar un cupo muestra su resumen", async () => {
+  test("cada cupo enlaza directo a la confirmación, con su día en el nombre", async () => {
     comoEstudiante();
     mockedResult = { status: "ok", slots: [cupoFicticio({ id: "cupo-1" })] };
     renderAt("/estudiante/horarios");
 
-    fireEvent.click(await screen.findByRole("radio", { name: /Sala 101/ }));
-
-    expect(await screen.findByRole("heading", { name: "Cupo elegido" })).toBeDefined();
-    expect(await screen.findAllByText("Sala 101", { exact: false })).toHaveLength(2);
-    const continuar = screen.getByRole("link", { name: "Continuar" });
-    expect(continuar.getAttribute("href")).toBe(
+    const enlace = await screen.findByRole("link", { name: /Martes 20 de octubre.*Sala 101/ });
+    expect(enlace.getAttribute("href")).toBe(
       "/estudiante/reservar?slotId=cupo-1&accompanimentId=acompanamiento-1",
     );
+    expect(screen.queryByRole("radio", { name: /Sala 101/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Continuar" })).toBeNull();
+  });
+
+  test("muestra una semana a la vez, salta las vacías y mueve el foco al encabezado", async () => {
+    comoEstudiante();
+    mockedResult = {
+      status: "ok",
+      slots: [
+        cupoFicticio({ id: "cupo-lejano", date: "2026-11-30", startAt: 1796000000000 }),
+        cupoFicticio({ id: "cupo-1", date: "2026-10-20", startAt: 1760925600000 }),
+        cupoFicticio({ id: "cupo-2", date: "2026-10-25", startAt: 1761400000000 }),
+      ],
+    };
+    renderAt("/estudiante/horarios");
+
+    expect(
+      await screen.findByRole("heading", { name: "Semana del 19 al 25 de octubre" }),
+    ).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Martes 20 de octubre" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Domingo 25 de octubre" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: /Lunes 30 de noviembre/ })).toBeNull();
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Semana anterior" }).disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Semana siguiente" }));
+
+    const siguiente = await screen.findByRole("heading", {
+      name: "Semana del 30 de noviembre al 6 de diciembre",
+    });
+    expect(document.activeElement).toBe(siguiente);
+    expect(screen.getByRole("link", { name: /Lunes 30 de noviembre/ })).toBeDefined();
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Semana siguiente" }).disabled,
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Semana anterior" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Semana del 19 al 25 de octubre" }),
+    ).toBeDefined();
   });
 
   test("cargando muestra el aviso explícito", async () => {

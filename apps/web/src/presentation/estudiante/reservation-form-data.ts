@@ -27,12 +27,12 @@ export function useReservationSlot(
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
-  const { accompanimentId, professionalId } = context;
+  const { accompanimentId, professionalIds } = context;
 
   useEffect(() => {
     let cancelled = false;
     getAgendaPort()
-      .searchSlots({ modality: "all", context: { accompanimentId, professionalId } })
+      .searchSlots({ modality: "all", context: { accompanimentId, professionalIds } })
       .then(
         (result) => {
           if (cancelled) {
@@ -55,7 +55,7 @@ export function useReservationSlot(
     return () => {
       cancelled = true;
     };
-  }, [attempt, accompanimentId, professionalId]);
+  }, [attempt, accompanimentId, professionalIds]);
 
   function retry() {
     setFailed(false);
