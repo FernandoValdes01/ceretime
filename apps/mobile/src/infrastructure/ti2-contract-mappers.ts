@@ -10,7 +10,7 @@ import type {
   ProfessionalRequestAction,
   ProfessionalActionDetails,
 } from "../application/professional-review-models";
-import { ACCESS_NEEDS_MAX_LENGTH } from "../application/ti2-sprint-1-contracts";
+import { ACCESS_NEEDS_MAX_LENGTH } from "./backend-contracts";
 import type {
   AcceptRequestArgs,
   CanonicalAuthorizedRequest,
@@ -22,7 +22,7 @@ import type {
   CreateRequestArgs,
   RequestAdditionalInformationArgs,
   TakeRequestArgs,
-} from "../application/ti2-sprint-1-contracts";
+} from "./backend-contracts";
 
 export interface CanonicalStudentAreaResponses {
   readonly requests: CanonicalStudentRequest[];

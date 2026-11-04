@@ -8,6 +8,10 @@ Esta es la fuente única por pantalla y criterio. TI4-46 define la estructura y 
 
 El alcance es A/AA, conforme a [WCAG 2.2](https://www.w3.org/TR/WCAG22/). La adaptación nativa consulta [WCAG2Mobile](https://www.w3.org/TR/wcag2mobile-22/), que es un borrador, y [WCAG2ICT](https://www.w3.org/TR/wcag2ict-22/). Las asignaciones a rutas son una interpretación de evaluación del equipo. La matriz no afirma conformidad global ni AAA.
 
+## Corrección de código móvil posterior a B1
+
+La limpieza móvil entregada el 4 de noviembre de 2026 parte de `main` `7f8423a9f178da0a5a361bc013792a003bca701f`. Cambia composición, carga, envío, errores y fechas; conserva los controles, proveedores y preferencias de accesibilidad. Las pruebas automatizadas actuales y los pendientes están en [la entrega a TI2](../entrega-ti2.md). Esta pasada no ejecuta Android, TalkBack, texto ampliado, TTS ni STT nativos. La evidencia B0, B1 y E64 conserva su alcance histórico y sus estados originales. Los recorridos de error, reintento y confirmación afectados requieren repetición nativa antes de atribuirles vigencia sobre este diff.
+
 ## Consolidación S4 (TI4-64)
 
 Consolidación del 3 de noviembre de 2026 sobre `main` `5c641432cb5179469cdd303147dcb68375f0c89a`, identificado como B1. Enlaza la evidencia de TalkBack y texto ampliado de los cuatro roles que dejaron las correcciones cerradas hasta S3. Con la autorización explícita de Vicente se inició Metro y se ejecutó una pasada Android acotada en el emulador (E64): texto ampliado en las primeras pantallas de los cuatro roles y TalkBack con teclado en Profesional y Administrador. Ninguna fila se aprobó y ninguna captura anterior se presenta como repetición.

@@ -6,6 +6,7 @@ export type ProfessionalAgendaEventColor = "teal" | "ochre" | "green";
 
 export interface ProfessionalAgendaEvent {
   readonly id: string;
+  /** Horas civiles HH:MM de CERETI, sin convertirlas en instantes ni usar la zona del dispositivo. */
   readonly startTime: string;
   readonly endTime: string;
   readonly studentName: string;

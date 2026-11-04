@@ -1,6 +1,6 @@
 import type { Id } from "../../../../convex/_generated/dataModel";
 
-import type { CanonicalTakenRequest } from "../application/ti2-sprint-1-contracts";
+import type { CanonicalTakenRequest } from "./backend-contracts";
 import type { CanonicalProfessionalRequestResponses } from "./ti2-contract-mappers";
 
 const requestId = (value: string) => value as Id<"requests">;

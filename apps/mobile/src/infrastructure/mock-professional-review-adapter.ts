@@ -12,7 +12,7 @@ import type {
   CanonicalAcceptedAccompaniment,
   CanonicalInformationRequest,
   CanonicalTakenRequest,
-} from "../application/ti2-sprint-1-contracts";
+} from "./backend-contracts";
 import {
   mapCanonicalProfessionalRequest,
   mapCanonicalProfessionalRequests,
