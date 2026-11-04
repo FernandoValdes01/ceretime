@@ -1,5 +1,4 @@
-import React from "react";
-import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
+import { act, renderHook } from "@testing-library/react-native";
 import { router } from "expo-router";
 import { fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import path from "node:path";
@@ -9,41 +8,15 @@ import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { createMockProfessionalReviewAdapter } from "../src/infrastructure/mock-professional-review-adapter";
 import type { ProfessionalRequest } from "../src/application/professional-review-models";
 import type { ProfessionalReviewPort } from "../src/application/professional-review-port";
-import {
-  useProfessionalReview,
-  type ProfessionalReviewState,
-} from "../src/presentation/hooks/use-professional-review";
+import { useProfessionalReview } from "../src/presentation/hooks/use-professional-review";
 import { formatAvailability } from "../src/presentation/profesional/professional-request-detail-screen";
 import { getNoActionMessage } from "../src/presentation/profesional/professional-requests-screen";
 
 const appDirectory = path.resolve(__dirname, "../app");
 
-function ProbeOutput({ value: _value }: { readonly value: unknown }): null {
-  return null;
-}
-
-function readProbeValue<T>(renderer: ReactTestRenderer): T {
-  return renderer.root.findByType(ProbeOutput).props.value as T;
-}
-
-function mountReview(port: ProfessionalReviewPort): {
-  readonly renderer: ReactTestRenderer;
-  readonly getState: () => ProfessionalReviewState;
-} {
-  function Probe() {
-    return React.createElement(ProbeOutput, {
-      value: useProfessionalReview(port),
-    });
-  }
-
-  let renderer!: ReactTestRenderer;
-  act(() => {
-    renderer = TestRenderer.create(React.createElement(Probe));
-  });
-  return {
-    renderer,
-    getState: () => readProbeValue<ProfessionalReviewState>(renderer),
-  };
+function mountReview(port: ProfessionalReviewPort) {
+  const { result, unmount } = renderHook(() => useProfessionalReview(port));
+  return { unmount, getState: () => result.current };
 }
 
 async function settle(): Promise<void> {
@@ -163,7 +136,7 @@ describe("hook y vista de revisión profesional", () => {
       await mounted.getState().performAction("SOL-PRO-001", "startReview");
     });
     expect(mounted.getState().getRequestFeedback("SOL-PRO-001").status).toBe("success");
-    act(() => mounted.renderer.unmount());
+    act(() => mounted.unmount());
 
     const emptyPort: ProfessionalReviewPort = {
       readProfessionalRequests: async () => [],
@@ -172,7 +145,7 @@ describe("hook y vista de revisión profesional", () => {
     const emptyMounted = mountReview(emptyPort);
     await settle();
     expect(emptyMounted.getState().status).toBe("empty");
-    act(() => emptyMounted.renderer.unmount());
+    act(() => emptyMounted.unmount());
   });
 
   test("muestra error de lectura y permite reintentar", async () => {
@@ -200,7 +173,7 @@ describe("hook y vista de revisión profesional", () => {
     expect(mounted.getState().status).toBe("loading");
     await settle();
     expect(mounted.getState().status).toBe("success");
-    act(() => mounted.renderer.unmount());
+    act(() => mounted.unmount());
   });
 
   test("abre el detalle de una solicitud recibida y registra que comienza la revisión", async () => {
