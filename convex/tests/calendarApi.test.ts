@@ -127,6 +127,8 @@ async function seedAppointment(
     readonly modality?: Doc<"appointments">["modality"];
     readonly calendarEventId?: string;
     readonly calendarEventAddedAt?: number;
+    readonly calendarEventStartsAt?: number;
+    readonly calendarEventEndsAt?: number;
   },
 ) {
   return await t.run(async (ctx) => {
@@ -142,6 +144,12 @@ async function seedAppointment(
       ...(input.calendarEventAddedAt === undefined
         ? {}
         : { calendarEventAddedAt: input.calendarEventAddedAt }),
+      ...(input.calendarEventStartsAt === undefined
+        ? {}
+        : { calendarEventStartsAt: input.calendarEventStartsAt }),
+      ...(input.calendarEventEndsAt === undefined
+        ? {}
+        : { calendarEventEndsAt: input.calendarEventEndsAt }),
       createdAt: CREATED_AT,
     });
   });
@@ -176,7 +184,7 @@ async function expectUnauthorized(promise: Promise<unknown>) {
   });
 }
 
-test("TI2-122 API: el listado acotado ordena por inicio y marca el evento agregado", async () => {
+test("TI2-122 API: el listado acotado ordena por inicio y distingue el evento vigente", async () => {
   const t = convexTest(schema, modules);
   const agenda = await seedAgenda(t, "list");
   const older = await seedAppointment(t, {
@@ -187,6 +195,8 @@ test("TI2-122 API: el listado acotado ordena por inicio y marca el evento agrega
     endsAt: BASE_START + HOUR,
     calendarEventId: "event-1",
     calendarEventAddedAt: CREATED_AT,
+    calendarEventStartsAt: BASE_START,
+    calendarEventEndsAt: BASE_START + HOUR,
   });
   const newer = await seedAppointment(t, {
     accompanimentId: agenda.accompanimentId,
@@ -196,6 +206,17 @@ test("TI2-122 API: el listado acotado ordena por inicio y marca el evento agrega
     endsAt: BASE_START + 2 * HOUR,
     modality: "inPerson",
   });
+  const stale = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: BASE_START + 2 * HOUR,
+    endsAt: BASE_START + 3 * HOUR,
+    calendarEventId: "event-old",
+    calendarEventAddedAt: CREATED_AT,
+    calendarEventStartsAt: BASE_START + HOUR,
+    calendarEventEndsAt: BASE_START + 2 * HOUR,
+  });
 
   const asStudent = t.withIdentity(agenda.studentIdentity);
   const rows = await asStudent.query(api.presentation.appointments.listAccompanimentAppointments, {
@@ -204,12 +225,22 @@ test("TI2-122 API: el listado acotado ordena por inicio y marca el evento agrega
 
   expect(rows).toEqual([
     {
+      appointmentId: stale,
+      status: "scheduled",
+      startAt: BASE_START + 2 * HOUR,
+      endAt: BASE_START + 3 * HOUR,
+      modality: "online",
+      calendarAdded: false,
+      calendarNeedsUpdate: true,
+    },
+    {
       appointmentId: newer,
       status: "scheduled",
       startAt: BASE_START + HOUR,
       endAt: BASE_START + 2 * HOUR,
       modality: "inPerson",
       calendarAdded: false,
+      calendarNeedsUpdate: false,
     },
     {
       appointmentId: older,
@@ -218,11 +249,13 @@ test("TI2-122 API: el listado acotado ordena por inicio y marca el evento agrega
       endAt: BASE_START + HOUR,
       modality: "online",
       calendarAdded: true,
+      calendarNeedsUpdate: false,
     },
   ]);
   expect(Object.keys(rows[0]!).sort()).toEqual([
     "appointmentId",
     "calendarAdded",
+    "calendarNeedsUpdate",
     "endAt",
     "modality",
     "startAt",
@@ -345,7 +378,7 @@ test("TI2-122 API: el Estudiante dueño descarga un .ics estable y genérico", a
   expect(first.content).not.toContain("VTIMEZONE");
 });
 
-test("TI2-122 API: el .ics marca alreadyAdded cuando el evento ya existe", async () => {
+test("TI2-122 API: el .ics marca alreadyAdded cuando el evento está sincronizado", async () => {
   const t = convexTest(schema, modules);
   const agenda = await seedAgenda(t, "ics-added");
   const appointmentId = await seedAppointment(t, {
@@ -356,12 +389,36 @@ test("TI2-122 API: el .ics marca alreadyAdded cuando el evento ya existe", async
     endsAt: BASE_START + HOUR,
     calendarEventId: "event-1",
     calendarEventAddedAt: CREATED_AT,
+    calendarEventStartsAt: BASE_START,
+    calendarEventEndsAt: BASE_START + HOUR,
   });
 
   const file = await t
     .withIdentity(agenda.studentIdentity)
     .query(api.presentation.appointments.getAppointmentCalendarFile, { appointmentId });
   expect(file.alreadyAdded).toBe(true);
+});
+
+test("TI2-122 API: el .ics no marca alreadyAdded si el evento conserva el horario anterior", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "ics-stale");
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: BASE_START,
+    endsAt: BASE_START + HOUR,
+    calendarEventId: "event-1",
+    calendarEventAddedAt: CREATED_AT,
+    calendarEventStartsAt: BASE_START - HOUR,
+    calendarEventEndsAt: BASE_START,
+  });
+
+  const file = await t
+    .withIdentity(agenda.studentIdentity)
+    .query(api.presentation.appointments.getAppointmentCalendarFile, { appointmentId });
+  expect(file.alreadyAdded).toBe(false);
+  expect(file.content).toContain("DTSTART:20260310T160000Z");
 });
 
 test("TI2-122 API: una atención no vigente no exporta .ics ni crea evento", async () => {
@@ -468,7 +525,7 @@ test("TI2-122 API: sin conexión de Google la acción respalda con .ics y no toc
   expect(await getAppointment(t, appointmentId)).toEqual(before);
 });
 
-test("TI2-122 API: si la atención ya tiene evento, la acción no llama a Google", async () => {
+test("TI2-122 API: si la atención ya tiene el evento vigente, la acción no llama a Google", async () => {
   const t = convexTest(schema, modules);
   const agenda = await seedAgenda(t, "already");
   const appointmentId = await seedAppointment(t, {
@@ -479,6 +536,8 @@ test("TI2-122 API: si la atención ya tiene evento, la acción no llama a Google
     endsAt: BASE_START + HOUR,
     calendarEventId: "event-1",
     calendarEventAddedAt: CREATED_AT,
+    calendarEventStartsAt: BASE_START,
+    calendarEventEndsAt: BASE_START + HOUR,
   });
 
   const result = await t
@@ -493,6 +552,36 @@ test("TI2-122 API: si la atención ya tiene evento, la acción no llama a Google
   expect(await getAppointment(t, appointmentId)).toMatchObject({
     calendarEventId: "event-1",
     calendarEventAddedAt: CREATED_AT,
+  });
+});
+
+test("TI2-122 API: una referencia desactualizada no responde already_created", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "stale");
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: BASE_START,
+    endsAt: BASE_START + HOUR,
+    calendarEventId: "event-1",
+    calendarEventAddedAt: CREATED_AT,
+    calendarEventStartsAt: BASE_START - HOUR,
+    calendarEventEndsAt: BASE_START,
+  });
+
+  const result = await t
+    .withIdentity(agenda.studentIdentity)
+    .action(api.presentation.appointments.addAppointmentToGoogleCalendar, { appointmentId });
+
+  // Sin conexión de Google no puede actualizar: respalda con el .ics vigente
+  // en vez de afirmar que el evento ya está creado.
+  expect(result.status).toBe("fallback");
+  expect(result.status === "fallback" && result.reason).toBe("not_connected");
+  expect(result.status === "fallback" && result.ics.content).toContain("DTSTART:20260310T160000Z");
+  expect(await getAppointment(t, appointmentId)).toMatchObject({
+    calendarEventStartsAt: BASE_START - HOUR,
+    calendarEventEndsAt: BASE_START,
   });
 });
 

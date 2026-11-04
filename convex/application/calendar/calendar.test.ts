@@ -17,6 +17,7 @@ import {
   type CalendarConnectionReader,
   type GoogleCalendarCreateOutcome,
   type GoogleCalendarGateway,
+  type GoogleCalendarUpdateOutcome,
 } from "./calendar";
 
 /**
@@ -157,15 +158,35 @@ function loadFor(
   );
 }
 
-function fakeGoogle(outcome: GoogleCalendarCreateOutcome): GoogleCalendarGateway & {
-  readonly calls: Array<Parameters<GoogleCalendarGateway["createEvent"]>[0]>;
+type CreateCall = Parameters<GoogleCalendarGateway["createEvent"]>[0];
+type UpdateCall = Parameters<GoogleCalendarGateway["updateEvent"]>[0];
+type RecordedReference = {
+  appointmentId: string;
+  eventId: string;
+  addedAt: number;
+  startsAt: number;
+  endsAt: number;
+};
+
+function fakeGoogle(
+  createOutcome: GoogleCalendarCreateOutcome,
+  updateOutcome: GoogleCalendarUpdateOutcome = { status: "updated", eventId: "event-1" },
+): GoogleCalendarGateway & {
+  readonly createCalls: CreateCall[];
+  readonly updateCalls: UpdateCall[];
 } {
-  const calls: Array<Parameters<GoogleCalendarGateway["createEvent"]>[0]> = [];
+  const createCalls: CreateCall[] = [];
+  const updateCalls: UpdateCall[] = [];
   return {
-    calls,
+    createCalls,
+    updateCalls,
     createEvent: async (input) => {
-      calls.push(input);
-      return outcome;
+      createCalls.push(input);
+      return createOutcome;
+    },
+    updateEvent: async (input) => {
+      updateCalls.push(input);
+      return updateOutcome;
     },
   };
 }
@@ -182,18 +203,14 @@ function fileDeps(appointmentReader: CalendarAppointmentReader) {
 function addDeps(
   appointmentReader: CalendarAppointmentReader,
   google: GoogleCalendarGateway,
-  recorded: Array<{ appointmentId: string; eventId: string; addedAt: number }> = [],
+  recorded: RecordedReference[] = [],
 ) {
   return {
     loadAppointment: (input: {
       readonly tokenIdentifier: string | null;
       readonly appointmentId: string;
     }) => loadFor(appointmentReader, input.tokenIdentifier, input.appointmentId),
-    recordEvent: async (input: {
-      readonly appointmentId: string;
-      readonly eventId: string;
-      readonly addedAt: number;
-    }) => {
+    recordEvent: async (input: RecordedReference) => {
       recorded.push(input);
     },
     google,
@@ -239,10 +256,32 @@ describe("loadCalendarAppointment", () => {
 
   test("devuelve la referencia guardada sin exponer otros campos", async () => {
     const loaded = await loadFor(
-      reader({ calendarEventId: "event-1", calendarEventAddedAt: CREATED_AT + 1 }),
+      reader({
+        calendarEventId: "event-1",
+        calendarEventAddedAt: CREATED_AT + 1,
+        calendarEventStartsAt: START_AT,
+        calendarEventEndsAt: END_AT,
+      }),
       "token-student",
     );
     expect(loaded?.reference).toEqual({ eventId: "event-1", addedAt: CREATED_AT + 1 });
+    expect(loaded?.referenceIsCurrent).toBe(true);
+  });
+
+  test("marca como obsoleta una referencia con el horario anterior o sin horario", async () => {
+    for (const stale of [
+      reader({ calendarEventId: "event-1", calendarEventAddedAt: CREATED_AT }),
+      reader({
+        calendarEventId: "event-1",
+        calendarEventAddedAt: CREATED_AT,
+        calendarEventStartsAt: START_AT - 60_000,
+        calendarEventEndsAt: END_AT - 60_000,
+      }),
+    ]) {
+      const loaded = await loadFor(stale, "token-student");
+      expect(loaded?.reference).toEqual({ eventId: "event-1", addedAt: CREATED_AT });
+      expect(loaded?.referenceIsCurrent).toBe(false);
+    }
   });
 });
 
@@ -258,12 +297,35 @@ describe("getAppointmentCalendarFile", () => {
     expect(result.data.alreadyAdded).toBe(false);
   });
 
-  test("marca alreadyAdded cuando ya existe el evento", async () => {
+  test("marca alreadyAdded cuando el evento está sincronizado con el horario vigente", async () => {
     const result = await getAppointmentCalendarFile(
-      fileDeps(reader({ calendarEventId: "event-1", calendarEventAddedAt: CREATED_AT })),
+      fileDeps(
+        reader({
+          calendarEventId: "event-1",
+          calendarEventAddedAt: CREATED_AT,
+          calendarEventStartsAt: START_AT,
+          calendarEventEndsAt: END_AT,
+        }),
+      ),
       input,
     );
     expect(result.status === "ok" && result.data.alreadyAdded).toBe(true);
+  });
+
+  test("no marca alreadyAdded cuando el evento conserva el horario anterior", async () => {
+    const result = await getAppointmentCalendarFile(
+      fileDeps(
+        reader({
+          calendarEventId: "event-1",
+          calendarEventAddedAt: CREATED_AT,
+          calendarEventStartsAt: START_AT - 60_000,
+          calendarEventEndsAt: END_AT - 60_000,
+        }),
+      ),
+      input,
+    );
+    expect(result.status === "ok" && result.data.alreadyAdded).toBe(false);
+    expect(result.status === "ok" && result.data.content).toContain("DTSTART:20260310T160000Z");
   });
 
   test("rechaza el .ics de una atención que ya no está vigente", async () => {
@@ -298,7 +360,7 @@ describe("getAppointmentCalendarFile", () => {
 
 describe("addAppointmentToGoogleCalendar", () => {
   test("crea el evento, guarda la referencia y devuelve el .ics", async () => {
-    const recorded: Array<{ appointmentId: string; eventId: string; addedAt: number }> = [];
+    const recorded: RecordedReference[] = [];
     const google = fakeGoogle({ status: "created", eventId: "event-1" });
     const result = await addAppointmentToGoogleCalendar(addDeps(reader(), google, recorded), input);
 
@@ -308,17 +370,89 @@ describe("addAppointmentToGoogleCalendar", () => {
     expect(result.data.status).toBe("created");
     expect(result.data.eventId).toBe("event-1");
     expect(result.data.ics.content).toContain("BEGIN:VCALENDAR");
-    expect(google.calls).toHaveLength(1);
-    expect(google.calls[0]).toMatchObject({
+    expect(google.createCalls).toHaveLength(1);
+    expect(google.createCalls[0]).toMatchObject({
       title: "Atención programada",
       startAt: START_AT,
       endAt: END_AT,
       timeZone: "America/Santiago",
     });
-    expect(google.calls[0]?.googleEventId).toMatch(/^[a-v0-9]{26}$/);
+    expect(google.createCalls[0]?.googleEventId).toMatch(/^[a-v0-9]{26}$/);
+    expect(google.updateCalls).toHaveLength(0);
     expect(recorded).toEqual([
-      { appointmentId: "appointment-1", eventId: "event-1", addedAt: CREATED_AT + 5_000 },
+      {
+        appointmentId: "appointment-1",
+        eventId: "event-1",
+        addedAt: CREATED_AT + 5_000,
+        startsAt: START_AT,
+        endsAt: END_AT,
+      },
     ]);
+  });
+
+  test("actualiza el evento existente cuando la referencia quedó obsoleta", async () => {
+    const recorded: RecordedReference[] = [];
+    const google = fakeGoogle(
+      { status: "created", eventId: "event-new" },
+      { status: "updated", eventId: "event-1" },
+    );
+    const result = await addAppointmentToGoogleCalendar(
+      addDeps(
+        reader({
+          calendarEventId: "event-1",
+          calendarEventAddedAt: CREATED_AT,
+          calendarEventStartsAt: START_AT - 60_000,
+          calendarEventEndsAt: END_AT - 60_000,
+        }),
+        google,
+        recorded,
+      ),
+      input,
+    );
+
+    expect(result.status === "ok" && result.data.status).toBe("updated");
+    expect(google.createCalls).toHaveLength(0);
+    expect(google.updateCalls).toEqual([
+      {
+        googleEventId: "event-1",
+        title: "Atención programada",
+        startAt: START_AT,
+        endAt: END_AT,
+        timeZone: "America/Santiago",
+      },
+    ]);
+    expect(recorded).toEqual([
+      {
+        appointmentId: "appointment-1",
+        eventId: "event-1",
+        addedAt: CREATED_AT,
+        startsAt: START_AT,
+        endsAt: END_AT,
+      },
+    ]);
+  });
+
+  test("respalda con .ics si no puede actualizar el evento obsoleto", async () => {
+    for (const outcome of ["not_connected", "unavailable"] as const) {
+      const google = fakeGoogle({ status: "created", eventId: "event-new" }, { status: outcome });
+      const result = await addAppointmentToGoogleCalendar(
+        addDeps(
+          reader({
+            calendarEventId: "event-1",
+            calendarEventAddedAt: CREATED_AT,
+            calendarEventStartsAt: START_AT - 60_000,
+            calendarEventEndsAt: END_AT - 60_000,
+          }),
+          google,
+        ),
+        input,
+      );
+      expect(result.status === "ok" && result.data.status).toBe("fallback");
+      expect(
+        result.status === "ok" && result.data.status === "fallback" && result.data.reason,
+      ).toBe(outcome);
+      expect(google.createCalls).toHaveLength(0);
+    }
   });
 
   test("rechaza crear el evento de una atención que ya no está vigente", async () => {
@@ -332,14 +466,23 @@ describe("addAppointmentToGoogleCalendar", () => {
         status: "error",
         error: { code: "conflict", message: CONFLICT_ERROR_MESSAGE },
       });
-      expect(google.calls).toHaveLength(0);
+      expect(google.createCalls).toHaveLength(0);
+      expect(google.updateCalls).toHaveLength(0);
     }
   });
 
-  test("no llama a Google si la atención ya tiene evento", async () => {
+  test("no llama a Google si la atención ya tiene evento vigente", async () => {
     const google = fakeGoogle({ status: "created", eventId: "event-new" });
     const result = await addAppointmentToGoogleCalendar(
-      addDeps(reader({ calendarEventId: "event-1", calendarEventAddedAt: CREATED_AT }), google),
+      addDeps(
+        reader({
+          calendarEventId: "event-1",
+          calendarEventAddedAt: CREATED_AT,
+          calendarEventStartsAt: START_AT,
+          calendarEventEndsAt: END_AT,
+        }),
+        google,
+      ),
       input,
     );
 
@@ -348,11 +491,12 @@ describe("addAppointmentToGoogleCalendar", () => {
       throw new Error("Se esperaba un evento ya creado");
     }
     expect(result.data.eventId).toBe("event-1");
-    expect(google.calls).toHaveLength(0);
+    expect(google.createCalls).toHaveLength(0);
+    expect(google.updateCalls).toHaveLength(0);
   });
 
   test("trata el 409 del proveedor como evento ya existente", async () => {
-    const recorded: Array<{ appointmentId: string; eventId: string; addedAt: number }> = [];
+    const recorded: RecordedReference[] = [];
     const google = fakeGoogle({ status: "already_exists", eventId: "event-1" });
     const result = await addAppointmentToGoogleCalendar(addDeps(reader(), google, recorded), input);
 
@@ -361,7 +505,7 @@ describe("addAppointmentToGoogleCalendar", () => {
   });
 
   test("respalda con .ics cuando Calendar no está conectado", async () => {
-    const recorded: Array<{ appointmentId: string; eventId: string; addedAt: number }> = [];
+    const recorded: RecordedReference[] = [];
     const result = await addAppointmentToGoogleCalendar(
       addDeps(reader(), fakeGoogle({ status: "not_connected" }), recorded),
       input,
@@ -409,6 +553,92 @@ describe("addAppointmentToGoogleCalendar", () => {
       );
       expect(result.status).toBe("error");
     }
+  });
+});
+
+describe("agregar → reagendar → consultar sin sincronización automática", () => {
+  type MutableRow = {
+    -readonly [K in keyof NonNullable<StoredRow>]: NonNullable<StoredRow>[K];
+  };
+
+  function mutableReader(stored: MutableRow, recorded: RecordedReference[]) {
+    const appointmentReader: CalendarAppointmentReader = {
+      getAppointment: async (appointmentId) =>
+        appointmentId === stored._id ? { ...stored } : null,
+      recordCalendarEvent: async () => undefined,
+    };
+    const recordEvent = async (reference: RecordedReference) => {
+      recorded.push(reference);
+      stored.calendarEventId = reference.eventId;
+      stored.calendarEventAddedAt = reference.addedAt;
+      stored.calendarEventStartsAt = reference.startsAt;
+      stored.calendarEventEndsAt = reference.endsAt;
+    };
+    return {
+      appointmentReader,
+      load: (tokenIdentifier: string | null) =>
+        loadFor(appointmentReader, tokenIdentifier, "appointment-1"),
+      recordEvent,
+    };
+  }
+
+  test("la referencia queda obsoleta y no confirma la nueva fecha como agregada", async () => {
+    const stored: MutableRow = { ...row() };
+    const recorded: RecordedReference[] = [];
+    const google = fakeGoogle(
+      { status: "created", eventId: "event-1" },
+      { status: "updated", eventId: "event-1" },
+    );
+    const { appointmentReader, load, recordEvent } = mutableReader(stored, recorded);
+    const deps = {
+      loadAppointment: (loadInput: {
+        readonly tokenIdentifier: string | null;
+        readonly appointmentId: string;
+      }) => loadFor(appointmentReader, loadInput.tokenIdentifier, loadInput.appointmentId),
+      recordEvent,
+      google,
+      now: () => CREATED_AT + 5_000,
+    };
+
+    const added = await addAppointmentToGoogleCalendar(deps, input);
+    expect(added.status === "ok" && added.data.status).toBe("created");
+    expect((await load("token-student"))?.referenceIsCurrent).toBe(true);
+
+    const newStart = START_AT + 24 * 60 * 60_000;
+    const newEnd = END_AT + 24 * 60 * 60_000;
+    stored.status = "rescheduled";
+    stored.startAt = newStart;
+    stored.endAt = newEnd;
+
+    const afterReschedule = await load("token-student");
+    expect(afterReschedule?.referenceIsCurrent).toBe(false);
+    expect(afterReschedule?.reference).toEqual({ eventId: "event-1", addedAt: CREATED_AT + 5_000 });
+
+    const file = await getAppointmentCalendarFile(
+      {
+        loadAppointment: (loadInput: {
+          readonly tokenIdentifier: string | null;
+          readonly appointmentId: string;
+        }) => loadFor(appointmentReader, loadInput.tokenIdentifier, loadInput.appointmentId),
+      },
+      input,
+    );
+    expect(file.status === "ok" && file.data.alreadyAdded).toBe(false);
+    expect(file.status === "ok" && file.data.content).toContain("DTSTART:20260311T160000Z");
+
+    const again = await addAppointmentToGoogleCalendar(deps, input);
+    expect(again.status === "ok" && again.data.status).toBe("updated");
+    expect(google.updateCalls).toEqual([
+      {
+        googleEventId: "event-1",
+        title: "Atención programada",
+        startAt: newStart,
+        endAt: newEnd,
+        timeZone: "America/Santiago",
+      },
+    ]);
+    expect(google.createCalls).toHaveLength(1);
+    expect((await load("token-student"))?.referenceIsCurrent).toBe(true);
   });
 });
 

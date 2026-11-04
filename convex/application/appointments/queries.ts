@@ -270,6 +270,7 @@ export interface AppointmentCalendarSummary {
   readonly endAt: number;
   readonly modality: ModalityPreference;
   readonly calendarAdded: boolean;
+  readonly calendarNeedsUpdate: boolean;
 }
 
 /** Lectura acotada por acompañamiento, ordenada de la más reciente a la más antigua. */

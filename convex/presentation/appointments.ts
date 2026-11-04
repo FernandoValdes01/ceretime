@@ -267,7 +267,7 @@ const appointmentProjectionValidator = v.union(
 );
 
 /**
- * Atenciones por rango civil y con paginación. Sin `accompanimentId` es la
+ * Atenciones por rango civil y por páginas. Sin `accompanimentId` es la
  * agenda propia del Estudiante o del Profesional; con él, las atenciones de ese
  * acompañamiento con la vista de quien consulta. Las fechas se leen en la zona
  * de la agenda (`AGENDA_TIME_ZONE`), que fija el servidor.
@@ -336,10 +336,15 @@ const appointmentCalendarFileValidator = v.object({
   alreadyAdded: v.boolean(),
 });
 
-/** Resultado de agregar la atención: éxito, ya existente o respaldo `.ics`. */
+/** Resultado de agregar o actualizar la atención: éxito, ya vigente o respaldo `.ics`. */
 const appointmentCalendarResultValidator = v.union(
   v.object({
     status: v.literal("created"),
+    eventId: v.string(),
+    ics: calendarFileContentValidator,
+  }),
+  v.object({
+    status: v.literal("updated"),
     eventId: v.string(),
     ics: calendarFileContentValidator,
   }),
@@ -363,6 +368,7 @@ const appointmentCalendarSummaryValidator = v.object({
   endAt: v.number(),
   modality: modalityUnion,
   calendarAdded: v.boolean(),
+  calendarNeedsUpdate: v.boolean(),
 });
 
 /**

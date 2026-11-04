@@ -473,6 +473,12 @@ export function appointmentCalendarReader(ctx: DbReader) {
         ...(doc.calendarEventAddedAt === undefined
           ? {}
           : { calendarEventAddedAt: doc.calendarEventAddedAt }),
+        ...(doc.calendarEventStartsAt === undefined
+          ? {}
+          : { calendarEventStartsAt: doc.calendarEventStartsAt }),
+        ...(doc.calendarEventEndsAt === undefined
+          ? {}
+          : { calendarEventEndsAt: doc.calendarEventEndsAt }),
       };
     },
   };
@@ -498,33 +504,48 @@ export function appointmentListReader(ctx: DbReader) {
         )
         .order("desc")
         .take(input.limit);
-      return rows.map((row) => ({
-        appointmentId: row._id,
-        status: row.status,
-        startAt: row.startsAt,
-        endAt: row.endsAt,
-        modality: row.modality,
-        calendarAdded: row.calendarEventId !== undefined,
-      }));
+      return rows.map((row) => {
+        const referenceIsCurrent =
+          row.calendarEventId !== undefined &&
+          row.calendarEventStartsAt === row.startsAt &&
+          row.calendarEventEndsAt === row.endsAt;
+        return {
+          appointmentId: row._id,
+          status: row.status,
+          startAt: row.startsAt,
+          endAt: row.endsAt,
+          modality: row.modality,
+          calendarAdded: referenceIsCurrent,
+          calendarNeedsUpdate: row.calendarEventId !== undefined && !referenceIsCurrent,
+        };
+      });
     },
   };
 }
 
 /**
- * Guarda la referencia del evento creado por TI2-122. Solo la llama la
- * mutación interna que compone la acción después de un resultado exitoso del
- * proveedor; un reintento con el mismo identificador determinista no duplica
- * el evento aunque esta escritura se repita.
+ * Guarda la referencia del evento creado o actualizado por TI2-122. Solo la
+ * llama la mutación interna que compone la acción después de un resultado
+ * exitoso del proveedor; un reintento con el mismo identificador determinista
+ * no duplica el evento aunque esta escritura se repita. El horario guardado es
+ * el que realmente tiene el evento: al reagendar la atención después, la
+ * referencia conserva el horario anterior y queda obsoleta.
  */
 export async function recordCalendarEvent(
   ctx: MutationCtx,
   appointmentId: Id<"appointments">,
-  eventId: string,
-  addedAt: number,
+  input: {
+    readonly eventId: string;
+    readonly addedAt: number;
+    readonly startsAt: number;
+    readonly endsAt: number;
+  },
 ): Promise<void> {
   await ctx.db.patch(appointmentId, {
-    calendarEventId: eventId,
-    calendarEventAddedAt: addedAt,
+    calendarEventId: input.eventId,
+    calendarEventAddedAt: input.addedAt,
+    calendarEventStartsAt: input.startsAt,
+    calendarEventEndsAt: input.endsAt,
   });
 }
 

@@ -164,6 +164,7 @@ function atencion(overrides: Partial<OwnAppointmentSummary> = {}): OwnAppointmen
     endAt: FIN_ATENCION,
     modality: "online",
     calendarAdded: false,
+    calendarNeedsUpdate: false,
     ...overrides,
   };
 }
@@ -173,7 +174,11 @@ function renderAt(path: string) {
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   const view = render(<RouterProvider router={router} />);
-  return { router, unmount: view.unmount };
+  return {
+    router,
+    unmount: view.unmount,
+    rerender: () => view.rerender(<RouterProvider router={router} />),
+  };
 }
 
 beforeEach(() => {
@@ -332,7 +337,100 @@ describe("calendario por atención (TI2-122)", () => {
     expect(screen.queryByText(/error_description|access_token|refresh_token/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Descargar .ics de respaldo" }));
-    expect(downloadedFiles).toEqual([ARCHIVO_ICS]);
+    await waitFor(() => expect(downloadedFiles).toEqual([ARCHIVO_ICS]));
+  });
+
+  test("muestra que el evento quedó desactualizado y permite actualizarlo", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [
+      atencion({ status: "rescheduled", calendarAdded: false, calendarNeedsUpdate: true }),
+    ];
+    mockedAddResult = { status: "updated", eventId: "event-1", ics: ARCHIVO_ICS };
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText(/evento de google calendar desactualizado/i)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /agregar a google calendar la atención/i }),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /actualizar en google calendar la atención/i }),
+    );
+    await waitFor(() => expect(addCalls).toEqual(["apt-1"]));
+    expect(
+      await screen.findByText("Actualizamos la atención en tu Google Calendar."),
+    ).toBeDefined();
+  });
+
+  test("el respaldo descarga el .ics vigente al pulsarlo y no el anterior", async () => {
+    const archivoAnterior: AppointmentCalendarFile = {
+      ...ARCHIVO_ICS,
+      content: "BEGIN:VCALENDAR\r\nDTSTART:20260310T160000Z\r\nEND:VCALENDAR\r\n",
+    };
+    const archivoVigente: AppointmentCalendarFile = {
+      ...ARCHIVO_ICS,
+      content: "BEGIN:VCALENDAR\r\nDTSTART:20260311T160000Z\r\nEND:VCALENDAR\r\n",
+    };
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    mockedCalendarFile = archivoAnterior;
+    mockedAddResult = { status: "fallback", reason: "unavailable", ics: archivoAnterior };
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+    expect(
+      await screen.findByText(/no pudimos agregar la atención a google calendar/i),
+    ).toBeDefined();
+    expect(downloadedFiles).toEqual([]);
+
+    // La fecha cambió después del intento fallido: el respaldo pide el archivo
+    // vigente al pulsarse, no reutiliza el `.ics` que devolvió la acción.
+    mockedCalendarFile = archivoVigente;
+    fireEvent.click(screen.getByRole("button", { name: "Descargar .ics de respaldo" }));
+    await waitFor(() => expect(downloadedFiles).toEqual([archivoVigente]));
+    expect(fileCalls).toEqual(["apt-1"]);
+  });
+
+  test("un reagendamiento con la pantalla abierta muestra la fecha nueva", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion({ calendarAdded: true })];
+    const first = renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(
+      await screen.findByRole("button", {
+        name: /descargar el archivo .ics de la atención del .*10 de marzo/i,
+      }),
+    ).toBeDefined();
+    expect(screen.getByText(/agregada a google calendar/i)).toBeDefined();
+
+    // Simula la actualización automática de la consulta con la pantalla abierta: los datos
+    // cambian y la misma ruta vuelve a leerse sin salir del detalle.
+    mockedAppointments = [
+      atencion({
+        status: "rescheduled",
+        startAt: INICIO_ATENCION + 24 * 60 * 60_000,
+        endAt: FIN_ATENCION + 24 * 60 * 60_000,
+        calendarAdded: false,
+        calendarNeedsUpdate: true,
+      }),
+    ];
+    first.unmount();
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(
+      await screen.findByRole("button", {
+        name: /descargar el archivo .ics de la atención del .*11 de marzo/i,
+      }),
+    ).toBeDefined();
+    expect(screen.getByText(/evento de google calendar desactualizado/i)).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: /actualizar en google calendar la atención/i }),
+    ).toBeDefined();
   });
 
   test("si Google revoca el acceso, ofrece volver a conectar y conserva el .ics", async () => {

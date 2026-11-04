@@ -269,8 +269,11 @@ export default defineSchema({
   // futura de justificación, no para este esquema. `calendarEventId` y
   // `calendarEventAddedAt` guardan la referencia del evento creado por TI2-122;
   // el identificador es determinista y ausente hasta la primera creación
-  // exitosa, así un reintento no duplica el evento. Solo persistencia: la
-  // ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
+  // exitosa, así un reintento no duplica el evento. `calendarEventStartsAt` y
+  // `calendarEventEndsAt` guardan el horario con el que se sincronizó ese
+  // evento: si difieren de `startsAt`/`endsAt`, la referencia quedó obsoleta y
+  // hay que actualizarla. Solo persistencia: la ocupación atómica de cupo es
+  // TI2-84 y los repositorios son TI2-95.
   appointments: defineTable({
     accompanimentId: v.id("accompaniments"),
     studentId: v.id("users"),
@@ -284,6 +287,8 @@ export default defineSchema({
     cancelReason: v.optional(v.string()),
     calendarEventId: v.optional(v.string()),
     calendarEventAddedAt: v.optional(v.number()),
+    calendarEventStartsAt: v.optional(v.number()),
+    calendarEventEndsAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     // Atenciones propias del estudiante.

@@ -11,7 +11,7 @@ import {
   formatAppointmentDateTime,
   modalityLabel,
 } from "./agenda-labels.ts";
-import { downloadCalendarFile, type DownloadableCalendarFile } from "./calendar-download.ts";
+import { downloadCalendarFile } from "./calendar-download.ts";
 import {
   useAddAppointmentToGoogleCalendar,
   useAppointmentCalendarFile,
@@ -120,7 +120,7 @@ export function StudentAppointmentsSection({
   const [needsReconnect, setNeedsReconnect] = useState(false);
   const [callbackDismissed, setCallbackDismissed] = useState(false);
   const [notices, setNotices] = useState<Record<string, Notice>>({});
-  const [fallbackFiles, setFallbackFiles] = useState<Record<string, DownloadableCalendarFile>>({});
+  const [fallbackIds, setFallbackIds] = useState<Record<string, true>>({});
 
   const callbackNotice = callbackDismissed ? null : calendarCallbackNotice(calendarStatus);
   const visibleConnectionNotice = connectionNotice ?? callbackNotice;
@@ -174,11 +174,12 @@ export function StudentAppointmentsSection({
 
   async function handleAdd(appointment: OwnAppointmentSummary) {
     const appointmentId = appointment.appointmentId;
+    const updating = appointment.calendarNeedsUpdate;
     setPendingId(appointmentId);
     try {
       const result = await addToCalendar({ appointmentId });
       if (result.status === "fallback") {
-        setFallbackFiles((current) => ({ ...current, [appointmentId]: result.ics }));
+        setFallbackIds((current) => ({ ...current, [appointmentId]: true }));
         if (result.reason === "not_connected") {
           setNeedsReconnect(true);
           setConnectionNotice({
@@ -187,27 +188,35 @@ export function StudentAppointmentsSection({
           });
           setAppointmentNotice(appointmentId, {
             kind: "info",
-            text: "No pudimos agregar la atención porque Google Calendar perdió el acceso. Vuelve a conectarlo o descarga el archivo .ics.",
+            text: updating
+              ? "No pudimos actualizar la atención porque Google Calendar perdió el acceso. Vuelve a conectarlo o descarga el archivo .ics."
+              : "No pudimos agregar la atención porque Google Calendar perdió el acceso. Vuelve a conectarlo o descarga el archivo .ics.",
           });
           return;
         }
         setAppointmentNotice(appointmentId, {
           kind: "info",
-          text: "No pudimos agregar la atención a Google Calendar. Puedes descargar el archivo .ics de respaldo.",
+          text: updating
+            ? "No pudimos actualizar la atención en Google Calendar. Puedes descargar el archivo .ics vigente."
+            : "No pudimos agregar la atención a Google Calendar. Puedes descargar el archivo .ics de respaldo.",
         });
         return;
       }
       setAppointmentNotice(appointmentId, {
         kind: "success",
         text:
-          result.status === "already_created"
-            ? "Esta atención ya estaba en tu Google Calendar."
-            : "Agregamos la atención a tu Google Calendar.",
+          result.status === "updated"
+            ? "Actualizamos la atención en tu Google Calendar."
+            : result.status === "already_created"
+              ? "Esta atención ya estaba en tu Google Calendar."
+              : "Agregamos la atención a tu Google Calendar.",
       });
     } catch {
       setAppointmentNotice(appointmentId, {
         kind: "error",
-        text: "No pudimos agregar la atención a Google Calendar. Inténtalo de nuevo o descarga el archivo .ics.",
+        text: updating
+          ? "No pudimos actualizar la atención en Google Calendar. Inténtalo de nuevo o descarga el archivo .ics."
+          : "No pudimos agregar la atención a Google Calendar. Inténtalo de nuevo o descarga el archivo .ics.",
       });
     } finally {
       setPendingId(null);
@@ -272,7 +281,7 @@ export function StudentAppointmentsSection({
               pending={pendingId === appointment.appointmentId}
               downloading={downloadingId === appointment.appointmentId}
               notice={notices[appointment.appointmentId]}
-              fallbackFile={fallbackFiles[appointment.appointmentId]}
+              fallbackAvailable={fallbackIds[appointment.appointmentId] === true}
               onAdd={() => void handleAdd(appointment)}
               onDownload={() => void handleDownload(appointment.appointmentId)}
             />
@@ -298,7 +307,7 @@ function AppointmentItem({
   pending,
   downloading,
   notice,
-  fallbackFile,
+  fallbackAvailable,
   onAdd,
   onDownload,
 }: {
@@ -308,7 +317,7 @@ function AppointmentItem({
   pending: boolean;
   downloading: boolean;
   notice?: Notice;
-  fallbackFile?: DownloadableCalendarFile;
+  fallbackAvailable: boolean;
   onAdd: () => void;
   onDownload: () => void;
 }) {
@@ -320,7 +329,11 @@ function AppointmentItem({
       <p className="mb-1 font-semibold text-on-surface">{dateLabel}</p>
       <p className="mb-3 text-sm text-on-surface-variant">
         {appointmentStatusLabel(appointment.status)} · {modalityLabel(appointment.modality)}
-        {appointment.calendarAdded ? " · Agregada a Google Calendar" : ""}
+        {appointment.calendarAdded
+          ? " · Agregada a Google Calendar"
+          : appointment.calendarNeedsUpdate
+            ? " · Evento de Google Calendar desactualizado"
+            : ""}
       </p>
 
       {notice === undefined ? null : <NoticeBox notice={notice} />}
@@ -338,7 +351,18 @@ function AppointmentItem({
             {downloading ? "Descargando…" : "Descargar .ics"}
           </button>
 
-          {connected && !appointment.calendarAdded ? (
+          {connected && appointment.calendarNeedsUpdate ? (
+            <button
+              type="button"
+              onClick={onAdd}
+              disabled={pending}
+              aria-busy={pending}
+              aria-label={`Actualizar en Google Calendar la atención del ${dateLabel}`}
+              className="min-h-[44px] rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
+            >
+              {pending ? "Actualizando…" : "Actualizar en Google Calendar"}
+            </button>
+          ) : connected && !appointment.calendarAdded ? (
             <button
               type="button"
               onClick={onAdd}
@@ -351,15 +375,17 @@ function AppointmentItem({
             </button>
           ) : null}
 
-          {fallbackFile === undefined ? null : (
+          {fallbackAvailable ? (
             <button
               type="button"
-              onClick={() => downloadCalendarFile(fallbackFile)}
-              className="min-h-[44px] rounded-[0.5rem] border border-primary px-4 py-2 font-semibold text-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+              onClick={onDownload}
+              disabled={downloading}
+              aria-busy={downloading}
+              className="min-h-[44px] rounded-[0.5rem] border border-primary px-4 py-2 font-semibold text-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
             >
-              Descargar .ics de respaldo
+              {downloading ? "Descargando…" : "Descargar .ics de respaldo"}
             </button>
-          )}
+          ) : null}
         </div>
       ) : (
         <p className="mt-4 text-sm text-on-surface-variant">

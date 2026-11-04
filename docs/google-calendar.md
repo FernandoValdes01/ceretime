@@ -2,7 +2,7 @@
 
 Integración real con Google Calendar para que el Estudiante dueño de una atención la agregue a su calendario personal con una acción explícita, más una alternativa `.ics` que funciona sin conexión con Google.
 
-El alcance es deliberadamente mínimo: se crea un evento por atención, nunca se leen ni se sincronizan calendarios. La reserva vive en Convex y el proveedor externo es solo un destino opcional; un fallo de Google no cancela, no mueve ni oculta la atención.
+El alcance es deliberadamente mínimo: se crea un evento por atención y se distingue si la referencia sigue vigente tras un reagendamiento; nunca se leen ni se listan calendarios. La reserva vive en Convex y el proveedor externo es solo un destino opcional; un fallo de Google no cancela, no mueve ni oculta la atención.
 
 ## Flujo de uso
 
@@ -10,8 +10,10 @@ El alcance es deliberadamente mínimo: se crea un evento por atención, nunca se
 2. En el detalle de su acompañamiento ve sus atenciones y el estado de la conexión con Google Calendar.
 3. Si quiere crear el evento automáticamente, pulsa «Conectar Google Calendar». Es un consentimiento OAuth aparte que pide únicamente `https://www.googleapis.com/auth/calendar.events`.
 4. Por cada atención en estado `scheduled` o `rescheduled`, pulsa «Agregar a Google Calendar». La acción crea el evento en el calendario primario de la cuenta vinculada.
-5. Por cada atención vigente, con o sin conexión, puede descargar el archivo `atencion-programada.ics` e importarlo en el calendario que prefiera.
-6. Si Google revoca el acceso, la acción responde `fallback` con `not_connected`; la interfaz muestra que la conexión se perdió y ofrece «Volver a conectar Google Calendar».
+5. Al reagendar una atención que ya tenía evento, la referencia conserva el horario anterior y queda obsoleta: el listado muestra la fecha nueva con «Evento de Google Calendar desactualizado» y no confirma la nueva fecha como agregada. No hay sincronización automática en esta entrega.
+6. Por cada atención vigente, con o sin conexión, puede descargar el archivo `atencion-programada.ics` e importarlo en el calendario que prefiera. El archivo se pide al pulsar el botón, así refleja siempre el horario vigente.
+7. Si el evento quedó con el horario anterior, la interfaz ofrece «Actualizar en Google Calendar». Esa acción usa `PATCH` sobre el mismo evento determinista y responde `updated`; si falla, responde `fallback` con el `.ics` vigente.
+8. Si Google revoca el acceso, la acción responde `fallback` con `not_connected`; la interfaz muestra que la conexión se perdió y ofrece «Volver a conectar Google Calendar».
 
 Solo las atenciones en estado `scheduled` o `rescheduled` admiten las dos acciones de calendario. Una atención cancelada, realizada o con inasistencia no se exporta como evento confirmado ni se crea en Google Calendar: la API responde `conflict` y la interfaz no muestra los botones.
 
@@ -23,16 +25,18 @@ La superficie es la misma para ambas aplicaciones, sale de `api.presentation.app
 
 | Operación                                                | Argumentos          | Devuelve                                                                                                 | Quién                                                    |
 | -------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `presentation/appointments.listAccompanimentAppointments` | `accompanimentId`   | Lista acotada (máximo 50, más reciente primero) de `{appointmentId, status, startAt, endAt, modality, calendarAdded}` | Estudiante dueño, Profesional o Practicante asignado     |
+| `presentation/appointments.listAccompanimentAppointments` | `accompanimentId`   | Lista acotada (máximo 50, más reciente primero) de `{appointmentId, status, startAt, endAt, modality, calendarAdded, calendarNeedsUpdate}` | Estudiante dueño, Profesional o Practicante asignado     |
 | `presentation/appointments.getAppointmentCalendarFile`    | `appointmentId`     | `{fileName, content, alreadyAdded}`                                                                      | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
 | `presentation/appointments.getCalendarConnection`         | —                   | `{connected: boolean}`                                                                                   | Cualquier sesión con perfil vigente                      |
-| `presentation/appointments.addAppointmentToGoogleCalendar` | `appointmentId`     | `{status: "created" \| "already_created", eventId, ics}` o `{status: "fallback", reason, ics}`            | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
+| `presentation/appointments.addAppointmentToGoogleCalendar` | `appointmentId`     | `{status: "created" \| "updated" \| "already_created", eventId, ics}` o `{status: "fallback", reason, ics}` | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
 
 Reglas del contrato:
 
 - `startAt` y `endAt` son instantes epoch en ms; la zona oficial de la agenda es `America/Santiago` (`AGENDA_TIME_ZONE`).
 - `status` usa los literales de `APPOINTMENT_STATUS_VALUES`. Solo `scheduled` y `rescheduled` admiten acciones: el backend rechaza la descarga y la creación con `conflict` para el resto de los estados, y la interfaz oculta ambos botones.
-- `calendarAdded` es un booleano derivado de la referencia guardada. `calendarEventId` y `calendarEventAddedAt` son persistencia interna y no se exponen como identificadores al cliente.
+- `calendarAdded` es `true` solo si la referencia guardada está sincronizada con `startsAt`/`endsAt` vigentes. `calendarNeedsUpdate` es `true` cuando existe un evento guardado pero conserva el horario anterior. `calendarEventId`, `calendarEventAddedAt`, `calendarEventStartsAt` y `calendarEventEndsAt` son persistencia interna y no se exponen como identificadores al cliente.
+- Una referencia sin horario guardado se considera obsoleta: no responde `already_created` aunque exista `calendarEventId`, porque no hay evidencia de que el evento tenga la fecha vigente.
+- `alreadyAdded` del `.ics` sigue la misma regla: solo es `true` para una referencia vigente.
 - `ics` y la descarga usan `{fileName, content}` con el nombre `atencion-programada.ics`. El contenido es texto RFC 5545 con CRLF, escape y plegado a 75 octetos.
 - `fallback.reason` solo distingue `not_connected` de `unavailable`. Nunca incluye la respuesta, encabezados, tokens ni el correo de Google.
 - Toda denegación de autorización responde `ConvexError("No autorizado")`, sin revelar si la atención o el acompañamiento existen.
@@ -46,7 +50,14 @@ Para Mobile, la integración consiste en consumir esas cuatro operaciones con el
 - `useConvex().query(api.presentation.appointments.getAppointmentCalendarFile, { appointmentId })` para obtener el `.ics` bajo demanda y guardarlo o compartirlo con el mecanismo nativo de la aplicación.
 - El consentimiento de Calendar se inicia con `authClient.linkSocial({ provider: "google", scopes: [CALENDAR_EVENTS_SCOPE], callbackURL, errorCallbackURL })`, igual que en Web. El valor `CALENDAR_EVENTS_SCOPE` se importa del Dominio compartido o se replica solo como constante documentada; no se inventa un scope distinto.
 
-Mobile no necesita leer tokens, correo de Google ni el documento de cuenta: el backend resuelve la conexión y la creación del evento. Si Mobile agrega su propia pantalla, debe conservar los estados de carga, vacío, error, éxito y solo lectura, y no debe mostrar detalles del proveedor.
+Mobile no necesita leer tokens, correo de Google ni el documento de cuenta: el backend resuelve la conexión, la creación y la actualización del evento. Si Mobile agrega su propia pantalla, debe conservar los estados de carga, vacío, error, éxito y solo lectura, distinguir `calendarNeedsUpdate` para ofrecer la actualización y no debe mostrar detalles del proveedor.
+
+## Reagendamiento sin sincronización automática
+
+- La mutación `rescheduleAppointment` no llama a Google y no programa sincronización en esta entrega.
+- Al reagendar, la referencia guarda el horario anterior y queda obsoleta: `calendarAdded` pasa a `false` y `calendarNeedsUpdate` a `true`; el `.ics` refleja la fecha nueva y `alreadyAdded` pasa a `false`.
+- Un fallo de Google no revierte el reagendamiento ni se propaga. La persona puede reintentar la actualización explícita o descargar el `.ics` vigente.
+- La recuperación de un evento borrado directamente en Google y la sincronización de cancelaciones siguen fuera de alcance.
 
 ## Consentimiento OAuth separado
 
@@ -90,7 +101,8 @@ Solo nombres; ningún valor real pertenece al repositorio. Se configuran en el d
 
 - El evento tiene título genérico `Atención programada`. No incluye CERETI, el nombre del Profesional, la modalidad, las necesidades de acceso, notas ni enlaces privados.
 - El evento no lleva descripción, ubicación ni URL. Tampoco se agrega el correo de la cuenta.
-- El `UID` del `.ics` y el `id` del evento de Google se derivan de forma determinista del identificador de la atención. Un reintento o un doble clic recibe `409` y se trata como éxito, sin duplicar.
+- El `UID` del `.ics` y el `id` del evento de Google se derivan de forma determinista del identificador de la atención. Un reintento o un doble clic recibe `409` y se trata como éxito, sin duplicar. La actualización usa `PATCH` sobre ese mismo `id`; nunca crea un segundo evento.
+- La referencia guarda el horario con el que se sincronizó el evento (`calendarEventStartsAt`/`calendarEventEndsAt`). Si difiere de `startsAt`/`endsAt`, el evento está desactualizado y no se responde `already_created`.
 - El `.ics` usa instantes UTC (`DTSTART`, `DTEND`, `DTSTAMP`) y declara `X-WR-TIMEZONE:America/Santiago`; no incluye una tabla `VTIMEZONE` frágil.
 - `DTSTAMP` sale del instante de creación de la atención, no del reloj de la consulta: dos descargas del mismo evento son idénticas.
 - La reserva se conserva aunque falle el guardado de la referencia o la llamada a Google. El identificador determinista permite recuperar el evento en el siguiente intento.
@@ -108,10 +120,14 @@ La verificación real requiere una cuenta de Google de prueba autorizada y el pr
 5. Verifica que la pantalla vuelve con el aviso de conexión y que el botón de agregar aparece.
 6. Agrega la atención y confirma el evento en Google Calendar: título `Atención programada`, hora correcta en `America/Santiago`, sin descripción ni ubicación.
 7. Pulsa de nuevo «Agregar» (o recarga y repite): debe responder que ya estaba agregada y no debe crear un segundo evento.
-8. Revoca el acceso de la aplicación desde la cuenta de Google e intenta agregar una atención: debe responder que la conexión se perdió y ofrecer «Volver a conectar Google Calendar», sin ocultar el `.ics`.
-9. Pulsa «Volver a conectar Google Calendar», aprueba de nuevo el alcance y agrega una atención nueva: el evento debe crearse una sola vez.
-10. Marca una atención como cancelada o realizada y confirma que no ofrece agregar ni descargar; la API debe responder `conflict` si se intenta por fuera de la interfaz.
-11. Cierra el acompañamiento y confirma que las atenciones se ven en solo lectura, sin acciones de calendario.
+8. Cambia la fecha de la atención (agregar → reagendar → consultar): el listado muestra la fecha nueva, `calendarAdded` en `false` y «Evento de Google Calendar desactualizado»; el `.ics` trae la fecha nueva y `alreadyAdded` en `false`.
+9. Con la pantalla del detalle abierta, cambia la fecha de la atención y verifica que el listado muestra la fecha nueva sin confirmar que está agregada.
+10. Descarga el `.ics` después del reagendamiento: debe contener la fecha nueva. Si hubo `fallback`, usa el botón «Descargar .ics de respaldo» y confirma que también trae la fecha vigente, no la anterior.
+11. Si aparece «Actualizar en Google Calendar», usa el botón y confirma que el evento existente se actualiza y responde `updated`.
+12. Revoca el acceso de la aplicación desde la cuenta de Google e intenta agregar una atención: debe responder que la conexión se perdió y ofrecer «Volver a conectar Google Calendar», sin ocultar el `.ics`.
+13. Pulsa «Volver a conectar Google Calendar», aprueba de nuevo el alcance y agrega una atención nueva: el evento debe crearse una sola vez.
+14. Marca una atención como cancelada o realizada y confirma que no ofrece agregar ni descargar; la API debe responder `conflict` si se intenta por fuera de la interfaz.
+15. Cierra el acompañamiento y confirma que las atenciones se ven en solo lectura, sin acciones de calendario.
 
 ## Diagnóstico de errores
 
@@ -130,8 +146,8 @@ La verificación real requiere una cuenta de Google de prueba autorizada y el pr
 ## Archivos de referencia
 
 - `convex/domain/calendar/calendar_event.ts`: título, UID determinista, escape, plegado y conversión `.ics`.
-- `convex/application/calendar/calendar.ts`: casos de uso, autorización y respaldo.
-- `convex/infrastructure/calendar/google_calendar.ts`: adaptador de Google y lectura de alcances.
+- `convex/application/calendar/calendar.ts`: casos de uso, autorización, actualización explícita y respaldo.
+- `convex/infrastructure/calendar/google_calendar.ts`: adaptador de Google (crear y actualizar) y lectura de alcances.
 - `convex/operations/calendar.ts`: puente interno entre la acción y la base.
 - `convex/presentation/appointments.ts`: API pública consumida por Web y Mobile.
 - `apps/web/src/presentation/estudiante/student-appointments.tsx`: interfaz Web de conexión, descarga y acción.

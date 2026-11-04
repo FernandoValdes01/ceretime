@@ -269,6 +269,10 @@ async function seedAppointment(
     readonly spaceId?: Id<"spaces">;
     readonly originalStartsAt?: number;
     readonly cancelReason?: string;
+    readonly calendarEventId?: string;
+    readonly calendarEventAddedAt?: number;
+    readonly calendarEventStartsAt?: number;
+    readonly calendarEventEndsAt?: number;
   },
 ) {
   return await t.run(async (ctx) => {
@@ -283,6 +287,16 @@ async function seedAppointment(
       ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
       ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
       ...(input.cancelReason === undefined ? {} : { cancelReason: input.cancelReason }),
+      ...(input.calendarEventId === undefined ? {} : { calendarEventId: input.calendarEventId }),
+      ...(input.calendarEventAddedAt === undefined
+        ? {}
+        : { calendarEventAddedAt: input.calendarEventAddedAt }),
+      ...(input.calendarEventStartsAt === undefined
+        ? {}
+        : { calendarEventStartsAt: input.calendarEventStartsAt }),
+      ...(input.calendarEventEndsAt === undefined
+        ? {}
+        : { calendarEventEndsAt: input.calendarEventEndsAt }),
       createdAt: 1,
     });
   });
@@ -821,6 +835,87 @@ test("TI2-121 API: el Estudiante mueve entre semanas y conserva la primera fecha
     originalStartsAt: weekOneSlots[0]!.startAt,
   });
   expect(await t.run(async (ctx) => await ctx.db.query("appointments").take(10))).toHaveLength(1);
+});
+
+test("TI2-122 API: reagendar actualiza el .ics y deja obsoleto el evento anterior", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "reschedule-calendar");
+  const block = await seedBlock(t, agenda.pro);
+  const weekOne = futureDateForWeekday(1, 2);
+  const weekTwo = futureDateForWeekday(1, 3);
+  const weekOneSlots = slotsOnDate(agenda.pro, block, weekOne);
+  const weekTwoSlots = slotsOnDate(agenda.pro, block, weekTwo);
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: weekOneSlots[0]!.startAt,
+    endsAt: weekOneSlots[0]!.endAt,
+    calendarEventId: "event-1",
+    calendarEventAddedAt: 1,
+    calendarEventStartsAt: weekOneSlots[0]!.startAt,
+    calendarEventEndsAt: weekOneSlots[0]!.endAt,
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+
+  const before = await asStudent.query(api.presentation.appointments.getAppointmentCalendarFile, {
+    appointmentId,
+  });
+  expect(before.alreadyAdded).toBe(true);
+  expect(before.content).toContain(
+    `DTSTART:${new Date(weekOneSlots[0]!.startAt)
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}/, "")}`,
+  );
+
+  expectOnlyAppointmentId(
+    await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, {
+      appointmentId,
+      professionalId: agenda.pro,
+      modality: "online",
+      startAt: weekTwoSlots[0]!.startAt,
+      endAt: weekTwoSlots[0]!.endAt,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    appointmentId,
+  );
+
+  const rows = await asStudent.query(api.presentation.appointments.listAccompanimentAppointments, {
+    accompanimentId: agenda.accompanimentId,
+  });
+  expect(rows).toEqual([
+    {
+      appointmentId,
+      status: "rescheduled",
+      startAt: weekTwoSlots[0]!.startAt,
+      endAt: weekTwoSlots[0]!.endAt,
+      modality: "online",
+      calendarAdded: false,
+      calendarNeedsUpdate: true,
+    },
+  ]);
+
+  const after = await asStudent.query(api.presentation.appointments.getAppointmentCalendarFile, {
+    appointmentId,
+  });
+  expect(after.alreadyAdded).toBe(false);
+  expect(after.content).toContain(
+    `DTSTART:${new Date(weekTwoSlots[0]!.startAt)
+      .toISOString()
+      .replace(/[-:]/g, "")
+      .replace(/\.\d{3}/, "")}`,
+  );
+
+  // Sin sincronización automática: la atención conserva el horario nuevo y la
+  // referencia anterior queda obsoleta hasta la próxima actualización explícita.
+  expect(await getAppointment(t, appointmentId)).toMatchObject({
+    startsAt: weekTwoSlots[0]!.startAt,
+    endsAt: weekTwoSlots[0]!.endAt,
+    calendarEventId: "event-1",
+    calendarEventStartsAt: weekOneSlots[0]!.startAt,
+    calendarEventEndsAt: weekOneSlots[0]!.endAt,
+  });
 });
 
 test("TI2-121 API: mover a otro Profesional asignado cambia la pertenencia y conserva la original", async () => {

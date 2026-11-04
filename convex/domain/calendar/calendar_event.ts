@@ -30,7 +30,12 @@ export const CALENDAR_EVENT_UID_DOMAIN = "calendar.local";
 export const CALENDAR_FILE_NAME = "atencion-programada.ics";
 
 /** Resultados públicos de la acción de agregar una atención al calendario. */
-export const CALENDAR_EVENT_OUTCOME_VALUES = ["created", "already_created", "fallback"] as const;
+export const CALENDAR_EVENT_OUTCOME_VALUES = [
+  "created",
+  "updated",
+  "already_created",
+  "fallback",
+] as const;
 
 export type CalendarEventOutcome = (typeof CALENDAR_EVENT_OUTCOME_VALUES)[number];
 

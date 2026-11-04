@@ -40,6 +40,9 @@ export type CalendarAppointmentRow = AuthorizableAppointment & {
   readonly createdAt: number;
   readonly calendarEventId?: string;
   readonly calendarEventAddedAt?: number;
+  /** Horario con el que se creó o actualizó el evento en Google Calendar. */
+  readonly calendarEventStartsAt?: number;
+  readonly calendarEventEndsAt?: number;
 };
 
 /** Lectura y escritura de la referencia del evento en la atención. */
@@ -49,6 +52,8 @@ export interface CalendarAppointmentReader {
     readonly appointmentId: string;
     readonly eventId: string;
     readonly addedAt: number;
+    readonly startsAt: number;
+    readonly endsAt: number;
   }): Promise<void>;
 }
 
@@ -61,6 +66,11 @@ export interface CalendarAppointmentContext {
   /** Instante estable de creación: el `.ics` no depende del reloj de la consulta. */
   readonly createdAt: number;
   readonly reference: { readonly eventId: string; readonly addedAt: number } | null;
+  /**
+   * Verdadero solo si la referencia guardada se sincronizó con el horario
+   * vigente. Una referencia ausente o con el horario anterior está obsoleta.
+   */
+  readonly referenceIsCurrent: boolean;
 }
 
 /** Resultado del proveedor externo, sin respuestas ni credenciales. */
@@ -70,7 +80,13 @@ export type GoogleCalendarCreateOutcome =
   | { readonly status: "not_connected" }
   | { readonly status: "unavailable" };
 
-/** Puerto del proveedor de calendario: solo crea eventos, nunca lee la agenda. */
+/** Resultado de actualizar el evento de una atención ya creada. */
+export type GoogleCalendarUpdateOutcome =
+  | { readonly status: "updated"; readonly eventId: string }
+  | { readonly status: "not_connected" }
+  | { readonly status: "unavailable" };
+
+/** Puerto del proveedor de calendario: crea y actualiza, nunca lee la agenda. */
 export interface GoogleCalendarGateway {
   createEvent(input: {
     readonly googleEventId: string;
@@ -79,6 +95,13 @@ export interface GoogleCalendarGateway {
     readonly endAt: number;
     readonly timeZone: string;
   }): Promise<GoogleCalendarCreateOutcome>;
+  updateEvent(input: {
+    readonly googleEventId: string;
+    readonly title: string;
+    readonly startAt: number;
+    readonly endAt: number;
+    readonly timeZone: string;
+  }): Promise<GoogleCalendarUpdateOutcome>;
 }
 
 /** Lectura de los alcances OAuth vinculados a la sesión. */
@@ -89,6 +112,7 @@ export interface CalendarConnectionReader {
 /** Resultado público de agregar una atención al calendario. */
 export type AppointmentCalendarResult =
   | { readonly status: "created"; readonly eventId: string; readonly ics: CalendarFile }
+  | { readonly status: "updated"; readonly eventId: string; readonly ics: CalendarFile }
   | {
       readonly status: "already_created";
       readonly eventId: string;
@@ -122,19 +146,24 @@ export async function loadCalendarAppointment(
     appointment,
   });
   if (grant.status === "error") return null;
+  const reference =
+    appointment.calendarEventId === undefined
+      ? null
+      : {
+          eventId: appointment.calendarEventId,
+          addedAt: appointment.calendarEventAddedAt ?? 0,
+        };
   return {
     appointmentId: appointment._id,
     status: appointment.status,
     startAt: appointment.startAt,
     endAt: appointment.endAt,
     createdAt: appointment.createdAt,
-    reference:
-      appointment.calendarEventId === undefined
-        ? null
-        : {
-            eventId: appointment.calendarEventId,
-            addedAt: appointment.calendarEventAddedAt ?? 0,
-          },
+    reference,
+    referenceIsCurrent:
+      reference !== null &&
+      appointment.calendarEventStartsAt === appointment.startAt &&
+      appointment.calendarEventEndsAt === appointment.endAt,
   };
 }
 
@@ -178,33 +207,59 @@ export async function getAppointmentCalendarFile(
   if (!isCalendarActionableStatus(context.status)) return errResult(conflictError());
   return okResult({
     ...buildFile(context, input.timeZone),
-    alreadyAdded: context.reference !== null,
+    alreadyAdded: context.referenceIsCurrent,
   });
+}
+
+/** Dependencias compartidas por las acciones que crean o actualizan el evento. */
+interface CalendarEventActionDeps {
+  readonly loadAppointment: (input: {
+    readonly tokenIdentifier: string | null;
+    readonly appointmentId: string;
+  }) => Promise<CalendarAppointmentContext | null>;
+  readonly recordEvent: (input: {
+    readonly appointmentId: string;
+    readonly eventId: string;
+    readonly addedAt: number;
+    readonly startsAt: number;
+    readonly endsAt: number;
+  }) => Promise<void>;
+  readonly google: GoogleCalendarGateway;
+}
+
+async function recordEventReference(
+  deps: CalendarEventActionDeps,
+  context: CalendarAppointmentContext,
+  eventId: string,
+  addedAt: number,
+): Promise<void> {
+  try {
+    await deps.recordEvent({
+      appointmentId: context.appointmentId,
+      eventId,
+      addedAt,
+      startsAt: context.startAt,
+      endsAt: context.endAt,
+    });
+  } catch {
+    // El evento ya existe y su identificador es determinista: el próximo
+    // intento lo recupera sin duplicarlo. No se expone el fallo interno.
+  }
 }
 
 /**
  * Agrega la atención al calendario personal con una acción explícita.
  *
- * Si ya hay una referencia guardada, no llama al proveedor: responde
- * `already_created`. Si el proveedor no está vinculado o falla, devuelve
- * `fallback` con el `.ics` y sin detalles externos. La referencia se guarda
- * después de crear el evento; el identificador determinista hace que un
- * reintento no duplique aunque esa escritura falle.
+ * Si la referencia guardada coincide con el horario vigente, no llama al
+ * proveedor: responde `already_created`. Si la referencia existe pero conserva
+ * el horario anterior, está desactualizada: no se confirma como agregada, se
+ * actualiza el mismo evento y se responde `updated`. Si el proveedor no está
+ * vinculado o falla, devuelve `fallback` con el `.ics` vigente y sin detalles
+ * externos. La referencia guarda el horario del evento; un reagendamiento la
+ * deja obsoleta hasta la próxima actualización explícita.
  */
 export async function addAppointmentToGoogleCalendar(
-  deps: {
-    readonly loadAppointment: (input: {
-      readonly tokenIdentifier: string | null;
-      readonly appointmentId: string;
-    }) => Promise<CalendarAppointmentContext | null>;
-    readonly recordEvent: (input: {
-      readonly appointmentId: string;
-      readonly eventId: string;
-      readonly addedAt: number;
-    }) => Promise<void>;
-    readonly google: GoogleCalendarGateway;
-    readonly now: () => number;
-  },
+  deps: CalendarEventActionDeps & { readonly now: () => number },
   input: {
     readonly tokenIdentifier: string | null;
     readonly appointmentId: string;
@@ -217,7 +272,6 @@ export async function addAppointmentToGoogleCalendar(
   // que ya no está vigente. La UI oculta la acción, pero la regla vive acá.
   if (!isCalendarActionableStatus(context.status)) return errResult(conflictError());
 
-  const addedAt = deps.now();
   const event = buildCalendarEvent({
     appointmentId: context.appointmentId,
     startAt: context.startAt,
@@ -228,7 +282,21 @@ export async function addAppointmentToGoogleCalendar(
   const ics = toCalendarFile(event);
 
   if (context.reference !== null) {
-    return okResult({ status: "already_created", eventId: context.reference.eventId, ics });
+    if (context.referenceIsCurrent) {
+      return okResult({ status: "already_created", eventId: context.reference.eventId, ics });
+    }
+    const update = await deps.google.updateEvent({
+      googleEventId: context.reference.eventId,
+      title: event.title,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      timeZone: event.timeZone,
+    });
+    if (update.status === "not_connected" || update.status === "unavailable") {
+      return okResult({ status: "fallback", reason: update.status, ics });
+    }
+    await recordEventReference(deps, context, update.eventId, context.reference.addedAt);
+    return okResult({ status: "updated", eventId: update.eventId, ics });
   }
 
   const outcome = await deps.google.createEvent({
@@ -242,16 +310,7 @@ export async function addAppointmentToGoogleCalendar(
     return okResult({ status: "fallback", reason: outcome.status, ics });
   }
 
-  try {
-    await deps.recordEvent({
-      appointmentId: context.appointmentId,
-      eventId: outcome.eventId,
-      addedAt,
-    });
-  } catch {
-    // El evento ya existe y su identificador es determinista: el próximo
-    // intento lo recupera sin duplicarlo. No se expone el fallo interno.
-  }
+  await recordEventReference(deps, context, outcome.eventId, deps.now());
 
   return okResult({
     status: outcome.status === "created" ? "created" : "already_created",
