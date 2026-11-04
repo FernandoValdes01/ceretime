@@ -77,6 +77,30 @@ describe("Contratos públicos de la atención reservada (TI2-87, TI2-93)", () =>
     };
     expect(JSON.parse(JSON.stringify(page))).toEqual(page);
   });
+
+  test("la página lleva cada atención con su vista (ida y vuelta JSON)", () => {
+    const appointment: Appointment = {
+      id: "atencion-ficticia-1",
+      accompanimentId: "acompanamiento-ficticio-1",
+      professionalId: "profesional-ficticio-1",
+      modality: "online",
+      startAt: 1000,
+      endAt: 2000,
+      status: "scheduled",
+      version: "v1",
+    };
+    const page: AppointmentPage = {
+      items: [
+        toAppointmentProjection(appointment, "full"),
+        toAppointmentProjection(appointment, "minimized"),
+      ],
+      hasMore: true,
+      nextCursor: "atencion-ficticia-1",
+      version: "v1",
+    };
+    expect(JSON.parse(JSON.stringify(page))).toEqual(page);
+    expect(page.items.map((item) => item.view)).toEqual(["full", "minimized"]);
+  });
 });
 
 describe("Política de transición de la atención (TI2-93)", () => {
@@ -726,17 +750,24 @@ describe("Proyección y constancia de la atención (TI2-100)", () => {
   };
 
   test("las vistas son completa y minimizada", () => {
-    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "minimized"]);
+    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "shared", "minimized"]);
   });
 
   test("la vista completa conserva la entidad y marca la vista", () => {
     const projected = toAppointmentProjection(appointment, "full");
 
     expect(projected).toEqual({ ...appointment, view: "full" });
-    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{ readonly view: "full" | "minimized" }>();
+    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{
+      readonly view: "full" | "shared" | "minimized";
+    }>();
   });
 
   test("la vista minimizada omite vínculos, fechas originales y motivos", () => {
+    const shared = toAppointmentProjection(appointment, "shared");
+    const { cancelReason: _omitted, ...withoutReason } = appointment;
+    expect(shared).toEqual({ ...withoutReason, view: "shared" });
+    expect(shared).not.toHaveProperty("cancelReason");
+
     const projected = toAppointmentProjection(appointment, "minimized");
 
     expect(projected).toEqual({

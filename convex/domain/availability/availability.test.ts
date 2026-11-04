@@ -7,6 +7,7 @@ import {
   MAX_EXPANSION_DAYS,
   WEEKDAY_MAX,
   WEEKDAY_MIN,
+  civilRangeToInstantRange,
   expandAvailabilitySlots,
   isAvailabilityExceptionKind,
   isValidCivilDate,
@@ -770,5 +771,115 @@ describe("rechazos de disponibilidad (TI2-81)", () => {
         }),
       ),
     ).toThrow("más de una excepción");
+  });
+});
+
+describe("civilRangeToInstantRange (TI2-112)", () => {
+  const timeZone = "America/Santiago";
+  const HOUR_MS = 3_600_000;
+
+  test("una semana normal va de medianoche a medianoche en la zona pedida", () => {
+    // En julio Santiago está en UTC-4.
+    const range = civilRangeToInstantRange({ from: "2026-07-06", to: "2026-07-12", timeZone });
+    expect(range).toEqual({
+      startAt: Date.UTC(2026, 6, 6, 4),
+      endAt: Date.UTC(2026, 6, 13, 4),
+    });
+    expect(range.endAt - range.startAt).toBe(7 * 24 * HOUR_MS);
+  });
+
+  test("un solo día civil es un rango válido de 24 horas", () => {
+    const range = civilRangeToInstantRange({ from: "2026-07-06", to: "2026-07-06", timeZone });
+    expect(range.endAt - range.startAt).toBe(24 * HOUR_MS);
+  });
+
+  test("rechaza fechas inválidas y un rango invertido", () => {
+    expect(() =>
+      civilRangeToInstantRange({ from: "2026-02-30", to: "2026-03-01", timeZone }),
+    ).toThrow("fechas válidas");
+    expect(() =>
+      civilRangeToInstantRange({ from: "2026-07-01", to: "1-7-2026", timeZone }),
+    ).toThrow("fechas válidas");
+    expect(() =>
+      civilRangeToInstantRange({ from: "2026-07-02", to: "2026-07-01", timeZone }),
+    ).toThrow("anterior a su inicio");
+  });
+
+  test("admite hasta el máximo de días y rechaza uno más", () => {
+    expect(() =>
+      civilRangeToInstantRange({ from: "2026-07-01", to: "2026-09-30", timeZone }),
+    ).not.toThrow();
+    expect(() =>
+      civilRangeToInstantRange({ from: "2026-07-01", to: "2026-10-01", timeZone }),
+    ).toThrow(`máximo de ${MAX_EXPANSION_DAYS} días`);
+  });
+
+  test("rechaza una zona horaria desconocida", () => {
+    expect(() =>
+      civilRangeToInstantRange({
+        from: "2026-07-01",
+        to: "2026-07-02",
+        timeZone: "Zona/Inexistente",
+      }),
+    ).toThrow(RangeError);
+  });
+
+  test("los días contiguos no dejan huecos cuando el cambio de hora borra la medianoche", () => {
+    const beforeChange = civilRangeToInstantRange({
+      from: "2026-09-05",
+      to: "2026-09-05",
+      timeZone,
+    });
+    const afterChange = civilRangeToInstantRange({
+      from: "2026-09-06",
+      to: "2026-09-06",
+      timeZone,
+    });
+    expect(beforeChange.endAt).toBe(afterChange.startAt);
+    expect(beforeChange.startAt).toBe(Date.UTC(2026, 8, 5, 4));
+    // El salto borra de 00:00 a 01:00 del domingo: la frontera es el instante del salto.
+    expect(beforeChange.endAt).toBe(Date.UTC(2026, 8, 6, 4));
+    expect(beforeChange.endAt - beforeChange.startAt).toBe(24 * HOUR_MS);
+    expect(afterChange.endAt - afterChange.startAt).toBe(23 * HOUR_MS);
+  });
+
+  test("las 23:30 de la víspera del cambio de hora quedan solo en el rango del sábado", () => {
+    const lateSaturday = Date.UTC(2026, 8, 6, 3, 30);
+    expect(localDateTime(lateSaturday)).toBe("2026-09-05 23:30");
+    const beforeChange = civilRangeToInstantRange({
+      from: "2026-09-05",
+      to: "2026-09-05",
+      timeZone,
+    });
+    const afterChange = civilRangeToInstantRange({
+      from: "2026-09-06",
+      to: "2026-09-06",
+      timeZone,
+    });
+    expect(lateSaturday).toBeGreaterThanOrEqual(beforeChange.startAt);
+    expect(lateSaturday).toBeLessThan(beforeChange.endAt);
+    expect(lateSaturday).toBeLessThan(afterChange.startAt);
+  });
+
+  test("un rango que empieza o termina junto al salto usa la misma frontera", () => {
+    const fromSunday = civilRangeToInstantRange({ from: "2026-09-06", to: "2026-09-07", timeZone });
+    expect(fromSunday.startAt).toBe(Date.UTC(2026, 8, 6, 4));
+    const toSaturday = civilRangeToInstantRange({ from: "2026-09-04", to: "2026-09-05", timeZone });
+    expect(toSaturday.endAt).toBe(Date.UTC(2026, 8, 6, 4));
+  });
+
+  test("los días contiguos no se solapan cuando el cambio de hora repite una hora", () => {
+    const beforeChange = civilRangeToInstantRange({
+      from: "2027-04-03",
+      to: "2027-04-03",
+      timeZone,
+    });
+    const afterChange = civilRangeToInstantRange({
+      from: "2027-04-04",
+      to: "2027-04-04",
+      timeZone,
+    });
+    expect(beforeChange.endAt).toBe(afterChange.startAt);
+    expect(beforeChange.endAt - beforeChange.startAt).toBe(25 * HOUR_MS);
   });
 });

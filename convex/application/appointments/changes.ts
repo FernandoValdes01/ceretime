@@ -1,9 +1,12 @@
 import {
   transitionAppointment,
   decideJustificationTimeliness,
+  isJustificationDecision,
   NO_SHOW_PENDING_STATE,
   type AppointmentAttendanceOutcome,
   type AppointmentStatus,
+  type JustificationDecision,
+  type JustificationReview,
 } from "../../domain/appointments/appointment";
 import {
   conflictError,
@@ -22,6 +25,7 @@ import {
   type AuthorizableAppointment,
   type AuthorizationReader,
 } from "../authorization/authorize";
+import { auditAppointmentChange, type AppointmentAuditRecorder } from "./audit";
 import {
   resolveBookableSlot,
   slotSelectionProblem,
@@ -52,6 +56,11 @@ import type { AppointmentOccupier } from "./occupancy";
  * el estado `rescheduled` y la primera fecha original, que la política no
  * sobrescribe en cambios encadenados.
  *
+ * Cada cambio exitoso deja un evento mínimo de auditoría (TI2-128) por el
+ * puerto `audit`, después de persistir y en la misma mutation: actor de la
+ * sesión, instante del servidor, acción, atención y estado resultante, sin el
+ * motivo. Los rechazos no se auditan porque abortan la mutation.
+ *
  * Opera con datos ficticios.
  */
 
@@ -68,9 +77,10 @@ export interface StoredAppointmentForChange {
   readonly endAt: number;
   /** Primera fecha conservada; ausente hasta el primer reagendamiento. */
   readonly originalStartAt?: number;
+  /** Justificación entregada por el Estudiante y su revisión (TI2-119). */
   readonly justificationExplanation?: string;
   readonly justificationSubmittedAt?: number;
-  readonly justificationReview?: string;
+  readonly justificationReview?: JustificationReview;
   readonly supportingDocumentReceived?: boolean;
 }
 
@@ -100,7 +110,7 @@ export interface AppointmentTransitionPersister {
       readonly originalStartsAt?: number;
       readonly justificationExplanation?: string;
       readonly justificationSubmittedAt?: number;
-      readonly justificationReview?: string;
+      readonly justificationReview?: JustificationReview;
       readonly supportingDocumentReceived?: boolean;
     },
   ): Promise<void>;
@@ -120,6 +130,7 @@ export interface CancelAppointmentDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
+  readonly audit: AppointmentAuditRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -136,6 +147,7 @@ export interface RescheduleAppointmentDeps extends SlotSelectionDeps {
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
   readonly occupier: AppointmentOccupier;
+  readonly audit: AppointmentAuditRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -158,6 +170,7 @@ export interface RecordAppointmentAttendanceDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
+  readonly audit: AppointmentAuditRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -219,11 +232,12 @@ export async function cancelAppointment(
   });
   if (grant.status === "error") return denied();
 
+  const occurredAt = occurredNow(deps);
   const outcome = transitionAppointment({
     from: stored.status,
     to: grant.data.target,
     actorId: grant.data.callerId,
-    occurredAt: occurredNow(deps),
+    occurredAt,
     ...(input.reason === undefined ? {} : { reason: input.reason }),
     currentStartAt: stored.startAt,
     ...(stored.originalStartAt === undefined
@@ -236,6 +250,13 @@ export async function cancelAppointment(
     status: outcome.change.to,
     ...(outcome.cancelReason === undefined ? {} : { cancelReason: outcome.cancelReason }),
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  await auditAppointmentChange(deps.audit, {
+    action: "cancelled",
+    actorId: grant.data.callerId,
+    appointmentId: stored.id,
+    result: outcome.change.to,
+    occurredAt,
   });
   return okResult({ appointmentId: stored.id });
 }
@@ -276,11 +297,12 @@ export async function rescheduleAppointment(
   // La política se aplica antes de releer disponibilidad: una atención ya
   // cancelada o un destino inválido se rechazan sin depender de qué cupos
   // existan, y el origen no se toca.
+  const occurredAt = occurredNow(deps);
   const outcome = transitionAppointment({
     from: stored.status,
     to: "rescheduled",
     actorId: grant.data.callerId,
-    occurredAt: occurredNow(deps),
+    occurredAt,
     currentStartAt: stored.startAt,
     ...(stored.originalStartAt === undefined
       ? {}
@@ -316,6 +338,13 @@ export async function rescheduleAppointment(
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  await auditAppointmentChange(deps.audit, {
+    action: "rescheduled",
+    actorId: grant.data.callerId,
+    appointmentId: occupied.data.appointmentId,
+    result: outcome.change.to,
+    occurredAt,
   });
   return okResult({ appointmentId: occupied.data.appointmentId });
 }
@@ -355,11 +384,12 @@ export async function recordAppointmentAttendance(
   });
   if (grant.status === "error") return denied();
 
+  const occurredAt = occurredNow(deps);
   const outcome = transitionAppointment({
     from: stored.status,
     to: input.outcome,
     actorId: grant.data.callerId,
-    occurredAt: occurredNow(deps),
+    occurredAt,
     currentStartAt: stored.startAt,
     ...(stored.originalStartAt === undefined
       ? {}
@@ -370,6 +400,13 @@ export async function recordAppointmentAttendance(
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  await auditAppointmentChange(deps.audit, {
+    action: "attendance_recorded",
+    actorId: grant.data.callerId,
+    appointmentId: stored.id,
+    result: outcome.change.to,
+    occurredAt,
   });
   return okResult({ appointmentId: stored.id });
 }
@@ -384,15 +421,27 @@ export interface SubmitAppointmentJustificationDeps {
 export interface SubmitAppointmentJustificationInput {
   readonly tokenIdentifier: string | null;
   readonly appointmentId: string;
+  /** Explicación operativa del Estudiante; sin certificados ni diagnósticos. */
   readonly explanation: string;
+  /** Solo constancia de recepción por canal institucional: no se guarda archivo. */
   readonly supportingDocumentReceived: boolean;
 }
 
+/**
+ * Entrega de la explicación de una inasistencia pendiente (TI2-119).
+ *
+ * Solo el Estudiante dueño de la atención puede entregarla, una única vez y
+ * mientras el plazo de cinco días hábiles de TI2-94 siga abierto. El plazo se
+ * decide con el reloj del servidor y el calendario de la agenda: el cliente no
+ * envía ni la zona ni el instante. La entrega deja la atención en `no_show`
+ * con la revisión `pending`; no la resuelve ni borra nada.
+ */
 export async function submitAppointmentJustification(
   deps: SubmitAppointmentJustificationDeps,
   input: SubmitAppointmentJustificationInput,
 ): Promise<ApiResult<AppointmentChangeSuccess>> {
-  if (input.appointmentId.trim() === "" || input.explanation.trim() === "") {
+  const explanation = input.explanation.trim();
+  if (input.appointmentId.trim() === "" || explanation === "") {
     return conflict();
   }
 
@@ -405,24 +454,22 @@ export async function submitAppointmentJustification(
   });
   if (grant.status === "error") return denied();
 
-  if (stored.status !== NO_SHOW_PENDING_STATE) {
+  if (stored.status !== NO_SHOW_PENDING_STATE || stored.justificationSubmittedAt !== undefined) {
     return conflict();
   }
 
-  const now = occurredNow(deps);
+  const submittedAt = occurredNow(deps);
   const timeliness = decideJustificationTimeliness({
     missedAt: stored.startAt,
-    submittedAt: now,
+    submittedAt,
     timeZone: AGENDA_TIME_ZONE,
   });
-  if (!timeliness.withinDeadline) {
-    return conflict();
-  }
+  if (!timeliness.withinDeadline) return conflict();
 
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: stored.status,
-    justificationExplanation: input.explanation.trim(),
-    justificationSubmittedAt: now,
+    justificationExplanation: explanation,
+    justificationSubmittedAt: submittedAt,
     justificationReview: "pending",
     supportingDocumentReceived: input.supportingDocumentReceived,
   });
@@ -439,17 +486,24 @@ export interface ReviewAppointmentJustificationDeps {
 export interface ReviewAppointmentJustificationInput {
   readonly tokenIdentifier: string | null;
   readonly appointmentId: string;
-  readonly review: "accepted" | "rejected";
+  readonly review: JustificationDecision;
 }
 
+/**
+ * Revisión de la justificación por el Profesional asignado (TI2-119).
+ *
+ * Aceptar exige una entrega `pending` del Estudiante y deja `no_show_justified`.
+ * Rechazar una entrega `pending` deja `no_show_unjustified`. Sin entrega, la
+ * misma operación con `rejected` cierra una inasistencia cuyo plazo de TI2-94
+ * ya venció: es el mecanismo verificable de vencimiento, evaluado con el reloj
+ * del servidor y sin cron ni sanción automática. Nunca se acepta una
+ * justificación inexistente ni se rechaza dentro del plazo abierto.
+ */
 export async function reviewAppointmentJustification(
   deps: ReviewAppointmentJustificationDeps,
   input: ReviewAppointmentJustificationInput,
 ): Promise<ApiResult<AppointmentChangeSuccess>> {
-  if (
-    input.appointmentId.trim() === "" ||
-    (input.review !== "accepted" && input.review !== "rejected")
-  ) {
+  if (input.appointmentId.trim() === "" || !isJustificationDecision(input.review)) {
     return conflict();
   }
 
@@ -462,12 +516,27 @@ export async function reviewAppointmentJustification(
   });
   if (grant.status === "error") return denied();
 
+  if (stored.status !== NO_SHOW_PENDING_STATE) return conflict();
+
+  const reviewedAt = occurredNow(deps);
+  const hasSubmission = stored.justificationSubmittedAt !== undefined;
+  if (hasSubmission) {
+    if (stored.justificationReview !== "pending") return conflict();
+  } else {
+    const timeliness = decideJustificationTimeliness({
+      missedAt: stored.startAt,
+      submittedAt: reviewedAt,
+      timeZone: AGENDA_TIME_ZONE,
+    });
+    if (input.review === "accepted" || timeliness.withinDeadline) return conflict();
+  }
+
   const targetStatus = input.review === "accepted" ? "no_show_justified" : "no_show_unjustified";
   const outcome = transitionAppointment({
     from: stored.status,
     to: targetStatus,
     actorId: grant.data.callerId,
-    occurredAt: occurredNow(deps),
+    occurredAt: reviewedAt,
     currentStartAt: stored.startAt,
     ...(stored.originalStartAt === undefined
       ? {}
@@ -477,7 +546,7 @@ export async function reviewAppointmentJustification(
 
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
-    justificationReview: input.review,
+    ...(hasSubmission ? { justificationReview: input.review } : {}),
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
   });
   return okResult({ appointmentId: stored.id });

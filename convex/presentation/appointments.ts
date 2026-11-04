@@ -7,14 +7,20 @@ import {
   submitAppointmentJustification as submitAppointmentJustificationUseCase,
   reviewAppointmentJustification as reviewAppointmentJustificationUseCase,
 } from "../application/appointments/changes";
-import { mutation } from "../_generated/server";
+import {
+  getAppointment as getAppointmentUseCase,
+  listAppointments as listAppointmentsUseCase,
+} from "../application/appointments/queries";
+import { mutation, query } from "../_generated/server";
 import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
 import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
 import {
   accompanimentNeedsReader,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
+import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
 import {
+  appointmentAgendaReader,
   appointmentChangeReader,
   appointmentOccupier,
   appointmentTransitionRepository,
@@ -23,19 +29,21 @@ import { availabilityReader } from "../infrastructure/availability/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   appointmentAttendanceOutcomeUnion,
+  appointmentStatusUnion,
   justificationDecisionUnion,
   modalityUnion,
 } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
 
 /**
- * Borde de Presentación: reserva y cambios de una atención (TI2-111/TI2-121).
+ * Borde de Presentación: reserva, cambios y consulta de atenciones
+ * (TI2-111/TI2-121/TI2-112).
  *
  * Adaptadores delgados bajo `api.presentation.appointments`: validan la forma
  * del contrato v1 de TI2-87, resuelven la identidad en el servidor con
  * `ctx.auth.getUserIdentity()` y delegan en los casos de uso de TI2-98,
- * TI2-109 y TI2-110, compuestos con los adaptadores de TI2-86, TI2-95 y
- * TI2-96. No tocan `ctx.db` ni deciden reglas: la pertenencia sale de la fila
+ * TI2-109, TI2-110 y TI2-112, compuestos con los adaptadores de TI2-86, TI2-95
+ * y TI2-96. No tocan `ctx.db` ni deciden reglas: la pertenencia sale de la fila
  * leída en el servidor y el actor, del perfil de la sesión. Nunca aceptan un
  * `userId` del cliente como prueba.
  *
@@ -53,7 +61,16 @@ import { unwrapApiResult } from "./session";
  * identificador ajeno o inexistente, `conflict` ante una entrada inválida, un
  * estado que no admite el cambio o un cruce de ocupación, y `no_availability`
  * cuando el destino ya no existe o no es compatible. La respuesta de éxito es
- * la misma atención, sin datos de terceros. Opera con datos ficticios.
+ * la misma atención, sin datos de terceros.
+ *
+ * Cada reserva o cambio exitoso deja su evento mínimo de auditoría (TI2-128)
+ * en la misma mutation; los errores abortan la mutation y no dejan evento. Las
+ * consultas no escriben, así que no auditan la lectura, y ninguna entrada de
+ * este archivo lee, edita ni borra la bitácora.
+ *
+ * Las consultas entregan solo la vista que autoriza el servidor, `full` o
+ * `minimized`, y nunca `studentId`, notas ni necesidades de acceso. Opera con
+ * datos ficticios.
  */
 
 /** Éxito de una reserva o cambio: la misma atención, con identificador genérico. */
@@ -81,6 +98,7 @@ export const bookAppointment = mutation({
           needs: accompanimentNeedsReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           occupier: appointmentOccupier(ctx),
+          audit: appointmentAuditRecorder(ctx),
         },
         { ...slot, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
@@ -108,6 +126,7 @@ export const cancelAppointment = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          audit: appointmentAuditRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -144,6 +163,7 @@ export const rescheduleAppointment = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          audit: appointmentAuditRecorder(ctx),
           occupier: appointmentOccupier(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
@@ -180,6 +200,7 @@ export const recordAppointmentAttendance = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          audit: appointmentAuditRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -192,7 +213,9 @@ export const recordAppointmentAttendance = mutation({
 });
 
 /**
- * El estudiante propio entrega la explicación y el respaldo de la inasistencia dentro de plazo (TI2-119).
+ * El Estudiante dueño entrega la explicación y el respaldo de la inasistencia
+ * dentro del plazo de cinco días hábiles (TI2-119). El respaldo se registra
+ * como recepción por canal institucional: no se sube ni se guarda archivo.
  */
 export const submitAppointmentJustification = mutation({
   args: {
@@ -226,7 +249,9 @@ export const submitAppointmentJustification = mutation({
 });
 
 /**
- * El profesional asignado revisa la justificación y decide aceptarla o rechazarla (TI2-119).
+ * El Profesional asignado revisa la justificación pendiente y la acepta o
+ * rechaza (TI2-119). Sin cron, la misma operación con `rejected` cierra una
+ * inasistencia cuyo plazo venció sin entrega; el dominio decide el plazo.
  */
 export const reviewAppointmentJustification = mutation({
   args: {
@@ -249,6 +274,96 @@ export const reviewAppointmentJustification = mutation({
           appointmentId,
           review,
         },
+      ),
+    );
+  },
+});
+
+const version = v.literal(APPOINTMENT_CONTRACT_VERSION);
+
+/** Proyección de la atención: las claves de cada vista son el contrato con los clientes. */
+const appointmentProjectionValidator = v.union(
+  v.object({
+    id: v.string(),
+    accompanimentId: v.string(),
+    professionalId: v.string(),
+    modality: modalityUnion,
+    spaceId: v.optional(v.string()),
+    startAt: v.number(),
+    endAt: v.number(),
+    originalStartAt: v.optional(v.number()),
+    cancelReason: v.optional(v.string()),
+    status: appointmentStatusUnion,
+    version,
+    view: v.literal("full"),
+  }),
+  v.object({
+    id: v.string(),
+    accompanimentId: v.string(),
+    professionalId: v.string(),
+    modality: modalityUnion,
+    spaceId: v.optional(v.string()),
+    startAt: v.number(),
+    endAt: v.number(),
+    originalStartAt: v.optional(v.number()),
+    status: appointmentStatusUnion,
+    version,
+    view: v.literal("shared"),
+  }),
+  v.object({
+    id: v.string(),
+    status: appointmentStatusUnion,
+    startAt: v.number(),
+    endAt: v.number(),
+    modality: modalityUnion,
+    view: v.literal("minimized"),
+  }),
+);
+
+/**
+ * Atenciones por rango civil y con paginación. Sin `accompanimentId` es la
+ * agenda propia del Estudiante o del Profesional; con él, las atenciones de ese
+ * acompañamiento con la vista de quien consulta. Las fechas se leen en la zona
+ * de la agenda (`AGENDA_TIME_ZONE`), que fija el servidor.
+ */
+export const listAppointments = query({
+  args: {
+    accompanimentId: v.optional(v.string()),
+    from: v.string(),
+    to: v.string(),
+    limit: v.number(),
+    cursor: v.optional(v.string()),
+    version,
+  },
+  returns: v.object({
+    items: v.array(appointmentProjectionValidator),
+    hasMore: v.boolean(),
+    nextCursor: v.union(v.string(), v.null()),
+    version,
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const page = unwrapApiResult(
+      await listAppointmentsUseCase(
+        { auth: authorizationReader(ctx), appointments: appointmentAgendaReader(ctx) },
+        { ...args, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
+      ),
+    );
+    // La página del dominio es de solo lectura; el validador espera un arreglo.
+    return { ...page, items: [...page.items] };
+  },
+});
+
+/** Detalle de una atención con la vista de `appointment:read`. */
+export const getAppointment = query({
+  args: { appointmentId: v.string(), version },
+  returns: appointmentProjectionValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await getAppointmentUseCase(
+        { auth: authorizationReader(ctx), appointments: appointmentAgendaReader(ctx) },
+        { ...args, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );
   },

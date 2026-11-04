@@ -1,4 +1,6 @@
 import type { AccompanimentStatus } from "../../domain/accompaniments/accompaniment";
+import type { AppointmentView } from "../../domain/appointments/appointment";
+import type { FollowUpView } from "../../domain/follow_up/follow_up";
 import {
   appointmentCancellationTarget,
   canBookAppointment,
@@ -8,7 +10,12 @@ import {
   canReadSpaceCatalog,
   canRecordAppointmentAttendance,
   canRescheduleAppointment,
+  canReviewAppointmentJustification,
+  canSubmitAppointmentJustification,
+  canWriteFollowUp,
   getAccompanimentView,
+  getAppointmentView,
+  getFollowUpView,
   isProfessionalBookable,
   type AccompanimentView,
   type AccountStatus,
@@ -203,7 +210,10 @@ export interface AuthorizationReader {
 export type AgendaGrant = { readonly callerId: string };
 
 /** Lectura de atenciones concedida, con la vista que corresponde al rol. */
-export type AppointmentReadGrant = AgendaGrant & { readonly view: AccompanimentView };
+export type AppointmentReadGrant = AgendaGrant & { readonly view: AppointmentView };
+
+/** Lectura de seguimiento concedida, con la vista que corresponde al rol. */
+export type FollowUpReadGrant = AgendaGrant & { readonly view: FollowUpView };
 
 /**
  * Atención concreta que se quiere cambiar. `_id`, `studentId` y
@@ -327,9 +337,30 @@ export async function authorizeAppointmentRead(
   request: AgendaRequest,
 ): Promise<ApiResult<AppointmentReadGrant>> {
   const loaded = await loadAgendaContext(reader, request);
-  const view = loaded === null ? null : getAccompanimentView(loaded.context);
+  const view = loaded === null ? null : getAppointmentView(loaded.context);
   if (loaded === null || view === null) return denied();
   return okResult({ callerId: loaded.callerId, view });
+}
+
+/** Lectura del seguimiento del acompañamiento, con la vista del rol. */
+export async function authorizeFollowUpRead(
+  reader: AuthorizationReader,
+  request: AgendaRequest,
+): Promise<ApiResult<FollowUpReadGrant>> {
+  const loaded = await loadAgendaContext(reader, request);
+  const view = loaded === null ? null : getFollowUpView(loaded.context);
+  if (loaded === null || view === null) return denied();
+  return okResult({ callerId: loaded.callerId, view });
+}
+
+/** Registro de seguimiento en un acompañamiento activo. */
+export async function authorizeFollowUpWrite(
+  reader: AuthorizationReader,
+  request: AgendaRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAgendaContext(reader, request);
+  if (loaded === null || !canWriteFollowUp(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
 }
 
 /** Reserva de un cupo en el acompañamiento. */
@@ -475,13 +506,7 @@ export async function authorizeAppointmentJustificationSubmit(
   request: AppointmentChangeRequest,
 ): Promise<ApiResult<AgendaGrant>> {
   const loaded = await loadAppointmentChangeContext(reader, request);
-  if (
-    loaded === null ||
-    loaded.context.role !== "student" ||
-    !loaded.context.isAppointmentStudent
-  ) {
-    return denied();
-  }
+  if (loaded === null || !canSubmitAppointmentJustification(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });
 }
 
@@ -494,13 +519,7 @@ export async function authorizeAppointmentJustificationReview(
   request: AppointmentChangeRequest,
 ): Promise<ApiResult<AgendaGrant>> {
   const loaded = await loadAppointmentChangeContext(reader, request);
-  if (
-    loaded === null ||
-    loaded.context.role !== "professional" ||
-    !loaded.context.isAppointmentProfessional
-  ) {
-    return denied();
-  }
+  if (loaded === null || !canReviewAppointmentJustification(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });
 }
 

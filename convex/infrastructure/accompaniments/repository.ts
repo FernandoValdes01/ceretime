@@ -160,6 +160,31 @@ export async function paginateInternalNotes(
     .paginate(paginationOpts);
 }
 
+/**
+ * Crea la nota interna breve del acompañamiento (TI2-118). `followUpNotes`
+ * sigue siendo la única tabla de notas internas: el registro de seguimiento
+ * guarda solo la referencia que devuelve esta función, nunca el texto.
+ */
+export async function insertInternalNote(
+  ctx: MutationCtx,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly authorId: Id<"users">;
+    readonly body: string;
+  },
+): Promise<Id<"followUpNotes">> {
+  return await ctx.db.insert("followUpNotes", { ...input });
+}
+
+/** Reemplaza el texto de una nota interna existente y registra quién la escribió. */
+export async function updateInternalNote(
+  ctx: MutationCtx,
+  noteId: Id<"followUpNotes">,
+  input: { readonly authorId: Id<"users">; readonly body: string },
+): Promise<void> {
+  await ctx.db.patch(noteId, { authorId: input.authorId, body: input.body });
+}
+
 export type AssignmentTriple = {
   readonly accompanimentId: Id<"accompaniments">;
   readonly userId: Id<"users">;
