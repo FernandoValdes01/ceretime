@@ -1,31 +1,37 @@
 import { useEffect, useState } from "react";
 import {
   type AgendaPort,
+  type SlotSearchContext,
   type SlotModalityFilter,
   type SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
-import { createFictitiousAgendaAdapter } from "../../infrastructure/agenda/fictitious-agenda-adapter.ts";
+import { createConvexAgendaAdapter } from "../../infrastructure/agenda/convex-agenda-adapter.ts";
+import { convexClient } from "../../infrastructure/convex/convex-client.ts";
 
 /**
  * Lectura de horarios del Estudiante (TI2-101).
  *
- * Un solo adaptador vigente: el ficticio hasta TI2-123, que lo sustituye por
- * la API real sin tocar presentación. Cada búsqueda responde `undefined`
+ * Un solo adaptador vigente: el de Convex (TI2-123), con la API real. Los
+ * fixtures quedan solo para pruebas. Cada búsqueda responde `undefined`
  * mientras carga; los fallos técnicos del adaptador se traducen al estado
  * `error` tipado (la UI nunca muestra excepciones en crudo).
  */
 
 let agendaPort: AgendaPort | null = null;
 
-/** Adaptador vigente (ficticio hasta TI2-123). Exportado para pruebas. */
+/** Adaptador vigente. Exportado para pruebas. */
 export function getAgendaPort(): AgendaPort {
   if (agendaPort === null) {
-    agendaPort = createFictitiousAgendaAdapter();
+    agendaPort = createConvexAgendaAdapter(convexClient);
   }
   return agendaPort;
 }
 
-export function useSlotSearch(modality: SlotModalityFilter, attempt: number) {
+export function useSlotSearch(
+  modality: SlotModalityFilter,
+  attempt: number,
+  context?: SlotSearchContext,
+) {
   // El resultado guardado recuerda a qué búsqueda pertenece: al cambiar de
   // modalidad o reintentar se deriva `loading` en el render, sin conservar los
   // cupos del filtro anterior mientras llega la respuesta nueva.
@@ -37,10 +43,18 @@ export function useSlotSearch(modality: SlotModalityFilter, attempt: number) {
   const result =
     entry.modality === modality && entry.attempt === attempt ? entry.result : undefined;
 
+  const accompanimentId = context?.accompanimentId;
+  const professionalId = context?.professionalId;
+
   useEffect(() => {
     let cancelled = false;
     getAgendaPort()
-      .searchSlots({ modality })
+      .searchSlots({
+        modality,
+        ...(accompanimentId === undefined || professionalId === undefined
+          ? {}
+          : { context: { accompanimentId, professionalId } }),
+      })
       .then(
         (next) => {
           if (!cancelled) {
@@ -63,7 +77,7 @@ export function useSlotSearch(modality: SlotModalityFilter, attempt: number) {
     return () => {
       cancelled = true;
     };
-  }, [modality, attempt]);
+  }, [modality, attempt, accompanimentId, professionalId]);
 
   return result;
 }

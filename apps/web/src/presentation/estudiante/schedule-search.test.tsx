@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ReactNode } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -33,6 +34,14 @@ vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 vi.mock("../session/session-state", () => ({
   useSessionState: () => mockedSession,
   useSessionAndRole: () => mockedPair,
+}));
+
+vi.mock("./student-booking-context.tsx", () => ({
+  BookingContextGate: ({
+    children,
+  }: {
+    children: (context: { accompanimentId: string; professionalId: string }) => ReactNode;
+  }) => children({ accompanimentId: "acompanamiento-1", professionalId: "pro-1" }),
 }));
 
 vi.mock("./schedule-search-data.ts", () => ({
@@ -161,7 +170,9 @@ describe("búsqueda de horarios (TI2-101)", () => {
     expect(await screen.findByRole("heading", { name: "Cupo elegido" })).toBeDefined();
     expect(await screen.findAllByText("Sala 101", { exact: false })).toHaveLength(2);
     const continuar = screen.getByRole("link", { name: "Continuar" });
-    expect(continuar.getAttribute("href")).toBe("/estudiante/reservar?slotId=cupo-1");
+    expect(continuar.getAttribute("href")).toBe(
+      "/estudiante/reservar?slotId=cupo-1&accompanimentId=acompanamiento-1",
+    );
   });
 
   test("cargando muestra el aviso explícito", async () => {
@@ -207,6 +218,16 @@ describe("búsqueda de horarios (TI2-101)", () => {
     expect(screen.getByRole("status").textContent?.trim()).toBe(
       "Sin cupos compatibles en este momento.",
     );
+  });
+
+  test("una denegación no ofrece cupos ni revela el motivo", async () => {
+    comoEstudiante();
+    mockedResult = { status: "denied" };
+    renderAt("/estudiante/horarios");
+
+    expect(await screen.findByText("No tienes acceso a estos horarios.")).toBeDefined();
+    expect(screen.queryByText("Cupo elegido")).toBeNull();
+    expect(screen.getByRole("status").textContent?.trim()).toBe("Sin acceso a los horarios.");
   });
 
   test("fallo técnico muestra mensaje y permite reintentar", async () => {

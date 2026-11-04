@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AgendaSlot } from "../../application/agenda/agenda-port.ts";
+import type { AgendaSlot, SlotSearchContext } from "../../application/agenda/agenda-port.ts";
 import { getAgendaPort } from "./schedule-search-data.ts";
 
 /**
@@ -16,7 +16,10 @@ export type ReservationSlotState =
   | { status: "missing" }
   | { status: "read-error" };
 
-export function useReservationSlot(slotId: string | undefined): {
+export function useReservationSlot(
+  slotId: string | undefined,
+  context: SlotSearchContext,
+): {
   state: ReservationSlotState;
   retry: () => void;
 } {
@@ -24,10 +27,12 @@ export function useReservationSlot(slotId: string | undefined): {
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
+  const { accompanimentId, professionalId } = context;
+
   useEffect(() => {
     let cancelled = false;
     getAgendaPort()
-      .searchSlots({ modality: "all" })
+      .searchSlots({ modality: "all", context: { accompanimentId, professionalId } })
       .then(
         (result) => {
           if (cancelled) {
@@ -50,7 +55,7 @@ export function useReservationSlot(slotId: string | undefined): {
     return () => {
       cancelled = true;
     };
-  }, [attempt]);
+  }, [attempt, accompanimentId, professionalId]);
 
   function retry() {
     setFailed(false);

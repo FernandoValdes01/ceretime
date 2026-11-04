@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, getRouteApi } from "@tanstack/react-router";
 import { formatSlotDateTime, modalityFilterOptions, modalityLabel } from "./agenda-labels.ts";
 import { useSlotSearch } from "./schedule-search-data.ts";
+import { BookingContextGate } from "./student-booking-context.tsx";
 import {
   type AgendaSlot,
+  type SlotSearchContext,
   type SlotModalityFilter,
   type SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
@@ -13,12 +15,15 @@ import "../routes/student-portal.css";
 /**
  * Búsqueda de horarios del Estudiante (TI2-101).
  *
- * Lee el adaptador vigente (ficticio hasta TI2-123) por el puerto de agenda:
+ * Lee la API real (TI2-123) por el puerto de agenda:
  * filtros por modalidad, estados tipados de carga/vacío/sin-cupo/error y
  * selección de un cupo que TI2-102 consume para reservar. Sin reglas de
- * compatibilidad ni autorización en el cliente; los datos son ficticios.
+ * compatibilidad ni autorización en el cliente.
  */
+const horariosRouteApi = getRouteApi("/estudiante/horarios");
+
 export function ScheduleSearchPage() {
+  const { accompanimentId } = horariosRouteApi.useSearch();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -30,19 +35,20 @@ export function ScheduleSearchPage() {
       <h1 id="schedule-search-title" ref={headingRef} tabIndex={-1}>
         Buscar horarios
       </h1>
-      <p>Datos ficticios de demostración.</p>
       <StudentPanelErrorBoundary subject="la búsqueda de horarios" level="section">
-        <ScheduleSearchBody />
+        <BookingContextGate requestedAccompanimentId={accompanimentId}>
+          {(context) => <ScheduleSearchBody context={context} />}
+        </BookingContextGate>
       </StudentPanelErrorBoundary>
     </section>
   );
 }
 
-function ScheduleSearchBody() {
+function ScheduleSearchBody({ context }: { context: SlotSearchContext }) {
   const [modality, setModality] = useState<SlotModalityFilter>("all");
   const [attempt, setAttempt] = useState(0);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
-  const result = useSlotSearch(modality, attempt);
+  const result = useSlotSearch(modality, attempt, context);
 
   function handleModalityChange(next: SlotModalityFilter) {
     setModality(next);
@@ -72,6 +78,7 @@ function ScheduleSearchBody() {
         </div>
       </fieldset>
       <SlotSearchContent
+        accompanimentId={context.accompanimentId}
         result={result}
         selectedSlotId={selectedSlotId}
         onSelect={setSelectedSlotId}
@@ -82,11 +89,13 @@ function ScheduleSearchBody() {
 }
 
 function SlotSearchContent({
+  accompanimentId,
   result,
   selectedSlotId,
   onSelect,
   onRetry,
 }: {
+  accompanimentId: string;
   result: ReturnType<typeof useSlotSearch>;
   selectedSlotId: string | null;
   onSelect: (slotId: string) => void;
@@ -98,6 +107,7 @@ function SlotSearchContent({
         {searchAnnouncement(result)}
       </span>
       <SlotSearchResult
+        accompanimentId={accompanimentId}
         result={result}
         selectedSlotId={selectedSlotId}
         onSelect={onSelect}
@@ -124,17 +134,22 @@ function searchAnnouncement(result: SlotSearchResult | undefined): string {
   if (result.status === "no_availability") {
     return "Sin cupos compatibles en este momento.";
   }
+  if (result.status === "denied") {
+    return "Sin acceso a los horarios.";
+  }
   return result.slots.length === 1
     ? "1 cupo disponible."
     : `${result.slots.length} cupos disponibles.`;
 }
 
 function SlotSearchResult({
+  accompanimentId,
   result,
   selectedSlotId,
   onSelect,
   onRetry,
 }: {
+  accompanimentId: string;
   result: ReturnType<typeof useSlotSearch>;
   selectedSlotId: string | null;
   onSelect: (slotId: string) => void;
@@ -181,6 +196,14 @@ function SlotSearchResult({
     );
   }
 
+  if (result.status === "denied") {
+    return (
+      <div className="student-portal__empty">
+        <p className="student-portal__empty-title">No tienes acceso a estos horarios.</p>
+      </div>
+    );
+  }
+
   const selected = result.slots.find((slot) => slot.id === selectedSlotId) ?? null;
 
   return (
@@ -207,12 +230,18 @@ function SlotSearchResult({
           </li>
         ))}
       </ul>
-      {selected && <SelectedSlotSummary slot={selected} />}
+      {selected && <SelectedSlotSummary slot={selected} accompanimentId={accompanimentId} />}
     </>
   );
 }
 
-function SelectedSlotSummary({ slot }: { slot: AgendaSlot }) {
+function SelectedSlotSummary({
+  slot,
+  accompanimentId,
+}: {
+  slot: AgendaSlot;
+  accompanimentId: string;
+}) {
   return (
     <section aria-labelledby="slot-elegido-title" aria-live="polite">
       <h2 id="slot-elegido-title">Cupo elegido</h2>
@@ -233,7 +262,7 @@ function SelectedSlotSummary({ slot }: { slot: AgendaSlot }) {
         )}
       </dl>
       <p>
-        <Link to="/estudiante/reservar" search={{ slotId: slot.id }}>
+        <Link to="/estudiante/reservar" search={{ slotId: slot.id, accompanimentId }}>
           Continuar
         </Link>
       </p>
