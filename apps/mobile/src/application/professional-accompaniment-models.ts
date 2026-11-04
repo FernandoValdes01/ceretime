@@ -1,4 +1,6 @@
-export type ProfessionalAccompanimentStatus = "active" | "paused" | "closed";
+import type { AccompanimentStatus } from "../../../../convex/domain/accompaniments/accompaniment";
+
+export type ProfessionalAccompanimentStatus = AccompanimentStatus;
 
 export interface ProfessionalAccompaniment {
   readonly id: string;

@@ -12,8 +12,21 @@ import { createMockPractitionerAccompanimentReader } from "../infrastructure/moc
 import { createLocalAccessibilityPreferencesAdapter } from "../infrastructure/local-accessibility-preferences-adapter";
 import { createNativeSpeechAdapter } from "../infrastructure/native-speech-adapter";
 import { createNativeSpeechRecognitionAdapter } from "../infrastructure/native-speech-recognition-adapter";
+import { createMockStudentAreaReader } from "../infrastructure/mock-student-area-reader";
+import { createMockStudentRequestSubmitter } from "../infrastructure/mock-student-request-submitter";
+import { mockStudentAreaStore } from "../infrastructure/mock-student-area-store";
 
 const professionalAccompanimentStore = createMockProfessionalAccompanimentStore();
+
+const studentAreaMode = process.env.EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE;
+const parsedStudentAreaDelay = Number.parseInt(
+  process.env.EXPO_PUBLIC_STUDENT_AREA_DELAY_MS ?? "0",
+  10,
+);
+const studentAreaDelay =
+  Number.isFinite(parsedStudentAreaDelay) && parsedStudentAreaDelay > 0
+    ? parsedStudentAreaDelay
+    : 0;
 
 const practitionerDemoMode = process.env.EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_MODE;
 const parsedPractitionerDelay = Number.parseInt(
@@ -36,6 +49,16 @@ const professionalAccompanimentDemoDelay =
     : 0;
 
 export const mobileDependencies = {
+  studentAreaReader: createMockStudentAreaReader({
+    delayMs: studentAreaDelay,
+    mode: studentAreaMode === "empty" || studentAreaMode === "error" ? studentAreaMode : "success",
+    store: mockStudentAreaStore,
+  }),
+  studentRequestSubmitter: createMockStudentRequestSubmitter({
+    failureMode:
+      process.env.EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE === "fail-once" ? "once" : "never",
+    store: mockStudentAreaStore,
+  }),
   accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
   speechPort: createNativeSpeechAdapter(),
   speechRecognitionPort: createNativeSpeechRecognitionAdapter(),
