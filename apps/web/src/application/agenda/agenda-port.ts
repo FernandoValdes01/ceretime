@@ -2,6 +2,8 @@ import {
   CONFLICT_ERROR_CODE,
   NO_AVAILABILITY_ERROR_CODE,
   type Appointment,
+  type AppointmentRejectionCause,
+  type AppointmentStatus,
   type AvailabilityBlock,
   type AvailabilityException,
   type AvailabilityExceptionKind,
@@ -13,14 +15,15 @@ import {
 
 /**
  * Contrato de capacidades de agenda del cliente Web (TI2-101, TI2-102,
- * TI2-103, TI2-04, TI2-113).
+ * TI2-103, TI2-04, TI2-113, TI2-115).
  *
  * Es únicamente el contrato para poder sustituir el adaptador ficticio por
  * la API real (TI2-123/TI2-125): deriva tipos compartidos y no implementa
- * reglas de disponibilidad, cruces ni autorización. TI2-102 extiende este
- * mismo archivo con la reserva, TI2-103 con bloques y excepciones, TI2-04
- * con espacios y TI2-113 completa los estados de conflicto de la reserva y
- * agrega la cancelación visible; no crear otro puerto por operación.
+ * reglas de disponibilidad, cruces, transiciones ni autorización. TI2-102
+ * extiende este mismo archivo con la reserva, TI2-103 con bloques y
+ * excepciones, TI2-04 con espacios, TI2-113 completa los desenlaces de la
+ * reserva y agrega la cancelación visible, y TI2-115 con la agenda del
+ * Profesional; no crear otro puerto por operación.
  */
 
 /** Filtro de modalidad de la búsqueda; `all` es solo vista del cliente. */
@@ -125,7 +128,7 @@ export type SaveExceptionInput = Pick<AvailabilityException, "date" | "kind"> & 
   readonly windows?: ReadonlyArray<AvailabilityWindow>;
 };
 
-/** Lectura simulada del editor: bloques y excepciones del profesional vigente. */
+/** Lectura del editor: bloques y excepciones del profesional vigente. */
 export type ListAvailabilityResult =
   | {
       readonly status: "ok";
@@ -136,13 +139,13 @@ export type ListAvailabilityResult =
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly message: string };
 
-/** Guardado simulado de un bloque: éxito tipado o error público compartido. */
+/** Guardado de un bloque: éxito tipado o error público compartido. */
 export type SaveBlockResult =
   | { readonly status: "saved"; readonly block: AvailabilityBlock }
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
 
-/** Guardado simulado de una excepción: éxito tipado o error público compartido. */
+/** Guardado de una excepción: éxito tipado o error público compartido. */
 export type SaveExceptionResult =
   | { readonly status: "saved"; readonly exception: AvailabilityException }
   | { readonly status: "denied" }
@@ -161,7 +164,10 @@ export type SaveSpaceInput = Pick<
   readonly id?: string;
 };
 
-/** Lectura simulada del catálogo de espacios visible al Administrador. */
+/**
+ * Lectura simulada del catálogo de espacios: la edita el Administrador y la
+ * lee cualquier cuenta vigente (`space:read`), como la agenda del Profesional.
+ */
 export type ListSpacesResult =
   | { readonly status: "ok"; readonly spaces: ReadonlyArray<Space> }
   | { readonly status: "empty" }
@@ -180,6 +186,70 @@ export type EditorWindow = AvailabilityWindow;
 /** Clase de excepción derivada del contrato, sin duplicar literales. */
 export type EditorExceptionKind = AvailabilityExceptionKind;
 
+/**
+ * Atención leída por la agenda del Profesional (TI2-115).
+ *
+ * Proyección mínima derivada del contrato de atención, sin duplicar su
+ * forma: campos de agenda más los que la propia vista necesita (fecha
+ * original conservada y motivo de cancelación propios). No trae identidad
+ * del estudiante: el Backend decide qué datos de acompañamiento aparecen y
+ * nunca se filtran necesidades de acceso de terceros ni notas internas.
+ */
+export type AgendaAppointment = Pick<
+  Appointment,
+  | "id"
+  | "status"
+  | "modality"
+  | "startAt"
+  | "endAt"
+  | "spaceId"
+  | "originalStartAt"
+  | "cancelReason"
+>;
+
+/** Lista de las atenciones del Profesional vigente. */
+export type ListAppointmentsResult =
+  | { readonly status: "ok"; readonly appointments: ReadonlyArray<AgendaAppointment> }
+  | { readonly status: "empty" }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly message: string };
+
+/** Lectura de una atención por identificador. Un id ajeno o desconocido es denegación genérica, sin filtrar existencia. */
+export type AgendaAppointmentResult =
+  | { readonly status: "ok"; readonly appointment: AgendaAppointment }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly message: string };
+
+/**
+ * Entrada del cambio de estado de una atención (TI2-115).
+ *
+ * El destino es un estado del contrato de dominio y la política de
+ * transiciones vive ahí (`APPOINTMENT_TRANSITIONS`): este puerto no decide
+ * transiciones ni autorización. El motivo viaja solo cuando el destino de
+ * dominio lo exige (cancelación CERETI); el Backend lo exige de nuevo.
+ */
+export type ChangeAppointmentStatusInput = {
+  readonly appointmentId: string;
+  readonly to: AppointmentStatus;
+  readonly reason?: string;
+};
+
+/**
+ * Resultado del cambio de estado.
+ *
+ * `rejected` trae la causa canónica del dominio
+ * (`APPOINTMENT_REJECTION_CAUSES`), `denied` la denegación del Backend y
+ * `error` el error público compartido.
+ */
+export type ChangeAppointmentStatusResult =
+  | { readonly status: "changed"; readonly appointment: AgendaAppointment }
+  | { readonly status: "rejected"; readonly cause: AppointmentRejectionCause }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly error: PublicApiError };
+
+/** Cancela una suscripción reactiva del puerto. */
+export type AgendaUnsubscribe = () => void;
+
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {
   searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult>;
@@ -188,6 +258,22 @@ export interface AgendaPort {
   listAvailability(): Promise<ListAvailabilityResult>;
   saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>;
   saveException(input: SaveExceptionInput): Promise<SaveExceptionResult>;
+  listAppointments(): Promise<ListAppointmentsResult>;
+  getAppointment(appointmentId: string): Promise<AgendaAppointmentResult>;
+  changeAppointmentStatus(
+    input: ChangeAppointmentStatusInput,
+  ): Promise<ChangeAppointmentStatusResult>;
   listSpaces(): Promise<ListSpacesResult>;
   saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult>;
+  /**
+   * Suscripción opcional a la agenda. La implementa la API real para reflejar
+   * cambios sin recargar la vista; el adaptador ficticio puede omitirla y las
+   * páginas caen a la lectura puntual.
+   */
+  watchAppointments?(onChange: (result: ListAppointmentsResult) => void): AgendaUnsubscribe;
+  /** Suscripción opcional al detalle de una atención. */
+  watchAppointment?(
+    appointmentId: string,
+    onChange: (result: AgendaAppointmentResult) => void,
+  ): AgendaUnsubscribe;
 }

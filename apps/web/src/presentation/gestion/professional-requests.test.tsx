@@ -123,6 +123,18 @@ const PAR_INTERN = {
   role: { status: "authenticated", role: "intern", email: "intern@uct.cl" },
 } as const;
 
+const SESION_ADMIN: WebSessionState = {
+  status: "authenticated",
+  email: "admin@uct.cl",
+  name: "Administrador Ficticio",
+  population: "personal",
+};
+
+const PAR_ADMIN = {
+  session: SESION_ADMIN,
+  role: { status: "authenticated", role: "admin", email: "admin@uct.cl" },
+} as const;
+
 function filaAbierta(
   overrides: Partial<{
     _id: string;
@@ -587,6 +599,10 @@ describe("detalle del Profesional (TI2-91)", () => {
     expect(screen.getByText("Necesidad ficticia de acceso")).toBeDefined();
     const volver = screen.getByRole("link", { name: "Volver a solicitudes" });
     expect(volver.getAttribute("href")).toBe("/profesional/solicitudes");
+    // Se distingue del texto normal por el subrayado, no solo por el color.
+    expect(volver.className).toContain("underline");
+    expect(volver.className).not.toContain("no-underline");
+    expect(volver.className).toContain("text-primary");
   });
 
   test("otra cuenta sin toma ve denegación sin filtrar el contenido", async () => {
@@ -655,6 +671,29 @@ describe("guard de las rutas de gestión (TI2-91)", () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
     expect(screen.queryByRole("heading", { name: "Detalle de la solicitud" })).toBeNull();
+  });
+
+  // TI2-126: la bandeja y el detalle son gestión del Profesional. El
+  // Administrador no lee acompañamientos ni notas internas (matriz TI2-5), y
+  // la Web no debe ofrecerle la ruta aunque el guard sea solo navegación.
+  test("el Administrador ve denegado sin contenido de gestión", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
+    const { router } = renderAt("/profesional/solicitudes");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Solicitudes" })).toBeNull();
+  });
+
+  test("el Administrador ve denegado el detalle sin contenido ni notas internas", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
+    const { router } = renderAt("/profesional/solicitudes/req-9");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(screen.queryByRole("heading", { name: "Detalle de la solicitud" })).toBeNull();
+    expect(screen.queryByText(/nota interna/i)).toBeNull();
   });
 });
 

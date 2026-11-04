@@ -15,6 +15,7 @@ import type * as application_appointments_booking from "../application/appointme
 import type * as application_appointments_changes from "../application/appointments/changes.js";
 import type * as application_appointments_commands from "../application/appointments/commands.js";
 import type * as application_appointments_occupancy from "../application/appointments/occupancy.js";
+import type * as application_appointments_queries from "../application/appointments/queries.js";
 import type * as application_authorization_authorize from "../application/authorization/authorize.js";
 import type * as application_availability_availability from "../application/availability/availability.js";
 import type * as application_availability_ports from "../application/availability/ports.js";
@@ -52,6 +53,8 @@ import type * as infrastructure_accompaniments_repository from "../infrastructur
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as infrastructure_appointments_repository from "../infrastructure/appointments/repository.js";
 import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
+import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
+import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
@@ -82,6 +85,7 @@ declare const fullApi: ApiFromModules<{
   "application/appointments/changes": typeof application_appointments_changes;
   "application/appointments/commands": typeof application_appointments_commands;
   "application/appointments/occupancy": typeof application_appointments_occupancy;
+  "application/appointments/queries": typeof application_appointments_queries;
   "application/authorization/authorize": typeof application_authorization_authorize;
   "application/availability/availability": typeof application_availability_availability;
   "application/availability/ports": typeof application_availability_ports;
@@ -119,6 +123,8 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "infrastructure/appointments/repository": typeof infrastructure_appointments_repository;
   "infrastructure/availability/repository": typeof infrastructure_availability_repository;
+  "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;
+  "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;

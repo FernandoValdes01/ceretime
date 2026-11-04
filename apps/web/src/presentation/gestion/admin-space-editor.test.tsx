@@ -132,6 +132,13 @@ function puertoOk(): AgendaPort {
           version: "v1",
         },
       }),
+    listAppointments: () => Promise.resolve({ status: "empty" }),
+    getAppointment: () => Promise.resolve({ status: "denied" }),
+    changeAppointmentStatus: () =>
+      Promise.resolve({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      }),
   };
 }
 
@@ -671,6 +678,24 @@ describe("guard de la ruta de espacios (TI2-04)", () => {
     expect(router.state.location.search).toMatchObject({
       redirect: "/administrador/espacios",
     });
+    expect(screen.queryByRole("heading", { name: "Espacios de atención" })).toBeNull();
+  });
+
+  // TI2-126: una cuenta autenticada sin perfil institucional no es
+  // Administrador. El guard la manda a denegado y el Backend vuelve a negar
+  // la lectura del catálogo si se intentara por API.
+  test("la sesión autenticada sin perfil ve denegado sin contenido del editor", async () => {
+    mockedSession = {
+      status: "authenticated",
+      email: "sin-perfil@uct.cl",
+      name: "Cuenta Sin Perfil",
+      population: "personal",
+    };
+    mockedPair = { session: mockedSession, role: { status: "unauthenticated" } };
+    const { router } = renderAt("/administrador/espacios");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
     expect(screen.queryByRole("heading", { name: "Espacios de atención" })).toBeNull();
   });
 

@@ -13,8 +13,9 @@
  *
  * La nota interna breve no se duplica acá como entidad: `followUpNotes` sigue
  * siendo la única tabla de notas internas. El registro solo la acompaña para
- * que la proyección compartida con el estudiante la omita. Sin persistencia
- * (TI2-118), sin política de acceso (TI2-127) y sin segunda tabla de notas.
+ * que la proyección compartida con el estudiante la omita. La persistencia
+ * vive en el repositorio de seguimiento (TI2-118); sin política de acceso
+ * (TI2-127) y sin segunda tabla de notas.
  */
 
 import { APPOINTMENT_STATUS_VALUES, type AppointmentStatus } from "../appointments/appointment";
@@ -109,6 +110,31 @@ export interface SharedFollowUpProjection {
   readonly suggestedNextAppointmentDate?: string;
   readonly version: FollowUpContractVersion;
 }
+
+/** Vistas de lectura del seguimiento según el rol (TI2-127). */
+export const FOLLOW_UP_VIEW_VALUES = ["professional", "shared", "minimized"] as const;
+
+export type FollowUpView = (typeof FOLLOW_UP_VIEW_VALUES)[number];
+
+/**
+ * Proyección minimizada para el Practicante: estado y fecha sugerida.
+ *
+ * Omite todo texto libre y el vínculo con el acompañamiento: acuerdos, tareas
+ * y próximos pasos pueden mencionar necesidades de acceso.
+ */
+export interface MinimizedFollowUpProjection {
+  readonly appointmentId: string;
+  readonly appointmentStatus: AppointmentStatus;
+  readonly suggestedNextAppointmentDate?: string;
+  readonly version: FollowUpContractVersion;
+  readonly view: "minimized";
+}
+
+/** Proyección de lectura del seguimiento según la vista autorizada. */
+export type FollowUpProjection =
+  | (SharedFollowUpProjection & { readonly internalNote?: string; readonly view: "professional" })
+  | (SharedFollowUpProjection & { readonly view: "shared" })
+  | MinimizedFollowUpProjection;
 
 /** Acuerdo de entrada: el adaptador puede traer texto sin normalizar. */
 export interface FollowUpAgreementInput {
@@ -264,7 +290,7 @@ function validateEntries(
  * Devuelve todas las causas únicas en el orden declarado, no solo la primera,
  * para que un formulario pueda señalarlas juntas. Un registro válido sale con
  * textos e identificadores recortados y con la versión vigente. No persiste
- * nada: TI2-118 decide el almacenamiento.
+ * nada: el repositorio de seguimiento (TI2-118) guarda el registro válido.
  */
 export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpValidationResult {
   const found = new Set<FollowUpRejectionCause>();
@@ -367,5 +393,35 @@ export function toSharedFollowUpProjection(
       ? {}
       : { suggestedNextAppointmentDate: record.suggestedNextAppointmentDate }),
     version: record.version,
+  };
+}
+
+/**
+ * Adaptador explícito de registro a vista de lectura. La vista ya viene
+ * decidida por la autorización; acá solo se recorta la forma. Cada rama arma
+ * su salida desde cero para que la nota no pueda colarse por una copia.
+ */
+export function toFollowUpProjection(
+  record: FollowUpRecord,
+  appointmentStatus: AppointmentStatus,
+  view: FollowUpView,
+): FollowUpProjection {
+  if (view === "minimized") {
+    return {
+      appointmentId: record.appointmentId,
+      appointmentStatus,
+      ...(record.suggestedNextAppointmentDate === undefined
+        ? {}
+        : { suggestedNextAppointmentDate: record.suggestedNextAppointmentDate }),
+      version: record.version,
+      view,
+    };
+  }
+  const shared = toSharedFollowUpProjection(record, appointmentStatus);
+  if (view === "shared") return { ...shared, view };
+  return {
+    ...shared,
+    ...(record.internalNote === undefined ? {} : { internalNote: record.internalNote }),
+    view,
   };
 }
