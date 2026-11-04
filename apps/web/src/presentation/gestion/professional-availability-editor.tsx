@@ -67,14 +67,15 @@ const FOCUSABLE_IN_DIALOG =
   'select:not([disabled]), input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
 /**
- * Editor de bloques recurrentes y excepciones del Profesional (TI2-103).
+ * Editor de bloques recurrentes y excepciones del Profesional
+ * (TI2-103/TI2-125).
  *
- * Interfaz tipada con validación de formato y resultados simulados, sin
- * duplicar reglas del Backend. Lee y guarda por el puerto común de agenda
- * con el adaptador ficticio hasta TI2-125; no escribe base de datos, no
- * resuelve compatibilidad ni autorización local y nunca envía identidad del
- * cliente como prueba de propiedad. Todo guardado se identifica como
- * simulado con datos ficticios. Crear es una acción aparte de consultar: los
+ * Interfaz tipada con validación de formato, sin duplicar reglas del Backend.
+ * Lee y guarda por el puerto común de agenda contra
+ * `api.presentation.availability`; no escribe base de datos, no resuelve
+ * compatibilidad ni autorización local y nunca envía identidad del cliente
+ * como prueba de propiedad. El catálogo de espacios que se referencia sigue
+ * siendo simulado hasta TI2-104. Crear es una acción aparte de consultar: los
  * botones del inicio abren cada formulario en un diálogo y al fondo de la
  * vista no queda ninguno desplegado.
  */
@@ -210,11 +211,11 @@ function AvailabilityBody({ attempt, onRetry }: { attempt: number; onRetry: () =
             {confirmation.kind === "block" ? "Bloque guardado" : "Excepción guardada"}
           </h2>
           {confirmation.kind === "block" ? (
-            <p>Código {confirmation.id}. Guardado simulado con datos ficticios.</p>
+            <p>Código {confirmation.id}. Guardado confirmado por el Backend.</p>
           ) : (
             <>
               <ExceptionDetails exception={confirmation.exception} />
-              <p>Guardado simulado con datos ficticios.</p>
+              <p>Guardado confirmado por el Backend.</p>
             </>
           )}
         </div>
@@ -385,7 +386,7 @@ function FormDialog({
         className="box-border max-h-full w-full max-w-lg overflow-y-auto rounded-lg border border-(--ct-line) bg-(--ct-card) p-6 text-left shadow-[0_10px_25px_-5px_rgb(0_0_0/0.1),0_8px_10px_-6px_rgb(0_0_0/0.1)]"
       >
         <h2 id={titleId}>{title}</h2>
-        <p>Guardado simulado con datos ficticios.</p>
+        <p>Se guarda en el Backend.</p>
         {children}
       </div>
     </div>

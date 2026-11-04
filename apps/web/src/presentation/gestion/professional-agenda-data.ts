@@ -12,14 +12,15 @@ import { appointmentChangeLabel } from "./gestion-labels.ts";
 import { getAgendaPort, setAgendaPortForTests } from "./professional-availability-data.ts";
 
 /**
- * Lectura y cambios de estado de la agenda del Profesional (TI2-115).
+ * Lectura y cambios de estado de la agenda del Profesional (TI2-115/TI2-125).
  *
  * Un solo adaptador vigente: reutiliza el singleton del puerto común de
  * agenda (TI2-103) para que agenda, editor y detalle compartan la misma
  * representación de la atención; no se crea una segunda store de reservas.
- * La lectura responde `undefined` mientras carga; los fallos técnicos se
- * traducen al estado `error` tipado y la denegación al estado `denied`
- * genérico sin detalles sensibles.
+ * Cuando el adaptador expone suscripciones (API real), la vista se actualiza
+ * sola; si no, cae a la lectura puntual. La lectura responde `undefined`
+ * mientras carga; los fallos técnicos se traducen al estado `error` tipado y
+ * la denegación al estado `denied` genérico sin detalles sensibles.
  *
  * Acá no hay validadores de política: los destinos disponibles se derivan
  * de la tabla canónica `APPOINTMENT_TRANSITIONS` del dominio y cualquier
@@ -32,23 +33,27 @@ export function useProfessionalAgenda(attempt: number): ListAppointmentsResult |
 
   useEffect(() => {
     let cancelled = false;
-    getAgendaPort()
-      .listAppointments()
-      .then(
-        (next) => {
-          if (!cancelled) {
-            setResult(next);
-          }
-        },
-        () => {
-          if (!cancelled) {
-            setResult({
-              status: "error",
-              message: "No pudimos cargar la agenda. Inténtalo de nuevo.",
-            });
-          }
-        },
-      );
+    const apply = (next: ListAppointmentsResult) => {
+      if (!cancelled) {
+        setResult(next);
+      }
+    };
+    const port = getAgendaPort();
+    if (port.watchAppointments !== undefined) {
+      const unsubscribe = port.watchAppointments(apply);
+      return () => {
+        cancelled = true;
+        unsubscribe();
+      };
+    }
+    port.listAppointments().then(apply, () => {
+      if (!cancelled) {
+        apply({
+          status: "error",
+          message: "No pudimos cargar la agenda. Inténtalo de nuevo.",
+        });
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -65,23 +70,27 @@ export function useAgendaAppointment(
 
   useEffect(() => {
     let cancelled = false;
-    getAgendaPort()
-      .getAppointment(appointmentId)
-      .then(
-        (next) => {
-          if (!cancelled) {
-            setResult(next);
-          }
-        },
-        () => {
-          if (!cancelled) {
-            setResult({
-              status: "error",
-              message: "No pudimos cargar la atención. Inténtalo de nuevo.",
-            });
-          }
-        },
-      );
+    const apply = (next: AgendaAppointmentResult) => {
+      if (!cancelled) {
+        setResult(next);
+      }
+    };
+    const port = getAgendaPort();
+    if (port.watchAppointment !== undefined) {
+      const unsubscribe = port.watchAppointment(appointmentId, apply);
+      return () => {
+        cancelled = true;
+        unsubscribe();
+      };
+    }
+    port.getAppointment(appointmentId).then(apply, () => {
+      if (!cancelled) {
+        apply({
+          status: "error",
+          message: "No pudimos cargar la atención. Inténtalo de nuevo.",
+        });
+      }
+    });
     return () => {
       cancelled = true;
     };
@@ -134,21 +143,25 @@ export type StatusChangeOption = {
 };
 
 /**
- * Cambios de estado disponibles desde un estado vigente (TI2-115).
+ * Cambios de estado disponibles desde un estado vigente (TI2-115/TI2-125).
  *
  * Derivan de `APPOINTMENT_TRANSITIONS` del dominio, sin política local.
- * El modo simulado no pide nuevas fechas, así que no se ofrece el
- * reagendamiento (la causa canónica `reschedule_required` lo protege si un
- * intento llegara igual), y cancelar por el estudiante pertenece a la vista
- * del Estudiante, no a la coordinación del Profesional. La autorización
- * efectiva de cada cambio la decide el Backend.
+ * El reagendamiento no se ofrece porque exige elegir un cupo y la API de
+ * reagendamiento (TI2-121) todavía no tiene pantalla de selección; cancelar
+ * por el estudiante pertenece a la vista del Estudiante, no a la coordinación
+ * del Profesional. La justificación de inasistencia (`no_show_justified` y
+ * `no_show_unjustified`) queda fuera porque su caso de uso es TI2-119 y aún no
+ * está publicado. La autorización efectiva de cada cambio la decide el
+ * Backend.
  */
 export function statusChangeOptions(from: AppointmentStatus): ReadonlyArray<StatusChangeOption> {
   return APPOINTMENT_TRANSITIONS.filter(
     (transition) =>
       transition.from === from &&
       !transition.requiresReschedule &&
-      transition.to !== "cancelled_by_student",
+      transition.to !== "cancelled_by_student" &&
+      transition.to !== "no_show_justified" &&
+      transition.to !== "no_show_unjustified",
   ).map((transition) => ({
     to: transition.to,
     label: appointmentChangeLabel(transition.to),
