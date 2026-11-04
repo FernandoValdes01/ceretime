@@ -63,15 +63,15 @@ const AGENDA_ITEM =
 const AGENDA_ITEM_LINK = `flex min-h-[44px] flex-col gap-2 rounded-lg px-5 py-4 text-left text-on-surface no-underline ${GESTION_FOCUS_VISIBLE}`;
 
 /**
- * Agenda del Profesional (TI2-115): lista de atenciones reservadas con
- * datos mínimos tipados y fechas legibles.
+ * Agenda del Profesional (TI2-115/TI2-125): lista de atenciones reservadas
+ * con datos mínimos tipados y fechas legibles.
  *
- * Lee por el puerto común de agenda con el adaptador ficticio hasta
- * TI2-125; el modo simulado se declara en la página. No es un calendario
- * global ni muestra acompañamientos de otros profesionales: solo las
- * atenciones del Profesional vigente, y la autorización efectiva sigue
- * viva en el Backend. El detalle compone la misma representación: cambios
- * de estado visibles en la página de la atención.
+ * Lee por el puerto común de agenda contra `api.presentation.appointments`;
+ * la vista se declara como consulta a la API y las fechas se leen en la zona
+ * de la agenda. No es un calendario global ni muestra acompañamientos de
+ * otros profesionales: solo las atenciones del Profesional vigente, y la
+ * autorización efectiva sigue viva en el Backend. El detalle compone la misma
+ * representación: cambios de estado visibles en la página de la atención.
  */
 export function ProfessionalAgendaPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -87,7 +87,7 @@ export function ProfessionalAgendaPage() {
         Agenda
       </h1>
       <p>Tus atenciones reservadas con la fecha vigente y su estado.</p>
-      <p>Lectura simulada con datos ficticios hasta integrar la API real.</p>
+      <p>Agenda consultada a la API; la autorización la decide el Backend.</p>
       <StudentPanelErrorBoundary subject="la agenda" level="section">
         <AgendaBody attempt={attempt} onRetry={() => setAttempt((value) => value + 1)} />
       </StudentPanelErrorBoundary>
@@ -217,7 +217,7 @@ function AppointmentRowContent({
  *
  * Muestra la misma representación que la agenda con la fecha original
  * conservada y el motivo de cancelación propio, y registra cambios de
- * estado simulados sobre el puerto común. Un identificador ajeno o
+ * estado contra la API sobre el puerto común. Un identificador ajeno o
  * desconocido llega como denegación genérica del Backend, sin filtrar
  * existencia. Los cambios visibles quedan anotados con foco al confirmar.
  */
@@ -270,8 +270,8 @@ function AppointmentDetailBody({
 }) {
   const result = useAgendaAppointment(appointmentId, attempt);
   const spaceLabels = useSpaceLabels();
-  // El estado local mantiene el detalle vigente tras un cambio simulado:
-  // la respuesta del puerto ya trae la atención actualizada.
+  // El estado local mantiene el detalle vigente tras un cambio: la respuesta
+  // del puerto ya trae la atención actualizada.
   const [current, setCurrent] = useState<AgendaAppointment | undefined>(undefined);
   const appointment = result?.status === "ok" ? result.appointment : undefined;
   const shown = current ?? appointment;
@@ -353,12 +353,12 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
 }
 
 /**
- * Cambios de estado simulados (TI2-115).
+ * Cambios de estado (TI2-115/TI2-125).
  *
  * Oferta visual derivada de la tabla canónica del dominio
- * (`statusChangeOptions`); el envío pasa por el puerto, que aplica la
- * política de transición del dominio como lo hará el Backend. Rechazo,
- * denegación y error quedan visibles; el éxito enfoca la confirmación.
+ * (`statusChangeOptions`); el envío pasa por el puerto y la API aplica la
+ * política de transición y la autorización. Rechazo, denegación y error
+ * quedan visibles; el éxito enfoca la confirmación.
  */
 function StatusChangeSection({
   appointment,
@@ -436,7 +436,7 @@ function StatusChangeSection({
       <div className="student-portal__section-head">
         <h2 id="status-change-title">Cambiar estado</h2>
       </div>
-      <p>Cambio simulado con datos ficticios; la autorización la decide el Backend.</p>
+      <p>El cambio se registra en el Backend, que decide la autorización.</p>
       {confirmedLabel !== null ? (
         <div>
           <h3 ref={confirmationRef} tabIndex={-1}>
@@ -444,7 +444,7 @@ function StatusChangeSection({
           </h3>
           <p role="status">
             {confirmedLabel}. Estado actual: {appointmentStatusLabel(appointment.status)}. Cambio
-            simulado con datos ficticios.
+            registrado por el Backend.
           </p>
         </div>
       ) : null}
