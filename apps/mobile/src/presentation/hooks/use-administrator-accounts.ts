@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { PractitionerAccount } from "../../application/administrator-account-models";
 import type { AdministratorAccountsPort } from "../../application/administrator-accounts-port";
+import { toMobileOperationError } from "../to-mobile-operation-error";
 
 export type AdministratorAccountsLoadStatus = "loading" | "success" | "empty" | "error";
 export type AccountEnablementStatus = "idle" | "loading" | "success" | "error";
@@ -34,6 +35,12 @@ const idleEnablementState: AccountEnablementState = {
   error: null,
 };
 
+const loadingEnablementState: AccountEnablementState = {
+  status: "loading",
+  message: null,
+  error: null,
+};
+
 function loadingLoad(port: AdministratorAccountsPort): AccountsLoad {
   return { port, status: "loading", accounts: [], error: null };
 }
@@ -43,11 +50,24 @@ export function useAdministratorAccounts(
 ): AdministratorAccountsState {
   const [load, setLoad] = useState<AccountsLoad>(() => loadingLoad(port));
   const [reloadVersion, setReloadVersion] = useState(0);
-  const [enablementStates, setEnablementStates] = useState<
-    Readonly<Record<string, AccountEnablementState>>
-  >({});
+  const [enablement, setEnablement] = useState<{
+    port: AdministratorAccountsPort;
+    states: Readonly<Record<string, AccountEnablementState>>;
+    pending: ReadonlySet<string>;
+  }>({ port, states: {}, pending: new Set() });
+  if (enablement.port !== port) setEnablement({ port, states: {}, pending: enablement.pending });
   const readId = useRef(0);
   const pendingAccounts = useRef(new Set<string>());
+  const activePort = useRef<AdministratorAccountsPort | null>(port);
+  const actionEpoch = useRef(0);
+  useEffect(() => {
+    activePort.current = port;
+    actionEpoch.current += 1;
+    return () => {
+      activePort.current = null;
+      actionEpoch.current += 1;
+    };
+  }, [port]);
 
   const reload = useCallback(() => {
     readId.current += 1;
@@ -70,7 +90,15 @@ export function useAdministratorAccounts(
         },
         (error: unknown) => {
           if (isCurrent()) {
-            setLoad({ port, status: "error", accounts: [], error });
+            setLoad({
+              port,
+              status: "error",
+              accounts: [],
+              error: toMobileOperationError(
+                error,
+                "No pudimos cargar las cuentas institucionales.",
+              ),
+            });
           }
         },
       );
@@ -84,40 +112,75 @@ export function useAdministratorAccounts(
 
   const enableAccount = useCallback(
     async (accountId: string) => {
-      if (pendingAccounts.current.has(accountId)) return;
-      pendingAccounts.current.add(accountId);
-      setEnablementStates((current) => ({
-        ...current,
-        [accountId]: { status: "loading", message: null, error: null },
+      const pending = pendingAccounts.current;
+      if (activePort.current !== port || pending.has(accountId)) return;
+      pending.add(accountId);
+      const epoch = actionEpoch.current;
+      setEnablement((current) => ({
+        port,
+        pending: new Set(current.pending).add(accountId),
+        states: {
+          ...(current.port === port ? current.states : {}),
+          [accountId]: { status: "loading", message: null, error: null },
+        },
       }));
 
       try {
         const receipt = await port.enablePractitionerAccount(accountId);
-        setLoad((current) => ({
-          ...current,
-          accounts: current.accounts.map((account) =>
-            account.id === accountId ? receipt.account : account,
-          ),
-        }));
-        setEnablementStates((current) => ({
-          ...current,
-          [accountId]: { status: "success", message: receipt.message, error: null },
-        }));
+        if (activePort.current === port && actionEpoch.current === epoch) {
+          setLoad((current) => ({
+            ...current,
+            accounts: current.accounts.map((account) =>
+              account.id === accountId ? receipt.account : account,
+            ),
+          }));
+          setEnablement((current) => ({
+            port,
+            pending: current.pending,
+            states: {
+              ...(current.port === port ? current.states : {}),
+              [accountId]: { status: "success", message: receipt.message, error: null },
+            },
+          }));
+        }
       } catch (error) {
-        setEnablementStates((current) => ({
-          ...current,
-          [accountId]: { status: "error", message: null, error },
-        }));
+        if (activePort.current === port && actionEpoch.current === epoch) {
+          setEnablement((current) => ({
+            port,
+            pending: current.pending,
+            states: {
+              ...(current.port === port ? current.states : {}),
+              [accountId]: {
+                status: "error",
+                message: null,
+                error: toMobileOperationError(
+                  error,
+                  "No pudimos habilitar la cuenta. Intenta nuevamente.",
+                ),
+              },
+            },
+          }));
+        }
       } finally {
-        pendingAccounts.current.delete(accountId);
+        pending.delete(accountId);
+        if (activePort.current)
+          setEnablement((current) => {
+            const nextPending = new Set(current.pending);
+            nextPending.delete(accountId);
+            return { ...current, pending: nextPending };
+          });
       }
     },
     [port],
   );
 
   const getEnablementState = useCallback(
-    (accountId: string) => enablementStates[accountId] ?? idleEnablementState,
-    [enablementStates],
+    (accountId: string) =>
+      enablement.pending.has(accountId)
+        ? loadingEnablementState
+        : ((enablement.port === port ? enablement.states[accountId] : undefined) ??
+          idleEnablementState),
+    [enablement, port],
   );
 
   return {
