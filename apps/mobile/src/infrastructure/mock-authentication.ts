@@ -5,6 +5,7 @@ import type {
   AuthenticatedUser,
 } from "../application/auth-models";
 import type { AuthPort } from "../application/auth-port";
+import { LocalOperationError } from "../application/operation-error";
 import { fictionalPractitionerAccompanimentsByPractitioner } from "./mock-practitioner-accompaniment-data";
 
 export const mockAuthCredentials = {
@@ -77,7 +78,7 @@ const mockUsers: readonly {
   },
 ];
 
-export class MockAuthenticationError extends Error {
+export class MockAuthenticationError extends LocalOperationError {
   constructor() {
     super("Correo o contraseña incorrectos.");
     this.name = "MockAuthenticationError";

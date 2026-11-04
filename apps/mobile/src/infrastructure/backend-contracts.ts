@@ -27,8 +27,7 @@ export type CanonicalAcceptedAccompaniment = FunctionReturnType<
   typeof api.presentation.requests.acceptRequest
 >;
 
-/** Límite documentado en docs/contratos-sprint-1.md; el validador de Convex no lo codifica en el tipo. */
-export const ACCESS_NEEDS_MAX_LENGTH = 2000;
+export { ACCESS_NEEDS_MAX_LENGTH } from "../../../../convex/domain/requests/request";
 
 export type CanonicalStudentRequest = CanonicalStudentRequestsPage["page"][number];
 export type CanonicalOpenRequest = CanonicalOpenRequestsPage["page"][number];

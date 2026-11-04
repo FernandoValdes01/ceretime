@@ -1,5 +1,6 @@
 import path from "node:path";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react-native";
+import type { PropsWithChildren } from "react";
 import { renderRouter } from "expo-router/testing-library";
 import type { AuthSession } from "../src/application/auth-models";
 import type { AuthPort } from "../src/application/auth-port";
@@ -55,6 +56,30 @@ function SessionContent() {
 }
 
 describe("autenticación mobile simulada", () => {
+  test("volver al proveedor anterior no recupera su sesión descartada", async () => {
+    const first = createMockAuthenticationPort();
+    const second = createMockAuthenticationPort();
+    let current = first;
+    function Wrapper({ children }: PropsWithChildren) {
+      return (
+        <NavigationSessionProvider authPort={current} demoCredentials={mockAuthCredentials}>
+          {children}
+        </NavigationSessionProvider>
+      );
+    }
+    const { result, rerender } = renderHook(() => useNavigationSession(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.signIn(mockAuthCredentials.estudiante);
+    });
+    expect(result.current.status).toBe("authenticated");
+    current = second;
+    rerender({});
+    expect(result.current.session).toBeNull();
+    current = first;
+    rerender({});
+    expect(result.current.status).toBe("unauthenticated");
+    expect(result.current.session).toBeNull();
+  });
   test("expone loading mientras prepara el rol seleccionado", async () => {
     const result = deferred<AuthSession>();
     const authPort: AuthPort = {
@@ -148,7 +173,7 @@ describe("autenticación mobile simulada", () => {
       login: jest.fn(async () => fakeSession),
       logout: jest
         .fn<Promise<void>, []>()
-        .mockRejectedValueOnce(new Error("No se pudo cerrar sesión."))
+        .mockRejectedValueOnce(new Error("Detalle interno del SDK"))
         .mockReturnValueOnce(retryResult.promise),
     };
 
@@ -168,7 +193,8 @@ describe("autenticación mobile simulada", () => {
       await Promise.resolve();
     });
     expect(screen.getByText("Inicio ficticio")).toBeOnTheScreen();
-    expect(screen.getByRole("alert")).toHaveTextContent("No se pudo cerrar sesión.");
+    expect(screen.getByRole("alert")).toHaveTextContent("No fue posible cerrar sesión.");
+    expect(screen.queryByText("Detalle interno del SDK")).toBeNull();
     expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeEnabled();
 
     await act(async () => {

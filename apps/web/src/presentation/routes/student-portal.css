@@ -410,3 +410,148 @@
     grid-template-columns: repeat(3, 1fr);
   }
 }
+
+/* Confirmación de reserva (TI2-113): ajustes acotados a esta superficie.
+   La tarjeta restaura la alineación a la izquierda y la escala tipográfica
+   de DESIGN.md sobre el centrado y el título heredados del bloque de
+   compatibilidad de index.css (TI2-130), sin alterar otras pantallas del
+   portal. Las etiquetas del resumen se diferencian de los valores por
+   tamaño, peso y color, no solo por color. */
+.student-portal__res {
+  background: var(--ct-card);
+  border: 1px solid var(--ct-line);
+  border-radius: 1rem;
+  padding: 2rem;
+  text-align: left;
+}
+
+.student-portal__res h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+  margin: 0 0 1rem;
+  color: var(--ct-primary);
+}
+
+/* El encabezado del estado recibe el foco programático: mantiene el anillo
+   de foco de DESIGN.md al moverse por teclado o al llegar por desenlace. */
+.student-portal__res h1:focus,
+.student-portal__res h2:focus {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+}
+
+.student-portal__res p {
+  margin: 0 0 1rem;
+}
+
+/* Etiqueta (pequeña, gris, semibold) frente a valor (tinta, regular, mayor):
+   fecha, modalidad y espacio quedan legibles sin depender del color. */
+.student-portal__res-dl {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0 0;
+}
+
+.student-portal__res-dl dt {
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ct-muted);
+  margin: 0 0 0.25rem;
+}
+
+.student-portal__res-dl dd {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 400;
+  color: var(--ct-ink);
+}
+
+/* Panel de desenlace permanente sobre el error heredado: el texto pesa
+   menos y los mensajes quedan más compactos, con la acción cerca. */
+.student-portal__res-state {
+  margin: 1.5rem 0 0;
+  font-weight: 400;
+  padding: 1rem 1.25rem;
+}
+
+.student-portal__res-state h2 {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.5;
+  margin: 0;
+  color: inherit;
+}
+
+.student-portal__res-state-note {
+  margin: 0.5rem 0 0;
+  font-weight: 400;
+}
+
+.student-portal__res-state-actions {
+  margin: 0.75rem 0 0;
+  font-weight: 400;
+}
+
+.student-portal__res-state-actions a {
+  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  text-decoration: underline;
+}
+
+.student-portal__res-state-actions a:focus-visible {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/* Acción secundaria de esta superficie: el texto queda alineado con el
+   contenido de la tarjeta; mantiene el objetivo táctil del botón base. */
+.student-portal__res .student-portal__btn--ghost {
+  justify-content: flex-start;
+  padding-left: 0;
+}
+
+/* Nota de demostración y salida única: breves y al final del contenido. */
+.student-portal__res-note {
+  font-size: 0.875rem;
+  color: var(--ct-muted);
+  margin: 1.25rem 0 0;
+}
+
+.student-portal__res-return {
+  margin: 1.5rem 0 0;
+}
+
+/* El texto del aviso de demostración no pide peso extra. */
+
+.student-portal__res-confirm {
+  margin-top: 1.25rem;
+}
+
+.student-portal__res-confirm label {
+  display: inline-flex;
+  align-items: flex-start;
+  min-height: 2.75rem;
+  font-weight: 600;
+}
+
+@media (max-width: 40rem) {
+  .student-portal__res {
+    padding: 1.25rem;
+  }
+
+  /* Escala de DESIGN.md en móvil: headline de 28px, no el heredado. */
+  .student-portal__res h1 {
+    font-size: 1.75rem;
+    margin: 0 0 0.75rem;
+  }
+
+  .student-portal__res-dl dd {
+    font-size: 1rem;
+  }
+}

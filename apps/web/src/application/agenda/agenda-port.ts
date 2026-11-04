@@ -1,4 +1,5 @@
 import {
+  CONFLICT_ERROR_CODE,
   NO_AVAILABILITY_ERROR_CODE,
   type Appointment,
   type AppointmentRejectionCause,
@@ -14,14 +15,15 @@ import {
 
 /**
  * Contrato de capacidades de agenda del cliente Web (TI2-101, TI2-102,
- * TI2-103, TI2-04, TI2-115).
+ * TI2-103, TI2-04, TI2-113, TI2-115).
  *
  * Es únicamente el contrato para poder sustituir el adaptador ficticio por
  * la API real (TI2-123/TI2-125): deriva tipos compartidos y no implementa
  * reglas de disponibilidad, cruces, transiciones ni autorización. TI2-102
  * extiende este mismo archivo con la reserva, TI2-103 con bloques y
- * excepciones, TI2-04 con espacios y TI2-115 con la agenda del Profesional;
- * no crear otro puerto por operación.
+ * excepciones, TI2-04 con espacios, TI2-113 completa los desenlaces de la
+ * reserva y agrega la cancelación visible, y TI2-115 con la agenda del
+ * Profesional; no crear otro puerto por operación.
  */
 
 /** Filtro de modalidad de la búsqueda; `all` es solo vista del cliente. */
@@ -67,9 +69,40 @@ export type ReservationConfirmation = Pick<
   "id" | "slotId" | "professionalId" | "modality" | "startAt" | "endAt"
 >;
 
-/** Respuesta tipada de la reserva: usa el error público compartido. */
+/**
+ * Respuesta tipada de la reserva (TI2-102, estados completados TI2-113):
+ * confirmación, conflicto reciente, falta de cupo, denegación y fallo
+ * técnico son estados distintos y no se confunden. Conflicto y falta de
+ * cupo llevan el código canónico del dominio compartido; la denegación
+ * llega sin motivo y sin revelar existencia, y el resto conserva el error
+ * público compartido. El comando de reserva sigue siendo único.
+ */
 export type ReserveSlotResult =
   | { readonly status: "confirmed"; readonly reservation: ReservationConfirmation }
+  | { readonly status: "conflict"; readonly code: typeof CONFLICT_ERROR_CODE }
+  | { readonly status: "no_availability"; readonly code: typeof NO_AVAILABILITY_ERROR_CODE }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly error: PublicApiError };
+
+/**
+ * Entrada de la cancelación visible (TI2-113): referencia opaca a la
+ * reserva confirmada, devuelta por el comprobante. La UI nunca prueba
+ * propiedad con ella: la autorización efectiva es del Backend cuando la
+ * cancelación real esté entregada.
+ */
+export type CancelReservationInput = {
+  readonly reservationId: string;
+};
+
+/**
+ * Resultado tipado de la cancelación visible (TI2-113): `cancelled` es una
+ * constancia declarada del adaptador vigente y no afirma una mutation real;
+ * la denegación llega sin motivo y el resto conserva el error público
+ * compartido. Nunca revela datos de terceros ni motivo interno.
+ */
+export type CancelReservationResult =
+  | { readonly status: "cancelled" }
+  | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
 
 /**
@@ -221,6 +254,7 @@ export type AgendaUnsubscribe = () => void;
 export interface AgendaPort {
   searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult>;
   reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult>;
+  cancelReservation(input: CancelReservationInput): Promise<CancelReservationResult>;
   listAvailability(): Promise<ListAvailabilityResult>;
   saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>;
   saveException(input: SaveExceptionInput): Promise<SaveExceptionResult>;

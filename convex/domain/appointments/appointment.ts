@@ -50,6 +50,16 @@ export type AppointmentStatus = (typeof APPOINTMENT_STATUS_VALUES)[number];
 /** Estado inicial de una reserva recién creada. */
 export const INITIAL_APPOINTMENT_STATUS: AppointmentStatus = "scheduled";
 
+/**
+ * Estados que todavía admiten llevar la atención al calendario personal.
+ * Una atención cancelada, realizada o con inasistencia no debe exportarse
+ * como un evento confirmado ni crearse en Google Calendar: el archivo `.ics`
+ * y el evento dejarían de representar el estado real de la atención.
+ */
+export function isCalendarActionableStatus(status: AppointmentStatus): boolean {
+  return status === "scheduled" || status === "rescheduled";
+}
+
 /** Inasistencia pendiente de justificación (valor histórico `no_show`). */
 export const NO_SHOW_PENDING_STATE: AppointmentStatus = "no_show";
 
