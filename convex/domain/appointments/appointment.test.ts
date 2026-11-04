@@ -9,6 +9,7 @@ import {
   NO_SHOW_PENDING_STATE,
   calculateJustificationDeadline,
   decideJustificationTimeliness,
+  isCalendarActionableStatus,
   isJustificationReview,
   toAppointmentProjection,
   transitionAppointment,
@@ -733,6 +734,28 @@ describe("Plazo de cinco días hábiles de justificación (TI2-94)", () => {
         timeZone: TIME_ZONE,
       }),
     ).toThrow("entrega");
+  });
+});
+
+describe("Acciones de calendario por estado de la atención (TI2-122)", () => {
+  test("solo las atenciones programadas o reagendadas admiten acciones de calendario", () => {
+    expect(APPOINTMENT_STATUS_VALUES.filter(isCalendarActionableStatus)).toEqual([
+      "scheduled",
+      "rescheduled",
+    ]);
+  });
+
+  test("una atención cerrada no se exporta como evento confirmado", () => {
+    for (const status of [
+      "completed",
+      "cancelled_by_student",
+      "cancelled_by_cereti",
+      "no_show",
+      "no_show_justified",
+      "no_show_unjustified",
+    ] as const) {
+      expect(isCalendarActionableStatus(status)).toBe(false);
+    }
   });
 });
 

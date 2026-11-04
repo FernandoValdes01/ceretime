@@ -3,6 +3,7 @@ import type { AppointmentView } from "../../domain/appointments/appointment";
 import type { FollowUpView } from "../../domain/follow_up/follow_up";
 import {
   appointmentCancellationTarget,
+  canAddAppointmentToCalendar,
   canBookAppointment,
   canEditAvailability,
   canReadAvailability,
@@ -494,6 +495,20 @@ export async function authorizeAppointmentAttendance(
 ): Promise<ApiResult<AgendaGrant>> {
   const loaded = await loadAppointmentChangeContext(reader, request);
   if (loaded === null || !canRecordAppointmentAttendance(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Evento de calendario de una atención (TI2-122): solo el Estudiante dueño de
+ * la atención, con acompañamiento activo. La fila leída en el servidor aporta
+ * la pertenencia y el consentimiento de Google Calendar se resuelve aparte.
+ */
+export async function authorizeAppointmentCalendar(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canAddAppointmentToCalendar(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });
 }
 

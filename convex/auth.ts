@@ -44,6 +44,12 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
     // proveedor agrega `&error=...`, que la Web traduce a un mensaje genérico.
     onAPIError: { errorURL: `${env.SITE_URL}/?auth=error` },
     database: authComponent.adapter(ctx),
+    // Los tokens OAuth (incluido el refresh token de Google Calendar) se
+    // cifran en reposo en el componente de autenticación (TI2-122). Better
+    // Auth descifra los tokens heredados en texto plano sin romper sesiones.
+    account: {
+      encryptOAuthTokens: true,
+    },
     // Rechazo real en el backend: una cuenta Google fuera de `@alu.uct.cl` y
     // `@uct.cl` no crea usuario ni sesión (retornar `false` cancela la
     // creación). El cliente solo recibe el error genérico vía
@@ -59,9 +65,17 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       google: {
         clientId: env.GOOGLE_CLIENT_ID,
         clientSecret: env.GOOGLE_CLIENT_SECRET,
-        // Solo identidad (openid, email, profile). Pedir Calendar, Drive o
-        // correo queda prohibido en Sprint 1.
-        prompt: "select_account",
+        // El inicio institucional sigue pidiendo solo identidad (openid,
+        // email, profile). El alcance de Calendar no se pide acá: se concede
+        // después con una acción explícita y un consentimiento aparte
+        // (`linkSocial` con `calendar.events`, TI2-122).
+        //
+        // `offline` + `consent` garantizan refresh token para que la creación
+        // del evento siga funcionando cuando el access token expire. El
+        // consentimiento de Calendar sigue siendo independiente porque su
+        // alcance solo viaja en la vinculación explícita.
+        accessType: "offline",
+        prompt: "select_account consent",
         // Sin `hd`: esta versión de Better Auth (1.6.x) no acepta parámetros
         // por llamada (`additionalParams` no existe en `/sign-in/social` y
         // zod los recorta en silencio) y el proveedor solo admite un dominio
