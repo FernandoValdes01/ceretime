@@ -206,7 +206,7 @@ describe("búsqueda de horarios (TI2-101)", () => {
     const siguiente = await screen.findByRole("heading", {
       name: "Semana del 30 de noviembre al 6 de diciembre",
     });
-    expect(document.activeElement).toBe(siguiente);
+    await waitFor(() => expect(document.activeElement).toBe(siguiente));
     expect(screen.getByRole("link", { name: /Lunes 30 de noviembre/ })).toBeDefined();
     expect(
       screen.getByRole<HTMLButtonElement>("button", { name: "Semana siguiente" }).disabled,
