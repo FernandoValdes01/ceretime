@@ -9,7 +9,7 @@ import { BookingContextGate } from "./student-booking-context.tsx";
  */
 
 let mockedOwned: { page: Array<Record<string, unknown>> } | undefined;
-const findBookingProfessional = vi.fn();
+const findBookingProfessionals = vi.fn();
 
 vi.mock("convex/react", () => ({ useQuery: () => mockedOwned }));
 
@@ -20,7 +20,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("./schedule-search-data.ts", () => ({
-  getAgendaPort: () => ({ findBookingProfessional }),
+  getAgendaPort: () => ({ findBookingProfessionals }),
 }));
 
 const ACTIVO = { _id: "acompanamiento-1", status: "active", objective: "Objetivo ficticio uno" };
@@ -34,15 +34,17 @@ const PAUSADO = { _id: "acompanamiento-3", status: "paused", objective: "Objetiv
 function renderGate(requested?: string) {
   render(
     <BookingContextGate requestedAccompanimentId={requested}>
-      {(context) => <p>{`${context.accompanimentId} con ${context.professionalId}`}</p>}
+      {(context) => (
+        <p>{`${context.accompanimentId} con ${context.professionalIds.join(" y ")}`}</p>
+      )}
     </BookingContextGate>,
   );
 }
 
 beforeEach(() => {
   mockedOwned = { page: [ACTIVO] };
-  findBookingProfessional.mockReset();
-  findBookingProfessional.mockResolvedValue({ status: "ok", professionalId: "pro-1" });
+  findBookingProfessionals.mockReset();
+  findBookingProfessionals.mockResolvedValue({ status: "ok", professionalIds: ["pro-1", "pro-2"] });
 });
 
 afterEach(() => {
@@ -55,14 +57,14 @@ describe("BookingContextGate (TI2-123)", () => {
     renderGate();
 
     expect(screen.getByRole("status").textContent).toBe("Cargando tu acompañamiento…");
-    expect(findBookingProfessional).not.toHaveBeenCalled();
+    expect(findBookingProfessionals).not.toHaveBeenCalled();
   });
 
   test("con un único activo entrega el contexto sin pedir elección", async () => {
     renderGate();
 
-    expect(await screen.findByText("acompanamiento-1 con pro-1")).toBeDefined();
-    expect(findBookingProfessional).toHaveBeenCalledWith("acompanamiento-1");
+    expect(await screen.findByText("acompanamiento-1 con pro-1 y pro-2")).toBeDefined();
+    expect(findBookingProfessionals).toHaveBeenCalledWith("acompanamiento-1");
   });
 
   test("sin activos explica el requisito y no consulta profesional", () => {
@@ -70,7 +72,7 @@ describe("BookingContextGate (TI2-123)", () => {
     renderGate();
 
     expect(screen.getByText("No tienes un acompañamiento activo.")).toBeDefined();
-    expect(findBookingProfessional).not.toHaveBeenCalled();
+    expect(findBookingProfessionals).not.toHaveBeenCalled();
   });
 
   test("con varios activos pide elegir y respeta el de la URL", async () => {
@@ -83,7 +85,7 @@ describe("BookingContextGate (TI2-123)", () => {
     cleanup();
 
     renderGate("acompanamiento-2");
-    expect(await screen.findByText("acompanamiento-2 con pro-1")).toBeDefined();
+    expect(await screen.findByText("acompanamiento-2 con pro-1 y pro-2")).toBeDefined();
   });
 
   test("un identificador que no es propio y activo no se usa", async () => {
@@ -91,27 +93,29 @@ describe("BookingContextGate (TI2-123)", () => {
     renderGate("ajeno");
 
     expect(screen.getByRole("heading", { name: "Elige un acompañamiento" })).toBeDefined();
-    expect(findBookingProfessional).not.toHaveBeenCalled();
+    expect(findBookingProfessionals).not.toHaveBeenCalled();
   });
 
   test("sin profesional disponible no muestra la búsqueda", async () => {
-    findBookingProfessional.mockResolvedValue({ status: "none" });
+    findBookingProfessionals.mockResolvedValue({ status: "none" });
     renderGate();
 
     expect(
-      await screen.findByText("Aún no podemos mostrar horarios de este acompañamiento."),
+      await screen.findByText(
+        "Este acompañamiento aún no tiene profesionales disponibles para reservar.",
+      ),
     ).toBeDefined();
   });
 
   test("la denegación no revela el motivo", async () => {
-    findBookingProfessional.mockResolvedValue({ status: "denied" });
+    findBookingProfessionals.mockResolvedValue({ status: "denied" });
     renderGate();
 
     expect(await screen.findByText("No tienes acceso a este acompañamiento.")).toBeDefined();
   });
 
   test("un fallo técnico permite reintentar", async () => {
-    findBookingProfessional.mockRejectedValueOnce(new Error("caída de red"));
+    findBookingProfessionals.mockRejectedValueOnce(new Error("caída de red"));
     renderGate();
 
     expect((await screen.findByRole("alert")).textContent).toBe(
@@ -119,6 +123,6 @@ describe("BookingContextGate (TI2-123)", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
 
-    expect(await screen.findByText("acompanamiento-1 con pro-1")).toBeDefined();
+    expect(await screen.findByText("acompanamiento-1 con pro-1 y pro-2")).toBeDefined();
   });
 });

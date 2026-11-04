@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import type {
-  BookingProfessionalResult,
+  BookingProfessionalsResult,
   SlotSearchContext,
 } from "../../application/agenda/agenda-port.ts";
 import { getAgendaPort } from "./schedule-search-data.ts";
@@ -12,8 +12,8 @@ import { getAgendaPort } from "./schedule-search-data.ts";
  * Contexto que la API real exige para buscar y reservar (TI2-123).
  *
  * El acompañamiento sale de los propios y activos: el de la URL si está entre
- * ellos, el único si hay uno y, si hay varios, una elección explícita. El
- * profesional lo entrega el puerto. La autorización de ambos identificadores
+ * ellos, el único si hay uno y, si hay varios, una elección explícita. Los
+ * profesionales los entrega el puerto. La autorización de ambos identificadores
  * vive en el Backend: aquí solo se decide qué pantalla mostrar, sin fixtures.
  */
 
@@ -27,10 +27,10 @@ function useOwnActiveAccompaniments() {
   return owned?.page.filter((accompaniment) => accompaniment.status === "active");
 }
 
-function useBookingProfessional(accompanimentId: string | undefined, attempt: number) {
+function useBookingProfessionals(accompanimentId: string | undefined, attempt: number) {
   const [entry, setEntry] = useState<{
     key: string;
-    result: BookingProfessionalResult;
+    result: BookingProfessionalsResult;
   } | null>(null);
   const key = `${accompanimentId ?? ""}:${attempt}`;
 
@@ -40,7 +40,7 @@ function useBookingProfessional(accompanimentId: string | undefined, attempt: nu
     }
     let cancelled = false;
     getAgendaPort()
-      .findBookingProfessional(accompanimentId)
+      .findBookingProfessionals(accompanimentId)
       .then(
         (result) => {
           if (!cancelled) {
@@ -80,7 +80,7 @@ export function BookingContextGate({
   const accompanimentId =
     active?.find((accompaniment) => accompaniment._id === requestedAccompanimentId)?._id ??
     (active?.length === 1 ? active[0]._id : undefined);
-  const professional = useBookingProfessional(accompanimentId, attempt);
+  const professional = useBookingProfessionals(accompanimentId, attempt);
 
   if (active === undefined) {
     return <BookingContextLoading />;
@@ -120,7 +120,7 @@ export function BookingContextGate({
     return (
       <div className="student-portal__empty">
         <p className="student-portal__empty-title">
-          Aún no podemos mostrar horarios de este acompañamiento.
+          Este acompañamiento aún no tiene profesionales disponibles para reservar.
         </p>
         <p>Inténtalo más tarde.</p>
       </div>
@@ -154,7 +154,7 @@ export function BookingContextGate({
     );
   }
 
-  return <>{children({ accompanimentId, professionalId: professional.professionalId })}</>;
+  return <>{children({ accompanimentId, professionalIds: professional.professionalIds })}</>;
 }
 
 function BookingContextLoading() {

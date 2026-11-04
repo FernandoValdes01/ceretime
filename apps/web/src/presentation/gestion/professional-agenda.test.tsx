@@ -118,7 +118,7 @@ const ETIQUETA_ESPACIO = "Campus San Juan Pablo II · Edificio A · Piso 1 · Sa
 
 function puertoAgendaBase(): AgendaPort {
   return {
-    findBookingProfessional: () => Promise.resolve({ status: "none" }),
+    findBookingProfessionals: () => Promise.resolve({ status: "none" }),
     searchSlots: () => Promise.resolve({ status: "empty" }),
     reserveSlot: () =>
       Promise.resolve({

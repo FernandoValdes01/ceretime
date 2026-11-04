@@ -93,7 +93,7 @@ const ESPACIOS_FICTICIOS: ReadonlyArray<Space> = [
 
 function puertoOk(): AgendaPort {
   return {
-    findBookingProfessional: () => Promise.resolve({ status: "none" }),
+    findBookingProfessionals: () => Promise.resolve({ status: "none" }),
     searchSlots: () => Promise.resolve({ status: "empty" }),
     reserveSlot: () =>
       Promise.resolve({

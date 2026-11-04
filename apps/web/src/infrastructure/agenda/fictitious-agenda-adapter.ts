@@ -14,7 +14,7 @@ import {
   type AgendaAppointmentResult,
   type AgendaPort,
   type AgendaSlot,
-  type BookingProfessionalResult,
+  type BookingProfessionalsResult,
   type CancelReservationInput,
   type CancelReservationResult,
   type ChangeAppointmentStatusInput,
@@ -299,8 +299,8 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
   let appointments: ReadonlyArray<AgendaAppointment> = FICTIONAL_APPOINTMENTS;
   let spaceCounter = Object.keys(FICTIONAL_SPACES).length;
   return {
-    async findBookingProfessional(): Promise<BookingProfessionalResult> {
-      return { status: "ok", professionalId: FICTIONAL_SLOTS[0].professionalId };
+    async findBookingProfessionals(): Promise<BookingProfessionalsResult> {
+      return { status: "ok", professionalIds: [FICTIONAL_SLOTS[0].professionalId] };
     },
     async searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult> {
       if (filter.modality === "online") {

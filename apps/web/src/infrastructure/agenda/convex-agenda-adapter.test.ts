@@ -21,6 +21,7 @@ const GET_APPOINTMENT = "presentation/appointments:getAppointment";
 const CANCEL_APPOINTMENT = "presentation/appointments:cancelAppointment";
 const RECORD_ATTENDANCE = "presentation/appointments:recordAppointmentAttendance";
 const SEARCH_SLOTS = "presentation/availability:searchSlots";
+const LIST_BOOKABLE = "presentation/availability:listBookableProfessionals";
 const BOOK_APPOINTMENT = "presentation/appointments:bookAppointment";
 const LIST_SPACES = "presentation/spaces:listSpaces";
 
@@ -580,7 +581,8 @@ describe("catálogo de espacios contra la API (TI2-125)", () => {
 });
 
 describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
-  const CONTEXT = { accompanimentId: "acompanamiento-1", professionalId: "pro-1" };
+  const CONTEXT = { accompanimentId: "acompanamiento-1", professionalIds: ["pro-1"] };
+  const SEARCH_ARGS = { accompanimentId: "acompanamiento-1", professionalId: "pro-1" };
   const IN_PERSON = {
     id: "cupo-1",
     professionalId: "pro-1",
@@ -638,14 +640,14 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
     const searches = fake.calls.filter((call) => call.name === SEARCH_SLOTS);
     expect(searches.map((call) => call.args)).toEqual([
       {
-        ...CONTEXT,
+        ...SEARCH_ARGS,
         from: "2026-10-31",
         to: "2027-01-30",
         limit: 50,
         version: "v1",
       },
       {
-        ...CONTEXT,
+        ...SEARCH_ARGS,
         from: "2026-10-31",
         to: "2027-01-30",
         limit: 50,
@@ -657,6 +659,45 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
       status: "ok",
       slots: [{ ...IN_PERSON, spaceLabel: expect.stringContaining("101") }, ONLINE],
     });
+  });
+
+  test("junta los cupos de todos los profesionales por hora de inicio", async () => {
+    const OTHER = { ...ONLINE, id: "cupo-3", professionalId: "pro-2", startAt: 1, endAt: 2 };
+    const fake = createFakeClient({
+      query: {
+        [SEARCH_SLOTS]: (args) =>
+          args.professionalId === "pro-1"
+            ? page([SLOT_ONLINE])
+            : page([{ ...OTHER, version: "v1" }]),
+      },
+    });
+
+    await expect(
+      fake.adapter().searchSlots({
+        modality: "all",
+        context: { accompanimentId: "acompanamiento-1", professionalIds: ["pro-1", "pro-2"] },
+      }),
+    ).resolves.toEqual({ status: "ok", slots: [OTHER, ONLINE] });
+  });
+
+  test("un profesional sin cupo no oculta los cupos de los demás", async () => {
+    const fake = createFakeClient({
+      query: {
+        [SEARCH_SLOTS]: (args) => {
+          if (args.professionalId === "pro-1") {
+            throw new ConvexError({ code: "no_availability", message: "Sin cupo" });
+          }
+          return page([SLOT_ONLINE]);
+        },
+      },
+    });
+
+    await expect(
+      fake.adapter().searchSlots({
+        modality: "all",
+        context: { accompanimentId: "acompanamiento-1", professionalIds: ["pro-1", "pro-2"] },
+      }),
+    ).resolves.toEqual({ status: "ok", slots: [ONLINE] });
   });
 
   test("filtrar una modalidad sin filas responde vacío, no falta de cupo", async () => {
@@ -815,41 +856,27 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
   });
 });
 
-describe("profesional con quien reservar (TI2-123)", () => {
-  const appointmentPage = (items: ReadonlyArray<unknown>, nextCursor: string | null = null) => ({
-    items,
-    hasMore: nextCursor !== null,
-    nextCursor,
-    version: "v1",
-  });
-
-  test("toma el de la atención más reciente, en todas las páginas", async () => {
+describe("profesionales con quienes reservar (TI2-123)", () => {
+  test("entrega los profesionales reservables del Backend", async () => {
     const fake = createFakeClient({
       query: {
-        [LIST_APPOINTMENTS]: (args) =>
-          args.cursor === undefined
-            ? appointmentPage(
-                [fullProjection({ professionalId: "pro-antiguo", startAt: 100 })],
-                "c2",
-              )
-            : appointmentPage([fullProjection({ professionalId: "pro-reciente", startAt: 200 })]),
+        [LIST_BOOKABLE]: () => ({ professionalIds: ["pro-1", "pro-2"], version: "v1" }),
       },
     });
 
-    await expect(fake.adapter().findBookingProfessional("acompanamiento-1")).resolves.toEqual({
+    await expect(fake.adapter().findBookingProfessionals("acompanamiento-1")).resolves.toEqual({
       status: "ok",
-      professionalId: "pro-reciente",
+      professionalIds: ["pro-1", "pro-2"],
     });
-    expect(fake.calls[0].args).toMatchObject({ accompanimentId: "acompanamiento-1", limit: 50 });
-    expect(fake.calls[1].args).toMatchObject({ cursor: "c2" });
+    expect(fake.calls[0].args).toEqual({ accompanimentId: "acompanamiento-1", version: "v1" });
   });
 
-  test("sin atenciones responde none y no inventa un profesional", async () => {
+  test("sin profesionales responde none y no inventa uno", async () => {
     const fake = createFakeClient({
-      query: { [LIST_APPOINTMENTS]: () => appointmentPage([]) },
+      query: { [LIST_BOOKABLE]: () => ({ professionalIds: [], version: "v1" }) },
     });
 
-    await expect(fake.adapter().findBookingProfessional("acompanamiento-1")).resolves.toEqual({
+    await expect(fake.adapter().findBookingProfessionals("acompanamiento-1")).resolves.toEqual({
       status: "none",
     });
   });
@@ -857,23 +884,23 @@ describe("profesional con quien reservar (TI2-123)", () => {
   test("traduce denegación y fallo técnico sin filtrar detalles", async () => {
     const denied = createFakeClient({
       query: {
-        [LIST_APPOINTMENTS]: () => {
+        [LIST_BOOKABLE]: () => {
           throw new ConvexError({ code: "unauthorized", message: "No autorizado" });
         },
       },
     });
     const failed = createFakeClient({
       query: {
-        [LIST_APPOINTMENTS]: () => {
+        [LIST_BOOKABLE]: () => {
           throw new Error("detalle interno");
         },
       },
     });
 
-    await expect(denied.adapter().findBookingProfessional("ajeno")).resolves.toEqual({
+    await expect(denied.adapter().findBookingProfessionals("ajeno")).resolves.toEqual({
       status: "denied",
     });
-    await expect(failed.adapter().findBookingProfessional("acompanamiento-1")).resolves.toEqual({
+    await expect(failed.adapter().findBookingProfessionals("acompanamiento-1")).resolves.toEqual({
       status: "error",
       message: "No pudimos cargar tu acompañamiento. Inténtalo de nuevo.",
     });

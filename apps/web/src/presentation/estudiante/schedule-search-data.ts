@@ -44,16 +44,16 @@ export function useSlotSearch(
     entry.modality === modality && entry.attempt === attempt ? entry.result : undefined;
 
   const accompanimentId = context?.accompanimentId;
-  const professionalId = context?.professionalId;
+  const professionalIds = context?.professionalIds;
 
   useEffect(() => {
     let cancelled = false;
     getAgendaPort()
       .searchSlots({
         modality,
-        ...(accompanimentId === undefined || professionalId === undefined
+        ...(accompanimentId === undefined || professionalIds === undefined
           ? {}
-          : { context: { accompanimentId, professionalId } }),
+          : { context: { accompanimentId, professionalIds } }),
       })
       .then(
         (next) => {
@@ -77,7 +77,7 @@ export function useSlotSearch(
     return () => {
       cancelled = true;
     };
-  }, [modality, attempt, accompanimentId, professionalId]);
+  }, [modality, attempt, accompanimentId, professionalIds]);
 
   return result;
 }

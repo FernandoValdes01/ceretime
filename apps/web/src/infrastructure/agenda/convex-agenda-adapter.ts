@@ -23,7 +23,7 @@ import type {
   AgendaPort,
   AgendaSlot,
   AgendaUnsubscribe,
-  BookingProfessionalResult,
+  BookingProfessionalsResult,
   CancelReservationInput,
   CancelReservationResult,
   ChangeAppointmentStatusInput,
@@ -39,7 +39,6 @@ import type {
   SaveExceptionResult,
   SaveSpaceInput,
   SaveSpaceResult,
-  SlotSearchContext,
   SlotSearchFilter,
   SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
@@ -132,6 +131,9 @@ export interface ConvexAgendaClient {
 type AppointmentsPage = FunctionReturnType<typeof api.presentation.appointments.listAppointments>;
 type AppointmentProjection = AppointmentsPage["items"][number];
 type SpacesPage = FunctionReturnType<typeof api.presentation.spaces.listSpaces>;
+type SearchedSlot = FunctionReturnType<
+  typeof api.presentation.availability.searchSlots
+>["items"][number];
 type OwnAvailability = FunctionReturnType<typeof api.presentation.availability.listOwnAvailability>;
 type AppointmentsArgs = {
   readonly from: string;
@@ -274,9 +276,6 @@ function mapStatusChangeError(error: unknown): ChangeAppointmentStatusResult {
 }
 
 function mapSearchError(error: unknown): SlotSearchResult {
-  if (publicErrorOf(error)?.code === NO_AVAILABILITY_ERROR_CODE) {
-    return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
-  }
   const classified = classifyError(error, SEARCH_SLOTS_FALLBACK);
   return "denied" in classified
     ? { status: "denied" }
@@ -345,37 +344,16 @@ export function createConvexAgendaAdapter(
     );
   }
 
-  /**
-   * Profesional con quien reservar: el de la atención más reciente del
-   * acompañamiento. Es la única fuente pública mientras no exista una operación
-   * que entregue los profesionales reservables antes de la primera reserva; la
-   * asignación vigente la sigue validando el Backend al buscar y reservar.
-   */
-  async function findBookingProfessional(
+  /** Profesionales reservables del acompañamiento, según el Backend. */
+  async function findBookingProfessionals(
     accompanimentId: string,
-  ): Promise<BookingProfessionalResult> {
+  ): Promise<BookingProfessionalsResult> {
     try {
-      const args = { ...appointmentsArgs(now()), accompanimentId };
-      let latest: { readonly professionalId: string; readonly startAt: number } | null = null;
-      let cursor: string | undefined;
-      for (let pages = 0; pages < AGENDA_MAX_PAGES; pages += 1) {
-        const page: AppointmentsPage = await client.query(
-          api.presentation.appointments.listAppointments,
-          { ...args, ...(cursor === undefined ? {} : { cursor }) },
-        );
-        for (const item of page.items) {
-          if ("professionalId" in item && (latest === null || item.startAt > latest.startAt)) {
-            latest = item;
-          }
-        }
-        if (!page.hasMore || page.nextCursor === null) {
-          break;
-        }
-        cursor = page.nextCursor;
-      }
-      return latest === null
-        ? { status: "none" }
-        : { status: "ok", professionalId: latest.professionalId };
+      const { professionalIds } = await client.query(
+        api.presentation.availability.listBookableProfessionals,
+        { accompanimentId, version: AVAILABILITY_CONTRACT_VERSION },
+      );
+      return professionalIds.length === 0 ? { status: "none" } : { status: "ok", professionalIds };
     } catch (error) {
       const classified = classifyError(error, BOOKING_PROFESSIONAL_FALLBACK);
       return "denied" in classified
@@ -384,28 +362,36 @@ export function createConvexAgendaAdapter(
     }
   }
 
-  /** Acumula todos los cupos de la ventana; `null` si supera el tope de páginas. */
-  async function readSlotPages(context: SlotSearchContext) {
+  /**
+   * Todos los cupos de un profesional en la ventana; `null` si supera el tope de
+   * páginas. Que uno no tenga cupo no debe ocultar los de los demás.
+   */
+  async function readProfessionalSlots(accompanimentId: string, professionalId: string) {
     const range = availabilityRange(now());
-    const slots: FunctionReturnType<
-      typeof api.presentation.availability.searchSlots
-    >["items"][number][] = [];
+    const slots: SearchedSlot[] = [];
     let cursor: string | undefined;
-    for (let pages = 0; pages < AGENDA_MAX_PAGES; pages += 1) {
-      const page = await client.query(api.presentation.availability.searchSlots, {
-        accompanimentId: context.accompanimentId,
-        professionalId: context.professionalId,
-        from: range.from,
-        to: range.to,
-        limit: SLOT_PAGE_LIMIT,
-        ...(cursor === undefined ? {} : { cursor }),
-        version: AVAILABILITY_CONTRACT_VERSION,
-      });
-      slots.push(...page.items);
-      if (!page.hasMore || page.nextCursor === null) {
+    try {
+      for (let pages = 0; pages < AGENDA_MAX_PAGES; pages += 1) {
+        const page = await client.query(api.presentation.availability.searchSlots, {
+          accompanimentId,
+          professionalId,
+          from: range.from,
+          to: range.to,
+          limit: SLOT_PAGE_LIMIT,
+          ...(cursor === undefined ? {} : { cursor }),
+          version: AVAILABILITY_CONTRACT_VERSION,
+        });
+        slots.push(...page.items);
+        if (!page.hasMore || page.nextCursor === null) {
+          return slots;
+        }
+        cursor = page.nextCursor;
+      }
+    } catch (error) {
+      if (publicErrorOf(error)?.code === NO_AVAILABILITY_ERROR_CODE) {
         return slots;
       }
-      cursor = page.nextCursor;
+      throw error;
     }
     return null;
   }
@@ -414,11 +400,22 @@ export function createConvexAgendaAdapter(
     if (filter.context === undefined) {
       return { status: "error", message: MISSING_CONTEXT_MESSAGE };
     }
+    const { accompanimentId, professionalIds } = filter.context;
     try {
-      const found = await readSlotPages(filter.context);
-      if (found === null) {
-        return { status: "error", message: TOO_MANY_SLOTS_MESSAGE };
+      const perProfessional = await Promise.all(
+        professionalIds.map((id) => readProfessionalSlots(accompanimentId, id)),
+      );
+      const found: SearchedSlot[] = [];
+      for (const slots of perProfessional) {
+        if (slots === null) {
+          return { status: "error", message: TOO_MANY_SLOTS_MESSAGE };
+        }
+        found.push(...slots);
       }
+      if (found.length === 0) {
+        return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
+      }
+      found.sort((left, right) => left.startAt - right.startAt);
       const matching =
         filter.modality === "all"
           ? found
@@ -873,7 +870,7 @@ export function createConvexAgendaAdapter(
     searchSlots,
     reserveSlot,
     cancelReservation,
-    findBookingProfessional,
+    findBookingProfessionals,
     listSpaces: readSpaces,
     // Sin API real todavía: la escritura del catálogo (TI2-104) conserva los
     // fixtures declarados.

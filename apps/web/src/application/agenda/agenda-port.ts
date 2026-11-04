@@ -49,15 +49,15 @@ export type AgendaSlot = Pick<
  */
 export type SlotSearchContext = {
   readonly accompanimentId: string;
-  readonly professionalId: string;
+  readonly professionalIds: ReadonlyArray<string>;
 };
 
 /**
- * Profesional con quien reservar en un acompañamiento (TI2-123). `none` indica
- * que ninguna operación pública lo entrega aún: no se inventa uno.
+ * Profesionales con quienes reservar en un acompañamiento (TI2-123). `none`
+ * indica que no hay ninguno reservable: no se inventa uno.
  */
-export type BookingProfessionalResult =
-  | { readonly status: "ok"; readonly professionalId: string }
+export type BookingProfessionalsResult =
+  | { readonly status: "ok"; readonly professionalIds: ReadonlyArray<string> }
   | { readonly status: "none" }
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly message: string };
@@ -287,7 +287,7 @@ export type AgendaUnsubscribe = () => void;
 
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {
-  findBookingProfessional(accompanimentId: string): Promise<BookingProfessionalResult>;
+  findBookingProfessionals(accompanimentId: string): Promise<BookingProfessionalsResult>;
   searchSlots(filter: SlotSearchFilter): Promise<SlotSearchResult>;
   reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult>;
   cancelReservation(input: CancelReservationInput): Promise<CancelReservationResult>;

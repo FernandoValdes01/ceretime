@@ -35,13 +35,13 @@ vi.mock("../session/session-state", () => ({
   useSessionAndRole: () => mockedPair,
 }));
 
-vi.mock("./student-booking-context.tsx", () => ({
-  BookingContextGate: ({
-    children,
-  }: {
-    children: (context: { accompanimentId: string; professionalId: string }) => ReactNode;
-  }) => children({ accompanimentId: "acompanamiento-1", professionalId: "pro-1" }),
-}));
+vi.mock("./student-booking-context.tsx", () => {
+  const context = { accompanimentId: "acompanamiento-1", professionalIds: ["pro-1"] };
+  return {
+    BookingContextGate: ({ children }: { children: (value: typeof context) => ReactNode }) =>
+      children(context),
+  };
+});
 
 vi.mock("../../infrastructure/agenda/convex-agenda-adapter.ts", () => ({
   createConvexAgendaAdapter: () => ({
