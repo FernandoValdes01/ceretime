@@ -7,9 +7,11 @@ import {
   APPOINTMENT_CONTRACT_VERSION,
   AVAILABILITY_CONTRACT_VERSION,
   CONFLICT_ERROR_CODE,
+  NO_AVAILABILITY_ERROR_CODE,
   SPACE_CATALOG_CONTRACT_VERSION,
   UNAUTHORIZED_ERROR_CODE,
   UNAUTHORIZED_ERROR_MESSAGE,
+  toSpaceLabel,
   type AvailabilityBlock,
   type AvailabilityException,
   type PublicApiError,
@@ -19,7 +21,9 @@ import type {
   AgendaAppointment,
   AgendaAppointmentResult,
   AgendaPort,
+  AgendaSlot,
   AgendaUnsubscribe,
+  BookingProfessionalResult,
   CancelReservationInput,
   CancelReservationResult,
   ChangeAppointmentStatusInput,
@@ -35,22 +39,25 @@ import type {
   SaveExceptionResult,
   SaveSpaceInput,
   SaveSpaceResult,
-  SlotModalityFilter,
+  SlotSearchContext,
+  SlotSearchFilter,
   SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
 import { createFictitiousAgendaAdapter } from "./fictitious-agenda-adapter.ts";
 
 /**
- * Adaptador Convex del puerto de agenda (TI2-125).
+ * Adaptador Convex del puerto de agenda (TI2-125, extendido TI2-123).
  *
  * Un solo adaptador vigente para las operaciones ya publicadas: el editor de
  * disponibilidad (TI2-111), la agenda/detalle del Profesional (TI2-112) y la
- * lectura del catálogo de espacios (TI2-99) leen contra
- * `api.presentation.*`; los guardados y la agenda escriben donde hay mutation
- * publicada. La búsqueda, la reserva y la cancelación visible del Estudiante
- * (TI2-113, conecta TI2-123) y la escritura del catálogo de espacios
- * (TI2-104) siguen delegadas al adaptador ficticio mientras no tengan
- * productor real; sus fixtures se identifican como tales en la interfaz.
+ * lectura del catálogo de espacios (TI2-99) y la búsqueda, reserva y cancelación
+ * del Estudiante (TI2-111, TI2-121) leen contra `api.presentation.*`; los
+ * guardados y la agenda escriben donde hay mutation publicada. La escritura del
+ * catálogo de espacios (TI2-104) sigue delegada al adaptador ficticio mientras
+ * no tenga productor real; sus fixtures se identifican como tales en la interfaz.
+ *
+ * Sin contexto, la búsqueda y la reserva responden error y no fixtures, para no
+ * inventar un éxito.
  *
  * El adaptador no decide autorización ni transiciones: resuelve la identidad en
  * el Backend, que también recorta la vista de cada atención. El cliente nunca
@@ -86,10 +93,21 @@ const AGENDA_MAX_PAGES = 40;
 const SPACE_CATALOG_PAGE_LIMIT = 100;
 const SPACE_CATALOG_MAX_PAGES = 10;
 
+/** Tope por página que acepta `searchSlots`. */
+const SLOT_PAGE_LIMIT = 50;
+
 const TOO_MANY_APPOINTMENTS_MESSAGE =
   "La agenda tiene más atenciones de las que esta vista puede cargar en este rango.";
 const TOO_MANY_SPACES_MESSAGE =
   "El catálogo de espacios tiene más salas de las que esta vista puede cargar.";
+const TOO_MANY_SLOTS_MESSAGE =
+  "Hay más horarios de los que esta vista puede cargar. Inténtalo de nuevo más tarde.";
+const MISSING_CONTEXT_MESSAGE = "No pudimos identificar tu acompañamiento. Vuelve a ingresar.";
+
+const SEARCH_SLOTS_FALLBACK = "No pudimos cargar los horarios. Inténtalo de nuevo.";
+const RESERVE_SLOT_FALLBACK = "No pudimos confirmar la reserva. Inténtalo de nuevo.";
+const CANCEL_RESERVATION_FALLBACK = "No pudimos cancelar la reserva. Inténtalo de nuevo.";
+const BOOKING_PROFESSIONAL_FALLBACK = "No pudimos cargar tu acompañamiento. Inténtalo de nuevo.";
 
 const LOAD_AVAILABILITY_FALLBACK = "No pudimos cargar la disponibilidad. Inténtalo de nuevo.";
 const LOAD_AGENDA_FALLBACK = "No pudimos cargar la agenda. Inténtalo de nuevo.";
@@ -255,6 +273,41 @@ function mapStatusChangeError(error: unknown): ChangeAppointmentStatusResult {
     : { status: "error", error: classified.error };
 }
 
+function mapSearchError(error: unknown): SlotSearchResult {
+  if (publicErrorOf(error)?.code === NO_AVAILABILITY_ERROR_CODE) {
+    return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
+  }
+  const classified = classifyError(error, SEARCH_SLOTS_FALLBACK);
+  return "denied" in classified
+    ? { status: "denied" }
+    : { status: "error", message: classified.error.message };
+}
+
+/**
+ * Lee `data.code` antes de clasificar: un fallo técnico lleva código `conflict`
+ * en `classifyError` y no debe presentarse como un conflicto de reserva.
+ */
+function mapReserveError(error: unknown): ReserveSlotResult {
+  const code = publicErrorOf(error)?.code;
+  if (code === CONFLICT_ERROR_CODE) {
+    return { status: "conflict", code: CONFLICT_ERROR_CODE };
+  }
+  if (code === NO_AVAILABILITY_ERROR_CODE) {
+    return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
+  }
+  const classified = classifyError(error, RESERVE_SLOT_FALLBACK);
+  return "denied" in classified
+    ? { status: "denied" }
+    : { status: "error", error: classified.error };
+}
+
+function mapCancelError(error: unknown): CancelReservationResult {
+  const classified = classifyError(error, CANCEL_RESERVATION_FALLBACK);
+  return "denied" in classified
+    ? { status: "denied" }
+    : { status: "error", error: classified.error };
+}
+
 /** Convierte las proyecciones en la lista ordenada de la agenda. */
 function toAppointmentsResult(items: ReadonlyArray<AppointmentProjection>): ListAppointmentsResult {
   if (items.length === 0) {
@@ -275,9 +328,178 @@ export function createConvexAgendaAdapter(
   client: ConvexAgendaClient,
   now: () => number = Date.now,
 ): AgendaPort {
-  // Operaciones aún sin API real: búsqueda y reserva del Estudiante
-  // (TI2-123) y catálogo de espacios (TI2-104) siguen con fixtures.
+  // Operación aún sin API real de escritura: el catálogo de espacios (TI2-104)
+  // sigue con fixtures.
   const simulated = createFictitiousAgendaAdapter();
+
+  /**
+   * Etiquetas de los espacios vigentes. Son solo presentación: si la lectura
+   * falla, el cupo se muestra sin etiqueta y no se pierde la búsqueda.
+   */
+  async function readSpaceLabels(): Promise<ReadonlyMap<string, string>> {
+    const catalog = await readSpaces();
+    return new Map(
+      catalog.status === "ok"
+        ? catalog.spaces.map((space) => [space.id, toSpaceLabel(space)] as const)
+        : [],
+    );
+  }
+
+  /**
+   * Profesional con quien reservar: el de la atención más reciente del
+   * acompañamiento. Es la única fuente pública mientras no exista una operación
+   * que entregue los profesionales reservables antes de la primera reserva; la
+   * asignación vigente la sigue validando el Backend al buscar y reservar.
+   */
+  async function findBookingProfessional(
+    accompanimentId: string,
+  ): Promise<BookingProfessionalResult> {
+    try {
+      const args = { ...appointmentsArgs(now()), accompanimentId };
+      let latest: { readonly professionalId: string; readonly startAt: number } | null = null;
+      let cursor: string | undefined;
+      for (let pages = 0; pages < AGENDA_MAX_PAGES; pages += 1) {
+        const page: AppointmentsPage = await client.query(
+          api.presentation.appointments.listAppointments,
+          { ...args, ...(cursor === undefined ? {} : { cursor }) },
+        );
+        for (const item of page.items) {
+          if ("professionalId" in item && (latest === null || item.startAt > latest.startAt)) {
+            latest = item;
+          }
+        }
+        if (!page.hasMore || page.nextCursor === null) {
+          break;
+        }
+        cursor = page.nextCursor;
+      }
+      return latest === null
+        ? { status: "none" }
+        : { status: "ok", professionalId: latest.professionalId };
+    } catch (error) {
+      const classified = classifyError(error, BOOKING_PROFESSIONAL_FALLBACK);
+      return "denied" in classified
+        ? { status: "denied" }
+        : { status: "error", message: classified.error.message };
+    }
+  }
+
+  /** Acumula todos los cupos de la ventana; `null` si supera el tope de páginas. */
+  async function readSlotPages(context: SlotSearchContext) {
+    const range = availabilityRange(now());
+    const slots: FunctionReturnType<
+      typeof api.presentation.availability.searchSlots
+    >["items"][number][] = [];
+    let cursor: string | undefined;
+    for (let pages = 0; pages < AGENDA_MAX_PAGES; pages += 1) {
+      const page = await client.query(api.presentation.availability.searchSlots, {
+        accompanimentId: context.accompanimentId,
+        professionalId: context.professionalId,
+        from: range.from,
+        to: range.to,
+        limit: SLOT_PAGE_LIMIT,
+        ...(cursor === undefined ? {} : { cursor }),
+        version: AVAILABILITY_CONTRACT_VERSION,
+      });
+      slots.push(...page.items);
+      if (!page.hasMore || page.nextCursor === null) {
+        return slots;
+      }
+      cursor = page.nextCursor;
+    }
+    return null;
+  }
+
+  async function searchSlots(filter: SlotSearchFilter): Promise<SlotSearchResult> {
+    if (filter.context === undefined) {
+      return { status: "error", message: MISSING_CONTEXT_MESSAGE };
+    }
+    try {
+      const found = await readSlotPages(filter.context);
+      if (found === null) {
+        return { status: "error", message: TOO_MANY_SLOTS_MESSAGE };
+      }
+      const matching =
+        filter.modality === "all"
+          ? found
+          : found.filter((slot) => slot.modality === filter.modality);
+      if (matching.length === 0) {
+        return { status: "empty" };
+      }
+      const labels = matching.some((slot) => slot.spaceId !== undefined)
+        ? await readSpaceLabels()
+        : new Map<string, string>();
+      const slots = matching.map((slot): AgendaSlot => {
+        const spaceLabel = slot.spaceId === undefined ? undefined : labels.get(slot.spaceId);
+        return {
+          id: slot.id,
+          professionalId: slot.professionalId,
+          date: slot.date,
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          modality: slot.modality,
+          ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
+          ...(spaceLabel === undefined ? {} : { spaceLabel }),
+        };
+      });
+      return { status: "ok", slots };
+    } catch (error) {
+      return mapSearchError(error);
+    }
+  }
+
+  async function reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult> {
+    if (input.booking === undefined) {
+      return {
+        status: "error",
+        error: { code: CONFLICT_ERROR_CODE, message: MISSING_CONTEXT_MESSAGE },
+      };
+    }
+    const { accompanimentId, slot } = input.booking;
+    try {
+      const { appointmentId } = await client.mutation(
+        api.presentation.appointments.bookAppointment,
+        {
+          accompanimentId,
+          professionalId: slot.professionalId,
+          modality: slot.modality,
+          ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          version: APPOINTMENT_CONTRACT_VERSION,
+        },
+      );
+      // La API responde solo el identificador: el contrato arma la confirmación
+      // con el cupo elegido.
+      return {
+        status: "confirmed",
+        reservation: {
+          id: appointmentId,
+          slotId: slot.id,
+          professionalId: slot.professionalId,
+          modality: slot.modality,
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+        },
+      };
+    } catch (error) {
+      return mapReserveError(error);
+    }
+  }
+
+  async function cancelReservation(
+    input: CancelReservationInput,
+  ): Promise<CancelReservationResult> {
+    try {
+      await client.mutation(api.presentation.appointments.cancelAppointment, {
+        appointmentId: input.reservationId,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      });
+      return { status: "cancelled" };
+    } catch (error) {
+      return mapCancelError(error);
+    }
+  }
 
   async function readOwnAvailability(): Promise<OwnAvailability> {
     const range = availabilityRange(now());
@@ -648,19 +870,13 @@ export function createConvexAgendaAdapter(
   }
 
   return {
-    // Sin API real todavía: búsqueda, reserva y cancelación del Estudiante
-    // (TI2-113/TI2-123) y escritura del catálogo (TI2-104) conservan los
-    // fixtures declarados.
-    searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult> {
-      return simulated.searchSlots(filter);
-    },
-    reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult> {
-      return simulated.reserveSlot(input);
-    },
-    cancelReservation(input: CancelReservationInput): Promise<CancelReservationResult> {
-      return simulated.cancelReservation(input);
-    },
+    searchSlots,
+    reserveSlot,
+    cancelReservation,
+    findBookingProfessional,
     listSpaces: readSpaces,
+    // Sin API real todavía: la escritura del catálogo (TI2-104) conserva los
+    // fixtures declarados.
     saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult> {
       return simulated.saveSpace(input);
     },

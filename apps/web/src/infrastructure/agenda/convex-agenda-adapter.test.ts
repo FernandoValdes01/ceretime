@@ -20,6 +20,8 @@ const LIST_APPOINTMENTS = "presentation/appointments:listAppointments";
 const GET_APPOINTMENT = "presentation/appointments:getAppointment";
 const CANCEL_APPOINTMENT = "presentation/appointments:cancelAppointment";
 const RECORD_ATTENDANCE = "presentation/appointments:recordAppointmentAttendance";
+const SEARCH_SLOTS = "presentation/availability:searchSlots";
+const BOOK_APPOINTMENT = "presentation/appointments:bookAppointment";
 const LIST_SPACES = "presentation/spaces:listSpaces";
 
 /** 2026-10-31 09:00 en America/Santiago (UTC-3 en esa fecha). */
@@ -577,17 +579,308 @@ describe("catálogo de espacios contra la API (TI2-125)", () => {
   });
 });
 
-describe("operaciones aún simuladas (TI2-125)", () => {
-  test("la búsqueda en línea sigue devolviendo la falta de cupo ficticia", async () => {
+describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
+  const CONTEXT = { accompanimentId: "acompanamiento-1", professionalId: "pro-1" };
+  const IN_PERSON = {
+    id: "cupo-1",
+    professionalId: "pro-1",
+    date: "2026-11-02",
+    startAt: Date.UTC(2026, 10, 2, 13, 0),
+    endAt: Date.UTC(2026, 10, 2, 14, 0),
+    modality: "inPerson",
+    spaceId: "esp-1",
+  } as const;
+  const SLOT_IN_PERSON = { ...IN_PERSON, version: "v1" } as const;
+  const ONLINE = {
+    id: "cupo-2",
+    professionalId: "pro-1",
+    date: "2026-11-03",
+    startAt: Date.UTC(2026, 10, 3, 13, 0),
+    endAt: Date.UTC(2026, 10, 3, 14, 0),
+    modality: "online",
+  } as const;
+  const SLOT_ONLINE = { ...ONLINE, version: "v1" } as const;
+  const SPACE = {
+    id: "esp-1",
+    campus: "San Juan Pablo II",
+    building: "A",
+    floor: "1",
+    room: "101",
+    accessConditions: "",
+    arrivalInstructions: "",
+    version: "v1",
+  } as const;
+  const page = (items: ReadonlyArray<unknown>, nextCursor: string | null = null) => ({
+    items,
+    hasMore: nextCursor !== null,
+    nextCursor,
+    version: "v1",
+  });
+  const publicError = (code: string, message: string) => () => {
+    throw new ConvexError({ code, message });
+  };
+  const BOOKING = {
+    accompanimentId: "acompanamiento-1",
+    slot: { ...SLOT_IN_PERSON },
+  };
+
+  test("recorre las páginas con la ventana de 92 días y resuelve la sala", async () => {
+    const fake = createFakeClient({
+      query: {
+        [SEARCH_SLOTS]: (args) =>
+          args.cursor === undefined ? page([SLOT_IN_PERSON], "c2") : page([SLOT_ONLINE]),
+        [LIST_SPACES]: () => page([SPACE]),
+      },
+    });
+
+    const result = await fake.adapter().searchSlots({ modality: "all", context: CONTEXT });
+
+    const searches = fake.calls.filter((call) => call.name === SEARCH_SLOTS);
+    expect(searches.map((call) => call.args)).toEqual([
+      {
+        ...CONTEXT,
+        from: "2026-10-31",
+        to: "2027-01-30",
+        limit: 50,
+        version: "v1",
+      },
+      {
+        ...CONTEXT,
+        from: "2026-10-31",
+        to: "2027-01-30",
+        limit: 50,
+        cursor: "c2",
+        version: "v1",
+      },
+    ]);
+    expect(result).toEqual({
+      status: "ok",
+      slots: [{ ...IN_PERSON, spaceLabel: expect.stringContaining("101") }, ONLINE],
+    });
+  });
+
+  test("filtrar una modalidad sin filas responde vacío, no falta de cupo", async () => {
+    const fake = createFakeClient({ query: { [SEARCH_SLOTS]: () => page([SLOT_ONLINE]) } });
+
+    await expect(
+      fake.adapter().searchSlots({ modality: "inPerson", context: CONTEXT }),
+    ).resolves.toEqual({ status: "empty" });
+  });
+
+  test("si falla el catálogo, el cupo sigue disponible sin etiqueta", async () => {
+    const fake = createFakeClient({
+      query: {
+        [SEARCH_SLOTS]: () => page([SLOT_IN_PERSON]),
+        [LIST_SPACES]: publicError("unauthorized", "No autorizado"),
+      },
+    });
+
+    const result = await fake.adapter().searchSlots({ modality: "all", context: CONTEXT });
+
+    expect(result).toEqual({ status: "ok", slots: [IN_PERSON] });
+  });
+
+  test.each([
+    [
+      "falta de cupo",
+      publicError("no_availability", "Sin cupo"),
+      { status: "no_availability", code: "no_availability" },
+    ],
+    ["denegación", publicError("unauthorized", "No autorizado"), { status: "denied" }],
+    [
+      "error público",
+      publicError("conflict", "Pide un rango menor."),
+      { status: "error", message: "Pide un rango menor." },
+    ],
+    [
+      "fallo técnico sin filtrar el detalle",
+      () => {
+        throw new Error("detalle interno");
+      },
+      { status: "error", message: "No pudimos cargar los horarios. Inténtalo de nuevo." },
+    ],
+  ])("la búsqueda traduce %s", async (_name, handler, expected) => {
+    const fake = createFakeClient({ query: { [SEARCH_SLOTS]: handler } });
+
+    await expect(
+      fake.adapter().searchSlots({ modality: "all", context: CONTEXT }),
+    ).resolves.toEqual(expected);
+  });
+
+  test("sin contexto no busca ni inventa fixtures", async () => {
     const fake = createFakeClient();
 
-    await expect(fake.adapter().searchSlots({ modality: "online" })).resolves.toEqual({
-      status: "no_availability",
-      code: "no_availability",
-    });
+    const result = await fake.adapter().searchSlots({ modality: "all" });
+
+    expect(result.status).toBe("error");
     expect(fake.calls).toHaveLength(0);
   });
 
+  test("la reserva envía el cupo elegido y confirma con el id del Backend", async () => {
+    const fake = createFakeClient({
+      mutation: { [BOOK_APPOINTMENT]: () => ({ appointmentId: "aten-9" }) },
+    });
+
+    const result = await fake.adapter().reserveSlot({ slotId: "cupo-1", booking: BOOKING });
+
+    expect(fake.calls).toEqual([
+      {
+        name: BOOK_APPOINTMENT,
+        kind: "mutation",
+        args: {
+          accompanimentId: "acompanamiento-1",
+          professionalId: "pro-1",
+          modality: "inPerson",
+          spaceId: "esp-1",
+          startAt: SLOT_IN_PERSON.startAt,
+          endAt: SLOT_IN_PERSON.endAt,
+          version: "v1",
+        },
+      },
+    ]);
+    expect(result).toEqual({
+      status: "confirmed",
+      reservation: {
+        id: "aten-9",
+        slotId: "cupo-1",
+        professionalId: "pro-1",
+        modality: "inPerson",
+        startAt: SLOT_IN_PERSON.startAt,
+        endAt: SLOT_IN_PERSON.endAt,
+      },
+    });
+  });
+
+  test.each([
+    ["conflicto", publicError("conflict", "Conflicto"), { status: "conflict", code: "conflict" }],
+    [
+      "falta de cupo",
+      publicError("no_availability", "Sin cupo"),
+      { status: "no_availability", code: "no_availability" },
+    ],
+    ["denegación", publicError("unauthorized", "No autorizado"), { status: "denied" }],
+  ])("la reserva traduce %s", async (_name, handler, expected) => {
+    const fake = createFakeClient({ mutation: { [BOOK_APPOINTMENT]: handler } });
+
+    await expect(
+      fake.adapter().reserveSlot({ slotId: "cupo-1", booking: BOOKING }),
+    ).resolves.toEqual(expected);
+  });
+
+  test("un fallo técnico de la reserva no se presenta como conflicto", async () => {
+    const fake = createFakeClient({
+      mutation: {
+        [BOOK_APPOINTMENT]: () => {
+          throw new Error("detalle interno");
+        },
+      },
+    });
+
+    const result = await fake.adapter().reserveSlot({ slotId: "cupo-1", booking: BOOKING });
+
+    expect(result).toMatchObject({
+      status: "error",
+      error: { message: "No pudimos confirmar la reserva. Inténtalo de nuevo." },
+    });
+  });
+
+  test("sin datos del cupo la reserva no llama a la API ni confirma", async () => {
+    const fake = createFakeClient();
+
+    const result = await fake.adapter().reserveSlot({ slotId: "cupo-1" });
+
+    expect(result.status).toBe("error");
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  test("cancelar usa la mutación real sin enviar motivo", async () => {
+    const fake = createFakeClient({
+      mutation: { [CANCEL_APPOINTMENT]: () => ({ appointmentId: "aten-9" }) },
+    });
+
+    await expect(fake.adapter().cancelReservation({ reservationId: "aten-9" })).resolves.toEqual({
+      status: "cancelled",
+    });
+    expect(fake.calls[0]?.args).toEqual({ appointmentId: "aten-9", version: "v1" });
+  });
+
+  test("una cancelación ajena responde denegación", async () => {
+    const fake = createFakeClient({
+      mutation: { [CANCEL_APPOINTMENT]: publicError("unauthorized", "No autorizado") },
+    });
+
+    await expect(fake.adapter().cancelReservation({ reservationId: "ajena" })).resolves.toEqual({
+      status: "denied",
+    });
+  });
+});
+
+describe("profesional con quien reservar (TI2-123)", () => {
+  const appointmentPage = (items: ReadonlyArray<unknown>, nextCursor: string | null = null) => ({
+    items,
+    hasMore: nextCursor !== null,
+    nextCursor,
+    version: "v1",
+  });
+
+  test("toma el de la atención más reciente, en todas las páginas", async () => {
+    const fake = createFakeClient({
+      query: {
+        [LIST_APPOINTMENTS]: (args) =>
+          args.cursor === undefined
+            ? appointmentPage(
+                [fullProjection({ professionalId: "pro-antiguo", startAt: 100 })],
+                "c2",
+              )
+            : appointmentPage([fullProjection({ professionalId: "pro-reciente", startAt: 200 })]),
+      },
+    });
+
+    await expect(fake.adapter().findBookingProfessional("acompanamiento-1")).resolves.toEqual({
+      status: "ok",
+      professionalId: "pro-reciente",
+    });
+    expect(fake.calls[0].args).toMatchObject({ accompanimentId: "acompanamiento-1", limit: 50 });
+    expect(fake.calls[1].args).toMatchObject({ cursor: "c2" });
+  });
+
+  test("sin atenciones responde none y no inventa un profesional", async () => {
+    const fake = createFakeClient({
+      query: { [LIST_APPOINTMENTS]: () => appointmentPage([]) },
+    });
+
+    await expect(fake.adapter().findBookingProfessional("acompanamiento-1")).resolves.toEqual({
+      status: "none",
+    });
+  });
+
+  test("traduce denegación y fallo técnico sin filtrar detalles", async () => {
+    const denied = createFakeClient({
+      query: {
+        [LIST_APPOINTMENTS]: () => {
+          throw new ConvexError({ code: "unauthorized", message: "No autorizado" });
+        },
+      },
+    });
+    const failed = createFakeClient({
+      query: {
+        [LIST_APPOINTMENTS]: () => {
+          throw new Error("detalle interno");
+        },
+      },
+    });
+
+    await expect(denied.adapter().findBookingProfessional("ajeno")).resolves.toEqual({
+      status: "denied",
+    });
+    await expect(failed.adapter().findBookingProfessional("acompanamiento-1")).resolves.toEqual({
+      status: "error",
+      message: "No pudimos cargar tu acompañamiento. Inténtalo de nuevo.",
+    });
+  });
+});
+
+describe("operaciones aún simuladas (TI2-125)", () => {
   test("la escritura del catálogo sigue delegada a fixtures", async () => {
     const fake = createFakeClient();
 
