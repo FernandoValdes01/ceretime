@@ -269,6 +269,10 @@ async function seedAppointment(
     readonly spaceId?: Id<"spaces">;
     readonly originalStartsAt?: number;
     readonly cancelReason?: string;
+    readonly justificationExplanation?: string;
+    readonly justificationSubmittedAt?: number;
+    readonly justificationReview?: Doc<"appointments">["justificationReview"];
+    readonly supportingDocumentReceived?: boolean;
   },
 ) {
   return await t.run(async (ctx) => {
@@ -283,6 +287,18 @@ async function seedAppointment(
       ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
       ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
       ...(input.cancelReason === undefined ? {} : { cancelReason: input.cancelReason }),
+      ...(input.justificationExplanation === undefined
+        ? {}
+        : { justificationExplanation: input.justificationExplanation }),
+      ...(input.justificationSubmittedAt === undefined
+        ? {}
+        : { justificationSubmittedAt: input.justificationSubmittedAt }),
+      ...(input.justificationReview === undefined
+        ? {}
+        : { justificationReview: input.justificationReview }),
+      ...(input.supportingDocumentReceived === undefined
+        ? {}
+        : { supportingDocumentReceived: input.supportingDocumentReceived }),
       createdAt: 1,
     });
   });
@@ -2836,4 +2852,473 @@ test("TI2-128 API: la bitácora no tiene entrada pública ni operaciones de edic
       "recordAppointmentAuditEvent",
     ].sort(),
   );
+});
+
+// ── Justificación de inasistencia (TI2-119) ────────────────────────────────
+
+test("TI2-119 API: el Estudiante entrega y el Profesional acepta la justificación", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-accepted");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  expectOnlyAppointmentId(
+    await asStudent.mutation(api.presentation.appointments.submitAppointmentJustification, {
+      appointmentId,
+      explanation: "  Motivo ficticio entregado en el canal institucional  ",
+      supportingDocumentReceived: true,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    appointmentId,
+  );
+
+  const submitted = await getAppointment(t, appointmentId);
+  expect(submitted).toMatchObject({
+    status: "no_show",
+    startsAt,
+    justificationExplanation: "Motivo ficticio entregado en el canal institucional",
+    justificationReview: "pending",
+    supportingDocumentReceived: true,
+  });
+  expect(submitted?.justificationSubmittedAt).toEqual(expect.any(Number));
+  expect(submitted?.justificationSubmittedAt).toBeGreaterThanOrEqual(startsAt);
+  expect(submitted).not.toHaveProperty("storageId");
+
+  expectOnlyAppointmentId(
+    await asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
+      appointmentId,
+      review: "accepted",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    appointmentId,
+  );
+
+  expect(await getAppointment(t, appointmentId)).toMatchObject({
+    status: "no_show_justified",
+    justificationReview: "accepted",
+    justificationExplanation: "Motivo ficticio entregado en el canal institucional",
+    supportingDocumentReceived: true,
+  });
+});
+
+test("TI2-119 API: el rechazo deja la inasistencia sin justificar y sin sanción automática", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-rejected");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  await asStudent.mutation(api.presentation.appointments.submitAppointmentJustification, {
+    appointmentId,
+    explanation: "Explicación ficticia rechazada",
+    supportingDocumentReceived: false,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expectOnlyAppointmentId(
+    await asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
+      appointmentId,
+      review: "rejected",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    appointmentId,
+  );
+
+  expect(await getAppointment(t, appointmentId)).toMatchObject({
+    status: "no_show_unjustified",
+    justificationReview: "rejected",
+    supportingDocumentReceived: false,
+  });
+  // Sin sanción automática: la revisión solo cambia el estado de la atención.
+  expect(await readAuditRows(t)).toHaveLength(0);
+});
+
+test("TI2-119 API: el plazo vencido rechaza la entrega y el Profesional cierra sin justificación", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-expired");
+  const expiredStart = Date.now() - 30 * DAY;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: expiredStart,
+    endsAt: expiredStart + HOUR,
+    status: "no_show",
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  await expectPublicError(
+    asStudent.mutation(api.presentation.appointments.submitAppointmentJustification, {
+      appointmentId,
+      explanation: "Entrega fuera de plazo",
+      supportingDocumentReceived: true,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "conflict",
+  );
+  const unchanged = await getAppointment(t, appointmentId);
+  expect(unchanged).toMatchObject({ status: "no_show", startsAt: expiredStart });
+  expect(unchanged).not.toHaveProperty("justificationSubmittedAt");
+  expect(unchanged).not.toHaveProperty("justificationReview");
+  expect(unchanged).not.toHaveProperty("justificationExplanation");
+
+  await expectPublicError(
+    asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
+      appointmentId,
+      review: "accepted",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "conflict",
+  );
+  expect(await getAppointment(t, appointmentId)).toMatchObject({ status: "no_show" });
+
+  expectOnlyAppointmentId(
+    await asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
+      appointmentId,
+      review: "rejected",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    appointmentId,
+  );
+  const expired = await getAppointment(t, appointmentId);
+  expect(expired).toMatchObject({ status: "no_show_unjustified" });
+  expect(expired).not.toHaveProperty("justificationSubmittedAt");
+  expect(expired).not.toHaveProperty("justificationReview");
+});
+
+test("TI2-119 API: la entrega es única y solo sobre una inasistencia pendiente", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-single");
+  const startsAt = Date.now() - 2 * HOUR;
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+  });
+
+  await asStudent.mutation(api.presentation.appointments.submitAppointmentJustification, {
+    appointmentId,
+    explanation: "Primera explicación ficticia",
+    supportingDocumentReceived: true,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  await expectPublicError(
+    asStudent.mutation(api.presentation.appointments.submitAppointmentJustification, {
+      appointmentId,
+      explanation: "Segunda explicación ficticia",
+      supportingDocumentReceived: false,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "conflict",
+  );
+  expect(await getAppointment(t, appointmentId)).toMatchObject({
+    justificationExplanation: "Primera explicación ficticia",
+    justificationReview: "pending",
+    supportingDocumentReceived: true,
+  });
+
+  const completedId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "completed",
+  });
+  await expectPublicError(
+    asStudent.mutation(api.presentation.appointments.submitAppointmentJustification, {
+      appointmentId: completedId,
+      explanation: "Explicación sobre una atención realizada",
+      supportingDocumentReceived: true,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "conflict",
+  );
+  expect(await getAppointment(t, completedId)).toMatchObject({ status: "completed" });
+});
+
+test("TI2-119 API: sin entrega no se acepta ni se rechaza dentro del plazo", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-without-submission");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+  });
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  for (const review of ["accepted", "rejected"] as const) {
+    await expectPublicError(
+      asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
+        appointmentId,
+        review,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+      "conflict",
+    );
+  }
+  const row = await getAppointment(t, appointmentId);
+  expect(row).toMatchObject({ status: "no_show" });
+  expect(row).not.toHaveProperty("justificationReview");
+});
+
+test("TI2-119 API: recursos ajenos, roles y cuentas sin vigencia se deniegan sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-denied");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+  });
+  await seedUser(t, { subject: "ti119-foreign-student", role: "student" });
+  await seedUser(t, { subject: "ti119-foreign-pro", role: "professional" });
+  await seedUser(t, { subject: "ti119-intern", role: "intern" });
+  await seedUser(t, { subject: "ti119-admin", role: "admin" });
+  const foreignStudentIdentity = identityFor(
+    "ti119-foreign-student",
+    "ti119-foreign-student@alu.uct.cl",
+  );
+  const foreignProIdentity = identityFor("ti119-foreign-pro", "ti119-foreign-pro@uct.cl");
+  const internIdentity = identityFor("ti119-intern", "ti119-intern@uct.cl");
+  const adminIdentity = identityFor("ti119-admin", "ti119-admin@uct.cl");
+  const inactiveStudentAgenda = await seedAgenda(t, "justification-inactive-student", {
+    studentAccountStatus: "inactive",
+  });
+  const inactiveStudentAppointment = await seedAppointment(t, {
+    accompanimentId: inactiveStudentAgenda.accompanimentId,
+    studentId: inactiveStudentAgenda.student,
+    professionalId: inactiveStudentAgenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+  });
+  const inactiveProAgenda = await seedAgenda(t, "justification-inactive-pro", {
+    professionalAccountStatus: "inactive",
+  });
+  const inactiveProAppointment = await seedAppointment(t, {
+    accompanimentId: inactiveProAgenda.accompanimentId,
+    studentId: inactiveProAgenda.student,
+    professionalId: inactiveProAgenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+  });
+
+  for (const identity of [
+    foreignStudentIdentity,
+    foreignProIdentity,
+    internIdentity,
+    adminIdentity,
+  ]) {
+    await expectPublicError(
+      t
+        .withIdentity(identity)
+        .mutation(api.presentation.appointments.submitAppointmentJustification, {
+          appointmentId,
+          explanation: "Intento ajeno ficticio",
+          supportingDocumentReceived: true,
+          version: APPOINTMENT_CONTRACT_VERSION,
+        }),
+      "unauthorized",
+    );
+  }
+
+  await expectPublicError(
+    t
+      .withIdentity(foreignProIdentity)
+      .mutation(api.presentation.appointments.reviewAppointmentJustification, {
+        appointmentId,
+        review: "accepted",
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    "unauthorized",
+  );
+  for (const identity of [agenda.studentIdentity, internIdentity, adminIdentity]) {
+    await expectPublicError(
+      t
+        .withIdentity(identity)
+        .mutation(api.presentation.appointments.reviewAppointmentJustification, {
+          appointmentId,
+          review: "accepted",
+          version: APPOINTMENT_CONTRACT_VERSION,
+        }),
+      "unauthorized",
+    );
+  }
+
+  await expectPublicError(
+    t
+      .withIdentity(inactiveStudentAgenda.studentIdentity)
+      .mutation(api.presentation.appointments.submitAppointmentJustification, {
+        appointmentId: inactiveStudentAppointment,
+        explanation: "Cuenta inactiva",
+        supportingDocumentReceived: true,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    "unauthorized",
+  );
+  await expectPublicError(
+    t
+      .withIdentity(inactiveProAgenda.proIdentity)
+      .mutation(api.presentation.appointments.reviewAppointmentJustification, {
+        appointmentId: inactiveProAppointment,
+        review: "rejected",
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    "unauthorized",
+  );
+
+  await expectPublicError(
+    t.mutation(api.presentation.appointments.submitAppointmentJustification, {
+      appointmentId,
+      explanation: "Sin sesión",
+      supportingDocumentReceived: true,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "unauthorized",
+  );
+  await expectPublicError(
+    t
+      .withIdentity(agenda.studentIdentity)
+      .mutation(api.presentation.appointments.submitAppointmentJustification, {
+        appointmentId: agenda.accompanimentId,
+        explanation: "Identificador de otra tabla",
+        supportingDocumentReceived: true,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    "unauthorized",
+  );
+
+  const row = await getAppointment(t, appointmentId);
+  expect(row).toMatchObject({
+    status: "no_show",
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+  });
+  expect(row).not.toHaveProperty("justificationSubmittedAt");
+});
+
+test("TI2-119 API: una asignación revocada deja de autorizar la revisión", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-revoked");
+  const startsAt = Date.now() - 2 * HOUR;
+  const revokedPro = await seedUser(t, { subject: "ti119-revoked-pro", role: "professional" });
+  await seedAssignment(t, agenda.accompanimentId, revokedPro, { status: "revoked" });
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: revokedPro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+    justificationExplanation: "Explicación previa",
+    justificationSubmittedAt: startsAt + HOUR,
+    justificationReview: "pending",
+  });
+
+  await expectPublicError(
+    t
+      .withIdentity(identityFor("ti119-revoked-pro", "ti119-revoked-pro@uct.cl"))
+      .mutation(api.presentation.appointments.reviewAppointmentJustification, {
+        appointmentId,
+        review: "accepted",
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    "unauthorized",
+  );
+  expect(await getAppointment(t, appointmentId)).toMatchObject({
+    status: "no_show",
+    justificationReview: "pending",
+  });
+});
+
+test("TI2-119 API: el Profesional asignado lee la explicación y la constancia de respaldo antes de revisar", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-read-pro");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+    justificationExplanation: "Explicación ficticia para lectura previa",
+    justificationSubmittedAt: startsAt + HOUR,
+    justificationReview: "pending",
+    supportingDocumentReceived: true,
+  });
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  const row = await asPro.query(api.presentation.appointments.getAppointment, {
+    appointmentId,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(row).toMatchObject({
+    id: appointmentId,
+    status: "no_show",
+    justificationExplanation: "Explicación ficticia para lectura previa",
+    justificationSubmittedAt: expect.any(Number),
+    justificationReview: "pending",
+    supportingDocumentReceived: true,
+  });
+});
+
+test("TI2-119 API: un tercero no puede leer los antecedentes de la justificación", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-read-denied");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+    justificationExplanation: "Explicación ficticia ajena",
+    justificationSubmittedAt: startsAt + HOUR,
+    justificationReview: "pending",
+    supportingDocumentReceived: true,
+  });
+  const foreignIdentity = identityFor("ti119-read-foreign", "ti119-read-foreign@alu.uct.cl");
+
+  await expectPublicError(
+    t.withIdentity(foreignIdentity).query(api.presentation.appointments.getAppointment, {
+      appointmentId,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "unauthorized",
+  );
+  // El tercero no lee nada: la fila queda intacta.
+  const untouched = await getAppointment(t, appointmentId);
+  expect(untouched).toMatchObject({ status: "no_show", studentId: agenda.student });
 });

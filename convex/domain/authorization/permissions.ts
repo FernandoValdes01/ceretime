@@ -239,6 +239,34 @@ export function canCancelAppointment(context: AppointmentChangeAuthorizationCont
 }
 
 /**
+ * Entrega de la explicación de una inasistencia (TI2-119): solo el Estudiante
+ * dueño de esa atención, con perfil vigente y acompañamiento activo. El
+ * Profesional asignado, el Practicante y el Administrador se deniegan igual.
+ */
+export function canSubmitAppointmentJustification(
+  context: AppointmentChangeAuthorizationContext,
+): boolean {
+  if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
+  return context.role === "student" && context.isOwner && context.isAppointmentStudent;
+}
+
+/**
+ * Revisión de la justificación de inasistencia (TI2-119): solo el Profesional
+ * asignado que tiene la atención a su cargo, con perfil vigente y
+ * acompañamiento activo. Una asignación revocada deja de autorizar.
+ */
+export function canReviewAppointmentJustification(
+  context: AppointmentChangeAuthorizationContext,
+): boolean {
+  if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
+  return (
+    context.role === "professional" &&
+    context.hasActiveProfessionalAssignment &&
+    context.isAppointmentProfessional
+  );
+}
+
+/**
  * Destino de la cancelación según el rol: el Estudiante cancela como
  * `cancelled_by_student` y el Profesional como `cancelled_by_cereti`. `null`
  * cuando la operación no está permitida.

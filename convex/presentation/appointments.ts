@@ -4,6 +4,8 @@ import {
   cancelAppointment as cancelAppointmentUseCase,
   recordAppointmentAttendance as recordAppointmentAttendanceUseCase,
   rescheduleAppointment as rescheduleAppointmentUseCase,
+  submitAppointmentJustification as submitAppointmentJustificationUseCase,
+  reviewAppointmentJustification as reviewAppointmentJustificationUseCase,
 } from "../application/appointments/changes";
 import {
   getAppointment as getAppointmentUseCase,
@@ -28,6 +30,8 @@ import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   appointmentAttendanceOutcomeUnion,
   appointmentStatusUnion,
+  justificationDecisionUnion,
+  justificationReviewUnion,
   modalityUnion,
 } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
@@ -209,6 +213,73 @@ export const recordAppointmentAttendance = mutation({
   },
 });
 
+/**
+ * El Estudiante dueño entrega la explicación y el respaldo de la inasistencia
+ * dentro del plazo de cinco días hábiles (TI2-119). El respaldo se registra
+ * como recepción por canal institucional: no se sube ni se guarda archivo.
+ */
+export const submitAppointmentJustification = mutation({
+  args: {
+    appointmentId: v.string(),
+    explanation: v.string(),
+    supportingDocumentReceived: v.boolean(),
+    version: v.literal(APPOINTMENT_CONTRACT_VERSION),
+  },
+  returns: appointmentResultValidator,
+  handler: async (
+    ctx,
+    { version: _version, appointmentId, explanation, supportingDocumentReceived },
+  ) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await submitAppointmentJustificationUseCase(
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentChangeReader(ctx),
+          persister: appointmentTransitionRepository(ctx).persister,
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          appointmentId,
+          explanation,
+          supportingDocumentReceived,
+        },
+      ),
+    );
+  },
+});
+
+/**
+ * El Profesional asignado revisa la justificación pendiente y la acepta o
+ * rechaza (TI2-119). Sin cron, la misma operación con `rejected` cierra una
+ * inasistencia cuyo plazo venció sin entrega; el dominio decide el plazo.
+ */
+export const reviewAppointmentJustification = mutation({
+  args: {
+    appointmentId: v.string(),
+    review: justificationDecisionUnion,
+    version: v.literal(APPOINTMENT_CONTRACT_VERSION),
+  },
+  returns: appointmentResultValidator,
+  handler: async (ctx, { version: _version, appointmentId, review }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await reviewAppointmentJustificationUseCase(
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentChangeReader(ctx),
+          persister: appointmentTransitionRepository(ctx).persister,
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          appointmentId,
+          review,
+        },
+      ),
+    );
+  },
+});
+
 const version = v.literal(APPOINTMENT_CONTRACT_VERSION);
 
 /** Proyección de la atención: las claves de cada vista son el contrato con los clientes. */
@@ -223,6 +294,10 @@ const appointmentProjectionValidator = v.union(
     endAt: v.number(),
     originalStartAt: v.optional(v.number()),
     cancelReason: v.optional(v.string()),
+    justificationExplanation: v.optional(v.string()),
+    justificationSubmittedAt: v.optional(v.number()),
+    justificationReview: v.optional(justificationReviewUnion),
+    supportingDocumentReceived: v.optional(v.boolean()),
     status: appointmentStatusUnion,
     version,
     view: v.literal("full"),
@@ -236,6 +311,10 @@ const appointmentProjectionValidator = v.union(
     startAt: v.number(),
     endAt: v.number(),
     originalStartAt: v.optional(v.number()),
+    justificationExplanation: v.optional(v.string()),
+    justificationSubmittedAt: v.optional(v.number()),
+    justificationReview: v.optional(justificationReviewUnion),
+    supportingDocumentReceived: v.optional(v.boolean()),
     status: appointmentStatusUnion,
     version,
     view: v.literal("shared"),

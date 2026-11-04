@@ -18,6 +18,8 @@ import {
   cancelAppointment,
   recordAppointmentAttendance,
   rescheduleAppointment,
+  submitAppointmentJustification,
+  reviewAppointmentJustification,
   type AppointmentChangeReader,
   type AppointmentTransitionPersister,
   type CancelAppointmentDeps,
@@ -225,6 +227,14 @@ function changeWorld(overrides: Partial<WorldRow> = {}): ChangeWorld {
       transitions.push({ appointmentId, fields });
       row.status = fields.status;
       if (fields.originalStartsAt !== undefined) row.originalStartAt = fields.originalStartsAt;
+      if (fields.justificationExplanation !== undefined)
+        row.justificationExplanation = fields.justificationExplanation;
+      if (fields.justificationSubmittedAt !== undefined)
+        row.justificationSubmittedAt = fields.justificationSubmittedAt;
+      if (fields.justificationReview !== undefined)
+        row.justificationReview = fields.justificationReview;
+      if (fields.supportingDocumentReceived !== undefined)
+        row.supportingDocumentReceived = fields.supportingDocumentReceived;
     },
   };
   const audits: AppointmentAuditEvent[] = [];
@@ -435,6 +445,283 @@ describe("cancelación de una atención (TI2-109)", () => {
       expect(world.transitions).toHaveLength(0);
       expect(world.row.status).toBe("scheduled");
     }
+  });
+
+  describe("Justificación de inasistencia (TI2-119)", () => {
+    const ONE_DAY = 86_400_000;
+
+    function justificationDeps(world: ChangeWorld, now: number) {
+      return {
+        auth: authorizedAuth(),
+        appointments: world.reader,
+        persister: world.persister,
+        now: () => now,
+      };
+    }
+
+    test("el Estudiante dueño entrega la explicación dentro del plazo de 5 días hábiles", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+      const submittedAt = CURRENT_START + ONE_DAY;
+
+      const result = await submitAppointmentJustification(justificationDeps(world, submittedAt), {
+        tokenIdentifier: "token-student",
+        appointmentId: "appointment-1",
+        explanation: "  Motivo médico justificado  ",
+        supportingDocumentReceived: true,
+      });
+
+      expect(result).toEqual(OK_APPOINTMENT);
+      expect(world.transitions).toEqual([
+        {
+          appointmentId: "appointment-1",
+          fields: {
+            status: "no_show",
+            justificationExplanation: "Motivo médico justificado",
+            justificationSubmittedAt: submittedAt,
+            justificationReview: "pending",
+            supportingDocumentReceived: true,
+          },
+        },
+      ]);
+      expect(world.row.status).toBe("no_show");
+      expect(world.row.justificationExplanation).toBe("Motivo médico justificado");
+      expect(world.row.justificationSubmittedAt).toBe(submittedAt);
+      expect(world.row.justificationReview).toBe("pending");
+      expect(world.row.supportingDocumentReceived).toBe(true);
+    });
+
+    test("rechaza la entrega fuera del plazo de 5 días hábiles sin escribir", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+      const statusBefore = world.row.status;
+
+      const result = await submitAppointmentJustification(
+        justificationDeps(world, CURRENT_START + 10 * ONE_DAY),
+        {
+          tokenIdentifier: "token-student",
+          appointmentId: "appointment-1",
+          explanation: "Entrega tardía",
+          supportingDocumentReceived: true,
+        },
+      );
+
+      expect(result).toEqual(CONFLICT);
+      expect(world.transitions).toHaveLength(0);
+      expect(world.row).toMatchObject({ status: statusBefore });
+      expect(world.row.justificationSubmittedAt).toBeUndefined();
+    });
+
+    test("la entrega es única y no sobrescribe una justificación ya enviada", async () => {
+      const world = changeWorld({
+        status: "no_show",
+        startAt: CURRENT_START,
+        justificationExplanation: "Explicación previa",
+        justificationSubmittedAt: CURRENT_START + ONE_DAY,
+        justificationReview: "pending",
+        supportingDocumentReceived: true,
+      });
+
+      const result = await submitAppointmentJustification(
+        justificationDeps(world, CURRENT_START + 2 * ONE_DAY),
+        {
+          tokenIdentifier: "token-student",
+          appointmentId: "appointment-1",
+          explanation: "Segunda explicación",
+          supportingDocumentReceived: false,
+        },
+      );
+
+      expect(result).toEqual(CONFLICT);
+      expect(world.transitions).toHaveLength(0);
+      expect(world.row.justificationExplanation).toBe("Explicación previa");
+      expect(world.row.supportingDocumentReceived).toBe(true);
+    });
+
+    test("el Profesional asignado acepta la entrega pendiente y la lleva a no_show_justified", async () => {
+      const world = changeWorld({
+        status: "no_show",
+        startAt: CURRENT_START,
+        justificationExplanation: "Explicación previa",
+        justificationSubmittedAt: CURRENT_START + ONE_DAY,
+        justificationReview: "pending",
+      });
+
+      const result = await reviewAppointmentJustification(
+        justificationDeps(world, CURRENT_START + 30 * ONE_DAY),
+        {
+          tokenIdentifier: "token-pro",
+          appointmentId: "appointment-1",
+          review: "accepted",
+        },
+      );
+
+      expect(result).toEqual(OK_APPOINTMENT);
+      expect(world.transitions).toEqual([
+        {
+          appointmentId: "appointment-1",
+          fields: { status: "no_show_justified", justificationReview: "accepted" },
+        },
+      ]);
+      expect(world.row.status).toBe("no_show_justified");
+      expect(world.row.justificationReview).toBe("accepted");
+    });
+
+    test("el Profesional asignado rechaza la entrega pendiente y la lleva a no_show_unjustified", async () => {
+      const world = changeWorld({
+        status: "no_show",
+        startAt: CURRENT_START,
+        justificationExplanation: "Explicación previa",
+        justificationSubmittedAt: CURRENT_START + ONE_DAY,
+        justificationReview: "pending",
+      });
+
+      const result = await reviewAppointmentJustification(
+        justificationDeps(world, CURRENT_START + 30 * ONE_DAY),
+        {
+          tokenIdentifier: "token-pro",
+          appointmentId: "appointment-1",
+          review: "rejected",
+        },
+      );
+
+      expect(result).toEqual(OK_APPOINTMENT);
+      expect(world.row.status).toBe("no_show_unjustified");
+      expect(world.row.justificationReview).toBe("rejected");
+    });
+
+    test("no se acepta una justificación inexistente ni se cierra dentro del plazo", async () => {
+      for (const { label, now, review } of [
+        { label: "aceptar sin entrega", now: CURRENT_START + ONE_DAY, review: "accepted" as const },
+        {
+          label: "rechazar sin entrega en plazo",
+          now: CURRENT_START + ONE_DAY,
+          review: "rejected" as const,
+        },
+      ]) {
+        const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+        const result = await reviewAppointmentJustification(justificationDeps(world, now), {
+          tokenIdentifier: "token-pro",
+          appointmentId: "appointment-1",
+          review,
+        });
+
+        expect({ label, result }).toEqual({ label, result: CONFLICT });
+        expect({ label, transitions: world.transitions.length }).toEqual({ label, transitions: 0 });
+        expect({ label, status: world.row.status }).toEqual({ label, status: "no_show" });
+      }
+    });
+
+    test("el vencimiento sin entrega se cierra como no_show_unjustified sin cron ni revisión inventada", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+
+      const result = await reviewAppointmentJustification(
+        justificationDeps(world, CURRENT_START + 10 * ONE_DAY),
+        {
+          tokenIdentifier: "token-pro",
+          appointmentId: "appointment-1",
+          review: "rejected",
+        },
+      );
+
+      expect(result).toEqual(OK_APPOINTMENT);
+      expect(world.transitions).toEqual([
+        { appointmentId: "appointment-1", fields: { status: "no_show_unjustified" } },
+      ]);
+      expect(world.row.status).toBe("no_show_unjustified");
+      expect(world.row.justificationSubmittedAt).toBeUndefined();
+      expect(world.row.justificationReview).toBeUndefined();
+    });
+
+    test("una entrega ya resuelta no se revisa dos veces", async () => {
+      for (const review of ["accepted", "rejected"] as const) {
+        const world = changeWorld({
+          status: "no_show_justified",
+          startAt: CURRENT_START,
+          justificationExplanation: "Explicación previa",
+          justificationSubmittedAt: CURRENT_START + ONE_DAY,
+          justificationReview: review,
+        });
+
+        const result = await reviewAppointmentJustification(
+          justificationDeps(world, CURRENT_START + 2 * ONE_DAY),
+          {
+            tokenIdentifier: "token-pro",
+            appointmentId: "appointment-1",
+            review: "accepted",
+          },
+        );
+
+        expect(result).toEqual(CONFLICT);
+        expect(world.transitions).toHaveLength(0);
+      }
+    });
+
+    test("terceros o roles incorrectos no pueden entregar ni revisar justificación", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+      const deps = justificationDeps(world, CURRENT_START + ONE_DAY);
+
+      for (const tokenIdentifier of [
+        "token-pro",
+        "token-other",
+        "token-intern",
+        "token-admin",
+        null,
+      ]) {
+        const submit = await submitAppointmentJustification(deps, {
+          tokenIdentifier,
+          appointmentId: "appointment-1",
+          explanation: "Intento ajeno",
+          supportingDocumentReceived: true,
+        });
+        expect({ tokenIdentifier, submit }).toEqual({ tokenIdentifier, submit: DENIED });
+      }
+
+      for (const tokenIdentifier of [
+        "token-student",
+        "token-other",
+        "token-pro-2",
+        "token-intern",
+        null,
+      ]) {
+        const review = await reviewAppointmentJustification(deps, {
+          tokenIdentifier,
+          appointmentId: "appointment-1",
+          review: "accepted",
+        });
+        expect({ tokenIdentifier, review }).toEqual({ tokenIdentifier, review: DENIED });
+      }
+
+      expect(world.transitions).toHaveLength(0);
+    });
+
+    test("entradas inválidas se rechazan antes de leer o persistir", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+      const deps = justificationDeps(world, CURRENT_START + ONE_DAY);
+
+      expect(
+        await submitAppointmentJustification(deps, {
+          tokenIdentifier: "token-student",
+          appointmentId: "   ",
+          explanation: "Motivo",
+          supportingDocumentReceived: false,
+        }),
+      ).toEqual(CONFLICT);
+      expect(
+        await submitAppointmentJustification(deps, {
+          tokenIdentifier: "token-student",
+          appointmentId: "appointment-1",
+          explanation: "   ",
+          supportingDocumentReceived: false,
+        }),
+      ).toEqual(CONFLICT);
+      expect(
+        await reviewAppointmentJustification(deps, {
+          tokenIdentifier: "token-pro",
+          appointmentId: "appointment-1",
+          review: "pending" as unknown as "accepted",
+        }),
+      ).toEqual(CONFLICT);
+      expect(world.transitions).toHaveLength(0);
+    });
   });
 
   test("ajenos, sin asignación vigente, Practicante y Administrador no cancelan", async () => {

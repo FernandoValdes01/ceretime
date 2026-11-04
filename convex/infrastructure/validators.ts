@@ -3,6 +3,8 @@ import { ACCOMPANIMENT_STATUS_VALUES } from "../domain/accompaniments/accompanim
 import {
   APPOINTMENT_ATTENDANCE_OUTCOME_VALUES,
   APPOINTMENT_STATUS_VALUES,
+  JUSTIFICATION_DECISION_VALUES,
+  JUSTIFICATION_REVIEW_VALUES,
 } from "../domain/appointments/appointment";
 import { APPOINTMENT_AUDIT_ACTION_VALUES } from "../domain/appointments/audit";
 import {
@@ -111,6 +113,20 @@ export const appointmentStatusUnion = v.union(
  */
 export const appointmentAttendanceOutcomeUnion = v.union(
   ...APPOINTMENT_ATTENDANCE_OUTCOME_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Revisiones de la justificación de inasistencia (TI2-119), derivadas del dominio.
+ */
+export const justificationReviewUnion = v.union(
+  ...JUSTIFICATION_REVIEW_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Decisiones de revisión de justificación (TI2-119): aceptar o rechazar.
+ */
+export const justificationDecisionUnion = v.union(
+  ...JUSTIFICATION_DECISION_VALUES.map((value) => v.literal(value)),
 );
 
 /**
