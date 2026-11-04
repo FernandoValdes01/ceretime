@@ -22,6 +22,9 @@ import {
   type AuthorizationContext,
   type AvailabilityAuthorizationContext,
 } from "./permissions";
+import { toAppointmentProjection, type Appointment } from "../appointments/appointment";
+import { toFollowUpProjection, type FollowUpRecord } from "../follow_up/follow_up";
+import { ROLE_VALUES } from "../identity/roles";
 
 function activeContext(overrides: Partial<AuthorizationContext>): AuthorizationContext {
   return {
@@ -583,5 +586,126 @@ describe("canReadSpaceCatalog", () => {
 describe("PERMISSION_MATRIX", () => {
   test("documenta cada acción una vez, en el orden de AUTHORIZATION_ACTIONS", () => {
     expect(PERMISSION_MATRIX.map((row) => row.action)).toEqual([...AUTHORIZATION_ACTIONS]);
+  });
+});
+
+/**
+ * Proyecciones de TI2-127 compuestas con la política (TI2-117).
+ *
+ * Recorre todas las combinaciones de rol, relación y cuenta, y usa las
+ * funciones de la política como oráculo en vez de copiar la matriz. Cada texto
+ * libre lleva un marcador: si aparece en una salida, ese texto llegó a ese rol.
+ */
+describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => {
+  const NOTE = "marcador-nota";
+  const FREE_TEXTS = ["marcador-acuerdo", "marcador-tarea", "marcador-pasos", NOTE];
+  const CANCEL_REASON = "marcador-motivo";
+
+  const record: FollowUpRecord = {
+    appointmentId: "atencion-ficticia-1",
+    accompanimentId: "acompanamiento-ficticio-1",
+    agreements: [{ id: "acuerdo-1", description: "marcador-acuerdo" }],
+    tasks: [
+      { id: "tarea-1", description: "marcador-tarea", responsible: "student", status: "pending" },
+    ],
+    nextSteps: "marcador-pasos",
+    suggestedNextAppointmentDate: "2026-11-20",
+    internalNote: NOTE,
+    version: "v1",
+  };
+
+  const appointment: Appointment = {
+    id: "atencion-ficticia-1",
+    accompanimentId: "acompanamiento-ficticio-1",
+    professionalId: "profesional-ficticio-1",
+    modality: "online",
+    startAt: 1000,
+    endAt: 2000,
+    cancelReason: CANCEL_REASON,
+    status: "cancelled_by_cereti",
+    version: "v1",
+  };
+
+  const ACCOUNTS = [
+    { institutionalStatus: "enabled", accountStatus: "active" },
+    ...INACTIVE_ACCOUNTS,
+  ] as const;
+  const contexts: AuthorizationContext[] = [];
+  for (const role of ROLE_VALUES) {
+    for (const isOwner of [false, true]) {
+      for (const hasActiveProfessionalAssignment of [false, true]) {
+        for (const hasActiveInternAssignment of [false, true]) {
+          for (const account of ACCOUNTS) {
+            contexts.push(
+              activeContext({
+                role,
+                isOwner,
+                hasActiveProfessionalAssignment,
+                hasActiveInternAssignment,
+                ...account,
+              }),
+            );
+          }
+        }
+      }
+    }
+  }
+
+  test("ninguna vista concede acceso que el acompañamiento niega", () => {
+    // Detecta una regla de vista propia que se separe de `accompaniment:read`.
+    for (const context of contexts) {
+      const granted = getAccompanimentView(context) !== null;
+      expect(getAppointmentView(context) !== null).toBe(granted);
+      expect(getFollowUpView(context) !== null).toBe(granted);
+    }
+  });
+
+  test("la cuenta sin vigencia y el Administrador no reciben ninguna vista", () => {
+    // Detecta una vista para una cuenta inhabilitada o un acceso general del Administrador.
+    for (const context of contexts) {
+      if (isProfileActive(context) && context.role !== "admin") continue;
+      expect(getAppointmentView(context)).toBe(null);
+      expect(getFollowUpView(context)).toBe(null);
+    }
+  });
+
+  test("la nota interna solo sale para quien puede leerla", () => {
+    // Detecta una vista que entregue la nota a quien `canReadInternalNote` rechaza.
+    let checked = 0;
+    for (const context of contexts) {
+      const view = getFollowUpView(context);
+      if (view === null) continue;
+      const output = JSON.stringify(toFollowUpProjection(record, "completed", view));
+      expect(output.includes(NOTE)).toBe(canReadInternalNote(context));
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  test("la vista minimizada no lleva textos libres ni el vínculo con el acompañamiento", () => {
+    // Detecta un campo de texto libre o `accompanimentId` agregado a la vista del Practicante.
+    let checked = 0;
+    for (const context of contexts) {
+      if (getFollowUpView(context) !== "minimized") continue;
+      const projected = toFollowUpProjection(record, "completed", "minimized");
+      const output = JSON.stringify(projected);
+      for (const text of FREE_TEXTS) expect(output.includes(text)).toBe(false);
+      expect(Object.keys(projected)).not.toContain("accompanimentId");
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  test("el motivo de cancelación solo llega al Profesional", () => {
+    // Detecta una vista de atención que entregue `cancelReason` al Estudiante o al Practicante.
+    let checked = 0;
+    for (const context of contexts) {
+      const view = getAppointmentView(context);
+      if (view === null) continue;
+      const output = JSON.stringify(toAppointmentProjection(appointment, view));
+      expect(output.includes(CANCEL_REASON)).toBe(context.role === "professional");
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
   });
 });
