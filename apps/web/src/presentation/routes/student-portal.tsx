@@ -18,10 +18,9 @@ import "./student-portal.css";
 /**
  * Estructura del portal del Estudiante (TI2-6).
  *
- * Solo navegación y protección: el encabezado enlaza el inicio del portal
- * y la sesión (donde vive el cierre). Las vistas funcionales de
- * solicitudes, agenda y seguimiento llegan en Sprint 2 y cuelgan de este
- * layout tras el mismo guard.
+ * Solo navegación y protección: el encabezado enlaza el inicio, horarios,
+ * atenciones (TI2-114), solicitudes y la sesión (donde vive el cierre). Las
+ * vistas restantes cuelgan de este layout tras el mismo guard.
  */
 export function StudentLayout() {
   return (
@@ -48,6 +47,7 @@ export function StudentLayout() {
             <nav aria-label="Portal del Estudiante">
               <Link to="/estudiante">Inicio</Link>
               <Link to="/estudiante/horarios">Horarios</Link>
+              <Link to="/estudiante/atenciones">Atenciones</Link>
               <Link to="/estudiante/solicitudes">Solicitudes</Link>
               <Link to="/login">Sesión</Link>
             </nav>

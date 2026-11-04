@@ -92,3 +92,12 @@ const APPOINTMENT_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", {
 export function formatAppointmentDateTime(startAt: number, endAt: number): string {
   return `${APPOINTMENT_DATE_FORMAT.format(startAt)}, ${APPOINTMENT_TIME_FORMAT.format(startAt)} – ${APPOINTMENT_TIME_FORMAT.format(endAt)} (${AGENDA_TIME_ZONE})`;
 }
+
+/**
+ * Instante único en la misma zona de la agenda (TI2-114): sirve para la
+ * fecha original conservada de una atención reagendada, cuyo cierre actual
+ * vive en la segunda fecha del rango.
+ */
+export function formatAppointmentInstant(startAt: number): string {
+  return `${APPOINTMENT_DATE_FORMAT.format(startAt)}, ${APPOINTMENT_TIME_FORMAT.format(startAt)} (${AGENDA_TIME_ZONE})`;
+}

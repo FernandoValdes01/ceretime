@@ -22,8 +22,10 @@ import {
  * reglas de disponibilidad, cruces, transiciones ni autorización. TI2-102
  * extiende este mismo archivo con la reserva, TI2-103 con bloques y
  * excepciones, TI2-04 con espacios, TI2-113 completa los desenlaces de la
- * reserva y agrega la cancelación visible, y TI2-115 con la agenda del
- * Profesional; no crear otro puerto por operación.
+ * reserva, y TI2-115 con la agenda del Profesional; no crear otro puerto
+ * por operación. La vista propia del Estudiante (TI2-114) reutiliza
+ * `listAppointments`/`getAppointment` sin capacidades nuevas: el rol queda
+ * resuelto por el Backend.
  */
 
 /** Filtro de modalidad de la búsqueda; `all` es solo vista del cliente. */
@@ -187,7 +189,8 @@ export type EditorWindow = AvailabilityWindow;
 export type EditorExceptionKind = AvailabilityExceptionKind;
 
 /**
- * Atención leída por la agenda del Profesional (TI2-115).
+ * Atención leída por la agenda del Profesional (TI2-115); la misma lectura
+ * sirve la vista propia del Estudiante (TI2-114).
  *
  * Proyección mínima derivada del contrato de atención, sin duplicar su
  * forma: campos de agenda más los que la propia vista necesita (fecha
@@ -207,7 +210,7 @@ export type AgendaAppointment = Pick<
   | "cancelReason"
 >;
 
-/** Lista de las atenciones del Profesional vigente. */
+/** Lista de las atenciones propias del rol vigente (Profesional en TI2-115, Estudiante en TI2-114); el Backend resuelve el rol. */
 export type ListAppointmentsResult =
   | { readonly status: "ok"; readonly appointments: ReadonlyArray<AgendaAppointment> }
   | { readonly status: "empty" }
