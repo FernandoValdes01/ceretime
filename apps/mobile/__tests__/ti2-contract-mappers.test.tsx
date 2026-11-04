@@ -4,7 +4,7 @@ import type {
   CanonicalCreatedRequest,
   CanonicalStudentAccompaniment,
   CanonicalStudentRequest,
-} from "../src/application/ti2-sprint-1-contracts";
+} from "../src/infrastructure/backend-contracts";
 import {
   mapCanonicalStudentAccompaniment,
   mapCanonicalStudentRequest,

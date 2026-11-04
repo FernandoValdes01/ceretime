@@ -1,7 +1,7 @@
 import type { Id } from "../../../../convex/_generated/dataModel";
 
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
-import type { CanonicalCreatedRequest } from "@/application/ti2-sprint-1-contracts";
+import type { CanonicalCreatedRequest } from "@/infrastructure/backend-contracts";
 import type { MockStudentAreaStore } from "./mock-student-area-store";
 import {
   mapCreatedRequestToReceipt,

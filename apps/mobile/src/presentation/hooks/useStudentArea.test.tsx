@@ -1,6 +1,5 @@
-import React, { StrictMode } from "react";
-import { expect, test } from "bun:test";
-import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
+import { StrictMode } from "react";
+import { act, renderHook } from "@testing-library/react-native";
 
 import type {
   Accompaniment,
@@ -14,17 +13,7 @@ import {
   useStudentArea,
   useStudentIdentity,
   useStudentRequests,
-  type StudentAccompanimentsState,
-  type StudentAreaState,
-  type StudentIdentityState,
-  type StudentRequestsState,
 } from "./useStudentArea";
-
-type ReactActGlobal = typeof globalThis & {
-  IS_REACT_ACT_ENVIRONMENT: boolean;
-};
-
-(globalThis as ReactActGlobal).IS_REACT_ACT_ENVIRONMENT = true;
 
 interface Deferred<T> {
   readonly promise: Promise<T>;
@@ -75,8 +64,6 @@ async function snapshot({
   readonly requests?: readonly StudentRequest[];
   readonly accompaniments?: readonly Accompaniment[];
 } = {}): Promise<StudentAreaSnapshot> {
-  // Reuse the existing adapter's identity so these fixtures do not depend on
-  // optional fields that may exist only in a local working tree.
   const base = await fixtureReader.readStudentArea();
   return {
     ...base,
@@ -85,33 +72,11 @@ async function snapshot({
   };
 }
 
-function ProbeOutput({ value: _value }: { readonly value: unknown }): null {
-  return null;
-}
-
-function readProbeValue<T>(renderer: ReactTestRenderer): T {
-  return renderer.root.findByType(ProbeOutput).props.value as T;
-}
-
-function mount(
-  reader: StudentAreaReader,
-  strict = false,
-): { readonly renderer: ReactTestRenderer; readonly getState: () => StudentAreaState } {
-  function Probe() {
-    return React.createElement(ProbeOutput, { value: useStudentArea(reader) });
-  }
-
-  const element = strict
-    ? React.createElement(StrictMode, null, React.createElement(Probe))
-    : React.createElement(Probe);
-  let renderer!: ReactTestRenderer;
-  act(() => {
-    renderer = TestRenderer.create(element);
+function mount(reader: StudentAreaReader, strict = false) {
+  const hook = renderHook(() => useStudentArea(reader), {
+    wrapper: strict ? StrictMode : undefined,
   });
-  return {
-    renderer,
-    getState: () => readProbeValue<StudentAreaState>(renderer),
-  };
+  return { unmount: hook.unmount, getState: () => hook.result.current };
 }
 
 async function settle(): Promise<void> {
@@ -149,7 +114,7 @@ test("mounted hook transitions from loading to success and tracks empty collecti
   expect(state.identity.data?.id).toBe("example-student-1");
   expect(state.requests.status).toBe("empty");
   expect(state.accompaniments.status).toBe("success");
-  act(() => mounted.renderer.unmount());
+  act(() => mounted.unmount());
 });
 
 test("a populated request collection and an empty accompaniment collection are distinct", async () => {
@@ -166,7 +131,7 @@ test("a populated request collection and an empty accompaniment collection are d
   expect(mounted.getState().requests.data).toHaveLength(1);
   expect(mounted.getState().accompaniments.status).toBe("empty");
   expect(mounted.getState().accompaniments.data).toEqual([]);
-  act(() => mounted.renderer.unmount());
+  act(() => mounted.unmount());
 });
 
 test("consumes the actual infrastructure mock reader when mounted", async () => {
@@ -179,7 +144,7 @@ test("consumes the actual infrastructure mock reader when mounted", async () => 
   expect(state.identity.data?.id).toBe("example-student-1");
   expect(state.requests.data[0]?.id).toBe("SOL-DEMO-001");
   expect(state.accompaniments.data[0]?.id).toBe("accompaniments:accompaniment-demo-1");
-  act(() => mounted.renderer.unmount());
+  act(() => mounted.unmount());
 });
 
 test("reports rejected reads, then reloads successfully", async () => {
@@ -213,7 +178,7 @@ test("reports rejected reads, then reloads successfully", async () => {
     await second.promise;
   });
   expect(mounted.getState().status).toBe("success");
-  act(() => mounted.renderer.unmount());
+  act(() => mounted.unmount());
 });
 
 test("catches a synchronous reader throw", () => {
@@ -229,7 +194,7 @@ test("catches a synchronous reader throw", () => {
   expect(mounted.getState().error).toEqual(
     new Error("No pudimos cargar tus solicitudes. Intenta nuevamente."),
   );
-  act(() => mounted.renderer.unmount());
+  act(() => mounted.unmount());
 });
 
 test("ignores an obsolete reload result", async () => {
@@ -257,7 +222,7 @@ test("ignores an obsolete reload result", async () => {
     await first.promise;
   });
   expect(mounted.getState().snapshot?.requests).toEqual([]);
-  act(() => mounted.renderer.unmount());
+  act(() => mounted.unmount());
 });
 
 test("hides populated old data when the reader is replaced", async () => {
@@ -267,17 +232,8 @@ test("hides populated old data when the reader is replaced", async () => {
   const newReader: StudentAreaReader = { readStudentArea: () => newRead.promise };
   let currentReader = oldReader;
 
-  function Probe() {
-    return React.createElement(ProbeOutput, {
-      value: useStudentArea(currentReader),
-    });
-  }
-
-  let renderer!: ReactTestRenderer;
-  act(() => {
-    renderer = TestRenderer.create(React.createElement(Probe));
-  });
-  const getState = () => readProbeValue<StudentAreaState>(renderer);
+  const { result, rerender, unmount } = renderHook(() => useStudentArea(currentReader));
+  const getState = () => result.current;
   await act(async () => {
     oldRead.resolve(await snapshot({ requests: [request("old")] }));
     await oldRead.promise;
@@ -286,7 +242,7 @@ test("hides populated old data when the reader is replaced", async () => {
 
   currentReader = newReader;
   await act(async () => {
-    renderer.update(React.createElement(Probe));
+    rerender({});
   });
   expect(getState().status).toBe("loading");
   expect(getState().snapshot).toBeNull();
@@ -297,7 +253,7 @@ test("hides populated old data when the reader is replaced", async () => {
     await newRead.promise;
   });
   expect(getState().snapshot?.requests[0]?.id).toBe("new");
-  act(() => renderer.unmount());
+  act(() => unmount());
 });
 
 test("ignores stale resolves and rejects when a reader is replaced while pending", async () => {
@@ -313,21 +269,12 @@ test("ignores stale resolves and rejects when a reader is replaced while pending
   };
   let currentReader = oldReader;
 
-  function Probe() {
-    return React.createElement(ProbeOutput, {
-      value: useStudentArea(currentReader),
-    });
-  }
-
-  let renderer!: ReactTestRenderer;
-  act(() => {
-    renderer = TestRenderer.create(React.createElement(Probe));
-  });
-  const getState = () => readProbeValue<StudentAreaState>(renderer);
+  const { result, rerender, unmount } = renderHook(() => useStudentArea(currentReader));
+  const getState = () => result.current;
   // Keep the old read pending until after the source replacement.
   currentReader = replacementReader;
   await act(async () => {
-    renderer.update(React.createElement(Probe));
+    rerender({});
   });
 
   await act(async () => {
@@ -342,7 +289,7 @@ test("ignores stale resolves and rejects when a reader is replaced while pending
   // first deferred was already settled and is intentionally not reused.
   currentReader = currentReaderAdapter;
   await act(async () => {
-    renderer.update(React.createElement(Probe));
+    rerender({});
   });
 
   const staleFailure = new Error("obsolete reader failure");
@@ -360,7 +307,7 @@ test("ignores stale resolves and rejects when a reader is replaced while pending
   });
   expect(getState().status).toBe("success");
   expect(getState().snapshot?.requests[0]?.id).toBe("new");
-  act(() => renderer.unmount());
+  act(() => unmount());
 });
 
 test("public aggregate hooks expose reload after rejection and retry independently", async () => {
@@ -372,27 +319,12 @@ test("public aggregate hooks expose reload after rejection and retry independent
       return read.promise;
     },
   };
-  type AggregateState = {
-    readonly identity: StudentIdentityState;
-    readonly requests: StudentRequestsState;
-    readonly accompaniments: StudentAccompanimentsState;
-  };
-
-  function Probe() {
-    return React.createElement(ProbeOutput, {
-      value: {
-        identity: useStudentIdentity(reader),
-        requests: useStudentRequests(reader),
-        accompaniments: useStudentAccompaniments(reader),
-      },
-    });
-  }
-
-  let renderer!: ReactTestRenderer;
-  act(() => {
-    renderer = TestRenderer.create(React.createElement(Probe));
-  });
-  const getState = () => readProbeValue<AggregateState>(renderer);
+  const { result, unmount } = renderHook(() => ({
+    identity: useStudentIdentity(reader),
+    requests: useStudentRequests(reader),
+    accompaniments: useStudentAccompaniments(reader),
+  }));
+  const getState = () => result.current;
   expect(reads).toHaveLength(3);
 
   const failure = new Error("aggregate reader unavailable");
@@ -426,14 +358,14 @@ test("public aggregate hooks expose reload after rejection and retry independent
   expect(getState().identity.status).toBe("success");
   expect(getState().requests.status).toBe("empty");
   expect(getState().accompaniments.status).toBe("empty");
-  act(() => renderer.unmount());
+  act(() => unmount());
 });
 
 test("completes safely when unmounted and when mounted in StrictMode", async () => {
   const read = deferred<StudentAreaSnapshot>();
   const reader: StudentAreaReader = { readStudentArea: () => read.promise };
   const mounted = mount(reader, true);
-  act(() => mounted.renderer.unmount());
+  act(() => mounted.unmount());
 
   await act(async () => {
     read.resolve(await snapshot());
@@ -450,5 +382,5 @@ test("completes safely when unmounted and when mounted in StrictMode", async () 
     await strictRead.promise;
   });
   expect(strictMounted.getState().status).toBe("success");
-  act(() => strictMounted.renderer.unmount());
+  act(() => strictMounted.unmount());
 });

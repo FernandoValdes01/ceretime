@@ -4,17 +4,13 @@ import type {
   SubmitStudentRequestCommand,
 } from "./student-area-models";
 
-/**
- * Small, replaceable application capability for the isolated student-area
- * example. Infrastructure implements it; this port has no React or transport
- * dependency.
- */
+/** Lectura del área estudiantil, sin dependencias de React ni del transporte. */
 export interface StudentAreaReader {
   readStudentArea(): Promise<StudentAreaSnapshot>;
   subscribe?(onChange: () => void): () => void;
 }
 
-/** Replaceable capability for the provisional student-request submission. */
+/** Envío de contenido completo. La composición actual selecciona un simulador local. */
 export interface StudentRequestSubmitter {
   submitStudentRequest(
     command: SubmitStudentRequestCommand,

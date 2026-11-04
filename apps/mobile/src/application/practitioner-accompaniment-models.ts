@@ -1,4 +1,6 @@
-export type PractitionerAccompanimentStatus = "active" | "paused" | "closed";
+import type { AccompanimentStatus } from "../../../../convex/domain/accompaniments/accompaniment";
+
+export type PractitionerAccompanimentStatus = AccompanimentStatus;
 
 /** Proyección mínima que el Practicante puede consultar en Sprint 1. */
 export interface PractitionerAccompaniment {

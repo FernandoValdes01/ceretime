@@ -1,4 +1,17 @@
-/** Presentation models consumed by Mobile screens and hooks. */
+import type { AccompanimentStatus } from "../../../../convex/domain/accompaniments/accompaniment";
+export type { AccompanimentStatus } from "../../../../convex/domain/accompaniments/accompaniment";
+import type {
+  AccompanimentRequestContent,
+  GeneralAvailability,
+  ModalityPreference,
+} from "../../../../convex/domain/requests/request";
+export type {
+  AccessNeed,
+  GeneralAvailability,
+  ModalityPreference,
+} from "../../../../convex/domain/requests/request";
+
+/** Proyecciones móviles; el contenido de la solicitud procede del dominio compartido. */
 
 export type IsoDateTime = string;
 
@@ -15,28 +28,6 @@ export interface StudentIdentity {
   readonly email: string;
   readonly role: ProvisionalRole;
 }
-
-export interface AccessNeed {
-  readonly id: string;
-  readonly label: string;
-}
-
-export interface GeneralAvailability {
-  readonly preferredWeekdays: readonly number[];
-  readonly preferredTimeRange?: {
-    readonly from: string;
-    readonly to: string;
-  };
-}
-
-export type ModalityPreference = "inPerson" | "online";
-
-/**
- * Provisional and intentionally open: TI2 can map this value to its canonical
- * accessible-information channel, or replace the field, without changing the
- * presentation example.
- */
-export type ProvisionalAccessibleInformationChannel = string;
 
 export type StudentRequestStatus =
   | "received"
@@ -60,10 +51,8 @@ export interface StudentRequest {
   readonly accessNeeds: string;
   readonly generalAvailability?: GeneralAvailability;
   readonly modalityPreference?: ModalityPreference;
-  readonly preferredAccessibleInformationChannel?: ProvisionalAccessibleInformationChannel;
+  readonly preferredAccessibleInformationChannel?: string;
 }
-
-export type AccompanimentStatus = "active" | "paused" | "closed";
 
 /** Presentation projection of a canonical accompaniment. */
 export interface Accompaniment {
@@ -83,16 +72,8 @@ export interface StudentAreaSnapshot {
   readonly accompaniments: readonly Accompaniment[];
 }
 
-/** Provisional command used only by the isolated mobile submission flow. */
-export interface SubmitStudentRequestCommand {
-  readonly needSummary: string;
-  readonly expectedOutcome: string;
-  readonly accessNeeds: readonly AccessNeed[];
-  readonly otherAccessNeed?: string;
-  readonly generalAvailability: GeneralAvailability;
-  readonly modalityPreference: ModalityPreference;
-  readonly preferredAccessibleInformationChannel: ProvisionalAccessibleInformationChannel;
-}
+/** Contenido canónico completo, usado por el formulario y el simulador local. */
+export type SubmitStudentRequestCommand = Readonly<AccompanimentRequestContent>;
 
 /** Minimal receipt returned by a student-request submission capability. */
 export interface StudentRequestSubmissionReceipt {

@@ -47,6 +47,12 @@ const idleActionState: ProfessionalReviewActionState = {
   error: null,
 };
 
+const loadingActionState: ProfessionalReviewActionState = {
+  status: "loading",
+  message: null,
+  error: null,
+};
+
 function actionKey(requestId: string, action: ProfessionalRequestAction) {
   return `${requestId}:${action}`;
 }
@@ -69,19 +75,32 @@ function successLoad(
 export function useProfessionalReview(port: ProfessionalReviewPort): ProfessionalReviewState {
   const [load, setLoad] = useState<ReviewLoad>(() => loadingLoad(port));
   const [reloadVersion, setReloadVersion] = useState(0);
-  const [actionStates, setActionStates] = useState<
-    Readonly<Record<string, ProfessionalReviewActionState>>
-  >({});
-  const [requestFeedback, setRequestFeedback] = useState<
-    Readonly<Record<string, ProfessionalReviewActionState>>
-  >({});
+  const [feedback, setFeedback] = useState<{
+    port: ProfessionalReviewPort;
+    actions: Readonly<Record<string, ProfessionalReviewActionState>>;
+    requests: Readonly<Record<string, ProfessionalReviewActionState>>;
+    pending: ReadonlySet<string>;
+  }>({ port, actions: {}, requests: {}, pending: new Set() });
+  if (feedback.port !== port) {
+    setFeedback({ port, actions: {}, requests: {}, pending: feedback.pending });
+  }
+  const activePort = useRef<ProfessionalReviewPort | null>(port);
+  const actionEpoch = useRef(0);
+  const pendingRequests = useRef(new Set<string>());
+  useEffect(() => {
+    activePort.current = port;
+    actionEpoch.current += 1;
+    return () => {
+      activePort.current = null;
+      actionEpoch.current += 1;
+    };
+  }, [port]);
   const requestId = useRef(0);
 
   const reload = useCallback(() => {
     requestId.current += 1;
     setLoad(loadingLoad(port));
-    setActionStates({});
-    setRequestFeedback({});
+    setFeedback((current) => ({ port, actions: {}, requests: {}, pending: current.pending }));
     setReloadVersion((version) => version + 1);
   }, [port]);
 
@@ -142,11 +161,27 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
       action: ProfessionalRequestAction,
       details?: ProfessionalActionDetails,
     ) => {
+      const pending = pendingRequests.current;
+      if (activePort.current !== port || pending.has(requestIdToUpdate)) return;
+      pending.add(requestIdToUpdate);
+      const epoch = actionEpoch.current;
       const key = actionKey(requestIdToUpdate, action);
-      setActionStates((current) => ({
-        ...current,
-        [key]: { status: "loading", message: null, error: null },
-      }));
+      const publishFeedback = (state: ProfessionalReviewActionState) => {
+        if (activePort.current !== port || actionEpoch.current !== epoch) return;
+        setFeedback((current) => ({
+          port,
+          pending:
+            state.status === "loading"
+              ? new Set(current.pending).add(requestIdToUpdate)
+              : current.pending,
+          actions: { ...(current.port === port ? current.actions : {}), [key]: state },
+          requests: {
+            ...(current.port === port ? current.requests : {}),
+            [requestIdToUpdate]: state,
+          },
+        }));
+      };
+      publishFeedback({ status: "loading", message: null, error: null });
 
       try {
         const receipt = await port.performProfessionalRequestAction(
@@ -154,33 +189,29 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
           action,
           details,
         );
-        setLoad((current) => ({
-          ...current,
-          requests: current.requests.map((request) =>
-            request.id === requestIdToUpdate ? receipt.request : request,
-          ),
-        }));
-        setActionStates((current) => ({
-          ...current,
-          [key]: { status: "success", message: receipt.message, error: null },
-        }));
-        setRequestFeedback((current) => ({
-          ...current,
-          [requestIdToUpdate]: { status: "success", message: receipt.message, error: null },
-        }));
+        if (activePort.current === port && actionEpoch.current === epoch) {
+          setLoad((current) => ({
+            ...current,
+            requests: current.requests.map((request) =>
+              request.id === requestIdToUpdate ? receipt.request : request,
+            ),
+          }));
+          publishFeedback({ status: "success", message: receipt.message, error: null });
+        }
       } catch (error) {
         const safeError = toMobileOperationError(
           error,
           "No pudimos actualizar la solicitud. Intenta nuevamente.",
         );
-        setActionStates((current) => ({
-          ...current,
-          [key]: { status: "error", message: null, error: safeError },
-        }));
-        setRequestFeedback((current) => ({
-          ...current,
-          [requestIdToUpdate]: { status: "error", message: null, error: safeError },
-        }));
+        publishFeedback({ status: "error", message: null, error: safeError });
+      } finally {
+        pending.delete(requestIdToUpdate);
+        if (activePort.current)
+          setFeedback((current) => {
+            const nextPending = new Set(current.pending);
+            nextPending.delete(requestIdToUpdate);
+            return { ...current, pending: nextPending };
+          });
       }
     },
     [port],
@@ -188,13 +219,21 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
 
   const getActionState = useCallback(
     (requestIdToRead: string, action: ProfessionalRequestAction) =>
-      actionStates[actionKey(requestIdToRead, action)] ?? idleActionState,
-    [actionStates],
+      feedback.pending.has(requestIdToRead)
+        ? loadingActionState
+        : ((feedback.port === port
+            ? feedback.actions[actionKey(requestIdToRead, action)]
+            : undefined) ?? idleActionState),
+    [feedback, port],
   );
 
   const getRequestFeedback = useCallback(
-    (requestIdToRead: string) => requestFeedback[requestIdToRead] ?? idleActionState,
-    [requestFeedback],
+    (requestIdToRead: string) =>
+      feedback.pending.has(requestIdToRead)
+        ? loadingActionState
+        : ((feedback.port === port ? feedback.requests[requestIdToRead] : undefined) ??
+          idleActionState),
+    [feedback, port],
   );
 
   return {

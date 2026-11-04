@@ -315,7 +315,7 @@ export function RequestForm({
 
   const announcement = submissionAnnouncement(submission.status);
 
-  if (submission.status === "success" && submission.receipt) {
+  if (submission.status === "success") {
     return (
       <View className="gap-6">
         <OperationAnnouncement message={announcement} />

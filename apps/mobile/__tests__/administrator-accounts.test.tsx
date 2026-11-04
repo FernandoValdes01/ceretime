@@ -2,10 +2,7 @@ import type { PractitionerAccount } from "@/application/administrator-account-mo
 import type { AdministratorAccountsPort } from "@/application/administrator-accounts-port";
 import { mobileDependencies } from "@/composition/mobile-dependencies";
 import { createMockAdministratorAccountsAdapter } from "@/infrastructure/mock-administrator-accounts-adapter";
-import {
-  useAdministratorAccounts,
-  type AdministratorAccountsState,
-} from "@/presentation/hooks/use-administrator-accounts";
+import { useAdministratorAccounts } from "@/presentation/hooks/use-administrator-accounts";
 import { router } from "expo-router";
 import { AccessibilityInfo } from "react-native";
 import {
@@ -16,31 +13,13 @@ import {
   waitFor,
 } from "expo-router/testing-library";
 import path from "node:path";
-import React from "react";
-import TestRenderer, { act, type ReactTestRenderer } from "react-test-renderer";
+import { act, renderHook } from "@testing-library/react-native";
 
 const appDirectory = path.resolve(__dirname, "../app");
 
-function ProbeOutput({ value: _value }: { readonly value: unknown }): null {
-  return null;
-}
-
-function mountAccounts(port: AdministratorAccountsPort): {
-  readonly renderer: ReactTestRenderer;
-  readonly getState: () => AdministratorAccountsState;
-} {
-  function Probe() {
-    return React.createElement(ProbeOutput, { value: useAdministratorAccounts(port) });
-  }
-
-  let renderer!: ReactTestRenderer;
-  act(() => {
-    renderer = TestRenderer.create(React.createElement(Probe));
-  });
-  return {
-    renderer,
-    getState: () => renderer.root.findByType(ProbeOutput).props.value as AdministratorAccountsState,
-  };
+function mountAccounts(port: AdministratorAccountsPort) {
+  const { result, unmount } = renderHook(() => useAdministratorAccounts(port));
+  return { unmount, getState: () => result.current };
 }
 
 async function settle(): Promise<void> {
@@ -148,7 +127,7 @@ describe("habilitación administrativa de cuentas", () => {
       await Promise.all([firstEnablement, secondEnablement]);
     });
     expect(mounted.getState().accounts[0]?.status).toBe("enabled");
-    act(() => mounted.renderer.unmount());
+    act(() => mounted.unmount());
   });
 
   test("muestra un error de lectura y permite reintentar hasta el estado vacío", async () => {
@@ -175,7 +154,7 @@ describe("habilitación administrativa de cuentas", () => {
     await settle();
     expect(mounted.getState().status).toBe("empty");
     expect(attempts).toBe(2);
-    act(() => mounted.renderer.unmount());
+    act(() => mounted.unmount());
   });
 });
 
