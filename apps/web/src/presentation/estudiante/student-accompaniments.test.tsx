@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import type { OwnAccompanimentDetail } from "./student-accompaniments-data.ts";
+import type {
+  AppointmentCalendarFile,
+  AppointmentCalendarResult,
+  OwnAccompanimentDetail,
+  OwnAppointmentSummary,
+} from "./student-accompaniments-data.ts";
+import type { DownloadableCalendarFile } from "./calendar-download.ts";
 
 /**
  * Pruebas del detalle del acompañamiento propio del Estudiante (TI2-90).
@@ -32,6 +38,15 @@ let mockedBackendConfigured = true;
 let mockedDetail: OwnAccompanimentDetail | undefined;
 let detailThrows: Error | null = null;
 
+let mockedAppointments: OwnAppointmentSummary[] | undefined;
+let mockedConnection: { connected: boolean } | undefined;
+let mockedAddResult: AppointmentCalendarResult | (() => Promise<AppointmentCalendarResult>);
+let mockedCalendarFile: AppointmentCalendarFile;
+let addCalls: string[] = [];
+let fileCalls: string[] = [];
+let downloadedFiles: DownloadableCalendarFile[] = [];
+let linkSocialCalls: Array<Record<string, unknown>> = [];
+
 let mockedPortalAccompaniments:
   | { page: OwnAccompanimentDetail[]; isDone: boolean; continueCursor: string }
   | undefined;
@@ -50,6 +65,22 @@ vi.mock("./student-accompaniments-data.ts", () => ({
     }
     return mockedDetail;
   },
+  useOwnAccompanimentAppointments: () => mockedAppointments,
+  useCalendarConnection: () => mockedConnection,
+  useAddAppointmentToGoogleCalendar: () => async (input: { appointmentId: string }) => {
+    addCalls.push(input.appointmentId);
+    return typeof mockedAddResult === "function" ? await mockedAddResult() : mockedAddResult;
+  },
+  useAppointmentCalendarFile: () => async (appointmentId: string) => {
+    fileCalls.push(appointmentId);
+    return mockedCalendarFile;
+  },
+}));
+
+vi.mock("./calendar-download.ts", () => ({
+  downloadCalendarFile: (file: DownloadableCalendarFile) => {
+    downloadedFiles.push(file);
+  },
 }));
 
 vi.mock("../routes/student-panel-data.ts", () => ({
@@ -59,7 +90,13 @@ vi.mock("../routes/student-panel-data.ts", () => ({
 }));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
-  authClient: { useSession: () => ({ isPending: false }) },
+  authClient: {
+    useSession: () => ({ isPending: false }),
+    linkSocial: async (input: Record<string, unknown>) => {
+      linkSocialCalls.push(input);
+      return { data: {}, error: null };
+    },
+  },
 }));
 
 vi.mock("../../infrastructure/convex/convex-client", () => ({
@@ -110,12 +147,38 @@ function detallePropio(
   };
 }
 
+const INICIO_ATENCION = Date.UTC(2026, 2, 10, 16, 0, 0);
+const FIN_ATENCION = Date.UTC(2026, 2, 10, 17, 0, 0);
+
+const ARCHIVO_ICS: AppointmentCalendarFile = {
+  fileName: "atencion-programada.ics",
+  content: "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n",
+  alreadyAdded: false,
+};
+
+function atencion(overrides: Partial<OwnAppointmentSummary> = {}): OwnAppointmentSummary {
+  return {
+    appointmentId: "apt-1",
+    status: "scheduled",
+    startAt: INICIO_ATENCION,
+    endAt: FIN_ATENCION,
+    modality: "online",
+    calendarAdded: false,
+    calendarNeedsUpdate: false,
+    ...overrides,
+  };
+}
+
 function renderAt(path: string) {
   const router = createAppRouter({
     history: createMemoryHistory({ initialEntries: [path] }),
   });
   const view = render(<RouterProvider router={router} />);
-  return { router, unmount: view.unmount };
+  return {
+    router,
+    unmount: view.unmount,
+    rerender: () => view.rerender(<RouterProvider router={router} />),
+  };
 }
 
 beforeEach(() => {
@@ -124,6 +187,14 @@ beforeEach(() => {
   mockedBackendConfigured = true;
   mockedDetail = undefined;
   detailThrows = null;
+  mockedAppointments = [];
+  mockedConnection = { connected: false };
+  mockedAddResult = { status: "fallback", reason: "not_connected", ics: ARCHIVO_ICS };
+  mockedCalendarFile = ARCHIVO_ICS;
+  addCalls = [];
+  fileCalls = [];
+  downloadedFiles = [];
+  linkSocialCalls = [];
   mockedPortalAccompaniments = undefined;
 });
 
@@ -142,8 +213,9 @@ describe("detalle del acompañamiento propio (TI2-90)", () => {
     expect(screen.getByText("Activo")).toBeDefined();
     expect(screen.getByText("Objetivo ficticio del acompañamiento")).toBeDefined();
     expect(screen.getByText("Apoyo ficticio para la prueba")).toBeDefined();
-    expect(screen.getByRole("link", { name: "Volver al inicio" })).toBeDefined();
-    expect(screen.getByText(/historial básico/i)).toBeDefined();
+    expect(screen.getAllByRole("link", { name: "Volver al inicio" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Atenciones" })).toBeDefined();
+    expect(screen.getByText(/aún no tienes atenciones registradas/i)).toBeDefined();
   });
 
   test("el acompañamiento ajeno muestra denegación permanente sin reintento ni contenido", async () => {
@@ -170,7 +242,9 @@ describe("detalle del acompañamiento propio (TI2-90)", () => {
       await screen.findByRole("heading", { name: "Detalle del acompañamiento" }),
     ).toBeDefined();
     expect(screen.getByText("Cerrado")).toBeDefined();
-    expect(screen.getByText(/solo lectura/i)).toBeDefined();
+    expect(
+      screen.getByText("Este acompañamiento está cerrado y se muestra en solo lectura."),
+    ).toBeDefined();
     expect(screen.getByText("Objetivo ficticio del acompañamiento")).toBeDefined();
   });
 
@@ -201,6 +275,274 @@ describe("detalle del acompañamiento propio (TI2-90)", () => {
     mockedDetail = detallePropio({ _id: "acc-1" });
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Objetivo ficticio del acompañamiento")).toBeDefined();
+  });
+});
+
+describe("calendario por atención (TI2-122)", () => {
+  test("muestra la conexión y descarga el .ics de una atención propia", async () => {
+    mockedDetail = detallePropio();
+    mockedAppointments = [atencion()];
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText("Google Calendar no está conectado.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Conectar Google Calendar" })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /descargar el archivo .ics/i }));
+    await waitFor(() => expect(downloadedFiles).toEqual([ARCHIVO_ICS]));
+    expect(fileCalls).toEqual(["apt-1"]);
+    expect(await screen.findByText("Descargamos el archivo .ics de esta atención.")).toBeDefined();
+  });
+
+  test("el botón de conexión pide solo el alcance de Calendar", async () => {
+    mockedDetail = detallePropio();
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Conectar Google Calendar" }));
+    await waitFor(() => expect(linkSocialCalls).toHaveLength(1));
+    expect(linkSocialCalls[0]).toMatchObject({
+      provider: "google",
+      scopes: ["https://www.googleapis.com/auth/calendar.events"],
+    });
+  });
+
+  test("agrega la atención al Google Calendar con una acción explícita", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    mockedAddResult = { status: "created", eventId: "event-1", ics: ARCHIVO_ICS };
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+    await waitFor(() => expect(addCalls).toEqual(["apt-1"]));
+    expect(await screen.findByText("Agregamos la atención a tu Google Calendar.")).toBeDefined();
+  });
+
+  test("un fallo del proveedor deja la atención visible y ofrece el .ics de respaldo", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    mockedAddResult = { status: "fallback", reason: "unavailable", ics: ARCHIVO_ICS };
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+    expect(
+      await screen.findByText(/no pudimos agregar la atención a google calendar/i),
+    ).toBeDefined();
+    // La reserva sigue visible: el fallo externo no oculta ni altera la atención.
+    expect(screen.getByText(/Programada · En línea/)).toBeDefined();
+    expect(screen.queryByText(/error_description|access_token|refresh_token/i)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Descargar .ics de respaldo" }));
+    await waitFor(() => expect(downloadedFiles).toEqual([ARCHIVO_ICS]));
+  });
+
+  test("muestra que el evento quedó desactualizado y permite actualizarlo", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [
+      atencion({ status: "rescheduled", calendarAdded: false, calendarNeedsUpdate: true }),
+    ];
+    mockedAddResult = { status: "updated", eventId: "event-1", ics: ARCHIVO_ICS };
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText(/evento de google calendar desactualizado/i)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /agregar a google calendar la atención/i }),
+    ).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /actualizar en google calendar la atención/i }),
+    );
+    await waitFor(() => expect(addCalls).toEqual(["apt-1"]));
+    expect(
+      await screen.findByText("Actualizamos la atención en tu Google Calendar."),
+    ).toBeDefined();
+  });
+
+  test("el respaldo descarga el .ics vigente al pulsarlo y no el anterior", async () => {
+    const archivoAnterior: AppointmentCalendarFile = {
+      ...ARCHIVO_ICS,
+      content: "BEGIN:VCALENDAR\r\nDTSTART:20260310T160000Z\r\nEND:VCALENDAR\r\n",
+    };
+    const archivoVigente: AppointmentCalendarFile = {
+      ...ARCHIVO_ICS,
+      content: "BEGIN:VCALENDAR\r\nDTSTART:20260311T160000Z\r\nEND:VCALENDAR\r\n",
+    };
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    mockedCalendarFile = archivoAnterior;
+    mockedAddResult = { status: "fallback", reason: "unavailable", ics: archivoAnterior };
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+    expect(
+      await screen.findByText(/no pudimos agregar la atención a google calendar/i),
+    ).toBeDefined();
+    expect(downloadedFiles).toEqual([]);
+
+    // La fecha cambió después del intento fallido: el respaldo pide el archivo
+    // vigente al pulsarse, no reutiliza el `.ics` que devolvió la acción.
+    mockedCalendarFile = archivoVigente;
+    fireEvent.click(screen.getByRole("button", { name: "Descargar .ics de respaldo" }));
+    await waitFor(() => expect(downloadedFiles).toEqual([archivoVigente]));
+    expect(fileCalls).toEqual(["apt-1"]);
+  });
+
+  test("un reagendamiento con la pantalla abierta muestra la fecha nueva", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion({ calendarAdded: true })];
+    const first = renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(
+      await screen.findByRole("button", {
+        name: /descargar el archivo .ics de la atención del .*10 de marzo/i,
+      }),
+    ).toBeDefined();
+    expect(screen.getByText(/agregada a google calendar/i)).toBeDefined();
+
+    // Simula la actualización automática de la consulta con la pantalla abierta: los datos
+    // cambian y la misma ruta vuelve a leerse sin salir del detalle.
+    mockedAppointments = [
+      atencion({
+        status: "rescheduled",
+        startAt: INICIO_ATENCION + 24 * 60 * 60_000,
+        endAt: FIN_ATENCION + 24 * 60 * 60_000,
+        calendarAdded: false,
+        calendarNeedsUpdate: true,
+      }),
+    ];
+    first.unmount();
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(
+      await screen.findByRole("button", {
+        name: /descargar el archivo .ics de la atención del .*11 de marzo/i,
+      }),
+    ).toBeDefined();
+    expect(screen.getByText(/evento de google calendar desactualizado/i)).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: /actualizar en google calendar la atención/i }),
+    ).toBeDefined();
+  });
+
+  test("si Google revoca el acceso, ofrece volver a conectar y conserva el .ics", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    mockedAddResult = { status: "fallback", reason: "not_connected", ics: ARCHIVO_ICS };
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+
+    expect(
+      (await screen.findAllByText(/google calendar perdió el acceso/i)).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Volver a conectar Google Calendar" })).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /agregar a google calendar la atención/i }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: /descargar el archivo .ics/i })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Volver a conectar Google Calendar" }));
+    await waitFor(() => expect(linkSocialCalls).toHaveLength(1));
+    expect(linkSocialCalls[0]).toMatchObject({
+      provider: "google",
+      scopes: ["https://www.googleapis.com/auth/calendar.events"],
+    });
+  });
+
+  test("después de volver a conectar, una atención nueva se agrega al calendario", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    mockedAddResult = { status: "fallback", reason: "not_connected", ics: ARCHIVO_ICS };
+    const first = renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Volver a conectar Google Calendar" }),
+    );
+    await waitFor(() => expect(linkSocialCalls).toHaveLength(1));
+
+    first.unmount();
+    mockedAppointments = [atencion({ appointmentId: "apt-2" })];
+    mockedAddResult = { status: "created", eventId: "event-2", ics: ARCHIVO_ICS };
+    renderAt("/estudiante/acompanamientos/acc-1?calendar=connected");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+    await waitFor(() => expect(addCalls).toEqual(["apt-1", "apt-2"]));
+    expect(await screen.findByText("Agregamos la atención a tu Google Calendar.")).toBeDefined();
+  });
+
+  test("una atención cancelada no ofrece agregar ni descargar", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion({ status: "cancelled_by_student" })];
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText(/cancelada por el estudiante/i)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /agregar a google calendar la atención/i }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /descargar el archivo .ics/i })).toBeNull();
+    expect(screen.getByText(/solo las atenciones programadas o reagendadas/i)).toBeDefined();
+  });
+
+  test("no ofrece agregar una atención que ya está en el calendario", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion({ calendarAdded: true })];
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText(/agregada a google calendar/i)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /agregar a google calendar la atención/i }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: /descargar el archivo .ics/i })).toBeDefined();
+  });
+
+  test("el acompañamiento cerrado muestra las atenciones sin acciones de calendario", async () => {
+    mockedDetail = detallePropio({ status: "closed" });
+    mockedAppointments = [atencion()];
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText(/sin acciones de calendario/i)).toBeDefined();
+    expect(screen.getByText(/Programada · En línea/)).toBeDefined();
+    expect(screen.queryByRole("button", { name: /descargar el archivo .ics/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /conectar google calendar/i })).toBeNull();
+  });
+
+  test("el retorno del consentimiento muestra un aviso genérico", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    renderAt("/estudiante/acompanamientos/acc-1?calendar=connected");
+
+    expect(await screen.findByText(/google calendar quedó conectado/i)).toBeDefined();
+    expect(screen.getByText("Google Calendar está conectado.")).toBeDefined();
+  });
+
+  test("un consentimiento fallido no bloquea el .ics", async () => {
+    mockedDetail = detallePropio();
+    mockedAppointments = [atencion()];
+    renderAt("/estudiante/acompanamientos/acc-1?calendar=error");
+
+    expect(await screen.findByText(/no pudimos conectar google calendar/i)).toBeDefined();
+    expect(screen.getByRole("button", { name: /descargar el archivo .ics/i })).toBeDefined();
   });
 });
 

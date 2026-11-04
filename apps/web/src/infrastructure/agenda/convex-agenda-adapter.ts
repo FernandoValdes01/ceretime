@@ -20,6 +20,8 @@ import type {
   AgendaAppointmentResult,
   AgendaPort,
   AgendaUnsubscribe,
+  CancelReservationInput,
+  CancelReservationResult,
   ChangeAppointmentStatusInput,
   ChangeAppointmentStatusResult,
   ListAppointmentsResult,
@@ -45,10 +47,10 @@ import { createFictitiousAgendaAdapter } from "./fictitious-agenda-adapter.ts";
  * disponibilidad (TI2-111), la agenda/detalle del Profesional (TI2-112) y la
  * lectura del catálogo de espacios (TI2-99) leen contra
  * `api.presentation.*`; los guardados y la agenda escriben donde hay mutation
- * publicada. La búsqueda y la reserva del Estudiante (TI2-123) y la escritura
- * del catálogo de espacios (TI2-104) siguen delegadas al adaptador ficticio
- * mientras no tengan productor real; sus fixtures se identifican como tales
- * en la interfaz.
+ * publicada. La búsqueda, la reserva y la cancelación visible del Estudiante
+ * (TI2-113, conecta TI2-123) y la escritura del catálogo de espacios
+ * (TI2-104) siguen delegadas al adaptador ficticio mientras no tengan
+ * productor real; sus fixtures se identifican como tales en la interfaz.
  *
  * El adaptador no decide autorización ni transiciones: resuelve la identidad en
  * el Backend, que también recorta la vista de cada atención. El cliente nunca
@@ -646,13 +648,17 @@ export function createConvexAgendaAdapter(
   }
 
   return {
-    // Sin API real todavía: búsqueda y reserva del Estudiante (TI2-123) y
-    // escritura del catálogo (TI2-104) conservan los fixtures declarados.
+    // Sin API real todavía: búsqueda, reserva y cancelación del Estudiante
+    // (TI2-113/TI2-123) y escritura del catálogo (TI2-104) conservan los
+    // fixtures declarados.
     searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult> {
       return simulated.searchSlots(filter);
     },
     reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult> {
       return simulated.reserveSlot(input);
+    },
+    cancelReservation(input: CancelReservationInput): Promise<CancelReservationResult> {
+      return simulated.cancelReservation(input);
     },
     listSpaces: readSpaces,
     saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult> {

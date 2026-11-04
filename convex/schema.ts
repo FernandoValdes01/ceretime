@@ -268,9 +268,14 @@ export default defineSchema({
   // esquema). La justificación de inasistencia (TI2-119) vive en la misma
   // fila: la explicación, el instante de entrega, la recepción del respaldo
   // por canal institucional (solo constancia, sin archivo) y la revisión
-  // `pending`/`accepted`/`rejected` que resuelve el Profesional asignado. Solo
-  // persistencia: la ocupación atómica de cupo es TI2-84 y los repositorios
-  // son TI2-95.
+  // `pending`/`accepted`/`rejected` que resuelve el Profesional asignado.
+  // `calendarEventId` y `calendarEventAddedAt` guardan la referencia del
+  // evento creado por TI2-122; el identificador es determinista y ausente
+  // hasta la primera creación exitosa, así un reintento no duplica el evento.
+  // `calendarEventStartsAt` y `calendarEventEndsAt` guardan el horario con el
+  // que se sincronizó ese evento: si difieren de `startsAt`/`endsAt`, la
+  // referencia quedó obsoleta y hay que actualizarla. Solo persistencia: la
+  // ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
   appointments: defineTable({
     accompanimentId: v.id("accompaniments"),
     studentId: v.id("users"),
@@ -282,6 +287,10 @@ export default defineSchema({
     endsAt: v.number(),
     originalStartsAt: v.optional(v.number()),
     cancelReason: v.optional(v.string()),
+    calendarEventId: v.optional(v.string()),
+    calendarEventAddedAt: v.optional(v.number()),
+    calendarEventStartsAt: v.optional(v.number()),
+    calendarEventEndsAt: v.optional(v.number()),
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
@@ -305,7 +314,8 @@ export default defineSchema({
     .index("by_spaceId_and_startsAt", ["spaceId", "startsAt"])
     // Atenciones del acompañamiento.
     .index("by_accompanimentId", ["accompanimentId"])
-    // Atenciones del acompañamiento por rango de inicio, sin filtrar en memoria.
+    // Atenciones del acompañamiento por rango de inicio, sin filtrar en
+    // memoria; también ordena el listado acotado del detalle (TI2-122).
     .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"]),
 
   // Tabla 'notificationEvents': eventos de notificación de la atención

@@ -3,7 +3,8 @@ import { SPACE_CATALOG_CONTRACT_VERSION } from "../../../../../convex/domain/ind
 import { createFictitiousAgendaAdapter } from "./fictitious-agenda-adapter.ts";
 
 /**
- * Reglas ficticias del adaptador de agenda (TI2-101, TI2-102, TI2-103, TI2-04).
+ * Reglas ficticias del adaptador de agenda (TI2-101, TI2-102, TI2-103,
+ * TI2-04, TI2-113).
  *
  * Fija el comportamiento documentado de los fixtures; la API real
  * (TI2-123/TI2-125) reemplaza este adaptador sin tocar presentación. Todos
@@ -68,15 +69,47 @@ describe("reserva ficticia (TI2-102)", () => {
     expect(resultado.reservation.slotId).toBe("cupo-1");
   });
 
-  test("id ajeno responde falta de cupo", async () => {
+  test("id ajeno responde falta de cupo tipada con código canónico", async () => {
     const adapter = createFictitiousAgendaAdapter();
 
     const resultado = await adapter.reserveSlot({ slotId: "cupo-ajeno" });
 
     expect(resultado).toMatchObject({
-      status: "error",
-      error: { code: "no_availability" },
+      status: "no_availability",
+      code: "no_availability",
     });
+  });
+});
+
+describe("conflicto y cancelación visible (TI2-113)", () => {
+  test("el cupo con toma reciente se publica en la búsqueda y responde conflicto", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const vista = await adapter.searchSlots({ modality: "all" });
+    if (vista.status !== "ok") {
+      throw new Error("Se esperaban cupos publicados en la vista general");
+    }
+    expect(vista.slots.map((slot) => slot.id)).toContain("cupo-3");
+
+    const reserva = await adapter.reserveSlot({ slotId: "cupo-3" });
+
+    expect(reserva).toMatchObject({ status: "conflict", code: "conflict" });
+  });
+
+  test("cancelar la reserva ficticia responde cancelada", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const resultado = await adapter.cancelReservation({ reservationId: "reserva-ficticia-cupo-1" });
+
+    expect(resultado).toEqual({ status: "cancelled" });
+  });
+
+  test("cancelar un id ajeno responde denegación sin revelar existencia", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const resultado = await adapter.cancelReservation({ reservationId: "reserva-ajena-1" });
+
+    expect(resultado).toEqual({ status: "denied" });
   });
 });
 
