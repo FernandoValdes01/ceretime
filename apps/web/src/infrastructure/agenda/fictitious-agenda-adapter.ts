@@ -1,5 +1,6 @@
 import {
   AVAILABILITY_CONTRACT_VERSION,
+  CONFLICT_ERROR_CODE,
   NO_AVAILABILITY_ERROR_CODE,
   SPACE_CATALOG_CONTRACT_VERSION,
   toSpaceLabel,
@@ -13,6 +14,8 @@ import {
   type AgendaAppointmentResult,
   type AgendaPort,
   type AgendaSlot,
+  type CancelReservationInput,
+  type CancelReservationResult,
   type ChangeAppointmentStatusInput,
   type ChangeAppointmentStatusResult,
   type ListAppointmentsResult,
@@ -31,8 +34,8 @@ import {
 } from "../../application/agenda/agenda-port.ts";
 
 /**
- * Adaptador ficticio de agenda (TI2-101, extendido TI2-102, TI2-103, TI2-04 y
- * TI2-115).
+ * Adaptador ficticio de agenda (TI2-101, extendido TI2-102, TI2-103, TI2-04,
+ * TI2-113 y TI2-115).
  *
  * Temporal hasta TI2-123/TI2-125: devuelve fixtures con la forma del
  * contrato, sin compatibilidad, persistencia ni autorización. Todo es
@@ -41,10 +44,21 @@ import {
  * Reglas ficticias documentadas: no hay cupos en línea publicados, así que
  * filtrar por esa modalidad responde `no_availability` (código canónico);
  * el resto filtra las filas por modalidad y responde `empty` sin filas. La
- * reserva confirma los cupos publicados y responde falta de cupo ante un id
- * ajeno. La lectura del editor trae dos bloques y tres excepciones ficticios
- * (cancelación del día, cancelación de un bloque y agregado con ventana);
- * el guardado asigna identidad ficticia sin validar propiedad.
+ * reserva confirma los cupos publicados y responde falta de cupo tipada
+ * ante un id ajeno; el cupo con toma reciente responde conflicto tipado con
+ * el código canónico (escenario de respuesta declarado, no un motor de
+ * ocupación ni de transición). La lectura del editor trae dos bloques y
+ * tres excepciones ficticios (cancelación del día, cancelación de un
+ * bloque y agregado con ventana); el guardado asigna identidad ficticia
+ * sin validar propiedad.
+ *
+ * La cancelación visible (TI2-113) es un escenario tipado del adaptador: la
+ * reserva ficticia entregada por la propia confirmación responde
+ * `cancelled` y un identificador ajeno responde denegación sin revelar
+ * existencia. No aplica mutation real ni persiste nada. La API de cancelación
+ * ya existe en `convex/presentation/appointments.ts` (`cancelAppointment`,
+ * TI2-121): lo pendiente es conectar esta interfaz Web al endpoint
+ * (TI2-123/TI2-125), trabajo fuera del alcance de TI2-113.
  *
  * El catálogo de espacios (TI2-04) es ficticio y en memoria: la lectura
  * devuelve los espacios con su contrato v1 y el guardado actualiza un
@@ -132,7 +146,25 @@ function slot(
 const FICTIONAL_SLOTS: ReadonlyArray<AgendaSlot> = [
   slot("cupo-1", 2, 10, 0, 60, "inPerson", "esp-1"),
   slot("cupo-2", 3, 15, 0, 60, "inPerson", "esp-2"),
+  // Escenario de conflicto (TI2-113): cupo publicado con una toma reciente;
+  // la búsqueda lo lista y al reservarlo responde conflicto.
+  slot("cupo-3", 2, 12, 0, 60, "inPerson", "esp-2"),
 ];
+
+/**
+ * Escenario de respuesta declarado (TI2-113): el cupo reservado que responde
+ * conflicto con el código canónico, sin revelar quién tomó el slot ni
+ * cuándo. Es una respuesta fija, no un motor de ocupación ni de transición.
+ */
+const FICTIONAL_CONFLICTING_SLOT_IDS: ReadonlyArray<string> = ["cupo-3"];
+
+/**
+ * Prefijo de la reserva ficticia que entrega la propia confirmación
+ * (TI2-113): cancelar un identificador con este prefijo responde
+ * `cancelled` y cualquier identificador ajeno responde denegación, también
+ * sin revelar existencia.
+ */
+const FICTIONAL_RESERVATION_PREFIX = "reserva-ficticia-";
 
 const FICTIONAL_BLOCKS: ReadonlyArray<AvailabilityBlock> = [
   {
@@ -279,17 +311,18 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
       }
       return { status: "ok", slots };
     },
-    // Reserva simulada (TI2-102): confirma los cupos publicados con la
-    // proyección del contrato; un id ajeno responde falta de cupo con el
+    // Reserva simulada (TI2-102, estados TI2-113): confirma los cupos
+    // publicados con la proyección del contrato; el cupo con toma reciente
+    // responde conflicto y un id ajeno responde falta de cupo, ambos con el
     // código canónico. El fallo técnico se prueba con rechazo y llegará con
     // la API real.
     async reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult> {
       const found = FICTIONAL_SLOTS.find((item) => item.id === input.slotId);
       if (found === undefined) {
-        return {
-          status: "error",
-          error: { code: NO_AVAILABILITY_ERROR_CODE, message: "El cupo ya no está disponible." },
-        };
+        return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
+      }
+      if (FICTIONAL_CONFLICTING_SLOT_IDS.includes(found.id)) {
+        return { status: "conflict", code: CONFLICT_ERROR_CODE };
       }
       return {
         status: "confirmed",
@@ -302,6 +335,14 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
           endAt: found.endAt,
         },
       };
+    },
+    // Cancelación visible simulada (TI2-113): el identificador que la propia
+    // confirmación entregó responde `cancelled` sin mutation real y sin
+    // persistir nada; un id ajeno responde denegación sin revelar existencia.
+    async cancelReservation(input: CancelReservationInput): Promise<CancelReservationResult> {
+      return input.reservationId.startsWith(FICTIONAL_RESERVATION_PREFIX)
+        ? { status: "cancelled" }
+        : { status: "denied" };
     },
     async listAvailability(): Promise<ListAvailabilityResult> {
       return { status: "ok", blocks: FICTIONAL_BLOCKS, exceptions: FICTIONAL_EXCEPTIONS };
