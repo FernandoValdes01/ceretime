@@ -1,5 +1,6 @@
 import type { PractitionerAccount } from "../application/administrator-account-models";
 import type { AdministratorAccountsPort } from "../application/administrator-accounts-port";
+import { LocalOperationError } from "../application/operation-error";
 
 const fictionalPractitionerAccounts: readonly PractitionerAccount[] = [
   {
@@ -42,13 +43,15 @@ export function createMockAdministratorAccountsAdapter(): AdministratorAccountsP
     async enablePractitionerAccount(accountId) {
       const account = accounts.find((candidate) => candidate.id === accountId);
       if (!account) {
-        throw new Error("No encontramos la cuenta institucional seleccionada.");
+        throw new LocalOperationError("No encontramos la cuenta institucional seleccionada.");
       }
       if (account.status !== "pending") {
-        throw new Error("La cuenta institucional ya está habilitada.");
+        throw new LocalOperationError("La cuenta institucional ya está habilitada.");
       }
       if (!hasInstitutionalPractitionerEmail(account.email)) {
-        throw new Error("Solo puedes habilitar cuentas institucionales @alu.uct.cl o @uct.cl.");
+        throw new LocalOperationError(
+          "Solo puedes habilitar cuentas institucionales @alu.uct.cl o @uct.cl.",
+        );
       }
 
       const enabledAccount: PractitionerAccount = { ...account, status: "enabled" };
