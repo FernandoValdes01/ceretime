@@ -883,3 +883,72 @@ describe("civilRangeToInstantRange (TI2-112)", () => {
     expect(beforeChange.endAt - beforeChange.startAt).toBe(25 * HOUR_MS);
   });
 });
+
+/** Límites de la expansión de disponibilidad (TI2-117). */
+describe("Disponibilidad en sus bordes (TI2-117)", () => {
+  test("dos bloques adyacentes dan cupos contiguos sin perder ni repetir", () => {
+    // Detecta que dos bloques contiguos se traten como solape y descarte o duplique el cupo del borde.
+    const slots = expandAvailabilitySlots(
+      input({
+        blocks: [
+          block({ startMinute: 540, endMinute: 600 }),
+          block({ id: "bloque-ficticio-2", startMinute: 600, endMinute: 660 }),
+        ],
+      }),
+    );
+
+    expect(slots.map((slot) => slot.startAt)).toEqual([WINTER_0900, WINTER_0900 + 3_600_000]);
+    expect(slots[0]?.endAt).toBe(slots[1]?.startAt);
+    expect(new Set(slots.map((slot) => slot.id)).size).toBe(2);
+  });
+
+  test("una ventana sin duración se rechaza", () => {
+    // Detecta un `<` en el fin del bloque, que aceptaría una ventana vacía.
+    expect(() =>
+      expandAvailabilitySlots(input({ blocks: [block({ startMinute: 600, endMinute: 600 })] })),
+    ).toThrow("fin posterior al inicio");
+  });
+
+  test("el agregado contiguo al bloque extiende el día sin hueco", () => {
+    // Detecta que el agregado reemplace el bloque del día o deje un hueco en la unión.
+    const slots = expandAvailabilitySlots(
+      input({
+        exceptions: [
+          {
+            date: WINTER_WEDNESDAY,
+            kind: "added",
+            windows: [
+              {
+                startMinute: 660,
+                endMinute: 720,
+                slotMinutes: 60,
+                modality: "inPerson",
+                spaceId: "sala-1",
+              },
+            ],
+            version: "v1",
+          },
+        ],
+      }),
+    );
+
+    expect(slots).toHaveLength(3);
+    for (let index = 0; index < slots.length - 1; index += 1) {
+      expect(slots[index]?.endAt).toBe(slots[index + 1]?.startAt);
+    }
+  });
+
+  test("la cancelación de otra fecha no toca el día pedido", () => {
+    // Detecta una cancelación que se aplique por día de la semana y no por fecha.
+    const slots = expandAvailabilitySlots(
+      input({
+        from: WINTER_WEDNESDAY,
+        to: "2026-07-08",
+        exceptions: [{ date: "2026-07-08", kind: "cancelled", version: "v1" }],
+      }),
+    );
+
+    expect(slots).toHaveLength(2);
+    expect(slots.every((slot) => slot.date === WINTER_WEDNESDAY)).toBe(true);
+  });
+});
