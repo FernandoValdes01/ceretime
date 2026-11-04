@@ -124,6 +124,8 @@ function puertoAgendaBase(): AgendaPort {
         status: "error",
         error: { code: "no_availability", message: "El cupo ya no está disponible." },
       }),
+    // Cancelación visible (TI2-113): la agenda del Profesional no cancela.
+    cancelReservation: () => Promise.resolve({ status: "denied" }),
     listAvailability: () => Promise.resolve({ status: "empty" }),
     saveBlock: () =>
       Promise.resolve({
