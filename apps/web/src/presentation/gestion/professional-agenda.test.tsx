@@ -17,9 +17,9 @@ import { setAgendaPortForTests } from "./professional-agenda-data.ts";
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Profesional, salvo los casos de denegación. El puerto de agenda se inyecta
- * por pruebas porque el adaptador ficticio no distingue referencias; el
- * cableado real puerto→adaptador lo cubren las pruebas del adaptador, `tsc`
- * y el build. Todos los datos son ficticios y el modo se declara simulado.
+ * por pruebas para fijar respuestas; el cableado real puerto→adaptador lo
+ * cubren las pruebas del adaptador, `tsc` y el build. Todos los datos son
+ * ficticios y la página declara que consulta la API.
  */
 
 let mockedSession: WebSessionState;
@@ -73,6 +73,18 @@ const SESION_INTERN: WebSessionState = {
 const PAR_INTERN = {
   session: SESION_INTERN,
   role: { status: "authenticated", role: "intern", email: "intern@uct.cl" },
+} as const;
+
+const SESION_ADMIN: WebSessionState = {
+  status: "authenticated",
+  email: "admin@uct.cl",
+  name: "Administrador Ficticio",
+  population: "personal",
+};
+
+const PAR_ADMIN = {
+  session: SESION_ADMIN,
+  role: { status: "authenticated", role: "admin", email: "admin@uct.cl" },
 } as const;
 
 const SIN_SESION: WebSessionState = { status: "unauthenticated" };
@@ -214,6 +226,34 @@ describe("agenda del Profesional (TI2-115)", () => {
     expect(screen.queryByText(/esp-1/)).toBeNull();
   });
 
+  test("una atención con una sala del catálogo del Backend muestra su ubicación", async () => {
+    const port = puertoAgendaBase();
+    const espacioBackend = {
+      id: "jd7space001",
+      campus: "Campus San Juan Pablo II",
+      building: "Edificio B",
+      floor: "Piso 2",
+      room: "Sala 204",
+      accessConditions: "Ascensor disponible.",
+      arrivalInstructions: "Subir por el ascensor principal.",
+      version: "v1",
+    } as const;
+    port.listSpaces = () => Promise.resolve({ status: "ok", spaces: [espacioBackend] });
+    port.listAppointments = () =>
+      Promise.resolve({
+        status: "ok",
+        appointments: [{ ...ATENCION_BASE, spaceId: espacioBackend.id }],
+      });
+    comoProfesional(port);
+    renderAt("/profesional/agenda");
+
+    expect(
+      await screen.findByText("Campus San Juan Pablo II · Edificio B · Piso 2 · Sala 204"),
+    ).toBeDefined();
+    // La etiqueta reemplaza al identificador interno del Backend.
+    expect(screen.queryByText(new RegExp(espacioBackend.id))).toBeNull();
+  });
+
   test("atenciones de años distintos muestran fechas distinguibles", async () => {
     const port = puertoAgendaBase();
     port.listAppointments = () =>
@@ -278,11 +318,13 @@ describe("agenda del Profesional (TI2-115)", () => {
     expect(screen.queryByText("Presencial")).toBeNull();
   });
 
-  test("el modo simulado se declara en la página", async () => {
+  test("la página declara que consulta la API y que autoriza el Backend", async () => {
     comoProfesional();
     renderAt("/profesional/agenda");
 
-    expect(await screen.findByText(/Lectura simulada con datos ficticios/)).toBeDefined();
+    expect(
+      await screen.findByText("Agenda consultada a la API; la autorización la decide el Backend."),
+    ).toBeDefined();
   });
 });
 
@@ -310,7 +352,7 @@ describe("detalle de la atención (TI2-115)", () => {
     if (confirmation === null) {
       throw new Error("Se esperaba el bloque de confirmación del cambio");
     }
-    expect(within(confirmation).getByText(/Cambio simulado con datos ficticios/)).toBeDefined();
+    expect(within(confirmation).getByText(/Cambio registrado por el Backend/)).toBeDefined();
     // El estado visible del detalle cambia con la misma representación.
     expect(screen.getByText("Realizada")).toBeDefined();
   });
@@ -560,6 +602,28 @@ describe("guards de la agenda (TI2-115)", () => {
   test("otro rol va a denegado sin contenido del detalle", async () => {
     mockedSession = SESION_INTERN;
     mockedPair = PAR_INTERN;
+    const { router } = renderAt("/profesional/agenda/aten-ficticio-1");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(screen.queryByRole("heading", { name: "Detalle de la atención" })).toBeNull();
+  });
+
+  // TI2-126: la agenda y el detalle son del Profesional asignado. El
+  // Administrador no lee atenciones ni acompañamientos (matriz TI2-5), así
+  // que ambas rutas se deniegan en la Web y el Backend las vuelve a negar.
+  test("el Administrador ve denegada la agenda sin contenido", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
+    const { router } = renderAt("/profesional/agenda");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Agenda" })).toBeNull();
+  });
+
+  test("el Administrador ve denegado el detalle sin contenido", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
     const { router } = renderAt("/profesional/agenda/aten-ficticio-1");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));

@@ -95,7 +95,7 @@ export type SaveExceptionInput = Pick<AvailabilityException, "date" | "kind"> & 
   readonly windows?: ReadonlyArray<AvailabilityWindow>;
 };
 
-/** Lectura simulada del editor: bloques y excepciones del profesional vigente. */
+/** Lectura del editor: bloques y excepciones del profesional vigente. */
 export type ListAvailabilityResult =
   | {
       readonly status: "ok";
@@ -106,13 +106,13 @@ export type ListAvailabilityResult =
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly message: string };
 
-/** Guardado simulado de un bloque: éxito tipado o error público compartido. */
+/** Guardado de un bloque: éxito tipado o error público compartido. */
 export type SaveBlockResult =
   | { readonly status: "saved"; readonly block: AvailabilityBlock }
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
 
-/** Guardado simulado de una excepción: éxito tipado o error público compartido. */
+/** Guardado de una excepción: éxito tipado o error público compartido. */
 export type SaveExceptionResult =
   | { readonly status: "saved"; readonly exception: AvailabilityException }
   | { readonly status: "denied" }
@@ -174,7 +174,7 @@ export type AgendaAppointment = Pick<
   | "cancelReason"
 >;
 
-/** Lista simulada de las atenciones del Profesional vigente. */
+/** Lista de las atenciones del Profesional vigente. */
 export type ListAppointmentsResult =
   | { readonly status: "ok"; readonly appointments: ReadonlyArray<AgendaAppointment> }
   | { readonly status: "empty" }
@@ -202,7 +202,7 @@ export type ChangeAppointmentStatusInput = {
 };
 
 /**
- * Resultado del cambio de estado simulado.
+ * Resultado del cambio de estado.
  *
  * `rejected` trae la causa canónica del dominio
  * (`APPOINTMENT_REJECTION_CAUSES`), `denied` la denegación del Backend y
@@ -213,6 +213,9 @@ export type ChangeAppointmentStatusResult =
   | { readonly status: "rejected"; readonly cause: AppointmentRejectionCause }
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
+
+/** Cancela una suscripción reactiva del puerto. */
+export type AgendaUnsubscribe = () => void;
 
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {
@@ -228,4 +231,15 @@ export interface AgendaPort {
   ): Promise<ChangeAppointmentStatusResult>;
   listSpaces(): Promise<ListSpacesResult>;
   saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult>;
+  /**
+   * Suscripción opcional a la agenda. La implementa la API real para reflejar
+   * cambios sin recargar la vista; el adaptador ficticio puede omitirla y las
+   * páginas caen a la lectura puntual.
+   */
+  watchAppointments?(onChange: (result: ListAppointmentsResult) => void): AgendaUnsubscribe;
+  /** Suscripción opcional al detalle de una atención. */
+  watchAppointment?(
+    appointmentId: string,
+    onChange: (result: AgendaAppointmentResult) => void,
+  ): AgendaUnsubscribe;
 }

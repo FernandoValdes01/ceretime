@@ -60,14 +60,14 @@ import {
  *   (TI2-91); `/profesional/solicitudes/$requestId`: detalle completo solo
  *   con toma activa, denegado por el Backend en otro caso.
  * - `/profesional/disponibilidad`: editor tipado de bloques recurrentes y
- *   excepciones del Profesional con guardado simulado (TI2-103); composición
- *   reservada para `/estudiante/horarios` (TI2-101) y `/estudiante/reservar`
- *   (TI2-102) sin editar sus páginas.
+ *   excepciones del Profesional con lectura y guardado contra la API
+ *   (TI2-103/TI2-125); composición reservada para `/estudiante/horarios`
+ *   (TI2-101) y `/estudiante/reservar` (TI2-102) sin editar sus páginas.
  * - `/profesional/agenda`: atenciones reservadas del Profesional con lectura
- *   y cambios de estado simulados (TI2-115);
+ *   y cambios de estado contra la API (TI2-115/TI2-125);
  *   `/profesional/agenda/$appointmentId`: detalle de una atención propia,
  *   denegado por el Backend en otro caso. La autorización efectiva sigue
- *   viva en Convex; el modo simulado se declara en la página.
+ *   viva en Convex; la página declara que consulta la API.
  * - `/practicante/acompanamientos`: acompañamientos con asignación vigente
  *   del Practicante en vista minimizada y solo lectura (TI2-116);
  *   `/practicante/acompanamientos/$accompanimentId`: detalle minimizado,

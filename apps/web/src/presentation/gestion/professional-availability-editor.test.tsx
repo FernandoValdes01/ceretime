@@ -12,9 +12,9 @@ import { setAgendaPortForTests } from "./professional-availability-data.ts";
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Profesional, salvo los casos de denegación. El puerto de agenda se inyecta
- * por pruebas porque el adaptador ficticio no distingue referencias; el
- * cableado real puerto→adaptador lo cubren `tsc`, el build y la verificación
- * manual contra el entorno ficticio de TI2-30. Todos los datos son ficticios.
+ * por pruebas para fijar respuestas; el cableado real puerto→adaptador lo
+ * cubren las pruebas del adaptador, `tsc` y el build. Todos los datos son
+ * ficticios y la confirmación visible la emite el Backend.
  */
 
 let mockedSession: WebSessionState;
@@ -68,6 +68,18 @@ const SESION_INTERN: WebSessionState = {
 const PAR_INTERN = {
   session: SESION_INTERN,
   role: { status: "authenticated", role: "intern", email: "intern@uct.cl" },
+} as const;
+
+const SESION_ADMIN: WebSessionState = {
+  status: "authenticated",
+  email: "admin@uct.cl",
+  name: "Administrador Ficticio",
+  population: "personal",
+};
+
+const PAR_ADMIN = {
+  session: SESION_ADMIN,
+  role: { status: "authenticated", role: "admin", email: "admin@uct.cl" },
 } as const;
 
 const SIN_SESION: WebSessionState = { status: "unauthenticated" };
@@ -329,7 +341,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     ).toBeDefined();
   });
 
-  test("guardado válido confirma con nota ficticia por teclado", async () => {
+  test("guardado válido confirma con la respuesta del Backend por teclado", async () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
 
@@ -345,7 +357,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
 
     expect(await screen.findByText("Bloque guardado")).toBeDefined();
     expect(
-      await screen.findByText("Código bloque-ficticio-9. Guardado simulado con datos ficticios.", {
+      await screen.findByText("Código bloque-ficticio-9. Guardado confirmado por el Backend.", {
         exact: false,
       }),
     ).toBeDefined();
@@ -420,7 +432,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     ).toBeDefined();
   });
 
-  test("excepción válida confirma con nota ficticia y conserva el detalle", async () => {
+  test("excepción válida confirma con la respuesta del Backend y conserva el detalle", async () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
 
@@ -443,7 +455,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     // El detalle sobrevive al limpiarse el formulario.
     expect(view.getByText("2026-05-07")).toBeDefined();
     expect(view.getByText("Día completo")).toBeDefined();
-    expect(view.getByText("Guardado simulado con datos ficticios.")).toBeDefined();
+    expect(view.getByText("Guardado confirmado por el Backend.")).toBeDefined();
   });
 
   test("distingue el alcance de las cancelaciones y detalla el agregado", async () => {
@@ -691,6 +703,18 @@ describe("guard de la ruta de disponibilidad (TI2-103)", () => {
     const { router } = renderAt("/profesional/disponibilidad");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(screen.queryByRole("heading", { name: "Disponibilidad" })).toBeNull();
+  });
+
+  // TI2-126: editar disponibilidad es exclusivo del Profesional dueño de sus
+  // bloques. El Administrador no la edita (matriz TI2-5) y la ruta se deniega.
+  test("el Administrador ve denegado sin contenido del editor", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
+    const { router } = renderAt("/profesional/disponibilidad");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
     expect(screen.queryByRole("heading", { name: "Disponibilidad" })).toBeNull();
   });
 });
