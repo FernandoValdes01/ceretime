@@ -501,7 +501,26 @@ describe("addAppointmentToGoogleCalendar", () => {
     const result = await addAppointmentToGoogleCalendar(addDeps(reader(), google, recorded), input);
 
     expect(result.status === "ok" && result.data.status).toBe("already_created");
-    expect(recorded).toHaveLength(1);
+    // Sin referencia guardada no se sabe qué horario tiene Google: se actualiza
+    // al vigente antes de registrar.
+    expect(google.updateCalls).toEqual([
+      {
+        googleEventId: "event-1",
+        title: "Atención programada",
+        startAt: START_AT,
+        endAt: END_AT,
+        timeZone: "America/Santiago",
+      },
+    ]);
+    expect(recorded).toEqual([
+      {
+        appointmentId: "appointment-1",
+        eventId: "event-1",
+        addedAt: CREATED_AT + 5_000,
+        startsAt: START_AT,
+        endsAt: END_AT,
+      },
+    ]);
   });
 
   test("respalda con .ics cuando Calendar no está conectado", async () => {
@@ -638,6 +657,92 @@ describe("agregar → reagendar → consultar sin sincronización automática", 
       },
     ]);
     expect(google.createCalls).toHaveLength(1);
+    expect((await load("token-student"))?.referenceIsCurrent).toBe(true);
+  });
+
+  test("creación con fallo al guardar y reagendamiento: el reintento actualiza Google", async () => {
+    const stored: MutableRow = { ...row() };
+    const recorded: RecordedReference[] = [];
+    // Horario que conserva Google: se crea con el inicial y solo cambia con PATCH.
+    const googleSchedule = { startAt: -1, endAt: -1 };
+    const createCalls: CreateCall[] = [];
+    const updateCalls: UpdateCall[] = [];
+    let googleHasEvent = false;
+    const google: GoogleCalendarGateway = {
+      createEvent: async (call) => {
+        createCalls.push(call);
+        if (!googleHasEvent) {
+          googleHasEvent = true;
+          googleSchedule.startAt = call.startAt;
+          googleSchedule.endAt = call.endAt;
+          return { status: "created", eventId: "event-1" };
+        }
+        return { status: "already_exists", eventId: "event-1" };
+      },
+      updateEvent: async (call) => {
+        updateCalls.push(call);
+        googleSchedule.startAt = call.startAt;
+        googleSchedule.endAt = call.endAt;
+        return { status: "updated", eventId: call.googleEventId };
+      },
+    };
+    let failSave = true;
+    const { appointmentReader, load } = mutableReader(stored, recorded);
+    const deps = {
+      loadAppointment: (loadInput: {
+        readonly tokenIdentifier: string | null;
+        readonly appointmentId: string;
+      }) => loadFor(appointmentReader, loadInput.tokenIdentifier, loadInput.appointmentId),
+      recordEvent: async (reference: RecordedReference) => {
+        if (failSave) throw new Error("fallo de guardado");
+        recorded.push(reference);
+        stored.calendarEventId = reference.eventId;
+        stored.calendarEventAddedAt = reference.addedAt;
+        stored.calendarEventStartsAt = reference.startsAt;
+        stored.calendarEventEndsAt = reference.endsAt;
+      },
+      google,
+      now: () => CREATED_AT + 5_000,
+    };
+
+    // Google crea el evento pero falla el guardado: no hay referencia.
+    const first = await addAppointmentToGoogleCalendar(deps, input);
+    expect(first.status === "ok" && first.data.status).toBe("created");
+    expect(stored.calendarEventId).toBeUndefined();
+    expect(googleSchedule).toEqual({ startAt: START_AT, endAt: END_AT });
+
+    // Al reagendar la atención, Google sigue con el horario anterior.
+    const newStart = START_AT + 24 * 60 * 60_000;
+    const newEnd = END_AT + 24 * 60 * 60_000;
+    stored.status = "rescheduled";
+    stored.startAt = newStart;
+    stored.endAt = newEnd;
+
+    // El reintento recibe `already_exists`: debe actualizar Google al horario
+    // vigente antes de registrar, no confirmar el anterior como sincronizado.
+    failSave = false;
+    const retry = await addAppointmentToGoogleCalendar(deps, input);
+    expect(retry.status === "ok" && retry.data.status).toBe("already_created");
+    expect(updateCalls).toEqual([
+      {
+        googleEventId: "event-1",
+        title: "Atención programada",
+        startAt: newStart,
+        endAt: newEnd,
+        timeZone: "America/Santiago",
+      },
+    ]);
+    expect(recorded).toEqual([
+      {
+        appointmentId: "appointment-1",
+        eventId: "event-1",
+        addedAt: CREATED_AT + 5_000,
+        startsAt: newStart,
+        endsAt: newEnd,
+      },
+    ]);
+    expect(googleSchedule).toEqual({ startAt: newStart, endAt: newEnd });
+    expect(googleSchedule).toEqual({ startAt: stored.startAt, endAt: stored.endAt });
     expect((await load("token-student"))?.referenceIsCurrent).toBe(true);
   });
 });

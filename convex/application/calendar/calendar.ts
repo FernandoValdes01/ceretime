@@ -253,10 +253,13 @@ async function recordEventReference(
  * Si la referencia guardada coincide con el horario vigente, no llama al
  * proveedor: responde `already_created`. Si la referencia existe pero conserva
  * el horario anterior, está desactualizada: no se confirma como agregada, se
- * actualiza el mismo evento y se responde `updated`. Si el proveedor no está
- * vinculado o falla, devuelve `fallback` con el `.ics` vigente y sin detalles
- * externos. La referencia guarda el horario del evento; un reagendamiento la
- * deja obsoleta hasta la próxima actualización explícita.
+ * actualiza el mismo evento y se responde `updated`. Si no hay referencia pero
+ * Google ya tiene el evento (`already_exists`), se actualiza al horario
+ * vigente antes de registrarla, para no confirmar como sincronizado un horario
+ * que Google no tiene. Si el proveedor no está vinculado o falla, devuelve
+ * `fallback` con el `.ics` vigente y sin detalles externos. La referencia
+ * guarda el horario del evento; un reagendamiento la deja obsoleta hasta la
+ * próxima actualización explícita.
  */
 export async function addAppointmentToGoogleCalendar(
   deps: CalendarEventActionDeps & { readonly now: () => number },
@@ -310,10 +313,30 @@ export async function addAppointmentToGoogleCalendar(
     return okResult({ status: "fallback", reason: outcome.status, ics });
   }
 
+  if (outcome.status === "already_exists") {
+    // El evento ya existe en Google pero no hay referencia guardada: puede
+    // conservar un horario anterior (se creó, falló el guardado y después
+    // cambió el horario). Antes de registrar la referencia se actualiza al
+    // vigente, para no confirmar como sincronizado un horario que Google no
+    // tiene. Si la actualización falla, se respalda con el `.ics` vigente.
+    const update = await deps.google.updateEvent({
+      googleEventId: outcome.eventId,
+      title: event.title,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      timeZone: event.timeZone,
+    });
+    if (update.status === "not_connected" || update.status === "unavailable") {
+      return okResult({ status: "fallback", reason: update.status, ics });
+    }
+    await recordEventReference(deps, context, update.eventId, deps.now());
+    return okResult({ status: "already_created", eventId: update.eventId, ics });
+  }
+
   await recordEventReference(deps, context, outcome.eventId, deps.now());
 
   return okResult({
-    status: outcome.status === "created" ? "created" : "already_created",
+    status: "created",
     eventId: outcome.eventId,
     ics,
   });
