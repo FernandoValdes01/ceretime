@@ -363,6 +363,33 @@ describe("calendario por atención (TI2-122)", () => {
     });
   });
 
+  test("después de volver a conectar, una atención nueva se agrega al calendario", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    mockedAddResult = { status: "fallback", reason: "not_connected", ics: ARCHIVO_ICS };
+    const first = renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Volver a conectar Google Calendar" }),
+    );
+    await waitFor(() => expect(linkSocialCalls).toHaveLength(1));
+
+    first.unmount();
+    mockedAppointments = [atencion({ appointmentId: "apt-2" })];
+    mockedAddResult = { status: "created", eventId: "event-2", ics: ARCHIVO_ICS };
+    renderAt("/estudiante/acompanamientos/acc-1?calendar=connected");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+    await waitFor(() => expect(addCalls).toEqual(["apt-1", "apt-2"]));
+    expect(await screen.findByText("Agregamos la atención a tu Google Calendar.")).toBeDefined();
+  });
+
   test("una atención cancelada no ofrece agregar ni descargar", async () => {
     mockedDetail = detallePropio();
     mockedConnection = { connected: true };
