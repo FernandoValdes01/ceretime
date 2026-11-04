@@ -623,6 +623,63 @@ function revocarAsignacion() {
   });
 }
 
+const OTRA_CUENTA_PRACTICANTE = "intern2@uct.cl";
+const OBJETIVO_OTRA_CUENTA = "Acompañar al laboratorio de idiomas.";
+
+/**
+ * Registra todo nodo insertado en el DOM que contenga el texto o el enlace
+ * indicados. Las mutaciones conservan los nodos añadidos aunque se retiren
+ * en el mismo ciclo, así un parpadeo intermedio también queda registrado.
+ */
+function vigilarInserciones(texto: string, href?: string) {
+  const vistos: string[] = [];
+  const revisar = (registros: MutationRecord[]) => {
+    for (const registro of registros) {
+      for (const nodo of registro.addedNodes) {
+        const conTexto = nodo.textContent?.includes(texto) ?? false;
+        const conEnlace =
+          href !== undefined &&
+          nodo instanceof Element &&
+          (nodo.matches(`a[href="${href}"]`) || nodo.querySelector(`a[href="${href}"]`) !== null);
+        if (conTexto || conEnlace) {
+          vistos.push(nodo.textContent ?? "");
+        }
+      }
+    }
+  };
+  const observer = new MutationObserver(revisar);
+  observer.observe(document.body, { childList: true, subtree: true });
+  return {
+    detener() {
+      revisar(observer.takeRecords());
+      observer.disconnect();
+      return vistos;
+    },
+  };
+}
+
+/**
+ * Cambio a otra cuenta del mismo rol en dos tiempos, como llega desde
+ * Convex: primero la sesión nueva con el par anterior (revalidación en
+ * curso) mientras la consulta conserva la respuesta de la cuenta anterior, y
+ * luego el par confirmado con la consulta de la cuenta nueva aún pendiente.
+ */
+function cambiarAOtraCuentaPracticante(consultaPendiente: () => void) {
+  act(() => {
+    sessionMocks.setSession(sesionPersonal(OTRA_CUENTA_PRACTICANTE));
+  });
+  expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+  expect(screen.getByText("Cargando…")).toBeDefined();
+
+  act(() => {
+    consultaPendiente();
+    sessionMocks.setPair({
+      session: sesionPersonal(OTRA_CUENTA_PRACTICANTE),
+      role: rolDe("intern", OTRA_CUENTA_PRACTICANTE),
+    });
+  });
+}
+
 describe("asignaciones del Practicante en la Web (TI2-126)", () => {
   test("con asignación vigente ve el listado minimizado y su detalle en solo lectura", async () => {
     const item = asignado("acompanamiento-ficticio-1", OBJETIVO_ASIGNADO);
@@ -726,6 +783,63 @@ describe("asignaciones del Practicante en la Web (TI2-126)", () => {
     expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
     expect(screen.queryByText(/acompanamiento-ficticio/)).toBeNull();
     expect(screen.queryByRole("link", { name: /Ver detalle/ })).toBeNull();
+  });
+
+  test("al cambiar a otra cuenta Practicante el acompañamiento anterior no reaparece en el listado", async () => {
+    const anterior = asignado("acompanamiento-cuenta-anterior", OBJETIVO_ASIGNADO);
+    const nuevo = asignado("acompanamiento-cuenta-nueva", OBJETIVO_OTRA_CUENTA);
+    const enlaceAnterior = `/practicante/acompanamientos/${anterior._id}`;
+    assignmentMocks.pages.set("first", paginaAsignada([anterior]));
+    comoPracticante();
+
+    renderAt("/practicante/acompanamientos");
+
+    const fila = await screen.findByRole("link", { name: new RegExp(OBJETIVO_ASIGNADO) });
+    expect(fila.getAttribute("href")).toBe(enlaceAnterior);
+    const vigilancia = vigilarInserciones(OBJETIVO_ASIGNADO, enlaceAnterior);
+
+    cambiarAOtraCuentaPracticante(() => assignmentMocks.pages.delete("first"));
+
+    expect(await screen.findByText("Cargando tus acompañamientos…")).toBeDefined();
+    expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+    expect(document.querySelector(`a[href="${enlaceAnterior}"]`)).toBeNull();
+
+    act(() => {
+      assignmentMocks.pages.set("first", paginaAsignada([nuevo]));
+      assignmentMocks.notify();
+    });
+
+    const filaNueva = await screen.findByRole("link", { name: new RegExp(OBJETIVO_OTRA_CUENTA) });
+    expect(filaNueva.getAttribute("href")).toBe(`/practicante/acompanamientos/${nuevo._id}`);
+    expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+    expect(document.querySelector(`a[href="${enlaceAnterior}"]`)).toBeNull();
+    expect(vigilancia.detener()).toEqual([]);
+  });
+
+  test("al cambiar a otra cuenta Practicante el detalle anterior no reaparece y la nueva cuenta recibe denegación genérica", async () => {
+    const anterior = asignado("acompanamiento-cuenta-anterior", OBJETIVO_ASIGNADO);
+    assignmentMocks.details.set(anterior._id, anterior);
+    comoPracticante();
+
+    renderAt(`/practicante/acompanamientos/${anterior._id}`);
+
+    expect(await screen.findByText(OBJETIVO_ASIGNADO)).toBeDefined();
+    const vigilancia = vigilarInserciones(OBJETIVO_ASIGNADO);
+
+    cambiarAOtraCuentaPracticante(() => assignmentMocks.details.delete(anterior._id));
+
+    expect(await screen.findByText("Cargando el detalle…")).toBeDefined();
+    expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+
+    act(() => {
+      assignmentMocks.details.set(anterior._id, DENEGACIÓN);
+      assignmentMocks.notify();
+    });
+
+    expect(await screen.findByText("No tienes acceso a este acompañamiento.")).toBeDefined();
+    expect(screen.queryByText(OBJETIVO_ASIGNADO)).toBeNull();
+    expect(screen.queryByText(new RegExp(anterior._id))).toBeNull();
+    expect(vigilancia.detener()).toEqual([]);
   });
 });
 
