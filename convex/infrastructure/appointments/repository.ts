@@ -562,6 +562,18 @@ function toAgendaAppointment(doc: Doc<"appointments">) {
     endAt: doc.endsAt,
     ...(doc.originalStartsAt === undefined ? {} : { originalStartAt: doc.originalStartsAt }),
     ...(doc.cancelReason === undefined ? {} : { cancelReason: doc.cancelReason }),
+    ...(doc.justificationExplanation === undefined
+      ? {}
+      : { justificationExplanation: doc.justificationExplanation }),
+    ...(doc.justificationSubmittedAt === undefined
+      ? {}
+      : { justificationSubmittedAt: doc.justificationSubmittedAt }),
+    ...(doc.justificationReview === undefined
+      ? {}
+      : { justificationReview: doc.justificationReview }),
+    ...(doc.supportingDocumentReceived === undefined
+      ? {}
+      : { supportingDocumentReceived: doc.supportingDocumentReceived }),
     status: doc.status,
     version: APPOINTMENT_CONTRACT_VERSION,
   };

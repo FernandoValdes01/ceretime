@@ -89,6 +89,14 @@ export interface Appointment {
    * estudiante. La persistencia lo refleja en `cancelReason` (TI2-107).
    */
   readonly cancelReason?: string;
+  /** Justificación entregada por el Estudiante (TI2-119): explicación operativa, sin diagnósticos. */
+  readonly justificationExplanation?: string;
+  /** Instante de entrega decidido por el servidor, en milisegundos epoch. */
+  readonly justificationSubmittedAt?: number;
+  /** Revisión del Profesional asignado: `pending`, `accepted` o `rejected`. */
+  readonly justificationReview?: JustificationReview;
+  /** Constancia de recepción del respaldo por canal institucional: no hay archivo. */
+  readonly supportingDocumentReceived?: boolean;
   readonly status: AppointmentStatus;
   readonly version: AppointmentContractVersion;
 }

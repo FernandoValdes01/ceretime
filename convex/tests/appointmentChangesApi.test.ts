@@ -3260,3 +3260,65 @@ test("TI2-119 API: una asignación revocada deja de autorizar la revisión", asy
     justificationReview: "pending",
   });
 });
+
+test("TI2-119 API: el Profesional asignado lee la explicación y la constancia de respaldo antes de revisar", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-read-pro");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+    justificationExplanation: "Explicación ficticia para lectura previa",
+    justificationSubmittedAt: startsAt + HOUR,
+    justificationReview: "pending",
+    supportingDocumentReceived: true,
+  });
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  const row = await asPro.query(api.presentation.appointments.getAppointment, {
+    appointmentId,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(row).toMatchObject({
+    id: appointmentId,
+    status: "no_show",
+    justificationExplanation: "Explicación ficticia para lectura previa",
+    justificationSubmittedAt: expect.any(Number),
+    justificationReview: "pending",
+    supportingDocumentReceived: true,
+  });
+});
+
+test("TI2-119 API: un tercero no puede leer los antecedentes de la justificación", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-read-denied");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+    justificationExplanation: "Explicación ficticia ajena",
+    justificationSubmittedAt: startsAt + HOUR,
+    justificationReview: "pending",
+    supportingDocumentReceived: true,
+  });
+  const foreignIdentity = identityFor("ti119-read-foreign", "ti119-read-foreign@alu.uct.cl");
+
+  await expectPublicError(
+    t.withIdentity(foreignIdentity).query(api.presentation.appointments.getAppointment, {
+      appointmentId,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "unauthorized",
+  );
+  // El tercero no lee nada: la fila queda intacta.
+  const untouched = await getAppointment(t, appointmentId);
+  expect(untouched).toMatchObject({ status: "no_show", studentId: agenda.student });
+});
