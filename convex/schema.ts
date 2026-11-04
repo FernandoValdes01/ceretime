@@ -12,6 +12,7 @@ import {
   followUpResponsibleUnion,
   followUpTaskStatusUnion,
   institutionalStatusUnion,
+  justificationReviewUnion,
   modalityUnion,
   notificationContractVersionLiteral,
   notificationEventKindUnion,
@@ -264,16 +265,17 @@ export default defineSchema({
   // `originalStartsAt` conserva la fecha original al reagendar y
   // `cancelReason` guarda el motivo (obligatorio para CERETI, opcional para
   // el estudiante; la distinción la aplica la capa de aplicación, no el
-  // esquema). La cola de inasistencias por estado (`no_show`) para la
-  // justificación con plazo de cinco días hábiles queda para la extensión
-  // futura de justificación, no para este esquema. `calendarEventId` y
-  // `calendarEventAddedAt` guardan la referencia del evento creado por TI2-122;
-  // el identificador es determinista y ausente hasta la primera creación
-  // exitosa, así un reintento no duplica el evento. `calendarEventStartsAt` y
-  // `calendarEventEndsAt` guardan el horario con el que se sincronizó ese
-  // evento: si difieren de `startsAt`/`endsAt`, la referencia quedó obsoleta y
-  // hay que actualizarla. Solo persistencia: la ocupación atómica de cupo es
-  // TI2-84 y los repositorios son TI2-95.
+  // esquema). La justificación de inasistencia (TI2-119) vive en la misma
+  // fila: la explicación, el instante de entrega, la recepción del respaldo
+  // por canal institucional (solo constancia, sin archivo) y la revisión
+  // `pending`/`accepted`/`rejected` que resuelve el Profesional asignado.
+  // `calendarEventId` y `calendarEventAddedAt` guardan la referencia del
+  // evento creado por TI2-122; el identificador es determinista y ausente
+  // hasta la primera creación exitosa, así un reintento no duplica el evento.
+  // `calendarEventStartsAt` y `calendarEventEndsAt` guardan el horario con el
+  // que se sincronizó ese evento: si difieren de `startsAt`/`endsAt`, la
+  // referencia quedó obsoleta y hay que actualizarla. Solo persistencia: la
+  // ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
   appointments: defineTable({
     accompanimentId: v.id("accompaniments"),
     studentId: v.id("users"),
@@ -289,6 +291,10 @@ export default defineSchema({
     calendarEventAddedAt: v.optional(v.number()),
     calendarEventStartsAt: v.optional(v.number()),
     calendarEventEndsAt: v.optional(v.number()),
+    justificationExplanation: v.optional(v.string()),
+    justificationSubmittedAt: v.optional(v.number()),
+    justificationReview: v.optional(justificationReviewUnion),
+    supportingDocumentReceived: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     // Atenciones propias del estudiante.

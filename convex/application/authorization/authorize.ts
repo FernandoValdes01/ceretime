@@ -11,6 +11,8 @@ import {
   canReadSpaceCatalog,
   canRecordAppointmentAttendance,
   canRescheduleAppointment,
+  canReviewAppointmentJustification,
+  canSubmitAppointmentJustification,
   canWriteFollowUp,
   getAccompanimentView,
   getAppointmentView,
@@ -507,6 +509,32 @@ export async function authorizeAppointmentCalendar(
 ): Promise<ApiResult<AgendaGrant>> {
   const loaded = await loadAppointmentChangeContext(reader, request);
   if (loaded === null || !canAddAppointmentToCalendar(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Entrega de explicación e inasistencia (TI2-119): solo el Estudiante dueño
+ * de la atención.
+ */
+export async function authorizeAppointmentJustificationSubmit(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canSubmitAppointmentJustification(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Revisión de la justificación de inasistencia (TI2-119): solo el Profesional
+ * asignado que tiene la atención a su cargo.
+ */
+export async function authorizeAppointmentJustificationReview(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canReviewAppointmentJustification(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });
 }
 

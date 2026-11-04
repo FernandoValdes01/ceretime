@@ -1,4 +1,4 @@
-import type { Doc, Id } from "../../_generated/dataModel";
+﻿import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { APPOINTMENT_CONTRACT_VERSION } from "../../domain/appointments/appointment";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
@@ -307,6 +307,10 @@ export interface PersistedAppointmentTransition {
   readonly status: Doc<"appointments">["status"];
   readonly cancelReason?: string;
   readonly originalStartsAt?: number;
+  readonly justificationExplanation?: string;
+  readonly justificationSubmittedAt?: number;
+  readonly justificationReview?: Doc<"appointments">["justificationReview"];
+  readonly supportingDocumentReceived?: boolean;
 }
 
 /**
@@ -326,6 +330,18 @@ export async function persistAppointmentTransition(
     status: fields.status,
     ...(fields.cancelReason === undefined ? {} : { cancelReason: fields.cancelReason }),
     ...(fields.originalStartsAt === undefined ? {} : { originalStartsAt: fields.originalStartsAt }),
+    ...(fields.justificationExplanation === undefined
+      ? {}
+      : { justificationExplanation: fields.justificationExplanation }),
+    ...(fields.justificationSubmittedAt === undefined
+      ? {}
+      : { justificationSubmittedAt: fields.justificationSubmittedAt }),
+    ...(fields.justificationReview === undefined
+      ? {}
+      : { justificationReview: fields.justificationReview }),
+    ...(fields.supportingDocumentReceived === undefined
+      ? {}
+      : { supportingDocumentReceived: fields.supportingDocumentReceived }),
   });
 }
 
@@ -348,6 +364,18 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
           status: doc.status,
           startsAt: doc.startsAt,
           ...(doc.originalStartsAt === undefined ? {} : { originalStartsAt: doc.originalStartsAt }),
+          ...(doc.justificationExplanation === undefined
+            ? {}
+            : { justificationExplanation: doc.justificationExplanation }),
+          ...(doc.justificationSubmittedAt === undefined
+            ? {}
+            : { justificationSubmittedAt: doc.justificationSubmittedAt }),
+          ...(doc.justificationReview === undefined
+            ? {}
+            : { justificationReview: doc.justificationReview }),
+          ...(doc.supportingDocumentReceived === undefined
+            ? {}
+            : { supportingDocumentReceived: doc.supportingDocumentReceived }),
         };
       },
     },
@@ -358,6 +386,10 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
           readonly status: Doc<"appointments">["status"];
           readonly cancelReason?: string;
           readonly originalStartsAt?: number;
+          readonly justificationExplanation?: string;
+          readonly justificationSubmittedAt?: number;
+          readonly justificationReview?: Doc<"appointments">["justificationReview"];
+          readonly supportingDocumentReceived?: boolean;
         },
       ) => {
         const convexId = normalizeAppointmentId(ctx, id);
@@ -438,6 +470,18 @@ export function appointmentChangeReader(ctx: DbReader) {
         startAt: doc.startsAt,
         endAt: doc.endsAt,
         ...(doc.originalStartsAt === undefined ? {} : { originalStartAt: doc.originalStartsAt }),
+        ...(doc.justificationExplanation === undefined
+          ? {}
+          : { justificationExplanation: doc.justificationExplanation }),
+        ...(doc.justificationSubmittedAt === undefined
+          ? {}
+          : { justificationSubmittedAt: doc.justificationSubmittedAt }),
+        ...(doc.justificationReview === undefined
+          ? {}
+          : { justificationReview: doc.justificationReview }),
+        ...(doc.supportingDocumentReceived === undefined
+          ? {}
+          : { supportingDocumentReceived: doc.supportingDocumentReceived }),
       };
     },
   };
@@ -624,6 +668,18 @@ function toAgendaAppointment(doc: Doc<"appointments">) {
     endAt: doc.endsAt,
     ...(doc.originalStartsAt === undefined ? {} : { originalStartAt: doc.originalStartsAt }),
     ...(doc.cancelReason === undefined ? {} : { cancelReason: doc.cancelReason }),
+    ...(doc.justificationExplanation === undefined
+      ? {}
+      : { justificationExplanation: doc.justificationExplanation }),
+    ...(doc.justificationSubmittedAt === undefined
+      ? {}
+      : { justificationSubmittedAt: doc.justificationSubmittedAt }),
+    ...(doc.justificationReview === undefined
+      ? {}
+      : { justificationReview: doc.justificationReview }),
+    ...(doc.supportingDocumentReceived === undefined
+      ? {}
+      : { supportingDocumentReceived: doc.supportingDocumentReceived }),
     status: doc.status,
     version: APPOINTMENT_CONTRACT_VERSION,
   };

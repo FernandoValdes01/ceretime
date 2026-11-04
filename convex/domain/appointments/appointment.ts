@@ -99,6 +99,14 @@ export interface Appointment {
    * estudiante. La persistencia lo refleja en `cancelReason` (TI2-107).
    */
   readonly cancelReason?: string;
+  /** Justificación entregada por el Estudiante (TI2-119): explicación operativa, sin diagnósticos. */
+  readonly justificationExplanation?: string;
+  /** Instante de entrega decidido por el servidor, en milisegundos epoch. */
+  readonly justificationSubmittedAt?: number;
+  /** Revisión del Profesional asignado: `pending`, `accepted` o `rejected`. */
+  readonly justificationReview?: JustificationReview;
+  /** Constancia de recepción del respaldo por canal institucional: no hay archivo. */
+  readonly supportingDocumentReceived?: boolean;
   readonly status: AppointmentStatus;
   readonly version: AppointmentContractVersion;
 }
@@ -704,6 +712,19 @@ export type JustificationReview = (typeof JUSTIFICATION_REVIEW_VALUES)[number];
 /** Verdadero cuando el valor es una revisión de justificación conocida. */
 export function isJustificationReview(value: string): value is JustificationReview {
   return (JUSTIFICATION_REVIEW_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * Decisiones que el Profesional asignado puede tomar sobre una justificación
+ * pendiente (TI2-119). `pending` es el estado de la entrega, no una decisión.
+ */
+export const JUSTIFICATION_DECISION_VALUES = ["accepted", "rejected"] as const;
+
+export type JustificationDecision = (typeof JUSTIFICATION_DECISION_VALUES)[number];
+
+/** Verdadero cuando el valor es una decisión de revisión conocida. */
+export function isJustificationDecision(value: string): value is JustificationDecision {
+  return (JUSTIFICATION_DECISION_VALUES as readonly string[]).includes(value);
 }
 
 /**
