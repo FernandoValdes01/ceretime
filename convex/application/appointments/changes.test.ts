@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { AppointmentAuditEvent } from "../../domain/appointments/audit";
 import { AVAILABILITY_CONTRACT_VERSION } from "../../domain/availability/availability";
 import type { ApiResult } from "../../domain/errors/api_error";
 import type {
@@ -24,6 +25,7 @@ import {
   type RescheduleAppointmentDeps,
   type StoredAppointmentForChange,
 } from "./changes";
+import type { AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotInput, OccupySlotResult } from "./occupancy";
 
 /**
@@ -191,6 +193,8 @@ interface ChangeWorld {
   readonly row: WorldRow;
   readonly reader: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
+  readonly audit: AppointmentAuditRecorder;
+  readonly audits: AppointmentAuditEvent[];
   readonly transitions: Array<{
     readonly appointmentId: string;
     readonly fields: Parameters<AppointmentTransitionPersister["persistAppointmentTransition"]>[1];
@@ -223,7 +227,13 @@ function changeWorld(overrides: Partial<WorldRow> = {}): ChangeWorld {
       if (fields.originalStartsAt !== undefined) row.originalStartAt = fields.originalStartsAt;
     },
   };
-  return { row, reader, persister, transitions };
+  const audits: AppointmentAuditEvent[] = [];
+  const audit: AppointmentAuditRecorder = {
+    recordAppointmentAudit: async (event) => {
+      audits.push(event);
+    },
+  };
+  return { row, reader, persister, audit, audits, transitions };
 }
 
 const OK_OCCUPATION: OccupySlotResult = {
@@ -266,7 +276,13 @@ type ChangeRescheduleDeps = Omit<RescheduleAppointmentDeps, "occupier"> & {
 };
 
 function cancelDeps(auth: AuthorizationReader, world: ChangeWorld): CancelAppointmentDeps {
-  return { auth, appointments: world.reader, persister: world.persister, now: () => NOW };
+  return {
+    auth,
+    appointments: world.reader,
+    persister: world.persister,
+    audit: world.audit,
+    now: () => NOW,
+  };
 }
 
 function recordDeps(
@@ -274,7 +290,13 @@ function recordDeps(
   world: ChangeWorld,
   now: number = NOW,
 ): RecordAppointmentAttendanceDeps {
-  return { auth, appointments: world.reader, persister: world.persister, now: () => now };
+  return {
+    auth,
+    appointments: world.reader,
+    persister: world.persister,
+    audit: world.audit,
+    now: () => now,
+  };
 }
 
 function rescheduleDeps(
@@ -286,6 +308,7 @@ function rescheduleDeps(
     auth,
     appointments: world.reader,
     persister: world.persister,
+    audit: world.audit,
     occupier: fakeOccupier(world),
     availability: fakeAvailability([
       ...dailyOnlineBlocks("user-pro"),
@@ -996,5 +1019,119 @@ describe("registro de atención e inasistencia (TI2-110)", () => {
     ).toEqual(CONFLICT);
     expect(world.transitions).toHaveLength(0);
     expect(world.row.status).toBe("scheduled");
+  });
+});
+
+describe("auditoría de cambios de agenda (TI2-128)", () => {
+  test("cancelar registra actor, acción, atención, resultado e instante sin el motivo", async () => {
+    const world = changeWorld();
+
+    requireOk(
+      await cancelAppointment(cancelDeps(authorizedAuth(), world), {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        reason: "Motivo ficticio sensible",
+      }),
+    );
+
+    expect(world.audits).toEqual([
+      {
+        action: "cancelled",
+        actorId: "user-pro",
+        appointmentId: "appointment-1",
+        result: "cancelled_by_cereti",
+        occurredAt: NOW,
+      },
+    ]);
+    expect(JSON.stringify(world.audits)).not.toContain("Motivo ficticio sensible");
+  });
+
+  test("reagendar y registrar la atención dejan un evento por cambio exitoso", async () => {
+    const moved = changeWorld();
+    requireOk(
+      await rescheduleAppointment(rescheduleDeps(authorizedAuth(), moved), rescheduleInput()),
+    );
+    expect(moved.audits).toEqual([
+      {
+        action: "rescheduled",
+        actorId: "user-student",
+        appointmentId: "appointment-1",
+        result: "rescheduled",
+        occurredAt: NOW,
+      },
+    ]);
+
+    const attended = changeWorld();
+    requireOk(
+      await recordAppointmentAttendance(recordDeps(authorizedAuth(), attended), {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        outcome: "no_show",
+      }),
+    );
+    expect(attended.audits).toEqual([
+      {
+        action: "attendance_recorded",
+        actorId: "user-pro",
+        appointmentId: "appointment-1",
+        result: "no_show",
+        occurredAt: NOW,
+      },
+    ]);
+  });
+
+  test("denegaciones, conflictos y destinos ocupados no registran evento", async () => {
+    const foreign = changeWorld();
+    expect(
+      await cancelAppointment(cancelDeps(authorizedAuth(), foreign), {
+        tokenIdentifier: "token-other",
+        appointmentId: "appointment-1",
+      }),
+    ).toEqual(DENIED);
+    expect(foreign.audits).toHaveLength(0);
+
+    const withoutReason = changeWorld();
+    expect(
+      await cancelAppointment(cancelDeps(authorizedAuth(), withoutReason), {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+      }),
+    ).toEqual(CONFLICT);
+    expect(withoutReason.audits).toHaveLength(0);
+
+    const occupied = changeWorld();
+    expect(
+      await rescheduleAppointment(
+        rescheduleDeps(authorizedAuth(), occupied, { occupier: fakeOccupier(occupied, OCCUPIED) }),
+        rescheduleInput(),
+      ),
+    ).toEqual(CONFLICT);
+    expect(occupied.audits).toHaveLength(0);
+
+    const byStudent = changeWorld();
+    expect(
+      await recordAppointmentAttendance(recordDeps(authorizedAuth(), byStudent), {
+        tokenIdentifier: "token-student",
+        appointmentId: "appointment-1",
+        outcome: "completed",
+      }),
+    ).toEqual(DENIED);
+    expect(byStudent.audits).toHaveLength(0);
+  });
+
+  test("si el puerto de auditoría falla, el caso de uso no informa éxito", async () => {
+    const world = changeWorld();
+    const deps = {
+      ...cancelDeps(authorizedAuth(), world),
+      audit: {
+        recordAppointmentAudit: async () => {
+          throw new Error("Referencia inválida");
+        },
+      },
+    };
+
+    await expect(
+      cancelAppointment(deps, { tokenIdentifier: "token-student", appointmentId: "appointment-1" }),
+    ).rejects.toThrow("Referencia inválida");
   });
 });

@@ -50,6 +50,12 @@ import {
   recordNotificationEvent,
   recordNotificationEvents,
 } from "../infrastructure/notifications/repository";
+import {
+  paginateAppointmentAuditEvents,
+  paginateAppointmentAuditEventsByActor,
+  recordAppointmentAuditEvent,
+} from "../infrastructure/audit/repository";
+import type { AppointmentAuditEvent } from "../domain/appointments/audit";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -3062,4 +3068,125 @@ test("TI2-118: el seguimiento rechaza diagnósticos, atenciones pendientes y ref
   expect(
     await t.run(async (ctx) => await findFollowUpRecordByAppointment(ctx, appointmentId)),
   ).toBeNull();
+});
+
+// ── Auditoría de agenda (TI2-128) ───────────────────────────────────────────
+
+test("TI2-128: la bitácora guarda cinco campos y sus índices responden en orden", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "audit-a");
+  const other = await seedTi118Appointment(t, "audit-b");
+
+  await t.run(async (ctx) => {
+    await recordAppointmentAuditEvent(ctx, {
+      action: "booked",
+      actorId: student,
+      appointmentId,
+      result: "scheduled",
+      occurredAt: TI83_MONDAY,
+    });
+    await recordAppointmentAuditEvent(ctx, {
+      action: "attendance_recorded",
+      actorId: professional,
+      appointmentId,
+      result: "completed",
+      occurredAt: TI83_MONDAY_10H,
+    });
+    await recordAppointmentAuditEvent(ctx, {
+      action: "booked",
+      actorId: other.student,
+      appointmentId: other.appointmentId,
+      result: "scheduled",
+      occurredAt: TI83_MONDAY_9H,
+    });
+  });
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("appointmentAuditEvents").take(10));
+  expect(rows).toHaveLength(3);
+  for (const row of rows) {
+    expect(Object.keys(row).sort()).toEqual(
+      ["_creationTime", "_id", "action", "actorId", "appointmentId", "occurredAt", "result"].sort(),
+    );
+  }
+
+  const history = await t.run(
+    async (ctx) =>
+      await paginateAppointmentAuditEvents(ctx, appointmentId, { numItems: 10, cursor: null }),
+  );
+  expect(history.page.map(({ action, actorId }) => ({ action, actorId }))).toEqual([
+    { action: "booked", actorId: student },
+    { action: "attendance_recorded", actorId: professional },
+  ]);
+
+  const byActor = await t.run(
+    async (ctx) =>
+      await paginateAppointmentAuditEventsByActor(ctx, other.student, {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  expect(byActor.page).toHaveLength(1);
+  expect(byActor.page[0]).toMatchObject({
+    appointmentId: other.appointmentId,
+    result: "scheduled",
+    occurredAt: TI83_MONDAY_9H,
+  });
+});
+
+test("TI2-128: texto extra, literales desconocidos y referencias inválidas no se escriben", async () => {
+  const t = convexTest(schema, modules);
+  const { student, appointmentId } = await seedTi118Appointment(t, "audit-c");
+
+  const smuggled = {
+    action: "cancelled",
+    actorId: student,
+    appointmentId,
+    result: "cancelled_by_student",
+    occurredAt: TI83_MONDAY,
+    reason: "Motivo libre ficticio",
+  } as AppointmentAuditEvent;
+  await t.run(async (ctx) => await recordAppointmentAuditEvent(ctx, smuggled));
+  const rows = await t.run(async (ctx) => await ctx.db.query("appointmentAuditEvents").take(10));
+  expect(rows).toHaveLength(1);
+  expect(JSON.stringify(rows[0])).not.toContain("Motivo libre");
+
+  const { _id, _creationTime, ...fields } = rows[0];
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("appointmentAuditEvents", {
+        ...fields,
+        reason: "Motivo libre ficticio",
+      } as never);
+    }),
+  ).rejects.toThrow(/reason/);
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("appointmentAuditEvents", { ...fields, action: "deleted" } as never);
+    }),
+  ).rejects.toThrow("Validator error");
+
+  const missing = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("users", {
+      email: "ti128-borrado@uct.cl",
+      fullName: "Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti128-borrado`,
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+  for (const invalid of [
+    { actorId: missing },
+    { actorId: appointmentId as unknown as string },
+    { appointmentId: student as unknown as string },
+  ]) {
+    await expect(
+      t.run(async (ctx) => await recordAppointmentAuditEvent(ctx, { ...smuggled, ...invalid })),
+    ).rejects.toThrow("El evento de auditoría tiene una referencia inválida.");
+  }
+  expect(
+    await t.run(async (ctx) => await ctx.db.query("appointmentAuditEvents").take(10)),
+  ).toHaveLength(1);
 });

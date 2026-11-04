@@ -335,6 +335,48 @@ describe("calendario por atención (TI2-122)", () => {
     expect(downloadedFiles).toEqual([ARCHIVO_ICS]);
   });
 
+  test("si Google revoca el acceso, ofrece volver a conectar y conserva el .ics", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    mockedAddResult = { status: "fallback", reason: "not_connected", ics: ARCHIVO_ICS };
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /agregar a google calendar la atención/i }),
+    );
+
+    expect(
+      (await screen.findAllByText(/google calendar perdió el acceso/i)).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Volver a conectar Google Calendar" })).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /agregar a google calendar la atención/i }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: /descargar el archivo .ics/i })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Volver a conectar Google Calendar" }));
+    await waitFor(() => expect(linkSocialCalls).toHaveLength(1));
+    expect(linkSocialCalls[0]).toMatchObject({
+      provider: "google",
+      scopes: ["https://www.googleapis.com/auth/calendar.events"],
+    });
+  });
+
+  test("una atención cancelada no ofrece agregar ni descargar", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion({ status: "cancelled_by_student" })];
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText(/cancelada por el estudiante/i)).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: /agregar a google calendar la atención/i }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /descargar el archivo .ics/i })).toBeNull();
+    expect(screen.getByText(/solo las atenciones programadas o reagendadas/i)).toBeDefined();
+  });
+
   test("no ofrece agregar una atención que ya está en el calendario", async () => {
     mockedDetail = detallePropio();
     mockedConnection = { connected: true };

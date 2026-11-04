@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { APPOINTMENT_CALENDAR_LIST_LIMIT } from "../application/appointments/queries";
+import { CONFLICT_ERROR_MESSAGE } from "../domain/errors/api_error";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -361,6 +362,51 @@ test("TI2-122 API: el .ics marca alreadyAdded cuando el evento ya existe", async
     .withIdentity(agenda.studentIdentity)
     .query(api.presentation.appointments.getAppointmentCalendarFile, { appointmentId });
   expect(file.alreadyAdded).toBe(true);
+});
+
+test("TI2-122 API: una atención no vigente no exporta .ics ni crea evento", async () => {
+  expect.hasAssertions();
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "not-actionable");
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+
+  for (const status of [
+    "cancelled_by_student",
+    "cancelled_by_cereti",
+    "completed",
+    "no_show",
+    "no_show_justified",
+    "no_show_unjustified",
+  ] as const) {
+    const appointmentId = await seedAppointment(t, {
+      accompanimentId: agenda.accompanimentId,
+      studentId: agenda.student,
+      professionalId: agenda.pro,
+      startsAt: BASE_START,
+      endsAt: BASE_START + HOUR,
+      status,
+    });
+
+    const expectedError = { code: "conflict", message: CONFLICT_ERROR_MESSAGE };
+    expect(
+      await publicErrorData(
+        asStudent.query(api.presentation.appointments.getAppointmentCalendarFile, {
+          appointmentId,
+        }),
+      ),
+    ).toEqual(expectedError);
+    expect(
+      await publicErrorData(
+        asStudent.action(api.presentation.appointments.addAppointmentToGoogleCalendar, {
+          appointmentId,
+        }),
+      ),
+    ).toEqual(expectedError);
+
+    const row = await getAppointment(t, appointmentId);
+    expect(row).toMatchObject({ status });
+    expect(row?.calendarEventId).toBeUndefined();
+  }
 });
 
 test("TI2-122 API: el .ics deniega a otros roles, ajenos y anónimos", async () => {

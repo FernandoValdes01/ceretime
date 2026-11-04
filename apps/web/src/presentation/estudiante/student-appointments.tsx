@@ -5,10 +5,10 @@ import {
   getCalendarLinkRequest,
   type CalendarCallbackStatus,
 } from "../../application/calendar/calendar-link.ts";
+import { isCalendarActionableStatus } from "../../../../../convex/domain/index.ts";
 import {
   appointmentStatusLabel,
   formatAppointmentDateTime,
-  isCalendarActionableStatus,
   modalityLabel,
 } from "./agenda-labels.ts";
 import { downloadCalendarFile, type DownloadableCalendarFile } from "./calendar-download.ts";
@@ -53,6 +53,36 @@ function NoticeBox({ notice }: { notice: Notice }) {
   );
 }
 
+function ConnectionCard({
+  title,
+  description,
+  actionLabel,
+  connecting,
+  onConnect,
+}: {
+  title: string;
+  description: string;
+  actionLabel: string;
+  connecting: boolean;
+  onConnect: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border-low bg-surface-container-lowest p-6">
+      <p className="mb-2 font-semibold text-on-surface">{title}</p>
+      <p className="mb-4 text-sm text-on-surface-variant">{description}</p>
+      <button
+        type="button"
+        onClick={onConnect}
+        disabled={connecting}
+        aria-busy={connecting}
+        className="min-h-[44px] rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
+      >
+        {connecting ? "Conectando…" : actionLabel}
+      </button>
+    </div>
+  );
+}
+
 function calendarCallbackNotice(status?: CalendarCallbackStatus): Notice | null {
   if (status === "connected") {
     return {
@@ -87,6 +117,7 @@ export function StudentAppointmentsSection({
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [connectionNotice, setConnectionNotice] = useState<Notice | null>(null);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const [callbackDismissed, setCallbackDismissed] = useState(false);
   const [notices, setNotices] = useState<Record<string, Notice>>({});
   const [fallbackFiles, setFallbackFiles] = useState<Record<string, DownloadableCalendarFile>>({});
@@ -148,6 +179,18 @@ export function StudentAppointmentsSection({
       const result = await addToCalendar({ appointmentId });
       if (result.status === "fallback") {
         setFallbackFiles((current) => ({ ...current, [appointmentId]: result.ics }));
+        if (result.reason === "not_connected") {
+          setNeedsReconnect(true);
+          setConnectionNotice({
+            kind: "error",
+            text: "Google Calendar perdió el acceso. Vuelve a conectarlo para agregar tus atenciones.",
+          });
+          setAppointmentNotice(appointmentId, {
+            kind: "info",
+            text: "No pudimos agregar la atención porque Google Calendar perdió el acceso. Vuelve a conectarlo o descarga el archivo .ics.",
+          });
+          return;
+        }
         setAppointmentNotice(appointmentId, {
           kind: "info",
           text: "No pudimos agregar la atención a Google Calendar. Puedes descargar el archivo .ics de respaldo.",
@@ -190,26 +233,24 @@ export function StudentAppointmentsSection({
         <p role="status" className="text-sm text-on-surface-variant">
           Verificando la conexión con Google Calendar…
         </p>
+      ) : needsReconnect ? (
+        <ConnectionCard
+          title="Google Calendar perdió el acceso."
+          description="Vuelve a conectar tu cuenta para agregar atenciones. También puedes descargar el archivo .ics de las atenciones vigentes."
+          actionLabel="Volver a conectar Google Calendar"
+          connecting={connecting}
+          onConnect={() => void handleConnect()}
+        />
       ) : connection.connected ? (
         <p className="text-sm text-on-surface-variant">Google Calendar está conectado.</p>
       ) : (
-        <div className="rounded-lg border border-border-low bg-surface-container-lowest p-6">
-          <p className="mb-2 font-semibold text-on-surface">Google Calendar no está conectado.</p>
-          <p className="mb-4 text-sm text-on-surface-variant">
-            Conectar tu cuenta permite crear el evento automáticamente. Google pedirá permiso sobre
-            los eventos de tu calendario; la app solo lo usa para crear esta atención y no lista ni
-            sincroniza tu calendario. También puedes descargar el archivo .ics.
-          </p>
-          <button
-            type="button"
-            onClick={() => void handleConnect()}
-            disabled={connecting}
-            aria-busy={connecting}
-            className="min-h-[44px] rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
-          >
-            {connecting ? "Conectando…" : "Conectar Google Calendar"}
-          </button>
-        </div>
+        <ConnectionCard
+          title="Google Calendar no está conectado."
+          description="Conectar tu cuenta permite crear el evento automáticamente. Google pedirá permiso sobre los eventos de tu calendario; la app solo lo usa para crear esta atención y no lista ni sincroniza tu calendario. También puedes descargar el archivo .ics."
+          actionLabel="Conectar Google Calendar"
+          connecting={connecting}
+          onConnect={() => void handleConnect()}
+        />
       )}
 
       {appointments === undefined ? (
@@ -226,7 +267,7 @@ export function StudentAppointmentsSection({
             <AppointmentItem
               key={appointment.appointmentId}
               appointment={appointment}
-              connected={connection?.connected === true}
+              connected={connection?.connected === true && !needsReconnect}
               readOnly={readOnly}
               pending={pendingId === appointment.appointmentId}
               downloading={downloadingId === appointment.appointmentId}
@@ -284,7 +325,7 @@ function AppointmentItem({
 
       {notice === undefined ? null : <NoticeBox notice={notice} />}
 
-      {readOnly ? null : (
+      {readOnly ? null : actionable ? (
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
@@ -297,7 +338,7 @@ function AppointmentItem({
             {downloading ? "Descargando…" : "Descargar .ics"}
           </button>
 
-          {actionable && connected && !appointment.calendarAdded ? (
+          {connected && !appointment.calendarAdded ? (
             <button
               type="button"
               onClick={onAdd}
@@ -320,6 +361,10 @@ function AppointmentItem({
             </button>
           )}
         </div>
+      ) : (
+        <p className="mt-4 text-sm text-on-surface-variant">
+          Solo las atenciones programadas o reagendadas se pueden agregar al calendario o descargar.
+        </p>
       )}
     </li>
   );

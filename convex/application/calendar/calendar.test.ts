@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { CALENDAR_EVENTS_SCOPE } from "../../domain/calendar/calendar_event";
+import { CONFLICT_ERROR_MESSAGE } from "../../domain/errors/api_error";
 import type {
   AuthorizableAgendaAccompaniment,
   AuthorizableAssignment,
@@ -129,6 +130,7 @@ function row(overrides: Partial<NonNullable<StoredRow>> = {}): NonNullable<Store
     accompanimentId: "acc-1",
     studentId: "user-student",
     professionalId: "user-pro",
+    status: "scheduled",
     startAt: START_AT,
     endAt: END_AT,
     createdAt: CREATED_AT,
@@ -264,6 +266,24 @@ describe("getAppointmentCalendarFile", () => {
     expect(result.status === "ok" && result.data.alreadyAdded).toBe(true);
   });
 
+  test("rechaza el .ics de una atención que ya no está vigente", async () => {
+    for (const status of ["cancelled_by_student", "completed", "no_show"] as const) {
+      const result = await getAppointmentCalendarFile(fileDeps(reader({ status })), input);
+      expect(result).toEqual({
+        status: "error",
+        error: { code: "conflict", message: CONFLICT_ERROR_MESSAGE },
+      });
+    }
+  });
+
+  test("entrega el .ics de una atención reagendada", async () => {
+    const result = await getAppointmentCalendarFile(
+      fileDeps(reader({ status: "rescheduled" })),
+      input,
+    );
+    expect(result.status).toBe("ok");
+  });
+
   test("responde unauthorized sin revelar si la atención existe", async () => {
     const result = await getAppointmentCalendarFile(fileDeps(reader()), {
       ...input,
@@ -299,6 +319,21 @@ describe("addAppointmentToGoogleCalendar", () => {
     expect(recorded).toEqual([
       { appointmentId: "appointment-1", eventId: "event-1", addedAt: CREATED_AT + 5_000 },
     ]);
+  });
+
+  test("rechaza crear el evento de una atención que ya no está vigente", async () => {
+    for (const status of ["cancelled_by_cereti", "completed", "no_show_justified"] as const) {
+      const google = fakeGoogle({ status: "created", eventId: "event-1" });
+      const result = await addAppointmentToGoogleCalendar(
+        addDeps(reader({ status }), google),
+        input,
+      );
+      expect(result).toEqual({
+        status: "error",
+        error: { code: "conflict", message: CONFLICT_ERROR_MESSAGE },
+      });
+      expect(google.calls).toHaveLength(0);
+    }
   });
 
   test("no llama a Google si la atención ya tiene evento", async () => {

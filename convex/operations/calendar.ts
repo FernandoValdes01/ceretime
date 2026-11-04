@@ -20,11 +20,13 @@ import {
   normalizeAppointmentId,
   recordCalendarEvent,
 } from "../infrastructure/appointments/repository";
+import { appointmentStatusUnion } from "../infrastructure/validators";
 
 const calendarAppointmentContextValidator = v.union(
   v.null(),
   v.object({
     appointmentId: v.string(),
+    status: appointmentStatusUnion,
     startAt: v.number(),
     endAt: v.number(),
     createdAt: v.number(),

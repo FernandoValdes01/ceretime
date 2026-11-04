@@ -15,8 +15,11 @@ import {
   toCalendarFile,
   type CalendarFile,
 } from "../../domain/calendar/calendar_event";
+import { isCalendarActionableStatus } from "../../domain/appointments/appointment";
+import type { AppointmentStatus } from "../../domain/appointments/appointment";
 import { isProfileActive } from "../../domain/authorization/permissions";
 import {
+  conflictError,
   errResult,
   okResult,
   unauthorizedError,
@@ -30,6 +33,7 @@ import {
 
 /** Fila de atención que necesita el calendario, ya autorizada por pertenencia. */
 export type CalendarAppointmentRow = AuthorizableAppointment & {
+  readonly status: AppointmentStatus;
   readonly startAt: number;
   readonly endAt: number;
   /** Instante estable de creación de la atención; se usa como `DTSTAMP`. */
@@ -51,6 +55,7 @@ export interface CalendarAppointmentReader {
 /** Contexto mínimo de una atención autorizada para calendario. */
 export interface CalendarAppointmentContext {
   readonly appointmentId: string;
+  readonly status: AppointmentStatus;
   readonly startAt: number;
   readonly endAt: number;
   /** Instante estable de creación: el `.ics` no depende del reloj de la consulta. */
@@ -119,6 +124,7 @@ export async function loadCalendarAppointment(
   if (grant.status === "error") return null;
   return {
     appointmentId: appointment._id,
+    status: appointment.status,
     startAt: appointment.startAt,
     endAt: appointment.endAt,
     createdAt: appointment.createdAt,
@@ -166,6 +172,10 @@ export async function getAppointmentCalendarFile(
 ): Promise<ApiResult<AppointmentCalendarFile>> {
   const context = await deps.loadAppointment(input);
   if (context === null) return errResult(unauthorizedError());
+  // Solo una atención vigente puede exportarse: un `.ics` con
+  // `STATUS:CONFIRMED` para una atención cancelada, realizada o con
+  // inasistencia representaría un estado que ya no es real.
+  if (!isCalendarActionableStatus(context.status)) return errResult(conflictError());
   return okResult({
     ...buildFile(context, input.timeZone),
     alreadyAdded: context.reference !== null,
@@ -203,6 +213,9 @@ export async function addAppointmentToGoogleCalendar(
 ): Promise<ApiResult<AppointmentCalendarResult>> {
   const context = await deps.loadAppointment(input);
   if (context === null) return errResult(unauthorizedError());
+  // La acción pública no puede crear un evento confirmado para una atención
+  // que ya no está vigente. La UI oculta la acción, pero la regla vive acá.
+  if (!isCalendarActionableStatus(context.status)) return errResult(conflictError());
 
   const addedAt = deps.now();
   const event = buildCalendarEvent({

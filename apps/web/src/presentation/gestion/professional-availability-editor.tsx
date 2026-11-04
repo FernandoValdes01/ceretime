@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import "../routes/student-portal.css";
@@ -39,22 +39,45 @@ const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
 
 /**
- * Campos de gestión (TI2-103): alto táctil mínimo de 44px, ancho fluido y
- * `min-w-0` para que la cuadrícula estrecha los contraiga, con el mismo
- * foco visible de las filas. Los formularios apilan los campos en columna.
+ * Enlace de retorno: verde y subrayado como el de la agenda. El subrayado es
+ * lo que lo distingue del texto normal, porque el color solo no alcanza a
+ * separarlo con visión borrosa o bajo contraste. Mide lo que su contenido y
+ * mantiene 44px de alto táctil mínimo.
  */
-const GESTION_FIELD = "min-h-[44px] w-full min-w-0 box-border px-3 py-2 text-base text-inherit";
-const GESTION_FIELD_CLASS = `${GESTION_FIELD} ${GESTION_FOCUS_VISIBLE}`;
+const GESTION_BACK_LINK = `flex min-h-[44px] w-fit items-center gap-1 rounded-[0.5rem] text-base font-semibold text-primary underline ${GESTION_FOCUS_VISIBLE}`;
 
 /**
- * Editor de bloques recurrentes y excepciones del Profesional (TI2-103).
+ * Campos de gestión (TI2-103): alto táctil mínimo de 44px, ancho fluido y
+ * `min-w-0` para que la cuadrícula estrecha los contraiga, con el mismo
+ * foco visible de las filas. Según DESIGN.md llevan borde de 1px para
+ * reconocerse antes del foco; el error lo vuelve rojo además del mensaje. El
+ * color va en una sola clase porque dos competirían en el mismo elemento.
+ */
+const GESTION_FIELD = `min-h-[44px] w-full min-w-0 box-border rounded-[0.5rem] border bg-surface-container-lowest px-3 py-2 text-base text-on-surface ${GESTION_FOCUS_VISIBLE}`;
+
+function fieldClass(error: string | undefined): string {
+  return `${GESTION_FIELD} ${error === undefined ? "border-outline" : "border-error"}`;
+}
+
+/** Formularios en columna con la etiqueta visible arriba de cada campo. */
+const GESTION_FORM =
+  "mt-4 flex flex-col gap-4 [&_label]:mb-2 [&_label]:block [&_label]:text-sm [&_label]:font-semibold";
+
+const FOCUSABLE_IN_DIALOG =
+  'select:not([disabled]), input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Editor de bloques recurrentes y excepciones del Profesional
+ * (TI2-103/TI2-125).
  *
- * Interfaz tipada con validación de formato y resultados simulados, sin
- * duplicar reglas del Backend. Lee y guarda por el puerto común de agenda
- * con el adaptador ficticio hasta TI2-125; no escribe base de datos, no
- * resuelve compatibilidad ni autorización local y nunca envía identidad del
- * cliente como prueba de propiedad. Todo guardado se identifica como
- * simulado con datos ficticios.
+ * Interfaz tipada con validación de formato, sin duplicar reglas del Backend.
+ * Lee y guarda por el puerto común de agenda contra
+ * `api.presentation.availability`; no escribe base de datos, no resuelve
+ * compatibilidad ni autorización local y nunca envía identidad del cliente
+ * como prueba de propiedad. El catálogo de espacios que se referencia sigue
+ * siendo simulado hasta TI2-104. Crear es una acción aparte de consultar: los
+ * botones del inicio abren cada formulario en un diálogo y al fondo de la
+ * vista no queda ninguno desplegado.
  */
 export function ProfessionalAvailabilityPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -71,11 +94,8 @@ export function ProfessionalAvailabilityPage() {
       </h1>
       <p>Gestiona tus bloques recurrentes y excepciones con el contrato vigente.</p>
       <p>
-        <Link
-          to="/profesional/solicitudes"
-          className={`${GESTION_ROW} no-underline ${GESTION_FOCUS_VISIBLE}`}
-        >
-          Volver a solicitudes
+        <Link to="/profesional/solicitudes" className={GESTION_BACK_LINK}>
+          <span aria-hidden="true">←</span> Volver a solicitudes
         </Link>
       </p>
       <StudentPanelErrorBoundary subject="el editor de disponibilidad" level="section">
@@ -85,10 +105,45 @@ export function ProfessionalAvailabilityPage() {
   );
 }
 
+type OpenForm = "block" | "exception" | null;
+
+type SavedConfirmation =
+  | { readonly kind: "block"; readonly id: string }
+  | { readonly kind: "exception"; readonly exception: AvailabilityException };
+
 function AvailabilityBody({ attempt, onRetry }: { attempt: number; onRetry: () => void }) {
   const result = useProfessionalAvailability(attempt);
   const [extraBlocks, setExtraBlocks] = useState<ReadonlyArray<AvailabilityBlock>>([]);
   const [extraExceptions, setExtraExceptions] = useState<ReadonlyArray<AvailabilityException>>([]);
+  const [openForm, setOpenForm] = useState<OpenForm>(null);
+  const [confirmation, setConfirmation] = useState<SavedConfirmation | null>(null);
+  const newBlockRef = useRef<HTMLButtonElement>(null);
+  const newExceptionRef = useRef<HTMLButtonElement>(null);
+  const confirmationRef = useRef<HTMLHeadingElement>(null);
+
+  // Al cerrar, el foco va a la confirmación si se guardó y, si se canceló, al
+  // botón que abrió el diálogo. Se resuelve tras el commit porque hasta
+  // entonces ni la confirmación existe ni el diálogo soltó el foco.
+  const previousForm = useRef<OpenForm>(null);
+  useEffect(() => {
+    const closed = previousForm.current;
+    previousForm.current = openForm;
+    if (openForm !== null || closed === null) {
+      return;
+    }
+    if (confirmationRef.current !== null) {
+      confirmationRef.current.focus();
+    } else if (closed === "block") {
+      newBlockRef.current?.focus();
+    } else {
+      newExceptionRef.current?.focus();
+    }
+  }, [openForm]);
+
+  function openFormDialog(form: Exclude<OpenForm, null>) {
+    setConfirmation(null);
+    setOpenForm(form);
+  }
 
   if (result === undefined) {
     return (
@@ -132,6 +187,39 @@ function AvailabilityBody({ attempt, onRetry }: { attempt: number; onRetry: () =
 
   return (
     <>
+      <div className="mt-4 flex flex-col justify-center gap-3 sm:flex-row sm:flex-wrap">
+        <button
+          ref={newBlockRef}
+          type="button"
+          className="student-portal__btn student-portal__btn--primary"
+          onClick={() => openFormDialog("block")}
+        >
+          Nuevo bloque
+        </button>
+        <button
+          ref={newExceptionRef}
+          type="button"
+          className="student-portal__btn student-portal__btn--primary"
+          onClick={() => openFormDialog("exception")}
+        >
+          Nueva excepción
+        </button>
+      </div>
+      {confirmation !== null ? (
+        <div className="student-portal__empty student-portal__empty--green" role="status">
+          <h2 ref={confirmationRef} tabIndex={-1}>
+            {confirmation.kind === "block" ? "Bloque guardado" : "Excepción guardada"}
+          </h2>
+          {confirmation.kind === "block" ? (
+            <p>Código {confirmation.id}. Guardado confirmado por el Backend.</p>
+          ) : (
+            <>
+              <ExceptionDetails exception={confirmation.exception} />
+              <p>Guardado confirmado por el Backend.</p>
+            </>
+          )}
+        </div>
+      ) : null}
       {isEmpty ? (
         <div className="student-portal__empty">
           <p className="student-portal__empty-title">Sin bloques ni excepciones.</p>
@@ -174,10 +262,26 @@ function AvailabilityBody({ attempt, onRetry }: { attempt: number; onRetry: () =
           </ul>
         )}
       </section>
-      <BlockFormSection onSaved={(block) => setExtraBlocks((prev) => [...prev, block])} />
-      <ExceptionFormSection
-        onSaved={(exception) => setExtraExceptions((prev) => [...prev, exception])}
-      />
+      {openForm === "block" ? (
+        <BlockFormDialog
+          onCancel={() => setOpenForm(null)}
+          onSaved={(block) => {
+            setExtraBlocks((prev) => [...prev, block]);
+            setConfirmation({ kind: "block", id: block.id });
+            setOpenForm(null);
+          }}
+        />
+      ) : null}
+      {openForm === "exception" ? (
+        <ExceptionFormDialog
+          onCancel={() => setOpenForm(null)}
+          onSaved={(exception) => {
+            setExtraExceptions((prev) => [...prev, exception]);
+            setConfirmation({ kind: "exception", exception });
+            setOpenForm(null);
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -213,20 +317,141 @@ function ExceptionDetails({ exception }: { exception: AvailabilityException }) {
   );
 }
 
-function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => void }) {
+/**
+ * Diálogo modal de un formulario (mismo patrón que el de TI2-92): al abrir
+ * enfoca el primer campo, Tab no sale del diálogo y Escape cierra. Escucha en
+ * el documento porque deshabilitar el botón mientras se guarda suelta el foco
+ * y el teclado debe seguir funcionando. En pantalla estrecha el contenido
+ * desplaza dentro del diálogo, sin desbordar la página.
+ */
+function FormDialog({
+  titleId,
+  title,
+  onClose,
+  children,
+}: {
+  titleId: string;
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_IN_DIALOG)?.focus();
+  }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      const dialog = dialogRef.current;
+      if (event.key !== "Tab" || dialog === null) {
+        return;
+      }
+      const targets = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_IN_DIALOG));
+      if (targets.length === 0) {
+        return;
+      }
+      const first = targets[0];
+      const last = targets[targets.length - 1];
+      const active = document.activeElement;
+      if (!dialog.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+    >
+      <div
+        ref={dialogRef}
+        className="box-border max-h-full w-full max-w-lg overflow-y-auto rounded-lg border border-(--ct-line) bg-(--ct-card) p-6 text-left shadow-[0_10px_25px_-5px_rgb(0_0_0/0.1),0_8px_10px_-6px_rgb(0_0_0/0.1)]"
+      >
+        <h2 id={titleId}>{title}</h2>
+        <p>Se guarda en el Backend.</p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Mientras se guarda, Escape no cierra: el resultado aún no se conoce. */
+function ignoreClose() {}
+
+/** Acciones del diálogo: cancelar vuelve al listado sin guardar. */
+function FormDialogActions({
+  pending,
+  saveLabel,
+  onCancel,
+}: {
+  pending: boolean;
+  saveLabel: string;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="mt-2 flex flex-wrap justify-end gap-3">
+      <button
+        type="button"
+        className="student-portal__btn student-portal__btn--ghost disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={onCancel}
+        disabled={pending}
+      >
+        Cancelar
+      </button>
+      <button
+        type="submit"
+        className="student-portal__btn student-portal__btn--primary"
+        disabled={pending}
+        aria-busy={pending}
+      >
+        {pending ? "Guardando…" : saveLabel}
+      </button>
+    </div>
+  );
+}
+
+/** Lleva el foco al primer campo inválido para que el error quede a la vista. */
+function useFocusFirstInvalid(fieldErrors: Record<string, string>) {
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (Object.keys(fieldErrors).length > 0) {
+      formRef.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+    }
+  }, [fieldErrors]);
+  return formRef;
+}
+
+function BlockFormDialog({
+  onSaved,
+  onCancel,
+}: {
+  onSaved: (block: AvailabilityBlock) => void;
+  onCancel: () => void;
+}) {
   const [form, setForm] = useState<BlockFormState>(EMPTY_BLOCK_FORM);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
-  const [savedId, setSavedId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
-  const confirmationRef = useRef<HTMLHeadingElement>(null);
-
-  useEffect(() => {
-    if (savedId !== null) {
-      confirmationRef.current?.focus();
-    }
-  }, [savedId]);
+  const formRef = useFocusFirstInvalid(fieldErrors);
 
   function setField<Key extends keyof BlockFormState>(key: Key, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -241,7 +466,6 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
     setFieldErrors(errors);
     setSaveError(null);
     setDenied(false);
-    setSavedId(null);
     if (Object.keys(errors).length > 0) {
       return;
     }
@@ -250,9 +474,6 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
       const result = await getAgendaPort().saveBlock(toSaveBlockInput(form));
       if (result.status === "saved") {
         onSaved(result.block);
-        setSavedId(result.block.id);
-        setForm(EMPTY_BLOCK_FORM);
-        setFieldErrors({});
       } else if (result.status === "denied") {
         setDenied(true);
       } else {
@@ -266,16 +487,16 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
   }
 
   return (
-    <section aria-labelledby="block-form-title" className="student-portal__section">
-      <div className="student-portal__section-head">
-        <h2 id="block-form-title">Nuevo bloque recurrente</h2>
-      </div>
-      <p>Guardado simulado con datos ficticios.</p>
-      <form onSubmit={handleSubmit} noValidate>
+    <FormDialog
+      titleId="block-form-title"
+      title="Nuevo bloque recurrente"
+      onClose={pending ? ignoreClose : onCancel}
+    >
+      <form ref={formRef} className={GESTION_FORM} onSubmit={handleSubmit} noValidate>
         <div>
           <label htmlFor="block-weekday">Día de la semana</label>
           <select
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.weekday)}
             id="block-weekday"
             value={form.weekday}
             onChange={(event) => setField("weekday", event.target.value)}
@@ -301,7 +522,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-start">Inicio (HH:MM)</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.startTime)}
             id="block-start"
             type="text"
             inputMode="numeric"
@@ -321,7 +542,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-end">Término (HH:MM)</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.endTime)}
             id="block-end"
             type="text"
             inputMode="numeric"
@@ -341,7 +562,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-duration">Duración del cupo (minutos)</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.slotMinutes)}
             id="block-duration"
             type="text"
             inputMode="numeric"
@@ -363,7 +584,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-modality">Modalidad</label>
           <select
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.modality)}
             id="block-modality"
             value={form.modality}
             onChange={(event) => setField("modality", event.target.value)}
@@ -386,7 +607,7 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
         <div>
           <label htmlFor="block-space">Referencia al espacio (solo presencial)</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.spaceId)}
             id="block-space"
             type="text"
             placeholder="esp-1"
@@ -412,47 +633,25 @@ function BlockFormSection({ onSaved }: { onSaved: (block: AvailabilityBlock) => 
             {saveError}
           </p>
         ) : null}
-        {savedId !== null ? (
-          <div>
-            <h3 ref={confirmationRef} tabIndex={-1}>
-              Bloque guardado
-            </h3>
-            <p>Código {savedId}. Guardado simulado con datos ficticios.</p>
-          </div>
-        ) : null}
-        <div className="student-portal__cta">
-          <button
-            type="submit"
-            className="student-portal__btn student-portal__btn--primary"
-            disabled={pending}
-            aria-busy={pending}
-          >
-            {pending ? "Guardando…" : "Guardar bloque"}
-          </button>
-        </div>
+        <FormDialogActions pending={pending} saveLabel="Guardar bloque" onCancel={onCancel} />
       </form>
-    </section>
+    </FormDialog>
   );
 }
 
-function ExceptionFormSection({
+function ExceptionFormDialog({
   onSaved,
+  onCancel,
 }: {
   onSaved: (exception: AvailabilityException) => void;
+  onCancel: () => void;
 }) {
   const [form, setForm] = useState<ExceptionFormState>(EMPTY_EXCEPTION_FORM);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
-  const [savedException, setSavedException] = useState<AvailabilityException | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
-  const confirmationRef = useRef<HTMLHeadingElement>(null);
-
-  useEffect(() => {
-    if (savedException !== null) {
-      confirmationRef.current?.focus();
-    }
-  }, [savedException]);
+  const formRef = useFocusFirstInvalid(fieldErrors);
 
   function setField<Key extends keyof ExceptionFormState>(key: Key, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -467,7 +666,6 @@ function ExceptionFormSection({
     setFieldErrors(errors);
     setSaveError(null);
     setDenied(false);
-    setSavedException(null);
     if (Object.keys(errors).length > 0) {
       return;
     }
@@ -476,9 +674,6 @@ function ExceptionFormSection({
       const result = await getAgendaPort().saveException(toSaveExceptionInput(form));
       if (result.status === "saved") {
         onSaved(result.exception);
-        setSavedException(result.exception);
-        setForm(EMPTY_EXCEPTION_FORM);
-        setFieldErrors({});
       } else if (result.status === "denied") {
         setDenied(true);
       } else {
@@ -494,16 +689,16 @@ function ExceptionFormSection({
   const isAdded = form.kind === "added";
 
   return (
-    <section aria-labelledby="exception-form-title" className="student-portal__section">
-      <div className="student-portal__section-head">
-        <h2 id="exception-form-title">Nueva excepción</h2>
-      </div>
-      <p>Guardado simulado con datos ficticios.</p>
-      <form onSubmit={handleSubmit} noValidate>
+    <FormDialog
+      titleId="exception-form-title"
+      title="Nueva excepción"
+      onClose={pending ? ignoreClose : onCancel}
+    >
+      <form ref={formRef} className={GESTION_FORM} onSubmit={handleSubmit} noValidate>
         <div>
           <label htmlFor="exception-date">Fecha (AAAA-MM-DD)</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.date)}
             id="exception-date"
             type="text"
             inputMode="numeric"
@@ -523,7 +718,7 @@ function ExceptionFormSection({
         <div>
           <label htmlFor="exception-kind">Clase</label>
           <select
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.kind)}
             id="exception-kind"
             value={form.kind}
             onChange={(event) => setField("kind", event.target.value)}
@@ -544,7 +739,7 @@ function ExceptionFormSection({
         <div>
           <label htmlFor="exception-block">Bloque afectado (solo cancelación puntual)</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={fieldClass(fieldErrors.blockId)}
             id="exception-block"
             type="text"
             placeholder="bloque-ficticio-1"
@@ -567,7 +762,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-start">Inicio del agregado (HH:MM)</label>
               <input
-                className={GESTION_FIELD_CLASS}
+                className={fieldClass(fieldErrors.startTime)}
                 id="exception-start"
                 type="text"
                 inputMode="numeric"
@@ -589,7 +784,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-end">Término del agregado (HH:MM)</label>
               <input
-                className={GESTION_FIELD_CLASS}
+                className={fieldClass(fieldErrors.endTime)}
                 id="exception-end"
                 type="text"
                 inputMode="numeric"
@@ -611,7 +806,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-duration">Duración del cupo (minutos)</label>
               <input
-                className={GESTION_FIELD_CLASS}
+                className={fieldClass(fieldErrors.slotMinutes)}
                 id="exception-duration"
                 type="text"
                 inputMode="numeric"
@@ -633,7 +828,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-modality">Modalidad del agregado</label>
               <select
-                className={GESTION_FIELD_CLASS}
+                className={fieldClass(fieldErrors.modality)}
                 id="exception-modality"
                 value={form.modality}
                 onChange={(event) => setField("modality", event.target.value)}
@@ -656,7 +851,7 @@ function ExceptionFormSection({
             <div>
               <label htmlFor="exception-space">Referencia al espacio (solo presencial)</label>
               <input
-                className={GESTION_FIELD_CLASS}
+                className={fieldClass(fieldErrors.spaceId)}
                 id="exception-space"
                 type="text"
                 placeholder="esp-1"
@@ -686,26 +881,8 @@ function ExceptionFormSection({
             {saveError}
           </p>
         ) : null}
-        {savedException !== null ? (
-          <div>
-            <h3 ref={confirmationRef} tabIndex={-1}>
-              Excepción guardada
-            </h3>
-            <ExceptionDetails exception={savedException} />
-            <p>Guardado simulado con datos ficticios.</p>
-          </div>
-        ) : null}
-        <div className="student-portal__cta">
-          <button
-            type="submit"
-            className="student-portal__btn student-portal__btn--primary"
-            disabled={pending}
-            aria-busy={pending}
-          >
-            {pending ? "Guardando…" : "Guardar excepción"}
-          </button>
-        </div>
+        <FormDialogActions pending={pending} saveLabel="Guardar excepción" onCancel={onCancel} />
       </form>
-    </section>
+    </FormDialog>
   );
 }

@@ -465,6 +465,7 @@ export function appointmentCalendarReader(ctx: DbReader) {
         accompanimentId: doc.accompanimentId,
         studentId: doc.studentId,
         professionalId: doc.professionalId,
+        status: doc.status,
         startAt: doc.startsAt,
         endAt: doc.endsAt,
         createdAt: doc.createdAt,

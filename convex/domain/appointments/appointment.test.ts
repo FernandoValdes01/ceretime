@@ -9,6 +9,7 @@ import {
   NO_SHOW_PENDING_STATE,
   calculateJustificationDeadline,
   decideJustificationTimeliness,
+  isCalendarActionableStatus,
   isJustificationReview,
   toAppointmentProjection,
   transitionAppointment,
@@ -734,6 +735,28 @@ describe("Plazo de cinco días hábiles de justificación (TI2-94)", () => {
   });
 });
 
+describe("Acciones de calendario por estado de la atención (TI2-122)", () => {
+  test("solo las atenciones programadas o reagendadas admiten acciones de calendario", () => {
+    expect(APPOINTMENT_STATUS_VALUES.filter(isCalendarActionableStatus)).toEqual([
+      "scheduled",
+      "rescheduled",
+    ]);
+  });
+
+  test("una atención cerrada no se exporta como evento confirmado", () => {
+    for (const status of [
+      "completed",
+      "cancelled_by_student",
+      "cancelled_by_cereti",
+      "no_show",
+      "no_show_justified",
+      "no_show_unjustified",
+    ] as const) {
+      expect(isCalendarActionableStatus(status)).toBe(false);
+    }
+  });
+});
+
 describe("Proyección y constancia de la atención (TI2-100)", () => {
   const appointment: Appointment = {
     id: "atencion-ficticia-1",
@@ -750,17 +773,24 @@ describe("Proyección y constancia de la atención (TI2-100)", () => {
   };
 
   test("las vistas son completa y minimizada", () => {
-    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "minimized"]);
+    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "shared", "minimized"]);
   });
 
   test("la vista completa conserva la entidad y marca la vista", () => {
     const projected = toAppointmentProjection(appointment, "full");
 
     expect(projected).toEqual({ ...appointment, view: "full" });
-    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{ readonly view: "full" | "minimized" }>();
+    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{
+      readonly view: "full" | "shared" | "minimized";
+    }>();
   });
 
   test("la vista minimizada omite vínculos, fechas originales y motivos", () => {
+    const shared = toAppointmentProjection(appointment, "shared");
+    const { cancelReason: _omitted, ...withoutReason } = appointment;
+    expect(shared).toEqual({ ...withoutReason, view: "shared" });
+    expect(shared).not.toHaveProperty("cancelReason");
+
     const projected = toAppointmentProjection(appointment, "minimized");
 
     expect(projected).toEqual({

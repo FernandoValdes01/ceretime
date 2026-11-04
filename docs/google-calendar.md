@@ -10,7 +10,10 @@ El alcance es deliberadamente mínimo: se crea un evento por atención, nunca se
 2. En el detalle de su acompañamiento ve sus atenciones y el estado de la conexión con Google Calendar.
 3. Si quiere crear el evento automáticamente, pulsa «Conectar Google Calendar». Es un consentimiento OAuth aparte que pide únicamente `https://www.googleapis.com/auth/calendar.events`.
 4. Por cada atención en estado `scheduled` o `rescheduled`, pulsa «Agregar a Google Calendar». La acción crea el evento en el calendario primario de la cuenta vinculada.
-5. En cualquier momento, con o sin conexión, puede descargar el archivo `atencion-programada.ics` e importarlo en el calendario que prefiera.
+5. Por cada atención vigente, con o sin conexión, puede descargar el archivo `atencion-programada.ics` e importarlo en el calendario que prefiera.
+6. Si Google revoca el acceso, la acción responde `fallback` con `not_connected`; la interfaz muestra que la conexión se perdió y ofrece «Volver a conectar Google Calendar».
+
+Solo las atenciones en estado `scheduled` o `rescheduled` admiten las dos acciones de calendario. Una atención cancelada, realizada o con inasistencia no se exporta como evento confirmado ni se crea en Google Calendar: la API responde `conflict` y la interfaz no muestra los botones.
 
 Un acompañamiento cerrado muestra sus atenciones en solo lectura: no ofrece conexión ni acciones de calendario, pero conserva el historial visible.
 
@@ -21,14 +24,14 @@ La superficie es la misma para ambas aplicaciones, sale de `api.presentation.app
 | Operación                                                | Argumentos          | Devuelve                                                                                                 | Quién                                                    |
 | -------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | `presentation/appointments.listAccompanimentAppointments` | `accompanimentId`   | Lista acotada (máximo 50, más reciente primero) de `{appointmentId, status, startAt, endAt, modality, calendarAdded}` | Estudiante dueño, Profesional o Practicante asignado     |
-| `presentation/appointments.getAppointmentCalendarFile`    | `appointmentId`     | `{fileName, content, alreadyAdded}`                                                                      | Solo el Estudiante dueño de una atención en acompañamiento activo |
+| `presentation/appointments.getAppointmentCalendarFile`    | `appointmentId`     | `{fileName, content, alreadyAdded}`                                                                      | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
 | `presentation/appointments.getCalendarConnection`         | —                   | `{connected: boolean}`                                                                                   | Cualquier sesión con perfil vigente                      |
-| `presentation/appointments.addAppointmentToGoogleCalendar` | `appointmentId`     | `{status: "created" \| "already_created", eventId, ics}` o `{status: "fallback", reason, ics}`            | Solo el Estudiante dueño de una atención en acompañamiento activo |
+| `presentation/appointments.addAppointmentToGoogleCalendar` | `appointmentId`     | `{status: "created" \| "already_created", eventId, ics}` o `{status: "fallback", reason, ics}`            | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
 
 Reglas del contrato:
 
 - `startAt` y `endAt` son instantes epoch en ms; la zona oficial de la agenda es `America/Santiago` (`AGENDA_TIME_ZONE`).
-- `status` usa los literales de `APPOINTMENT_STATUS_VALUES`; la interfaz decide las acciones con `scheduled` y `rescheduled`.
+- `status` usa los literales de `APPOINTMENT_STATUS_VALUES`. Solo `scheduled` y `rescheduled` admiten acciones: el backend rechaza la descarga y la creación con `conflict` para el resto de los estados, y la interfaz oculta ambos botones.
 - `calendarAdded` es un booleano derivado de la referencia guardada. `calendarEventId` y `calendarEventAddedAt` son persistencia interna y no se exponen como identificadores al cliente.
 - `ics` y la descarga usan `{fileName, content}` con el nombre `atencion-programada.ics`. El contenido es texto RFC 5545 con CRLF, escape y plegado a 75 octetos.
 - `fallback.reason` solo distingue `not_connected` de `unavailable`. Nunca incluye la respuesta, encabezados, tokens ni el correo de Google.
@@ -53,7 +56,7 @@ El inicio institucional y el consentimiento de Calendar son dos pasos distintos 
 - La conexión de Calendar usa `linkSocial` con el alcance `calendar.events` y vuelve a la ruta de la atención con `?calendar=connected` o `?calendar=error`.
 - `accessType: "offline"` y `prompt: "select_account consent"` garantizan un refresh token para que la creación siga funcionando cuando el access token expire. El consentimiento de Calendar sigue siendo independiente porque su alcance solo viaja en la vinculación explícita.
 - Los tokens OAuth se guardan cifrados en reposo (`account.encryptOAuthTokens: true`) en el componente de autenticación. No se registran, no se devuelven al cliente y no se incluyen en el `.ics`.
-- Si la persona revoca el acceso desde su cuenta de Google, el backend recibe un fallo de token y responde `not_connected`; la interfaz ofrece volver a conectar y el `.ics` sigue disponible.
+- Si la persona revoca el acceso desde su cuenta de Google, el backend recibe un fallo de token y responde `not_connected`; la interfaz muestra que la conexión se perdió, ofrece «Volver a conectar Google Calendar» y conserva el `.ics` de las atenciones vigentes. El estado almacenado puede seguir diciendo «conectado» hasta ese intento, porque los alcances guardados no cambian al revocar el token.
 - Better Auth renueva el access token con el refresh token cuando está por expirar. Un refresh token ausente, revocado o inválido se traduce a `not_connected`, nunca a un error del proveedor.
 
 ## Configuración en Google Cloud
@@ -92,6 +95,7 @@ Solo nombres; ningún valor real pertenece al repositorio. Se configuran en el d
 - `DTSTAMP` sale del instante de creación de la atención, no del reloj de la consulta: dos descargas del mismo evento son idénticas.
 - La reserva se conserva aunque falle el guardado de la referencia o la llamada a Google. El identificador determinista permite recuperar el evento en el siguiente intento.
 - Los errores del proveedor se traducen a estados públicos (`not_connected`, `unavailable`) sin propagar cuerpos, encabezados ni credenciales.
+- Una atención no vigente responde `conflict` tanto al pedir el `.ics` como al intentar crear el evento; nunca se genera un `STATUS:CONFIRMED` para una atención cancelada, realizada o con inasistencia.
 
 ## Verificación end-to-end
 
@@ -104,8 +108,10 @@ La verificación real requiere una cuenta de Google de prueba autorizada y el pr
 5. Verifica que la pantalla vuelve con el aviso de conexión y que el botón de agregar aparece.
 6. Agrega la atención y confirma el evento en Google Calendar: título `Atención programada`, hora correcta en `America/Santiago`, sin descripción ni ubicación.
 7. Pulsa de nuevo «Agregar» (o recarga y repite): debe responder que ya estaba agregada y no debe crear un segundo evento.
-8. Revoca el acceso de la aplicación desde la cuenta de Google, recarga y confirma que el estado pasa a desconectado y que el `.ics` sigue disponible.
-9. Cierra el acompañamiento y confirma que las atenciones se ven en solo lectura, sin acciones de calendario.
+8. Revoca el acceso de la aplicación desde la cuenta de Google e intenta agregar una atención: debe responder que la conexión se perdió y ofrecer «Volver a conectar Google Calendar», sin ocultar el `.ics`.
+9. Pulsa «Volver a conectar Google Calendar», aprueba de nuevo el alcance y agrega una atención nueva: el evento debe crearse una sola vez.
+10. Marca una atención como cancelada o realizada y confirma que no ofrece agregar ni descargar; la API debe responder `conflict` si se intenta por fuera de la interfaz.
+11. Cierra el acompañamiento y confirma que las atenciones se ven en solo lectura, sin acciones de calendario.
 
 ## Diagnóstico de errores
 
@@ -117,8 +123,9 @@ La verificación real requiere una cuenta de Google de prueba autorizada y el pr
 | `invalid_scope`                              | El alcance `calendar.events` no está declarado en la pantalla de consentimiento | Agregarlo en la pantalla de consentimiento                 |
 | `403 accessNotConfigured`                    | Google Calendar API no está habilitada                                    | Habilitarla en la biblioteca del proyecto                        |
 | `403 insufficientPermissions`                | La cuenta vinculada no concedió `calendar.events`                        | Volver a conectar Google Calendar desde el detalle               |
-| La acción responde `fallback` con `not_connected` | No hay cuenta vinculada, falta el alcance o el token fue revocado    | Volver a conectar o descargar el `.ics`                          |
+| La acción responde `fallback` con `not_connected` | No hay cuenta vinculada, falta el alcance o el token fue revocado    | Volver a conectar Google Calendar o descargar el `.ics`                 |
 | La acción responde `fallback` con `unavailable` | Google no respondió o devolvió un error no recuperable                | Reintentar más tarde o descargar el `.ics`                       |
+| La acción o la descarga responden `conflict` | La atención está cancelada, realizada o con inasistencia               | No hay acción de calendario para ese estado                      |
 
 ## Archivos de referencia
 

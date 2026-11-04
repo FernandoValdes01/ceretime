@@ -72,11 +72,6 @@ export function appointmentStatusLabel(status: string): string {
   return APPOINTMENT_STATUS_LABELS[status] ?? status;
 }
 
-/** Estados con una atención futura que tiene sentido agregar al calendario. */
-export function isCalendarActionableStatus(status: string): boolean {
-  return status === "scheduled" || status === "rescheduled";
-}
-
 /**
  * Fecha y hora de una atención en la zona oficial de la agenda, sin depender
  * de la zona del navegador. Se muestra como texto, nunca solo con color.

@@ -11,6 +11,7 @@
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
+import type * as application_appointments_audit from "../application/appointments/audit.js";
 import type * as application_appointments_booking from "../application/appointments/booking.js";
 import type * as application_appointments_changes from "../application/appointments/changes.js";
 import type * as application_appointments_commands from "../application/appointments/commands.js";
@@ -35,6 +36,7 @@ import type * as domain_accompaniments_intern_access from "../domain/accompanime
 import type * as domain_accompaniments_practitioner_assignment from "../domain/accompaniments/practitioner_assignment.js";
 import type * as domain_accounts_enablement from "../domain/accounts/enablement.js";
 import type * as domain_appointments_appointment from "../domain/appointments/appointment.js";
+import type * as domain_appointments_audit from "../domain/appointments/audit.js";
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
 import type * as domain_authorization_permissions from "../domain/authorization/permissions.js";
 import type * as domain_availability_availability from "../domain/availability/availability.js";
@@ -54,6 +56,7 @@ import type * as http from "../http.js";
 import type * as infrastructure_accompaniments_repository from "../infrastructure/accompaniments/repository.js";
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as infrastructure_appointments_repository from "../infrastructure/appointments/repository.js";
+import type * as infrastructure_audit_repository from "../infrastructure/audit/repository.js";
 import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
 import type * as infrastructure_calendar_google_calendar from "../infrastructure/calendar/google_calendar.js";
 import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
@@ -85,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   "application/accompaniments/commands": typeof application_accompaniments_commands;
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accounts/enablement": typeof application_accounts_enablement;
+  "application/appointments/audit": typeof application_appointments_audit;
   "application/appointments/booking": typeof application_appointments_booking;
   "application/appointments/changes": typeof application_appointments_changes;
   "application/appointments/commands": typeof application_appointments_commands;
@@ -109,6 +113,7 @@ declare const fullApi: ApiFromModules<{
   "domain/accompaniments/practitioner_assignment": typeof domain_accompaniments_practitioner_assignment;
   "domain/accounts/enablement": typeof domain_accounts_enablement;
   "domain/appointments/appointment": typeof domain_appointments_appointment;
+  "domain/appointments/audit": typeof domain_appointments_audit;
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
   "domain/authorization/permissions": typeof domain_authorization_permissions;
   "domain/availability/availability": typeof domain_availability_availability;
@@ -128,6 +133,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/accompaniments/repository": typeof infrastructure_accompaniments_repository;
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "infrastructure/appointments/repository": typeof infrastructure_appointments_repository;
+  "infrastructure/audit/repository": typeof infrastructure_audit_repository;
   "infrastructure/availability/repository": typeof infrastructure_availability_repository;
   "infrastructure/calendar/google_calendar": typeof infrastructure_calendar_google_calendar;
   "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;

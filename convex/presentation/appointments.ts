@@ -26,6 +26,7 @@ import {
   accompanimentNeedsReader,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
+import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
 import {
   appointmentAgendaReader,
   appointmentCalendarReader,
@@ -75,6 +76,11 @@ import { unwrapApiResult } from "./session";
  * cuando el destino ya no existe o no es compatible. La respuesta de éxito es
  * la misma atención, sin datos de terceros.
  *
+ * Cada reserva o cambio exitoso deja su evento mínimo de auditoría (TI2-128)
+ * en la misma mutation; los errores abortan la mutation y no dejan evento. Las
+ * consultas no escriben, así que no auditan la lectura, y ninguna entrada de
+ * este archivo lee, edita ni borra la bitácora.
+ *
  * Las consultas entregan solo la vista que autoriza el servidor, `full` o
  * `minimized`, y nunca `studentId`, notas ni necesidades de acceso. Opera con
  * datos ficticios.
@@ -105,6 +111,7 @@ export const bookAppointment = mutation({
           needs: accompanimentNeedsReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           occupier: appointmentOccupier(ctx),
+          audit: appointmentAuditRecorder(ctx),
         },
         { ...slot, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
@@ -132,6 +139,7 @@ export const cancelAppointment = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          audit: appointmentAuditRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -168,6 +176,7 @@ export const rescheduleAppointment = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          audit: appointmentAuditRecorder(ctx),
           occupier: appointmentOccupier(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
@@ -204,6 +213,7 @@ export const recordAppointmentAttendance = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          audit: appointmentAuditRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -232,6 +242,19 @@ const appointmentProjectionValidator = v.union(
     status: appointmentStatusUnion,
     version,
     view: v.literal("full"),
+  }),
+  v.object({
+    id: v.string(),
+    accompanimentId: v.string(),
+    professionalId: v.string(),
+    modality: modalityUnion,
+    spaceId: v.optional(v.string()),
+    startAt: v.number(),
+    endAt: v.number(),
+    originalStartAt: v.optional(v.number()),
+    status: appointmentStatusUnion,
+    version,
+    view: v.literal("shared"),
   }),
   v.object({
     id: v.string(),
@@ -277,7 +300,7 @@ export const listAppointments = query({
   },
 });
 
-/** Detalle de una atención con la vista de su acompañamiento. */
+/** Detalle de una atención con la vista de `appointment:read`. */
 export const getAppointment = query({
   args: { appointmentId: v.string(), version },
   returns: appointmentProjectionValidator,

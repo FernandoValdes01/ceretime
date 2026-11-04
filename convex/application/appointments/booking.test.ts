@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import type { AppointmentAuditEvent } from "../../domain/appointments/audit";
 import { AVAILABILITY_CONTRACT_VERSION } from "../../domain/availability/availability";
 import type { ApiResult } from "../../domain/errors/api_error";
 import type { AccessNeed } from "../../domain/requests/request";
@@ -17,6 +18,7 @@ import type {
   StoredAvailabilityBlock,
   StoredAvailabilityException,
 } from "../availability/ports";
+import type { AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotInput, OccupySlotResult } from "./occupancy";
 import { bookAppointment, type BookAppointmentDeps, type BookAppointmentInput } from "./booking";
 
@@ -234,7 +236,23 @@ function bookingDeps(
     needs: fakeNeeds([]),
     compatibility: fakeCompatibility(),
     occupier: fakeOccupier(),
+    audit: fakeAudit(),
+    now: () => BOOKED_AT,
     ...overrides,
+  };
+}
+
+/** Instante fijo del servidor para el evento de auditoría de la reserva. */
+const BOOKED_AT = Date.UTC(2026, 9, 1, 12);
+
+/** Puerto de auditoría en memoria: guarda lo que el caso de uso registra. */
+function fakeAudit(): AppointmentAuditRecorder & { readonly events: AppointmentAuditEvent[] } {
+  const events: AppointmentAuditEvent[] = [];
+  return {
+    events,
+    recordAppointmentAudit: async (event) => {
+      events.push(event);
+    },
   };
 }
 
@@ -521,5 +539,54 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
     expect(await bookAppointment(deps, bookingInput({ timeZone: "No/Existe" }))).toEqual(CONFLICT);
     expect(await bookAppointment(deps, bookingInput({ modality: "inPerson" }))).toEqual(CONFLICT);
     expect(occupier.calls).toHaveLength(0);
+  });
+});
+
+describe("auditoría de la reserva (TI2-128)", () => {
+  test("la reserva exitosa registra un evento con actor de sesión y reloj del servidor", async () => {
+    const audit = fakeAudit();
+    const deps = bookingDeps(authorizedAuth(), { audit });
+
+    expect(await bookAppointment(deps, bookingInput())).toEqual({
+      status: "ok",
+      data: { appointmentId: "appointment-1" },
+    });
+    expect(audit.events).toEqual([
+      {
+        action: "booked",
+        actorId: "user-student",
+        appointmentId: "appointment-1",
+        result: "scheduled",
+        occurredAt: BOOKED_AT,
+      },
+    ]);
+  });
+
+  test("una denegación, un conflicto de ocupación o una entrada inválida no registran evento", async () => {
+    const audit = fakeAudit();
+    const conflicted = fakeOccupier({
+      status: "error",
+      error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
+    });
+
+    expect(
+      await bookAppointment(
+        bookingDeps(authorizedAuth(), { audit }),
+        bookingInput({ tokenIdentifier: null }),
+      ),
+    ).toEqual(DENIED);
+    expect(
+      await bookAppointment(
+        bookingDeps(authorizedAuth(), { audit, occupier: conflicted }),
+        bookingInput(),
+      ),
+    ).toEqual(CONFLICT);
+    expect(
+      await bookAppointment(
+        bookingDeps(authorizedAuth(), { audit }),
+        bookingInput({ accompanimentId: " " }),
+      ),
+    ).toEqual(CONFLICT);
+    expect(audit.events).toHaveLength(0);
   });
 });

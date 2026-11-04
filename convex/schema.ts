@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import {
   accompanimentStatusUnion,
   accountStatusUnion,
+  appointmentAuditActionUnion,
   appointmentStatusUnion,
   assignmentRoleUnion,
   assignmentStatusUnion,
@@ -328,6 +329,26 @@ export default defineSchema({
     .index("by_recipientId_and_occurredAt", ["recipientId", "occurredAt"])
     // Eventos de la atención en orden de ocurrencia.
     .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"]),
+
+  // Tabla 'appointmentAuditEvents': bitácora append-only de cambios de agenda
+  // (TI2-128). Cada fila guarda solo la acción, el actor resuelto desde la
+  // identidad de la sesión, la atención, el estado resultante y el instante
+  // del servidor, en la misma transacción del cambio. No guarda motivos,
+  // notas ni nombres: `requestTransitions` no equivale porque contiene
+  // `reason`. Solo la escribe `convex/infrastructure/audit/repository.ts`, no
+  // existe entrada pública para leerla, editarla ni borrarla y los rechazos
+  // no se registran porque abortan la mutation.
+  appointmentAuditEvents: defineTable({
+    action: appointmentAuditActionUnion,
+    actorId: v.id("users"),
+    appointmentId: v.id("appointments"),
+    result: appointmentStatusUnion,
+    occurredAt: v.number(),
+  })
+    // Historial de la atención en orden de ocurrencia.
+    .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"])
+    // Cambios hechos por un actor en orden de ocurrencia.
+    .index("by_actorId_and_occurredAt", ["actorId", "occurredAt"]),
 
   // Tabla 'followUpRecords': registro de seguimiento posterior a una atención
   // (forma de TI2-106, persistida por TI2-118), como máximo uno por atención.

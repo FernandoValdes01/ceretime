@@ -21,5 +21,7 @@ export function downloadCalendarFile(file: DownloadableCalendarFile): void {
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Algunos navegadores cancelan la descarga si el objeto se libera en el
+  // mismo turno del clic; la revocación se difiere un turno.
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
