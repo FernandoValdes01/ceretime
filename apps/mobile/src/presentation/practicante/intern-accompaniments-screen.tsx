@@ -2,7 +2,7 @@ import { router } from "expo-router";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import type { ReactNode } from "react";
 
-import type { InternAccompaniment } from "../../application/intern-accompaniment-models";
+import type { InternAccompaniment } from "../../domain/intern-accompaniment-models";
 import { mobileDependencies } from "../../composition/mobile-dependencies";
 import { AppIcon } from "../components/app-icon";
 import { RoleHome } from "../components/role-home";

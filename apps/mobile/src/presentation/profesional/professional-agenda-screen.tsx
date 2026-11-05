@@ -6,13 +6,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type {
   ProfessionalAgendaAppointmentViewModel,
   ProfessionalAgendaAppointmentColor,
-} from "@/application/professional-agenda-view-models";
+} from "@/domain/professional-agenda-view-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { AccessDeniedNotice } from "@/presentation/components/role-home";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { useNavigationSession } from "@/presentation/navigation/session";
 import { useProfessionalAgendaContext } from "./professional-agenda-provider";
-import { ProfessionalHeader } from "./professional-header";
+import { AppHeader } from "@/presentation/components/app-header";
 
 const appointmentColors: Record<ProfessionalAgendaAppointmentColor, string> = {
   teal: "#078B7B",
@@ -172,7 +172,7 @@ export function ProfessionalAgendaScreen() {
   return (
     <StudentFonts>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-        <ProfessionalHeader />
+        <AppHeader />
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.content}

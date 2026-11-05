@@ -1,10 +1,8 @@
 import { useCallback } from "react";
 
-import type { ProfessionalAccompaniment } from "@/application/professional-accompaniment-models";
-import {
-  isProfessionalAccompanimentAccessDeniedError,
-  type ProfessionalAccompanimentReader,
-} from "@/application/professional-accompaniment-port";
+import type { ProfessionalAccompaniment } from "@/domain/professional-accompaniment-models";
+import { isProfessionalAccompanimentAccessDeniedError } from "@/domain/professional-accompaniment-models";
+import type { ProfessionalAccompanimentReader } from "@/application/professional-accompaniment-port";
 
 import { useAsyncResource } from "./use-async-resource";
 import { isMobileAccessDenied, toMobileOperationError } from "../to-mobile-operation-error";

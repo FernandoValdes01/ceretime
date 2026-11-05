@@ -1,7 +1,7 @@
 import { router } from "expo-router";
 import { useEffect, type PropsWithChildren } from "react";
 
-import type { AuthRole } from "../../application/auth-models";
+import type { AuthRole } from "../../domain/auth-models";
 import { getRoleHome } from "./roles";
 import { useNavigationSession } from "./session";
 import { Screen } from "../components/screen";

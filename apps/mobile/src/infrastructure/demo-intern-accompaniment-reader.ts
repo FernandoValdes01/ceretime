@@ -1,7 +1,5 @@
-import {
-  InternAccompanimentAccessDeniedError,
-  type InternAccompanimentReader,
-} from "../application/intern-accompaniment-port";
+import { InternAccompanimentAccessDeniedError } from "../domain/intern-accompaniment-models";
+import type { InternAccompanimentReader } from "../application/intern-accompaniment-port";
 import { demoInternAccompanimentsByIntern } from "./demo-intern-accompaniment-data";
 
 export type DemoInternAccompanimentMode = "success" | "empty" | "error";

@@ -4,7 +4,7 @@ import type {
   ProfessionalRequestAction,
   ProfessionalRequestActionReceipt,
   ProfessionalActionDetails,
-} from "./professional-review-models";
+} from "../domain/professional-review-models";
 
 export interface ProfessionalReviewReader {
   readProfessionalRequests(): Promise<readonly ProfessionalRequest[]>;

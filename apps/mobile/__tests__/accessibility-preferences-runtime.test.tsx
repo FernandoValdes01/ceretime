@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
-} from "@/application/accessibility-preferences-models";
+} from "@/domain/accessibility-preferences-models";
 import type { AccessibilityPreferencesPort } from "@/application/accessibility-preferences-port";
 import {
   AccessibilityPreferencesProvider,

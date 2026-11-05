@@ -1,6 +1,6 @@
 import { View } from "react-native";
 
-import type { StudentRequestStatus } from "@/application/student-area-models";
+import type { StudentRequestStatus } from "@/domain/student-area-models";
 import { AppIcon, type AppIconName } from "../components/app-icon";
 import { StudentText } from "./student-text";
 

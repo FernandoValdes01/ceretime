@@ -5,7 +5,7 @@ import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
   ProfessionalRequestActionReceipt,
-} from "../application/professional-review-models";
+} from "../domain/professional-review-models";
 import type { ProfessionalReviewPort } from "../application/professional-review-port";
 import type { DemoProfessionalAccompanimentStore } from "./demo-professional-accompaniment-data";
 import type { DemoStudentAreaStore } from "./demo-student-area-store";

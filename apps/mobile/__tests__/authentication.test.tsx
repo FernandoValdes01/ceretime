@@ -2,7 +2,7 @@ import path from "node:path";
 import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react-native";
 import type { PropsWithChildren } from "react";
 import { renderRouter } from "expo-router/testing-library";
-import type { AuthSession } from "../src/application/auth-models";
+import type { AuthSession } from "../src/domain/auth-models";
 import type { AuthPort } from "../src/application/auth-port";
 import {
   createDemoAuthAdapter,

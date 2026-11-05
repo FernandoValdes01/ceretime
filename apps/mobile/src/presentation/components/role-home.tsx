@@ -1,7 +1,7 @@
 import { View, StyleSheet } from "react-native";
 import type { PropsWithChildren } from "react";
 
-import type { AuthRole } from "../../application/auth-models";
+import type { AuthRole } from "../../domain/auth-models";
 import { useNavigationSession } from "../navigation/session";
 import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { Action, Screen } from "./screen";

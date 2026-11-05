@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { InternAccount } from "../../application/administrator-account-models";
+import type { InternAccount } from "../../domain/administrator-account-models";
 import type { AdministratorAccountsPort } from "../../application/administrator-accounts-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
 

@@ -4,8 +4,8 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-
 import { renderRouter } from "expo-router/testing-library";
 import { AccessibilityInfo } from "react-native";
 
-import type { InternAccompaniment } from "../src/application/intern-accompaniment-models";
-import { InternAccompanimentAccessDeniedError } from "../src/application/intern-accompaniment-port";
+import type { InternAccompaniment } from "../src/domain/intern-accompaniment-models";
+import { InternAccompanimentAccessDeniedError } from "../src/domain/intern-accompaniment-models";
 import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { createDemoInternAccompanimentReader } from "../src/infrastructure/demo-intern-accompaniment-reader";
 import { InternAccompanimentsContent } from "../src/presentation/practicante/intern-accompaniments-screen";

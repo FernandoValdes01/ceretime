@@ -1,8 +1,6 @@
-import type { ProfessionalAccompaniment } from "../application/professional-accompaniment-models";
-import {
-  ProfessionalAccompanimentAccessDeniedError,
-  type ProfessionalAccompanimentReader,
-} from "../application/professional-accompaniment-port";
+import type { ProfessionalAccompaniment } from "../domain/professional-accompaniment-models";
+import { ProfessionalAccompanimentAccessDeniedError } from "../domain/professional-accompaniment-models";
+import type { ProfessionalAccompanimentReader } from "../application/professional-accompaniment-port";
 import {
   createDemoProfessionalAccompanimentStore,
   type DemoProfessionalAccompanimentStore,

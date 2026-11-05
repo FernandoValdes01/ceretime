@@ -13,7 +13,7 @@ import {
   mapStudentSubmissionToCreateRequest,
 } from "../src/infrastructure/backend-contract-mappers";
 import { toMobileOperationError } from "../src/presentation/to-mobile-operation-error";
-import type { SubmitStudentRequestCommand } from "../src/application/student-area-models";
+import type { SubmitStudentRequestCommand } from "../src/domain/student-area-models";
 
 const requestId = "SOL-DEMO-001" as Id<"requests">;
 const studentId = "users:student-demo-1" as Id<"users">;

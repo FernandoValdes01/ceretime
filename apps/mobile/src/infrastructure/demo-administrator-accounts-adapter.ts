@@ -1,6 +1,6 @@
-import type { InternAccount } from "../application/administrator-account-models";
+import type { InternAccount } from "../domain/administrator-account-models";
 import type { AdministratorAccountsPort } from "../application/administrator-accounts-port";
-import { LocalOperationError } from "../application/operation-error";
+import { LocalOperationError } from "../domain/operation-error";
 
 const demoInternAccounts: readonly InternAccount[] = [
   {

@@ -2,7 +2,7 @@
 import type {
   AccessibilityPreferences,
   ToggleSetting,
-} from "../../application/accessibility-preferences-models";
+} from "../../domain/accessibility-preferences-models";
 
 export interface SystemAccessibilitySettings {
   readonly fontScale: number;

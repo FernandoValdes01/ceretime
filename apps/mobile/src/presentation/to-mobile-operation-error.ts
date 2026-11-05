@@ -1,5 +1,5 @@
 import { API_ERROR_MESSAGES, isApiErrorCode } from "../../../../convex/domain/errors/api_error";
-import { LocalOperationError } from "../application/operation-error";
+import { LocalOperationError } from "../domain/operation-error";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

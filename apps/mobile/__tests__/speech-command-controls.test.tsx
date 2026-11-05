@@ -1,4 +1,4 @@
-import { defaultAccessibilityPreferences } from "@/application/accessibility-preferences-models";
+import { defaultAccessibilityPreferences } from "@/domain/accessibility-preferences-models";
 import { AccessibilityPreferencesProvider } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import type { SpeechRecognitionPort, SpeechRecognitionResult } from "@/application/speech-port";

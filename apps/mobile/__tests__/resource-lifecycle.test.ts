@@ -1,12 +1,12 @@
 import { StrictMode } from "react";
 import { ConvexError } from "convex/values";
 import { act, renderHook, waitFor } from "@testing-library/react-native";
-import type { ProfessionalAgendaDayViewModel } from "@/application/professional-agenda-view-models";
-import type { ProfessionalAccompaniment } from "@/application/professional-accompaniment-models";
+import type { ProfessionalAgendaDayViewModel } from "@/domain/professional-agenda-view-models";
+import type { ProfessionalAccompaniment } from "@/domain/professional-accompaniment-models";
 import type { ProfessionalAccompanimentReader } from "@/application/professional-accompaniment-port";
-import type { InternAccompaniment } from "@/application/intern-accompaniment-models";
+import type { InternAccompaniment } from "@/domain/intern-accompaniment-models";
 import type { InternAccompanimentReader } from "@/application/intern-accompaniment-port";
-import { InternAccompanimentAccessDeniedError } from "@/application/intern-accompaniment-port";
+import { InternAccompanimentAccessDeniedError } from "@/domain/intern-accompaniment-models";
 import { createDemoProfessionalAccompanimentReader } from "@/infrastructure/demo-professional-accompaniment-reader";
 import { createDemoInternAccompanimentReader } from "@/infrastructure/demo-intern-accompaniment-reader";
 import { demoProfessionalAgenda } from "@/infrastructure/demo-professional-agenda-data";

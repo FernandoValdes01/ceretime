@@ -5,7 +5,7 @@ import type {
   StudentAreaSnapshot,
   StudentIdentity,
   StudentRequest,
-} from "../../application/student-area-models";
+} from "../../domain/student-area-models";
 import type { StudentAreaReader } from "../../application/student-area-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
 

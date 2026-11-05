@@ -5,7 +5,7 @@ import type {
   Accompaniment,
   StudentAreaSnapshot,
   StudentRequest,
-} from "../../application/student-area-models";
+} from "../../domain/student-area-models";
 import type { StudentAreaReader } from "../../application/student-area-port";
 import { createDemoStudentAreaReader } from "../../infrastructure/demo-student-area-reader";
 import { useStudentArea } from "./use-student-area";

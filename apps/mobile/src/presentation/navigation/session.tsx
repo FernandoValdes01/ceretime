@@ -8,7 +8,7 @@ import {
   type PropsWithChildren,
 } from "react";
 
-import type { AuthCredentials, AuthRole, AuthSession } from "../../application/auth-models";
+import type { AuthCredentials, AuthRole, AuthSession } from "../../domain/auth-models";
 import type { AuthPort } from "../../application/auth-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
 

@@ -1,5 +1,5 @@
 // Puerto de lectura y escritura de las preferencias; lo implementa el adaptador de AsyncStorage.
-import type { AccessibilityPreferences } from "./accessibility-preferences-models";
+import type { AccessibilityPreferences } from "../domain/accessibility-preferences-models";
 
 export type AccessibilityPreferencesError = "read-failed" | "write-failed" | "invalid-preferences";
 

@@ -4,7 +4,7 @@ import {
   createDemoDataDependencies,
   mobileDependencies,
 } from "../src/composition/mobile-dependencies";
-import type { SubmitStudentRequestCommand } from "../src/application/student-area-models";
+import type { SubmitStudentRequestCommand } from "../src/domain/student-area-models";
 import { createDemoProfessionalAgenda } from "../src/infrastructure/demo-professional-agenda-data";
 import { fillRequiredStudentRequestFields } from "./student-request-test-helpers";
 

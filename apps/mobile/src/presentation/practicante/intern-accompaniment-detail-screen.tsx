@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type { InternAccompaniment } from "../../application/intern-accompaniment-models";
+import type { InternAccompaniment } from "../../domain/intern-accompaniment-models";
 import { mobileDependencies } from "../../composition/mobile-dependencies";
 import { AppHeader } from "../components/app-header";
 import { StudentText } from "../estudiante/student-text";

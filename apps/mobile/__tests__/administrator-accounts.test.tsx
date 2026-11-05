@@ -1,4 +1,4 @@
-import type { InternAccount } from "@/application/administrator-account-models";
+import type { InternAccount } from "@/domain/administrator-account-models";
 import type { AdministratorAccountsPort } from "@/application/administrator-accounts-port";
 import { mobileDependencies } from "@/composition/mobile-dependencies";
 import { createDemoAdministratorAccountsAdapter } from "@/infrastructure/demo-administrator-accounts-adapter";

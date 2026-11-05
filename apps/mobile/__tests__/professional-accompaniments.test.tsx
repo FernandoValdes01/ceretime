@@ -3,8 +3,8 @@ import { router } from "expo-router";
 import { act, render } from "@testing-library/react-native";
 import { fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 
-import type { ProfessionalAccompaniment } from "../src/application/professional-accompaniment-models";
-import { ProfessionalAccompanimentAccessDeniedError } from "../src/application/professional-accompaniment-port";
+import type { ProfessionalAccompaniment } from "../src/domain/professional-accompaniment-models";
+import { ProfessionalAccompanimentAccessDeniedError } from "../src/domain/professional-accompaniment-models";
 import { createDemoProfessionalAccompanimentReader } from "../src/infrastructure/demo-professional-accompaniment-reader";
 import {
   createDemoProfessionalAccompanimentStore,

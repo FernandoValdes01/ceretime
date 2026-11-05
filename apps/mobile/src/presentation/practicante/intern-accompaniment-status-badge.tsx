@@ -1,6 +1,6 @@
 import { StyleSheet, View } from "react-native";
 
-import type { InternAccompanimentStatus } from "../../application/intern-accompaniment-models";
+import type { InternAccompanimentStatus } from "../../domain/intern-accompaniment-models";
 import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { AppIcon } from "../components/app-icon";
 import {

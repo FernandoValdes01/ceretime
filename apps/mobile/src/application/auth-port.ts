@@ -1,4 +1,4 @@
-import type { AuthCredentials, AuthSession } from "./auth-models";
+import type { AuthCredentials, AuthSession } from "../domain/auth-models";
 
 // Puerto del inicio de sesión. Hoy lo implementa `createDemoAuthAdapter`, local y ficticio; un adaptador
 // real puede reemplazarlo sin tocar la presentación ni la navegación.

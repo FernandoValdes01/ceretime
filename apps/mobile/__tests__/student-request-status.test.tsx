@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react-native";
 
-import type { StudentRequestStatus } from "@/application/student-area-models";
+import type { StudentRequestStatus } from "@/domain/student-area-models";
 import {
   getStudentRequestStatusPresentation,
   StudentRequestStatusIndicator,

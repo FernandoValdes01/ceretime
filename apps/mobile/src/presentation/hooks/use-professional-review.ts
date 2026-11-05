@@ -4,7 +4,7 @@ import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
   ProfessionalActionDetails,
-} from "../../application/professional-review-models";
+} from "../../domain/professional-review-models";
 import type { ProfessionalReviewPort } from "../../application/professional-review-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
 

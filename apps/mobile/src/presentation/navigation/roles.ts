@@ -1,4 +1,4 @@
-import type { AuthRole } from "../../application/auth-models";
+import type { AuthRole } from "../../domain/auth-models";
 
 // Identificadores locales de la navegación simulada, no contratos del backend.
 export const roles = [

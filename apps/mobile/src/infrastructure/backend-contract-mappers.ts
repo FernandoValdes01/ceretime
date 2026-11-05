@@ -5,12 +5,12 @@ import type {
   StudentRequest,
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
-} from "../application/student-area-models";
+} from "../domain/student-area-models";
 import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
   ProfessionalActionDetails,
-} from "../application/professional-review-models";
+} from "../domain/professional-review-models";
 import { ACCESS_NEEDS_MAX_LENGTH } from "./backend-contracts";
 import type {
   AcceptRequestArgs,

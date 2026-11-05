@@ -1,5 +1,8 @@
 // Puerto con que el Administrador lista y habilita cuentas de Practicante.
-import type { InternAccount, InternAccountEnablementReceipt } from "./administrator-account-models";
+import type {
+  InternAccount,
+  InternAccountEnablementReceipt,
+} from "../domain/administrator-account-models";
 
 export interface AdministratorAccountsPort {
   readInternAccounts(): Promise<readonly InternAccount[]>;

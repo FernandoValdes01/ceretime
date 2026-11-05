@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react-native";
 import type {
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
-} from "@/application/student-area-models";
+} from "@/domain/student-area-models";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import { useSubmitStudentRequest } from "@/presentation/hooks/use-submit-student-request";
 

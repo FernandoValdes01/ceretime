@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type { InternAccount } from "@/application/administrator-account-models";
+import type { InternAccount } from "@/domain/administrator-account-models";
 import { useOptionalAccessibilityPreferences } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { AppHeader } from "@/presentation/components/app-header";
 import { AppIcon } from "@/presentation/components/app-icon";

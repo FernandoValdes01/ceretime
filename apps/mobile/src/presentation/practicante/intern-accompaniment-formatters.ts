@@ -1,4 +1,4 @@
-import type { InternAccompanimentStatus } from "../../application/intern-accompaniment-models";
+import type { InternAccompanimentStatus } from "../../domain/intern-accompaniment-models";
 import type { AppIconName } from "../components/app-icon";
 
 export const internAccompanimentStatusLabels: Record<InternAccompanimentStatus, string> = {

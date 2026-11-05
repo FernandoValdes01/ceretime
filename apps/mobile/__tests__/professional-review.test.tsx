@@ -6,7 +6,7 @@ import { AccessibilityInfo } from "react-native";
 
 import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { createDemoProfessionalReviewAdapter } from "../src/infrastructure/demo-professional-review-adapter";
-import type { ProfessionalRequest } from "../src/application/professional-review-models";
+import type { ProfessionalRequest } from "../src/domain/professional-review-models";
 import type { ProfessionalReviewPort } from "../src/application/professional-review-port";
 import { useProfessionalReview } from "../src/presentation/hooks/use-professional-review";
 import { formatAvailability } from "../src/presentation/profesional/professional-request-detail-screen";

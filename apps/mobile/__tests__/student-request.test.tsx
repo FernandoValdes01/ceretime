@@ -4,7 +4,7 @@ import { render } from "@testing-library/react-native";
 import type {
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
-} from "@/application/student-area-models";
+} from "@/domain/student-area-models";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import { createDemoStudentRequestSubmitter } from "@/infrastructure/demo-student-request-submitter";
 import { RequestForm } from "@/presentation/estudiante/request-form";

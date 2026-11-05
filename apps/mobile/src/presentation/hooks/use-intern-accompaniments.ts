@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import type { InternAccompaniment } from "../../application/intern-accompaniment-models";
+import type { InternAccompaniment } from "../../domain/intern-accompaniment-models";
 import type { InternAccompanimentReader } from "../../application/intern-accompaniment-port";
 
 import { useAsyncResource } from "./use-async-resource";

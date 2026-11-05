@@ -3,9 +3,9 @@ import type {
   AuthRole,
   AuthSession,
   AuthenticatedUser,
-} from "../application/auth-models";
+} from "../domain/auth-models";
 import type { AuthPort } from "../application/auth-port";
-import { LocalOperationError } from "../application/operation-error";
+import { LocalOperationError } from "../domain/operation-error";
 import { demoInternAccompanimentsByIntern } from "./demo-intern-accompaniment-data";
 
 export const demoAuthCredentials = {

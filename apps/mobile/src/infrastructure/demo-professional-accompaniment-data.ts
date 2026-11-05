@@ -1,4 +1,4 @@
-import type { ProfessionalAccompaniment } from "../application/professional-accompaniment-models";
+import type { ProfessionalAccompaniment } from "../domain/professional-accompaniment-models";
 
 /** Datos ficticios del conjunto autorizado que ve el Profesional actual. */
 export const demoProfessionalAccompaniments: readonly ProfessionalAccompaniment[] = [

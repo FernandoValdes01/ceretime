@@ -8,7 +8,7 @@ import {
   defaultAccessibilityPreferences,
   isAccessibilityPreferences,
   type AccessibilityPreferences,
-} from "@/application/accessibility-preferences-models";
+} from "@/domain/accessibility-preferences-models";
 import type { AccessibilityPreferencesPort } from "@/application/accessibility-preferences-port";
 import {
   accessibilityPreferencesStorageKey,

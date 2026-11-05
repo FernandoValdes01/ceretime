@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type Ref } from "react";
-import { AccessibilityInfo, Keyboard, Pressable, TextInput, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, Keyboard, TextInput, View } from "react-native";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import type {
-  AccessNeed,
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
-} from "@/application/student-area-models";
+} from "@/domain/student-area-models";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import {
   useSubmitStudentRequest,
@@ -13,8 +12,18 @@ import {
 } from "@/presentation/hooks/use-submit-student-request";
 import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { StudentAction } from "./student-screen";
-import { StudentText as Text, useStudentFont } from "./student-text";
-import { AppIcon } from "../components/app-icon";
+import { StudentText as Text } from "./student-text";
+import { studentRequestSubmissionMessages } from "./student-request-submission-messages";
+import {
+  AccessStep,
+  AvailabilityStep,
+  InformationStep,
+  NeedStep,
+  ReviewStep,
+  type RequestChoiceGroup,
+  type RequestTextFieldBinding,
+  type RequestTextFieldKey,
+} from "./request-form-steps";
 import {
   initialRequestValues,
   getRequestFormStepForField,
@@ -26,26 +35,6 @@ import {
   type RequestFormValues,
 } from "./request-form-state";
 
-const accessOptions: readonly AccessNeed[] = [
-  { id: "written-communication", label: "Comunicación escrita" },
-  { id: "sign-language-interpreter", label: "Intérprete de lengua de señas" },
-  { id: "physically-accessible-room", label: "Sala físicamente accesible" },
-  { id: "reduced-stimulation", label: "Reducción de estímulos" },
-  { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
-  { id: "support-person", label: "Persona de apoyo" },
-];
-const weekdays = [
-  { label: "Lunes", value: 1 },
-  { label: "Martes", value: 2 },
-  { label: "Miércoles", value: 3 },
-  { label: "Jueves", value: 4 },
-  { label: "Viernes", value: 5 },
-  { label: "Sábado", value: 6 },
-  { label: "Domingo", value: 0 },
-] as const;
-const weekdayLabelByValue = new Map<number, string>(
-  weekdays.map(({ label, value }) => [value, label]),
-);
 const stepTitles: Record<RequestFormStepId, string> = {
   need: "Cuéntanos qué necesitas",
   access: "Necesidades de acceso",
@@ -60,59 +49,6 @@ const stepDescriptions: Record<RequestFormStepId, string> = {
   information: "Elige cómo prefieres que CERETI se comunique contigo.",
   review: "Confirma que los datos estén correctos antes de enviar la solicitud.",
 };
-
-function Choice({
-  label,
-  selected,
-  onPress,
-  single = false,
-  controlRef,
-  disabled = false,
-  error,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-  single?: boolean;
-  controlRef?: Ref<View>;
-  disabled?: boolean;
-  error?: string;
-}) {
-  return (
-    <Pressable
-      ref={controlRef}
-      tabIndex={disabled ? -1 : 0}
-      accessibilityRole={single ? "radio" : "checkbox"}
-      accessibilityLabel={error ? `${label}. Error: ${error}` : label}
-      accessibilityState={{ checked: selected, disabled }}
-      onPress={onPress}
-      disabled={disabled}
-      className={`min-h-[52px] flex-row items-center gap-2 p-2 border-2 rounded-lg active:opacity-75 focus:border-student-focus ${disabled ? "opacity-60" : ""} ${selected ? "border-student-primary bg-student-muted" : "border-student-border bg-student-surface"}`}
-      style={{ borderCurve: "continuous" }}
-    >
-      <View
-        accessible={false}
-        className={`w-6 h-6 border-2 items-center justify-center ${single ? "rounded-full" : "rounded"} ${selected ? "border-student-primary bg-student-primary" : "border-student-outline"}`}
-        style={single ? undefined : { borderCurve: "continuous" }}
-      >
-        {selected ? <AppIcon accessible={false} name="check" color="#FFFFFF" size={16} /> : null}
-      </View>
-      <Text className="text-student-text text-base leading-[26px] shrink">{label}</Text>
-    </Pressable>
-  );
-}
-
-function ErrorText({ message }: { message?: string }) {
-  return message ? (
-    <Text
-      selectable
-      accessibilityRole="alert"
-      className="text-student-error text-base leading-[26px]"
-    >
-      {message}
-    </Text>
-  ) : null;
-}
 
 // Convierte el borrador editable en el comando de envío; solo se llama después de validar el formulario.
 function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCommand {
@@ -139,10 +75,8 @@ function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCom
 }
 
 function submissionAnnouncement(status: StudentRequestSubmissionStatus): string | null {
-  if (status === "submitting") return "Enviando solicitud ficticia.";
-  if (status === "error") return "No pudimos enviar la solicitud ficticia. Puedes reintentar.";
-  if (status === "success") return "Solicitud ficticia enviada.";
-  return null;
+  if (status === "idle") return null;
+  return studentRequestSubmissionMessages[status];
 }
 
 function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubmissionReceipt }) {
@@ -197,8 +131,6 @@ export function RequestForm({
   onRevealGroup,
   submitter,
 }: RequestFormProps) {
-  const fontFamily = useStudentFont();
-  const [focusedField, setFocusedField] = useState<keyof RequestFormValues | null>(null);
   const [values, setValues] = useState<RequestFormValues>(initialRequestValues);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [validatedSteps, setValidatedSteps] = useState<RequestFormStepId[]>([]);
@@ -330,109 +262,31 @@ export function RequestForm({
     );
   }
 
-  // Campo de texto con etiqueta, ayuda y error anunciados en un solo label accesible.
-  function field(
-    key:
-      | "needSummary"
-      | "expectedOutcome"
-      | "otherAccessNeed"
-      | "availableFrom"
-      | "availableTo"
-      | "preferredAccessibleInformationChannel",
-    label: string,
-    hint: string,
-    multiline = false,
-  ) {
-    const borderClass =
-      focusedField === key
-        ? "border-student-focus"
-        : errors[key]
-          ? "border-student-error"
-          : "border-student-outline";
-    return (
-      <View className="gap-2">
-        <Text
-          weight="semibold"
-          nativeID={`${key}-label`}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          className="text-student-text text-lg leading-[26px]"
-        >
-          {label}
-        </Text>
-        <Text
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          className="text-student-secondary text-base leading-[26px]"
-        >
-          {hint}
-        </Text>
-        <TextInput
-          ref={(input) => {
-            inputs.current[key] = input;
-          }}
-          accessibilityLabel={errors[key] ? `${label}. Error: ${errors[key]}` : label}
-          accessibilityHint={hint}
-          aria-invalid={Boolean(errors[key])}
-          aria-describedby={errors[key] ? `${key}-error` : undefined}
-          value={values[key]}
-          onChangeText={(value) => update(key, value)}
-          onFocus={(event) => {
-            setFocusedField(key);
-            onFieldFocus?.(event.nativeEvent.target);
-          }}
-          onBlur={() => {
-            setFocusedField(null);
-          }}
-          editable={!isSubmitting}
-          accessibilityState={{ disabled: isSubmitting }}
-          multiline={multiline}
-          className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${isSubmitting ? "opacity-60" : ""} ${multiline ? "min-h-28" : "min-h-[52px]"} ${borderClass}`}
-          style={{ fontFamily, borderCurve: "continuous" }}
-          textAlignVertical={multiline ? "top" : "center"}
-          autoCapitalize={key.startsWith("available") ? "none" : "sentences"}
-        />
-        {errors[key] && (
-          <Text
-            selectable
-            nativeID={`${key}-error`}
-            accessibilityRole="alert"
-            className="text-student-error text-base leading-[26px]"
-          >
-            {errors[key]}
-          </Text>
-        )}
-      </View>
-    );
+  // Conecta cada campo de texto con el estado del formulario y registra su input para enfocarlo.
+  function bindField(key: RequestTextFieldKey): RequestTextFieldBinding {
+    return {
+      fieldKey: key,
+      value: values[key],
+      error: errors[key],
+      disabled: isSubmitting,
+      onChangeText: (value) => update(key, value),
+      onFocus: onFieldFocus,
+      inputRef: (input) => {
+        inputs.current[key] = input;
+      },
+    };
   }
 
-  // Textos del paso de revisión.
-  const preferredWeekdays = values.preferredWeekdays
-    .flatMap((day) => {
-      const label = weekdayLabelByValue.get(day);
-      return label ? [label] : [];
-    })
-    .join(", ");
-  const accessNeedsSummary = [
-    ...values.accessNeeds.map(({ label }) => label),
-    ...(values.otherAccessNeed.trim() ? [values.otherAccessNeed.trim()] : []),
-  ].join(", ");
-  const timeRangeSummary = values.availableFrom.trim()
-    ? `${values.availableFrom.trim()} a ${values.availableTo.trim()}`
-    : "Sin preferencia de horario";
-
-  function summaryItem(label: string, value: string) {
-    return (
-      <View key={label} className="gap-1 border-b border-student-border py-3">
-        <Text weight="semibold" className="text-student-secondary text-base leading-[26px]">
-          {label}
-        </Text>
-        <Text selectable className="text-student-text text-lg leading-[29px]">
-          {value}
-        </Text>
-      </View>
-    );
-  }
+  const choiceStepProps = {
+    values,
+    errors,
+    disabled: isSubmitting,
+    update,
+    bindField,
+    onGroupLayout: (group: RequestChoiceGroup, y: number) => {
+      groupTop.current[group] = y;
+    },
+  };
 
   return (
     <View
@@ -493,202 +347,19 @@ export function RequestForm({
         </View>
       </View>
 
-      {currentStep.id === "need" && (
-        <>
-          <Text className="text-student-secondary text-base leading-[26px]">
-            Los campos marcados con * son obligatorios. No incluyas diagnósticos, RUT ni
-            certificados.
-          </Text>
-          <View
-            className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-            style={{ borderCurve: "continuous" }}
-          >
-            {field(
-              "needSummary",
-              "¿Qué necesidad quieres abordar? *",
-              "Describe la barrera o dificultad que encuentras.",
-              true,
-            )}
-            {field(
-              "expectedOutcome",
-              "¿Qué esperas de CERETI? *",
-              "Cuéntanos qué te gustaría lograr con el acompañamiento.",
-              true,
-            )}
-          </View>
-        </>
-      )}
-
+      {currentStep.id === "need" && <NeedStep bindField={bindField} />}
       {currentStep.id === "access" && (
-        <View
-          className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-          style={{ borderCurve: "continuous" }}
-          onLayout={(event) => {
-            groupTop.current.accessNeeds = event.nativeEvent.layout.y;
-          }}
-        >
-          <Text
-            weight="semibold"
-            accessibilityRole="header"
-            className="text-student-text text-lg leading-[26px]"
-          >
-            Necesidades de acceso *
-          </Text>
-          {accessOptions.map((option, index) => {
-            const selected = values.accessNeeds.some((need) => need.id === option.id);
-            return (
-              <Choice
-                controlRef={index === 0 ? accessControl : undefined}
-                error={errors.accessNeeds}
-                key={option.id}
-                label={option.label}
-                selected={selected}
-                disabled={isSubmitting}
-                onPress={() =>
-                  update(
-                    "accessNeeds",
-                    selected
-                      ? values.accessNeeds.filter((need) => need.id !== option.id)
-                      : [...values.accessNeeds, option],
-                  )
-                }
-              />
-            );
-          })}
-          {field(
-            "otherAccessNeed",
-            "Otra necesidad de acceso",
-            "Opcional. Puedes describir un apoyo que no aparezca en la lista.",
-            true,
-          )}
-          <ErrorText message={errors.accessNeeds} />
-        </View>
+        <AccessStep {...choiceStepProps} accessControl={accessControl} />
       )}
-
       {currentStep.id === "availability" && (
-        <>
-          <View
-            className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-            style={{ borderCurve: "continuous" }}
-            onLayout={(event) => {
-              groupTop.current.modalityPreference = event.nativeEvent.layout.y;
-            }}
-          >
-            <Text
-              weight="semibold"
-              accessibilityRole="header"
-              className="text-student-text text-lg leading-[26px]"
-            >
-              Modalidad preferida *
-            </Text>
-            <Choice
-              error={errors.modalityPreference}
-              controlRef={modalityControl}
-              label="Presencial"
-              single
-              selected={values.modalityPreference === "inPerson"}
-              disabled={isSubmitting}
-              onPress={() => update("modalityPreference", "inPerson")}
-            />
-            <Choice
-              error={errors.modalityPreference}
-              label="En línea"
-              single
-              selected={values.modalityPreference === "online"}
-              disabled={isSubmitting}
-              onPress={() => update("modalityPreference", "online")}
-            />
-            <ErrorText message={errors.modalityPreference} />
-          </View>
-
-          <View
-            className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-            style={{ borderCurve: "continuous" }}
-            onLayout={(event) => {
-              groupTop.current.preferredWeekdays = event.nativeEvent.layout.y;
-            }}
-          >
-            <Text
-              weight="semibold"
-              accessibilityRole="header"
-              className="text-student-text text-lg leading-[26px]"
-            >
-              Disponibilidad general *
-            </Text>
-            <View className="flex-row flex-wrap gap-2">
-              {weekdays.map(({ label, value }, index) => {
-                const selected = values.preferredWeekdays.includes(value);
-                return (
-                  <Choice
-                    error={errors.preferredWeekdays}
-                    controlRef={index === 0 ? weekdayControl : undefined}
-                    key={label}
-                    label={label}
-                    selected={selected}
-                    disabled={isSubmitting}
-                    onPress={() =>
-                      update(
-                        "preferredWeekdays",
-                        selected
-                          ? values.preferredWeekdays.filter((day) => day !== value)
-                          : [...values.preferredWeekdays, value],
-                      )
-                    }
-                  />
-                );
-              })}
-            </View>
-            <ErrorText message={errors.preferredWeekdays} />
-            <Text className="text-student-secondary text-base leading-[26px]">
-              Opcional. Indica una franja común para los días seleccionados, usando el formato de 24
-              horas.
-            </Text>
-            {field("availableFrom", "Desde", "Formato HH:MM, por ejemplo 09:00.")}
-            {field("availableTo", "Hasta", "Formato HH:MM, por ejemplo 13:00.")}
-          </View>
-        </>
+        <AvailabilityStep
+          {...choiceStepProps}
+          modalityControl={modalityControl}
+          weekdayControl={weekdayControl}
+        />
       )}
-
-      {currentStep.id === "information" && (
-        <View
-          className="gap-4 p-4 rounded-xl border border-student-border bg-student-surface"
-          style={{ borderCurve: "continuous" }}
-        >
-          {field(
-            "preferredAccessibleInformationChannel",
-            "¿Cómo prefieres recibir información? *",
-            "Por ejemplo, correo con texto accesible. Describe el medio, sin ingresar tu dirección ni teléfono.",
-            true,
-          )}
-        </View>
-      )}
-
-      {currentStep.id === "review" && (
-        <>
-          <View
-            className="gap-1 p-4 rounded-xl border border-student-border bg-student-surface"
-            style={{ borderCurve: "continuous" }}
-          >
-            {summaryItem("Necesidad que quieres abordar", values.needSummary.trim())}
-            {summaryItem("Resultado esperado", values.expectedOutcome.trim())}
-            {summaryItem("Necesidades de acceso", accessNeedsSummary)}
-            {summaryItem(
-              "Modalidad preferida",
-              values.modalityPreference === "inPerson" ? "Presencial" : "En línea",
-            )}
-            {summaryItem("Días preferidos", preferredWeekdays)}
-            {summaryItem("Franja horaria", timeRangeSummary)}
-            {summaryItem(
-              "Medio preferido para recibir información",
-              values.preferredAccessibleInformationChannel.trim(),
-            )}
-          </View>
-          <Text className="text-student-secondary text-base leading-[26px]">
-            El nombre y correo se obtendrán de la cuenta institucional cuando esté disponible el
-            inicio de sesión.
-          </Text>
-        </>
-      )}
+      {currentStep.id === "information" && <InformationStep bindField={bindField} />}
+      {currentStep.id === "review" && <ReviewStep values={values} />}
 
       {Object.keys(errors).length > 0 && (
         <Text

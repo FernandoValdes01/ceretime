@@ -7,7 +7,7 @@ import type {
   AccessibilityPreferences,
   TextScale,
   ToggleSetting,
-} from "../../application/accessibility-preferences-models";
+} from "../../domain/accessibility-preferences-models";
 import { getAccessibilityColorPalette } from "./accessibility-color-palette";
 import { useAccessibilityPreferences } from "./accessibility-preferences-provider";
 import { Action, Screen } from "../components/screen";

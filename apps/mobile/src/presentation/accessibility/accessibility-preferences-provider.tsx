@@ -14,7 +14,7 @@ import { ReducedMotionConfig, ReduceMotion } from "react-native-reanimated";
 import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
-} from "../../application/accessibility-preferences-models";
+} from "../../domain/accessibility-preferences-models";
 import type {
   AccessibilityPreferencesError,
   AccessibilityPreferencesPort,

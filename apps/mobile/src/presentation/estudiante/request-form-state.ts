@@ -1,6 +1,6 @@
 // Estado editable de presentación, no contrato de creación ni entidad del backend.
 // Los campos corresponden al contenido canónico de solicitud.
-import type { AccessNeed } from "@/application/student-area-models";
+import type { AccessNeed } from "@/domain/student-area-models";
 
 export interface RequestFormValues {
   needSummary: string;

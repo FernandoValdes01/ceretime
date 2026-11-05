@@ -6,7 +6,7 @@ import type { PropsWithChildren } from "react";
 import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
-} from "@/application/accessibility-preferences-models";
+} from "@/domain/accessibility-preferences-models";
 import type { AccessibilityPreferencesPort } from "@/application/accessibility-preferences-port";
 import { AccessibilityPreferencesProvider } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { Screen } from "@/presentation/components/screen";

@@ -1,4 +1,4 @@
-import type { Accompaniment, StudentRequest } from "../application/student-area-models";
+import type { Accompaniment, StudentRequest } from "../domain/student-area-models";
 
 export interface DemoStudentAreaStore {
   nextRequestId(): string;

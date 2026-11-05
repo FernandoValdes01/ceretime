@@ -1,6 +1,6 @@
 import type { Id } from "../../../../convex/_generated/dataModel";
 
-import type { StudentIdentity } from "../application/student-area-models";
+import type { StudentIdentity } from "../domain/student-area-models";
 import type { BackendStudentAreaResponses } from "./backend-contract-mappers";
 
 const requestId = (value: string) => value as Id<"requests">;

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { AccessibilityInfo } from "react-native";
 
-import type { AuthCredentials, AuthRole, AuthSession } from "../src/application/auth-models";
+import type { AuthCredentials, AuthRole, AuthSession } from "../src/domain/auth-models";
 import type { AuthPort } from "../src/application/auth-port";
 import { LoginScreen } from "../src/presentation/auth/login-screen";
 import { NavigationSessionProvider } from "../src/presentation/navigation/session";

@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { useProfessionalAgendaContext } from "./professional-agenda-provider";
-import { ProfessionalHeader } from "./professional-header";
+import { AppHeader } from "@/presentation/components/app-header";
 
 export function ProfessionalAgendaDetailScreen() {
   const { appointmentId } = useLocalSearchParams<{ appointmentId: string }>();
@@ -14,7 +14,7 @@ export function ProfessionalAgendaDetailScreen() {
   return (
     <StudentFonts>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-        <ProfessionalHeader onBack={() => router.back()} />
+        <AppHeader onBack={() => router.back()} />
         <ScrollView contentContainerStyle={styles.content}>
           {status === "error" ? (
             <View style={styles.stateCard}>

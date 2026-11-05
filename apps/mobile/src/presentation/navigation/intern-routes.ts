@@ -1,4 +1,4 @@
-import type { AssignedAccompanimentSummary } from "../../application/auth-models";
+import type { AssignedAccompanimentSummary } from "../../domain/auth-models";
 
 export const internRoutes = {
   assigned: "/practicante/asignaciones",

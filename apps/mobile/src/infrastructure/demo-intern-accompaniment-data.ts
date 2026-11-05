@@ -1,4 +1,4 @@
-import type { InternAccompaniment } from "../application/intern-accompaniment-models";
+import type { InternAccompaniment } from "../domain/intern-accompaniment-models";
 
 /**
  * Proyecciones ficticias con la forma minimizada de TI2: id, objetivo, estado

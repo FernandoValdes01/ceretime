@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
 
-import type { AuthCredentials } from "../../application/auth-models";
+import type { AuthCredentials } from "../../domain/auth-models";
 import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { Action, Screen } from "../components/screen";
 import { StudentText } from "../estudiante/student-text";

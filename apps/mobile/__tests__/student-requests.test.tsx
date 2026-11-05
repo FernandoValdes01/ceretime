@@ -6,7 +6,7 @@ import path from "node:path";
 import { StrictMode } from "react";
 import { AccessibilityInfo } from "react-native";
 
-import type { StudentAreaSnapshot } from "@/application/student-area-models";
+import type { StudentAreaSnapshot } from "@/domain/student-area-models";
 import type { StudentAreaReader } from "@/application/student-area-port";
 import { createDemoStudentAreaReader } from "@/infrastructure/demo-student-area-reader";
 import { createDemoStudentAreaStore } from "@/infrastructure/demo-student-area-store";
