@@ -1,3 +1,4 @@
+import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import { render } from "@testing-library/react-native";
@@ -8,10 +9,7 @@ import { AccessibilityInfo } from "react-native";
 import type { StudentAreaSnapshot } from "@/application/student-area-models";
 import type { StudentAreaReader } from "@/application/student-area-port";
 import { createMockStudentAreaReader } from "@/infrastructure/mock-student-area-reader";
-import {
-  createMockStudentAreaStore,
-  mockStudentAreaStore,
-} from "@/infrastructure/mock-student-area-store";
+import { createMockStudentAreaStore } from "@/infrastructure/mock-student-area-store";
 import { StudentAreaProvider } from "@/presentation/estudiante/student-area-provider";
 import StudentRequestsScreen from "@/presentation/estudiante/student-requests-screen";
 import { fillRequiredStudentRequestFields } from "./student-request-test-helpers";
@@ -20,7 +18,7 @@ const appDirectory = path.resolve(__dirname, "../app");
 
 afterEach(() => {
   jest.clearAllMocks();
-  mockStudentAreaStore.reset();
+  mobileDependencies.resetDemo();
   jest.restoreAllMocks();
 });
 
@@ -151,7 +149,7 @@ describe("Solicitudes del estudiante", () => {
         name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
       }),
     ).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("button", { name: /^Inicio(?:, tab.*)?$/ }));
+    fireEvent.press(screen.getByLabelText("Inicio, pestaña, 1 de 3"));
     fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
     fillRequiredStudentRequestFields();
     announce.mockClear();
@@ -162,7 +160,7 @@ describe("Solicitudes del estudiante", () => {
       ["Enviando solicitud ficticia."],
       ["Solicitud ficticia enviada."],
     ]);
-    fireEvent.press(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 3" }));
+    fireEvent.press(screen.getByLabelText("Solicitudes, pestaña, 2 de 3"));
     await waitFor(() => expect(navigation.getPathname()).toBe("/estudiante/solicitudes"));
 
     const createdRequest = await screen.findByRole("button", {
@@ -266,7 +264,7 @@ describe("Solicitudes del estudiante", () => {
   });
 
   test.each([
-    ["Profesional", "/profesional", "Jueves, 24 de Octubre"],
+    ["Profesional", "/profesional", "Jueves, 5 de noviembre"],
     ["Practicante", "/practicante/asignaciones", "Acompañamientos asignados"],
     ["Administrador", "/administrador", "Inicio de Administrador"],
   ] as const)(

@@ -14,9 +14,7 @@ import { createNativeSpeechAdapter } from "../infrastructure/native-speech-adapt
 import { createNativeSpeechRecognitionAdapter } from "../infrastructure/native-speech-recognition-adapter";
 import { createMockStudentAreaReader } from "../infrastructure/mock-student-area-reader";
 import { createMockStudentRequestSubmitter } from "../infrastructure/mock-student-request-submitter";
-import { mockStudentAreaStore } from "../infrastructure/mock-student-area-store";
-
-const professionalAccompanimentStore = createMockProfessionalAccompanimentStore();
+import { createMockStudentAreaStore } from "../infrastructure/mock-student-area-store";
 
 const studentAreaMode = process.env.EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE;
 const parsedStudentAreaDelay = Number.parseInt(
@@ -48,41 +46,55 @@ const professionalAccompanimentDemoDelay =
     ? parsedProfessionalAccompanimentDelay
     : 0;
 
+export function createDemoDataDependencies() {
+  const mockStudentAreaStore = createMockStudentAreaStore();
+  const professionalAccompanimentStore = createMockProfessionalAccompanimentStore();
+  return {
+    studentAreaReader: createMockStudentAreaReader({
+      delayMs: studentAreaDelay,
+      mode:
+        studentAreaMode === "empty" || studentAreaMode === "error" ? studentAreaMode : "success",
+      store: mockStudentAreaStore,
+    }),
+    studentRequestSubmitter: createMockStudentRequestSubmitter({
+      failureMode:
+        process.env.EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE === "fail-once" ? "once" : "never",
+      store: mockStudentAreaStore,
+    }),
+    administratorAccountsPort: createMockAdministratorAccountsAdapter(),
+    professionalAgendaReader: createMockProfessionalAgendaReader(),
+    professionalAccompanimentReader: createMockProfessionalAccompanimentReader({
+      delayMs: professionalAccompanimentDemoDelay,
+      mode:
+        professionalAccompanimentDemoMode === "empty" ||
+        professionalAccompanimentDemoMode === "error"
+          ? professionalAccompanimentDemoMode
+          : "success",
+      store: professionalAccompanimentStore,
+    }),
+    professionalReviewPort: createMockProfessionalReviewAdapter({
+      accompanimentStore: professionalAccompanimentStore,
+      studentStore: mockStudentAreaStore,
+    }),
+    practitionerAccompanimentReader: createMockPractitionerAccompanimentReader({
+      delayMs: practitionerDemoDelay,
+      mode:
+        practitionerDemoMode === "empty" || practitionerDemoMode === "error"
+          ? practitionerDemoMode
+          : "success",
+    }),
+  };
+}
+
 export const mobileDependencies = {
-  studentAreaReader: createMockStudentAreaReader({
-    delayMs: studentAreaDelay,
-    mode: studentAreaMode === "empty" || studentAreaMode === "error" ? studentAreaMode : "success",
-    store: mockStudentAreaStore,
-  }),
-  studentRequestSubmitter: createMockStudentRequestSubmitter({
-    failureMode:
-      process.env.EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE === "fail-once" ? "once" : "never",
-    store: mockStudentAreaStore,
-  }),
+  ...createDemoDataDependencies(),
   accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
   speechPort: createNativeSpeechAdapter(),
   speechRecognitionPort: createNativeSpeechRecognitionAdapter(),
-  administratorAccountsPort: createMockAdministratorAccountsAdapter(),
   authPort: createMockAuthenticationPort(),
   demoCredentials: mockAuthCredentials,
   unassignedPractitionerCredentials,
-  professionalAgendaReader: createMockProfessionalAgendaReader(),
-  professionalAccompanimentReader: createMockProfessionalAccompanimentReader({
-    delayMs: professionalAccompanimentDemoDelay,
-    mode:
-      professionalAccompanimentDemoMode === "empty" || professionalAccompanimentDemoMode === "error"
-        ? professionalAccompanimentDemoMode
-        : "success",
-    store: professionalAccompanimentStore,
-  }),
-  professionalReviewPort: createMockProfessionalReviewAdapter({
-    accompanimentStore: professionalAccompanimentStore,
-  }),
-  practitionerAccompanimentReader: createMockPractitionerAccompanimentReader({
-    delayMs: practitionerDemoDelay,
-    mode:
-      practitionerDemoMode === "empty" || practitionerDemoMode === "error"
-        ? practitionerDemoMode
-        : "success",
-  }),
-} as const;
+  resetDemo(): void {
+    Object.assign(mobileDependencies, createDemoDataDependencies());
+  },
+};

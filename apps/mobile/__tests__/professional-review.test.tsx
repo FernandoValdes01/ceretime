@@ -191,7 +191,7 @@ describe("hook y vista de revisión profesional", () => {
     });
     const navigation = renderRouter(appDirectory);
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
-    await waitFor(() => expect(screen.getByText("Jueves, 24 de Octubre")).toBeOnTheScreen());
+    await waitFor(() => expect(screen.getByText("Jueves, 5 de noviembre")).toBeOnTheScreen());
     await act(async () => {
       router.push("/profesional/estudiantes");
       await Promise.resolve();

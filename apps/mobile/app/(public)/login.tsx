@@ -5,6 +5,7 @@ export default function LoginRoute() {
   return (
     <LoginScreen
       unassignedPractitionerCredentials={mobileDependencies.unassignedPractitionerCredentials}
+      onResetDemo={mobileDependencies.resetDemo}
     />
   );
 }

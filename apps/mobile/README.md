@@ -125,7 +125,7 @@ un rol y la identidad institucional se integrará posteriormente.
 
 ## Envío simulado: TI4-30
 
-El formulario usa un puerto de aplicación independiente del lector de TI4-29. La app inyecta un adaptador mock que espera brevemente y devuelve un comprobante ficticio. El envío y el lector comparten un almacén en memoria para que la nueva solicitud aparezca en el listado y el detalle. Los datos se conservan mientras el proceso de la aplicación está abierto; el adaptador no llama a Convex ni replica reglas del backend.
+El formulario usa un puerto de aplicación independiente del lector de TI4-29. La app inyecta un adaptador mock que espera brevemente y devuelve un comprobante ficticio. El envío, el lector estudiantil y la revisión profesional comparten un escenario en memoria. Una solicitud nueva puede ponerse en revisión y aceptarse desde Profesional; el Estudiante consulta el mismo acompañamiento resultante. **Reiniciar demostración**, en el acceso, restablece el escenario completo y conserva las preferencias de accesibilidad. El [guion de demostración](docs/demostracion.md) describe el recorrido y sus límites. Los datos se conservan mientras el proceso de la aplicación está abierto; el adaptador no llama a Convex ni replica reglas del backend.
 
 Durante el envío, los campos y las acciones quedan deshabilitados y una guarda inmediata impide iniciar una segunda promesa. Si el adaptador falla, los campos vuelven a quedar editables y **Reintentar envío** valida y envía los valores visibles del formulario. Cuando el adaptador responde, el formulario se reemplaza por una confirmación con una referencia de prueba.
 

@@ -2,9 +2,9 @@ import type { ProfessionalAgendaDay } from "../application/professional-agenda-m
 
 /** Datos ficticios de la agenda mostrada en el mockup. */
 export const fictionalProfessionalAgenda: ProfessionalAgendaDay = {
-  id: "agenda-demo-2024-10-24",
-  weekdayLabel: "Hoy",
-  dateLabel: "Jueves, 24 de Octubre",
+  id: "agenda-demo-2026-11-05",
+  weekdayLabel: "Día de demostración",
+  dateLabel: "Jueves, 5 de noviembre",
   events: [
     {
       id: "appointment-martin-gomez",
@@ -53,24 +53,28 @@ export const fictionalProfessionalAgenda: ProfessionalAgendaDay = {
   ],
 };
 
-const adjacentDayLabels: Record<number, { weekdayLabel: string; dateLabel: string }> = {
-  [-1]: { weekdayLabel: "Ayer", dateLabel: "Miércoles, 23 de Octubre" },
-  [1]: { weekdayLabel: "Mañana", dateLabel: "Viernes, 25 de Octubre" },
-};
+const demoDate = Date.UTC(2026, 10, 5, 12);
+const dateFormatter = new Intl.DateTimeFormat("es-CL", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: "UTC",
+});
 
 export function createFictionalProfessionalAgenda(dayOffset: number): ProfessionalAgendaDay {
-  const labels = adjacentDayLabels[dayOffset] ?? {
-    weekdayLabel: dayOffset < 0 ? "Día anterior" : "Día siguiente",
-    dateLabel: dayOffset < 0 ? "Día anterior" : "Día siguiente",
-  };
-
+  const date = new Date(demoDate);
+  date.setUTCDate(date.getUTCDate() + dayOffset);
+  const formatted = dateFormatter.format(date);
+  const events =
+    dayOffset === 0
+      ? fictionalProfessionalAgenda.events
+      : dayOffset === 1
+        ? fictionalProfessionalAgenda.events.slice(1, 2)
+        : [];
   return {
-    ...fictionalProfessionalAgenda,
-    id: `agenda-demo-${dayOffset}`,
-    ...labels,
-    events: fictionalProfessionalAgenda.events.map((event) => ({
-      ...event,
-      id: `${event.id}-${dayOffset}`,
-    })),
+    id: `agenda-demo-${date.toISOString().slice(0, 10)}`,
+    weekdayLabel: "Día de demostración",
+    dateLabel: formatted.charAt(0).toUpperCase() + formatted.slice(1),
+    events: events.map((event) => ({ ...event, id: `${event.id}-${dayOffset}` })),
   };
 }

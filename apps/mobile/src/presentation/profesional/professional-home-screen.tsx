@@ -20,6 +20,7 @@ export function ProfessionalHomeScreen() {
               Revisa tu agenda y mantén tus acompañamientos organizados.
             </StudentText>
             <Pressable
+              cssInterop={false}
               accessibilityRole="button"
               accessibilityLabel="Abrir agenda"
               onPress={() => router.replace("/profesional")}

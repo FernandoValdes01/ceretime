@@ -37,7 +37,11 @@ export function createMockStudentAreaReader({
           requests: [],
           accompaniments: [],
         });
-        return { ...snapshot, requests: store?.readRequests() ?? [] };
+        return {
+          ...snapshot,
+          requests: store?.readRequests() ?? [],
+          accompaniments: store?.readAccompaniments() ?? [],
+        };
       }
 
       const snapshot = mapCanonicalStudentArea(
@@ -47,10 +51,13 @@ export function createMockStudentAreaReader({
       return {
         ...snapshot,
         requests: [...(store?.readRequests() ?? []), ...snapshot.requests],
-        accompaniments: snapshot.accompaniments.map((accompaniment) => {
-          const details = fictionalAccompanimentDetails[accompaniment.id];
-          return details ? { ...accompaniment, ...details } : accompaniment;
-        }),
+        accompaniments: [
+          ...(store?.readAccompaniments() ?? []),
+          ...snapshot.accompaniments.map((accompaniment) => {
+            const details = fictionalAccompanimentDetails[accompaniment.id];
+            return details ? { ...accompaniment, ...details } : accompaniment;
+          }),
+        ],
       };
     },
   };

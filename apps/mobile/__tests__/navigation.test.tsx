@@ -5,7 +5,7 @@ import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testi
 const appDirectory = path.resolve(__dirname, "../app");
 const roleCases = [
   ["Estudiante", "/estudiante", "Inicio de Estudiante"],
-  ["Profesional", "/profesional", "Jueves, 24 de Octubre"],
+  ["Profesional", "/profesional", "Jueves, 5 de noviembre"],
   ["Practicante", "/practicante/asignaciones", "Acompañamientos asignados"],
   ["Administrador", "/administrador", "Inicio de Administrador"],
 ] as const;

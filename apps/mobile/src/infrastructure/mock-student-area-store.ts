@@ -1,9 +1,12 @@
-import type { StudentRequest } from "../application/student-area-models";
+import type { Accompaniment, StudentRequest } from "../application/student-area-models";
 
 export interface MockStudentAreaStore {
   nextRequestId(): string;
   addRequest(request: StudentRequest): void;
   readRequests(): readonly StudentRequest[];
+  updateRequest(request: StudentRequest): void;
+  addAccompaniment(accompaniment: Accompaniment): void;
+  readAccompaniments(): readonly Accompaniment[];
   reset(): void;
   subscribe(onChange: () => void): () => void;
 }
@@ -12,6 +15,7 @@ export interface MockStudentAreaStore {
 export function createMockStudentAreaStore(lastExampleRequestNumber = 5): MockStudentAreaStore {
   let lastRequestNumber = lastExampleRequestNumber;
   let requests: StudentRequest[] = [];
+  let accompaniments: Accompaniment[] = [];
   const listeners = new Set<() => void>();
 
   return {
@@ -26,9 +30,22 @@ export function createMockStudentAreaStore(lastExampleRequestNumber = 5): MockSt
     readRequests() {
       return requests;
     },
+    updateRequest(request) {
+      requests = requests.map((current) => (current.id === request.id ? request : current));
+      listeners.forEach((listener) => listener());
+    },
+    addAccompaniment(accompaniment) {
+      if (accompaniments.some((current) => current.id === accompaniment.id)) return;
+      accompaniments = [...accompaniments, accompaniment];
+      listeners.forEach((listener) => listener());
+    },
+    readAccompaniments() {
+      return accompaniments;
+    },
     reset() {
       lastRequestNumber = lastExampleRequestNumber;
       requests = [];
+      accompaniments = [];
       listeners.forEach((listener) => listener());
     },
     subscribe(onChange) {
@@ -39,6 +56,3 @@ export function createMockStudentAreaStore(lastExampleRequestNumber = 5): MockSt
     },
   };
 }
-
-/** Shared only while the app process is running; no request leaves the device. */
-export const mockStudentAreaStore = createMockStudentAreaStore();

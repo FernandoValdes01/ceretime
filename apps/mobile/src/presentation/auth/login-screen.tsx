@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
 
 import type { AuthCredentials } from "../../application/auth-models";
@@ -11,14 +11,17 @@ import { useNavigationSession } from "../navigation/session";
 
 export function LoginScreen({
   unassignedPractitionerCredentials,
+  onResetDemo,
 }: {
   readonly unassignedPractitionerCredentials: AuthCredentials;
+  readonly onResetDemo?: () => void;
 }) {
   const { signIn, selectRole, status, error } = useNavigationSession();
   const isLoading = status === "loading";
   const accessibility = useOptionalAccessibilityPreferences();
   const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
   const errorRef = useRef<View>(null);
+  const [reset, setReset] = useState(false);
 
   useEffect(() => {
     if (isLoading) {
@@ -31,7 +34,7 @@ export function LoginScreen({
   return (
     <Screen
       title="Explora la aplicación"
-      description="Selecciona un rol para explorar CERETI. El acceso institucional se integrará más adelante."
+      description="Demostración local con datos ficticios. Selecciona un rol para continuar; los cambios se comparten en este dispositivo y no se envían a CERETI."
     >
       <View style={styles.selector}>
         <StudentText
@@ -53,6 +56,23 @@ export function LoginScreen({
           label="Entrar como Practicante sin asignación"
           onPress={() => void signIn(unassignedPractitionerCredentials)}
         />
+        {onResetDemo ? (
+          <>
+            <Action
+              label="Reiniciar demostración"
+              disabled={isLoading}
+              onPress={() => {
+                onResetDemo();
+                setReset(true);
+              }}
+            />
+            {reset ? (
+              <StudentText accessibilityLiveRegion="polite" style={{ color: colors.text }}>
+                Demostración reiniciada. Puedes comenzar de nuevo.
+              </StudentText>
+            ) : null}
+          </>
+        ) : null}
         {isLoading ? (
           <StudentText
             accessibilityRole="progressbar"

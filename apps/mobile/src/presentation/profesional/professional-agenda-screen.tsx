@@ -163,7 +163,7 @@ export function ProfessionalAgendaScreen() {
           ) : null}
           {status === "empty" ? (
             <AgendaState
-              title="No tienes actividades hoy"
+              title="No hay actividades para este día"
               message="Cuando exista una actividad programada, aparecerá aquí."
             />
           ) : null}
@@ -187,10 +187,10 @@ export function ProfessionalAgendaScreen() {
           </Pressable>
           <View style={styles.dayCopy}>
             <StudentText accessibilityRole="header" weight="bold" style={styles.dayTitle}>
-              {data?.weekdayLabel ?? "Hoy"}
+              {data?.weekdayLabel ?? "Agenda de demostración"}
             </StudentText>
             <StudentText style={styles.dateLabel}>
-              {data?.dateLabel ?? "Jueves, 24 de Octubre"}
+              {data?.dateLabel ?? "Cargando fecha…"}
             </StudentText>
           </View>
           <Pressable

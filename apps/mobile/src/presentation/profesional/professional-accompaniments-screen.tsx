@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -147,6 +147,7 @@ export function ProfessionalAccompanimentsContent({
 
 export function ProfessionalAccompanimentsScreen() {
   const state = useProfessionalAccompaniments(mobileDependencies.professionalAccompanimentReader);
+  useFocusEffect(state.reload);
 
   return (
     <RoleGuard requiredRole="profesional">

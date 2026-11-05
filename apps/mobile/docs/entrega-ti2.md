@@ -30,7 +30,7 @@ Entrega del 4 de noviembre de 2026 en `jmunoz/ti4-fix-coherencia-mobile`, autori
 | Habilitar cuentas                                 | `administrator-users-screen` → `useAdministratorAccounts`                          | `AdministratorAccountsPort` → adaptador mock                      | Habilitación ficticia separada de la asignación de acompañamientos. No concede acceso general al Administrador.                                            |
 | Preferencias y voz                                | Proveedores existentes                                                             | Almacenamiento local y adaptadores nativos existentes             | Código conservado. Su ejecución nativa no se comprobó en esta pasada.                                                                                      |
 
-Los almacenes de Estudiante y Profesional no constituyen una base compartida entre roles. No hay sincronización ni persistencia remota. Importar tipos de Convex permite verificar formas de datos, pero no establece una conexión de red.
+El escenario local ahora comparte las solicitudes creadas entre Estudiante y Profesional y conserva el vínculo al acompañamiento aceptado en ambos roles. El reinicio desde el acceso reemplaza los almacenes y adaptadores del escenario; el [guion de demostración](demostracion.md) delimita el recorrido. No hay sincronización ni persistencia remota. Importar tipos de Convex permite verificar formas de datos, pero no establece una conexión de red.
 
 ## Contratos existentes que TI2 debe preservar
 
@@ -111,7 +111,7 @@ El bloqueo de envío es local a la instancia montada del hook. No aporta idempot
 ## Pendientes de TI4
 
 - Implementar los adaptadores reales de autenticación y lectura/escritura una vez acordados los contratos. Completar lectura por páginas sin topes silenciosos y definir actualización automática, reconexión y recuperación de sesión.
-- Verificar los recorridos entre roles con el backend ficticio autorizado. Los almacenes mock no demuestran coherencia entre una solicitud estudiantil y la bandeja de otro rol.
+- Ensayar en Android el recorrido local entre roles descrito en el guion. Las pruebas de pantalla y adaptadores comprueban que la solicitud nueva aparece en la bandeja profesional y que ambos roles consultan el mismo acompañamiento aceptado; queda pendiente la validación nativa.
 - Integrar agenda, reserva, coordinación multiprofesional, cancelación, reagendamiento, justificación, seguimiento, notificaciones, Calendar, `.ics` y privacidad según las issues que autoricen esas capacidades. Esta limpieza no añade pantallas vacías ni declara esas funciones móviles terminadas.
 - El compañero designado de TI4 realizará la validación funcional Android. Debe repetir los recorridos modificados de acceso, carga, error, reintento, confirmación y fechas, con TalkBack, foco, texto ampliado y alternativa táctil. Comprobar TTS/STT con TalkBack y una zona del dispositivo distinta de CERETI.
 - Mantener los hallazgos nativos ya abiertos en la matriz WCAG. La evidencia anterior sigue asociada a su versión; esta entrega no acredita conformidad general ni actualiza una fila a aprobado.
