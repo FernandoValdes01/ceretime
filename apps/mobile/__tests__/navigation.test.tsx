@@ -108,27 +108,18 @@ describe("Navegación principal", () => {
     fireEvent.press(await screen.findByRole("button", { name: `Entrar como ${role}` }));
     for (const [index, label] of labels.entries()) {
       expect(
-        await screen.findByRole("button", {
-          name: `${label}, pestaña, ${index + 1} de ${labels.length}`,
-        }),
+        await screen.findByLabelText(`${label}, pestaña, ${index + 1} de ${labels.length}`),
       ).toBeOnTheScreen();
     }
   });
 
-  test("divide visualmente las pestañas largas sin perder los nombres completos", async () => {
-    renderRouter(appDirectory);
+  test("las pestañas conservan nombres completos y permiten abrir los acompañamientos", async () => {
+    const navigation = renderRouter(appDirectory);
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
-
-    expect(
-      await screen.findByText("Solicitudes".slice(0, 8) + "\u200B" + "Solicitudes".slice(8)),
-    ).toBeOnTheScreen();
-    expect(
-      screen.getByText("Acompañamientos".slice(0, 8) + "\u200B" + "Acompañamientos".slice(8)),
-    ).toBeOnTheScreen();
-    expect(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 4" })).toBeOnTheScreen();
-    expect(
-      screen.getByRole("button", { name: "Acompañamientos, pestaña, 3 de 4" }),
-    ).toBeOnTheScreen();
+    expect(await screen.findByText("Solicitudes")).toBeOnTheScreen();
+    fireEvent.press(screen.getByLabelText("Acompañamientos, pestaña, 3 de 4"));
+    expect(await screen.findByText("Camila Muñoz")).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/profesional/acompanamientos");
   });
 
   test("una dirección inexistente ofrece volver al acceso", async () => {

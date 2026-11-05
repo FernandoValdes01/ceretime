@@ -1,10 +1,16 @@
-import { RoleTabIcon, roleTabAccessibilityLabel, Tabs, useRoleTabScreenOptions } from "./role-tabs";
+import {
+  RoleTabBar,
+  RoleTabIcon,
+  roleTabAccessibilityLabel,
+  Tabs,
+  useRoleTabScreenOptions,
+} from "./role-tabs";
 
 export default function PractitionerLayout() {
   const screenOptions = useRoleTabScreenOptions();
 
   return (
-    <Tabs screenOptions={screenOptions}>
+    <Tabs tabBar={(props) => <RoleTabBar {...props} />} screenOptions={screenOptions}>
       <Tabs.Screen
         name="asignaciones"
         options={{

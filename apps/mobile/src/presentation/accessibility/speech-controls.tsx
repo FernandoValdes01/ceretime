@@ -5,6 +5,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { parseSpeechCommand, type SpeechCommand } from "../../application/speech-command-parser";
 import type { SpeechPort, SpeechRecognitionPort } from "../../application/speech-port";
 import type { StudentRequestSubmissionState } from "../hooks/use-submit-student-request";
+import { AppIcon } from "../components/app-icon";
 import { StudentText } from "../estudiante/student-text";
 import { useOptionalAccessibilityPreferences } from "./accessibility-preferences-provider";
 import { getAccessibilityColorPalette } from "./accessibility-color-palette";
@@ -305,11 +306,13 @@ export function SpeechCommandLauncher({
   onOpenRequests,
   onBack,
   bottomOffset = 0,
+  inline = false,
 }: {
   readonly speechPort: SpeechRecognitionPort;
   readonly onOpenRequests: () => void;
   readonly onBack: () => void;
   readonly bottomOffset?: number;
+  readonly inline?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const preferences = useOptionalAccessibilityPreferences();
@@ -328,11 +331,15 @@ export function SpeechCommandLauncher({
         accessibilityHint="Abre los comandos abrir solicitudes, volver y cancelar"
         onPress={() => setOpen(true)}
         android_ripple={{ color: "#D3E4DF" }}
-        style={[styles.launcher, { bottom: bottomOffset, backgroundColor: palette.action }]}
+        style={[
+          styles.launcher,
+          inline
+            ? { position: "relative", right: 0, alignSelf: "flex-end" }
+            : { bottom: bottomOffset },
+          { backgroundColor: palette.action },
+        ]}
       >
-        <StudentText weight="semibold" style={styles.launcherLabel}>
-          Comandos de voz
-        </StudentText>
+        <AppIcon name="mic" size={22} color="#FFFFFF" accessible={false} />
       </Pressable>
       {open ? (
         <Modal
@@ -442,18 +449,14 @@ const styles = StyleSheet.create({
   launcher: {
     position: "absolute",
     right: 16,
-    maxWidth: "90%",
-    minHeight: 48,
-    minWidth: 44,
+    width: 48,
+    height: 48,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     borderRadius: 24,
     backgroundColor: "#246259",
     boxShadow: "0 2px 6px rgba(24, 44, 49, 0.28)",
   },
-  launcherLabel: { color: "#FFFFFF", fontSize: 16, fontWeight: "600", textAlign: "center" },
   modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0, 0, 0, 0.4)" },
   modalSheet: {
     maxHeight: "85%",

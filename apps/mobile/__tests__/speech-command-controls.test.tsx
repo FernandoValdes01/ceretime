@@ -197,7 +197,10 @@ it("amplía los comandos según la preferencia y conserva la cancelación local"
       />
     </AccessibilityPreferencesProvider>,
   );
-  await waitFor(() => expect(view.getByText("Comandos de voz")).toHaveStyle({ fontSize: 32 }));
+  await waitFor(() =>
+    expect(view.getByRole("button", { name: "Comandos de voz" })).toBeOnTheScreen(),
+  );
+  expect(view.queryByText("Comandos de voz")).toBeNull();
   fireEvent.press(view.getByRole("button", { name: "Comandos de voz" }));
   expect(view.getByRole("header", { name: "Comandos de voz" })).toBeOnTheScreen();
   expect(view.getByText("Cancelar")).toHaveStyle({ fontSize: 34 });
