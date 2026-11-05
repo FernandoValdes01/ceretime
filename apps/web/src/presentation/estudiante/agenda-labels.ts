@@ -1,6 +1,7 @@
 import { AGENDA_TIME_ZONE, MODALITY_VALUES } from "../../../../../convex/domain/index.ts";
 import {
   SLOT_MODALITY_FILTER_VALUES,
+  type AgendaSlot,
   type SlotModalityFilter,
 } from "../../application/agenda/agenda-port.ts";
 
@@ -41,16 +42,101 @@ const SLOT_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {
   weekday: "long",
   day: "numeric",
   month: "long",
+  timeZone: AGENDA_TIME_ZONE,
 });
 
 const SLOT_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", {
   hour: "numeric",
   minute: "2-digit",
+  timeZone: AGENDA_TIME_ZONE,
 });
+
+/** Horario legible de un cupo en la zona de la agenda (epoch en ms). */
+export function formatSlotTimeRange(startAt: number, endAt: number): string {
+  return `${SLOT_TIME_FORMAT.format(startAt)} – ${SLOT_TIME_FORMAT.format(endAt)}`;
+}
 
 /** Fecha y hora legibles de un cupo (epoch en ms). */
 export function formatSlotDateTime(startAt: number, endAt: number): string {
-  return `${SLOT_DATE_FORMAT.format(startAt)}, ${SLOT_TIME_FORMAT.format(startAt)} – ${SLOT_TIME_FORMAT.format(endAt)}`;
+  return `${SLOT_DATE_FORMAT.format(startAt)}, ${formatSlotTimeRange(startAt, endAt)}`;
+}
+
+/** Día con cupos, identificado por su fecha civil en la zona de la agenda. */
+export type SlotDay = {
+  readonly date: string;
+  readonly label: string;
+  readonly slots: ReadonlyArray<AgendaSlot>;
+};
+
+/** Semana de lunes a domingo que tiene al menos un cupo. */
+export type SlotWeek = {
+  readonly start: string;
+  readonly label: string;
+  readonly days: ReadonlyArray<SlotDay>;
+};
+
+const DAY_MS = 86_400_000;
+
+// Las fechas civiles ya vienen resueltas por el Backend (`AgendaSlot.date`): se
+// leen en UTC para que la zona del navegador no las mueva de día.
+const CIVIL_DAY_FORMAT = new Intl.DateTimeFormat("es-CL", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: "UTC",
+});
+
+const CIVIL_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {
+  day: "numeric",
+  month: "long",
+  timeZone: "UTC",
+});
+
+function civilDateToUtc(date: string): number {
+  const [year, month, day] = date.split("-").map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+function civilDayLabel(date: string): string {
+  const label = CIVIL_DAY_FORMAT.format(civilDateToUtc(date)).replace(",", "");
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function weekStartOf(date: string): string {
+  const utc = civilDateToUtc(date);
+  const daysSinceWeekStart = (new Date(utc).getUTCDay() + 6) % 7;
+  return new Date(utc - daysSinceWeekStart * DAY_MS).toISOString().slice(0, 10);
+}
+
+function weekLabel(weekStart: string): string {
+  const start = new Date(civilDateToUtc(weekStart));
+  const end = new Date(start.getTime() + 6 * DAY_MS);
+  const sameMonth = start.getUTCMonth() === end.getUTCMonth();
+  const from = sameMonth ? `${start.getUTCDate()}` : CIVIL_DATE_FORMAT.format(start);
+  return `${from} al ${CIVIL_DATE_FORMAT.format(end)}`;
+}
+
+/**
+ * Agrupa los cupos por semana y día, en orden. Solo incluye semanas con cupos:
+ * la navegación nunca se detiene en una semana vacía.
+ */
+export function groupSlotsByWeek(slots: ReadonlyArray<AgendaSlot>): ReadonlyArray<SlotWeek> {
+  const weeks = new Map<string, Map<string, AgendaSlot[]>>();
+  for (const slot of [...slots].sort((left, right) => left.startAt - right.startAt)) {
+    const weekStart = weekStartOf(slot.date);
+    const days = weeks.get(weekStart) ?? new Map<string, AgendaSlot[]>();
+    days.set(slot.date, [...(days.get(slot.date) ?? []), slot]);
+    weeks.set(weekStart, days);
+  }
+  return [...weeks.keys()].sort().map((start) => ({
+    start,
+    label: weekLabel(start),
+    days: [...(weeks.get(start) ?? new Map<string, AgendaSlot[]>())].map(([date, daySlots]) => ({
+      date,
+      label: civilDayLabel(date),
+      slots: daySlots,
+    })),
+  }));
 }
 
 /**

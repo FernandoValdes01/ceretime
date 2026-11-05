@@ -38,11 +38,42 @@ export type AgendaSlot = Pick<
   AvailabilitySlot,
   "id" | "professionalId" | "date" | "startAt" | "endAt" | "modality"
 > & {
+  /** Referencia opaca del espacio: la reserva la reenvía, la UI no la imprime. */
+  readonly spaceId?: string;
   /** Resumen legible del espacio; ausente en modalidad en línea. */
   readonly spaceLabel?: string;
 };
 
-/** Respuesta tipada de la búsqueda: vacío y falta de cupo son distintos. */
+/**
+ * Contexto que exige la API real para buscar (TI2-123). Es opcional porque el
+ * adaptador ficticio no lo usa; el adaptador Convex responde error sin él. La
+ * autorización de ambos identificadores es del Backend.
+ */
+export type SlotSearchContext = {
+  readonly accompanimentId: string;
+  readonly professionalIds: ReadonlyArray<string>;
+};
+
+/**
+ * Profesionales con quienes reservar en un acompañamiento (TI2-123). `none`
+ * indica que no hay ninguno reservable: no se inventa uno.
+ */
+export type BookingProfessionalsResult =
+  | { readonly status: "ok"; readonly professionalIds: ReadonlyArray<string> }
+  | { readonly status: "none" }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly message: string };
+
+/** Filtro de la búsqueda de cupos. */
+export type SlotSearchFilter = {
+  readonly modality: SlotModalityFilter;
+  readonly context?: SlotSearchContext;
+};
+
+/**
+ * Respuesta tipada de la búsqueda: vacío, falta de cupo y denegación son
+ * distintos. La denegación llega sin motivo y sin revelar existencia.
+ */
 export type SlotSearchResult =
   | { readonly status: "ok"; readonly slots: ReadonlyArray<AgendaSlot> }
   | { readonly status: "empty" }
@@ -50,6 +81,7 @@ export type SlotSearchResult =
       readonly status: "no_availability";
       readonly code: typeof NO_AVAILABILITY_ERROR_CODE;
     }
+  | { readonly status: "denied" }
   | { readonly status: "error"; readonly message: string };
 
 /** Selección que el formulario de reserva consume (TI2-102). */
@@ -59,10 +91,16 @@ export type AgendaSlotSelection = {
 
 /**
  * Entrada única del comando de reserva (TI2-102). Definida una sola vez
- * para búsqueda y formulario: no duplicar este comando.
+ * para búsqueda y formulario: no duplicar este comando. `booking` lleva lo que
+ * exige la API real (TI2-123): el cupo elegido en la búsqueda y su
+ * acompañamiento; el adaptador Convex responde error sin él.
  */
 export type ReserveSlotInput = {
   readonly slotId: string;
+  readonly booking?: {
+    readonly accompanimentId: string;
+    readonly slot: AgendaSlot;
+  };
 };
 
 /** Confirmación de reserva: proyección necesaria de `Appointment`. */
@@ -89,17 +127,14 @@ export type ReserveSlotResult =
 /**
  * Entrada de la cancelación visible (TI2-113): referencia opaca a la
  * reserva confirmada, devuelta por el comprobante. La UI nunca prueba
- * propiedad con ella: la autorización efectiva es del Backend cuando la
- * cancelación real esté entregada.
+ * propiedad con ella: la autorización efectiva es del Backend.
  */
 export type CancelReservationInput = {
   readonly reservationId: string;
 };
 
 /**
- * Resultado tipado de la cancelación visible (TI2-113): `cancelled` es una
- * constancia declarada del adaptador vigente y no afirma una mutation real;
- * la denegación llega sin motivo y el resto conserva el error público
+ * Resultado tipado de la cancelación visible (TI2-113): la denegación llega sin motivo y el resto conserva el error público
  * compartido. Nunca revela datos de terceros ni motivo interno.
  */
 export type CancelReservationResult =
@@ -255,7 +290,8 @@ export type AgendaUnsubscribe = () => void;
 
 /** Capacidades de agenda que implementa el adaptador vigente. */
 export interface AgendaPort {
-  searchSlots(filter: { modality: SlotModalityFilter }): Promise<SlotSearchResult>;
+  findBookingProfessionals(accompanimentId: string): Promise<BookingProfessionalsResult>;
+  searchSlots(filter: SlotSearchFilter): Promise<SlotSearchResult>;
   reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult>;
   cancelReservation(input: CancelReservationInput): Promise<CancelReservationResult>;
   listAvailability(): Promise<ListAvailabilityResult>;

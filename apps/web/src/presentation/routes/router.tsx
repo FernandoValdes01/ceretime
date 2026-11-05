@@ -123,14 +123,22 @@ const studentIndexRoute = createRoute({
 const studentScheduleRoute = createRoute({
   getParentRoute: () => studentLayoutRoute,
   path: "/horarios",
+  validateSearch: (search: Record<string, unknown>): { accompanimentId?: string } => ({
+    accompanimentId:
+      typeof search.accompanimentId === "string" ? search.accompanimentId : undefined,
+  }),
   component: StudentScheduleRouteComponent,
 });
 
 const studentReservationRoute = createRoute({
   getParentRoute: () => studentLayoutRoute,
   path: "/reservar",
-  validateSearch: (search: Record<string, unknown>): { slotId?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { slotId?: string; accompanimentId?: string } => ({
     slotId: typeof search.slotId === "string" ? search.slotId : undefined,
+    accompanimentId:
+      typeof search.accompanimentId === "string" ? search.accompanimentId : undefined,
   }),
   component: StudentReservationRouteComponent,
 });

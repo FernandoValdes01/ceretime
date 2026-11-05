@@ -25,6 +25,7 @@ import {
 import type {
   AccompanimentNeedsReader,
   AvailabilityReader,
+  BookableProfessionalSource,
   AvailabilityWriter,
   CompatibilitySpaceSource,
   SlotOccupancyReader,
@@ -381,6 +382,49 @@ export async function searchAvailabilitySlots(
     items,
     hasMore,
     nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null,
+    version: AVAILABILITY_CONTRACT_VERSION,
+  });
+}
+
+/** Profesionales con quienes se puede reservar en un acompañamiento. */
+export interface BookableProfessionals {
+  readonly professionalIds: readonly string[];
+  readonly version: typeof AVAILABILITY_CONTRACT_VERSION;
+}
+
+/**
+ * Profesionales reservables de un acompañamiento activo (TI2-123): permite la
+ * primera reserva, cuando aún no hay atenciones de donde conocer al profesional.
+ *
+ * Usa la misma autorización que la búsqueda de cupos y la misma regla
+ * `isBookableProfessional`, así no entrega a quien la búsqueda rechazaría. Solo
+ * expone identificadores, los mismos que ya trae cada cupo. Sin profesionales
+ * responde una lista vacía: no es falta de cupo.
+ */
+export async function listBookableProfessionals(
+  deps: {
+    readonly auth: AuthorizationReader;
+    readonly professionals: BookableProfessionalSource;
+  },
+  input: { readonly tokenIdentifier: string | null; readonly accompanimentId: string },
+): Promise<ApiResult<BookableProfessionals>> {
+  const grant = await authorizeAvailabilityRead(deps.auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    accompanimentId: input.accompanimentId,
+  });
+  if (grant.status === "error") return denied();
+  const candidates = await deps.professionals.listActiveProfessionalIds(input.accompanimentId);
+  if (candidates === null) return conflict();
+  const bookable = await Promise.all(
+    candidates.map((professionalId) =>
+      isBookableProfessional(deps.auth, {
+        accompanimentId: input.accompanimentId,
+        professionalId,
+      }),
+    ),
+  );
+  return okResult({
+    professionalIds: candidates.filter((_, index) => bookable[index]),
     version: AVAILABILITY_CONTRACT_VERSION,
   });
 }

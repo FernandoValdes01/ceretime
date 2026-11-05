@@ -307,6 +307,34 @@ export function authorizationReader(ctx: DbReader) {
   };
 }
 
+/** Tope de asignaciones leídas por acompañamiento, activas o revocadas. */
+const MAX_ASSIGNMENTS_PER_ACCOMPANIMENT = 200;
+
+/**
+ * Usuarios con asignación activa como profesional (puerto
+ * `BookableProfessionalSource`, TI2-123). Un identificador de otra tabla
+ * responde igual que un acompañamiento sin asignaciones.
+ */
+export function bookableProfessionalSource(ctx: DbReader) {
+  return {
+    listActiveProfessionalIds: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return [];
+      const rows = await ctx.db
+        .query("accompanimentAssignments")
+        .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+          q.eq("accompanimentId", id),
+        )
+        .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT + 1);
+      if (rows.length > MAX_ASSIGNMENTS_PER_ACCOMPANIMENT) return null;
+      const active = rows.filter(
+        (row) => row.status === "active" && row.assignedRole === "professional",
+      );
+      return [...new Set(active.map((row) => row.userId as string))];
+    },
+  };
+}
+
 /**
  * Necesidades vigentes del acompañamiento para la búsqueda, la reserva y el
  * reagendamiento (puerto `AccompanimentNeedsReader` de TI2-97), una por línea
