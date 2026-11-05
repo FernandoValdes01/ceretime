@@ -71,10 +71,8 @@ import {
  * profesional con estados variados del contrato. El cambio de estado no
  * agrega política local: valida con `transitionAppointment` del dominio (la
  * misma función que usará el Backend) y solo simula identidad y reloj.
- * La misma lectura sirve la demostración de la lista propia del Estudiante
- * (TI2-114), sin resolver rol en el cliente: cuando la conexión real llegue
- * (TI2-123), el Backend responde solo las atenciones del rol vigente. Un
- * identificador ajeno responde denegación genérica sin filtrar
+ * Sus estados cubren también los de la lista propia del Estudiante
+ * (TI2-114), que en la Web ya lee la API (TI2-123). Un identificador ajeno responde denegación genérica sin filtrar
  * existencia. Los cambios viven en memoria mientras dura el adaptador, sin
  * persistencia productiva.
  */
@@ -236,8 +234,8 @@ function fromNow(hours: number): number {
  * ocurrida (admite cierre), una reagendada con su fecha original, una
  * realizada, inasistencias en los tres desenlaces de justificación
  * (pendiente, justificada y no justificada), una cancelación por CERETI
- * con motivo propio y una cancelación por el Estudiante. La misma lista
- * sirve la demostración de la vista propia del Estudiante (TI2-114).
+ * con motivo propio y una cancelación por el Estudiante, los mismos estados
+ * que reconoce la vista propia del Estudiante (TI2-114).
  */
 const FICTIONAL_APPOINTMENTS: ReadonlyArray<AgendaAppointment> = [
   {

@@ -52,10 +52,9 @@ import {
  *   en otro caso; los cerrados se muestran en solo lectura, sin notas
  *   internas.
  * - `/estudiante/atenciones`: lista propia de atenciones del Estudiante
- *   (TI2-114) con datos ficticios de demostración por el puerto común de
- *   agenda; `/estudiante/atenciones/$appointmentId`: detalle con los
- *   estados textuales de realización, cancelación e inasistencia. La
- *   conexión real llega en TI2-123 reutilizando esta lista y su detalle.
+ *   (TI2-114) por el puerto común de agenda, conectado a la API por
+ *   TI2-123; `/estudiante/atenciones/$appointmentId`: detalle con los
+ *   estados textuales de realización, cancelación e inasistencia.
  * - `/profesional`, `/practicante` y `/administrador`: layouts protegidos
  *   por rol con portada temporal; sin sesión van al acceso, con otro rol
  *   van a denegado. El portal de Administración no enlaza acompañamientos
