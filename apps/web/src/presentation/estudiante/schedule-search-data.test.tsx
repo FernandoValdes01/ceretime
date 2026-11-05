@@ -1,11 +1,16 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { SlotModalityFilter, SlotSearchResult } from "../../application/agenda/agenda-port.ts";
+import type {
+  AgendaSlot,
+  SlotModalityFilter,
+  SlotSearchResult,
+} from "../../application/agenda/agenda-port.ts";
 import { useSlotSearch } from "./schedule-search-data.ts";
 
 /**
- * Lectura de horarios (TI2-101): cada búsqueda vuelve a carga.
+ * Lectura de horarios (TI2-101): reintentar vuelve a carga y cambiar la
+ * modalidad filtra lo ya cargado.
  *
  * Se controla el adaptador con promesas pendientes para observar las
  * transiciones sin depender del tiempo real. Los datos son ficticios.
@@ -47,7 +52,15 @@ afterEach(() => {
 });
 
 describe("useSlotSearch (TI2-101)", () => {
-  test("cambiar de modalidad vuelve a carga antes de la respuesta nueva", async () => {
+  test("cambiar de modalidad filtra lo cargado sin volver a buscar", async () => {
+    const enLinea: AgendaSlot = {
+      id: "cupo-1",
+      professionalId: "pro-1",
+      date: "2026-11-09",
+      startAt: 1,
+      endAt: 2,
+      modality: "online",
+    };
     const pendientes = respuestasControladas();
     const { result, rerender } = renderHook(
       ({ modality }: { modality: SlotModalityFilter }) => useSlotSearch(modality, 0),
@@ -57,18 +70,17 @@ describe("useSlotSearch (TI2-101)", () => {
     expect(result.current).toBeUndefined();
 
     await act(async () => {
-      pendientes[0].resolve({ status: "ok", slots: [] });
+      pendientes[0].resolve({ status: "ok", slots: [enLinea] });
     });
-    expect(result.current).toEqual({ status: "ok", slots: [] });
+    expect(result.current).toEqual({ status: "ok", slots: [enLinea] });
 
     rerender({ modality: "inPerson" });
-
-    expect(result.current).toBeUndefined();
-
-    await act(async () => {
-      pendientes[1].resolve({ status: "empty" });
-    });
     expect(result.current).toEqual({ status: "empty" });
+
+    rerender({ modality: "online" });
+    expect(result.current).toEqual({ status: "ok", slots: [enLinea] });
+
+    expect(pendientes).toHaveLength(1);
   });
 
   test("reintentar vuelve a carga antes de la respuesta nueva", async () => {

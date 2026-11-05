@@ -27,21 +27,28 @@ export function getAgendaPort(): AgendaPort {
   return agendaPort;
 }
 
+/** Aplica el filtro de modalidad a una búsqueda ya cargada. */
+function filterByModality(
+  result: SlotSearchResult | undefined,
+  modality: SlotModalityFilter,
+): SlotSearchResult | undefined {
+  if (result?.status !== "ok" || modality === "all") {
+    return result;
+  }
+  const slots = result.slots.filter((slot) => slot.modality === modality);
+  return slots.length === 0 ? { status: "empty" } : { status: "ok", slots };
+}
+
 export function useSlotSearch(
   modality: SlotModalityFilter,
   attempt: number,
   context?: SlotSearchContext,
 ) {
-  // El resultado guardado recuerda a qué búsqueda pertenece: al cambiar de
-  // modalidad o reintentar se deriva `loading` en el render, sin conservar los
-  // cupos del filtro anterior mientras llega la respuesta nueva.
-  const [entry, setEntry] = useState<{
-    modality: SlotModalityFilter;
-    attempt: number;
-    result?: SlotSearchResult;
-  }>({ modality, attempt });
-  const result =
-    entry.modality === modality && entry.attempt === attempt ? entry.result : undefined;
+  // Se carga una sola vez por intento: cambiar la modalidad filtra lo ya leído
+  // sin repetir la búsqueda. El resultado guardado recuerda su intento: al
+  // reintentar se deriva `loading` en el render, sin conservar los cupos previos.
+  const [entry, setEntry] = useState<{ attempt: number; result?: SlotSearchResult }>({ attempt });
+  const result = entry.attempt === attempt ? entry.result : undefined;
 
   const accompanimentId = context?.accompanimentId;
   const professionalIds = context?.professionalIds;
@@ -50,7 +57,7 @@ export function useSlotSearch(
     let cancelled = false;
     getAgendaPort()
       .searchSlots({
-        modality,
+        modality: "all",
         ...(accompanimentId === undefined || professionalIds === undefined
           ? {}
           : { context: { accompanimentId, professionalIds } }),
@@ -58,13 +65,12 @@ export function useSlotSearch(
       .then(
         (next) => {
           if (!cancelled) {
-            setEntry({ modality, attempt, result: next });
+            setEntry({ attempt, result: next });
           }
         },
         () => {
           if (!cancelled) {
             setEntry({
-              modality,
               attempt,
               result: {
                 status: "error",
@@ -77,7 +83,7 @@ export function useSlotSearch(
     return () => {
       cancelled = true;
     };
-  }, [modality, attempt, accompanimentId, professionalIds]);
+  }, [attempt, accompanimentId, professionalIds]);
 
-  return result;
+  return filterByModality(result, modality);
 }

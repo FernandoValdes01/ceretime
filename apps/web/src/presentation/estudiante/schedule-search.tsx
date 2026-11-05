@@ -78,6 +78,7 @@ function ScheduleSearchBody({ context }: { context: SlotSearchContext }) {
       </fieldset>
       <SlotSearchContent
         accompanimentId={context.accompanimentId}
+        modality={modality}
         result={result}
         onRetry={() => setAttempt((count) => count + 1)}
       />
@@ -87,10 +88,12 @@ function ScheduleSearchBody({ context }: { context: SlotSearchContext }) {
 
 function SlotSearchContent({
   accompanimentId,
+  modality,
   result,
   onRetry,
 }: {
   accompanimentId: string;
+  modality: SlotModalityFilter;
   result: ReturnType<typeof useSlotSearch>;
   onRetry: () => void;
 }) {
@@ -99,7 +102,12 @@ function SlotSearchContent({
       <span role="status" aria-live="polite" className="sr-only">
         {searchAnnouncement(result)}
       </span>
-      <SlotSearchResult accompanimentId={accompanimentId} result={result} onRetry={onRetry} />
+      <SlotSearchResult
+        accompanimentId={accompanimentId}
+        modality={modality}
+        result={result}
+        onRetry={onRetry}
+      />
     </>
   );
 }
@@ -131,10 +139,12 @@ function searchAnnouncement(result: SlotSearchResult | undefined): string {
 
 function SlotSearchResult({
   accompanimentId,
+  modality,
   result,
   onRetry,
 }: {
   accompanimentId: string;
+  modality: SlotModalityFilter;
   result: ReturnType<typeof useSlotSearch>;
   onRetry: () => void;
 }) {
@@ -187,7 +197,8 @@ function SlotSearchResult({
     );
   }
 
-  return <SlotWeeks slots={result.slots} accompanimentId={accompanimentId} />;
+  // La clave devuelve la vista a la primera semana con cupos al cambiar de filtro.
+  return <SlotWeeks key={modality} slots={result.slots} accompanimentId={accompanimentId} />;
 }
 
 /**

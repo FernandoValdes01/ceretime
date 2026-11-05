@@ -396,6 +396,23 @@ export function createConvexAgendaAdapter(
     return null;
   }
 
+  /**
+   * Una sola opción por hora, modalidad y sala: para el Estudiante son el mismo
+   * horario aunque los atiendan profesionales distintos. Queda el primero de la
+   * lista, y si ese cupo se ocupa, la búsqueda siguiente ofrece el del otro.
+   */
+  function withoutRepeatedOptions(slots: ReadonlyArray<SearchedSlot>): SearchedSlot[] {
+    const seen = new Set<string>();
+    return slots.filter((slot) => {
+      const option = [slot.startAt, slot.endAt, slot.modality, slot.spaceId ?? ""].join("|");
+      if (seen.has(option)) {
+        return false;
+      }
+      seen.add(option);
+      return true;
+    });
+  }
+
   async function searchSlots(filter: SlotSearchFilter): Promise<SlotSearchResult> {
     if (filter.context === undefined) {
       return { status: "error", message: MISSING_CONTEXT_MESSAGE };
@@ -416,10 +433,11 @@ export function createConvexAgendaAdapter(
         return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
       }
       found.sort((left, right) => left.startAt - right.startAt);
+      const options = withoutRepeatedOptions(found);
       const matching =
         filter.modality === "all"
-          ? found
-          : found.filter((slot) => slot.modality === filter.modality);
+          ? options
+          : options.filter((slot) => slot.modality === filter.modality);
       if (matching.length === 0) {
         return { status: "empty" };
       }

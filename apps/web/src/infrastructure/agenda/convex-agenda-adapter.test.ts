@@ -680,6 +680,58 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
     ).resolves.toEqual({ status: "ok", slots: [OTHER, ONLINE] });
   });
 
+  test("dos profesionales a la misma hora se muestran como una sola opción", async () => {
+    const OTRO_PROFESIONAL = { ...SLOT_ONLINE, id: "cupo-3", professionalId: "pro-2" };
+    const OTRO_FIN = {
+      ...SLOT_ONLINE,
+      id: "cupo-4",
+      professionalId: "pro-2",
+      endAt: SLOT_ONLINE.endAt + 1_800_000,
+    };
+    const OTRA_SALA = {
+      ...SLOT_IN_PERSON,
+      id: "cupo-5",
+      professionalId: "pro-2",
+      spaceId: "esp-2",
+    };
+    const fake = createFakeClient({
+      query: {
+        [SEARCH_SLOTS]: (args) =>
+          args.professionalId === "pro-1"
+            ? page([SLOT_IN_PERSON, SLOT_ONLINE])
+            : page([OTRA_SALA, OTRO_PROFESIONAL, OTRO_FIN]),
+        [LIST_SPACES]: () => page([SPACE]),
+      },
+    });
+
+    const result = await fake.adapter().searchSlots({
+      modality: "all",
+      context: { accompanimentId: "acompanamiento-1", professionalIds: ["pro-1", "pro-2"] },
+    });
+
+    expect(result).toMatchObject({ status: "ok" });
+    expect(result.status === "ok" ? result.slots.map((slot) => slot.id) : []).toEqual([
+      "cupo-1",
+      "cupo-5",
+      "cupo-2",
+      "cupo-4",
+    ]);
+  });
+
+  test("superar el tope de páginas responde error y nunca una lista parcial", async () => {
+    const fake = createFakeClient({
+      query: { [SEARCH_SLOTS]: () => page([SLOT_ONLINE], "siguiente") },
+    });
+
+    await expect(
+      fake.adapter().searchSlots({ modality: "all", context: CONTEXT }),
+    ).resolves.toEqual({
+      status: "error",
+      message: "Hay más horarios de los que esta vista puede cargar. Inténtalo de nuevo más tarde.",
+    });
+    expect(fake.calls).toHaveLength(40);
+  });
+
   test("un profesional sin cupo no oculta los cupos de los demás", async () => {
     const fake = createFakeClient({
       query: {
