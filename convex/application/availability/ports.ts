@@ -98,6 +98,16 @@ export interface AccompanimentNeeds {
 }
 
 /**
+ * Candidatos a profesional reservable de un acompañamiento (TI2-123): los
+ * usuarios con asignación activa como profesional. La vigencia de cada cuenta
+ * la decide `isBookableProfessional`. `null` indica que la lectura acotada no
+ * alcanzó: se responde `conflict`, nunca una lista cortada.
+ */
+export interface BookableProfessionalSource {
+  listActiveProfessionalIds(accompanimentId: string): Promise<readonly string[] | null>;
+}
+
+/**
  * Lectura mínima del acompañamiento para buscar cupos. La pertenencia, la
  * asignación y el estado activo ya los exige `authorizeAvailabilityRead`
  * (TI2-86); acá solo se resuelven las necesidades vigentes.
