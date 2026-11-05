@@ -2,7 +2,7 @@
 // viven en `RequestForm`; estos componentes solo dibujan lo que reciben.
 import { useState, type PropsWithChildren, type Ref } from "react";
 import { Pressable, TextInput, View, type LayoutChangeEvent } from "react-native";
-import type { AccessNeed } from "@/domain/student-area-models";
+import type { AccessNeed } from "@/domain/request-models";
 import { AppIcon } from "../components/app-icon";
 import { StudentText as Text, useStudentFont } from "./student-text";
 import type { RequestFormErrors, RequestFormValues } from "./request-form-state";

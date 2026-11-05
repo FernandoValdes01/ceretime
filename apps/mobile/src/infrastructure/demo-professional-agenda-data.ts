@@ -1,4 +1,4 @@
-import type { ProfessionalAgendaDayViewModel } from "../domain/professional-agenda-view-models";
+import type { ProfessionalAgendaDayViewModel } from "../application/professional-agenda-view-models";
 
 /** Datos ficticios de la agenda de la demostración. */
 export const demoProfessionalAgenda: ProfessionalAgendaDayViewModel = {

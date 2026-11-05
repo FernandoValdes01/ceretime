@@ -1,11 +1,11 @@
 // Traductores entre los contratos de Convex (snake_case, timestamps) y los modelos de la app (camelCase, ISO).
 import type {
-  Accompaniment,
   StudentAreaSnapshot,
   StudentRequest,
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
 } from "../domain/student-area-models";
+import type { Accompaniment } from "../domain/request-models";
 import type {
   ProfessionalRequest,
   ProfessionalRequestAction,

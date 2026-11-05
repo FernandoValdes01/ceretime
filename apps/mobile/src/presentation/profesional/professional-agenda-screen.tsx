@@ -6,7 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type {
   ProfessionalAgendaAppointmentViewModel,
   ProfessionalAgendaAppointmentColor,
-} from "@/domain/professional-agenda-view-models";
+} from "@/application/professional-agenda-view-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { AccessDeniedNotice } from "@/presentation/components/role-home";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";

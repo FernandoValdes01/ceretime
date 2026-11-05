@@ -4,7 +4,7 @@ import { act, render } from "@testing-library/react-native";
 import { fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 
 import type { ProfessionalAccompaniment } from "../src/domain/professional-accompaniment-models";
-import { ProfessionalAccompanimentAccessDeniedError } from "../src/domain/professional-accompaniment-models";
+import { AccompanimentAccessDeniedError } from "../src/domain/accompaniment-access-denied-error";
 import { createDemoProfessionalAccompanimentReader } from "../src/infrastructure/demo-professional-accompaniment-reader";
 import {
   createDemoProfessionalAccompanimentStore,
@@ -40,7 +40,7 @@ describe("lector de acompañamientos del Profesional", () => {
       expect.objectContaining({ id: "ACO-PRO-001", studentName: "Camila Muñoz" }),
     );
     await expect(reader.readAccompaniment("ACO-OTRO-PROFESIONAL-001")).rejects.toBeInstanceOf(
-      ProfessionalAccompanimentAccessDeniedError,
+      AccompanimentAccessDeniedError,
     );
     await expect(reader.readAccompaniment("ACO-NO-EXISTE")).rejects.toThrow(
       "No puedes acceder a este acompañamiento.",

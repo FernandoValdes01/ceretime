@@ -16,7 +16,7 @@ import type {
   ProfessionalRequestAction,
   ProfessionalActionDetails,
 } from "@/domain/professional-review-models";
-import type { GeneralAvailability } from "@/domain/student-area-models";
+import type { GeneralAvailability } from "@/domain/request-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText, useStudentFont } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";

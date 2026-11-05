@@ -1,6 +1,6 @@
 import type { InternAccount } from "../domain/administrator-account-models";
 import type { AdministratorAccountsPort } from "../application/administrator-accounts-port";
-import { LocalOperationError } from "../domain/operation-error";
+import { UserFacingError } from "../application/user-facing-error";
 
 const demoInternAccounts: readonly InternAccount[] = [
   {
@@ -43,13 +43,13 @@ export function createDemoAdministratorAccountsAdapter(): AdministratorAccountsP
     async enableInternAccount(accountId) {
       const account = accounts.find((candidate) => candidate.id === accountId);
       if (!account) {
-        throw new LocalOperationError("No encontramos la cuenta institucional seleccionada.");
+        throw new UserFacingError("No encontramos la cuenta institucional seleccionada.");
       }
       if (account.status !== "pending") {
-        throw new LocalOperationError("La cuenta institucional ya está habilitada.");
+        throw new UserFacingError("La cuenta institucional ya está habilitada.");
       }
       if (!hasInstitutionalInternEmail(account.email)) {
-        throw new LocalOperationError(
+        throw new UserFacingError(
           "Solo puedes habilitar cuentas institucionales @alu.uct.cl o @uct.cl.",
         );
       }

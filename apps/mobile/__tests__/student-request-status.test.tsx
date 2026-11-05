@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react-native";
 
-import type { StudentRequestStatus } from "@/domain/student-area-models";
+import type { RequestStatus } from "@/domain/request-models";
 import {
   getStudentRequestStatusPresentation,
   StudentRequestStatusIndicator,
@@ -27,7 +27,7 @@ const statusCases = [
   ["referred", "Derivada", "arrowRight"],
   ["closedWithoutAccompaniment", "Cerrada sin acompañamiento", "circleX"],
   ["cancelled", "Cancelada", "minus"],
-] as const satisfies readonly (readonly [StudentRequestStatus, string, string])[];
+] as const satisfies readonly (readonly [RequestStatus, string, string])[];
 
 describe("Estado accesible de la solicitud", () => {
   test.each(statusCases)("presenta %s como texto y señal gráfica", (status, label, icon) => {

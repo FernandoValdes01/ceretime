@@ -6,13 +6,13 @@ import { createDemoAuthAdapter, demoAuthCredentials } from "@/infrastructure/dem
 import { NavigationSessionProvider, useNavigationSession } from "@/presentation/navigation/session";
 import {
   defaultAccessibilityPreferences,
-  isAccessibilityPreferences,
   type AccessibilityPreferences,
 } from "@/domain/accessibility-preferences-models";
 import type { AccessibilityPreferencesPort } from "@/application/accessibility-preferences-port";
 import {
   accessibilityPreferencesStorageKey,
   createLocalAccessibilityPreferencesAdapter,
+  isAccessibilityPreferences,
 } from "@/infrastructure/local-accessibility-preferences-adapter";
 import {
   AccessibilityPreferencesProvider,

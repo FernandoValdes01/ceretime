@@ -1,4 +1,4 @@
-import { InternAccompanimentAccessDeniedError } from "../domain/intern-accompaniment-models";
+import { AccompanimentAccessDeniedError } from "../domain/accompaniment-access-denied-error";
 import type { InternAccompanimentReader } from "../application/intern-accompaniment-port";
 import { demoInternAccompanimentsByIntern } from "./demo-intern-accompaniment-data";
 
@@ -40,7 +40,7 @@ export function createDemoInternAccompanimentReader({
       }
 
       if (mode === "empty") {
-        throw new InternAccompanimentAccessDeniedError();
+        throw new AccompanimentAccessDeniedError();
       }
 
       const accompaniment = demoInternAccompanimentsByIntern[internId]?.find(
@@ -48,7 +48,7 @@ export function createDemoInternAccompanimentReader({
       );
 
       if (!accompaniment) {
-        throw new InternAccompanimentAccessDeniedError();
+        throw new AccompanimentAccessDeniedError();
       }
 
       return accompaniment;

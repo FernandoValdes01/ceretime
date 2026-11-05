@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "reac
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type { ProfessionalRequest } from "@/domain/professional-review-models";
-import type { StudentRequestStatus } from "@/domain/student-area-models";
+import type { RequestStatus } from "@/domain/request-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
@@ -21,9 +21,9 @@ const noActionMessages = {
   referred: "Solicitud derivada; queda pendiente del contacto y aceptación del estudiante.",
   closedWithoutAccompaniment: "Solicitud cerrada sin acompañamiento.",
   cancelled: "Solicitud cancelada.",
-} satisfies Record<StudentRequestStatus, string>;
+} satisfies Record<RequestStatus, string>;
 
-export function getNoActionMessage(status: StudentRequestStatus): string {
+export function getNoActionMessage(status: RequestStatus): string {
   return noActionMessages[status];
 }
 

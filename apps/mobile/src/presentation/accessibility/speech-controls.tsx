@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { AccessibilityInfo, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { parseSpeechCommand, type SpeechCommand } from "../../domain/speech-command-parser";
+import { parseSpeechCommand, type SpeechCommand } from "./speech-command-parser";
 import type { SpeechPort, SpeechRecognitionPort } from "../../application/speech-port";
 import type { StudentRequestSubmissionState } from "../hooks/use-submit-student-request";
 import { AppIcon } from "../components/app-icon";

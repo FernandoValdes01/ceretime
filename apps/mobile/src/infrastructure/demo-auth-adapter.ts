@@ -5,7 +5,7 @@ import type {
   AuthenticatedUser,
 } from "../domain/auth-models";
 import type { AuthPort } from "../application/auth-port";
-import { LocalOperationError } from "../domain/operation-error";
+import { UserFacingError } from "../application/user-facing-error";
 import { demoInternAccompanimentsByIntern } from "./demo-intern-accompaniment-data";
 
 export const demoAuthCredentials = {
@@ -78,7 +78,7 @@ const demoUsers: readonly {
   },
 ];
 
-export class DemoAuthenticationError extends LocalOperationError {
+export class DemoAuthenticationError extends UserFacingError {
   constructor() {
     super("Correo o contraseña incorrectos.");
     this.name = "DemoAuthenticationError";

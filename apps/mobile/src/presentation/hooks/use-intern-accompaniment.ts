@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 
 import type { InternAccompaniment } from "../../domain/intern-accompaniment-models";
-import { isInternAccompanimentAccessDeniedError } from "../../domain/intern-accompaniment-models";
+import { isAccompanimentAccessDeniedError } from "../../domain/accompaniment-access-denied-error";
 import type { InternAccompanimentReader } from "../../application/intern-accompaniment-port";
 
 import { useAsyncResource } from "./use-async-resource";
@@ -32,8 +32,7 @@ export function useInternAccompaniment(
   const denied =
     !(internId && accompanimentId) ||
     (resource.status === "error" &&
-      (isInternAccompanimentAccessDeniedError(resource.error) ||
-        isMobileAccessDenied(resource.error)));
+      (isAccompanimentAccessDeniedError(resource.error) || isMobileAccessDenied(resource.error)));
   return {
     status: denied ? "access-denied" : resource.status,
     data: denied ? null : resource.data,

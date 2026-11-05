@@ -1,11 +1,8 @@
 import { StrictMode } from "react";
 import { act, renderHook } from "@testing-library/react-native";
 
-import type {
-  Accompaniment,
-  StudentAreaSnapshot,
-  StudentRequest,
-} from "../../domain/student-area-models";
+import type { StudentAreaSnapshot, StudentRequest } from "../../domain/student-area-models";
+import type { Accompaniment } from "../../domain/request-models";
 import type { StudentAreaReader } from "../../application/student-area-port";
 import { createDemoStudentAreaReader } from "../../infrastructure/demo-student-area-reader";
 import { useStudentArea } from "./use-student-area";

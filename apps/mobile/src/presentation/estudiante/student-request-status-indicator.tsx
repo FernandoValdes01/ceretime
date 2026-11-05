@@ -1,6 +1,6 @@
 import { View } from "react-native";
 
-import type { StudentRequestStatus } from "@/domain/student-area-models";
+import type { RequestStatus } from "@/domain/request-models";
 import { AppIcon, type AppIconName } from "../components/app-icon";
 import { StudentText } from "./student-text";
 
@@ -20,15 +20,15 @@ const STATUS_PRESENTATIONS = {
   referred: { label: "Derivada", icon: "arrowRight" },
   closedWithoutAccompaniment: { label: "Cerrada sin acompañamiento", icon: "circleX" },
   cancelled: { label: "Cancelada", icon: "minus" },
-} satisfies Record<StudentRequestStatus, StudentRequestStatusPresentation>;
+} satisfies Record<RequestStatus, StudentRequestStatusPresentation>;
 
 export function getStudentRequestStatusPresentation(
-  status: StudentRequestStatus,
+  status: RequestStatus,
 ): StudentRequestStatusPresentation {
   return STATUS_PRESENTATIONS[status];
 }
 
-export function StudentRequestStatusIndicator({ status }: { status: StudentRequestStatus }) {
+export function StudentRequestStatusIndicator({ status }: { status: RequestStatus }) {
   const presentation = getStudentRequestStatusPresentation(status);
 
   return (

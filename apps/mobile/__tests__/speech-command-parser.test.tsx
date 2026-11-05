@@ -1,4 +1,4 @@
-import { parseSpeechCommand } from "../src/domain/speech-command-parser";
+import { parseSpeechCommand } from "../src/presentation/accessibility/speech-command-parser";
 
 describe("parseSpeechCommand", () => {
   it.each([

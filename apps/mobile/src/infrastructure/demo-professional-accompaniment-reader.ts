@@ -1,5 +1,5 @@
 import type { ProfessionalAccompaniment } from "../domain/professional-accompaniment-models";
-import { ProfessionalAccompanimentAccessDeniedError } from "../domain/professional-accompaniment-models";
+import { AccompanimentAccessDeniedError } from "../domain/accompaniment-access-denied-error";
 import type { ProfessionalAccompanimentReader } from "../application/professional-accompaniment-port";
 import {
   createDemoProfessionalAccompanimentStore,
@@ -48,7 +48,7 @@ export function createDemoProfessionalAccompanimentReader({
       const accompaniment = store.read().find((candidate) => candidate.id === accompanimentId);
 
       if (!accompaniment) {
-        throw new ProfessionalAccompanimentAccessDeniedError();
+        throw new AccompanimentAccessDeniedError();
       }
 
       return accompaniment;

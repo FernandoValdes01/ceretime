@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type {
-  Accompaniment,
   StudentAreaSnapshot,
   StudentIdentity,
   StudentRequest,
 } from "../../domain/student-area-models";
+import type { Accompaniment } from "../../domain/request-models";
 import type { StudentAreaReader } from "../../application/student-area-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
 

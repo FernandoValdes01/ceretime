@@ -8,20 +8,3 @@ export interface ProfessionalAccompaniment {
   readonly objective: string;
   readonly status: ProfessionalAccompanimentStatus;
 }
-
-// Error de acceso: el adaptador lo lanza cuando el acompañamiento no pertenece a la persona.
-export const professionalAccompanimentAccessDeniedMessage =
-  "No puedes acceder a este acompañamiento.";
-
-export class ProfessionalAccompanimentAccessDeniedError extends Error {
-  constructor() {
-    super(professionalAccompanimentAccessDeniedMessage);
-    this.name = "ProfessionalAccompanimentAccessDeniedError";
-  }
-}
-
-export function isProfessionalAccompanimentAccessDeniedError(
-  error: unknown,
-): error is ProfessionalAccompanimentAccessDeniedError {
-  return error instanceof ProfessionalAccompanimentAccessDeniedError;
-}

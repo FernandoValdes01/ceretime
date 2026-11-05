@@ -3,7 +3,7 @@ import { useCallback, useState } from "react";
 import type {
   ProfessionalAgendaDayViewModel,
   ProfessionalAgendaAppointmentViewModel,
-} from "../../domain/professional-agenda-view-models";
+} from "../../application/professional-agenda-view-models";
 import type { ProfessionalAgendaReader } from "../../application/professional-agenda-port";
 
 import { useAsyncResource } from "./use-async-resource";

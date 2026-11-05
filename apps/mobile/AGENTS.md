@@ -16,7 +16,7 @@ No inicies ni reinicies Expo, Metro ni ningún servidor de desarrollo para valid
 
 ## Capas de `src/`
 
-- `domain/`: modelos, proyecciones, errores y lógica pura, sin I/O ni React.
-- `application/`: solo puertos, las interfaces que la app necesita del exterior. Un puerto importa de `domain/`, nunca al revés.
+- `domain/`: modelos, proyecciones y errores propios del negocio, sin I/O ni React. Los tipos que comparten varios roles van en `request-models.ts`.
+- `application/`: los puertos, las interfaces que la app necesita del exterior, con los tipos de su contrato (como los modelos de vista de la agenda o `UserFacingError`). Importa de `domain/`, nunca al revés.
 - `infrastructure/`: adaptadores que implementan los puertos (demo, nativos, contratos de Convex).
 - `presentation/`: pantallas, hooks y proveedores; `composition/` elige los adaptadores.

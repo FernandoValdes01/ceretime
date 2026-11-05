@@ -3,8 +3,8 @@ import type {
   GeneralAvailability,
   IsoDateTime,
   ModalityPreference,
-  StudentRequestStatus,
-} from "./student-area-models";
+  RequestStatus,
+} from "./request-models";
 
 export type ProfessionalRequestAction = "startReview" | "requestInformation" | "accept";
 
@@ -17,7 +17,7 @@ export interface ProfessionalRequest {
   readonly id: string;
   readonly studentId?: string;
   readonly studentName?: string;
-  readonly status: StudentRequestStatus;
+  readonly status: RequestStatus;
   readonly createdAt: IsoDateTime;
   readonly updatedAt?: IsoDateTime;
   readonly needSummary?: string;

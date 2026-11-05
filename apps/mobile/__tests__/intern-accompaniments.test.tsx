@@ -5,7 +5,7 @@ import { renderRouter } from "expo-router/testing-library";
 import { AccessibilityInfo } from "react-native";
 
 import type { InternAccompaniment } from "../src/domain/intern-accompaniment-models";
-import { InternAccompanimentAccessDeniedError } from "../src/domain/intern-accompaniment-models";
+import { AccompanimentAccessDeniedError } from "../src/domain/accompaniment-access-denied-error";
 import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { createDemoInternAccompanimentReader } from "../src/infrastructure/demo-intern-accompaniment-reader";
 import { InternAccompanimentsContent } from "../src/presentation/practicante/intern-accompaniments-screen";
@@ -41,7 +41,7 @@ describe("lector de acompañamientos del Practicante", () => {
     await expect(reader.readAssignedAccompaniments("another-intern")).resolves.toEqual([]);
     await expect(
       reader.readAssignedAccompaniment("demo-intern-assigned-1", "not-assigned"),
-    ).rejects.toBeInstanceOf(InternAccompanimentAccessDeniedError);
+    ).rejects.toBeInstanceOf(AccompanimentAccessDeniedError);
     await expect(
       reader.readAssignedAccompaniment("another-intern", "demo-accompaniment-1"),
     ).rejects.toThrow("No puedes acceder a este acompañamiento.");

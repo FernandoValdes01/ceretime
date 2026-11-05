@@ -1,19 +1,13 @@
-import type { AccompanimentStatus } from "../../../../convex/domain/accompaniments/accompaniment";
-export type { AccompanimentStatus } from "../../../../convex/domain/accompaniments/accompaniment";
+import type { AccompanimentRequestContent } from "../../../../convex/domain/requests/request";
 import type {
-  AccompanimentRequestContent,
+  Accompaniment,
   GeneralAvailability,
+  IsoDateTime,
   ModalityPreference,
-} from "../../../../convex/domain/requests/request";
-export type {
-  AccessNeed,
-  GeneralAvailability,
-  ModalityPreference,
-} from "../../../../convex/domain/requests/request";
+  RequestStatus,
+} from "./request-models";
 
 // Proyecciones móviles; el contenido de la solicitud procede del dominio compartido.
-
-export type IsoDateTime = string;
 
 export interface StudentIdentity {
   readonly id: string;
@@ -21,18 +15,9 @@ export interface StudentIdentity {
   readonly email: string;
 }
 
-export type StudentRequestStatus =
-  | "received"
-  | "underReview"
-  | "awaitingInformationOrAcceptance"
-  | "accepted"
-  | "referred"
-  | "closedWithoutAccompaniment"
-  | "cancelled";
-
 export interface StudentRequest {
   readonly id: string;
-  readonly status: StudentRequestStatus;
+  readonly status: RequestStatus;
   // Solo existe cuando la solicitud se cierra sin abrir un acompañamiento.
   readonly closureReason?: string;
   readonly createdAt: IsoDateTime;
@@ -44,18 +29,6 @@ export interface StudentRequest {
   readonly generalAvailability?: GeneralAvailability;
   readonly modalityPreference?: ModalityPreference;
   readonly preferredAccessibleInformationChannel?: string;
-}
-
-// Vista del acompañamiento que recibe la app, derivada del modelo canónico del dominio.
-export interface Accompaniment {
-  readonly id: string;
-  readonly status: AccompanimentStatus;
-  readonly objective?: string;
-  readonly accessNeeds?: string;
-  readonly view?: "full" | "minimized";
-  // No viene en la proyección actual de acompañamientos de TI2.
-  readonly requestId?: string;
-  readonly createdAt?: IsoDateTime;
 }
 
 export interface StudentAreaSnapshot {
