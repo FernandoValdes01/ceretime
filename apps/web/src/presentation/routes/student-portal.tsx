@@ -269,11 +269,17 @@ function StudentPanelContent() {
       <section aria-labelledby="student-attentions-title" className="student-portal__section">
         <div className="student-portal__section-head">
           <h2 id="student-attentions-title">Atenciones</h2>
-          <span className="student-portal__soon">Próximamente</span>
         </div>
         <div className="student-portal__empty student-portal__empty--blue">
-          <p className="student-portal__empty-title">Aún no tienes atenciones agendadas.</p>
-          <p>Cuando tengas atenciones agendadas en un acompañamiento activo, aparecerán aquí.</p>
+          <p className="student-portal__empty-title">Revisa tus atenciones y su estado.</p>
+          <div className="student-portal__cta">
+            <Link
+              to="/estudiante/atenciones"
+              className="student-portal__btn student-portal__btn--ghost"
+            >
+              Ver mis atenciones
+            </Link>
+          </div>
         </div>
       </section>
 

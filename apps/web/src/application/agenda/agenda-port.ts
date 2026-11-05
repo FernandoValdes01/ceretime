@@ -22,8 +22,8 @@ import {
  * reglas de disponibilidad, cruces, transiciones ni autorización. TI2-102
  * extiende este mismo archivo con la reserva, TI2-103 con bloques y
  * excepciones, TI2-04 con espacios, TI2-113 completa los desenlaces de la
- * reserva, y TI2-115 con la agenda del Profesional; no crear otro puerto
- * por operación. La vista propia del Estudiante (TI2-114) reutiliza
+ * reserva y agrega la cancelación visible, y TI2-115 con la agenda del
+ * Profesional; no crear otro puerto por operación. La vista propia del Estudiante (TI2-114) reutiliza
  * `listAppointments`/`getAppointment` sin capacidades nuevas: el rol queda
  * resuelto por el Backend.
  */

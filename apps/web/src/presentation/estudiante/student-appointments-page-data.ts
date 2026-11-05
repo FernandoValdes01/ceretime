@@ -42,17 +42,25 @@ function sharedViewOf(appointment: AgendaAppointment): AgendaAppointment {
 
 /** Lista de las atenciones propias, con la vista `shared` aplicada. */
 export function useStudentAppointments(attempt: number): ListAppointmentsResult | undefined {
-  const [result, setResult] = useState<ListAppointmentsResult | undefined>(undefined);
+  // El resultado recuerda a qué intento pertenece: al reintentar se deriva la
+  // carga en el render, sin conservar el error anterior mientras llega la
+  // respuesta nueva.
+  const [entry, setEntry] = useState<{
+    attempt: number;
+    result?: ListAppointmentsResult;
+  }>({ attempt });
 
   useEffect(() => {
     let cancelled = false;
     const apply = (next: ListAppointmentsResult) => {
       if (!cancelled) {
-        setResult(
-          next.status === "ok"
-            ? { status: "ok", appointments: next.appointments.map(sharedViewOf) }
-            : next,
-        );
+        setEntry({
+          attempt,
+          result:
+            next.status === "ok"
+              ? { status: "ok", appointments: next.appointments.map(sharedViewOf) }
+              : next,
+        });
       }
     };
     const port = getAgendaPort();
@@ -76,7 +84,7 @@ export function useStudentAppointments(attempt: number): ListAppointmentsResult 
     };
   }, [attempt]);
 
-  return result;
+  return entry.attempt === attempt ? entry.result : undefined;
 }
 
 /** Detalle de una atención propia, con la vista `shared` aplicada. */
@@ -84,17 +92,25 @@ export function useStudentAppointment(
   appointmentId: string,
   attempt: number,
 ): AgendaAppointmentResult | undefined {
-  const [result, setResult] = useState<AgendaAppointmentResult | undefined>(undefined);
+  // Igual que la lista, el resultado recuerda a qué lectura pertenece.
+  const [entry, setEntry] = useState<{
+    appointmentId: string;
+    attempt: number;
+    result?: AgendaAppointmentResult;
+  }>({ appointmentId, attempt });
 
   useEffect(() => {
     let cancelled = false;
     const apply = (next: AgendaAppointmentResult) => {
       if (!cancelled) {
-        setResult(
-          next.status === "ok"
-            ? { status: "ok", appointment: sharedViewOf(next.appointment) }
-            : next,
-        );
+        setEntry({
+          appointmentId,
+          attempt,
+          result:
+            next.status === "ok"
+              ? { status: "ok", appointment: sharedViewOf(next.appointment) }
+              : next,
+        });
       }
     };
     const port = getAgendaPort();
@@ -118,8 +134,20 @@ export function useStudentAppointment(
     };
   }, [appointmentId, attempt]);
 
-  return result;
+  return entry.appointmentId === appointmentId && entry.attempt === attempt
+    ? entry.result
+    : undefined;
 }
+
+/** Catálogo de salas por identificador, con su estado de lectura y reintento. */
+export type SpaceLabels = {
+  readonly labels: ReadonlyMap<string, string>;
+  /** Verdadero cuando la lectura terminó; una sala sin etiqueta queda sin resolver. */
+  readonly settled: boolean;
+  readonly retry: () => void;
+};
+
+const NO_SPACE_LABELS: ReadonlyMap<string, string> = new Map();
 
 /**
  * Etiquetas legibles de los espacios del catálogo, por identificador.
@@ -127,29 +155,47 @@ export function useStudentAppointment(
  * La misma lectura compartida (`space:read`) resuelve la etiqueta con
  * `toSpaceLabel` del dominio. Mientras carga, o si la lectura falla, el mapa
  * queda vacío y la fila omite el espacio en vez de mostrar el identificador
- * interno.
+ * interno; `settled` permite avisar de la sala sin resolver y `retry` vuelve a
+ * leer el catálogo sin afectar a las atenciones ya cargadas.
  */
-export function useSpaceLabels(): ReadonlyMap<string, string> {
-  const [labels, setLabels] = useState<ReadonlyMap<string, string>>(() => new Map());
+export function useSpaceLabels(): SpaceLabels {
+  const [attempt, setAttempt] = useState(0);
+  const [entry, setEntry] = useState<{
+    attempt: number;
+    labels: ReadonlyMap<string, string>;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const settle = (labels: ReadonlyMap<string, string>) => {
+      if (!cancelled) {
+        setEntry({ attempt, labels });
+      }
+    };
     getAgendaPort()
       .listSpaces()
       .then(
         (result) => {
-          if (!cancelled && result.status === "ok") {
-            setLabels(new Map(result.spaces.map((space) => [space.id, toSpaceLabel(space)])));
-          }
+          settle(
+            result.status === "ok"
+              ? new Map(result.spaces.map((space) => [space.id, toSpaceLabel(space)]))
+              : NO_SPACE_LABELS,
+          );
         },
         () => {
-          // Sin catálogo la lista sigue siendo útil: el espacio se omite.
+          // Sin catálogo la lista sigue siendo útil: el espacio se omite con aviso.
+          settle(NO_SPACE_LABELS);
         },
       );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
 
-  return labels;
+  const settled = entry !== null && entry.attempt === attempt;
+  return {
+    labels: settled ? entry.labels : NO_SPACE_LABELS,
+    settled,
+    retry: () => setAttempt((value) => value + 1),
+  };
 }

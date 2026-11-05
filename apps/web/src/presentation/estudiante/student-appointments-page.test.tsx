@@ -12,11 +12,11 @@ import type { Space } from "../../../../../convex/domain/index.ts";
  * (TI2-114).
  *
  * Integración por el router real (incluye el guard y la nav del portal). El
- * adaptador ficticio se mockea por módulo con promesas controladas y la
- * respuesta simulada puede traer el motivo de cancelación de la vista
- * profesional: la prueba verifica que el Estudiante no lo reciba, como
- * corresponde a la vista `shared` de TI2-112. El cableado real del puerto lo
- * cubren las pruebas del adaptador, `tsc` y el build. Todos los datos son
+ * puerto vigente se simula en `getAgendaPort`, sin depender del adaptador que
+ * lo implemente, y la respuesta simulada puede traer el motivo de cancelación
+ * de la vista profesional: la prueba verifica que la pantalla no lo muestre,
+ * como corresponde a la vista `shared` de TI2-112. El cableado real del puerto
+ * lo cubren las pruebas del adaptador, `tsc` y el build. Todos los datos son
  * ficticios y las páginas los declaran como demostración.
  */
 
@@ -39,8 +39,9 @@ vi.mock("../session/session-state", () => ({
   useSessionAndRole: () => mockedPair,
 }));
 
-vi.mock("../../infrastructure/agenda/fictitious-agenda-adapter.ts", () => ({
-  createFictitiousAgendaAdapter: () => ({
+vi.mock("./schedule-search-data.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./schedule-search-data.ts")>()),
+  getAgendaPort: () => ({
     listAppointments: listAppointmentsMock,
     getAppointment: getAppointmentMock,
     listSpaces: listSpacesMock,
@@ -176,6 +177,19 @@ const ESPACIO_FICTICIO: Space = {
   version: "v1",
 };
 
+const SEGUNDO_ESPACIO_FICTICIO: Space = { ...ESPACIO_FICTICIO, id: "esp-2", room: "Sala 102" };
+
+const AVISO_SALA = "No pudimos cargar la información de la sala. Inténtalo de nuevo.";
+
+/** Promesa resuelta a mano, para observar el estado mientras la lectura sigue en curso. */
+function lecturaEnCurso<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_URL", "https://test.convex.cloud");
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
@@ -195,7 +209,10 @@ beforeEach(() => {
       ? Promise.resolve({ status: "denied" })
       : Promise.resolve({ status: "ok", appointment: found });
   });
-  listSpacesMock.mockResolvedValue({ status: "ok", spaces: [ESPACIO_FICTICIO] });
+  listSpacesMock.mockResolvedValue({
+    status: "ok",
+    spaces: [ESPACIO_FICTICIO, SEGUNDO_ESPACIO_FICTICIO],
+  });
 });
 
 afterEach(() => {
@@ -295,6 +312,48 @@ describe("lista de atenciones propias (TI2-114)", () => {
     expect(await screen.findByText("Realizada")).toBeDefined();
   });
 
+  test("el reintento vuelve a la carga sin conservar el error y deja el foco en el título", async () => {
+    comoEstudiante();
+    const lectura = lecturaEnCurso<unknown>();
+    listAppointmentsMock
+      .mockResolvedValueOnce({ status: "error", message: "Fallo interno." })
+      .mockReturnValueOnce(lectura.promise);
+    renderAt("/estudiante/atenciones");
+
+    expect(await screen.findByText("Fallo interno.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+
+    expect(await screen.findByText("Cargando tus atenciones…")).toBeDefined();
+    expect(screen.queryByText("Fallo interno.")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Atenciones" }));
+
+    lectura.resolve({ status: "ok", appointments: ATENCIONES_FICTICIAS });
+    expect(await screen.findByText("Realizada")).toBeDefined();
+  });
+
+  test("sin catálogo de salas avisa y su reintento recupera la sala", async () => {
+    comoEstudiante();
+    listSpacesMock.mockRejectedValueOnce(new Error("caída de red"));
+    renderAt("/estudiante/atenciones");
+
+    expect(await screen.findByText(AVISO_SALA)).toBeDefined();
+    expect(screen.getByText("Realizada")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar cargar la sala" }));
+
+    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Atenciones" }));
+    expect((await screen.findAllByText(/Sala 101/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(AVISO_SALA)).toBeNull();
+    expect(listSpacesMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("con catálogo disponible no muestra aviso de sala", async () => {
+    comoEstudiante();
+    renderAt("/estudiante/atenciones");
+
+    expect((await screen.findAllByText(/Sala 102/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(AVISO_SALA)).toBeNull();
+  });
+
   test("cada fila navega al detalle de su atención y deja el foco en el título", async () => {
     comoEstudiante();
     const { router } = renderAt("/estudiante/atenciones");
@@ -349,7 +408,7 @@ describe("detalle de la atención (TI2-114)", () => {
     renderAt("/estudiante/atenciones/at-est-6");
 
     expect(await screen.findByText("Inasistencia pendiente")).toBeDefined();
-    expect(screen.queryByText(/días|habil|plazo/iu)).toBeNull();
+    expect(screen.queryByText(/días|hábil|plazo/iu)).toBeNull();
   });
 
   test("atención ajena o desconocida llega como denegación sin filtrar existencia", async () => {
@@ -373,6 +432,50 @@ describe("detalle de la atención (TI2-114)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Programada")).toBeDefined();
     expect(getAppointmentMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("el reintento del detalle vuelve a la carga y deja el foco en el título", async () => {
+    comoEstudiante();
+    const lectura = lecturaEnCurso<unknown>();
+    getAppointmentMock
+      .mockResolvedValueOnce({ status: "error", message: "Fallo interno." })
+      .mockReturnValueOnce(lectura.promise);
+    renderAt("/estudiante/atenciones/at-est-1");
+
+    expect(await screen.findByText("Fallo interno.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+
+    expect(await screen.findByText("Cargando la atención…")).toBeDefined();
+    expect(screen.queryByText("Fallo interno.")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { name: "Detalle de la atención" }),
+    );
+
+    lectura.resolve({ status: "ok", appointment: ATENCIONES_FICTICIAS[0] });
+    expect(await screen.findByText("Programada")).toBeDefined();
+  });
+
+  test("una atención presencial sin catálogo avisa y su reintento muestra la sala", async () => {
+    comoEstudiante();
+    listSpacesMock.mockResolvedValueOnce({ status: "error", message: "Fallo interno." });
+    renderAt("/estudiante/atenciones/at-est-1");
+
+    expect(await screen.findByText(AVISO_SALA)).toBeDefined();
+    expect(screen.queryByText("Fallo interno.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar cargar la sala" }));
+
+    expect(await screen.findByText(/Sala 101/)).toBeDefined();
+    expect(screen.queryByText(AVISO_SALA)).toBeNull();
+  });
+
+  test("una atención en línea sin catálogo no avisa por la sala", async () => {
+    comoEstudiante();
+    listSpacesMock.mockRejectedValue(new Error("caída de red"));
+    renderAt("/estudiante/atenciones/at-est-3");
+
+    expect(await screen.findByText("Reagendada")).toBeDefined();
+    await waitFor(() => expect(listSpacesMock).toHaveBeenCalled());
+    expect(screen.queryByText(AVISO_SALA)).toBeNull();
   });
 });
 

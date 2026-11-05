@@ -12,6 +12,7 @@ import {
   useSpaceLabels,
   useStudentAppointment,
   useStudentAppointments,
+  type SpaceLabels,
 } from "./student-appointments-page-data.ts";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
 
@@ -35,13 +36,12 @@ const ATENCIONES_BACK_LINK = `flex min-h-[44px] w-fit items-center gap-1 rounded
  * foco es visible, siguiendo la fila de la agenda por el puerto común.
  */
 const ATENCION_ITEM =
-  "rounded-lg border border-outline bg-surface-container-lowest transition-colors hover:border-outline";
+  "rounded-lg border border-border-low bg-surface-container-lowest transition-colors hover:border-outline";
 
 const ATENCION_ITEM_LINK = `flex min-h-[44px] flex-col gap-2 rounded-lg px-5 py-4 text-left text-base text-on-surface no-underline ${ATENCIONES_FOCUS_VISIBLE}`;
 
 /** Texto de la declaración de demostración, igual en lista y en detalle. */
-const AVISO_FICTICIO =
-  "Demostración con datos ficticios; la lectura real de la API llegará sin cambiar esta vista.";
+const AVISO_FICTICIO = "Demostración con datos ficticios: estas atenciones no son reales.";
 
 /**
  * Lista de las atenciones propias del Estudiante (TI2-114).
@@ -71,16 +71,32 @@ export function StudentAppointmentsPage() {
       >
         Atenciones
       </h1>
-      <p>Tus atenciones con su estado en texto: Realizada, Cancelada o Inasistencia.</p>
+      <p>Revisa tus atenciones y el estado de cada una.</p>
       <p>{AVISO_FICTICIO}</p>
       <StudentPanelErrorBoundary subject="tus atenciones" level="section">
-        <AppointmentsBody attempt={attempt} onRetry={() => setAttempt((value) => value + 1)} />
+        <AppointmentsBody
+          attempt={attempt}
+          // El botón desaparece al reintentar: el foco pasa al título para no perderse.
+          onRetry={() => {
+            setAttempt((value) => value + 1);
+            headingRef.current?.focus();
+          }}
+          onFocusTitle={() => headingRef.current?.focus()}
+        />
       </StudentPanelErrorBoundary>
     </section>
   );
 }
 
-function AppointmentsBody({ attempt, onRetry }: { attempt: number; onRetry: () => void }) {
+function AppointmentsBody({
+  attempt,
+  onRetry,
+  onFocusTitle,
+}: {
+  attempt: number;
+  onRetry: () => void;
+  onFocusTitle: () => void;
+}) {
   const result = useStudentAppointments(attempt);
   const spaceLabels = useSpaceLabels();
 
@@ -129,31 +145,79 @@ function AppointmentsBody({ attempt, onRetry }: { attempt: number; onRetry: () =
   }
 
   return (
-    <ul className="mt-4 grid list-none gap-3 p-0">
-      {result.appointments.map((appointment) => (
-        <li key={appointment.id} className={ATENCION_ITEM}>
-          <Link
-            to="/estudiante/atenciones/$appointmentId"
-            params={{ appointmentId: appointment.id }}
-            className={ATENCION_ITEM_LINK}
-          >
-            <AppointmentRowContent
-              appointment={appointment}
-              spaceLabel={spaceLabelOf(appointment, spaceLabels)}
-            />
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <>
+      {result.appointments.some((appointment) => isSpaceUnresolved(appointment, spaceLabels)) ? (
+        <SpaceNotice spaceLabels={spaceLabels} onFocusTitle={onFocusTitle} />
+      ) : null}
+      <ul className="mt-4 grid list-none gap-3 p-0">
+        {result.appointments.map((appointment) => (
+          <li key={appointment.id} className={ATENCION_ITEM}>
+            <Link
+              to="/estudiante/atenciones/$appointmentId"
+              params={{ appointmentId: appointment.id }}
+              className={ATENCION_ITEM_LINK}
+            >
+              <AppointmentRowContent
+                appointment={appointment}
+                spaceLabel={spaceLabelOf(appointment, spaceLabels.labels)}
+              />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
 /** Etiqueta del espacio propio de la atención, sin identificador interno. */
 function spaceLabelOf(
   appointment: AgendaAppointment,
-  spaceLabels: ReadonlyMap<string, string>,
+  labels: ReadonlyMap<string, string>,
 ): string | undefined {
-  return appointment.spaceId === undefined ? undefined : spaceLabels.get(appointment.spaceId);
+  return appointment.spaceId === undefined ? undefined : labels.get(appointment.spaceId);
+}
+
+/** Verdadero si la lectura del catálogo terminó sin resolver la sala de la atención. */
+function isSpaceUnresolved(appointment: AgendaAppointment, spaceLabels: SpaceLabels): boolean {
+  return (
+    spaceLabels.settled &&
+    appointment.spaceId !== undefined &&
+    !spaceLabels.labels.has(appointment.spaceId)
+  );
+}
+
+/**
+ * Aviso de una sala sin resolver. Para una atención presencial la sala es un
+ * dato necesario: se declara su ausencia en vez de omitirla en silencio, y el
+ * reintento lee solo el catálogo.
+ */
+function SpaceNotice({
+  spaceLabels,
+  onFocusTitle,
+}: {
+  spaceLabels: SpaceLabels;
+  onFocusTitle: () => void;
+}) {
+  return (
+    <div>
+      <p role="alert" className="student-portal__error">
+        No pudimos cargar la información de la sala. Inténtalo de nuevo.
+      </p>
+      <div className="student-portal__cta">
+        <button
+          type="button"
+          className="student-portal__btn student-portal__btn--primary"
+          onClick={() => {
+            spaceLabels.retry();
+            // El botón desaparece al reintentar: el foco pasa al título para no perderse.
+            onFocusTitle();
+          }}
+        >
+          Reintentar cargar la sala
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -235,7 +299,12 @@ export function StudentAppointmentDetailPage({ appointmentId }: { appointmentId:
         <AppointmentDetailBody
           appointmentId={appointmentId}
           attempt={attempt}
-          onRetry={() => setAttempt((value) => value + 1)}
+          // El botón desaparece al reintentar: el foco pasa al título para no perderse.
+          onRetry={() => {
+            setAttempt((value) => value + 1);
+            headingRef.current?.focus();
+          }}
+          onFocusTitle={() => headingRef.current?.focus()}
         />
       </StudentPanelErrorBoundary>
     </section>
@@ -246,10 +315,12 @@ function AppointmentDetailBody({
   appointmentId,
   attempt,
   onRetry,
+  onFocusTitle,
 }: {
   appointmentId: string;
   attempt: number;
   onRetry: () => void;
+  onFocusTitle: () => void;
 }) {
   const result = useStudentAppointment(appointmentId, attempt);
   const spaceLabels = useSpaceLabels();
@@ -290,22 +361,27 @@ function AppointmentDetailBody({
   }
 
   const shown = result.appointment;
-  const spaceLabel = spaceLabelOf(shown, spaceLabels);
+  const spaceLabel = spaceLabelOf(shown, spaceLabels.labels);
 
   return (
-    <dl className="m-0 divide-y divide-(--ct-line)">
-      <DetailRow label="Estado">{appointmentStatusLabel(shown.status)}</DetailRow>
-      <DetailRow label="Fecha y hora">
-        {formatAppointmentDateTime(shown.startAt, shown.endAt)}
-      </DetailRow>
-      <DetailRow label="Modalidad">{modalityLabel(shown.modality)}</DetailRow>
-      {spaceLabel === undefined ? null : <DetailRow label="Espacio">{spaceLabel}</DetailRow>}
-      {shown.originalStartAt === undefined ? null : (
-        <DetailRow label="Fecha original conservada">
-          {formatAppointmentInstant(shown.originalStartAt)}
+    <>
+      <dl className="m-0 divide-y divide-(--ct-line)">
+        <DetailRow label="Estado">{appointmentStatusLabel(shown.status)}</DetailRow>
+        <DetailRow label="Fecha y hora">
+          {formatAppointmentDateTime(shown.startAt, shown.endAt)}
         </DetailRow>
-      )}
-    </dl>
+        <DetailRow label="Modalidad">{modalityLabel(shown.modality)}</DetailRow>
+        {spaceLabel === undefined ? null : <DetailRow label="Espacio">{spaceLabel}</DetailRow>}
+        {shown.originalStartAt === undefined ? null : (
+          <DetailRow label="Fecha original conservada">
+            {formatAppointmentInstant(shown.originalStartAt)}
+          </DetailRow>
+        )}
+      </dl>
+      {isSpaceUnresolved(shown, spaceLabels) ? (
+        <SpaceNotice spaceLabels={spaceLabels} onFocusTitle={onFocusTitle} />
+      ) : null}
+    </>
   );
 }
 

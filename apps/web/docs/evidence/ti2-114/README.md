@@ -19,16 +19,17 @@ Issue: [TI2-114](https://linear.app/ceretime/issue/TI2-114). PR [ #152 ](https:/
 
 ## Validación ejecutada
 
-| Comando                                                                                   | Resultado                                                  |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `bunx vitest run apps/web/src/presentation/estudiante/student-appointments-page.test.tsx` | 16 pruebas del nuevo módulo, en verde                      |
-| `bun run test:web`                                                                        | 23 archivos / 380 pruebas, en verde                        |
-| `bun run --cwd apps/web lint`                                                             | en verde                                                   |
-| `bun run --cwd apps/web build` (`tsc -b` + Vite)                                          | en verde                                                   |
-| `bun run lint` / `bun run format:check`                                                   | en verde (agregar resultado final antes de pedir revisión) |
-| `bunx cspell` con `@cspell/dict-es-es`                                                    | pendiente de anotar                                        |
+| Comando                                                                             | Resultado                                                                                                                                                           |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run test:web`                                                                  | 23 archivos / 387 pruebas, en verde                                                                                                                                 |
+| `bun run --cwd apps/web lint`                                                       | en verde                                                                                                                                                            |
+| `bun run --cwd apps/web build` (`tsc -b` + Vite)                                    | en verde                                                                                                                                                            |
+| `bun run lint` / `bun run format:check`                                             | en verde                                                                                                                                                            |
+| `cspell` con `@cspell/dict-es-es` (ejecutado con `npx`)                             | sin hallazgos en los textos de esta entrega; quedan una palabra en `student-portal.tsx` y 8 en `docs/contratos-sprint-1.md`, en líneas que esta entrega no modifica |
+| `test:web` y `tsc -b` sobre esta rama combinada localmente con la PR #155 (TI2-123) | 24 archivos / 417 pruebas, en verde; sin conflictos de fusión                                                                                                       |
 
 ## Pendiente al cierre
 
-- Recorrido por teclado + capturas de escritorio y móvil de carga, vacío, fallo, denegación y los estados de atención, anotadas aquí antes de pedir la revisión de TI4.
-- Resultado final de `bun run lint`, `bun run format:check` y `cspell` de los textos definitivos, más los SHA de los commits de cierre.
+- Al integrar TI2-123: quitar el aviso de demostración y sus pruebas, ajustar el estado vacío a la ventana de lectura y comprobar lista, detalle y denegación contra la API en el entorno ficticio. Las pruebas actuales simulan el puerto y no detectan el aviso obsoleto.
+- Recorrido por teclado y capturas de escritorio y móvil de carga, vacío, fallo, denegación y los estados de atención, antes de pedir la revisión de TI4.
+- SHA de los commits de cierre.
