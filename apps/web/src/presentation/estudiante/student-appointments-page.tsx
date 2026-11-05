@@ -9,6 +9,8 @@ import {
   modalityLabel,
 } from "./agenda-labels.ts";
 import {
+  AGENDA_DAYS_AFTER,
+  AGENDA_DAYS_BEFORE,
   useSpaceLabels,
   useStudentAppointment,
   useStudentAppointments,
@@ -40,15 +42,19 @@ const ATENCION_ITEM =
 
 const ATENCION_ITEM_LINK = `flex min-h-[44px] flex-col gap-2 rounded-lg px-5 py-4 text-left text-base text-on-surface no-underline ${ATENCIONES_FOCUS_VISIBLE}`;
 
-/** Texto de la declaración de demostración, igual en lista y en detalle. */
-const AVISO_FICTICIO = "Demostración con datos ficticios: estas atenciones no son reales.";
+/**
+ * Período que cubre la lista, en días civiles. La lectura real pide una
+ * ventana acotada: lo dice en pantalla para que el vacío no se lea como
+ * "nunca tuviste atenciones".
+ */
+const PERIODO_LISTA = `los últimos ${AGENDA_DAYS_BEFORE} días y los próximos ${AGENDA_DAYS_AFTER}`;
 
 /**
  * Lista de las atenciones propias del Estudiante (TI2-114).
  *
- * Reutiliza el puerto común de agenda (`listAppointments`) mientras la
- * conexión real sigue pendiente (TI2-123), y lo declara en pantalla: los
- * datos son ficticios de demostración. Los estados textuales de Realizada,
+ * Reutiliza el puerto común de agenda (`listAppointments`), conectado a la
+ * API por TI2-123: el Backend entrega solo las atenciones propias dentro de
+ * la ventana de lectura del adaptador. Los estados textuales de Realizada,
  * Cancelada e Inasistencia salen de las etiquetas compartidas de la agenda
  * estudiantil, y ni el plazo de justificación (TI2-94) ni su presentación
  * o revisión (TI2-119) se calculan o muestran acá.
@@ -71,8 +77,7 @@ export function StudentAppointmentsPage() {
       >
         Atenciones
       </h1>
-      <p>Revisa tus atenciones y el estado de cada una.</p>
-      <p>{AVISO_FICTICIO}</p>
+      <p>Revisa tus atenciones de {PERIODO_LISTA}, con el estado de cada una.</p>
       <StudentPanelErrorBoundary subject="tus atenciones" level="section">
         <AppointmentsBody
           attempt={attempt}
@@ -138,8 +143,8 @@ function AppointmentsBody({
   if (result.status === "empty") {
     return (
       <div className="student-portal__empty">
-        <p className="student-portal__empty-title">Aún no tienes atenciones.</p>
-        <p>Cuando reserves un horario, aparecerán aquí con su estado.</p>
+        <p className="student-portal__empty-title">No tienes atenciones en {PERIODO_LISTA}.</p>
+        <p>Cuando reserves un horario, aparecerá aquí con su estado.</p>
       </div>
     );
   }
@@ -263,8 +268,9 @@ function AppointmentRowContent({
 /**
  * Detalle de una atención propia del Estudiante (TI2-114).
  *
- * Muestra la misma lectura por el puerto común y la declara como
- * demostración. El detalle corresponde a la vista `shared` de TI2-112: no
+ * Muestra la misma lectura por el puerto común, conectado a la API. Una
+ * atención fuera de la ventana de la lista sigue disponible por su
+ * identificador. El detalle corresponde a la vista `shared` de TI2-112: no
  * muestra el motivo de cancelación, que queda en la vista del Profesional.
  */
 export function StudentAppointmentDetailPage({ appointmentId }: { appointmentId: string }) {
@@ -290,7 +296,6 @@ export function StudentAppointmentDetailPage({ appointmentId }: { appointmentId:
           <span aria-hidden="true">←</span> Volver a tus atenciones
         </Link>
       </p>
-      <p>{AVISO_FICTICIO}</p>
       <StudentPanelErrorBoundary
         key={appointmentId}
         subject="el detalle de la atención"

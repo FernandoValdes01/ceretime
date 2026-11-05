@@ -16,8 +16,9 @@ import type { Space } from "../../../../../convex/domain/index.ts";
  * lo implemente, y la respuesta simulada puede traer el motivo de cancelación
  * de la vista profesional: la prueba verifica que la pantalla no lo muestre,
  * como corresponde a la vista `shared` de TI2-112. El cableado real del puerto
- * lo cubren las pruebas del adaptador, `tsc` y el build. Todos los datos son
- * ficticios y las páginas los declaran como demostración.
+ * lo cubren las pruebas del adaptador, `tsc` y el build. Los datos de estas
+ * pruebas son ficticios; la página lee la API real desde TI2-123 y no muestra
+ * aviso de demostración.
  */
 
 let mockedSession: WebSessionState;
@@ -257,25 +258,29 @@ describe("lista de atenciones propias (TI2-114)", () => {
     }
   });
 
-  test("declara la demostración con datos ficticios", async () => {
+  test("declara el período que cubre la lista, sin aviso de demostración", async () => {
     comoEstudiante();
     renderAt("/estudiante/atenciones");
 
     expect(
-      await screen.findByText("Demostración con datos ficticios", { exact: false }),
+      await screen.findByText(
+        "Revisa tus atenciones de los últimos 45 días y los próximos 46, con el estado de cada una.",
+      ),
     ).toBeDefined();
+    expect(await screen.findByText("Realizada")).toBeDefined();
+    expect(screen.queryByText(/ficticios|demostración/iu)).toBeNull();
   });
 
-  test("estado vacío sin filas conserva la declaración de demostración", async () => {
+  test("el estado vacío se acota al período de la lista", async () => {
     comoEstudiante();
     listAppointmentsMock.mockResolvedValue({ status: "empty" });
     renderAt("/estudiante/atenciones");
 
-    expect(await screen.findByText("Aún no tienes atenciones.")).toBeDefined();
-    expect(screen.queryByRole("link", { name: /Ver detalle/ })).toBeNull();
     expect(
-      await screen.findByText("Demostración con datos ficticios", { exact: false }),
+      await screen.findByText("No tienes atenciones en los últimos 45 días y los próximos 46."),
     ).toBeDefined();
+    expect(screen.queryByText("Aún no tienes atenciones.")).toBeNull();
+    expect(screen.queryByRole("link", { name: /Ver detalle/ })).toBeNull();
   });
 
   test("denegación de la lectura es genérica sin detalles", async () => {
@@ -377,9 +382,7 @@ describe("detalle de la atención (TI2-114)", () => {
     expect(await screen.findByText("Reagendada")).toBeDefined();
     expect(screen.getByText("En línea")).toBeDefined();
     expect(screen.getByText("Fecha original conservada")).toBeDefined();
-    expect(
-      await screen.findByText("Demostración con datos ficticios", { exact: false }),
-    ).toBeDefined();
+    expect(screen.queryByText(/ficticios|demostración/iu)).toBeNull();
     expect(screen.getByRole("link", { name: "Volver a tus atenciones" }).getAttribute("href")).toBe(
       "/estudiante/atenciones",
     );

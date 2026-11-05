@@ -7,16 +7,20 @@ import type {
 } from "../../application/agenda/agenda-port.ts";
 import { getAgendaPort } from "./schedule-search-data.ts";
 
+/** Ventana de la lista según el adaptador, para declararla en pantalla. */
+export {
+  AGENDA_DAYS_AFTER,
+  AGENDA_DAYS_BEFORE,
+} from "../../infrastructure/agenda/convex-agenda-adapter.ts";
+
 /**
  * Lectura de las atenciones propias del Estudiante (TI2-114).
  *
  * La lista y el detalle reutilizan el mismo puerto común de agenda
- * (`listAppointments`/`getAppointment`) que la agenda del Profesional:
- * mientras la conexión real sigue pendiente (TI2-123), la lectura cae en el
- * adaptador ficticio vigente del flujo estudiantil y la vista lo declara
- * como demostración. El rol no se decide acá ni en el Cliente: cuando el
- * adaptador real responda, el Backend entrega solo las atenciones propias
- * del Estudiante y esta presentación no cambia.
+ * (`listAppointments`/`getAppointment`) que la agenda del Profesional,
+ * conectado a la API por TI2-123. El rol no se decide acá ni en el Cliente:
+ * el Backend entrega solo las atenciones propias del Estudiante, dentro de
+ * la ventana de lectura del adaptador.
  *
  * La proyección visible corresponde a la vista `shared` de TI2-112: el
  * motivo de cancelación es texto libre de la vista del Profesional y el
