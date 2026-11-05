@@ -7,7 +7,7 @@ export interface AuthCredentials {
   readonly password: string;
 }
 
-export interface AuthAccompaniment {
+export interface AssignedAccompanimentSummary {
   readonly id: string;
   readonly title: string;
 }
@@ -17,7 +17,7 @@ export interface AuthenticatedUser {
   readonly displayName: string;
   readonly email: string;
   readonly role: AuthRole;
-  readonly assignedAccompaniments: readonly AuthAccompaniment[];
+  readonly assignedAccompaniments: readonly AssignedAccompanimentSummary[];
 }
 
 export interface AuthSession {

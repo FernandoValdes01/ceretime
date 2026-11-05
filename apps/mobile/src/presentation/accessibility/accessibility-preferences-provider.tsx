@@ -25,7 +25,10 @@ import {
   resolveAccessibilitySettings,
   type SystemAccessibilitySettings,
 } from "./accessibility-preferences-policy";
-import { getAccessibilityColorVariables } from "./accessibility-color-palette";
+import {
+  getAccessibilityColorPalette,
+  getAccessibilityColorVariables,
+} from "./accessibility-color-palette";
 
 export interface AccessibilityPreferencesState {
   readonly preferences: AccessibilityPreferences;
@@ -45,6 +48,25 @@ const errorMessages: Record<AccessibilityPreferencesError, string> = {
   "invalid-preferences": "La preferencia indicada no es válida.",
 };
 
+// Cada plataforma expone el alto contraste con otro nombre; en web no existe y se asume desactivado.
+function readSystemHighContrast(): Promise<boolean> {
+  if (Platform.OS === "android") return AccessibilityInfo.isHighTextContrastEnabled();
+  if (Platform.OS === "ios") return AccessibilityInfo.isDarkerSystemColorsEnabled();
+  return Promise.resolve(false);
+}
+
+function subscribeToSystemHighContrast(onChange: (highContrast: boolean) => void) {
+  if (Platform.OS === "android") {
+    return AccessibilityInfo.addEventListener("highTextContrastChanged", onChange);
+  }
+  if (Platform.OS === "ios") {
+    return AccessibilityInfo.addEventListener("darkerSystemColorsChanged", onChange);
+  }
+  return null;
+}
+
+// Entrega a toda la app las preferencias guardadas y los ajustes del sistema ya resueltos.
+// `busy` evita escrituras simultáneas y `lifetime` descarta respuestas de un puerto que ya se reemplazó.
 export function AccessibilityPreferencesProvider({
   port,
   children,
@@ -66,6 +88,7 @@ export function AccessibilityPreferencesProvider({
   const busy = useRef(true);
   const lifetime = useRef<{ active: boolean; port: AccessibilityPreferencesPort } | null>(null);
 
+  // Las versiones evitan que una consulta lenta pise un evento del sistema que llegó después.
   useEffect(() => {
     let active = true;
     let queryVersion = 0;
@@ -76,12 +99,7 @@ export function AccessibilityPreferencesProvider({
       const version = ++queryVersion;
       const motionVersionAtStart = motionEventVersion;
       const contrastVersionAtStart = contrastEventVersion;
-      const contrastQuery =
-        Platform.OS === "android"
-          ? AccessibilityInfo.isHighTextContrastEnabled()
-          : Platform.OS === "ios"
-            ? AccessibilityInfo.isDarkerSystemColorsEnabled()
-            : Promise.resolve(false);
+      const contrastQuery = readSystemHighContrast();
       const [reduceMotion, highContrast] = await Promise.all([
         AccessibilityInfo.isReduceMotionEnabled().catch(() => false),
         contrastQuery.catch(() => false),
@@ -109,12 +127,7 @@ export function AccessibilityPreferencesProvider({
         if (active) setSystemSettings((current) => ({ ...current, reduceMotion }));
       },
     );
-    const contrastSubscription =
-      Platform.OS === "android"
-        ? AccessibilityInfo.addEventListener("highTextContrastChanged", updateHighContrast)
-        : Platform.OS === "ios"
-          ? AccessibilityInfo.addEventListener("darkerSystemColorsChanged", updateHighContrast)
-          : null;
+    const contrastSubscription = subscribeToSystemHighContrast(updateHighContrast);
     const appStateSubscription = AppState.addEventListener("change", (state) => {
       if (state === "active") void refreshSystemSettings();
     });
@@ -282,4 +295,10 @@ export function useAccessibilityPreferences() {
 
 export function useOptionalAccessibilityPreferences() {
   return useContext(PreferencesContext);
+}
+
+// Paleta vigente según el alto contraste efectivo; fuera del proveedor usa la paleta estándar.
+export function useAccessibilityColors() {
+  const preferences = useOptionalAccessibilityPreferences();
+  return getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
 }

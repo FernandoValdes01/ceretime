@@ -1,7 +1,7 @@
 import { RoleHome } from "../../../src/presentation/components/role-home";
 import { RoleGuard } from "../../../src/presentation/navigation/role-guard";
 
-export default function PractitionerProfile() {
+export default function InternProfile() {
   return (
     <RoleGuard requiredRole="practicante">
       <RoleHome

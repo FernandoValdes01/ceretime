@@ -13,8 +13,10 @@ import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { AppIconName } from "../components/app-icon";
-import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
-import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import {
+  useOptionalAccessibilityPreferences,
+  useAccessibilityColors,
+} from "../accessibility/accessibility-preferences-provider";
 import { AppIcon } from "../components/app-icon";
 import { StudentText } from "../estudiante/student-text";
 
@@ -32,12 +34,14 @@ const baseRoleTabScreenOptions = {
   },
 };
 
+// Opciones de las pestañas de cada rol. Mide la altura real de cada etiqueta para que la barra crezca
+// con la escala de letra en vez de cortar los nombres.
 export function useRoleTabScreenOptions() {
   const { bottom } = useSafeAreaInsets();
   const { fontScale: systemFontScale, width } = useWindowDimensions();
   const accessibility = useOptionalAccessibilityPreferences();
   const fontScale = accessibility?.effective.textScale ?? systemFontScale;
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
   const iconSize = 21 * Math.min(1.5, Math.max(1, fontScale));
   const layoutKey = `${width}:${fontScale}`;
   const [labelLayout, setLabelLayout] = useState<{
@@ -97,7 +101,7 @@ export function useRoleTabScreenOptions() {
 export function RoleTabBar(props: BottomTabBarProps) {
   const { fontScale } = useWindowDimensions();
   const preferences = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
   const scale = preferences?.effective.textScale ?? fontScale;
   if (scale <= 1.3) return <BottomTabBar {...props} />;
   return (

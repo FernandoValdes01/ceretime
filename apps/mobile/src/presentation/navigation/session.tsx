@@ -39,6 +39,8 @@ function initialSession(port: AuthPort): SessionState {
 
 const SessionContext = createContext<NavigationSession | null>(null);
 
+// Guarda la sesión actual y expone iniciar/cerrar sesión a toda la app.
+// `operation` descarta respuestas de un intento anterior y `pendingOperation` impide dos a la vez.
 export function NavigationSessionProvider({
   children,
   authPort,

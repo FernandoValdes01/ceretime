@@ -1,99 +1,80 @@
 import {
-  createMockAuthenticationPort,
-  mockAuthCredentials,
-  unassignedPractitionerCredentials,
-} from "../infrastructure/mock-authentication";
-import { createMockAdministratorAccountsAdapter } from "../infrastructure/mock-administrator-accounts-adapter";
-import { createMockProfessionalAgendaReader } from "../infrastructure/mock-professional-agenda-reader";
-import { createMockProfessionalAccompanimentReader } from "../infrastructure/mock-professional-accompaniment-reader";
-import { createMockProfessionalAccompanimentStore } from "../infrastructure/mock-professional-accompaniment-data";
-import { createMockProfessionalReviewAdapter } from "../infrastructure/mock-professional-review-adapter";
-import { createMockPractitionerAccompanimentReader } from "../infrastructure/mock-practitioner-accompaniment-reader";
+  createDemoAuthAdapter,
+  demoAuthCredentials,
+  unassignedInternCredentials,
+} from "../infrastructure/demo-auth-adapter";
+import { createDemoAdministratorAccountsAdapter } from "../infrastructure/demo-administrator-accounts-adapter";
+import { createDemoProfessionalAgendaReader } from "../infrastructure/demo-professional-agenda-reader";
+import { createDemoProfessionalAccompanimentReader } from "../infrastructure/demo-professional-accompaniment-reader";
+import { createDemoProfessionalAccompanimentStore } from "../infrastructure/demo-professional-accompaniment-data";
+import { createDemoProfessionalReviewAdapter } from "../infrastructure/demo-professional-review-adapter";
+import { createDemoInternAccompanimentReader } from "../infrastructure/demo-intern-accompaniment-reader";
 import { createLocalAccessibilityPreferencesAdapter } from "../infrastructure/local-accessibility-preferences-adapter";
 import { createNativeSpeechAdapter } from "../infrastructure/native-speech-adapter";
 import { createNativeSpeechRecognitionAdapter } from "../infrastructure/native-speech-recognition-adapter";
-import { createMockStudentAreaReader } from "../infrastructure/mock-student-area-reader";
-import { createMockStudentRequestSubmitter } from "../infrastructure/mock-student-request-submitter";
-import { createMockStudentAreaStore } from "../infrastructure/mock-student-area-store";
+import { createDemoStudentAreaReader } from "../infrastructure/demo-student-area-reader";
+import { createDemoStudentRequestSubmitter } from "../infrastructure/demo-student-request-submitter";
+import { createDemoStudentAreaStore } from "../infrastructure/demo-student-area-store";
 
-const studentAreaMode = process.env.EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE;
-const parsedStudentAreaDelay = Number.parseInt(
-  process.env.EXPO_PUBLIC_STUDENT_AREA_DELAY_MS ?? "0",
-  10,
-);
-const studentAreaDelay =
-  Number.isFinite(parsedStudentAreaDelay) && parsedStudentAreaDelay > 0
-    ? parsedStudentAreaDelay
-    : 0;
+type DemoReadMode = "success" | "empty" | "error";
 
-const practitionerDemoMode = process.env.EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_MODE;
-const parsedPractitionerDelay = Number.parseInt(
-  process.env.EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_DELAY_MS ?? "0",
-  10,
-);
-const practitionerDemoDelay =
-  Number.isFinite(parsedPractitionerDelay) && parsedPractitionerDelay > 0
-    ? parsedPractitionerDelay
-    : 0;
+// Las variables EXPO_PUBLIC_* permiten forzar estados vacíos, errores o demoras para probar la interfaz.
+function readDemoMode(value: string | undefined): DemoReadMode {
+  return value === "empty" || value === "error" ? value : "success";
+}
 
-const professionalAccompanimentDemoMode = process.env.EXPO_PUBLIC_PROFESSIONAL_ACCOMPANIMENT_MODE;
-const parsedProfessionalAccompanimentDelay = Number.parseInt(
-  process.env.EXPO_PUBLIC_PROFESSIONAL_ACCOMPANIMENT_DELAY_MS ?? "0",
-  10,
-);
-const professionalAccompanimentDemoDelay =
-  Number.isFinite(parsedProfessionalAccompanimentDelay) && parsedProfessionalAccompanimentDelay > 0
-    ? parsedProfessionalAccompanimentDelay
-    : 0;
+function readDelayMs(value: string | undefined): number {
+  const delay = Number.parseInt(value ?? "0", 10);
+  return Number.isFinite(delay) && delay > 0 ? delay : 0;
+}
 
+// Las claves públicas conservan «PRACTITIONER» para no romper los .env existentes.
+const internDemoMode = process.env.EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_MODE;
+const internDemoDelay = process.env.EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_DELAY_MS;
+
+// Crea los adaptadores con datos de demostración; `resetDemo` los vuelve a crear para reiniciar el estado.
 export function createDemoDataDependencies() {
-  const mockStudentAreaStore = createMockStudentAreaStore();
-  const professionalAccompanimentStore = createMockProfessionalAccompanimentStore();
+  const demoStudentAreaStore = createDemoStudentAreaStore();
+  const professionalAccompanimentStore = createDemoProfessionalAccompanimentStore();
   return {
-    studentAreaReader: createMockStudentAreaReader({
-      delayMs: studentAreaDelay,
-      mode:
-        studentAreaMode === "empty" || studentAreaMode === "error" ? studentAreaMode : "success",
-      store: mockStudentAreaStore,
+    studentAreaReader: createDemoStudentAreaReader({
+      delayMs: readDelayMs(process.env.EXPO_PUBLIC_STUDENT_AREA_DELAY_MS),
+      mode: readDemoMode(process.env.EXPO_PUBLIC_STUDENT_AREA_DEMO_MODE),
+      store: demoStudentAreaStore,
     }),
-    studentRequestSubmitter: createMockStudentRequestSubmitter({
+    studentRequestSubmitter: createDemoStudentRequestSubmitter({
       failureMode:
         process.env.EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE === "fail-once" ? "once" : "never",
-      store: mockStudentAreaStore,
+      store: demoStudentAreaStore,
     }),
-    administratorAccountsPort: createMockAdministratorAccountsAdapter(),
-    professionalAgendaReader: createMockProfessionalAgendaReader(),
-    professionalAccompanimentReader: createMockProfessionalAccompanimentReader({
-      delayMs: professionalAccompanimentDemoDelay,
-      mode:
-        professionalAccompanimentDemoMode === "empty" ||
-        professionalAccompanimentDemoMode === "error"
-          ? professionalAccompanimentDemoMode
-          : "success",
+    administratorAccountsPort: createDemoAdministratorAccountsAdapter(),
+    professionalAgendaReader: createDemoProfessionalAgendaReader(),
+    professionalAccompanimentReader: createDemoProfessionalAccompanimentReader({
+      delayMs: readDelayMs(process.env.EXPO_PUBLIC_PROFESSIONAL_ACCOMPANIMENT_DELAY_MS),
+      mode: readDemoMode(process.env.EXPO_PUBLIC_PROFESSIONAL_ACCOMPANIMENT_MODE),
       store: professionalAccompanimentStore,
     }),
-    professionalReviewPort: createMockProfessionalReviewAdapter({
+    professionalReviewPort: createDemoProfessionalReviewAdapter({
       accompanimentStore: professionalAccompanimentStore,
-      studentStore: mockStudentAreaStore,
+      studentStore: demoStudentAreaStore,
     }),
-    practitionerAccompanimentReader: createMockPractitionerAccompanimentReader({
-      delayMs: practitionerDemoDelay,
-      mode:
-        practitionerDemoMode === "empty" || practitionerDemoMode === "error"
-          ? practitionerDemoMode
-          : "success",
+    internAccompanimentReader: createDemoInternAccompanimentReader({
+      delayMs: readDelayMs(internDemoDelay),
+      mode: readDemoMode(internDemoMode),
     }),
   };
 }
 
+// Punto único donde la app elige las implementaciones de cada puerto. Hoy todo es demostración local,
+// salvo preferencias (AsyncStorage) y voz (módulos nativos); conectar Convex se hace aquí.
 export const mobileDependencies = {
   ...createDemoDataDependencies(),
   accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
   speechPort: createNativeSpeechAdapter(),
   speechRecognitionPort: createNativeSpeechRecognitionAdapter(),
-  authPort: createMockAuthenticationPort(),
-  demoCredentials: mockAuthCredentials,
-  unassignedPractitionerCredentials,
+  authPort: createDemoAuthAdapter(),
+  demoCredentials: demoAuthCredentials,
+  unassignedInternCredentials,
   resetDemo(): void {
     Object.assign(mobileDependencies, createDemoDataDependencies());
   },

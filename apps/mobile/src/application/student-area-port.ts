@@ -1,3 +1,4 @@
+// Puertos del Estudiante: leer su área (solicitudes y acompañamientos) y enviar una solicitud nueva.
 import type {
   StudentAreaSnapshot,
   StudentRequestSubmissionReceipt,

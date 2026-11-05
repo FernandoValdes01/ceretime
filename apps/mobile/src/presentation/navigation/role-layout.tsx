@@ -6,6 +6,7 @@ import {
   useRoleTabScreenOptions,
 } from "./role-tabs";
 
+// Pestañas del Administrador: inicio, usuarios y perfil.
 export default function RoleLayout() {
   const screenOptions = useRoleTabScreenOptions();
 

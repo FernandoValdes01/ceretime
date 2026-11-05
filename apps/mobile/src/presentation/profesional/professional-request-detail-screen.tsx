@@ -37,6 +37,7 @@ const actionHints: Record<ProfessionalRequestAction, string> = {
   accept: "Acepta la solicitud y abre el acompañamiento",
 };
 
+// Texto que una acción exige antes de habilitarse: el motivo al pedir información y el objetivo al aceptar.
 interface ActionInputField {
   readonly label: string;
   readonly placeholder: string;
@@ -45,6 +46,7 @@ interface ActionInputField {
   readonly details: ProfessionalActionDetails;
 }
 
+// Detalle de una solicitud para el Profesional: carga, error, no encontrada o el detalle con sus acciones.
 export function ProfessionalRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
   const { status, requests, error, reload, performAction, getActionState, getRequestFeedback } =
@@ -121,6 +123,8 @@ export function ProfessionalRequestDetailScreen() {
   );
 }
 
+// Muestra la solicitud y el siguiente paso. Las acciones disponibles se calculan al traducir el contrato
+// según el estado, así que la pantalla solo dibuja las que recibe.
 function RequestDetail({
   request,
   onAction,
@@ -147,6 +151,7 @@ function RequestDetail({
   const [reason, setReason] = useState("");
   const [objective, setObjective] = useState("");
 
+  // Al pasar a revisión, el foco va al mensaje de éxito para que el lector de pantalla lo anuncie.
   useEffect(() => {
     if (
       previousStatus.current !== "underReview" &&

@@ -114,6 +114,7 @@ function ErrorText({ message }: { message?: string }) {
   ) : null;
 }
 
+// Convierte el borrador editable en el comando de envío; solo se llama después de validar el formulario.
 function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCommand {
   const availableFrom = values.availableFrom.trim();
   const availableTo = values.availableTo.trim();
@@ -130,6 +131,7 @@ function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCom
         ? { preferredTimeRange: { from: availableFrom, to: availableTo } }
         : {}),
     },
+    // La validación ya descartó la modalidad vacía, pero el tipo del borrador aún la admite.
     modalityPreference:
       values.modalityPreference as SubmitStudentRequestCommand["modalityPreference"],
     preferredAccessibleInformationChannel: values.preferredAccessibleInformationChannel.trim(),
@@ -187,6 +189,8 @@ export interface RequestFormProps {
   readonly submitter: StudentRequestSubmitter;
 }
 
+// Formulario de solicitud del Estudiante en cinco pasos; valida por paso y lleva el foco al primer error
+// para que lectores de pantalla y teclado no pierdan la posición.
 export function RequestForm({
   onSubmitted,
   onFieldFocus,
@@ -223,12 +227,12 @@ export function RequestForm({
     (key: keyof RequestFormValues) => {
       if (key === "accessNeeds" || key === "modalityPreference" || key === "preferredWeekdays") {
         Keyboard.dismiss();
-        const control =
-          key === "accessNeeds"
-            ? accessControl
-            : key === "modalityPreference"
-              ? modalityControl
-              : weekdayControl;
+        // Los grupos de opciones no son TextInput: se enfocan por su contenedor con un evento de accesibilidad.
+        const control = {
+          accessNeeds: accessControl,
+          modalityPreference: modalityControl,
+          preferredWeekdays: weekdayControl,
+        }[key];
         requestAnimationFrame(() => {
           onRevealGroup(formTop.current + groupTop.current[key]);
           if (control.current) {
@@ -279,6 +283,7 @@ export function RequestForm({
   }
 
   function continueToNextStep() {
+    // Valida solo el paso actual para permitir avanzar sin ocultar errores posteriores.
     markStepValidated(currentStep.id);
     const stepErrors = validateRequestFormStep(values, currentStep.id);
     const firstError = currentStep.fields.find((key) => stepErrors[key]);
@@ -295,6 +300,7 @@ export function RequestForm({
   }
 
   function submit() {
+    // La revisión final recorre los pasos en orden y lleva el foco al primer dato pendiente.
     const nextErrors = validateRequestForm(values);
     const firstError = requestFormSteps
       .slice(0, -1)
@@ -324,6 +330,7 @@ export function RequestForm({
     );
   }
 
+  // Campo de texto con etiqueta, ayuda y error anunciados en un solo label accesible.
   function field(
     key:
       | "needSummary"
@@ -336,6 +343,12 @@ export function RequestForm({
     hint: string,
     multiline = false,
   ) {
+    const borderClass =
+      focusedField === key
+        ? "border-student-focus"
+        : errors[key]
+          ? "border-student-error"
+          : "border-student-outline";
     return (
       <View className="gap-2">
         <Text
@@ -374,7 +387,7 @@ export function RequestForm({
           editable={!isSubmitting}
           accessibilityState={{ disabled: isSubmitting }}
           multiline={multiline}
-          className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${isSubmitting ? "opacity-60" : ""} ${multiline ? "min-h-28" : "min-h-[52px]"} ${focusedField === key ? "border-student-focus" : errors[key] ? "border-student-error" : "border-student-outline"}`}
+          className={`border-2 rounded-lg bg-student-surface text-student-text p-4 text-base leading-[26px] ${isSubmitting ? "opacity-60" : ""} ${multiline ? "min-h-28" : "min-h-[52px]"} ${borderClass}`}
           style={{ fontFamily, borderCurve: "continuous" }}
           textAlignVertical={multiline ? "top" : "center"}
           autoCapitalize={key.startsWith("available") ? "none" : "sentences"}
@@ -393,6 +406,7 @@ export function RequestForm({
     );
   }
 
+  // Textos del paso de revisión.
   const preferredWeekdays = values.preferredWeekdays
     .flatMap((day) => {
       const label = weekdayLabelByValue.get(day);

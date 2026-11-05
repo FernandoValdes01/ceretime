@@ -2,8 +2,7 @@ import { router, type NativeStackNavigationOptions } from "expo-router";
 import { StyleSheet, View } from "react-native";
 
 import { mobileDependencies } from "../../composition/mobile-dependencies";
-import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
-import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { SpeechCommandLauncher } from "../accessibility/speech-controls";
 import { appHeaderOptions } from "./app-header-options";
 import {
@@ -21,10 +20,10 @@ export const studentRequestScreenOptions = {
   headerBackVisible: true,
 } satisfies NativeStackNavigationOptions;
 
+// Pestañas del Estudiante con los comandos de voz fijos sobre la barra.
 export default function StudentLayout() {
   const screenOptions = useRoleTabScreenOptions();
-  const accessibility = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
   return (
     <View style={{ flex: 1 }}>
       <Tabs

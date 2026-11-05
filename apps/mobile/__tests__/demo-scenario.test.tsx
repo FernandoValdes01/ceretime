@@ -5,7 +5,7 @@ import {
   mobileDependencies,
 } from "../src/composition/mobile-dependencies";
 import type { SubmitStudentRequestCommand } from "../src/application/student-area-models";
-import { createFictionalProfessionalAgenda } from "../src/infrastructure/mock-professional-agenda-data";
+import { createDemoProfessionalAgenda } from "../src/infrastructure/demo-professional-agenda-data";
 import { fillRequiredStudentRequestFields } from "./student-request-test-helpers";
 
 const content = {
@@ -88,9 +88,7 @@ test("reiniciar descarta cambios de todos los roles y una escritura tardía del 
   jest.useFakeTimers();
   const previous = mobileDependencies.studentRequestSubmitter;
   const pending = previous.submitStudentRequest(content);
-  await mobileDependencies.administratorAccountsPort.enablePractitionerAccount(
-    "practitioner-account-1",
-  );
+  await mobileDependencies.administratorAccountsPort.enableInternAccount("intern-account-1");
   await mobileDependencies.professionalReviewPort.performProfessionalRequestAction(
     "SOL-PRO-001",
     "startReview",
@@ -104,8 +102,8 @@ test("reiniciar descarta cambios de todos los roles y una escritura tardía del 
     ),
   ).toBe(false);
   expect(
-    (await mobileDependencies.administratorAccountsPort.readPractitionerAccounts()).find(
-      (item) => item.id === "practitioner-account-1",
+    (await mobileDependencies.administratorAccountsPort.readInternAccounts()).find(
+      (item) => item.id === "intern-account-1",
     )?.status,
   ).toBe("pending");
   expect(
@@ -116,12 +114,12 @@ test("reiniciar descarta cambios de todos los roles y una escritura tardía del 
 });
 
 test("la agenda avanza fechas civiles entre meses y ofrece días vacíos sin duplicar actividades", () => {
-  expect(createFictionalProfessionalAgenda(0).dateLabel).toBe("Jueves, 5 de noviembre");
-  expect(createFictionalProfessionalAgenda(1).dateLabel).toBe("Viernes, 6 de noviembre");
-  expect(createFictionalProfessionalAgenda(26).dateLabel).toBe("Martes, 1 de diciembre");
-  expect(createFictionalProfessionalAgenda(-6).dateLabel).toBe("Viernes, 30 de octubre");
-  expect(createFictionalProfessionalAgenda(2).events).toEqual([]);
-  expect(createFictionalProfessionalAgenda(1).events).toHaveLength(1);
+  expect(createDemoProfessionalAgenda(0).dateLabel).toBe("Jueves, 5 de noviembre");
+  expect(createDemoProfessionalAgenda(1).dateLabel).toBe("Viernes, 6 de noviembre");
+  expect(createDemoProfessionalAgenda(26).dateLabel).toBe("Martes, 1 de diciembre");
+  expect(createDemoProfessionalAgenda(-6).dateLabel).toBe("Viernes, 30 de octubre");
+  expect(createDemoProfessionalAgenda(2).appointments).toEqual([]);
+  expect(createDemoProfessionalAgenda(1).appointments).toHaveLength(1);
 });
 
 test("recorre la solicitud real de las pantallas entre Estudiante y Profesional y permite repetir la demostración", async () => {

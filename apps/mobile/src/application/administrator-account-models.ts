@@ -1,13 +1,13 @@
-export type PractitionerAccountStatus = "pending" | "enabled";
+export type InternAccountStatus = "pending" | "enabled";
 
-export interface PractitionerAccount {
+export interface InternAccount {
   readonly id: string;
   readonly displayName: string;
   readonly email: string;
-  readonly status: PractitionerAccountStatus;
+  readonly status: InternAccountStatus;
 }
 
-export interface PractitionerAccountEnablementReceipt {
-  readonly account: PractitionerAccount;
+export interface InternAccountEnablementReceipt {
+  readonly account: InternAccount;
   readonly message: string;
 }

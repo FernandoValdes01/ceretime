@@ -7,9 +7,9 @@ import { useProfessionalAgendaContext } from "./professional-agenda-provider";
 import { ProfessionalHeader } from "./professional-header";
 
 export function ProfessionalAgendaDetailScreen() {
-  const { eventId } = useLocalSearchParams<{ eventId: string }>();
-  const { status, findEvent, error, reload } = useProfessionalAgendaContext();
-  const event = typeof eventId === "string" ? findEvent(eventId) : null;
+  const { appointmentId } = useLocalSearchParams<{ appointmentId: string }>();
+  const { status, findAppointment, error, reload } = useProfessionalAgendaContext();
+  const appointment = typeof appointmentId === "string" ? findAppointment(appointmentId) : null;
 
   return (
     <StudentFonts>
@@ -35,22 +35,25 @@ export function ProfessionalAgendaDetailScreen() {
                 </StudentText>
               </Pressable>
             </View>
-          ) : event ? (
+          ) : appointment ? (
             <View style={styles.detailCard}>
               <StudentText weight="bold" style={styles.name}>
-                {event.studentName}
+                {appointment.studentName}
               </StudentText>
               <StudentText accessibilityRole="header" weight="semibold" style={styles.title}>
-                {event.title}
+                {appointment.title}
               </StudentText>
               <View style={styles.divider} />
-              <DetailRow label="Horario" value={`${event.startTime} - ${event.endTime}`} />
+              <DetailRow
+                label="Horario"
+                value={`${appointment.startTime} - ${appointment.endTime}`}
+              />
               <DetailRow
                 label="Modalidad"
-                value={event.modality === "online" ? "En línea" : "Presencial"}
+                value={appointment.modality === "online" ? "En línea" : "Presencial"}
               />
-              <DetailRow label="Lugar" value={event.location} />
-              <StudentText style={styles.summary}>{event.summary}</StudentText>
+              <DetailRow label="Lugar" value={appointment.location} />
+              <StudentText style={styles.summary}>{appointment.summary}</StudentText>
             </View>
           ) : status === "loading" ? null : (
             <StudentText style={styles.message}>No encontramos esta actividad.</StudentText>

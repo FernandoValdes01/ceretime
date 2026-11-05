@@ -9,6 +9,7 @@ import { RoleGuard } from "@/presentation/navigation/role-guard";
 import { useProfessionalAccompaniment } from "@/presentation/hooks/use-professional-accompaniment";
 import { ProfessionalAccompanimentStatusBadge } from "./professional-accompaniment-status-badge";
 import { ProfessionalHeader } from "./professional-header";
+import { firstRouteParam } from "@/presentation/navigation/route-params";
 
 function StateMessage({
   title,
@@ -120,10 +121,7 @@ export function ProfessionalAccompanimentDetailContent({
 
 function ProfessionalAccompanimentDetailRouteContent() {
   const params = useLocalSearchParams<{ accompanimentId?: string | string[] }>();
-  const rawAccompanimentId = params.accompanimentId;
-  const accompanimentId = Array.isArray(rawAccompanimentId)
-    ? (rawAccompanimentId[0] ?? null)
-    : (rawAccompanimentId ?? null);
+  const accompanimentId = firstRouteParam(params.accompanimentId);
   const state = useProfessionalAccompaniment(
     mobileDependencies.professionalAccompanimentReader,
     accompanimentId,

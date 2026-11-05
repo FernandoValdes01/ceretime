@@ -1,3 +1,4 @@
+// Comandos de voz admitidos y sus frases equivalentes.
 export type SpeechCommand = "open-requests" | "back" | "cancel";
 
 export type ParsedSpeechCommand = { readonly type: SpeechCommand } | { readonly type: "unknown" };
@@ -11,6 +12,7 @@ const commands = new Map<string, SpeechCommand>([
   ["cancelar", "cancel"],
 ]);
 
+// Normaliza tildes, mayúsculas y signos para que «¡Volver!» y «volver» sean el mismo comando.
 export function parseSpeechCommand(transcript: string): ParsedSpeechCommand {
   const normalized = transcript
     .normalize("NFKD")

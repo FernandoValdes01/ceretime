@@ -1,7 +1,7 @@
 import { createContext, useContext, type PropsWithChildren } from "react";
 
 import type { StudentAreaReader } from "@/application/student-area-port";
-import { useStudentArea, type StudentAreaState } from "@/presentation/hooks/useStudentArea";
+import { useStudentArea, type StudentAreaState } from "@/presentation/hooks/use-student-area";
 
 const StudentAreaContext = createContext<StudentAreaState | null>(null);
 

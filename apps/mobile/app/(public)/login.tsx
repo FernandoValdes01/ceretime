@@ -4,7 +4,7 @@ import { LoginScreen } from "../../src/presentation/auth/login-screen";
 export default function LoginRoute() {
   return (
     <LoginScreen
-      unassignedPractitionerCredentials={mobileDependencies.unassignedPractitionerCredentials}
+      unassignedInternCredentials={mobileDependencies.unassignedInternCredentials}
       onResetDemo={mobileDependencies.resetDemo}
     />
   );

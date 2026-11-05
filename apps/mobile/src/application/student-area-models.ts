@@ -11,22 +11,14 @@ export type {
   ModalityPreference,
 } from "../../../../convex/domain/requests/request";
 
-/** Proyecciones móviles; el contenido de la solicitud procede del dominio compartido. */
+// Proyecciones móviles; el contenido de la solicitud procede del dominio compartido.
 
 export type IsoDateTime = string;
-
-/** Roles are intentionally provisional and limited to this client projection. */
-export type ProvisionalRole =
-  | "student"
-  | "ceretiProfessional"
-  | "practitioner"
-  | "provisionalAdministrator";
 
 export interface StudentIdentity {
   readonly id: string;
   readonly displayName: string;
   readonly email: string;
-  readonly role: ProvisionalRole;
 }
 
 export type StudentRequestStatus =
@@ -41,27 +33,27 @@ export type StudentRequestStatus =
 export interface StudentRequest {
   readonly id: string;
   readonly status: StudentRequestStatus;
-  /** Present when a request is closed without opening an accompaniment. */
+  // Solo existe cuando la solicitud se cierra sin abrir un acompañamiento.
   readonly closureReason?: string;
   readonly createdAt: IsoDateTime;
   readonly updatedAt?: IsoDateTime;
   readonly needSummary?: string;
   readonly expectedOutcome?: string;
-  /** TI2 currently exposes the saved needs as one string. */
+  // TI2 hoy expone las necesidades guardadas como un único texto.
   readonly accessNeeds: string;
   readonly generalAvailability?: GeneralAvailability;
   readonly modalityPreference?: ModalityPreference;
   readonly preferredAccessibleInformationChannel?: string;
 }
 
-/** Presentation projection of a canonical accompaniment. */
+// Vista del acompañamiento que recibe la app, derivada del modelo canónico del dominio.
 export interface Accompaniment {
   readonly id: string;
   readonly status: AccompanimentStatus;
   readonly objective?: string;
   readonly accessNeeds?: string;
   readonly view?: "full" | "minimized";
-  /** Not present in TI2's current accompaniment projection. */
+  // No viene en la proyección actual de acompañamientos de TI2.
   readonly requestId?: string;
   readonly createdAt?: IsoDateTime;
 }
@@ -75,7 +67,7 @@ export interface StudentAreaSnapshot {
 /** Contenido canónico completo, usado por el formulario y el simulador local. */
 export type SubmitStudentRequestCommand = Readonly<AccompanimentRequestContent>;
 
-/** Minimal receipt returned by a student-request submission capability. */
+// Comprobante mínimo que devuelve el envío de una solicitud.
 export interface StudentRequestSubmissionReceipt {
   readonly requestId: string;
   readonly receivedAt: IsoDateTime;

@@ -2,10 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-
 import { Pressable, Text } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect } from "react";
-import {
-  createMockAuthenticationPort,
-  mockAuthCredentials,
-} from "@/infrastructure/mock-authentication";
+import { createDemoAuthAdapter, demoAuthCredentials } from "@/infrastructure/demo-auth-adapter";
 import { NavigationSessionProvider, useNavigationSession } from "@/presentation/navigation/session";
 import {
   defaultAccessibilityPreferences,
@@ -211,8 +208,8 @@ describe("proveedor único de preferencias", () => {
     render(
       <AccessibilityPreferencesProvider port={createLocalAccessibilityPreferencesAdapter(storage)}>
         <NavigationSessionProvider
-          authPort={createMockAuthenticationPort()}
-          demoCredentials={mockAuthCredentials}
+          authPort={createDemoAuthAdapter()}
+          demoCredentials={demoAuthCredentials}
         >
           <Consumer name="uno" />
           <SessionConsumer />

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Pressable, View } from "react-native";
 
 import type { StudentRequest } from "@/application/student-area-models";
-import type { StudentAreaCollectionStatus } from "@/presentation/hooks/useStudentArea";
+import type { StudentAreaCollectionStatus } from "@/presentation/hooks/use-student-area";
 import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";

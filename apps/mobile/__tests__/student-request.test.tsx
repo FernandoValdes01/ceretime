@@ -6,7 +6,7 @@ import type {
   SubmitStudentRequestCommand,
 } from "@/application/student-area-models";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
-import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
+import { createDemoStudentRequestSubmitter } from "@/infrastructure/demo-student-request-submitter";
 import { RequestForm } from "@/presentation/estudiante/request-form";
 import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
@@ -520,7 +520,7 @@ describe("Formulario de solicitud del estudiante", () => {
 
 describe("Adaptador mock de envío", () => {
   test("no confirma una solicitud sin necesidades de acceso ni consume su referencia", async () => {
-    const submitter = createMockStudentRequestSubmitter({
+    const submitter = createDemoStudentRequestSubmitter({
       delayMs: 0,
       now: () => new Date("2026-09-10T12:00:00.000Z"),
     });
@@ -545,7 +545,7 @@ describe("Adaptador mock de envío", () => {
   });
 
   test("falla una vez y confirma el reintento cuando se configura fail-once", async () => {
-    const submitter = createMockStudentRequestSubmitter({
+    const submitter = createDemoStudentRequestSubmitter({
       delayMs: 0,
       failureMode: "once",
       now: () => new Date("2026-09-10T12:00:00.000Z"),

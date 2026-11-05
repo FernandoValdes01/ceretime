@@ -1,3 +1,4 @@
+// Puerto con que el Profesional lee solicitudes y actúa sobre ellas (revisar, pedir información, aceptar).
 import type {
   ProfessionalRequest,
   ProfessionalRequestAction,

@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type { PractitionerAccount } from "@/application/administrator-account-models";
+import type { InternAccount } from "@/application/administrator-account-models";
 import { useOptionalAccessibilityPreferences } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { AppHeader } from "@/presentation/components/app-header";
 import { AppIcon } from "@/presentation/components/app-icon";
@@ -27,7 +27,7 @@ function AccountCard({
   enablement,
   onEnable,
 }: {
-  readonly account: PractitionerAccount;
+  readonly account: InternAccount;
   readonly enablement: AccountEnablementState;
   readonly onEnable: () => void;
 }) {

@@ -53,6 +53,7 @@ function StateMessage({
   );
 }
 
+// La tarjeta representa un acompañamiento autorizado y conserva el acceso directo a su detalle.
 function AccompanimentCard({
   accompaniment,
   onOpen,

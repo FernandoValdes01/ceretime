@@ -3,7 +3,11 @@ import { useState } from "react";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 
-import type { AccessibilityPreferences } from "../../application/accessibility-preferences-models";
+import type {
+  AccessibilityPreferences,
+  TextScale,
+  ToggleSetting,
+} from "../../application/accessibility-preferences-models";
 import { getAccessibilityColorPalette } from "./accessibility-color-palette";
 import { useAccessibilityPreferences } from "./accessibility-preferences-provider";
 import { Action, Screen } from "../components/screen";
@@ -25,20 +29,20 @@ interface PreferenceOptionsProps<Value extends PreferenceValue> {
   readonly onChange: (value: Value) => void;
 }
 
-const textScaleOptions: readonly PreferenceOption<AccessibilityPreferences["textScale"]>[] = [
+const textScaleOptions: readonly PreferenceOption<TextScale>[] = [
   { value: "system", label: "Seguir el sistema" },
   { value: 1, label: "100 %" },
   { value: 1.5, label: "150 %" },
   { value: 2, label: "200 %" },
 ];
 
-const contrastOptions: readonly PreferenceOption<AccessibilityPreferences["highContrast"]>[] = [
+const contrastOptions: readonly PreferenceOption<ToggleSetting>[] = [
   { value: "system", label: "Seguir el sistema" },
   { value: "on", label: "Activado" },
   { value: "off", label: "Desactivado" },
 ];
 
-const motionOptions: readonly PreferenceOption<AccessibilityPreferences["reduceMotion"]>[] = [
+const motionOptions: readonly PreferenceOption<ToggleSetting>[] = [
   { value: "system", label: "Seguir el sistema" },
   { value: "on", label: "Reducir movimiento" },
   { value: "off", label: "Permitir movimiento" },

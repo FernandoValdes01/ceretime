@@ -122,6 +122,20 @@ describe("Navegación principal", () => {
     expect(navigation.getPathname()).toBe("/profesional/acompanamientos");
   });
 
+  test("el Profesional abre el detalle de una atención desde la agenda", async () => {
+    const navigation = renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
+    fireEvent.press(
+      await screen.findByRole("button", { name: "Martín Gómez, Seguimiento, 09:00" }),
+    );
+
+    expect(
+      await screen.findByText("Revisión del avance del acompañamiento y próximos acuerdos."),
+    ).toBeOnTheScreen();
+    expect(navigation.getPathname()).toBe("/profesional/appointment-martin-gomez");
+    expect(screen.getByText("09:00 - 10:00")).toBeOnTheScreen();
+  });
+
   test("una dirección inexistente ofrece volver al acceso", async () => {
     const navigation = renderRouter(appDirectory, { initialUrl: "/no-existe" });
     expect(await screen.findByRole("header", { name: "Página no encontrada" })).toBeOnTheScreen();

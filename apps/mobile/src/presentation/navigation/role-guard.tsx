@@ -1,15 +1,16 @@
 import { router } from "expo-router";
 import { useEffect, type PropsWithChildren } from "react";
 
-import type { NavigationRole } from "./roles";
+import type { AuthRole } from "../../application/auth-models";
 import { getRoleHome } from "./roles";
 import { useNavigationSession } from "./session";
 import { Screen } from "../components/screen";
 
+// Protege una sección por rol: si la sesión es de otro rol, registra el acceso denegado y la envía a su inicio.
 export function RoleGuard({
   requiredRole,
   children,
-}: PropsWithChildren<{ readonly requiredRole: NavigationRole }>) {
+}: PropsWithChildren<{ readonly requiredRole: AuthRole }>) {
   const { role, recordAccessDenied } = useNavigationSession();
 
   useEffect(() => {

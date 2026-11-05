@@ -35,7 +35,7 @@ test("permite explorar el rol de practicante sin exponer credenciales", async ()
 
   render(
     <NavigationSessionProvider authPort={authPort} demoCredentials={demoCredentials}>
-      <LoginScreen unassignedPractitionerCredentials={unassignedCredentials} />
+      <LoginScreen unassignedInternCredentials={unassignedCredentials} />
     </NavigationSessionProvider>,
   );
   expect(
@@ -80,7 +80,7 @@ test("anuncia la carga una vez, enfoca el error y permite reintentar", async () 
   render(
     <NavigationSessionProvider authPort={authPort} demoCredentials={demoCredentials}>
       <LoginScreen
-        unassignedPractitionerCredentials={{
+        unassignedInternCredentials={{
           email: "practicante-sin-asignacion@demo.test",
           password: "demo",
         }}

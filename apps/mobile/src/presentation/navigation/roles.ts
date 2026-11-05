@@ -8,8 +8,6 @@ export const roles = [
   { id: "administrador", label: "Administrador", href: "/administrador" },
 ] as const satisfies readonly { id: AuthRole; label: string; href: string }[];
 
-export type NavigationRole = AuthRole;
-
-export function getRoleHome(role: NavigationRole) {
+export function getRoleHome(role: AuthRole) {
   return roles.find((entry) => entry.id === role)!.href;
 }

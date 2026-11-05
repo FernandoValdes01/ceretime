@@ -5,7 +5,7 @@ import { AccessibilityInfo, Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { SpeechPort } from "@/application/speech-port";
 import { mobileDependencies } from "@/composition/mobile-dependencies";
-import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
+import { createDemoStudentRequestSubmitter } from "@/infrastructure/demo-student-request-submitter";
 import { StudentRequestSpeechControls } from "@/presentation/accessibility/speech-controls";
 import { useAccessibilityPreferences } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { getAccessibilityColorPalette } from "@/presentation/accessibility/accessibility-color-palette";
@@ -20,7 +20,7 @@ export default function TI460Probe() {
   const [unavailable, setUnavailable] = useState(false);
   const [readerEnabled, setReaderEnabled] = useState<boolean | null>(null);
   const submitter = useMemo(
-    () => createMockStudentRequestSubmitter({ delayMs: 9000, failureMode: "once" }),
+    () => createDemoStudentRequestSubmitter({ delayMs: 9000, failureMode: "once" }),
     [],
   );
   const submission = useSubmitStudentRequest(submitter);

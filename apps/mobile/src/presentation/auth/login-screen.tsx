@@ -2,24 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
 
 import type { AuthCredentials } from "../../application/auth-models";
-import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
-import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { Action, Screen } from "../components/screen";
 import { StudentText } from "../estudiante/student-text";
 import { roles } from "../navigation/roles";
 import { useNavigationSession } from "../navigation/session";
 
 export function LoginScreen({
-  unassignedPractitionerCredentials,
+  unassignedInternCredentials,
   onResetDemo,
 }: {
-  readonly unassignedPractitionerCredentials: AuthCredentials;
+  readonly unassignedInternCredentials: AuthCredentials;
   readonly onResetDemo?: () => void;
 }) {
   const { signIn, selectRole, status, error } = useNavigationSession();
   const isLoading = status === "loading";
-  const accessibility = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
   const errorRef = useRef<View>(null);
   const [reset, setReset] = useState(false);
 
@@ -54,7 +52,7 @@ export function LoginScreen({
         <Action
           disabled={isLoading}
           label="Entrar como Practicante sin asignación"
-          onPress={() => void signIn(unassignedPractitionerCredentials)}
+          onPress={() => void signIn(unassignedInternCredentials)}
         />
         {onResetDemo ? (
           <>
