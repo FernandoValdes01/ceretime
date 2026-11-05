@@ -23,6 +23,7 @@ import type {
   StoredAvailabilityException,
 } from "./ports";
 import {
+  listBookableProfessionals,
   listOwnAvailability,
   publishAvailabilityBlock,
   publishAvailabilityException,
@@ -935,5 +936,70 @@ describe("lectura de la disponibilidad propia (TI2-111)", () => {
         { tokenIdentifier: "token-pro", from: "2026-11-01", to: "2026-11-30" },
       ),
     ).toEqual(CONFLICT);
+  });
+});
+
+describe("profesionales reservables del acompañamiento (TI2-123)", () => {
+  const input = { tokenIdentifier: "token-student", accompanimentId: "acc-1" };
+
+  test("entrega solo a quien la búsqueda aceptaría", async () => {
+    await expect(
+      listBookableProfessionals(
+        {
+          auth: studentSearchAuth(),
+          professionals: { listActiveProfessionalIds: async () => ["user-pro", "user-sin-perfil"] },
+        },
+        input,
+      ),
+    ).resolves.toEqual({
+      status: "ok",
+      data: { professionalIds: ["user-pro"], version: AVAILABILITY_CONTRACT_VERSION },
+    });
+  });
+
+  test("sin profesionales responde una lista vacía, no falta de cupo", async () => {
+    await expect(
+      listBookableProfessionals(
+        {
+          auth: studentSearchAuth(),
+          professionals: { listActiveProfessionalIds: async () => [] },
+        },
+        input,
+      ),
+    ).resolves.toEqual({
+      status: "ok",
+      data: { professionalIds: [], version: AVAILABILITY_CONTRACT_VERSION },
+    });
+  });
+
+  test("una lectura que no alcanzó responde conflict, nunca una lista cortada", async () => {
+    await expect(
+      listBookableProfessionals(
+        {
+          auth: studentSearchAuth(),
+          professionals: { listActiveProfessionalIds: async () => null },
+        },
+        input,
+      ),
+    ).resolves.toEqual(CONFLICT);
+  });
+
+  test("deniega sin leer candidatos a quien no puede ver la agenda", async () => {
+    let reads = 0;
+    await expect(
+      listBookableProfessionals(
+        {
+          auth: studentSearchAuth(),
+          professionals: {
+            listActiveProfessionalIds: async () => {
+              reads += 1;
+              return ["user-pro"];
+            },
+          },
+        },
+        { ...input, tokenIdentifier: "token-desconocido" },
+      ),
+    ).resolves.toEqual(DENIED);
+    expect(reads).toBe(0);
   });
 });

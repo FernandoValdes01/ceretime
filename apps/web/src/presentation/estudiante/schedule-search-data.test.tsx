@@ -17,8 +17,10 @@ const mocks = vi.hoisted(() => ({
   searchSlots: () => Promise.resolve({ status: "empty" } as SlotSearchResult),
 }));
 
-vi.mock("../../infrastructure/agenda/fictitious-agenda-adapter.ts", () => ({
-  createFictitiousAgendaAdapter: () => ({
+vi.mock("../../infrastructure/convex/convex-client", () => ({ convexClient: {} }));
+
+vi.mock("../../infrastructure/agenda/convex-agenda-adapter.ts", () => ({
+  createConvexAgendaAdapter: () => ({
     searchSlots: () => mocks.searchSlots(),
   }),
 }));

@@ -1150,6 +1150,72 @@ test("TI2-111: la búsqueda entrega solo cupos libres y compatibles a quien pued
   ).rejects.toThrow("Missing required field `version`");
 });
 
+test("TI2-123: el Estudiante conoce a sus profesionales reservables antes de la primera reserva", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await ti111SeedAgenda(t);
+  await t.run(async (ctx) => {
+    const seed = async (
+      subject: string,
+      accountStatus: "active" | "inactive",
+      status: "active" | "revoked",
+      assignedRole: "professional" | "intern",
+    ) => {
+      const id = await ctx.db.insert("users", {
+        email: `${subject}@uct.cl`,
+        fullName: "Ficticio",
+        role: assignedRole === "intern" ? "intern" : "professional",
+        institutionalStatus: "enabled",
+        accountStatus,
+        tokenIdentifier: `${ISSUER}|${subject}`,
+      });
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId: agenda.accompanimentId,
+        userId: id,
+        assignedRole,
+        status,
+      });
+    };
+    await seed("ti123-revocado", "active", "revoked", "professional");
+    await seed("ti123-inactivo", "inactive", "active", "professional");
+    await seed("ti123-practicante", "active", "active", "intern");
+  });
+  const args = { accompanimentId: agenda.accompanimentId, version: "v1" as const };
+  const list = api.presentation.availability.listBookableProfessionals;
+  const expected = { professionalIds: [agenda.professionalId], version: "v1" };
+
+  // Sin atenciones propias: el resultado sirve de entrada a `searchSlots`.
+  const asStudent = t.withIdentity(identityFor("ti111-ag-est-1", "ti111-ag-est-1@alu.uct.cl"));
+  expect(await asStudent.query(list, args)).toStrictEqual(expected);
+  const asAssigned = t.withIdentity(identityFor("ti111-ag-pro-1", "ti111-ag-pro-1@uct.cl"));
+  expect(await asAssigned.query(list, args)).toStrictEqual(expected);
+  expect(
+    (
+      await asStudent.query(
+        api.presentation.availability.searchSlots,
+        ti111Search(agenda.accompanimentId, agenda.professionalId),
+      )
+    ).items.map((slot) => slot.startAt),
+  ).toStrictEqual([ti111At(10)]);
+
+  const denied = { code: "unauthorized", message: "No autorizado" };
+  for (const caller of [
+    t,
+    t.withIdentity(identityFor("ti111-ag-est-2", "ti111-ag-est-2@alu.uct.cl")),
+    t.withIdentity(identityFor("ti111-ag-pro-2", "ti111-ag-pro-2@uct.cl")),
+    t.withIdentity(identityFor("ti123-practicante", "ti123-practicante@uct.cl")),
+  ]) {
+    expect(await ti111PublicError(caller.query(list, args))).toStrictEqual(denied);
+  }
+  expect(
+    await ti111PublicError(asStudent.query(list, { ...args, accompanimentId: "no-existe" })),
+  ).toStrictEqual(denied);
+
+  await t.run(async (ctx) => {
+    await ctx.db.patch(agenda.accompanimentId, { status: "paused" });
+  });
+  expect(await ti111PublicError(asStudent.query(list, args))).toStrictEqual(denied);
+});
+
 test("TI2-111: la búsqueda no expone cupos de un profesional no asignado, revocado o sin cuenta vigente", async () => {
   const t = convexTest(schema, modules);
   const agenda = await ti111SeedAgenda(t);

@@ -7,10 +7,11 @@ import {
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_MESSAGE,
 } from "../../../../../convex/domain/index.ts";
-import type { AgendaSlot } from "../../application/agenda/agenda-port.ts";
+import type { AgendaSlot, SlotSearchContext } from "../../application/agenda/agenda-port.ts";
 import { formatSlotDateTime, modalityLabel } from "./agenda-labels.ts";
 import { useReservationSlot } from "./reservation-form-data.ts";
 import { getAgendaPort } from "./schedule-search-data.ts";
+import { BookingContextGate } from "./student-booking-context.tsx";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import "../routes/student-portal.css";
 
@@ -19,14 +20,13 @@ import "../routes/student-portal.css";
  * composición de TI2-113).
  *
  * Extiende la búsqueda (mismo puerto y adaptador temporal): muestra el cupo
- * elegido, exige confirmación explícita y bloquea el doble envío. La reserva
- * sigue siendo simulada hasta TI2-123 y se declara como demostración.
+ * elegido, exige confirmación explícita y bloquea el doble envío. La reserva y
+ * la cancelación usan la API real (TI2-123).
  *
  * TI2-113 completa los desenlaces: conflicto con recuperación sin perder la
  * selección, denegación permanente sin reintento y falta de cupo son estados
- * distintos del mismo único comando de reserva. La cancelación visible es un
- * escenario tipado del comprobante reutilizado de TI2-102, declarado como
- * demostración.
+ * distintos del mismo único comando de reserva. La cancelación visible vive en
+ * el comprobante reutilizado de TI2-102.
  *
  * Composición (DESIGN.md, ajustes acotados a esta superficie): la tarjeta
  * restaura la alineación a la izquierda y la escala tipográfica sobre los
@@ -55,9 +55,8 @@ type ReserveOutcome =
   | { status: "error"; message: string };
 
 /**
- * Desenlace tipado de la cancelación visible (TI2-113): escenario declarado
- * del adaptador vigente y sin mutation real; el fallo técnico conserva el
- * mensaje del error público compartido.
+ * Desenlace tipado de la cancelación visible (TI2-113): el fallo técnico
+ * conserva el mensaje del error público compartido.
  */
 type CancelOutcome =
   | { status: "cancelled" }
@@ -65,21 +64,30 @@ type CancelOutcome =
   | { status: "error"; message: string };
 
 export function ReservationFormPage() {
-  const { slotId } = reservarRouteApi.useSearch();
+  const { slotId, accompanimentId } = reservarRouteApi.useSearch();
 
   return (
     <StudentPanelErrorBoundary
-      key={slotId ?? "sin-cupo"}
+      key={`${accompanimentId ?? "sin-acompanamiento"}:${slotId ?? "sin-cupo"}`}
       subject="la confirmación de reserva"
       level="section"
     >
-      <ReservationFormArea slotId={slotId} />
+      <BookingContextGate requestedAccompanimentId={accompanimentId}>
+        {(context) => <ReservationFormArea slotId={slotId} context={context} />}
+      </BookingContextGate>
     </StudentPanelErrorBoundary>
   );
 }
 
-function ReservationFormArea({ slotId }: { slotId: string | undefined }) {
-  const { state, retry } = useReservationSlot(slotId);
+function ReservationFormArea({
+  slotId,
+  context,
+}: {
+  slotId: string | undefined;
+  context: SlotSearchContext;
+}) {
+  const { state, retry } = useReservationSlot(slotId, context);
+  const schedule = { accompanimentId: context.accompanimentId };
 
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
@@ -141,7 +149,10 @@ function ReservationFormArea({ slotId }: { slotId: string | undefined }) {
     setOutcome(null);
     setPending(true);
     try {
-      const result = await getAgendaPort().reserveSlot({ slotId: slot.id });
+      const result = await getAgendaPort().reserveSlot({
+        slotId: slot.id,
+        booking: { accompanimentId: context.accompanimentId, slot },
+      });
       // El puerto entrega los estados tipados; el resto (`error`) guarda el
       // mensaje público compartido sin deducir nada del código.
       if (result.status === "confirmed") {
@@ -292,7 +303,9 @@ function ReservationFormArea({ slotId }: { slotId: string | undefined }) {
                     {CONFLICT_ERROR_MESSAGE} La selección se conserva.
                   </p>
                   <p className="student-portal__res-state-actions">
-                    <Link to="/estudiante/horarios">Elegir otro horario</Link>
+                    <Link to="/estudiante/horarios" search={schedule}>
+                      Elegir otro horario
+                    </Link>
                   </p>
                 </div>
               )}
@@ -349,7 +362,9 @@ function ReservationFormArea({ slotId }: { slotId: string | undefined }) {
           salida ya vive junto al mensaje como Elegir otro horario. */}
       {outcome?.status !== "conflict" && (
         <p className="student-portal__res-return">
-          <Link to="/estudiante/horarios">Volver a horarios</Link>
+          <Link to="/estudiante/horarios" search={schedule}>
+            Volver a horarios
+          </Link>
         </p>
       )}
     </section>
@@ -358,8 +373,7 @@ function ReservationFormArea({ slotId }: { slotId: string | undefined }) {
 
 /**
  * Contenido del comprobante tras la confirmación (TI2-102), con la
- * cancelación visible tipada de TI2-113. La cancelación declarada como
- * demostración responde `cancelled`, la denegación es permanente y el fallo
+ * cancelación visible tipada de TI2-113. La denegación es permanente y el fallo
  * técnico conserva el comprobante y permite reintentar. El título del estado
  * vive en el h1 de la tarjeta; aquí solo está el contenido y los paneles de
  * desenlace con su foco único.
@@ -396,9 +410,6 @@ function ReservationReceiptBody({
             <dd>{modalityLabel(slot.modality)}</dd>
           </div>
         </dl>
-        <p className="student-portal__res-note">
-          Esta es una demostración. No se canceló ninguna reserva real.
-        </p>
       </>
     );
   }
@@ -438,10 +449,6 @@ function ReservationReceiptBody({
           {cancelOutcome.message}
         </p>
       )}
-
-      <p className="student-portal__res-note">
-        Esta es una demostración. Los datos son ficticios y no hay reserva real.
-      </p>
 
       {cancelOutcome?.status === "denied" ? null : (
         <div className="student-portal__cta">
