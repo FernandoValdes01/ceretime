@@ -3070,7 +3070,7 @@ function ti120Book(
   t: Ti120Test,
   subject: string | null,
   target: {
-    readonly accompanimentId: Id<"accompaniments">;
+    readonly accompanimentId: string;
     readonly professionalId: Id<"users">;
   },
   slot: Ti120Slot,
@@ -3254,12 +3254,12 @@ test("TI2-120 API: dos reservas en contienda por estudiante, Profesional o sala 
 /** Origen ocupado por un estudiante y un segundo estudiante que quiere el destino. */
 async function seedTi120MoveRace(t: Ti120Test, label: string) {
   const moverSubject = `ti120-move-${label}-est-a`;
-  const bookerSubject = `ti120-move-${label}-est-b`;
+  const rivalSubject = `ti120-move-${label}-est-b`;
   const mover = await seedTi120User(t, moverSubject, "student");
-  const booker = await seedTi120User(t, bookerSubject, "student");
+  const rival = await seedTi120User(t, rivalSubject, "student");
   const pro = await seedTi120User(t, `ti120-move-${label}-pro`, "professional");
   const moverAccompaniment = await seedTi120Accompaniment(t, mover, [pro]);
-  const bookerAccompaniment = await seedTi120Accompaniment(t, booker, [pro]);
+  const rivalAccompaniment = await seedTi120Accompaniment(t, rival, [pro]);
   await seedTi120Block(t, pro);
   const [origin, target] = ti120Slots(pro);
   const originId = await seedTi120Appointment(t, {
@@ -3270,7 +3270,7 @@ async function seedTi120MoveRace(t: Ti120Test, label: string) {
   });
   return {
     mover,
-    booker,
+    rival,
     origin,
     target,
     originId,
@@ -3279,8 +3279,8 @@ async function seedTi120MoveRace(t: Ti120Test, label: string) {
     book: () =>
       ti120Book(
         t,
-        bookerSubject,
-        { accompanimentId: bookerAccompaniment, professionalId: pro },
+        rivalSubject,
+        { accompanimentId: rivalAccompaniment, professionalId: pro },
         target,
       ),
   };
@@ -3329,7 +3329,7 @@ test("TI2-120 API: si la reserva llega antes que el cambio, el origen queda inta
   expect(rows).toHaveLength(2);
   expect(rows.find((row) => row._id !== race.originId)).toMatchObject({
     _id: booked.result.appointmentId,
-    studentId: race.booker,
+    studentId: race.rival,
     status: "scheduled",
     startsAt: race.target.startAt,
     endsAt: race.target.endAt,
@@ -3337,7 +3337,7 @@ test("TI2-120 API: si la reserva llega antes que el cambio, el origen queda inta
   expect(await ti120Audit(t)).toEqual([
     {
       action: "booked",
-      actorId: race.booker,
+      actorId: race.rival,
       appointmentId: booked.result.appointmentId,
       result: "scheduled",
     },
@@ -3418,7 +3418,7 @@ test("TI2-120 API: cancelar libera solo su cupo y no toca la atención de otro e
 
   // El cupo cancelado vuelve a estar libre; el del otro estudiante sigue ocupado.
   const newcomerTarget = { accompanimentId: newcomerAccompaniment, professionalId: pro };
-  const rebooked = await ti120Book(t, "ti120-free-est-c", newcomerTarget, freed);
+  const newBooking = await ti120Book(t, "ti120-free-est-c", newcomerTarget, freed);
   expect(await ti120ErrorOf(() => ti120Book(t, "ti120-free-est-c", newcomerTarget, kept))).toEqual(
     ti120Error("conflict"),
   );
@@ -3435,7 +3435,7 @@ test("TI2-120 API: cancelar libera solo su cupo y no toca la atención de otro e
     {
       action: "booked",
       actorId: newcomer,
-      appointmentId: rebooked.appointmentId,
+      appointmentId: newBooking.appointmentId,
       result: "scheduled",
     },
   ]);
@@ -3536,7 +3536,7 @@ test("TI2-120 API: reservar, mover y cancelar deniegan a cada identidad sin perm
   });
 });
 
-test("TI2-120 API: atención ajena, eliminada o de otra tabla responden el mismo error mínimo", async () => {
+test("TI2-120 API: atención o acompañamiento ajeno, eliminado o de otra tabla responden el mismo error mínimo", async () => {
   const t = convexTest(schema, modules);
   const student = await seedTi120User(t, "ti120-same-est", "student");
   const other = await seedTi120User(t, "ti120-same-otro", "student");
@@ -3565,6 +3565,9 @@ test("TI2-120 API: atención ajena, eliminada o de otra tabla responden el mismo
     await ctx.db.delete(id);
     return id;
   });
+  // Reservar apunta a un acompañamiento, no a una atención: se prepara el equivalente eliminado.
+  const removedAccompaniment = await seedTi120Accompaniment(t, student, [pro]);
+  await t.run(async (ctx) => await ctx.db.delete(removedAccompaniment));
   const before = await ti120Get(t, foreign);
 
   const targets = [
@@ -3584,6 +3587,20 @@ test("TI2-120 API: atención ajena, eliminada o de otra tabla responden el mismo
     }
   }
 
+  // Reservar por la API pública responde igual: mismo código, mismo texto y solo esas dos claves.
+  const bookTargets = [
+    { label: "reservar ajeno", accompanimentId: otherAccompaniment as string },
+    { label: "reservar eliminado", accompanimentId: removedAccompaniment as string },
+    { label: "reservar otra tabla", accompanimentId: foreign as string },
+  ];
+  for (const { label, accompanimentId } of bookTargets) {
+    const data = await ti120ErrorOf(() =>
+      ti120Book(t, "ti120-same-est", { accompanimentId, professionalId: pro }, target),
+    );
+    expect({ label, data }).toEqual({ label, data: ti120Error("unauthorized") });
+    expect(Object.keys(data as Record<string, unknown>).sort()).toEqual(["code", "message"]);
+  }
+
   expect(await ti120Get(t, foreign)).toEqual(before);
   expect(await ti120Appointments(t)).toHaveLength(1);
   expect(await ti120Audit(t)).toEqual([]);
@@ -3593,7 +3610,7 @@ test("TI2-120 API: revocar la asignación quita el permiso desde la llamada sigu
   const t = convexTest(schema, modules);
   const student = await seedTi120User(t, "ti120-revoke-est", "student");
   const pro = await seedTi120User(t, "ti120-revoke-pro", "professional");
-  await seedTi120User(t, "ti120-revoke-coordinacion", "professional");
+  await seedTi120User(t, "ti120-revoke-coordinador", "professional");
   const accompanimentId = await seedTi120Accompaniment(t, student, [pro]);
   await seedTi120Block(t, pro);
   const [first, second] = ti120Slots(pro);
@@ -3617,7 +3634,7 @@ test("TI2-120 API: revocar la asignación quita el permiso desde la llamada sigu
 
   // Revocación por la única vía guardada de escritura de asignaciones.
   const revoked = await t
-    .withIdentity(ti120Identity("ti120-revoke-coordinacion"))
+    .withIdentity(ti120Identity("ti120-revoke-coordinador"))
     .mutation(internal.operations.assignments.revoke, {
       accompanimentId,
       userId: pro,
