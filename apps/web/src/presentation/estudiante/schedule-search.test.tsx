@@ -252,12 +252,18 @@ describe("búsqueda de horarios (TI2-101)", () => {
     );
   });
 
-  test("falta de cupo no se presenta como fallo técnico", async () => {
+  test("falta de cupo ofrece el canal oficial y no otra modalidad", async () => {
     comoEstudiante();
     mockedResult = { status: "no_availability", code: "no_availability" };
     renderAt("/estudiante/horarios");
 
     expect(await screen.findByText("No hay cupos compatibles por ahora.")).toBeDefined();
+    expect(
+      screen.getByText(
+        "Sin cupo disponible. Coordina por el canal oficial con la referencia indicada.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/otra modalidad/)).toBeNull();
     expect(screen.queryByText("No pudimos cargar los horarios. Inténtalo de nuevo.")).toBeNull();
     expect(screen.getByRole("status").textContent?.trim()).toBe(
       "Sin cupos compatibles en este momento.",
