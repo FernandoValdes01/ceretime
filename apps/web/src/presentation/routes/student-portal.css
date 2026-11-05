@@ -275,10 +275,31 @@
   cursor: pointer;
 }
 
-/* Etiqueta de selección de un cupo: área activable completa de 44 px. */
-.student-portal__slot {
-  min-height: 2.75rem;
-  padding: 0.5rem 0;
+.student-portal__week-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+}
+
+/* Siguiente queda al extremo derecho, también si los botones no caben en una línea. */
+.student-portal__week-nav > :last-child {
+  margin-left: auto;
+}
+
+.student-portal__day-title {
+  margin: 1.25rem 0 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.student-portal__slot-link {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem 0.75rem;
 }
 
 .student-portal__list {
