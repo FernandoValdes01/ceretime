@@ -1,9 +1,11 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import { ConvexError } from "convex/values";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
+  APPOINTMENT_CONTRACT_VERSION,
   APPOINTMENT_STATUS_VALUES,
   transitionAppointment,
   type AppointmentStatus,
@@ -15,8 +17,15 @@ import {
   isErrorResult,
   isOkResult,
   NO_AVAILABILITY_ERROR_CODE,
+  noAvailabilityError,
   okResult,
+  unauthorizedError,
 } from "../domain/errors/api_error";
+import {
+  AGENDA_TIME_ZONE,
+  AVAILABILITY_CONTRACT_VERSION,
+  expandAvailabilitySlots,
+} from "../domain/availability/availability";
 import {
   appointmentOccupier,
   MAX_APPOINTMENT_MS,
@@ -2864,4 +2873,796 @@ test("TI2-110: el registro conserva la fecha original de una atención reagendad
     startsAt: TI98_SLOT_START,
     endsAt: TI98_SLOT_END,
   });
+});
+
+// ── TI2-120: autorización y contienda por la API pública ─────────────────────
+//
+// Las pruebas de TI2-84, TI2-96, TI2-98 y TI2-109 fijan la exclusión sobre el
+// ocupador y los casos de uso. Este bloque ejercita la API real
+// `api.presentation.appointments` con convex-test: dos intentos competidores
+// por estudiante, Profesional y sala; cambio y reserva sobre el mismo destino;
+// dos cancelaciones de la misma atención; la cancelación que libera solo su
+// cupo; las identidades sin permiso; el error indistinguible y la revocación
+// inmediata. Cada prueba revisa el documento final de ambos intentos y la
+// bitácora `appointmentAuditEvents` (TI2-128), el único efecto lateral que
+// escriben estas mutations.
+//
+// Alcance: convex-test@0.0.58 ejecuta en secuencia las transacciones de nivel
+// superior, así que los intentos lanzados con `Promise.allSettled` llegan en el
+// orden en que se llaman y gana el primero. Son pruebas deterministas de la
+// regla de exclusión: no reproducen transacciones solapadas ni reintentos OCC
+// del backend real, que solo se observan en un deployment de prueba autorizado
+// con datos ficticios.
+
+type Ti120Test = ReturnType<typeof convexTest>;
+
+/** Cupo concreto en milisegundos de época. */
+interface Ti120Slot {
+  readonly startAt: number;
+  readonly endAt: number;
+}
+
+/** Quién reserva y para qué acompañamiento y Profesional. */
+interface Ti120Booking {
+  readonly subject: string;
+  readonly studentId: Id<"users">;
+  readonly accompanimentId: Id<"accompaniments">;
+  readonly professionalId: Id<"users">;
+}
+
+/** Resultado de un intento competidor: éxito con su respuesta o datos públicos del error. */
+type Ti120Outcome =
+  | { readonly status: "ok"; readonly result: { readonly appointmentId: string } }
+  | { readonly status: "error"; readonly data: unknown };
+
+/** Lunes de la agenda, de 09:00 a 11:00 en cupos de 60 minutos: dos cupos. */
+const TI120_WEEKDAY = 1;
+const TI120_START_MINUTE = 540;
+const TI120_END_MINUTE = 660;
+const TI120_SLOT_MINUTES = 60;
+
+function ti120Identity(subject: string) {
+  return identityFor(subject, `${subject}@uct.cl`);
+}
+
+async function seedTi120User(
+  t: Ti120Test,
+  subject: string,
+  role: Doc<"users">["role"],
+): Promise<Id<"users">> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: `${subject}@uct.cl`,
+      fullName: "Ficticio",
+      role,
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|${subject}`,
+    });
+  });
+}
+
+/** Acompañamiento activo, sin necesidades de acceso, con sus asignaciones vigentes. */
+async function seedTi120Accompaniment(
+  t: Ti120Test,
+  studentId: Id<"users">,
+  professionals: readonly Id<"users">[],
+  intern?: Id<"users">,
+): Promise<Id<"accompaniments">> {
+  return await t.run(async (ctx) => {
+    const accompanimentId = await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "",
+    });
+    for (const userId of professionals) {
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId,
+        userId,
+        assignedRole: "professional",
+        status: "active",
+      });
+    }
+    if (intern !== undefined) {
+      await ctx.db.insert("accompanimentAssignments", {
+        accompanimentId,
+        userId: intern,
+        assignedRole: "intern",
+        status: "active",
+      });
+    }
+    return accompanimentId;
+  });
+}
+
+async function seedTi120Space(t: Ti120Test, label: string): Promise<Id<"spaces">> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("spaces", {
+      campus: `Campus ${label}`,
+      building: "Edificio ficticio",
+      floor: "Piso 1",
+      room: `Sala ${label}`,
+      accessConditions: "",
+      accessInstructions: "Instrucciones ficticias",
+      isActive: true,
+    });
+  });
+}
+
+/** Bloque recurrente del lunes: en línea, o presencial en la sala indicada. */
+async function seedTi120Block(t: Ti120Test, professionalId: Id<"users">, spaceId?: Id<"spaces">) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert("availabilityBlocks", {
+      professionalId,
+      weekday: TI120_WEEKDAY,
+      startMinute: TI120_START_MINUTE,
+      endMinute: TI120_END_MINUTE,
+      slotMinutes: TI120_SLOT_MINUTES,
+      modality: spaceId === undefined ? "online" : "inPerson",
+      ...(spaceId === undefined ? {} : { spaceId }),
+      isActive: true,
+    });
+  });
+}
+
+/** Los dos cupos del bloque en un lunes futuro, con la misma expansión del servidor. */
+function ti120Slots(professionalId: Id<"users">): readonly [Ti120Slot, Ti120Slot] {
+  const base = new Date(Date.now() + 14 * 24 * 60 * 60_000);
+  const delta = (TI120_WEEKDAY - base.getUTCDay() + 7) % 7;
+  const date = new Date(
+    Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate() + delta),
+  )
+    .toISOString()
+    .slice(0, 10);
+  const slots = expandAvailabilitySlots({
+    professionalId,
+    blocks: [
+      {
+        id: "ti120-bloque",
+        professionalId,
+        weekday: TI120_WEEKDAY,
+        startMinute: TI120_START_MINUTE,
+        endMinute: TI120_END_MINUTE,
+        slotMinutes: TI120_SLOT_MINUTES,
+        modality: "online",
+        version: AVAILABILITY_CONTRACT_VERSION,
+      },
+    ],
+    from: date,
+    to: date,
+    timeZone: AGENDA_TIME_ZONE,
+  });
+  const [first, second] = slots;
+  if (slots.length !== 2 || first === undefined || second === undefined) {
+    throw new Error("Se esperaban dos cupos en el bloque de prueba");
+  }
+  return [
+    { startAt: first.startAt, endAt: first.endAt },
+    { startAt: second.startAt, endAt: second.endAt },
+  ];
+}
+
+async function seedTi120Appointment(
+  t: Ti120Test,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly studentId: Id<"users">;
+    readonly professionalId: Id<"users">;
+    readonly slot: Ti120Slot;
+  },
+): Promise<Id<"appointments">> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("appointments", {
+      accompanimentId: input.accompanimentId,
+      studentId: input.studentId,
+      professionalId: input.professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: input.slot.startAt,
+      endsAt: input.slot.endAt,
+      createdAt: 1,
+    });
+  });
+}
+
+function ti120Book(
+  t: Ti120Test,
+  subject: string | null,
+  target: {
+    readonly accompanimentId: string;
+    readonly professionalId: Id<"users">;
+  },
+  slot: Ti120Slot,
+  spaceId?: Id<"spaces">,
+) {
+  const client = subject === null ? t : t.withIdentity(ti120Identity(subject));
+  return client.mutation(api.presentation.appointments.bookAppointment, {
+    accompanimentId: target.accompanimentId,
+    professionalId: target.professionalId,
+    modality: spaceId === undefined ? "online" : "inPerson",
+    ...(spaceId === undefined ? {} : { spaceId }),
+    startAt: slot.startAt,
+    endAt: slot.endAt,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+}
+
+function ti120Reschedule(
+  t: Ti120Test,
+  subject: string | null,
+  appointmentId: string,
+  professionalId: Id<"users">,
+  slot: Ti120Slot,
+) {
+  const client = subject === null ? t : t.withIdentity(ti120Identity(subject));
+  return client.mutation(api.presentation.appointments.rescheduleAppointment, {
+    appointmentId,
+    professionalId,
+    modality: "online",
+    startAt: slot.startAt,
+    endAt: slot.endAt,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+}
+
+function ti120Cancel(t: Ti120Test, subject: string | null, appointmentId: string, reason?: string) {
+  const client = subject === null ? t : t.withIdentity(ti120Identity(subject));
+  return client.mutation(api.presentation.appointments.cancelAppointment, {
+    appointmentId,
+    ...(reason === undefined ? {} : { reason }),
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+}
+
+/** Datos públicos de un error de la API, sin asumir la clase concreta que envuelve Convex. */
+function ti120ErrorData(reason: unknown): unknown {
+  if (reason instanceof ConvexError) return reason.data;
+  if (typeof reason === "object" && reason !== null && "data" in reason) {
+    return (reason as { readonly data?: unknown }).data;
+  }
+  throw reason;
+}
+
+/** Ejecuta una llamada que debe fallar y devuelve los datos públicos del error. */
+async function ti120ErrorOf(attempt: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await attempt();
+  } catch (error) {
+    return ti120ErrorData(error);
+  }
+  throw new Error("Se esperaba un error público");
+}
+
+/** Error público esperado: solo `code` y `message`, sin datos internos. */
+function ti120Error(code: "unauthorized" | "conflict" | "no_availability") {
+  return code === "unauthorized"
+    ? unauthorizedError()
+    : code === "conflict"
+      ? conflictError()
+      : noAvailabilityError();
+}
+
+/** Lanza los intentos sin esperar uno a otro y devuelve el resultado de cada uno en orden. */
+async function ti120Race(
+  attempts: readonly (() => Promise<{ readonly appointmentId: string }>)[],
+): Promise<Ti120Outcome[]> {
+  const settled = await Promise.allSettled(attempts.map((attempt) => attempt()));
+  return settled.map((outcome): Ti120Outcome =>
+    outcome.status === "fulfilled"
+      ? { status: "ok", result: outcome.value }
+      : { status: "error", data: ti120ErrorData(outcome.reason) },
+  );
+}
+
+async function ti120Appointments(t: Ti120Test) {
+  return await t.run(async (ctx) => await ctx.db.query("appointments").take(20));
+}
+
+async function ti120Get(t: Ti120Test, appointmentId: Id<"appointments">) {
+  return await t.run(async (ctx) => await ctx.db.get(appointmentId));
+}
+
+/** Bitácora sin `_id`, `_creationTime` ni instante, para comparar el efecto lateral exacto. */
+async function ti120Audit(t: Ti120Test) {
+  const rows = await t.run(async (ctx) => await ctx.db.query("appointmentAuditEvents").take(20));
+  return rows.map(({ action, actorId, appointmentId, result }) => ({
+    action,
+    actorId,
+    appointmentId,
+    result,
+  }));
+}
+
+test("TI2-120 API: dos reservas en contienda por estudiante, Profesional o sala dejan una sola atención", async () => {
+  for (const shared of ["student", "professional", "space"] as const) {
+    for (const reversed of [false, true]) {
+      const t = convexTest(schema, modules);
+      const label = `${shared}-${reversed ? "inverso" : "directo"}`;
+      const subjectA = `ti120-race-${label}-est-a`;
+      const subjectB = `ti120-race-${label}-est-b`;
+      const studentA = await seedTi120User(t, subjectA, "student");
+      const studentB = await seedTi120User(t, subjectB, "student");
+      const proA = await seedTi120User(t, `ti120-race-${label}-pro-a`, "professional");
+      const proB = await seedTi120User(t, `ti120-race-${label}-pro-b`, "professional");
+      const accompanimentA = await seedTi120Accompaniment(t, studentA, [proA, proB]);
+      const accompanimentB = await seedTi120Accompaniment(t, studentB, [proA, proB]);
+      const room = shared === "space" ? await seedTi120Space(t, label) : undefined;
+      await seedTi120Block(t, proA, room);
+      await seedTi120Block(t, proB, room);
+      const [slot] = ti120Slots(proA);
+
+      const a = { subject: subjectA, studentId: studentA, accompanimentId: accompanimentA };
+      const b = { subject: subjectB, studentId: studentB, accompanimentId: accompanimentB };
+      // El recurso compartido es el único que coincide entre ambos intentos.
+      const pairs: Record<typeof shared, readonly [Ti120Booking, Ti120Booking]> = {
+        student: [
+          { ...a, professionalId: proA },
+          { ...a, professionalId: proB },
+        ],
+        professional: [
+          { ...a, professionalId: proA },
+          { ...b, professionalId: proA },
+        ],
+        space: [
+          { ...a, professionalId: proA },
+          { ...b, professionalId: proB },
+        ],
+      };
+      const [first, second] = reversed
+        ? [pairs[shared][1], pairs[shared][0]]
+        : [pairs[shared][0], pairs[shared][1]];
+
+      const [won, lost] = await ti120Race(
+        [first, second].map((booking) => () => ti120Book(t, booking.subject, booking, slot, room)),
+      );
+      if (won?.status !== "ok") {
+        throw new Error(`Se esperaba que ganara el primer intento: ${label}`);
+      }
+      expect(Object.keys(won.result)).toEqual(["appointmentId"]);
+      expect(lost).toEqual({ status: "error", data: ti120Error("conflict") });
+
+      // Documento final: solo el del ganador; el perdedor no dejó fila.
+      const rows = await ti120Appointments(t);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        _id: won.result.appointmentId,
+        accompanimentId: first.accompanimentId,
+        studentId: first.studentId,
+        professionalId: first.professionalId,
+        modality: room === undefined ? "online" : "inPerson",
+        status: "scheduled",
+        startsAt: slot.startAt,
+        endsAt: slot.endAt,
+      });
+      expect(rows[0]?.spaceId).toBe(room);
+      expect(rows[0]?.originalStartsAt).toBeUndefined();
+
+      // Efecto lateral: un solo evento, el del ganador.
+      expect(await ti120Audit(t)).toEqual([
+        {
+          action: "booked",
+          actorId: first.studentId,
+          appointmentId: won.result.appointmentId,
+          result: "scheduled",
+        },
+      ]);
+    }
+  }
+});
+
+/** Origen ocupado por un estudiante y un segundo estudiante que quiere el destino. */
+async function seedTi120MoveRace(t: Ti120Test, label: string) {
+  const moverSubject = `ti120-move-${label}-est-a`;
+  const rivalSubject = `ti120-move-${label}-est-b`;
+  const mover = await seedTi120User(t, moverSubject, "student");
+  const rival = await seedTi120User(t, rivalSubject, "student");
+  const pro = await seedTi120User(t, `ti120-move-${label}-pro`, "professional");
+  const moverAccompaniment = await seedTi120Accompaniment(t, mover, [pro]);
+  const rivalAccompaniment = await seedTi120Accompaniment(t, rival, [pro]);
+  await seedTi120Block(t, pro);
+  const [origin, target] = ti120Slots(pro);
+  const originId = await seedTi120Appointment(t, {
+    accompanimentId: moverAccompaniment,
+    studentId: mover,
+    professionalId: pro,
+    slot: origin,
+  });
+  return {
+    mover,
+    rival,
+    origin,
+    target,
+    originId,
+    before: await ti120Get(t, originId),
+    move: () => ti120Reschedule(t, moverSubject, originId, pro, target),
+    book: () =>
+      ti120Book(
+        t,
+        rivalSubject,
+        { accompanimentId: rivalAccompaniment, professionalId: pro },
+        target,
+      ),
+  };
+}
+
+test("TI2-120 API: si el cambio llega antes que la reserva, la misma fila ocupa el destino", async () => {
+  const t = convexTest(schema, modules);
+  const race = await seedTi120MoveRace(t, "cambio-primero");
+
+  const [moved, booked] = await ti120Race([race.move, race.book]);
+  expect(moved).toEqual({ status: "ok", result: { appointmentId: race.originId } });
+  expect(booked).toEqual({ status: "error", data: ti120Error("conflict") });
+
+  // La misma fila se movió y conserva la fecha original; la reserva no escribió.
+  const rows = await ti120Appointments(t);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    _id: race.originId,
+    studentId: race.mover,
+    status: "rescheduled",
+    startsAt: race.target.startAt,
+    endsAt: race.target.endAt,
+    originalStartsAt: race.origin.startAt,
+  });
+  expect(await ti120Audit(t)).toEqual([
+    {
+      action: "rescheduled",
+      actorId: race.mover,
+      appointmentId: race.originId,
+      result: "rescheduled",
+    },
+  ]);
+});
+
+test("TI2-120 API: si la reserva llega antes que el cambio, el origen queda intacto", async () => {
+  const t = convexTest(schema, modules);
+  const race = await seedTi120MoveRace(t, "reserva-primero");
+
+  const [booked, moved] = await ti120Race([race.book, race.move]);
+  if (booked?.status !== "ok") throw new Error("Se esperaba que ganara la reserva");
+  expect(moved).toEqual({ status: "error", data: ti120Error("conflict") });
+
+  // El origen queda intacto y el destino es de quien reservó primero.
+  expect(await ti120Get(t, race.originId)).toEqual(race.before);
+  const rows = await ti120Appointments(t);
+  expect(rows).toHaveLength(2);
+  expect(rows.find((row) => row._id !== race.originId)).toMatchObject({
+    _id: booked.result.appointmentId,
+    studentId: race.rival,
+    status: "scheduled",
+    startsAt: race.target.startAt,
+    endsAt: race.target.endAt,
+  });
+  expect(await ti120Audit(t)).toEqual([
+    {
+      action: "booked",
+      actorId: race.rival,
+      appointmentId: booked.result.appointmentId,
+      result: "scheduled",
+    },
+  ]);
+});
+
+test("TI2-120 API: dos cancelaciones de la misma atención dejan un solo estado terminal", async () => {
+  for (const studentFirst of [true, false]) {
+    const t = convexTest(schema, modules);
+    const label = studentFirst ? "estudiante-primero" : "cereti-primero";
+    const studentSubject = `ti120-cancel-race-${label}-est`;
+    const proSubject = `ti120-cancel-race-${label}-pro`;
+    const student = await seedTi120User(t, studentSubject, "student");
+    const pro = await seedTi120User(t, proSubject, "professional");
+    const accompanimentId = await seedTi120Accompaniment(t, student, [pro]);
+    await seedTi120Block(t, pro);
+    const [slot] = ti120Slots(pro);
+    const appointmentId = await seedTi120Appointment(t, {
+      accompanimentId,
+      studentId: student,
+      professionalId: pro,
+      slot,
+    });
+
+    const byStudent = () => ti120Cancel(t, studentSubject, appointmentId);
+    const byCereti = () => ti120Cancel(t, proSubject, appointmentId, "Motivo ficticio de CERETI");
+    const [won, lost] = await ti120Race(
+      studentFirst ? [byStudent, byCereti] : [byCereti, byStudent],
+    );
+    expect(won).toEqual({ status: "ok", result: { appointmentId } });
+    expect(lost).toEqual({ status: "error", data: ti120Error("conflict") });
+
+    const status = studentFirst ? "cancelled_by_student" : "cancelled_by_cereti";
+    const row = await ti120Get(t, appointmentId);
+    expect(row).toMatchObject({ status, startsAt: slot.startAt, endsAt: slot.endAt });
+    expect(row?.cancelReason).toBe(studentFirst ? undefined : "Motivo ficticio de CERETI");
+    expect(await ti120Audit(t)).toEqual([
+      { action: "cancelled", actorId: studentFirst ? student : pro, appointmentId, result: status },
+    ]);
+  }
+});
+
+test("TI2-120 API: cancelar libera solo su cupo y no toca la atención de otro estudiante", async () => {
+  const t = convexTest(schema, modules);
+  const owner = await seedTi120User(t, "ti120-free-est-a", "student");
+  const neighbor = await seedTi120User(t, "ti120-free-est-b", "student");
+  const newcomer = await seedTi120User(t, "ti120-free-est-c", "student");
+  const pro = await seedTi120User(t, "ti120-free-pro", "professional");
+  const ownerAccompaniment = await seedTi120Accompaniment(t, owner, [pro]);
+  const neighborAccompaniment = await seedTi120Accompaniment(t, neighbor, [pro]);
+  const newcomerAccompaniment = await seedTi120Accompaniment(t, newcomer, [pro]);
+  await seedTi120Block(t, pro);
+  const [freed, kept] = ti120Slots(pro);
+  const ownerAppointment = await seedTi120Appointment(t, {
+    accompanimentId: ownerAccompaniment,
+    studentId: owner,
+    professionalId: pro,
+    slot: freed,
+  });
+  const neighborAppointment = await seedTi120Appointment(t, {
+    accompanimentId: neighborAccompaniment,
+    studentId: neighbor,
+    professionalId: pro,
+    slot: kept,
+  });
+  const neighborBefore = await ti120Get(t, neighborAppointment);
+
+  expect(await ti120Cancel(t, "ti120-free-est-a", ownerAppointment)).toEqual({
+    appointmentId: ownerAppointment,
+  });
+  // La fila cancelada se conserva en estado terminal; la del otro estudiante no cambia.
+  expect(await ti120Get(t, ownerAppointment)).toMatchObject({
+    status: "cancelled_by_student",
+    startsAt: freed.startAt,
+    endsAt: freed.endAt,
+  });
+  expect(await ti120Get(t, neighborAppointment)).toEqual(neighborBefore);
+
+  // El cupo cancelado vuelve a estar libre; el del otro estudiante sigue ocupado.
+  const newcomerTarget = { accompanimentId: newcomerAccompaniment, professionalId: pro };
+  const newBooking = await ti120Book(t, "ti120-free-est-c", newcomerTarget, freed);
+  expect(await ti120ErrorOf(() => ti120Book(t, "ti120-free-est-c", newcomerTarget, kept))).toEqual(
+    ti120Error("conflict"),
+  );
+
+  expect(await ti120Appointments(t)).toHaveLength(3);
+  expect(await ti120Get(t, neighborAppointment)).toEqual(neighborBefore);
+  expect(await ti120Audit(t)).toEqual([
+    {
+      action: "cancelled",
+      actorId: owner,
+      appointmentId: ownerAppointment,
+      result: "cancelled_by_student",
+    },
+    {
+      action: "booked",
+      actorId: newcomer,
+      appointmentId: newBooking.appointmentId,
+      result: "scheduled",
+    },
+  ]);
+});
+
+test("TI2-120 API: reservar, mover y cancelar deniegan a cada identidad sin permiso sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const owner = await seedTi120User(t, "ti120-matrix-est", "student");
+  const pro = await seedTi120User(t, "ti120-matrix-pro", "professional");
+  const intern = await seedTi120User(t, "ti120-matrix-int", "intern");
+  await seedTi120User(t, "ti120-matrix-admin", "admin");
+  await seedTi120User(t, "ti120-matrix-pro-libre", "professional");
+  const foreignStudent = await seedTi120User(t, "ti120-matrix-est-ajeno", "student");
+  const foreignPro = await seedTi120User(t, "ti120-matrix-pro-ajeno", "professional");
+  const accompanimentId = await seedTi120Accompaniment(t, owner, [pro], intern);
+  await seedTi120Accompaniment(t, foreignStudent, [foreignPro]);
+  await seedTi120Block(t, pro);
+  const [slot, target] = ti120Slots(pro);
+  const appointmentId = await seedTi120Appointment(t, {
+    accompanimentId,
+    studentId: owner,
+    professionalId: pro,
+    slot,
+  });
+  const before = await ti120Get(t, appointmentId);
+
+  const cases: readonly {
+    readonly label: string;
+    readonly subject: string | null;
+    readonly profile?: {
+      readonly userId: Id<"users">;
+      readonly fields: Partial<Pick<Doc<"users">, "accountStatus" | "institutionalStatus">>;
+    };
+  }[] = [
+    { label: "anónimo", subject: null },
+    {
+      label: "Estudiante dueño con cuenta inactiva",
+      subject: "ti120-matrix-est",
+      profile: { userId: owner, fields: { accountStatus: "inactive" } },
+    },
+    {
+      label: "Estudiante dueño inhabilitado",
+      subject: "ti120-matrix-est",
+      profile: { userId: owner, fields: { institutionalStatus: "disabled" } },
+    },
+    {
+      label: "Profesional asignado con cuenta inactiva",
+      subject: "ti120-matrix-pro",
+      profile: { userId: pro, fields: { accountStatus: "inactive" } },
+    },
+    {
+      label: "Profesional asignado inhabilitado",
+      subject: "ti120-matrix-pro",
+      profile: { userId: pro, fields: { institutionalStatus: "disabled" } },
+    },
+    { label: "Estudiante ajeno", subject: "ti120-matrix-est-ajeno" },
+    { label: "Profesional de otro acompañamiento", subject: "ti120-matrix-pro-ajeno" },
+    { label: "Profesional sin asignación", subject: "ti120-matrix-pro-libre" },
+    { label: "Practicante asignado", subject: "ti120-matrix-int" },
+    { label: "Administrador", subject: "ti120-matrix-admin" },
+  ];
+
+  for (const { label, subject, profile } of cases) {
+    if (profile !== undefined) {
+      await t.run(async (ctx) => await ctx.db.patch(profile.userId, profile.fields));
+    }
+    const attempts = [
+      () => ti120Book(t, subject, { accompanimentId, professionalId: pro }, target),
+      () => ti120Reschedule(t, subject, appointmentId, pro, target),
+      () => ti120Cancel(t, subject, appointmentId, "Motivo ficticio"),
+    ];
+    for (const attempt of attempts) {
+      // La etiqueta viaja en el valor comparado para identificar el caso si falla.
+      expect({ label, error: await ti120ErrorOf(attempt) }).toEqual({
+        label,
+        error: ti120Error("unauthorized"),
+      });
+    }
+    if (profile !== undefined) {
+      await t.run(
+        async (ctx) =>
+          await ctx.db.patch(profile.userId, {
+            accountStatus: "active",
+            institutionalStatus: "enabled",
+          }),
+      );
+    }
+  }
+
+  // Ninguna denegación escribió: la atención, la tabla y la bitácora siguen iguales.
+  expect(await ti120Get(t, appointmentId)).toEqual(before);
+  expect(await ti120Appointments(t)).toHaveLength(1);
+  expect(await ti120Audit(t)).toEqual([]);
+
+  // Control: con los perfiles restaurados, el dueño sí puede mover su atención.
+  expect(await ti120Reschedule(t, "ti120-matrix-est", appointmentId, pro, target)).toEqual({
+    appointmentId,
+  });
+});
+
+test("TI2-120 API: atención o acompañamiento ajeno, eliminado o de otra tabla responden el mismo error mínimo", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedTi120User(t, "ti120-same-est", "student");
+  const other = await seedTi120User(t, "ti120-same-otro", "student");
+  const pro = await seedTi120User(t, "ti120-same-pro", "professional");
+  const ownAccompaniment = await seedTi120Accompaniment(t, student, [pro]);
+  const otherAccompaniment = await seedTi120Accompaniment(t, other, [pro]);
+  await seedTi120Block(t, pro);
+  const [slot, target] = ti120Slots(pro);
+  const foreign = await seedTi120Appointment(t, {
+    accompanimentId: otherAccompaniment,
+    studentId: other,
+    professionalId: pro,
+    slot,
+  });
+  const removed = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("appointments", {
+      accompanimentId: ownAccompaniment,
+      studentId: student,
+      professionalId: pro,
+      modality: "online",
+      status: "scheduled",
+      startsAt: target.startAt,
+      endsAt: target.endAt,
+      createdAt: 1,
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+  // Reservar apunta a un acompañamiento, no a una atención: se prepara el equivalente eliminado.
+  const removedAccompaniment = await seedTi120Accompaniment(t, student, [pro]);
+  await t.run(async (ctx) => await ctx.db.delete(removedAccompaniment));
+  const before = await ti120Get(t, foreign);
+
+  const targets = [
+    { label: "ajena", appointmentId: foreign as string },
+    { label: "eliminada", appointmentId: removed as string },
+    { label: "de otra tabla", appointmentId: ownAccompaniment as string },
+  ];
+  for (const { label, appointmentId } of targets) {
+    const errors = [
+      await ti120ErrorOf(() => ti120Cancel(t, "ti120-same-est", appointmentId)),
+      await ti120ErrorOf(() => ti120Reschedule(t, "ti120-same-est", appointmentId, pro, target)),
+    ];
+    for (const data of errors) {
+      // Mismo código y texto en los tres casos, y solo las dos claves públicas.
+      expect({ label, data }).toEqual({ label, data: ti120Error("unauthorized") });
+      expect(Object.keys(data as Record<string, unknown>).sort()).toEqual(["code", "message"]);
+    }
+  }
+
+  // Reservar por la API pública responde igual: mismo código, mismo texto y solo esas dos claves.
+  const bookTargets = [
+    { label: "reservar ajeno", accompanimentId: otherAccompaniment as string },
+    { label: "reservar eliminado", accompanimentId: removedAccompaniment as string },
+    { label: "reservar otra tabla", accompanimentId: foreign as string },
+  ];
+  for (const { label, accompanimentId } of bookTargets) {
+    const data = await ti120ErrorOf(() =>
+      ti120Book(t, "ti120-same-est", { accompanimentId, professionalId: pro }, target),
+    );
+    expect({ label, data }).toEqual({ label, data: ti120Error("unauthorized") });
+    expect(Object.keys(data as Record<string, unknown>).sort()).toEqual(["code", "message"]);
+  }
+
+  expect(await ti120Get(t, foreign)).toEqual(before);
+  expect(await ti120Appointments(t)).toHaveLength(1);
+  expect(await ti120Audit(t)).toEqual([]);
+});
+
+test("TI2-120 API: revocar la asignación quita el permiso desde la llamada siguiente", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedTi120User(t, "ti120-revoke-est", "student");
+  const pro = await seedTi120User(t, "ti120-revoke-pro", "professional");
+  await seedTi120User(t, "ti120-revoke-coordinador", "professional");
+  const accompanimentId = await seedTi120Accompaniment(t, student, [pro]);
+  await seedTi120Block(t, pro);
+  const [first, second] = ti120Slots(pro);
+  const cancelled = await seedTi120Appointment(t, {
+    accompanimentId,
+    studentId: student,
+    professionalId: pro,
+    slot: first,
+  });
+  const kept = await seedTi120Appointment(t, {
+    accompanimentId,
+    studentId: student,
+    professionalId: pro,
+    slot: second,
+  });
+
+  // Con la asignación vigente, el Profesional cancela una de sus atenciones.
+  expect(await ti120Cancel(t, "ti120-revoke-pro", cancelled, "Motivo ficticio")).toEqual({
+    appointmentId: cancelled,
+  });
+
+  // Revocación por la única vía guardada de escritura de asignaciones.
+  const revoked = await t
+    .withIdentity(ti120Identity("ti120-revoke-coordinador"))
+    .mutation(internal.operations.assignments.revoke, {
+      accompanimentId,
+      userId: pro,
+      assignedRole: "professional",
+    });
+  expect(revoked).toBe(1);
+  const before = await ti120Get(t, kept);
+
+  // La llamada siguiente ya no autoriza cancelar ni mover, y el Profesional deja de ser reservable.
+  expect(
+    await ti120ErrorOf(() => ti120Cancel(t, "ti120-revoke-pro", kept, "Motivo ficticio")),
+  ).toEqual(ti120Error("unauthorized"));
+  expect(
+    await ti120ErrorOf(() => ti120Reschedule(t, "ti120-revoke-pro", kept, pro, first)),
+  ).toEqual(ti120Error("unauthorized"));
+  expect(
+    await ti120ErrorOf(() =>
+      ti120Book(t, "ti120-revoke-est", { accompanimentId, professionalId: pro }, first),
+    ),
+  ).toEqual(ti120Error("no_availability"));
+
+  expect(await ti120Get(t, kept)).toEqual(before);
+  expect(await ti120Audit(t)).toEqual([
+    {
+      action: "cancelled",
+      actorId: pro,
+      appointmentId: cancelled,
+      result: "cancelled_by_cereti",
+    },
+  ]);
 });
