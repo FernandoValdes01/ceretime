@@ -497,7 +497,7 @@ describe("Formulario de solicitud del estudiante", () => {
         role === "Practicante"
           ? "Acompañamientos asignados"
           : role === "Profesional"
-            ? "Jueves, 24 de Octubre"
+            ? "Jueves, 5 de noviembre"
             : `Inicio de ${role}`;
       const roleHomePath =
         role === "Practicante" ? "/practicante/asignaciones" : `/${role.toLowerCase()}`;
