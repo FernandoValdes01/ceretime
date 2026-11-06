@@ -1,20 +1,20 @@
 import { StrictMode } from "react";
 import { ConvexError } from "convex/values";
 import { act, renderHook, waitFor } from "@testing-library/react-native";
-import type { ProfessionalAgendaDay } from "@/application/professional-agenda-models";
-import type { ProfessionalAccompaniment } from "@/application/professional-accompaniment-models";
+import type { ProfessionalAgendaDayViewModel } from "@/application/professional-agenda-view-models";
+import type { ProfessionalAccompaniment } from "@/domain/professional-accompaniment-models";
 import type { ProfessionalAccompanimentReader } from "@/application/professional-accompaniment-port";
-import type { PractitionerAccompaniment } from "@/application/practitioner-accompaniment-models";
-import type { PractitionerAccompanimentReader } from "@/application/practitioner-accompaniment-port";
-import { PractitionerAccompanimentAccessDeniedError } from "@/application/practitioner-accompaniment-port";
-import { createMockProfessionalAccompanimentReader } from "@/infrastructure/mock-professional-accompaniment-reader";
-import { createMockPractitionerAccompanimentReader } from "@/infrastructure/mock-practitioner-accompaniment-reader";
-import { fictionalProfessionalAgenda } from "@/infrastructure/mock-professional-agenda-data";
+import type { InternAccompaniment } from "@/domain/intern-accompaniment-models";
+import type { InternAccompanimentReader } from "@/application/intern-accompaniment-port";
+import { AccompanimentAccessDeniedError } from "@/domain/accompaniment-access-denied-error";
+import { createDemoProfessionalAccompanimentReader } from "@/infrastructure/demo-professional-accompaniment-reader";
+import { createDemoInternAccompanimentReader } from "@/infrastructure/demo-intern-accompaniment-reader";
+import { demoProfessionalAgenda } from "@/infrastructure/demo-professional-agenda-data";
 import { useProfessionalAgenda } from "@/presentation/hooks/use-professional-agenda";
 import { useProfessionalAccompaniments } from "@/presentation/hooks/use-professional-accompaniments";
 import { useProfessionalAccompaniment } from "@/presentation/hooks/use-professional-accompaniment";
-import { usePractitionerAccompaniments } from "@/presentation/hooks/use-practitioner-accompaniments";
-import { usePractitionerAccompaniment } from "@/presentation/hooks/use-practitioner-accompaniment";
+import { useInternAccompaniments } from "@/presentation/hooks/use-intern-accompaniments";
+import { useInternAccompaniment } from "@/presentation/hooks/use-intern-accompaniment";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -29,7 +29,7 @@ function deferred<T>() {
 test("una recarga descarta la respuesta anterior y un reemplazo oculta los datos profesionales", async () => {
   const first = deferred<readonly ProfessionalAccompaniment[]>();
   const retry = deferred<readonly ProfessionalAccompaniment[]>();
-  const adapter = createMockProfessionalAccompanimentReader();
+  const adapter = createDemoProfessionalAccompanimentReader();
   const rows = await adapter.readAccompaniments();
   const reader: ProfessionalAccompanimentReader = {
     ...adapter,
@@ -65,9 +65,9 @@ test("una recarga descarta la respuesta anterior y un reemplazo oculta los datos
 });
 
 test("el cambio de Practicante descarta tanto resultados como errores antiguos y no consulta sin identidad", async () => {
-  const first = deferred<readonly PractitionerAccompaniment[]>();
-  const second = deferred<readonly PractitionerAccompaniment[]>();
-  const reader: PractitionerAccompanimentReader = {
+  const first = deferred<readonly InternAccompaniment[]>();
+  const second = deferred<readonly InternAccompaniment[]>();
+  const reader: InternAccompanimentReader = {
     readAssignedAccompaniments: jest
       .fn()
       .mockReturnValueOnce(first.promise)
@@ -76,7 +76,7 @@ test("el cambio de Practicante descarta tanto resultados como errores antiguos y
     readAssignedAccompaniment: jest.fn(),
   };
   const { result, rerender } = renderHook(
-    ({ id }: { id: string | null }) => usePractitionerAccompaniments(reader, id),
+    ({ id }: { id: string | null }) => useInternAccompaniments(reader, id),
     { initialProps: { id: "first" } },
   );
   rerender({ id: "second" });
@@ -97,8 +97,8 @@ test("el cambio de Practicante descarta tanto resultados como errores antiguos y
 });
 
 test("dos avances de agenda en el mismo evento acumulan días y descartan la lectura anterior", async () => {
-  const first = deferred<ProfessionalAgendaDay>();
-  const second = deferred<ProfessionalAgendaDay>();
+  const first = deferred<ProfessionalAgendaDayViewModel>();
+  const second = deferred<ProfessionalAgendaDayViewModel>();
   const reader = {
     readProfessionalAgenda: jest
       .fn()
@@ -112,18 +112,18 @@ test("dos avances de agenda en el mismo evento acumulan días y descartan la lec
   });
   expect(reader.readProfessionalAgenda).toHaveBeenLastCalledWith(2);
   await act(async () => {
-    second.resolve({ ...fictionalProfessionalAgenda, id: "current" });
+    second.resolve({ ...demoProfessionalAgenda, id: "current" });
     await second.promise;
   });
   await act(async () => {
-    first.resolve({ ...fictionalProfessionalAgenda, id: "obsolete" });
+    first.resolve({ ...demoProfessionalAgenda, id: "obsolete" });
     await first.promise;
   });
   expect(result.current.data?.id).toBe("current");
 });
 
 test("el detalle profesional oculta el recurso anterior y tolera un fallo síncrono con reintento", async () => {
-  const adapter = createMockProfessionalAccompanimentReader();
+  const adapter = createDemoProfessionalAccompanimentReader();
   const [row] = await adapter.readAccompaniments();
   const old = deferred<ProfessionalAccompaniment>();
   const reader: ProfessionalAccompanimentReader = {
@@ -157,15 +157,15 @@ test("el detalle profesional oculta el recurso anterior y tolera un fallo síncr
 });
 
 test("el detalle asignado conserva la denegación y completa sin publicar después del desmontaje", async () => {
-  const adapter = createMockPractitionerAccompanimentReader();
-  const [row] = await adapter.readAssignedAccompaniments("mock-practitioner-assigned-1");
-  const pending = deferred<PractitionerAccompaniment>();
+  const adapter = createDemoInternAccompanimentReader();
+  const [row] = await adapter.readAssignedAccompaniments("demo-intern-assigned-1");
+  const pending = deferred<InternAccompaniment>();
   const readAssignedAccompaniment = jest
     .fn()
-    .mockRejectedValue(new PractitionerAccompanimentAccessDeniedError());
-  const reader: PractitionerAccompanimentReader = { ...adapter, readAssignedAccompaniment };
+    .mockRejectedValue(new AccompanimentAccessDeniedError());
+  const reader: InternAccompanimentReader = { ...adapter, readAssignedAccompaniment };
   const { result, unmount } = renderHook(
-    () => usePractitionerAccompaniment(reader, "mock-practitioner-assigned-1", row.id),
+    () => useInternAccompaniment(reader, "demo-intern-assigned-1", row.id),
     { wrapper: StrictMode },
   );
   await waitFor(() => expect(result.current.status).toBe("access-denied"));

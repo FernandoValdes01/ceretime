@@ -3,15 +3,15 @@ import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type { ProfessionalRequest } from "@/application/professional-review-models";
-import type { StudentRequestStatus } from "@/application/student-area-models";
+import type { ProfessionalRequest } from "@/domain/professional-review-models";
+import type { RequestStatus } from "@/domain/request-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
 import { getStudentRequestStatusPresentation } from "@/presentation/estudiante/student-request-status-indicator";
 import { RoleGuard } from "@/presentation/navigation/role-guard";
 import { useProfessionalReviewContext } from "./professional-review-provider";
-import { ProfessionalHeader } from "./professional-header";
+import { AppHeader } from "@/presentation/components/app-header";
 
 const noActionMessages = {
   received: "No hay acciones disponibles para esta solicitud.",
@@ -21,9 +21,9 @@ const noActionMessages = {
   referred: "Solicitud derivada; queda pendiente del contacto y aceptación del estudiante.",
   closedWithoutAccompaniment: "Solicitud cerrada sin acompañamiento.",
   cancelled: "Solicitud cancelada.",
-} satisfies Record<StudentRequestStatus, string>;
+} satisfies Record<RequestStatus, string>;
 
-export function getNoActionMessage(status: StudentRequestStatus): string {
+export function getNoActionMessage(status: RequestStatus): string {
   return noActionMessages[status];
 }
 
@@ -137,7 +137,7 @@ export function ProfessionalRequestsScreen() {
     <RoleGuard requiredRole="profesional">
       <StudentFonts>
         <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-          <ProfessionalHeader />
+          <AppHeader />
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.content}

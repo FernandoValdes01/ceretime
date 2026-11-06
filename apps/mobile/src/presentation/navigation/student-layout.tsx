@@ -1,10 +1,17 @@
 import { router, type NativeStackNavigationOptions } from "expo-router";
-import { View } from "react-native";
+import { StyleSheet, View } from "react-native";
 
 import { mobileDependencies } from "../../composition/mobile-dependencies";
+import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { SpeechCommandLauncher } from "../accessibility/speech-controls";
 import { appHeaderOptions } from "./app-header-options";
-import { RoleTabIcon, roleTabAccessibilityLabel, Tabs, useRoleTabScreenOptions } from "./role-tabs";
+import {
+  RoleTabBar,
+  RoleTabIcon,
+  roleTabAccessibilityLabel,
+  Tabs,
+  useRoleTabScreenOptions,
+} from "./role-tabs";
 
 export const studentLayoutScreenOptions = appHeaderOptions;
 
@@ -13,14 +20,28 @@ export const studentRequestScreenOptions = {
   headerBackVisible: true,
 } satisfies NativeStackNavigationOptions;
 
+// Pestañas del Estudiante con los comandos de voz fijos sobre la barra.
 export default function StudentLayout() {
   const screenOptions = useRoleTabScreenOptions();
-  const tabBarHeight =
-    typeof screenOptions.tabBarStyle.height === "number" ? screenOptions.tabBarStyle.height : 66;
-
+  const colors = useAccessibilityColors();
   return (
     <View style={{ flex: 1 }}>
-      <Tabs screenOptions={screenOptions}>
+      <Tabs
+        tabBar={(props) => (
+          <View>
+            <View style={[styles.commands, { backgroundColor: colors.background }]}>
+              <SpeechCommandLauncher
+                speechPort={mobileDependencies.speechRecognitionPort}
+                onOpenRequests={() => router.push("/estudiante/solicitudes")}
+                onBack={() => (router.canGoBack() ? router.back() : router.replace("/estudiante"))}
+                inline
+              />
+            </View>
+            <RoleTabBar {...props} />
+          </View>
+        )}
+        screenOptions={screenOptions}
+      >
         <Tabs.Screen
           name="index"
           options={{
@@ -47,12 +68,10 @@ export default function StudentLayout() {
         />
         <Tabs.Screen name="nueva-solicitud" options={{ href: null }} />
       </Tabs>
-      <SpeechCommandLauncher
-        speechPort={mobileDependencies.speechRecognitionPort}
-        onOpenRequests={() => router.push("/estudiante/solicitudes")}
-        onBack={() => (router.canGoBack() ? router.back() : router.replace("/estudiante"))}
-        bottomOffset={tabBarHeight + 16}
-      />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  commands: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 },
+});

@@ -1,3 +1,4 @@
+// Tipografía del área accesible (Estudiante y Profesional): fuente propia y escala de letra.
 import { createContext, useContext, type PropsWithChildren } from "react";
 import {
   Platform,
@@ -38,18 +39,16 @@ export interface StudentTextProps extends TextProps {
   readonly className?: string;
 }
 
+const systemFontWeights = { regular: "400", semibold: "600", bold: "700" } as const;
+
+// Texto del área accesible: aplica la fuente Fira Sans y la escala de letra elegida en la app.
 export function StudentText({ weight = "regular", style, className, ...props }: StudentTextProps) {
   const preferences = useOptionalAccessibilityPreferences();
   const { fontScale } = useWindowDimensions();
   const textScale = preferences?.effective.textScale ?? fontScale;
   const fontFamily = useStudentFont(weight);
-  const fontWeight = fontFamily
-    ? "400"
-    : weight === "bold"
-      ? "700"
-      : weight === "semibold"
-        ? "600"
-        : "400";
+  // Con Fira Sans cargada, el grosor ya viene en la familia; sin ella se pide al sistema.
+  const fontWeight = fontFamily ? "400" : systemFontWeights[weight];
   return (
     <Text
       {...props}
@@ -62,6 +61,8 @@ export function StudentText({ weight = "regular", style, className, ...props }: 
   );
 }
 
+// El sistema ya aplica su propia escala; aquí solo se corrige la diferencia con la escala de la app.
+// Sin `fontSize` ni `className`, React Native usa 14 por defecto y ese es el tamaño que se escala.
 function scaleTextStyle(
   style: TextProps["style"],
   textScale: number,
@@ -69,33 +70,12 @@ function scaleTextStyle(
   hasClassName: boolean,
 ): TextProps["style"] {
   if (textScale === systemFontScale) return style;
+  const scale = (size: number) =>
+    getNativeFontSize(size, textScale, systemFontScale, Platform.OS, Platform.Version);
   const flattened = StyleSheet.flatten(style);
   const scaled: TextStyle = { ...flattened };
-  if (typeof flattened?.fontSize === "number") {
-    scaled.fontSize = getNativeFontSize(
-      flattened.fontSize,
-      textScale,
-      systemFontScale,
-      Platform.OS,
-      Platform.Version,
-    );
-  } else if (!hasClassName) {
-    scaled.fontSize = getNativeFontSize(
-      14,
-      textScale,
-      systemFontScale,
-      Platform.OS,
-      Platform.Version,
-    );
-  }
-  if (typeof flattened?.lineHeight === "number") {
-    scaled.lineHeight = getNativeFontSize(
-      flattened.lineHeight,
-      textScale,
-      systemFontScale,
-      Platform.OS,
-      Platform.Version,
-    );
-  }
+  if (typeof flattened?.fontSize === "number") scaled.fontSize = scale(flattened.fontSize);
+  else if (!hasClassName) scaled.fontSize = scale(14);
+  if (typeof flattened?.lineHeight === "number") scaled.lineHeight = scale(flattened.lineHeight);
   return scaled;
 }

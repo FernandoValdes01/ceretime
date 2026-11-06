@@ -3,7 +3,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { RoleGuard } from "@/presentation/navigation/role-guard";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
-import { ProfessionalHeader } from "./professional-header";
+import { AppHeader } from "@/presentation/components/app-header";
 
 export function ProfessionalPlaceholderScreen({
   title,
@@ -16,7 +16,7 @@ export function ProfessionalPlaceholderScreen({
     <RoleGuard requiredRole="profesional">
       <StudentFonts>
         <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-          <ProfessionalHeader />
+          <AppHeader />
           <View style={styles.content}>
             <StudentText accessibilityRole="header" weight="bold" style={styles.title}>
               {title}

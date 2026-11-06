@@ -4,7 +4,7 @@ import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
   ProfessionalActionDetails,
-} from "../../application/professional-review-models";
+} from "../../domain/professional-review-models";
 import type { ProfessionalReviewPort } from "../../application/professional-review-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
 
@@ -52,6 +52,7 @@ const loadingActionState: ProfessionalReviewActionState = {
   message: null,
   error: null,
 };
+const loadErrorMessage = "No pudimos cargar las solicitudes del Profesional. Intenta nuevamente.";
 
 function actionKey(requestId: string, action: ProfessionalRequestAction) {
   return `${requestId}:${action}`;
@@ -72,6 +73,7 @@ function successLoad(
   return { port, status: "success", requests, error: null };
 }
 
+// Mantiene lectura y acciones separadas: una acción puede terminar después de cambiar el port.
 export function useProfessionalReview(port: ProfessionalReviewPort): ProfessionalReviewState {
   const [load, setLoad] = useState<ReviewLoad>(() => loadingLoad(port));
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -82,6 +84,7 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
     pending: ReadonlySet<string>;
   }>({ port, actions: {}, requests: {}, pending: new Set() });
   if (feedback.port !== port) {
+    // Conserva los pendientes para impedir duplicar una operación que aún sigue ejecutándose.
     setFeedback({ port, actions: {}, requests: {}, pending: feedback.pending });
   }
   const activePort = useRef<ProfessionalReviewPort | null>(port);
@@ -98,6 +101,7 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
   const requestId = useRef(0);
 
   const reload = useCallback(() => {
+    // Invalida lecturas anteriores antes de que React ejecute el siguiente efecto.
     requestId.current += 1;
     setLoad(loadingLoad(port));
     setFeedback((current) => ({ port, actions: {}, requests: {}, pending: current.pending }));
@@ -114,15 +118,7 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
       pending = port.readProfessionalRequests();
     } catch (error) {
       if (isCurrent()) {
-        setLoad(
-          errorLoad(
-            port,
-            toMobileOperationError(
-              error,
-              "No pudimos cargar las solicitudes del Profesional. Intenta nuevamente.",
-            ),
-          ),
-        );
+        setLoad(errorLoad(port, toMobileOperationError(error, loadErrorMessage)));
       }
       return () => {
         disposed = true;
@@ -135,15 +131,7 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
       },
       (error: unknown) => {
         if (isCurrent()) {
-          setLoad(
-            errorLoad(
-              port,
-              toMobileOperationError(
-                error,
-                "No pudimos cargar las solicitudes del Profesional. Intenta nuevamente.",
-              ),
-            ),
-          );
+          setLoad(errorLoad(port, toMobileOperationError(error, loadErrorMessage)));
         }
       },
     );
@@ -162,11 +150,14 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
       details?: ProfessionalActionDetails,
     ) => {
       const pending = pendingRequests.current;
+      // Una operación por solicitud evita escrituras simultáneas sobre el mismo registro.
       if (activePort.current !== port || pending.has(requestIdToUpdate)) return;
       pending.add(requestIdToUpdate);
       const epoch = actionEpoch.current;
+      // La época descarta resultados de acciones iniciadas por un port ya reemplazado.
       const key = actionKey(requestIdToUpdate, action);
       const publishFeedback = (state: ProfessionalReviewActionState) => {
+        // También protege los estados de carga y error, no solo la respuesta exitosa.
         if (activePort.current !== port || actionEpoch.current !== epoch) return;
         setFeedback((current) => ({
           port,
@@ -218,21 +209,22 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
   );
 
   const getActionState = useCallback(
-    (requestIdToRead: string, action: ProfessionalRequestAction) =>
-      feedback.pending.has(requestIdToRead)
-        ? loadingActionState
-        : ((feedback.port === port
-            ? feedback.actions[actionKey(requestIdToRead, action)]
-            : undefined) ?? idleActionState),
+    (requestIdToRead: string, action: ProfessionalRequestAction) => {
+      if (feedback.pending.has(requestIdToRead)) return loadingActionState;
+      return feedback.port === port
+        ? (feedback.actions[actionKey(requestIdToRead, action)] ?? idleActionState)
+        : idleActionState;
+    },
     [feedback, port],
   );
 
   const getRequestFeedback = useCallback(
-    (requestIdToRead: string) =>
-      feedback.pending.has(requestIdToRead)
-        ? loadingActionState
-        : ((feedback.port === port ? feedback.requests[requestIdToRead] : undefined) ??
-          idleActionState),
+    (requestIdToRead: string) => {
+      if (feedback.pending.has(requestIdToRead)) return loadingActionState;
+      return feedback.port === port
+        ? (feedback.requests[requestIdToRead] ?? idleActionState)
+        : idleActionState;
+    },
     [feedback, port],
   );
 

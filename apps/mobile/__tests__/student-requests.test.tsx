@@ -1,3 +1,4 @@
+import { mobileDependencies } from "../src/composition/mobile-dependencies";
 import { router } from "expo-router";
 import { act, fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 import { render } from "@testing-library/react-native";
@@ -5,13 +6,10 @@ import path from "node:path";
 import { StrictMode } from "react";
 import { AccessibilityInfo } from "react-native";
 
-import type { StudentAreaSnapshot } from "@/application/student-area-models";
+import type { StudentAreaSnapshot } from "@/domain/student-area-models";
 import type { StudentAreaReader } from "@/application/student-area-port";
-import { createMockStudentAreaReader } from "@/infrastructure/mock-student-area-reader";
-import {
-  createMockStudentAreaStore,
-  mockStudentAreaStore,
-} from "@/infrastructure/mock-student-area-store";
+import { createDemoStudentAreaReader } from "@/infrastructure/demo-student-area-reader";
+import { createDemoStudentAreaStore } from "@/infrastructure/demo-student-area-store";
 import { StudentAreaProvider } from "@/presentation/estudiante/student-area-provider";
 import StudentRequestsScreen from "@/presentation/estudiante/student-requests-screen";
 import { fillRequiredStudentRequestFields } from "./student-request-test-helpers";
@@ -20,12 +18,12 @@ const appDirectory = path.resolve(__dirname, "../app");
 
 afterEach(() => {
   jest.clearAllMocks();
-  mockStudentAreaStore.reset();
+  mobileDependencies.resetDemo();
   jest.restoreAllMocks();
 });
 
 function snapshotWith(requests: StudentAreaSnapshot["requests"]): Promise<StudentAreaSnapshot> {
-  return createMockStudentAreaReader()
+  return createDemoStudentAreaReader()
     .readStudentArea()
     .then((snapshot) => ({
       ...snapshot,
@@ -70,7 +68,7 @@ describe("Solicitudes del estudiante", () => {
 
   test("muestra el estado vacío y permite iniciar una nueva solicitud", async () => {
     render(
-      <StudentAreaProvider reader={createMockStudentAreaReader({ mode: "empty" })}>
+      <StudentAreaProvider reader={createDemoStudentAreaReader({ mode: "empty" })}>
         <StudentRequestsScreen />
       </StudentAreaProvider>,
     );
@@ -151,7 +149,7 @@ describe("Solicitudes del estudiante", () => {
         name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
       }),
     ).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole("button", { name: /^Inicio(?:, tab.*)?$/ }));
+    fireEvent.press(screen.getByLabelText("Inicio, pestaña, 1 de 3"));
     fireEvent.press(await screen.findByRole("button", { name: "Nueva solicitud" }));
     fillRequiredStudentRequestFields();
     announce.mockClear();
@@ -162,7 +160,7 @@ describe("Solicitudes del estudiante", () => {
       ["Enviando solicitud ficticia."],
       ["Solicitud ficticia enviada."],
     ]);
-    fireEvent.press(screen.getByRole("button", { name: "Solicitudes, pestaña, 2 de 3" }));
+    fireEvent.press(screen.getByLabelText("Solicitudes, pestaña, 2 de 3"));
     await waitFor(() => expect(navigation.getPathname()).toBe("/estudiante/solicitudes"));
 
     const createdRequest = await screen.findByRole("button", {
@@ -266,7 +264,7 @@ describe("Solicitudes del estudiante", () => {
   });
 
   test.each([
-    ["Profesional", "/profesional", "Jueves, 24 de Octubre"],
+    ["Profesional", "/profesional", "Jueves, 5 de noviembre"],
     ["Practicante", "/practicante/asignaciones", "Acompañamientos asignados"],
     ["Administrador", "/administrador", "Inicio de Administrador"],
   ] as const)(
@@ -287,18 +285,18 @@ describe("Adaptador mock de solicitudes", () => {
     ["success", "SOL-DEMO-001"],
     ["empty", undefined],
   ] as const)("devuelve el escenario %s", async (mode, requestId) => {
-    const snapshot = await createMockStudentAreaReader({ mode }).readStudentArea();
+    const snapshot = await createDemoStudentAreaReader({ mode }).readStudentArea();
     expect(snapshot.requests[0]?.id).toBe(requestId);
   });
 
   test("devuelve un error controlado en modo error", async () => {
-    await expect(createMockStudentAreaReader({ mode: "error" }).readStudentArea()).rejects.toThrow(
+    await expect(createDemoStudentAreaReader({ mode: "error" }).readStudentArea()).rejects.toThrow(
       "Falla simulada al cargar las solicitudes",
     );
   });
 
   test("muestra envíos de la sesión en el modo de ejemplos vacíos", async () => {
-    const store = createMockStudentAreaStore();
+    const store = createDemoStudentAreaStore();
     store.addRequest({
       id: "SOL-DEMO-006",
       status: "received",
@@ -306,7 +304,7 @@ describe("Adaptador mock de solicitudes", () => {
       accessNeeds: "Comunicación escrita",
     });
 
-    const snapshot = await createMockStudentAreaReader({ mode: "empty", store }).readStudentArea();
+    const snapshot = await createDemoStudentAreaReader({ mode: "empty", store }).readStudentArea();
 
     expect(snapshot.requests).toMatchObject([{ id: "SOL-DEMO-006", status: "received" }]);
     expect(snapshot.accompaniments).toEqual([]);

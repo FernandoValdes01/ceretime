@@ -23,6 +23,7 @@ export default function NewRequestScreen({
   const scrollRef = useRef<ScrollView>(null);
   const focusedInputHandleRef = useRef<number | null>(null);
 
+  // Tras enviar, salir a otra sección del Estudiante reinicia el formulario con una sesión nueva.
   const leftForStudentArea =
     pathname !== "/estudiante/nueva-solicitud" &&
     (pathname === "/estudiante" || pathname.startsWith("/estudiante/"));
@@ -36,6 +37,7 @@ export default function NewRequestScreen({
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [formSession]);
 
+  // Mantiene visible el campo enfocado cuando el teclado aparece o cambia el alto disponible.
   function revealFocusedInput() {
     const focusedInputHandle = focusedInputHandleRef.current;
     if (focusedInputHandle === null || !Keyboard.isVisible()) return;

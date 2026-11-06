@@ -101,6 +101,12 @@ export default function StudentAccompanimentScreen() {
             <DetailField label="Solicitud de origen" value={accompaniment.requestId} />
           ) : null}
           <DetailField label="Estado" value={accompanimentStatusLabel[accompaniment.status]} />
+          {accompaniment.objective ? (
+            <DetailField label="Objetivo" value={accompaniment.objective} />
+          ) : null}
+          {accompaniment.accessNeeds ? (
+            <DetailField label="Necesidades de acceso" value={accompaniment.accessNeeds} />
+          ) : null}
           {accompaniment.createdAt ? (
             <DetailField
               label="Fecha de apertura"

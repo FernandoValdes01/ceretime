@@ -1,14 +1,38 @@
+// Controles de voz del producto: lectura en voz alta de mensajes y comandos hablados para navegar.
+// Ambos son un complemento; cada acción por voz también existe como botón.
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { AccessibilityInfo, Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { parseSpeechCommand, type SpeechCommand } from "../../application/speech-command-parser";
+import { parseSpeechCommand, type SpeechCommand } from "./speech-command-parser";
 import type { SpeechPort, SpeechRecognitionPort } from "../../application/speech-port";
 import type { StudentRequestSubmissionState } from "../hooks/use-submit-student-request";
+import { AppIcon } from "../components/app-icon";
 import { StudentText } from "../estudiante/student-text";
-import { useOptionalAccessibilityPreferences } from "./accessibility-preferences-provider";
-import { getAccessibilityColorPalette } from "./accessibility-color-palette";
+import { studentRequestSubmissionMessages } from "../estudiante/student-request-submission-messages";
+import {
+  useAccessibilityColors,
+  useOptionalAccessibilityPreferences,
+} from "./accessibility-preferences-provider";
 
+function submissionSpeechText(
+  submission: Pick<StudentRequestSubmissionState, "status" | "receipt">,
+): string {
+  switch (submission.status) {
+    case "submitting":
+    case "error":
+      return studentRequestSubmissionMessages[submission.status];
+    case "success":
+      return submission.receipt
+        ? `${studentRequestSubmissionMessages.success} Referencia: ${submission.receipt.requestId}.`
+        : "";
+    default:
+      return "";
+  }
+}
+
+// Lee en voz alta el estado del envío de la solicitud del Estudiante.
 export function StudentRequestSpeechControls({
   speechPort,
   submission,
@@ -16,18 +40,10 @@ export function StudentRequestSpeechControls({
   readonly speechPort: SpeechPort;
   readonly submission: Pick<StudentRequestSubmissionState, "status" | "receipt">;
 }) {
-  const text =
-    submission.status === "submitting"
-      ? "Enviando solicitud ficticia."
-      : submission.status === "error"
-        ? "No pudimos enviar la solicitud ficticia. Puedes reintentar."
-        : submission.status === "success" && submission.receipt
-          ? `Solicitud ficticia enviada. Referencia: ${submission.receipt.requestId}.`
-          : "";
-
-  return <SpeechControls speechPort={speechPort} text={text} />;
+  return <SpeechControls speechPort={speechPort} text={submissionSpeechText(submission)} />;
 }
 
+// Consulta el estado del lector y coordina cada solicitud de voz; las versiones descartan respuestas obsoletas.
 export function SpeechControls({
   speechPort,
   text,
@@ -48,8 +64,7 @@ export function SpeechControls({
   const request = useRef(0);
   const screenReaderEventVersion = useRef(0);
 
-  const preferences = useOptionalAccessibilityPreferences();
-  const palette = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
+  const palette = useAccessibilityColors();
   const stopSpeech = useCallback(() => speechPort.stop(), [speechPort]);
 
   // Cambiar el mensaje invalida la lectura anterior sin iniciar otra automáticamente.
@@ -170,6 +185,18 @@ type SpeechCommandStatus =
   | "unknown"
   | "failed";
 
+const commandStatusMessages: Record<SpeechCommandStatus, string | null> = {
+  idle: null,
+  listening: "Escuchando. También puedes usar los botones en cualquier momento.",
+  silence: "No se detectó voz. Puedes usar los botones.",
+  denied: "No hay permiso para usar el micrófono. Puedes usar los botones.",
+  unavailable: "El reconocimiento de voz no está disponible. Puedes usar los botones.",
+  unknown: "No reconocí ese comando. Prueba abrir solicitudes, volver o cancelar.",
+  failed: "Falló el reconocimiento. Puedes volver a intentarlo o usar los botones.",
+};
+
+// Escucha un comando hablado y lo ejecuta. `generation` invalida el reconocimiento en curso al detenerlo,
+// salir de la pantalla o desmontar, para que un resultado tardío no navegue por su cuenta.
 export function SpeechCommandControls({
   speechPort,
   onOpenRequests,
@@ -182,8 +209,7 @@ export function SpeechCommandControls({
   readonly onCancel: () => void;
 }) {
   const [status, setStatus] = useState<SpeechCommandStatus>("idle");
-  const preferences = useOptionalAccessibilityPreferences();
-  const palette = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
+  const palette = useAccessibilityColors();
   const mounted = useRef(false);
   const listening = useRef(false);
   const generation = useRef(0);
@@ -257,16 +283,6 @@ export function SpeechCommandControls({
     }
   }
 
-  const statusMessage: Record<SpeechCommandStatus, string | null> = {
-    idle: null,
-    listening: "Escuchando. También puedes usar los botones en cualquier momento.",
-    silence: "No se detectó voz. Puedes usar los botones.",
-    denied: "No hay permiso para usar el micrófono. Puedes usar los botones.",
-    unavailable: "El reconocimiento de voz no está disponible. Puedes usar los botones.",
-    unknown: "No reconocí ese comando. Prueba abrir solicitudes, volver o cancelar.",
-    failed: "Falló el reconocimiento. Puedes volver a intentarlo o usar los botones.",
-  };
-
   return (
     <View style={commandStyles.container}>
       <Pressable
@@ -288,32 +304,35 @@ export function SpeechCommandControls({
         <CommandButton label="Volver" onPress={() => runCommand("back")} />
         <CommandButton label="Cancelar" onPress={() => runCommand("cancel")} />
       </View>
-      {statusMessage[status] ? (
+      {commandStatusMessages[status] ? (
         <StudentText
           accessibilityLiveRegion="polite"
           style={[commandStyles.message, { color: palette.text }]}
         >
-          {statusMessage[status]}
+          {commandStatusMessages[status]}
         </StudentText>
       ) : null}
     </View>
   );
 }
 
+// Botón que abre los comandos de voz en un modal; al elegir una acción cierra el modal antes de navegar.
 export function SpeechCommandLauncher({
   speechPort,
   onOpenRequests,
   onBack,
   bottomOffset = 0,
+  inline = false,
 }: {
   readonly speechPort: SpeechRecognitionPort;
   readonly onOpenRequests: () => void;
   readonly onBack: () => void;
   readonly bottomOffset?: number;
+  readonly inline?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const preferences = useOptionalAccessibilityPreferences();
-  const palette = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
+  const palette = useAccessibilityColors();
 
   function closeThen(action: () => void) {
     setOpen(false);
@@ -328,11 +347,15 @@ export function SpeechCommandLauncher({
         accessibilityHint="Abre los comandos abrir solicitudes, volver y cancelar"
         onPress={() => setOpen(true)}
         android_ripple={{ color: "#D3E4DF" }}
-        style={[styles.launcher, { bottom: bottomOffset, backgroundColor: palette.action }]}
+        style={[
+          styles.launcher,
+          inline
+            ? { position: "relative", right: 0, alignSelf: "flex-end" }
+            : { bottom: bottomOffset },
+          { backgroundColor: palette.action },
+        ]}
       >
-        <StudentText weight="semibold" style={styles.launcherLabel}>
-          Comandos de voz
-        </StudentText>
+        <AppIcon name="mic" size={22} color="#FFFFFF" accessible={false} />
       </Pressable>
       {open ? (
         <Modal
@@ -400,8 +423,7 @@ function CommandButton({
   readonly label: string;
   readonly onPress: () => void;
 }) {
-  const preferences = useOptionalAccessibilityPreferences();
-  const palette = getAccessibilityColorPalette(preferences?.effective.highContrast ?? false);
+  const palette = useAccessibilityColors();
   return (
     <Pressable
       accessibilityRole="button"
@@ -442,18 +464,14 @@ const styles = StyleSheet.create({
   launcher: {
     position: "absolute",
     right: 16,
-    maxWidth: "90%",
-    minHeight: 48,
-    minWidth: 44,
+    width: 48,
+    height: 48,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     borderRadius: 24,
     backgroundColor: "#246259",
     boxShadow: "0 2px 6px rgba(24, 44, 49, 0.28)",
   },
-  launcherLabel: { color: "#FFFFFF", fontSize: 16, fontWeight: "600", textAlign: "center" },
   modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0, 0, 0, 0.4)" },
   modalSheet: {
     maxHeight: "85%",
