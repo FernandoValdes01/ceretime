@@ -77,6 +77,29 @@ export interface AccompanimentRequestContent {
 }
 
 /**
+ * Canales por los que llega una solicitud (TI2-135): el propio Estudiante o
+ * personal autorizado que la registra desde un canal oficial de CERETI.
+ */
+export const REQUEST_PROVENANCE_CHANNEL_VALUES = ["student", "official_channel"] as const;
+
+export type RequestProvenanceChannel = (typeof REQUEST_PROVENANCE_CHANNEL_VALUES)[number];
+
+/**
+ * Canal que se asume en una solicitud sin `provenance` (TI2-135). Hasta
+ * TI2-135 la única entrada era `createRequest` con la identidad del propio
+ * Estudiante, así que las filas anteriores nacieron por ese canal: asumirlo al
+ * leer y escribirlo en la migración no inventa un dato.
+ */
+export const LEGACY_REQUEST_PROVENANCE_CHANNEL = "student" satisfies RequestProvenanceChannel;
+
+/** Canal efectivo de una fila: el declarado o, en las anteriores, el del Estudiante. */
+export function requestProvenanceChannelOf(row: {
+  readonly provenance?: { readonly channel: RequestProvenanceChannel };
+}): RequestProvenanceChannel {
+  return row.provenance?.channel ?? LEGACY_REQUEST_PROVENANCE_CHANNEL;
+}
+
+/**
  * Texto de necesidades de acceso para registrar una solicitud (TI2-26).
  *
  * Dominio puro: recorta el texto del estudiante y rechaza el vacío, sin persistir nada. Devuelve el texto recortado o `null` cuando no hay contenido válido; el tope de longitud lo aplica la capa de aplicación junto a este recorte, para que el mensaje de rechazo indique el máximo vigente.

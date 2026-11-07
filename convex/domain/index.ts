@@ -21,6 +21,9 @@ export type {
 export {
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
+  LEGACY_REQUEST_PROVENANCE_CHANNEL,
+  REQUEST_PROVENANCE_CHANNEL_VALUES,
+  requestProvenanceChannelOf,
   toAccessNeedsText,
   toAccompanimentRequest,
   toStoredRequestFields,
@@ -31,6 +34,7 @@ export type {
   AccompanimentRequestContent,
   GeneralAvailability,
   ModalityPreference,
+  RequestProvenanceChannel,
   StoredRequestFields,
 } from "./requests/request";
 export {

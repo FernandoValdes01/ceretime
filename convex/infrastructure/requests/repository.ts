@@ -15,20 +15,72 @@ import type { MutationCtx, QueryCtx } from "../../_generated/server";
 /** Contexto con lectura de base de datos (consultas y mutaciones). */
 type DbReader = QueryCtx | MutationCtx;
 
+/**
+ * Campos de la solicitud completa que se pueden fijar al recibirla (TI2-135).
+ * Todos son opcionales: sin ellos la fila queda como las anteriores. La razón
+ * de cierre y la derivación de salida no están porque se escriben al cerrar o
+ * derivar, no al recibir.
+ */
+export type ReceivedRequestExtras = Pick<
+  Doc<"requests">,
+  | "needSummary"
+  | "expectedOutcome"
+  | "accessNeedSelections"
+  | "otherAccessNeed"
+  | "modalityPreference"
+  | "generalAvailability"
+  | "preferredAccessibleInformationChannel"
+  | "provenance"
+  | "incomingReferral"
+  | "idempotencyKey"
+>;
+
+export type ReceivedRequestInput = ReceivedRequestExtras & {
+  readonly studentId: Id<"users">;
+  readonly accessNeeds: string;
+};
+
 /** Inserta una solicitud recibida del estudiante. */
-export async function insertReceivedRequest(
-  ctx: MutationCtx,
-  input: {
-    readonly studentId: Id<"users">;
-    readonly accessNeeds: string;
-  },
-) {
+export async function insertReceivedRequest(ctx: MutationCtx, input: ReceivedRequestInput) {
+  const { studentId, accessNeeds, ...extras } = input;
   return await ctx.db.insert("requests", {
-    studentId: input.studentId,
+    ...extras,
+    studentId,
     status: "received",
-    accessNeeds: input.accessNeeds,
+    accessNeeds,
     createdAt: Date.now(),
   });
+}
+
+/** Solicitud del estudiante con esa clave de idempotencia, si existe. */
+export async function findRequestByIdempotencyKey(
+  ctx: DbReader,
+  studentId: Id<"users">,
+  idempotencyKey: string,
+): Promise<Doc<"requests"> | null> {
+  const rows = await ctx.db
+    .query("requests")
+    .withIndex("by_student_and_idempotencyKey", (q) =>
+      q.eq("studentId", studentId).eq("idempotencyKey", idempotencyKey),
+    )
+    .take(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Inserta la solicitud recibida salvo que el estudiante ya tenga una con la
+ * misma clave de idempotencia (TI2-135): en ese caso devuelve la existente sin
+ * escribir. La búsqueda y la inserción ocurren en la misma mutation, así que
+ * dos envíos concurrentes con la misma clave no dejan dos filas: Convex
+ * reintenta al que pierde el conflicto y este ya encuentra la primera.
+ */
+export async function insertReceivedRequestOnce(
+  ctx: MutationCtx,
+  input: ReceivedRequestInput & { readonly idempotencyKey: string },
+): Promise<{ readonly requestId: Id<"requests">; readonly created: boolean }> {
+  const existing = await findRequestByIdempotencyKey(ctx, input.studentId, input.idempotencyKey);
+  if (existing !== null) return { requestId: existing._id, created: false };
+  return { requestId: await insertReceivedRequest(ctx, input), created: true };
 }
 
 /** Solicitud por id, o `null` si no existe. */
