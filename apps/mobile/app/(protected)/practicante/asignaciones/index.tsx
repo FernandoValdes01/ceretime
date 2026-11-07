@@ -1,1 +1,1 @@
-export { default } from "../../../../src/presentation/practicante/practitioner-accompaniments-screen";
+export { default } from "../../../../src/presentation/practicante/intern-accompaniments-screen";

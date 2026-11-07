@@ -1,3 +1,4 @@
+// Colores del área accesible en dos variantes: estándar y alto contraste. Cada token existe en ambas.
 export const accessibilityColorPalettes = {
   standard: {
     background: "#FBF9F8",
@@ -48,6 +49,7 @@ export function getAccessibilityColorPalette(highContrast: boolean): Accessibili
     : accessibilityColorPalettes.standard;
 }
 
+// Expone la paleta como variables CSS (`--student-error-surface`) para las clases de NativeWind.
 export function getAccessibilityColorVariables(highContrast: boolean) {
   const palette = getAccessibilityColorPalette(highContrast);
   return Object.fromEntries(
@@ -58,6 +60,7 @@ export function getAccessibilityColorVariables(highContrast: boolean) {
   );
 }
 
+// Razón de contraste WCAG 2.x entre dos colores hexadecimales; la usan las pruebas de la paleta.
 export function contrastRatio(foreground: string, background: string): number {
   const foregroundLuminance = relativeLuminance(foreground);
   const backgroundLuminance = relativeLuminance(background);

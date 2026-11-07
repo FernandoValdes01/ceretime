@@ -1,9 +1,10 @@
+// Puerto con que el Profesional lee solicitudes y actúa sobre ellas (revisar, pedir información, aceptar).
 import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
   ProfessionalRequestActionReceipt,
   ProfessionalActionDetails,
-} from "./professional-review-models";
+} from "../domain/professional-review-models";
 
 export interface ProfessionalReviewReader {
   readProfessionalRequests(): Promise<readonly ProfessionalRequest[]>;

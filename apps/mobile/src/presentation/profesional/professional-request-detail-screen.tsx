@@ -15,15 +15,15 @@ import type {
   ProfessionalRequest,
   ProfessionalRequestAction,
   ProfessionalActionDetails,
-} from "@/application/professional-review-models";
-import type { GeneralAvailability } from "@/application/student-area-models";
+} from "@/domain/professional-review-models";
+import type { GeneralAvailability } from "@/domain/request-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { StudentFonts, StudentText, useStudentFont } from "@/presentation/estudiante/student-text";
 import { formatRequestDate } from "@/presentation/estudiante/student-request-formatters";
 import { getStudentRequestStatusPresentation } from "@/presentation/estudiante/student-request-status-indicator";
 import type { ProfessionalReviewActionState } from "@/presentation/hooks/use-professional-review";
 import { useProfessionalReviewContext } from "./professional-review-provider";
-import { ProfessionalHeader } from "./professional-header";
+import { AppHeader } from "@/presentation/components/app-header";
 
 const actionLabels: Record<ProfessionalRequestAction, string> = {
   startReview: "Poner en revisión",
@@ -37,6 +37,7 @@ const actionHints: Record<ProfessionalRequestAction, string> = {
   accept: "Acepta la solicitud y abre el acompañamiento",
 };
 
+// Texto que una acción exige antes de habilitarse: el motivo al pedir información y el objetivo al aceptar.
 interface ActionInputField {
   readonly label: string;
   readonly placeholder: string;
@@ -45,6 +46,7 @@ interface ActionInputField {
   readonly details: ProfessionalActionDetails;
 }
 
+// Detalle de una solicitud para el Profesional: carga, error, no encontrada o el detalle con sus acciones.
 export function ProfessionalRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
   const { status, requests, error, reload, performAction, getActionState, getRequestFeedback } =
@@ -54,7 +56,7 @@ export function ProfessionalRequestDetailScreen() {
   return (
     <StudentFonts>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-        <ProfessionalHeader onBack={() => router.back()} />
+        <AppHeader onBack={() => router.back()} />
         <ScrollView contentContainerStyle={styles.content}>
           {status === "loading" ? (
             <View style={styles.stateCard}>
@@ -121,6 +123,8 @@ export function ProfessionalRequestDetailScreen() {
   );
 }
 
+// Muestra la solicitud y el siguiente paso. Las acciones disponibles se calculan al traducir el contrato
+// según el estado, así que la pantalla solo dibuja las que recibe.
 function RequestDetail({
   request,
   onAction,
@@ -147,6 +151,7 @@ function RequestDetail({
   const [reason, setReason] = useState("");
   const [objective, setObjective] = useState("");
 
+  // Al pasar a revisión, el foco va al mensaje de éxito para que el lector de pantalla lo anuncie.
   useEffect(() => {
     if (
       previousStatus.current !== "underReview" &&

@@ -2,13 +2,14 @@ import { router, useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type { ProfessionalAccompaniment } from "@/application/professional-accompaniment-models";
+import type { ProfessionalAccompaniment } from "@/domain/professional-accompaniment-models";
 import { mobileDependencies } from "@/composition/mobile-dependencies";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { RoleGuard } from "@/presentation/navigation/role-guard";
 import { useProfessionalAccompaniment } from "@/presentation/hooks/use-professional-accompaniment";
 import { ProfessionalAccompanimentStatusBadge } from "./professional-accompaniment-status-badge";
-import { ProfessionalHeader } from "./professional-header";
+import { AppHeader } from "@/presentation/components/app-header";
+import { firstRouteParam } from "@/presentation/navigation/route-params";
 
 function StateMessage({
   title,
@@ -120,10 +121,7 @@ export function ProfessionalAccompanimentDetailContent({
 
 function ProfessionalAccompanimentDetailRouteContent() {
   const params = useLocalSearchParams<{ accompanimentId?: string | string[] }>();
-  const rawAccompanimentId = params.accompanimentId;
-  const accompanimentId = Array.isArray(rawAccompanimentId)
-    ? (rawAccompanimentId[0] ?? null)
-    : (rawAccompanimentId ?? null);
+  const accompanimentId = firstRouteParam(params.accompanimentId);
   const state = useProfessionalAccompaniment(
     mobileDependencies.professionalAccompanimentReader,
     accompanimentId,
@@ -133,7 +131,7 @@ function ProfessionalAccompanimentDetailRouteContent() {
   return (
     <StudentFonts>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-        <ProfessionalHeader onBack={onBack} />
+        <AppHeader onBack={onBack} />
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.introduction}>
             <StudentText accessibilityRole="header" weight="bold" style={styles.title}>

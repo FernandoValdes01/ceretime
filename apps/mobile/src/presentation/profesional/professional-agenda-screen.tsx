@@ -4,17 +4,17 @@ import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "re
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import type {
-  ProfessionalAgendaEvent,
-  ProfessionalAgendaEventColor,
-} from "@/application/professional-agenda-models";
+  ProfessionalAgendaAppointmentViewModel,
+  ProfessionalAgendaAppointmentColor,
+} from "@/application/professional-agenda-view-models";
 import { AppIcon } from "@/presentation/components/app-icon";
 import { AccessDeniedNotice } from "@/presentation/components/role-home";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { useNavigationSession } from "@/presentation/navigation/session";
 import { useProfessionalAgendaContext } from "./professional-agenda-provider";
-import { ProfessionalHeader } from "./professional-header";
+import { AppHeader } from "@/presentation/components/app-header";
 
-const eventColors: Record<ProfessionalAgendaEventColor, string> = {
+const appointmentColors: Record<ProfessionalAgendaAppointmentColor, string> = {
   teal: "#078B7B",
   ochre: "#A88A00",
   green: "#61BE43",
@@ -49,24 +49,36 @@ function AgendaState({
   );
 }
 
-function EventCard({ event }: { readonly event: ProfessionalAgendaEvent }) {
+function AppointmentCard({
+  appointment,
+}: {
+  readonly appointment: ProfessionalAgendaAppointmentViewModel;
+}) {
   return (
     <Pressable
       accessibilityHint="Abre el detalle de la actividad"
-      accessibilityLabel={`${event.studentName}, ${event.title}, ${event.startTime}`}
+      accessibilityLabel={`${appointment.studentName}, ${appointment.title}, ${appointment.startTime}`}
       accessibilityRole="button"
       onPress={() =>
-        router.push({ pathname: "/profesional/[eventId]", params: { eventId: event.id } })
+        router.push({
+          pathname: "/profesional/[appointmentId]",
+          params: { appointmentId: appointment.id },
+        })
       }
-      style={({ pressed }) => [styles.eventCardHitArea, pressed && styles.eventCardPressed]}
+      style={({ pressed }) => [
+        styles.appointmentCardHitArea,
+        pressed && styles.appointmentCardPressed,
+      ]}
     >
-      <View style={[styles.eventCard, { borderLeftColor: eventColors[event.color] }]}>
+      <View
+        style={[styles.appointmentCard, { borderLeftColor: appointmentColors[appointment.color] }]}
+      >
         <View style={styles.cardHeading}>
           <StudentText weight="semibold" style={styles.studentName}>
-            {event.studentName}
+            {appointment.studentName}
           </StudentText>
         </View>
-        <View style={styles.eventMetaRow}>
+        <View style={styles.appointmentMetaRow}>
           <AppIcon
             accessible={false}
             color="#42565B"
@@ -74,61 +86,77 @@ function EventCard({ event }: { readonly event: ProfessionalAgendaEvent }) {
             size={16}
             strokeWidth={2}
           />
-          <StudentText weight="semibold" style={styles.eventMeta}>
-            {event.title}
+          <StudentText weight="semibold" style={styles.appointmentMeta}>
+            {appointment.title}
           </StudentText>
         </View>
-        <View style={styles.eventMetaRow}>
+        <View style={styles.appointmentMetaRow}>
           <AppIcon
             accessible={false}
             color="#42565B"
-            name={event.modality === "online" ? "video" : "mapPin"}
+            name={appointment.modality === "online" ? "video" : "mapPin"}
             size={16}
             strokeWidth={2}
           />
-          <StudentText style={styles.eventMeta}>{event.location}</StudentText>
+          <StudentText style={styles.appointmentMeta}>{appointment.location}</StudentText>
         </View>
       </View>
     </Pressable>
   );
 }
 
-function Timeline({ events }: { readonly events: readonly ProfessionalAgendaEvent[] }) {
+// La pausa de almuerzo es fija en el prototipo: no viene del lector y se dibuja tras la segunda actividad.
+const lunchBreakAfterIndex = 1;
+
+function LunchBreakRow({ timeColumnWidth }: { readonly timeColumnWidth: number }) {
+  return (
+    <View style={styles.lunchRow}>
+      <View style={[styles.timeColumn, { width: timeColumnWidth }]}>
+        <StudentText style={styles.lunchTime}>13:00</StudentText>
+      </View>
+      <View style={styles.markerColumn} />
+      <View style={styles.cardColumn}>
+        <StudentText style={styles.lunchLabel}>Almuerzo</StudentText>
+      </View>
+    </View>
+  );
+}
+
+// Línea de tiempo del día ordenada por hora de inicio; la columna de horas crece con la escala de letra.
+function Timeline({
+  appointments,
+}: {
+  readonly appointments: readonly ProfessionalAgendaAppointmentViewModel[];
+}) {
   const { fontScale } = useWindowDimensions();
   const timeColumnWidth = 54 * Math.max(1, fontScale);
-  const orderedEvents = useMemo(
-    () => [...events].sort((left, right) => left.startTime.localeCompare(right.startTime)),
-    [events],
+  const orderedAppointments = useMemo(
+    () => [...appointments].sort((left, right) => left.startTime.localeCompare(right.startTime)),
+    [appointments],
   );
 
   return (
     <View style={styles.timeline}>
       <View pointerEvents="none" style={[styles.timelineLine, { left: 34.5 + timeColumnWidth }]} />
-      {orderedEvents.map((event, index) => (
-        <View key={event.id}>
+      {orderedAppointments.map((appointment, index) => (
+        <View key={appointment.id}>
           <View style={styles.timelineRow}>
             <View style={[styles.timeColumn, { width: timeColumnWidth }]}>
               <StudentText weight="semibold" style={styles.timeText}>
-                {event.startTime}
+                {appointment.startTime}
               </StudentText>
             </View>
             <View style={styles.markerColumn}>
-              <View style={[styles.marker, { backgroundColor: eventColors[event.color] }]} />
+              <View
+                style={[styles.marker, { backgroundColor: appointmentColors[appointment.color] }]}
+              />
             </View>
             <View style={styles.cardColumn}>
-              <EventCard event={event} />
+              <AppointmentCard appointment={appointment} />
             </View>
           </View>
-          {index === 1 ? (
-            <View style={styles.lunchRow}>
-              <View style={[styles.timeColumn, { width: timeColumnWidth }]}>
-                <StudentText style={styles.lunchTime}>13:00</StudentText>
-              </View>
-              <View style={styles.markerColumn} />
-              <View style={styles.cardColumn}>
-                <StudentText style={styles.lunchLabel}>Almuerzo</StudentText>
-              </View>
-            </View>
+          {index === lunchBreakAfterIndex ? (
+            <LunchBreakRow timeColumnWidth={timeColumnWidth} />
           ) : null}
         </View>
       ))}
@@ -137,14 +165,14 @@ function Timeline({ events }: { readonly events: readonly ProfessionalAgendaEven
 }
 
 export function ProfessionalAgendaScreen() {
-  const { status, data, events, error, reload, goToPreviousDay, goToNextDay } =
+  const { status, data, appointments, error, reload, goToPreviousDay, goToNextDay } =
     useProfessionalAgendaContext();
   const { accessDeniedRole, dismissAccessDenied } = useNavigationSession();
 
   return (
     <StudentFonts>
       <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-        <ProfessionalHeader />
+        <AppHeader />
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.content}
@@ -163,11 +191,11 @@ export function ProfessionalAgendaScreen() {
           ) : null}
           {status === "empty" ? (
             <AgendaState
-              title="No tienes actividades hoy"
+              title="No hay actividades para este día"
               message="Cuando exista una actividad programada, aparecerá aquí."
             />
           ) : null}
-          {status === "success" ? <Timeline events={events} /> : null}
+          {status === "success" ? <Timeline appointments={appointments} /> : null}
         </ScrollView>
         <View style={styles.daySelector}>
           <Pressable
@@ -187,10 +215,10 @@ export function ProfessionalAgendaScreen() {
           </Pressable>
           <View style={styles.dayCopy}>
             <StudentText accessibilityRole="header" weight="bold" style={styles.dayTitle}>
-              {data?.weekdayLabel ?? "Hoy"}
+              {data?.weekdayLabel ?? "Agenda de demostración"}
             </StudentText>
             <StudentText style={styles.dateLabel}>
-              {data?.dateLabel ?? "Jueves, 24 de Octubre"}
+              {data?.dateLabel ?? "Cargando fecha…"}
             </StudentText>
           </View>
           <Pressable
@@ -247,8 +275,8 @@ const styles = StyleSheet.create({
   markerColumn: { width: 37, alignItems: "center", paddingTop: 8 },
   marker: { width: 11, height: 11, borderRadius: 6, borderWidth: 2, borderColor: "#FFFFFF" },
   cardColumn: { flex: 1, paddingLeft: 8 },
-  eventCardHitArea: { alignSelf: "stretch" },
-  eventCard: {
+  appointmentCardHitArea: { alignSelf: "stretch" },
+  appointmentCard: {
     minHeight: 102,
     paddingHorizontal: 14,
     paddingVertical: 13,
@@ -261,11 +289,11 @@ const styles = StyleSheet.create({
     elevation: 2,
     boxShadow: "0 2px 5px rgba(24, 44, 49, 0.1)",
   },
-  eventCardPressed: { opacity: 0.78 },
+  appointmentCardPressed: { opacity: 0.78 },
   cardHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   studentName: { flex: 1, color: "#182C31", fontSize: 18, lineHeight: 23 },
-  eventMetaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  eventMeta: { flex: 1, color: "#42565B", fontSize: 15, lineHeight: 21 },
+  appointmentMetaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  appointmentMeta: { flex: 1, color: "#42565B", fontSize: 15, lineHeight: 21 },
   lunchRow: { minHeight: 59, flexDirection: "row", alignItems: "center" },
   lunchTime: { color: "#42565B", fontSize: 11, textAlign: "right" },
   lunchLabel: { color: "#42565B", fontSize: 13, textAlign: "center" },

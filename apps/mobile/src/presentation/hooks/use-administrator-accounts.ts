@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { PractitionerAccount } from "../../application/administrator-account-models";
+import type { InternAccount } from "../../domain/administrator-account-models";
 import type { AdministratorAccountsPort } from "../../application/administrator-accounts-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
 
@@ -15,7 +15,7 @@ export interface AccountEnablementState {
 
 export interface AdministratorAccountsState {
   readonly status: AdministratorAccountsLoadStatus;
-  readonly accounts: readonly PractitionerAccount[];
+  readonly accounts: readonly InternAccount[];
   readonly error: unknown | null;
   readonly reload: () => void;
   readonly enableAccount: (accountId: string) => Promise<void>;
@@ -25,7 +25,7 @@ export interface AdministratorAccountsState {
 interface AccountsLoad {
   readonly port: AdministratorAccountsPort;
   readonly status: Exclude<AdministratorAccountsLoadStatus, "empty">;
-  readonly accounts: readonly PractitionerAccount[];
+  readonly accounts: readonly InternAccount[];
   readonly error: unknown | null;
 }
 
@@ -81,7 +81,7 @@ export function useAdministratorAccounts(
     const isCurrent = () => !disposed && readId.current === currentReadId;
 
     Promise.resolve()
-      .then(() => port.readPractitionerAccounts())
+      .then(() => port.readInternAccounts())
       .then(
         (accounts) => {
           if (isCurrent()) {
@@ -126,7 +126,7 @@ export function useAdministratorAccounts(
       }));
 
       try {
-        const receipt = await port.enablePractitionerAccount(accountId);
+        const receipt = await port.enableInternAccount(accountId);
         if (activePort.current === port && actionEpoch.current === epoch) {
           setLoad((current) => ({
             ...current,

@@ -1,12 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { useFonts } from "expo-font";
-import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
+import { createDemoStudentRequestSubmitter } from "@/infrastructure/demo-student-request-submitter";
 import { RequestForm } from "@/presentation/estudiante/request-form";
 import { StudentScreen } from "@/presentation/estudiante/student-screen";
 
 jest.mock("expo-font", () => ({ useFonts: jest.fn() }));
 
-const submitter = createMockStudentRequestSubmitter({ delayMs: 0 });
+const submitter = createDemoStudentRequestSubmitter({ delayMs: 0 });
 
 const form = (
   <StudentScreen title="Solicitud" description="Prueba de fuentes">

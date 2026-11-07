@@ -5,8 +5,8 @@ import path from "node:path";
 import { AccessibilityInfo } from "react-native";
 
 import { mobileDependencies } from "../src/composition/mobile-dependencies";
-import { createMockProfessionalReviewAdapter } from "../src/infrastructure/mock-professional-review-adapter";
-import type { ProfessionalRequest } from "../src/application/professional-review-models";
+import { createDemoProfessionalReviewAdapter } from "../src/infrastructure/demo-professional-review-adapter";
+import type { ProfessionalRequest } from "../src/domain/professional-review-models";
 import type { ProfessionalReviewPort } from "../src/application/professional-review-port";
 import { useProfessionalReview } from "../src/presentation/hooks/use-professional-review";
 import { formatAvailability } from "../src/presentation/profesional/professional-request-detail-screen";
@@ -28,7 +28,7 @@ async function settle(): Promise<void> {
 
 describe("adaptador de revisión profesional", () => {
   it("expone respuestas reducidas del contrato y permite tomar una solicitud recibida", async () => {
-    const adapter = createMockProfessionalReviewAdapter();
+    const adapter = createDemoProfessionalReviewAdapter();
 
     const requests = await adapter.readProfessionalRequests();
     expect(requests).toHaveLength(7);
@@ -79,7 +79,7 @@ describe("adaptador de revisión profesional", () => {
   });
 
   it("rechaza una acción que no corresponde al estado actual", async () => {
-    const adapter = createMockProfessionalReviewAdapter();
+    const adapter = createDemoProfessionalReviewAdapter();
 
     await expect(
       adapter.performProfessionalRequestAction("SOL-PRO-003", "startReview"),
@@ -87,10 +87,10 @@ describe("adaptador de revisión profesional", () => {
   });
 
   it("permite simular errores de carga y de acción", async () => {
-    const readErrorAdapter = createMockProfessionalReviewAdapter({
+    const readErrorAdapter = createDemoProfessionalReviewAdapter({
       readMode: "error",
     });
-    const actionErrorAdapter = createMockProfessionalReviewAdapter({
+    const actionErrorAdapter = createDemoProfessionalReviewAdapter({
       actionMode: "error",
     });
 
@@ -118,7 +118,7 @@ describe("hook y vista de revisión profesional", () => {
     const pendingRead = new Promise<readonly ProfessionalRequest[]>((resolve) => {
       resolveRead = resolve;
     });
-    const adapter = createMockProfessionalReviewAdapter();
+    const adapter = createDemoProfessionalReviewAdapter();
     const port: ProfessionalReviewPort = {
       readProfessionalRequests: () => pendingRead,
       performProfessionalRequestAction: adapter.performProfessionalRequestAction,
@@ -151,7 +151,7 @@ describe("hook y vista de revisión profesional", () => {
   test("muestra error de lectura y permite reintentar", async () => {
     let attempts = 0;
     const failure = new Error("Falla de lectura");
-    const adapter = createMockProfessionalReviewAdapter();
+    const adapter = createDemoProfessionalReviewAdapter();
     const port: ProfessionalReviewPort = {
       readProfessionalRequests: () => {
         attempts += 1;
@@ -191,7 +191,7 @@ describe("hook y vista de revisión profesional", () => {
     });
     const navigation = renderRouter(appDirectory);
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Profesional" }));
-    await waitFor(() => expect(screen.getByText("Jueves, 24 de Octubre")).toBeOnTheScreen());
+    await waitFor(() => expect(screen.getByText("Jueves, 5 de noviembre")).toBeOnTheScreen());
     await act(async () => {
       router.push("/profesional/estudiantes");
       await Promise.resolve();

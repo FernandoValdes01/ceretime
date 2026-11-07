@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -34,8 +35,16 @@ vi.mock("../session/session-state", () => ({
   useSessionAndRole: () => mockedPair,
 }));
 
-vi.mock("../../infrastructure/agenda/fictitious-agenda-adapter.ts", () => ({
-  createFictitiousAgendaAdapter: () => ({
+vi.mock("./student-booking-context.tsx", () => {
+  const context = { accompanimentId: "acompanamiento-1", professionalIds: ["pro-1"] };
+  return {
+    BookingContextGate: ({ children }: { children: (value: typeof context) => ReactNode }) =>
+      children(context),
+  };
+});
+
+vi.mock("../../infrastructure/agenda/convex-agenda-adapter.ts", () => ({
+  createConvexAgendaAdapter: () => ({
     searchSlots: searchSlotsMock,
     reserveSlot: reserveSlotMock,
     cancelReservation: cancelReservationMock,
@@ -173,16 +182,21 @@ describe("formulario de reserva (TI2-102)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
 
     expect(reserveSlotMock).toHaveBeenCalledTimes(1);
-    expect(reserveSlotMock).toHaveBeenCalledWith({ slotId: "cupo-1" });
+    expect(reserveSlotMock).toHaveBeenCalledWith({
+      slotId: "cupo-1",
+      booking: { accompanimentId: "acompanamiento-1", slot: cupoFicticio() },
+    });
     const confirmado = await screen.findByRole("heading", { name: "Reserva confirmada" });
     expect(screen.getByText("reserva-ficticia-cupo-1")).toBeDefined();
     // El foco cae una sola vez en el encabezado del estado; la única salida a
     // horarios vive al final de la tarjeta sin duplicarse.
-    expect(document.activeElement).toBe(confirmado);
+    await waitFor(() => expect(document.activeElement).toBe(confirmado));
     const volverLinks = screen.getAllByRole("link", { name: "Volver a horarios" });
     expect(volverLinks).toHaveLength(1);
     for (const volver of volverLinks) {
-      expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
+      expect(volver.getAttribute("href")).toBe(
+        "/estudiante/horarios?accompanimentId=acompanamiento-1",
+      );
     }
   });
 
@@ -411,7 +425,9 @@ describe("formulario de reserva (TI2-102)", () => {
     expect(await screen.findByText("Cupo no disponible.")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Confirmar reserva" })).toBeNull();
     const volver = screen.getByRole("link", { name: "Volver a horarios" });
-    expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
+    expect(volver.getAttribute("href")).toBe(
+      "/estudiante/horarios?accompanimentId=acompanamiento-1",
+    );
   });
 
   test("cupo inexistente muestra mensaje y vuelta", async () => {
@@ -439,7 +455,9 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     const alerta = screen.getByRole("alert");
     expect(alerta.textContent).toContain("La solicitud entra en conflicto con el estado actual.");
     const salida = screen.getByRole("link", { name: "Elegir otro horario" });
-    expect(salida.getAttribute("href")).toBe("/estudiante/horarios");
+    expect(salida.getAttribute("href")).toBe(
+      "/estudiante/horarios?accompanimentId=acompanamiento-1",
+    );
 
     // La selección sigue íntegra y sin botón alternativo: el mismo comando de
     // reserva vuelve a intentarse, sin rehacer búsqueda ni formulario.
@@ -452,7 +470,12 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     expect(await screen.findByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
     expect(reserveSlotMock).toHaveBeenCalledTimes(2);
     for (const llamada of reserveSlotMock.mock.calls) {
-      expect(llamada).toEqual([{ slotId: "cupo-1" }]);
+      expect(llamada).toEqual([
+        {
+          slotId: "cupo-1",
+          booking: { accompanimentId: "acompanamiento-1", slot: cupoFicticio() },
+        },
+      ]);
     }
   });
 
@@ -469,7 +492,7 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     const denegado = await screen.findByRole("heading", {
       name: "No tienes acceso a esta reserva.",
     });
-    expect(document.activeElement).toBe(denegado);
+    await waitFor(() => expect(document.activeElement).toBe(denegado));
     expect(screen.queryByRole("alert")).toBeNull();
     expect(reserveSlotMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Confirmar reserva" })).toBeNull();
@@ -478,7 +501,9 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     const volverLinks = screen.getAllByRole("link", { name: "Volver a horarios" });
     expect(volverLinks).toHaveLength(1);
     for (const volver of volverLinks) {
-      expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
+      expect(volver.getAttribute("href")).toBe(
+        "/estudiante/horarios?accompanimentId=acompanamiento-1",
+      );
     }
   });
 
@@ -493,7 +518,7 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     // El foco también recibe este desenlace: encabezado del panel y mensaje
     // canónico, sin ningún anuncio duplicado.
     const sinCupo = await screen.findByRole("heading", { name: "Cupo no disponible." });
-    expect(document.activeElement).toBe(sinCupo);
+    await waitFor(() => expect(document.activeElement).toBe(sinCupo));
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText("Sin cupo disponible.", { exact: false })).toBeDefined();
     expect(screen.queryByRole("button", { name: "Confirmar reserva" })).toBeNull();
@@ -501,11 +526,13 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     const volverLinks = screen.getAllByRole("link", { name: "Volver a horarios" });
     expect(volverLinks).toHaveLength(1);
     for (const volver of volverLinks) {
-      expect(volver.getAttribute("href")).toBe("/estudiante/horarios");
+      expect(volver.getAttribute("href")).toBe(
+        "/estudiante/horarios?accompanimentId=acompanamiento-1",
+      );
     }
   });
 
-  test("cancelación visible muestra el resultado tipado declarado como simulado", async () => {
+  test("cancelación visible muestra el resultado tipado sin aviso de demostración", async () => {
     comoEstudiante();
     reserveSlotMock.mockResolvedValue({ status: "confirmed", reservation: reservaFicticia() });
     cancelReservationMock.mockResolvedValue({ status: "cancelled" });
@@ -520,10 +547,8 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     // Tras cancelar el encabezado del estado queda con el foco y es la única
     // salida a horarios de la tarjeta.
     const cancelado = screen.getByRole("heading", { name: "Reserva cancelada" });
-    expect(document.activeElement).toBe(cancelado);
-    expect(
-      screen.getByText("Esta es una demostración. No se canceló ninguna reserva real."),
-    ).toBeDefined();
+    await waitFor(() => expect(document.activeElement).toBe(cancelado));
+    expect(screen.queryByText(/demostración/)).toBeNull();
     expect(screen.getByText("reserva-ficticia-cupo-1")).toBeDefined();
     expect(cancelReservationMock).toHaveBeenCalledTimes(1);
     expect(cancelReservationMock).toHaveBeenCalledWith({
@@ -548,7 +573,7 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     const denegadoCancel = await screen.findByRole("heading", {
       name: "No tienes acceso a esta reserva.",
     });
-    expect(document.activeElement).toBe(denegadoCancel);
+    await waitFor(() => expect(document.activeElement).toBe(denegadoCancel));
     expect(screen.queryByRole("alert")).toBeNull();
     expect(cancelReservationMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: "Cancelar esta reserva" })).toBeNull();

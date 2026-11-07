@@ -18,6 +18,7 @@ import House from "lucide-react-native/icons/house";
 import Info from "lucide-react-native/icons/info";
 import LogOut from "lucide-react-native/icons/log-out";
 import MapPin from "lucide-react-native/icons/map-pin";
+import Mic from "lucide-react-native/icons/mic";
 import Menu from "lucide-react-native/icons/menu";
 import MessageCircle from "lucide-react-native/icons/message-circle";
 import MoreVertical from "lucide-react-native/icons/ellipsis-vertical";
@@ -54,6 +55,7 @@ const ICONS = {
   logOut: LogOut,
   mapPin: MapPin,
   menu: Menu,
+  mic: Mic,
   messageCircle: MessageCircle,
   minus: Minus,
   moreVertical: MoreVertical,

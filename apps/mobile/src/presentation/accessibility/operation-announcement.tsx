@@ -2,6 +2,7 @@ import { NavigationContext } from "expo-router/react-navigation";
 import { useContext, useEffect, useEffectEvent, useRef, type RefObject } from "react";
 import { AccessibilityInfo, type View } from "react-native";
 
+// Anuncia al lector de pantalla cada mensaje nuevo de una operación, o mueve el foco a `focusTarget`.
 // Las pantallas fuera de foco consumen la transición sin interrumpir la pantalla activa.
 export function OperationAnnouncement({
   message,

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { parseSpeechCommand } from "../../../src/application/speech-command-parser";
-import type { SpeechCommand } from "../../../src/application/speech-command-parser";
+import { parseSpeechCommand } from "../../../src/presentation/accessibility/speech-command-parser";
+import type { SpeechCommand } from "../../../src/presentation/accessibility/speech-command-parser";
 import type { SpeechRecognitionPort } from "../../../src/application/speech-port";
 
 const commandLabels: Record<SpeechCommand, string> = {
