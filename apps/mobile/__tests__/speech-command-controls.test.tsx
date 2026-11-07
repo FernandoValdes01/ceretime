@@ -1,4 +1,4 @@
-import { defaultAccessibilityPreferences } from "@/application/accessibility-preferences-models";
+import { defaultAccessibilityPreferences } from "@/domain/accessibility-preferences-models";
 import { AccessibilityPreferencesProvider } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import type { SpeechRecognitionPort, SpeechRecognitionResult } from "@/application/speech-port";
@@ -197,7 +197,10 @@ it("amplía los comandos según la preferencia y conserva la cancelación local"
       />
     </AccessibilityPreferencesProvider>,
   );
-  await waitFor(() => expect(view.getByText("Comandos de voz")).toHaveStyle({ fontSize: 32 }));
+  await waitFor(() =>
+    expect(view.getByRole("button", { name: "Comandos de voz" })).toBeOnTheScreen(),
+  );
+  expect(view.queryByText("Comandos de voz")).toBeNull();
   fireEvent.press(view.getByRole("button", { name: "Comandos de voz" }));
   expect(view.getByRole("header", { name: "Comandos de voz" })).toBeOnTheScreen();
   expect(view.getByText("Cancelar")).toHaveStyle({ fontSize: 34 });

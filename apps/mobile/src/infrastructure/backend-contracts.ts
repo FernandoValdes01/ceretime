@@ -1,38 +1,37 @@
+// Tipos de entrada y salida de las funciones de Convex de TI2, derivados de su API para detectar cambios al compilar.
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 
 import type { api } from "../../../../convex/_generated/api";
 
-export type CanonicalStudentRequestsPage = FunctionReturnType<
+export type BackendStudentRequestsPage = FunctionReturnType<
   typeof api.presentation.requests.listOwnRequests
 >;
-export type CanonicalOpenRequestsPage = FunctionReturnType<
+export type BackendOpenRequestsPage = FunctionReturnType<
   typeof api.presentation.requests.listOpenRequests
 >;
-export type CanonicalAuthorizedRequestsPage = FunctionReturnType<
+export type BackendAuthorizedRequestsPage = FunctionReturnType<
   typeof api.presentation.requests.listAuthorizedRequests
 >;
-export type CanonicalStudentAccompanimentsPage = FunctionReturnType<
+export type BackendStudentAccompanimentsPage = FunctionReturnType<
   typeof api.presentation.accompaniments.listOwnedAccompaniments
 >;
-export type CanonicalCreatedRequest = FunctionReturnType<
+export type BackendCreatedRequest = FunctionReturnType<
   typeof api.presentation.requests.createRequest
 >;
-export type CanonicalTakenRequest = FunctionReturnType<
-  typeof api.presentation.requests.takeRequest
->;
-export type CanonicalInformationRequest = FunctionReturnType<
+export type BackendTakenRequest = FunctionReturnType<typeof api.presentation.requests.takeRequest>;
+export type BackendInformationRequest = FunctionReturnType<
   typeof api.presentation.requests.requestAdditionalInformation
 >;
-export type CanonicalAcceptedAccompaniment = FunctionReturnType<
+export type BackendAcceptedAccompaniment = FunctionReturnType<
   typeof api.presentation.requests.acceptRequest
 >;
 
 export { ACCESS_NEEDS_MAX_LENGTH } from "../../../../convex/domain/requests/request";
 
-export type CanonicalStudentRequest = CanonicalStudentRequestsPage["page"][number];
-export type CanonicalOpenRequest = CanonicalOpenRequestsPage["page"][number];
-export type CanonicalAuthorizedRequest = CanonicalAuthorizedRequestsPage["page"][number];
-export type CanonicalStudentAccompaniment = CanonicalStudentAccompanimentsPage["page"][number];
+export type BackendStudentRequest = BackendStudentRequestsPage["page"][number];
+export type BackendOpenRequest = BackendOpenRequestsPage["page"][number];
+export type BackendAuthorizedRequest = BackendAuthorizedRequestsPage["page"][number];
+export type BackendStudentAccompaniment = BackendStudentAccompanimentsPage["page"][number];
 export type CreateRequestArgs = FunctionArgs<typeof api.presentation.requests.createRequest>;
 export type TakeRequestArgs = FunctionArgs<typeof api.presentation.requests.takeRequest>;
 export type RequestAdditionalInformationArgs = FunctionArgs<

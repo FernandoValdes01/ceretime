@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import type { ProfessionalAccompaniment } from "../../application/professional-accompaniment-models";
+import type { ProfessionalAccompaniment } from "../../domain/professional-accompaniment-models";
 import type { ProfessionalAccompanimentReader } from "../../application/professional-accompaniment-port";
 
 import { useAsyncResource } from "./use-async-resource";

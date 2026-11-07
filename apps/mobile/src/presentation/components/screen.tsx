@@ -1,11 +1,11 @@
 import { useState, type PropsWithChildren, type Ref } from "react";
 import { Pressable, ScrollView, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
-import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { StudentText } from "../estudiante/student-text";
 import { AppHeader } from "./app-header";
 
+// Marco base de las pantallas con StyleSheet: título, descripción y contenido desplazable.
 export function Screen({
   title,
   description,
@@ -24,8 +24,7 @@ export function Screen({
   showPreferencesAction?: boolean;
   headerTitle?: string;
 }>) {
-  const accessibility = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
 
   return (
     <SafeAreaView
@@ -68,8 +67,7 @@ export function Action({
   disabled?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
-  const accessibility = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
 
   return (
     <Pressable

@@ -1,10 +1,8 @@
 import { useCallback } from "react";
 
-import type { ProfessionalAccompaniment } from "@/application/professional-accompaniment-models";
-import {
-  isProfessionalAccompanimentAccessDeniedError,
-  type ProfessionalAccompanimentReader,
-} from "@/application/professional-accompaniment-port";
+import type { ProfessionalAccompaniment } from "@/domain/professional-accompaniment-models";
+import { isAccompanimentAccessDeniedError } from "@/domain/accompaniment-access-denied-error";
+import type { ProfessionalAccompanimentReader } from "@/application/professional-accompaniment-port";
 
 import { useAsyncResource } from "./use-async-resource";
 import { isMobileAccessDenied, toMobileOperationError } from "../to-mobile-operation-error";
@@ -33,8 +31,7 @@ export function useProfessionalAccompaniment(
   const denied =
     !accompanimentId ||
     (resource.status === "error" &&
-      (isProfessionalAccompanimentAccessDeniedError(resource.error) ||
-        isMobileAccessDenied(resource.error)));
+      (isAccompanimentAccessDeniedError(resource.error) || isMobileAccessDenied(resource.error)));
   return {
     status: denied ? "access-denied" : resource.status,
     data: denied ? null : resource.data,

@@ -1,6 +1,6 @@
 import { Stack } from "expo-router";
 
-export default function PractitionerAssignmentsLayout() {
+export default function InternAssignmentsLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />

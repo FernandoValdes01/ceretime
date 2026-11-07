@@ -1,3 +1,4 @@
+// Puertos de voz: lectura en voz alta (`SpeechPort`) y reconocimiento de comandos (`SpeechRecognitionPort`).
 export type SpeechResult =
   | { readonly status: "completed" | "stopped" }
   | {

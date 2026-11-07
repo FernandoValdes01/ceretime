@@ -1,11 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
+import { createDemoStudentRequestSubmitter } from "@/infrastructure/demo-student-request-submitter";
 import { Action, Screen } from "@/presentation/components/screen";
 import { RequestForm } from "@/presentation/estudiante/request-form";
 import { StudentScreen, StudentAction } from "@/presentation/estudiante/student-screen";
 
-const submitter = createMockStudentRequestSubmitter({ delayMs: 0 });
+const submitter = createDemoStudentRequestSubmitter({ delayMs: 0 });
 
 test("la integración conserva los estilos de las acciones anteriores", () => {
   render(<Action label="Entrar como Estudiante" onPress={() => {}} />);

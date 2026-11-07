@@ -5,7 +5,7 @@ import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
 import { formatRequestDate } from "./student-request-formatters";
 import { StudentRequestStatusIndicator } from "./student-request-status-indicator";
-import type { StudentAreaCollectionStatus } from "@/presentation/hooks/useStudentArea";
+import type { StudentAreaCollectionStatus } from "@/presentation/hooks/use-student-area";
 import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { useStudentAreaContext } from "./student-area-provider";
 

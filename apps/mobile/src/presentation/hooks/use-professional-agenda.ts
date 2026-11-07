@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
 
 import type {
-  ProfessionalAgendaDay,
-  ProfessionalAgendaEvent,
-} from "../../application/professional-agenda-models";
+  ProfessionalAgendaDayViewModel,
+  ProfessionalAgendaAppointmentViewModel,
+} from "../../application/professional-agenda-view-models";
 import type { ProfessionalAgendaReader } from "../../application/professional-agenda-port";
 
 import { useAsyncResource } from "./use-async-resource";
@@ -13,13 +13,13 @@ export type ProfessionalAgendaStatus = "loading" | "success" | "empty" | "error"
 
 export interface ProfessionalAgendaState {
   readonly status: ProfessionalAgendaStatus;
-  readonly data: ProfessionalAgendaDay | null;
-  readonly events: readonly ProfessionalAgendaEvent[];
+  readonly data: ProfessionalAgendaDayViewModel | null;
+  readonly appointments: readonly ProfessionalAgendaAppointmentViewModel[];
   readonly error: unknown | null;
   readonly reload: () => void;
   readonly goToPreviousDay: () => void;
   readonly goToNextDay: () => void;
-  readonly findEvent: (id: string) => ProfessionalAgendaEvent | null;
+  readonly findAppointment: (id: string) => ProfessionalAgendaAppointmentViewModel | null;
 }
 
 export function useProfessionalAgenda(reader: ProfessionalAgendaReader): ProfessionalAgendaState {
@@ -27,11 +27,11 @@ export function useProfessionalAgenda(reader: ProfessionalAgendaReader): Profess
   const read = useCallback(() => reader.readProfessionalAgenda(dayOffset), [reader, dayOffset]);
   const resource = useAsyncResource(read);
   const data = resource.data;
-  const events = data?.events ?? [];
+  const appointments = data?.appointments ?? [];
   return {
-    status: resource.status === "success" && events.length === 0 ? "empty" : resource.status,
+    status: resource.status === "success" && appointments.length === 0 ? "empty" : resource.status,
     data,
-    events,
+    appointments,
     error:
       resource.status === "error"
         ? toMobileOperationError(resource.error, "No pudimos cargar la agenda. Intenta nuevamente.")
@@ -39,6 +39,6 @@ export function useProfessionalAgenda(reader: ProfessionalAgendaReader): Profess
     reload: resource.reload,
     goToPreviousDay: () => setDayOffset((offset) => offset - 1),
     goToNextDay: () => setDayOffset((offset) => offset + 1),
-    findEvent: (id) => events.find((event) => event.id === id) ?? null,
+    findAppointment: (id) => appointments.find((appointment) => appointment.id === id) ?? null,
   };
 }
