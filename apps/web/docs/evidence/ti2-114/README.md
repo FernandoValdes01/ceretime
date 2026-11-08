@@ -19,20 +19,30 @@ Issue: [TI2-114](https://linear.app/ceretime/issue/TI2-114). PR [#152](https://g
 
 ## Validación ejecutada
 
-Sobre la rama actualizada con `main` `13c6ee6`, en Windows:
+Sobre la rama al día con `main` `625267b`, en Windows:
 
-| Comando                                                 | Resultado                                                                                                                                                           |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bun run test:web`                                      | 24 archivos / 419 pruebas, en verde                                                                                                                                 |
-| `bun run --cwd apps/web lint`                           | en verde                                                                                                                                                            |
-| `bun run --cwd apps/web build` (`tsc -b` + Vite)        | en verde                                                                                                                                                            |
-| `bun run lint` / `bun run format:check`                 | en verde                                                                                                                                                            |
-| `cspell` con `@cspell/dict-es-es` (ejecutado con `npx`) | sin hallazgos en los textos de esta entrega; quedan una palabra en `student-portal.tsx` y 8 en `docs/contratos-sprint-1.md`, en líneas que esta entrega no modifica |
+| Comando                                                 | Resultado                                         |
+| ------------------------------------------------------- | ------------------------------------------------- |
+| `bun run test:web`                                      | 24 archivos / 419 pruebas, en verde               |
+| `bun run --cwd apps/web lint`                           | en verde                                          |
+| `bun run --cwd apps/web build` (`tsc -b` + Vite)        | en verde                                          |
+| `bun run lint` / `bun run format:check`                 | en verde                                          |
+| `cspell` con `@cspell/dict-es-es` (ejecutado con `npx`) | sin palabras nuevas en los textos de esta entrega |
 
-Las pruebas de la página simulan `getAgendaPort`; no verifican la llamada real a la API.
+Las pruebas de la página simulan `getAgendaPort`; no verifican la llamada real a la API. Las de reintento dan el foco al botón antes de pulsarlo y fallan si el foco no vuelve al título; la de la reagendada falla si la fila «Fecha original conservada» muestra el inicio nuevo en vez del original.
+
+### Comprobación manual contra la API
+
+En localhost, contra un deployment de desarrollo con datos ficticios ([capturas del 05-11](https://github.com/FernandoValdes01/ceretime/pull/152#issuecomment-6671631379)):
+
+- Lista de atenciones de un Estudiante con atenciones reales del deployment.
+- Atención en línea programada.
+- Atención presencial programada con su sala.
+- Atención cancelada por CERETI sin motivo visible.
+- Recorrido con Tab en navegador y en modo dispositivo, sin problemas de navegación ni textos superpuestos.
 
 ## Pendiente al cierre
 
-- Comprobar contra la API en el entorno ficticio de TI2-30: lista y detalle de un Estudiante con atenciones, denegación de una atención ajena, cancelación sin motivo visible y sala de una atención presencial.
-- Recorrido por teclado y capturas de escritorio y móvil de carga, vacío, fallo, denegación, aviso de sala y los estados de atención, antes de pedir la revisión de TI4.
-- SHA de los commits de cierre.
+- Comprobar contra la API: denegación de una atención ajena, aviso de sala con una sala inactiva, vacío, fallo técnico e inasistencias en sus tres estados.
+- Capturas en ancho de móvil.
+- SHA del commit que cierra las observaciones de la revisión.

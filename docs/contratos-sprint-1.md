@@ -233,4 +233,4 @@ Parámetros y límites de la lectura real: `listAppointments` recibe `from` y `t
 
 Estados de lectura: al reintentar, la lista y el detalle vuelven a la carga sin conservar el error anterior y dejan el foco en el título. Si termina la lectura del catálogo sin resolver la sala de una atención, la vista lo avisa y ofrece reintentar solo esa lectura, sin mostrar el identificador interno.
 
-Comprobación: estados textuales, período declarado y vacío acotado, detalle sin motivo de la vista profesional, denegación, fallos con reintento, aviso de sala, foco al título y nav del portal en `apps/web/src/presentation/estudiante/student-appointments-page.test.tsx`; estados del escenario del Estudiante en el set de `apps/web/src/infrastructure/agenda/fictitious-agenda-adapter.test.ts`.
+Comprobación: estados textuales, período declarado y vacío acotado, detalle sin motivo de la vista profesional, denegación, fallos con reintento, aviso de sala, foco al título y nav del portal en `apps/web/src/presentation/estudiante/student-appointments-page.test.tsx`. La vista del Estudiante no usa el adaptador ficticio, así que `fictitious-agenda-adapter.test.ts` no la cubre.

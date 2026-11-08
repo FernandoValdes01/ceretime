@@ -266,8 +266,10 @@ describe("agenda ficticia del profesional (TI2-115)", () => {
     const estados = new Set(resultado.appointments.map((item) => item.status));
     expect(estados.has("scheduled")).toBe(true);
     expect(estados.has("completed")).toBe(true);
-    // El mismo escenario sirve la vista propia del Estudiante (TI2-114): la
-    // cancelación y la inasistencia en sus tres desenlaces de justificación.
+    // Los fixtures del Profesional cubren también la cancelación y la
+    // inasistencia en sus tres desenlaces de justificación. La vista del
+    // Estudiante (TI2-114) no usa este adaptador: sus estados los prueba
+    // `student-appointments-page.test.tsx`.
     expect(estados.has("cancelled_by_student")).toBe(true);
     expect(estados.has("cancelled_by_cereti")).toBe(true);
     expect(estados.has("no_show")).toBe(true);
