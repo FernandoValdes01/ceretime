@@ -8,7 +8,7 @@ import {
   type PropsWithChildren,
 } from "react";
 
-import type { AuthCredentials, AuthRole, AuthSession } from "../../application/auth-models";
+import type { AuthCredentials, AuthRole, AuthSession } from "../../domain/auth-models";
 import type { AuthPort } from "../../application/auth-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
 
@@ -39,6 +39,8 @@ function initialSession(port: AuthPort): SessionState {
 
 const SessionContext = createContext<NavigationSession | null>(null);
 
+// Guarda la sesión actual y expone iniciar/cerrar sesión a toda la app.
+// `operation` descarta respuestas de un intento anterior y `pendingOperation` impide dos a la vez.
 export function NavigationSessionProvider({
   children,
   authPort,

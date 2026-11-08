@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, getRouteApi } from "@tanstack/react-router";
+// Mensaje canónico del contrato compartido (TI2-88): sin cupos se coordina por
+// el canal oficial, igual que en la confirmación de reserva.
+import { NO_AVAILABILITY_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
 import {
   formatSlotTimeRange,
   groupSlotsByWeek,
@@ -78,6 +81,7 @@ function ScheduleSearchBody({ context }: { context: SlotSearchContext }) {
       </fieldset>
       <SlotSearchContent
         accompanimentId={context.accompanimentId}
+        modality={modality}
         result={result}
         onRetry={() => setAttempt((count) => count + 1)}
       />
@@ -87,10 +91,12 @@ function ScheduleSearchBody({ context }: { context: SlotSearchContext }) {
 
 function SlotSearchContent({
   accompanimentId,
+  modality,
   result,
   onRetry,
 }: {
   accompanimentId: string;
+  modality: SlotModalityFilter;
   result: ReturnType<typeof useSlotSearch>;
   onRetry: () => void;
 }) {
@@ -99,7 +105,12 @@ function SlotSearchContent({
       <span role="status" aria-live="polite" className="sr-only">
         {searchAnnouncement(result)}
       </span>
-      <SlotSearchResult accompanimentId={accompanimentId} result={result} onRetry={onRetry} />
+      <SlotSearchResult
+        accompanimentId={accompanimentId}
+        modality={modality}
+        result={result}
+        onRetry={onRetry}
+      />
     </>
   );
 }
@@ -131,10 +142,12 @@ function searchAnnouncement(result: SlotSearchResult | undefined): string {
 
 function SlotSearchResult({
   accompanimentId,
+  modality,
   result,
   onRetry,
 }: {
   accompanimentId: string;
+  modality: SlotModalityFilter;
   result: ReturnType<typeof useSlotSearch>;
   onRetry: () => void;
 }) {
@@ -170,11 +183,13 @@ function SlotSearchResult({
     );
   }
 
+  // Ningún profesional tiene cupos en ninguna modalidad: cambiar el filtro no
+  // ayuda, así que se ofrece la coordinación por canal oficial.
   if (result.status === "no_availability") {
     return (
       <div className="student-portal__empty">
         <p className="student-portal__empty-title">No hay cupos compatibles por ahora.</p>
-        <p>Puedes probar con otra modalidad o volver más tarde.</p>
+        <p>{NO_AVAILABILITY_ERROR_MESSAGE}</p>
       </div>
     );
   }
@@ -187,7 +202,8 @@ function SlotSearchResult({
     );
   }
 
-  return <SlotWeeks slots={result.slots} accompanimentId={accompanimentId} />;
+  // La clave devuelve la vista a la primera semana con cupos al cambiar de filtro.
+  return <SlotWeeks key={modality} slots={result.slots} accompanimentId={accompanimentId} />;
 }
 
 /**

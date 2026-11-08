@@ -11,6 +11,10 @@ import {
 } from "../gestion/practitioner-accompaniments.tsx";
 import { ProfessionalAvailabilityPage } from "../gestion/professional-availability-editor.tsx";
 import { StudentAccompanimentDetailPage } from "../estudiante/student-accompaniments.tsx";
+import {
+  StudentAppointmentDetailPage,
+  StudentAppointmentsPage,
+} from "../estudiante/student-appointments-page.tsx";
 import { StudentRequestDetailPage, StudentRequestsPage } from "../estudiante/student-requests.tsx";
 import {
   ProfessionalRequestDetailPage,
@@ -36,7 +40,7 @@ import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 
 /**
  * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04,
- * TI2-115, TI2-116): puentes delgados entre las definiciones de `router.tsx` y las
+ * TI2-114, TI2-115, TI2-116): puentes delgados entre las definiciones de `router.tsx` y las
  * páginas. Viven acá para que `router.tsx` no mezcle componentes con objetos
  * de ruta (regla de fast refresh).
  */
@@ -80,6 +84,17 @@ export function StudentScheduleRouteComponent() {
 
 export function StudentReservationRouteComponent() {
   return <ReservationFormPage />;
+}
+
+const studentAppointmentDetailApi = getRouteApi("/estudiante/atenciones/$appointmentId");
+
+export function StudentAppointmentsRouteComponent() {
+  return <StudentAppointmentsPage />;
+}
+
+export function StudentAppointmentDetailRouteComponent() {
+  const { appointmentId } = studentAppointmentDetailApi.useParams();
+  return <StudentAppointmentDetailPage appointmentId={appointmentId} />;
 }
 
 const studentRequestDetailApi = getRouteApi("/estudiante/solicitudes/$requestId");

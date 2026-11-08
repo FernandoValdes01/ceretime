@@ -74,6 +74,12 @@ import { createFictitiousAgendaAdapter } from "./fictitious-agenda-adapter.ts";
 /** Tope de días civiles del contrato de disponibilidad y agenda. */
 const AGENDA_WINDOW_DAYS = 92;
 
+/** Días civiles antes de hoy que cubre la ventana de la agenda. */
+export const AGENDA_DAYS_BEFORE = Math.floor((AGENDA_WINDOW_DAYS - 1) / 2);
+
+/** Días civiles después de hoy que cubre la ventana de la agenda. */
+export const AGENDA_DAYS_AFTER = AGENDA_WINDOW_DAYS - 1 - AGENDA_DAYS_BEFORE;
+
 /** Tope de atenciones por página que acepta la API; nunca se envía más. */
 const AGENDA_PAGE_LIMIT = 50;
 
@@ -179,8 +185,7 @@ function availabilityRange(nowMs: number): { readonly from: string; readonly to:
  */
 function agendaRange(nowMs: number): { readonly from: string; readonly to: string } {
   const today = civilDateOf(nowMs);
-  const before = Math.floor((AGENDA_WINDOW_DAYS - 1) / 2);
-  const from = civilDatePlus(today, -before);
+  const from = civilDatePlus(today, -AGENDA_DAYS_BEFORE);
   return { from, to: civilDatePlus(from, AGENDA_WINDOW_DAYS - 1) };
 }
 
@@ -396,6 +401,23 @@ export function createConvexAgendaAdapter(
     return null;
   }
 
+  /**
+   * Una sola opción por hora, modalidad y sala: para el Estudiante son el mismo
+   * horario aunque los atiendan profesionales distintos. Queda el primero de la
+   * lista, y si ese cupo se ocupa, la búsqueda siguiente ofrece el del otro.
+   */
+  function withoutRepeatedOptions(slots: ReadonlyArray<SearchedSlot>): SearchedSlot[] {
+    const seen = new Set<string>();
+    return slots.filter((slot) => {
+      const option = [slot.startAt, slot.endAt, slot.modality, slot.spaceId ?? ""].join("|");
+      if (seen.has(option)) {
+        return false;
+      }
+      seen.add(option);
+      return true;
+    });
+  }
+
   async function searchSlots(filter: SlotSearchFilter): Promise<SlotSearchResult> {
     if (filter.context === undefined) {
       return { status: "error", message: MISSING_CONTEXT_MESSAGE };
@@ -416,10 +438,11 @@ export function createConvexAgendaAdapter(
         return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
       }
       found.sort((left, right) => left.startAt - right.startAt);
+      const options = withoutRepeatedOptions(found);
       const matching =
         filter.modality === "all"
-          ? found
-          : found.filter((slot) => slot.modality === filter.modality);
+          ? options
+          : options.filter((slot) => slot.modality === filter.modality);
       if (matching.length === 0) {
         return { status: "empty" };
       }

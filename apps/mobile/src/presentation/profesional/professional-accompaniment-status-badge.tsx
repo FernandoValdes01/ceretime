@@ -3,7 +3,7 @@ import { StyleSheet, View } from "react-native";
 import type {
   ProfessionalAccompaniment,
   ProfessionalAccompanimentStatus,
-} from "@/application/professional-accompaniment-models";
+} from "@/domain/professional-accompaniment-models";
 import { AppIcon, type AppIconName } from "@/presentation/components/app-icon";
 import { StudentText } from "@/presentation/estudiante/student-text";
 

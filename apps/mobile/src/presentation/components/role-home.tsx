@@ -1,22 +1,21 @@
 import { View, StyleSheet } from "react-native";
 import type { PropsWithChildren } from "react";
 
-import type { NavigationRole } from "../navigation/roles";
+import type { AuthRole } from "../../domain/auth-models";
 import { useNavigationSession } from "../navigation/session";
-import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
-import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { Action, Screen } from "./screen";
 import { StudentText } from "../estudiante/student-text";
 
+// Aviso que deja `RoleGuard` al redirigir desde una sección de otro rol.
 export function AccessDeniedNotice({
   role,
   onDismiss,
 }: {
-  readonly role: NavigationRole;
+  readonly role: AuthRole;
   readonly onDismiss: () => void;
 }) {
-  const accessibility = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
 
   return (
     <View
@@ -33,6 +32,7 @@ export function AccessDeniedNotice({
   );
 }
 
+// Inicio común de cada rol: muestra el aviso de acceso denegado y el estado del cierre de sesión.
 export function RoleHome({
   title,
   description,
@@ -40,8 +40,7 @@ export function RoleHome({
 }: PropsWithChildren<{ title: string; description?: string }>) {
   const { accessDeniedRole, dismissAccessDenied, status, error } = useNavigationSession();
   const isSigningOut = status === "loading";
-  const accessibility = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
 
   return (
     <Screen title={title} description={description} showAppHeader>

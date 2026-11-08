@@ -1,12 +1,22 @@
 import { useState } from "react";
-import { Platform, useWindowDimensions, type ColorValue } from "react-native";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  type ColorValue,
+} from "react-native";
+import { BottomTabBar, type BottomTabBarProps } from "expo-router/js-tabs";
 
 import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { AppIconName } from "../components/app-icon";
-import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
-import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import {
+  useOptionalAccessibilityPreferences,
+  useAccessibilityColors,
+} from "../accessibility/accessibility-preferences-provider";
 import { AppIcon } from "../components/app-icon";
 import { StudentText } from "../estudiante/student-text";
 
@@ -24,23 +34,14 @@ const baseRoleTabScreenOptions = {
   },
 };
 
-const tabLabelBreaks: Readonly<Record<string, number>> = {
-  Solicitudes: 8,
-  Acompañamientos: 8,
-};
-
-function getVisibleTabLabel(label: string) {
-  const breakAt = tabLabelBreaks[label];
-  if (breakAt === undefined) return label;
-  return `${label.slice(0, breakAt)}\u200B${label.slice(breakAt)}`;
-}
-
+// Opciones de las pestañas de cada rol. Mide la altura real de cada etiqueta para que la barra crezca
+// con la escala de letra en vez de cortar los nombres.
 export function useRoleTabScreenOptions() {
   const { bottom } = useSafeAreaInsets();
   const { fontScale: systemFontScale, width } = useWindowDimensions();
   const accessibility = useOptionalAccessibilityPreferences();
   const fontScale = accessibility?.effective.textScale ?? systemFontScale;
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
   const iconSize = 21 * Math.min(1.5, Math.max(1, fontScale));
   const layoutKey = `${width}:${fontScale}`;
   const [labelLayout, setLabelLayout] = useState<{
@@ -48,7 +49,7 @@ export function useRoleTabScreenOptions() {
     heights: Readonly<Record<string, number>>;
   }>({ key: layoutKey, heights: {} });
   const labelHeight = Math.max(
-    2 * baseRoleTabScreenOptions.tabBarLabelStyle.lineHeight * Math.max(1, fontScale),
+    baseRoleTabScreenOptions.tabBarLabelStyle.lineHeight * Math.max(1, fontScale),
     ...(labelLayout.key === layoutKey ? Object.values(labelLayout.heights) : []),
   );
   const bottomPadding = Math.max(bottom, baseRoleTabScreenOptions.tabBarStyle.paddingBottom);
@@ -82,7 +83,7 @@ export function useRoleTabScreenOptions() {
           });
         }}
       >
-        {getVisibleTabLabel(children)}
+        {children}
       </StudentText>
     ),
     tabBarStyle: {
@@ -94,6 +95,70 @@ export function useRoleTabScreenOptions() {
       backgroundColor: colors.surface,
     },
   };
+}
+
+/** Con texto grande la navegación usa filas, sin cortar nombres ni reducir la fuente. */
+export function RoleTabBar(props: BottomTabBarProps) {
+  const { fontScale } = useWindowDimensions();
+  const preferences = useOptionalAccessibilityPreferences();
+  const colors = useAccessibilityColors();
+  const scale = preferences?.effective.textScale ?? fontScale;
+  if (scale <= 1.3) return <BottomTabBar {...props} />;
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        flexWrap: "wrap",
+        padding: 8,
+        paddingBottom: Math.max(8, props.insets.bottom),
+        backgroundColor: colors.surface,
+      }}
+    >
+      {props.state.routes.map((route, index) => {
+        const options = props.descriptors[route.key].options;
+        if (StyleSheet.flatten(options.tabBarItemStyle)?.display === "none") return null;
+        const title = options.title ?? route.name;
+        const selected = props.state.index === index;
+        return (
+          <Pressable
+            key={route.key}
+            accessibilityRole="tab"
+            accessibilityLabel={options.tabBarAccessibilityLabel ?? title}
+            accessibilityState={{ selected }}
+            onPress={() => {
+              const event = props.navigation.emit({
+                type: "tabPress",
+                target: route.key,
+                canPreventDefault: true,
+              });
+              if (!selected && !event.defaultPrevented)
+                props.navigation.navigate(route.name, route.params);
+            }}
+            onLongPress={() => props.navigation.emit({ type: "tabLongPress", target: route.key })}
+            style={{
+              width: title === "Acompañamientos" ? "100%" : "50%",
+              minHeight: 48,
+              padding: 8,
+              borderRadius: 12,
+              justifyContent: "center",
+              backgroundColor: selected ? colors.muted : colors.surface,
+            }}
+          >
+            <StudentText
+              weight="semibold"
+              style={{
+                fontSize: 14,
+                color: selected ? colors.primary : colors.secondary,
+                textAlign: "center",
+              }}
+            >
+              {title}
+            </StudentText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 }
 
 export function roleTabAccessibilityLabel(label: string, position: number, total: number) {

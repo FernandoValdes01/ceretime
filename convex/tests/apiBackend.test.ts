@@ -1216,6 +1216,42 @@ test("TI2-123: el Estudiante conoce a sus profesionales reservables antes de la 
   expect(await ti111PublicError(asStudent.query(list, args))).toStrictEqual(denied);
 });
 
+test("TI2-123: superar el tope de asignaciones responde conflict y nunca una lista parcial", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await ti111SeedAgenda(t);
+  const addRevoked = async (count: number) => {
+    await t.run(async (ctx) => {
+      for (let index = 0; index < count; index += 1) {
+        await ctx.db.insert("accompanimentAssignments", {
+          accompanimentId: agenda.accompanimentId,
+          userId: agenda.professionalId,
+          assignedRole: "professional",
+          status: "revoked",
+        });
+      }
+    });
+  };
+  const asStudent = t.withIdentity(identityFor("ti111-ag-est-1", "ti111-ag-est-1@alu.uct.cl"));
+  const list = () =>
+    asStudent.query(api.presentation.availability.listBookableProfessionals, {
+      accompanimentId: agenda.accompanimentId,
+      version: "v1",
+    });
+
+  // Con la asignación activa de la agenda, 199 más llegan justo al tope.
+  await addRevoked(199);
+  expect(await list()).toStrictEqual({
+    professionalIds: [agenda.professionalId],
+    version: "v1",
+  });
+
+  await addRevoked(1);
+  expect(await ti111PublicError(list())).toStrictEqual({
+    code: "conflict",
+    message: conflictError().message,
+  });
+});
+
 test("TI2-111: la búsqueda no expone cupos de un profesional no asignado, revocado o sin cuenta vigente", async () => {
   const t = convexTest(schema, modules);
   const agenda = await ti111SeedAgenda(t);

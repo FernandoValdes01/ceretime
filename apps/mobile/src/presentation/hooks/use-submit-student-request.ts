@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
-} from "@/application/student-area-models";
+} from "@/domain/student-area-models";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import { toMobileOperationError } from "@/presentation/to-mobile-operation-error";
 

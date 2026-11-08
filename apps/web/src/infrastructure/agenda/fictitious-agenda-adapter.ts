@@ -36,7 +36,7 @@ import {
 
 /**
  * Adaptador ficticio de agenda (TI2-101, extendido TI2-102, TI2-103, TI2-04,
- * TI2-113 y TI2-115).
+ * TI2-113, TI2-115 y TI2-114).
  *
  * Temporal hasta TI2-123/TI2-125: devuelve fixtures con la forma del
  * contrato, sin compatibilidad, persistencia ni autorización. Todo es
@@ -67,11 +67,12 @@ import {
  * propiedad ni persistir nada. La escritura real del catálogo no está
  * entregada: TI2-99 entrega lectura, no escritura.
  *
- * Agenda del Profesional (TI2-115): seis atenciones ficticias del mismo
+ * Agenda del Profesional (TI2-115): nueve atenciones ficticias del mismo
  * profesional con estados variados del contrato. El cambio de estado no
  * agrega política local: valida con `transitionAppointment` del dominio (la
  * misma función que usará el Backend) y solo simula identidad y reloj.
- * Un identificador ajeno responde denegación genérica sin filtrar
+ * Sus estados cubren también los de la lista propia del Estudiante
+ * (TI2-114), que en la Web ya lee la API (TI2-123). Un identificador ajeno responde denegación genérica sin filtrar
  * existencia. Los cambios viven en memoria mientras dura el adaptador, sin
  * persistencia productiva.
  */
@@ -225,14 +226,16 @@ function fromNow(hours: number): number {
 }
 
 /**
- * Atenciones ficticias de la agenda del Profesional (TI2-115).
+ * Atenciones ficticias de la agenda (TI2-115 y TI2-114).
  *
  * Todos con el mismo profesional ficticio: la página no expone
  * acompañamientos de otros profesionales. Estados variados del contrato
  * para mostrar agenda y cambios: una programada futura, una programada ya
  * ocurrida (admite cierre), una reagendada con su fecha original, una
- * realizada, una inasistencia pendiente de justificación y una cancelación
- * por CERETI con motivo propio.
+ * realizada, inasistencias en los tres desenlaces de justificación
+ * (pendiente, justificada y no justificada), una cancelación por CERETI
+ * con motivo propio y una cancelación por el Estudiante, los mismos estados
+ * que reconoce la vista propia del Estudiante (TI2-114).
  */
 const FICTIONAL_APPOINTMENTS: ReadonlyArray<AgendaAppointment> = [
   {
@@ -283,6 +286,29 @@ const FICTIONAL_APPOINTMENTS: ReadonlyArray<AgendaAppointment> = [
     startAt: fromNow(-122),
     endAt: fromNow(-121),
     cancelReason: "Jornada de capacitación del equipo.",
+  },
+  {
+    id: "aten-ficticio-7",
+    status: "cancelled_by_student",
+    modality: "online",
+    startAt: fromNow(-98),
+    endAt: fromNow(-97),
+  },
+  {
+    id: "aten-ficticio-8",
+    status: "no_show_justified",
+    modality: "inPerson",
+    spaceId: "esp-1",
+    startAt: fromNow(-146),
+    endAt: fromNow(-145),
+  },
+  {
+    id: "aten-ficticio-9",
+    status: "no_show_unjustified",
+    modality: "inPerson",
+    spaceId: "esp-2",
+    startAt: fromNow(-218),
+    endAt: fromNow(-217),
   },
 ];
 

@@ -3,14 +3,14 @@ import { router } from "expo-router";
 import { act, render } from "@testing-library/react-native";
 import { fireEvent, renderRouter, screen, waitFor } from "expo-router/testing-library";
 
-import type { ProfessionalAccompaniment } from "../src/application/professional-accompaniment-models";
-import { ProfessionalAccompanimentAccessDeniedError } from "../src/application/professional-accompaniment-port";
-import { createMockProfessionalAccompanimentReader } from "../src/infrastructure/mock-professional-accompaniment-reader";
+import type { ProfessionalAccompaniment } from "../src/domain/professional-accompaniment-models";
+import { AccompanimentAccessDeniedError } from "../src/domain/accompaniment-access-denied-error";
+import { createDemoProfessionalAccompanimentReader } from "../src/infrastructure/demo-professional-accompaniment-reader";
 import {
-  createMockProfessionalAccompanimentStore,
-  fictionalOtherProfessionalAccompaniments,
-} from "../src/infrastructure/mock-professional-accompaniment-data";
-import { createMockProfessionalReviewAdapter } from "../src/infrastructure/mock-professional-review-adapter";
+  createDemoProfessionalAccompanimentStore,
+  demoOtherProfessionalAccompaniments,
+} from "../src/infrastructure/demo-professional-accompaniment-data";
+import { createDemoProfessionalReviewAdapter } from "../src/infrastructure/demo-professional-review-adapter";
 import { ProfessionalAccompanimentsContent } from "../src/presentation/profesional/professional-accompaniments-screen";
 import { ProfessionalAccompanimentDetailContent } from "../src/presentation/profesional/professional-accompaniment-detail-screen";
 
@@ -25,7 +25,7 @@ const accompaniment: ProfessionalAccompaniment = {
 
 describe("lector de acompañamientos del Profesional", () => {
   test("devuelve sólo el conjunto autorizado", async () => {
-    const reader = createMockProfessionalAccompanimentReader();
+    const reader = createDemoProfessionalAccompanimentReader();
     const accompaniments = await reader.readAccompaniments();
 
     expect(accompaniments).toEqual(
@@ -33,14 +33,14 @@ describe("lector de acompañamientos del Profesional", () => {
     );
     expect(accompaniments).not.toEqual(
       expect.arrayContaining(
-        fictionalOtherProfessionalAccompaniments.map(({ id }) => expect.objectContaining({ id })),
+        demoOtherProfessionalAccompaniments.map(({ id }) => expect.objectContaining({ id })),
       ),
     );
     await expect(reader.readAccompaniment("ACO-PRO-001")).resolves.toEqual(
       expect.objectContaining({ id: "ACO-PRO-001", studentName: "Camila Muñoz" }),
     );
     await expect(reader.readAccompaniment("ACO-OTRO-PROFESIONAL-001")).rejects.toBeInstanceOf(
-      ProfessionalAccompanimentAccessDeniedError,
+      AccompanimentAccessDeniedError,
     );
     await expect(reader.readAccompaniment("ACO-NO-EXISTE")).rejects.toThrow(
       "No puedes acceder a este acompañamiento.",
@@ -49,20 +49,20 @@ describe("lector de acompañamientos del Profesional", () => {
 
   test("expone escenarios vacío y error controlado", async () => {
     await expect(
-      createMockProfessionalAccompanimentReader({ mode: "empty" }).readAccompaniments(),
+      createDemoProfessionalAccompanimentReader({ mode: "empty" }).readAccompaniments(),
     ).resolves.toEqual([]);
     await expect(
-      createMockProfessionalAccompanimentReader({ mode: "error" }).readAccompaniments(),
+      createDemoProfessionalAccompanimentReader({ mode: "error" }).readAccompaniments(),
     ).rejects.toThrow("No pudimos cargar tus acompañamientos.");
     await expect(
-      createMockProfessionalAccompanimentReader({ mode: "error" }).readAccompaniment("ACO-PRO-001"),
+      createDemoProfessionalAccompanimentReader({ mode: "error" }).readAccompaniment("ACO-PRO-001"),
     ).rejects.toThrow("No pudimos cargar el acompañamiento.");
   });
 
   test("comparte el acompañamiento creado al aceptar una solicitud", async () => {
-    const store = createMockProfessionalAccompanimentStore([]);
-    const reader = createMockProfessionalAccompanimentReader({ store });
-    const reviewAdapter = createMockProfessionalReviewAdapter({ accompanimentStore: store });
+    const store = createDemoProfessionalAccompanimentStore([]);
+    const reader = createDemoProfessionalAccompanimentReader({ store });
+    const reviewAdapter = createDemoProfessionalReviewAdapter({ accompanimentStore: store });
 
     await reviewAdapter.performProfessionalRequestAction("SOL-PRO-003", "accept", {
       objective: "Acordar apoyos accesibles",

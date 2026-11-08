@@ -1,5 +1,5 @@
 import { API_ERROR_MESSAGES, isApiErrorCode } from "../../../../convex/domain/errors/api_error";
-import { LocalOperationError } from "../application/operation-error";
+import { UserFacingError } from "../application/user-facing-error";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -20,20 +20,20 @@ const publicRequestMessages = new Set([
 ]);
 
 export function toMobileOperationError(error: unknown, fallback: string): Error {
-  if (error instanceof LocalOperationError) return error;
+  if (error instanceof UserFacingError) return error;
   const data = isRecord(error) && isRecord(error.data) ? error.data : error;
   if (isRecord(data) && typeof data.code === "string") {
-    return new LocalOperationError(
+    return new UserFacingError(
       isApiErrorCode(data.code) ? API_ERROR_MESSAGES[data.code] : fallback,
     );
   }
   if (isRecord(error) && error.data === "No autorizado") {
-    return new LocalOperationError("No autorizado");
+    return new UserFacingError("No autorizado");
   }
   if (error instanceof Error && publicRequestMessages.has(error.message)) {
-    return new LocalOperationError(error.message);
+    return new UserFacingError(error.message);
   }
-  return new LocalOperationError(fallback);
+  return new UserFacingError(fallback);
 }
 
 /** Transición compatible para denegaciones antiguas y el código público actual. */

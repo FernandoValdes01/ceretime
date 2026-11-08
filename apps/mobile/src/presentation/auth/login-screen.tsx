@@ -1,24 +1,25 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
 
-import type { AuthCredentials } from "../../application/auth-models";
-import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
-import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import type { AuthCredentials } from "../../domain/auth-models";
+import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { Action, Screen } from "../components/screen";
 import { StudentText } from "../estudiante/student-text";
 import { roles } from "../navigation/roles";
 import { useNavigationSession } from "../navigation/session";
 
 export function LoginScreen({
-  unassignedPractitionerCredentials,
+  unassignedInternCredentials,
+  onResetDemo,
 }: {
-  readonly unassignedPractitionerCredentials: AuthCredentials;
+  readonly unassignedInternCredentials: AuthCredentials;
+  readonly onResetDemo?: () => void;
 }) {
   const { signIn, selectRole, status, error } = useNavigationSession();
   const isLoading = status === "loading";
-  const accessibility = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
   const errorRef = useRef<View>(null);
+  const [reset, setReset] = useState(false);
 
   useEffect(() => {
     if (isLoading) {
@@ -31,7 +32,7 @@ export function LoginScreen({
   return (
     <Screen
       title="Explora la aplicación"
-      description="Selecciona un rol para explorar CERETI. El acceso institucional se integrará más adelante."
+      description="Demostración local con datos ficticios. Selecciona un rol para continuar; los cambios se comparten en este dispositivo y no se envían a CERETI."
     >
       <View style={styles.selector}>
         <StudentText
@@ -51,8 +52,25 @@ export function LoginScreen({
         <Action
           disabled={isLoading}
           label="Entrar como Practicante sin asignación"
-          onPress={() => void signIn(unassignedPractitionerCredentials)}
+          onPress={() => void signIn(unassignedInternCredentials)}
         />
+        {onResetDemo ? (
+          <>
+            <Action
+              label="Reiniciar demostración"
+              disabled={isLoading}
+              onPress={() => {
+                onResetDemo();
+                setReset(true);
+              }}
+            />
+            {reset ? (
+              <StudentText accessibilityLiveRegion="polite" style={{ color: colors.text }}>
+                Demostración reiniciada. Puedes comenzar de nuevo.
+              </StudentText>
+            ) : null}
+          </>
+        ) : null}
         {isLoading ? (
           <StudentText
             accessibilityRole="progressbar"

@@ -1,7 +1,7 @@
 import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
-} from "@/application/accessibility-preferences-models";
+} from "@/domain/accessibility-preferences-models";
 import {
   getNativeFontSize,
   resolveAccessibilitySettings,

@@ -1,14 +1,34 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   defaultAccessibilityPreferences,
-  isAccessibilityPreferences,
+  textScales,
+  toggleSettings,
   type AccessibilityPreferences,
-} from "../application/accessibility-preferences-models";
+} from "../domain/accessibility-preferences-models";
 import type {
   AccessibilityPreferencesPort,
   AccessibilityPreferencesReadResult,
   AccessibilityPreferencesUpdateResult,
 } from "../application/accessibility-preferences-port";
+
+function isOneOf<const T>(options: readonly T[], value: unknown): value is T {
+  return options.some((option) => option === value);
+}
+
+// Valida lo leído del almacenamiento local, que puede venir de otra versión o estar corrupto.
+export function isAccessibilityPreferences(value: unknown): value is AccessibilityPreferences {
+  if (typeof value !== "object" || value === null) return false;
+
+  const { textScale, highContrast, reduceMotion } = value as Partial<
+    Record<keyof AccessibilityPreferences, unknown>
+  >;
+
+  return (
+    isOneOf(textScales, textScale) &&
+    isOneOf(toggleSettings, highContrast) &&
+    isOneOf(toggleSettings, reduceMotion)
+  );
+}
 
 export const accessibilityPreferencesStorageKey = "ceretime.accessibility-preferences.v1";
 
