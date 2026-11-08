@@ -18,10 +18,9 @@ import "./student-portal.css";
 /**
  * Estructura del portal del Estudiante (TI2-6).
  *
- * Solo navegación y protección: el encabezado enlaza el inicio del portal
- * y la sesión (donde vive el cierre). Las vistas funcionales de
- * solicitudes, agenda y seguimiento llegan en Sprint 2 y cuelgan de este
- * layout tras el mismo guard.
+ * Solo navegación y protección: el encabezado enlaza el inicio, horarios,
+ * atenciones (TI2-114), solicitudes y la sesión (donde vive el cierre). Las
+ * vistas restantes cuelgan de este layout tras el mismo guard.
  */
 export function StudentLayout() {
   return (
@@ -48,6 +47,7 @@ export function StudentLayout() {
             <nav aria-label="Portal del Estudiante">
               <Link to="/estudiante">Inicio</Link>
               <Link to="/estudiante/horarios">Horarios</Link>
+              <Link to="/estudiante/atenciones">Atenciones</Link>
               <Link to="/estudiante/solicitudes">Solicitudes</Link>
               <Link to="/login">Sesión</Link>
             </nav>
@@ -269,11 +269,17 @@ function StudentPanelContent() {
       <section aria-labelledby="student-attentions-title" className="student-portal__section">
         <div className="student-portal__section-head">
           <h2 id="student-attentions-title">Atenciones</h2>
-          <span className="student-portal__soon">Próximamente</span>
         </div>
         <div className="student-portal__empty student-portal__empty--blue">
-          <p className="student-portal__empty-title">Aún no tienes atenciones agendadas.</p>
-          <p>Cuando tengas atenciones agendadas en un acompañamiento activo, aparecerán aquí.</p>
+          <p className="student-portal__empty-title">Revisa tus atenciones y su estado.</p>
+          <div className="student-portal__cta">
+            <Link
+              to="/estudiante/atenciones"
+              className="student-portal__btn student-portal__btn--ghost"
+            >
+              Ver mis atenciones
+            </Link>
+          </div>
         </div>
       </section>
 

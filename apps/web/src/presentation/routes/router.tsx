@@ -25,6 +25,8 @@ import {
   ProfessionalRequestsRouteComponent,
   RootComponent,
   StudentAccompanimentDetailRouteComponent,
+  StudentAppointmentDetailRouteComponent,
+  StudentAppointmentsRouteComponent,
   StudentIndexRouteComponent,
   StudentLayoutRouteComponent,
   StudentRequestDetailRouteComponent,
@@ -34,7 +36,7 @@ import {
 } from "./route-components.tsx";
 
 /**
- * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04, TI2-115, TI2-116, Sprint 1, 2 y 3).
+ * Mapa de rutas web (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04, TI2-114, TI2-115, TI2-116, Sprint 1, 2 y 3).
  *
  * - `/` índice: acceso sin sesión (preserva callback OAuth de TI2-3),
  *   portal según sesión y rol, denegado sin portal conocido.
@@ -49,6 +51,10 @@ import {
  *   acompañamiento propio solo del titular (TI2-90), denegado por el Backend
  *   en otro caso; los cerrados se muestran en solo lectura, sin notas
  *   internas.
+ * - `/estudiante/atenciones`: lista propia de atenciones del Estudiante
+ *   (TI2-114) por el puerto común de agenda, conectado a la API por
+ *   TI2-123; `/estudiante/atenciones/$appointmentId`: detalle con los
+ *   estados textuales de realización, cancelación e inasistencia.
  * - `/profesional`, `/practicante` y `/administrador`: layouts protegidos
  *   por rol con portada temporal; sin sesión van al acceso, con otro rol
  *   van a denegado. El portal de Administración no enlaza acompañamientos
@@ -134,6 +140,18 @@ const studentReservationRoute = createRoute({
       typeof search.accompanimentId === "string" ? search.accompanimentId : undefined,
   }),
   component: StudentReservationRouteComponent,
+});
+
+const studentAppointmentsRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "atenciones",
+  component: StudentAppointmentsRouteComponent,
+});
+
+const studentAppointmentDetailRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "atenciones/$appointmentId",
+  component: StudentAppointmentDetailRouteComponent,
 });
 
 const studentRequestsRoute = createRoute({
@@ -254,6 +272,8 @@ const routeTree = rootRoute.addChildren([
     studentIndexRoute,
     studentScheduleRoute,
     studentReservationRoute,
+    studentAppointmentsRoute,
+    studentAppointmentDetailRoute,
     studentRequestsRoute,
     studentRequestDetailRoute,
     studentAccompanimentDetailRoute,
