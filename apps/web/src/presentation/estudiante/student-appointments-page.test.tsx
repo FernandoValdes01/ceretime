@@ -6,6 +6,7 @@ import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
 import type { Space } from "../../../../../convex/domain/index.ts";
+import { formatAppointmentInstant } from "./agenda-labels.ts";
 
 /**
  * Pruebas de la lista y el detalle de atenciones propias del Estudiante
@@ -191,6 +192,18 @@ function lecturaEnCurso<T>() {
   return { promise, resolve };
 }
 
+/**
+ * Pulsa un botón como lo haría el teclado: primero recibe el foco. Así la
+ * prueba detecta si el foco queda en `document.body` cuando el botón
+ * desaparece, en vez de pasar porque el título ya tenía el foco al montar.
+ */
+function pulsarConFoco(name: string) {
+  const control = screen.getByRole("button", { name });
+  control.focus();
+  expect(document.activeElement).toBe(control);
+  fireEvent.click(control);
+}
+
 beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_URL", "https://test.convex.cloud");
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
@@ -326,7 +339,7 @@ describe("lista de atenciones propias (TI2-114)", () => {
     renderAt("/estudiante/atenciones");
 
     expect(await screen.findByText("Fallo interno.")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    pulsarConFoco("Reintentar");
 
     expect(await screen.findByText("Cargando tus atenciones…")).toBeDefined();
     expect(screen.queryByText("Fallo interno.")).toBeNull();
@@ -343,7 +356,7 @@ describe("lista de atenciones propias (TI2-114)", () => {
 
     expect(await screen.findByText(AVISO_SALA)).toBeDefined();
     expect(screen.getByText("Realizada")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Reintentar cargar la sala" }));
+    pulsarConFoco("Reintentar cargar la sala");
 
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Atenciones" }));
     expect((await screen.findAllByText(/Sala 101/)).length).toBeGreaterThan(0);
@@ -381,7 +394,11 @@ describe("detalle de la atención (TI2-114)", () => {
 
     expect(await screen.findByText("Reagendada")).toBeDefined();
     expect(screen.getByText("En línea")).toBeDefined();
-    expect(screen.getByText("Fecha original conservada")).toBeDefined();
+    // La fila muestra el inicio original (12 de octubre), no el nuevo (19 de octubre).
+    const fechaOriginal = screen.getByText("Fecha original conservada").nextElementSibling;
+    expect(fechaOriginal?.textContent).toBe(formatAppointmentInstant(Date.UTC(2026, 9, 12, 16, 0)));
+    expect(fechaOriginal?.textContent).toContain("12 de octubre");
+    expect(fechaOriginal?.textContent).not.toContain("19 de octubre");
     expect(screen.queryByText(/ficticios|demostración/iu)).toBeNull();
     expect(screen.getByRole("link", { name: "Volver a tus atenciones" }).getAttribute("href")).toBe(
       "/estudiante/atenciones",
@@ -446,7 +463,7 @@ describe("detalle de la atención (TI2-114)", () => {
     renderAt("/estudiante/atenciones/at-est-1");
 
     expect(await screen.findByText("Fallo interno.")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+    pulsarConFoco("Reintentar");
 
     expect(await screen.findByText("Cargando la atención…")).toBeDefined();
     expect(screen.queryByText("Fallo interno.")).toBeNull();
@@ -465,8 +482,11 @@ describe("detalle de la atención (TI2-114)", () => {
 
     expect(await screen.findByText(AVISO_SALA)).toBeDefined();
     expect(screen.queryByText("Fallo interno.")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Reintentar cargar la sala" }));
+    pulsarConFoco("Reintentar cargar la sala");
 
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { name: "Detalle de la atención" }),
+    );
     expect(await screen.findByText(/Sala 101/)).toBeDefined();
     expect(screen.queryByText(AVISO_SALA)).toBeNull();
   });
