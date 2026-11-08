@@ -3466,7 +3466,7 @@ test("TI2-135: la clave de idempotencia evita duplicar el envío del mismo estud
   };
   expect((await withKey(studentA, "ti135-clave-3"))?._id).toBe(raced[0]?.requestId);
   expect((await withKey(studentB, "ti135-clave-1"))?._id).toBe(otherStudent.requestId);
-  expect(await withKey(studentA, "ti135-sin-envio")).toBeNull();
+  expect(await withKey(studentA, "ti135-sin-envío")).toBeNull();
   const ownA = await t.run(async (ctx) => {
     return await ctx.db
       .query("requests")
