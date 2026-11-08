@@ -51,6 +51,8 @@ const CANCEL = "presentation/appointments:cancelAppointment";
 const SEARCH = "presentation/availability:searchSlots";
 const BOOKABLE = "presentation/availability:listBookableProfessionals";
 const SESSION_STATE = "presentation/session:getSessionState";
+const LIST_APPOINTMENTS = "presentation/appointments:listAppointments";
+const GET_APPOINTMENT = "presentation/appointments:getAppointment";
 
 /** Martes 10 de noviembre de 2026, 10:00 en America/Santiago. */
 const IN_PERSON_SLOT = {
@@ -94,10 +96,13 @@ const conflict = () =>
 
 type StoredAppointment = {
   appointmentId: string;
+  professionalId: string;
   status: string;
   startAt: number;
   endAt: number;
   modality: string;
+  spaceId?: string;
+  cancelReason?: string;
   calendarAdded: boolean;
   calendarNeedsUpdate: boolean;
 };
@@ -119,6 +124,27 @@ function createFakeBackend() {
     listeners.forEach((listener) => listener());
   };
 
+  /**
+   * Proyección de la atención. El contrato entrega al Estudiante la vista
+   * `shared`, sin motivo de cancelación; `exposeFullView` simula una respuesta
+   * indebida con la vista `full` para comprobar que la Web no la muestra.
+   */
+  let exposeFullView = false;
+  const projectionOf = (appointment: StoredAppointment) => ({
+    id: appointment.appointmentId,
+    accompanimentId: OWN_ACCOMPANIMENT,
+    professionalId: appointment.professionalId,
+    modality: appointment.modality,
+    ...(appointment.spaceId === undefined ? {} : { spaceId: appointment.spaceId }),
+    startAt: appointment.startAt,
+    endAt: appointment.endAt,
+    status: appointment.status,
+    version: "v1",
+    ...(exposeFullView && appointment.cancelReason !== undefined
+      ? { view: "full", cancelReason: appointment.cancelReason }
+      : { view: "shared" }),
+  });
+
   const assertOwn = (accompanimentId: unknown) => {
     if (accompanimentId !== OWN_ACCOMPANIMENT) {
       throw denied();
@@ -137,10 +163,12 @@ function createFakeBackend() {
     const appointmentId = `atencion-ficticia-${appointments.length + 1}`;
     appointments.push({
       appointmentId,
+      professionalId: slot.professionalId,
       status: "scheduled",
       startAt: slot.startAt,
       endAt: slot.endAt,
       modality: slot.modality,
+      ...("spaceId" in slot ? { spaceId: slot.spaceId } : {}),
       calendarAdded: false,
       calendarNeedsUpdate: false,
     });
@@ -171,7 +199,28 @@ function createFakeBackend() {
     },
     "presentation/appointments:listAccompanimentAppointments": (args) => {
       assertOwn(args.accompanimentId);
-      return appointments.map((appointment) => ({ ...appointment }));
+      return appointments.map((appointment) => ({
+        appointmentId: appointment.appointmentId,
+        status: appointment.status,
+        startAt: appointment.startAt,
+        endAt: appointment.endAt,
+        modality: appointment.modality,
+        calendarAdded: appointment.calendarAdded,
+        calendarNeedsUpdate: appointment.calendarNeedsUpdate,
+      }));
+    },
+    [LIST_APPOINTMENTS]: () => ({
+      items: appointments.map(projectionOf),
+      hasMore: false,
+      nextCursor: null,
+      version: "v1",
+    }),
+    [GET_APPOINTMENT]: (args) => {
+      const appointment = appointments.find((item) => item.appointmentId === args.appointmentId);
+      if (appointment === undefined) {
+        throw denied();
+      }
+      return projectionOf(appointment);
     },
     "presentation/appointments:getCalendarConnection": () => ({ connected: false }),
     [BOOKABLE]: (args) => {
@@ -220,6 +269,29 @@ function createFakeBackend() {
       query: (ref: FunctionReference<"query">, args: Args = {}) => dispatch(queries, ref, args),
       mutation: (ref: FunctionReference<"mutation">, args: Args = {}) =>
         dispatch(mutations, ref, args),
+      /**
+       * Suscripción como `ConvexReactClient.watchQuery`: el resultado local se vuelve a
+       * calcular en cada cambio y un error se lanza al leerlo.
+       */
+      watchQuery: (ref: FunctionReference<"query">, args: Args = {}) => {
+        const name = getFunctionName(ref);
+        calls.push({ name, args });
+        return {
+          localQueryResult: () => {
+            const handler = queries[name];
+            if (handler === undefined) {
+              throw new Error(`Función no configurada en el doble: ${name}`);
+            }
+            return handler(args);
+          },
+          onUpdate: (callback: () => void) => {
+            listeners.add(callback);
+            return () => {
+              listeners.delete(callback);
+            };
+          },
+        };
+      },
     },
     /** Lectura reactiva: se vuelve a calcular en cada cambio, como una suscripción. */
     subscribe: (listener: () => void) => {
@@ -269,6 +341,18 @@ function createFakeBackend() {
         modality: slot.modality,
       }),
     cancelElsewhere: (appointmentId: string) => cancel({ appointmentId }),
+    /** CERETI cancela con un motivo interno, que el Estudiante no debe ver. */
+    cancelByCereti: (appointmentId: string, reason: string) => {
+      const appointment = appointments.find((item) => item.appointmentId === appointmentId);
+      if (appointment !== undefined) {
+        appointment.status = "cancelled_by_cereti";
+        appointment.cancelReason = reason;
+        notify();
+      }
+    },
+    exposeFullView: () => {
+      exposeFullView = true;
+    },
     appointments,
   };
 }
@@ -304,6 +388,8 @@ vi.mock("../../infrastructure/convex/convex-client", () => ({
     query: (ref: FunctionReference<"query">, args?: Args) => backend.client.query(ref, args),
     mutation: (ref: FunctionReference<"mutation">, args?: Args) =>
       backend.client.mutation(ref, args),
+    watchQuery: (ref: FunctionReference<"query">, args?: Args) =>
+      backend.client.watchQuery(ref, args),
   },
 }));
 
@@ -322,6 +408,7 @@ const PAR_ESTUDIANTE: { session: WebSessionState; role: WebSessionRole } = {
 const HORARIOS = "/estudiante/horarios";
 const RESERVAR_PRESENCIAL = `/estudiante/reservar?slotId=${IN_PERSON_SLOT.id}&accompanimentId=${OWN_ACCOMPANIMENT}`;
 const DETALLE = `/estudiante/acompanamientos/${OWN_ACCOMPANIMENT}`;
+const ATENCIONES = "/estudiante/atenciones";
 
 /** Argumentos exactos del comando: sin identidad del cliente como prueba de propiedad. */
 const BOOKING_ARGS = {
@@ -570,8 +657,93 @@ describe("conflicto, red fallida, reintento y doble confirmación (TI2-124)", ()
   });
 });
 
+describe("atenciones propias tras reservar (TI2-124 sobre TI2-114)", () => {
+  test("la reserva confirmada aparece en Atenciones con el dato del Backend", async () => {
+    const router = renderAt(RESERVAR_PRESENCIAL);
+    await confirmarCupo();
+    await screen.findByRole("heading", { name: "Reserva confirmada" });
+
+    await act(() => router.navigate({ to: ATENCIONES }));
+
+    const fila = await screen.findByRole("link", {
+      name: new RegExp(appointmentStatusLabel("scheduled")),
+    });
+    expect(fila.getAttribute("href")).toBe(`${ATENCIONES}/atencion-ficticia-1`);
+    expect(fila.textContent).toMatch(/101/);
+    // La lectura pide solo la ventana y el tope: el Backend resuelve el titular.
+    const lectura = backend.callsTo(LIST_APPOINTMENTS)[0]?.args;
+    expect(Object.keys(lectura ?? {}).sort()).toEqual(["from", "limit", "to", "version"]);
+    expect(lectura?.limit).toBe(50);
+  });
+
+  test("la lista abierta refleja reserva y cancelación sin recargar", async () => {
+    renderAt(ATENCIONES);
+    expect(await screen.findByText(/No tienes atenciones en/)).toBeDefined();
+
+    let appointmentId = "";
+    act(() => {
+      appointmentId = backend.bookElsewhere(ONLINE_SLOT).appointmentId;
+    });
+    expect(
+      await screen.findByRole("link", { name: new RegExp(appointmentStatusLabel("scheduled")) }),
+    ).toBeDefined();
+
+    act(() => {
+      backend.cancelElsewhere(appointmentId);
+    });
+    expect(
+      await screen.findByRole("link", {
+        name: new RegExp(appointmentStatusLabel("cancelled_by_student")),
+      }),
+    ).toBeDefined();
+    expect(backend.callsTo(LIST_APPOINTMENTS)).toHaveLength(1);
+  });
+
+  test("el detalle abierto refleja la cancelación sin recargar", async () => {
+    const { appointmentId } = backend.bookElsewhere(ONLINE_SLOT);
+    renderAt(`${ATENCIONES}/${appointmentId}`);
+    expect(await screen.findByText(appointmentStatusLabel("scheduled"))).toBeDefined();
+
+    act(() => {
+      backend.cancelElsewhere(appointmentId);
+    });
+
+    expect(await screen.findByText(appointmentStatusLabel("cancelled_by_student"))).toBeDefined();
+  });
+
+  test("un motivo interno de CERETI no se muestra aunque llegue en la proyección", async () => {
+    const motivo = "Motivo interno ficticio de la coordinación";
+    const { appointmentId } = backend.bookElsewhere(ONLINE_SLOT);
+    backend.exposeFullView();
+    backend.cancelByCereti(appointmentId, motivo);
+
+    renderAt(ATENCIONES);
+    await screen.findByRole("link", {
+      name: new RegExp(appointmentStatusLabel("cancelled_by_cereti")),
+    });
+    expect(document.body.textContent).not.toContain(motivo);
+
+    cleanup();
+    renderAt(`${ATENCIONES}/${appointmentId}`);
+    expect(await screen.findByText(appointmentStatusLabel("cancelled_by_cereti"))).toBeDefined();
+    expect(document.body.textContent).not.toContain(motivo);
+  });
+});
+
 describe("acceso directo y recursos de otro titular (TI2-124)", () => {
-  test.each([HORARIOS, RESERVAR_PRESENCIAL, DETALLE])(
+  test("el detalle de una atención ajena responde denegación sin datos", async () => {
+    backend.bookElsewhere(ONLINE_SLOT);
+    renderAt(`${ATENCIONES}/atencion-ajena`);
+
+    expect(await screen.findByText(/No autorizado\./)).toBeDefined();
+    expect(screen.queryByText(appointmentStatusLabel("scheduled"))).toBeNull();
+    expect(backend.callsTo(GET_APPOINTMENT)[0]?.args).toEqual({
+      appointmentId: "atencion-ajena",
+      version: expect.any(String),
+    });
+  });
+
+  test.each([HORARIOS, RESERVAR_PRESENCIAL, DETALLE, ATENCIONES])(
     "%s sin sesión va al acceso sin llamar a la API",
     async (path) => {
       mockedSession = { status: "unauthenticated" };
@@ -585,7 +757,7 @@ describe("acceso directo y recursos de otro titular (TI2-124)", () => {
     },
   );
 
-  test.each([HORARIOS, RESERVAR_PRESENCIAL, DETALLE])(
+  test.each([HORARIOS, RESERVAR_PRESENCIAL, DETALLE, ATENCIONES])(
     "%s con otro rol va a denegado sin llamar a la API",
     async (path) => {
       mockedSession = {
