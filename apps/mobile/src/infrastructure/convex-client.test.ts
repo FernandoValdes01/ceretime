@@ -73,6 +73,28 @@ test("distingue una red caída y permite reintentar sin mostrar el error técnic
   });
 });
 
+test("una red que no responde vence y se clasifica como fallo de red", async () => {
+  jest.useFakeTimers();
+  try {
+    const fetchMock = jest.fn(
+      (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const client = createMobileConvexClient(deploymentUrl, fetchMock as typeof fetch, 1000);
+    const pending = client
+      .query(api.presentation.session.getSessionState, {})
+      .catch((error: unknown) => error);
+    await jest.advanceTimersByTimeAsync(1000);
+    const error = await pending;
+    expect(error).toMatchObject({ code: "network_error" });
+    expect(isMobileAccessDenied(error)).toBe(false);
+  } finally {
+    jest.useRealTimers();
+  }
+});
+
 test.each(["unauthorized", "conflict", "no_availability", "internal"])(
   "conserva el código público %s y oculta detalles del servidor",
   async (code) => {
