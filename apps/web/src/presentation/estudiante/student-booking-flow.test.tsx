@@ -10,9 +10,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { getFunctionName, type FunctionReference } from "convex/server";
+import { getFunctionName, type FunctionReference, type FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 import {
   CONFLICT_ERROR_CODE,
   CONFLICT_ERROR_MESSAGE,
@@ -42,17 +44,24 @@ type Args = Record<string, unknown>;
 type Call = { readonly name: string; readonly args: Args };
 type Interceptor = () => Promise<void> | void;
 
-const OWN_ACCOMPANIMENT = "acompanamiento-propio";
+const OWN_ACCOMPANIMENT = "acompanamiento-propio" as Id<"accompaniments">;
 const FOREIGN_ACCOMPANIMENT = "acompanamiento-ajeno";
 const PROFESSIONAL = "pro-ficticio-1";
 
-const BOOK = "presentation/appointments:bookAppointment";
-const CANCEL = "presentation/appointments:cancelAppointment";
-const SEARCH = "presentation/availability:searchSlots";
-const BOOKABLE = "presentation/availability:listBookableProfessionals";
-const SESSION_STATE = "presentation/session:getSessionState";
-const LIST_APPOINTMENTS = "presentation/appointments:listAppointments";
-const GET_APPOINTMENT = "presentation/appointments:getAppointment";
+/**
+ * El doble responde lo mismo que la API pública: cada respuesta declara el
+ * retorno de su función, así que el build falla si una respuesta se aparta.
+ */
+type Returns<F extends FunctionReference<"query" | "mutation">> = FunctionReturnType<F>;
+
+const fn = api.presentation;
+const BOOK = getFunctionName(fn.appointments.bookAppointment);
+const CANCEL = getFunctionName(fn.appointments.cancelAppointment);
+const SEARCH = getFunctionName(fn.availability.searchSlots);
+const BOOKABLE = getFunctionName(fn.availability.listBookableProfessionals);
+const SESSION_STATE = getFunctionName(fn.session.getSessionState);
+const LIST_APPOINTMENTS = getFunctionName(fn.appointments.listAppointments);
+const GET_APPOINTMENT = getFunctionName(fn.appointments.getAppointment);
 
 /** Martes 10 de noviembre de 2026, 10:00 en America/Santiago. */
 const IN_PERSON_SLOT = {
@@ -78,7 +87,7 @@ const ONLINE_SLOT = {
 } as const;
 
 const SPACE = {
-  id: "espacio-1",
+  id: "espacio-1" as Id<"spaces">,
   campus: "Campus Ficticio",
   building: "A",
   floor: "1",
@@ -90,17 +99,29 @@ const SPACE = {
 
 const OBJECTIVE = "Objetivo ficticio del acompañamiento";
 
+/** Vista `full` que el contrato entrega al Estudiante dueño del acompañamiento. */
+const OWN_ACCOMPANIMENT_VIEW = {
+  _id: OWN_ACCOMPANIMENT,
+  studentId: "estudiante-ficticio" as Id<"users">,
+  status: "active",
+  objective: OBJECTIVE,
+  accessNeeds: "",
+  view: "full",
+} as const;
+
 const denied = () => new ConvexError(UNAUTHORIZED_ERROR_MESSAGE);
 const conflict = () =>
   new ConvexError({ code: CONFLICT_ERROR_CODE, message: CONFLICT_ERROR_MESSAGE });
 
+type AppointmentView = Returns<typeof fn.appointments.getAppointment>;
+
 type StoredAppointment = {
   appointmentId: string;
   professionalId: string;
-  status: string;
+  status: AppointmentView["status"];
   startAt: number;
   endAt: number;
-  modality: string;
+  modality: AppointmentView["modality"];
   spaceId?: string;
   cancelReason?: string;
   calendarAdded: boolean;
@@ -118,6 +139,7 @@ function createFakeBackend() {
     ONLINE_SLOT,
   ];
   let version = 0;
+  let assignmentRevoked = false;
 
   const notify = () => {
     version += 1;
@@ -130,7 +152,7 @@ function createFakeBackend() {
    * indebida con la vista `full` para comprobar que la Web no la muestra.
    */
   let exposeFullView = false;
-  const projectionOf = (appointment: StoredAppointment) => ({
+  const projectionOf = (appointment: StoredAppointment): AppointmentView => ({
     id: appointment.appointmentId,
     accompanimentId: OWN_ACCOMPANIMENT,
     professionalId: appointment.professionalId,
@@ -141,8 +163,8 @@ function createFakeBackend() {
     status: appointment.status,
     version: "v1",
     ...(exposeFullView && appointment.cancelReason !== undefined
-      ? { view: "full", cancelReason: appointment.cancelReason }
-      : { view: "shared" }),
+      ? { view: "full" as const, cancelReason: appointment.cancelReason }
+      : { view: "shared" as const }),
   });
 
   const assertOwn = (accompanimentId: unknown) => {
@@ -151,7 +173,7 @@ function createFakeBackend() {
     }
   };
 
-  const book = (args: Args): { appointmentId: string } => {
+  const book = (args: Args): Returns<typeof fn.appointments.bookAppointment> => {
     assertOwn(args.accompanimentId);
     const slot = slots.find(
       (candidate) => candidate.startAt === args.startAt && candidate.modality === args.modality,
@@ -176,28 +198,35 @@ function createFakeBackend() {
     return { appointmentId };
   };
 
-  const cancel = (args: Args): null => {
+  const cancel = (args: Args): Returns<typeof fn.appointments.cancelAppointment> => {
     const appointment = appointments.find((item) => item.appointmentId === args.appointmentId);
     if (appointment === undefined) {
       throw denied();
     }
     appointment.status = "cancelled_by_student";
     notify();
-    return null;
+    return { appointmentId: appointment.appointmentId };
   };
 
   const queries: Record<string, (args: Args) => unknown> = {
-    [SESSION_STATE]: () => mockedSession,
-    "presentation/accompaniments:listOwnedAccompaniments": () => ({
-      page: [{ _id: OWN_ACCOMPANIMENT, status: "active", objective: OBJECTIVE }],
+    [SESSION_STATE]: (): Returns<typeof fn.session.getSessionState> =>
+      mockedSession ?? { status: "unauthenticated" },
+    [getFunctionName(fn.accompaniments.listOwnedAccompaniments)]: (): Returns<
+      typeof fn.accompaniments.listOwnedAccompaniments
+    > => ({
+      page: [OWN_ACCOMPANIMENT_VIEW],
       isDone: true,
       continueCursor: "",
     }),
-    "presentation/accompaniments:getAccompaniment": (args) => {
+    [getFunctionName(fn.accompaniments.getAccompaniment)]: (
+      args,
+    ): Returns<typeof fn.accompaniments.getAccompaniment> => {
       assertOwn(args.accompanimentId);
-      return { _id: OWN_ACCOMPANIMENT, status: "active", objective: OBJECTIVE, view: "full" };
+      return OWN_ACCOMPANIMENT_VIEW;
     },
-    "presentation/appointments:listAccompanimentAppointments": (args) => {
+    [getFunctionName(fn.appointments.listAccompanimentAppointments)]: (
+      args,
+    ): Returns<typeof fn.appointments.listAccompanimentAppointments> => {
       assertOwn(args.accompanimentId);
       return appointments.map((appointment) => ({
         appointmentId: appointment.appointmentId,
@@ -209,25 +238,27 @@ function createFakeBackend() {
         calendarNeedsUpdate: appointment.calendarNeedsUpdate,
       }));
     },
-    [LIST_APPOINTMENTS]: () => ({
+    [LIST_APPOINTMENTS]: (): Returns<typeof fn.appointments.listAppointments> => ({
       items: appointments.map(projectionOf),
       hasMore: false,
       nextCursor: null,
       version: "v1",
     }),
-    [GET_APPOINTMENT]: (args) => {
+    [GET_APPOINTMENT]: (args): Returns<typeof fn.appointments.getAppointment> => {
       const appointment = appointments.find((item) => item.appointmentId === args.appointmentId);
       if (appointment === undefined) {
         throw denied();
       }
       return projectionOf(appointment);
     },
-    "presentation/appointments:getCalendarConnection": () => ({ connected: false }),
-    [BOOKABLE]: (args) => {
+    [getFunctionName(fn.appointments.getCalendarConnection)]: (): Returns<
+      typeof fn.appointments.getCalendarConnection
+    > => ({ connected: false }),
+    [BOOKABLE]: (args): Returns<typeof fn.availability.listBookableProfessionals> => {
       assertOwn(args.accompanimentId);
-      return { professionalIds: [PROFESSIONAL], version: "v1" };
+      return { professionalIds: assignmentRevoked ? [] : [PROFESSIONAL], version: "v1" };
     },
-    [SEARCH]: (args) => {
+    [SEARCH]: (args): Returns<typeof fn.availability.searchSlots> => {
       assertOwn(args.accompanimentId);
       if (slots.length === 0) {
         throw new ConvexError({
@@ -235,9 +266,9 @@ function createFakeBackend() {
           message: NO_AVAILABILITY_ERROR_MESSAGE,
         });
       }
-      return { items: slots, hasMore: false, nextCursor: null, version: "v1" };
+      return { items: [...slots], hasMore: false, nextCursor: null, version: "v1" };
     },
-    "presentation/spaces:listSpaces": () => ({
+    [getFunctionName(fn.spaces.listSpaces)]: (): Returns<typeof fn.spaces.listSpaces> => ({
       items: [SPACE],
       hasMore: false,
       nextCursor: null,
@@ -353,6 +384,14 @@ function createFakeBackend() {
     exposeFullView: () => {
       exposeFullView = true;
     },
+    /**
+     * Revoca la asignación del profesional. Como `listBookableProfessionals`
+     * solo cuenta asignaciones activas, responde la lista vacía, no denegación.
+     */
+    revokeAssignment: () => {
+      assignmentRevoked = true;
+      notify();
+    },
     appointments,
   };
 }
@@ -425,10 +464,15 @@ const BOOKING_ARGS = {
  * La primera consulta por rol de este archivo calcula estilos en frío sobre toda
  * la página y, con la suite completa en paralelo, supera por sí sola el límite
  * de 1 s de Testing Library. Es costo de jsdom, no una espera del flujo.
+ *
+ * El tiempo límite de cada prueba se fija al registrarla, antes de `beforeAll`,
+ * así que va al nivel del módulo. Queda por encima de `asyncUtilTimeout` para
+ * que un fallo muestre la aserción del `waitFor` y no «Test timed out».
  */
+vi.setConfig({ testTimeout: 20_000 });
+
 beforeAll(() => {
   configure({ asyncUtilTimeout: 5000 });
-  vi.setConfig({ testTimeout: 20_000 });
 });
 
 beforeEach(() => {
@@ -543,7 +587,7 @@ describe("selección, confirmación y lectura reactiva (TI2-124)", () => {
   });
 });
 
-describe("conflicto, red fallida, reintento y doble confirmación (TI2-124)", () => {
+describe("conflicto, fallo técnico, red caída y doble confirmación (TI2-124)", () => {
   test("un cupo tomado por otra persona responde conflicto y conserva la selección", async () => {
     renderAt(RESERVAR_PRESENCIAL);
     const enviar = await marcarCasilla();
@@ -593,7 +637,7 @@ describe("conflicto, red fallida, reintento y doble confirmación (TI2-124)", ()
     expect(backend.appointments).toHaveLength(1);
   });
 
-  test("una red caída no confirma, no filtra el detalle y el reintento reserva una vez", async () => {
+  test("un fallo técnico del servidor no confirma, no filtra el detalle y el reintento reserva una vez", async () => {
     const detalleInterno = "Server Error: notas internas de un tercero";
     renderAt(RESERVAR_PRESENCIAL);
     backend.failNext(BOOK, new Error(detalleInterno));
@@ -612,8 +656,12 @@ describe("conflicto, red fallida, reintento y doble confirmación (TI2-124)", ()
     expect(backend.appointments).toHaveLength(1);
   });
 
-  test("la doble confirmación envía un solo comando mientras está pendiente", async () => {
-    const liberar = backend.holdNext(BOOK);
+  /**
+   * Con la red caída, el cliente de Convex no rechaza la mutación: la deja
+   * pendiente y la reenvía cuando vuelve la conexión. `holdNext` modela ese envío en espera.
+   */
+  test("con la red caída la reserva queda pendiente, no se duplica y confirma al volver la conexión", async () => {
+    const restablecer = backend.holdNext(BOOK);
     renderAt(RESERVAR_PRESENCIAL);
     const enviar = await marcarCasilla();
     const formulario = enviar.closest("form");
@@ -626,8 +674,9 @@ describe("conflicto, red fallida, reintento y doble confirmación (TI2-124)", ()
     await screen.findByRole("button", { name: "Confirmando…" });
     expect(backend.callsTo(BOOK)).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "Reserva confirmada" })).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
 
-    liberar();
+    restablecer();
 
     expect(await screen.findByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
     expect(backend.callsTo(BOOK)).toHaveLength(1);
@@ -801,11 +850,25 @@ describe("acceso directo y recursos de otro titular (TI2-124)", () => {
     expect(screen.queryByText("Necesidades de acceso")).toBeNull();
   });
 
-  test("una asignación revocada deniega la búsqueda sin mostrar cupos", async () => {
+  test("la búsqueda denegada para el acompañamiento no muestra cupos", async () => {
     backend.failNext(BOOKABLE, denied());
     renderAt(HORARIOS);
 
     expect(await screen.findByText("No tienes acceso a este acompañamiento.")).toBeDefined();
+    expect(screen.queryByRole("link", { name: /noviembre/ })).toBeNull();
+    expect(backend.callsTo(SEARCH)).toHaveLength(0);
+  });
+
+  test("una asignación revocada deja el acompañamiento sin profesionales ni cupos", async () => {
+    backend.revokeAssignment();
+    renderAt(HORARIOS);
+
+    expect(
+      await screen.findByText(
+        "Este acompañamiento aún no tiene profesionales disponibles para reservar.",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText("No tienes acceso a este acompañamiento.")).toBeNull();
     expect(screen.queryByRole("link", { name: /noviembre/ })).toBeNull();
     expect(backend.callsTo(SEARCH)).toHaveLength(0);
   });
@@ -867,8 +930,10 @@ describe("estados accesibles del flujo (TI2-124)", () => {
   test("cada cupo es un enlace con su día, hora y modalidad en el nombre", async () => {
     renderAt(HORARIOS);
 
-    const enlace = await screen.findByRole("link", { name: /Miércoles 11 de noviembre/ });
-    expect(enlace.textContent).toMatch(/En línea/);
+    // El nombre accesible, no `textContent`: un dato oculto al lector debe hacer fallar la prueba.
+    const enlace = await screen.findByRole("link", {
+      name: /Miércoles 11 de noviembre.*10:00.*11:00.*En línea/,
+    });
     expect(enlace.getAttribute("href")).toContain(`slotId=${ONLINE_SLOT.id}`);
     expect(screen.getByRole("status").textContent).toBe("2 cupos disponibles.");
   });
