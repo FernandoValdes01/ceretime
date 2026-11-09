@@ -42,6 +42,13 @@ export default defineSchema({
     // procedimiento por entorno en `domain/accounts/enablement.md`.
     enabledBy: v.optional(v.id("users")),
     enabledAt: v.optional(v.number()),
+    // Auditoría de revocación (TI2-137): actor administrador y fecha de la
+    // revocación de cuentas profesionales y administrativas. La revoca la vía
+    // guardada de cuentas y deja `institutionalStatus` en `disabled`; la
+    // habilitación posterior sobrescribe `enabledBy`/`enabledAt` sin borrar
+    // este historial.
+    revokedBy: v.optional(v.id("users")),
+    revokedAt: v.optional(v.number()),
   })
     // Índice para búsquedas rápidas por correo electrónico
     .index("by_email", ["email"])
