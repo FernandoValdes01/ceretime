@@ -511,15 +511,19 @@ describe("navegación y protección (TI2-114)", () => {
     const links = within(nav).getAllByRole("link");
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Inicio",
-      "Horarios",
-      "Atenciones",
       "Solicitudes",
-      "Sesión",
+      "Horarios",
+      "Reservar",
+      "Atenciones",
     ]);
+    expect(within(nav).getByRole("link", { name: "Atenciones" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
     for (const link of links) {
       link.focus();
       expect(document.activeElement).toBe(link);
     }
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 
   test("sin sesión redirige al acceso conservando el retorno", async () => {

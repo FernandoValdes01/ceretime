@@ -41,7 +41,7 @@ describe("resolveReturnTarget", () => {
 });
 
 describe("persistencia del retorno", () => {
-  test("guarda, previsualiza y consume una sola vez", () => {
+  test("guarda, muestra y consume una sola vez", () => {
     persistReturnTarget("/estudiante");
     expect(peekReturnTarget()).toBe("/estudiante");
     expect(consumeReturnTarget()).toBe("/estudiante");

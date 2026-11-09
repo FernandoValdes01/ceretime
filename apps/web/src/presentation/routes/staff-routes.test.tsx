@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -12,6 +12,12 @@ import type {
   WebSessionRole,
   WebSessionState,
 } from "../session/session-state.ts";
+
+/**
+ * Cierre de sesión (TI2-133): el encabezado común debe invalidar la sesión
+ * real de Better Auth, no navegar a `/login`.
+ */
+const signOutMock = vi.hoisted(() => vi.fn());
 
 /**
  * Stores reactivos de sesión y par (TI2-20): dos suscripciones
@@ -142,7 +148,7 @@ vi.mock("../session/session-state", async () => {
 });
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
-  authClient: { useSession: () => ({ isPending: false }) },
+  authClient: { useSession: () => ({ isPending: false }), signOut: signOutMock },
 }));
 
 vi.mock("../../infrastructure/convex/convex-client", () => ({
@@ -174,6 +180,8 @@ beforeEach(() => {
   sessionStorage.clear();
   sessionMocks.reset();
   assignmentMocks.reset();
+  signOutMock.mockReset();
+  signOutMock.mockResolvedValue({ data: {}, error: null });
 });
 
 afterEach(() => {
@@ -189,9 +197,13 @@ function renderAt(path: string) {
 }
 
 function portalHrefs(): Array<string> {
-  return [...document.querySelectorAll("a")]
-    .map((anchor) => anchor.getAttribute("href") ?? "")
-    .filter((href) => href.length > 0);
+  return (
+    [...document.querySelectorAll("a")]
+      .map((anchor) => anchor.getAttribute("href") ?? "")
+      // El enlace de salto apunta al contenido de la misma página, no a un
+      // portal: no forma parte de los límites de navegación por rol.
+      .filter((href) => href.length > 0 && !href.startsWith("#"))
+  );
 }
 
 const PORTALES = [
@@ -282,6 +294,41 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
   });
 });
 
+describe("encabezado común y cierre de sesión (TI2-133)", () => {
+  test.each(PORTALES)(
+    "$nombre marca la portada actual y no ofrece un enlace de sesión",
+    async (portal) => {
+      sessionMocks.setPair({
+        session: sesionPersonal(`${portal.rol}@uct.cl`),
+        role: rolDe(portal.rol, `${portal.rol}@uct.cl`),
+      });
+      renderAt(portal.ruta);
+
+      await screen.findByRole("heading", { name: portal.titulo });
+      const nav = screen.getByRole("navigation", { name: portal.titulo });
+      expect(within(nav).getByRole("link", { name: "Inicio" }).getAttribute("aria-current")).toBe(
+        "page",
+      );
+      expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
+      expect(screen.queryByRole("link", { name: "Sesión" })).toBeNull();
+      expect(portalHrefs()).not.toContain("/login");
+    },
+  );
+
+  test("Cerrar sesión invalida la sesión de Better Auth y vuelve al índice", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("pro@uct.cl"),
+      role: rolDe("professional", "pro@uct.cl"),
+    });
+    renderAt("/profesional");
+
+    const logout = await screen.findByRole("button", { name: "Cerrar sesión" });
+    fireEvent.click(logout);
+
+    await waitFor(() => expect(signOutMock).toHaveBeenCalledTimes(1));
+  });
+});
+
 describe("límites de navegación por rol (TI2-20)", () => {
   test("el Practicante enlaza solo su listado asignado, no acompañamientos concretos", async () => {
     sessionMocks.setPair({
@@ -294,7 +341,7 @@ describe("límites de navegación por rol (TI2-20)", () => {
     const hrefs = portalHrefs();
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
-      expect(["/practicante", "/practicante/acompanamientos", "/login"]).toContain(href);
+      expect(["/practicante", "/practicante/acompanamientos"]).toContain(href);
     }
   });
 
@@ -309,9 +356,7 @@ describe("límites de navegación por rol (TI2-20)", () => {
     const hrefs = portalHrefs();
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
-      expect(
-        href === "/administrador" || href === "/administrador/espacios" || href === "/login",
-      ).toBe(true);
+      expect(href === "/administrador" || href === "/administrador/espacios").toBe(true);
     }
     // El editor de espacios (TI2-04) es la vista propia del Administrador.
     expect(hrefs).toContain("/administrador/espacios");
