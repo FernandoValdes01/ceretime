@@ -6,46 +6,74 @@ Fuente: `CONTEXT.md` (Administrador sin acceso irrestricto), matriz de `convex/d
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
-| `presentation/accounts.listAccounts` | `paginationOpts` | Página de cuentas con detalle mínimo | Administrador vigente | Error genérico, sin revelar existencia |
-| `presentation/accounts.getAccount` | `userId` | Detalle mínimo de la cuenta | Administrador vigente | Error genérico, sin revelar existencia |
+| `presentation/accounts.listAccounts` | `role` (`professional` o `admin`), `paginationOpts` (`numItems` acotado a 1–100) | Página de cuentas del `role` pedido con detalle mínimo | Administrador vigente | `unauthorized`, sin revelar existencia |
+| `presentation/accounts.getAccount` | `userId` | Detalle mínimo de la cuenta | Administrador vigente, solo personal | `unauthorized`; el `_id` de estudiante o practicante se deniega igual que uno inexistente |
 
 ## Mutations públicas
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
-| `presentation/accounts.enableAccount` | `userId` | `userId` habilitado | Administrador vigente, objetivo profesional o administrador pendiente o revocado | Error genérico, sin revelar motivo ni existencia |
-| `presentation/accounts.revokeAccount` | `userId` | `userId` revocado | Administrador vigente, objetivo profesional o administrador habilitado | Error genérico, sin revelar motivo ni existencia |
+| `presentation/accounts.enableAccount` | `userId` | `{ userId }` habilitado | Administrador vigente, objetivo profesional o administrador de personal, pendiente o revocado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido |
+| `presentation/accounts.revokeAccount` | `userId` | `{ userId }` revocado | Administrador vigente, objetivo profesional o administrador habilitado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido o auto-revocación |
 
-## Detalle mínimo
+## Detalle mínimo y resultados
 
-El listado y el detalle entregan `_id`, `email`, `fullName`, `role`, `institutionalStatus`, `accountStatus` y la auditoría (`enabledBy`, `enabledAt`, `revokedBy`, `revokedAt`); nunca `tokenIdentifier`, acompañamientos, necesidades de acceso ni notas internas.
+El listado y el detalle entregan `_id`, `email`, `fullName`, `role`, `institutionalStatus`, `accountStatus` y la auditoría (`enabledBy`, `enabledAt`, `revokedBy`, `revokedAt`); nunca `tokenIdentifier`, acompañamientos, necesidades de acceso ni notas internas. La página conserva la forma de `paginate`: `{ page, isDone, continueCursor }`.
+
+```json
+{
+  "_id": "j97abc...",
+  "email": "pro@uct.cl",
+  "fullName": "Profesional Ficticio",
+  "role": "professional",
+  "institutionalStatus": "enabled",
+  "accountStatus": "active",
+  "enabledBy": "j97def...",
+  "enabledAt": 1762700000000
+}
+```
+
+Una cuenta pendiente aún no trae auditoría; una revocada conserva la habilitación y suma la revocación (`revokedBy`, `revokedAt`).
 
 ## Permisos y datos por rol
 
-Solo el Administrador con cuenta habilitada y vigente lista, lee, habilita y revoca cuentas profesionales y administrativas. Estudiante, Profesional y Practicante solo ven su perfil propio mediante `presentation/session.getMyProfile` y reciben denegación en esta superficie. Tener correo institucional no concede acceso: sin perfil vinculado y vigente la respuesta es denegación. Administrar no concede acompañamientos ni notas: el Administrador sigue denegado en `accompaniment:read` e `internalNote:read`. La gestión de Practicantes corresponde al Profesional y se resuelve en TI2-140.
+Solo el Administrador con cuenta habilitada y vigente lista, lee, habilita y revoca cuentas de personal. Estudiante, Profesional y Practicante solo ven su perfil propio mediante `presentation/session.getMyProfile` y reciben `unauthorized` en esta superficie. Tener correo institucional no concede acceso: sin perfil vinculado y vigente la respuesta es denegación. Administrar no concede acompañamientos ni notas: el Administrador sigue denegado en `accompaniment:read` e `internalNote:read`. La gestión de Practicantes corresponde al Profesional y se resuelve en TI2-140.
 
 ## Errores
 
-Toda denegación de autorización responde `ConvexError("No autorizado")`: mismo mensaje sin motivo y sin revelar si el recurso existe. Aplica a identidad ausente, perfil ausente o no vigente, rol ajeno, objetivo inexistente, rol no administrable, correo no institucional, cuenta no vigente, estado que no admite el tránsito, auto-revocación y revocación del último administrador vigente. Las validaciones de tipo de argumentos fallan con error de validador de Convex, sin detalles sensibles.
+Los errores usan el contrato común de TI2-88 (`ConvexError({ code, message })`): los clientes distinguen por `error.data.code`, nunca por el texto. `unauthorized` (`No autorizado`) responde ante falta de identidad, perfil o vigencia, rol ajeno u objetivo inexistente o fuera de esta vía. `conflict` explica un tránsito inválido a un administrador autorizado: cuenta ya habilitada, cuenta no habilitada, objetivo sin correo de personal, cuenta no vigente o auto-revocación. Las validaciones de tipo de argumentos fallan con error de validador de Convex, sin detalles sensibles.
 
-## Ejemplos
+```json
+{ "code": "unauthorized", "message": "No autorizado" }
+```
+
+## Ejemplos para Web y Mobile
 
 ```ts
+import { useMutation, usePaginatedQuery } from "convex/react";
 import { api } from "./_generated/api";
 
-const page = await ctx.runQuery(api.presentation.accounts.listAccounts, {
-  paginationOpts: { numItems: 20, cursor: null },
-});
+const { results, status, loadMore } = usePaginatedQuery(
+  api.presentation.accounts.listAccounts,
+  { role: "professional" },
+  { initialNumItems: 20 },
+);
 
-const detail = await ctx.runQuery(api.presentation.accounts.getAccount, {
-  userId: targetId,
-});
+const enableAccount = useMutation(api.presentation.accounts.enableAccount);
+await enableAccount({ userId: targetId });
 
-const enabled = await ctx.runMutation(api.presentation.accounts.enableAccount, {
-  userId: targetId,
-});
+const revokeAccount = useMutation(api.presentation.accounts.revokeAccount);
+await revokeAccount({ userId: targetId });
+```
 
-const revoked = await ctx.runMutation(api.presentation.accounts.revokeAccount, {
-  userId: targetId,
-});
+```ts
+import { ConvexError } from "convex/values";
+
+try {
+  await enableAccount({ userId: targetId });
+} catch (error) {
+  if (error instanceof ConvexError && error.data.code === "conflict") {
+    muestraMensaje(error.data.message);
+  }
+}
 ```

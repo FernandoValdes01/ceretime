@@ -1,4 +1,8 @@
-import { isInstitutionalEmail, normalizeEmail } from "../auth/institutional_domain";
+import {
+  getInstitutionalPopulation,
+  isInstitutionalEmail,
+  normalizeEmail,
+} from "../auth/institutional_domain";
 import type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
 
 /**
@@ -100,9 +104,7 @@ export function checkEnablement(input: {
   return validateEnablementTarget(input.target);
 }
 
-/** Roles que administra TI2-137: profesional y administrador. */
-export type StaffRole = "professional" | "admin";
-
+/** Objetivo profesional o administrativo de TI2-137. */
 export type StaffEnablementTarget = {
   readonly role: Role;
   readonly email: string;
@@ -115,24 +117,19 @@ export type StaffEnablementTarget = {
  * `enabled` (TI2-137).
  *
  * Acepta `pending` (primera habilitación) o `disabled` (rehabilitación tras
- * una revocación); rechaza la cuenta ya habilitada para no sobrescribir la
- * auditoría. El correo debe ser institucional y la cuenta debe estar vigente
- * (`active`). El administrador exige correo de personal (`@uct.cl`); el
- * profesional acepta cualquier correo institucional (`@uct.cl` o
- * `@alu.uct.cl`, este último solo como profesional de prueba RN-25). Jamás
- * cambia el rol. El practicante no entra por esta vía: lo habilita el flujo
+ * una revocación, que registra nuevo actor y fecha); rechaza la cuenta ya
+ * habilitada. Profesional y administrador exigen correo de personal
+ * (`@uct.cl`): un Profesional `@alu.uct.cl` solo opera como cuenta de prueba
+ * con alcance por acompañamiento (RN-25/RD-11) y se habilita en TI2-140, no
+ * en esta vía general. La cuenta debe estar vigente (`active`) y el rol no
+ * cambia jamás. El practicante no entra por esta vía: lo habilita el flujo
  * de TI2-140.
  */
 export function validateStaffEnablementTarget(target: StaffEnablementTarget): EnablementCheck {
   if (target.role !== "professional" && target.role !== "admin") {
     return { ok: false, reason: "target-not-staff" };
   }
-  const normalized = normalizeEmail(target.email);
-  if (target.role === "admin") {
-    if (!isInstitutionalEmail(normalized) || !normalized.endsWith("@uct.cl")) {
-      return { ok: false, reason: "target-email-not-institutional" };
-    }
-  } else if (!isInstitutionalEmail(normalized)) {
+  if (getInstitutionalPopulation(target.email) !== "personal") {
     return { ok: false, reason: "target-email-not-institutional" };
   }
   if (target.accountStatus !== "active") {
@@ -141,22 +138,7 @@ export function validateStaffEnablementTarget(target: StaffEnablementTarget): En
   if (target.institutionalStatus === "enabled") {
     return { ok: false, reason: "target-already-enabled" };
   }
-  if (target.institutionalStatus !== "pending" && target.institutionalStatus !== "disabled") {
-    return { ok: false, reason: "target-not-pending" };
-  }
   return { ok: true };
-}
-
-/** Decisión completa de habilitación profesional o administrativa (TI2-137). */
-export function checkStaffEnablement(input: {
-  readonly caller: EnablementCaller;
-  readonly target: StaffEnablementTarget;
-}): EnablementCheck {
-  if (input.caller.role !== "admin") return { ok: false, reason: "caller-not-admin" };
-  if (input.caller.institutionalStatus !== "enabled" || input.caller.accountStatus !== "active") {
-    return { ok: false, reason: "caller-not-active" };
-  }
-  return validateStaffEnablementTarget(input.target);
 }
 
 /**
@@ -177,18 +159,6 @@ export function validateStaffRevocationTarget(target: StaffEnablementTarget): En
     return { ok: false, reason: "target-not-enabled" };
   }
   return { ok: true };
-}
-
-/** Decisión completa de revocación profesional o administrativa (TI2-137). */
-export function checkStaffRevocation(input: {
-  readonly caller: EnablementCaller;
-  readonly target: StaffEnablementTarget;
-}): EnablementCheck {
-  if (input.caller.role !== "admin") return { ok: false, reason: "caller-not-admin" };
-  if (input.caller.institutionalStatus !== "enabled" || input.caller.accountStatus !== "active") {
-    return { ok: false, reason: "caller-not-active" };
-  }
-  return validateStaffRevocationTarget(input.target);
 }
 
 export type BootstrapCandidate = {

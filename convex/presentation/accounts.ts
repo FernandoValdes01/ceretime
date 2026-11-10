@@ -12,6 +12,7 @@ import {
   institutionalStatusUnion,
   roleUnion,
 } from "../infrastructure/validators";
+import { unwrapApiResult } from "./session";
 
 /**
  * Borde de Presentación: cuentas profesionales y administrativas (TI2-137).
@@ -22,13 +23,15 @@ import {
  * del cliente como prueba ni toca `ctx.db` directamente.
  *
  * Solo el Administrador con cuenta habilitada y vigente lista, lee,
- * habilita y revoca cuentas profesionales y administrativas. Toda
- * denegación (sin identidad, sin perfil, cuenta no vigente, rol ajeno o
- * recurso inexistente) responde el mismo error genérico, sin exponer el
- * motivo ni la existencia del recurso. Administrar no concede
- * acompañamientos ni notas: esa lectura sigue denegada. El detalle es
- * mínimo, sin `tokenIdentifier`, acompañamientos ni notas. Opera con datos
- * ficticios.
+ * habilita y revoca cuentas de personal (profesional o administrador),
+ * filtradas por rol con el índice `by_role`. Los errores usan el contrato
+ * común de TI2-88 (`ConvexError({code, message})` vía `unwrapApiResult`):
+ * `unauthorized` ante falta de identidad, perfil o vigencia, rol ajeno u
+ * objetivo inexistente o fuera de esta vía, y `conflict` ante un tránsito
+ * inválido que un administrador autorizado puede explicar. Administrar no
+ * concede acompañamientos ni notas: esa lectura sigue denegada. El detalle
+ * es mínimo, sin `tokenIdentifier`, acompañamientos ni notas. Opera con
+ * datos ficticios.
  */
 
 const accountSummaryValidator = v.object({
@@ -44,23 +47,26 @@ const accountSummaryValidator = v.object({
   revokedAt: v.optional(v.number()),
 });
 
-/** Lista paginada de cuentas con detalle mínimo. Solo Administrador. */
+/** Lista paginada de cuentas de personal, filtrada por rol. Solo Administrador. */
 export const listAccounts = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: {
+    role: v.union(v.literal("professional"), v.literal("admin")),
+    paginationOpts: paginationOptsValidator,
+  },
   returns: paginationResultValidator(accountSummaryValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listAccountsUseCase(ctx, identity, args);
+    return unwrapApiResult(await listAccountsUseCase(ctx, identity, args));
   },
 });
 
-/** Detalle mínimo de una cuenta. Solo Administrador. */
+/** Detalle mínimo de una cuenta de personal. Solo Administrador. */
 export const getAccount = query({
   args: { userId: v.id("users") },
   returns: accountSummaryValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await getAccountDetailUseCase(ctx, identity, args);
+    return unwrapApiResult(await getAccountDetailUseCase(ctx, identity, args));
   },
 });
 
@@ -73,7 +79,7 @@ export const enableAccount = mutation({
   returns: v.id("users"),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await enableStaffAccount(ctx, identity, args);
+    return unwrapApiResult(await enableStaffAccount(ctx, identity, args));
   },
 });
 
@@ -86,6 +92,6 @@ export const revokeAccount = mutation({
   returns: v.id("users"),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await revokeStaffAccount(ctx, identity, args);
+    return unwrapApiResult(await revokeStaffAccount(ctx, identity, args));
   },
 });

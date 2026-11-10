@@ -96,33 +96,16 @@ export async function patchRevocation(
   });
 }
 
-/** Página de cuentas para el listado administrativo (TI2-137). */
-export async function paginateAccounts(ctx: QueryCtx, paginationOpts: PaginationOptions) {
-  return await ctx.db.query("users").paginate(paginationOpts);
-}
-
-/**
- * Administradores habilitados y vigentes distintos del excluido (TI2-137).
- *
- * Existe para no revocar al último administrador operativo: una como máximo
- * basta para decidir, sin lecturas ilimitadas.
- */
-export async function findOtherEnabledAdmin(
-  ctx: MutationCtx,
-  excludeUserId: Id<"users">,
-): Promise<Doc<"users"> | null> {
-  const rows = await ctx.db
+/** Página de cuentas de personal para el listado administrativo (TI2-137). */
+export async function paginateStaffAccounts(
+  ctx: QueryCtx,
+  role: "professional" | "admin",
+  paginationOpts: PaginationOptions,
+) {
+  return await ctx.db
     .query("users")
-    .withIndex("by_role", (q) => q.eq("role", "admin"))
-    .take(50);
-  return (
-    rows.find(
-      (row) =>
-        row._id !== excludeUserId &&
-        row.institutionalStatus === "enabled" &&
-        row.accountStatus === "active",
-    ) ?? null
-  );
+    .withIndex("by_role", (q) => q.eq("role", role))
+    .paginate(paginationOpts);
 }
 
 /** Crea la cuenta administrativa inicial del entorno, ya habilitada. */

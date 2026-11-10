@@ -2,8 +2,6 @@ import { describe, expect, test } from "vitest";
 import {
   canEnableAsAdmin,
   checkEnablement,
-  checkStaffEnablement,
-  checkStaffRevocation,
   validateBootstrapCandidate,
   validateEnablementTarget,
   validateStaffEnablementTarget,
@@ -135,7 +133,7 @@ describe("validateBootstrapCandidate", () => {
 });
 
 describe("validateStaffEnablementTarget", () => {
-  test("acepta profesional pendiente y administrador de personal", () => {
+  test("acepta profesional y administrador de personal pendientes o revocados", () => {
     expect(
       validateStaffEnablementTarget({
         role: "professional",
@@ -147,7 +145,7 @@ describe("validateStaffEnablementTarget", () => {
     expect(
       validateStaffEnablementTarget({
         role: "professional",
-        email: "pro@alu.uct.cl",
+        email: "pro@uct.cl",
         institutionalStatus: "disabled",
         accountStatus: "active",
       }),
@@ -162,7 +160,7 @@ describe("validateStaffEnablementTarget", () => {
     ).toEqual({ ok: true });
   });
 
-  test("rechaza practicante, correo no institucional y cuenta ya habilitada", () => {
+  test("rechaza practicante, correo no personal y cuenta ya habilitada", () => {
     expect(
       validateStaffEnablementTarget({
         role: "intern",
@@ -171,6 +169,14 @@ describe("validateStaffEnablementTarget", () => {
         accountStatus: "active",
       }),
     ).toEqual({ ok: false, reason: "target-not-staff" });
+    expect(
+      validateStaffEnablementTarget({
+        role: "professional",
+        email: "pro@alu.uct.cl",
+        institutionalStatus: "disabled",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-email-not-institutional" });
     expect(
       validateStaffEnablementTarget({
         role: "admin",
@@ -216,32 +222,5 @@ describe("validateStaffRevocationTarget", () => {
         accountStatus: "active",
       }),
     ).toEqual({ ok: false, reason: "target-not-staff" });
-  });
-});
-
-describe("checkStaffEnablement y checkStaffRevocation", () => {
-  test("priorizan el permiso del actor", () => {
-    expect(
-      checkStaffEnablement({
-        caller: caller({ role: "professional" }),
-        target: {
-          role: "professional",
-          email: "pro@uct.cl",
-          institutionalStatus: "pending",
-          accountStatus: "active",
-        },
-      }),
-    ).toEqual({ ok: false, reason: "caller-not-admin" });
-    expect(
-      checkStaffRevocation({
-        caller: caller({ role: "student" }),
-        target: {
-          role: "professional",
-          email: "pro@uct.cl",
-          institutionalStatus: "enabled",
-          accountStatus: "active",
-        },
-      }),
-    ).toEqual({ ok: false, reason: "caller-not-admin" });
   });
 });
