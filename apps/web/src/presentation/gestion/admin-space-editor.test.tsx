@@ -651,11 +651,12 @@ describe("editor de espacios (TI2-04)", () => {
 
     const nav = await screen.findByRole("navigation", { name: "Portal de Administración" });
     const links = within(nav).getAllByRole("link");
-    expect(links.map((link) => link.textContent?.trim())).toEqual(["Inicio", "Espacios", "Sesión"]);
+    expect(links.map((link) => link.textContent?.trim())).toEqual(["Inicio", "Espacios"]);
     for (const link of links) {
       link.focus();
       expect(document.activeElement).toBe(link);
     }
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 
   test("la portada del Administrador enlaza el editor de espacios", async () => {

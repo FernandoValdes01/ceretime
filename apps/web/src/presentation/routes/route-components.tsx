@@ -21,6 +21,8 @@ import {
   ProfessionalRequestsPage,
 } from "../gestion/professional-requests.tsx";
 import { useSessionAndRole, useSessionState } from "../session/session-state.ts";
+import { PublicMain, SkipLink } from "./app-shell.tsx";
+import { DeniedPage } from "./denied-page.tsx";
 import { IndexPage } from "./index-page.tsx";
 import { LoginPage } from "./login-page.tsx";
 import { RequireStudent } from "./student-guard.tsx";
@@ -40,16 +42,15 @@ import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 
 /**
  * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04,
- * TI2-114, TI2-115, TI2-116): puentes delgados entre las definiciones de `router.tsx` y las
- * páginas. Viven acá para que `router.tsx` no mezcle componentes con objetos
- * de ruta (regla de fast refresh).
+ * TI2-114, TI2-115, TI2-116, TI2-133): puentes delgados entre las definiciones
+ * de los archivos de área y las páginas. Viven acá para que las definiciones
+ * de ruta no mezclen componentes (regla de fast refresh).
  */
 export function RootComponent() {
   return (
     <AccessibilityProvider>
-      <main>
-        <Outlet />
-      </main>
+      <SkipLink />
+      <Outlet />
     </AccessibilityProvider>
   );
 }
@@ -59,11 +60,27 @@ export function NotFoundRedirect() {
 }
 
 export function IndexRouteComponent() {
-  return <IndexPage session={useSessionState()} pair={useSessionAndRole()} />;
+  return (
+    <PublicMain>
+      <IndexPage session={useSessionState()} pair={useSessionAndRole()} />
+    </PublicMain>
+  );
 }
 
 export function LoginRouteComponent() {
-  return <LoginPage session={useSessionState()} />;
+  return (
+    <PublicMain>
+      <LoginPage session={useSessionState()} />
+    </PublicMain>
+  );
+}
+
+export function DeniedRouteComponent() {
+  return (
+    <PublicMain>
+      <DeniedPage />
+    </PublicMain>
+  );
 }
 
 export function StudentLayoutRouteComponent() {
