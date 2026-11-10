@@ -141,6 +141,63 @@ export async function insertSpace(
   return okResult({ spaceId });
 }
 
+/**
+ * Reemplaza los campos de una sala sin cambiar su vigencia. La sala
+ * inexistente o de otra tabla y la ubicación que ya usa otra sala
+ * responden `conflict` sin escribir.
+ */
+export async function updateSpace(
+  ctx: MutationCtx,
+  spaceId: string,
+  space: Omit<Space, "id" | "version">,
+): Promise<ApiResult<null>> {
+  const id = ctx.db.normalizeId("spaces", spaceId);
+  const row = id === null ? null : await ctx.db.get(id);
+  if (row === null) return errResult(conflictError());
+  const clash = await findSpaceRowByLocation(ctx, space);
+  if (clash !== null && clash._id !== row._id) return errResult(conflictError());
+  await ctx.db.patch(row._id, {
+    campus: space.campus,
+    building: space.building,
+    floor: space.floor,
+    room: space.room,
+    accessConditions: space.accessConditions,
+    accessInstructions: space.arrivalInstructions,
+  });
+  return okResult(null);
+}
+
+/**
+ * Retira o reactiva una sala sin borrarla ni su historial. La sala
+ * inexistente o de otra tabla responde `conflict` sin escribir, sin
+ * filtrar la existencia.
+ */
+export async function setSpaceActive(
+  ctx: MutationCtx,
+  spaceId: string,
+  isActive: boolean,
+): Promise<ApiResult<null>> {
+  const id = ctx.db.normalizeId("spaces", spaceId);
+  const row = id === null ? null : await ctx.db.get(id);
+  if (row === null) return errResult(conflictError());
+  await ctx.db.patch(row._id, { isActive });
+  return okResult(null);
+}
+
+/**
+ * Escrituras del catálogo para Aplicación (TI2-148). Validan integridad,
+ * no autorización: el caso de uso exige administración vigente antes de
+ * llamar. Cumplen por forma el puerto `SpaceWriter` sin importarlo.
+ */
+export function spaceWriter(ctx: MutationCtx) {
+  return {
+    insertSpace: (space: Omit<Space, "id" | "version">) => insertSpace(ctx, space),
+    updateSpace: (spaceId: string, space: Omit<Space, "id" | "version">) =>
+      updateSpace(ctx, spaceId, space),
+    setSpaceActive: (spaceId: string, isActive: boolean) => setSpaceActive(ctx, spaceId, isActive),
+  };
+}
+
 /** Contrato `Space` más la vigencia, que el contrato no trae. */
 function toStoredSpace(row: Doc<"spaces">) {
   return { ...toSpace(row), isActive: row.isActive };

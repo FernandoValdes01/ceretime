@@ -10,6 +10,7 @@ import {
   authorizeAvailabilityEdit,
   authorizeAvailabilityRead,
   authorizeInternalNoteRead,
+  authorizeSpaceCatalogManage,
   authorizeSpaceCatalogRead,
   AUTHORIZATION_DENIED_MESSAGE,
   listingScopeForRole,
@@ -476,5 +477,18 @@ describe("authorizeSpaceCatalogRead", () => {
       DENIED,
     );
     expect(await authorizeSpaceCatalogRead(reader, { tokenIdentifier: null })).toEqual(DENIED);
+  });
+});
+
+describe("authorizeSpaceCatalogManage", () => {
+  test("solo administración vigente gestiona; resto denegado", async () => {
+    const reader = fakeReader({ profiles: [admin, intern, student, professional] });
+    expect(await authorizeSpaceCatalogManage(reader, { tokenIdentifier: "token-admin" })).toEqual({
+      status: "ok",
+      data: { callerId: "user-admin" },
+    });
+    for (const tokenIdentifier of ["token-intern", "token-student", "token-pro", null]) {
+      expect(await authorizeSpaceCatalogManage(reader, { tokenIdentifier })).toEqual(DENIED);
+    }
   });
 });

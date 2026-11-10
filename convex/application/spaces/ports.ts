@@ -1,3 +1,4 @@
+import type { ApiResult } from "../../domain/errors/api_error";
 import type { Space } from "../../domain/spaces/space";
 
 /**
@@ -28,4 +29,21 @@ export interface SpaceReader {
   findSpaceByLocation(
     location: Pick<Space, "campus" | "building" | "floor" | "room">,
   ): Promise<StoredSpace | null>;
+}
+
+/**
+ * Escrituras del catálogo (TI2-148). Validan integridad, no autorización:
+ * el caso de uso exige administración vigente antes de llamar. El duplicado
+ * lógico (misma ubicación, vigente o retirada) y la sala inexistente o de
+ * otra tabla responden `conflict` sin escribir, sin filtrar la existencia.
+ */
+export interface SpaceWriter {
+  /** Crea una sala vigente y devuelve su identificador. */
+  insertSpace(
+    space: Omit<Space, "id" | "version">,
+  ): Promise<ApiResult<{ readonly spaceId: string }>>;
+  /** Reemplaza los campos de una sala sin cambiar su vigencia. */
+  updateSpace(spaceId: string, space: Omit<Space, "id" | "version">): Promise<ApiResult<null>>;
+  /** Retira o reactiva una sala sin borrarla ni su historial. */
+  setSpaceActive(spaceId: string, isActive: boolean): Promise<ApiResult<null>>;
 }

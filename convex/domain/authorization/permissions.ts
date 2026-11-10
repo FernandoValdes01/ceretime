@@ -38,6 +38,7 @@ export const AUTHORIZATION_ACTIONS = [
   "followUp:read",
   "followUp:write",
   "space:read",
+  "space:manage",
 ] as const;
 
 export type AuthorizationAction = (typeof AUTHORIZATION_ACTIONS)[number];
@@ -346,6 +347,20 @@ export function canReadSpaceCatalog(input: {
 }
 
 /**
+ * Gestión del catálogo de espacios (TI2-148): solo el Administrador con
+ * cuenta habilitada y vigente. Estudiante, Profesional y Practicante se
+ * deniegan aunque tengan cuenta vigente: el catálogo publicado se lee, no
+ * se administra.
+ */
+export function canManageSpaceCatalog(input: {
+  readonly role: Role;
+  readonly institutionalStatus: InstitutionalStatus;
+  readonly accountStatus: AccountStatus;
+}): boolean {
+  return input.role === "admin" && isProfileActive(input);
+}
+
+/**
  * Matriz explícita para documentación y revisión con CERETI. Cada celda indica
  * el resultado esperado en Backend; la UI no sustituye esta decisión (RN-08).
  */
@@ -446,5 +461,12 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     professional: "permitido con cuenta vigente",
     intern: "permitido con cuenta vigente",
     admin: "permitido con cuenta vigente",
+  },
+  {
+    action: "space:manage",
+    student: "denegado",
+    professional: "denegado",
+    intern: "denegado",
+    admin: "permitido solo con cuenta vigente",
   },
 ];
