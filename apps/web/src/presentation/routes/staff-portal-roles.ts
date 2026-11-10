@@ -32,7 +32,7 @@ export function staffHomeForRole(role: StaffRole): string | null {
  * Confirmación cruzada entre la suscripción independiente de sesión y el
  * par sesión y rol (TI2-20): ambas deben describir a la misma sesión. Si el
  * par aún trae otra sesión (revalidación en curso tras un cambio de
- * cuenta), no está confirmado y el guard espera sin renderizar ni navegar.
+ * cuenta), no está confirmado y el guard espera sin mostrar el portal ni navegar.
  * Compara los correos de identidad, nunca el guardado en el perfil (el
  * arranque admite ambos independientes).
  */

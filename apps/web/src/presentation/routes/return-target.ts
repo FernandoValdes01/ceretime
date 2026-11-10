@@ -5,7 +5,7 @@
  * la ruta a la que el Estudiante quería entrar antes del login. El retorno
  * sobrevive al round-trip OAuth (el `callbackURL` fijo de TI2-3 siempre
  * vuelve a `/`, donde el índice lo consume). Nunca acepta URLs absolutas ni
- * las rutas de acceso/denegado, para no crear bucles ni redirecciones
+ * las rutas de acceso/denegado, para no crear bucles ni desvíos
  * abiertas fuera del portal.
  */
 
