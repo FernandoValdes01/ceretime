@@ -2,6 +2,8 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 
 import type { StudentIdentity } from "../domain/student-area-models";
 import type { BackendStudentAreaResponses } from "./backend-contract-mappers";
+import type { StudentPublicOperation } from "../application/student-area-port";
+import type { StudentContractArgs, StudentContractResponse } from "./student-contract-mappers";
 
 const requestId = (value: string) => value as Id<"requests">;
 const studentId = "users:student-demo-1" as Id<"users">;
@@ -71,6 +73,43 @@ export const demoStudentAreaResponses: BackendStudentAreaResponses = {
       view: "full",
     },
   ],
+};
+
+/** Ejemplos locales de las cinco operaciones publicadas; no requieren cliente ni conexión. */
+export const demoStudentContractExamples = {
+  createRequest: {
+    args: { accessNeeds: "Comunicación escrita" },
+    response: demoStudentAreaResponses.requests[2],
+  },
+  listOwnRequests: {
+    args: { paginationOpts: { numItems: 5, cursor: null } },
+    response: {
+      page: demoStudentAreaResponses.requests,
+      isDone: true,
+      continueCursor: "",
+    },
+  },
+  getRequest: {
+    args: { requestId: demoStudentAreaResponses.requests[0]._id },
+    response: demoStudentAreaResponses.requests[0],
+  },
+  listOwnedAccompaniments: {
+    args: { paginationOpts: { numItems: 5, cursor: null } },
+    response: {
+      page: demoStudentAreaResponses.accompaniments,
+      isDone: true,
+      continueCursor: "",
+    },
+  },
+  getAccompaniment: {
+    args: { accompanimentId: demoStudentAreaResponses.accompaniments[0]._id },
+    response: demoStudentAreaResponses.accompaniments[0],
+  },
+} satisfies {
+  [Operation in StudentPublicOperation]: {
+    args: StudentContractArgs<Operation>;
+    response: StudentContractResponse<Operation>;
+  };
 };
 
 // Enlaces de demostración para la navegación de acompañamientos de TI4-35.
