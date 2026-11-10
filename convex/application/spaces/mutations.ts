@@ -89,7 +89,7 @@ export async function createSpaceCatalogEntry(
   if (grant.status === "error") return denied();
   if ((await store.findSpaceByLocation(fields)) !== null) return conflict();
   const inserted = await store.insertSpace(fields);
-  if (inserted.status === "error") return inserted as ApiResult<ManagedSpace>;
+  if (inserted.status === "error") return errResult(inserted.error);
   const managed = await readManaged(store, inserted.data.spaceId);
   if (managed === null) return conflict();
   return okResult(managed);
@@ -120,7 +120,7 @@ export async function updateSpaceCatalogEntry(
   const clash = await store.findSpaceByLocation(fields);
   if (clash !== null && clash.id !== existing.id) return conflict();
   const updated = await store.updateSpace(input.spaceId, fields);
-  if (updated.status === "error") return updated as ApiResult<ManagedSpace>;
+  if (updated.status === "error") return errResult(updated.error);
   const managed = await readManaged(store, input.spaceId);
   if (managed === null) return denied();
   return okResult(managed);
@@ -149,7 +149,7 @@ export async function setSpaceCatalogActive(
   const existing = await store.getSpace(input.spaceId);
   if (existing === null) return denied();
   const patched = await store.setSpaceActive(input.spaceId, input.isActive);
-  if (patched.status === "error") return patched as ApiResult<ManagedSpace>;
+  if (patched.status === "error") return errResult(patched.error);
   const managed = await readManaged(store, input.spaceId);
   if (managed === null) return denied();
   return okResult(managed);

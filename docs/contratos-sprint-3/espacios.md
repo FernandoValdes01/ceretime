@@ -10,7 +10,7 @@ Superficie pública versionada para que administración cree, consulte, edite y 
 | `presentation.spaces.getSpace` | `spaceId`, `version: "v1"` | `{space: Space, label, isActive, version}` | Solo administración vigente | `{code: "unauthorized", message: "No autorizado"}`; inexistente o de otra tabla igual |
 | `presentation.spaces.createSpace` | `campus, building, floor, room, accessConditions, arrivalInstructions`, `version: "v1"` | `{space: Space, label, isActive, version}` | Solo administración vigente | `unauthorized` genérico; duplicado `conflict` |
 | `presentation.spaces.updateSpace` | `spaceId` más los campos de creación | `{space: Space, label, isActive, version}` | Solo administración vigente | `unauthorized` genérico; ubicación de otra sala `conflict` |
-| `presentation.spaces.setSpaceActive` | `spaceId, isActive`, `version: "v1"` | `{space: Space, label, isActive, version}` | Solo administración vigente | `unauthorized` genérico; inexistente `conflict` en persistencia, `unauthorized` en el borde |
+| `presentation.spaces.setSpaceActive` | `spaceId, isActive`, `version: "v1"` | `{space: Space, label, isActive, version}` | Solo administración vigente | `unauthorized` genérico; inexistente o de otra tabla igual, sin filtrar |
 
 ## Reglas
 

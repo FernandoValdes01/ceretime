@@ -28,6 +28,7 @@ import type * as application_session_minimal_identity from "../application/sessi
 import type * as application_session_portal_role from "../application/session/portal_role.js";
 import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
+import type * as application_spaces_mutations from "../application/spaces/mutations.js";
 import type * as application_spaces_ports from "../application/spaces/ports.js";
 import type * as application_spaces_queries from "../application/spaces/queries.js";
 import type * as auth from "../auth.js";
@@ -105,6 +106,7 @@ declare const fullApi: ApiFromModules<{
   "application/session/portal_role": typeof application_session_portal_role;
   "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
+  "application/spaces/mutations": typeof application_spaces_mutations;
   "application/spaces/ports": typeof application_spaces_ports;
   "application/spaces/queries": typeof application_spaces_queries;
   auth: typeof auth;
