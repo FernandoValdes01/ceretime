@@ -5,6 +5,7 @@ import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-login.ts";
 import type { AssignedAccompanimentsPage } from "../gestion/practitioner-accompaniments-data.ts";
 import { createAppRouter } from "./router.tsx";
 import type {
@@ -320,12 +321,40 @@ describe("encabezado común y cierre de sesión (TI2-133)", () => {
       session: sesionPersonal("pro@uct.cl"),
       role: rolDe("professional", "pro@uct.cl"),
     });
-    renderAt("/profesional");
+    // Better Auth retira la sesión al cerrarla; se simula esa transición para
+    // comprobar que el índice ya no deriva de vuelta al portal.
+    signOutMock.mockImplementation(async () => {
+      act(() => {
+        sessionMocks.setSession(SIN_SESION);
+        sessionMocks.setPair({ session: SIN_SESION, role: ROL_DESCONOCIDO });
+      });
+      return { data: {}, error: null };
+    });
+    const { router } = renderAt("/profesional");
 
     const logout = await screen.findByRole("button", { name: "Cerrar sesión" });
     fireEvent.click(logout);
 
-    await waitFor(() => expect(signOutMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("heading", { name: "Portal del Profesional" })).toBeNull();
+  });
+
+  test("si el cierre falla, avisa sin navegar ni abandonar el portal", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("pro@uct.cl"),
+      role: rolDe("professional", "pro@uct.cl"),
+    });
+    signOutMock.mockResolvedValue({ data: null, error: { status: 500, message: "fallo" } });
+    const { router } = renderAt("/profesional");
+
+    const logout = await screen.findByRole("button", { name: "Cerrar sesión" });
+    fireEvent.click(logout);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(GENERIC_AUTH_MESSAGES.signOutError);
+    expect(router.state.location.pathname).toBe("/profesional");
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 });
 

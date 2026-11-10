@@ -41,12 +41,14 @@ Las URL y las guardias vigentes no cambian: cada layout conserva su `RequireStud
 
 | Portal | Enlaces |
 | --- | --- |
-| Estudiante | Inicio, Solicitudes, Horarios, Reservar y Atenciones |
+| Estudiante | Inicio, Solicitudes, Horarios y Atenciones |
 | Profesional | Inicio, Solicitudes, Agenda y Disponibilidad |
 | Practicante | Inicio y Acompañamientos |
 | Administrador | Inicio y Espacios |
 
 El encabezado común vive en `app-shell.tsx` y `app-shell.css`. Marca la sección actual con `aria-current="page"`, distingue el elemento activo con fondo y subrayado (no solo color) y mantiene objetivos táctiles de 44 × 44 px. El botón «Cerrar sesión» llama a `authClient.signOut()`, espera la invalidación de la sesión y vuelve al índice. Se retiró el enlace «Sesión» que apuntaba a `/login` porque no cerraba la sesión.
+
+La confirmación de reserva (`/estudiante/reservar`) no aparece en la navegación porque necesita el `slotId` que devuelve la búsqueda de horarios; sin ese parámetro la vista muestra «Cupo no disponible». Se llega desde Horarios al elegir un cupo.
 
 ## Cómo agregar una ruta
 

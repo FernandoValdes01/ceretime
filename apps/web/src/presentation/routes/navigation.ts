@@ -21,7 +21,9 @@ export const PORTAL_NAVIGATION = {
       { to: "/estudiante", label: "Inicio", exact: true },
       { to: "/estudiante/solicitudes", label: "Solicitudes", exact: false },
       { to: "/estudiante/horarios", label: "Horarios", exact: false },
-      { to: "/estudiante/reservar", label: "Reservar", exact: false },
+      // «Reservar» no se enlaza aquí: la confirmación necesita el `slotId`
+      // que devuelve la búsqueda de horarios. Sin ese parámetro la vista
+      // muestra «Cupo no disponible», así que se llega desde Horarios.
       { to: "/estudiante/atenciones", label: "Atenciones", exact: false },
     ],
   },
