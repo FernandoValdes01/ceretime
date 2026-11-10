@@ -511,15 +511,22 @@ describe("navegación y protección (TI2-114)", () => {
     const links = within(nav).getAllByRole("link");
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Inicio",
+      "Solicitudes",
       "Horarios",
       "Atenciones",
-      "Solicitudes",
-      "Sesión",
     ]);
+    // La confirmación de reserva necesita el `slotId` que devuelve la
+    // búsqueda de horarios: sin él la vista muestra «Cupo no disponible», así
+    // que se llega desde Horarios y no se enlaza en el encabezado.
+    expect(within(nav).queryByRole("link", { name: "Reservar" })).toBeNull();
+    expect(within(nav).getByRole("link", { name: "Atenciones" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
     for (const link of links) {
       link.focus();
       expect(document.activeElement).toBe(link);
     }
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 
   test("sin sesión redirige al acceso conservando el retorno", async () => {
