@@ -6,7 +6,7 @@ import type { PropsWithChildren } from "react";
 import {
   defaultAccessibilityPreferences,
   type AccessibilityPreferences,
-} from "@/application/accessibility-preferences-models";
+} from "@/domain/accessibility-preferences-models";
 import type { AccessibilityPreferencesPort } from "@/application/accessibility-preferences-port";
 import { AccessibilityPreferencesProvider } from "@/presentation/accessibility/accessibility-preferences-provider";
 import { Screen } from "@/presentation/components/screen";
@@ -37,19 +37,19 @@ function TabBar() {
 
 test("las pestañas reservan el área inferior una sola vez sin espacio sobrante", async () => {
   render(<TabPreview textScale={1} />);
-  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 97 }));
+  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 81 }));
   expect(screen.getByTestId("tab-bar")).toHaveStyle({ paddingTop: 0, paddingBottom: 34 });
 });
 
 test("las pestañas crecen con las líneas reales y se compactan al reducir el texto", async () => {
   const view = render(<TabPreview textScale={2} />);
-  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 140 }));
+  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 108 }));
   fireEvent(screen.getByText(/Acompaña/), "textLayout", {
     nativeEvent: { lines: [0, 32, 64].map((y) => ({ y, height: 32 })) },
   });
   expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 172 });
   view.rerender(<TabPreview textScale={1} />);
-  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 97 }));
+  await waitFor(() => expect(screen.getByTestId("tab-bar")).toHaveStyle({ height: 81 }));
 });
 
 afterEach(() => jest.restoreAllMocks());

@@ -1,7 +1,6 @@
 import { Component, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Link, Outlet } from "@tanstack/react-router";
-import { AccessibilityMenu } from "../accessibility/AccessibilityMenu.tsx";
+import { Link } from "@tanstack/react-router";
 import { Speakable } from "../accessibility/Speakable.tsx";
 import {
   accompanimentStatusLabel,
@@ -13,53 +12,18 @@ import {
   useStudentRequests,
   useStudentSession,
 } from "./student-panel-data.ts";
+import { AppShell } from "./app-shell.tsx";
 import "./student-portal.css";
 
 /**
- * Estructura del portal del Estudiante (TI2-6).
+ * Estructura del portal del Estudiante (TI2-6, TI2-133).
  *
- * Solo navegación y protección: el encabezado enlaza el inicio del portal
- * y la sesión (donde vive el cierre). Las vistas funcionales de
- * solicitudes, agenda y seguimiento llegan en Sprint 2 y cuelgan de este
- * layout tras el mismo guard.
+ * La navegación común vive en `AppShell`: marca el inicio, las pantallas
+ * reales del rol y el cierre de sesión. Las vistas cuelgan de este layout
+ * tras el mismo guard.
  */
 export function StudentLayout() {
-  return (
-    <div className="student-portal">
-      <a href="#student-content" className="student-portal__skip">
-        Saltar al contenido principal
-      </a>
-      <header className="student-portal__header">
-        <div className="student-portal__bar">
-          <Link
-            to="/estudiante"
-            className="student-portal__brand"
-            aria-label="CERETI, ir al inicio del portal"
-          >
-            <span className="student-portal__mark" aria-hidden="true">
-              CE
-            </span>
-            <span className="student-portal__name">
-              <strong>CERETI</strong>
-              <span>Portal del Estudiante</span>
-            </span>
-          </Link>
-          <div className="student-portal__actions">
-            <nav aria-label="Portal del Estudiante">
-              <Link to="/estudiante">Inicio</Link>
-              <Link to="/estudiante/horarios">Horarios</Link>
-              <Link to="/estudiante/solicitudes">Solicitudes</Link>
-              <Link to="/login">Sesión</Link>
-            </nav>
-            <AccessibilityMenu />
-          </div>
-        </div>
-      </header>
-      <div className="student-portal__main" id="student-content">
-        <Outlet />
-      </div>
-    </div>
-  );
+  return <AppShell area="student" />;
 }
 
 /**
@@ -254,7 +218,7 @@ function StudentPanelContent() {
             </p>
             <p>
               Un integrante de CERETI debe habilitar tu cuenta de Estudiante. Revisa tu sesión o
-              contáctanos por los canales oficiales.
+              consulta los canales oficiales.
             </p>
           </div>
         </section>
@@ -269,11 +233,17 @@ function StudentPanelContent() {
       <section aria-labelledby="student-attentions-title" className="student-portal__section">
         <div className="student-portal__section-head">
           <h2 id="student-attentions-title">Atenciones</h2>
-          <span className="student-portal__soon">Próximamente</span>
         </div>
         <div className="student-portal__empty student-portal__empty--blue">
-          <p className="student-portal__empty-title">Aún no tienes atenciones agendadas.</p>
-          <p>Cuando tengas atenciones agendadas en un acompañamiento activo, aparecerán aquí.</p>
+          <p className="student-portal__empty-title">Revisa tus atenciones y su estado.</p>
+          <div className="student-portal__cta">
+            <Link
+              to="/estudiante/atenciones"
+              className="student-portal__btn student-portal__btn--ghost"
+            >
+              Ver mis atenciones
+            </Link>
+          </div>
         </div>
       </section>
 

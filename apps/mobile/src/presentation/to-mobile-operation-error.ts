@@ -1,8 +1,11 @@
+import { API_ERROR_MESSAGES, isApiErrorCode } from "../../../../convex/domain/errors/api_error";
+import { UserFacingError } from "../application/user-facing-error";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** Mensajes de validación que la API pública documenta para Sprint 1. */
+/** Compatibilidad con operaciones antiguas que todavía no publican códigos. */
 const publicRequestMessages = new Set([
   "Se requiere describir la necesidad de acceso",
   "La necesidad de acceso supera el máximo permitido (2000 caracteres)",
@@ -17,11 +20,31 @@ const publicRequestMessages = new Set([
 ]);
 
 export function toMobileOperationError(error: unknown, fallback: string): Error {
+  if (error instanceof UserFacingError) return error;
+  const data = isRecord(error) && isRecord(error.data) ? error.data : error;
+  if (isRecord(data) && data.code === "network_error") {
+    return new UserFacingError("No se pudo conectar. Revisa tu conexión e intenta nuevamente.");
+  }
+  if (isRecord(data) && typeof data.code === "string") {
+    return new UserFacingError(
+      isApiErrorCode(data.code) ? API_ERROR_MESSAGES[data.code] : fallback,
+    );
+  }
   if (isRecord(error) && error.data === "No autorizado") {
-    return new Error("No autorizado");
+    return new UserFacingError("No autorizado");
   }
   if (error instanceof Error && publicRequestMessages.has(error.message)) {
-    return new Error(error.message);
+    return new UserFacingError(error.message);
   }
-  return new Error(fallback);
+  return new UserFacingError(fallback);
+}
+
+/** Transición compatible para denegaciones antiguas y el código público actual. */
+export function isMobileAccessDenied(error: unknown): boolean {
+  if (!isRecord(error)) return false;
+  return (
+    error.data === "No autorizado" ||
+    (isRecord(error.data) && error.data.code === "unauthorized") ||
+    error.code === "unauthorized"
+  );
 }

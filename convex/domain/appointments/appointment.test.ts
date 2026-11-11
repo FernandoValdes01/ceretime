@@ -9,12 +9,15 @@ import {
   NO_SHOW_PENDING_STATE,
   calculateJustificationDeadline,
   decideJustificationTimeliness,
+  isCalendarActionableStatus,
   isJustificationReview,
   toAppointmentProjection,
   transitionAppointment,
   type Appointment,
   type AppointmentPage,
   type AppointmentProjection,
+  type AppointmentStatus,
+  type AppointmentTransitionAttempt,
   type JustificationReceipt,
 } from "./appointment";
 import {
@@ -734,6 +737,28 @@ describe("Plazo de cinco días hábiles de justificación (TI2-94)", () => {
   });
 });
 
+describe("Acciones de calendario por estado de la atención (TI2-122)", () => {
+  test("solo las atenciones programadas o reagendadas admiten acciones de calendario", () => {
+    expect(APPOINTMENT_STATUS_VALUES.filter(isCalendarActionableStatus)).toEqual([
+      "scheduled",
+      "rescheduled",
+    ]);
+  });
+
+  test("una atención cerrada no se exporta como evento confirmado", () => {
+    for (const status of [
+      "completed",
+      "cancelled_by_student",
+      "cancelled_by_cereti",
+      "no_show",
+      "no_show_justified",
+      "no_show_unjustified",
+    ] as const) {
+      expect(isCalendarActionableStatus(status)).toBe(false);
+    }
+  });
+});
+
 describe("Proyección y constancia de la atención (TI2-100)", () => {
   const appointment: Appointment = {
     id: "atencion-ficticia-1",
@@ -750,17 +775,24 @@ describe("Proyección y constancia de la atención (TI2-100)", () => {
   };
 
   test("las vistas son completa y minimizada", () => {
-    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "minimized"]);
+    expect([...APPOINTMENT_VIEW_VALUES]).toEqual(["full", "shared", "minimized"]);
   });
 
   test("la vista completa conserva la entidad y marca la vista", () => {
     const projected = toAppointmentProjection(appointment, "full");
 
     expect(projected).toEqual({ ...appointment, view: "full" });
-    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{ readonly view: "full" | "minimized" }>();
+    expectTypeOf<AppointmentProjection>().toMatchTypeOf<{
+      readonly view: "full" | "shared" | "minimized";
+    }>();
   });
 
   test("la vista minimizada omite vínculos, fechas originales y motivos", () => {
+    const shared = toAppointmentProjection(appointment, "shared");
+    const { cancelReason: _omitted, ...withoutReason } = appointment;
+    expect(shared).toEqual({ ...withoutReason, view: "shared" });
+    expect(shared).not.toHaveProperty("cancelReason");
+
     const projected = toAppointmentProjection(appointment, "minimized");
 
     expect(projected).toEqual({
@@ -808,5 +840,271 @@ describe("Proyección y constancia de la atención (TI2-100)", () => {
   test("la proyección sale por el barrel sin duplicar la fuente", () => {
     expect(barrelProjection).toBe(toAppointmentProjection);
     expectTypeOf<BarrelProjection>().toEqualTypeOf<AppointmentProjection>();
+  });
+});
+
+/**
+ * Límites de la política de transición (TI2-117). Cada prueba nombra la
+ * violación que detecta; ninguna copia la tabla de transiciones: los estados
+ * finales y la resolución de la inasistencia salen del contrato de TI2-93.
+ */
+describe("Invariantes límite de la atención (TI2-117)", () => {
+  /** Estados que el contrato de TI2-93 declara terminales. */
+  const FINAL_STATES: readonly AppointmentStatus[] = [
+    "completed",
+    "cancelled_by_student",
+    "cancelled_by_cereti",
+    "no_show_justified",
+    "no_show_unjustified",
+  ];
+
+  /**
+   * Intento con todo lo que cualquier destino puede exigir: actor, motivo,
+   * fecha nueva y registro posterior al inicio. Así el único rechazo posible
+   * es el de la tabla.
+   */
+  function attempt(
+    from: AppointmentStatus,
+    to: AppointmentStatus,
+    overrides: Partial<AppointmentTransitionAttempt> = {},
+  ): AppointmentTransitionAttempt {
+    return {
+      from,
+      to,
+      actorId: "profesional-ficticio-1",
+      occurredAt: 3000,
+      reason: "Motivo ficticio",
+      currentStartAt: 2000,
+      newStartAt: 5000,
+      newEndAt: 6000,
+      ...overrides,
+    };
+  }
+
+  test("un estado final rechaza cualquier destino", () => {
+    // Detecta una fila nueva que reabra una atención realizada, cancelada o resuelta.
+    for (const from of FINAL_STATES) {
+      for (const to of APPOINTMENT_STATUS_VALUES) {
+        expect(transitionAppointment(attempt(from, to))).toEqual({
+          status: "rejected",
+          cause: "transition_not_allowed",
+        });
+      }
+    }
+  });
+
+  test("ningún estado vuelve a la reserva inicial", () => {
+    // Detecta un retroceso a `scheduled`: una atención se mueve con `rescheduled`.
+    for (const from of APPOINTMENT_STATUS_VALUES) {
+      expect(transitionAppointment(attempt(from, INITIAL_APPOINTMENT_STATUS))).toEqual({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      });
+    }
+  });
+
+  test("la inasistencia pendiente solo se resuelve como justificada o sin justificar", () => {
+    // Detecta una salida de `no_show` que la convierta en realizada, cancelada o reagendada.
+    const resolutions: readonly AppointmentStatus[] = ["no_show_justified", "no_show_unjustified"];
+    for (const to of APPOINTMENT_STATUS_VALUES) {
+      const result = transitionAppointment(attempt(NO_SHOW_PENDING_STATE, to));
+      expect(result.status).toBe(resolutions.includes(to) ? "applied" : "rejected");
+    }
+  });
+
+  test("la cancelación CERETI exige motivo también después de reagendar", () => {
+    // Detecta una fila desde `rescheduled` que no pida el motivo.
+    const base = attempt("rescheduled", "cancelled_by_cereti");
+    const { reason: _omitted, ...withoutReason } = base;
+    expect(transitionAppointment(withoutReason)).toEqual({
+      status: "rejected",
+      cause: "reason_required",
+    });
+    expect(transitionAppointment({ ...base, reason: "   " })).toEqual({
+      status: "rejected",
+      cause: "reason_required",
+    });
+  });
+
+  test("la fecha original sobrevive a reagendar tres veces y a la cancelación", () => {
+    // Detecta que un reagendamiento encadenado guarde la fecha intermedia como original.
+    let from: AppointmentStatus = "scheduled";
+    let currentStartAt = 2000;
+    let currentOriginalStartAt: number | undefined;
+    for (const newStartAt of [5000, 8000, 11_000]) {
+      const result = transitionAppointment({
+        from,
+        to: "rescheduled",
+        actorId: "profesional-ficticio-1",
+        occurredAt: currentStartAt - 500,
+        currentStartAt,
+        ...(currentOriginalStartAt === undefined ? {} : { currentOriginalStartAt }),
+        newStartAt,
+        newEndAt: newStartAt + 1000,
+      });
+      expect(result.status).toBe("applied");
+      if (result.status !== "applied") return;
+      expect(result.originalStartAt).toBe(2000);
+      from = "rescheduled";
+      currentStartAt = result.effectiveStartAt;
+      currentOriginalStartAt = result.originalStartAt;
+    }
+
+    const cancelled = transitionAppointment({
+      from,
+      to: "cancelled_by_cereti",
+      actorId: "profesional-ficticio-1",
+      occurredAt: 9000,
+      reason: "Sala no disponible",
+      currentStartAt,
+      ...(currentOriginalStartAt === undefined ? {} : { currentOriginalStartAt }),
+    });
+    expect(cancelled).toMatchObject({
+      status: "applied",
+      effectiveStartAt: 11_000,
+      originalStartAt: 2000,
+      cancelReason: "Sala no disponible",
+    });
+  });
+
+  test("la fecha original sobrevive a la inasistencia y a su resolución", () => {
+    // Detecta que `no_show` o su resolución pierdan la fecha original de una atención movida.
+    const rescheduled = transitionAppointment(
+      attempt("scheduled", "rescheduled", { occurredAt: 1000 }),
+    );
+    expect(rescheduled.status).toBe("applied");
+    if (rescheduled.status !== "applied") return;
+
+    const pending = transitionAppointment({
+      from: "rescheduled",
+      to: "no_show",
+      actorId: "profesional-ficticio-1",
+      occurredAt: rescheduled.effectiveStartAt,
+      currentStartAt: rescheduled.effectiveStartAt,
+      currentOriginalStartAt: 2000,
+    });
+    expect(pending).toMatchObject({ status: "applied", originalStartAt: 2000 });
+
+    const justified = transitionAppointment({
+      from: "no_show",
+      to: "no_show_justified",
+      actorId: "profesional-ficticio-1",
+      occurredAt: rescheduled.effectiveStartAt + 1,
+      currentStartAt: rescheduled.effectiveStartAt,
+      currentOriginalStartAt: 2000,
+    });
+    expect(justified).toMatchObject({ status: "applied", originalStartAt: 2000 });
+  });
+
+  test("realización e inasistencia se aceptan en el instante exacto del inicio", () => {
+    // Detecta un `<=` en la regla de evento pasado, que rechazaría el registro puntual.
+    for (const to of ["completed", "no_show"] as const) {
+      expect(transitionAppointment(attempt("scheduled", to, { occurredAt: 2000 })).status).toBe(
+        "applied",
+      );
+      expect(transitionAppointment(attempt("scheduled", to, { occurredAt: 1999 }))).toEqual({
+        status: "rejected",
+        cause: "occurred_before_start",
+      });
+    }
+  });
+
+  test("reagendar a un intervalo sin duración se rechaza", () => {
+    // Detecta un `<` en la validación del fin, que aceptaría una atención de cero minutos.
+    expect(
+      transitionAppointment(
+        attempt("scheduled", "rescheduled", { newStartAt: 5000, newEndAt: 5000 }),
+      ),
+    ).toEqual({ status: "rejected", cause: "reschedule_invalid" });
+  });
+});
+
+/**
+ * Plazo de justificación en sus bordes (TI2-117). Los feriados son datos
+ * explícitos de prueba, no un calendario oficial: la política es provisional
+ * (PV-11).
+ */
+describe("Plazo de justificación en sus bordes (TI2-117)", () => {
+  const TIME_ZONE = "America/Santiago";
+  /** Lunes 2026-10-12 12:00 UTC: 09:00 en Santiago. */
+  const MONDAY = Date.UTC(2026, 9, 12, 12);
+
+  test("el feriado en el día que sería el vencimiento corre el plazo", () => {
+    // Detecta un conteo que solo descuente feriados antes del quinto día.
+    const deadline = calculateJustificationDeadline({
+      missedAt: MONDAY,
+      timeZone: TIME_ZONE,
+      holidays: ["2026-10-19"],
+    });
+    expect(deadline.deadlineDate).toBe("2026-10-20");
+  });
+
+  test("la inasistencia del sábado cuenta desde el lunes", () => {
+    // Detecta que el día de la inasistencia o el domingo cuenten como hábiles.
+    const deadline = calculateJustificationDeadline({
+      missedAt: Date.UTC(2026, 9, 17, 12),
+      timeZone: TIME_ZONE,
+    });
+    expect(deadline.absenceDate).toBe("2026-10-17");
+    // Lun 19 (1), mar 20 (2), mié 21 (3), jue 22 (4), vie 23 (5).
+    expect(deadline.deadlineDate).toBe("2026-10-23");
+  });
+
+  test("los feriados a ambos lados del fin de semana se saltan todos", () => {
+    // Detecta que un feriado en sábado descuente un hábil o que solo se salte el primer feriado.
+    const deadline = calculateJustificationDeadline({
+      missedAt: Date.UTC(2026, 8, 16, 12),
+      timeZone: TIME_ZONE,
+      holidays: ["2026-09-18", "2026-09-19", "2026-09-21"],
+    });
+    // Jue 17 (1), mar 22 (2), mié 23 (3), jue 24 (4), vie 25 (5).
+    expect(deadline.deadlineDate).toBe("2026-09-25");
+  });
+
+  test("el año bisiesto cuenta el 29 de febrero", () => {
+    // Detecta un avance de fecha que pase del 28 de febrero al 1 de marzo.
+    const deadline = calculateJustificationDeadline({
+      missedAt: Date.UTC(2028, 1, 24, 12),
+      timeZone: TIME_ZONE,
+    });
+    // Vie 25 (1), lun 28 (2), mar 29 (3), mié 01-03 (4), jue 02-03 (5).
+    expect(deadline.deadlineDate).toBe("2028-03-02");
+  });
+
+  test("el vencimiento usa el desfase vigente ese día cuando empieza el horario de verano", () => {
+    // Detecta un vencimiento calculado con el desfase de la fecha de la inasistencia (UTC-4).
+    const deadline = calculateJustificationDeadline({
+      missedAt: Date.UTC(2026, 8, 3, 12),
+      timeZone: TIME_ZONE,
+    });
+    // Vie 04 (1), lun 07 (2), mar 08 (3), mié 09 (4), jue 10 (5); vence a las 00:00 UTC-3.
+    expect(deadline.deadlineDate).toBe("2026-09-10");
+    expect(deadline.deadlineAt).toBe(Date.UTC(2026, 8, 11, 3));
+  });
+
+  test("el vencimiento usa el desfase vigente ese día cuando termina el horario de verano", () => {
+    // Detecta un vencimiento calculado con el desfase de la fecha de la inasistencia (UTC-3).
+    const deadline = calculateJustificationDeadline({
+      missedAt: Date.UTC(2027, 3, 1, 12),
+      timeZone: TIME_ZONE,
+    });
+    // Vie 02 (1), lun 05 (2), mar 06 (3), mié 07 (4), jue 08 (5); vence a las 00:00 UTC-4.
+    expect(deadline.deadlineDate).toBe("2027-04-08");
+    expect(deadline.deadlineAt).toBe(Date.UTC(2027, 3, 9, 4));
+  });
+
+  test("el último milisegundo del día pertenece a ese día civil", () => {
+    // Detecta un redondeo al día UTC, que movería la inasistencia de las 23:59 al día siguiente.
+    const lastInstant = Date.UTC(2026, 9, 13, 2, 59, 59, 999);
+    const sameDay = calculateJustificationDeadline({ missedAt: lastInstant, timeZone: TIME_ZONE });
+    expect(sameDay.absenceDate).toBe("2026-10-12");
+    expect(sameDay.deadlineDate).toBe("2026-10-19");
+
+    const nextDay = calculateJustificationDeadline({
+      missedAt: lastInstant + 1,
+      timeZone: TIME_ZONE,
+    });
+    expect(nextDay.absenceDate).toBe("2026-10-13");
+    expect(nextDay.deadlineDate).toBe("2026-10-20");
   });
 });

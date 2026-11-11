@@ -3,7 +3,10 @@ import { ACCOMPANIMENT_STATUS_VALUES } from "../domain/accompaniments/accompanim
 import {
   APPOINTMENT_ATTENDANCE_OUTCOME_VALUES,
   APPOINTMENT_STATUS_VALUES,
+  JUSTIFICATION_DECISION_VALUES,
+  JUSTIFICATION_REVIEW_VALUES,
 } from "../domain/appointments/appointment";
+import { APPOINTMENT_AUDIT_ACTION_VALUES } from "../domain/appointments/audit";
 import {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
   MODALITY_VALUES,
@@ -21,6 +24,7 @@ import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
 } from "../domain/accompaniments/practitioner_assignment";
+import { REQUEST_PROVENANCE_CHANNEL_VALUES } from "../domain/requests/request";
 import { PERSISTABLE_REQUEST_STATES, SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
 import {
   ACCOUNT_STATUS_VALUES,
@@ -84,6 +88,72 @@ export const persistableRequestStatusUnion = v.union(
 );
 
 /**
+ * Contenido ampliado de la solicitud (TI2-135): formas persistidas de las
+ * condiciones de acceso y de la disponibilidad general del contrato
+ * `AccompanimentRequestContent` del dominio. Los campos de `requests` que las
+ * usan son todos opcionales para que las filas anteriores sigan siendo
+ * válidas; los topes de largo y las reglas de contenido los aplican los casos
+ * de uso, no el esquema.
+ */
+export const accessNeedSelectionValidator = v.object({
+  id: v.string(),
+  label: v.string(),
+});
+
+export const generalAvailabilityValidator = v.object({
+  preferredWeekdays: v.array(v.number()),
+  preferredTimeRange: v.optional(v.object({ from: v.string(), to: v.string() })),
+});
+
+const [studentProvenanceChannel, officialProvenanceChannel] = REQUEST_PROVENANCE_CHANNEL_VALUES;
+
+/**
+ * Procedencia de una solicitud (TI2-135): el canal, quién la registró cuando
+ * no fue el propio Estudiante y cuándo la recibió CERETI.
+ *
+ * Un canal oficial exige autor y fecha de recepción: sin esos datos la fila no
+ * explica su procedencia. El canal del Estudiante solo necesita la fecha
+ * cuando se conoce.
+ */
+export const requestProvenanceValidator = v.union(
+  v.object({
+    channel: v.literal(studentProvenanceChannel),
+    receivedAt: v.optional(v.number()),
+  }),
+  v.object({
+    channel: v.literal(officialProvenanceChannel),
+    registeredBy: v.id("users"),
+    receivedAt: v.number(),
+  }),
+);
+
+/**
+ * Derivación de entrada (TI2-135): otra unidad de la Universidad avisa de una
+ * posible necesidad. CERETI debe contactar al estudiante y este debe aceptar
+ * antes de abrir un acompañamiento (RN-24); el contacto y la aceptación se
+ * guardan con su fecha. Dónde se exige ese orden es de los casos de uso.
+ */
+export const incomingReferralValidator = v.object({
+  originUnit: v.string(),
+  referredAt: v.number(),
+  contactedAt: v.optional(v.number()),
+  contactedBy: v.optional(v.id("users")),
+  acceptedAt: v.optional(v.number()),
+});
+
+/**
+ * Derivación de salida (TI2-135): CERETI deriva al estudiante a otra unidad,
+ * con la razón comprensible. El estado `referred` sigue sin habilitarse; esto
+ * solo da dónde guardar el dato cuando un caso de uso lo habilite.
+ */
+export const outgoingReferralValidator = v.object({
+  destinationUnit: v.string(),
+  referredAt: v.number(),
+  referredBy: v.id("users"),
+  reason: v.string(),
+});
+
+/**
  * Modalidades de atención de la agenda (TI2-83), derivadas de los literales
  * del dominio para que el esquema no defina nombres por su cuenta.
  */
@@ -110,6 +180,27 @@ export const appointmentStatusUnion = v.union(
  */
 export const appointmentAttendanceOutcomeUnion = v.union(
   ...APPOINTMENT_ATTENDANCE_OUTCOME_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Revisiones de la justificación de inasistencia (TI2-119), derivadas del dominio.
+ */
+export const justificationReviewUnion = v.union(
+  ...JUSTIFICATION_REVIEW_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Decisiones de revisión de justificación (TI2-119): aceptar o rechazar.
+ */
+export const justificationDecisionUnion = v.union(
+  ...JUSTIFICATION_DECISION_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Acciones auditadas de la agenda (TI2-128), derivadas del dominio.
+ */
+export const appointmentAuditActionUnion = v.union(
+  ...APPOINTMENT_AUDIT_ACTION_VALUES.map((value) => v.literal(value)),
 );
 
 /**

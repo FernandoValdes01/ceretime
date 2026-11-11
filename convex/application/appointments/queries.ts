@@ -5,6 +5,7 @@ import {
   type AppointmentContractVersion,
   type AppointmentPage,
   type AppointmentProjection,
+  type AppointmentStatus,
   type AppointmentView,
 } from "../../domain/appointments/appointment";
 import { isProfileActive } from "../../domain/authorization/permissions";
@@ -12,6 +13,7 @@ import {
   civilRangeToInstantRange,
   type InstantRange,
 } from "../../domain/availability/availability";
+import type { ModalityPreference } from "../../domain/requests/request";
 import {
   conflictError,
   errResult,
@@ -29,9 +31,10 @@ import {
  * Consulta de la agenda y del detalle de las atenciones (TI2-112).
  *
  * Capa de Aplicación: lee por puertos, no toca `ctx.db` y se prueba con dobles.
- * La vista de cada atención sale siempre de `authorizeAppointmentRead`, la
- * misma regla del acompañamiento (TI2-86), sin una política propia de agenda.
- * `toAppointmentProjection` recorta la fila antes de entregarla.
+ * La vista de cada atención sale siempre de `authorizeAppointmentRead`, que
+ * deriva del acceso al acompañamiento (TI2-86, TI2-127), sin una política
+ * propia de agenda. `toAppointmentProjection` recorta la fila antes de
+ * entregarla.
  *
  * Con `accompanimentId` se leen las atenciones de ese acompañamiento. Sin él se
  * lee la agenda propia, que solo tienen el Estudiante y el Profesional: el
@@ -233,7 +236,7 @@ export async function listAppointments(
 }
 
 /**
- * Detalle de una atención con la vista de su acompañamiento. Una fila
+ * Detalle de una atención con la vista de `appointment:read`. Una fila
  * inexistente, un identificador de otra tabla o sin forma y una atención sin
  * vista responden el mismo `unauthorized`.
  */
@@ -250,4 +253,61 @@ export async function getAppointment(
   });
   if (grant.status === "error") return denied();
   return okResult(toAppointmentProjection(row, grant.data.view));
+}
+
+// ── TI2-122: listado acotado para las acciones de calendario ────────────────
+//
+// La agenda de TI2-112 pagina por rango y entrega la proyección completa. El
+// detalle del acompañamiento necesita, además, un resumen mínimo y acotado para
+// ofrecer las acciones de calendario sin duplicar la proyección ni exponer
+// profesional, sala, notas o necesidades.
+
+/** Resumen mínimo de una atención propia para el portal. */
+export interface AppointmentCalendarSummary {
+  readonly appointmentId: string;
+  readonly status: AppointmentStatus;
+  readonly startAt: number;
+  readonly endAt: number;
+  readonly modality: ModalityPreference;
+  readonly calendarAdded: boolean;
+  readonly calendarNeedsUpdate: boolean;
+}
+
+/** Lectura acotada por acompañamiento, ordenada de la más reciente a la más antigua. */
+export interface AppointmentListReader {
+  listByAccompaniment(input: {
+    readonly accompanimentId: string;
+    readonly limit: number;
+  }): Promise<readonly AppointmentCalendarSummary[]>;
+}
+
+/** Tope del listado: el detalle no pagina ni necesita historial ilimitado. */
+export const APPOINTMENT_CALENDAR_LIST_LIMIT = 50;
+
+/**
+ * Lista las atenciones del acompañamiento cuando el rol puede leerlas.
+ * Estudiante, Profesional y Practicante reciben lo que su vista permite;
+ * Administrador y acompañamientos ajenos reciben la denegación genérica.
+ */
+export async function listAccompanimentAppointmentsUseCase(
+  deps: {
+    readonly auth: AuthorizationReader;
+    readonly appointments: AppointmentListReader;
+  },
+  input: {
+    readonly tokenIdentifier: string | null;
+    readonly accompanimentId: string;
+  },
+): Promise<ApiResult<AppointmentCalendarSummary[]>> {
+  const grant = await authorizeAppointmentRead(deps.auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    accompanimentId: input.accompanimentId,
+  });
+  if (grant.status === "error") return denied();
+
+  const items = await deps.appointments.listByAccompaniment({
+    accompanimentId: input.accompanimentId,
+    limit: APPOINTMENT_CALENDAR_LIST_LIMIT,
+  });
+  return okResult([...items]);
 }

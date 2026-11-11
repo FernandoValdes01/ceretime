@@ -1,4 +1,4 @@
-import type { Doc, Id } from "../../_generated/dataModel";
+﻿import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { APPOINTMENT_CONTRACT_VERSION } from "../../domain/appointments/appointment";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
@@ -307,6 +307,10 @@ export interface PersistedAppointmentTransition {
   readonly status: Doc<"appointments">["status"];
   readonly cancelReason?: string;
   readonly originalStartsAt?: number;
+  readonly justificationExplanation?: string;
+  readonly justificationSubmittedAt?: number;
+  readonly justificationReview?: Doc<"appointments">["justificationReview"];
+  readonly supportingDocumentReceived?: boolean;
 }
 
 /**
@@ -326,6 +330,18 @@ export async function persistAppointmentTransition(
     status: fields.status,
     ...(fields.cancelReason === undefined ? {} : { cancelReason: fields.cancelReason }),
     ...(fields.originalStartsAt === undefined ? {} : { originalStartsAt: fields.originalStartsAt }),
+    ...(fields.justificationExplanation === undefined
+      ? {}
+      : { justificationExplanation: fields.justificationExplanation }),
+    ...(fields.justificationSubmittedAt === undefined
+      ? {}
+      : { justificationSubmittedAt: fields.justificationSubmittedAt }),
+    ...(fields.justificationReview === undefined
+      ? {}
+      : { justificationReview: fields.justificationReview }),
+    ...(fields.supportingDocumentReceived === undefined
+      ? {}
+      : { supportingDocumentReceived: fields.supportingDocumentReceived }),
   });
 }
 
@@ -348,6 +364,18 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
           status: doc.status,
           startsAt: doc.startsAt,
           ...(doc.originalStartsAt === undefined ? {} : { originalStartsAt: doc.originalStartsAt }),
+          ...(doc.justificationExplanation === undefined
+            ? {}
+            : { justificationExplanation: doc.justificationExplanation }),
+          ...(doc.justificationSubmittedAt === undefined
+            ? {}
+            : { justificationSubmittedAt: doc.justificationSubmittedAt }),
+          ...(doc.justificationReview === undefined
+            ? {}
+            : { justificationReview: doc.justificationReview }),
+          ...(doc.supportingDocumentReceived === undefined
+            ? {}
+            : { supportingDocumentReceived: doc.supportingDocumentReceived }),
         };
       },
     },
@@ -358,6 +386,10 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
           readonly status: Doc<"appointments">["status"];
           readonly cancelReason?: string;
           readonly originalStartsAt?: number;
+          readonly justificationExplanation?: string;
+          readonly justificationSubmittedAt?: number;
+          readonly justificationReview?: Doc<"appointments">["justificationReview"];
+          readonly supportingDocumentReceived?: boolean;
         },
       ) => {
         const convexId = normalizeAppointmentId(ctx, id);
@@ -438,9 +470,127 @@ export function appointmentChangeReader(ctx: DbReader) {
         startAt: doc.startsAt,
         endAt: doc.endsAt,
         ...(doc.originalStartsAt === undefined ? {} : { originalStartAt: doc.originalStartsAt }),
+        ...(doc.justificationExplanation === undefined
+          ? {}
+          : { justificationExplanation: doc.justificationExplanation }),
+        ...(doc.justificationSubmittedAt === undefined
+          ? {}
+          : { justificationSubmittedAt: doc.justificationSubmittedAt }),
+        ...(doc.justificationReview === undefined
+          ? {}
+          : { justificationReview: doc.justificationReview }),
+        ...(doc.supportingDocumentReceived === undefined
+          ? {}
+          : { supportingDocumentReceived: doc.supportingDocumentReceived }),
       };
     },
   };
+}
+
+// ── TI2-122: lectura y referencia del evento de calendario ─────────────────
+//
+// Cumplen por forma los puertos de calendario de Aplicación sin importarla.
+// La lectura de la atención devuelve la pertenencia que autoriza el caso de
+// uso y la referencia ya guardada; el listado se acota por el índice del
+// acompañamiento y no expone profesional, sala ni notas.
+
+/**
+ * Lectura de una atención para el calendario. Un identificador que no
+ * pertenece a `appointments` responde igual que uno inexistente: `null`.
+ */
+export function appointmentCalendarReader(ctx: DbReader) {
+  return {
+    getAppointment: async (appointmentId: string) => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      const doc = id === null ? null : await getAppointmentById(ctx, id);
+      if (doc === null) return null;
+      return {
+        _id: doc._id,
+        accompanimentId: doc.accompanimentId,
+        studentId: doc.studentId,
+        professionalId: doc.professionalId,
+        status: doc.status,
+        startAt: doc.startsAt,
+        endAt: doc.endsAt,
+        createdAt: doc.createdAt,
+        ...(doc.calendarEventId === undefined ? {} : { calendarEventId: doc.calendarEventId }),
+        ...(doc.calendarEventAddedAt === undefined
+          ? {}
+          : { calendarEventAddedAt: doc.calendarEventAddedAt }),
+        ...(doc.calendarEventStartsAt === undefined
+          ? {}
+          : { calendarEventStartsAt: doc.calendarEventStartsAt }),
+        ...(doc.calendarEventEndsAt === undefined
+          ? {}
+          : { calendarEventEndsAt: doc.calendarEventEndsAt }),
+      };
+    },
+  };
+}
+
+/**
+ * Listado acotado de atenciones del acompañamiento, de la más reciente a la
+ * más antigua. La autorización ya la resolvió Aplicación con
+ * `appointment:read`; acá solo se recorta la forma para el portal.
+ */
+export function appointmentListReader(ctx: DbReader) {
+  return {
+    listByAccompaniment: async (input: {
+      readonly accompanimentId: string;
+      readonly limit: number;
+    }) => {
+      const accompanimentId = ctx.db.normalizeId("accompaniments", input.accompanimentId);
+      if (accompanimentId === null) return [];
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_accompanimentId_and_startsAt", (q) =>
+          q.eq("accompanimentId", accompanimentId),
+        )
+        .order("desc")
+        .take(input.limit);
+      return rows.map((row) => {
+        const referenceIsCurrent =
+          row.calendarEventId !== undefined &&
+          row.calendarEventStartsAt === row.startsAt &&
+          row.calendarEventEndsAt === row.endsAt;
+        return {
+          appointmentId: row._id,
+          status: row.status,
+          startAt: row.startsAt,
+          endAt: row.endsAt,
+          modality: row.modality,
+          calendarAdded: referenceIsCurrent,
+          calendarNeedsUpdate: row.calendarEventId !== undefined && !referenceIsCurrent,
+        };
+      });
+    },
+  };
+}
+
+/**
+ * Guarda la referencia del evento creado o actualizado por TI2-122. Solo la
+ * llama la mutación interna que compone la acción después de un resultado
+ * exitoso del proveedor; un reintento con el mismo identificador determinista
+ * no duplica el evento aunque esta escritura se repita. El horario guardado es
+ * el que realmente tiene el evento: al reagendar la atención después, la
+ * referencia conserva el horario anterior y queda obsoleta.
+ */
+export async function recordCalendarEvent(
+  ctx: MutationCtx,
+  appointmentId: Id<"appointments">,
+  input: {
+    readonly eventId: string;
+    readonly addedAt: number;
+    readonly startsAt: number;
+    readonly endsAt: number;
+  },
+): Promise<void> {
+  await ctx.db.patch(appointmentId, {
+    calendarEventId: input.eventId,
+    calendarEventAddedAt: input.addedAt,
+    calendarEventStartsAt: input.startsAt,
+    calendarEventEndsAt: input.endsAt,
+  });
 }
 
 /**
@@ -518,6 +668,18 @@ function toAgendaAppointment(doc: Doc<"appointments">) {
     endAt: doc.endsAt,
     ...(doc.originalStartsAt === undefined ? {} : { originalStartAt: doc.originalStartsAt }),
     ...(doc.cancelReason === undefined ? {} : { cancelReason: doc.cancelReason }),
+    ...(doc.justificationExplanation === undefined
+      ? {}
+      : { justificationExplanation: doc.justificationExplanation }),
+    ...(doc.justificationSubmittedAt === undefined
+      ? {}
+      : { justificationSubmittedAt: doc.justificationSubmittedAt }),
+    ...(doc.justificationReview === undefined
+      ? {}
+      : { justificationReview: doc.justificationReview }),
+    ...(doc.supportingDocumentReceived === undefined
+      ? {}
+      : { supportingDocumentReceived: doc.supportingDocumentReceived }),
     status: doc.status,
     version: APPOINTMENT_CONTRACT_VERSION,
   };

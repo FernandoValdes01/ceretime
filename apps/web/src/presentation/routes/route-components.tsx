@@ -1,14 +1,28 @@
 import { getRouteApi, Navigate, Outlet } from "@tanstack/react-router";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
 import { AdminSpaceEditorPage } from "../gestion/admin-space-editor.tsx";
+import {
+  ProfessionalAgendaDetailPage,
+  ProfessionalAgendaPage,
+} from "../gestion/professional-agenda.tsx";
+import {
+  PractitionerAccompanimentDetailPage,
+  PractitionerAccompanimentsPage,
+} from "../gestion/practitioner-accompaniments.tsx";
 import { ProfessionalAvailabilityPage } from "../gestion/professional-availability-editor.tsx";
 import { StudentAccompanimentDetailPage } from "../estudiante/student-accompaniments.tsx";
+import {
+  StudentAppointmentDetailPage,
+  StudentAppointmentsPage,
+} from "../estudiante/student-appointments-page.tsx";
 import { StudentRequestDetailPage, StudentRequestsPage } from "../estudiante/student-requests.tsx";
 import {
   ProfessionalRequestDetailPage,
   ProfessionalRequestsPage,
 } from "../gestion/professional-requests.tsx";
 import { useSessionAndRole, useSessionState } from "../session/session-state.ts";
+import { PublicMain, SkipLink } from "./app-shell.tsx";
+import { DeniedPage } from "./denied-page.tsx";
 import { IndexPage } from "./index-page.tsx";
 import { LoginPage } from "./login-page.tsx";
 import { RequireStudent } from "./student-guard.tsx";
@@ -27,17 +41,16 @@ import { ScheduleSearchPage } from "../estudiante/schedule-search.tsx";
 import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 
 /**
- * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04):
- * puentes delgados entre las definiciones de `router.tsx` y las páginas. Viven
- * acá para que `router.tsx` no mezcle componentes con objetos de ruta (regla
- * de fast refresh).
+ * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04,
+ * TI2-114, TI2-115, TI2-116, TI2-133): puentes delgados entre las definiciones
+ * de los archivos de área y las páginas. Viven acá para que las definiciones
+ * de ruta no mezclen componentes (regla de fast refresh).
  */
 export function RootComponent() {
   return (
     <AccessibilityProvider>
-      <main>
-        <Outlet />
-      </main>
+      <SkipLink />
+      <Outlet />
     </AccessibilityProvider>
   );
 }
@@ -47,11 +60,27 @@ export function NotFoundRedirect() {
 }
 
 export function IndexRouteComponent() {
-  return <IndexPage session={useSessionState()} pair={useSessionAndRole()} />;
+  return (
+    <PublicMain>
+      <IndexPage session={useSessionState()} pair={useSessionAndRole()} />
+    </PublicMain>
+  );
 }
 
 export function LoginRouteComponent() {
-  return <LoginPage session={useSessionState()} />;
+  return (
+    <PublicMain>
+      <LoginPage session={useSessionState()} />
+    </PublicMain>
+  );
+}
+
+export function DeniedRouteComponent() {
+  return (
+    <PublicMain>
+      <DeniedPage />
+    </PublicMain>
+  );
 }
 
 export function StudentLayoutRouteComponent() {
@@ -74,6 +103,17 @@ export function StudentReservationRouteComponent() {
   return <ReservationFormPage />;
 }
 
+const studentAppointmentDetailApi = getRouteApi("/estudiante/atenciones/$appointmentId");
+
+export function StudentAppointmentsRouteComponent() {
+  return <StudentAppointmentsPage />;
+}
+
+export function StudentAppointmentDetailRouteComponent() {
+  const { appointmentId } = studentAppointmentDetailApi.useParams();
+  return <StudentAppointmentDetailPage appointmentId={appointmentId} />;
+}
+
 const studentRequestDetailApi = getRouteApi("/estudiante/solicitudes/$requestId");
 
 const studentAccompanimentDetailApi = getRouteApi("/estudiante/acompanamientos/$accompanimentId");
@@ -89,7 +129,12 @@ export function StudentRequestDetailRouteComponent() {
 
 export function StudentAccompanimentDetailRouteComponent() {
   const { accompanimentId } = studentAccompanimentDetailApi.useParams();
-  return <StudentAccompanimentDetailPage accompanimentId={accompanimentId} />;
+  // Marcador de retorno del consentimiento de Calendar (TI2-122). La ruta ya
+  // lo valida; acá solo se pasa a la página para mostrar el aviso genérico.
+  const { calendar } = studentAccompanimentDetailApi.useSearch();
+  return (
+    <StudentAccompanimentDetailPage accompanimentId={accompanimentId} calendarStatus={calendar} />
+  );
 }
 
 export function ProfessionalLayoutRouteComponent() {
@@ -123,6 +168,17 @@ export function ProfessionalAvailabilityRouteComponent() {
   return <ProfessionalAvailabilityPage />;
 }
 
+const professionalAgendaDetailApi = getRouteApi("/profesional/agenda/$appointmentId");
+
+export function ProfessionalAgendaRouteComponent() {
+  return <ProfessionalAgendaPage />;
+}
+
+export function ProfessionalAgendaDetailRouteComponent() {
+  const { appointmentId } = professionalAgendaDetailApi.useParams();
+  return <ProfessionalAgendaDetailPage appointmentId={appointmentId} />;
+}
+
 export function PractitionerLayoutRouteComponent() {
   return (
     <RequireStaffRole
@@ -137,6 +193,19 @@ export function PractitionerLayoutRouteComponent() {
 
 export function PractitionerIndexRouteComponent() {
   return <PractitionerHome />;
+}
+
+const practitionerAccompanimentDetailApi = getRouteApi(
+  "/practicante/acompanamientos/$accompanimentId",
+);
+
+export function PractitionerAccompanimentsRouteComponent() {
+  return <PractitionerAccompanimentsPage />;
+}
+
+export function PractitionerAccompanimentDetailRouteComponent() {
+  const { accompanimentId } = practitionerAccompanimentDetailApi.useParams();
+  return <PractitionerAccompanimentDetailPage accompanimentId={accompanimentId} />;
 }
 
 export function AdminLayoutRouteComponent() {

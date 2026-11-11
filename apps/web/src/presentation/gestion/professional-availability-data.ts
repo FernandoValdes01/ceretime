@@ -5,15 +5,18 @@ import type {
   SaveBlockInput,
   SaveExceptionInput,
 } from "../../application/agenda/agenda-port.ts";
-import { createFictitiousAgendaAdapter } from "../../infrastructure/agenda/fictitious-agenda-adapter.ts";
+import { convexClient } from "../../infrastructure/convex/convex-client.ts";
+import { createConvexAgendaAdapter } from "../../infrastructure/agenda/convex-agenda-adapter.ts";
 
 /**
  * Lectura y validación de formato del editor de disponibilidad (TI2-103).
  *
- * Un solo adaptador vigente: el ficticio hasta TI2-125, que lo sustituye por
- * la API real sin tocar presentación. La lectura responde `undefined`
- * mientras carga; los fallos técnicos se traducen al estado `error` tipado
- * y la denegación al estado `denied` genérico sin detalles sensibles.
+ * Un solo adaptador vigente: el de Convex (TI2-125) expone disponibilidad,
+ * agenda y la lectura del catálogo de espacios contra `api.presentation.*`;
+ * del catálogo solo queda simulada la escritura hasta TI2-104. La lectura
+ * responde `undefined` mientras carga; los fallos técnicos se traducen al
+ * estado `error` tipado y la denegación al estado `denied` genérico sin
+ * detalles sensibles.
  *
  * Los validadores de formato solo revisan horas, rangos y presencia de
  * campos para dar errores legibles y accesibles. No sustituyen los
@@ -23,10 +26,10 @@ import { createFictitiousAgendaAdapter } from "../../infrastructure/agenda/ficti
 
 let agendaPort: AgendaPort | null = null;
 
-/** Adaptador vigente (ficticio hasta TI2-125). Exportado para pruebas. */
+/** Adaptador vigente; sin Backend configurado la vista muestra un error real. */
 export function getAgendaPort(): AgendaPort {
   if (agendaPort === null) {
-    agendaPort = createFictitiousAgendaAdapter();
+    agendaPort = createConvexAgendaAdapter(convexClient);
   }
   return agendaPort;
 }

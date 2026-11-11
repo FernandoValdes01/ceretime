@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import {
+  listBookableProfessionals as listBookableProfessionalsUseCase,
   listOwnAvailability as listOwnAvailabilityUseCase,
   publishAvailabilityBlock,
   publishAvailabilityException,
@@ -16,6 +17,7 @@ import {
 import {
   accompanimentNeedsReader,
   authorizationReader,
+  bookableProfessionalSource,
 } from "../infrastructure/accompaniments/repository";
 import { slotOccupancyReader } from "../infrastructure/appointments/repository";
 import { availabilityReader, availabilityWriter } from "../infrastructure/availability/repository";
@@ -190,6 +192,26 @@ export const searchSlots = query({
     );
     // La página del dominio es de solo lectura; el validador espera un arreglo.
     return { ...page, items: [...page.items] };
+  },
+});
+
+/**
+ * Profesionales reservables de un acompañamiento activo (TI2-123). Solo el
+ * Estudiante dueño o el Profesional asignado; es la entrada de `searchSlots`
+ * cuando todavía no hay atenciones. Solo entrega identificadores.
+ */
+export const listBookableProfessionals = query({
+  args: { accompanimentId: v.string(), version },
+  returns: v.object({ professionalIds: v.array(v.string()), version }),
+  handler: async (ctx, { accompanimentId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrap(
+      await listBookableProfessionalsUseCase(
+        { auth: authorizationReader(ctx), professionals: bookableProfessionalSource(ctx) },
+        { accompanimentId, tokenIdentifier: identity?.tokenIdentifier ?? null },
+      ),
+    );
+    return { ...result, professionalIds: [...result.professionalIds] };
   },
 });
 

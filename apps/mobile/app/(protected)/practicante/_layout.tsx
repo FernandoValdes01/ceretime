@@ -1,1 +1,1 @@
-export { default } from "../../../src/presentation/navigation/practitioner-layout";
+export { default } from "../../../src/presentation/navigation/intern-layout";

@@ -1,22 +1,23 @@
 import path from "node:path";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react-native";
+import type { PropsWithChildren } from "react";
 import { renderRouter } from "expo-router/testing-library";
-import type { AuthSession } from "../src/application/auth-models";
+import type { AuthSession } from "../src/domain/auth-models";
 import type { AuthPort } from "../src/application/auth-port";
 import {
-  createMockAuthenticationPort,
-  mockAuthCredentials,
-} from "../src/infrastructure/mock-authentication";
+  createDemoAuthAdapter,
+  demoAuthCredentials,
+} from "../src/infrastructure/demo-auth-adapter";
 import { RoleHome } from "../src/presentation/components/role-home";
 import { LoginScreen as Login } from "../src/presentation/auth/login-screen";
 import {
   NavigationSessionProvider,
   useNavigationSession,
 } from "../src/presentation/navigation/session";
-import { practitionerRoutes } from "../src/presentation/navigation/practitioner-routes";
+import { internRoutes } from "../src/presentation/navigation/intern-routes";
 
 const loginProps = {
-  unassignedPractitionerCredentials: {
+  unassignedInternCredentials: {
     email: "practicante-sin-asignacion@cereti.test",
     password: "cereti-demo",
   },
@@ -55,6 +56,30 @@ function SessionContent() {
 }
 
 describe("autenticación mobile simulada", () => {
+  test("volver al proveedor anterior no recupera su sesión descartada", async () => {
+    const first = createDemoAuthAdapter();
+    const second = createDemoAuthAdapter();
+    let current = first;
+    function Wrapper({ children }: PropsWithChildren) {
+      return (
+        <NavigationSessionProvider authPort={current} demoCredentials={demoAuthCredentials}>
+          {children}
+        </NavigationSessionProvider>
+      );
+    }
+    const { result, rerender } = renderHook(() => useNavigationSession(), { wrapper: Wrapper });
+    await act(async () => {
+      await result.current.signIn(demoAuthCredentials.estudiante);
+    });
+    expect(result.current.status).toBe("authenticated");
+    current = second;
+    rerender({});
+    expect(result.current.session).toBeNull();
+    current = first;
+    rerender({});
+    expect(result.current.status).toBe("unauthenticated");
+    expect(result.current.session).toBeNull();
+  });
   test("expone loading mientras prepara el rol seleccionado", async () => {
     const result = deferred<AuthSession>();
     const authPort: AuthPort = {
@@ -63,7 +88,7 @@ describe("autenticación mobile simulada", () => {
     };
 
     render(
-      <NavigationSessionProvider authPort={authPort} demoCredentials={mockAuthCredentials}>
+      <NavigationSessionProvider authPort={authPort} demoCredentials={demoAuthCredentials}>
         <Login {...loginProps} />
       </NavigationSessionProvider>,
     );
@@ -83,8 +108,8 @@ describe("autenticación mobile simulada", () => {
   test("no muestra campos de credenciales en el selector de roles", async () => {
     render(
       <NavigationSessionProvider
-        authPort={createMockAuthenticationPort()}
-        demoCredentials={mockAuthCredentials}
+        authPort={createDemoAuthAdapter()}
+        demoCredentials={demoAuthCredentials}
       >
         <Login {...loginProps} />
       </NavigationSessionProvider>,
@@ -100,8 +125,8 @@ describe("autenticación mobile simulada", () => {
     ["practicante", "Practicante"],
     ["administrador", "Administrador"],
   ] as const)("el mock permite iniciar sesión como %s", async (role, _label) => {
-    const authPort = createMockAuthenticationPort();
-    await expect(authPort.login(mockAuthCredentials[role])).resolves.toMatchObject({
+    const authPort = createDemoAuthAdapter();
+    await expect(authPort.login(demoAuthCredentials[role])).resolves.toMatchObject({
       user: { role },
     });
   });
@@ -114,7 +139,7 @@ describe("autenticación mobile simulada", () => {
     };
 
     render(
-      <NavigationSessionProvider authPort={authPort} demoCredentials={mockAuthCredentials}>
+      <NavigationSessionProvider authPort={authPort} demoCredentials={demoAuthCredentials}>
         <SessionContent />
       </NavigationSessionProvider>,
     );
@@ -148,12 +173,12 @@ describe("autenticación mobile simulada", () => {
       login: jest.fn(async () => fakeSession),
       logout: jest
         .fn<Promise<void>, []>()
-        .mockRejectedValueOnce(new Error("No se pudo cerrar sesión."))
+        .mockRejectedValueOnce(new Error("Detalle interno del SDK"))
         .mockReturnValueOnce(retryResult.promise),
     };
 
     render(
-      <NavigationSessionProvider authPort={authPort} demoCredentials={mockAuthCredentials}>
+      <NavigationSessionProvider authPort={authPort} demoCredentials={demoAuthCredentials}>
         <SessionContent />
       </NavigationSessionProvider>,
     );
@@ -168,7 +193,8 @@ describe("autenticación mobile simulada", () => {
       await Promise.resolve();
     });
     expect(screen.getByText("Inicio ficticio")).toBeOnTheScreen();
-    expect(screen.getByRole("alert")).toHaveTextContent("No se pudo cerrar sesión.");
+    expect(screen.getByRole("alert")).toHaveTextContent("No fue posible cerrar sesión.");
+    expect(screen.queryByText("Detalle interno del SDK")).toBeNull();
     expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeEnabled();
 
     await act(async () => {
@@ -200,7 +226,7 @@ describe("autenticación mobile simulada", () => {
         ),
       ).toBeOnTheScreen(),
     );
-    expect(navigation.getPathname()).toBe(practitionerRoutes.unassigned);
+    expect(navigation.getPathname()).toBe(internRoutes.unassigned);
     await act(async () => {
       fireEvent.press(screen.getByRole("button", { name: "Cerrar sesión" }));
       await Promise.resolve();
@@ -212,6 +238,6 @@ describe("autenticación mobile simulada", () => {
     });
     await waitFor(() => expect(screen.getByText("Acompañamientos asignados")).toBeOnTheScreen());
     expect(screen.queryByText(/Consulta sólo los acompañamientos/)).not.toBeOnTheScreen();
-    expect(navigation.getPathname()).toBe(practitionerRoutes.assigned);
+    expect(navigation.getPathname()).toBe(internRoutes.assigned);
   });
 });

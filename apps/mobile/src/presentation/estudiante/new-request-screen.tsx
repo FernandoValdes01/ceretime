@@ -3,23 +3,17 @@ import { Keyboard, KeyboardAvoidingView, Platform, ScrollView } from "react-nati
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { router, usePathname } from "expo-router";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
-import { createMockStudentRequestSubmitter } from "@/infrastructure/mock-student-request-submitter";
-import { mockStudentAreaStore } from "@/infrastructure/mock-student-area-store";
+import { mobileDependencies } from "@/composition/mobile-dependencies";
 import { StudentScreen } from "./student-screen";
 import { RequestForm } from "./request-form";
 import { RoleGuard } from "../navigation/role-guard";
-
-const defaultSubmitter = createMockStudentRequestSubmitter({
-  failureMode: process.env.EXPO_PUBLIC_STUDENT_REQUEST_DEMO_MODE === "fail-once" ? "once" : "never",
-  store: mockStudentAreaStore,
-});
 
 export interface NewRequestScreenProps {
   readonly submitter?: StudentRequestSubmitter;
 }
 
 export default function NewRequestScreen({
-  submitter = defaultSubmitter,
+  submitter = mobileDependencies.studentRequestSubmitter,
 }: NewRequestScreenProps = {}) {
   const headerHeight = useHeaderHeight();
   const pathname = usePathname();
@@ -29,6 +23,7 @@ export default function NewRequestScreen({
   const scrollRef = useRef<ScrollView>(null);
   const focusedInputHandleRef = useRef<number | null>(null);
 
+  // Tras enviar, salir a otra sección del Estudiante reinicia el formulario con una sesión nueva.
   const leftForStudentArea =
     pathname !== "/estudiante/nueva-solicitud" &&
     (pathname === "/estudiante" || pathname.startsWith("/estudiante/"));
@@ -42,6 +37,7 @@ export default function NewRequestScreen({
     scrollRef.current?.scrollTo({ y: 0, animated: false });
   }, [formSession]);
 
+  // Mantiene visible el campo enfocado cuando el teclado aparece o cambia el alto disponible.
   function revealFocusedInput() {
     const focusedInputHandle = focusedInputHandleRef.current;
     if (focusedInputHandle === null || !Keyboard.isVisible()) return;

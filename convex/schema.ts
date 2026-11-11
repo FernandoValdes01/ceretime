@@ -1,8 +1,10 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  accessNeedSelectionValidator,
   accompanimentStatusUnion,
   accountStatusUnion,
+  appointmentAuditActionUnion,
   appointmentStatusUnion,
   assignmentRoleUnion,
   assignmentStatusUnion,
@@ -10,11 +12,16 @@ import {
   followUpContractVersionLiteral,
   followUpResponsibleUnion,
   followUpTaskStatusUnion,
+  generalAvailabilityValidator,
+  incomingReferralValidator,
   institutionalStatusUnion,
+  justificationReviewUnion,
   modalityUnion,
   notificationContractVersionLiteral,
   notificationEventKindUnion,
+  outgoingReferralValidator,
   persistableRequestStatusUnion,
+  requestProvenanceValidator,
   roleUnion,
 } from "./infrastructure/validators";
 
@@ -118,7 +125,10 @@ export default defineSchema({
   // conserva los 4 estados de Sprint 1 (ver `toSprint1AccompanimentRequest`).
   // `createdAt` es la fecha de creación como número. Solo persistencia: las
   // transiciones las aplica TI2-21 y las reglas de cancelación y cierre son
-  // de TI2-85.
+  // de TI2-85. TI2-135 suma el contenido completo de la solicitud, su
+  // procedencia, las derivaciones, la razón de cierre y la clave de
+  // idempotencia como campos opcionales: las filas anteriores no los tienen
+  // y se leen igual (ver `domain/database/integrity.md`).
   requests: defineTable({
     studentId: v.id("users"),
     status: persistableRequestStatusUnion,
@@ -128,6 +138,33 @@ export default defineSchema({
     // lectura para el listado autorizado: cada solicitud aparece una sola
     // vez por construcción. Lo fija `takeRequest` junto a la toma.
     takenBy: v.optional(v.id("users")),
+    // Contenido completo que el estudiante entrega al solicitar (TI2-135),
+    // con los nombres del contrato `AccompanimentRequestContent`. `accessNeeds`
+    // sigue siendo el texto unido que entrega la API vigente; la lista
+    // `accessNeedSelections` es la fuente estructurada de las mismas
+    // condiciones y `otherAccessNeed` el texto libre adicional. Sin RUT,
+    // diagnóstico, certificados ni área interna.
+    needSummary: v.optional(v.string()),
+    expectedOutcome: v.optional(v.string()),
+    accessNeedSelections: v.optional(v.array(accessNeedSelectionValidator)),
+    otherAccessNeed: v.optional(v.string()),
+    modalityPreference: v.optional(modalityUnion),
+    generalAvailability: v.optional(generalAvailabilityValidator),
+    preferredAccessibleInformationChannel: v.optional(v.string()),
+    // Procedencia (TI2-135): canal por el que llegó la solicitud. Una fila sin
+    // ella nació por el canal del Estudiante (ver `requestProvenanceChannelOf`).
+    provenance: v.optional(requestProvenanceValidator),
+    // Derivación de entrada y de salida (TI2-135). El estado `referred` sigue
+    // sin habilitarse: estos campos solo guardan el dato.
+    incomingReferral: v.optional(incomingReferralValidator),
+    outgoingReferral: v.optional(outgoingReferralValidator),
+    // Razón comprensible de cierre (TI2-135): la vigente y legible para el
+    // estudiante. `requestTransitions.reason` conserva el rastro histórico de
+    // cada transición; el caso de uso futuro escribe ambas en una transacción.
+    closureReason: v.optional(v.string()),
+    // Clave de idempotencia del envío (TI2-135), única por estudiante: un
+    // reintento con la misma clave no crea otra solicitud.
+    idempotencyKey: v.optional(v.string()),
   })
     // Solicitudes propias del estudiante.
     .index("by_student", ["studentId"])
@@ -138,7 +175,10 @@ export default defineSchema({
     .index("by_student_and_status", ["studentId", "status"])
     // Solicitudes tomadas por cada profesional: base del listado
     // autorizado, una fila por solicitud.
-    .index("by_takenBy", ["takenBy"]),
+    .index("by_takenBy", ["takenBy"])
+    // Reintento de un envío (TI2-135): la solicitud del estudiante con esa
+    // clave de idempotencia, en una sola lectura.
+    .index("by_student_and_idempotencyKey", ["studentId", "idempotencyKey"]),
 
   // Tabla 'requestTransitions': bitácora append-only de cambios de estado.
   // Cada transición guarda motivo, actor y fecha junto al estado resultante,
@@ -263,9 +303,16 @@ export default defineSchema({
   // `originalStartsAt` conserva la fecha original al reagendar y
   // `cancelReason` guarda el motivo (obligatorio para CERETI, opcional para
   // el estudiante; la distinción la aplica la capa de aplicación, no el
-  // esquema). La cola de inasistencias por estado (`no_show`) para la
-  // justificación con plazo de cinco días hábiles queda para la extensión
-  // futura de justificación, no para este esquema. Solo persistencia: la
+  // esquema). La justificación de inasistencia (TI2-119) vive en la misma
+  // fila: la explicación, el instante de entrega, la recepción del respaldo
+  // por canal institucional (solo constancia, sin archivo) y la revisión
+  // `pending`/`accepted`/`rejected` que resuelve el Profesional asignado.
+  // `calendarEventId` y `calendarEventAddedAt` guardan la referencia del
+  // evento creado por TI2-122; el identificador es determinista y ausente
+  // hasta la primera creación exitosa, así un reintento no duplica el evento.
+  // `calendarEventStartsAt` y `calendarEventEndsAt` guardan el horario con el
+  // que se sincronizó ese evento: si difieren de `startsAt`/`endsAt`, la
+  // referencia quedó obsoleta y hay que actualizarla. Solo persistencia: la
   // ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
   appointments: defineTable({
     accompanimentId: v.id("accompaniments"),
@@ -278,6 +325,14 @@ export default defineSchema({
     endsAt: v.number(),
     originalStartsAt: v.optional(v.number()),
     cancelReason: v.optional(v.string()),
+    calendarEventId: v.optional(v.string()),
+    calendarEventAddedAt: v.optional(v.number()),
+    calendarEventStartsAt: v.optional(v.number()),
+    calendarEventEndsAt: v.optional(v.number()),
+    justificationExplanation: v.optional(v.string()),
+    justificationSubmittedAt: v.optional(v.number()),
+    justificationReview: v.optional(justificationReviewUnion),
+    supportingDocumentReceived: v.optional(v.boolean()),
     createdAt: v.number(),
   })
     // Atenciones propias del estudiante.
@@ -297,7 +352,8 @@ export default defineSchema({
     .index("by_spaceId_and_startsAt", ["spaceId", "startsAt"])
     // Atenciones del acompañamiento.
     .index("by_accompanimentId", ["accompanimentId"])
-    // Atenciones del acompañamiento por rango de inicio, sin filtrar en memoria.
+    // Atenciones del acompañamiento por rango de inicio, sin filtrar en
+    // memoria; también ordena el listado acotado del detalle (TI2-122).
     .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"]),
 
   // Tabla 'notificationEvents': eventos de notificación de la atención
@@ -322,6 +378,26 @@ export default defineSchema({
     .index("by_recipientId_and_occurredAt", ["recipientId", "occurredAt"])
     // Eventos de la atención en orden de ocurrencia.
     .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"]),
+
+  // Tabla 'appointmentAuditEvents': bitácora append-only de cambios de agenda
+  // (TI2-128). Cada fila guarda solo la acción, el actor resuelto desde la
+  // identidad de la sesión, la atención, el estado resultante y el instante
+  // del servidor, en la misma transacción del cambio. No guarda motivos,
+  // notas ni nombres: `requestTransitions` no equivale porque contiene
+  // `reason`. Solo la escribe `convex/infrastructure/audit/repository.ts`, no
+  // existe entrada pública para leerla, editarla ni borrarla y los rechazos
+  // no se registran porque abortan la mutation.
+  appointmentAuditEvents: defineTable({
+    action: appointmentAuditActionUnion,
+    actorId: v.id("users"),
+    appointmentId: v.id("appointments"),
+    result: appointmentStatusUnion,
+    occurredAt: v.number(),
+  })
+    // Historial de la atención en orden de ocurrencia.
+    .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"])
+    // Cambios hechos por un actor en orden de ocurrencia.
+    .index("by_actorId_and_occurredAt", ["actorId", "occurredAt"]),
 
   // Tabla 'followUpRecords': registro de seguimiento posterior a una atención
   // (forma de TI2-106, persistida por TI2-118), como máximo uno por atención.

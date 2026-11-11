@@ -1,6 +1,9 @@
 import type { AccompanimentStatus } from "../../domain/accompaniments/accompaniment";
+import type { AppointmentView } from "../../domain/appointments/appointment";
+import type { FollowUpView } from "../../domain/follow_up/follow_up";
 import {
   appointmentCancellationTarget,
+  canAddAppointmentToCalendar,
   canBookAppointment,
   canEditAvailability,
   canReadAvailability,
@@ -8,7 +11,12 @@ import {
   canReadSpaceCatalog,
   canRecordAppointmentAttendance,
   canRescheduleAppointment,
+  canReviewAppointmentJustification,
+  canSubmitAppointmentJustification,
+  canWriteFollowUp,
   getAccompanimentView,
+  getAppointmentView,
+  getFollowUpView,
   isProfessionalBookable,
   type AccompanimentView,
   type AccountStatus,
@@ -203,7 +211,10 @@ export interface AuthorizationReader {
 export type AgendaGrant = { readonly callerId: string };
 
 /** Lectura de atenciones concedida, con la vista que corresponde al rol. */
-export type AppointmentReadGrant = AgendaGrant & { readonly view: AccompanimentView };
+export type AppointmentReadGrant = AgendaGrant & { readonly view: AppointmentView };
+
+/** Lectura de seguimiento concedida, con la vista que corresponde al rol. */
+export type FollowUpReadGrant = AgendaGrant & { readonly view: FollowUpView };
 
 /**
  * Atención concreta que se quiere cambiar. `_id`, `studentId` y
@@ -327,9 +338,30 @@ export async function authorizeAppointmentRead(
   request: AgendaRequest,
 ): Promise<ApiResult<AppointmentReadGrant>> {
   const loaded = await loadAgendaContext(reader, request);
-  const view = loaded === null ? null : getAccompanimentView(loaded.context);
+  const view = loaded === null ? null : getAppointmentView(loaded.context);
   if (loaded === null || view === null) return denied();
   return okResult({ callerId: loaded.callerId, view });
+}
+
+/** Lectura del seguimiento del acompañamiento, con la vista del rol. */
+export async function authorizeFollowUpRead(
+  reader: AuthorizationReader,
+  request: AgendaRequest,
+): Promise<ApiResult<FollowUpReadGrant>> {
+  const loaded = await loadAgendaContext(reader, request);
+  const view = loaded === null ? null : getFollowUpView(loaded.context);
+  if (loaded === null || view === null) return denied();
+  return okResult({ callerId: loaded.callerId, view });
+}
+
+/** Registro de seguimiento en un acompañamiento activo. */
+export async function authorizeFollowUpWrite(
+  reader: AuthorizationReader,
+  request: AgendaRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAgendaContext(reader, request);
+  if (loaded === null || !canWriteFollowUp(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
 }
 
 /** Reserva de un cupo en el acompañamiento. */
@@ -463,6 +495,46 @@ export async function authorizeAppointmentAttendance(
 ): Promise<ApiResult<AgendaGrant>> {
   const loaded = await loadAppointmentChangeContext(reader, request);
   if (loaded === null || !canRecordAppointmentAttendance(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Evento de calendario de una atención (TI2-122): solo el Estudiante dueño de
+ * la atención, con acompañamiento activo. La fila leída en el servidor aporta
+ * la pertenencia y el consentimiento de Google Calendar se resuelve aparte.
+ */
+export async function authorizeAppointmentCalendar(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canAddAppointmentToCalendar(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Entrega de explicación e inasistencia (TI2-119): solo el Estudiante dueño
+ * de la atención.
+ */
+export async function authorizeAppointmentJustificationSubmit(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canSubmitAppointmentJustification(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Revisión de la justificación de inasistencia (TI2-119): solo el Profesional
+ * asignado que tiene la atención a su cargo.
+ */
+export async function authorizeAppointmentJustificationReview(
+  reader: AuthorizationReader,
+  request: AppointmentChangeRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAppointmentChangeContext(reader, request);
+  if (loaded === null || !canReviewAppointmentJustification(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });
 }
 

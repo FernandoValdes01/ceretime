@@ -50,6 +50,16 @@ export type AppointmentStatus = (typeof APPOINTMENT_STATUS_VALUES)[number];
 /** Estado inicial de una reserva recién creada. */
 export const INITIAL_APPOINTMENT_STATUS: AppointmentStatus = "scheduled";
 
+/**
+ * Estados que todavía admiten llevar la atención al calendario personal.
+ * Una atención cancelada, realizada o con inasistencia no debe exportarse
+ * como un evento confirmado ni crearse en Google Calendar: el archivo `.ics`
+ * y el evento dejarían de representar el estado real de la atención.
+ */
+export function isCalendarActionableStatus(status: AppointmentStatus): boolean {
+  return status === "scheduled" || status === "rescheduled";
+}
+
 /** Inasistencia pendiente de justificación (valor histórico `no_show`). */
 export const NO_SHOW_PENDING_STATE: AppointmentStatus = "no_show";
 
@@ -89,6 +99,14 @@ export interface Appointment {
    * estudiante. La persistencia lo refleja en `cancelReason` (TI2-107).
    */
   readonly cancelReason?: string;
+  /** Justificación entregada por el Estudiante (TI2-119): explicación operativa, sin diagnósticos. */
+  readonly justificationExplanation?: string;
+  /** Instante de entrega decidido por el servidor, en milisegundos epoch. */
+  readonly justificationSubmittedAt?: number;
+  /** Revisión del Profesional asignado: `pending`, `accepted` o `rejected`. */
+  readonly justificationReview?: JustificationReview;
+  /** Constancia de recepción del respaldo por canal institucional: no hay archivo. */
+  readonly supportingDocumentReceived?: boolean;
   readonly status: AppointmentStatus;
   readonly version: AppointmentContractVersion;
 }
@@ -619,8 +637,12 @@ export interface AppointmentPage {
   readonly version: AppointmentContractVersion;
 }
 
-/** Vistas de lectura de la atención: completa o minimizada según el rol (TI2-100). */
-export const APPOINTMENT_VIEW_VALUES = ["full", "minimized"] as const;
+/**
+ * Vistas de lectura de la atención según el rol (TI2-100, TI2-127): completa
+ * para el Profesional, compartida para el Estudiante y minimizada para el
+ * Practicante.
+ */
+export const APPOINTMENT_VIEW_VALUES = ["full", "shared", "minimized"] as const;
 
 export type AppointmentView = (typeof APPOINTMENT_VIEW_VALUES)[number];
 
@@ -641,9 +663,18 @@ export interface MinimizedAppointment {
   readonly view: "minimized";
 }
 
+/**
+ * Atención compartida con el Estudiante: la fila sin `cancelReason`.
+ *
+ * El motivo queda en la vista profesional hasta que CERETI valide qué parte
+ * puede compartirse: es texto libre y puede traer datos sensibles.
+ */
+export type SharedAppointment = Omit<Appointment, "cancelReason"> & { readonly view: "shared" };
+
 /** Proyección de lectura de la atención según la vista autorizada. */
 export type AppointmentProjection =
   | (Appointment & { readonly view: "full" })
+  | SharedAppointment
   | MinimizedAppointment;
 
 /**
@@ -666,6 +697,10 @@ export function toAppointmentProjection(
       view: "minimized",
     };
   }
+  if (view === "shared") {
+    const { cancelReason: _omitted, ...shared } = appointment;
+    return { ...shared, view: "shared" };
+  }
   return { ...appointment, view: "full" };
 }
 
@@ -677,6 +712,19 @@ export type JustificationReview = (typeof JUSTIFICATION_REVIEW_VALUES)[number];
 /** Verdadero cuando el valor es una revisión de justificación conocida. */
 export function isJustificationReview(value: string): value is JustificationReview {
   return (JUSTIFICATION_REVIEW_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * Decisiones que el Profesional asignado puede tomar sobre una justificación
+ * pendiente (TI2-119). `pending` es el estado de la entrega, no una decisión.
+ */
+export const JUSTIFICATION_DECISION_VALUES = ["accepted", "rejected"] as const;
+
+export type JustificationDecision = (typeof JUSTIFICATION_DECISION_VALUES)[number];
+
+/** Verdadero cuando el valor es una decisión de revisión conocida. */
+export function isJustificationDecision(value: string): value is JustificationDecision {
+  return (JUSTIFICATION_DECISION_VALUES as readonly string[]).includes(value);
 }
 
 /**

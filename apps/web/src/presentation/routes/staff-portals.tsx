@@ -1,68 +1,33 @@
-import type { ReactNode } from "react";
-import { Link, Outlet } from "@tanstack/react-router";
-import "./staff-portal.css";
+import { Link } from "@tanstack/react-router";
+import { AppShell } from "./app-shell.tsx";
 
 /**
- * Portales del personal con cuenta institucional (TI2-20, TI2-103, TI2-04).
+ * Portales del personal con cuenta institucional (TI2-20, TI2-103, TI2-04,
+ * TI2-116, TI2-133).
  *
- * Solo navegación y protección, como el portal del Estudiante de TI2-6: cada
- * layout enlaza su inicio y la sesión, y cada portada es temporal. Las
- * vistas funcionales (bandejas, agenda, administración) cuelgan de estos
- * layouts tras el mismo guard.
+ * La estructura, la navegación por rol y el cierre de sesión viven en
+ * `AppShell`; cada portal solo fija su área. Las vistas funcionales (bandejas,
+ * agenda, administración) cuelgan de estos layouts tras el mismo guard.
  *
  * El portal de Administración enlaza el editor de espacios (TI2-04) y no
  * enlaza acompañamientos ni notas internas (coherente con la matriz TI2-5,
  * donde el Administrador no lista ni lee esos recursos). El portal del
- * Practicante no enlaza acompañamientos concretos: solo verá los asignados
- * cuando existan las vistas. El portal del Profesional enlaza solicitudes
- * (TI2-91) y disponibilidad (TI2-103).
+ * Practicante enlaza solo su listado de acompañamientos asignados (TI2-116),
+ * en solo lectura; el Backend decide qué acompañamientos incluye. El portal
+ * del Profesional enlaza solicitudes (TI2-91), agenda (TI2-115) y
+ * disponibilidad (TI2-103).
  */
 
-function StaffLayout({ title, home }: { title: string; home: ReactNode }) {
-  return (
-    <div className="staff-portal">
-      <header className="staff-portal__header">
-        <nav aria-label={title}>
-          {home} <Link to="/login">Sesión</Link>
-        </nav>
-      </header>
-      <Outlet />
-    </div>
-  );
-}
-
 export function ProfessionalLayout() {
-  return (
-    <StaffLayout
-      title="Portal del Profesional"
-      home={
-        <>
-          <Link to="/profesional">Inicio</Link>{" "}
-          <Link to="/profesional/solicitudes">Solicitudes</Link>{" "}
-          <Link to="/profesional/disponibilidad">Disponibilidad</Link>
-        </>
-      }
-    />
-  );
+  return <AppShell area="professional" />;
 }
 
 export function PractitionerLayout() {
-  return (
-    <StaffLayout title="Portal del Practicante" home={<Link to="/practicante">Inicio</Link>} />
-  );
+  return <AppShell area="practitioner" />;
 }
 
 export function AdminLayout() {
-  return (
-    <StaffLayout
-      title="Portal de Administración"
-      home={
-        <>
-          <Link to="/administrador">Inicio</Link> <Link to="/administrador/espacios">Espacios</Link>
-        </>
-      }
-    />
-  );
+  return <AppShell area="admin" />;
 }
 
 export function ProfessionalHome() {
@@ -78,7 +43,10 @@ export function PractitionerHome() {
   return (
     <section aria-labelledby="practitioner-home-title">
       <h1 id="practitioner-home-title">Portal del Practicante</h1>
-      <p>Tus acompañamientos asignados estarán disponibles aquí.</p>
+      <p>
+        Consulta en solo lectura tus acompañamientos asignados desde{" "}
+        <Link to="/practicante/acompanamientos">Acompañamientos</Link>.
+      </p>
     </section>
   );
 }

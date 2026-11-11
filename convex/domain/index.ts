@@ -25,8 +25,12 @@ export type { InstitutionalPopulation } from "./auth/institutional_domain";
 export {
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
+  LEGACY_REQUEST_PROVENANCE_CHANNEL,
+  REQUEST_PROVENANCE_CHANNEL_VALUES,
+  requestProvenanceChannelOf,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toStoredAccessNeeds,
   toStoredRequestFields,
 } from "./requests/request";
 export type {
@@ -35,6 +39,7 @@ export type {
   AccompanimentRequestContent,
   GeneralAvailability,
   ModalityPreference,
+  RequestProvenanceChannel,
   StoredRequestFields,
 } from "./requests/request";
 export {
@@ -159,8 +164,11 @@ export {
   APPOINTMENT_VIEW_VALUES,
   findAppointmentTransition,
   INITIAL_APPOINTMENT_STATUS,
+  isCalendarActionableStatus,
+  isJustificationDecision,
   isJustificationReview,
   JUSTIFICATION_BUSINESS_DAYS,
+  JUSTIFICATION_DECISION_VALUES,
   JUSTIFICATION_REVIEW_VALUES,
   NO_SHOW_PENDING_STATE,
   calculateJustificationDeadline,
@@ -184,12 +192,36 @@ export type {
   CalculateJustificationDeadlineInput,
   DecideJustificationTimelinessInput,
   JustificationDeadline,
+  JustificationDecision,
   JustificationReceipt,
   JustificationReview,
   JustificationTimeliness,
   ListAppointmentsInput,
   MinimizedAppointment,
 } from "./appointments/appointment";
+
+// Evento de calendario por atención y alternativa .ics (TI2-122).
+export {
+  buildCalendarEvent,
+  CALENDAR_EVENT_CONTRACT_VERSION,
+  CALENDAR_EVENT_FALLBACK_REASON_VALUES,
+  CALENDAR_EVENT_OUTCOME_VALUES,
+  CALENDAR_EVENT_TITLE,
+  CALENDAR_EVENTS_SCOPE,
+  CALENDAR_FILE_NAME,
+  deriveCalendarEventKey,
+  escapeIcsText,
+  foldIcsLine,
+  serializeCalendarEventIcs,
+  toCalendarFile,
+} from "./calendar/calendar_event";
+export type {
+  CalendarEventContractVersion,
+  CalendarEventDraft,
+  CalendarEventFallbackReason,
+  CalendarEventOutcome,
+  CalendarFile,
+} from "./calendar/calendar_event";
 
 // Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105).
 export {
@@ -221,8 +253,10 @@ export {
   FOLLOW_UP_RESPONSIBLE_VALUES,
   FOLLOW_UP_TASK_STATUS_VALUES,
   FOLLOW_UP_TEXT_MAX_LENGTH,
+  FOLLOW_UP_VIEW_VALUES,
   isFollowUpResponsible,
   isFollowUpTaskStatus,
+  toFollowUpProjection,
   toSharedFollowUpProjection,
   validateFollowUpRecord,
 } from "./follow_up/follow_up";
@@ -230,6 +264,7 @@ export type {
   FollowUpAgreement,
   FollowUpAgreementInput,
   FollowUpContractVersion,
+  FollowUpProjection,
   FollowUpRecord,
   FollowUpRecordInput,
   FollowUpRejectionCause,
@@ -238,5 +273,7 @@ export type {
   FollowUpTaskInput,
   FollowUpTaskStatus,
   FollowUpValidationResult,
+  FollowUpView,
+  MinimizedFollowUpProjection,
   SharedFollowUpProjection,
 } from "./follow_up/follow_up";

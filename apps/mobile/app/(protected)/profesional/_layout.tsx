@@ -1,5 +1,6 @@
 import { mobileDependencies } from "../../../src/composition/mobile-dependencies";
 import {
+  RoleTabBar,
   RoleTabIcon,
   roleTabAccessibilityLabel,
   Tabs,
@@ -16,7 +17,11 @@ export default function ProfessionalLayout() {
     <RoleGuard requiredRole="profesional">
       <ProfessionalReviewProvider port={mobileDependencies.professionalReviewPort}>
         <ProfessionalAgendaProvider reader={mobileDependencies.professionalAgendaReader}>
-          <Tabs initialRouteName="(agenda)" screenOptions={screenOptions}>
+          <Tabs
+            tabBar={(props) => <RoleTabBar {...props} />}
+            initialRouteName="(agenda)"
+            screenOptions={screenOptions}
+          >
             <Tabs.Screen name="inicio" options={{ href: null }} />
             <Tabs.Screen
               name="(agenda)"

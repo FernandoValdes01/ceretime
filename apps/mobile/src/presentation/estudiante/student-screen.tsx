@@ -3,8 +3,7 @@ import { Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppHeader } from "../components/app-header";
 import { AppIcon } from "../components/app-icon";
-import { getAccessibilityColorPalette } from "../accessibility/accessibility-color-palette";
-import { useOptionalAccessibilityPreferences } from "../accessibility/accessibility-preferences-provider";
+import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { StudentFonts, StudentText } from "./student-text";
 
 type StudentScreenIntroductionProps =
@@ -26,6 +25,7 @@ export type StudentScreenProps = PropsWithChildren<
   }
 >;
 
+// Marco común de las pantallas del área accesible: cabecera, scroll centrado e introducción opcional.
 export function StudentScreen({
   scrollRef,
   onBack,
@@ -80,8 +80,7 @@ export function StudentAction({
   secondary = false,
   disabled = false,
 }: StudentActionProps) {
-  const accessibility = useOptionalAccessibilityPreferences();
-  const colors = getAccessibilityColorPalette(accessibility?.effective.highContrast ?? false);
+  const colors = useAccessibilityColors();
 
   return (
     <Pressable

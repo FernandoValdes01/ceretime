@@ -1,6 +1,7 @@
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import type { GenericOAuthConfig } from "better-auth/plugins/generic-oauth";
 import { toInstitutionalGoogleUserInfo } from "../../application/session/reject_external_user";
+import { CALENDAR_EVENTS_SCOPE } from "../../domain/calendar/calendar_event";
 import {
   GOOGLE_PROVIDER_ID_BY_POPULATION,
   HOSTED_DOMAIN_BY_POPULATION,
@@ -70,15 +71,48 @@ const PATHS_WITH_CLIENT_SCOPES: readonly string[] = [
   "/link-social",
 ];
 
-/** Verdadero si la petición intenta agregar alcances desde el cliente. */
-export function requestsClientScopes(path: string, body: unknown): boolean {
-  if (!PATHS_WITH_CLIENT_SCOPES.includes(path)) return false;
-  if (typeof body !== "object" || body === null || !("scopes" in body)) return false;
-  return body.scopes !== undefined;
+function isBodyRecord(body: unknown): body is Record<string, unknown> {
+  return typeof body === "object" && body !== null;
 }
 
-/** Hook global que rechaza los `scopes` enviados por el cliente. */
-export const rejectClientScopes = createAuthMiddleware(async (ctx) => {
+/**
+ * Verdadero si la petición intenta agregar alcances fuera del contrato.
+ *
+ * TI2-122: la única excepción es vincular Calendar con `google` pidiendo
+ * exactamente `calendar.events`. El inicio institucional y la vinculación
+ * genérica siguen sin aceptar `scopes` del cliente.
+ */
+export function requestsClientScopes(path: string, body: unknown): boolean {
+  if (!PATHS_WITH_CLIENT_SCOPES.includes(path)) return false;
+  if (!isBodyRecord(body) || !("scopes" in body) || body.scopes === undefined) return false;
+  if (path === "/link-social") {
+    return !(
+      body.provider === "google" &&
+      Array.isArray(body.scopes) &&
+      body.scopes.length === 1 &&
+      body.scopes[0] === CALENDAR_EVENTS_SCOPE
+    );
+  }
+  return true;
+}
+
+/**
+ * Verdadero si se intenta iniciar sesión con `google`, que quedó limitado a
+ * vincular Calendar (TI2-122). El inicio debe pasar por `google-alu` o
+ * `google-uct`, donde `getUserInfo` valida el ID token (TI2-131).
+ */
+export function requestsGoogleSignIn(path: string, body: unknown): boolean {
+  return path === "/sign-in/social" && isBodyRecord(body) && body.provider === "google";
+}
+
+/**
+ * Hook global de Google: bloquea el inicio por `google` y los alcances que el
+ * cliente no puede ampliar.
+ */
+export const guardGoogleOAuth = createAuthMiddleware(async (ctx) => {
+  if (requestsGoogleSignIn(ctx.path, ctx.body)) {
+    throw new APIError("BAD_REQUEST");
+  }
   if (requestsClientScopes(ctx.path, ctx.body)) {
     throw new APIError("BAD_REQUEST");
   }

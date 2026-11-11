@@ -1,14 +1,14 @@
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type { ProfessionalAccompaniment } from "@/application/professional-accompaniment-models";
+import type { ProfessionalAccompaniment } from "@/domain/professional-accompaniment-models";
 import { mobileDependencies } from "@/composition/mobile-dependencies";
 import { StudentFonts, StudentText } from "@/presentation/estudiante/student-text";
 import { useProfessionalAccompaniments } from "@/presentation/hooks/use-professional-accompaniments";
 import { RoleGuard } from "@/presentation/navigation/role-guard";
-import { ProfessionalHeader } from "./professional-header";
+import { AppHeader } from "@/presentation/components/app-header";
 import {
   ProfessionalAccompanimentStatusBadge,
   professionalAccompanimentStatusPresentations,
@@ -53,6 +53,7 @@ function StateMessage({
   );
 }
 
+// La tarjeta representa un acompañamiento autorizado y conserva el acceso directo a su detalle.
 function AccompanimentCard({
   accompaniment,
   onOpen,
@@ -147,12 +148,13 @@ export function ProfessionalAccompanimentsContent({
 
 export function ProfessionalAccompanimentsScreen() {
   const state = useProfessionalAccompaniments(mobileDependencies.professionalAccompanimentReader);
+  useFocusEffect(state.reload);
 
   return (
     <RoleGuard requiredRole="profesional">
       <StudentFonts>
         <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-          <ProfessionalHeader />
+          <AppHeader />
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.content}

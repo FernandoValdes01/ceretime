@@ -12,9 +12,9 @@ import { setAgendaPortForTests } from "./professional-availability-data.ts";
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Profesional, salvo los casos de denegación. El puerto de agenda se inyecta
- * por pruebas porque el adaptador ficticio no distingue referencias; el
- * cableado real puerto→adaptador lo cubren `tsc`, el build y la verificación
- * manual contra el entorno ficticio de TI2-30. Todos los datos son ficticios.
+ * por pruebas para fijar respuestas; el cableado real puerto→adaptador lo
+ * cubren las pruebas del adaptador, `tsc` y el build. Todos los datos son
+ * ficticios y la confirmación visible la emite el Backend.
  */
 
 let mockedSession: WebSessionState;
@@ -70,6 +70,18 @@ const PAR_INTERN = {
   role: { status: "authenticated", role: "intern", email: "intern@uct.cl" },
 } as const;
 
+const SESION_ADMIN: WebSessionState = {
+  status: "authenticated",
+  email: "admin@uct.cl",
+  name: "Administrador Ficticio",
+  population: "personal",
+};
+
+const PAR_ADMIN = {
+  session: SESION_ADMIN,
+  role: { status: "authenticated", role: "admin", email: "admin@uct.cl" },
+} as const;
+
 const SIN_SESION: WebSessionState = { status: "unauthenticated" };
 
 const PAR_SIN_SESION = {
@@ -79,12 +91,15 @@ const PAR_SIN_SESION = {
 
 function puertoOk(): AgendaPort {
   return {
+    findBookingProfessionals: () => Promise.resolve({ status: "none" }),
     searchSlots: () => Promise.resolve({ status: "empty" }),
     reserveSlot: () =>
       Promise.resolve({
         status: "error",
         error: { code: "no_availability", message: "El cupo ya no está disponible." },
       }),
+    // Cancelación visible (TI2-113): el editor del Profesional no cancela.
+    cancelReservation: () => Promise.resolve({ status: "denied" }),
     listAvailability: () =>
       Promise.resolve({
         status: "ok",
@@ -140,6 +155,13 @@ function puertoOk(): AgendaPort {
         status: "saved",
         exception: { ...input, version: "v1" },
       }),
+    listAppointments: () => Promise.resolve({ status: "empty" }),
+    getAppointment: () => Promise.resolve({ status: "denied" }),
+    changeAppointmentStatus: () =>
+      Promise.resolve({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      }),
     listSpaces: () => Promise.resolve({ status: "empty" }),
     saveSpace: (input) =>
       Promise.resolve({
@@ -170,6 +192,16 @@ function renderAt(path: string) {
   });
   const view = render(<RouterProvider router={router} />);
   return { router, unmount: view.unmount };
+}
+
+async function abrirBloque() {
+  fireEvent.click(await screen.findByRole("button", { name: "Nuevo bloque" }));
+  return screen.getByRole("dialog", { name: "Nuevo bloque recurrente" });
+}
+
+async function abrirExcepcion() {
+  fireEvent.click(await screen.findByRole("button", { name: "Nueva excepción" }));
+  return screen.getByRole("dialog", { name: "Nueva excepción" });
 }
 
 function completarBloqueValido() {
@@ -274,6 +306,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(await screen.findByRole("heading", { name: "Bloques recurrentes" })).toBeDefined();
     expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
 
+    await abrirBloque();
     const guardarBloque = screen.getByRole("button", { name: "Guardar bloque" });
     fireEvent.click(guardarBloque);
 
@@ -290,6 +323,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(await screen.findByRole("heading", { name: "Bloques recurrentes" })).toBeDefined();
     expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
 
+    await abrirBloque();
     fireEvent.change(screen.getByLabelText("Día de la semana"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("Inicio (HH:MM)"), { target: { value: "12:00" } });
     fireEvent.change(screen.getByLabelText("Término (HH:MM)"), { target: { value: "10:00" } });
@@ -310,13 +344,14 @@ describe("editor de disponibilidad (TI2-103)", () => {
     ).toBeDefined();
   });
 
-  test("guardado válido confirma con nota ficticia por teclado", async () => {
+  test("guardado válido confirma con la respuesta del Backend por teclado", async () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
 
     expect(await screen.findByRole("heading", { name: "Bloques recurrentes" })).toBeDefined();
     expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
 
+    await abrirBloque();
     completarBloqueValido();
     const guardar = screen.getByRole("button", { name: "Guardar bloque" });
     guardar.focus();
@@ -325,7 +360,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
 
     expect(await screen.findByText("Bloque guardado")).toBeDefined();
     expect(
-      await screen.findByText("Código bloque-ficticio-9. Guardado simulado con datos ficticios.", {
+      await screen.findByText("Código bloque-ficticio-9. Guardado confirmado por el Backend.", {
         exact: false,
       }),
     ).toBeDefined();
@@ -347,6 +382,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(await screen.findByRole("heading", { name: "Bloques recurrentes" })).toBeDefined();
     expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
 
+    await abrirBloque();
     completarBloqueValido();
     fireEvent.click(screen.getByRole("button", { name: "Guardar bloque" }));
 
@@ -354,6 +390,9 @@ describe("editor de disponibilidad (TI2-103)", () => {
       await screen.findByText("La solicitud entra en conflicto con el estado actual."),
     ).toBeDefined();
     expect(screen.queryByText("Bloque guardado")).toBeNull();
+    // El diálogo sigue abierto y conserva lo escrito para reintentar.
+    expect(screen.getByRole("dialog", { name: "Nuevo bloque recurrente" })).toBeDefined();
+    expect((screen.getByLabelText("Inicio (HH:MM)") as HTMLInputElement).value).toBe("09:00");
   });
 
   test("guardado denegado muestra aviso sin filtrar", async () => {
@@ -365,6 +404,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(await screen.findByRole("heading", { name: "Bloques recurrentes" })).toBeDefined();
     expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
 
+    await abrirBloque();
     completarBloqueValido();
     fireEvent.click(screen.getByRole("button", { name: "Guardar bloque" }));
 
@@ -380,6 +420,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(await screen.findByRole("heading", { name: "Bloques recurrentes" })).toBeDefined();
     expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
 
+    await abrirExcepcion();
     fireEvent.change(screen.getByLabelText("Fecha (AAAA-MM-DD)"), {
       target: { value: "2026-05-05" },
     });
@@ -394,13 +435,14 @@ describe("editor de disponibilidad (TI2-103)", () => {
     ).toBeDefined();
   });
 
-  test("excepción válida confirma con nota ficticia y conserva el detalle", async () => {
+  test("excepción válida confirma con la respuesta del Backend y conserva el detalle", async () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
 
     expect(await screen.findByRole("heading", { name: "Bloques recurrentes" })).toBeDefined();
     expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
 
+    await abrirExcepcion();
     fireEvent.change(screen.getByLabelText("Fecha (AAAA-MM-DD)"), {
       target: { value: "2026-05-07" },
     });
@@ -416,7 +458,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     // El detalle sobrevive al limpiarse el formulario.
     expect(view.getByText("2026-05-07")).toBeDefined();
     expect(view.getByText("Día completo")).toBeDefined();
-    expect(view.getByText("Guardado simulado con datos ficticios.")).toBeDefined();
+    expect(view.getByText("Guardado confirmado por el Backend.")).toBeDefined();
   });
 
   test("distingue el alcance de las cancelaciones y detalla el agregado", async () => {
@@ -445,23 +487,184 @@ describe("editor de disponibilidad (TI2-103)", () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
 
-    await screen.findByRole("heading", { name: "Nuevo bloque recurrente" });
-    // Revela los campos del agregado para cubrir ambos formularios.
-    fireEvent.change(screen.getByLabelText("Clase"), { target: { value: "added" } });
-
-    const fields = [...screen.getAllByRole("textbox"), ...screen.getAllByRole("combobox")];
-    expect(fields.length).toBe(14);
-    for (const field of fields) {
-      // Alto táctil de 44px según DESIGN.md mediante la clase compartida.
-      expect(field.className).toContain("min-h-[44px]");
-      // Ancho fluido y min-w-0 para refluir dentro de la cuadrícula estrecha.
-      expect(field.className).toContain("w-full");
-      expect(field.className).toContain("min-w-0");
-      expect(field.getAttribute("style") ?? "").not.toContain("width");
-      // Operable por teclado.
-      field.focus();
-      expect(document.activeElement).toBe(field);
+    function comprobarCampos(cantidad: number) {
+      const fields = [...screen.getAllByRole("textbox"), ...screen.getAllByRole("combobox")];
+      expect(fields.length).toBe(cantidad);
+      for (const field of fields) {
+        // Alto táctil de 44px según DESIGN.md mediante la clase compartida.
+        expect(field.className).toContain("min-h-[44px]");
+        // Ancho fluido y min-w-0 para refluir dentro de la cuadrícula estrecha.
+        expect(field.className).toContain("w-full");
+        expect(field.className).toContain("min-w-0");
+        // Borde visible antes del foco, según DESIGN.md.
+        expect(field.className).toContain("border-outline");
+        expect(field.getAttribute("style") ?? "").not.toContain("width");
+        // Operable por teclado.
+        field.focus();
+        expect(document.activeElement).toBe(field);
+      }
     }
+
+    await abrirBloque();
+    comprobarCampos(6);
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await abrirExcepcion();
+    // Revela los campos del agregado.
+    fireEvent.change(screen.getByLabelText("Clase"), { target: { value: "added" } });
+    comprobarCampos(8);
+  });
+
+  test("las acciones van antes de los listados y ningún formulario queda desplegado", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    const nuevoBloque = await screen.findByRole("button", { name: "Nuevo bloque" });
+    const nuevaExcepcion = screen.getByRole("button", { name: "Nueva excepción" });
+    const listado = screen.getByRole("heading", { name: "Bloques recurrentes" });
+
+    expect(nuevoBloque.compareDocumentPosition(listado)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(nuevaExcepcion.compareDocumentPosition(listado)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByLabelText("Día de la semana")).toBeNull();
+    expect(screen.queryByLabelText("Fecha (AAAA-MM-DD)")).toBeNull();
+  });
+
+  test("cada acción abre su formulario con el foco en el primer campo", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    const bloque = await abrirBloque();
+    expect(bloque.getAttribute("aria-modal")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByLabelText("Día de la semana"));
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await abrirExcepcion();
+    expect(document.activeElement).toBe(screen.getByLabelText("Fecha (AAAA-MM-DD)"));
+  });
+
+  test("cancelar no guarda, descarta lo escrito y devuelve el foco al botón", async () => {
+    const port = puertoOk();
+    const saveBlock = vi.fn(port.saveBlock);
+    port.saveBlock = saveBlock;
+    comoProfesional(port);
+    renderAt("/profesional/disponibilidad");
+
+    await abrirBloque();
+    fireEvent.change(screen.getByLabelText("Inicio (HH:MM)"), { target: { value: "09:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(saveBlock).not.toHaveBeenCalled();
+    expect(screen.queryByText("Bloque guardado")).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Nuevo bloque" })),
+    );
+
+    await abrirBloque();
+    expect((screen.getByLabelText("Inicio (HH:MM)") as HTMLInputElement).value).toBe("");
+  });
+
+  test("Escape cierra el diálogo y devuelve el foco a su botón", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    await abrirExcepcion();
+    fireEvent.keyDown(screen.getByLabelText("Fecha (AAAA-MM-DD)"), { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Nueva excepción" })),
+    );
+  });
+
+  test("Tab no sale del diálogo en ninguna dirección", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    await abrirBloque();
+    const primero = screen.getByLabelText("Día de la semana");
+    const ultimo = screen.getByRole("button", { name: "Guardar bloque" });
+
+    ultimo.focus();
+    fireEvent.keyDown(ultimo, { key: "Tab" });
+    expect(document.activeElement).toBe(primero);
+
+    fireEvent.keyDown(primero, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(ultimo);
+  });
+
+  test("con campos inválidos el diálogo sigue abierto y enfoca el primero", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    await abrirBloque();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar bloque" }));
+
+    expect(
+      await screen.findByText("Elige un día de la semana entre domingo y sábado."),
+    ).toBeDefined();
+    const dia = screen.getByLabelText("Día de la semana");
+    expect(screen.getByRole("dialog", { name: "Nuevo bloque recurrente" })).toBeDefined();
+    expect(document.activeElement).toBe(dia);
+    expect(dia.className).toContain("border-error");
+    expect(dia.className).not.toContain("border-outline");
+  });
+
+  test("guardar cierra el diálogo, actualiza el listado y enfoca la confirmación", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    await abrirBloque();
+    completarBloqueValido();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar bloque" }));
+
+    const mensajeGuardado = await screen.findByRole("heading", { name: "Bloque guardado" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(mensajeGuardado));
+
+    const listaBloques = screen
+      .getByRole("heading", { name: "Bloques recurrentes" })
+      .closest("section");
+    if (listaBloques === null) {
+      throw new Error("Se esperaba la sección de bloques");
+    }
+    expect(within(listaBloques).getByText("Martes")).toBeDefined();
+  });
+
+  test("abrir otro formulario retira la confirmación anterior", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    await abrirBloque();
+    completarBloqueValido();
+    fireEvent.click(screen.getByRole("button", { name: "Guardar bloque" }));
+    await screen.findByRole("heading", { name: "Bloque guardado" });
+
+    await abrirExcepcion();
+    expect(screen.queryByRole("heading", { name: "Bloque guardado" })).toBeNull();
+  });
+
+  test("sin lectura autorizada no se ofrecen las acciones de crear", async () => {
+    const port = puertoOk();
+    port.listAvailability = () => Promise.resolve({ status: "denied" });
+    comoProfesional(port);
+    renderAt("/profesional/disponibilidad");
+
+    await screen.findByText("No autorizado. Pide acceso por el canal oficial si corresponde.");
+    expect(screen.queryByRole("button", { name: "Nuevo bloque" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Nueva excepción" })).toBeNull();
+  });
+
+  test("el retorno a solicitudes se distingue del texto normal", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    const volver = await screen.findByRole("link", { name: "Volver a solicitudes" });
+    expect(volver.getAttribute("href")).toBe("/profesional/solicitudes");
+    expect(volver.className).toContain("underline");
+    expect(volver.className).not.toContain("no-underline");
+    expect(volver.className).toContain("text-primary");
   });
 
   test("navegación del profesional conserva enlaces visibles y operables por teclado", async () => {
@@ -473,13 +676,17 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Inicio",
       "Solicitudes",
+      "Agenda",
       "Disponibilidad",
-      "Sesión",
     ]);
+    expect(
+      within(nav).getByRole("link", { name: "Disponibilidad" }).getAttribute("aria-current"),
+    ).toBe("page");
     for (const link of links) {
       link.focus();
       expect(document.activeElement).toBe(link);
     }
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 });
 
@@ -502,6 +709,18 @@ describe("guard de la ruta de disponibilidad (TI2-103)", () => {
     const { router } = renderAt("/profesional/disponibilidad");
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(screen.queryByRole("heading", { name: "Disponibilidad" })).toBeNull();
+  });
+
+  // TI2-126: editar disponibilidad es exclusivo del Profesional dueño de sus
+  // bloques. El Administrador no la edita (matriz TI2-5) y la ruta se deniega.
+  test("el Administrador ve denegado sin contenido del editor", async () => {
+    mockedSession = SESION_ADMIN;
+    mockedPair = PAR_ADMIN;
+    const { router } = renderAt("/profesional/disponibilidad");
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
+    expect(await screen.findByRole("heading", { name: "Acceso denegado" })).toBeDefined();
     expect(screen.queryByRole("heading", { name: "Disponibilidad" })).toBeNull();
   });
 });

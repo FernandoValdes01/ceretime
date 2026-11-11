@@ -3,10 +3,10 @@ import { router } from "expo-router";
 import StudentHome from "../app/(protected)/estudiante";
 import { LoginScreen } from "@/presentation/auth/login-screen";
 import {
-  createMockAuthenticationPort,
-  mockAuthCredentials,
-  unassignedPractitionerCredentials,
-} from "@/infrastructure/mock-authentication";
+  createDemoAuthAdapter,
+  demoAuthCredentials,
+  unassignedInternCredentials,
+} from "@/infrastructure/demo-auth-adapter";
 import { NavigationSessionProvider, useNavigationSession } from "@/presentation/navigation/session";
 
 import {
@@ -40,7 +40,7 @@ function StudentSession() {
   return session ? (
     <StudentHome />
   ) : (
-    <LoginScreen unassignedPractitionerCredentials={unassignedPractitionerCredentials} />
+    <LoginScreen unassignedInternCredentials={unassignedInternCredentials} />
   );
 }
 
@@ -49,9 +49,9 @@ test("el inicio impide navegar durante el cierre de sesión y recupera las accio
   const logoutResult = new Promise<void>((_resolve, reject) => {
     rejectLogout = reject;
   });
-  const authPort = { ...createMockAuthenticationPort(), logout: () => logoutResult };
+  const authPort = { ...createDemoAuthAdapter(), logout: () => logoutResult };
   render(
-    <NavigationSessionProvider authPort={authPort} demoCredentials={mockAuthCredentials}>
+    <NavigationSessionProvider authPort={authPort} demoCredentials={demoAuthCredentials}>
       <StudentSession />
     </NavigationSessionProvider>,
   );

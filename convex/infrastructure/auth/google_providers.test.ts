@@ -2,10 +2,12 @@ import { betterAuth } from "better-auth/minimal";
 import { memoryAdapter } from "better-auth/adapters/memory";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { describe, expect, test } from "vitest";
+import { CALENDAR_EVENTS_SCOPE } from "../../domain/calendar/calendar_event";
 import {
   googleWorkspaceProvider,
-  rejectClientScopes,
+  guardGoogleOAuth,
   requestsClientScopes,
+  requestsGoogleSignIn,
 } from "./google_providers";
 
 const credentials = {
@@ -71,13 +73,42 @@ describe("googleWorkspaceProvider", () => {
 });
 
 describe("requestsClientScopes", () => {
-  test("detecta scopes del cliente en las rutas de inicio y vinculación", () => {
-    for (const path of ["/sign-in/oauth2", "/sign-in/social", "/oauth2/link", "/link-social"]) {
+  test("detecta scopes del cliente en el inicio y la vinculación genérica", () => {
+    for (const path of ["/sign-in/oauth2", "/sign-in/social", "/oauth2/link"]) {
       expect(
         requestsClientScopes(path, { scopes: ["https://www.googleapis.com/auth/calendar"] }),
       ).toBe(true);
       expect(requestsClientScopes(path, { scopes: [] })).toBe(true);
     }
+  });
+
+  test("solo permite calendar.events al vincular Calendar con google", () => {
+    expect(
+      requestsClientScopes("/link-social", {
+        provider: "google",
+        scopes: [CALENDAR_EVENTS_SCOPE],
+      }),
+    ).toBe(false);
+    expect(requestsClientScopes("/link-social", { provider: "google" })).toBe(false);
+    expect(
+      requestsClientScopes("/link-social", {
+        provider: "google-alu",
+        scopes: [CALENDAR_EVENTS_SCOPE],
+      }),
+    ).toBe(true);
+    expect(
+      requestsClientScopes("/link-social", {
+        provider: "google",
+        scopes: ["https://www.googleapis.com/auth/calendar"],
+      }),
+    ).toBe(true);
+    expect(
+      requestsClientScopes("/link-social", {
+        provider: "google",
+        scopes: [CALENDAR_EVENTS_SCOPE, "https://www.googleapis.com/auth/drive"],
+      }),
+    ).toBe(true);
+    expect(requestsClientScopes("/link-social", { provider: "google", scopes: [] })).toBe(true);
   });
 
   test("permite el inicio sin scopes y las demás rutas", () => {
@@ -87,19 +118,33 @@ describe("requestsClientScopes", () => {
   });
 });
 
-describe("rejectClientScopes", () => {
-  // Instancia de Better Auth en memoria con el mismo hook y proveedor que
-  // `convex/auth.ts`: confirma que la ruta real de inicio queda bloqueada.
+describe("requestsGoogleSignIn", () => {
+  test("bloquea el inicio por google y no los proveedores institucionales", () => {
+    expect(requestsGoogleSignIn("/sign-in/social", { provider: "google" })).toBe(true);
+    expect(requestsGoogleSignIn("/sign-in/social", { provider: "google-alu" })).toBe(false);
+    expect(requestsGoogleSignIn("/sign-in/oauth2", { providerId: "google" })).toBe(false);
+  });
+});
+
+describe("guardGoogleOAuth", () => {
+  // Instancia de Better Auth en memoria con los mismos hooks y proveedores que
+  // `convex/auth.ts`: confirma el comportamiento de las rutas reales.
   const auth = betterAuth({
     baseURL: "http://localhost:3000",
     secret: "secreto-ficticio-de-pruebas-con-largo-suficiente",
     database: memoryAdapter({ user: [], session: [], account: [], verification: [] }),
-    hooks: { before: rejectClientScopes },
+    socialProviders: {
+      google: {
+        clientId: credentials.clientId,
+        clientSecret: credentials.clientSecret,
+      },
+    },
+    hooks: { before: guardGoogleOAuth },
     plugins: [genericOAuth({ config: [googleWorkspaceProvider("estudiante", credentials)] })],
   });
-  const signIn = (body: object) =>
+  const post = (path: string, body: object) =>
     auth.handler(
-      new Request("http://localhost:3000/api/auth/sign-in/oauth2", {
+      new Request(`http://localhost:3000/api/auth${path}`, {
         method: "POST",
         headers: { "content-type": "application/json", origin: "http://localhost:3000" },
         body: JSON.stringify(body),
@@ -107,15 +152,23 @@ describe("rejectClientScopes", () => {
     );
 
   test("rechaza el inicio que pide alcances extra", async () => {
-    const response = await signIn({
+    const response = await post("/sign-in/oauth2", {
       providerId: "google-alu",
       scopes: ["https://www.googleapis.com/auth/calendar"],
     });
     expect(response.status).toBe(400);
   });
 
-  test("el inicio sin alcances extra pide solo identidad con hd", async () => {
-    const response = await signIn({ providerId: "google-alu" });
+  test("rechaza el inicio por google, que solo vincula Calendar", async () => {
+    const response = await post("/sign-in/social", {
+      provider: "google",
+      callbackURL: "/",
+    });
+    expect(response.status).toBe(400);
+  });
+
+  test("el inicio institucional sin alcances extra pide solo identidad con hd", async () => {
+    const response = await post("/sign-in/oauth2", { providerId: "google-alu" });
     expect(response.status).toBe(200);
     const { url } = (await response.json()) as { url: string };
     const authorization = new URL(url);
@@ -124,5 +177,30 @@ describe("rejectClientScopes", () => {
     );
     expect(authorization.searchParams.get("scope")).toBe("openid email profile");
     expect(authorization.searchParams.get("hd")).toBe("alu.uct.cl");
+  });
+
+  test("la vinculación de Calendar llega al endpoint y exige sesión", async () => {
+    const response = await post("/link-social", {
+      provider: "google",
+      scopes: [CALENDAR_EVENTS_SCOPE],
+      callbackURL: "/",
+    });
+    expect(response.status).toBe(401);
+  });
+
+  test("rechaza otros alcances y otros proveedores en /link-social", async () => {
+    const otherScope = await post("/link-social", {
+      provider: "google",
+      scopes: ["https://www.googleapis.com/auth/calendar"],
+      callbackURL: "/",
+    });
+    expect(otherScope.status).toBe(400);
+
+    const otherProvider = await post("/link-social", {
+      provider: "google-alu",
+      scopes: [CALENDAR_EVENTS_SCOPE],
+      callbackURL: "/",
+    });
+    expect(otherProvider.status).toBe(400);
   });
 });
