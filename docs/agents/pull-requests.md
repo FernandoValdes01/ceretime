@@ -48,4 +48,4 @@ Formato: `ID - tipo(scope): descripción`
 
 ## Validación y revisión humana
 
-Las PR deben aprobar los cuatro checks de CI y recibir la aprobación humana requerida por `protectedmain`. Asigna el reviewer según Linear antes de solicitar revisión. Los detalles de los checks y las reglas de integración están en [protecciones de CI](../ci-protections.md).
+Las PR deben aprobar los cuatro checks de CI y recibir la aprobación humana requerida por `protectedmain`. Asigna el reviewer según Linear antes de solicitar revisión. Los detalles de los checks y las reglas de integración están en [protecciones de CI](../operaciones/ci-protections.md).

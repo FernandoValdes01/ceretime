@@ -263,4 +263,4 @@ Seguridad, accesibilidad y pruebas se trabajan desde el primer incremento; la ta
 - Revisión jurídica, de ciberseguridad y autorización antes de usar datos reales.
 - Confirmación del calendario del curso: la guía contiene referencias tanto a la semana 12 como a la semana 13 para el segundo incremento.
 
-El análisis jurídico y su lista de comprobación se encuentran en [Aplicación de la Ley 21.719](./ley-21719.md).
+El análisis jurídico y su lista de comprobación se encuentran en [Aplicación de la Ley 21.719](./producto/ley-21719.md).

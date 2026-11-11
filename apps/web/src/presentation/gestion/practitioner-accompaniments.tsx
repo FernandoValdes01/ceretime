@@ -17,6 +17,7 @@ import {
   type AssignedAccompanimentsPage,
   type MinimizedAccompaniment,
 } from "./practitioner-accompaniments-data.ts";
+import { DeniedState, EmptyState, LoadingState } from "../shared/view-states.tsx";
 
 /**
  * Acompañamientos asignados al Practicante en solo lectura (TI2-116).
@@ -56,16 +57,12 @@ function isAuthorizationDenial(error: unknown): boolean {
   return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
 }
 
-function DeniedNotice({ title }: { title: string }) {
-  return (
-    <div className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
-      <p role="alert" className="mb-2 font-semibold text-on-surface">
-        {title}
-      </p>
-      <p>Si crees que deberías verlo, consulta con el Profesional a cargo o con CERETI.</p>
-    </div>
-  );
-}
+/**
+ * Salida de la denegación: el aviso propio del Practicante y el canal donde
+ * consultar, fuera del `role="alert"` para que el anuncio sea solo el título.
+ */
+const PRACTITIONER_DENIED_HINT =
+  "Si crees que deberías verlo, consulta con el Profesional a cargo o con CERETI.";
 
 export function PractitionerAccompanimentsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -126,25 +123,25 @@ function AssignedAccompanimentsBody() {
     firstPage = useAssignedAccompaniments(undefined);
   } catch (error) {
     if (isAuthorizationDenial(error)) {
-      return <DeniedNotice title="No tienes acceso a acompañamientos asignados." />;
+      return (
+        <DeniedState
+          title="No tienes acceso a acompañamientos asignados."
+          description={PRACTITIONER_DENIED_HINT}
+        />
+      );
     }
     throw error;
   }
 
   if (firstPage === undefined) {
-    return (
-      <p role="status" className="student-portal__loading">
-        Cargando tus acompañamientos…
-      </p>
-    );
+    return <LoadingState label="Cargando tus acompañamientos…" />;
   }
 
   if (firstPage.items.length === 0 && !firstPage.hasMore) {
     return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No tienes acompañamientos asignados.</p>
+      <EmptyState title="No tienes acompañamientos asignados.">
         <p>Cuando un Profesional te asigne un acompañamiento, aparecerá aquí.</p>
-      </div>
+      </EmptyState>
     );
   }
 
@@ -331,17 +328,18 @@ function AssignedAccompanimentDetailBody({ accompanimentId }: { accompanimentId:
     view = useAssignedAccompanimentDetail(accompanimentId);
   } catch (error) {
     if (isAuthorizationDenial(error)) {
-      return <DeniedNotice title="No tienes acceso a este acompañamiento." />;
+      return (
+        <DeniedState
+          title="No tienes acceso a este acompañamiento."
+          description={PRACTITIONER_DENIED_HINT}
+        />
+      );
     }
     throw error;
   }
 
   if (view === undefined) {
-    return (
-      <p role="status" className="student-portal__loading">
-        Cargando el detalle…
-      </p>
-    );
+    return <LoadingState label="Cargando el detalle…" />;
   }
 
   const accompaniment = toMinimizedAccompaniment(view);

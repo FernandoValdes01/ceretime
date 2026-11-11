@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import {
+  accessNeedSelectionValidator,
   accompanimentStatusUnion,
   accountStatusUnion,
   appointmentAuditActionUnion,
@@ -11,12 +12,16 @@ import {
   followUpContractVersionLiteral,
   followUpResponsibleUnion,
   followUpTaskStatusUnion,
+  generalAvailabilityValidator,
+  incomingReferralValidator,
   institutionalStatusUnion,
   justificationReviewUnion,
   modalityUnion,
   notificationContractVersionLiteral,
   notificationEventKindUnion,
+  outgoingReferralValidator,
   persistableRequestStatusUnion,
+  requestProvenanceValidator,
   roleUnion,
 } from "./infrastructure/validators";
 
@@ -127,7 +132,10 @@ export default defineSchema({
   // conserva los 4 estados de Sprint 1 (ver `toSprint1AccompanimentRequest`).
   // `createdAt` es la fecha de creación como número. Solo persistencia: las
   // transiciones las aplica TI2-21 y las reglas de cancelación y cierre son
-  // de TI2-85.
+  // de TI2-85. TI2-135 suma el contenido completo de la solicitud, su
+  // procedencia, las derivaciones, la razón de cierre y la clave de
+  // idempotencia como campos opcionales: las filas anteriores no los tienen
+  // y se leen igual (ver `domain/database/integrity.md`).
   requests: defineTable({
     studentId: v.id("users"),
     status: persistableRequestStatusUnion,
@@ -137,6 +145,33 @@ export default defineSchema({
     // lectura para el listado autorizado: cada solicitud aparece una sola
     // vez por construcción. Lo fija `takeRequest` junto a la toma.
     takenBy: v.optional(v.id("users")),
+    // Contenido completo que el estudiante entrega al solicitar (TI2-135),
+    // con los nombres del contrato `AccompanimentRequestContent`. `accessNeeds`
+    // sigue siendo el texto unido que entrega la API vigente; la lista
+    // `accessNeedSelections` es la fuente estructurada de las mismas
+    // condiciones y `otherAccessNeed` el texto libre adicional. Sin RUT,
+    // diagnóstico, certificados ni área interna.
+    needSummary: v.optional(v.string()),
+    expectedOutcome: v.optional(v.string()),
+    accessNeedSelections: v.optional(v.array(accessNeedSelectionValidator)),
+    otherAccessNeed: v.optional(v.string()),
+    modalityPreference: v.optional(modalityUnion),
+    generalAvailability: v.optional(generalAvailabilityValidator),
+    preferredAccessibleInformationChannel: v.optional(v.string()),
+    // Procedencia (TI2-135): canal por el que llegó la solicitud. Una fila sin
+    // ella nació por el canal del Estudiante (ver `requestProvenanceChannelOf`).
+    provenance: v.optional(requestProvenanceValidator),
+    // Derivación de entrada y de salida (TI2-135). El estado `referred` sigue
+    // sin habilitarse: estos campos solo guardan el dato.
+    incomingReferral: v.optional(incomingReferralValidator),
+    outgoingReferral: v.optional(outgoingReferralValidator),
+    // Razón comprensible de cierre (TI2-135): la vigente y legible para el
+    // estudiante. `requestTransitions.reason` conserva el rastro histórico de
+    // cada transición; el caso de uso futuro escribe ambas en una transacción.
+    closureReason: v.optional(v.string()),
+    // Clave de idempotencia del envío (TI2-135), única por estudiante: un
+    // reintento con la misma clave no crea otra solicitud.
+    idempotencyKey: v.optional(v.string()),
   })
     // Solicitudes propias del estudiante.
     .index("by_student", ["studentId"])
@@ -147,7 +182,10 @@ export default defineSchema({
     .index("by_student_and_status", ["studentId", "status"])
     // Solicitudes tomadas por cada profesional: base del listado
     // autorizado, una fila por solicitud.
-    .index("by_takenBy", ["takenBy"]),
+    .index("by_takenBy", ["takenBy"])
+    // Reintento de un envío (TI2-135): la solicitud del estudiante con esa
+    // clave de idempotencia, en una sola lectura.
+    .index("by_student_and_idempotencyKey", ["studentId", "idempotencyKey"]),
 
   // Tabla 'requestTransitions': bitácora append-only de cambios de estado.
   // Cada transición guarda motivo, actor y fecha junto al estado resultante,

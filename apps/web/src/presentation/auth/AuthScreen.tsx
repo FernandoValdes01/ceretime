@@ -77,7 +77,7 @@ export function AuthScreen() {
       setPendingPopulation(null);
     };
     try {
-      await authClient.signIn.social(getLoginRequest(siteUrl), {
+      await authClient.signIn.oauth2(getLoginRequest(population, siteUrl), {
         onError: reset,
       });
     } catch {

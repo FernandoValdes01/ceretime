@@ -1,0 +1,109 @@
+/* Estados de vista comunes (TI2-134). Un solo origen visual para carga, vacío,
+   error y acceso denegado; los selectores `student-portal__*` se conservan
+   mientras las pantallas restantes migran a los componentes compartidos. */
+
+.view-state--loading,
+.student-portal__loading {
+  margin: 1rem 0 0;
+  border-radius: 1rem;
+  background: var(--ct-tonal);
+  padding: 1.5rem;
+  font-size: 1.125rem;
+  color: var(--ct-muted);
+}
+
+/* El error suma borde izquierdo y texto en negrita: se reconoce sin color. */
+.view-state--error,
+.student-portal__error {
+  background: var(--ct-danger-bg);
+  border: 1px solid var(--ct-danger);
+  border-left: 4px solid var(--ct-danger);
+  border-radius: 0.5rem;
+  color: var(--ct-danger-ink);
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 1rem 0 0;
+  padding: 0.75rem;
+}
+
+/* El vacío se distingue por su borde superior, no solo por el tono. */
+.view-state--empty,
+.student-portal__empty {
+  margin-top: 1rem;
+  border-radius: 1rem;
+  border-top: 4px solid var(--ct-accent);
+  background: var(--ct-tonal);
+  padding: 1.5rem;
+  font-size: 1rem;
+  color: var(--ct-muted);
+}
+
+.view-state--denied {
+  margin-top: 1rem;
+  border-radius: 1rem;
+  border-top: 4px solid var(--ct-danger);
+  background: var(--ct-danger-bg);
+  padding: 1.5rem;
+  font-size: 1rem;
+  color: var(--ct-danger-ink);
+}
+
+.student-portal__empty--green {
+  border-top-color: var(--ct-ok);
+}
+
+.student-portal__empty--blue {
+  border-top-color: var(--ct-info);
+}
+
+.view-state--empty p,
+.student-portal__empty p {
+  margin: 0;
+}
+
+.view-state__title,
+.student-portal__empty-title {
+  font-weight: 600;
+  color: var(--ct-ink);
+  margin: 0 0 0.5rem;
+}
+
+.view-state--denied .view-state__title {
+  color: var(--ct-danger-ink);
+}
+
+/* Acciones del estado: el reintento conserva el alto táctil de 44 px y el
+   foco visible de DESIGN.md. */
+.view-state__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.view-state__retry {
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0.75rem 1.25rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: var(--ct-primary);
+  color: var(--ct-primary-ink);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.view-state__retry:hover:not(:disabled) {
+  background: var(--ct-primary-hover);
+}
+
+.view-state__retry:focus-visible {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+}

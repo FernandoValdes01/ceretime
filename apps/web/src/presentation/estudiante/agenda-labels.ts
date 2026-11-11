@@ -1,15 +1,25 @@
-import { AGENDA_TIME_ZONE, MODALITY_VALUES } from "../../../../../convex/domain/index.ts";
+import { MODALITY_VALUES } from "../../../../../convex/domain/index.ts";
 import {
   SLOT_MODALITY_FILTER_VALUES,
   type AgendaSlot,
   type SlotModalityFilter,
 } from "../../application/agenda/agenda-port.ts";
+import {
+  civilDateToUtc,
+  formatAgendaDateTime,
+  formatAgendaInstant,
+  formatAgendaTimeRange,
+  formatCivilDateRange,
+  formatCivilDay,
+} from "../shared/date-format.ts";
 
 /**
- * Etiquetas de agenda del Estudiante (TI2-101).
+ * Etiquetas de agenda del Estudiante (TI2-101, TI2-134).
  *
  * Derivan de los literales canónicos sin duplicarlos: modalidad desconocida
- * muestra el valor. Fecha y hora siempre como texto, nunca solo con color.
+ * muestra el valor. El formato de fechas y horas vive en
+ * `presentation/shared/date-format.ts`; acá solo se conserva el nombre que ya
+ * usan las pantallas del Estudiante.
  */
 
 const MODALITY_LABELS: Record<string, string> = {
@@ -38,27 +48,14 @@ export function isKnownModality(value: string): boolean {
   return (MODALITY_VALUES as ReadonlyArray<string>).includes(value);
 }
 
-const SLOT_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  timeZone: AGENDA_TIME_ZONE,
-});
-
-const SLOT_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: AGENDA_TIME_ZONE,
-});
-
 /** Horario legible de un cupo en la zona de la agenda (epoch en ms). */
 export function formatSlotTimeRange(startAt: number, endAt: number): string {
-  return `${SLOT_TIME_FORMAT.format(startAt)} – ${SLOT_TIME_FORMAT.format(endAt)}`;
+  return formatAgendaTimeRange(startAt, endAt);
 }
 
-/** Fecha y hora legibles de un cupo (epoch en ms). */
+/** Fecha y hora legibles de un cupo, con la zona de la agenda (epoch en ms). */
 export function formatSlotDateTime(startAt: number, endAt: number): string {
-  return `${SLOT_DATE_FORMAT.format(startAt)}, ${formatSlotTimeRange(startAt, endAt)}`;
+  return formatAgendaDateTime(startAt, endAt);
 }
 
 /** Día con cupos, identificado por su fecha civil en la zona de la agenda. */
@@ -77,31 +74,6 @@ export type SlotWeek = {
 
 const DAY_MS = 86_400_000;
 
-// Las fechas civiles ya vienen resueltas por el Backend (`AgendaSlot.date`): se
-// leen en UTC para que la zona del navegador no las mueva de día.
-const CIVIL_DAY_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  timeZone: "UTC",
-});
-
-const CIVIL_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  day: "numeric",
-  month: "long",
-  timeZone: "UTC",
-});
-
-function civilDateToUtc(date: string): number {
-  const [year, month, day] = date.split("-").map(Number);
-  return Date.UTC(year, month - 1, day);
-}
-
-function civilDayLabel(date: string): string {
-  const label = CIVIL_DAY_FORMAT.format(civilDateToUtc(date)).replace(",", "");
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
 function weekStartOf(date: string): string {
   const utc = civilDateToUtc(date);
   const daysSinceWeekStart = (new Date(utc).getUTCDay() + 6) % 7;
@@ -109,11 +81,8 @@ function weekStartOf(date: string): string {
 }
 
 function weekLabel(weekStart: string): string {
-  const start = new Date(civilDateToUtc(weekStart));
-  const end = new Date(start.getTime() + 6 * DAY_MS);
-  const sameMonth = start.getUTCMonth() === end.getUTCMonth();
-  const from = sameMonth ? `${start.getUTCDate()}` : CIVIL_DATE_FORMAT.format(start);
-  return `${from} al ${CIVIL_DATE_FORMAT.format(end)}`;
+  const end = new Date(civilDateToUtc(weekStart) + 6 * DAY_MS).toISOString().slice(0, 10);
+  return formatCivilDateRange(weekStart, end);
 }
 
 /**
@@ -133,7 +102,7 @@ export function groupSlotsByWeek(slots: ReadonlyArray<AgendaSlot>): ReadonlyArra
     label: weekLabel(start),
     days: [...(weeks.get(start) ?? new Map<string, AgendaSlot[]>())].map(([date, daySlots]) => ({
       date,
-      label: civilDayLabel(date),
+      label: formatCivilDay(date),
       slots: daySlots,
     })),
   }));
@@ -159,24 +128,11 @@ export function appointmentStatusLabel(status: string): string {
 }
 
 /**
- * Fecha y hora de una atención en la zona oficial de la agenda, sin depender
- * de la zona del navegador. Se muestra como texto, nunca solo con color.
+ * Fecha y hora de una atención en la zona oficial de la agenda, con la zona
+ * indicada. Se muestra como texto, nunca solo con color.
  */
-const APPOINTMENT_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  timeZone: AGENDA_TIME_ZONE,
-});
-
-const APPOINTMENT_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: AGENDA_TIME_ZONE,
-});
-
 export function formatAppointmentDateTime(startAt: number, endAt: number): string {
-  return `${APPOINTMENT_DATE_FORMAT.format(startAt)}, ${APPOINTMENT_TIME_FORMAT.format(startAt)} – ${APPOINTMENT_TIME_FORMAT.format(endAt)} (${AGENDA_TIME_ZONE})`;
+  return formatAgendaDateTime(startAt, endAt);
 }
 
 /**
@@ -185,5 +141,5 @@ export function formatAppointmentDateTime(startAt: number, endAt: number): strin
  * vive en la segunda fecha del rango.
  */
 export function formatAppointmentInstant(startAt: number): string {
-  return `${APPOINTMENT_DATE_FORMAT.format(startAt)}, ${APPOINTMENT_TIME_FORMAT.format(startAt)} (${AGENDA_TIME_ZONE})`;
+  return formatAgendaInstant(startAt);
 }
