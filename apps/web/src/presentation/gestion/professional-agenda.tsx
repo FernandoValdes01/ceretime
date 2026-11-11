@@ -10,7 +10,13 @@ import {
   formatAppointmentTimeRange,
 } from "./gestion-labels.ts";
 import { AGENDA_TIME_ZONE_LABEL } from "../shared/date-format.ts";
-import { DeniedState, EmptyState, ErrorState, LoadingState } from "../shared/view-states.tsx";
+import {
+  ACCESS_DENIED_MESSAGE,
+  DeniedState,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../shared/view-states.tsx";
 import { availabilityModalityLabel } from "./professional-availability-labels.ts";
 import {
   getAgendaPort,
@@ -460,7 +466,7 @@ function StatusChangeSection({
           ) : null}
           {denied ? (
             <p role="alert" className="student-portal__error">
-              No autorizado. Pide acceso por el canal oficial si corresponde.
+              {ACCESS_DENIED_MESSAGE}
             </p>
           ) : null}
           {resultError !== null ? (

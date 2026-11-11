@@ -55,6 +55,7 @@ Los selectores `.student-portal__loading`, `.student-portal__error`, `.student-p
 | Función | Resultado |
 | --- | --- |
 | `formatAgendaDate` | `martes, 12 de mayo de 2026` |
+| `formatAgendaShortDate` | `12 may 2026` |
 | `formatAgendaTime` | `10:00 a. m.` |
 | `formatAgendaTimeRange` | `10:00 a. m. – 11:00 a. m.` |
 | `formatAgendaDateTime` | `martes, 12 de mayo de 2026, 10:00 a. m. – 11:00 a. m. (America/Santiago)` |
@@ -62,7 +63,7 @@ Los selectores `.student-portal__loading`, `.student-portal__error`, `.student-p
 
 Las fechas civiles (`YYYY-MM-DD`) no representan un instante y se leen en UTC para que la zona del navegador no las mueva de día: `formatCivilDay`, `formatCivilDate`, `formatCivilDateWithYear` y `formatCivilDateRange`.
 
-`agenda-labels.ts` y `gestion-labels.ts` conservan sus nombres exportados (`formatSlotDateTime`, `formatAppointmentDateTime`, `formatAppointmentInstant`, `formatAppointmentDate`, `formatAppointmentTime` y `formatAppointmentTimeRange`) como delegados del módulo compartido. Así las pantallas y sus pruebas no cambian de contrato mientras el formato se centraliza.
+`agenda-labels.ts` y `gestion-labels.ts` conservan sus nombres exportados (`formatSlotDateTime`, `formatAppointmentDateTime`, `formatAppointmentInstant`, `formatAppointmentDate`, `formatAppointmentTime` y `formatAppointmentTimeRange`) como delegados del módulo compartido. `student-panel-labels.ts` hace lo mismo con `formatPanelDate`, el resumen de fecha de las solicitudes. Así las pantallas y sus pruebas no cambian de contrato mientras el formato se centraliza.
 
 Toda pantalla nueva muestra la zona vigente donde presenta horas de la agenda. La agenda del Profesional lo declara en la introducción y en una fila «Zona horaria» del detalle.
 
@@ -98,6 +99,7 @@ El resto de las pantallas de `estudiante/` y `gestion/` se migra al tocarlas, se
 
 - `shared/date-format.test.ts` cubre el cambio de hora de Chile (septiembre y abril) y el cambio de año, además de las fechas civiles y la validación de fechas reales.
 - `shared/view-states.test.tsx` cubre los anuncios, el reintento y la denegación.
+- `routes/student-panel.test.tsx` comprueba que `formatPanelDate` no cambia de día con el navegador en otra zona.
 - `professional-availability-editor.test.tsx` comprueba que una fecha imposible no se acepta.
 
 ## Validación

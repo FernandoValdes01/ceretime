@@ -13,7 +13,13 @@ import {
   type SpaceFormState,
 } from "./admin-space-editor-data.ts";
 import { toSpaceLabel, type Space } from "../../../../../convex/domain/index.ts";
-import { DeniedState, EmptyState, ErrorState, LoadingState } from "../shared/view-states.tsx";
+import {
+  ACCESS_DENIED_MESSAGE,
+  DeniedState,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../shared/view-states.tsx";
 
 /**
  * Clases Tailwind de las filas y campos de gestión (TI2-103): 44px de alto
@@ -463,7 +469,7 @@ function SpaceFormSection({
         </div>
         {denied ? (
           <p role="alert" className="student-portal__error">
-            No autorizado. Pide acceso por el canal oficial si corresponde.
+            {ACCESS_DENIED_MESSAGE}
           </p>
         ) : null}
         {saveError !== null ? (

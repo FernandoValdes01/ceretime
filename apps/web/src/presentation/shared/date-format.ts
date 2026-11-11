@@ -31,6 +31,13 @@ const TIME = new Intl.DateTimeFormat("es-CL", {
   timeZone: AGENDA_TIME_ZONE,
 });
 
+const SHORT_DATE = new Intl.DateTimeFormat("es-CL", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  timeZone: AGENDA_TIME_ZONE,
+});
+
 const CIVIL_DAY_TEXT = new Intl.DateTimeFormat("es-CL", {
   weekday: "long",
   day: "numeric",
@@ -54,6 +61,11 @@ const CIVIL_DATE_WITH_YEAR_TEXT = new Intl.DateTimeFormat("es-CL", {
 /** Fecha con día de la semana y año de un instante de la agenda. */
 export function formatAgendaDate(instantAt: number): string {
   return DATE_WITH_YEAR.format(instantAt);
+}
+
+/** Fecha corta con mes abreviado y año, para listas y resúmenes. */
+export function formatAgendaShortDate(instantAt: number): string {
+  return SHORT_DATE.format(instantAt);
 }
 
 /** Hora de un instante de la agenda. */
