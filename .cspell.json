@@ -5,8 +5,21 @@
   "useGitignore": true,
   "dictionaries": ["bash", "git", "html", "npm", "shellscript", "softwareTerms"],
   "import": ["@cspell/dict-es-es/cspell-ext.json"],
-  "ignorePaths": ["convex/_generated/**", "apps/web/public/icons.svg", "apps/web/src/assets/*.svg"],
+  "ignorePaths": [
+    "convex/_generated/**",
+    ".agents/convex-guides/**",
+    "apps/web/public/icons.svg",
+    "apps/web/src/assets/*.svg"
+  ],
   "words": [
+    "cmdk",
+    "evals",
+    "frontmatter",
+    "garamond",
+    "jetbrains",
+    "millionco",
+    "oklch",
+    "scroller",
     "Adoptium",
     "Temurin",
     "gradlew",

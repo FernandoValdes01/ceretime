@@ -23,12 +23,12 @@ Un acompañamiento cerrado muestra sus atenciones en solo lectura: no ofrece con
 
 La superficie es la misma para ambas aplicaciones, sale de `api.presentation.appointments` y de los tipos generados en `convex/_generated`. No existe endpoint propio de Web ni de Mobile, ni una tabla paralela de reservas o calendario.
 
-| Operación                                                | Argumentos          | Devuelve                                                                                                 | Quién                                                    |
-| -------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `presentation/appointments.listAccompanimentAppointments` | `accompanimentId`   | Lista acotada (máximo 50, más reciente primero) de `{appointmentId, status, startAt, endAt, modality, calendarAdded, calendarNeedsUpdate}` | Estudiante dueño, Profesional o Practicante asignado     |
-| `presentation/appointments.getAppointmentCalendarFile`    | `appointmentId`     | `{fileName, content, alreadyAdded}`                                                                      | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
-| `presentation/appointments.getCalendarConnection`         | —                   | `{connected: boolean}`                                                                                   | Cualquier sesión con perfil vigente                      |
-| `presentation/appointments.addAppointmentToGoogleCalendar` | `appointmentId`     | `{status: "created" \| "updated" \| "already_created", eventId, ics}` o `{status: "fallback", reason, ics}` | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
+| Operación                                                  | Argumentos        | Devuelve                                                                                                                                   | Quién                                                                     |
+| ---------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `presentation/appointments.listAccompanimentAppointments`  | `accompanimentId` | Lista acotada (máximo 50, más reciente primero) de `{appointmentId, status, startAt, endAt, modality, calendarAdded, calendarNeedsUpdate}` | Estudiante dueño, Profesional o Practicante asignado                      |
+| `presentation/appointments.getAppointmentCalendarFile`     | `appointmentId`   | `{fileName, content, alreadyAdded}`                                                                                                        | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
+| `presentation/appointments.getCalendarConnection`          | —                 | `{connected: boolean}`                                                                                                                     | Cualquier sesión con perfil vigente                                       |
+| `presentation/appointments.addAppointmentToGoogleCalendar` | `appointmentId`   | `{status: "created" \| "updated" \| "already_created", eventId, ics}` o `{status: "fallback", reason, ics}`                                | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
 
 Reglas del contrato:
 
@@ -86,16 +86,16 @@ Todo ocurre en el mismo proyecto de Google Cloud asociado a `GOOGLE_CLIENT_ID` q
 
 Solo nombres; ningún valor real pertenece al repositorio. Se configuran en el deployment de Convex con `convex env set`.
 
-| Variable                      | Uso                                                        |
-| ----------------------------- | ---------------------------------------------------------- |
-| `GOOGLE_CLIENT_ID`            | Cliente OAuth de Google, servidor                          |
-| `GOOGLE_CLIENT_SECRET`        | Secreto OAuth, solo servidor                               |
-| `BETTER_AUTH_SECRET`          | Firma de sesiones y cifrado de tokens, solo servidor       |
-| `SITE_URL`                    | Origen de la Web para callbacks y orígenes confiables      |
-| `CONVEX_SITE_URL`             | Base de `/api/auth/*` y redirect OAuth                     |
-| `BETTER_AUTH_TRUSTED_ORIGINS` | Orígenes extra permitidos, separados por coma (opcional)   |
-| `VITE_CONVEX_URL`             | Cliente Convex en Web, pública                             |
-| `VITE_CONVEX_SITE_URL`        | Base de `/api/auth/*` en Web, pública                      |
+| Variable                      | Uso                                                      |
+| ----------------------------- | -------------------------------------------------------- |
+| `GOOGLE_CLIENT_ID`            | Cliente OAuth de Google, servidor                        |
+| `GOOGLE_CLIENT_SECRET`        | Secreto OAuth, solo servidor                             |
+| `BETTER_AUTH_SECRET`          | Firma de sesiones y cifrado de tokens, solo servidor     |
+| `SITE_URL`                    | Origen de la Web para callbacks y orígenes confiables    |
+| `CONVEX_SITE_URL`             | Base de `/api/auth/*` y redirect OAuth                   |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | Orígenes extra permitidos, separados por coma (opcional) |
+| `VITE_CONVEX_URL`             | Cliente Convex en Web, pública                           |
+| `VITE_CONVEX_SITE_URL`        | Base de `/api/auth/*` en Web, pública                    |
 
 ## Seguridad y privacidad
 
@@ -131,17 +131,17 @@ La verificación real requiere una cuenta de Google de prueba autorizada y el pr
 
 ## Diagnóstico de errores
 
-| Síntoma                                      | Causa probable                                                           | Acción                                                           |
-| -------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| `redirect_uri_mismatch`                      | La URI de callback no coincide exactamente con la registrada             | Corregir la URI en Credenciales                                  |
-| `access_denied`                              | La cuenta no es test user o la persona rechazó el consentimiento          | Agregar la cuenta o reintentar el consentimiento                 |
-| `admin_policy_enforced`                      | El Workspace bloquea aplicaciones de terceros                             | Pedir autorización al administrador institucional                |
-| `invalid_scope`                              | El alcance `calendar.events` no está declarado en la pantalla de consentimiento | Agregarlo en la pantalla de consentimiento                 |
-| `403 accessNotConfigured`                    | Google Calendar API no está habilitada                                    | Habilitarla en la biblioteca del proyecto                        |
-| `403 insufficientPermissions`                | La cuenta vinculada no concedió `calendar.events`                        | Volver a conectar Google Calendar desde el detalle               |
-| La acción responde `fallback` con `not_connected` | No hay cuenta vinculada, falta el alcance o el token fue revocado    | Volver a conectar Google Calendar o descargar el `.ics`                 |
-| La acción responde `fallback` con `unavailable` | Google no respondió o devolvió un error no recuperable                | Reintentar más tarde o descargar el `.ics`                       |
-| La acción o la descarga responden `conflict` | La atención está cancelada, realizada o con inasistencia               | No hay acción de calendario para ese estado                      |
+| Síntoma                                           | Causa probable                                                                  | Acción                                                  |
+| ------------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `redirect_uri_mismatch`                           | La URI de callback no coincide exactamente con la registrada                    | Corregir la URI en Credenciales                         |
+| `access_denied`                                   | La cuenta no es test user o la persona rechazó el consentimiento                | Agregar la cuenta o reintentar el consentimiento        |
+| `admin_policy_enforced`                           | El Workspace bloquea aplicaciones de terceros                                   | Pedir autorización al administrador institucional       |
+| `invalid_scope`                                   | El alcance `calendar.events` no está declarado en la pantalla de consentimiento | Agregarlo en la pantalla de consentimiento              |
+| `403 accessNotConfigured`                         | Google Calendar API no está habilitada                                          | Habilitarla en la biblioteca del proyecto               |
+| `403 insufficientPermissions`                     | La cuenta vinculada no concedió `calendar.events`                               | Volver a conectar Google Calendar desde el detalle      |
+| La acción responde `fallback` con `not_connected` | No hay cuenta vinculada, falta el alcance o el token fue revocado               | Volver a conectar Google Calendar o descargar el `.ics` |
+| La acción responde `fallback` con `unavailable`   | Google no respondió o devolvió un error no recuperable                          | Reintentar más tarde o descargar el `.ics`              |
+| La acción o la descarga responden `conflict`      | La atención está cancelada, realizada o con inasistencia                        | No hay acción de calendario para ese estado             |
 
 ## Archivos de referencia
 

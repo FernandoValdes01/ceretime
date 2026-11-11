@@ -1,9 +1,6 @@
 ---
 name: diagnosing-bugs
-description: Diagnosis loop for hard bugs and performance regressions. Use when the user says "diagnose"/"debug this", or reports something broken/throwing/failing/slow.
-disable-model-invocation: true
-metadata:
-  opencode/autoinvoke: "false"
+description: Diagnostica fallos difíciles o regresiones de rendimiento con una reproducción verificable; úsala cuando algo falla, se rompe o está lento y la causa no es evidente.
 ---
 
 # Diagnosing Bugs
