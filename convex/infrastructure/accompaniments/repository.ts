@@ -234,17 +234,25 @@ export async function hasActiveProfessionalAssignment(
   return rows.length > 0;
 }
 
-/** Crea la fila activa de la tripla, registrando quién concede y cuándo. */
+/**
+ * Crea la fila activa de la combinación, registrando quién concede y cuándo.
+ * La vigencia es opcional (TI2-138): `validFrom`/`validUntil` solo se escriben
+ * si quien llama los entrega y no reemplazan a `status`, que sigue decidiendo
+ * el acceso.
+ */
 export async function insertActiveAssignment(
   ctx: MutationCtx,
   triple: AssignmentTriple,
   grantedBy: Id<"users">,
+  validity?: { readonly validFrom?: number; readonly validUntil?: number },
 ) {
   return await ctx.db.insert("accompanimentAssignments", {
     ...triple,
     status: "active",
     grantedBy,
     grantedAt: Date.now(),
+    ...(validity?.validFrom === undefined ? {} : { validFrom: validity.validFrom }),
+    ...(validity?.validUntil === undefined ? {} : { validUntil: validity.validUntil }),
   });
 }
 
