@@ -51,6 +51,19 @@ export const UNAUTHORIZED_ERROR_CODE = "unauthorized" as const;
 /** Campos del espacio inválidos: el mensaje indica el campo en español. */
 export const SPACE_FIELDS_INVALID_ERROR_CODE = "space_fields_invalid" as const;
 
+/**
+ * Nota de traducción para `space_fields_invalid` (TI2-148, revisión).
+ *
+ * A diferencia del precedente `access_needs_*` (un código por regla), un
+ * solo código cubre los seis campos del espacio y el detalle viaja en
+ * `message`. Los clientes que traducen por código (mobile lo hace en
+ * `to-mobile-operation-error.ts` con `API_ERROR_MESSAGES[code]`) muestran
+ * el genérico; los que muestran el mensaje (editor web de TI2-169) ven el
+ * campo exacto. Si TI2-169 necesita marcar el campo en el formulario,
+ * conviene un código por campo o una clave `field` en el error. Hoy no
+ * afecta a nadie porque mobile no gestiona espacios.
+ */
+
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
 
