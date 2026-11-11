@@ -1,14 +1,19 @@
 # Design Systems from DESIGN.md
 
-Build a new app from a preset, install every component, restyle it from a `DESIGN.md`, then render a design system page.
+Restyle shadcn/ui from a `DESIGN.md` and render a design system page. Two modes:
+
+- **Existing app** (default when the request is to apply a DESIGN.md to CERETI Web, `apps/web`): keep the app, its `components.json` and its theme. Skip Step 1 and the `add --all` in Step 2: read `info --json`, then change only `tailwindCssFile` and the installed components (Steps 3–5). Add a component only when the DESIGN.md needs one that is missing. Build the showcase inside the app only if the user asks for it (Step 6).
+- **New app** (only when the user explicitly asks for a new project or a standalone design system): scaffold from a preset, install every component, then continue from Step 3.
+
+Never run `init` in an existing app to apply a DESIGN.md. Use the preset flow in SKILL.md ("Switching presets") when the request is a new preset.
 
 Trigger phrases: "build me a design system using <preset>", "apply this DESIGN.md", "create a showcase / design system page", "make shadcn look like <brand>".
 
 ## Contents
 
 - Inputs to confirm
-- Step 1: Scaffold
-- Step 2: Install everything
+- Step 1: Scaffold (new app only)
+- Step 2: Install everything (new app only)
 - Step 3: Read the DESIGN.md
 - Step 4: Map tokens to the theme
 - Step 5: Map component recipes to variants
@@ -32,7 +37,7 @@ If the DESIGN.md path can't be read (macOS privacy blocks `~/Downloads` and `~/D
 
 ---
 
-## Step 1: Scaffold
+## Step 1: Scaffold (new app only)
 
 With a preset code from the user:
 
@@ -72,7 +77,7 @@ The theme gets replaced by the DESIGN.md anyway. The style decides geometry the 
 
 State the choice and the reason in one line ("Picked maia: 40px controls, 12–16px cards, generous padding"). If the user names a style, use it. Read `base`, `style`, `iconLibrary`, `tailwindCssFile` and `aliases` from `info` before writing any code.
 
-## Step 2: Install Everything
+## Step 2: Install Everything (new app only)
 
 ```bash
 npx shadcn@latest add --all -y

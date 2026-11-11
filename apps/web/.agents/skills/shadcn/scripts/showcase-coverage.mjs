@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Lists installed UI components that no file in the showcase imports.
+// Lists installed UI components that no showcase file renders: an import counts
+// only when one of its names is used in that file outside imports and comments.
 // Usage: node showcase-coverage.mjs <ui-dir> <showcase-dir...>
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { basename, extname, join, resolve } from "node:path"
@@ -32,16 +33,33 @@ function walk(path) {
   })
 }
 
-const source = roots
-  .map((root) => resolve(root))
-  .flatMap(walk)
-  .filter((file) => /\.(tsx?|jsx?)$/.test(file))
-  .map((file) => readFileSync(file, "utf8"))
-  .join("\n")
+const IMPORT_RE = /import\s+([^;]*?)\s+from\s+["']([^"']*\/ui\/[^"']+)["']/g
+const COMMENT_RE = /\/\*[\s\S]*?\*\/|(^|[^:])\/\/.*$/gm
 
-const missing = components.filter(
-  (name) => !new RegExp(`/ui/${name}["']`).test(source)
-)
+// Local names bound by an import clause: default, namespace and named (after `as`).
+function importedNames(clause) {
+  return [...clause.matchAll(/(?:\*\s+as\s+)?([A-Za-z_$][\w$]*)\s*(?=[,}]|$)/g)]
+    .map((match) => match[1])
+    .filter((name) => name !== "as" && name !== "type")
+}
+
+const shown = new Set()
+
+for (const root of roots.map((entry) => resolve(entry))) {
+  for (const file of walk(root).filter((path) => /\.(tsx?|jsx?)$/.test(path))) {
+    const code = readFileSync(file, "utf8").replace(COMMENT_RE, "$1")
+    const body = code.replace(IMPORT_RE, "")
+
+    for (const [, clause, specifier] of code.matchAll(IMPORT_RE)) {
+      const names = importedNames(clause.replace(/^type\s+/, ""))
+      if (names.some((name) => new RegExp(`\\b${name}\\b`).test(body))) {
+        shown.add(basename(specifier))
+      }
+    }
+  }
+}
+
+const missing = components.filter((name) => !shown.has(name))
 
 console.log(
   `${components.length - missing.length}/${components.length} components shown.`
