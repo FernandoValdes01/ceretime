@@ -4,10 +4,10 @@ TI4-27 prepara la ejecución reproducible de los builds reales que TI4-34 debe v
 
 ## Inventario de scripts reales
 
-| Componente | Script del paquete | Comando de CI | Salida esperada |
-| --- | --- | --- | --- |
-| Web | `build`: `tsc -b && vite build` | `bun run --cwd apps/web build` | `apps/web/dist/` |
-| Mobile | `export`: `expo export --platform all` | `bun run --cwd apps/mobile export` | `apps/mobile/dist/` |
+| Componente | Script del paquete                     | Comando de CI                      | Salida esperada     |
+| ---------- | -------------------------------------- | ---------------------------------- | ------------------- |
+| Web        | `build`: `tsc -b && vite build`        | `bun run --cwd apps/web build`     | `apps/web/dist/`    |
+| Mobile     | `export`: `expo export --platform all` | `bun run --cwd apps/mobile export` | `apps/mobile/dist/` |
 
 El inventario no incluye `eas build`: `apps/mobile` documenta que `export` genera los bundles JavaScript para Android, iOS y Web, mientras que EAS queda reservado para una construcción Preview posterior.
 
@@ -15,10 +15,10 @@ El inventario no incluye `eas build`: `apps/mobile` documenta que `export` gener
 
 La primera versión incluía estos dos jobs dentro de `ci.yml` y los condicionaba a `workflow_dispatch`. GitHub los mostraba como `skipped` en cada ejecución de `pull_request`, aunque la preparación manual no se hubiera solicitado. Ahora están aislados en un workflow manual para que la CI de la PR no presente checks omitidos.
 
-| Job | Qué hace | Cuándo se ejecuta |
-| --- | --- | --- |
-| `builds` | Ejecuta en paralelo el build real de Web y el export de Mobile, publica sus carpetas `dist/` como artefactos y deja un resumen del resultado. | Solo mediante **Run workflow** en `Validación de builds`. |
-| `publish-pr-result` | Publica o actualiza un comentario en la PR con el estado, el commit validado y el enlace al run. No ejecuta builds ni pruebas. | Siempre después de `builds`; `pr_number` es obligatorio. |
+| Job                 | Qué hace                                                                                                                                      | Cuándo se ejecuta                                         |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `builds`            | Ejecuta en paralelo el build real de Web y el export de Mobile, publica sus carpetas `dist/` como artefactos y deja un resumen del resultado. | Solo mediante **Run workflow** en `Validación de builds`. |
+| `publish-pr-result` | Publica o actualiza un comentario en la PR con el estado, el commit validado y el enlace al run. No ejecuta builds ni pruebas.                | Siempre después de `builds`; `pr_number` es obligatorio.  |
 
 En una ejecución normal de `pull_request`, esos jobs ya no forman parte del workflow `CI`, por lo que no quedan checks `skipped`. La validación Web existente sí se ejecuta en su job normal, pero la matriz adicional de Web y Mobile sigue reservada para la ejecución controlada de TI4-34. En el workflow manual tampoco se omiten pasos por componente: cada trabajo de la matriz ejecuta exactamente el comando que corresponde a su componente.
 
