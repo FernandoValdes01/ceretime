@@ -4,6 +4,7 @@ import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-l
 import { isBackendConfigured } from "../../infrastructure/convex/convex-client.ts";
 import { AuthScreen } from "../auth/AuthScreen.tsx";
 import type { StaffRole, WebSessionAndRole, WebSessionState } from "../session/session-state.ts";
+import { PublicMain } from "./app-shell.tsx";
 import { isPairCurrent } from "./staff-portal-roles.ts";
 
 /**
@@ -19,7 +20,7 @@ import { isPairCurrent } from "./staff-portal-roles.ts";
  * (`getSessionWithRole`), y además se exige confirmación cruzada con la
  * suscripción independiente de sesión: si el par aún trae otra sesión
  * (revalidación en curso tras un cambio de cuenta), se espera sin
- * renderizar ni navegar hasta que el contexto se actualice.
+ * mostrar el portal ni navegar hasta que el contexto se actualice.
  *
  * La redirección es imperativa en efecto con dependencias estables, y la
  * ruta de retorno se captura una sola vez al montar (mismo motivo que en
@@ -56,7 +57,7 @@ export function RequireStaffRole({
     if (pair === undefined) {
       return;
     }
-    // Sin confirmación no se navega ni se renderiza: el par puede traer
+    // Sin confirmación no se navega ni se muestra el portal: el par puede traer
     // otra sesión mientras revalida y actuar con él mostraría el portal
     // anterior o expulsaría una sesión legítima.
     if (!isPairCurrent(session, pair)) {
@@ -70,23 +71,39 @@ export function RequireStaffRole({
 
   // Sin backend la sesión nunca resuelve: se muestra el acceso con su
   // estado explícito en vez de un "Cargando…" indefinido. No expone
-  // contenido protegido porque el portal nunca llega a renderizarse.
+  // contenido protegido porque el portal nunca llega a mostrarse.
   if (!isBackendConfigured) {
-    return <AuthScreen />;
+    return (
+      <PublicMain>
+        <AuthScreen />
+      </PublicMain>
+    );
   }
   // El portal se oculta desde el primer render sin sesión o sin
   // confirmación, aunque el par anterior siga en memoria: tras perder la
   // sesión o al cambiar de cuenta no se vuelve a mostrar contenido
   // protegido mientras se navega o se espera al contexto vigente.
   if (session === undefined || pair === undefined) {
-    return <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>;
+    return (
+      <PublicMain>
+        <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>
+      </PublicMain>
+    );
   }
   if (session.status === "unauthenticated" || !isPairCurrent(session, pair)) {
-    return <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>;
+    return (
+      <PublicMain>
+        <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>
+      </PublicMain>
+    );
   }
   const role = pair.role;
   if (role.status === "unauthenticated" || !allowedRoles.includes(role.role)) {
-    return <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>;
+    return (
+      <PublicMain>
+        <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>
+      </PublicMain>
+    );
   }
   return <>{children}</>;
 }

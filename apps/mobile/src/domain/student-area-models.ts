@@ -10,17 +10,23 @@ import type {
 // Proyecciones móviles; el contenido de la solicitud procede del dominio compartido.
 
 export interface StudentIdentity {
+  // Identidad de sesión; no la entregan los cinco endpoints de solicitudes y acompañamientos.
   readonly id: string;
   readonly displayName: string;
   readonly email: string;
 }
 
 export interface StudentRequest {
+  // createRequest, listOwnRequests y getRequest: _id -> id, createdAt -> ISO.
   readonly id: string;
+  // Públicos: received, underReview, awaitingInformationOrAcceptance y accepted.
+  // referred, closedWithoutAccompaniment y cancelled siguen pendientes de TI2-141.
   readonly status: RequestStatus;
-  // Solo existe cuando la solicitud se cierra sin abrir un acompañamiento.
+  // Provisional: TI2-141 aún no publica el cierre ni su motivo.
   readonly closureReason?: string;
   readonly createdAt: IsoDateTime;
+  // Campos locales del formulario/demo. No llegan en listOwnRequests ni getRequest;
+  // TI2-141 publicará el contenido completo y sus reglas de envío.
   readonly updatedAt?: IsoDateTime;
   readonly needSummary?: string;
   readonly expectedOutcome?: string;
@@ -37,10 +43,10 @@ export interface StudentAreaSnapshot {
   readonly accompaniments: readonly Accompaniment[];
 }
 
-/** Contenido canónico completo, usado por el formulario y el simulador local. */
+/** Contenido del formulario/demo. createRequest solo acepta accessNeeds como texto; el mapper enumera los campos aún no enviados. */
 export type SubmitStudentRequestCommand = Readonly<AccompanimentRequestContent>;
 
-// Comprobante mínimo que devuelve el envío de una solicitud.
+// createRequest: _id -> requestId y createdAt -> receivedAt, sin inventar otros datos.
 export interface StudentRequestSubmissionReceipt {
   readonly requestId: string;
   readonly receivedAt: IsoDateTime;

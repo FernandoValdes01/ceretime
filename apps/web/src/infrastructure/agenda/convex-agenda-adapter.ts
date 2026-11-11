@@ -74,6 +74,12 @@ import { createFictitiousAgendaAdapter } from "./fictitious-agenda-adapter.ts";
 /** Tope de días civiles del contrato de disponibilidad y agenda. */
 const AGENDA_WINDOW_DAYS = 92;
 
+/** Días civiles antes de hoy que cubre la ventana de la agenda. */
+export const AGENDA_DAYS_BEFORE = Math.floor((AGENDA_WINDOW_DAYS - 1) / 2);
+
+/** Días civiles después de hoy que cubre la ventana de la agenda. */
+export const AGENDA_DAYS_AFTER = AGENDA_WINDOW_DAYS - 1 - AGENDA_DAYS_BEFORE;
+
 /** Tope de atenciones por página que acepta la API; nunca se envía más. */
 const AGENDA_PAGE_LIMIT = 50;
 
@@ -179,8 +185,7 @@ function availabilityRange(nowMs: number): { readonly from: string; readonly to:
  */
 function agendaRange(nowMs: number): { readonly from: string; readonly to: string } {
   const today = civilDateOf(nowMs);
-  const before = Math.floor((AGENDA_WINDOW_DAYS - 1) / 2);
-  const from = civilDatePlus(today, -before);
+  const from = civilDatePlus(today, -AGENDA_DAYS_BEFORE);
   return { from, to: civilDatePlus(from, AGENDA_WINDOW_DAYS - 1) };
 }
 

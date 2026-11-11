@@ -678,12 +678,15 @@ describe("editor de disponibilidad (TI2-103)", () => {
       "Solicitudes",
       "Agenda",
       "Disponibilidad",
-      "Sesión",
     ]);
+    expect(
+      within(nav).getByRole("link", { name: "Disponibilidad" }).getAttribute("aria-current"),
+    ).toBe("page");
     for (const link of links) {
       link.focus();
       expect(document.activeElement).toBe(link);
     }
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 });
 

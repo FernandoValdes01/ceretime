@@ -121,6 +121,19 @@ describe("panel inicial del Estudiante", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  test("la sección de atenciones enlaza la lista sin afirmar que no hay atenciones", async () => {
+    mockSession = SESSION;
+    mockRequests = EMPTY_PAGE;
+    mockAccompaniments = EMPTY_PAGE;
+    renderPanel();
+
+    expect(await screen.findByText(greetingText())).toBeDefined();
+    expect(screen.getByRole("link", { name: "Ver mis atenciones" }).getAttribute("href")).toBe(
+      "/estudiante/atenciones",
+    );
+    expect(screen.queryByText("Aún no tienes atenciones agendadas.")).toBeNull();
+  });
+
   test("con datos muestra estados con etiquetas en español", async () => {
     mockSession = SESSION;
     mockRequests = {
