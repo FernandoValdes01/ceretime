@@ -6,6 +6,8 @@ import {
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_CODE,
   NO_AVAILABILITY_ERROR_MESSAGE,
+  SPACE_FIELDS_INVALID_ERROR_CODE,
+  SPACE_FIELDS_INVALID_ERROR_MESSAGE,
   UNAUTHORIZED_ERROR_CODE,
   UNAUTHORIZED_ERROR_MESSAGE,
   conflictError,
@@ -48,6 +50,7 @@ describe("Códigos estables de conflicto, acceso denegado y ausencia de cupo (TI
       "unauthorized",
       "conflict",
       "no_availability",
+      "space_fields_invalid",
     ]);
   });
 
@@ -68,6 +71,15 @@ describe("Códigos estables de conflicto, acceso denegado y ausencia de cupo (TI
       expect(message.length).toBeGreaterThan(0);
       expect(message).not.toMatch(/stack|Id\(|needs|nota/i);
     }
+  });
+
+  test("la validación de espacios usa código estable con mensaje específico", () => {
+    expect(SPACE_FIELDS_INVALID_ERROR_CODE).toBe("space_fields_invalid");
+    expect(SPACE_FIELDS_INVALID_ERROR_MESSAGE).toContain("campos del espacio");
+    expect(API_ERROR_MESSAGES[SPACE_FIELDS_INVALID_ERROR_CODE]).toBe(
+      SPACE_FIELDS_INVALID_ERROR_MESSAGE,
+    );
+    expect(isApiErrorCode(SPACE_FIELDS_INVALID_ERROR_CODE)).toBe(true);
   });
 
   test("la ausencia de cupo pide coordinación por el canal oficial, no reserva incompatible", () => {

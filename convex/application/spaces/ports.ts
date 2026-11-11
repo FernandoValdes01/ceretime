@@ -33,9 +33,11 @@ export interface SpaceReader {
 
 /**
  * Escrituras del catálogo (TI2-148). Validan integridad, no autorización:
- * el caso de uso exige administración vigente antes de llamar. El duplicado
- * lógico (misma ubicación, vigente o retirada) y la sala inexistente o de
- * otra tabla responden `conflict` sin escribir, sin filtrar la existencia.
+ * el caso de uso exige administración vigente antes de llamar y convierte
+ * la sala inexistente o de otra tabla en `unauthorized` con una lectura
+ * previa; por eso este puerto responde `conflict` también ante la sala
+ * inexistente, sin filtrar la existencia. El duplicado lógico (misma
+ * ubicación, vigente o retirada) responde `conflict` sin escribir.
  */
 export interface SpaceWriter {
   /** Crea una sala vigente y devuelve su identificador. */

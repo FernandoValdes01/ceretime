@@ -26,34 +26,7 @@ import { unwrapApiResult as unwrap } from "./session";
  * pagina: nunca se trunca en silencio.
  */
 
-const spaceValidator = v.object({
-  id: v.id("spaces"),
-  campus: v.string(),
-  building: v.string(),
-  floor: v.string(),
-  room: v.string(),
-  accessConditions: v.string(),
-  arrivalInstructions: v.string(),
-  version: v.literal(SPACE_CATALOG_CONTRACT_VERSION),
-});
-
-const managedSpaceValidator = v.object({
-  space: v.object({
-    id: v.string(),
-    campus: v.string(),
-    building: v.string(),
-    floor: v.string(),
-    room: v.string(),
-    accessConditions: v.string(),
-    arrivalInstructions: v.string(),
-    version: v.literal(SPACE_CATALOG_CONTRACT_VERSION),
-  }),
-  label: v.string(),
-  isActive: v.boolean(),
-  version: v.literal(SPACE_CATALOG_CONTRACT_VERSION),
-});
-
-const spaceFields = {
+const spaceContentFields = {
   campus: v.string(),
   building: v.string(),
   floor: v.string(),
@@ -62,6 +35,22 @@ const spaceFields = {
   arrivalInstructions: v.string(),
   version: v.literal(SPACE_CATALOG_CONTRACT_VERSION),
 };
+
+const spaceValidator = v.object({
+  id: v.id("spaces"),
+  ...spaceContentFields,
+});
+
+const managedSpaceValidator = v.object({
+  space: v.object({
+    id: v.string(),
+    ...spaceContentFields,
+  }),
+  label: v.string(),
+  isActive: v.boolean(),
+});
+
+const spaceFields = { ...spaceContentFields };
 
 const spaceCatalogPageValidator = v.object({
   items: v.array(spaceValidator),
@@ -103,7 +92,7 @@ export const createSpace = mutation({
   returns: managedSpaceValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    const managed = unwrap(
+    return unwrap(
       await createSpaceCatalogEntry(
         authorizationReader(ctx),
         { ...spaceReader(ctx), ...spaceWriter(ctx) },
@@ -113,7 +102,6 @@ export const createSpace = mutation({
         },
       ),
     );
-    return { ...managed, version: SPACE_CATALOG_CONTRACT_VERSION };
   },
 });
 
@@ -123,7 +111,7 @@ export const updateSpace = mutation({
   returns: managedSpaceValidator,
   handler: async (ctx, { spaceId, version: _version, ...fields }) => {
     const identity = await ctx.auth.getUserIdentity();
-    const managed = unwrap(
+    return unwrap(
       await updateSpaceCatalogEntry(
         authorizationReader(ctx),
         { ...spaceReader(ctx), ...spaceWriter(ctx) },
@@ -135,7 +123,6 @@ export const updateSpace = mutation({
         },
       ),
     );
-    return { ...managed, version: SPACE_CATALOG_CONTRACT_VERSION };
   },
 });
 
@@ -149,7 +136,7 @@ export const setSpaceActive = mutation({
   returns: managedSpaceValidator,
   handler: async (ctx, { spaceId, isActive }) => {
     const identity = await ctx.auth.getUserIdentity();
-    const managed = unwrap(
+    return unwrap(
       await setSpaceCatalogActive(
         authorizationReader(ctx),
         { ...spaceReader(ctx), ...spaceWriter(ctx) },
@@ -161,7 +148,6 @@ export const setSpaceActive = mutation({
         },
       ),
     );
-    return { ...managed, version: SPACE_CATALOG_CONTRACT_VERSION };
   },
 });
 
@@ -171,13 +157,12 @@ export const getSpace = query({
   returns: managedSpaceValidator,
   handler: async (ctx, { spaceId }) => {
     const identity = await ctx.auth.getUserIdentity();
-    const managed = unwrap(
+    return unwrap(
       await getSpaceCatalogEntry(authorizationReader(ctx), spaceReader(ctx), {
         tokenIdentifier: identity?.tokenIdentifier ?? null,
         version: SPACE_CATALOG_CONTRACT_VERSION,
         spaceId,
       }),
     );
-    return { ...managed, version: SPACE_CATALOG_CONTRACT_VERSION };
   },
 });

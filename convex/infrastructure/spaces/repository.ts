@@ -89,9 +89,9 @@ type DbReader = QueryCtx | MutationCtx;
 // bloques y excepciones, y crearla sin repetir la misma ubicación. Las
 // funciones de filas son para Infraestructura; Aplicación lee con
 // `spaceReader(ctx)`, que entrega el contrato `Space` mapeado con `toSpace`.
-// Retirar una sala del catálogo no está aquí: exige decidir qué pasa con los
-// bloques, excepciones y atenciones que la usan, y esa gestión no tiene
-// productor en S2 (TI2-104).
+// TI2-148 suma `updateSpace` y `setSpaceActive` con la misma regla de
+// unicidad: retirar conserva la fila y su historial, y no avisa a
+// atenciones confirmadas (eso es TI2-156).
 
 /** Sala por id, vigente o retirada; `null` si no existe o el id es de otra tabla. */
 export async function getSpaceRow(ctx: DbReader, spaceId: string): Promise<Doc<"spaces"> | null> {

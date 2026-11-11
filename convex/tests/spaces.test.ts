@@ -201,13 +201,15 @@ test("los filtros inválidos se rechazan sin consultar", async () => {
 });
 
 /** Datos públicos del error de gestión, sin asumir la envoltura concreta. */
-async function manageErrorData(promise: Promise<unknown>): Promise<{ code: string }> {
+async function manageErrorData(
+  promise: Promise<unknown>,
+): Promise<{ code: string; message: string }> {
   try {
     await promise;
   } catch (error) {
-    if (error instanceof ConvexError) return error.data as { code: string };
+    if (error instanceof ConvexError) return error.data as { code: string; message: string };
     if (typeof error === "object" && error !== null && "data" in error) {
-      return (error as { readonly data: { code: string } }).data;
+      return (error as { readonly data: { code: string; message: string } }).data;
     }
     throw error;
   }
@@ -231,7 +233,7 @@ test("TI2-148 éxito: administración crea, consulta, edita y deshabilita con no
 
   const created = await admin.mutation(api.presentation.spaces.createSpace, SPACE_INPUT);
   expect(created.isActive).toBe(true);
-  expect(created.version).toBe("v1");
+  expect(created.space.version).toBe("v1");
   expect(created.space.room).toBe("Sala Ficticia Nueva");
   expect(created.label).toBe("Campus Ficticio · Edificio Ficticio · Piso 2 · Sala Ficticia Nueva");
 
@@ -327,10 +329,75 @@ test("TI2-148 denegación: sin administración no se gestiona el catálogo", asy
   expect(
     (
       await manageErrorData(
+        t.mutation(api.presentation.spaces.updateSpace, {
+          spaceId: created.space.id,
+          ...SPACE_INPUT,
+        }),
+      )
+    ).code,
+  ).toBe("unauthorized");
+  expect(
+    (
+      await manageErrorData(
+        t.mutation(api.presentation.spaces.setSpaceActive, {
+          spaceId: created.space.id,
+          isActive: false,
+          version: "v1",
+        }),
+      )
+    ).code,
+  ).toBe("unauthorized");
+  expect(
+    (
+      await manageErrorData(
         t.query(api.presentation.spaces.getSpace, { spaceId: created.space.id, version: "v1" }),
       )
     ).code,
   ).toBe("unauthorized");
+});
+
+test("TI2-148 inexistente: un id ajeno o de otra tabla se deniega sin filtrar", async () => {
+  const t = convexTest(schema, modules);
+  await seedUser(t, "ti148-adm", "admin");
+  await seedUser(t, "ti148-otro", "professional");
+  const admin = asReader(t, "ti148-adm");
+  const created = await admin.mutation(api.presentation.spaces.createSpace, SPACE_INPUT);
+  const foreignId = await t.run(async (ctx) => {
+    const row = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", "ti148-otro@uct.cl"))
+      .first();
+    return row!._id;
+  });
+
+  for (const spaceId of ["sala-ficticia-inexistente", foreignId]) {
+    expect(
+      (
+        await manageErrorData(
+          admin.query(api.presentation.spaces.getSpace, { spaceId, version: "v1" }),
+        )
+      ).code,
+    ).toBe("unauthorized");
+    expect(
+      (
+        await manageErrorData(
+          admin.mutation(api.presentation.spaces.updateSpace, { spaceId, ...SPACE_INPUT }),
+        )
+      ).code,
+    ).toBe("unauthorized");
+    expect(
+      (
+        await manageErrorData(
+          admin.mutation(api.presentation.spaces.setSpaceActive, {
+            spaceId,
+            isActive: false,
+            version: "v1",
+          }),
+        )
+      ).code,
+    ).toBe("unauthorized");
+  }
+  expect(created.isActive).toBe(true);
 });
 
 test("TI2-148 duplicado: la misma ubicación vigente o retirada responde conflicto", async () => {
@@ -393,13 +460,55 @@ test("TI2-148 duplicado: la misma ubicación vigente o retirada responde conflic
     ).code,
   ).toBe("conflict");
 
-  await expect(
+  const emptyCampus = await manageErrorData(
+    admin.mutation(api.presentation.spaces.createSpace, { ...SPACE_INPUT, campus: "   " }),
+  );
+  expect(emptyCampus.code).toBe("space_fields_invalid");
+  expect(emptyCampus.message).toBe("Indica el campus del espacio.");
+});
+
+test("TI2-148 vigencia y recorte: reactivar vuelve a ofrecer y el duplicado se recorta", async () => {
+  const t = convexTest(schema, modules);
+  await seedUser(t, "ti148-adm", "admin");
+  const admin = asReader(t, "ti148-adm");
+  const created = await admin.mutation(api.presentation.spaces.createSpace, SPACE_INPUT);
+
+  const sameLocation = await admin.mutation(api.presentation.spaces.updateSpace, {
+    spaceId: created.space.id,
+    ...SPACE_INPUT,
+    accessConditions: "Condición ficticia editada",
+  });
+  expect(sameLocation.isActive).toBe(true);
+  expect(sameLocation.space.accessConditions).toBe("Condición ficticia editada");
+
+  await admin.mutation(api.presentation.spaces.setSpaceActive, {
+    spaceId: created.space.id,
+    isActive: false,
+    version: "v1",
+  });
+  const reactivated = await admin.mutation(api.presentation.spaces.setSpaceActive, {
+    spaceId: created.space.id,
+    isActive: true,
+    version: "v1",
+  });
+  expect(reactivated.isActive).toBe(true);
+  const page = await admin.query(api.presentation.spaces.listSpaces, {
+    limit: 10,
+    version: "v1",
+  });
+  expect(page.items.map((item) => item.id)).toContain(created.space.id);
+
+  const padded = await manageErrorData(
     admin.mutation(api.presentation.spaces.createSpace, {
       ...SPACE_INPUT,
-      campus: "   ",
+      room: " Sala Ficticia Nueva ",
     }),
-  ).rejects.toThrow("campus");
-  await expect(
-    admin.mutation(api.presentation.spaces.createSpace, { ...SPACE_INPUT, version: "v2" as "v1" }),
-  ).rejects.toThrow("v1");
+  );
+  expect(padded.code).toBe("conflict");
+
+  const trimmed = await admin.mutation(api.presentation.spaces.createSpace, {
+    ...SPACE_INPUT,
+    room: "  Sala Ficticia Recortada  ",
+  });
+  expect(trimmed.space.room).toBe("Sala Ficticia Recortada");
 });
