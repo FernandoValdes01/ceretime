@@ -9,6 +9,7 @@ import {
   NOTIFICATION_EVENT_KIND_VALUES,
   isNotificationEventKind,
   notificationEventsForCreation,
+  notificationEventsForOnlineAccess,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   toExternalNotification,
@@ -23,6 +24,7 @@ import {
   NOTIFICATION_CONTRACT_VERSION as BARREL_VERSION,
   isNotificationEventKind as barrelIsKind,
   notificationEventsForCreation as barrelEventsForCreation,
+  notificationEventsForOnlineAccess as barrelEventsForOnlineAccess,
   notificationEventsForTransition as barrelEventsForTransition,
   notificationIdempotencyKey as barrelKey,
   toExternalNotification as barrelToExternal,
@@ -105,6 +107,7 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
     expect(barrelIsKind).toBe(isNotificationEventKind);
     expect(barrelToEvent).toBe(toNotificationEvent);
     expect(barrelEventsForCreation).toBe(notificationEventsForCreation);
+    expect(barrelEventsForOnlineAccess).toBe(notificationEventsForOnlineAccess);
     expect(barrelEventsForTransition).toBe(notificationEventsForTransition);
     expect(barrelKey).toBe(notificationIdempotencyKey);
     expectTypeOf<BarrelEvent>().toEqualTypeOf<NotificationEvent>();
@@ -120,6 +123,7 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
       "appointment_cancelled",
       "appointment_no_show",
       "appointment_reminder",
+      "appointment_online_access_ready",
     ]);
     expect(isNotificationEventKind("appointment_reminder")).toBe(true);
     expect(isNotificationEventKind("appointment_deleted")).toBe(false);
@@ -146,6 +150,10 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
       appointment_reminder: {
         title: "Tienes una atención programada",
         body: "Revisa la hora en la aplicación.",
+      },
+      appointment_online_access_ready: {
+        title: "Tu atención tiene su acceso disponible",
+        body: "Revisa cómo ingresar en la aplicación.",
       },
     };
     for (const kind of NOTIFICATION_EVENT_KIND_VALUES) {
@@ -362,5 +370,31 @@ describe("Emisión de eventos de la atención (TI2-105)", () => {
     expect(() => notificationEventsForCreation({ ...subject, appointmentId: "" }, 1000)).toThrow(
       "atención",
     );
+  });
+});
+
+describe("Aviso del acceso en línea (TI2-142)", () => {
+  test("agregar o reemplazar el enlace avisa solo al estudiante, sin el enlace", () => {
+    const emitted = notificationEventsForOnlineAccess(subject, 3000);
+    expect(emitted).toEqual([
+      {
+        kind: "appointment_online_access_ready",
+        appointmentId: "atencion-ficticia-1",
+        recipientId: "estudiante-ficticio-1",
+        occurredAt: 3000,
+        version: "v1",
+      },
+    ]);
+    const external = toExternalNotification(emitted[0]);
+    expect(`${external.title} ${external.body}`).not.toContain("meet");
+    expect(`${external.title} ${external.body}`).not.toContain("http");
+  });
+
+  test("un reemplazo posterior produce otra clave y un reintento repite la misma", () => {
+    const [first] = notificationEventsForOnlineAccess(subject, 3000);
+    const [retry] = notificationEventsForOnlineAccess(subject, 3000);
+    const [replacement] = notificationEventsForOnlineAccess(subject, 4000);
+    expect(notificationIdempotencyKey(retry)).toBe(notificationIdempotencyKey(first));
+    expect(notificationIdempotencyKey(replacement)).not.toBe(notificationIdempotencyKey(first));
   });
 });

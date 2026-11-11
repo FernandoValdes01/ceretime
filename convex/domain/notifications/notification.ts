@@ -32,6 +32,7 @@ export const NOTIFICATION_EVENT_KIND_VALUES = [
   "appointment_cancelled",
   "appointment_no_show",
   "appointment_reminder",
+  "appointment_online_access_ready",
 ] as const;
 
 export type NotificationEventKind = (typeof NOTIFICATION_EVENT_KIND_VALUES)[number];
@@ -207,6 +208,23 @@ export function notificationEventsForCreation(
 }
 
 /**
+ * Evento de una atención en línea cuyo enlace privado se agregó o reemplazó
+ * (TI2-142).
+ *
+ * Avisa solo al Estudiante: el profesional que lo agregó ya lo sabe. La clase
+ * no distingue agregar de reemplazar; el texto externo no lleva el enlace y
+ * el Estudiante lo lee en su sesión. `occurredAt` es el instante persistido
+ * del cambio, así un reintento repite la clave y un reemplazo posterior
+ * produce otra. Un enlace sin cambios no llega acá (`unchanged`).
+ */
+export function notificationEventsForOnlineAccess(
+  subject: NotificationSubject,
+  occurredAt: number,
+): readonly NotificationEvent[] {
+  return eventsFor("appointment_online_access_ready", subject, ["student"], occurredAt);
+}
+
+/**
  * Eventos de una transición de la atención, vacío si esa transición no avisa.
  *
  * Solo acepta pares declarados en `APPOINTMENT_TRANSITIONS`: un par ausente
@@ -281,6 +299,10 @@ const EXTERNAL_NOTIFICATION_TEXTS: Record<NotificationEventKind, ExternalNotific
   appointment_reminder: {
     title: "Tienes una atención programada",
     body: "Revisa la hora en la aplicación.",
+  },
+  appointment_online_access_ready: {
+    title: "Tu atención tiene su acceso disponible",
+    body: "Revisa cómo ingresar en la aplicación.",
   },
 };
 

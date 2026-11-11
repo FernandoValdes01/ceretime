@@ -191,6 +191,48 @@ export type {
   MinimizedAppointment,
 } from "./appointments/appointment";
 
+// Participantes de la atención: varios profesionales (TI2-142).
+export {
+  APPOINTMENT_PROFESSIONALS_REJECTION_CAUSES,
+  MAX_APPOINTMENT_PROFESSIONALS,
+  appointmentProfessionalIds,
+  isAppointmentParticipant,
+  isAppointmentProfessional,
+  normalizeAppointmentProfessionals,
+} from "./appointments/participants";
+export type {
+  AppointmentParticipants,
+  AppointmentProfessionals,
+  AppointmentProfessionalsRejectionCause,
+  AppointmentProfessionalsResult,
+} from "./appointments/participants";
+
+// Acceso privado y apoyos de la atención en línea (TI2-142).
+export {
+  ONLINE_ACCESS_ALLOWED_HOSTS,
+  ONLINE_ACCESS_LINK_MAX_LENGTH,
+  ONLINE_ACCESS_LINK_REJECTION_CAUSES,
+  ONLINE_ACCESS_STATUS_VALUES,
+  ONLINE_ACCESS_UPDATE_REJECTION_CAUSES,
+  ONLINE_SUPPORTS_REJECTION_CAUSES,
+  decideOnlineAccessUpdate,
+  normalizeOnlineAccessLink,
+  normalizeOnlineSupports,
+  toOnlineAccessView,
+} from "./appointments/online_access";
+export type {
+  OnlineAccessChange,
+  OnlineAccessLinkRejectionCause,
+  OnlineAccessLinkResult,
+  OnlineAccessStatus,
+  OnlineAccessSubject,
+  OnlineAccessUpdateRejectionCause,
+  OnlineAccessUpdateResult,
+  OnlineAccessView,
+  OnlineSupportsRejectionCause,
+  OnlineSupportsResult,
+} from "./appointments/online_access";
+
 // Evento de calendario por atención y alternativa .ics (TI2-122).
 export {
   buildCalendarEvent,
@@ -220,6 +262,7 @@ export {
   NOTIFICATION_EVENT_KIND_VALUES,
   isNotificationEventKind,
   notificationEventsForCreation,
+  notificationEventsForOnlineAccess,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   toExternalNotification,

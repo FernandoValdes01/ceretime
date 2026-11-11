@@ -18,7 +18,7 @@
  * con identificadores genéricos (`string` plano, sin `Id`/`Doc` de Convex).
  */
 
-import type { ModalityPreference } from "../requests/request";
+import type { AccessNeed, ModalityPreference } from "../requests/request";
 import { isValidCivilDate } from "../availability/availability";
 
 /** Versión del contrato público de la atención reservada. */
@@ -76,10 +76,22 @@ export type AppointmentAttendanceOutcome = (typeof APPOINTMENT_ATTENDANCE_OUTCOM
 export interface Appointment {
   readonly id: string;
   readonly accompanimentId: string;
+  /** Profesional responsable de la atención. */
   readonly professionalId: string;
+  /**
+   * Profesionales que acompañan al responsable (TI2-142), sin repetirlo.
+   * Ausente en las atenciones de un solo profesional; ver `participants.ts`.
+   */
+  readonly additionalProfessionalIds?: readonly string[];
   readonly modality: ModalityPreference;
   /** Referencia opaca al espacio; ausente en modalidad en línea. */
   readonly spaceId?: string;
+  /**
+   * Apoyos de la atención en línea, como subtítulos o interpretación
+   * (TI2-142), con la forma `AccessNeed`. El enlace privado no viaja acá: se
+   * lee aparte con `toOnlineAccessView` (`online_access.ts`).
+   */
+  readonly onlineSupports?: readonly AccessNeed[];
   /** Referencia opaca al cupo de disponibilidad que la originó. */
   readonly slotId?: string;
   /** Inicio de la atención como milisegundos epoch. */
@@ -649,8 +661,9 @@ export type AppointmentView = (typeof APPOINTMENT_VIEW_VALUES)[number];
 /**
  * Atención minimizada: oculta vínculos e historial interno.
  *
- * Omite `accompanimentId`, `professionalId`, `spaceId`, `slotId`,
- * `originalStartAt` y `cancelReason`: componer calendario, exportar o avisar
+ * Omite `accompanimentId`, `professionalId`, `additionalProfessionalIds`,
+ * `spaceId`, `onlineSupports`, `slotId`, `originalStartAt` y `cancelReason`:
+ * componer calendario, exportar o avisar
  * fuera de sesión no requiere esos datos y la autorización de cada vista
  * vive en Aplicación, no acá.
  */
