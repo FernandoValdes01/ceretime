@@ -5,6 +5,7 @@ import {
   canBookAppointment,
   canCancelAppointment,
   canEditAvailability,
+  canManageSpaceCatalog,
   canReadAvailability,
   canReadInternalNote,
   canReadSpaceCatalog,
@@ -580,6 +581,40 @@ describe("canReadSpaceCatalog", () => {
     for (const account of INACTIVE_ACCOUNTS) {
       expect(canReadSpaceCatalog(account)).toBe(false);
     }
+  });
+});
+
+describe("canManageSpaceCatalog", () => {
+  test("solo el Administrador con cuenta vigente gestiona el catálogo", () => {
+    expect(
+      canManageSpaceCatalog({
+        role: "admin",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+      }),
+    ).toBe(true);
+  });
+
+  test("otros roles o cuenta no vigente no gestionan", () => {
+    for (const role of ["student", "professional", "intern"] as const) {
+      expect(
+        canManageSpaceCatalog({ role, institutionalStatus: "enabled", accountStatus: "active" }),
+      ).toBe(false);
+    }
+    expect(
+      canManageSpaceCatalog({
+        role: "admin",
+        institutionalStatus: "disabled",
+        accountStatus: "active",
+      }),
+    ).toBe(false);
+    expect(
+      canManageSpaceCatalog({
+        role: "admin",
+        institutionalStatus: "enabled",
+        accountStatus: "inactive",
+      }),
+    ).toBe(false);
   });
 });
 
