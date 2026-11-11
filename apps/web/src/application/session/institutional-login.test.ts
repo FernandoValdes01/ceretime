@@ -15,32 +15,44 @@ describe("POPULATION_LOGINS", () => {
 });
 
 describe("getLoginRequest", () => {
-  test("usa el mismo proveedor Google con retorno controlado a la SPA", () => {
-    expect(getLoginRequest()).toEqual({
-      provider: "google",
+  test("cada población usa el proveedor de su dominio con retorno controlado a la SPA", () => {
+    expect(getLoginRequest("estudiante")).toEqual({
+      providerId: "google-alu",
+      callbackURL: "/",
+      errorCallbackURL: "/?auth=error",
+    });
+    expect(getLoginRequest("personal")).toEqual({
+      providerId: "google-uct",
       callbackURL: "/",
       errorCallbackURL: "/?auth=error",
     });
   });
 
+  test("el proveedor de cada botón coincide con el sufijo que muestra", () => {
+    const providerBySuffix = Object.fromEntries(
+      POPULATION_LOGINS.map((entry) => [entry.emailSuffix, getLoginRequest(entry.id).providerId]),
+    );
+    expect(providerBySuffix).toEqual({ "@alu.uct.cl": "google-alu", "@uct.cl": "google-uct" });
+  });
+
   test("con origen del entorno vuelve a esa SPA y no al SITE_URL del deployment", () => {
-    expect(getLoginRequest("http://localhost:5173")).toEqual({
-      provider: "google",
+    expect(getLoginRequest("estudiante", "http://localhost:5173")).toEqual({
+      providerId: "google-alu",
       callbackURL: "http://localhost:5173/",
       errorCallbackURL: "http://localhost:5173/?auth=error",
     });
   });
 
   test("usa solo el origen aunque la variable traiga ruta o barra final", () => {
-    expect(getLoginRequest(" https://ceretime.vercel.app/inicio/ ").callbackURL).toBe(
+    expect(getLoginRequest("personal", " https://ceretime.vercel.app/inicio/ ").callbackURL).toBe(
       "https://ceretime.vercel.app/",
     );
   });
 
   test("sin origen válido conserva la ruta relativa de siempre", () => {
     for (const value of ["", "   ", "localhost:5173-no-es-url", "no es una url"]) {
-      expect(getLoginRequest(value)).toEqual({
-        provider: "google",
+      expect(getLoginRequest("estudiante", value)).toEqual({
+        providerId: "google-alu",
         callbackURL: "/",
         errorCallbackURL: "/?auth=error",
       });

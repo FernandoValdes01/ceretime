@@ -43,3 +43,53 @@ export function getInstitutionalPopulation(email: unknown): InstitutionalPopulat
   if (normalized.endsWith("@uct.cl")) return "personal";
   return null;
 }
+
+/**
+ * Dominio de Google Workspace de cada población (TI2-131): el valor que se
+ * pide como `hd` al abrir el selector y el que Google declara en el claim `hd`
+ * del ID token de sus cuentas.
+ */
+export const HOSTED_DOMAIN_BY_POPULATION = {
+  estudiante: "alu.uct.cl",
+  personal: "uct.cl",
+} as const satisfies Record<InstitutionalPopulation, string>;
+
+/**
+ * Proveedor de inicio de cada población (TI2-131): contrato entre la Web, que
+ * elige el proveedor según el botón, y `convex/auth.ts`, que lo registra.
+ */
+export const GOOGLE_PROVIDER_ID_BY_POPULATION = {
+  estudiante: "google-alu",
+  personal: "google-uct",
+} as const satisfies Record<InstitutionalPopulation, string>;
+
+/** Claims del ID token de Google que decide el ingreso, sin validar. */
+export interface GoogleIdentityClaims {
+  readonly email: unknown;
+  readonly emailVerified: unknown;
+  readonly hostedDomain: unknown;
+}
+
+/**
+ * Verdadero solo si la cuenta de Google corresponde a la población del inicio.
+ *
+ * Exige correo verificado por Google, sufijo institucional de esa población y
+ * el claim `hd` de su dominio: una cuenta de consumo registrada con un correo
+ * institucional (por ejemplo, de quien ya egresó) no trae `hd` y se rechaza.
+ * Las cuentas `@alu.uct.cl` declaran `hd: "alu.uct.cl"` (verificado en
+ * TI2-131). Solo en personal se tolera la ausencia de `hd` mientras una cuenta
+ * `@uct.cl` real confirma su claim; entonces se exige en ambas poblaciones.
+ */
+export function isAcceptedGoogleIdentity(
+  claims: GoogleIdentityClaims,
+  population: InstitutionalPopulation,
+): boolean {
+  if (claims.emailVerified !== true) return false;
+  const email = normalizeEmail(claims.email);
+  if (!isInstitutionalEmail(email) || getInstitutionalPopulation(email) !== population) {
+    return false;
+  }
+  if (claims.hostedDomain === HOSTED_DOMAIN_BY_POPULATION[population]) return true;
+  // Pendiente de TI2-131: quitar cuando una cuenta @uct.cl real confirme `hd`.
+  return population === "personal" && claims.hostedDomain === undefined;
+}
