@@ -1,6 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { toStoredAccessNeeds } from "../../domain/requests/request";
 
 /**
  * Repositorio de solicitudes (TI2-9).
@@ -19,7 +20,8 @@ type DbReader = QueryCtx | MutationCtx;
  * Campos de la solicitud completa que se pueden fijar al recibirla (TI2-135).
  * Todos son opcionales: sin ellos la fila queda como las anteriores. La razón
  * de cierre y la derivación de salida no están porque se escriben al cerrar o
- * derivar, no al recibir.
+ * derivar, no al recibir. La clave de idempotencia tampoco está: solo la
+ * escribe `insertReceivedRequestOnce`, que comprueba el duplicado.
  */
 export type ReceivedRequestExtras = Pick<
   Doc<"requests">,
@@ -32,24 +34,72 @@ export type ReceivedRequestExtras = Pick<
   | "preferredAccessibleInformationChannel"
   | "provenance"
   | "incomingReferral"
-  | "idempotencyKey"
 >;
 
-export type ReceivedRequestInput = ReceivedRequestExtras & {
-  readonly studentId: Id<"users">;
-  readonly accessNeeds: string;
-};
+/**
+ * Necesidades de acceso del envío: el texto unido suelto, o la lista
+ * estructurada de la que el repositorio deriva ese texto con
+ * `toStoredAccessNeeds`. Nunca las dos, para que no puedan contradecirse.
+ */
+type ReceivedRequestNeeds =
+  | {
+      readonly accessNeeds: string;
+      readonly accessNeedSelections?: undefined;
+      readonly otherAccessNeed?: undefined;
+    }
+  | {
+      readonly accessNeedSelections: NonNullable<Doc<"requests">["accessNeedSelections"]>;
+      readonly accessNeeds?: undefined;
+      readonly otherAccessNeed?: string;
+    };
 
-/** Inserta una solicitud recibida del estudiante. */
+export type ReceivedRequestInput = Omit<
+  ReceivedRequestExtras,
+  "accessNeedSelections" | "otherAccessNeed"
+> &
+  ReceivedRequestNeeds & {
+    readonly studentId: Id<"users">;
+  };
+
+/**
+ * Inserta una solicitud recibida del estudiante. No acepta la clave de
+ * idempotencia: para guardarla hay que usar `insertReceivedRequestOnce`.
+ */
 export async function insertReceivedRequest(ctx: MutationCtx, input: ReceivedRequestInput) {
-  const { studentId, accessNeeds, ...extras } = input;
+  return await insertRequestRow(ctx, input);
+}
+
+/** Fila de `requests` con el texto unido ya resuelto desde una sola fuente. */
+async function insertRequestRow(
+  ctx: MutationCtx,
+  input: ReceivedRequestInput,
+  idempotencyKey?: string,
+) {
+  const { studentId, ...extras } = input;
+  const resolvedAccessNeeds =
+    input.accessNeedSelections === undefined
+      ? input.accessNeeds
+      : storedAccessNeeds(input.accessNeedSelections, input.otherAccessNeed);
   return await ctx.db.insert("requests", {
     ...extras,
     studentId,
     status: "received",
-    accessNeeds,
+    accessNeeds: resolvedAccessNeeds,
+    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
     createdAt: Date.now(),
   });
+}
+
+/** Texto unido de las condiciones de acceso, o error de dominio si no hay texto. */
+function storedAccessNeeds(
+  selections: NonNullable<Doc<"requests">["accessNeedSelections"]>,
+  otherAccessNeed?: string,
+): string {
+  const result = toStoredAccessNeeds(selections, otherAccessNeed);
+  if (result.status === "error") {
+    throw new Error(result.error.message);
+  }
+  return result.data.accessNeeds;
 }
 
 /** Solicitud del estudiante con esa clave de idempotencia, si existe. */
@@ -78,9 +128,10 @@ export async function insertReceivedRequestOnce(
   ctx: MutationCtx,
   input: ReceivedRequestInput & { readonly idempotencyKey: string },
 ): Promise<{ readonly requestId: Id<"requests">; readonly created: boolean }> {
-  const existing = await findRequestByIdempotencyKey(ctx, input.studentId, input.idempotencyKey);
+  const { idempotencyKey, ...received } = input;
+  const existing = await findRequestByIdempotencyKey(ctx, input.studentId, idempotencyKey);
   if (existing !== null) return { requestId: existing._id, created: false };
-  return { requestId: await insertReceivedRequest(ctx, input), created: true };
+  return { requestId: await insertRequestRow(ctx, received, idempotencyKey), created: true };
 }
 
 /** Solicitud por id, o `null` si no existe. */

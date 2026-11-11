@@ -26,6 +26,7 @@ export {
   requestProvenanceChannelOf,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toStoredAccessNeeds,
   toStoredRequestFields,
 } from "./requests/request";
 export type {

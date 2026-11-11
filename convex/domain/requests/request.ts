@@ -194,34 +194,32 @@ export interface StoredRequestFields {
 }
 
 /**
- * Serializa el contenido estructurado a la forma persistida (TI2-23).
+ * Serializa las condiciones de acceso a la forma persistida (TI2-23).
  *
  * Une las etiquetas de `accessNeeds` más `otherAccessNeed` (si trae texto)
- * separadas por salto de línea. Solo cubre las condiciones de acceso: el
- * resto del contenido (`needSummary`, `expectedOutcome`, modalidad,
- * disponibilidad) aún no tiene columna en el schema de Sprint 1 y queda
- * pendiente de persistencia futura, sin inventarle ubicación.
+ * separadas por salto de línea. Es la única regla para armar el texto unido:
+ * la usan los clientes y también el repositorio cuando recibe la lista
+ * estructurada, para que `accessNeeds` y `accessNeedSelections` no puedan
+ * contradecirse (TI2-135).
  *
- * Es solo dominio para que los clientes armen el texto antes de llamar:
- * Aplicación y Presentación no lo invocan y la API rechaza con sus propios
- * mensajes (ver tabla de rechazos en `docs/contratos-sprint-1.md`). Exige
- * texto no vacío como el registro: un arreglo vacío sin texto libre es
+ * Exige texto no vacío como el registro: un arreglo vacío sin texto libre es
  * error, no fila vacía.
  *
  * Nunca trunca: si el texto supera `ACCESS_NEEDS_MAX_LENGTH` devuelve error
  * con código estable para que el llamante lo informe sin filtrar detalles
  * internos.
  */
-export function toStoredRequestFields(
-  content: AccompanimentRequestContent,
+export function toStoredAccessNeeds(
+  accessNeeds: readonly AccessNeed[],
+  otherAccessNeed?: string,
 ): ApiResult<StoredRequestFields> {
-  const parts = content.accessNeeds.map((need) => need.label);
-  const other = content.otherAccessNeed?.trim();
+  const parts = accessNeeds.map((need) => need.label);
+  const other = otherAccessNeed?.trim();
   if (other) {
     parts.push(other);
   }
-  const accessNeeds = parts.join("\n");
-  if (accessNeeds.trim().length === 0) {
+  const text = parts.join("\n");
+  if (text.trim().length === 0) {
     return {
       status: "error",
       error: {
@@ -230,7 +228,7 @@ export function toStoredRequestFields(
       },
     };
   }
-  if (!isAccessNeedsWithinLimit(accessNeeds)) {
+  if (!isAccessNeedsWithinLimit(text)) {
     return {
       status: "error",
       error: {
@@ -239,5 +237,20 @@ export function toStoredRequestFields(
       },
     };
   }
-  return { status: "ok", data: { accessNeeds } };
+  return { status: "ok", data: { accessNeeds: text } };
+}
+
+/**
+ * Serializa el contenido estructurado a la forma persistida (TI2-23).
+ *
+ * Solo cubre las condiciones de acceso: el resto del contenido (`needSummary`,
+ * `expectedOutcome`, modalidad, disponibilidad) tiene sus propias columnas
+ * desde TI2-135. Es solo dominio para que los clientes armen el texto antes de
+ * llamar: Aplicación y Presentación no lo invocan y la API rechaza con sus
+ * propios mensajes (ver tabla de rechazos en `docs/contratos-sprint-1.md`).
+ */
+export function toStoredRequestFields(
+  content: AccompanimentRequestContent,
+): ApiResult<StoredRequestFields> {
+  return toStoredAccessNeeds(content.accessNeeds, content.otherAccessNeed);
 }

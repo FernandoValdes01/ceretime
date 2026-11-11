@@ -3215,10 +3215,11 @@ test("TI2-128: texto extra, literales desconocidos y referencias inválidas no s
  */
 
 /** Texto unido de las necesidades, tal como lo entrega la API vigente. */
-const TI135_ACCESS_NEEDS_TEXT = "Comunicación escrita\nMás tiempo para comunicarme";
+const TI135_ACCESS_NEEDS_TEXT =
+  "Comunicación escrita\nMás tiempo para comunicarme\nMaterial enviado con anticipación";
 
 /** Contenido completo ficticio de una solicitud, sin datos clínicos. */
-const TI135_CONTENT: ReceivedRequestExtras = {
+const TI135_CONTENT = {
   needSummary: "Necesito apoyo para seguir las clases en línea",
   expectedOutcome: "Acordar ajustes de comunicación con mis docentes",
   accessNeedSelections: [
@@ -3232,7 +3233,7 @@ const TI135_CONTENT: ReceivedRequestExtras = {
     preferredTimeRange: { from: "09:00", to: "12:00" },
   },
   preferredAccessibleInformationChannel: "Correo con letra grande",
-};
+} satisfies ReceivedRequestExtras;
 
 /** Fila de `requests` por id; falla si no existe. */
 async function ti135Row(t: ReturnType<typeof convexTest>, requestId: Id<"requests">) {
@@ -3307,10 +3308,10 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
     role: "professional",
   });
   // Sin truncar: 2000 caracteres, el tope del texto de necesidades de acceso.
-  const content: ReceivedRequestExtras = {
+  const content = {
     ...TI135_CONTENT,
     expectedOutcome: "Resultado ficticio. ".repeat(100),
-  };
+  } satisfies ReceivedRequestExtras;
   const provenance: NonNullable<Doc<"requests">["provenance"]> = {
     channel: "official_channel",
     registeredBy: staff,
@@ -3329,11 +3330,10 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
     referredBy: staff,
     reason: "Tu necesidad corresponde a otra unidad",
   };
-  const requestId = await t.run(async (ctx) => {
-    return await insertReceivedRequest(ctx, {
+  const { requestId } = await t.run(async (ctx) => {
+    return await insertReceivedRequestOnce(ctx, {
       ...content,
       studentId: student,
-      accessNeeds: TI135_ACCESS_NEEDS_TEXT,
       provenance,
       incomingReferral,
       idempotencyKey: "ti135-clave-completa",
@@ -3401,6 +3401,9 @@ test("TI2-135: el esquema rechaza RUT, diagnóstico, certificados y área intern
   const invalid = [
     { modalityPreference: "hybrid" },
     { provenance: { channel: "email" } },
+    // El canal oficial exige autor y fecha de recepción.
+    { provenance: { channel: "official_channel" } },
+    { provenance: { channel: "official_channel", registeredBy: student } },
     { incomingReferral: { referredAt: 1 } },
     { outgoingReferral: { destinationUnit: "Unidad ficticia", referredAt: 1, reason: "Motivo" } },
     { generalAvailability: { preferredWeekdays: ["lunes"] } },
@@ -3487,6 +3490,20 @@ test("TI2-135: la clave de idempotencia evita duplicar el envío del mismo estud
   expect(await plain()).not.toBe(await plain());
 });
 
+test("TI2-135: insertReceivedRequest no acepta la clave de idempotencia", () => {
+  const receive = (input: Parameters<typeof insertReceivedRequest>[1]) => input;
+  expect(
+    receive({ studentId: "student-id" as Id<"users">, accessNeeds: "Necesidad ficticia" }),
+  ).toEqual({ studentId: "student-id", accessNeeds: "Necesidad ficticia" });
+  // La clave solo se escribe por insertReceivedRequestOnce, que busca el duplicado.
+  receive({
+    studentId: "student-id" as Id<"users">,
+    accessNeeds: "Necesidad ficticia",
+    // @ts-expect-error: `idempotencyKey` no forma parte de ReceivedRequestInput
+    idempotencyKey: "ti135-clave-directa",
+  });
+});
+
 test("TI2-135: la auditoría y la migración escriben la procedencia sin inventar contenido", async () => {
   const t = convexTest(schema, modules);
   await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
@@ -3523,7 +3540,6 @@ test("TI2-135: la auditoría y la migración escriben la procedencia sin inventa
     return await insertReceivedRequest(ctx, {
       ...TI135_CONTENT,
       studentId: student,
-      accessNeeds: TI135_ACCESS_NEEDS_TEXT,
       provenance: { channel: "official_channel", registeredBy: staff, receivedAt: 33 },
     });
   });

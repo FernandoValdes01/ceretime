@@ -105,22 +105,27 @@ export const generalAvailabilityValidator = v.object({
   preferredTimeRange: v.optional(v.object({ from: v.string(), to: v.string() })),
 });
 
-/**
- * Canales de procedencia de una solicitud (TI2-135), derivados del dominio.
- */
-export const requestProvenanceChannelUnion = v.union(
-  ...REQUEST_PROVENANCE_CHANNEL_VALUES.map((value) => v.literal(value)),
-);
+const [studentProvenanceChannel, officialProvenanceChannel] = REQUEST_PROVENANCE_CHANNEL_VALUES;
 
 /**
  * Procedencia de una solicitud (TI2-135): el canal, quién la registró cuando
  * no fue el propio Estudiante y cuándo la recibió CERETI.
+ *
+ * Un canal oficial exige autor y fecha de recepción: sin esos datos la fila no
+ * explica su procedencia. El canal del Estudiante solo necesita la fecha
+ * cuando se conoce.
  */
-export const requestProvenanceValidator = v.object({
-  channel: requestProvenanceChannelUnion,
-  registeredBy: v.optional(v.id("users")),
-  receivedAt: v.optional(v.number()),
-});
+export const requestProvenanceValidator = v.union(
+  v.object({
+    channel: v.literal(studentProvenanceChannel),
+    receivedAt: v.optional(v.number()),
+  }),
+  v.object({
+    channel: v.literal(officialProvenanceChannel),
+    registeredBy: v.id("users"),
+    receivedAt: v.number(),
+  }),
+);
 
 /**
  * Derivación de entrada (TI2-135): otra unidad de la Universidad avisa de una
