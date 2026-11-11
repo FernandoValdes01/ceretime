@@ -7,6 +7,7 @@ import {
   renderHook,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { ConvexError } from "convex/values";
@@ -322,7 +323,7 @@ describe("detalle minimizado del Practicante (TI2-116)", () => {
     expect(document.body.textContent).not.toContain(NECESIDAD_SENSIBLE);
     expect(document.body.textContent).not.toContain("Necesidades de acceso");
     expect(document.body.textContent).not.toContain("stu-ficticio");
-    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(within(screen.getByRole("main")).queryAllByRole("button")).toHaveLength(0);
     expect(
       screen.getByRole("link", { name: "Volver a acompañamientos" }).getAttribute("href"),
     ).toBe("/practicante/acompanamientos");

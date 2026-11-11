@@ -1,136 +1,7 @@
-/* Portal del Estudiante (TI2-6). Lenguaje del acceso institucional: sobrio y centrado. */
-
-.student-portal {
-  display: flex;
-  flex-direction: column;
-  min-height: 100svh;
-  font-family: "Fira Sans", system-ui, "Segoe UI", Roboto, sans-serif;
-  color: var(--ct-ink);
-  line-height: 1.6;
-}
-
-.student-portal__skip {
-  position: absolute;
-  left: -9999px;
-  top: 0;
-  z-index: 100;
-  background: var(--ct-primary);
-  color: var(--ct-primary-ink);
-  font-weight: 600;
-  font-size: 1rem;
-  padding: 0.75rem 1.25rem;
-  border-radius: 0.5rem;
-}
-
-.student-portal__skip:focus-visible {
-  left: 1rem;
-  top: 1rem;
-}
-
-/* Encabezado sobrio con la misma barra del acceso. */
-
-.student-portal__header {
-  background: var(--ct-card);
-  border-bottom: 1px solid var(--ct-line);
-}
-
-.student-portal__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  max-width: 50rem;
-  margin: 0 auto;
-  padding: 1rem;
-}
-
-.student-portal__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-height: 2.75rem;
-  border-radius: 0.5rem;
-  color: inherit;
-  text-decoration: none;
-  line-height: 1.2;
-}
-
-.student-portal__mark {
-  display: inline-flex;
-  width: 2.5rem;
-  height: 2.5rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 0.5rem;
-  background: var(--ct-primary);
-  color: var(--ct-primary-ink);
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.student-portal__name {
-  display: none;
-  flex-direction: column;
-}
-
-.student-portal__name strong {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.student-portal__name span {
-  font-size: 0.875rem;
-  color: var(--ct-muted);
-}
-
-.student-portal__header nav {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.student-portal__actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.student-portal__header nav a {
-  display: inline-flex;
-  box-sizing: border-box;
-  align-items: center;
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  padding: 0.625rem 0.75rem;
-  border-radius: 0.5rem;
-  color: var(--ct-primary);
-  font-size: 1rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.student-portal__header nav a:hover {
-  background: var(--ct-tonal);
-}
-
-.student-portal__header nav a:focus-visible,
-.student-portal__brand:focus-visible {
-  outline: 3px solid var(--ct-ring);
-  outline-offset: 2px;
-}
+/* Portal del Estudiante (TI2-6). Contenido propio; el encabezado y la
+   navegación común viven en app-shell.css (TI2-133). */
 
 /* Contenido centrado como la tarjeta del acceso. */
-
-.student-portal__main {
-  flex: 1;
-  width: 100%;
-  max-width: 50rem;
-  margin: 0 auto;
-  padding: 2.5rem 1rem;
-}
 
 .student-portal__head {
   background: var(--ct-card);
@@ -423,10 +294,6 @@
 }
 
 @media (min-width: 40rem) {
-  .student-portal__name {
-    display: flex;
-  }
-
   .student-portal__steps {
     grid-template-columns: repeat(3, 1fr);
   }
