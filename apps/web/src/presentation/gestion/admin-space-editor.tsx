@@ -13,6 +13,7 @@ import {
   type SpaceFormState,
 } from "./admin-space-editor-data.ts";
 import { toSpaceLabel, type Space } from "../../../../../convex/domain/index.ts";
+import { DeniedState, EmptyState, ErrorState, LoadingState } from "../shared/view-states.tsx";
 
 /**
  * Clases Tailwind de las filas y campos de gestión (TI2-103): 44px de alto
@@ -131,38 +132,17 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
   }, [savedSpace]);
 
   if (result === undefined) {
-    return (
-      <p role="status" className="student-portal__loading">
-        Cargando los espacios…
-      </p>
-    );
+    return <LoadingState label="Cargando los espacios…" />;
   }
 
   if (result.status === "error") {
     return (
-      <div>
-        <p role="alert" className="student-portal__error">
-          No pudimos cargar los espacios. Inténtalo de nuevo.
-        </p>
-        <div className="student-portal__cta">
-          <button
-            type="button"
-            className="student-portal__btn student-portal__btn--primary"
-            onClick={onRetry}
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
+      <ErrorState message="No pudimos cargar los espacios. Inténtalo de nuevo." onRetry={onRetry} />
     );
   }
 
   if (result.status === "denied") {
-    return (
-      <p role="alert" className="student-portal__error">
-        No autorizado. Pide acceso por el canal oficial si corresponde.
-      </p>
-    );
+    return <DeniedState />;
   }
 
   // Catálogo vigente: la lectura fija la base y cada guardado simulado
@@ -176,10 +156,9 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
   return (
     <>
       {isEmpty ? (
-        <div className="student-portal__empty">
-          <p className="student-portal__empty-title">Sin espacios registrados.</p>
+        <EmptyState title="Sin espacios registrados.">
           <p>Cuando registres un espacio, aparecerá aquí.</p>
-        </div>
+        </EmptyState>
       ) : null}
       <section aria-labelledby="spaces-catalog-title" className="student-portal__section">
         <div className="student-portal__section-head">

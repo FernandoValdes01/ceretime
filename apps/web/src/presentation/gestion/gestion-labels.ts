@@ -1,13 +1,19 @@
-import { AGENDA_TIME_ZONE, REQUEST_STATE_LABELS } from "../../../../../convex/domain/index.ts";
+import { REQUEST_STATE_LABELS } from "../../../../../convex/domain/index.ts";
 import type { AppointmentRejectionCause } from "../../../../../convex/domain/index.ts";
+import {
+  formatAgendaDate,
+  formatAgendaTime,
+  formatAgendaTimeRange,
+} from "../shared/date-format.ts";
 
 /**
- * Etiquetas de gestión del Profesional (TI2-91, extendido TI2-115).
+ * Etiquetas de gestión del Profesional (TI2-91, extendido TI2-115, TI2-134).
  *
  * Derivan del contrato canónico del dominio, sin duplicar literales: si el
  * Backend agrega un estado, la etiqueta llega sola. Ante un literal
  * desconocido se muestra el valor, igual que el panel del Estudiante. El
- * estado siempre se comunica con texto, nunca solo con color.
+ * estado siempre se comunica con texto, nunca solo con color, y el formato de
+ * fechas vive en `presentation/shared/date-format.ts`.
  */
 export function requestStatusLabel(status: string): string {
   return (REQUEST_STATE_LABELS as Record<string, string>)[status] ?? status;
@@ -83,33 +89,20 @@ export function appointmentChangeLabel(to: string): string {
 
 // Las fechas se muestran en la zona de la agenda del dominio y no en la del
 // navegador: así el Profesional ve la misma hora que publicó y que revalida
-// el Backend, aunque abra la agenda desde otra zona. Llevan el año para que
-// atenciones de años distintos no se confundan.
-const APPOINTMENT_WINDOW_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  timeZone: AGENDA_TIME_ZONE,
-});
-
-const APPOINTMENT_TIME_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  hour: "numeric",
-  minute: "2-digit",
-  timeZone: AGENDA_TIME_ZONE,
-});
+// el Backend, aunque abra la agenda desde otra zona. El formato compartido
+// incluye el año para que atenciones de años distintos no se confundan.
 
 /** Fecha legible de una atención, sin la hora (epoch en milisegundos). */
 export function formatAppointmentDate(instantAt: number): string {
-  return APPOINTMENT_WINDOW_FORMAT.format(instantAt);
+  return formatAgendaDate(instantAt);
 }
 
 /** Hora legible de un instante de la atención (epoch en milisegundos). */
 export function formatAppointmentTime(instantAt: number): string {
-  return APPOINTMENT_TIME_FORMAT.format(instantAt);
+  return formatAgendaTime(instantAt);
 }
 
 /** Horario legible de una atención, de inicio a término (epoch en milisegundos). */
 export function formatAppointmentTimeRange(startAt: number, endAt: number): string {
-  return `${formatAppointmentTime(startAt)} – ${formatAppointmentTime(endAt)}`;
+  return formatAgendaTimeRange(startAt, endAt);
 }

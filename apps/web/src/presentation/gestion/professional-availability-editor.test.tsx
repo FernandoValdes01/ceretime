@@ -435,6 +435,24 @@ describe("editor de disponibilidad (TI2-103)", () => {
     ).toBeDefined();
   });
 
+  test("una fecha imposible no se acepta aunque tenga forma correcta", async () => {
+    comoProfesional();
+    renderAt("/profesional/disponibilidad");
+
+    expect(await screen.findByRole("heading", { name: "Bloques recurrentes" })).toBeDefined();
+    expect(screen.getAllByText("Lunes").length).toBeGreaterThan(0);
+
+    await abrirExcepcion();
+    fireEvent.change(screen.getByLabelText("Fecha (AAAA-MM-DD)"), {
+      target: { value: "2026-02-29" },
+    });
+    fireEvent.change(screen.getByLabelText("Clase"), { target: { value: "cancelled" } });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar excepción" }));
+
+    expect(await screen.findByText("Esa fecha no existe en el calendario.")).toBeDefined();
+    expect(screen.queryByText("Excepción guardada")).toBeNull();
+  });
+
   test("excepción válida confirma con la respuesta del Backend y conserva el detalle", async () => {
     comoProfesional();
     renderAt("/profesional/disponibilidad");
