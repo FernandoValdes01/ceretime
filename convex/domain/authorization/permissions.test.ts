@@ -8,6 +8,7 @@ import {
   canEnableAccount,
   canListAccounts,
   canManageAccounts,
+  canManageSpaceCatalog,
   canReadAccount,
   canReadAvailability,
   canReadInternalNote,
@@ -621,6 +622,40 @@ describe("gestión de cuentas (TI2-137)", () => {
     ).toBe(false);
     expect(
       canManageAccounts({
+        role: "admin",
+        institutionalStatus: "enabled",
+        accountStatus: "inactive",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("canManageSpaceCatalog", () => {
+  test("solo el Administrador con cuenta vigente gestiona el catálogo", () => {
+    expect(
+      canManageSpaceCatalog({
+        role: "admin",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+      }),
+    ).toBe(true);
+  });
+
+  test("otros roles o cuenta no vigente no gestionan", () => {
+    for (const role of ["student", "professional", "intern"] as const) {
+      expect(
+        canManageSpaceCatalog({ role, institutionalStatus: "enabled", accountStatus: "active" }),
+      ).toBe(false);
+    }
+    expect(
+      canManageSpaceCatalog({
+        role: "admin",
+        institutionalStatus: "disabled",
+        accountStatus: "active",
+      }),
+    ).toBe(false);
+    expect(
+      canManageSpaceCatalog({
         role: "admin",
         institutionalStatus: "enabled",
         accountStatus: "inactive",

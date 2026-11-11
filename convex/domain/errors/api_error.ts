@@ -29,7 +29,9 @@ export type ApiResult<T> = { status: "ok"; data: T } | { status: "error"; error:
  * y se fijan los tres nuevos: `unauthorized` para acceso denegado,
  * `conflict` para conflicto con el estado actual y `no_availability` para
  * ausencia de cupo. Conflicto y ausencia de cupo son códigos distintos y
- * ninguno revela si el recurso existe.
+ * ninguno revela si el recurso existe. TI2-148 suma `space_fields_invalid`
+ * para la validación de campos del catálogo de espacios, con el mensaje
+ * específico en español.
  */
 export const API_ERROR_CODE_VALUES = [
   "access_needs_empty",
@@ -37,6 +39,7 @@ export const API_ERROR_CODE_VALUES = [
   "unauthorized",
   "conflict",
   "no_availability",
+  "space_fields_invalid",
 ] as const;
 
 /** Código estable de un error público del contrato común. */
@@ -44,6 +47,22 @@ export type ApiErrorCode = (typeof API_ERROR_CODE_VALUES)[number];
 
 /** Acceso denegado: responde igual ante identificador ajeno o inexistente. */
 export const UNAUTHORIZED_ERROR_CODE = "unauthorized" as const;
+
+/** Campos del espacio inválidos: el mensaje indica el campo en español. */
+export const SPACE_FIELDS_INVALID_ERROR_CODE = "space_fields_invalid" as const;
+
+/**
+ * Nota de traducción para `space_fields_invalid` (TI2-148, revisión).
+ *
+ * A diferencia del precedente `access_needs_*` (un código por regla), un
+ * solo código cubre los seis campos del espacio y el detalle viaja en
+ * `message`. Los clientes que traducen por código (mobile lo hace en
+ * `to-mobile-operation-error.ts` con `API_ERROR_MESSAGES[code]`) muestran
+ * el genérico; los que muestran el mensaje (editor web de TI2-169) ven el
+ * campo exacto. Si TI2-169 necesita marcar el campo en el formulario,
+ * conviene un código por campo o una clave `field` en el error. Hoy no
+ * afecta a nadie porque mobile no gestiona espacios.
+ */
 
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
@@ -56,6 +75,9 @@ export const NO_AVAILABILITY_ERROR_CODE = "no_availability" as const;
 
 /** Mensaje comprensible para acceso denegado, idéntico al de Sprint 1. */
 export const UNAUTHORIZED_ERROR_MESSAGE = "No autorizado";
+
+/** Mensaje genérico para campos del espacio inválidos; el detalle va en el error. */
+export const SPACE_FIELDS_INVALID_ERROR_MESSAGE = "Los campos del espacio no son válidos.";
 
 /** Mensaje comprensible para conflicto, sin detalles sensibles. */
 export const CONFLICT_ERROR_MESSAGE = "La solicitud entra en conflicto con el estado actual.";
@@ -75,6 +97,7 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   unauthorized: UNAUTHORIZED_ERROR_MESSAGE,
   conflict: CONFLICT_ERROR_MESSAGE,
   no_availability: NO_AVAILABILITY_ERROR_MESSAGE,
+  space_fields_invalid: SPACE_FIELDS_INVALID_ERROR_MESSAGE,
 };
 
 /** Verdadero cuando el código pertenece al contrato público estable. */
