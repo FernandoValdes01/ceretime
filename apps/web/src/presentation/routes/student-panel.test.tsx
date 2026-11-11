@@ -253,8 +253,13 @@ describe("etiquetas del panel", () => {
   });
 
   test("la fecha incluye día, mes y año", () => {
-    const text = formatPanelDate(new Date(2026, 8, 12).getTime());
+    const text = formatPanelDate(Date.UTC(2026, 8, 12, 12, 0));
     expect(text).toMatch(/12/);
     expect(text).toMatch(/2026/);
+  });
+
+  test("la fecha no cambia de día con el navegador en otra zona", () => {
+    // 02:30 UTC del 13 todavía es la noche del 12 en Santiago.
+    expect(formatPanelDate(Date.UTC(2026, 8, 13, 2, 30))).toBe("12 sept 2026");
   });
 });

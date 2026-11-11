@@ -16,6 +16,7 @@ import {
   useStudentAppointments,
   type SpaceLabels,
 } from "./student-appointments-page-data.ts";
+import { DeniedState, EmptyState, ErrorState, LoadingState } from "../shared/view-states.tsx";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
 
 /**
@@ -106,46 +107,22 @@ function AppointmentsBody({
   const spaceLabels = useSpaceLabels();
 
   if (result === undefined) {
-    return (
-      <p role="status" className="student-portal__loading">
-        Cargando tus atenciones…
-      </p>
-    );
+    return <LoadingState label="Cargando tus atenciones…" />;
   }
 
   if (result.status === "error") {
-    return (
-      <div>
-        <p role="alert" className="student-portal__error">
-          {result.message}
-        </p>
-        <div className="student-portal__cta">
-          <button
-            type="button"
-            className="student-portal__btn student-portal__btn--primary"
-            onClick={onRetry}
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
-    );
+    return <ErrorState message={result.message} onRetry={onRetry} />;
   }
 
   if (result.status === "denied") {
-    return (
-      <p role="alert" className="student-portal__error">
-        No autorizado. Pide acceso por el canal oficial si corresponde.
-      </p>
-    );
+    return <DeniedState />;
   }
 
   if (result.status === "empty") {
     return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No tienes atenciones en {PERIODO_LISTA}.</p>
+      <EmptyState title={`No tienes atenciones en ${PERIODO_LISTA}.`}>
         <p>Cuando reserves un horario, aparecerá aquí con su estado.</p>
-      </div>
+      </EmptyState>
     );
   }
 
@@ -204,24 +181,15 @@ function SpaceNotice({
   onFocusTitle: () => void;
 }) {
   return (
-    <div>
-      <p role="alert" className="student-portal__error">
-        No pudimos cargar la información de la sala. Inténtalo de nuevo.
-      </p>
-      <div className="student-portal__cta">
-        <button
-          type="button"
-          className="student-portal__btn student-portal__btn--primary"
-          onClick={() => {
-            spaceLabels.retry();
-            // El botón desaparece al reintentar: el foco pasa al título para no perderse.
-            onFocusTitle();
-          }}
-        >
-          Reintentar cargar la sala
-        </button>
-      </div>
-    </div>
+    <ErrorState
+      message="No pudimos cargar la información de la sala. Inténtalo de nuevo."
+      retryLabel="Reintentar cargar la sala"
+      onRetry={() => {
+        spaceLabels.retry();
+        // El botón desaparece al reintentar: el foco pasa al título para no perderse.
+        onFocusTitle();
+      }}
+    />
   );
 }
 
@@ -331,38 +299,15 @@ function AppointmentDetailBody({
   const spaceLabels = useSpaceLabels();
 
   if (result === undefined) {
-    return (
-      <p role="status" className="student-portal__loading">
-        Cargando la atención…
-      </p>
-    );
+    return <LoadingState label="Cargando la atención…" />;
   }
 
   if (result.status === "error") {
-    return (
-      <div>
-        <p role="alert" className="student-portal__error">
-          {result.message}
-        </p>
-        <div className="student-portal__cta">
-          <button
-            type="button"
-            className="student-portal__btn student-portal__btn--primary"
-            onClick={onRetry}
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
-    );
+    return <ErrorState message={result.message} onRetry={onRetry} />;
   }
 
   if (result.status === "denied") {
-    return (
-      <p role="alert" className="student-portal__error">
-        No autorizado. Pide acceso por el canal oficial si corresponde.
-      </p>
-    );
+    return <DeniedState />;
   }
 
   const shown = result.appointment;

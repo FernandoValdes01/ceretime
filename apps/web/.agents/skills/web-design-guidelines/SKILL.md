@@ -1,12 +1,10 @@
 ---
 name: web-design-guidelines
-description: Review UI code for Web Interface Guidelines compliance. Use when asked to "review my UI", "check accessibility", "audit design", "review UX", or "check my site against best practices".
+description: Revisa código de la web con Web Interface Guidelines cuando pidan auditar accesibilidad, experiencia de usuario o cumplimiento de buenas prácticas de interfaz.
 metadata:
   author: vercel
   version: "1.0.0"
   argument-hint: <file-or-pattern>
-  opencode/autoinvoke: "false"
-disable-model-invocation: true
 ---
 
 # Web Interface Guidelines
@@ -16,7 +14,7 @@ Review files for compliance with Web Interface Guidelines.
 ## How It Works
 
 1. Fetch the latest guidelines from the source URL below
-2. Read the specified files (or prompt user for files/pattern)
+2. Read the specified files, or identify the relevant files from the request and repository
 3. Check against all rules in the fetched guidelines
 4. Output findings in the terse `file:line` format
 
@@ -39,4 +37,4 @@ When a user provides a file or pattern argument:
 3. Apply all rules from the fetched guidelines
 4. Output findings using the format specified in the guidelines
 
-If no files specified, ask the user which files to review.
+If the request does not specify files, identify the relevant files from its scope. Ask only if the scope cannot be inferred.

@@ -1,5 +1,7 @@
 # **ceretime**
 
+El [índice de documentación](docs/README.md) reúne las fuentes del producto, los diagramas, los contratos y las guías de desarrollo.
+
 ## Carrera del equipo
 
 [![Carrera de autores de PR fusionadas en CERETIME](.github/assets/release-balls.gif)](https://github.com/FernandoValdes01/ceretime/actions/workflows/release-balls.yml)
@@ -67,7 +69,7 @@ Levanta la web y el backend con el dataset ficticio del Sprint 1 (TI2-30) en tu 
    bunx convex dev --once
    ```
 
-4. Configura las variables del backend en tu deployment, una sola vez. `convex/convex.config.ts` las declara obligatorias, salvo `TEST_SEEDS_ENABLED`, que habilita las semillas de desarrollo. El secreto se genera dentro del comando y no aparece en pantalla. Con los valores ficticios de Google la web queda en la pantalla de acceso, y eso basta para comprobar el entorno y el dataset; para iniciar sesión hacen falta las credenciales del cliente OAuth de desarrollo y el callback de tu deployment registrado, como indica [convex/README.md](convex/README.md). `bunx convex env list` muestra los valores: no compartas su salida.
+4. Configura las variables del backend en tu deployment, una sola vez. `convex/convex.config.ts` las declara obligatorias, salvo `TEST_SEEDS_ENABLED`, que habilita las semillas de desarrollo. El secreto se genera dentro del comando y no aparece en pantalla. Con los valores ficticios de Google la web queda en la pantalla de acceso, y eso basta para comprobar el entorno y el dataset; para iniciar sesión hacen falta las credenciales del cliente OAuth de desarrollo y los dos callbacks de tu deployment registrados, como indica [convex/README.md](convex/README.md). `bunx convex env list` muestra los valores: no compartas su salida.
 
    ```bash
    bunx convex env set SITE_URL http://localhost:5173
@@ -106,7 +108,7 @@ En producción no se define `TEST_SEEDS_ENABLED`: sin esa variable, `createTestU
 
 Oxlint y Oxfmt se configuran en la raíz. Oxfmt también comprueba los archivos de configuración y documentación compatibles de la raíz, junto con `apps/`, `convex/`, `packages/` y `.github/` cuando esas carpetas existan. Las salidas generadas, dependencias y builds quedan excluidas. Estas comprobaciones no reemplazan typecheck, pruebas ni builds.
 
-La configuración manual para exigir estos checks y mantener las PR actualizadas con `main` está en [docs/ci-protections.md](docs/ci-protections.md).
+La configuración manual para exigir estos checks y mantener las PR actualizadas con `main` está en [docs/operaciones/ci-protections.md](docs/operaciones/ci-protections.md).
 
 Desde la raíz del monorepo:
 
@@ -145,13 +147,19 @@ claude mcp login linear
 claude mcp list
 ```
 
+Si Linear aparece sin autenticar, ejecuta el login de tu herramienta y completa la autorización con tu propia cuenta. Una conexión disponible en una sesión o aplicación no garantiza que esté autenticada en otra. Para comprobar el flujo, pide al agente que lea el identificador y los criterios de tu issue en el workspace `ceretime`; comprueba que coincidan con Linear antes de empezar.
+
+Claude Code carga `CLAUDE.md`, que remite a `AGENTS.md`. En OpenCode selecciona `ti2` para Web y Backend o `ti4` para Mobile. Usa las skills del área correspondiente y conserva los límites de ownership descritos en `AGENTS.md`, con independencia de la herramienta o del plan.
+
+Con un modelo de pago puedes pedir una revisión independiente en una sesión nueva; con un modelo gratuito usa el mismo flujo y divide el trabajo en partes pequeñas si su contexto o cuota lo requieren. La persona responsable revisa el diff y los resultados antes de publicar o ejecutar acciones sensibles. No incluyas credenciales ni datos de facturación en la conversación o en el repositorio.
+
 ## Flujo de trabajo
 
 1. En Linear, abre la issue asignada y revisa su descripción, criterios y dependencias.
 2. Crea o cambia a la rama que sugiere Linear, respetando el formato `usuario/TEAM-nnn-slug`.
 3. Pide al agente que trabaje en esa issue. Antes de empezar debe confirmar la rama y el alcance.
-4. Al terminar, ejecuta las validaciones del proyecto y abre la PR ya sea manual o con `gh pr create`, siguiendo los lineamientos establecidos.
-5. Antes de pedir revisión, abre una sesión nueva del agente y pídele: `Ejecuta la skill self-review sobre esta PR`. La sesión nueva permite revisar el cambio con una perspectiva independiente de la implementación. La skill contrasta el cambio con la issue, corrige el título si es necesario y deja el resultado comentado en GitHub.
+4. Antes de hacer push o crear una PR, ejecuta `.agents/skills/code-review/SKILL.md` sobre el código propio y corrige los hallazgos. `file-pr` realiza esta revisión automáticamente antes de publicar la PR.
+5. Usa `verify-ceretime` para comprobar el comportamiento y reunir evidencia. Si no tienes navegador o cuenta de prueba, registra lo pendiente y pide a una persona del equipo que recorra el flujo con datos de prueba y adjunte la evidencia. Para publicar, pide al agente que use `file-pr` o abre la PR manualmente siguiendo los lineamientos del proyecto; deja Draft si falta verificación.
 
 ### Workflows manuales
 
