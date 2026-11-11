@@ -7,6 +7,7 @@ import type {
 } from "../../application/agenda/agenda-port.ts";
 import { convexClient } from "../../infrastructure/convex/convex-client.ts";
 import { createConvexAgendaAdapter } from "../../infrastructure/agenda/convex-agenda-adapter.ts";
+import { civilDateIssue } from "../shared/date-format.ts";
 
 /**
  * Lectura y validación de formato del editor de disponibilidad (TI2-103).
@@ -123,24 +124,20 @@ export function parseTimeToMinutes(value: string): number | null {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-/** Verdadero ante fecha civil `YYYY-MM-DD` real del calendario. */
-export function isValidDateText(value: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (match === null) {
-    return false;
+/**
+ * Error legible de la fecha del formulario: distingue el formato inválido de
+ * una fecha con forma correcta que no existe en el calendario, para que la
+ * persona sepa qué corregir. Devuelve `undefined` cuando la fecha es real.
+ */
+export function dateFieldError(value: string): string | undefined {
+  switch (civilDateIssue(value)) {
+    case "format":
+      return "Usa una fecha válida con formato AAAA-MM-DD.";
+    case "impossible":
+      return "Esa fecha no existe en el calendario.";
+    case null:
+      return undefined;
   }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
-    return false;
-  }
-  const roundTrip = new Date(Date.UTC(year, month - 1, day));
-  return (
-    roundTrip.getUTCFullYear() === year &&
-    roundTrip.getUTCMonth() === month - 1 &&
-    roundTrip.getUTCDate() === day
-  );
 }
 
 function validateWindowFields(
@@ -226,8 +223,9 @@ export function toSaveBlockInput(form: BlockFormState): SaveBlockInput {
 /** Errores de formato del formulario de excepción, vacíos cuando es válido. */
 export function validateExceptionForm(form: ExceptionFormState): Record<string, string> {
   const errors: Record<string, string> = {};
-  if (!isValidDateText(form.date)) {
-    errors.date = "Usa una fecha válida con formato AAAA-MM-DD.";
+  const dateError = dateFieldError(form.date);
+  if (dateError !== undefined) {
+    errors.date = dateError;
   }
   if (form.kind !== "cancelled" && form.kind !== "added") {
     errors.kind = "Elige cancelación o agregado.";

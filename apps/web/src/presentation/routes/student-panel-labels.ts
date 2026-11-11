@@ -32,13 +32,9 @@ export function accompanimentStatusLabel(status: string): string {
   return ACCOMPANIMENT_STATUS_LABELS[status] ?? status;
 }
 
-const PANEL_DATE_FORMAT = new Intl.DateTimeFormat("es-CL", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
+import { formatAgendaShortDate } from "../shared/date-format.ts";
 
-/** Fecha legible de un `createdAt` en milisegundos (p. ej. «12 de sep de 2026»). */
+/** Fecha legible de un `createdAt` en milisegundos (p. ej. «12 sept 2026»). */
 export function formatPanelDate(timestamp: number): string {
-  return PANEL_DATE_FORMAT.format(new Date(timestamp));
+  return formatAgendaShortDate(timestamp);
 }
