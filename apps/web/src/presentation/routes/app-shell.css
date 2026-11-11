@@ -1,0 +1,216 @@
+/* Estructura común de la Web (TI2-133): encabezado del mockup y navegación
+   por rol sobre los tokens de DESIGN.md. */
+
+/* Encabezado fijo: el desplazamiento del ancla reserva su altura para que el
+   foco del teclado no quede oculto (WCAG 2.2, 2.4.11). */
+html {
+  scroll-padding-top: 5.5rem;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+  font-family: "Fira Sans", system-ui, "Segoe UI", Roboto, sans-serif;
+  color: var(--ct-ink);
+  line-height: 1.6;
+}
+
+.app-shell__skip {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--ct-primary);
+  color: var(--ct-primary-ink);
+  font-weight: 600;
+  font-size: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+}
+
+.app-shell__skip:focus-visible {
+  left: 1rem;
+  top: 1rem;
+}
+
+.app-shell__header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--ct-card);
+  border-bottom: 1px solid var(--ct-line);
+}
+
+.app-shell__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+  box-sizing: border-box;
+  flex-wrap: wrap;
+}
+
+.app-shell__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.75rem;
+  border-radius: 0.5rem;
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  line-height: 1.2;
+}
+
+.app-shell__mark {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  background: var(--ct-primary);
+  color: var(--ct-primary-ink);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.app-shell__name {
+  display: none;
+  flex-direction: column;
+}
+
+.app-shell__name strong {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.app-shell__name span {
+  font-size: 0.875rem;
+  color: var(--ct-muted);
+}
+
+.app-shell__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.app-shell__nav {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.app-shell__nav a {
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  color: var(--ct-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.app-shell__nav a:hover {
+  background: var(--ct-tonal);
+}
+
+/* La sección actual se distingue por fondo y subrayado, no solo por color. */
+.app-shell__nav a[aria-current="page"] {
+  background: var(--ct-tonal);
+  text-decoration: underline;
+  text-underline-offset: 0.25rem;
+}
+
+.app-shell__nav a:focus-visible,
+.app-shell__brand:focus-visible,
+.app-shell__logout:focus-visible {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+}
+
+.app-shell__logout {
+  box-sizing: border-box;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--ct-line);
+  border-radius: 0.5rem;
+  background: var(--ct-card);
+  color: var(--ct-primary);
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.app-shell__logout:hover:not(:disabled) {
+  background: var(--ct-tonal);
+}
+
+.app-shell__logout:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.app-shell__error {
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 0.5rem 1rem 0.75rem;
+  color: var(--ct-danger-ink);
+  font-weight: 600;
+  text-align: left;
+}
+
+.app-shell__main,
+.app-shell__public {
+  width: 100%;
+  box-sizing: border-box;
+  flex: 1;
+  margin: 0 auto;
+}
+
+.app-shell__main {
+  max-width: 50rem;
+  padding: 2.5rem 1rem;
+}
+
+/* Las vistas del personal conservan el ancho de trabajo que tenían antes. */
+.app-shell__main--wide {
+  max-width: 70rem;
+  padding: 2rem 1rem;
+}
+
+.app-shell__public {
+  padding: 1rem;
+}
+
+/* El destino del salto recibe el foco sin dibujar un anillo de control. */
+#contenido:focus {
+  outline: none;
+}
+
+@media (min-width: 40rem) {
+  .app-shell__name {
+    display: flex;
+  }
+}
+
+@media (max-width: 40rem) {
+  html {
+    scroll-padding-top: 8rem;
+  }
+}

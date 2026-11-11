@@ -4,6 +4,7 @@ import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-l
 import { isBackendConfigured } from "../../infrastructure/convex/convex-client.ts";
 import { AuthScreen } from "../auth/AuthScreen.tsx";
 import type { WebSessionAndRole, WebSessionState } from "../session/session-state.ts";
+import { PublicMain } from "./app-shell.tsx";
 import { isPairCurrent, isStaffRole } from "./staff-portal-roles.ts";
 
 /**
@@ -66,9 +67,13 @@ export function RequireStudent({
 
   // Sin backend la sesión nunca resuelve: se muestra el acceso con su
   // estado explícito en vez de un "Cargando…" indefinido. No expone
-  // contenido protegido porque el portal nunca llega a renderizarse.
+  // contenido protegido porque el portal nunca llega a mostrarse.
   if (!isBackendConfigured) {
-    return <AuthScreen />;
+    return (
+      <PublicMain>
+        <AuthScreen />
+      </PublicMain>
+    );
   }
   if (
     session === undefined ||
@@ -78,7 +83,11 @@ export function RequireStudent({
     session.population !== "estudiante" ||
     isStaffRole(pair.role)
   ) {
-    return <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>;
+    return (
+      <PublicMain>
+        <p role="status">{GENERIC_AUTH_MESSAGES.loading}</p>
+      </PublicMain>
+    );
   }
   return <>{children}</>;
 }

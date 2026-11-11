@@ -538,12 +538,15 @@ describe("navegación del portal con agenda (TI2-115)", () => {
       "Solicitudes",
       "Agenda",
       "Disponibilidad",
-      "Sesión",
     ]);
+    expect(within(nav).getByRole("link", { name: "Agenda" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
     for (const link of links) {
       link.focus();
       expect(document.activeElement).toBe(link);
     }
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 
   test("cada fila navega al detalle de su atención", async () => {
