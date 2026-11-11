@@ -1,6 +1,6 @@
 ---
 name: ui
-description: Guía el diseño y la verificación de pantallas, componentes y estilos de Web y Mobile; úsala antes de cualquier cambio visual.
+description: Diseña y verifica interfaces de Web y Mobile; úsala antes de crear o cambiar pantallas, componentes, estilos, formularios o estados visuales, incluso en ajustes pequeños.
 ---
 
 # UI

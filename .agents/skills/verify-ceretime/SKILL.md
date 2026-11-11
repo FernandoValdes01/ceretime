@@ -1,6 +1,6 @@
 ---
 name: verify-ceretime
-description: Verifica cambios de comportamiento o interfaz de CERETI en sus superficies reales y documenta evidencia, estados y límites. Úsala al terminar cambios de comportamiento o UI, al reproducir un bug o cuando se solicite demostrar un flujo.
+description: Comprueba en las superficies reales los flujos de CERETI y documenta evidencia y límites. Úsala al terminar cambios de comportamiento o interfaz, reproducir un fallo o demostrar que un flujo funciona.
 ---
 
 # Verificar CERETI

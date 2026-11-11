@@ -6,7 +6,7 @@ Aplica estas comprobaciones cuando el diff afecte lógica o contratos. El objeti
 
 Por cada regla, tipo de dominio, caso de uso, adaptador o componente con lógica que el cambio añada o modifique, busca responsabilidades equivalentes con `rg` y `rg --files`. Busca por comportamiento y por los sinónimos usados en el proyecto, además del nombre del símbolo. Lee las coincidencias relevantes, sus consumidores y sus pruebas; que una búsqueda no encuentre el nombre exacto no demuestra que la responsabilidad sea nueva.
 
-Compara la base y el cambio completo, incluidos los cambios sin commit, para distinguir lo introducido, lo agravado y lo que ya existía. Para cerrar esta comprobación debes poder señalar la implementación canónica reutilizada, justificar por qué las implementaciones son distintas o identificar la duplicación y los consumidores afectados.
+Compara la base y el cambio completo dentro del alcance fijado, incluidos los cambios sin commit cuando formen parte de una revisión local, para distinguir lo introducido, lo agravado y lo que ya existía. Para cerrar esta comprobación debes poder señalar la implementación canónica reutilizada, justificar por qué las implementaciones son distintas o identificar la duplicación y los consumidores afectados.
 
 ## Duplicación de responsabilidades
 

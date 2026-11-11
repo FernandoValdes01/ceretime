@@ -1,6 +1,6 @@
 ---
 name: convex
-description: "Guía el trabajo con Convex en CERETIME: código, diseño, revisión, verificación y operaciones; selecciona solo las referencias necesarias."
+description: "Trabaja con el backend Convex de CERETIME: consultas, mutaciones, esquema, permisos, pruebas y operaciones del deployment. Úsala al diseñar, cambiar, revisar o ejecutar funciones de Convex, aunque la petición describa solo el comportamiento."
 ---
 
 # Convex en CERETIME

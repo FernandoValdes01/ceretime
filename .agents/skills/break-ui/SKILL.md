@@ -1,6 +1,6 @@
 ---
 name: break-ui
-description: Comprueba interfaces con datos realistas de peor caso, estados de listas y tamaños de texto; úsala al verificar pantallas con datos variables o cuando se solicite probar casos límite visuales.
+description: Comprueba si una interfaz soporta datos variables y casos límite; úsala al verificar nombres o textos largos, listas, datos ausentes, tamaños de pantalla o texto ampliado.
 ---
 
 # Datos de peor caso
