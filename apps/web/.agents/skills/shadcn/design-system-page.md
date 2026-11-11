@@ -247,7 +247,8 @@ Copy from `assets/showcase/` into the showcase folder:
 | File                 | Purpose                                                                    |
 | -------------------- | -------------------------------------------------------------------------- |
 | `preview-states.css` | Variant overrides that pin hover, focus and active through `data-preview`. |
-| `state-matrix.tsx`   | `StateMatrix` (labeled variant × state table) and `previewState(state)`.   |
+| `state-matrix.tsx`   | `StateMatrix`: labeled variant × state table.                              |
+| `preview-state.ts`   | `previewState(state)`: props that pin a preview state.                     |
 | `color-pair.tsx`     | `ColorPair`: surface + foreground with live contrast ratio and WCAG level. |
 
 They import `cn` from `@/lib/utils`. Rewrite that path to the project's `utils` alias.

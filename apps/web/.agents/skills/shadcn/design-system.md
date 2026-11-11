@@ -337,7 +337,7 @@ In short:
 2. Components by tier: primitives get a variant × state matrix, size ladder and icon row. Composed components get a typical example, additions and edge cases. Overlays get real triggers.
 3. Then rendered do/don't pairs for the DESIGN.md's rules, the DESIGN.md's named recipes rebuilt from components, and one example screen.
 
-Copy the helpers from `assets/showcase/` (`preview-states.css`, `state-matrix.tsx`, `color-pair.tsx`). Put sections in `src/showcase/<section>.tsx` (Vite) or `app/design-system/` (Next.js). Write copy in the brand's voice.
+Copy the helpers from `assets/showcase/` (`preview-states.css`, `preview-state.ts`, `state-matrix.tsx`, `color-pair.tsx`). Put sections in `src/showcase/<section>.tsx` (Vite) or `app/design-system/` (Next.js). Write copy in the brand's voice.
 
 ### Known traps
 
