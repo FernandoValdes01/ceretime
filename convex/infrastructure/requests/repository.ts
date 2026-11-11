@@ -1,6 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { toStoredAccessNeeds } from "../../domain/requests/request";
 
 /**
  * Repositorio de solicitudes (TI2-9).
@@ -15,20 +16,146 @@ import type { MutationCtx, QueryCtx } from "../../_generated/server";
 /** Contexto con lectura de base de datos (consultas y mutaciones). */
 type DbReader = QueryCtx | MutationCtx;
 
-/** Inserta una solicitud recibida del estudiante. */
-export async function insertReceivedRequest(
-  ctx: MutationCtx,
-  input: {
+/**
+ * Campos de la solicitud completa que se pueden fijar al recibirla (TI2-135).
+ * Todos son opcionales: sin ellos la fila queda como las anteriores. La razón
+ * de cierre y la derivación de salida no están porque se escriben al cerrar o
+ * derivar, no al recibir. La clave de idempotencia tampoco está: solo la
+ * escribe `insertReceivedRequestOnce`, que comprueba el duplicado.
+ */
+export type ReceivedRequestExtras = Pick<
+  Doc<"requests">,
+  | "needSummary"
+  | "expectedOutcome"
+  | "accessNeedSelections"
+  | "otherAccessNeed"
+  | "modalityPreference"
+  | "generalAvailability"
+  | "preferredAccessibleInformationChannel"
+  | "provenance"
+  | "incomingReferral"
+>;
+
+/**
+ * Necesidades de acceso del envío: el texto unido suelto, o la lista
+ * estructurada de la que el repositorio deriva ese texto con
+ * `toStoredAccessNeeds`. Nunca las dos, para que no puedan contradecirse.
+ */
+type ReceivedRequestNeeds =
+  | {
+      readonly accessNeeds: string;
+      readonly accessNeedSelections?: undefined;
+      readonly otherAccessNeed?: undefined;
+    }
+  | {
+      readonly accessNeedSelections: NonNullable<Doc<"requests">["accessNeedSelections"]>;
+      readonly accessNeeds?: undefined;
+      readonly otherAccessNeed?: string;
+    };
+
+export type ReceivedRequestInput = Omit<
+  ReceivedRequestExtras,
+  "accessNeedSelections" | "otherAccessNeed"
+> &
+  ReceivedRequestNeeds & {
     readonly studentId: Id<"users">;
-    readonly accessNeeds: string;
-  },
+  };
+
+/**
+ * Inserta una solicitud recibida del estudiante. No acepta la clave de
+ * idempotencia: para guardarla hay que usar `insertReceivedRequestOnce`.
+ */
+export async function insertReceivedRequest(ctx: MutationCtx, input: ReceivedRequestInput) {
+  return await insertRequestRow(ctx, input);
+}
+
+/** Fila de `requests` con el texto unido ya resuelto desde una sola fuente. */
+async function insertRequestRow(
+  ctx: MutationCtx,
+  input: ReceivedRequestInput,
+  idempotencyKey?: string,
 ) {
+  // La fila se arma campo por campo, sin `...input`: un spread puede traer
+  // `idempotencyKey` sin que TypeScript lo revise y la clave se colaría por la
+  // vía que no comprueba duplicados. Solo se guarda el parámetro explícito.
+  const {
+    studentId,
+    needSummary,
+    expectedOutcome,
+    accessNeedSelections,
+    otherAccessNeed,
+    modalityPreference,
+    generalAvailability,
+    preferredAccessibleInformationChannel,
+    provenance,
+    incomingReferral,
+  } = input;
+  const resolvedAccessNeeds =
+    input.accessNeedSelections === undefined
+      ? input.accessNeeds
+      : storedAccessNeeds(input.accessNeedSelections, input.otherAccessNeed);
   return await ctx.db.insert("requests", {
-    studentId: input.studentId,
+    studentId,
     status: "received",
-    accessNeeds: input.accessNeeds,
+    accessNeeds: resolvedAccessNeeds,
     createdAt: Date.now(),
+    ...(needSummary === undefined ? {} : { needSummary }),
+    ...(expectedOutcome === undefined ? {} : { expectedOutcome }),
+    ...(accessNeedSelections === undefined ? {} : { accessNeedSelections }),
+    ...(otherAccessNeed === undefined ? {} : { otherAccessNeed }),
+    ...(modalityPreference === undefined ? {} : { modalityPreference }),
+    ...(generalAvailability === undefined ? {} : { generalAvailability }),
+    ...(preferredAccessibleInformationChannel === undefined
+      ? {}
+      : { preferredAccessibleInformationChannel }),
+    ...(provenance === undefined ? {} : { provenance }),
+    ...(incomingReferral === undefined ? {} : { incomingReferral }),
+    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
   });
+}
+
+/** Texto unido de las condiciones de acceso, o error de dominio si no hay texto. */
+function storedAccessNeeds(
+  selections: NonNullable<Doc<"requests">["accessNeedSelections"]>,
+  otherAccessNeed?: string,
+): string {
+  const result = toStoredAccessNeeds(selections, otherAccessNeed);
+  if (result.status === "error") {
+    throw new Error(result.error.message);
+  }
+  return result.data.accessNeeds;
+}
+
+/** Solicitud del estudiante con esa clave de idempotencia, si existe. */
+export async function findRequestByIdempotencyKey(
+  ctx: DbReader,
+  studentId: Id<"users">,
+  idempotencyKey: string,
+): Promise<Doc<"requests"> | null> {
+  const rows = await ctx.db
+    .query("requests")
+    .withIndex("by_student_and_idempotencyKey", (q) =>
+      q.eq("studentId", studentId).eq("idempotencyKey", idempotencyKey),
+    )
+    .take(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Inserta la solicitud recibida salvo que el estudiante ya tenga una con la
+ * misma clave de idempotencia (TI2-135): en ese caso devuelve la existente sin
+ * escribir. La búsqueda y la inserción ocurren en la misma mutation, así que
+ * dos envíos concurrentes con la misma clave no dejan dos filas: Convex
+ * reintenta al que pierde el conflicto y este ya encuentra la primera.
+ */
+export async function insertReceivedRequestOnce(
+  ctx: MutationCtx,
+  input: ReceivedRequestInput & { readonly idempotencyKey: string },
+): Promise<{ readonly requestId: Id<"requests">; readonly created: boolean }> {
+  const { idempotencyKey, ...received } = input;
+  const existing = await findRequestByIdempotencyKey(ctx, input.studentId, idempotencyKey);
+  if (existing !== null) return { requestId: existing._id, created: false };
+  return { requestId: await insertRequestRow(ctx, received, idempotencyKey), created: true };
 }
 
 /** Solicitud por id, o `null` si no existe. */
