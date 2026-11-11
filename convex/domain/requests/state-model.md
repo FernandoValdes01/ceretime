@@ -1,6 +1,6 @@
 # Modelo de estados — Solicitud de acompañamiento
 
-Fuente: TI2-7, TI2-21 y TI2-22 (Sprint 1), TI2-85 (Sprint 2) y el documento de requerimientos, sección "Estados y ciclos de vida". Este archivo es la evidencia de cierre de esos issues; el modelo ejecutable vive en [`state.ts`](./state.ts), [`transitions.ts`](./transitions.ts) y [`transition_policy.ts`](./transition_policy.ts).
+Fuente: TI2-7, TI2-21 y TI2-22 (Sprint 1), TI2-85 (Sprint 2), TI2-141 (Sprint 3) y el documento de requerimientos, sección "Estados y ciclos de vida". Este archivo es la evidencia de cierre de esos issues; el modelo ejecutable vive en [`state.ts`](./state.ts), [`transitions.ts`](./transitions.ts) y [`transition_policy.ts`](./transition_policy.ts).
 
 ## Diagrama
 
@@ -114,7 +114,9 @@ Sus transiciones **no se modelan todavía**. El documento de requerimientos marc
 
 ## Contrato público
 
-`api.presentation.requests.*` sigue entregando solo los cuatro estados de Sprint 1. Mobile deriva sus tipos de ese contrato y su mapeo de estados es exhaustivo, así que ampliarlo es un cambio incompatible que se coordina con TI4 en la tarea que publique cancelar y cerrar. Hasta entonces los dos casos de uso no tienen entrada pública y ninguna lectura pública entrega una fila cerrada o cancelada con un estado que los clientes no saben mostrar. Los listados paginados (`listOwnRequests` y `listAuthorizedRequests`) la omiten, para que una sola fila cerrada no deje sin respuesta el listado completo; el detalle (`getRequest`) y las mutations la rechazan con `toSprint1AccompanimentRequest`, porque ahí entregarla violaría el contrato.
+Desde TI2-141, `api.presentation.requests.*` declara los siete estados de `REQUEST_STATES` (`requestStatusUnion` en `convex/infrastructure/validators.ts`). `referred` forma parte del contrato aunque ninguna fila lo trae todavía, para que Web y Mobile mapeen el conjunto completo una sola vez; lo habilita la tarea de derivaciones. Es un cambio incompatible para un cliente con mapeo exhaustivo de cuatro estados, y está descrito en `docs/contratos-sprint-3/solicitudes.md`.
+
+`cancelRequest` y `closeRequestWithoutAccompaniment` tienen entrada pública. Las lecturas ya no omiten ni rechazan una solicitud cerrada o cancelada: `listOwnRequests`, `listAuthorizedRequests` y `getRequest` la entregan con su estado. La bandeja `listOpenRequests` sigue trayendo solo `received`.
 
 ## Casos cubiertos por pruebas
 
@@ -126,7 +128,7 @@ bunx vitest run convex/domain/requests
 
 Positivos: las transiciones declaradas se aplican y devuelven actor, origen, destino, instante y el motivo cuando llega; el paso a espera y los cinco cierres conservan el motivo recortado; llegar a la aceptación marca que corresponde abrir el acompañamiento y ningún cierre lo marca; el estado inicial es `received` y queda reconocido como estado con operación; los siete estados tienen etiqueta visible y una sola definición; el diagrama dibuja exactamente las transiciones de las dos tablas, marca "exige motivo" donde la tabla lo exige, entra por el estado inicial y sale por los tres estados terminales; las tablas no repiten filas, no dejan la solicitud donde ya estaba, alcanzan todos los estados persistibles desde el inicial, y desde todo estado abierto se puede cancelar; la proyección adapta una fila cerrada o cancelada.
 
-Negativos: todo par ausente de las tablas se rechaza sin tocar el estado, incluidos los saltos, los retrocesos, quedarse en el mismo estado, aceptar dos veces, cancelar o cerrar una aceptada y repetir un cierre, tanto con el par escrito a mano como partiendo del estado que dejó el primer intento; el paso a espera y los cierres sin motivo, o con un motivo en blanco, se rechazan; el actor vacío o solo con espacios se rechaza; un instante que no es un número finito y positivo se rechaza; un rechazo no trae entrada de historial y deja el intento intacto, y cada causa declarada tiene un intento que la provoca; `referred` no queda habilitado, no aparece dibujado y no tiene fila; el Profesional no cierra una recibida; el contrato público de Sprint 1 rechaza una fila cerrada o cancelada.
+Negativos: todo par ausente de las tablas se rechaza sin tocar el estado, incluidos los saltos, los retrocesos, quedarse en el mismo estado, aceptar dos veces, cancelar o cerrar una aceptada y repetir un cierre, tanto con el par escrito a mano como partiendo del estado que dejó el primer intento; el paso a espera y los cierres sin motivo, o con un motivo en blanco, se rechazan; el actor vacío o solo con espacios se rechaza; un instante que no es un número finito y positivo se rechaza; un rechazo no trae entrada de historial y deja el intento intacto, y cada causa declarada tiene un intento que la provoca; `referred` no queda habilitado, no aparece dibujado y no tiene fila; el Profesional no cierra una recibida.
 
 Lo que estas pruebas no cubren, porque vive fuera del dominio: quién está autorizado a intentar una transición, la persistencia del estado y de su historial, el evento de auditoría y la unicidad del acompañamiento. Las pruebas de integración de los dos cierres viven en [`requests.test.ts`](../../tests/requests.test.ts) y [`acceptance.test.ts`](../../tests/acceptance.test.ts).
 
@@ -142,11 +144,12 @@ Quien escribe el motivo no debe incluir diagnósticos ni etiquetas clínicas, po
 
 ## Qué queda para otros issues
 
-| Issue  | Qué le corresponde                                                                                                                                                   |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TI2-21 | La función que aplica una transición, rechaza las inválidas y exige motivo.                                                                                          |
-| TI2-16 | La persistencia: tabla de solicitudes y validadores de Convex derivados de estos literales.                                                                          |
-| TI2-8  | Los contratos compartidos, incluida la entidad de solicitud y el mapa de estado a etiqueta en español.                                                               |
-| TI2-24 | La apertura única del acompañamiento: leer y actualizar el estado persistido de forma atómica, según CA-04.                                                          |
-| TI2-22 | Entregado: el diagrama y las tablas atados al código, las pruebas propias de los estados y de la tabla como grafo, y este documento.                                 |
-| TI2-85 | Entregado: los cierres sin acompañamiento en dominio y aplicación, con sus pruebas. La entrada pública y la ampliación del contrato quedan sin tarea asignada (TI4). |
+| Issue   | Qué le corresponde                                                                                                                   |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| TI2-21  | La función que aplica una transición, rechaza las inválidas y exige motivo.                                                          |
+| TI2-16  | La persistencia: tabla de solicitudes y validadores de Convex derivados de estos literales.                                          |
+| TI2-8   | Los contratos compartidos, incluida la entidad de solicitud y el mapa de estado a etiqueta en español.                               |
+| TI2-24  | La apertura única del acompañamiento: leer y actualizar el estado persistido de forma atómica, según CA-04.                          |
+| TI2-22  | Entregado: el diagrama y las tablas atados al código, las pruebas propias de los estados y de la tabla como grafo, y este documento. |
+| TI2-85  | Entregado: los cierres sin acompañamiento en dominio y aplicación, con sus pruebas.                                                  |
+| TI2-141 | Entregado: la entrada pública de cancelar y cerrar, y los siete estados en el contrato público.                                      |
