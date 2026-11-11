@@ -317,10 +317,10 @@ test("habilita profesional de personal con actor y fecha y rechaza practicante",
   });
 
   const asAdmin = t.withIdentity(identityFor("ti2-137-adm-7", "adm7@uct.cl"));
-  const enabledId = await asAdmin.mutation(api.presentation.accounts.enableAccount, {
+  const enabled = await asAdmin.mutation(api.presentation.accounts.enableAccount, {
     userId: pro.id,
   });
-  expect(enabledId).toEqual(pro.id);
+  expect(enabled).toEqual({ userId: pro.id });
   const stored = await t.run(async (ctx) => {
     return await ctx.db.get(pro.id);
   });
@@ -435,10 +435,10 @@ test("revoca profesional habilitado y deja de operar en la petición siguiente",
   });
 
   const asAdmin = t.withIdentity(identityFor("ti2-137-adm-12", "adm12@uct.cl"));
-  const revokedId = await asAdmin.mutation(api.presentation.accounts.revokeAccount, {
+  const revoked = await asAdmin.mutation(api.presentation.accounts.revokeAccount, {
     userId: pro.id,
   });
-  expect(revokedId).toEqual(pro.id);
+  expect(revoked).toEqual({ userId: pro.id });
   const stored = await t.run(async (ctx) => {
     return await ctx.db.get(pro.id);
   });
@@ -460,6 +460,29 @@ test("revoca profesional habilitado y deja de operar en la petición siguiente",
     return await ctx.db.get(pro.id);
   });
   expect(reenabled?.institutionalStatus).toBe("enabled");
+  expect(reenabled?.enabledBy).toEqual(admin.id);
+  expect(typeof reenabled?.enabledAt).toBe("number");
+  expect(reenabled?.revokedBy).toEqual(admin.id);
+  expect(typeof reenabled?.revokedAt).toBe("number");
+
+  const detail = await asAdmin.query(api.presentation.accounts.getAccount, { userId: pro.id });
+  expect(detail.institutionalStatus).toBe("enabled");
+  expect(Object.keys(detail).sort()).toEqual([
+    "_id",
+    "accountStatus",
+    "email",
+    "enabledAt",
+    "enabledBy",
+    "fullName",
+    "institutionalStatus",
+    "revokedAt",
+    "revokedBy",
+    "role",
+  ]);
+
+  const asProEnabled = t.withIdentity(identityFor("ti2-137-pro-6", "pro6@uct.cl"));
+  const session = await asProEnabled.query(api.presentation.session.getSessionWithRole, {});
+  expect(session.role).toMatchObject({ status: "authenticated", role: "professional" });
 });
 
 test("revoca a otro administrador y el revocado deja de operar", async () => {
@@ -531,7 +554,7 @@ test("no permite auto-revocarse ni revocar una cuenta pendiente, sin escribir", 
   expect(storedPending).not.toHaveProperty("revokedBy");
 });
 
-test("el tope de numItems acota sin leer de más", async () => {
+test("el límite fuera de rango se rechaza y el tope es 100", async () => {
   const t = convexTest(schema, modules);
   await seedUser(t, {
     subject: "ti2-137-adm-16",
@@ -539,23 +562,27 @@ test("el tope de numItems acota sin leer de más", async () => {
     fullName: "Administrador Ficticio",
     role: "admin",
   });
-  await seedUser(t, {
-    subject: "ti2-137-pro-8",
-    email: "pro8@uct.cl",
-    fullName: "Profesional Ficticio",
-    role: "professional",
-    institutionalStatus: "pending",
-  });
 
   const asAdmin = t.withIdentity(identityFor("ti2-137-adm-16", "adm16@uct.cl"));
-  const wide = await asAdmin.query(
+  await expect(
+    asAdmin.query(api.presentation.accounts.listAccounts, listArgs("professional", 0)),
+  ).rejects.toThrow("El límite del listado debe ser un entero entre 1 y 100.");
+  await expect(
+    asAdmin.query(api.presentation.accounts.listAccounts, listArgs("professional", 101)),
+  ).rejects.toThrow("El límite del listado debe ser un entero entre 1 y 100.");
+
+  for (let i = 0; i < 101; i++) {
+    await seedUser(t, {
+      subject: `ti2-137-cap-${i}`,
+      email: `cap${i}@uct.cl`,
+      fullName: `Profesional Tope ${i}`,
+      role: "professional",
+    });
+  }
+  const page = await asAdmin.query(
     api.presentation.accounts.listAccounts,
-    listArgs("professional", 100000),
+    listArgs("professional", 100),
   );
-  expect(wide.page.length).toBe(1);
-  const narrow = await asAdmin.query(
-    api.presentation.accounts.listAccounts,
-    listArgs("professional", 0),
-  );
-  expect(narrow.page.length).toBe(1);
+  expect(page.page.length).toBe(100);
+  expect(page.isDone).toBe(false);
 });

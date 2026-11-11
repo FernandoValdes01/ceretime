@@ -47,6 +47,8 @@ const accountSummaryValidator = v.object({
   revokedAt: v.optional(v.number()),
 });
 
+const accountIdValidator = v.object({ userId: v.id("users") });
+
 /** Lista paginada de cuentas de personal, filtrada por rol. Solo Administrador. */
 export const listAccounts = query({
   args: {
@@ -76,7 +78,7 @@ export const getAccount = query({
  */
 export const enableAccount = mutation({
   args: { userId: v.id("users") },
-  returns: v.id("users"),
+  returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(await enableStaffAccount(ctx, identity, args));
@@ -89,7 +91,7 @@ export const enableAccount = mutation({
  */
 export const revokeAccount = mutation({
   args: { userId: v.id("users") },
-  returns: v.id("users"),
+  returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(await revokeStaffAccount(ctx, identity, args));

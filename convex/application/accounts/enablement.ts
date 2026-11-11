@@ -8,7 +8,12 @@ import {
   validateStaffEnablementTarget,
   validateStaffRevocationTarget,
 } from "../../domain/accounts/enablement";
-import { canManageAccounts } from "../../domain/authorization/permissions";
+import {
+  canEnableAccount,
+  canListAccounts,
+  canReadAccount,
+  canRevokeAccount,
+} from "../../domain/authorization/permissions";
 import { normalizeEmail } from "../../domain/auth/institutional_domain";
 import {
   CONFLICT_ERROR_CODE,
@@ -58,29 +63,18 @@ function conflict<T>(message: string): ApiResult<T> {
 type DbProfile = Doc<"users">;
 
 /**
- * Actor administrador con cuenta habilitada y vigente (TI2-137).
+ * Perfil de quien llama, vinculado a la identidad (TI2-137).
  *
- * Única evaluación de la regla en Aplicación: delega en `canManageAccounts`
- * de la matriz, sin duplicarla. Devuelve `null` para que cada caso de uso
- * responda `unauthorized` del contrato común.
+ * Solo carga el perfil; cada caso de uso exige su permiso específico de la
+ * matriz (`canListAccounts`, `canReadAccount`, `canEnableAccount`,
+ * `canRevokeAccount`) para que la matriz y el código hablen igual.
  */
 async function requireAdminCaller(
   ctx: QueryCtx | MutationCtx,
   identity: UserIdentity | null,
 ): Promise<DbProfile | null> {
   if (identity === null) return null;
-  const caller = await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier ?? "");
-  if (
-    caller === null ||
-    !canManageAccounts({
-      role: caller.role,
-      institutionalStatus: caller.institutionalStatus,
-      accountStatus: caller.accountStatus,
-    })
-  ) {
-    return null;
-  }
-  return caller;
+  return await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier ?? "");
 }
 
 /** Verdadero cuando la cuenta es de personal: profesional o administrador. */
@@ -121,10 +115,10 @@ function toAccountSummary(profile: DbProfile): AccountSummary {
  * Lista paginada de cuentas de personal para administración (TI2-137).
  *
  * Solo el Administrador vigente lista, filtrado por rol con el índice
- * `by_role`: estudiantes y practicantes nunca aparecen. El `numItems` se
- * acota a 1..100, igual que `listAuthorizedRequestsUseCase`; un valor no
- * finito responde `unauthorized`. Devuelve el detalle mínimo, sin
- * `tokenIdentifier`, acompañamientos ni notas.
+ * `by_role`: estudiantes y practicantes nunca aparecen. El `numItems` debe
+ * ser un entero entre 1 y 100 y se rechaza con error de regla, igual que
+ * `listSpaces`: nunca se trunca en silencio. Devuelve el detalle mínimo,
+ * sin `tokenIdentifier`, acompañamientos ni notas.
  */
 export async function listAccountsUseCase(
   ctx: QueryCtx,
@@ -132,13 +126,24 @@ export async function listAccountsUseCase(
   args: { readonly role: "professional" | "admin"; readonly paginationOpts: PaginationOptions },
 ): Promise<ApiResult<{ page: AccountSummary[]; isDone: boolean; continueCursor: string }>> {
   const caller = await requireAdminCaller(ctx, identity);
-  if (caller === null) return unauthorized();
-  if (!Number.isFinite(args.paginationOpts.numItems)) return unauthorized();
-  const numItems = Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), 100);
-  const result = await paginateStaffAccounts(ctx, args.role, {
-    ...args.paginationOpts,
-    numItems,
-  });
+  if (
+    caller === null ||
+    !canListAccounts({
+      role: caller.role,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    })
+  ) {
+    return unauthorized();
+  }
+  if (
+    !Number.isInteger(args.paginationOpts.numItems) ||
+    args.paginationOpts.numItems < 1 ||
+    args.paginationOpts.numItems > 100
+  ) {
+    throw new Error("El límite del listado debe ser un entero entre 1 y 100.");
+  }
+  const result = await paginateStaffAccounts(ctx, args.role, args.paginationOpts);
   return okResult({ ...result, page: result.page.map(toAccountSummary) });
 }
 
@@ -155,7 +160,16 @@ export async function getAccountDetailUseCase(
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<AccountSummary>> {
   const caller = await requireAdminCaller(ctx, identity);
-  if (caller === null) return unauthorized();
+  if (
+    caller === null ||
+    !canReadAccount({
+      role: caller.role,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    })
+  ) {
+    return unauthorized();
+  }
   const target = await getUserById(ctx, args.userId);
   if (target === null || !isStaffAccount(target)) return unauthorized();
   return okResult(toAccountSummary(target));
@@ -167,20 +181,31 @@ export async function getAccountDetailUseCase(
  *
  * Registra actor (`enabledBy`) y fecha (`enabledAt`); la rehabilitación
  * registra el nuevo evento, sin conservar la auditoría anterior. La falta
- * de permiso o un objetivo inexistente o fuera de esta vía responde
- * `unauthorized`; un tránsito inválido (cuenta ya habilitada, correo sin
- * personal o cuenta no vigente) responde `conflict` sin escribir. El
+ * de permiso responde `unauthorized`; un objetivo inexistente o fuera de
+ * esta vía también, sin revelar existencia; un tránsito
+ * inválido (cuenta ya habilitada, correo sin personal o cuenta no vigente)
+ * responde `conflict` sin escribir. Cortar el acceso no exige correo de
+ * personal, pero rehabilitar sí: por eso revocar no revisa el dominio. El
  * practicante no entra por esta vía (TI2-140).
  */
 export async function enableStaffAccount(
   ctx: MutationCtx,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
-): Promise<ApiResult<Id<"users">>> {
+): Promise<ApiResult<{ userId: Id<"users"> }>> {
   const caller = await requireAdminCaller(ctx, identity);
-  if (caller === null) return unauthorized();
+  if (
+    caller === null ||
+    !canEnableAccount({
+      role: caller.role,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    })
+  ) {
+    return unauthorized();
+  }
   const target = await getUserById(ctx, args.userId);
-  if (target === null || !isStaffAccount(target)) return unauthorized();
+  if (target === null) return unauthorized();
   const check = validateStaffEnablementTarget({
     role: target.role,
     email: target.email,
@@ -189,6 +214,8 @@ export async function enableStaffAccount(
   });
   if (!check.ok) {
     switch (check.reason) {
+      case "target-not-staff":
+        return unauthorized();
       case "target-already-enabled":
         return conflict("La cuenta ya está habilitada.");
       case "target-email-not-institutional":
@@ -204,7 +231,7 @@ export async function enableStaffAccount(
     enabledBy: caller._id,
     enabledAt: Date.now(),
   });
-  return okResult(target._id);
+  return okResult({ userId: target._id });
 }
 
 /**
@@ -212,8 +239,10 @@ export async function enableStaffAccount(
  *
  * Fija `institutionalStatus` en `disabled` y registra actor (`revokedBy`)
  * y fecha (`revokedAt`); la cuenta revocada deja de operar en la petición
- * siguiente. La falta de permiso o un objetivo inexistente o fuera de
- * esta vía responde `unauthorized`; un tránsito inválido (cuenta no
+ * siguiente. Revocar no revisa el dominio del correo: cortar el acceso
+ * siempre está permitido, aunque rehabilitar exija personal. La falta de
+ * permiso responde `unauthorized`; un objetivo inexistente o fuera de esta
+ * vía también, sin revelar existencia; un tránsito inválido (cuenta no
  * habilitada, cuenta no vigente o auto-revocación) responde `conflict` sin
  * escribir. La auto-revocación se deniega como conflicto porque quien llama
  * ya es un administrador autorizado que puede leer el estado.
@@ -222,11 +251,20 @@ export async function revokeStaffAccount(
   ctx: MutationCtx,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
-): Promise<ApiResult<Id<"users">>> {
+): Promise<ApiResult<{ userId: Id<"users"> }>> {
   const caller = await requireAdminCaller(ctx, identity);
-  if (caller === null) return unauthorized();
+  if (
+    caller === null ||
+    !canRevokeAccount({
+      role: caller.role,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    })
+  ) {
+    return unauthorized();
+  }
   const target = await getUserById(ctx, args.userId);
-  if (target === null || !isStaffAccount(target)) return unauthorized();
+  if (target === null) return unauthorized();
   if (target._id === caller._id) return conflict("No puedes revocar tu propia cuenta.");
   const check = validateStaffRevocationTarget({
     role: target.role,
@@ -236,6 +274,8 @@ export async function revokeStaffAccount(
   });
   if (!check.ok) {
     switch (check.reason) {
+      case "target-not-staff":
+        return unauthorized();
       case "target-not-enabled":
         return conflict("La cuenta no está habilitada.");
       case "target-account-not-active":
@@ -249,7 +289,7 @@ export async function revokeStaffAccount(
     revokedBy: caller._id,
     revokedAt: Date.now(),
   });
-  return okResult(target._id);
+  return okResult({ userId: target._id });
 }
 
 /**
