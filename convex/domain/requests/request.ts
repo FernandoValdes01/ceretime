@@ -19,12 +19,7 @@
  */
 
 import type { ApiResult } from "../errors/api_error";
-import {
-  isPersistableRequestState,
-  isSprint1RequestState,
-  type PersistableRequestState,
-  type Sprint1RequestState,
-} from "./state";
+import { isPersistableRequestState, type PersistableRequestState } from "./state";
 
 /**
  * Tope del texto de necesidades de acceso en caracteres (TI2-23).
@@ -154,38 +149,6 @@ export function toAccompanimentRequest<RowId extends string, StudentId extends s
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   };
-}
-
-/**
- * Solicitud tal como la entrega hoy `api.presentation.requests.*`: solo los
- * cuatro estados de Sprint 1 (TI2-85).
- *
- * El contrato público no se amplió con los cierres porque Mobile deriva sus
- * tipos de él y su mapeo de estados es exhaustivo: ampliarlo es un cambio
- * incompatible que se coordina con TI4 en la tarea que publique cancelar y
- * cerrar. Mientras tanto ninguna vía pública llega a un cierre, y una fila
- * cerrada o cancelada se rechaza acá en vez de entregarse con un estado que
- * los clientes no saben mostrar.
- */
-export function toSprint1AccompanimentRequest<RowId extends string, StudentId extends string>(row: {
-  readonly _id: RowId;
-  readonly studentId: StudentId;
-  readonly status: string;
-  readonly accessNeeds: string;
-  readonly createdAt: number;
-}): AccompanimentRequest & {
-  readonly _id: RowId;
-  readonly studentId: StudentId;
-  readonly status: Sprint1RequestState;
-} {
-  const request = toAccompanimentRequest(row);
-  const status = request.status;
-  if (!isSprint1RequestState(status)) {
-    throw new Error(
-      `Estado de solicitud fuera del contrato público de Sprint 1 en la fila ${row._id}: ${status}`,
-    );
-  }
-  return { ...request, status };
 }
 
 /** Campos de la tabla `requests` que salen del contenido estructurado. */

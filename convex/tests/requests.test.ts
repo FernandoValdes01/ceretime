@@ -4,7 +4,6 @@ import type { FunctionReturnType } from "convex/server";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { cancelRequest, closeRequestWithoutAccompaniment } from "../application/requests/commands";
 import { SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
 import schema from "../schema";
 
@@ -119,8 +118,8 @@ test("El estado persiste exactamente los literales de Sprint 1 del dominio", asy
     expect(fetchedRequest?.status).toBe(status);
   }
 
-  // La semilla usa el contrato público de Sprint 1: un cierre de TI2-85 se
-  // persiste por su caso de uso, no por esta vía
+  // La semilla solo crea solicitudes abiertas o aceptadas: un cierre de
+  // TI2-85 se persiste por su caso de uso, no por esta vía
   await expect(
     t.mutation(internal.operations.requests.createTestRequest, {
       studentId,
@@ -812,11 +811,10 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
 });
 
 /*
- * TI2-85: cancelar y cerrar sin acompañamiento. Los dos casos de uso todavía
- * no tienen entrada pública, así que se invocan dentro de `t.run`, que
- * convex-test ejecuta como una mutation y revierte si lanza: un rechazo se
- * prueba igual que en producción. La identidad llega ya resuelta, como la
- * entrega el borde con `ctx.auth.getUserIdentity()`.
+ * TI2-85 y TI2-141: cancelar y cerrar sin acompañamiento. Desde TI2-141 los
+ * dos casos de uso tienen entrada pública, así que estas pruebas pasan por
+ * `api.presentation.requests.*` con la identidad de la sesión: lo que se
+ * comprueba es el borde completo, no solo el caso de uso.
  */
 
 type SchemaTest = TestConvex<typeof schema>;
@@ -878,7 +876,7 @@ async function seedTake(
   });
 }
 
-/** Estado, registro de cambios y acompañamientos de la solicitud. */
+/** Estado, razón de cierre, registro de cambios y acompañamientos de la solicitud. */
 async function snapshotOf(t: SchemaTest, requestId: Id<"requests">) {
   return await t.run(async (ctx) => {
     const request = await ctx.db.get(requestId);
@@ -891,16 +889,32 @@ async function snapshotOf(t: SchemaTest, requestId: Id<"requests">) {
       .query("accompaniments")
       .filter((q) => q.eq(q.field("requestId"), requestId))
       .take(2);
-    return { status: request?.status, transitions, accompaniments: accompaniments.length };
+    return {
+      status: request?.status,
+      closureReason: request?.closureReason,
+      transitions,
+      accompaniments: accompaniments.length,
+    };
   });
 }
 
+/** Sesión de la identidad, o sin sesión cuando es `null`. */
+function sessionOf(t: SchemaTest, identity: Identity) {
+  return identity === null ? t : t.withIdentity(identity);
+}
+
 function cancelAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, reason: string) {
-  return t.run((ctx) => cancelRequest(ctx, identity, { requestId, reason }));
+  return sessionOf(t, identity).mutation(api.presentation.requests.cancelRequest, {
+    requestId,
+    reason,
+  });
 }
 
 function closeAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, reason: string) {
-  return t.run((ctx) => closeRequestWithoutAccompaniment(ctx, identity, { requestId, reason }));
+  return sessionOf(t, identity).mutation(
+    api.presentation.requests.closeRequestWithoutAccompaniment,
+    { requestId, reason },
+  );
 }
 
 const OPEN_FOR_STUDENT = [
@@ -927,6 +941,8 @@ test("TI2-85: el Estudiante cancela su solicitud abierta y queda el registro con
     // y el motivo recortado; no se abre ningún acompañamiento
     const after = await snapshotOf(t, requestId);
     expect(after.status).toBe("cancelled");
+    // Cancelar no escribe razón de cierre: el motivo del Estudiante queda en el registro
+    expect(after.closureReason).toBeUndefined();
     expect(after.accompaniments).toBe(0);
     expect(after.transitions).toHaveLength(1);
     expect(after.transitions[0]).toMatchObject({
@@ -1039,6 +1055,7 @@ test("TI2-85: repetir la cancelación o cancelar una aceptada o cerrada se recha
     );
     expect(await snapshotOf(t, endedId)).toEqual({
       status,
+      closureReason: undefined,
       transitions: [],
       accompaniments: 0,
     });
@@ -1068,6 +1085,10 @@ test("TI2-85: el Profesional con toma cierra sin acompañamiento desde revisión
   expect(closed.status).toBe("closed_without_accompaniment");
   const afterReview = await snapshotOf(t, reviewed._id);
   expect(afterReview.status).toBe("closed_without_accompaniment");
+  // La razón vigente queda en la fila, recortada e igual a la del registro
+  expect(afterReview.closureReason).toBe(
+    "La necesidad corresponde a otra unidad de la universidad",
+  );
   expect(afterReview.accompaniments).toBe(0);
   expect(afterReview.transitions.map((row) => `${row.from} -> ${row.to}`)).toEqual([
     "received -> under_review",
@@ -1195,6 +1216,7 @@ test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza si
     );
     expect(await snapshotOf(t, requestId)).toEqual({
       status,
+      closureReason: undefined,
       transitions: [],
       accompaniments: 0,
     });
@@ -1212,7 +1234,7 @@ test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza si
   expect(afterFirst.transitions).toHaveLength(1);
 });
 
-test("TI2-85: tras cerrar, la bandeja del Profesional sigue respondiendo con el resto de las solicitudes", async () => {
+test("TI2-141: tras cerrar, el listado y el detalle del Profesional entregan la solicitud cerrada", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti85-est-12", "student");
   const proId = await seedProfile(t, "ti85-pro-8", "professional");
@@ -1222,20 +1244,24 @@ test("TI2-85: tras cerrar, la bandeja del Profesional sigue respondiendo con el 
   await seedTake(t, openId, proId);
   await closeAs(t, identityOf("ti85-pro-8"), closedId, "Motivo ficticio");
 
-  // La cerrada se omite: una sola fila fuera del contrato no tumba la bandeja
+  // La cerrada sigue en el listado, con su estado, junto a la abierta
   const asProfessional = t.withIdentity(identityOf("ti85-pro-8"));
   const page = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(page.page.map((item) => item._id)).toEqual([openId]);
+  expect(page.page.map((item) => [item._id, item.status])).toEqual([
+    [closedId, "closed_without_accompaniment"],
+    [openId, "under_review"],
+  ]);
 
-  // El detalle sí la rechaza: ahí entregarla violaría el contrato público
-  await expect(
-    asProfessional.query(api.presentation.requests.getRequest, { requestId: closedId }),
-  ).rejects.toThrow("fuera del contrato público de Sprint 1");
+  // El detalle también la entrega
+  const detail = await asProfessional.query(api.presentation.requests.getRequest, {
+    requestId: closedId,
+  });
+  expect(detail).toMatchObject({ _id: closedId, status: "closed_without_accompaniment" });
 });
 
-test("TI2-85: tras cancelar, el listado del Estudiante y la bandeja del Profesional con toma siguen respondiendo", async () => {
+test("TI2-141: tras cancelar, el listado del Estudiante y el del Profesional con toma entregan la solicitud cancelada", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti85-est-13", "student");
   const proId = await seedProfile(t, "ti85-pro-9", "professional");
@@ -1249,9 +1275,16 @@ test("TI2-85: tras cancelar, el listado del Estudiante y la bandeja del Profesio
     .query(api.presentation.requests.listOwnRequests, {
       paginationOpts: { numItems: 10, cursor: null },
     });
-  expect(own.page.map((item) => item._id)).toEqual([openId]);
+  expect(own.page.map((item) => [item._id, item.status])).toEqual([
+    [cancelledId, "cancelled"],
+    [openId, "received"],
+  ]);
+  const ownDetail = await t
+    .withIdentity(identityOf("ti85-est-13"))
+    .query(api.presentation.requests.getRequest, { requestId: cancelledId });
+  expect(ownDetail).toMatchObject({ _id: cancelledId, status: "cancelled" });
 
-  // Cancelar no revoca la toma, así que la bandeja sigue pasando por la fila
+  // Cancelar no revoca la toma, así que el Profesional la sigue viendo
   const activeTakes = await t.run((ctx) =>
     ctx.db
       .query("requestAssignments")
@@ -1266,5 +1299,7 @@ test("TI2-85: tras cancelar, el listado del Estudiante y la bandeja del Profesio
     .query(api.presentation.requests.listAuthorizedRequests, {
       paginationOpts: { numItems: 10, cursor: null },
     });
-  expect(authorized.page).toEqual([]);
+  expect(authorized.page.map((item) => [item._id, item.status])).toEqual([
+    [cancelledId, "cancelled"],
+  ]);
 });

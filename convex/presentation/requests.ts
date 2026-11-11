@@ -1,7 +1,9 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
-import { v } from "convex/values";
+import { v, type Infer } from "convex/values";
 import {
   acceptRequest as acceptRequestUseCase,
+  cancelRequest as cancelRequestUseCase,
+  closeRequestWithoutAccompaniment as closeRequestWithoutAccompanimentUseCase,
   registerRequest,
   requestAdditionalInformation as requestAdditionalInformationUseCase,
   takeRequest as takeRequestUseCase,
@@ -27,11 +29,16 @@ import { acceptedAccompanimentValidator } from "./accompaniments";
  * Toda denegación responde con el mismo error genérico, sin exponer el
  * motivo. Opera con datos ficticios.
  *
- * TI2-26: las cuatro mutations de abajo son toda la escritura pública del
- * Sprint 1; la habilitación de cuentas y la concesión de accesos siguen en
- * las vías internas guardadas (`internal.operations.accounts`, `internal.operations.assignments`) y
- * el Sprint 1 no usa `action` (sin integraciones que lo requieran: OAuth corre
+ * TI2-26: `createRequest`, `takeRequest`, `requestAdditionalInformation` y
+ * `acceptRequest` son la escritura pública del Sprint 1; la habilitación de
+ * cuentas y la concesión de accesos siguen en las vías internas guardadas
+ * (`internal.operations.accounts`, `internal.operations.assignments`) y el
+ * Sprint 1 no usa `action` (sin integraciones que lo requieran: OAuth corre
  * por las rutas HTTP de Better Auth).
+ *
+ * TI2-141: suma la cancelación y el cierre sin acompañamiento, y el estado
+ * de toda respuesta puede ser cualquiera de los siete del contrato
+ * (`requestStatusUnion`).
  */
 
 const requestBaseFields = {
@@ -48,6 +55,16 @@ const requestValidator = v.object({
 
 const minimizedRequestValidator = v.object(requestBaseFields);
 
+const requestPageValidator = paginationResultValidator(requestValidator);
+const minimizedRequestPageValidator = paginationResultValidator(minimizedRequestValidator);
+
+// Los handlers declaran el tipo del validador y no el que infiere TypeScript
+// desde la fila: así Web y Mobile derivan los siete estados del contrato,
+// incluido `referred`, y no solo los que hoy puede traer una fila.
+type PublicRequest = Infer<typeof requestValidator>;
+type PublicRequestPage = Infer<typeof requestPageValidator>;
+type PublicMinimizedRequestPage = Infer<typeof minimizedRequestPageValidator>;
+
 /**
  * Registra la solicitud del Estudiante en estado `received`. Solo una
  * cuenta de Estudiante habilitada y vigente puede registrar; cualquier otro
@@ -56,7 +73,7 @@ const minimizedRequestValidator = v.object(requestBaseFields);
 export const createRequest = mutation({
   args: { accessNeeds: v.string() },
   returns: requestValidator,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
     return await registerRequest(ctx, identity, args);
   },
@@ -68,8 +85,8 @@ export const createRequest = mutation({
  */
 export const listOwnRequests = query({
   args: { paginationOpts: paginationOptsValidator },
-  returns: paginationResultValidator(requestValidator),
-  handler: async (ctx, args) => {
+  returns: requestPageValidator,
+  handler: async (ctx, args): Promise<PublicRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
     return await listOwnRequestsUseCase(ctx, identity, args);
   },
@@ -85,7 +102,7 @@ export const listOwnRequests = query({
 export const getRequest = query({
   args: { requestId: v.id("requests") },
   returns: requestValidator,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
     return await getRequestDetailUseCase(ctx, identity, args);
   },
@@ -97,8 +114,8 @@ export const getRequest = query({
  */
 export const listAuthorizedRequests = query({
   args: { paginationOpts: paginationOptsValidator },
-  returns: paginationResultValidator(requestValidator),
-  handler: async (ctx, args) => {
+  returns: requestPageValidator,
+  handler: async (ctx, args): Promise<PublicRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
     return await listAuthorizedRequestsUseCase(ctx, identity, args);
   },
@@ -111,8 +128,8 @@ export const listAuthorizedRequests = query({
  */
 export const listOpenRequests = query({
   args: { paginationOpts: paginationOptsValidator },
-  returns: paginationResultValidator(minimizedRequestValidator),
-  handler: async (ctx, args) => {
+  returns: minimizedRequestPageValidator,
+  handler: async (ctx, args): Promise<PublicMinimizedRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
     return await listOpenRequestsUseCase(ctx, identity, args);
   },
@@ -125,7 +142,7 @@ export const listOpenRequests = query({
 export const takeRequest = mutation({
   args: { requestId: v.id("requests") },
   returns: requestValidator,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
     return await takeRequestUseCase(ctx, identity, args);
   },
@@ -138,7 +155,7 @@ export const takeRequest = mutation({
 export const requestAdditionalInformation = mutation({
   args: { requestId: v.id("requests"), reason: v.string() },
   returns: requestValidator,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
     return await requestAdditionalInformationUseCase(ctx, identity, args);
   },
@@ -155,5 +172,33 @@ export const acceptRequest = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await acceptRequestUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Cancela la solicitud propia (TI2-141). Solo el Estudiante dueño con cuenta
+ * vigente y mientras siga abierta; el motivo es obligatorio. Una solicitud
+ * ajena o inexistente recibe la misma denegación.
+ */
+export const cancelRequest = mutation({
+  args: { requestId: v.id("requests"), reason: v.string() },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await cancelRequestUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Cierra la solicitud sin abrir acompañamiento (TI2-141). Solo el Profesional
+ * con toma activa y cuenta vigente; la razón es obligatoria y es la que lee
+ * el Estudiante.
+ */
+export const closeRequestWithoutAccompaniment = mutation({
+  args: { requestId: v.id("requests"), reason: v.string() },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await closeRequestWithoutAccompanimentUseCase(ctx, identity, args);
   },
 });

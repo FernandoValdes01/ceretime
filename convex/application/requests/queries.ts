@@ -1,7 +1,7 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import { toSprint1AccompanimentRequest } from "../../domain/requests/request";
-import { isSprint1RequestState, type Sprint1RequestState } from "../../domain/requests/state";
+import { toAccompanimentRequest } from "../../domain/requests/request";
+import type { PersistableRequestState } from "../../domain/requests/state";
 import type { Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
@@ -60,13 +60,10 @@ function deny(): never {
 }
 
 /**
- * Lista las solicitudes propias del Estudiante, paginado. Cualquier otro
- * rol recibe denegación genérica, sin motivo ni existencia de recursos.
- *
- * Las solicitudes canceladas o cerradas sin acompañamiento se omiten en vez
- * de pasar por `toSprint1AccompanimentRequest`, que lanzaría y dejaría sin
- * listado también a las abiertas. Se mostrarán cuando la tarea que publique
- * cancelar y cerrar amplíe `requestStatusUnion` junto con TI4 (TI2-85).
+ * Lista las solicitudes propias del Estudiante, paginado y en cualquier
+ * estado, incluidas las canceladas y las cerradas sin acompañamiento
+ * (TI2-141). Cualquier otro rol recibe denegación genérica, sin motivo ni
+ * existencia de recursos.
  */
 export async function listOwnRequestsUseCase(
   ctx: QueryCtx,
@@ -77,18 +74,14 @@ export async function listOwnRequestsUseCase(
   const result = await listOwnedRequests(ctx, student._id, args.paginationOpts);
   return {
     ...result,
-    page: result.page.flatMap((row) =>
-      isSprint1RequestState(row.status)
-        ? [
-            toSprint1AccompanimentRequest({
-              _id: row._id,
-              studentId: row.studentId,
-              status: row.status,
-              accessNeeds: row.accessNeeds,
-              createdAt: row.createdAt,
-            }),
-          ]
-        : [],
+    page: result.page.map((row) =>
+      toAccompanimentRequest({
+        _id: row._id,
+        studentId: row.studentId,
+        status: row.status,
+        accessNeeds: row.accessNeeds,
+        createdAt: row.createdAt,
+      }),
     ),
   };
 }
@@ -96,12 +89,7 @@ export async function listOwnRequestsUseCase(
 export type AuthorizedRequestItem = {
   readonly _id: Id<"requests">;
   readonly studentId: Id<"users">;
-  // Estado del contrato público: los ítems se construyen con
-  // `toSprint1AccompanimentRequest`, así el tipo refleja lo devuelto y no el
-  // conjunto persistible ampliado (TI2-83/TI2-85). Las solicitudes canceladas
-  // o cerradas se omiten hasta que la tarea que publique cancelar y cerrar
-  // amplíe `requestStatusUnion` junto con TI4.
-  readonly status: Sprint1RequestState;
+  readonly status: PersistableRequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
 };
@@ -116,8 +104,7 @@ export type AuthorizedRequestItem = {
  * historial lineal. Cualquier otro rol recibe denegación genérica.
  *
  * Cerrar o cancelar no revoca la toma, así que una solicitud cancelada o
- * cerrada sin acompañamiento sigue apareciendo en el barrido: se omite, igual
- * que en el listado propio, hasta que el contrato público se amplíe (TI2-85).
+ * cerrada sin acompañamiento sigue en el listado con su estado (TI2-141).
  */
 export async function listAuthorizedRequestsUseCase(
   ctx: QueryCtx,
@@ -140,15 +127,9 @@ export async function listAuthorizedRequestsUseCase(
     seenInPage.add(take.requestId);
     const request = await getRequestById(ctx, take.requestId);
     if (request === null) continue;
-    if (!isSprint1RequestState(request.status)) {
-      // `last` avanza también al omitir, para que la página siguiente salte las
-      // tomas repetidas de esta solicitud sin volver a leerla.
-      last = take.requestId;
-      continue;
-    }
     last = take.requestId;
     items.push(
-      toSprint1AccompanimentRequest({
+      toAccompanimentRequest({
         _id: request._id,
         studentId: request.studentId,
         status: request.status,
@@ -178,13 +159,10 @@ export async function listOpenRequestsUseCase(
 ) {
   await requireActiveProfessional(ctx, identity);
   const result = await listRequestsByStatus(ctx, "received", args.paginationOpts);
-  // La bandeja solo trae `received`, pero el tipo de la fila cubre el
-  // conjunto persistible ampliado: se adapta con la misma vía que el resto
-  // de las lecturas para conservar el contrato de presentación (TI2-83).
   return {
     ...result,
     page: result.page.map((row) => {
-      const adapted = toSprint1AccompanimentRequest({
+      const adapted = toAccompanimentRequest({
         _id: row._id,
         studentId: row.studentId,
         status: row.status,
@@ -232,7 +210,7 @@ export async function getRequestDetailUseCase(
 
   if (caller.role === "student") {
     if (request.studentId !== caller._id) deny();
-    return toSprint1AccompanimentRequest({
+    return toAccompanimentRequest({
       _id: request._id,
       studentId: request.studentId,
       status: request.status,
@@ -244,7 +222,7 @@ export async function getRequestDetailUseCase(
   if (caller.role === "professional") {
     const take = await findActiveTake(ctx, args.requestId, caller._id);
     if (take === null) deny();
-    return toSprint1AccompanimentRequest({
+    return toAccompanimentRequest({
       _id: request._id,
       studentId: request.studentId,
       status: request.status,

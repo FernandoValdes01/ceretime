@@ -27,8 +27,7 @@ export const FUTURE_REQUEST_STATES = ["referred"] as const;
 /**
  * Estados terminales que cierran la solicitud sin abrir acompañamiento
  * (TI2-85): el Estudiante cancela la suya y el Profesional con toma activa la
- * cierra. Operan en Dominio y Aplicación; `api.presentation.*` todavía no los
- * entrega (ver `toSprint1AccompanimentRequest`).
+ * cierra. Desde TI2-141 tienen entrada pública y las lecturas los entregan.
  */
 export const CLOSURE_REQUEST_STATES = ["closed_without_accompaniment", "cancelled"] as const;
 
@@ -73,7 +72,7 @@ export const REQUEST_STATE_LABELS: Record<RequestState, string> = {
   cancelled: "Cancelada",
 };
 
-/** Evita exponer estados que el contrato público todavía no entrega. */
+/** Verdadero para los estados operativos de Sprint 1: los abiertos y `accepted`. */
 export function isSprint1RequestState(state: RequestState): state is Sprint1RequestState {
   return (SPRINT_1_REQUEST_STATES as readonly RequestState[]).includes(state);
 }

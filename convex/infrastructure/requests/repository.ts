@@ -175,6 +175,19 @@ export async function setRequestStatus(
   await ctx.db.patch(requestId, { status });
 }
 
+/**
+ * Cierra la solicitud sin acompañamiento y deja su razón comprensible en la
+ * misma escritura (TI2-141). El rastro histórico va aparte, en
+ * `logRequestTransition`, dentro de la misma mutation.
+ */
+export async function closeRequestWithReason(
+  ctx: MutationCtx,
+  requestId: Id<"requests">,
+  closureReason: string,
+): Promise<void> {
+  await ctx.db.patch(requestId, { status: "closed_without_accompaniment", closureReason });
+}
+
 /** Registra el cambio de estado con motivo, actor y fecha. */
 export async function logRequestTransition(
   ctx: MutationCtx,

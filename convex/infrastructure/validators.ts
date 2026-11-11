@@ -25,7 +25,7 @@ import {
   ASSIGNMENT_STATUS_VALUES,
 } from "../domain/accompaniments/practitioner_assignment";
 import { REQUEST_PROVENANCE_CHANNEL_VALUES } from "../domain/requests/request";
-import { PERSISTABLE_REQUEST_STATES, SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
+import { PERSISTABLE_REQUEST_STATES, REQUEST_STATES } from "../domain/requests/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,
@@ -65,23 +65,19 @@ export const assignmentStatusUnion = v.union(
 );
 
 /**
- * Estados de solicitud del contrato de presentación (Sprint 1, TI2-7): lo que
- * la API pública devuelve hoy. Derivados del dominio para que el esquema no
- * defina nombres por su cuenta. Mantenerlo en 4 estados conserva intactos
- * los tipos que Web y Mobile derivan de `api.presentation.*`. TI2-85 habilitó
- * los cierres en Dominio y Aplicación sin ampliarlo: el mapeo de estados de
- * Mobile es exhaustivo y deja de compilar con 6. Lo amplía, junto con TI4, la
- * tarea que publique cancelar y cerrar.
+ * Estados de solicitud del contrato de presentación (TI2-141): los siete que
+ * declara el dominio. Derivados de `REQUEST_STATES` para que el borde no
+ * defina nombres por su cuenta. Incluye `referred` aunque todavía ninguna fila
+ * lo trae, para que Web y Mobile mapeen el conjunto completo una sola vez: lo
+ * habilita la tarea de derivaciones.
  */
-const requestStatusLiterals = SPRINT_1_REQUEST_STATES.map((state) => v.literal(state));
-
-export const requestStatusUnion = v.union(...requestStatusLiterals);
+export const requestStatusUnion = v.union(...REQUEST_STATES.map((state) => v.literal(state)));
 
 /**
  * Estados de solicitud persistibles (TI2-83 adapta validadores para TI2-85):
  * operativos de Sprint 1 más `closed_without_accompaniment` y `cancelled`,
- * sin `referred`. Solo esquema (`requests`, `requestTransitions`) y
- * adaptación de lectura; la presentación sigue en 4 estados (ver arriba).
+ * sin `referred`. Es lo que puede traer una fila de `requests` o de
+ * `requestTransitions`; la presentación declara además `referred` (ver arriba).
  */
 export const persistableRequestStatusUnion = v.union(
   ...PERSISTABLE_REQUEST_STATES.map((state) => v.literal(state)),
