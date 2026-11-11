@@ -75,18 +75,42 @@ async function insertRequestRow(
   input: ReceivedRequestInput,
   idempotencyKey?: string,
 ) {
-  const { studentId, ...extras } = input;
+  // La fila se arma campo por campo, sin `...input`: un spread puede traer
+  // `idempotencyKey` sin que TypeScript lo revise y la clave se colaría por la
+  // vía que no comprueba duplicados. Solo se guarda el parámetro explícito.
+  const {
+    studentId,
+    needSummary,
+    expectedOutcome,
+    accessNeedSelections,
+    otherAccessNeed,
+    modalityPreference,
+    generalAvailability,
+    preferredAccessibleInformationChannel,
+    provenance,
+    incomingReferral,
+  } = input;
   const resolvedAccessNeeds =
     input.accessNeedSelections === undefined
       ? input.accessNeeds
       : storedAccessNeeds(input.accessNeedSelections, input.otherAccessNeed);
   return await ctx.db.insert("requests", {
-    ...extras,
     studentId,
     status: "received",
     accessNeeds: resolvedAccessNeeds,
-    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
     createdAt: Date.now(),
+    ...(needSummary === undefined ? {} : { needSummary }),
+    ...(expectedOutcome === undefined ? {} : { expectedOutcome }),
+    ...(accessNeedSelections === undefined ? {} : { accessNeedSelections }),
+    ...(otherAccessNeed === undefined ? {} : { otherAccessNeed }),
+    ...(modalityPreference === undefined ? {} : { modalityPreference }),
+    ...(generalAvailability === undefined ? {} : { generalAvailability }),
+    ...(preferredAccessibleInformationChannel === undefined
+      ? {}
+      : { preferredAccessibleInformationChannel }),
+    ...(provenance === undefined ? {} : { provenance }),
+    ...(incomingReferral === undefined ? {} : { incomingReferral }),
+    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
   });
 }
 

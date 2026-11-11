@@ -3504,6 +3504,32 @@ test("TI2-135: insertReceivedRequest no acepta la clave de idempotencia", () => 
   });
 });
 
+test("TI2-135: un spread no cuela la clave por la inserción directa", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti135-spread-est",
+    email: "ti135spread@alu.uct.cl",
+    role: "student",
+  });
+  // `args` llega como el payload de una mutation: el spread evita la revisión
+  // de propiedades extra de TypeScript, pero la fila no debe guardar la clave.
+  const args = { accessNeeds: "Necesidad ficticia", idempotencyKey: "ti135-clave-spread" };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await t.run(async (ctx) => await insertReceivedRequest(ctx, { ...args, studentId: student }));
+  }
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("requests").take(10));
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    expect(row.idempotencyKey).toBeUndefined();
+  }
+  expect(
+    await t.run(
+      async (ctx) => await findRequestByIdempotencyKey(ctx, student, args.idempotencyKey),
+    ),
+  ).toBeNull();
+});
+
 test("TI2-135: la auditoría y la migración escriben la procedencia sin inventar contenido", async () => {
   const t = convexTest(schema, modules);
   await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
