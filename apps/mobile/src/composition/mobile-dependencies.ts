@@ -1,3 +1,4 @@
+import { createMobileConvexClient, type MobileConvexClient } from "../infrastructure/convex-client";
 import {
   createDemoAuthAdapter,
   demoAuthCredentials,
@@ -79,3 +80,40 @@ export const mobileDependencies = {
     Object.assign(mobileDependencies, createDemoDataDependencies());
   },
 };
+
+let convexClient: MobileConvexClient | undefined;
+
+// Se crea al usarlo: la demostración local no requiere configurar un backend.
+export function getMobileConvexClient(): MobileConvexClient {
+  convexClient ??= createMobileConvexClient(process.env.EXPO_PUBLIC_CONVEX_URL);
+  return convexClient;
+}
+
+type DataDependencies = ReturnType<typeof createDemoDataDependencies>;
+
+export interface MobileConvexAdapterFactories {
+  student(
+    client: MobileConvexClient,
+  ): Pick<DataDependencies, "studentAreaReader" | "studentRequestSubmitter">;
+  professional(
+    client: MobileConvexClient,
+  ): Pick<
+    DataDependencies,
+    "professionalAgendaReader" | "professionalAccompanimentReader" | "professionalReviewPort"
+  >;
+  intern(client: MobileConvexClient): Pick<DataDependencies, "internAccompanimentReader">;
+  administrator(client: MobileConvexClient): Pick<DataDependencies, "administratorAccountsPort">;
+}
+
+/** Las próximas issues aportan las fábricas reales; esta base no reemplaza los adaptadores demo. */
+export function createConvexDataDependencies(
+  factories: MobileConvexAdapterFactories,
+): DataDependencies {
+  const client = getMobileConvexClient();
+  return {
+    ...factories.student(client),
+    ...factories.professional(client),
+    ...factories.intern(client),
+    ...factories.administrator(client),
+  };
+}

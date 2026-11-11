@@ -22,6 +22,9 @@ const publicRequestMessages = new Set([
 export function toMobileOperationError(error: unknown, fallback: string): Error {
   if (error instanceof UserFacingError) return error;
   const data = isRecord(error) && isRecord(error.data) ? error.data : error;
+  if (isRecord(data) && data.code === "network_error") {
+    return new UserFacingError("No se pudo conectar. Revisa tu conexión e intenta nuevamente.");
+  }
   if (isRecord(data) && typeof data.code === "string") {
     return new UserFacingError(
       isApiErrorCode(data.code) ? API_ERROR_MESSAGES[data.code] : fallback,
