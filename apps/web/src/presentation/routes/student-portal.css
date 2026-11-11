@@ -1,5 +1,8 @@
 /* Portal del Estudiante (TI2-6). Contenido propio; el encabezado y la
-   navegación común viven en app-shell.css (TI2-133). */
+   navegación común viven en app-shell.css (TI2-133). Los estados de carga,
+   vacío, error y denegación viven en shared/view-states.css (TI2-134) y se
+   importan acá mientras el resto de las pantallas migra. */
+@import "../shared/view-states.css";
 
 /* Contenido centrado como la tarjeta del acceso. */
 
@@ -212,54 +215,8 @@
   color: var(--ct-muted);
 }
 
-.student-portal__loading {
-  margin: 1rem 0 0;
-  border-radius: 1rem;
-  background: var(--ct-tonal);
-  padding: 1.5rem;
-  font-size: 1.125rem;
-  color: var(--ct-muted);
-}
-
-.student-portal__error {
-  background: var(--ct-danger-bg);
-  border: 1px solid var(--ct-danger);
-  border-left: 4px solid var(--ct-danger);
-  border-radius: 0.5rem;
-  color: var(--ct-danger-ink);
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 1rem 0 0;
-  padding: 0.75rem;
-}
-
-.student-portal__empty {
-  margin-top: 1rem;
-  border-radius: 1rem;
-  border-top: 4px solid var(--ct-accent);
-  background: var(--ct-tonal);
-  padding: 1.5rem;
-  font-size: 1rem;
-  color: var(--ct-muted);
-}
-
-.student-portal__empty--green {
-  border-top-color: var(--ct-ok);
-}
-
-.student-portal__empty--blue {
-  border-top-color: var(--ct-info);
-}
-
-.student-portal__empty p {
-  margin: 0;
-}
-
-.student-portal__empty-title {
-  font-weight: 600;
-  color: var(--ct-ink);
-  margin: 0 0 0.5rem;
-}
+/* Carga, vacío, error y denegado viven en shared/view-states.css (TI2-134),
+   importado al inicio de este archivo. */
 
 .student-portal__steps {
   list-style: none;
