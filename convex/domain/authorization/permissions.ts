@@ -1,6 +1,6 @@
 /**
  * Matriz de permisos por rol y caso de uso: acompañamientos y notas internas
- * (base S2), agenda (TI2-86) y seguimiento (TI2-127).
+ * (base S2), agenda (TI2-86), seguimiento (TI2-127) y cuentas (TI2-137).
  *
  * Dominio puro: no importa Convex, React ni variables de entorno, para poder
  * probarse sin levantar el backend (RNF-19).
@@ -39,6 +39,10 @@ export const AUTHORIZATION_ACTIONS = [
   "followUp:write",
   "space:read",
   "space:manage",
+  "account:list",
+  "account:read",
+  "account:enable",
+  "account:revoke",
 ] as const;
 
 export type AuthorizationAction = (typeof AUTHORIZATION_ACTIONS)[number];
@@ -347,6 +351,47 @@ export function canReadSpaceCatalog(input: {
 }
 
 /**
+ * Gestión de cuentas profesionales y administrativas (TI2-137).
+ *
+ * Solo el Administrador con cuenta habilitada y vigente lista, lee,
+ * habilita y revoca cuentas. El dominio institucional por sí solo no
+ * concede acceso (RN-06): sin perfil vinculado la respuesta es denegación.
+ * Administrar no concede acompañamientos ni notas: esa lectura sigue
+ * denegada por `getAccompanimentView` y `canReadInternalNote`.
+ */
+export type AccountManagementContext = {
+  readonly role: Role;
+  readonly institutionalStatus: InstitutionalStatus;
+  readonly accountStatus: AccountStatus;
+};
+
+/** Verdadero solo cuando el actor administra cuentas (TI2-137). */
+export function canManageAccounts(context: AccountManagementContext): boolean {
+  if (!isProfileActive(context)) return false;
+  return context.role === "admin";
+}
+
+/** Verdadero solo cuando el actor lista cuentas (TI2-137). */
+export function canListAccounts(context: AccountManagementContext): boolean {
+  return canManageAccounts(context);
+}
+
+/** Verdadero solo cuando el actor lee el detalle mínimo (TI2-137). */
+export function canReadAccount(context: AccountManagementContext): boolean {
+  return canManageAccounts(context);
+}
+
+/** Verdadero solo cuando el actor habilita profesionales o administradores. */
+export function canEnableAccount(context: AccountManagementContext): boolean {
+  return canManageAccounts(context);
+}
+
+/** Verdadero solo cuando el actor revoca profesionales o administradores. */
+export function canRevokeAccount(context: AccountManagementContext): boolean {
+  return canManageAccounts(context);
+}
+
+/**
  * Gestión del catálogo de espacios (TI2-148): solo el Administrador con
  * cuenta habilitada y vigente. Estudiante, Profesional y Practicante se
  * deniegan aunque tengan cuenta vigente: el catálogo publicado se lee, no
@@ -468,5 +513,33 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     professional: "denegado",
     intern: "denegado",
     admin: "permitido solo con cuenta vigente",
+  },
+  {
+    action: "account:list",
+    student: "denegado, solo su perfil propio",
+    professional: "denegado, solo su perfil propio",
+    intern: "denegado, solo su perfil propio",
+    admin: "permitido con cuenta vigente, detalle mínimo sin acompañamientos",
+  },
+  {
+    action: "account:read",
+    student: "denegado, solo su perfil propio",
+    professional: "denegado, solo su perfil propio",
+    intern: "denegado, solo su perfil propio",
+    admin: "permitido con cuenta vigente, detalle mínimo sin acompañamientos",
+  },
+  {
+    action: "account:enable",
+    student: "denegado",
+    professional: "denegado",
+    intern: "denegado",
+    admin: "permitido con cuenta vigente, solo profesional o administrador",
+  },
+  {
+    action: "account:revoke",
+    student: "denegado",
+    professional: "denegado",
+    intern: "denegado",
+    admin: "permitido con cuenta vigente, solo profesional o administrador",
   },
 ];

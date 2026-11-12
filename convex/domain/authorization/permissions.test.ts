@@ -5,12 +5,17 @@ import {
   canBookAppointment,
   canCancelAppointment,
   canEditAvailability,
+  canEnableAccount,
+  canListAccounts,
+  canManageAccounts,
   canManageSpaceCatalog,
+  canReadAccount,
   canReadAvailability,
   canReadInternalNote,
   canReadSpaceCatalog,
   canRecordAppointmentAttendance,
   canRescheduleAppointment,
+  canRevokeAccount,
   canWriteFollowUp,
   getAccompanimentView,
   getAppointmentView,
@@ -581,6 +586,47 @@ describe("canReadSpaceCatalog", () => {
     for (const account of INACTIVE_ACCOUNTS) {
       expect(canReadSpaceCatalog(account)).toBe(false);
     }
+  });
+});
+
+describe("gestión de cuentas (TI2-137)", () => {
+  test("solo el administrador vigente administra cuentas", () => {
+    const admin = {
+      role: "admin" as const,
+      institutionalStatus: "enabled" as const,
+      accountStatus: "active" as const,
+    };
+    expect(canManageAccounts(admin)).toBe(true);
+    expect(canListAccounts(admin)).toBe(true);
+    expect(canReadAccount(admin)).toBe(true);
+    expect(canEnableAccount(admin)).toBe(true);
+    expect(canRevokeAccount(admin)).toBe(true);
+    for (const role of ["student", "professional", "intern"] as const) {
+      const context = {
+        role,
+        institutionalStatus: "enabled" as const,
+        accountStatus: "active" as const,
+      };
+      expect(canManageAccounts(context)).toBe(false);
+      expect(canListAccounts(context)).toBe(false);
+      expect(canReadAccount(context)).toBe(false);
+      expect(canEnableAccount(context)).toBe(false);
+      expect(canRevokeAccount(context)).toBe(false);
+    }
+    expect(
+      canManageAccounts({
+        role: "admin",
+        institutionalStatus: "disabled",
+        accountStatus: "active",
+      }),
+    ).toBe(false);
+    expect(
+      canManageAccounts({
+        role: "admin",
+        institutionalStatus: "enabled",
+        accountStatus: "inactive",
+      }),
+    ).toBe(false);
   });
 });
 
