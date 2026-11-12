@@ -25,15 +25,19 @@ Dos casos de uso de `commands.ts`, con entrada pública desde TI2-141. Se prueba
 | `presentation/requests.cancelRequest`                    | Estudiante vigente, dueño de la solicitud | Mueve `received`, `under_review` o `awaiting_information_or_acceptance` a `cancelled` con motivo obligatorio                                                       |
 | `presentation/requests.closeRequestWithoutAccompaniment` | Profesional vigente con toma activa       | Mueve `under_review` o `awaiting_information_or_acceptance` a `closed_without_accompaniment` con razón obligatoria, que queda como `closureReason` de la solicitud |
 
-Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la misma transacción, y un rechazo no escribe nada. Al cerrar, la razón se escribe además en `closureReason`, en esa misma transacción. Rechazos con mensaje específico: "Se requiere el motivo para cancelar la solicitud", "La solicitud no admite la cancelación en su estado actual", "Se requiere el motivo para cerrar la solicitud sin acompañamiento" y "La solicitud no admite el cierre sin acompañamiento en su estado actual". Una solicitud ajena, inexistente o sin toma recibe la denegación genérica.
+Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la misma transacción, y un rechazo no escribe nada. Al cerrar, la razón se escribe además en `closureReason`, en esa misma transacción. Desde TI2-141 los rechazos usan el contrato común `ConvexError({code, message})`: `request_fields_invalid` para "Se requiere el motivo para cancelar la solicitud" y "Se requiere el motivo para cerrar la solicitud sin acompañamiento", y `conflict` para "La solicitud no admite la cancelación en su estado actual" y "La solicitud no admite el cierre sin acompañamiento en su estado actual". Una solicitud ajena, inexistente o sin toma recibe la denegación genérica.
 
 `listOwnRequests`, `listAuthorizedRequests` y `getRequest` entregan las solicitudes canceladas o cerradas con su estado: el contrato público declara los siete estados (ver [`state-model.md`](../../domain/requests/state-model.md#contrato-público)).
 
 ## Respuesta del Estudiante (TI2-141)
 
-`presentation/requests.respondToInformationRequest` recibe `requestId` y `response`. Solo el Estudiante dueño con cuenta vigente, y solo mientras la solicitud está en `awaiting_information_or_acceptance`: la devuelve a `under_review` y guarda la respuesta como motivo del cambio, con actor y fecha, en la misma transacción. Rechazos con mensaje específico: "Se requiere la respuesta a la información pedida", "La respuesta supera el máximo permitido (2000 caracteres)" y "La solicitud no admite una respuesta en su estado actual". Una solicitud ajena o inexistente recibe la denegación genérica.
+`presentation/requests.respondToInformationRequest` recibe `requestId` y `response`. Solo el Estudiante dueño con cuenta vigente, y solo mientras la solicitud está en `awaiting_information_or_acceptance`: la devuelve a `under_review` y guarda la respuesta como motivo del cambio, con actor y fecha, en la misma transacción. Rechazos con el contrato común: `request_fields_invalid` para "Se requiere la respuesta a la información pedida" y "La respuesta supera el máximo permitido (2000 caracteres)", y `conflict` para "La solicitud no admite una respuesta en su estado actual". Una solicitud ajena o inexistente recibe la denegación genérica.
 
 `getRequest` entrega además `informationRequest` (lo pedido, solo mientras espera respuesta), `informationResponse` (la última respuesta) y `closureReason`, al Estudiante dueño y al Profesional con toma.
+
+## Envío completo (TI2-141)
+
+`presentation/requests.createRequest` acepta la forma completa (necesidad, resultado esperado, necesidades de acceso como lista y texto libre, modalidad, disponibilidad general, medio accesible e `idempotencyKey`) o la forma anterior, solo con `accessNeeds`. La forma completa se valida en Dominio con `toRequestSubmission` y se guarda con `insertReceivedRequestOnce`: un reintento con la misma clave devuelve la solicitud ya creada. Sus rechazos usan `request_fields_invalid`; la forma anterior conserva su `Error` de Sprint 1. Topes, reglas y ejemplos en [`docs/contratos-sprint-3/solicitudes.md`](../../../docs/contratos-sprint-3/solicitudes.md).
 
 ## Alcance explícito
 
