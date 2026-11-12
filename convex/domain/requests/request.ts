@@ -151,6 +151,154 @@ export function toAccompanimentRequest<RowId extends string, StudentId extends s
   };
 }
 
+/**
+ * Topes del envío completo (TI2-141). Los textos largos comparten el tope de
+ * las necesidades de acceso; el canal accesible es una indicación breve. Se
+ * rechaza el exceso, nunca se trunca, por la misma razón que en
+ * `ACCESS_NEEDS_MAX_LENGTH`.
+ */
+export const REQUEST_TEXT_MAX_LENGTH = ACCESS_NEEDS_MAX_LENGTH;
+export const INFORMATION_CHANNEL_MAX_LENGTH = 200;
+export const ACCESS_NEED_SELECTIONS_MAX = 20;
+export const ACCESS_NEED_LABEL_MAX_LENGTH = 200;
+export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
+
+/** Envío completo tal como llega del cliente, antes de validar. */
+export interface RequestSubmissionInput {
+  readonly needSummary: string;
+  readonly expectedOutcome: string;
+  readonly accessNeedSelections: readonly AccessNeed[];
+  readonly otherAccessNeed?: string;
+  readonly modalityPreference: ModalityPreference;
+  readonly generalAvailability: GeneralAvailability;
+  readonly preferredAccessibleInformationChannel: string;
+  readonly idempotencyKey: string;
+}
+
+/** Envío completo validado y recortado, listo para persistir. */
+export type RequestSubmission = RequestSubmissionInput;
+
+const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Texto recortado dentro del tope, o el mensaje que indica qué corregir. */
+function boundedText(
+  raw: string,
+  max: number,
+  empty: string,
+  tooLong: string,
+): { readonly error: string } | { readonly text: string } {
+  const text = raw.trim();
+  if (text === "") return { error: empty };
+  if (text.length > max) return { error: tooLong };
+  return { text };
+}
+
+/**
+ * Valida el envío completo de una solicitud (TI2-141).
+ *
+ * Dominio puro: recorta los textos, aplica los topes y revisa la forma de la
+ * disponibilidad general, sin persistir nada. Devuelve el envío normalizado o
+ * el primer error con un mensaje en español que indica qué corregir. No pide
+ * ni acepta RUT, diagnóstico, certificados ni área interna: esos campos no
+ * existen en el contrato.
+ */
+export function toRequestSubmission(input: RequestSubmissionInput): ApiResult<RequestSubmission> {
+  const fail = (message: string): ApiResult<RequestSubmission> => ({
+    status: "error",
+    error: { code: "request_fields_invalid", message },
+  });
+
+  const needSummary = boundedText(
+    input.needSummary,
+    REQUEST_TEXT_MAX_LENGTH,
+    "Describe la barrera o necesidad.",
+    `La descripción de la necesidad supera el máximo permitido (${REQUEST_TEXT_MAX_LENGTH} caracteres).`,
+  );
+  if ("error" in needSummary) return fail(needSummary.error);
+
+  const expectedOutcome = boundedText(
+    input.expectedOutcome,
+    REQUEST_TEXT_MAX_LENGTH,
+    "Indica qué esperas de CERETI.",
+    `El resultado esperado supera el máximo permitido (${REQUEST_TEXT_MAX_LENGTH} caracteres).`,
+  );
+  if ("error" in expectedOutcome) return fail(expectedOutcome.error);
+
+  if (input.accessNeedSelections.length > ACCESS_NEED_SELECTIONS_MAX) {
+    return fail(`Selecciona como máximo ${ACCESS_NEED_SELECTIONS_MAX} necesidades de acceso.`);
+  }
+  const accessNeedSelections: AccessNeed[] = [];
+  const seenNeeds = new Set<string>();
+  for (const need of input.accessNeedSelections) {
+    const id = need.id.trim();
+    const label = need.label.trim();
+    if (id === "" || label === "") return fail("Cada necesidad de acceso necesita su nombre.");
+    if (label.length > ACCESS_NEED_LABEL_MAX_LENGTH) {
+      return fail(
+        `El nombre de una necesidad de acceso supera el máximo permitido (${ACCESS_NEED_LABEL_MAX_LENGTH} caracteres).`,
+      );
+    }
+    if (seenNeeds.has(id)) return fail("Una necesidad de acceso está repetida.");
+    seenNeeds.add(id);
+    accessNeedSelections.push({ id, label });
+  }
+  const otherAccessNeed = input.otherAccessNeed?.trim();
+  const stored = toStoredAccessNeeds(accessNeedSelections, otherAccessNeed);
+  if (stored.status === "error") return fail(stored.error.message);
+
+  const { preferredWeekdays, preferredTimeRange } = input.generalAvailability;
+  if (preferredWeekdays.length === 0) return fail("Selecciona al menos un día disponible.");
+  const days = new Set<number>();
+  for (const day of preferredWeekdays) {
+    if (!Number.isInteger(day) || day < 0 || day > 6) {
+      return fail("Los días disponibles van de 0 (domingo) a 6 (sábado).");
+    }
+    if (days.has(day)) return fail("Un día disponible está repetido.");
+    days.add(day);
+  }
+  if (preferredTimeRange !== undefined) {
+    const { from, to } = preferredTimeRange;
+    if (!TIME_OF_DAY.test(from) || !TIME_OF_DAY.test(to)) {
+      return fail("El horario disponible se indica en formato HH:mm.");
+    }
+    if (from >= to) return fail("El horario disponible debe empezar antes de terminar.");
+  }
+
+  const channel = boundedText(
+    input.preferredAccessibleInformationChannel,
+    INFORMATION_CHANNEL_MAX_LENGTH,
+    "Indica cómo prefieres recibir información.",
+    `El medio para recibir información supera el máximo permitido (${INFORMATION_CHANNEL_MAX_LENGTH} caracteres).`,
+  );
+  if ("error" in channel) return fail(channel.error);
+
+  const idempotencyKey = input.idempotencyKey;
+  if (idempotencyKey.trim() === "" || idempotencyKey.length > IDEMPOTENCY_KEY_MAX_LENGTH) {
+    return fail(
+      `La clave del envío debe tener entre 1 y ${IDEMPOTENCY_KEY_MAX_LENGTH} caracteres.`,
+    );
+  }
+
+  return {
+    status: "ok",
+    data: {
+      needSummary: needSummary.text,
+      expectedOutcome: expectedOutcome.text,
+      accessNeedSelections,
+      ...(otherAccessNeed ? { otherAccessNeed } : {}),
+      modalityPreference: input.modalityPreference,
+      generalAvailability: {
+        preferredWeekdays: [...preferredWeekdays],
+        ...(preferredTimeRange === undefined
+          ? {}
+          : { preferredTimeRange: { ...preferredTimeRange } }),
+      },
+      preferredAccessibleInformationChannel: channel.text,
+      idempotencyKey,
+    },
+  };
+}
+
 /** Tope de la respuesta del Estudiante a la información pedida (TI2-141). */
 export const REQUEST_RESPONSE_MAX_LENGTH = 2000;
 

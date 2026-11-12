@@ -9,6 +9,7 @@ import {
   toAccessNeedsText,
   toAccompanimentRequest,
   toRequestExchange,
+  toRequestSubmission,
   toStoredRequestFields,
   type AccompanimentRequestContent,
 } from "./request";
@@ -257,5 +258,64 @@ describe("toRequestExchange (TI2-141)", () => {
   test("la toma no cuenta como respuesta y sin intercambio no entrega nada", () => {
     expect(toRequestExchange("under_review", [taken])).toEqual({});
     expect(toRequestExchange("received", [])).toEqual({});
+  });
+});
+
+describe("toRequestSubmission (TI2-141)", () => {
+  const valid = {
+    needSummary: " Necesidad ficticia ",
+    expectedOutcome: " Resultado ficticio ",
+    accessNeedSelections: [{ id: " written ", label: " Comunicación escrita " }],
+    otherAccessNeed: "   ",
+    modalityPreference: "inPerson",
+    generalAvailability: { preferredWeekdays: [0, 6] },
+    preferredAccessibleInformationChannel: " Correo ",
+    idempotencyKey: "clave",
+  } as const;
+
+  test("recorta los textos y omite el texto libre vacío", () => {
+    expect(toRequestSubmission(valid)).toEqual({
+      status: "ok",
+      data: {
+        needSummary: "Necesidad ficticia",
+        expectedOutcome: "Resultado ficticio",
+        accessNeedSelections: [{ id: "written", label: "Comunicación escrita" }],
+        modalityPreference: "inPerson",
+        generalAvailability: { preferredWeekdays: [0, 6] },
+        preferredAccessibleInformationChannel: "Correo",
+        idempotencyKey: "clave",
+      },
+    });
+  });
+
+  test("el texto libre basta como necesidad cuando no hay selecciones", () => {
+    const result = toRequestSubmission({
+      ...valid,
+      accessNeedSelections: [],
+      otherAccessNeed: "Persona de apoyo",
+    });
+    expect(result).toMatchObject({ status: "ok", data: { otherAccessNeed: "Persona de apoyo" } });
+  });
+
+  test("un rechazo usa un código estable y un mensaje para corregir", () => {
+    expect(toRequestSubmission({ ...valid, needSummary: "" })).toEqual({
+      status: "error",
+      error: { code: "request_fields_invalid", message: "Describe la barrera o necesidad." },
+    });
+  });
+
+  test.each([
+    [{ preferredWeekdays: [1.5] }, "Los días disponibles van de 0"],
+    [{ preferredWeekdays: [-1] }, "Los días disponibles van de 0"],
+    [{ preferredWeekdays: [1], preferredTimeRange: { from: "24:00", to: "25:00" } }, "HH:mm"],
+    [
+      { preferredWeekdays: [1], preferredTimeRange: { from: "10:00", to: "10:00" } },
+      "antes de terminar",
+    ],
+  ])("rechaza la disponibilidad %j", (generalAvailability, message) => {
+    expect(toRequestSubmission({ ...valid, generalAvailability })).toMatchObject({
+      status: "error",
+      error: { message: expect.stringContaining(message) },
+    });
   });
 });

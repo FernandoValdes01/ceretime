@@ -4,6 +4,8 @@ import { toOpeningObjective, type Accompaniment } from "../../domain/accompanime
 import {
   ACCESS_NEEDS_MAX_LENGTH,
   REQUEST_RESPONSE_MAX_LENGTH,
+  toRequestSubmission,
+  type RequestSubmissionInput,
   toAccessNeedsText,
   toAccompanimentRequest,
 } from "../../domain/requests/request";
@@ -23,6 +25,7 @@ import {
   getRequestById,
   insertActiveTake,
   insertReceivedRequest,
+  insertReceivedRequestOnce,
   logRequestTransition,
   markRequestTaken,
   setRequestStatus,
@@ -44,33 +47,87 @@ function deny(): never {
 }
 
 /**
+ * Envío de una solicitud tal como lo recibe el borde: la forma completa de
+ * TI2-141 o la forma anterior, solo con el texto de necesidades de acceso,
+ * que se conserva mientras Web y Mobile migran. Nunca las dos a la vez.
+ */
+export type RegisterRequestInput = {
+  readonly accessNeeds?: string;
+} & Partial<RequestSubmissionInput>;
+
+/** Campos que solo existen en la forma completa. */
+const FULL_FORM_FIELDS = [
+  "needSummary",
+  "expectedOutcome",
+  "accessNeedSelections",
+  "otherAccessNeed",
+  "modalityPreference",
+  "generalAvailability",
+  "preferredAccessibleInformationChannel",
+  "idempotencyKey",
+] as const;
+
+/** La forma completa con todos sus campos obligatorios, o el error que indica qué falta. */
+function toFullSubmission(input: RegisterRequestInput): RequestSubmissionInput {
+  const {
+    needSummary,
+    expectedOutcome,
+    accessNeedSelections,
+    otherAccessNeed,
+    modalityPreference,
+    generalAvailability,
+    preferredAccessibleInformationChannel,
+    idempotencyKey,
+  } = input;
+  if (
+    needSummary === undefined ||
+    expectedOutcome === undefined ||
+    accessNeedSelections === undefined ||
+    modalityPreference === undefined ||
+    generalAvailability === undefined ||
+    preferredAccessibleInformationChannel === undefined ||
+    idempotencyKey === undefined
+  ) {
+    throw new Error("Faltan datos de la solicitud");
+  }
+  return {
+    needSummary,
+    expectedOutcome,
+    accessNeedSelections,
+    ...(otherAccessNeed === undefined ? {} : { otherAccessNeed }),
+    modalityPreference,
+    generalAvailability,
+    preferredAccessibleInformationChannel,
+    idempotencyKey,
+  };
+}
+
+/**
  * Registra la solicitud del Estudiante en estado `received`. Solo el propio
  * Estudiante con cuenta vigente puede registrar; cualquier otro caso recibe
- * denegación genérica, sin motivo ni existencia del recurso. La necesidad de
- * acceso se valida como texto no vacío hasta el tope del contrato
- * (`ACCESS_NEEDS_MAX_LENGTH`, valor acordado en TI2-23) y se persiste
- * recortada; el rechazo por forma es un error operativo que indica qué
- * corregir, no una denegación.
+ * denegación genérica, sin motivo ni existencia del recurso.
+ *
+ * La forma completa (TI2-141) se valida con `toRequestSubmission` y se
+ * guarda con `insertReceivedRequestOnce`: un reintento con la misma clave
+ * devuelve la solicitud ya creada sin escribir otra. La forma anterior valida
+ * el texto como siempre, hasta `ACCESS_NEEDS_MAX_LENGTH`, y no es idempotente
+ * porque no trae clave. El rechazo por forma es un error operativo que indica
+ * qué corregir, no una denegación.
  */
 export async function registerRequest(
   ctx: MutationCtx,
   identity: UserIdentity | null,
-  input: { readonly accessNeeds: string },
+  input: RegisterRequestInput,
 ) {
   const student = await requireActiveStudent(ctx, identity);
-  const accessNeeds = toAccessNeedsText(input.accessNeeds);
-  if (accessNeeds === null) {
-    throw new Error("Se requiere describir la necesidad de acceso");
+  const usesFullForm = FULL_FORM_FIELDS.some((field) => input[field] !== undefined);
+  if (usesFullForm && input.accessNeeds !== undefined) {
+    throw new Error("Envía las necesidades de acceso como lista o como texto, no de ambas formas");
   }
-  if (accessNeeds.length > ACCESS_NEEDS_MAX_LENGTH) {
-    throw new Error(
-      `La necesidad de acceso supera el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres)`,
-    );
-  }
-  const requestId = await insertReceivedRequest(ctx, {
-    studentId: student._id,
-    accessNeeds,
-  });
+  const requestId =
+    input.accessNeeds === undefined
+      ? await registerFullRequest(ctx, student._id, toFullSubmission(input))
+      : await registerLegacyRequest(ctx, student._id, input.accessNeeds);
   const row = await getRequestById(ctx, requestId);
   if (row === null) deny();
   return toAccompanimentRequest({
@@ -80,6 +137,45 @@ export async function registerRequest(
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   });
+}
+
+async function registerFullRequest(
+  ctx: MutationCtx,
+  studentId: Id<"users">,
+  input: RequestSubmissionInput,
+): Promise<Id<"requests">> {
+  const submission = toRequestSubmission(input);
+  if (submission.status === "error") throw new Error(submission.error.message);
+  const { generalAvailability, accessNeedSelections } = submission.data;
+  const { requestId } = await insertReceivedRequestOnce(ctx, {
+    ...submission.data,
+    // El esquema tipa los arreglos como mutables; el dominio, de solo lectura.
+    accessNeedSelections: [...accessNeedSelections],
+    generalAvailability: {
+      ...generalAvailability,
+      preferredWeekdays: [...generalAvailability.preferredWeekdays],
+    },
+    studentId,
+    provenance: { channel: "student", receivedAt: Date.now() },
+  });
+  return requestId;
+}
+
+async function registerLegacyRequest(
+  ctx: MutationCtx,
+  studentId: Id<"users">,
+  raw: string,
+): Promise<Id<"requests">> {
+  const accessNeeds = toAccessNeedsText(raw);
+  if (accessNeeds === null) {
+    throw new Error("Se requiere describir la necesidad de acceso");
+  }
+  if (accessNeeds.length > ACCESS_NEEDS_MAX_LENGTH) {
+    throw new Error(
+      `La necesidad de acceso supera el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres)`,
+    );
+  }
+  return await insertReceivedRequest(ctx, { studentId, accessNeeds });
 }
 
 /**

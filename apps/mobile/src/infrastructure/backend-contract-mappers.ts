@@ -151,7 +151,8 @@ export function mapBackendProfessionalRequests(
 // El backend de TI2 hoy solo recibe `accessNeeds`; `omittedFields` deja explícito lo que el formulario
 // captura pero aún no se envía, y las pruebas lo fijan para detectar cuando el contrato crezca.
 export function mapStudentSubmissionToCreateRequest(command: SubmitStudentRequestCommand): {
-  readonly args: CreateRequestArgs;
+  // Forma anterior de `createRequest`: solo el texto unido (TI2-141 la conserva).
+  readonly args: CreateRequestArgs & { readonly accessNeeds: string };
   readonly omittedFields: readonly string[];
 } {
   const accessNeeds = [

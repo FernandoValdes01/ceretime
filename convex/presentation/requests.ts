@@ -16,7 +16,12 @@ import {
   getRequestDetailUseCase,
 } from "../application/requests/queries";
 import { mutation, query } from "../_generated/server";
-import { requestStatusUnion } from "../infrastructure/validators";
+import {
+  accessNeedSelectionValidator,
+  generalAvailabilityValidator,
+  modalityUnion,
+  requestStatusUnion,
+} from "../infrastructure/validators";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 
 /**
@@ -78,12 +83,32 @@ type PublicRequestPage = Infer<typeof requestPageValidator>;
 type PublicMinimizedRequestPage = Infer<typeof minimizedRequestPageValidator>;
 
 /**
+ * Argumentos del envío (TI2-141). Convex exige un objeto, así que las dos
+ * formas comparten campos opcionales y Aplicación decide cuál llegó: la
+ * completa, o la anterior solo con `accessNeeds`. Sin RUT, diagnóstico,
+ * certificados ni área interna: el validador rechaza cualquier campo extra.
+ */
+const createRequestArgs = {
+  accessNeeds: v.optional(v.string()),
+  needSummary: v.optional(v.string()),
+  expectedOutcome: v.optional(v.string()),
+  accessNeedSelections: v.optional(v.array(accessNeedSelectionValidator)),
+  otherAccessNeed: v.optional(v.string()),
+  modalityPreference: v.optional(modalityUnion),
+  generalAvailability: v.optional(generalAvailabilityValidator),
+  preferredAccessibleInformationChannel: v.optional(v.string()),
+  idempotencyKey: v.optional(v.string()),
+};
+
+/**
  * Registra la solicitud del Estudiante en estado `received`. Solo una
- * cuenta de Estudiante habilitada y vigente puede registrar; cualquier otro
- * caso recibe denegación.
+ * cuenta de Estudiante habilitada y vigente puede registrar; otro rol o una
+ * cuenta sin vigencia recibe denegación. Con la forma completa, repetir el
+ * envío con la misma `idempotencyKey` devuelve la misma solicitud sin crear
+ * otra.
  */
 export const createRequest = mutation({
-  args: { accessNeeds: v.string() },
+  args: createRequestArgs,
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();

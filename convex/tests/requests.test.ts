@@ -1511,3 +1511,212 @@ test("TI2-141: la razón de cierre llega al detalle del Estudiante y los textos 
   // Un Profesional sin toma no lee el detalle, y con él tampoco la razón
   await expect(detailAs(t, identityOf("ti141-pro-4"), requestId)).rejects.toThrow("No autorizado");
 });
+
+/*
+ * TI2-141: envío completo con validaciones, límites e idempotencia.
+ */
+
+const FULL_SUBMISSION = {
+  needSummary: "  Necesito apoyo para seguir las clases en línea  ",
+  expectedOutcome: "Acordar ajustes de comunicación con mis docentes",
+  accessNeedSelections: [
+    { id: "written-communication", label: "Comunicación escrita" },
+    { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
+  ],
+  otherAccessNeed: "Material enviado con anticipación",
+  modalityPreference: "online" as const,
+  generalAvailability: {
+    preferredWeekdays: [1, 3],
+    preferredTimeRange: { from: "09:00", to: "12:00" },
+  },
+  preferredAccessibleInformationChannel: "Correo con letra grande",
+  idempotencyKey: "clave-ficticia-1",
+};
+
+async function requestsOf(t: SchemaTest, studentId: Id<"users">) {
+  return await t.run((ctx) =>
+    ctx.db
+      .query("requests")
+      .withIndex("by_student", (q) => q.eq("studentId", studentId))
+      .take(20),
+  );
+}
+
+test("TI2-141: el envío completo guarda todos sus campos recortados y su procedencia", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-1", "student");
+  const asStudent = t.withIdentity(identityOf("ti141-env-1"));
+
+  const created = await asStudent.mutation(
+    api.presentation.requests.createRequest,
+    FULL_SUBMISSION,
+  );
+  // La respuesta pública conserva sus cinco campos, con el texto unido derivado
+  expect(Object.keys(created).sort()).toEqual([
+    "_id",
+    "accessNeeds",
+    "createdAt",
+    "status",
+    "studentId",
+  ]);
+  expect(created).toMatchObject({
+    studentId,
+    status: "received",
+    accessNeeds:
+      "Comunicación escrita\nMás tiempo para comunicarme\nMaterial enviado con anticipación",
+  });
+
+  const [row] = await requestsOf(t, studentId);
+  expect(row).toMatchObject({
+    needSummary: "Necesito apoyo para seguir las clases en línea",
+    expectedOutcome: FULL_SUBMISSION.expectedOutcome,
+    accessNeedSelections: FULL_SUBMISSION.accessNeedSelections,
+    otherAccessNeed: FULL_SUBMISSION.otherAccessNeed,
+    modalityPreference: "online",
+    generalAvailability: FULL_SUBMISSION.generalAvailability,
+    preferredAccessibleInformationChannel: FULL_SUBMISSION.preferredAccessibleInformationChannel,
+    idempotencyKey: "clave-ficticia-1",
+    provenance: { channel: "student" },
+  });
+  expect(row?.provenance?.receivedAt).toBeGreaterThan(0);
+});
+
+test("TI2-141: reintentar el envío con la misma clave no duplica; otra clave u otro estudiante sí crean", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-2", "student");
+  const otherId = await seedProfile(t, "ti141-env-3", "student");
+  const asStudent = t.withIdentity(identityOf("ti141-env-2"));
+
+  const first = await asStudent.mutation(api.presentation.requests.createRequest, FULL_SUBMISSION);
+  // Reintento, aunque cambie el contenido: la clave identifica el envío
+  const retry = await asStudent.mutation(api.presentation.requests.createRequest, {
+    ...FULL_SUBMISSION,
+    needSummary: "Otro texto del mismo envío",
+  });
+  expect(retry._id).toBe(first._id);
+  expect(await requestsOf(t, studentId)).toHaveLength(1);
+
+  // Envíos simultáneos con la misma clave dejan una sola fila
+  const simultaneous = await Promise.all(
+    [1, 2, 3].map(() =>
+      asStudent.mutation(api.presentation.requests.createRequest, {
+        ...FULL_SUBMISSION,
+        idempotencyKey: "clave-simultanea",
+      }),
+    ),
+  );
+  expect(new Set(simultaneous.map((item) => item._id)).size).toBe(1);
+  expect(await requestsOf(t, studentId)).toHaveLength(2);
+
+  // La clave es del estudiante: la misma en otra cuenta es otro envío
+  const other = await t
+    .withIdentity(identityOf("ti141-env-3"))
+    .mutation(api.presentation.requests.createRequest, FULL_SUBMISSION);
+  expect(other._id).not.toBe(first._id);
+  expect(await requestsOf(t, otherId)).toHaveLength(1);
+});
+
+test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas inválidas sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-4", "student");
+  const asStudent = t.withIdentity(identityOf("ti141-env-4"));
+  const send = (changes: Record<string, unknown>) =>
+    asStudent.mutation(api.presentation.requests.createRequest, {
+      ...FULL_SUBMISSION,
+      ...changes,
+    } as typeof FULL_SUBMISSION);
+
+  const cases: [Record<string, unknown>, string][] = [
+    [{ needSummary: "   " }, "Describe la barrera o necesidad."],
+    [{ needSummary: "a".repeat(2001) }, "La descripción de la necesidad supera el máximo"],
+    [{ expectedOutcome: "" }, "Indica qué esperas de CERETI."],
+    [{ expectedOutcome: "a".repeat(2001) }, "El resultado esperado supera el máximo"],
+    [
+      { accessNeedSelections: [], otherAccessNeed: " " },
+      "Se requiere describir la necesidad de acceso.",
+    ],
+    [
+      {
+        accessNeedSelections: [
+          { id: "a", label: "Uno" },
+          { id: "a", label: "Otro" },
+        ],
+      },
+      "Una necesidad de acceso está repetida.",
+    ],
+    [
+      { accessNeedSelections: [{ id: "a", label: "  " }] },
+      "Cada necesidad de acceso necesita su nombre.",
+    ],
+    [
+      {
+        accessNeedSelections: Array.from({ length: 21 }, (_, index) => ({
+          id: `n${index}`,
+          label: `Necesidad ${index}`,
+        })),
+      },
+      "Selecciona como máximo 20 necesidades de acceso.",
+    ],
+    [{ generalAvailability: { preferredWeekdays: [] } }, "Selecciona al menos un día disponible."],
+    [{ generalAvailability: { preferredWeekdays: [7] } }, "Los días disponibles van de 0"],
+    [{ generalAvailability: { preferredWeekdays: [1, 1] } }, "Un día disponible está repetido."],
+    [
+      {
+        generalAvailability: {
+          preferredWeekdays: [1],
+          preferredTimeRange: { from: "9:00", to: "12:00" },
+        },
+      },
+      "formato HH:mm",
+    ],
+    [
+      {
+        generalAvailability: {
+          preferredWeekdays: [1],
+          preferredTimeRange: { from: "12:00", to: "09:00" },
+        },
+      },
+      "debe empezar antes de terminar",
+    ],
+    [{ preferredAccessibleInformationChannel: " " }, "Indica cómo prefieres recibir información."],
+    [{ preferredAccessibleInformationChannel: "a".repeat(201) }, "supera el máximo permitido (200"],
+    [{ idempotencyKey: "  " }, "La clave del envío debe tener entre 1 y 128"],
+    [{ idempotencyKey: "a".repeat(129) }, "La clave del envío debe tener entre 1 y 128"],
+    [{ idempotencyKey: undefined }, "Faltan datos de la solicitud"],
+    [{ accessNeeds: "Texto suelto" }, "no de ambas formas"],
+  ];
+  for (const [changes, message] of cases) {
+    await expect(send(changes)).rejects.toThrow(message);
+  }
+
+  // En los topes exactos se acepta
+  await send({
+    needSummary: "a".repeat(2000),
+    expectedOutcome: "a".repeat(2000),
+    preferredAccessibleInformationChannel: "a".repeat(200),
+    idempotencyKey: "a".repeat(128),
+  });
+  expect(await requestsOf(t, studentId)).toHaveLength(1);
+});
+
+test("TI2-141: el envío no admite RUT, diagnóstico ni campos fuera del contrato, y solo lo hace un Estudiante vigente", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-5", "student");
+  await seedProfile(t, "ti141-env-pro", "professional");
+  const asStudent = t.withIdentity(identityOf("ti141-env-5"));
+
+  for (const extra of [{ rut: "11.111.111-1" }, { diagnosis: "Ficticio" }, { internalArea: "X" }]) {
+    await expect(
+      asStudent.mutation(api.presentation.requests.createRequest, {
+        ...FULL_SUBMISSION,
+        ...extra,
+      } as typeof FULL_SUBMISSION),
+    ).rejects.toThrow("Validator error");
+  }
+  for (const identity of [null, identityOf("ti141-env-pro")]) {
+    await expect(
+      sessionOf(t, identity).mutation(api.presentation.requests.createRequest, FULL_SUBMISSION),
+    ).rejects.toThrow("No autorizado");
+  }
+  expect(await requestsOf(t, studentId)).toHaveLength(0);
+});
