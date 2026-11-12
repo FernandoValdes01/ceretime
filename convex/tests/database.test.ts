@@ -2998,42 +2998,40 @@ test("TI2-118: el seguimiento guarda acuerdos y tareas en filas propias y la not
   expect(notes.page.map((note) => note.body)).toEqual([input.internalNote]);
 });
 
-test("TI2-118: guardar de nuevo reemplaza el registro de la atención sin duplicar filas ni notas", async () => {
+test("TI2-146: el registro confirmado no se reemplaza: el reintento no duplica y otro contenido se rechaza", async () => {
   const t = convexTest(schema, modules);
   const { professional, accompanimentId, appointmentId } = await seedTi118Appointment(t, "g");
   const input = ti118RecordInput(appointmentId, accompanimentId, professional);
   const first = await t.run(async (ctx) => await saveFollowUpRecord(ctx, input));
-  const retry = await t.run(async (ctx) => await saveFollowUpRecord(ctx, input));
+  const before = await readTi118FollowUpTables(t);
+
+  // Los espacios que el validador recorta no cuentan como cambio.
+  const retry = await t.run(
+    async (ctx) => await saveFollowUpRecord(ctx, { ...input, nextSteps: ` ${input.nextSteps} ` }),
+  );
   expect(retry).toEqual({
     status: "saved",
     recordId: first.status === "saved" ? first.recordId : null,
     created: false,
   });
 
-  const edited = await t.run(
-    async (ctx) =>
-      await saveFollowUpRecord(ctx, {
-        ...input,
-        agreements: [],
-        tasks: [{ ...input.tasks[0], status: "done" }],
-        suggestedNextAppointmentDate: undefined,
-        internalNote: "Nota interna ficticia corregida",
-      }),
-  );
-  expect(edited.status).toBe("saved");
+  const edits = await t.run(async (ctx) => ({
+    agreements: await saveFollowUpRecord(ctx, { ...input, agreements: [] }),
+    taskStatus: await saveFollowUpRecord(ctx, {
+      ...input,
+      tasks: [{ ...input.tasks[0], status: "done" }, input.tasks[1]],
+    }),
+    date: await saveFollowUpRecord(ctx, { ...input, suggestedNextAppointmentDate: undefined }),
+    note: await saveFollowUpRecord(ctx, {
+      ...input,
+      internalNote: "Nota interna ficticia corregida",
+    }),
+    withoutNote: await saveFollowUpRecord(ctx, { ...input, internalNote: undefined }),
+  }));
+  expect(Object.values(edits)).toEqual(Array(5).fill({ status: "already_confirmed" }));
 
-  const after = await readTi118FollowUpTables(t);
-  expect(after.records).toHaveLength(1);
-  expect(after.records[0]).not.toHaveProperty("suggestedNextAppointmentDate");
-  expect(after.agreements).toHaveLength(0);
-  expect(after.tasks.map((task) => [task.entryId, task.status])).toEqual([["t1", "done"]]);
-  expect(after.notes.map((note) => note.body)).toEqual(["Nota interna ficticia corregida"]);
-
-  // Sin nota, el registro deja de apuntar a ella y la nota queda en el historial.
-  await t.run(async (ctx) => await saveFollowUpRecord(ctx, { ...input, internalNote: undefined }));
-  const unlinked = await readTi118FollowUpTables(t);
-  expect(unlinked.records[0]).not.toHaveProperty("internalNoteId");
-  expect(unlinked.notes).toHaveLength(1);
+  // Ni el reintento ni los intentos de edición escriben filas ni notas.
+  expect(await readTi118FollowUpTables(t)).toEqual(before);
 });
 
 test("TI2-118: el seguimiento rechaza diagnósticos, atenciones pendientes y referencias inválidas sin escribir", async () => {
