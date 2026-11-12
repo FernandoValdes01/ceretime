@@ -59,6 +59,12 @@ export function mapBackendRequestStatus(
       return "awaitingInformationOrAcceptance";
     case "accepted":
       return "accepted";
+    case "referred":
+      return "referred";
+    case "closed_without_accompaniment":
+      return "closedWithoutAccompaniment";
+    case "cancelled":
+      return "cancelled";
   }
 }
 
