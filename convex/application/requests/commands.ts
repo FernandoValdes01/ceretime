@@ -3,6 +3,7 @@ import { ConvexError } from "convex/values";
 import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
+  REQUEST_RESPONSE_MAX_LENGTH,
   toAccessNeedsText,
   toAccompanimentRequest,
 } from "../../domain/requests/request";
@@ -361,6 +362,67 @@ export async function closeRequestWithoutAccompaniment(
     to: result.change.to,
     actorId: professional._id,
     reason: closureReason,
+    occurredAt: result.change.occurredAt,
+  });
+  return toAccompanimentRequest({
+    _id: row._id,
+    studentId: row.studentId,
+    status: result.change.to,
+    accessNeeds: row.accessNeeds,
+    createdAt: row.createdAt,
+  });
+}
+
+/**
+ * Responde a la información que pidió el Profesional (TI2-141): devuelve la
+ * solicitud de `awaiting_information_or_acceptance` a `under_review` para
+ * que quien la tomó la retome. Solo el Estudiante dueño con cuenta vigente;
+ * una solicitud ajena o inexistente recibe la misma denegación genérica. La
+ * respuesta es obligatoria, tiene tope y queda como motivo del cambio en el
+ * historial, junto al actor y la fecha, en la misma transacción. Fuera de la
+ * espera se rechaza sin modificar nada y nunca abre acompañamiento.
+ */
+export async function respondToInformationRequest(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  input: { readonly requestId: Id<"requests">; readonly response: string },
+) {
+  const student = await requireActiveStudent(ctx, identity);
+  const row = await getRequestById(ctx, input.requestId);
+  if (row === null) deny();
+  if (row.studentId !== student._id) deny();
+  // Solo la espera admite respuesta: `received -> under_review` existe en la
+  // tabla, pero es la toma del Profesional, no un paso del Estudiante.
+  if (row.status !== "awaiting_information_or_acceptance") {
+    throw new Error("La solicitud no admite una respuesta en su estado actual");
+  }
+  const result = transitionRequest({
+    from: row.status,
+    to: "under_review",
+    actorId: student._id,
+    occurredAt: Date.now(),
+    reason: input.response,
+  });
+  if (result.status === "rejected") {
+    if (result.cause === "reason_required") {
+      throw new Error("Se requiere la respuesta a la información pedida");
+    }
+    throw new Error("La solicitud no admite una respuesta en su estado actual");
+  }
+  const response = result.change.reason;
+  if (response === undefined) deny();
+  if (response.length > REQUEST_RESPONSE_MAX_LENGTH) {
+    throw new Error(
+      `La respuesta supera el máximo permitido (${REQUEST_RESPONSE_MAX_LENGTH} caracteres)`,
+    );
+  }
+  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await logRequestTransition(ctx, {
+    requestId: input.requestId,
+    from: result.change.from,
+    to: result.change.to,
+    actorId: student._id,
+    reason: response,
     occurredAt: result.change.occurredAt,
   });
   return toAccompanimentRequest({

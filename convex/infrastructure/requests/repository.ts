@@ -210,6 +210,21 @@ export async function logRequestTransition(
   });
 }
 
+/** Tope de cambios recientes que se leen para armar el detalle. */
+const RECENT_TRANSITIONS_LIMIT = 50;
+
+/** Cambios de estado más recientes de la solicitud, del último al primero. */
+export async function listRecentRequestTransitions(
+  ctx: DbReader,
+  requestId: Id<"requests">,
+): Promise<Doc<"requestTransitions">[]> {
+  return await ctx.db
+    .query("requestTransitions")
+    .withIndex("by_request", (q) => q.eq("requestId", requestId))
+    .order("desc")
+    .take(RECENT_TRANSITIONS_LIMIT);
+}
+
 /** Solicitudes propias del estudiante, paginadas. */
 export async function listOwnedRequests(
   ctx: DbReader,

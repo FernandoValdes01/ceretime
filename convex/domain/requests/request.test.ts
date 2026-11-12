@@ -8,6 +8,7 @@ import {
   requestProvenanceChannelOf,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toRequestExchange,
   toStoredRequestFields,
   type AccompanimentRequestContent,
 } from "./request";
@@ -227,5 +228,34 @@ describe("Procedencia de la solicitud (TI2-135)", () => {
     const official = requestProvenanceChannelOf({ provenance: { channel: "official_channel" } });
     expect(official).toBe("official_channel");
     expect(requestProvenanceChannelOf({ provenance: { channel: "student" } })).toBe("student");
+  });
+});
+
+describe("toRequestExchange (TI2-141)", () => {
+  const asked = (reason: string) =>
+    ({ from: "under_review", to: "awaiting_information_or_acceptance", reason }) as const;
+  const answered = (reason: string) =>
+    ({ from: "awaiting_information_or_acceptance", to: "under_review", reason }) as const;
+  const taken = { from: "received", to: "under_review" } as const;
+
+  test("mientras espera entrega lo pedido más reciente", () => {
+    const changes = [asked("Segundo pedido"), answered("Respuesta"), asked("Primer pedido"), taken];
+    expect(toRequestExchange("awaiting_information_or_acceptance", changes)).toEqual({
+      informationRequest: "Segundo pedido",
+      informationResponse: "Respuesta",
+    });
+  });
+
+  test("fuera de la espera no entrega lo pedido: ya no está pendiente", () => {
+    const changes = [answered("Respuesta"), asked("Pedido"), taken];
+    expect(toRequestExchange("under_review", changes)).toEqual({
+      informationResponse: "Respuesta",
+    });
+    expect(toRequestExchange("accepted", changes)).toEqual({ informationResponse: "Respuesta" });
+  });
+
+  test("la toma no cuenta como respuesta y sin intercambio no entrega nada", () => {
+    expect(toRequestExchange("under_review", [taken])).toEqual({});
+    expect(toRequestExchange("received", [])).toEqual({});
   });
 });

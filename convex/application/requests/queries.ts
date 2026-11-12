@@ -1,8 +1,8 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import { toAccompanimentRequest } from "../../domain/requests/request";
+import { toAccompanimentRequest, toRequestExchange } from "../../domain/requests/request";
 import type { PersistableRequestState } from "../../domain/requests/state";
-import type { Id } from "../../_generated/dataModel";
+import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
 import {
@@ -10,6 +10,7 @@ import {
   getRequestById,
   listActiveTakes,
   listOwnedRequests,
+  listRecentRequestTransitions,
   listRequestsByStatus,
 } from "../../infrastructure/requests/repository";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
@@ -180,6 +181,28 @@ export async function listOpenRequestsUseCase(
 }
 
 /**
+ * Detalle que recibe quien ya puede leer la solicitud (TI2-141): la entidad
+ * más lo pedido mientras espera respuesta, la última respuesta del
+ * Estudiante y la razón de cierre. Son textos libres, por eso no viajan en
+ * los listados ni en la bandeja.
+ */
+async function toRequestDetail(ctx: QueryCtx, request: Doc<"requests">) {
+  const entity = toAccompanimentRequest({
+    _id: request._id,
+    studentId: request.studentId,
+    status: request.status,
+    accessNeeds: request.accessNeeds,
+    createdAt: request.createdAt,
+  });
+  const changes = await listRecentRequestTransitions(ctx, request._id);
+  return {
+    ...entity,
+    ...toRequestExchange(entity.status, changes),
+    ...(request.closureReason === undefined ? {} : { closureReason: request.closureReason }),
+  };
+}
+
+/**
  * Detalle de una solicitud con autorización estricta (TI2-10).
  *
  * El Estudiante solo lee sus solicitudes propias y el Profesional solo las
@@ -210,25 +233,13 @@ export async function getRequestDetailUseCase(
 
   if (caller.role === "student") {
     if (request.studentId !== caller._id) deny();
-    return toAccompanimentRequest({
-      _id: request._id,
-      studentId: request.studentId,
-      status: request.status,
-      accessNeeds: request.accessNeeds,
-      createdAt: request.createdAt,
-    });
+    return await toRequestDetail(ctx, request);
   }
 
   if (caller.role === "professional") {
     const take = await findActiveTake(ctx, args.requestId, caller._id);
     if (take === null) deny();
-    return toAccompanimentRequest({
-      _id: request._id,
-      studentId: request.studentId,
-      status: request.status,
-      accessNeeds: request.accessNeeds,
-      createdAt: request.createdAt,
-    });
+    return await toRequestDetail(ctx, request);
   }
 
   deny();

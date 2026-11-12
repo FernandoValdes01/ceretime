@@ -3362,12 +3362,13 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
   expect(row.expectedOutcome).toHaveLength(2000);
   expect(requestProvenanceChannelOf(row)).toBe("official_channel");
 
-  // La API vigente no cambió: los mismos cinco campos, sin contenido ni derivaciones.
+  // El detalle suma la razón de cierre (TI2-141), sin contenido ni derivaciones.
   const asStudent = t.withIdentity(identityFor("ti135-full-est", "ti135full@alu.uct.cl"));
   const detail = await asStudent.query(api.presentation.requests.getRequest, { requestId });
   expect(Object.keys(detail).sort()).toEqual([
     "_id",
     "accessNeeds",
+    "closureReason",
     "createdAt",
     "status",
     "studentId",

@@ -1303,3 +1303,211 @@ test("TI2-141: tras cancelar, el listado del Estudiante y el del Profesional con
     [cancelledId, "cancelled"],
   ]);
 });
+
+/*
+ * TI2-141: respuesta del Estudiante a la información pedida y detalle con
+ * los textos del intercambio.
+ */
+
+function respondAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, response: string) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.respondToInformationRequest, {
+    requestId,
+    response,
+  });
+}
+
+function detailAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">) {
+  return sessionOf(t, identity).query(api.presentation.requests.getRequest, { requestId });
+}
+
+const PAGE = { numItems: 10, cursor: null };
+
+test("TI2-141: el Estudiante responde lo pedido y la solicitud vuelve a revisión con su registro", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-est-1", "student");
+  const proId = await seedProfile(t, "ti141-pro-1", "professional");
+  const student = identityOf("ti141-est-1");
+  const professional = identityOf("ti141-pro-1");
+  const asProfessional = t.withIdentity(professional);
+
+  const created = await t
+    .withIdentity(student)
+    .mutation(api.presentation.requests.createRequest, { accessNeeds: "Necesidad ficticia" });
+  const requestId = created._id;
+  await asProfessional.mutation(api.presentation.requests.takeRequest, { requestId });
+  await asProfessional.mutation(api.presentation.requests.requestAdditionalInformation, {
+    requestId,
+    reason: "Falta el horario en que puedes asistir",
+  });
+
+  // Mientras espera, el dueño y quien la tomó leen lo pedido en el detalle
+  for (const identity of [student, professional]) {
+    const waiting = await detailAs(t, identity, requestId);
+    expect(waiting.status).toBe("awaiting_information_or_acceptance");
+    expect(waiting.informationRequest).toBe("Falta el horario en que puedes asistir");
+    expect(waiting.informationResponse).toBeUndefined();
+  }
+
+  const answered = await respondAs(t, student, requestId, "  Puedo los martes por la tarde  ");
+  expect(answered).toMatchObject({ _id: requestId, studentId, status: "under_review" });
+
+  // Estado y registro en la misma transacción: actor Estudiante, respuesta recortada
+  const after = await snapshotOf(t, requestId);
+  expect(after.status).toBe("under_review");
+  expect(after.accompaniments).toBe(0);
+  expect(after.transitions.map((row) => `${row.from} -> ${row.to}`)).toEqual([
+    "received -> under_review",
+    "under_review -> awaiting_information_or_acceptance",
+    "awaiting_information_or_acceptance -> under_review",
+  ]);
+  expect(after.transitions[2]).toMatchObject({
+    actorId: studentId,
+    reason: "Puedo los martes por la tarde",
+  });
+
+  // Ya no hay nada pendiente: el detalle entrega la respuesta y no lo pedido
+  for (const identity of [student, professional]) {
+    const reviewed = await detailAs(t, identity, requestId);
+    expect(reviewed.informationRequest).toBeUndefined();
+    expect(reviewed.informationResponse).toBe("Puedo los martes por la tarde");
+  }
+
+  // El Profesional retoma: vuelve a pedir y el detalle muestra el pedido nuevo
+  await asProfessional.mutation(api.presentation.requests.requestAdditionalInformation, {
+    requestId,
+    reason: "Indica también la modalidad",
+  });
+  const again = await detailAs(t, student, requestId);
+  expect(again.informationRequest).toBe("Indica también la modalidad");
+  expect(again.informationResponse).toBe("Puedo los martes por la tarde");
+
+  // Tras la segunda respuesta se acepta y abre un solo acompañamiento
+  await respondAs(t, student, requestId, "En línea");
+  await asProfessional.mutation(api.presentation.requests.acceptRequest, {
+    requestId,
+    objective: "Objetivo ficticio",
+  });
+  const accepted = await snapshotOf(t, requestId);
+  expect(accepted.status).toBe("accepted");
+  expect(accepted.accompaniments).toBe(1);
+  expect(accepted.transitions.filter((row) => row.actorId === proId)).toHaveLength(4);
+});
+
+test("TI2-141: responder una solicitud ajena o inexistente, o sin ser Estudiante vigente, se deniega sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const ownerId = await seedProfile(t, "ti141-est-2", "student");
+  await seedProfile(t, "ti141-est-3", "student");
+  const proId = await seedProfile(t, "ti141-pro-2", "professional");
+  await seedProfile(t, "ti141-int-1", "intern");
+  await seedProfile(t, "ti141-adm-1", "admin");
+  await seedProfile(t, "ti141-est-ina", "student", {
+    institutionalStatus: "enabled",
+    accountStatus: "inactive",
+  });
+  const requestId = await seedRequestIn(t, ownerId, "awaiting_information_or_acceptance");
+  await seedTake(t, requestId, proId);
+  const missingId = await seedRequestIn(t, ownerId, "awaiting_information_or_acceptance");
+  await t.run(async (ctx) => {
+    await ctx.db.delete(missingId);
+  });
+  const before = await snapshotOf(t, requestId);
+
+  // Otro Estudiante no distingue una solicitud ajena de una inexistente
+  for (const id of [requestId, missingId]) {
+    await expect(respondAs(t, identityOf("ti141-est-3"), id, "Respuesta")).rejects.toThrow(
+      "No autorizado",
+    );
+  }
+  // Ni el Profesional con toma responde por el Estudiante
+  for (const identity of [
+    null,
+    identityOf("ti141-sin-perfil"),
+    identityOf("ti141-pro-2"),
+    identityOf("ti141-int-1"),
+    identityOf("ti141-adm-1"),
+    identityOf("ti141-est-ina"),
+  ]) {
+    await expect(respondAs(t, identity, requestId, "Respuesta")).rejects.toThrow("No autorizado");
+  }
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+});
+
+test("TI2-141: responder exige la espera, una respuesta con texto y dentro del tope", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-est-4", "student");
+  const student = identityOf("ti141-est-4");
+
+  // Fuera de la espera no hay nada que responder, ni siquiera desde recibida,
+  // donde el par `received -> under_review` existe para la toma
+  for (const status of [
+    "received",
+    "under_review",
+    "accepted",
+    "cancelled",
+    "closed_without_accompaniment",
+  ] as const) {
+    const requestId = await seedRequestIn(t, studentId, status);
+    await expect(respondAs(t, student, requestId, "Respuesta")).rejects.toThrow(
+      "La solicitud no admite una respuesta en su estado actual",
+    );
+    expect(await snapshotOf(t, requestId)).toMatchObject({ status, transitions: [] });
+  }
+
+  const requestId = await seedRequestIn(t, studentId, "awaiting_information_or_acceptance");
+  const before = await snapshotOf(t, requestId);
+  for (const response of ["", "   "]) {
+    await expect(respondAs(t, student, requestId, response)).rejects.toThrow(
+      "Se requiere la respuesta a la información pedida",
+    );
+  }
+  await expect(respondAs(t, student, requestId, "a".repeat(2001))).rejects.toThrow(
+    "La respuesta supera el máximo permitido (2000 caracteres)",
+  );
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+
+  // En el tope exacto se acepta
+  await respondAs(t, student, requestId, "a".repeat(2000));
+  expect((await snapshotOf(t, requestId)).status).toBe("under_review");
+});
+
+test("TI2-141: la razón de cierre llega al detalle del Estudiante y los textos no viajan en los listados", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-est-5", "student");
+  const proId = await seedProfile(t, "ti141-pro-3", "professional");
+  await seedProfile(t, "ti141-pro-4", "professional");
+  const student = identityOf("ti141-est-5");
+  const professional = identityOf("ti141-pro-3");
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+  await seedTake(t, requestId, proId);
+  await t
+    .withIdentity(professional)
+    .mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId,
+      reason: "Pedido ficticio",
+    });
+  await respondAs(t, student, requestId, "Respuesta ficticia");
+  await closeAs(t, professional, requestId, "La necesidad corresponde a otra unidad");
+
+  const detail = await detailAs(t, student, requestId);
+  expect(detail).toMatchObject({
+    status: "closed_without_accompaniment",
+    closureReason: "La necesidad corresponde a otra unidad",
+    informationResponse: "Respuesta ficticia",
+  });
+  expect(detail.informationRequest).toBeUndefined();
+
+  // Los listados conservan los cinco campos: sin razón ni intercambio
+  const BASE_KEYS = ["_id", "accessNeeds", "createdAt", "status", "studentId"];
+  const own = await t
+    .withIdentity(student)
+    .query(api.presentation.requests.listOwnRequests, { paginationOpts: PAGE });
+  const authorized = await t
+    .withIdentity(professional)
+    .query(api.presentation.requests.listAuthorizedRequests, { paginationOpts: PAGE });
+  for (const item of [...own.page, ...authorized.page]) {
+    expect(Object.keys(item).sort()).toEqual(BASE_KEYS);
+  }
+
+  // Un Profesional sin toma no lee el detalle, y con él tampoco la razón
+  await expect(detailAs(t, identityOf("ti141-pro-4"), requestId)).rejects.toThrow("No autorizado");
+});

@@ -5,6 +5,7 @@ import {
   cancelRequest as cancelRequestUseCase,
   closeRequestWithoutAccompaniment as closeRequestWithoutAccompanimentUseCase,
   registerRequest,
+  respondToInformationRequest as respondToInformationRequestUseCase,
   requestAdditionalInformation as requestAdditionalInformationUseCase,
   takeRequest as takeRequestUseCase,
 } from "../application/requests/commands";
@@ -55,6 +56,16 @@ const requestValidator = v.object({
 
 const minimizedRequestValidator = v.object(requestBaseFields);
 
+// Detalle (TI2-141): suma los textos del intercambio y la razón de cierre.
+// Solo lo entrega `getRequest`, a quien ya puede leer la solicitud.
+const requestDetailValidator = v.object({
+  ...requestBaseFields,
+  accessNeeds: v.string(),
+  informationRequest: v.optional(v.string()),
+  informationResponse: v.optional(v.string()),
+  closureReason: v.optional(v.string()),
+});
+
 const requestPageValidator = paginationResultValidator(requestValidator);
 const minimizedRequestPageValidator = paginationResultValidator(minimizedRequestValidator);
 
@@ -62,6 +73,7 @@ const minimizedRequestPageValidator = paginationResultValidator(minimizedRequest
 // desde la fila: así Web y Mobile derivan los siete estados del contrato,
 // incluido `referred`, y no solo los que hoy puede traer una fila.
 type PublicRequest = Infer<typeof requestValidator>;
+type PublicRequestDetail = Infer<typeof requestDetailValidator>;
 type PublicRequestPage = Infer<typeof requestPageValidator>;
 type PublicMinimizedRequestPage = Infer<typeof minimizedRequestPageValidator>;
 
@@ -101,8 +113,8 @@ export const listOwnRequests = query({
  */
 export const getRequest = query({
   args: { requestId: v.id("requests") },
-  returns: requestValidator,
-  handler: async (ctx, args): Promise<PublicRequest> => {
+  returns: requestDetailValidator,
+  handler: async (ctx, args): Promise<PublicRequestDetail> => {
     const identity = await ctx.auth.getUserIdentity();
     return await getRequestDetailUseCase(ctx, identity, args);
   },
@@ -200,5 +212,19 @@ export const closeRequestWithoutAccompaniment = mutation({
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
     return await closeRequestWithoutAccompanimentUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Responde a la información pedida (TI2-141). Solo el Estudiante dueño con
+ * cuenta vigente y mientras la solicitud espera respuesta; la solicitud
+ * vuelve a revisión.
+ */
+export const respondToInformationRequest = mutation({
+  args: { requestId: v.id("requests"), response: v.string() },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await respondToInformationRequestUseCase(ctx, identity, args);
   },
 });

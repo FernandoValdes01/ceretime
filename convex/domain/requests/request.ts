@@ -151,6 +151,41 @@ export function toAccompanimentRequest<RowId extends string, StudentId extends s
   };
 }
 
+/** Tope de la respuesta del Estudiante a la información pedida (TI2-141). */
+export const REQUEST_RESPONSE_MAX_LENGTH = 2000;
+
+/**
+ * Textos del intercambio que acompañan al detalle de una solicitud (TI2-141),
+ * leídos de su historial de cambios, del último al primero.
+ *
+ * `informationRequest` es lo que el Profesional pidió y solo existe mientras
+ * la solicitud espera respuesta: después deja de ser lo pendiente.
+ * `informationResponse` es la última respuesta del Estudiante. Son texto
+ * libre: solo se entregan en el detalle, a quien ya puede leer la solicitud.
+ */
+export function toRequestExchange(
+  status: PersistableRequestState,
+  recentChanges: readonly {
+    readonly from: PersistableRequestState;
+    readonly to: PersistableRequestState;
+    readonly reason?: string;
+  }[],
+): { readonly informationRequest?: string; readonly informationResponse?: string } {
+  const lastRequest = recentChanges.find(
+    (change) => change.to === "awaiting_information_or_acceptance",
+  );
+  const lastResponse = recentChanges.find(
+    (change) =>
+      change.from === "awaiting_information_or_acceptance" && change.to === "under_review",
+  );
+  return {
+    ...(status === "awaiting_information_or_acceptance" && lastRequest?.reason !== undefined
+      ? { informationRequest: lastRequest.reason }
+      : {}),
+    ...(lastResponse?.reason === undefined ? {} : { informationResponse: lastResponse.reason }),
+  };
+}
+
 /** Campos de la tabla `requests` que salen del contenido estructurado. */
 export interface StoredRequestFields {
   readonly accessNeeds: string;
