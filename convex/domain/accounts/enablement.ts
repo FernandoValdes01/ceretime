@@ -1,4 +1,8 @@
-import { isInstitutionalEmail, normalizeEmail } from "../auth/institutional_domain";
+import {
+  getInstitutionalPopulation,
+  isInstitutionalEmail,
+  normalizeEmail,
+} from "../auth/institutional_domain";
 import type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
 
 /**
@@ -37,9 +41,11 @@ export type EnablementRejectionReason =
   | "caller-not-admin"
   | "caller-not-active"
   | "target-not-intern"
+  | "target-not-staff"
   | "target-email-not-institutional"
   | "target-account-not-active"
   | "target-not-pending"
+  | "target-not-enabled"
   | "target-already-enabled";
 
 export type EnablementCheck =
@@ -96,6 +102,63 @@ export function checkEnablement(input: {
     return { ok: false, reason: "caller-not-active" };
   }
   return validateEnablementTarget(input.target);
+}
+
+/** Objetivo profesional o administrativo de TI2-137. */
+export type StaffEnablementTarget = {
+  readonly role: Role;
+  readonly email: string;
+  readonly institutionalStatus: EnablementInstitutionalStatus;
+  readonly accountStatus: EnablementAccountStatus;
+};
+
+/**
+ * Valida que el objetivo profesional o administrativo pueda transitar a
+ * `enabled` (TI2-137).
+ *
+ * Acepta `pending` (primera habilitación) o `disabled` (rehabilitación tras
+ * una revocación, que registra nuevo actor y fecha); rechaza la cuenta ya
+ * habilitada. Profesional y administrador exigen correo de personal
+ * (`@uct.cl`): un Profesional `@alu.uct.cl` solo opera como cuenta de prueba
+ * con alcance por acompañamiento (RN-25/RD-11) y se habilita en TI2-140, no
+ * en esta vía general. La cuenta debe estar vigente (`active`) y el rol no
+ * cambia jamás. El practicante no entra por esta vía: lo habilita el flujo
+ * de TI2-140.
+ */
+export function validateStaffEnablementTarget(target: StaffEnablementTarget): EnablementCheck {
+  if (target.role !== "professional" && target.role !== "admin") {
+    return { ok: false, reason: "target-not-staff" };
+  }
+  if (getInstitutionalPopulation(target.email) !== "personal") {
+    return { ok: false, reason: "target-email-not-institutional" };
+  }
+  if (target.accountStatus !== "active") {
+    return { ok: false, reason: "target-account-not-active" };
+  }
+  if (target.institutionalStatus === "enabled") {
+    return { ok: false, reason: "target-already-enabled" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Valida que el objetivo profesional o administrativo pueda revocarse
+ * (TI2-137).
+ *
+ * Solo una cuenta en `enabled` y vigente (`active`) se revoca: una cuenta ya
+ * `pending`, `disabled` o inactiva no opera y no hay nada que cortar.
+ */
+export function validateStaffRevocationTarget(target: StaffEnablementTarget): EnablementCheck {
+  if (target.role !== "professional" && target.role !== "admin") {
+    return { ok: false, reason: "target-not-staff" };
+  }
+  if (target.accountStatus !== "active") {
+    return { ok: false, reason: "target-account-not-active" };
+  }
+  if (target.institutionalStatus !== "enabled") {
+    return { ok: false, reason: "target-not-enabled" };
+  }
+  return { ok: true };
 }
 
 export type BootstrapCandidate = {
