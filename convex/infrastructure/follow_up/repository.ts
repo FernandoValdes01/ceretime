@@ -26,10 +26,12 @@ import { insertInternalNote } from "../accompaniments/repository";
  * borrado.
  *
  * La nota interna se guarda solo en `followUpNotes` mediante el repositorio de
- * acompañamientos; el registro conserva la referencia y la lectura de este
- * repositorio no la resuelve, para que ninguna proyección copie el texto. Solo
- * la comparación de un reintento lee el texto, sin devolverlo. No decide
- * autorización ni minimización (TI2-127).
+ * acompañamientos; el registro conserva la referencia y sus lecturas no la
+ * resuelven, para que ninguna proyección copie el texto por accidente. El
+ * texto sale solo por `readInternalNote` del adaptador de lectura, que
+ * Aplicación pide únicamente para la vista `professional`, y por la
+ * comparación de un reintento, que no lo devuelve. No decide autorización ni
+ * minimización (TI2-127).
  *
  * Opera con datos ficticios.
  */
@@ -234,6 +236,20 @@ export interface StoredFollowUpRecord {
   readonly internalNoteId?: Id<"followUpNotes">;
 }
 
+/** Registro leído con el estado vigente de su atención y la referencia a la nota. */
+async function toStoredRecord(
+  ctx: DbReader,
+  row: Doc<"followUpRecords">,
+  appointment: Doc<"appointments">,
+): Promise<StoredFollowUpRecord> {
+  return {
+    id: row._id,
+    record: await toRecordWithoutNote(ctx, row, appointment.accompanimentId),
+    appointmentStatus: appointment.status,
+    ...(row.internalNoteId === undefined ? {} : { internalNoteId: row.internalNoteId }),
+  };
+}
+
 /**
  * Registro de seguimiento de la atención, o `null` si no hay atención o aún
  * no tiene seguimiento. El estado y el acompañamiento se leen de la atención
@@ -247,12 +263,72 @@ export async function findFollowUpRecordByAppointment(
   const appointment = id === null ? null : await ctx.db.get(id);
   if (appointment === null) return null;
   const row = await findRecordRow(ctx, appointment._id);
-  if (row === null) return null;
+  return row === null ? null : await toStoredRecord(ctx, row, appointment);
+}
 
+/**
+ * Registros de las atenciones de un acompañamiento, de la más reciente a la
+ * más antigua. Pagina atenciones, no registros: una página puede traer menos
+ * registros que `limit`, y un acompañamiento sin forma devuelve una página
+ * vacía. Solo recorre el índice del acompañamiento, así que no mezcla
+ * historiales.
+ */
+export async function paginateFollowUpRecordsByAccompaniment(
+  ctx: DbReader,
+  accompanimentId: string,
+  page: { readonly limit: number; readonly cursor: string | null },
+): Promise<{
+  readonly items: readonly StoredFollowUpRecord[];
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
+}> {
+  const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+  if (id === null) return { items: [], hasMore: false, nextCursor: null };
+  const appointments = await ctx.db
+    .query("appointments")
+    .withIndex("by_accompanimentId_and_startsAt", (q) => q.eq("accompanimentId", id))
+    .order("desc")
+    .paginate({ numItems: page.limit, cursor: page.cursor });
+
+  const items: StoredFollowUpRecord[] = [];
+  for (const appointment of appointments.page) {
+    const row = await findRecordRow(ctx, appointment._id);
+    if (row !== null) items.push(await toStoredRecord(ctx, row, appointment));
+  }
   return {
-    id: row._id,
-    record: await toRecordWithoutNote(ctx, row, appointment.accompanimentId),
-    appointmentStatus: appointment.status,
-    ...(row.internalNoteId === undefined ? {} : { internalNoteId: row.internalNoteId }),
+    items,
+    hasMore: !appointments.isDone,
+    nextCursor: appointments.isDone ? null : appointments.continueCursor,
+  };
+}
+
+/**
+ * Adaptador del guardado (TI2-146) con la forma que espera Aplicación, sin
+ * importar sus tipos para que Infraestructura no dependa de Aplicación.
+ */
+export function followUpRecorder(ctx: MutationCtx) {
+  return {
+    save: (input: FollowUpRecordSaveInput) => saveFollowUpRecord(ctx, input),
+  };
+}
+
+/**
+ * Adaptador de lectura del seguimiento. La nota se entrega solo si su fila
+ * pertenece al acompañamiento del registro: una referencia cruzada no filtra
+ * el texto de otro acompañamiento.
+ */
+export function followUpRecordReader(ctx: DbReader) {
+  return {
+    findByAppointment: (appointmentId: string) =>
+      findFollowUpRecordByAppointment(ctx, appointmentId),
+    listByAccompaniment: (
+      accompanimentId: string,
+      page: { readonly limit: number; readonly cursor: string | null },
+    ) => paginateFollowUpRecordsByAccompaniment(ctx, accompanimentId, page),
+    readInternalNote: async (noteId: string, accompanimentId: string) => {
+      const id = ctx.db.normalizeId("followUpNotes", noteId);
+      const note = id === null ? null : await ctx.db.get(id);
+      return note === null || note.accompanimentId !== accompanimentId ? null : note.body;
+    },
   };
 }
