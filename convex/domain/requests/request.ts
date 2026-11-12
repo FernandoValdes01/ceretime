@@ -18,7 +18,7 @@
  * manual contra `AccompanimentRequestContent`.
  */
 
-import type { ApiResult } from "../errors/api_error";
+import { REQUEST_FIELDS_INVALID_ERROR_CODE, type ApiResult } from "../errors/api_error";
 import { isPersistableRequestState, type PersistableRequestState } from "./state";
 
 /**
@@ -163,20 +163,14 @@ export const ACCESS_NEED_SELECTIONS_MAX = 20;
 export const ACCESS_NEED_LABEL_MAX_LENGTH = 200;
 export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
 
-/** Envío completo tal como llega del cliente, antes de validar. */
-export interface RequestSubmissionInput {
-  readonly needSummary: string;
-  readonly expectedOutcome: string;
-  readonly accessNeedSelections: readonly AccessNeed[];
-  readonly otherAccessNeed?: string;
-  readonly modalityPreference: ModalityPreference;
-  readonly generalAvailability: GeneralAvailability;
-  readonly preferredAccessibleInformationChannel: string;
+/**
+ * Envío completo (TI2-141): el contenido canónico `AccompanimentRequestContent`
+ * más la clave de idempotencia que genera el cliente. La lista `accessNeeds`
+ * se persiste como `accessNeedSelections`; esa conversión es del caso de uso.
+ */
+export type RequestSubmission = Readonly<AccompanimentRequestContent> & {
   readonly idempotencyKey: string;
-}
-
-/** Envío completo validado y recortado, listo para persistir. */
-export type RequestSubmission = RequestSubmissionInput;
+};
 
 const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -202,10 +196,10 @@ function boundedText(
  * ni acepta RUT, diagnóstico, certificados ni área interna: esos campos no
  * existen en el contrato.
  */
-export function toRequestSubmission(input: RequestSubmissionInput): ApiResult<RequestSubmission> {
+export function toRequestSubmission(input: RequestSubmission): ApiResult<RequestSubmission> {
   const fail = (message: string): ApiResult<RequestSubmission> => ({
     status: "error",
-    error: { code: "request_fields_invalid", message },
+    error: { code: REQUEST_FIELDS_INVALID_ERROR_CODE, message },
   });
 
   const needSummary = boundedText(
@@ -224,12 +218,12 @@ export function toRequestSubmission(input: RequestSubmissionInput): ApiResult<Re
   );
   if ("error" in expectedOutcome) return fail(expectedOutcome.error);
 
-  if (input.accessNeedSelections.length > ACCESS_NEED_SELECTIONS_MAX) {
+  if (input.accessNeeds.length > ACCESS_NEED_SELECTIONS_MAX) {
     return fail(`Selecciona como máximo ${ACCESS_NEED_SELECTIONS_MAX} necesidades de acceso.`);
   }
-  const accessNeedSelections: AccessNeed[] = [];
+  const accessNeeds: AccessNeed[] = [];
   const seenNeeds = new Set<string>();
-  for (const need of input.accessNeedSelections) {
+  for (const need of input.accessNeeds) {
     const id = need.id.trim();
     const label = need.label.trim();
     if (id === "" || label === "") return fail("Cada necesidad de acceso necesita su nombre.");
@@ -240,10 +234,10 @@ export function toRequestSubmission(input: RequestSubmissionInput): ApiResult<Re
     }
     if (seenNeeds.has(id)) return fail("Una necesidad de acceso está repetida.");
     seenNeeds.add(id);
-    accessNeedSelections.push({ id, label });
+    accessNeeds.push({ id, label });
   }
   const otherAccessNeed = input.otherAccessNeed?.trim();
-  const stored = toStoredAccessNeeds(accessNeedSelections, otherAccessNeed);
+  const stored = toStoredAccessNeeds(accessNeeds, otherAccessNeed);
   if (stored.status === "error") return fail(stored.error.message);
 
   const { preferredWeekdays, preferredTimeRange } = input.generalAvailability;
@@ -284,7 +278,7 @@ export function toRequestSubmission(input: RequestSubmissionInput): ApiResult<Re
     data: {
       needSummary: needSummary.text,
       expectedOutcome: expectedOutcome.text,
-      accessNeedSelections,
+      accessNeeds,
       ...(otherAccessNeed ? { otherAccessNeed } : {}),
       modalityPreference: input.modalityPreference,
       generalAvailability: {

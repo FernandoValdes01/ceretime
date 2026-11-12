@@ -5,10 +5,15 @@ import {
   ACCESS_NEEDS_MAX_LENGTH,
   REQUEST_RESPONSE_MAX_LENGTH,
   toRequestSubmission,
-  type RequestSubmissionInput,
+  type AccessNeed,
+  type RequestSubmission,
   toAccessNeedsText,
   toAccompanimentRequest,
 } from "../../domain/requests/request";
+import {
+  CONFLICT_ERROR_CODE,
+  REQUEST_FIELDS_INVALID_ERROR_CODE,
+} from "../../domain/errors/api_error";
 import { transitionRequest } from "../../domain/requests/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
@@ -46,20 +51,39 @@ function deny(): never {
   throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
 }
 
+/*
+ * Rechazos de las operaciones que publica TI2-141 (envío completo, respuesta,
+ * cancelación y cierre). Van como `ConvexError({code, message})` del contrato
+ * común de TI2-88: un `Error` común llega a producción solo como «Server
+ * Error», sin el mensaje. Las operaciones de Sprint 1 y la forma anterior de
+ * `createRequest` conservan su `Error` documentado para no cambiarles el
+ * contrato a sus consumidores.
+ */
+
+/** Un campo de la solicitud no cumple: el mensaje dice qué corregir. */
+function rejectFields(message: string): never {
+  throw new ConvexError({ code: REQUEST_FIELDS_INVALID_ERROR_CODE, message });
+}
+
+/** El estado actual no admite el paso pedido. */
+function rejectState(message: string): never {
+  throw new ConvexError({ code: CONFLICT_ERROR_CODE, message });
+}
+
 /**
- * Envío de una solicitud tal como lo recibe el borde: la forma completa de
- * TI2-141 o la forma anterior, solo con el texto de necesidades de acceso,
- * que se conserva mientras Web y Mobile migran. Nunca las dos a la vez.
+ * Envío de una solicitud tal como lo recibe el borde. En la forma completa de
+ * TI2-141, `accessNeeds` es la lista de necesidades de `AccompanimentRequestContent`;
+ * en la forma anterior es el texto unido y no viaja ningún otro campo. La
+ * forma anterior se conserva mientras Web y Mobile migran.
  */
 export type RegisterRequestInput = {
-  readonly accessNeeds?: string;
-} & Partial<RequestSubmissionInput>;
+  readonly accessNeeds?: string | readonly AccessNeed[];
+} & Partial<Omit<RequestSubmission, "accessNeeds">>;
 
 /** Campos que solo existen en la forma completa. */
 const FULL_FORM_FIELDS = [
   "needSummary",
   "expectedOutcome",
-  "accessNeedSelections",
   "otherAccessNeed",
   "modalityPreference",
   "generalAvailability",
@@ -68,11 +92,11 @@ const FULL_FORM_FIELDS = [
 ] as const;
 
 /** La forma completa con todos sus campos obligatorios, o el error que indica qué falta. */
-function toFullSubmission(input: RegisterRequestInput): RequestSubmissionInput {
+function toFullSubmission(input: RegisterRequestInput): RequestSubmission {
   const {
     needSummary,
     expectedOutcome,
-    accessNeedSelections,
+    accessNeeds,
     otherAccessNeed,
     modalityPreference,
     generalAvailability,
@@ -82,18 +106,19 @@ function toFullSubmission(input: RegisterRequestInput): RequestSubmissionInput {
   if (
     needSummary === undefined ||
     expectedOutcome === undefined ||
-    accessNeedSelections === undefined ||
+    accessNeeds === undefined ||
+    typeof accessNeeds === "string" ||
     modalityPreference === undefined ||
     generalAvailability === undefined ||
     preferredAccessibleInformationChannel === undefined ||
     idempotencyKey === undefined
   ) {
-    throw new Error("Faltan datos de la solicitud");
+    rejectFields("Faltan datos de la solicitud");
   }
   return {
     needSummary,
     expectedOutcome,
-    accessNeedSelections,
+    accessNeeds,
     ...(otherAccessNeed === undefined ? {} : { otherAccessNeed }),
     modalityPreference,
     generalAvailability,
@@ -120,14 +145,11 @@ export async function registerRequest(
   input: RegisterRequestInput,
 ) {
   const student = await requireActiveStudent(ctx, identity);
-  const usesFullForm = FULL_FORM_FIELDS.some((field) => input[field] !== undefined);
-  if (usesFullForm && input.accessNeeds !== undefined) {
-    throw new Error("Envía las necesidades de acceso como lista o como texto, no de ambas formas");
-  }
+  const { accessNeeds } = input;
   const requestId =
-    input.accessNeeds === undefined
-      ? await registerFullRequest(ctx, student._id, toFullSubmission(input))
-      : await registerLegacyRequest(ctx, student._id, input.accessNeeds);
+    typeof accessNeeds === "string"
+      ? await registerLegacyRequest(ctx, student._id, accessNeeds, input)
+      : await registerFullRequest(ctx, student._id, toFullSubmission(input));
   const row = await getRequestById(ctx, requestId);
   if (row === null) deny();
   return toAccompanimentRequest({
@@ -142,15 +164,17 @@ export async function registerRequest(
 async function registerFullRequest(
   ctx: MutationCtx,
   studentId: Id<"users">,
-  input: RequestSubmissionInput,
+  input: RequestSubmission,
 ): Promise<Id<"requests">> {
   const submission = toRequestSubmission(input);
-  if (submission.status === "error") throw new Error(submission.error.message);
-  const { generalAvailability, accessNeedSelections } = submission.data;
+  if (submission.status === "error") rejectFields(submission.error.message);
+  const { accessNeeds, generalAvailability, ...content } = submission.data;
   const { requestId } = await insertReceivedRequestOnce(ctx, {
-    ...submission.data,
-    // El esquema tipa los arreglos como mutables; el dominio, de solo lectura.
-    accessNeedSelections: [...accessNeedSelections],
+    ...content,
+    // La lista del contrato se persiste como `accessNeedSelections` (TI2-135),
+    // y el repositorio deriva de ella el texto unido. El esquema tipa los
+    // arreglos como mutables; el dominio, de solo lectura.
+    accessNeedSelections: [...accessNeeds],
     generalAvailability: {
       ...generalAvailability,
       preferredWeekdays: [...generalAvailability.preferredWeekdays],
@@ -165,7 +189,15 @@ async function registerLegacyRequest(
   ctx: MutationCtx,
   studentId: Id<"users">,
   raw: string,
+  input: RegisterRequestInput,
 ): Promise<Id<"requests">> {
+  // Con el texto unido no viajan los campos de la forma completa: juntar las dos
+  // guardaría una solicitud a medias.
+  if (FULL_FORM_FIELDS.some((field) => input[field] !== undefined)) {
+    rejectFields(
+      "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud",
+    );
+  }
   const accessNeeds = toAccessNeedsText(raw);
   if (accessNeeds === null) {
     throw new Error("Se requiere describir la necesidad de acceso");
@@ -391,9 +423,9 @@ export async function cancelRequest(
   });
   if (result.status === "rejected") {
     if (result.cause === "reason_required") {
-      throw new Error("Se requiere el motivo para cancelar la solicitud");
+      rejectFields("Se requiere el motivo para cancelar la solicitud");
     }
-    throw new Error("La solicitud no admite la cancelación en su estado actual");
+    rejectState("La solicitud no admite la cancelación en su estado actual");
   }
   await setRequestStatus(ctx, input.requestId, result.change.to);
   await logRequestTransition(ctx, {
@@ -444,9 +476,9 @@ export async function closeRequestWithoutAccompaniment(
   });
   if (result.status === "rejected") {
     if (result.cause === "reason_required") {
-      throw new Error("Se requiere el motivo para cerrar la solicitud sin acompañamiento");
+      rejectFields("Se requiere el motivo para cerrar la solicitud sin acompañamiento");
     }
-    throw new Error("La solicitud no admite el cierre sin acompañamiento en su estado actual");
+    rejectState("La solicitud no admite el cierre sin acompañamiento en su estado actual");
   }
   // La política ya exigió el motivo; sin él no hay razón que mostrar.
   const closureReason = result.change.reason;
@@ -490,7 +522,7 @@ export async function respondToInformationRequest(
   // Solo la espera admite respuesta: `received -> under_review` existe en la
   // tabla, pero es la toma del Profesional, no un paso del Estudiante.
   if (row.status !== "awaiting_information_or_acceptance") {
-    throw new Error("La solicitud no admite una respuesta en su estado actual");
+    rejectState("La solicitud no admite una respuesta en su estado actual");
   }
   const result = transitionRequest({
     from: row.status,
@@ -501,14 +533,14 @@ export async function respondToInformationRequest(
   });
   if (result.status === "rejected") {
     if (result.cause === "reason_required") {
-      throw new Error("Se requiere la respuesta a la información pedida");
+      rejectFields("Se requiere la respuesta a la información pedida");
     }
-    throw new Error("La solicitud no admite una respuesta en su estado actual");
+    rejectState("La solicitud no admite una respuesta en su estado actual");
   }
   const response = result.change.reason;
   if (response === undefined) deny();
   if (response.length > REQUEST_RESPONSE_MAX_LENGTH) {
-    throw new Error(
+    rejectFields(
       `La respuesta supera el máximo permitido (${REQUEST_RESPONSE_MAX_LENGTH} caracteres)`,
     );
   }

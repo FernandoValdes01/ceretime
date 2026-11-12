@@ -265,7 +265,7 @@ describe("toRequestSubmission (TI2-141)", () => {
   const valid = {
     needSummary: " Necesidad ficticia ",
     expectedOutcome: " Resultado ficticio ",
-    accessNeedSelections: [{ id: " written ", label: " Comunicación escrita " }],
+    accessNeeds: [{ id: " written ", label: " Comunicación escrita " }],
     otherAccessNeed: "   ",
     modalityPreference: "inPerson",
     generalAvailability: { preferredWeekdays: [0, 6] },
@@ -279,7 +279,7 @@ describe("toRequestSubmission (TI2-141)", () => {
       data: {
         needSummary: "Necesidad ficticia",
         expectedOutcome: "Resultado ficticio",
-        accessNeedSelections: [{ id: "written", label: "Comunicación escrita" }],
+        accessNeeds: [{ id: "written", label: "Comunicación escrita" }],
         modalityPreference: "inPerson",
         generalAvailability: { preferredWeekdays: [0, 6] },
         preferredAccessibleInformationChannel: "Correo",
@@ -291,7 +291,7 @@ describe("toRequestSubmission (TI2-141)", () => {
   test("el texto libre basta como necesidad cuando no hay selecciones", () => {
     const result = toRequestSubmission({
       ...valid,
-      accessNeedSelections: [],
+      accessNeeds: [],
       otherAccessNeed: "Persona de apoyo",
     });
     expect(result).toMatchObject({ status: "ok", data: { otherAccessNeed: "Persona de apoyo" } });

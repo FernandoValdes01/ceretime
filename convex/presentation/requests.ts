@@ -84,15 +84,15 @@ type PublicMinimizedRequestPage = Infer<typeof minimizedRequestPageValidator>;
 
 /**
  * Argumentos del envío (TI2-141). Convex exige un objeto, así que las dos
- * formas comparten campos opcionales y Aplicación decide cuál llegó: la
- * completa, o la anterior solo con `accessNeeds`. Sin RUT, diagnóstico,
- * certificados ni área interna: el validador rechaza cualquier campo extra.
+ * formas comparten campos opcionales y Aplicación decide cuál llegó por la
+ * forma de `accessNeeds`: lista en la completa (`AccompanimentRequestContent`)
+ * o texto en la anterior. Sin RUT, diagnóstico, certificados ni área interna:
+ * el validador rechaza cualquier campo extra.
  */
 const createRequestArgs = {
-  accessNeeds: v.optional(v.string()),
+  accessNeeds: v.optional(v.union(v.string(), v.array(accessNeedSelectionValidator))),
   needSummary: v.optional(v.string()),
   expectedOutcome: v.optional(v.string()),
-  accessNeedSelections: v.optional(v.array(accessNeedSelectionValidator)),
   otherAccessNeed: v.optional(v.string()),
   modalityPreference: v.optional(modalityUnion),
   generalAvailability: v.optional(generalAvailabilityValidator),

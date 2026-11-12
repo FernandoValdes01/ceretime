@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
 import type { FunctionReturnType } from "convex/server";
+import { ConvexError } from "convex/values";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
@@ -1519,7 +1520,7 @@ test("TI2-141: la razón de cierre llega al detalle del Estudiante y los textos 
 const FULL_SUBMISSION = {
   needSummary: "  Necesito apoyo para seguir las clases en línea  ",
   expectedOutcome: "Acordar ajustes de comunicación con mis docentes",
-  accessNeedSelections: [
+  accessNeeds: [
     { id: "written-communication", label: "Comunicación escrita" },
     { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
   ],
@@ -1570,7 +1571,7 @@ test("TI2-141: el envío completo guarda todos sus campos recortados y su proced
   expect(row).toMatchObject({
     needSummary: "Necesito apoyo para seguir las clases en línea",
     expectedOutcome: FULL_SUBMISSION.expectedOutcome,
-    accessNeedSelections: FULL_SUBMISSION.accessNeedSelections,
+    accessNeedSelections: FULL_SUBMISSION.accessNeeds,
     otherAccessNeed: FULL_SUBMISSION.otherAccessNeed,
     modalityPreference: "online",
     generalAvailability: FULL_SUBMISSION.generalAvailability,
@@ -1631,26 +1632,20 @@ test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas invá
     [{ needSummary: "a".repeat(2001) }, "La descripción de la necesidad supera el máximo"],
     [{ expectedOutcome: "" }, "Indica qué esperas de CERETI."],
     [{ expectedOutcome: "a".repeat(2001) }, "El resultado esperado supera el máximo"],
-    [
-      { accessNeedSelections: [], otherAccessNeed: " " },
-      "Se requiere describir la necesidad de acceso.",
-    ],
+    [{ accessNeeds: [], otherAccessNeed: " " }, "Se requiere describir la necesidad de acceso."],
     [
       {
-        accessNeedSelections: [
+        accessNeeds: [
           { id: "a", label: "Uno" },
           { id: "a", label: "Otro" },
         ],
       },
       "Una necesidad de acceso está repetida.",
     ],
-    [
-      { accessNeedSelections: [{ id: "a", label: "  " }] },
-      "Cada necesidad de acceso necesita su nombre.",
-    ],
+    [{ accessNeeds: [{ id: "a", label: "  " }] }, "Cada necesidad de acceso necesita su nombre."],
     [
       {
-        accessNeedSelections: Array.from({ length: 21 }, (_, index) => ({
+        accessNeeds: Array.from({ length: 21 }, (_, index) => ({
           id: `n${index}`,
           label: `Necesidad ${index}`,
         })),
@@ -1683,7 +1678,8 @@ test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas invá
     [{ idempotencyKey: "  " }, "La clave del envío debe tener entre 1 y 128"],
     [{ idempotencyKey: "a".repeat(129) }, "La clave del envío debe tener entre 1 y 128"],
     [{ idempotencyKey: undefined }, "Faltan datos de la solicitud"],
-    [{ accessNeeds: "Texto suelto" }, "no de ambas formas"],
+    [{ accessNeeds: "Texto suelto" }, "como lista junto con los demás datos"],
+    [{ accessNeeds: undefined }, "Faltan datos de la solicitud"],
   ];
   for (const [changes, message] of cases) {
     await expect(send(changes)).rejects.toThrow(message);
@@ -1719,4 +1715,67 @@ test("TI2-141: el envío no admite RUT, diagnóstico ni campos fuera del contrat
     ).rejects.toThrow("No autorizado");
   }
   expect(await requestsOf(t, studentId)).toHaveLength(0);
+});
+
+/** Datos del `ConvexError` con que se rechazó la promesa. */
+async function publicErrorOf(promise: Promise<unknown>) {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof ConvexError) return error.data as unknown;
+    throw error;
+  }
+  throw new Error("Se esperaba un rechazo");
+}
+
+test("TI2-141: los rechazos de las operaciones nuevas llegan como error público con código", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-err-est", "student");
+  const proId = await seedProfile(t, "ti141-err-pro", "professional");
+  const student = identityOf("ti141-err-est");
+  const professional = identityOf("ti141-err-pro");
+  const waiting = await seedRequestIn(t, studentId, "awaiting_information_or_acceptance");
+  const accepted = await seedRequestIn(t, studentId, "accepted");
+  await seedTake(t, waiting, proId);
+  await seedTake(t, accepted, proId);
+
+  // Un campo que corregir: `request_fields_invalid` con el mensaje específico
+  for (const [promise, message] of [
+    [cancelAs(t, student, waiting, " "), "Se requiere el motivo para cancelar la solicitud"],
+    [
+      closeAs(t, professional, waiting, ""),
+      "Se requiere el motivo para cerrar la solicitud sin acompañamiento",
+    ],
+    [respondAs(t, student, waiting, " "), "Se requiere la respuesta a la información pedida"],
+    [
+      t.withIdentity(student).mutation(api.presentation.requests.createRequest, {
+        ...FULL_SUBMISSION,
+        needSummary: "",
+      }),
+      "Describe la barrera o necesidad.",
+    ],
+  ] as const) {
+    expect(await publicErrorOf(promise)).toEqual({ code: "request_fields_invalid", message });
+  }
+
+  // Un estado que no admite el paso: `conflict` con el mensaje específico
+  for (const [promise, message] of [
+    [
+      cancelAs(t, student, accepted, "Motivo"),
+      "La solicitud no admite la cancelación en su estado actual",
+    ],
+    [
+      closeAs(t, professional, accepted, "Motivo"),
+      "La solicitud no admite el cierre sin acompañamiento en su estado actual",
+    ],
+    [
+      respondAs(t, student, accepted, "Respuesta"),
+      "La solicitud no admite una respuesta en su estado actual",
+    ],
+  ] as const) {
+    expect(await publicErrorOf(promise)).toEqual({ code: "conflict", message });
+  }
+
+  // La denegación conserva la forma de Sprint 1
+  expect(await publicErrorOf(cancelAs(t, professional, waiting, "Motivo"))).toBe("No autorizado");
 });
