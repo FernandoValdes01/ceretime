@@ -72,11 +72,6 @@ export const REQUEST_STATE_LABELS: Record<RequestState, string> = {
   cancelled: "Cancelada",
 };
 
-/** Verdadero para los estados operativos de Sprint 1: los abiertos y `accepted`. */
-export function isSprint1RequestState(state: RequestState): state is Sprint1RequestState {
-  return (SPRINT_1_REQUEST_STATES as readonly RequestState[]).includes(state);
-}
-
 /**
  * Recibe `string` porque valida lo que trae una fila leída: un literal fuera
  * de la lista es corrupción o un estado sin reglas, como `referred`.
