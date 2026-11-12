@@ -257,6 +257,7 @@ export {
   FOLLOW_UP_TEXT_MAX_LENGTH,
   FOLLOW_UP_VIEW_VALUES,
   isFollowUpResponsible,
+  isFollowUpRetry,
   isFollowUpTaskStatus,
   toFollowUpProjection,
   toSharedFollowUpProjection,

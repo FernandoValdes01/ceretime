@@ -16,6 +16,10 @@
  * que la proyección compartida con el estudiante la omita. La persistencia
  * vive en el repositorio de seguimiento (TI2-118); sin política de acceso
  * (TI2-127) y sin segunda tabla de notas.
+ *
+ * El primer guardado confirma el registro (TI2-146): desde entonces solo se
+ * admite repetirlo idéntico, como reintento. `isFollowUpRetry` decide qué
+ * cuenta como repetición; editar, reemplazar o eliminar no tiene vía.
  */
 
 import { APPOINTMENT_STATUS_VALUES, type AppointmentStatus } from "../appointments/appointment";
@@ -363,6 +367,55 @@ export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpVali
       version: FOLLOW_UP_CONTRACT_VERSION,
     },
   };
+}
+
+/** Mismas entradas en el mismo orden, comparando identificador y contenido. */
+function sameEntries<T extends { readonly id: string }>(
+  confirmed: readonly T[],
+  incoming: readonly T[],
+  sameContent: (left: T, right: T) => boolean,
+): boolean {
+  return (
+    confirmed.length === incoming.length &&
+    confirmed.every((entry, index) => {
+      const other = incoming[index];
+      return other !== undefined && entry.id === other.id && sameContent(entry, other);
+    })
+  );
+}
+
+/**
+ * Verdadero cuando el guardado repite el registro ya confirmado (TI2-146).
+ *
+ * Un registro confirmado no se edita: la única escritura posterior que se
+ * acepta es el reintento de la misma constancia, que no escribe nada. Compara
+ * los dos registros ya validados, así los espacios que el validador recorta no
+ * cuentan como cambio; el orden de acuerdos y tareas sí cuenta, porque es el
+ * que se guardó. Cualquier diferencia, incluida la nota interna, es un intento
+ * de edición.
+ */
+export function isFollowUpRetry(confirmed: FollowUpRecord, incoming: FollowUpRecord): boolean {
+  return (
+    confirmed.appointmentId === incoming.appointmentId &&
+    confirmed.accompanimentId === incoming.accompanimentId &&
+    confirmed.nextSteps === incoming.nextSteps &&
+    confirmed.suggestedNextAppointmentDate === incoming.suggestedNextAppointmentDate &&
+    confirmed.internalNote === incoming.internalNote &&
+    confirmed.version === incoming.version &&
+    sameEntries(
+      confirmed.agreements,
+      incoming.agreements,
+      (left, right) => left.description === right.description,
+    ) &&
+    sameEntries(
+      confirmed.tasks,
+      incoming.tasks,
+      (left, right) =>
+        left.description === right.description &&
+        left.responsible === right.responsible &&
+        left.status === right.status,
+    )
+  );
 }
 
 /**
