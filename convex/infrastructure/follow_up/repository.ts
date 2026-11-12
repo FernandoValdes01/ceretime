@@ -113,6 +113,35 @@ async function insertEntries(
   }
 }
 
+/** Registro guardado sin la nota: acuerdos y tareas en el orden en que se guardaron. */
+async function toRecordWithoutNote(
+  ctx: DbReader,
+  row: Doc<"followUpRecords">,
+  accompanimentId: Id<"accompaniments">,
+): Promise<Omit<FollowUpRecord, "internalNote">> {
+  const agreements = await takeAgreementRows(ctx, row._id);
+  const tasks = await takeTaskRows(ctx, row._id);
+  return {
+    appointmentId: row.appointmentId,
+    accompanimentId,
+    agreements: agreements.map((agreement) => ({
+      id: agreement.entryId,
+      description: agreement.description,
+    })),
+    tasks: tasks.map((task) => ({
+      id: task.entryId,
+      description: task.description,
+      responsible: task.responsible,
+      status: task.status,
+    })),
+    nextSteps: row.nextSteps,
+    ...(row.suggestedNextAppointmentDate === undefined
+      ? {}
+      : { suggestedNextAppointmentDate: row.suggestedNextAppointmentDate }),
+    version: row.version,
+  };
+}
+
 /**
  * Registro confirmado con su nota, solo para compararlo con un reintento.
  *
@@ -192,35 +221,6 @@ export async function saveFollowUpRecord(
   });
   await insertEntries(ctx, recordId, record);
   return { status: "saved", recordId, created: true };
-}
-
-/** Registro guardado sin la nota: acuerdos y tareas en el orden en que se guardaron. */
-async function toRecordWithoutNote(
-  ctx: DbReader,
-  row: Doc<"followUpRecords">,
-  accompanimentId: Id<"accompaniments">,
-): Promise<Omit<FollowUpRecord, "internalNote">> {
-  const agreements = await takeAgreementRows(ctx, row._id);
-  const tasks = await takeTaskRows(ctx, row._id);
-  return {
-    appointmentId: row.appointmentId,
-    accompanimentId,
-    agreements: agreements.map((agreement) => ({
-      id: agreement.entryId,
-      description: agreement.description,
-    })),
-    tasks: tasks.map((task) => ({
-      id: task.entryId,
-      description: task.description,
-      responsible: task.responsible,
-      status: task.status,
-    })),
-    nextSteps: row.nextSteps,
-    ...(row.suggestedNextAppointmentDate === undefined
-      ? {}
-      : { suggestedNextAppointmentDate: row.suggestedNextAppointmentDate }),
-    version: row.version,
-  };
 }
 
 /**
