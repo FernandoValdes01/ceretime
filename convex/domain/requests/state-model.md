@@ -14,6 +14,7 @@ stateDiagram-v2
     under_review --> awaiting_information_or_acceptance : exige motivo
     under_review --> accepted
     awaiting_information_or_acceptance --> accepted
+    awaiting_information_or_acceptance --> under_review : exige motivo
 
     received --> cancelled : exige motivo
     under_review --> cancelled : exige motivo
@@ -31,7 +32,7 @@ stateDiagram-v2
     class closed_without_accompaniment,cancelled closure
 ```
 
-Las transiciones del diagrama son exactamente las de `SPRINT_1_REQUEST_TRANSITIONS` y `CLOSURE_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido, incluidos los saltos hacia adelante, los retrocesos y cualquier salida de un estado terminal.
+Las transiciones del diagrama son exactamente las de `SPRINT_1_REQUEST_TRANSITIONS`, `RESPONSE_REQUEST_TRANSITIONS` y `CLOSURE_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido, incluidos los saltos hacia adelante, los demás retrocesos y cualquier salida de un estado terminal.
 
 [`state_model.test.ts`](./state_model.test.ts) lee este archivo y falla si el diagrama o las tablas dejan de coincidir con `state.ts` y `transitions.ts`; si editas cualquiera de ellos, corre `bunx vitest run convex/domain/requests`.
 
@@ -72,6 +73,18 @@ Los orígenes son una decisión provisional de TI2-85: el documento de requerimi
 El motivo es obligatorio en los cinco pasos. Al cerrar es la "razón comprensible" que pide la especificación del prototipo; al cancelar deja trazado por qué terminó la solicitud. Esta regla es de solicitudes y no se mezcla con la de cancelar una atención, donde CERETI debe dar motivo y para el estudiante es opcional.
 
 La columna "Quién lo intenta" la exige la capa de aplicación (`cancelRequest` y `closeRequestWithoutAccompaniment` en [`commands.ts`](../../application/requests/commands.ts)), no esta tabla: el dominio decide qué pares existen y si falta el motivo.
+
+## Respuesta del Estudiante (TI2-141)
+
+| Origen                               | Destino        | Quién lo intenta                 | Exige motivo |
+| ------------------------------------ | -------------- | -------------------------------- | ------------ |
+| `awaiting_information_or_acceptance` | `under_review` | Estudiante dueño, cuenta vigente | Sí           |
+
+Cuando el Profesional pide información, la solicitud queda en espera. El Estudiante responde y la solicitud vuelve a revisión, para que quien la tomó la retome: aceptarla, pedir más información o cerrarla. Es el único retroceso del modelo. El motivo es la respuesta misma, por eso es obligatorio; queda en el historial de cambios con el Estudiante como actor, sin un campo nuevo en la solicitud. La respuesta tiene un tope de `REQUEST_RESPONSE_MAX_LENGTH` caracteres, que aplica la capa de aplicación.
+
+El par `received -> under_review` también existe en las tablas, pero es la toma del Profesional. Que el Estudiante solo pueda responder desde la espera lo exige `respondToInformationRequest` en [`commands.ts`](../../application/requests/commands.ts), igual que la columna "Quién lo intenta".
+
+El detalle de la solicitud (`getRequest`) entrega al Estudiante dueño y al Profesional con toma lo pedido mientras la solicitud espera respuesta (`informationRequest`), la última respuesta (`informationResponse`) y la razón de cierre (`closureReason`). Son textos libres: no viajan en los listados ni en la bandeja.
 
 ## Política de transición
 
@@ -136,7 +149,7 @@ Lo que estas pruebas no cubren, porque vive fuera del dominio: quién está auto
 
 Una transición aplicada deja dos rastros distintos, y no deben confundirse.
 
-El **historial de cambios de estado** es parte de la solicitud. Cada transición aplicada produce una entrada con origen, destino, actor, instante y, cuando lo hubo, el motivo; la capa de aplicación la guarda en `requestTransitions`, junto al estado resultante y en la misma transacción, como hacen los casos de uso de TI2-9. El actor es el Profesional o, al cancelar, el propio Estudiante. El motivo se conserva ahí porque le explica al estudiante qué información falta o por qué se cerró o, al cancelar, deja trazado por qué el Estudiante terminó la solicitud, y queda protegido por el mismo control de acceso que la solicitud.
+El **historial de cambios de estado** es parte de la solicitud. Cada transición aplicada produce una entrada con origen, destino, actor, instante y, cuando lo hubo, el motivo; la capa de aplicación la guarda en `requestTransitions`, junto al estado resultante y en la misma transacción, como hacen los casos de uso de TI2-9. El actor es el Profesional o, al cancelar o responder, el propio Estudiante. El motivo se conserva ahí porque le explica al estudiante qué información falta o por qué se cerró o, al cancelar, deja trazado por qué el Estudiante terminó la solicitud, y queda protegido por el mismo control de acceso que la solicitud.
 
 El **evento de auditoría** es lo que exige RD-03: registra solo actor, fecha, acción, recurso y resultado, sin contenido sensible, como piden también RF-31, RN-19 y RNF-11. **El motivo no se copia a la bitácora de auditoría**: es texto libre y puede traer necesidades de acceso u otros datos sensibles. El evento de auditoría de las transiciones de solicitud todavía no tiene tabla y no se crea en este issue.
 
@@ -152,4 +165,4 @@ Quien escribe el motivo no debe incluir diagnósticos ni etiquetas clínicas, po
 | TI2-24  | La apertura única del acompañamiento: leer y actualizar el estado persistido de forma atómica, según CA-04.                          |
 | TI2-22  | Entregado: el diagrama y las tablas atados al código, las pruebas propias de los estados y de la tabla como grafo, y este documento. |
 | TI2-85  | Entregado: los cierres sin acompañamiento en dominio y aplicación, con sus pruebas.                                                  |
-| TI2-141 | Entregado: la entrada pública de cancelar y cerrar, y los siete estados en el contrato público.                                      |
+| TI2-141 | Entregado: la entrada pública de cancelar y cerrar, los siete estados en el contrato público y la respuesta del Estudiante.          |

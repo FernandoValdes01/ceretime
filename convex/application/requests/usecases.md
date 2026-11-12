@@ -29,6 +29,12 @@ Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la
 
 `listOwnRequests`, `listAuthorizedRequests` y `getRequest` entregan las solicitudes canceladas o cerradas con su estado: el contrato público declara los siete estados (ver [`state-model.md`](../../domain/requests/state-model.md#contrato-público)).
 
+## Respuesta del Estudiante (TI2-141)
+
+`presentation/requests.respondToInformationRequest` recibe `requestId` y `response`. Solo el Estudiante dueño con cuenta vigente, y solo mientras la solicitud está en `awaiting_information_or_acceptance`: la devuelve a `under_review` y guarda la respuesta como motivo del cambio, con actor y fecha, en la misma transacción. Rechazos con mensaje específico: "Se requiere la respuesta a la información pedida", "La respuesta supera el máximo permitido (2000 caracteres)" y "La solicitud no admite una respuesta en su estado actual". Una solicitud ajena o inexistente recibe la denegación genérica.
+
+`getRequest` entrega además `informationRequest` (lo pedido, solo mientras espera respuesta), `informationResponse` (la última respuesta) y `closureReason`, al Estudiante dueño y al Profesional con toma.
+
 ## Alcance explícito
 
 - El Profesional solo opera solicitudes con toma activa a su nombre; la toma es manual y queda auditada (quién y cuándo). Sin toma no hay acceso.
