@@ -452,24 +452,27 @@ describe("TI2-146 API: denegaciones y estados de la atención", () => {
     );
   });
 
-  test("un acompañamiento cerrado no admite guardar, pero su historial se sigue leyendo", async () => {
-    const t = convexTest(schema, modules);
-    const scenario = await seedScenario(t, "closed");
-    const confirmed = await seedAppointment(t, scenario);
-    const pending = await seedAppointment(t, scenario, { startsAt: MONDAY_9H + DAY });
-    await save(scenario, "professional", confirmed, followUpContent());
-    await t.run(async (ctx) => {
-      await ctx.db.patch(scenario.accompanimentId, { status: "closed" });
-    });
+  test.each(["closed", "paused"] as const)(
+    "un acompañamiento %s no admite guardar, pero su historial se sigue leyendo",
+    async (status) => {
+      const t = convexTest(schema, modules);
+      const scenario = await seedScenario(t, `inactive-${status}`);
+      const confirmed = await seedAppointment(t, scenario);
+      const pending = await seedAppointment(t, scenario, { startsAt: MONDAY_9H + DAY });
+      await save(scenario, "professional", confirmed, followUpContent());
+      await t.run(async (ctx) => {
+        await ctx.db.patch(scenario.accompanimentId, { status });
+      });
 
-    expect(
-      await publicErrorData(save(scenario, "professional", pending, followUpContent())),
-    ).toEqual(UNAUTHORIZED);
-    expect(await read(scenario, "professional", confirmed)).toMatchObject({
-      appointmentId: confirmed,
-      view: "professional",
-    });
-  });
+      expect(
+        await publicErrorData(save(scenario, "professional", pending, followUpContent())),
+      ).toEqual(UNAUTHORIZED);
+      expect(await read(scenario, "professional", confirmed)).toMatchObject({
+        appointmentId: confirmed,
+        view: "professional",
+      });
+    },
+  );
 
   test("una atención inexistente, de otra tabla o sin forma responde unauthorized al guardar y al leer", async () => {
     const t = convexTest(schema, modules);
@@ -556,6 +559,23 @@ describe("TI2-146 API: denegaciones y estados de la atención", () => {
     ).toEqual(
       conflict(
         "La fecha sugerida debe ser una fecha válida con formato AAAA-MM-DD. El seguimiento no admite diagnósticos, evaluaciones psicológicas ni documentos clínicos.",
+      ),
+    );
+    expect(await readTables(t)).toEqual({ records: [], agreements: [], tasks: [], notes: [] });
+  });
+
+  test("una nota enviada vacía se rechaza: para no guardar nota se omite la clave", async () => {
+    const t = convexTest(schema, modules);
+    const scenario = await seedScenario(t, "empty-note");
+    const appointmentId = await seedAppointment(t, scenario);
+
+    expect(
+      await publicErrorData(
+        save(scenario, "professional", appointmentId, followUpContent({ internalNote: "   " })),
+      ),
+    ).toEqual(
+      conflict(
+        "Hay textos vacíos: completa los acuerdos, las tareas, los próximos pasos y, si la incluyes, la nota interna.",
       ),
     );
     expect(await readTables(t)).toEqual({ records: [], agreements: [], tasks: [], notes: [] });
