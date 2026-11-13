@@ -273,7 +273,7 @@ export async function findFollowUpRecordByAppointment(
  * vacía. Solo recorre el índice del acompañamiento, así que no mezcla
  * historiales.
  */
-export async function paginateFollowUpRecordsByAccompaniment(
+async function paginateFollowUpRecordsByAccompaniment(
   ctx: DbReader,
   accompanimentId: string,
   page: { readonly limit: number; readonly cursor: string | null },
