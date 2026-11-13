@@ -4,6 +4,11 @@ import { internalMutation, internalQuery, type MutationCtx } from "../_generated
 import { AUTHORIZATION_DENIED_MESSAGE } from "../application/authorization/authorize";
 import { LEGACY_REQUEST_PROVENANCE_CHANNEL } from "../domain/requests/request";
 import { findProfileByTokenIdentifier } from "../infrastructure/accounts/repository";
+import {
+  appliedAccessNeedsFor,
+  findAppointmentProfessional,
+  syncAppointmentProfessional,
+} from "../infrastructure/appointments/repository";
 
 /**
  * Migración de la database mínima (TI2-17): trazabilidad de asignaciones.
@@ -192,6 +197,108 @@ export const migrateLegacyRequests = internalMutation({
     return {
       scanned: result.page.length,
       migrated,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      migratedIds,
+    };
+  },
+});
+
+/**
+ * Migración de atenciones (TI2-138): participantes y necesidades aplicadas.
+ *
+ * Las filas de `appointments` anteriores a TI2-138 no tienen
+ * `appliedAccessNeeds` ni una fila en `appointmentProfessionals`. La migración
+ * copia a cada atención la necesidad vigente del acompañamiento con
+ * `accessNeedsFromLines`, el único dato disponible: desde ese momento la copia
+ * queda congelada y cambiar las necesidades actuales ya no la altera. También
+ * crea la fila del profesional responsable para que el índice de cruces cubra
+ * el historial. No inventa apoyos en línea ni referencia privada: esos campos
+ * siguen ausentes hasta que el caso de uso que los obtiene los escriba.
+ *
+ * Es idempotente: solo escribe lo que falta y no toca las filas ya migradas.
+ * La ejecuta un Administrador vigente y el barrido es paginado, repitiendo
+ * cada llamada con el `continueCursor` devuelto hasta que `isDone` sea
+ * verdadero. El entorno queda apto cuando un barrido completo de auditoría
+ * informa `missingAppliedAccessNeeds` y `missingParticipants` en cero. Opera
+ * con datos ficticios fuera de producción.
+ */
+export const auditAppointmentParticipants = internalQuery({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const result = await ctx.db.query("appointments").paginate(args.paginationOpts);
+
+    let missingAppliedAccessNeeds = 0;
+    let missingParticipants = 0;
+    const sampleLegacyIds = [];
+    for (const row of result.page) {
+      const needsMissing = row.appliedAccessNeeds === undefined;
+      const participant = await findAppointmentProfessional(ctx, row._id, row.professionalId);
+      if (needsMissing) missingAppliedAccessNeeds += 1;
+      if (participant === null) missingParticipants += 1;
+      if (
+        (needsMissing || participant === null) &&
+        sampleLegacyIds.length < MIGRATION_SAMPLE_SIZE
+      ) {
+        sampleLegacyIds.push(row._id);
+      }
+    }
+    return {
+      scanned: result.page.length,
+      missingAppliedAccessNeeds,
+      missingParticipants,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      sampleLegacyIds,
+    };
+  },
+});
+
+/**
+ * Completa las atenciones de la página: copia la necesidad vigente del
+ * acompañamiento cuando falta y crea la fila del profesional responsable. Un
+ * acompañamiento inexistente no se rellena con una lista vacía inventada: la
+ * fila queda sin `appliedAccessNeeds` y se informa en `unresolvedNeeds`.
+ */
+export const migrateLegacyAppointments = internalMutation({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    await requireAdminOperator(ctx);
+
+    const result = await ctx.db.query("appointments").paginate(args.paginationOpts);
+    let migratedNeeds = 0;
+    let createdParticipants = 0;
+    let unresolvedNeeds = 0;
+    const migratedIds = [];
+    for (const row of result.page) {
+      let touched = false;
+      if (row.appliedAccessNeeds === undefined) {
+        const needs = await appliedAccessNeedsFor(ctx, row.accompanimentId);
+        if (needs === undefined) {
+          unresolvedNeeds += 1;
+        } else {
+          await ctx.db.patch(row._id, { appliedAccessNeeds: needs });
+          migratedNeeds += 1;
+          touched = true;
+        }
+      }
+      const inserted = await syncAppointmentProfessional(ctx, {
+        appointmentId: row._id,
+        professionalId: row.professionalId,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+      });
+      if (inserted) {
+        createdParticipants += 1;
+        touched = true;
+      }
+      if (touched && migratedIds.length < MIGRATION_SAMPLE_SIZE) migratedIds.push(row._id);
+    }
+    return {
+      scanned: result.page.length,
+      migratedNeeds,
+      createdParticipants,
+      unresolvedNeeds,
       isDone: result.isDone,
       continueCursor: result.continueCursor,
       migratedIds,
