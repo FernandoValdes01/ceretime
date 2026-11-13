@@ -42,7 +42,7 @@ Los listados conservan los cinco campos de la entidad y ya no omiten las solicit
 El detalle suma tres campos opcionales de texto libre, que no viajan en los listados ni en la bandeja:
 
 - `informationRequest`: lo que pidió el Profesional. Solo está mientras la solicitud espera respuesta.
-- `informationResponse`: la última respuesta del Estudiante.
+- `informationResponse`: la respuesta del Estudiante al último pedido. Si el Profesional vuelve a pedir información, la respuesta anterior deja de venir hasta que llegue la nueva, así una pregunta pendiente nunca aparece junto a una respuesta vieja.
 - `closureReason`: la razón de cierre, legible para el Estudiante.
 
 ```json
@@ -67,7 +67,7 @@ El detalle suma tres campos opcionales de texto libre, que no viajan en los list
 | --- | --- | --- |
 | `needSummary` | `string` | Obligatorio, de 1 a 2000 caracteres tras recortar |
 | `expectedOutcome` | `string` | Obligatorio, de 1 a 2000 caracteres tras recortar |
-| `accessNeeds` | `{ id: string, label: string }[]` | Hasta 20, sin repetir `id`, cada `label` de 1 a 200 caracteres |
+| `accessNeeds` | `{ id: string, label: string }[]` | Hasta 20, sin repetir `id`; cada `id` y cada `label` de 1 a 200 caracteres tras recortar |
 | `otherAccessNeed` | `string`, opcional | Texto libre adicional, sin pedir diagnóstico |
 | `modalityPreference` | `"inPerson"` o `"online"` | Obligatorio |
 | `generalAvailability` | `{ preferredWeekdays: number[], preferredTimeRange?: { from: string, to: string } }` | Al menos un día, de 0 (domingo) a 6 (sábado), sin repetir; horario `HH:mm` con inicio antes del fin |
@@ -94,14 +94,18 @@ Las cuatro mutations de «Mutations públicas» rechazan con el contrato común 
 
 | Código | Cuándo | Mensajes |
 | --- | --- | --- |
-| `request_fields_invalid` | Falta un dato o no cumple su regla | Por ejemplo: «Describe la barrera o necesidad.», «Selecciona al menos un día disponible.», «Se requiere el motivo para cancelar la solicitud», «Se requiere la respuesta a la información pedida», «Faltan datos de la solicitud», «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud» |
-| `conflict` | El estado actual no admite el paso | «La solicitud no admite la cancelación en su estado actual», «La solicitud no admite el cierre sin acompañamiento en su estado actual», «La solicitud no admite una respuesta en su estado actual» |
+| `request_fields_invalid` | Falta un dato o no cumple su regla | Por ejemplo: «Describe la barrera o necesidad.», «Selecciona al menos un día disponible.», «Se requiere el motivo para cancelar la solicitud.», «Se requiere la respuesta a la información pedida.», «Faltan datos de la solicitud.», «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.» |
+| `access_needs_empty` | No hay ninguna necesidad seleccionada ni `otherAccessNeed` con texto | «Se requiere describir la necesidad de acceso.» |
+| `access_needs_too_long` | Los nombres seleccionados y `otherAccessNeed`, unidos, superan 2000 caracteres | «Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (2000 caracteres).» |
+| `conflict` | El estado actual no admite el paso | «La solicitud no admite la cancelación en su estado actual.», «La solicitud no admite el cierre sin acompañamiento en su estado actual.», «La solicitud no admite una respuesta en su estado actual.» |
 
 ```json
 { "code": "request_fields_invalid", "message": "Selecciona al menos un día disponible." }
 ```
 
-La denegación conserva la forma de Sprint 1: `ConvexError("No autorizado")`, sin motivo y sin revelar si la solicitud existe. Aplica a identidad ausente, perfil ausente o no vigente, rol ajeno, solicitud ajena o inexistente y toma ausente.
+Los códigos `access_needs_*` son los mismos de Sprint 1, que los clientes ya traducen; el resto de los campos usa `request_fields_invalid`.
+
+La denegación conserva la forma de Sprint 1: `ConvexError("No autorizado")`, con el texto en `error.data` en vez de un objeto, sin motivo y sin revelar si la solicitud existe. Aplica a identidad ausente, perfil ausente o no vigente, rol ajeno, solicitud ajena o inexistente y toma ausente. Todas las operaciones de solicitudes deniegan igual; pasar la denegación al código `unauthorized` del contrato común se hará para todo el módulo a la vez, junto con las operaciones de Sprint 1, en una issue aparte.
 
 La forma anterior de `createRequest` y las operaciones de Sprint 1 siguen rechazando con `Error` y un mensaje en español. Ese mensaje solo llega al cliente en desarrollo: en producción Convex lo reemplaza por «Server Error». Pasarlas al contrato común cambia lo que reciben sus consumidores actuales y queda fuera de TI2-141.
 
@@ -127,8 +131,9 @@ try {
     idempotencyKey,
   });
 } catch (error) {
-  if (error instanceof ConvexError && typeof error.data === "object") {
-    muestraMensaje(error.data.message);
+  if (error instanceof ConvexError) {
+    // La denegación llega como texto; los demás rechazos, como `{ code, message }`.
+    muestraMensaje(typeof error.data === "string" ? error.data : error.data.message);
   }
 }
 ```
