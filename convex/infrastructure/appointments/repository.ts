@@ -185,8 +185,9 @@ export async function listAppointmentProfessionals(
 /**
  * Sincroniza la fila del profesional con la atención: la inserta si falta y
  * copia en todas las filas de la atención la ventana nueva. No borra a otros
- * participantes porque solo los retira el caso de uso que los administra; una
- * atención movida conserva su conjunto y solo actualiza el horario. Devuelve
+ * participantes porque solo los retira el caso de uso que los administra. Al
+ * mover con otro responsable, la fila del anterior no se conserva: la
+ * reemplaza `reassignAppointmentProfessional` antes de sincronizar. Devuelve
  * `true` cuando insertó la fila que faltaba.
  */
 export async function syncAppointmentProfessional(
@@ -212,6 +213,37 @@ export async function syncAppointmentProfessional(
     startsAt: input.startsAt,
     endsAt: input.endsAt,
   });
+  return true;
+}
+
+/**
+ * Cambia el responsable de una atención trasladada sin dejar al anterior como
+ * participante. Su fila pasa a ser la del nuevo profesional; si el nuevo ya
+ * participaba, la fila anterior se retira para no duplicarlo. Así el anterior
+ * deja de figurar en una atención que ya no es suya y no aparece ocupado en un
+ * horario que nunca aceptó. Devuelve `true` cuando encontró la fila anterior.
+ */
+export async function reassignAppointmentProfessional(
+  ctx: MutationCtx,
+  input: {
+    readonly appointmentId: Id<"appointments">;
+    readonly previousProfessionalId: Id<"users">;
+    readonly professionalId: Id<"users">;
+  },
+): Promise<boolean> {
+  if (input.previousProfessionalId === input.professionalId) return false;
+  const previous = await findAppointmentProfessional(
+    ctx,
+    input.appointmentId,
+    input.previousProfessionalId,
+  );
+  if (previous === null) return false;
+  const next = await findAppointmentProfessional(ctx, input.appointmentId, input.professionalId);
+  if (next === null) {
+    await ctx.db.patch(previous._id, { professionalId: input.professionalId });
+  } else {
+    await ctx.db.delete(previous._id);
+  }
   return true;
 }
 
@@ -367,7 +399,14 @@ export async function occupySlotAtomically(
       ...(input.nextStatus === undefined ? {} : { status: input.nextStatus }),
     });
     // La ventana copiada sigue al horario nuevo. Las necesidades aplicadas no
-    // se reescriben: la atención conserva la copia con la que se registró.
+    // se reescriben: la atención conserva la copia con la que se registró. Si
+    // el traslado cambia al responsable, la fila del anterior pasa a ser la
+    // del nuevo: no queda ocupado en un horario que nunca aceptó.
+    await reassignAppointmentProfessional(ctx, {
+      appointmentId: moved._id,
+      previousProfessionalId: moved.professionalId,
+      professionalId: input.professionalId,
+    });
     await syncAppointmentProfessional(ctx, {
       appointmentId: moved._id,
       professionalId: input.professionalId,

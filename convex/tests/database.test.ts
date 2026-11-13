@@ -3670,9 +3670,9 @@ test("TI2-135: la migración de solicitudes avanza por páginas hasta agotar las
  *
  * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
  * que reservar congela las necesidades del acompañamiento, que cambiarlas
- * después no altera la atención, que mover la atención mantiene la ventana de
- * sus participantes y que la migración completa las filas anteriores sin
- * inventar apoyos ni referencia privada.
+ * después no altera la atención, que mover la atención con otro responsable
+ * reemplaza al anterior en la ventana de participantes y que la migración
+ * completa las filas anteriores sin inventar apoyos ni referencia privada.
  */
 
 const TI138_NEEDS = ["Necesidad ficticia A", "Necesidad ficticia B"] as const;
@@ -3748,11 +3748,16 @@ test("TI2-138: reservar copia las necesidades vigentes y registra a los particip
   );
 });
 
-test("TI2-138: mover la atención sincroniza participantes sin reescribir necesidades", async () => {
+test("TI2-138: mover la atención cambia al responsable sin reescribir necesidades", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti138-move-est",
     email: "ti138move@alu.uct.cl",
+    role: "student",
+  });
+  const otherStudent = await seedUser(t, {
+    subject: "ti138-move-otro-est",
+    email: "ti138moveotro@alu.uct.cl",
     role: "student",
   });
   const firstProfessional = await seedUser(t, {
@@ -3773,6 +3778,14 @@ test("TI2-138: mover la atención sincroniza participantes sin reescribir necesi
       accessNeeds: TI138_NEEDS.join("\n"),
     });
   });
+  const otherAccompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: otherStudent,
+      status: "active",
+      objective: "Otro objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
 
   const created = await t.run(async (ctx) => {
     return await occupySlotAtomically(ctx, {
@@ -3786,6 +3799,21 @@ test("TI2-138: mover la atención sincroniza participantes sin reescribir necesi
   });
   expect(created.status).toBe("ok");
   if (created.status !== "ok") return;
+
+  // Otra atención del responsable anterior a la hora del destino: si su fila
+  // se conservara con el horario nuevo, aparecería ocupado dos veces.
+  const otherAttention = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: otherAccompaniment,
+      studentId: otherStudent,
+      professionalId: firstProfessional,
+      modality: "inPerson",
+      startsAt: TI83_MONDAY_10H,
+      endsAt: TI83_MONDAY_10H + 3_600_000,
+    });
+  });
+  expect(otherAttention.status).toBe("ok");
+  if (otherAttention.status !== "ok") return;
 
   await t.run(async (ctx) => {
     await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
@@ -3812,15 +3840,27 @@ test("TI2-138: mover la atención sincroniza participantes sin reescribir necesi
       )
       .take(10);
   });
-  // El responsable anterior sigue como participante y el nuevo se agrega: la
-  // atención conserva su conjunto y solo actualiza la ventana copiada.
-  expect(participants.map((row) => row.professionalId).sort()).toEqual(
-    [firstProfessional, secondProfessional].sort(),
-  );
-  for (const participant of participants) {
-    expect(participant.startsAt).toBe(TI83_MONDAY_10H);
-    expect(participant.endsAt).toBe(TI83_MONDAY_10H + 3_600_000);
-  }
+  // El responsable anterior deja de participar: la fila pasa a ser la del
+  // nuevo y la atención sigue teniendo una sola fila por responsable.
+  expect(participants.map((row) => row.professionalId)).toEqual([secondProfessional]);
+  expect(participants[0]).toMatchObject({
+    startsAt: TI83_MONDAY_10H,
+    endsAt: TI83_MONDAY_10H + 3_600_000,
+  });
+
+  // El índice de cruces del anterior solo devuelve su otra atención a las
+  // 10:00, no la que ya no le pertenece.
+  const previousWindows = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointmentProfessionals")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", firstProfessional).gte("startsAt", TI83_MONDAY_10H),
+      )
+      .take(10);
+  });
+  expect(previousWindows.map((row) => row.appointmentId)).toEqual([
+    otherAttention.data.appointmentId,
+  ]);
 
   const row = await t.run(async (ctx) => await ctx.db.get(created.data.appointmentId));
   expect(row?.appliedAccessNeeds).toEqual(TI138_NEEDS.map((label) => ({ id: label, label })));
