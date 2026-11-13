@@ -214,6 +214,17 @@ The shape language is **Rounded (8px / 0.5rem)**. This provides a soft, friendly
 - Light gray background with dark text.
 - Large enough to be easily dismissible with a clear "X" icon.
 
+### View States
+
+Carga, vacío, error y acceso denegado comparten una sola pieza en `apps/web/src/presentation/shared/`; su uso y sus mensajes se documentan en `docs/estados-y-fechas-web.md`.
+
+- **Loading:** fondo `--ct-tonal`, texto en `--ct-muted`, anunciado con `role="status"`.
+- **Empty:** borde superior de 4 px `--ct-accent` sobre `--ct-tonal`; explica por qué no hay datos y qué hacer para que aparezcan.
+- **Error:** fondo `--ct-danger-bg`, borde izquierdo de 4 px `--ct-danger` y texto en negrita; se anuncia con `role="alert"` y ofrece «Reintentar» solo cuando la acción existe.
+- **Denied:** borde superior `--ct-danger` sobre `--ct-danger-bg`, con el aviso genérico que no revela motivo ni existencia.
+
+Ninguno depende solo del color. Las fechas y horas de la agenda se muestran en `America/Santiago` e indican la zona.
+
 ### Accessibility Specifics
 
 - **Skip Links:** Provide a "Skip to Content" button for keyboard users.

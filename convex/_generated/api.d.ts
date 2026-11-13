@@ -28,6 +28,7 @@ import type * as application_session_minimal_identity from "../application/sessi
 import type * as application_session_portal_role from "../application/session/portal_role.js";
 import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
+import type * as application_spaces_mutations from "../application/spaces/mutations.js";
 import type * as application_spaces_ports from "../application/spaces/ports.js";
 import type * as application_spaces_queries from "../application/spaces/queries.js";
 import type * as auth from "../auth.js";
@@ -57,6 +58,7 @@ import type * as infrastructure_accompaniments_repository from "../infrastructur
 import type * as infrastructure_accounts_repository from "../infrastructure/accounts/repository.js";
 import type * as infrastructure_appointments_repository from "../infrastructure/appointments/repository.js";
 import type * as infrastructure_audit_repository from "../infrastructure/audit/repository.js";
+import type * as infrastructure_auth_google_providers from "../infrastructure/auth/google_providers.js";
 import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
 import type * as infrastructure_calendar_google_calendar from "../infrastructure/calendar/google_calendar.js";
 import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
@@ -72,6 +74,7 @@ import type * as operations_migrations from "../operations/migrations.js";
 import type * as operations_requests from "../operations/requests.js";
 import type * as operations_users from "../operations/users.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
+import type * as presentation_accounts from "../presentation/accounts.js";
 import type * as presentation_appointments from "../presentation/appointments.js";
 import type * as presentation_availability from "../presentation/availability.js";
 import type * as presentation_requests from "../presentation/requests.js";
@@ -105,6 +108,7 @@ declare const fullApi: ApiFromModules<{
   "application/session/portal_role": typeof application_session_portal_role;
   "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
+  "application/spaces/mutations": typeof application_spaces_mutations;
   "application/spaces/ports": typeof application_spaces_ports;
   "application/spaces/queries": typeof application_spaces_queries;
   auth: typeof auth;
@@ -134,6 +138,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/accounts/repository": typeof infrastructure_accounts_repository;
   "infrastructure/appointments/repository": typeof infrastructure_appointments_repository;
   "infrastructure/audit/repository": typeof infrastructure_audit_repository;
+  "infrastructure/auth/google_providers": typeof infrastructure_auth_google_providers;
   "infrastructure/availability/repository": typeof infrastructure_availability_repository;
   "infrastructure/calendar/google_calendar": typeof infrastructure_calendar_google_calendar;
   "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;
@@ -149,6 +154,7 @@ declare const fullApi: ApiFromModules<{
   "operations/requests": typeof operations_requests;
   "operations/users": typeof operations_users;
   "presentation/accompaniments": typeof presentation_accompaniments;
+  "presentation/accounts": typeof presentation_accounts;
   "presentation/appointments": typeof presentation_appointments;
   "presentation/availability": typeof presentation_availability;
   "presentation/requests": typeof presentation_requests;

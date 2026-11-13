@@ -32,10 +32,15 @@ Estamos usando Linear como Issue Tracker, tenemos los equipos separados
 - Las skills de mobile viven únicamente en `apps/mobile/.agents/skills` y `apps/mobile/.claude/skills` es su enlace simbólico; no deben instalarse en la raíz.
 - Las skills exclusivas de web (`web-design-guidelines` y `shadcn`) viven únicamente en `apps/web/.agents/skills` y `apps/web/.claude/skills` es su enlace simbólico; no deben instalarse en la raíz.
 - Para OpenCode, usa el agente `ti2` para cambios de `apps/web` o `convex`, y `ti4` para cambios de `apps/mobile`; el agente `ti2` bloquea explícitamente las skills de mobile.
-- La mayoría de las skills de revisión son manuales. `self-review` funciona como router al cierre del cambio y selecciona solo las skills que correspondan al diff.
+- Antes de cada push, ejecuta `.agents/skills/code-review/SKILL.md` sobre el código propio que se publicará. Corrige los defectos e incumplimientos de arquitectura o legibilidad y repite la revisión afectada; sin resultado aprobado para el código y la base actuales no hagas push.
+- Antes de editar pantallas, componentes o estilos, consulta `ui`; para datos variables usa `break-ui` al verificar. `prototype` se usa cuando se solicitan variantes explícitamente.
 - `blast-radius` se ejecuta después de que existe un diff concreto y antes del veredicto final cuando hay riesgo de impacto; no se ejecuta al inicio de una tarea vacía.
+- Usa `verify-ceretime` para verificar cambios de comportamiento o interfaz, reproducir bugs y producir evidencia. Usa `file-pr` cuando se solicite crear o actualizar una PR.
+- Para trabajar con Convex o ejecutar comandos que afecten un deployment, consulta `.agents/skills/convex/SKILL.md`; selecciona sus guías locales según la tarea.
 
 La fuente de verdad operativa de cada issue es Linear: la issue vigente manda sobre alcance, prioridad, dependencias y criterios de cierre. La fuente de verdad del producto permanece en `CONTEXT.md`, `DESIGN.md`, `docs/` y los ADR.
+
+Antes de implementar o revisar código, consulta `CODING_STANDARDS.md` y los patrones relevantes de `patterns/`.
 
 ## Verificación de Markdown
 
@@ -43,7 +48,7 @@ La fuente de verdad operativa de cada issue es Linear: la issue vigente manda so
 
 ## Verificación de textos
 
-- En archivos de texto versionados y textos visibles de la aplicación, ejecuta `bunx --package cspell --package @cspell/dict-es-es cspell lint --no-progress <archivo>`; la configuración está en `.cspell.json`.
+- En archivos de texto versionados y textos visibles de la aplicación, ejecuta `npx --yes -p cspell -p @cspell/dict-es-es cspell lint --no-progress <archivo>`; la configuración está en `.cspell.json`.
 - Ante una palabra desconocida, corrige el texto si contiene un error de escritura o falta una tilde; solo agrega a `words` nombres propios e identificadores técnicos.
 
 ## Verificación de código

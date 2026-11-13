@@ -1,0 +1,50 @@
+name: React Doctor
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: react-doctor-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: React Doctor (${{ matrix.area }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - area: Web
+            project: apps/web
+          - area: Mobile
+            project: apps/mobile
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+
+      - name: Analizar cambios
+        uses: millionco/react-doctor@695e46eee203a5d1855020191aa7e9c010a1250e # v2
+        with:
+          project: ${{ matrix.project }}
+          version: 0.9.22
+          scope: changed
+          blocking: none
+          comment: false
+          review-comments: false
+          commit-status: false
