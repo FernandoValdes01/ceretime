@@ -166,26 +166,22 @@ export async function getRequestById(
   return await ctx.db.get(requestId);
 }
 
-/** Actualiza el estado de una solicitud. */
+/**
+ * Actualiza el estado de una solicitud con el destino que decidió la política.
+ * Al cerrar sin acompañamiento (TI2-141), la razón comprensible va en la misma
+ * escritura; el rastro histórico va aparte, en `logRequestTransition`, dentro
+ * de la misma mutation.
+ */
 export async function setRequestStatus(
   ctx: MutationCtx,
   requestId: Id<"requests">,
   status: Doc<"requests">["status"],
+  closureReason?: string,
 ): Promise<void> {
-  await ctx.db.patch(requestId, { status });
-}
-
-/**
- * Cierra la solicitud sin acompañamiento y deja su razón comprensible en la
- * misma escritura (TI2-141). El rastro histórico va aparte, en
- * `logRequestTransition`, dentro de la misma mutation.
- */
-export async function closeRequestWithReason(
-  ctx: MutationCtx,
-  requestId: Id<"requests">,
-  closureReason: string,
-): Promise<void> {
-  await ctx.db.patch(requestId, { status: "closed_without_accompaniment", closureReason });
+  await ctx.db.patch(requestId, {
+    status,
+    ...(closureReason === undefined ? {} : { closureReason }),
+  });
 }
 
 /** Registra el cambio de estado con motivo, actor y fecha. */

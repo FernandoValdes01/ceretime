@@ -1,6 +1,9 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { PERSISTABLE_REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
 import {
+  ACCESS_NEED_ID_MAX_LENGTH,
+  ACCESS_NEED_LABEL_MAX_LENGTH,
+  ACCESS_NEED_SELECTIONS_MAX,
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
   LEGACY_REQUEST_PROVENANCE_CHANNEL,
@@ -239,10 +242,28 @@ describe("toRequestExchange (TI2-141)", () => {
     ({ from: "awaiting_information_or_acceptance", to: "under_review", reason }) as const;
   const taken = { from: "received", to: "under_review" } as const;
 
-  test("mientras espera entrega lo pedido más reciente", () => {
+  test("mientras espera entrega lo pedido más reciente, sin la respuesta a un pedido anterior", () => {
     const changes = [asked("Segundo pedido"), answered("Respuesta"), asked("Primer pedido"), taken];
     expect(toRequestExchange("awaiting_information_or_acceptance", changes)).toEqual({
       informationRequest: "Segundo pedido",
+    });
+  });
+
+  test("tras responder el pedido nuevo entrega esa respuesta, no la anterior", () => {
+    const changes = [
+      answered("Segunda respuesta"),
+      asked("Segundo pedido"),
+      answered("Primera respuesta"),
+      asked("Primer pedido"),
+      taken,
+    ];
+    expect(toRequestExchange("under_review", changes)).toEqual({
+      informationResponse: "Segunda respuesta",
+    });
+  });
+
+  test("una respuesta cuyo pedido quedó fuera de lo leído se entrega", () => {
+    expect(toRequestExchange("under_review", [answered("Respuesta")])).toEqual({
       informationResponse: "Respuesta",
     });
   });
@@ -301,6 +322,44 @@ describe("toRequestSubmission (TI2-141)", () => {
     expect(toRequestSubmission({ ...valid, needSummary: "" })).toEqual({
       status: "error",
       error: { code: "request_fields_invalid", message: "Describe la barrera o necesidad." },
+    });
+  });
+
+  test("un identificador de necesidad más largo que su tope se rechaza", () => {
+    const id = "x".repeat(ACCESS_NEED_ID_MAX_LENGTH);
+    const need = (value: string) => [{ id: value, label: "Comunicación escrita" }];
+    expect(toRequestSubmission({ ...valid, accessNeeds: need(id) })).toMatchObject({
+      status: "ok",
+    });
+    expect(toRequestSubmission({ ...valid, accessNeeds: need(`${id}x`) })).toEqual({
+      status: "error",
+      error: {
+        code: "request_fields_invalid",
+        message: `El identificador de una necesidad de acceso supera el máximo permitido (${ACCESS_NEED_ID_MAX_LENGTH} caracteres).`,
+      },
+    });
+  });
+
+  test("las necesidades de acceso conservan sus códigos de Sprint 1", () => {
+    expect(toRequestSubmission({ ...valid, accessNeeds: [] })).toEqual({
+      status: "error",
+      error: {
+        code: "access_needs_empty",
+        message: "Se requiere describir la necesidad de acceso.",
+      },
+    });
+
+    // 20 nombres válidos de 200 caracteres superan juntos el tope del texto unido.
+    const accessNeeds = Array.from({ length: ACCESS_NEED_SELECTIONS_MAX }, (_, index) => ({
+      id: `need-${index}`,
+      label: `${index}`.padEnd(ACCESS_NEED_LABEL_MAX_LENGTH, "x"),
+    }));
+    expect(toRequestSubmission({ ...valid, accessNeeds })).toEqual({
+      status: "error",
+      error: {
+        code: "access_needs_too_long",
+        message: `Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres).`,
+      },
     });
   });
 

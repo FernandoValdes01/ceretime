@@ -964,7 +964,7 @@ test("TI2-85: cancelar exige motivo y el rechazo no deja escrituras", async () =
 
   for (const reason of ["", "   "]) {
     await expect(cancelAs(t, identityOf("ti85-est-2"), requestId, reason)).rejects.toThrow(
-      "Se requiere el motivo para cancelar la solicitud",
+      "Se requiere el motivo para cancelar la solicitud.",
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
@@ -1044,7 +1044,7 @@ test("TI2-85: repetir la cancelación o cancelar una aceptada o cerrada se recha
   await cancelAs(t, student, requestId, "Motivo ficticio");
   const afterFirst = await snapshotOf(t, requestId);
   await expect(cancelAs(t, student, requestId, "Otro motivo")).rejects.toThrow(
-    "La solicitud no admite la cancelación en su estado actual",
+    "La solicitud no admite la cancelación en su estado actual.",
   );
   expect(await snapshotOf(t, requestId)).toEqual(afterFirst);
   expect(afterFirst.transitions).toHaveLength(1);
@@ -1168,7 +1168,7 @@ test("TI2-85: cerrar exige motivo y el rechazo no deja escrituras", async () => 
 
   for (const reason of ["", "   "]) {
     await expect(closeAs(t, identityOf("ti85-pro-6"), requestId, reason)).rejects.toThrow(
-      "Se requiere el motivo para cerrar la solicitud sin acompañamiento",
+      "Se requiere el motivo para cerrar la solicitud sin acompañamiento.",
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
@@ -1213,7 +1213,7 @@ test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza si
     const requestId = await seedRequestIn(t, studentId, status);
     await seedTake(t, requestId, proId);
     await expect(closeAs(t, professional, requestId, "Motivo ficticio")).rejects.toThrow(
-      "La solicitud no admite el cierre sin acompañamiento en su estado actual",
+      "La solicitud no admite el cierre sin acompañamiento en su estado actual.",
     );
     expect(await snapshotOf(t, requestId)).toEqual({
       status,
@@ -1373,17 +1373,27 @@ test("TI2-141: el Estudiante responde lo pedido y la solicitud vuelve a revisió
     expect(reviewed.informationResponse).toBe("Puedo los martes por la tarde");
   }
 
-  // El Profesional retoma: vuelve a pedir y el detalle muestra el pedido nuevo
+  // El Profesional retoma: vuelve a pedir y el detalle muestra solo el pedido
+  // nuevo, sin la respuesta al anterior, para que no parezca respondido
   await asProfessional.mutation(api.presentation.requests.requestAdditionalInformation, {
     requestId,
     reason: "Indica también la modalidad",
   });
-  const again = await detailAs(t, student, requestId);
-  expect(again.informationRequest).toBe("Indica también la modalidad");
-  expect(again.informationResponse).toBe("Puedo los martes por la tarde");
+  for (const identity of [student, professional]) {
+    const again = await detailAs(t, identity, requestId);
+    expect(again.informationRequest).toBe("Indica también la modalidad");
+    expect(again.informationResponse).toBeUndefined();
+  }
+
+  // La segunda respuesta reemplaza a la primera en el detalle
+  await respondAs(t, student, requestId, "En línea");
+  for (const identity of [student, professional]) {
+    const answered = await detailAs(t, identity, requestId);
+    expect(answered.informationRequest).toBeUndefined();
+    expect(answered.informationResponse).toBe("En línea");
+  }
 
   // Tras la segunda respuesta se acepta y abre un solo acompañamiento
-  await respondAs(t, student, requestId, "En línea");
   await asProfessional.mutation(api.presentation.requests.acceptRequest, {
     requestId,
     objective: "Objetivo ficticio",
@@ -1449,7 +1459,7 @@ test("TI2-141: responder exige la espera, una respuesta con texto y dentro del t
   ] as const) {
     const requestId = await seedRequestIn(t, studentId, status);
     await expect(respondAs(t, student, requestId, "Respuesta")).rejects.toThrow(
-      "La solicitud no admite una respuesta en su estado actual",
+      "La solicitud no admite una respuesta en su estado actual.",
     );
     expect(await snapshotOf(t, requestId)).toMatchObject({ status, transitions: [] });
   }
@@ -1458,11 +1468,11 @@ test("TI2-141: responder exige la espera, una respuesta con texto y dentro del t
   const before = await snapshotOf(t, requestId);
   for (const response of ["", "   "]) {
     await expect(respondAs(t, student, requestId, response)).rejects.toThrow(
-      "Se requiere la respuesta a la información pedida",
+      "Se requiere la respuesta a la información pedida.",
     );
   }
   await expect(respondAs(t, student, requestId, "a".repeat(2001))).rejects.toThrow(
-    "La respuesta supera el máximo permitido (2000 caracteres)",
+    "La respuesta supera el máximo permitido (2000 caracteres).",
   );
   expect(await snapshotOf(t, requestId)).toEqual(before);
 
@@ -1677,9 +1687,9 @@ test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas invá
     [{ preferredAccessibleInformationChannel: "a".repeat(201) }, "supera el máximo permitido (200"],
     [{ idempotencyKey: "  " }, "La clave del envío debe tener entre 1 y 128"],
     [{ idempotencyKey: "a".repeat(129) }, "La clave del envío debe tener entre 1 y 128"],
-    [{ idempotencyKey: undefined }, "Faltan datos de la solicitud"],
+    [{ idempotencyKey: undefined }, "Faltan datos de la solicitud."],
     [{ accessNeeds: "Texto suelto" }, "como lista junto con los demás datos"],
-    [{ accessNeeds: undefined }, "Faltan datos de la solicitud"],
+    [{ accessNeeds: undefined }, "Faltan datos de la solicitud."],
   ];
   for (const [changes, message] of cases) {
     await expect(send(changes)).rejects.toThrow(message);
@@ -1741,12 +1751,12 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
 
   // Un campo que corregir: `request_fields_invalid` con el mensaje específico
   for (const [promise, message] of [
-    [cancelAs(t, student, waiting, " "), "Se requiere el motivo para cancelar la solicitud"],
+    [cancelAs(t, student, waiting, " "), "Se requiere el motivo para cancelar la solicitud."],
     [
       closeAs(t, professional, waiting, ""),
-      "Se requiere el motivo para cerrar la solicitud sin acompañamiento",
+      "Se requiere el motivo para cerrar la solicitud sin acompañamiento.",
     ],
-    [respondAs(t, student, waiting, " "), "Se requiere la respuesta a la información pedida"],
+    [respondAs(t, student, waiting, " "), "Se requiere la respuesta a la información pedida."],
     [
       t.withIdentity(student).mutation(api.presentation.requests.createRequest, {
         ...FULL_SUBMISSION,
@@ -1758,19 +1768,50 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
     expect(await publicErrorOf(promise)).toEqual({ code: "request_fields_invalid", message });
   }
 
+  // Las necesidades de acceso conservan sus códigos de Sprint 1, que los clientes traducen
+  const requestsBefore = (await requestsOf(t, studentId)).length;
+  const createWith = (changes: Record<string, unknown>) =>
+    t.withIdentity(student).mutation(api.presentation.requests.createRequest, {
+      ...FULL_SUBMISSION,
+      ...changes,
+    } as typeof FULL_SUBMISSION);
+  expect(await publicErrorOf(createWith({ accessNeeds: [], otherAccessNeed: " " }))).toEqual({
+    code: "access_needs_empty",
+    message: "Se requiere describir la necesidad de acceso.",
+  });
+  const longNeeds = Array.from({ length: 20 }, (_, index) => ({
+    id: `n${index}`,
+    label: `${index}`.padEnd(200, "x"),
+  }));
+  expect(await publicErrorOf(createWith({ accessNeeds: longNeeds }))).toEqual({
+    code: "access_needs_too_long",
+    message:
+      "Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (2000 caracteres).",
+  });
+  expect(
+    await publicErrorOf(
+      createWith({ accessNeeds: [{ id: "a".repeat(201), label: "Comunicación escrita" }] }),
+    ),
+  ).toEqual({
+    code: "request_fields_invalid",
+    message:
+      "El identificador de una necesidad de acceso supera el máximo permitido (200 caracteres).",
+  });
+  expect(await requestsOf(t, studentId)).toHaveLength(requestsBefore);
+
   // Un estado que no admite el paso: `conflict` con el mensaje específico
   for (const [promise, message] of [
     [
       cancelAs(t, student, accepted, "Motivo"),
-      "La solicitud no admite la cancelación en su estado actual",
+      "La solicitud no admite la cancelación en su estado actual.",
     ],
     [
       closeAs(t, professional, accepted, "Motivo"),
-      "La solicitud no admite el cierre sin acompañamiento en su estado actual",
+      "La solicitud no admite el cierre sin acompañamiento en su estado actual.",
     ],
     [
       respondAs(t, student, accepted, "Respuesta"),
-      "La solicitud no admite una respuesta en su estado actual",
+      "La solicitud no admite una respuesta en su estado actual.",
     ],
   ] as const) {
     expect(await publicErrorOf(promise)).toEqual({ code: "conflict", message });

@@ -13,6 +13,7 @@ import {
 import {
   CONFLICT_ERROR_CODE,
   REQUEST_FIELDS_INVALID_ERROR_CODE,
+  type PublicApiError,
 } from "../../domain/errors/api_error";
 import { transitionRequest } from "../../domain/requests/transition_policy";
 import type { Id } from "../../_generated/dataModel";
@@ -25,7 +26,6 @@ import {
   insertActiveAssignment,
 } from "../../infrastructure/accompaniments/repository";
 import {
-  closeRequestWithReason,
   findActiveTake,
   getRequestById,
   insertActiveTake,
@@ -42,9 +42,10 @@ import { requireActiveProfessional, requireActiveStudent } from "./identity";
  *
  * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
  * `ctx.auth.getUserIdentity()`, exige el rol con cuenta habilitada y
- * vigente, y persiste con Infraestructura. Convertir el contenido
- * estructurado a la forma persistida es alcance de TI2-23: aquí solo se
- * guarda el texto de necesidades de acceso. Opera con datos ficticios.
+ * vigente, y persiste con Infraestructura. El envío completo de TI2-141
+ * guarda la lista de necesidades de acceso como `accessNeedSelections` y el
+ * repositorio deriva de ella el texto unido; la forma anterior guarda solo
+ * ese texto. Opera con datos ficticios.
  */
 
 function deny(): never {
@@ -60,14 +61,19 @@ function deny(): never {
  * contrato a sus consumidores.
  */
 
+/** Rechazo del contrato común con su código estable y su mensaje, nada más. */
+function reject(error: PublicApiError): never {
+  throw new ConvexError({ code: error.code, message: error.message });
+}
+
 /** Un campo de la solicitud no cumple: el mensaje dice qué corregir. */
 function rejectFields(message: string): never {
-  throw new ConvexError({ code: REQUEST_FIELDS_INVALID_ERROR_CODE, message });
+  reject({ code: REQUEST_FIELDS_INVALID_ERROR_CODE, message });
 }
 
 /** El estado actual no admite el paso pedido. */
 function rejectState(message: string): never {
-  throw new ConvexError({ code: CONFLICT_ERROR_CODE, message });
+  reject({ code: CONFLICT_ERROR_CODE, message });
 }
 
 /**
@@ -113,7 +119,7 @@ function toFullSubmission(input: RegisterRequestInput): RequestSubmission {
     preferredAccessibleInformationChannel === undefined ||
     idempotencyKey === undefined
   ) {
-    rejectFields("Faltan datos de la solicitud");
+    rejectFields("Faltan datos de la solicitud.");
   }
   return {
     needSummary,
@@ -167,7 +173,7 @@ async function registerFullRequest(
   input: RequestSubmission,
 ): Promise<Id<"requests">> {
   const submission = toRequestSubmission(input);
-  if (submission.status === "error") rejectFields(submission.error.message);
+  if (submission.status === "error") reject(submission.error);
   const { accessNeeds, generalAvailability, ...content } = submission.data;
   const { requestId } = await insertReceivedRequestOnce(ctx, {
     ...content,
@@ -195,7 +201,7 @@ async function registerLegacyRequest(
   // guardaría una solicitud a medias.
   if (FULL_FORM_FIELDS.some((field) => input[field] !== undefined)) {
     rejectFields(
-      "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud",
+      "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.",
     );
   }
   const accessNeeds = toAccessNeedsText(raw);
@@ -423,9 +429,9 @@ export async function cancelRequest(
   });
   if (result.status === "rejected") {
     if (result.cause === "reason_required") {
-      rejectFields("Se requiere el motivo para cancelar la solicitud");
+      rejectFields("Se requiere el motivo para cancelar la solicitud.");
     }
-    rejectState("La solicitud no admite la cancelación en su estado actual");
+    rejectState("La solicitud no admite la cancelación en su estado actual.");
   }
   await setRequestStatus(ctx, input.requestId, result.change.to);
   await logRequestTransition(ctx, {
@@ -476,14 +482,17 @@ export async function closeRequestWithoutAccompaniment(
   });
   if (result.status === "rejected") {
     if (result.cause === "reason_required") {
-      rejectFields("Se requiere el motivo para cerrar la solicitud sin acompañamiento");
+      rejectFields("Se requiere el motivo para cerrar la solicitud sin acompañamiento.");
     }
-    rejectState("La solicitud no admite el cierre sin acompañamiento en su estado actual");
+    rejectState("La solicitud no admite el cierre sin acompañamiento en su estado actual.");
   }
-  // La política ya exigió el motivo; sin él no hay razón que mostrar.
+  // La política ya exigió el motivo: si faltara, es un fallo interno, no una
+  // denegación, y responder «No autorizado» lo escondería.
   const closureReason = result.change.reason;
-  if (closureReason === undefined) deny();
-  await closeRequestWithReason(ctx, input.requestId, closureReason);
+  if (closureReason === undefined) {
+    throw new Error("La política de solicitudes cerró sin dejar la razón del cierre.");
+  }
+  await setRequestStatus(ctx, input.requestId, result.change.to, closureReason);
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -522,7 +531,7 @@ export async function respondToInformationRequest(
   // Solo la espera admite respuesta: `received -> under_review` existe en la
   // tabla, pero es la toma del Profesional, no un paso del Estudiante.
   if (row.status !== "awaiting_information_or_acceptance") {
-    rejectState("La solicitud no admite una respuesta en su estado actual");
+    rejectState("La solicitud no admite una respuesta en su estado actual.");
   }
   const result = transitionRequest({
     from: row.status,
@@ -533,15 +542,18 @@ export async function respondToInformationRequest(
   });
   if (result.status === "rejected") {
     if (result.cause === "reason_required") {
-      rejectFields("Se requiere la respuesta a la información pedida");
+      rejectFields("Se requiere la respuesta a la información pedida.");
     }
-    rejectState("La solicitud no admite una respuesta en su estado actual");
+    rejectState("La solicitud no admite una respuesta en su estado actual.");
   }
+  // Igual que en el cierre: la política ya exigió la respuesta.
   const response = result.change.reason;
-  if (response === undefined) deny();
+  if (response === undefined) {
+    throw new Error("La política de solicitudes aceptó la respuesta sin dejar su texto.");
+  }
   if (response.length > REQUEST_RESPONSE_MAX_LENGTH) {
     rejectFields(
-      `La respuesta supera el máximo permitido (${REQUEST_RESPONSE_MAX_LENGTH} caracteres)`,
+      `La respuesta supera el máximo permitido (${REQUEST_RESPONSE_MAX_LENGTH} caracteres).`,
     );
   }
   await setRequestStatus(ctx, input.requestId, result.change.to);

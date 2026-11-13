@@ -161,6 +161,8 @@ export const REQUEST_TEXT_MAX_LENGTH = ACCESS_NEEDS_MAX_LENGTH;
 export const INFORMATION_CHANNEL_MAX_LENGTH = 200;
 export const ACCESS_NEED_SELECTIONS_MAX = 20;
 export const ACCESS_NEED_LABEL_MAX_LENGTH = 200;
+/** El identificador se guarda tal cual en `accessNeedSelections`: lleva el mismo tope que el nombre. */
+export const ACCESS_NEED_ID_MAX_LENGTH = ACCESS_NEED_LABEL_MAX_LENGTH;
 export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
 
 /**
@@ -192,7 +194,9 @@ function boundedText(
  *
  * Dominio puro: recorta los textos, aplica los topes y revisa la forma de la
  * disponibilidad general, sin persistir nada. Devuelve el envío normalizado o
- * el primer error con un mensaje en español que indica qué corregir. No pide
+ * el primer error con un mensaje en español que indica qué corregir, con
+ * `request_fields_invalid`; el texto unido de las necesidades de acceso
+ * conserva los códigos `access_needs_*` de `toStoredAccessNeeds`. No pide
  * ni acepta RUT, diagnóstico, certificados ni área interna: esos campos no
  * existen en el contrato.
  */
@@ -232,13 +236,30 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
         `El nombre de una necesidad de acceso supera el máximo permitido (${ACCESS_NEED_LABEL_MAX_LENGTH} caracteres).`,
       );
     }
+    if (id.length > ACCESS_NEED_ID_MAX_LENGTH) {
+      return fail(
+        `El identificador de una necesidad de acceso supera el máximo permitido (${ACCESS_NEED_ID_MAX_LENGTH} caracteres).`,
+      );
+    }
     if (seenNeeds.has(id)) return fail("Una necesidad de acceso está repetida.");
     seenNeeds.add(id);
     accessNeeds.push({ id, label });
   }
   const otherAccessNeed = input.otherAccessNeed?.trim();
   const stored = toStoredAccessNeeds(accessNeeds, otherAccessNeed);
-  if (stored.status === "error") return fail(stored.error.message);
+  if (stored.status === "error") {
+    // Conserva el código estable de Sprint 1 (`access_needs_*`), que los
+    // clientes ya traducen. El tope es del texto unido: con la lista, se pasa
+    // la suma de los nombres y el texto adicional, no un texto suelto.
+    if (stored.error.code !== "access_needs_too_long") return stored;
+    return {
+      status: "error",
+      error: {
+        code: stored.error.code,
+        message: `Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres).`,
+      },
+    };
+  }
 
   const { preferredWeekdays, preferredTimeRange } = input.generalAvailability;
   if (preferredWeekdays.length === 0) return fail("Selecciona al menos un día disponible.");
@@ -302,8 +323,10 @@ export const REQUEST_RESPONSE_MAX_LENGTH = 2000;
  *
  * `informationRequest` es lo que el Profesional pidió y solo existe mientras
  * la solicitud espera respuesta: después deja de ser lo pendiente.
- * `informationResponse` es la última respuesta del Estudiante. Son texto
- * libre: solo se entregan en el detalle, a quien ya puede leer la solicitud.
+ * `informationResponse` es la respuesta al último pedido: si el Profesional
+ * vuelve a pedir, la respuesta anterior deja de entregarse hasta que llegue la
+ * nueva, así una pregunta pendiente no parece respondida. Son texto libre:
+ * solo se entregan en el detalle, a quien ya puede leer la solicitud.
  */
 export function toRequestExchange(
   status: PersistableRequestState,
@@ -313,13 +336,20 @@ export function toRequestExchange(
     readonly reason?: string;
   }[],
 ): { readonly informationRequest?: string; readonly informationResponse?: string } {
-  const lastRequest = recentChanges.find(
+  const requestAt = recentChanges.findIndex(
     (change) => change.to === "awaiting_information_or_acceptance",
   );
-  const lastResponse = recentChanges.find(
+  const responseAt = recentChanges.findIndex(
     (change) =>
       change.from === "awaiting_information_or_acceptance" && change.to === "under_review",
   );
+  const lastRequest = recentChanges[requestAt];
+  // La lista va del último cambio al primero. Un pedido fuera de lo leído es
+  // anterior a cualquier respuesta leída, porque toda respuesta sigue a un pedido.
+  const lastResponse =
+    responseAt !== -1 && (requestAt === -1 || responseAt < requestAt)
+      ? recentChanges[responseAt]
+      : undefined;
   return {
     ...(status === "awaiting_information_or_acceptance" && lastRequest?.reason !== undefined
       ? { informationRequest: lastRequest.reason }
