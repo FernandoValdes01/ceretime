@@ -29,7 +29,8 @@ import type { FollowUpAppointmentReader, FollowUpContent, FollowUpRecorder } fro
  * seguimiento, se rechaza con `conflict`, porque depende del estado. Los datos
  * que no cumplen las reglas de TI2-106 responden `follow_up_fields_invalid`,
  * con qué corregir. Una atención inexistente o ajena responde
- * `unauthorized`, sin revelar si existe.
+ * `unauthorized`, sin revelar si existe. Una referencia que el servidor ya
+ * resolvió y llega rechazada es un defecto interno, no un error del cliente.
  *
  * Opera con datos ficticios.
  */
@@ -52,12 +53,30 @@ export const FOLLOW_UP_ALREADY_CONFIRMED_MESSAGE =
   "El seguimiento de esta atención ya está confirmado y no se puede cambiar.";
 
 /**
- * Qué corregir por cada causa de TI2-106. El tipo exige un mensaje por causa,
- * así una causa nueva no llega al cliente sin explicación.
+ * Causas de referencias que resuelve el servidor: el acompañamiento sale de la
+ * atención leída y la atención ya se encontró. El cliente no puede
+ * corregirlas desde el formulario.
  */
-const FOLLOW_UP_REJECTION_MESSAGES: Readonly<Record<FollowUpRejectionCause, string>> = {
-  appointment_reference_required: "Falta indicar la atención.",
-  accompaniment_reference_required: "Falta indicar el acompañamiento.",
+type ServerResolvedCause = "appointment_reference_required" | "accompaniment_reference_required";
+
+const SERVER_RESOLVED_CAUSES: ReadonlySet<FollowUpRejectionCause> = new Set<ServerResolvedCause>([
+  "appointment_reference_required",
+  "accompaniment_reference_required",
+]);
+
+function isClientCause(
+  cause: FollowUpRejectionCause,
+): cause is Exclude<FollowUpRejectionCause, ServerResolvedCause> {
+  return !SERVER_RESOLVED_CAUSES.has(cause);
+}
+
+/**
+ * Qué corregir por cada causa de TI2-106 que llega al cliente. El tipo exige
+ * un mensaje por causa, así una causa nueva no llega sin explicación.
+ */
+const FOLLOW_UP_REJECTION_MESSAGES: Readonly<
+  Record<Exclude<FollowUpRejectionCause, ServerResolvedCause>, string>
+> = {
   appointment_status_unknown: "La atención tiene un estado desconocido.",
   follow_up_not_admissible:
     "La atención todavía no admite seguimiento: debe estar realizada o con la inasistencia registrada.",
@@ -86,9 +105,12 @@ const STATE_CAUSES: ReadonlySet<FollowUpRejectionCause> = new Set([
 /**
  * Si la atención no admite seguimiento, `conflict` con ese motivo, porque
  * los campos no importan todavía. Si no, `follow_up_fields_invalid` con lo
- * que hay que corregir, en el orden de las causas.
+ * que hay que corregir, en el orden de las causas. Una causa que resuelve el
+ * servidor lanza un error interno, igual que `invalid_reference`.
  */
-function rejected<T>(causes: readonly FollowUpRejectionCause[]): ApiResult<T> {
+function rejected<T>(allCauses: readonly FollowUpRejectionCause[]): ApiResult<T> {
+  const causes = allCauses.filter(isClientCause);
+  if (causes.length < allCauses.length) throw serverReferenceError();
   const stateCauses = causes.filter((cause) => STATE_CAUSES.has(cause));
   const reported = stateCauses.length > 0 ? stateCauses : causes;
   const message = reported.map((cause) => FOLLOW_UP_REJECTION_MESSAGES[cause]).join(" ");
@@ -130,8 +152,12 @@ export async function saveFollowUpRecord(
     case "invalid_reference":
       // La atención ya se leyó y el autor es el perfil de la sesión: llegar
       // aquí es un defecto del servidor, no un problema de permisos.
-      throw new Error(
-        "El guardado del seguimiento recibió una referencia que el servidor ya había resuelto.",
-      );
+      throw serverReferenceError();
   }
+}
+
+function serverReferenceError(): Error {
+  return new Error(
+    "El guardado del seguimiento recibió una referencia que el servidor ya había resuelto.",
+  );
 }

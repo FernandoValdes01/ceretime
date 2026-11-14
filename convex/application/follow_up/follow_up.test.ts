@@ -232,6 +232,19 @@ describe("saveFollowUpRecord (TI2-146)", () => {
       saveFollowUpRecord({ auth, appointments: appointmentReader, recorder }, command()),
     ).rejects.toThrow("referencia que el servidor ya había resuelto");
   });
+
+  test.each([
+    [["accompaniment_reference_required"]],
+    [["appointment_reference_required", "text_required"]],
+  ] as const)(
+    "una causa de referencia que resuelve el servidor (%j) lanza un error interno, no follow_up_fields_invalid",
+    async (causes) => {
+      const { recorder } = recorderReturning({ status: "invalid", causes });
+      await expect(
+        saveFollowUpRecord({ auth, appointments: appointmentReader, recorder }, command()),
+      ).rejects.toThrow("referencia que el servidor ya había resuelto");
+    },
+  );
 });
 
 const stored: StoredFollowUp = {
