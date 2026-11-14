@@ -59,7 +59,7 @@ El detalle suma tres campos opcionales de texto libre, que no viajan en los list
 
 ## Envío
 
-`createRequest` acepta dos formas, nunca las dos a la vez. Se distinguen por `accessNeeds`: es una lista en la forma completa y un texto en la anterior.
+`createRequest` acepta dos formas, nunca las dos a la vez. La forma anterior trae solo `accessNeeds` como texto; cualquier otra entrada sigue la forma completa, donde `accessNeeds` es una lista.
 
 **Forma completa (TI2-141).** Es la que deben usar Web y Mobile:
 
@@ -78,7 +78,7 @@ Debe haber al menos una necesidad seleccionada o un `otherAccessNeed` con texto.
 
 **Idempotencia.** Repetir el envío con la misma `idempotencyKey` devuelve la misma solicitud sin crear otra, aunque el contenido cambie. La clave es del Estudiante: la misma clave en otra cuenta es otro envío. El cliente debe generar una clave nueva para cada solicitud distinta y reutilizarla solo al reintentar.
 
-**Forma anterior (Sprint 1).** Solo `accessNeeds: string`, de 1 a 2000 caracteres. Se conserva mientras Web y Mobile migran, no es idempotente y no guarda los campos nuevos.
+**Forma anterior (Sprint 1).** Solo `accessNeeds: string`, de 1 a 2000 caracteres, sin ningún otro campo. Se conserva mientras Web y Mobile migran, no es idempotente y no guarda los campos nuevos. Si el texto llega con cualquier campo de la forma completa, incluido `otherAccessNeed`, el envío sigue la forma completa: autoriza antes de validar y rechaza con `request_fields_invalid` y «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.», aunque falten otros campos.
 
 ## Respuesta, cancelación y cierre
 
