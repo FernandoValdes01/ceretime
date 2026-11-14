@@ -421,14 +421,30 @@ describe("toCompleteSubmission (TI2-141)", () => {
     });
   });
 
-  test("las necesidades como texto piden la lista", () => {
-    expect(toCompleteSubmission({ ...complete, accessNeeds: "Texto suelto" })).toEqual({
+  // Con el texto llega al menos un campo de la forma completa: la forma
+  // anterior pura la atiende Aplicación antes de llegar aquí
+  const { needSummary: _needSummary, ...withoutNeedSummary } = complete;
+  test.each([
+    ["con todos los demás campos", complete],
+    ["con todos menos la necesidad", withoutNeedSummary],
+    ["solo con la necesidad", { needSummary: "Necesidad ficticia" }],
+    ["solo con la clave", { idempotencyKey: "clave" }],
+    ["solo con el texto adicional", { otherAccessNeed: "Apoyo" }],
+  ] as const)("las necesidades como texto %s piden la lista", (_label, fields) => {
+    expect(toCompleteSubmission({ ...fields, accessNeeds: "Texto suelto" })).toEqual({
       status: "error",
       error: {
         code: "request_fields_invalid",
         message:
           "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.",
       },
+    });
+  });
+
+  test("sin ningún campo nombra el primero del formulario", () => {
+    expect(toCompleteSubmission({})).toEqual({
+      status: "error",
+      error: { code: "request_fields_invalid", message: "Describe la barrera o necesidad." },
     });
   });
 

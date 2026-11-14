@@ -209,10 +209,12 @@ export type RequestSubmissionDraft = {
 } & Partial<Omit<RequestSubmission, "accessNeeds">>;
 
 /**
- * Exige los campos obligatorios de la forma completa (TI2-141), en el orden
- * del formulario. Si falta uno, el mensaje lo nombra con el mismo texto que
- * usa `toRequestSubmission` cuando llega vacío; `accessNeeds` como texto
- * pide la lista. No valida contenido: eso es de `toRequestSubmission`.
+ * Exige los campos obligatorios de la forma completa (TI2-141). `accessNeeds`
+ * como texto se revisa primero: si llega aquí, vino con algún campo de la
+ * forma completa, y la lista es lo que hay que corregir aunque falten otros.
+ * Después, en el orden del formulario, el primer campo que falta se nombra
+ * con el mismo texto que usa `toRequestSubmission` cuando llega vacío. No
+ * valida contenido: eso es de `toRequestSubmission`.
  */
 export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<RequestSubmission> {
   const {
@@ -225,11 +227,10 @@ export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<R
     preferredAccessibleInformationChannel,
     idempotencyKey,
   } = draft;
+  if (typeof accessNeeds === "string") return invalidRequestFields(ACCESS_NEEDS_LIST_REQUIRED);
   if (needSummary === undefined) return invalidRequestFields(NEED_SUMMARY_REQUIRED);
   if (expectedOutcome === undefined) return invalidRequestFields(EXPECTED_OUTCOME_REQUIRED);
-  if (accessNeeds === undefined || typeof accessNeeds === "string") {
-    return invalidRequestFields(ACCESS_NEEDS_LIST_REQUIRED);
-  }
+  if (accessNeeds === undefined) return invalidRequestFields(ACCESS_NEEDS_LIST_REQUIRED);
   if (modalityPreference === undefined) return invalidRequestFields(MODALITY_PREFERENCE_REQUIRED);
   if (generalAvailability === undefined) return invalidRequestFields(PREFERRED_WEEKDAYS_REQUIRED);
   if (preferredAccessibleInformationChannel === undefined) {

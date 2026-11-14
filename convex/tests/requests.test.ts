@@ -1756,6 +1756,30 @@ test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas invá
   expect(await requestsOf(t, studentId)).toHaveLength(1);
 });
 
+test("TI2-141: las necesidades como texto con un solo campo de la forma completa piden la lista, sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-6", "student");
+  const asStudent = t.withIdentity(identityOf("ti141-env-6"));
+  const { accessNeeds: _list, ...fullFields } = FULL_SUBMISSION;
+
+  // Un solo campo junto al texto basta para que no sea la forma anterior
+  for (const [field, value] of Object.entries(fullFields)) {
+    expect(
+      await publicErrorOf(
+        asStudent.mutation(api.presentation.requests.createRequest, {
+          accessNeeds: "Texto suelto",
+          [field]: value,
+        }),
+      ),
+    ).toEqual({
+      code: "request_fields_invalid",
+      message:
+        "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.",
+    });
+  }
+  expect(await requestsOf(t, studentId)).toHaveLength(0);
+});
+
 test("TI2-141: el envío no admite RUT, diagnóstico ni campos fuera del contrato, y solo lo hace un Estudiante vigente", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti141-env-5", "student");
