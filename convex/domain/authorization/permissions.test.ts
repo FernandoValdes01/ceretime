@@ -4,6 +4,7 @@ import {
   AUTHORIZATION_ACTIONS,
   canBookAppointment,
   canCancelAppointment,
+  canCoordinateAppointment,
   canEditAvailability,
   canEnableAccount,
   canListAccounts,
@@ -16,6 +17,7 @@ import {
   canRecordAppointmentAttendance,
   canRescheduleAppointment,
   canRevokeAccount,
+  canUseAppointmentOnlineAccess,
   canWriteFollowUp,
   getAccompanimentView,
   getAppointmentView,
@@ -367,6 +369,86 @@ describe("canBookAppointment", () => {
         canBookAppointment(agendaContext({ role: "student", isOwner: true, ...account })),
       ).toBe(false);
     }
+  });
+});
+
+describe("canCoordinateAppointment (TI2-142)", () => {
+  test("solo el profesional con asignación activa coordina, en un acompañamiento activo", () => {
+    expect(
+      canCoordinateAppointment(
+        agendaContext({ role: "professional", hasActiveProfessionalAssignment: true }),
+      ),
+    ).toBe(true);
+    expect(canCoordinateAppointment(agendaContext({ role: "professional" }))).toBe(false);
+    expect(canCoordinateAppointment(agendaContext({ role: "student", isOwner: true }))).toBe(false);
+    expect(
+      canCoordinateAppointment(agendaContext({ role: "intern", hasActiveInternAssignment: true })),
+    ).toBe(false);
+    expect(canCoordinateAppointment(agendaContext({ role: "admin" }))).toBe(false);
+  });
+
+  test("acompañamiento no activo o cuenta no vigente no coordinan", () => {
+    for (const accompanimentStatus of ["paused", "closed"] as const) {
+      expect(
+        canCoordinateAppointment(
+          agendaContext({
+            role: "professional",
+            hasActiveProfessionalAssignment: true,
+            accompanimentStatus,
+          }),
+        ),
+      ).toBe(false);
+    }
+    for (const account of INACTIVE_ACCOUNTS) {
+      expect(
+        canCoordinateAppointment(
+          agendaContext({
+            role: "professional",
+            hasActiveProfessionalAssignment: true,
+            ...account,
+          }),
+        ),
+      ).toBe(false);
+    }
+  });
+});
+
+describe("canUseAppointmentOnlineAccess (TI2-142)", () => {
+  test("el Estudiante dueño y cada profesional de la atención con asignación activa", () => {
+    expect(
+      canUseAppointmentOnlineAccess(
+        changeContext({ role: "student", isOwner: true, isAppointmentStudent: true }),
+      ),
+    ).toBe(true);
+    expect(
+      canUseAppointmentOnlineAccess(
+        changeContext({
+          role: "professional",
+          hasActiveProfessionalAssignment: true,
+          isAppointmentProfessional: true,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      canUseAppointmentOnlineAccess(
+        changeContext({ role: "professional", hasActiveProfessionalAssignment: true }),
+      ),
+    ).toBe(false);
+    expect(
+      canUseAppointmentOnlineAccess(
+        changeContext({ role: "intern", hasActiveInternAssignment: true }),
+      ),
+    ).toBe(false);
+    expect(
+      canUseAppointmentOnlineAccess(
+        changeContext({
+          role: "student",
+          isOwner: true,
+          isAppointmentStudent: true,
+          accompanimentStatus: "paused",
+        }),
+      ),
+    ).toBe(false);
   });
 });
 

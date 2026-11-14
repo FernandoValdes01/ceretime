@@ -118,7 +118,7 @@ describe("Agregar o reemplazar el enlace (TI2-142)", () => {
   });
 
   test("distingue reemplazo de reintento con el mismo enlace", () => {
-    const withLink = subject({ onlineAccessLink: LINK });
+    const withLink = subject({ privateAccessReference: LINK });
     expect(decideOnlineAccessUpdate(withLink, RESPONSIBLE, OTHER_LINK)).toEqual({
       status: "applied",
       link: OTHER_LINK,
@@ -174,7 +174,7 @@ describe("Entrega del enlace a los participantes (TI2-142)", () => {
   test("estudiante y profesionales ven el enlace pendiente o disponible", () => {
     for (const viewer of [STUDENT, RESPONSIBLE, SECOND]) {
       expect(toOnlineAccessView(subject(), viewer)).toEqual({ status: "pending" });
-      expect(toOnlineAccessView(subject({ onlineAccessLink: LINK }), viewer)).toEqual({
+      expect(toOnlineAccessView(subject({ privateAccessReference: LINK }), viewer)).toEqual({
         status: "available",
         link: LINK,
       });
@@ -187,7 +187,7 @@ describe("Entrega del enlace a los participantes (TI2-142)", () => {
       "administrador-ficticio-1",
       "estudiante-ficticio-2",
     ]) {
-      expect(toOnlineAccessView(subject({ onlineAccessLink: LINK }), viewer)).toBeNull();
+      expect(toOnlineAccessView(subject({ privateAccessReference: LINK }), viewer)).toBeNull();
     }
   });
 
@@ -197,7 +197,7 @@ describe("Entrega del enlace a los participantes (TI2-142)", () => {
     });
     expect(
       toOnlineAccessView(
-        subject({ status: "cancelled_by_cereti", onlineAccessLink: LINK }),
+        subject({ status: "cancelled_by_cereti", privateAccessReference: LINK }),
         STUDENT,
       ),
     ).toEqual({ status: "not_applicable" });

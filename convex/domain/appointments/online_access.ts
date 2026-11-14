@@ -94,7 +94,7 @@ export interface OnlineAccessSubject extends AppointmentParticipants {
   readonly modality: ModalityPreference;
   readonly status: AppointmentStatus;
   /** Enlace canónico guardado; ausente mientras esté pendiente. */
-  readonly onlineAccessLink?: string;
+  readonly privateAccessReference?: string;
 }
 
 /** Causas por las que no se puede agregar ni reemplazar el enlace. */
@@ -149,9 +149,9 @@ export function decideOnlineAccessUpdate(
   if (normalized.status === "rejected") return normalized;
 
   const change: OnlineAccessChange =
-    appointment.onlineAccessLink === undefined
+    appointment.privateAccessReference === undefined
       ? "added"
-      : appointment.onlineAccessLink === normalized.link
+      : appointment.privateAccessReference === normalized.link
         ? "unchanged"
         : "replaced";
   return { status: "applied", link: normalized.link, change };
@@ -189,8 +189,8 @@ export function toOnlineAccessView(
   if (appointment.modality !== "online" || !isCalendarActionableStatus(appointment.status)) {
     return { status: "not_applicable" };
   }
-  if (appointment.onlineAccessLink === undefined) return { status: "pending" };
-  return { status: "available", link: appointment.onlineAccessLink };
+  if (appointment.privateAccessReference === undefined) return { status: "pending" };
+  return { status: "available", link: appointment.privateAccessReference };
 }
 
 /** Causas de rechazo de los apoyos de la atención en línea. */
