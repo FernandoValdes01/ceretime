@@ -10,6 +10,7 @@ import {
   takeRequest,
 } from "../application/requests/commands";
 import { AGENDA_TIME_ZONE, civilRangeToInstantRange } from "../domain/availability/availability";
+import type { ApiResult } from "../domain/errors/api_error";
 import { findProfileByTokenIdentifier } from "../infrastructure/accompaniments/repository";
 import {
   appliedAccessNeedsFor,
@@ -23,6 +24,12 @@ import {
  * operations/fictitiousData:load`, siguiendo la guía de arranque del `README.md` raíz.
  * El inventario vive en `docs/dataset-ficticio.md`.
  */
+
+/** La carga usa la forma anterior, que lanza sus rechazos: un error aquí es un dataset roto. */
+function registered<T>(result: ApiResult<T>): T {
+  if (result.status === "error") throw new Error(result.error.message);
+  return result.data;
+}
 
 // Emisor inventado: una sesión real produce `{CONVEX_SITE_URL}|{subject}`, así
 // que ningún inicio de sesión coincide con estas cuentas ni puede usarlas.
@@ -179,27 +186,35 @@ export const load = internalMutation({
     // Las solicitudes pasan por los casos de uso reales, con las identidades
     // ficticias: el dataset cumple las mismas reglas que el flujo del cliente.
     const professional = identityOf("professional");
-    await registerRequest(ctx, identityOf("studentReceived"), {
-      accessNeeds: "Material de clases en formato digital compatible con lector de pantalla.",
-    });
+    registered(
+      await registerRequest(ctx, identityOf("studentReceived"), {
+        accessNeeds: "Material de clases en formato digital compatible con lector de pantalla.",
+      }),
+    );
 
-    const underReview = await registerRequest(ctx, identityOf("studentUnderReview"), {
-      accessNeeds: "Tiempo adicional en evaluaciones escritas.",
-    });
+    const underReview = registered(
+      await registerRequest(ctx, identityOf("studentUnderReview"), {
+        accessNeeds: "Tiempo adicional en evaluaciones escritas.",
+      }),
+    );
     await takeRequest(ctx, professional, { requestId: underReview._id });
 
-    const awaiting = await registerRequest(ctx, identityOf("studentAwaiting"), {
-      accessNeeds: "Apoyo para organizar la entrega de trabajos del semestre.",
-    });
+    const awaiting = registered(
+      await registerRequest(ctx, identityOf("studentAwaiting"), {
+        accessNeeds: "Apoyo para organizar la entrega de trabajos del semestre.",
+      }),
+    );
     await takeRequest(ctx, professional, { requestId: awaiting._id });
     await requestAdditionalInformation(ctx, professional, {
       requestId: awaiting._id,
       reason: "Falta indicar en qué asignaturas se necesita el apoyo.",
     });
 
-    const accepted = await registerRequest(ctx, identityOf("studentAccepted"), {
-      accessNeeds: "Sala con acceso sin escaleras para las clases prácticas.",
-    });
+    const accepted = registered(
+      await registerRequest(ctx, identityOf("studentAccepted"), {
+        accessNeeds: "Sala con acceso sin escaleras para las clases prácticas.",
+      }),
+    );
     await takeRequest(ctx, professional, { requestId: accepted._id });
     const accompaniment = await acceptRequest(ctx, professional, {
       requestId: accepted._id,

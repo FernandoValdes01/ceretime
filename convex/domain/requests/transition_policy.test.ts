@@ -140,7 +140,7 @@ describe("transitionRequest", () => {
       ["received", "awaiting_information_or_acceptance"],
       ["under_review", "received"],
       ["accepted", "under_review"],
-      ["awaiting_information_or_acceptance", "under_review"],
+      ["awaiting_information_or_acceptance", "received"],
       ["received", "received"],
       ["accepted", "accepted"],
     ] as const;
@@ -281,6 +281,40 @@ describe("transitionRequest", () => {
       expect(result).toStrictEqual({ status: "rejected", cause });
       expect(result).not.toHaveProperty("change");
       expect(attempt).toStrictEqual(copy);
+    }
+  });
+});
+
+describe("respuesta del Estudiante (TI2-141)", () => {
+  const response = {
+    ...actor,
+    from: "awaiting_information_or_acceptance",
+    to: "under_review",
+  } as const;
+
+  test("vuelve a revisión conservando la respuesta recortada, sin abrir acompañamiento", () => {
+    expect(
+      transitionRequest({ ...response, reason: "  Puedo asistir los martes  " }),
+    ).toStrictEqual({
+      status: "applied",
+      change: { ...response, reason: "Puedo asistir los martes" },
+      opensAccompaniment: false,
+    });
+  });
+
+  test.each([undefined, "", "   "])("sin respuesta (%j) se rechaza", (reason) => {
+    expect(transitionRequest({ ...response, reason })).toStrictEqual({
+      status: "rejected",
+      cause: "reason_required",
+    });
+  });
+
+  test("solo sale de la espera: desde un estado terminal no hay respuesta que dar", () => {
+    for (const from of ["accepted", "cancelled", "closed_without_accompaniment"] as const) {
+      expect(transitionRequest({ ...response, from, reason: "Respuesta" })).toStrictEqual({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      });
     }
   });
 });

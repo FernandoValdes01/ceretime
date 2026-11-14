@@ -18,13 +18,8 @@
  * manual contra `AccompanimentRequestContent`.
  */
 
-import type { ApiResult } from "../errors/api_error";
-import {
-  isPersistableRequestState,
-  isSprint1RequestState,
-  type PersistableRequestState,
-  type Sprint1RequestState,
-} from "./state";
+import { REQUEST_FIELDS_INVALID_ERROR_CODE, errResult, type ApiResult } from "../errors/api_error";
+import { isPersistableRequestState, type PersistableRequestState } from "./state";
 
 /**
  * Tope del texto de necesidades de acceso en caracteres (TI2-23).
@@ -157,35 +152,297 @@ export function toAccompanimentRequest<RowId extends string, StudentId extends s
 }
 
 /**
- * Solicitud tal como la entrega hoy `api.presentation.requests.*`: solo los
- * cuatro estados de Sprint 1 (TI2-85).
- *
- * El contrato público no se amplió con los cierres porque Mobile deriva sus
- * tipos de él y su mapeo de estados es exhaustivo: ampliarlo es un cambio
- * incompatible que se coordina con TI4 en la tarea que publique cancelar y
- * cerrar. Mientras tanto ninguna vía pública llega a un cierre, y una fila
- * cerrada o cancelada se rechaza acá en vez de entregarse con un estado que
- * los clientes no saben mostrar.
+ * Topes del envío completo (TI2-141). Los textos largos comparten el tope de
+ * las necesidades de acceso; el canal accesible es una indicación breve. Se
+ * rechaza el exceso, nunca se trunca, por la misma razón que en
+ * `ACCESS_NEEDS_MAX_LENGTH`.
  */
-export function toSprint1AccompanimentRequest<RowId extends string, StudentId extends string>(row: {
-  readonly _id: RowId;
-  readonly studentId: StudentId;
-  readonly status: string;
-  readonly accessNeeds: string;
-  readonly createdAt: number;
-}): AccompanimentRequest & {
-  readonly _id: RowId;
-  readonly studentId: StudentId;
-  readonly status: Sprint1RequestState;
-} {
-  const request = toAccompanimentRequest(row);
-  const status = request.status;
-  if (!isSprint1RequestState(status)) {
-    throw new Error(
-      `Estado de solicitud fuera del contrato público de Sprint 1 en la fila ${row._id}: ${status}`,
-    );
+export const REQUEST_TEXT_MAX_LENGTH = ACCESS_NEEDS_MAX_LENGTH;
+export const INFORMATION_CHANNEL_MAX_LENGTH = 200;
+export const ACCESS_NEED_SELECTIONS_MAX = 20;
+export const ACCESS_NEED_LABEL_MAX_LENGTH = 200;
+/** El identificador se guarda tal cual en `accessNeedSelections`: lleva el mismo tope que el nombre. */
+export const ACCESS_NEED_ID_MAX_LENGTH = ACCESS_NEED_LABEL_MAX_LENGTH;
+export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
+
+/**
+ * Envío completo (TI2-141): el contenido canónico `AccompanimentRequestContent`
+ * más la clave de idempotencia que genera el cliente. La lista `accessNeeds`
+ * se persiste como `accessNeedSelections`; esa conversión es del caso de uso.
+ */
+export type RequestSubmission = Readonly<AccompanimentRequestContent> & {
+  readonly idempotencyKey: string;
+};
+
+const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/*
+ * Mensajes de los campos del envío completo. Los usan `toCompleteSubmission`,
+ * cuando el campo no llega, y `toRequestSubmission`, cuando llega vacío: el
+ * Estudiante lee lo mismo en los dos casos.
+ */
+const NEED_SUMMARY_REQUIRED = "Describe la barrera o necesidad.";
+const EXPECTED_OUTCOME_REQUIRED = "Indica qué esperas de CERETI.";
+const ACCESS_NEEDS_LIST_REQUIRED =
+  "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.";
+const MODALITY_PREFERENCE_REQUIRED = "Indica si prefieres la modalidad presencial o en línea.";
+const PREFERRED_WEEKDAYS_REQUIRED = "Selecciona al menos un día disponible.";
+const INFORMATION_CHANNEL_REQUIRED = "Indica cómo prefieres recibir información.";
+const IDEMPOTENCY_KEY_INVALID = `La clave del envío debe tener entre 1 y ${IDEMPOTENCY_KEY_MAX_LENGTH} caracteres.`;
+
+/**
+ * Un campo de la solicitud falta o no cumple su regla: el mensaje dice en
+ * español qué corregir. Es el único lugar que arma `request_fields_invalid`.
+ */
+export function invalidRequestFields<T>(message: string): ApiResult<T> {
+  return errResult({ code: REQUEST_FIELDS_INVALID_ERROR_CODE, message });
+}
+
+/**
+ * Envío tal como llega al borde: en la forma completa, `accessNeeds` es la
+ * lista de necesidades; en la forma anterior, el texto unido sin ningún otro
+ * campo. Convex exige un objeto, así que los campos de la forma completa
+ * llegan opcionales.
+ */
+export type RequestSubmissionDraft = {
+  readonly accessNeeds?: string | readonly AccessNeed[];
+} & Partial<Omit<RequestSubmission, "accessNeeds">>;
+
+/**
+ * Exige los campos obligatorios de la forma completa (TI2-141). `accessNeeds`
+ * como texto se revisa primero: si llega aquí, vino con algún campo de la
+ * forma completa, y la lista es lo que hay que corregir aunque falten otros.
+ * Después, en el orden del formulario, el primer campo que falta se nombra
+ * con el mismo texto que usa `toRequestSubmission` cuando llega vacío. No
+ * valida contenido: eso es de `toRequestSubmission`.
+ */
+export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<RequestSubmission> {
+  const {
+    needSummary,
+    expectedOutcome,
+    accessNeeds,
+    otherAccessNeed,
+    modalityPreference,
+    generalAvailability,
+    preferredAccessibleInformationChannel,
+    idempotencyKey,
+  } = draft;
+  if (typeof accessNeeds === "string") return invalidRequestFields(ACCESS_NEEDS_LIST_REQUIRED);
+  if (needSummary === undefined) return invalidRequestFields(NEED_SUMMARY_REQUIRED);
+  if (expectedOutcome === undefined) return invalidRequestFields(EXPECTED_OUTCOME_REQUIRED);
+  if (accessNeeds === undefined) return invalidRequestFields(ACCESS_NEEDS_LIST_REQUIRED);
+  if (modalityPreference === undefined) return invalidRequestFields(MODALITY_PREFERENCE_REQUIRED);
+  if (generalAvailability === undefined) return invalidRequestFields(PREFERRED_WEEKDAYS_REQUIRED);
+  if (preferredAccessibleInformationChannel === undefined) {
+    return invalidRequestFields(INFORMATION_CHANNEL_REQUIRED);
   }
-  return { ...request, status };
+  if (idempotencyKey === undefined) return invalidRequestFields(IDEMPOTENCY_KEY_INVALID);
+  return {
+    status: "ok",
+    data: {
+      needSummary,
+      expectedOutcome,
+      accessNeeds,
+      ...(otherAccessNeed === undefined ? {} : { otherAccessNeed }),
+      modalityPreference,
+      generalAvailability,
+      preferredAccessibleInformationChannel,
+      idempotencyKey,
+    },
+  };
+}
+
+/** Texto recortado dentro del tope, o el mensaje que indica qué corregir. */
+function boundedText(
+  raw: string,
+  max: number,
+  empty: string,
+  tooLong: string,
+): { readonly error: string } | { readonly text: string } {
+  const text = raw.trim();
+  if (text === "") return { error: empty };
+  if (text.length > max) return { error: tooLong };
+  return { text };
+}
+
+/**
+ * Valida el envío completo de una solicitud (TI2-141).
+ *
+ * Dominio puro: recorta los textos, aplica los topes y revisa la forma de la
+ * disponibilidad general, sin persistir nada. Devuelve el envío normalizado o
+ * el primer error con un mensaje en español que indica qué corregir, con
+ * `request_fields_invalid`; el texto unido de las necesidades de acceso
+ * conserva los códigos `access_needs_*` de `toStoredAccessNeeds`. No pide
+ * ni acepta RUT, diagnóstico, certificados ni área interna: esos campos no
+ * existen en el contrato.
+ */
+export function toRequestSubmission(input: RequestSubmission): ApiResult<RequestSubmission> {
+  const fail = (message: string): ApiResult<RequestSubmission> => invalidRequestFields(message);
+
+  const needSummary = boundedText(
+    input.needSummary,
+    REQUEST_TEXT_MAX_LENGTH,
+    NEED_SUMMARY_REQUIRED,
+    `La descripción de la necesidad supera el máximo permitido (${REQUEST_TEXT_MAX_LENGTH} caracteres).`,
+  );
+  if ("error" in needSummary) return fail(needSummary.error);
+
+  const expectedOutcome = boundedText(
+    input.expectedOutcome,
+    REQUEST_TEXT_MAX_LENGTH,
+    EXPECTED_OUTCOME_REQUIRED,
+    `El resultado esperado supera el máximo permitido (${REQUEST_TEXT_MAX_LENGTH} caracteres).`,
+  );
+  if ("error" in expectedOutcome) return fail(expectedOutcome.error);
+
+  if (input.accessNeeds.length > ACCESS_NEED_SELECTIONS_MAX) {
+    return fail(`Selecciona como máximo ${ACCESS_NEED_SELECTIONS_MAX} necesidades de acceso.`);
+  }
+  const accessNeeds: AccessNeed[] = [];
+  const seenNeeds = new Set<string>();
+  for (const need of input.accessNeeds) {
+    const id = need.id.trim();
+    const label = need.label.trim();
+    if (id === "" || label === "") return fail("Cada necesidad de acceso necesita su nombre.");
+    if (label.length > ACCESS_NEED_LABEL_MAX_LENGTH) {
+      return fail(
+        `El nombre de una necesidad de acceso supera el máximo permitido (${ACCESS_NEED_LABEL_MAX_LENGTH} caracteres).`,
+      );
+    }
+    if (id.length > ACCESS_NEED_ID_MAX_LENGTH) {
+      return fail(
+        `El identificador de una necesidad de acceso supera el máximo permitido (${ACCESS_NEED_ID_MAX_LENGTH} caracteres).`,
+      );
+    }
+    if (seenNeeds.has(id)) return fail("Una necesidad de acceso está repetida.");
+    seenNeeds.add(id);
+    accessNeeds.push({ id, label });
+  }
+  const otherAccessNeed = input.otherAccessNeed?.trim();
+  const stored = toStoredAccessNeeds(accessNeeds, otherAccessNeed);
+  if (stored.status === "error") {
+    // Conserva el código estable de Sprint 1 (`access_needs_*`), que los
+    // clientes ya traducen. El tope es del texto unido: con la lista, se pasa
+    // la suma de los nombres y el texto adicional, no un texto suelto.
+    if (stored.error.code !== "access_needs_too_long") return stored;
+    return {
+      status: "error",
+      error: {
+        code: stored.error.code,
+        message: `Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres).`,
+      },
+    };
+  }
+
+  const { preferredWeekdays, preferredTimeRange } = input.generalAvailability;
+  if (preferredWeekdays.length === 0) return fail(PREFERRED_WEEKDAYS_REQUIRED);
+  const days = new Set<number>();
+  for (const day of preferredWeekdays) {
+    if (!Number.isInteger(day) || day < 0 || day > 6) {
+      return fail("Los días disponibles van de 0 (domingo) a 6 (sábado).");
+    }
+    if (days.has(day)) return fail("Un día disponible está repetido.");
+    days.add(day);
+  }
+  if (preferredTimeRange !== undefined) {
+    const { from, to } = preferredTimeRange;
+    if (!TIME_OF_DAY.test(from) || !TIME_OF_DAY.test(to)) {
+      return fail("El horario disponible se indica en formato HH:mm.");
+    }
+    if (from >= to) return fail("El horario disponible debe empezar antes de terminar.");
+  }
+
+  const channel = boundedText(
+    input.preferredAccessibleInformationChannel,
+    INFORMATION_CHANNEL_MAX_LENGTH,
+    INFORMATION_CHANNEL_REQUIRED,
+    `El medio para recibir información supera el máximo permitido (${INFORMATION_CHANNEL_MAX_LENGTH} caracteres).`,
+  );
+  if ("error" in channel) return fail(channel.error);
+
+  const idempotencyKey = input.idempotencyKey;
+  if (idempotencyKey.trim() === "" || idempotencyKey.length > IDEMPOTENCY_KEY_MAX_LENGTH) {
+    return fail(IDEMPOTENCY_KEY_INVALID);
+  }
+
+  return {
+    status: "ok",
+    data: {
+      needSummary: needSummary.text,
+      expectedOutcome: expectedOutcome.text,
+      accessNeeds,
+      ...(otherAccessNeed ? { otherAccessNeed } : {}),
+      modalityPreference: input.modalityPreference,
+      generalAvailability: {
+        preferredWeekdays: [...preferredWeekdays],
+        ...(preferredTimeRange === undefined
+          ? {}
+          : { preferredTimeRange: { ...preferredTimeRange } }),
+      },
+      preferredAccessibleInformationChannel: channel.text,
+      idempotencyKey,
+    },
+  };
+}
+
+/** Tope de la respuesta del Estudiante a la información pedida (TI2-141). */
+export const REQUEST_RESPONSE_MAX_LENGTH = 2000;
+
+/**
+ * Respuesta del Estudiante a la información pedida (TI2-141), recortada.
+ * Es obligatoria y se rechaza sobre `REQUEST_RESPONSE_MAX_LENGTH` sin
+ * cortarla, igual que los demás textos de la solicitud.
+ */
+export function toInformationResponse(raw: string): ApiResult<string> {
+  const response = boundedText(
+    raw,
+    REQUEST_RESPONSE_MAX_LENGTH,
+    "Se requiere la respuesta a la información pedida.",
+    `La respuesta supera el máximo permitido (${REQUEST_RESPONSE_MAX_LENGTH} caracteres).`,
+  );
+  if ("error" in response) return invalidRequestFields(response.error);
+  return { status: "ok", data: response.text };
+}
+
+/**
+ * Textos del intercambio que acompañan al detalle de una solicitud (TI2-141),
+ * leídos de su historial de cambios, del último al primero.
+ *
+ * `informationRequest` es lo que el Profesional pidió y solo existe mientras
+ * la solicitud espera respuesta: después deja de ser lo pendiente.
+ * `informationResponse` es la respuesta al último pedido: si el Profesional
+ * vuelve a pedir, la respuesta anterior deja de entregarse hasta que llegue la
+ * nueva, así una pregunta pendiente no parece respondida. Son texto libre:
+ * solo se entregan en el detalle, a quien ya puede leer la solicitud.
+ */
+export function toRequestExchange(
+  status: PersistableRequestState,
+  recentChanges: readonly {
+    readonly from: PersistableRequestState;
+    readonly to: PersistableRequestState;
+    readonly reason?: string;
+  }[],
+): { readonly informationRequest?: string; readonly informationResponse?: string } {
+  const requestAt = recentChanges.findIndex(
+    (change) => change.to === "awaiting_information_or_acceptance",
+  );
+  const responseAt = recentChanges.findIndex(
+    (change) =>
+      change.from === "awaiting_information_or_acceptance" && change.to === "under_review",
+  );
+  const lastRequest = recentChanges[requestAt];
+  // La lista va del último cambio al primero. Un pedido fuera de lo leído es
+  // anterior a cualquier respuesta leída, porque toda respuesta sigue a un pedido.
+  const lastResponse =
+    responseAt !== -1 && (requestAt === -1 || responseAt < requestAt)
+      ? recentChanges[responseAt]
+      : undefined;
+  return {
+    ...(status === "awaiting_information_or_acceptance" && lastRequest?.reason !== undefined
+      ? { informationRequest: lastRequest.reason }
+      : {}),
+    ...(lastResponse?.reason === undefined ? {} : { informationResponse: lastResponse.reason }),
+  };
 }
 
 /** Campos de la tabla `requests` que salen del contenido estructurado. */

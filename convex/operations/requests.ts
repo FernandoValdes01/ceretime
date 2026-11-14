@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { env, internalMutation, internalQuery } from "../_generated/server";
-import { requestStatusUnion } from "../infrastructure/validators";
+import { SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
 
 /**
  * Módulo de funciones internas para la entidad 'requests'.
@@ -8,6 +8,10 @@ import { requestStatusUnion } from "../infrastructure/validators";
  * Solo persistencia: las transiciones de estado las aplica TI2-21, aquí no
  * se valida ningún cambio de estado.
  */
+
+// La semilla crea solicitudes abiertas o aceptadas; un cierre se persiste por
+// su caso de uso, no por esta vía.
+const seedRequestStatusUnion = v.union(...SPRINT_1_REQUEST_STATES.map((state) => v.literal(state)));
 
 /**
  * Crea una solicitud ficticia de prueba para validar persistencia y estados.
@@ -18,7 +22,7 @@ import { requestStatusUnion } from "../infrastructure/validators";
 export const createTestRequest = internalMutation({
   args: {
     studentId: v.id("users"),
-    status: requestStatusUnion,
+    status: seedRequestStatusUnion,
     accessNeeds: v.string(),
   },
   handler: async (ctx, args) => {

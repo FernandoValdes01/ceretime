@@ -2,6 +2,7 @@ import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { isActiveInRole } from "../../domain/authorization/permissions";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 
@@ -9,48 +10,59 @@ import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
  * Identidad de quien llama para solicitudes (TI2-9).
  *
  * Resuelve el perfil en el servidor desde `ctx.auth.getUserIdentity()` y
- * exige el rol con cuenta habilitada y vigente. Toda denegación usa el
- * error genérico, sin motivo ni existencia de recursos.
+ * exige el rol con cuenta habilitada y vigente con `isActiveInRole`, la
+ * regla de Dominio que también aplica `activeStudentReader` de
+ * Infraestructura. Las variantes `find*` devuelven `null` para que las
+ * operaciones de TI2-141 respondan `unauthorized` como valor, y las
+ * `require*` de Sprint 1 lanzan el texto «No autorizado» de siempre. Ninguna
+ * dice el motivo ni si el recurso existe.
  */
-
-function deny(): never {
-  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
-}
 
 type DbContext = QueryCtx | MutationCtx;
 
-/** Estudiante con cuenta habilitada y vigente. */
+async function findActiveProfile(
+  ctx: DbContext,
+  tokenIdentifier: string | null,
+  role: Doc<"users">["role"],
+): Promise<Doc<"users"> | null> {
+  if (tokenIdentifier === null) return null;
+  const caller = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+  return caller !== null && isActiveInRole(caller, role) ? caller : null;
+}
+
+/** Estudiante con cuenta habilitada y vigente, o `null`. */
+export async function findActiveStudent(
+  ctx: DbContext,
+  tokenIdentifier: string | null,
+): Promise<Doc<"users"> | null> {
+  return await findActiveProfile(ctx, tokenIdentifier, "student");
+}
+
+/** Profesional con cuenta habilitada y vigente, o `null`. */
+export async function findActiveProfessional(
+  ctx: DbContext,
+  tokenIdentifier: string | null,
+): Promise<Doc<"users"> | null> {
+  return await findActiveProfile(ctx, tokenIdentifier, "professional");
+}
+
+function orDeny(caller: Doc<"users"> | null): Doc<"users"> {
+  if (caller === null) throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+  return caller;
+}
+
+/** Estudiante con cuenta habilitada y vigente; si no, la denegación de Sprint 1. */
 export async function requireActiveStudent(
   ctx: DbContext,
   identity: UserIdentity | null,
 ): Promise<Doc<"users">> {
-  if (identity === null) deny();
-  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
-  if (
-    caller === null ||
-    caller.role !== "student" ||
-    caller.institutionalStatus !== "enabled" ||
-    caller.accountStatus !== "active"
-  ) {
-    deny();
-  }
-  return caller;
+  return orDeny(await findActiveStudent(ctx, identity?.tokenIdentifier ?? null));
 }
 
-/** Profesional con cuenta habilitada y vigente. */
+/** Profesional con cuenta habilitada y vigente; si no, la denegación de Sprint 1. */
 export async function requireActiveProfessional(
   ctx: DbContext,
   identity: UserIdentity | null,
 ): Promise<Doc<"users">> {
-  if (identity === null) deny();
-  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
-  if (
-    caller === null ||
-    caller.role !== "professional" ||
-    caller.institutionalStatus !== "enabled" ||
-    caller.accountStatus !== "active"
-  ) {
-    deny();
-  }
-  return caller;
+  return orDeny(await findActiveProfessional(ctx, identity?.tokenIdentifier ?? null));
 }

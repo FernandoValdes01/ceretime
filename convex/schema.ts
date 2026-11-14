@@ -134,8 +134,8 @@ export default defineSchema({
 
   // Tabla 'requests': solicitudes de acompañamiento. El estado usa los
   // literales persistibles del dominio (Sprint 1 de TI2-7 más la cancelación
-  // y el cierre de TI2-85, sin `referred`); el contrato de presentación
-  // conserva los 4 estados de Sprint 1 (ver `toSprint1AccompanimentRequest`).
+  // y el cierre de TI2-85, sin `referred`); desde TI2-141 el contrato de
+  // presentación declara los siete estados del dominio (`requestStatusUnion`).
   // `createdAt` es la fecha de creación como número. Solo persistencia: las
   // transiciones las aplica TI2-21 y las reglas de cancelación y cierre son
   // de TI2-85. TI2-135 suma el contenido completo de la solicitud, su
@@ -173,7 +173,8 @@ export default defineSchema({
     outgoingReferral: v.optional(outgoingReferralValidator),
     // Razón comprensible de cierre (TI2-135): la vigente y legible para el
     // estudiante. `requestTransitions.reason` conserva el rastro histórico de
-    // cada transición; el caso de uso futuro escribe ambas en una transacción.
+    // cada transición; desde TI2-141 el cierre sin acompañamiento escribe
+    // ambas en la misma transacción.
     closureReason: v.optional(v.string()),
     // Clave de idempotencia del envío (TI2-135), única por estudiante: un
     // reintento con la misma clave no crea otra solicitud.

@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
 import type { FunctionReturnType } from "convex/server";
+import { ConvexError } from "convex/values";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { cancelRequest, closeRequestWithoutAccompaniment } from "../application/requests/commands";
 import { SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
 import schema from "../schema";
 
@@ -119,8 +119,8 @@ test("El estado persiste exactamente los literales de Sprint 1 del dominio", asy
     expect(fetchedRequest?.status).toBe(status);
   }
 
-  // La semilla usa el contrato público de Sprint 1: un cierre de TI2-85 se
-  // persiste por su caso de uso, no por esta vía
+  // La semilla solo crea solicitudes abiertas o aceptadas: un cierre de
+  // TI2-85 se persiste por su caso de uso, no por esta vía
   await expect(
     t.mutation(internal.operations.requests.createTestRequest, {
       studentId,
@@ -812,11 +812,10 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
 });
 
 /*
- * TI2-85: cancelar y cerrar sin acompañamiento. Los dos casos de uso todavía
- * no tienen entrada pública, así que se invocan dentro de `t.run`, que
- * convex-test ejecuta como una mutation y revierte si lanza: un rechazo se
- * prueba igual que en producción. La identidad llega ya resuelta, como la
- * entrega el borde con `ctx.auth.getUserIdentity()`.
+ * TI2-85 y TI2-141: cancelar y cerrar sin acompañamiento. Desde TI2-141 los
+ * dos casos de uso tienen entrada pública, así que estas pruebas pasan por
+ * `api.presentation.requests.*` con la identidad de la sesión: lo que se
+ * comprueba es el borde completo, no solo el caso de uso.
  */
 
 type SchemaTest = TestConvex<typeof schema>;
@@ -878,7 +877,7 @@ async function seedTake(
   });
 }
 
-/** Estado, registro de cambios y acompañamientos de la solicitud. */
+/** Estado, razón de cierre, registro de cambios y acompañamientos de la solicitud. */
 async function snapshotOf(t: SchemaTest, requestId: Id<"requests">) {
   return await t.run(async (ctx) => {
     const request = await ctx.db.get(requestId);
@@ -891,16 +890,50 @@ async function snapshotOf(t: SchemaTest, requestId: Id<"requests">) {
       .query("accompaniments")
       .filter((q) => q.eq(q.field("requestId"), requestId))
       .take(2);
-    return { status: request?.status, transitions, accompaniments: accompaniments.length };
+    return {
+      status: request?.status,
+      closureReason: request?.closureReason,
+      transitions,
+      accompaniments: accompaniments.length,
+    };
   });
 }
 
+/** Sesión de la identidad, o sin sesión cuando es `null`. */
+function sessionOf(t: SchemaTest, identity: Identity) {
+  return identity === null ? t : t.withIdentity(identity);
+}
+
+/**
+ * Datos del `ConvexError` con que se rechazó la promesa. Distingue las dos
+ * formas de denegación: con datos de objeto, `ConvexError` copia el objeto
+ * como texto en `message`, así que `toThrow("No autorizado")` acepta las dos.
+ */
+async function publicErrorOf(promise: Promise<unknown>) {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof ConvexError) return error.data as unknown;
+    throw error;
+  }
+  throw new Error("Se esperaba un rechazo");
+}
+
+/** Denegación del contrato común que usan las operaciones de TI2-141. */
+const UNAUTHORIZED = { code: "unauthorized", message: "No autorizado" };
+
 function cancelAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, reason: string) {
-  return t.run((ctx) => cancelRequest(ctx, identity, { requestId, reason }));
+  return sessionOf(t, identity).mutation(api.presentation.requests.cancelRequest, {
+    requestId,
+    reason,
+  });
 }
 
 function closeAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, reason: string) {
-  return t.run((ctx) => closeRequestWithoutAccompaniment(ctx, identity, { requestId, reason }));
+  return sessionOf(t, identity).mutation(
+    api.presentation.requests.closeRequestWithoutAccompaniment,
+    { requestId, reason },
+  );
 }
 
 const OPEN_FOR_STUDENT = [
@@ -927,6 +960,8 @@ test("TI2-85: el Estudiante cancela su solicitud abierta y queda el registro con
     // y el motivo recortado; no se abre ningún acompañamiento
     const after = await snapshotOf(t, requestId);
     expect(after.status).toBe("cancelled");
+    // Cancelar no escribe razón de cierre: el motivo del Estudiante queda en el registro
+    expect(after.closureReason).toBeUndefined();
     expect(after.accompaniments).toBe(0);
     expect(after.transitions).toHaveLength(1);
     expect(after.transitions[0]).toMatchObject({
@@ -947,7 +982,7 @@ test("TI2-85: cancelar exige motivo y el rechazo no deja escrituras", async () =
 
   for (const reason of ["", "   "]) {
     await expect(cancelAs(t, identityOf("ti85-est-2"), requestId, reason)).rejects.toThrow(
-      "Se requiere el motivo para cancelar la solicitud",
+      "Se requiere el motivo para cancelar la solicitud.",
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
@@ -966,9 +1001,9 @@ test("TI2-85: cancelar una solicitud ajena o inexistente se deniega igual, sin e
 
   // Otro Estudiante vigente no distingue una solicitud ajena de una inexistente
   for (const requestId of [foreignId, missingId]) {
-    await expect(
-      cancelAs(t, identityOf("ti85-est-4"), requestId, "Motivo ficticio"),
-    ).rejects.toThrow("No autorizado");
+    expect(
+      await publicErrorOf(cancelAs(t, identityOf("ti85-est-4"), requestId, "Motivo ficticio")),
+    ).toEqual(UNAUTHORIZED);
   }
   expect(await snapshotOf(t, foreignId)).toEqual(before);
 });
@@ -980,8 +1015,8 @@ test("TI2-85: sin identidad, sin rol Estudiante o sin cuenta vigente no se cance
   const before = await snapshotOf(t, requestId);
 
   for (const identity of [null, identityOf("ti85-sin-perfil")]) {
-    await expect(cancelAs(t, identity, requestId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(cancelAs(t, identity, requestId, "Motivo ficticio"))).toEqual(
+      UNAUTHORIZED,
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
@@ -995,8 +1030,8 @@ test("TI2-85: sin identidad, sin rol Estudiante o sin cuenta vigente no se cance
   ] as const) {
     const profileId = await seedProfile(t, subject, role);
     const ownId = await seedRequestIn(t, profileId, "received");
-    await expect(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio"))).toEqual(
+      UNAUTHORIZED,
     );
     expect((await snapshotOf(t, ownId)).status).toBe("received");
   }
@@ -1010,8 +1045,8 @@ test("TI2-85: sin identidad, sin rol Estudiante o sin cuenta vigente no se cance
   ] as const) {
     const studentId = await seedProfile(t, subject, "student", status);
     const ownId = await seedRequestIn(t, studentId, "received");
-    await expect(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio"))).toEqual(
+      UNAUTHORIZED,
     );
     expect((await snapshotOf(t, ownId)).status).toBe("received");
   }
@@ -1027,7 +1062,7 @@ test("TI2-85: repetir la cancelación o cancelar una aceptada o cerrada se recha
   await cancelAs(t, student, requestId, "Motivo ficticio");
   const afterFirst = await snapshotOf(t, requestId);
   await expect(cancelAs(t, student, requestId, "Otro motivo")).rejects.toThrow(
-    "La solicitud no admite la cancelación en su estado actual",
+    "La solicitud no admite la cancelación en su estado actual.",
   );
   expect(await snapshotOf(t, requestId)).toEqual(afterFirst);
   expect(afterFirst.transitions).toHaveLength(1);
@@ -1039,6 +1074,7 @@ test("TI2-85: repetir la cancelación o cancelar una aceptada o cerrada se recha
     );
     expect(await snapshotOf(t, endedId)).toEqual({
       status,
+      closureReason: undefined,
       transitions: [],
       accompaniments: 0,
     });
@@ -1052,7 +1088,7 @@ test("TI2-85: el Profesional con toma cierra sin acompañamiento desde revisión
   const asStudent = t.withIdentity(identityFor("ti85-est-7", "ti85-est-7@alu.uct.cl"));
   const asProfessional = t.withIdentity(identityOf("ti85-pro-2"));
 
-  // En revisión: registrar y tomar por la vía pública, cerrar por el caso de uso
+  // En revisión: registrar, tomar y cerrar por la vía pública
   const reviewed = await asStudent.mutation(api.presentation.requests.createRequest, {
     accessNeeds: "Necesidad de acceso ficticia",
   });
@@ -1068,6 +1104,10 @@ test("TI2-85: el Profesional con toma cierra sin acompañamiento desde revisión
   expect(closed.status).toBe("closed_without_accompaniment");
   const afterReview = await snapshotOf(t, reviewed._id);
   expect(afterReview.status).toBe("closed_without_accompaniment");
+  // La razón vigente queda en la fila, recortada e igual a la del registro
+  expect(afterReview.closureReason).toBe(
+    "La necesidad corresponde a otra unidad de la universidad",
+  );
   expect(afterReview.accompaniments).toBe(0);
   expect(afterReview.transitions.map((row) => `${row.from} -> ${row.to}`)).toEqual([
     "received -> under_review",
@@ -1125,14 +1165,14 @@ test("TI2-85: cerrar exige toma activa; sin ella o con una revocada se deniega s
 
   // Otro Profesional sin toma y uno con la toma revocada no operan
   for (const subject of ["ti85-pro-4", "ti85-pro-5"]) {
-    await expect(closeAs(t, identityOf(subject), requestId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
-    );
+    expect(
+      await publicErrorOf(closeAs(t, identityOf(subject), requestId, "Motivo ficticio")),
+    ).toEqual(UNAUTHORIZED);
   }
   // Una solicitud inexistente responde igual que una sin toma
-  await expect(closeAs(t, identityOf("ti85-pro-3"), missingId, "Motivo ficticio")).rejects.toThrow(
-    "No autorizado",
-  );
+  expect(
+    await publicErrorOf(closeAs(t, identityOf("ti85-pro-3"), missingId, "Motivo ficticio")),
+  ).toEqual(UNAUTHORIZED);
   expect(await snapshotOf(t, requestId)).toEqual(before);
 });
 
@@ -1146,7 +1186,7 @@ test("TI2-85: cerrar exige motivo y el rechazo no deja escrituras", async () => 
 
   for (const reason of ["", "   "]) {
     await expect(closeAs(t, identityOf("ti85-pro-6"), requestId, reason)).rejects.toThrow(
-      "Se requiere el motivo para cerrar la solicitud sin acompañamiento",
+      "Se requiere el motivo para cerrar la solicitud sin acompañamiento.",
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
@@ -1173,8 +1213,8 @@ test("TI2-85: sin identidad, sin rol Profesional o sin cuenta vigente no se cier
 
   const subjects = ["ti85-est-10", ...others.map(([subject]) => subject)];
   for (const identity of [null, identityOf("ti85-sin-perfil"), ...subjects.map(identityOf)]) {
-    await expect(closeAs(t, identity, requestId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(closeAs(t, identity, requestId, "Motivo ficticio"))).toEqual(
+      UNAUTHORIZED,
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
@@ -1191,10 +1231,11 @@ test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza si
     const requestId = await seedRequestIn(t, studentId, status);
     await seedTake(t, requestId, proId);
     await expect(closeAs(t, professional, requestId, "Motivo ficticio")).rejects.toThrow(
-      "La solicitud no admite el cierre sin acompañamiento en su estado actual",
+      "La solicitud no admite el cierre sin acompañamiento en su estado actual.",
     );
     expect(await snapshotOf(t, requestId)).toEqual({
       status,
+      closureReason: undefined,
       transitions: [],
       accompaniments: 0,
     });
@@ -1212,7 +1253,7 @@ test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza si
   expect(afterFirst.transitions).toHaveLength(1);
 });
 
-test("TI2-85: tras cerrar, la bandeja del Profesional sigue respondiendo con el resto de las solicitudes", async () => {
+test("TI2-141: tras cerrar, el listado y el detalle del Profesional entregan la solicitud cerrada", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti85-est-12", "student");
   const proId = await seedProfile(t, "ti85-pro-8", "professional");
@@ -1222,20 +1263,24 @@ test("TI2-85: tras cerrar, la bandeja del Profesional sigue respondiendo con el 
   await seedTake(t, openId, proId);
   await closeAs(t, identityOf("ti85-pro-8"), closedId, "Motivo ficticio");
 
-  // La cerrada se omite: una sola fila fuera del contrato no tumba la bandeja
+  // La cerrada sigue en el listado, con su estado, junto a la abierta
   const asProfessional = t.withIdentity(identityOf("ti85-pro-8"));
   const page = await asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(page.page.map((item) => item._id)).toEqual([openId]);
+  expect(page.page.map((item) => [item._id, item.status])).toEqual([
+    [closedId, "closed_without_accompaniment"],
+    [openId, "under_review"],
+  ]);
 
-  // El detalle sí la rechaza: ahí entregarla violaría el contrato público
-  await expect(
-    asProfessional.query(api.presentation.requests.getRequest, { requestId: closedId }),
-  ).rejects.toThrow("fuera del contrato público de Sprint 1");
+  // El detalle también la entrega
+  const detail = await asProfessional.query(api.presentation.requests.getRequest, {
+    requestId: closedId,
+  });
+  expect(detail).toMatchObject({ _id: closedId, status: "closed_without_accompaniment" });
 });
 
-test("TI2-85: tras cancelar, el listado del Estudiante y la bandeja del Profesional con toma siguen respondiendo", async () => {
+test("TI2-141: tras cancelar, el listado del Estudiante y el del Profesional con toma entregan la solicitud cancelada", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti85-est-13", "student");
   const proId = await seedProfile(t, "ti85-pro-9", "professional");
@@ -1249,9 +1294,16 @@ test("TI2-85: tras cancelar, el listado del Estudiante y la bandeja del Profesio
     .query(api.presentation.requests.listOwnRequests, {
       paginationOpts: { numItems: 10, cursor: null },
     });
-  expect(own.page.map((item) => item._id)).toEqual([openId]);
+  expect(own.page.map((item) => [item._id, item.status])).toEqual([
+    [cancelledId, "cancelled"],
+    [openId, "received"],
+  ]);
+  const ownDetail = await t
+    .withIdentity(identityOf("ti85-est-13"))
+    .query(api.presentation.requests.getRequest, { requestId: cancelledId });
+  expect(ownDetail).toMatchObject({ _id: cancelledId, status: "cancelled" });
 
-  // Cancelar no revoca la toma, así que la bandeja sigue pasando por la fila
+  // Cancelar no revoca la toma, así que el Profesional la sigue viendo
   const activeTakes = await t.run((ctx) =>
     ctx.db
       .query("requestAssignments")
@@ -1266,5 +1318,586 @@ test("TI2-85: tras cancelar, el listado del Estudiante y la bandeja del Profesio
     .query(api.presentation.requests.listAuthorizedRequests, {
       paginationOpts: { numItems: 10, cursor: null },
     });
-  expect(authorized.page).toEqual([]);
+  expect(authorized.page.map((item) => [item._id, item.status])).toEqual([
+    [cancelledId, "cancelled"],
+  ]);
+});
+
+/*
+ * TI2-141: respuesta del Estudiante a la información pedida y detalle con
+ * los textos del intercambio.
+ */
+
+function respondAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, response: string) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.respondToInformationRequest, {
+    requestId,
+    response,
+  });
+}
+
+function detailAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">) {
+  return sessionOf(t, identity).query(api.presentation.requests.getRequest, { requestId });
+}
+
+const PAGE = { numItems: 10, cursor: null };
+
+test("TI2-141: el Estudiante responde lo pedido y la solicitud vuelve a revisión con su registro", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-est-1", "student");
+  const proId = await seedProfile(t, "ti141-pro-1", "professional");
+  const student = identityOf("ti141-est-1");
+  const professional = identityOf("ti141-pro-1");
+  const asProfessional = t.withIdentity(professional);
+
+  const created = await t
+    .withIdentity(student)
+    .mutation(api.presentation.requests.createRequest, { accessNeeds: "Necesidad ficticia" });
+  const requestId = created._id;
+  await asProfessional.mutation(api.presentation.requests.takeRequest, { requestId });
+  await asProfessional.mutation(api.presentation.requests.requestAdditionalInformation, {
+    requestId,
+    reason: "Falta el horario en que puedes asistir",
+  });
+
+  // Mientras espera, el dueño y quien la tomó leen lo pedido en el detalle
+  for (const identity of [student, professional]) {
+    const waiting = await detailAs(t, identity, requestId);
+    expect(waiting.status).toBe("awaiting_information_or_acceptance");
+    expect(waiting.informationRequest).toBe("Falta el horario en que puedes asistir");
+    expect(waiting.informationResponse).toBeUndefined();
+  }
+
+  const answered = await respondAs(t, student, requestId, "  Puedo los martes por la tarde  ");
+  expect(answered).toMatchObject({ _id: requestId, studentId, status: "under_review" });
+
+  // Estado y registro en la misma transacción: actor Estudiante, respuesta recortada
+  const after = await snapshotOf(t, requestId);
+  expect(after.status).toBe("under_review");
+  expect(after.accompaniments).toBe(0);
+  expect(after.transitions.map((row) => `${row.from} -> ${row.to}`)).toEqual([
+    "received -> under_review",
+    "under_review -> awaiting_information_or_acceptance",
+    "awaiting_information_or_acceptance -> under_review",
+  ]);
+  expect(after.transitions[2]).toMatchObject({
+    actorId: studentId,
+    reason: "Puedo los martes por la tarde",
+  });
+
+  // Ya no hay nada pendiente: el detalle entrega la respuesta y no lo pedido
+  for (const identity of [student, professional]) {
+    const reviewed = await detailAs(t, identity, requestId);
+    expect(reviewed.informationRequest).toBeUndefined();
+    expect(reviewed.informationResponse).toBe("Puedo los martes por la tarde");
+  }
+
+  // El Profesional retoma: vuelve a pedir y el detalle muestra solo el pedido
+  // nuevo, sin la respuesta al anterior, para que no parezca respondido
+  await asProfessional.mutation(api.presentation.requests.requestAdditionalInformation, {
+    requestId,
+    reason: "Indica también la modalidad",
+  });
+  for (const identity of [student, professional]) {
+    const again = await detailAs(t, identity, requestId);
+    expect(again.informationRequest).toBe("Indica también la modalidad");
+    expect(again.informationResponse).toBeUndefined();
+  }
+
+  // La segunda respuesta reemplaza a la primera en el detalle
+  await respondAs(t, student, requestId, "En línea");
+  for (const identity of [student, professional]) {
+    const answered = await detailAs(t, identity, requestId);
+    expect(answered.informationRequest).toBeUndefined();
+    expect(answered.informationResponse).toBe("En línea");
+  }
+
+  // Tras la segunda respuesta se acepta y abre un solo acompañamiento
+  await asProfessional.mutation(api.presentation.requests.acceptRequest, {
+    requestId,
+    objective: "Objetivo ficticio",
+  });
+  const accepted = await snapshotOf(t, requestId);
+  expect(accepted.status).toBe("accepted");
+  expect(accepted.accompaniments).toBe(1);
+  expect(accepted.transitions.filter((row) => row.actorId === proId)).toHaveLength(4);
+});
+
+test("TI2-141: responder una solicitud ajena o inexistente, o sin ser Estudiante vigente, se deniega sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const ownerId = await seedProfile(t, "ti141-est-2", "student");
+  await seedProfile(t, "ti141-est-3", "student");
+  const proId = await seedProfile(t, "ti141-pro-2", "professional");
+  await seedProfile(t, "ti141-int-1", "intern");
+  await seedProfile(t, "ti141-adm-1", "admin");
+  await seedProfile(t, "ti141-est-ina", "student", {
+    institutionalStatus: "enabled",
+    accountStatus: "inactive",
+  });
+  const requestId = await seedRequestIn(t, ownerId, "awaiting_information_or_acceptance");
+  await seedTake(t, requestId, proId);
+  const missingId = await seedRequestIn(t, ownerId, "awaiting_information_or_acceptance");
+  await t.run(async (ctx) => {
+    await ctx.db.delete(missingId);
+  });
+  const before = await snapshotOf(t, requestId);
+
+  // Otro Estudiante no distingue una solicitud ajena de una inexistente
+  for (const id of [requestId, missingId]) {
+    expect(await publicErrorOf(respondAs(t, identityOf("ti141-est-3"), id, "Respuesta"))).toEqual(
+      UNAUTHORIZED,
+    );
+  }
+  // Ni el Profesional con toma responde por el Estudiante
+  for (const identity of [
+    null,
+    identityOf("ti141-sin-perfil"),
+    identityOf("ti141-pro-2"),
+    identityOf("ti141-int-1"),
+    identityOf("ti141-adm-1"),
+    identityOf("ti141-est-ina"),
+  ]) {
+    expect(await publicErrorOf(respondAs(t, identity, requestId, "Respuesta"))).toEqual(
+      UNAUTHORIZED,
+    );
+  }
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+});
+
+test("TI2-141: el dueño sin rol Estudiante o sin cuenta vigente no responde su propia solicitud", async () => {
+  const t = convexTest(schema, modules);
+  // Cada perfil es dueño de la solicitud que intenta responder: la denegación
+  // sale del rol o de la vigencia, no de la pertenencia
+  for (const [subject, role, status] of [
+    ["ti141-resp-pro", "professional", ENABLED],
+    ["ti141-resp-inh", "student", { institutionalStatus: "disabled", accountStatus: "active" }],
+    ["ti141-resp-pen", "student", { institutionalStatus: "pending", accountStatus: "active" }],
+    ["ti141-resp-ina", "student", { institutionalStatus: "enabled", accountStatus: "inactive" }],
+  ] as const) {
+    const ownerId = await seedProfile(t, subject, role, status);
+    const requestId = await seedRequestIn(t, ownerId, "awaiting_information_or_acceptance");
+    const before = await snapshotOf(t, requestId);
+    expect(await publicErrorOf(respondAs(t, identityOf(subject), requestId, "Respuesta"))).toEqual(
+      UNAUTHORIZED,
+    );
+    expect(await snapshotOf(t, requestId)).toEqual(before);
+  }
+});
+
+test("TI2-141: responder exige la espera, una respuesta con texto y dentro del tope", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-est-4", "student");
+  const student = identityOf("ti141-est-4");
+
+  // Fuera de la espera no hay nada que responder, ni siquiera desde recibida,
+  // donde el par `received -> under_review` existe para la toma
+  for (const status of [
+    "received",
+    "under_review",
+    "accepted",
+    "cancelled",
+    "closed_without_accompaniment",
+  ] as const) {
+    const requestId = await seedRequestIn(t, studentId, status);
+    await expect(respondAs(t, student, requestId, "Respuesta")).rejects.toThrow(
+      "La solicitud no admite una respuesta en su estado actual.",
+    );
+    expect(await snapshotOf(t, requestId)).toMatchObject({ status, transitions: [] });
+  }
+
+  const requestId = await seedRequestIn(t, studentId, "awaiting_information_or_acceptance");
+  const before = await snapshotOf(t, requestId);
+  for (const response of ["", "   "]) {
+    await expect(respondAs(t, student, requestId, response)).rejects.toThrow(
+      "Se requiere la respuesta a la información pedida.",
+    );
+  }
+  await expect(respondAs(t, student, requestId, "a".repeat(2001))).rejects.toThrow(
+    "La respuesta supera el máximo permitido (2000 caracteres).",
+  );
+  expect(await snapshotOf(t, requestId)).toEqual(before);
+
+  // En el tope exacto se acepta
+  await respondAs(t, student, requestId, "a".repeat(2000));
+  expect((await snapshotOf(t, requestId)).status).toBe("under_review");
+});
+
+test("TI2-141: la razón de cierre llega al detalle del Estudiante y los textos no viajan en los listados", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-est-5", "student");
+  const proId = await seedProfile(t, "ti141-pro-3", "professional");
+  await seedProfile(t, "ti141-pro-4", "professional");
+  const student = identityOf("ti141-est-5");
+  const professional = identityOf("ti141-pro-3");
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+  await seedTake(t, requestId, proId);
+  await t
+    .withIdentity(professional)
+    .mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId,
+      reason: "Pedido ficticio",
+    });
+  await respondAs(t, student, requestId, "Respuesta ficticia");
+  await closeAs(t, professional, requestId, "La necesidad corresponde a otra unidad");
+
+  const detail = await detailAs(t, student, requestId);
+  expect(detail).toMatchObject({
+    status: "closed_without_accompaniment",
+    closureReason: "La necesidad corresponde a otra unidad",
+    informationResponse: "Respuesta ficticia",
+  });
+  expect(detail.informationRequest).toBeUndefined();
+
+  // Los listados conservan los cinco campos: sin razón ni intercambio
+  const BASE_KEYS = ["_id", "accessNeeds", "createdAt", "status", "studentId"];
+  const own = await t
+    .withIdentity(student)
+    .query(api.presentation.requests.listOwnRequests, { paginationOpts: PAGE });
+  const authorized = await t
+    .withIdentity(professional)
+    .query(api.presentation.requests.listAuthorizedRequests, { paginationOpts: PAGE });
+  for (const item of [...own.page, ...authorized.page]) {
+    expect(Object.keys(item).sort()).toEqual(BASE_KEYS);
+  }
+
+  // Un Profesional sin toma no lee el detalle, y con él tampoco la razón
+  await expect(detailAs(t, identityOf("ti141-pro-4"), requestId)).rejects.toThrow("No autorizado");
+});
+
+/*
+ * TI2-141: envío completo con validaciones, límites e idempotencia.
+ */
+
+const FULL_SUBMISSION = {
+  needSummary: "  Necesito apoyo para seguir las clases en línea  ",
+  expectedOutcome: "Acordar ajustes de comunicación con mis docentes",
+  accessNeeds: [
+    { id: "written-communication", label: "Comunicación escrita" },
+    { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
+  ],
+  otherAccessNeed: "Material enviado con anticipación",
+  modalityPreference: "online" as const,
+  generalAvailability: {
+    preferredWeekdays: [1, 3],
+    preferredTimeRange: { from: "09:00", to: "12:00" },
+  },
+  preferredAccessibleInformationChannel: "Correo con letra grande",
+  idempotencyKey: "clave-ficticia-1",
+};
+
+/**
+ * Envío completo con cambios. El cast deja pasar campos ausentes o de otra
+ * forma a propósito: son los casos que el validador o Aplicación rechazan.
+ */
+function submitAs(t: SchemaTest, identity: Identity, changes: Record<string, unknown> = {}) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.createRequest, {
+    ...FULL_SUBMISSION,
+    ...changes,
+  } as typeof FULL_SUBMISSION);
+}
+
+async function requestsOf(t: SchemaTest, studentId: Id<"users">) {
+  return await t.run((ctx) =>
+    ctx.db
+      .query("requests")
+      .withIndex("by_student", (q) => q.eq("studentId", studentId))
+      .take(20),
+  );
+}
+
+test("TI2-141: el envío completo guarda todos sus campos recortados y su procedencia", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-1", "student");
+  const asStudent = t.withIdentity(identityOf("ti141-env-1"));
+
+  const created = await asStudent.mutation(
+    api.presentation.requests.createRequest,
+    FULL_SUBMISSION,
+  );
+  // La respuesta pública conserva sus cinco campos, con el texto unido derivado
+  expect(Object.keys(created).sort()).toEqual([
+    "_id",
+    "accessNeeds",
+    "createdAt",
+    "status",
+    "studentId",
+  ]);
+  expect(created).toMatchObject({
+    studentId,
+    status: "received",
+    accessNeeds:
+      "Comunicación escrita\nMás tiempo para comunicarme\nMaterial enviado con anticipación",
+  });
+
+  const [row] = await requestsOf(t, studentId);
+  expect(row).toMatchObject({
+    needSummary: "Necesito apoyo para seguir las clases en línea",
+    expectedOutcome: FULL_SUBMISSION.expectedOutcome,
+    accessNeedSelections: FULL_SUBMISSION.accessNeeds,
+    otherAccessNeed: FULL_SUBMISSION.otherAccessNeed,
+    modalityPreference: "online",
+    generalAvailability: FULL_SUBMISSION.generalAvailability,
+    preferredAccessibleInformationChannel: FULL_SUBMISSION.preferredAccessibleInformationChannel,
+    idempotencyKey: "clave-ficticia-1",
+    provenance: { channel: "student" },
+  });
+  expect(row?.provenance?.receivedAt).toBeGreaterThan(0);
+});
+
+test("TI2-141: reintentar el envío con la misma clave no duplica; otra clave u otro estudiante sí crean", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-2", "student");
+  const otherId = await seedProfile(t, "ti141-env-3", "student");
+  const asStudent = t.withIdentity(identityOf("ti141-env-2"));
+
+  const first = await asStudent.mutation(api.presentation.requests.createRequest, FULL_SUBMISSION);
+  // Reintento, aunque cambie el contenido: la clave identifica el envío
+  const retry = await asStudent.mutation(api.presentation.requests.createRequest, {
+    ...FULL_SUBMISSION,
+    needSummary: "Otro texto del mismo envío",
+  });
+  expect(retry._id).toBe(first._id);
+  expect(await requestsOf(t, studentId)).toHaveLength(1);
+
+  // Envíos simultáneos con la misma clave dejan una sola fila
+  const simultaneous = await Promise.all(
+    [1, 2, 3].map(() =>
+      asStudent.mutation(api.presentation.requests.createRequest, {
+        ...FULL_SUBMISSION,
+        idempotencyKey: "clave-simultanea",
+      }),
+    ),
+  );
+  expect(new Set(simultaneous.map((item) => item._id)).size).toBe(1);
+  expect(await requestsOf(t, studentId)).toHaveLength(2);
+
+  // La clave es del estudiante: la misma en otra cuenta es otro envío
+  const other = await t
+    .withIdentity(identityOf("ti141-env-3"))
+    .mutation(api.presentation.requests.createRequest, FULL_SUBMISSION);
+  expect(other._id).not.toBe(first._id);
+  expect(await requestsOf(t, otherId)).toHaveLength(1);
+});
+
+test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas inválidas sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-4", "student");
+  const send = (changes: Record<string, unknown>) =>
+    submitAs(t, identityOf("ti141-env-4"), changes);
+
+  const cases: [Record<string, unknown>, string][] = [
+    [{ needSummary: "   " }, "Describe la barrera o necesidad."],
+    [{ needSummary: "a".repeat(2001) }, "La descripción de la necesidad supera el máximo"],
+    [{ expectedOutcome: "" }, "Indica qué esperas de CERETI."],
+    [{ expectedOutcome: "a".repeat(2001) }, "El resultado esperado supera el máximo"],
+    [{ accessNeeds: [], otherAccessNeed: " " }, "Se requiere describir la necesidad de acceso."],
+    [
+      {
+        accessNeeds: [
+          { id: "a", label: "Uno" },
+          { id: "a", label: "Otro" },
+        ],
+      },
+      "Una necesidad de acceso está repetida.",
+    ],
+    [{ accessNeeds: [{ id: "a", label: "  " }] }, "Cada necesidad de acceso necesita su nombre."],
+    [
+      {
+        accessNeeds: Array.from({ length: 21 }, (_, index) => ({
+          id: `n${index}`,
+          label: `Necesidad ${index}`,
+        })),
+      },
+      "Selecciona como máximo 20 necesidades de acceso.",
+    ],
+    [{ generalAvailability: { preferredWeekdays: [] } }, "Selecciona al menos un día disponible."],
+    [{ generalAvailability: { preferredWeekdays: [7] } }, "Los días disponibles van de 0"],
+    [{ generalAvailability: { preferredWeekdays: [1, 1] } }, "Un día disponible está repetido."],
+    [
+      {
+        generalAvailability: {
+          preferredWeekdays: [1],
+          preferredTimeRange: { from: "9:00", to: "12:00" },
+        },
+      },
+      "formato HH:mm",
+    ],
+    [
+      {
+        generalAvailability: {
+          preferredWeekdays: [1],
+          preferredTimeRange: { from: "12:00", to: "09:00" },
+        },
+      },
+      "debe empezar antes de terminar",
+    ],
+    [{ preferredAccessibleInformationChannel: " " }, "Indica cómo prefieres recibir información."],
+    [{ preferredAccessibleInformationChannel: "a".repeat(201) }, "supera el máximo permitido (200"],
+    [{ idempotencyKey: "  " }, "La clave del envío debe tener entre 1 y 128"],
+    [{ idempotencyKey: "a".repeat(129) }, "La clave del envío debe tener entre 1 y 128"],
+    // Un campo ausente se nombra con el mismo texto que cuando llega vacío
+    [{ needSummary: undefined }, "Describe la barrera o necesidad."],
+    [{ modalityPreference: undefined }, "Indica si prefieres la modalidad presencial o en línea."],
+    [{ generalAvailability: undefined }, "Selecciona al menos un día disponible."],
+    [{ idempotencyKey: undefined }, "La clave del envío debe tener entre 1 y 128"],
+    [{ accessNeeds: "Texto suelto" }, "como lista junto con los demás datos"],
+    [{ accessNeeds: undefined }, "como lista junto con los demás datos"],
+  ];
+  for (const [changes, message] of cases) {
+    await expect(send(changes)).rejects.toThrow(message);
+  }
+
+  // En los topes exactos se acepta
+  await send({
+    needSummary: "a".repeat(2000),
+    expectedOutcome: "a".repeat(2000),
+    preferredAccessibleInformationChannel: "a".repeat(200),
+    idempotencyKey: "a".repeat(128),
+  });
+  expect(await requestsOf(t, studentId)).toHaveLength(1);
+});
+
+test("TI2-141: las necesidades como texto con un solo campo de la forma completa piden la lista, sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-6", "student");
+  const asStudent = t.withIdentity(identityOf("ti141-env-6"));
+  const { accessNeeds: _list, ...fullFields } = FULL_SUBMISSION;
+
+  // Un solo campo junto al texto basta para que no sea la forma anterior
+  for (const [field, value] of Object.entries(fullFields)) {
+    expect(
+      await publicErrorOf(
+        asStudent.mutation(api.presentation.requests.createRequest, {
+          accessNeeds: "Texto suelto",
+          [field]: value,
+        }),
+      ),
+    ).toEqual({
+      code: "request_fields_invalid",
+      message:
+        "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.",
+    });
+  }
+  expect(await requestsOf(t, studentId)).toHaveLength(0);
+});
+
+test("TI2-141: el envío no admite RUT, diagnóstico ni campos fuera del contrato, y solo lo hace un Estudiante vigente", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-env-5", "student");
+  await seedProfile(t, "ti141-env-pro", "professional");
+
+  for (const extra of [{ rut: "11.111.111-1" }, { diagnosis: "Ficticio" }, { internalArea: "X" }]) {
+    await expect(submitAs(t, identityOf("ti141-env-5"), extra)).rejects.toThrow("Validator error");
+  }
+  for (const identity of [null, identityOf("ti141-env-pro")]) {
+    expect(
+      await publicErrorOf(
+        sessionOf(t, identity).mutation(api.presentation.requests.createRequest, FULL_SUBMISSION),
+      ),
+    ).toEqual(UNAUTHORIZED);
+  }
+  expect(await requestsOf(t, studentId)).toHaveLength(0);
+});
+
+test("TI2-141: los rechazos de las operaciones nuevas llegan como error público con código", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti141-err-est", "student");
+  const proId = await seedProfile(t, "ti141-err-pro", "professional");
+  const student = identityOf("ti141-err-est");
+  const professional = identityOf("ti141-err-pro");
+  const waiting = await seedRequestIn(t, studentId, "awaiting_information_or_acceptance");
+  const accepted = await seedRequestIn(t, studentId, "accepted");
+  await seedTake(t, waiting, proId);
+  await seedTake(t, accepted, proId);
+
+  // Un campo que corregir: `request_fields_invalid` con el mensaje específico
+  for (const [promise, message] of [
+    [cancelAs(t, student, waiting, " "), "Se requiere el motivo para cancelar la solicitud."],
+    [
+      closeAs(t, professional, waiting, ""),
+      "Se requiere el motivo para cerrar la solicitud sin acompañamiento.",
+    ],
+    [respondAs(t, student, waiting, " "), "Se requiere la respuesta a la información pedida."],
+    [submitAs(t, student, { needSummary: "" }), "Describe la barrera o necesidad."],
+  ] as const) {
+    expect(await publicErrorOf(promise)).toEqual({ code: "request_fields_invalid", message });
+  }
+
+  // Las necesidades de acceso conservan sus códigos de Sprint 1, que los clientes traducen
+  const requestsBefore = (await requestsOf(t, studentId)).length;
+  const createWith = (changes: Record<string, unknown>) => submitAs(t, student, changes);
+  expect(await publicErrorOf(createWith({ accessNeeds: [], otherAccessNeed: " " }))).toEqual({
+    code: "access_needs_empty",
+    message: "Se requiere describir la necesidad de acceso.",
+  });
+  const longNeeds = Array.from({ length: 20 }, (_, index) => ({
+    id: `n${index}`,
+    label: `${index}`.padEnd(200, "x"),
+  }));
+  expect(await publicErrorOf(createWith({ accessNeeds: longNeeds }))).toEqual({
+    code: "access_needs_too_long",
+    message:
+      "Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (2000 caracteres).",
+  });
+  expect(
+    await publicErrorOf(
+      createWith({ accessNeeds: [{ id: "a".repeat(201), label: "Comunicación escrita" }] }),
+    ),
+  ).toEqual({
+    code: "request_fields_invalid",
+    message:
+      "El identificador de una necesidad de acceso supera el máximo permitido (200 caracteres).",
+  });
+  expect(await requestsOf(t, studentId)).toHaveLength(requestsBefore);
+
+  // Un estado que no admite el paso: `conflict` con el mensaje específico
+  for (const [promise, message] of [
+    [
+      cancelAs(t, student, accepted, "Motivo"),
+      "La solicitud no admite la cancelación en su estado actual.",
+    ],
+    [
+      closeAs(t, professional, accepted, "Motivo"),
+      "La solicitud no admite el cierre sin acompañamiento en su estado actual.",
+    ],
+    [
+      respondAs(t, student, accepted, "Respuesta"),
+      "La solicitud no admite una respuesta en su estado actual.",
+    ],
+  ] as const) {
+    expect(await publicErrorOf(promise)).toEqual({ code: "conflict", message });
+  }
+
+  // Las cuatro operaciones nuevas deniegan con el código del contrato común
+  for (const promise of [
+    submitAs(t, professional, { needSummary: "" }),
+    cancelAs(t, professional, waiting, "Motivo"),
+    closeAs(t, student, waiting, "Motivo"),
+    respondAs(t, professional, waiting, "Respuesta"),
+  ]) {
+    expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
+  }
+
+  // La forma anterior de `createRequest` y Sprint 1 siguen denegando con texto hasta TI2-181,
+  // tanto por rol como por falta de toma sobre la solicitud
+  const withoutTake = await seedRequestIn(t, studentId, "under_review");
+  for (const promise of [
+    t.withIdentity(professional).mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId: withoutTake,
+      reason: "Motivo",
+    }),
+    t
+      .withIdentity(professional)
+      .mutation(api.presentation.requests.createRequest, { accessNeeds: "Texto ficticio" }),
+    t.withIdentity(student).mutation(api.presentation.requests.takeRequest, { requestId: waiting }),
+  ]) {
+    expect(await publicErrorOf(promise)).toBe("No autorizado");
+  }
+  // y la forma anterior rechaza el texto con `Error`, sin código
+  await expect(
+    publicErrorOf(
+      t
+        .withIdentity(student)
+        .mutation(api.presentation.requests.createRequest, { accessNeeds: " " }),
+    ),
+  ).rejects.toThrow("Se requiere describir la necesidad de acceso");
 });

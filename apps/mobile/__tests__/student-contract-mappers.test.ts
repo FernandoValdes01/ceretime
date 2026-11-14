@@ -46,12 +46,15 @@ const operations: readonly StudentPublicOperation[] = [
 ];
 
 describe("contratos locales del módulo estudiantil TI4-76", () => {
-  it("convierte los cuatro estados públicos y no atribuye campos locales al servidor", () => {
+  it("convierte los estados públicos y no atribuye campos locales al servidor", () => {
     const states = {
       received: "received",
       under_review: "underReview",
       awaiting_information_or_acceptance: "awaitingInformationOrAcceptance",
       accepted: "accepted",
+      referred: "referred",
+      closed_without_accompaniment: "closedWithoutAccompaniment",
+      cancelled: "cancelled",
     } as const;
     const response = structuredClone(demoStudentContractExamples.listOwnRequests.response);
     const original = structuredClone(response);
@@ -66,7 +69,10 @@ describe("contratos locales del módulo estudiantil TI4-76", () => {
         createdAt: new Date(item.createdAt).toISOString(),
       });
     });
-    expect(new Set(result.page.map((item) => item.status))).toEqual(new Set(Object.values(states)));
+    // Los ejemplos locales cubren los cuatro estados abiertos o aceptados.
+    expect(new Set(result.page.map((item) => item.status))).toEqual(
+      new Set(["received", "underReview", "awaitingInformationOrAcceptance", "accepted"]),
+    );
     expect(response).toEqual(original);
   });
 

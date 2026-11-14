@@ -31,7 +31,9 @@ export type ApiResult<T> = { status: "ok"; data: T } | { status: "error"; error:
  * ausencia de cupo. Conflicto y ausencia de cupo son códigos distintos y
  * ninguno revela si el recurso existe. TI2-148 suma `space_fields_invalid`
  * para la validación de campos del catálogo de espacios, con el mensaje
- * específico en español.
+ * específico en español. TI2-141 suma `request_fields_invalid` para los
+ * campos de una solicitud, con la misma idea: un código y el detalle en el
+ * mensaje.
  */
 export const API_ERROR_CODE_VALUES = [
   "access_needs_empty",
@@ -40,6 +42,7 @@ export const API_ERROR_CODE_VALUES = [
   "conflict",
   "no_availability",
   "space_fields_invalid",
+  "request_fields_invalid",
 ] as const;
 
 /** Código estable de un error público del contrato común. */
@@ -64,6 +67,9 @@ export const SPACE_FIELDS_INVALID_ERROR_CODE = "space_fields_invalid" as const;
  * afecta a nadie porque mobile no gestiona espacios.
  */
 
+/** Campos de la solicitud inválidos: el mensaje indica qué corregir en español. */
+export const REQUEST_FIELDS_INVALID_ERROR_CODE = "request_fields_invalid" as const;
+
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
 
@@ -78,6 +84,9 @@ export const UNAUTHORIZED_ERROR_MESSAGE = "No autorizado";
 
 /** Mensaje genérico para campos del espacio inválidos; el detalle va en el error. */
 export const SPACE_FIELDS_INVALID_ERROR_MESSAGE = "Los campos del espacio no son válidos.";
+
+/** Mensaje genérico para campos de la solicitud inválidos; el detalle va en el error. */
+export const REQUEST_FIELDS_INVALID_ERROR_MESSAGE = "Los datos de la solicitud no son válidos.";
 
 /** Mensaje comprensible para conflicto, sin detalles sensibles. */
 export const CONFLICT_ERROR_MESSAGE = "La solicitud entra en conflicto con el estado actual.";
@@ -98,6 +107,7 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   conflict: CONFLICT_ERROR_MESSAGE,
   no_availability: NO_AVAILABILITY_ERROR_MESSAGE,
   space_fields_invalid: SPACE_FIELDS_INVALID_ERROR_MESSAGE,
+  request_fields_invalid: REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
 };
 
 /** Verdadero cuando el código pertenece al contrato público estable. */

@@ -4,7 +4,6 @@ import {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
   isPersistableRequestState,
-  isSprint1RequestState,
   PERSISTABLE_REQUEST_STATES,
   REQUEST_STATE_LABELS,
   REQUEST_STATES,
@@ -71,24 +70,8 @@ describe("PERSISTABLE_REQUEST_STATES", () => {
 describe("INITIAL_REQUEST_STATE", () => {
   test("toda solicitud nace recibida, un estado con operación en Sprint 1", () => {
     expect(INITIAL_REQUEST_STATE).toBe("received");
-    expect(isSprint1RequestState(INITIAL_REQUEST_STATE)).toBe(true);
+    expect(SPRINT_1_REQUEST_STATES).toContain(INITIAL_REQUEST_STATE);
   });
-});
-
-describe("isSprint1RequestState", () => {
-  test.each(SPRINT_1_REQUEST_STATES)(
-    "reconoce %s como estado con operación en Sprint 1",
-    (state) => {
-      expect(isSprint1RequestState(state)).toBe(true);
-    },
-  );
-
-  test.each([...FUTURE_REQUEST_STATES, ...CLOSURE_REQUEST_STATES])(
-    "no reconoce %s, que el contrato público de Sprint 1 no entrega",
-    (state) => {
-      expect(isSprint1RequestState(state)).toBe(false);
-    },
-  );
 });
 
 describe("isPersistableRequestState", () => {

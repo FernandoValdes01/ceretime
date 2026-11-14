@@ -1,6 +1,6 @@
 /**
- * Transiciones de solicitud: las de Sprint 1 (TI2-7) y los cierres sin
- * acompañamiento (TI2-85).
+ * Transiciones de solicitud: las de Sprint 1 (TI2-7), los cierres sin
+ * acompañamiento (TI2-85) y la respuesta del Estudiante (TI2-141).
  *
  * Declara qué transiciones existen. No las aplica ni las valida: el rechazo de
  * saltos y la exigencia de motivo son alcance de TI2-21.
@@ -24,8 +24,8 @@ export type RequestStateTransition = {
 };
 
 /**
- * Cualquier par que no esté en esta tabla ni en la de cierres es inválido,
- * incluidos los saltos y los retrocesos.
+ * Cualquier par que no esté en esta tabla, en la de respuesta ni en la de
+ * cierres es inválido, incluidos los saltos y los demás retrocesos.
  *
  * Las filas se tipan como `Sprint1RequestState`: agregar acá una transición
  * hacia un cierre o un estado de Cycle futuro no compila.
@@ -75,9 +75,23 @@ export const CLOSURE_REQUEST_TRANSITIONS = [
   readonly to: ClosureRequestState;
 })[];
 
+/**
+ * Respuesta del Estudiante a la información pedida (TI2-141): la solicitud
+ * vuelve a revisión para que el Profesional la retome. Exige motivo porque el
+ * motivo es la respuesta misma. Es el único retroceso del modelo; quién lo
+ * intenta (el Estudiante dueño) lo exige Aplicación.
+ */
+export const RESPONSE_REQUEST_TRANSITIONS = [
+  { from: "awaiting_information_or_acceptance", to: "under_review", requiresReason: true },
+] as const satisfies readonly (RequestStateTransition & {
+  readonly from: Sprint1RequestState;
+  readonly to: Sprint1RequestState;
+})[];
+
 /** Toda transición válida de la solicitud; la política busca solo acá. */
 export const REQUEST_TRANSITIONS = [
   ...SPRINT_1_REQUEST_TRANSITIONS,
+  ...RESPONSE_REQUEST_TRANSITIONS,
   ...CLOSURE_REQUEST_TRANSITIONS,
 ] as const;
 
@@ -90,7 +104,7 @@ export const REQUEST_TRANSITIONS = [
  * `actorId` sale de la sesión autenticada en la capa de aplicación, nunca de un
  * parámetro del cliente: es el Profesional o, al cancelar, el propio
  * Estudiante. `reason` lo escribe ese actor: el Profesional para el
- * estudiante o, al cancelar, el Estudiante para CERETI. Quien lo escribe no
+ * estudiante o, al cancelar o responder, el Estudiante para CERETI. Quien lo escribe no
  * debe incluir diagnósticos ni etiquetas clínicas, pero el tipo no puede
  * impedirlo. `occurredAt` es epoch en milisegundos, como maneja las fechas
  * Convex.
@@ -102,6 +116,19 @@ export type RequestStateChange = {
   readonly occurredAt: number;
   readonly reason?: string;
 };
+
+/**
+ * Escritura del estado vigente de la solicitud (TI2-141). El cierre sin
+ * acompañamiento lleva su razón, que lee el Estudiante, y ningún otro estado
+ * la lleva: así no compila una razón de cierre en una solicitud aceptada ni un
+ * cierre sin razón.
+ */
+export type RequestStatusChange =
+  | { readonly status: "closed_without_accompaniment"; readonly closureReason: string }
+  | {
+      readonly status: Exclude<PersistableRequestState, "closed_without_accompaniment">;
+      readonly closureReason?: never;
+    };
 
 /** Llegar acá habilita la apertura de exactamente un acompañamiento (TI2-24). */
 export const ACCEPTANCE_STATE: Sprint1RequestState = "accepted";

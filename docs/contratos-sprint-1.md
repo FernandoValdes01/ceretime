@@ -110,7 +110,7 @@ La superficie versionada es `api.presentation.*` (pública), `internal.*` (solo 
 
 - TI2-26 quedó integrada (PR #52): la validación y la documentación de esta superficie ya viven en este archivo y en `convex/tests/apiBackend.test.ts`.
 - TI4-12 cablea los hooks al Backend y resuelve las divergencias de valores.
-- TI2-85 habilitó cancelar (Estudiante) y cerrar sin acompañamiento (Profesional con toma) como casos de uso de Aplicación, sin entrada pública. El estado de `api.presentation.requests.*` sigue en los cuatro de Sprint 1. Agregar `closed_without_accompaniment` y `cancelled` es un cambio incompatible para Mobile, porque `mapCanonicalRequestStatus` en `apps/mobile/src/infrastructure/ti2-contract-mappers.ts` cubre solo cuatro estados y deja de compilar; se coordina con TI4 en la tarea que publique esas operaciones. El detalle está en [`state-model.md`](../convex/domain/requests/state-model.md#contrato-público).
+- TI2-85 habilitó cancelar (Estudiante) y cerrar sin acompañamiento (Profesional con toma) como casos de uso de Aplicación. TI2-141 los publicó, sumó la respuesta del Estudiante y el envío completo, y amplió el estado de `api.presentation.requests.*` a los siete del dominio: ver [`contratos-sprint-3/solicitudes.md`](contratos-sprint-3/solicitudes.md).
 - TI2-121 publicó la cancelación, el reagendamiento y el registro de atención en `api.presentation.appointments`; TI2-119 sumó la entrega y la revisión de la justificación de inasistencia sobre las mismas operaciones, adaptadores y fila de `appointments`.
 - TI2-111 quedó integrada (PR #126) con `bookAppointment`; esta rama reutiliza sus adaptadores y conserva las tres operaciones de TI2-121 en el mismo módulo de presentación.
 

@@ -20,6 +20,7 @@ import {
   getAccompanimentView,
   getAppointmentView,
   getFollowUpView,
+  isActiveInRole,
   isProfessionalBookable,
   isProfileActive,
   PERMISSION_MATRIX,
@@ -89,6 +90,19 @@ describe("isProfileActive", () => {
     expect(isProfileActive({ institutionalStatus: "enabled", accountStatus: "inactive" })).toBe(
       false,
     );
+  });
+});
+
+describe("isActiveInRole", () => {
+  const active = { institutionalStatus: "enabled", accountStatus: "active" } as const;
+
+  test("exige el rol pedido con la cuenta vigente", () => {
+    expect(isActiveInRole({ ...active, role: "student" }, "student")).toBe(true);
+    expect(isActiveInRole({ ...active, role: "professional" }, "student")).toBe(false);
+  });
+
+  test.each(INACTIVE_ACCOUNTS)("rechaza el rol pedido con %o", (account) => {
+    expect(isActiveInRole({ ...account, role: "student" }, "student")).toBe(false);
   });
 });
 
