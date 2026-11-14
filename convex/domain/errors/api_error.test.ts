@@ -51,6 +51,7 @@ describe("Códigos estables de conflicto, acceso denegado y ausencia de cupo (TI
       "conflict",
       "no_availability",
       "space_fields_invalid",
+      "request_fields_invalid",
     ]);
   });
 

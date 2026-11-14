@@ -25,7 +25,11 @@ import type * as application_follow_up_commands from "../application/follow_up/c
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_identity from "../application/requests/identity.js";
+import type * as application_requests_ports from "../application/requests/ports.js";
 import type * as application_requests_queries from "../application/requests/queries.js";
+import type * as application_requests_respond from "../application/requests/respond.js";
+import type * as application_requests_results from "../application/requests/results.js";
+import type * as application_requests_status_change from "../application/requests/status_change.js";
 import type * as application_session_minimal_identity from "../application/session/minimal_identity.js";
 import type * as application_session_portal_role from "../application/session/portal_role.js";
 import type * as application_session_profile from "../application/session/profile.js";
@@ -108,7 +112,11 @@ declare const fullApi: ApiFromModules<{
   "application/follow_up/queries": typeof application_follow_up_queries;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/identity": typeof application_requests_identity;
+  "application/requests/ports": typeof application_requests_ports;
   "application/requests/queries": typeof application_requests_queries;
+  "application/requests/respond": typeof application_requests_respond;
+  "application/requests/results": typeof application_requests_results;
+  "application/requests/status_change": typeof application_requests_status_change;
   "application/session/minimal_identity": typeof application_session_minimal_identity;
   "application/session/portal_role": typeof application_session_portal_role;
   "application/session/profile": typeof application_session_profile;

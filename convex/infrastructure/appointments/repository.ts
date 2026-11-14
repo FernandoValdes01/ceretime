@@ -2,6 +2,7 @@
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { APPOINTMENT_CONTRACT_VERSION } from "../../domain/appointments/appointment";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
+import { accessNeedsFromLines } from "../spaces/repository";
 
 /**
  * Repositorio de ocupación de cupo (TI2-84, cruces de TI2-96).
@@ -143,7 +144,127 @@ async function isResourceTaken(
   return rows.some((row) => row._id !== ownId && isBlocking(row) && row.endsAt > interval.startsAt);
 }
 
-/** Entrada de la ocupación con identificadores Convex. */
+// ── TI2-138: profesionales participantes y necesidades aplicadas ───────────
+//
+// `appointments.professionalId` sigue siendo el profesional responsable
+// principal. La tabla `appointmentProfessionals` registra el conjunto completo
+// y copia la ventana de la atención para detectar cruces con
+// `by_professionalId_and_startsAt`. Acá se mantiene sincronizada al crear o
+// mover la atención; agregar o retirar participantes fuera de eso es de los
+// casos de uso futuros.
+
+/** Tope de participantes leídos por atención; acota la lectura y la escritura. */
+export const MAX_APPOINTMENT_PROFESSIONALS = 200;
+
+/** Fila del profesional en la atención, o `null` si no participa. */
+export async function findAppointmentProfessional(
+  ctx: DbReader,
+  appointmentId: Id<"appointments">,
+  professionalId: Id<"users">,
+): Promise<Doc<"appointmentProfessionals"> | null> {
+  const rows = await ctx.db
+    .query("appointmentProfessionals")
+    .withIndex("by_appointmentId_and_professionalId", (q) =>
+      q.eq("appointmentId", appointmentId).eq("professionalId", professionalId),
+    )
+    .take(1);
+  return rows[0] ?? null;
+}
+
+/** Participantes de la atención, con la ventana copiada de su horario. */
+export async function listAppointmentProfessionals(
+  ctx: DbReader,
+  appointmentId: Id<"appointments">,
+): Promise<Doc<"appointmentProfessionals">[]> {
+  return await ctx.db
+    .query("appointmentProfessionals")
+    .withIndex("by_appointmentId_and_professionalId", (q) => q.eq("appointmentId", appointmentId))
+    .take(MAX_APPOINTMENT_PROFESSIONALS);
+}
+
+/**
+ * Sincroniza la fila del profesional con la atención: la inserta si falta y
+ * copia en todas las filas de la atención la ventana nueva. No borra a otros
+ * participantes porque solo los retira el caso de uso que los administra. Al
+ * mover con otro responsable, la fila del anterior no se conserva: la
+ * reemplaza `reassignAppointmentProfessional` antes de sincronizar. Devuelve
+ * `true` cuando insertó la fila que faltaba.
+ */
+export async function syncAppointmentProfessional(
+  ctx: MutationCtx,
+  input: {
+    readonly appointmentId: Id<"appointments">;
+    readonly professionalId: Id<"users">;
+    readonly startsAt: number;
+    readonly endsAt: number;
+  },
+): Promise<boolean> {
+  const rows = await listAppointmentProfessionals(ctx, input.appointmentId);
+  const alreadyParticipates = rows.some((row) => row.professionalId === input.professionalId);
+  for (const row of rows) {
+    if (row.startsAt !== input.startsAt || row.endsAt !== input.endsAt) {
+      await ctx.db.patch(row._id, { startsAt: input.startsAt, endsAt: input.endsAt });
+    }
+  }
+  if (alreadyParticipates) return false;
+  await ctx.db.insert("appointmentProfessionals", {
+    appointmentId: input.appointmentId,
+    professionalId: input.professionalId,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+  });
+  return true;
+}
+
+/**
+ * Cambia el responsable de una atención trasladada sin dejar al anterior como
+ * participante. Su fila pasa a ser la del nuevo profesional; si el nuevo ya
+ * participaba, la fila anterior se retira para no duplicarlo. Así el anterior
+ * deja de figurar en una atención que ya no es suya y no aparece ocupado en un
+ * horario que nunca aceptó. Devuelve `true` cuando encontró la fila anterior.
+ */
+export async function reassignAppointmentProfessional(
+  ctx: MutationCtx,
+  input: {
+    readonly appointmentId: Id<"appointments">;
+    readonly previousProfessionalId: Id<"users">;
+    readonly professionalId: Id<"users">;
+  },
+): Promise<boolean> {
+  if (input.previousProfessionalId === input.professionalId) return false;
+  const previous = await findAppointmentProfessional(
+    ctx,
+    input.appointmentId,
+    input.previousProfessionalId,
+  );
+  if (previous === null) return false;
+  const next = await findAppointmentProfessional(ctx, input.appointmentId, input.professionalId);
+  if (next === null) {
+    await ctx.db.patch(previous._id, { professionalId: input.professionalId });
+  } else {
+    await ctx.db.delete(previous._id);
+  }
+  return true;
+}
+
+/**
+ * Necesidades que se copian a la atención al crearla: la lista `{ id, label }`
+ * vigente del acompañamiento en ese momento. Una vez escrita no se vuelve a
+ * leer el acompañamiento, así cambiar sus necesidades no altera las atenciones
+ * ya registradas. Un acompañamiento inexistente (identificador inválido) no
+ * inventa una lista y deja el campo ausente.
+ */
+export async function appliedAccessNeedsFor(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+): Promise<Doc<"appointments">["appliedAccessNeeds"]> {
+  const accompaniment = await ctx.db.get(accompanimentId);
+  return accompaniment === null ? undefined : accessNeedsFromLines(accompaniment.accessNeeds);
+}
+
+/**
+ * Entrada de la ocupación con identificadores Convex.
+ */
 export interface OccupySlotRow {
   readonly accompanimentId: Id<"accompaniments">;
   readonly studentId: Id<"users">;
@@ -152,6 +273,13 @@ export interface OccupySlotRow {
   readonly spaceId?: Id<"spaces">;
   readonly startsAt: number;
   readonly endsAt: number;
+  /**
+   * Apoyos de la atención en línea y referencia de su acceso privado
+   * (TI2-138). Opcionales: la reserva actual no los obtiene todavía y las
+   * atenciones presenciales no los usan. Solo se persisten al crear.
+   */
+  readonly onlineSupports?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
+  readonly privateAccessReference?: string;
   /**
    * Atención que se cambia de horario o de recursos. Tiene que seguir
    * ocupando su cupo y ser del mismo estudiante y acompañamiento; sin ella
@@ -270,8 +398,24 @@ export async function occupySlotAtomically(
       ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
       ...(input.nextStatus === undefined ? {} : { status: input.nextStatus }),
     });
+    // La ventana copiada sigue al horario nuevo. Las necesidades aplicadas no
+    // se reescriben: la atención conserva la copia con la que se registró. Si
+    // el traslado cambia al responsable, la fila del anterior pasa a ser la
+    // del nuevo: no queda ocupado en un horario que nunca aceptó.
+    await reassignAppointmentProfessional(ctx, {
+      appointmentId: moved._id,
+      previousProfessionalId: moved.professionalId,
+      professionalId: input.professionalId,
+    });
+    await syncAppointmentProfessional(ctx, {
+      appointmentId: moved._id,
+      professionalId: input.professionalId,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+    });
     return okResult({ appointmentId: moved._id });
   }
+  const appliedAccessNeeds = await appliedAccessNeedsFor(ctx, input.accompanimentId);
   const appointmentId = await ctx.db.insert("appointments", {
     accompanimentId: input.accompanimentId,
     studentId: input.studentId,
@@ -281,7 +425,18 @@ export async function occupySlotAtomically(
     status: "scheduled",
     startsAt: input.startsAt,
     endsAt: input.endsAt,
+    ...(appliedAccessNeeds === undefined ? {} : { appliedAccessNeeds }),
+    ...(input.onlineSupports === undefined ? {} : { onlineSupports: [...input.onlineSupports] }),
+    ...(input.privateAccessReference === undefined
+      ? {}
+      : { privateAccessReference: input.privateAccessReference }),
     createdAt: Date.now(),
+  });
+  await syncAppointmentProfessional(ctx, {
+    appointmentId,
+    professionalId: input.professionalId,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
   });
   return okResult({ appointmentId });
 }
@@ -609,6 +764,8 @@ export function appointmentOccupier(ctx: MutationCtx) {
       readonly spaceId?: string;
       readonly startAt: number;
       readonly endAt: number;
+      readonly onlineSupports?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
+      readonly privateAccessReference?: string;
       readonly movedAppointmentId?: string;
     }): Promise<ApiResult<{ appointmentId: string }>> => {
       const accompanimentId = ctx.db.normalizeId("accompaniments", slot.accompanimentId);
@@ -637,6 +794,10 @@ export function appointmentOccupier(ctx: MutationCtx) {
         ...(spaceId === undefined ? {} : { spaceId }),
         startsAt: slot.startAt,
         endsAt: slot.endAt,
+        ...(slot.onlineSupports === undefined ? {} : { onlineSupports: slot.onlineSupports }),
+        ...(slot.privateAccessReference === undefined
+          ? {}
+          : { privateAccessReference: slot.privateAccessReference }),
         ...(movedAppointmentId === undefined ? {} : { movedAppointmentId }),
       });
     },
