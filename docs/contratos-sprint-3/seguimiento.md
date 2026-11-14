@@ -116,8 +116,27 @@ try {
     version: "v1",
   });
 } catch (error) {
-  if (error instanceof ConvexError && error.data.code === "conflict") {
-    muestraMensaje(error.data.message);
+  muestraMensaje(mensajeDeError(error));
+}
+
+const MENSAJE_POR_DEFECTO = "No pudimos completar la acción. Intenta de nuevo.";
+const MENSAJE_SIN_ACCESO = "No tienes acceso a este seguimiento.";
+
+// Distingue por código estable. Lo que no es un código conocido, incluido el
+// «Server Error» de producción, usa el mensaje genérico: nunca se muestra el
+// texto del SDK.
+function mensajeDeError(error: unknown): string {
+  if (!(error instanceof ConvexError)) return MENSAJE_POR_DEFECTO;
+  const data: unknown = error.data;
+  if (typeof data !== "object" || data === null || !("code" in data)) return MENSAJE_POR_DEFECTO;
+  const message = "message" in data && typeof data.message === "string" ? data.message : null;
+  switch (data.code) {
+    case "unauthorized":
+      return MENSAJE_SIN_ACCESO;
+    case "conflict":
+      return message ?? MENSAJE_POR_DEFECTO;
+    default:
+      return MENSAJE_POR_DEFECTO;
   }
 }
 
