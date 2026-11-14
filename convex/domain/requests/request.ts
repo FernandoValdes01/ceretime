@@ -18,7 +18,7 @@
  * manual contra `AccompanimentRequestContent`.
  */
 
-import { REQUEST_FIELDS_INVALID_ERROR_CODE, type ApiResult } from "../errors/api_error";
+import { REQUEST_FIELDS_INVALID_ERROR_CODE, errResult, type ApiResult } from "../errors/api_error";
 import { isPersistableRequestState, type PersistableRequestState } from "./state";
 
 /**
@@ -190,8 +190,12 @@ const PREFERRED_WEEKDAYS_REQUIRED = "Selecciona al menos un día disponible.";
 const INFORMATION_CHANNEL_REQUIRED = "Indica cómo prefieres recibir información.";
 const IDEMPOTENCY_KEY_INVALID = `La clave del envío debe tener entre 1 y ${IDEMPOTENCY_KEY_MAX_LENGTH} caracteres.`;
 
-function invalidRequestFields<T>(message: string): ApiResult<T> {
-  return { status: "error", error: { code: REQUEST_FIELDS_INVALID_ERROR_CODE, message } };
+/**
+ * Un campo de la solicitud falta o no cumple su regla: el mensaje dice en
+ * español qué corregir. Es el único lugar que arma `request_fields_invalid`.
+ */
+export function invalidRequestFields<T>(message: string): ApiResult<T> {
+  return errResult({ code: REQUEST_FIELDS_INVALID_ERROR_CODE, message });
 }
 
 /**

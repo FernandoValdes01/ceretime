@@ -3,6 +3,7 @@ import { ConvexError } from "convex/values";
 import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
+  invalidRequestFields,
   toCompleteSubmission,
   toRequestSubmission,
   type AccompanimentRequest,
@@ -38,7 +39,7 @@ import {
   requireActiveProfessional,
   requireActiveStudent,
 } from "./identity";
-import { denied, invalidFields, stateConflict } from "./results";
+import { denied, stateConflict } from "./results";
 import { toStatusChange } from "./status_change";
 
 /**
@@ -395,7 +396,7 @@ export async function cancelRequest(
   });
   if (result.status === "rejected") {
     return result.cause === "reason_required"
-      ? invalidFields("Se requiere el motivo para cancelar la solicitud.")
+      ? invalidRequestFields("Se requiere el motivo para cancelar la solicitud.")
       : stateConflict("La solicitud no admite la cancelación en su estado actual.");
   }
   await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
@@ -450,7 +451,7 @@ export async function closeRequestWithoutAccompaniment(
   });
   if (result.status === "rejected") {
     return result.cause === "reason_required"
-      ? invalidFields("Se requiere el motivo para cerrar la solicitud sin acompañamiento.")
+      ? invalidRequestFields("Se requiere el motivo para cerrar la solicitud sin acompañamiento.")
       : stateConflict("La solicitud no admite el cierre sin acompañamiento en su estado actual.");
   }
   await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
