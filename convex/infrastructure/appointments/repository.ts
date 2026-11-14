@@ -329,6 +329,12 @@ export interface OccupySlotRow {
    */
   readonly additionalProfessionalIds?: ReadonlyArray<Id<"users">>;
   /**
+   * Profesionales adicionales que salen de la atención al moverla (TI2-142),
+   * porque ya no son reservables: no se comprueban sus cruces y su fila de
+   * participante se retira. Al crear se ignora.
+   */
+  readonly removedProfessionalIds?: ReadonlyArray<Id<"users">>;
+  /**
    * Atención que se cambia de horario o de recursos. Tiene que seguir
    * ocupando su cupo y ser del mismo estudiante y acompañamiento; sin ella
    * se crea una atención nueva.
@@ -381,7 +387,8 @@ async function findMovedAppointment(
  *
  * Al crear son el responsable y los adicionales pedidos. Al mover son los
  * participantes guardados de la atención, con el responsable nuevo en lugar
- * del anterior, porque el traslado conserva a los demás profesionales. `null`
+ * del anterior y sin los que salen, porque el traslado conserva a los demás
+ * profesionales. `null`
  * cuando la atención tiene más participantes que el tope de lectura y no se
  * puede decidir.
  */
@@ -395,9 +402,13 @@ async function professionalsToCheck(
   }
   const participants = await listAppointmentProfessionals(ctx, moved._id);
   if (participants.length >= MAX_APPOINTMENT_PROFESSIONAL_ROWS) return null;
+  const leaving = new Set<Id<"users">>([
+    moved.professionalId,
+    ...(input.removedProfessionalIds ?? []),
+  ]);
   const kept = participants
     .map((row) => row.professionalId)
-    .filter((professionalId) => professionalId !== moved.professionalId);
+    .filter((professionalId) => !leaving.has(professionalId));
   return [...new Set([input.professionalId, ...kept])];
 }
 
@@ -487,6 +498,13 @@ export async function occupySlotAtomically(
       previousProfessionalId: moved.professionalId,
       professionalId: input.professionalId,
     });
+    // Los adicionales que ya no son reservables salen con el mismo cambio. El
+    // responsable nuevo nunca está entre ellos: el caso de uso lo excluye.
+    for (const professionalId of input.removedProfessionalIds ?? []) {
+      if (professionalId === input.professionalId) continue;
+      const row = await findAppointmentProfessional(ctx, moved._id, professionalId);
+      if (row !== null) await ctx.db.delete(row._id);
+    }
     await syncAppointmentProfessional(ctx, {
       appointmentId: moved._id,
       professionalId: input.professionalId,
@@ -916,9 +934,13 @@ export function appointmentOccupier(ctx: MutationCtx) {
       readonly onlineSupports?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
       readonly privateAccessReference?: string;
       readonly additionalProfessionalIds?: readonly string[];
+      readonly removedProfessionalIds?: readonly string[];
       readonly movedAppointmentId?: string;
     }): Promise<ApiResult<{ appointmentId: string }>> => {
       const additionalProfessionalIds = (slot.additionalProfessionalIds ?? []).map((id) =>
+        ctx.db.normalizeId("users", id),
+      );
+      const removedProfessionalIds = (slot.removedProfessionalIds ?? []).map((id) =>
         ctx.db.normalizeId("users", id),
       );
       const accompanimentId = ctx.db.normalizeId("accompaniments", slot.accompanimentId);
@@ -936,7 +958,8 @@ export function appointmentOccupier(ctx: MutationCtx) {
         professionalId === null ||
         spaceId === null ||
         movedAppointmentId === null ||
-        additionalProfessionalIds.includes(null)
+        additionalProfessionalIds.includes(null) ||
+        removedProfessionalIds.includes(null)
       ) {
         return errResult(conflictError());
       }
@@ -956,6 +979,13 @@ export function appointmentOccupier(ctx: MutationCtx) {
           ? {}
           : {
               additionalProfessionalIds: additionalProfessionalIds.filter(
+                (id): id is Id<"users"> => id !== null,
+              ),
+            }),
+        ...(removedProfessionalIds.length === 0
+          ? {}
+          : {
+              removedProfessionalIds: removedProfessionalIds.filter(
                 (id): id is Id<"users"> => id !== null,
               ),
             }),

@@ -48,6 +48,12 @@ export interface OccupySlotInput {
    * atención y la ocupación los comprueba a todos.
    */
   readonly additionalProfessionalIds?: readonly string[];
+  /**
+   * Profesionales adicionales que salen de la atención al moverla (TI2-142),
+   * porque ya no son reservables. No se comprueban sus cruces y su fila de
+   * participante se retira en la misma transacción. Al crear se ignora.
+   */
+  readonly removedProfessionalIds?: readonly string[];
   /** Apoyos de la atención en línea (TI2-142); solo se guardan al crear. */
   readonly onlineSupports?: readonly AccessNeed[];
   /**

@@ -300,7 +300,6 @@ export async function confirmAdditionalProfessionals(
     readonly timeZone: string;
   },
 ): Promise<ApiResult<null>> {
-  const date = civilDateOfInstant(input.slot.startAt, input.timeZone);
   for (const professionalId of input.additionalProfessionalIds) {
     if (
       !(await isBookableProfessional(deps.auth, {
@@ -310,12 +309,29 @@ export async function confirmAdditionalProfessionals(
     ) {
       return noAvailability();
     }
-    const slots = await expandProfessionalSlots(deps, professionalId, date, input.timeZone);
-    if (slots.status === "error") return slots;
-    const sameModality = slots.data.filter((slot) => slot.modality === input.slot.modality);
-    if (!slotsCoverInterval(sameModality, input.slot)) return noAvailability();
+    const covered = await availabilityCoversSlot(deps, professionalId, input.slot, input.timeZone);
+    if (covered.status === "error") return covered;
   }
   return okResult(null);
+}
+
+/**
+ * Confirma que la disponibilidad vigente del profesional, en la modalidad del
+ * cupo, cubre todo su intervalo; `no_availability` si no. No revisa si sigue
+ * asignado: eso lo decide quien llama, porque reservar y reagendar responden
+ * distinto a un adicional que dejó de ser reservable.
+ */
+export async function availabilityCoversSlot(
+  deps: SlotSelectionDeps,
+  professionalId: string,
+  slot: AvailabilitySlot,
+  timeZone: string,
+): Promise<ApiResult<null>> {
+  const date = civilDateOfInstant(slot.startAt, timeZone);
+  const slots = await expandProfessionalSlots(deps, professionalId, date, timeZone);
+  if (slots.status === "error") return slots;
+  const sameModality = slots.data.filter((candidate) => candidate.modality === slot.modality);
+  return slotsCoverInterval(sameModality, slot) ? okResult(null) : noAvailability();
 }
 
 /**

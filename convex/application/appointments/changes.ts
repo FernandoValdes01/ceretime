@@ -23,12 +23,13 @@ import {
   authorizeAppointmentReschedule,
   authorizeAppointmentJustificationSubmit,
   authorizeAppointmentJustificationReview,
+  isBookableProfessional,
   type AuthorizableAppointment,
   type AuthorizationReader,
 } from "../authorization/authorize";
 import { auditAppointmentChange, type AppointmentAuditRecorder } from "./audit";
 import {
-  confirmAdditionalProfessionals,
+  availabilityCoversSlot,
   resolveBookableSlot,
   slotSelectionProblem,
   type SlotSelectionDeps,
@@ -278,8 +279,12 @@ export async function cancelAppointment(
  * ocupación falla, el persister no se llama y el origen sigue intacto.
  *
  * Una atención coordinada (TI2-142) conserva sus apoyos para la compatibilidad
- * y sus profesionales adicionales: cada uno debe poder atender el destino
- * (`confirmAdditionalProfessionals`) y la ocupación comprueba sus cruces.
+ * y sus profesionales adicionales: cada uno que siga siendo reservable debe
+ * tener disponibilidad que cubra el destino (`availabilityCoversSlot`) y la
+ * ocupación comprueba sus cruces. Un adicional que ya no es reservable
+ * (asignación revocada o cuenta no vigente) sale de la atención en el mismo
+ * cambio, en vez de impedir el reagendamiento: no hay otra vía para retirarlo
+ * y ya no podría atenderla.
  */
 export async function rescheduleAppointment(
   deps: RescheduleAppointmentDeps,
@@ -336,15 +341,23 @@ export async function rescheduleAppointment(
 
   // Si el destino cambia al responsable por uno de los adicionales, ese ya no
   // se revisa como adicional: es el responsable recién revalidado.
-  const additional = await confirmAdditionalProfessionals(deps, {
-    accompanimentId: stored.accompanimentId,
-    slot: slot.data,
-    additionalProfessionalIds: (stored.additionalProfessionalIds ?? []).filter(
-      (professionalId) => professionalId !== slot.data.professionalId,
-    ),
-    timeZone: input.timeZone,
-  });
-  if (additional.status === "error") return additional;
+  const additionalProfessionalIds = (stored.additionalProfessionalIds ?? []).filter(
+    (professionalId) => professionalId !== slot.data.professionalId,
+  );
+  const removedProfessionalIds: string[] = [];
+  for (const professionalId of additionalProfessionalIds) {
+    if (
+      !(await isBookableProfessional(deps.auth, {
+        accompanimentId: stored.accompanimentId,
+        professionalId,
+      }))
+    ) {
+      removedProfessionalIds.push(professionalId);
+      continue;
+    }
+    const covered = await availabilityCoversSlot(deps, professionalId, slot.data, input.timeZone);
+    if (covered.status === "error") return covered;
+  }
 
   const occupied = await deps.occupier.occupySlot({
     accompanimentId: stored.accompanimentId,
@@ -355,6 +368,7 @@ export async function rescheduleAppointment(
     startAt: slot.data.startAt,
     endAt: slot.data.endAt,
     movedAppointmentId: stored.id,
+    ...(removedProfessionalIds.length === 0 ? {} : { removedProfessionalIds }),
   });
   if (occupied.status === "error") return occupied;
 
