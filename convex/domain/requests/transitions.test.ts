@@ -10,6 +10,7 @@ import {
   ACCEPTANCE_STATE,
   CLOSURE_REQUEST_TRANSITIONS,
   REQUEST_TRANSITIONS,
+  RESPONSE_REQUEST_TRANSITIONS,
   SPRINT_1_REQUEST_TRANSITIONS,
 } from "./transitions";
 
@@ -124,14 +125,29 @@ describe("CLOSURE_REQUEST_TRANSITIONS (TI2-85)", () => {
   });
 });
 
+describe("RESPONSE_REQUEST_TRANSITIONS (TI2-141)", () => {
+  test("declara solo la vuelta de la espera a la revisión, con motivo", () => {
+    expect(RESPONSE_REQUEST_TRANSITIONS).toEqual([
+      { from: "awaiting_information_or_acceptance", to: "under_review", requiresReason: true },
+    ]);
+  });
+
+  test("es el único retroceso: ninguna otra fila vuelve a un estado anterior del flujo", () => {
+    const order = (state: PersistableRequestState) => PERSISTABLE_REQUEST_STATES.indexOf(state);
+    const backwards = REQUEST_TRANSITIONS.filter((row) => order(row.to) < order(row.from));
+    expect(backwards.map(pair)).toEqual(RESPONSE_REQUEST_TRANSITIONS.map(pair));
+  });
+});
+
 const allSuccessors = (state: PersistableRequestState) =>
   REQUEST_TRANSITIONS.filter((row) => row.from === state).map((row) => row.to);
 
 describe("REQUEST_TRANSITIONS como grafo", () => {
-  test("es la suma exacta de las dos tablas, sin repetir pares", () => {
+  test("es la suma exacta de las tres tablas, sin repetir pares", () => {
     const pairs = REQUEST_TRANSITIONS.map(pair);
     expect(pairs).toEqual([
       ...SPRINT_1_REQUEST_TRANSITIONS.map(pair),
+      ...RESPONSE_REQUEST_TRANSITIONS.map(pair),
       ...CLOSURE_REQUEST_TRANSITIONS.map(pair),
     ]);
     expect(pairs.filter((value, index) => pairs.indexOf(value) !== index)).toEqual([]);

@@ -3,10 +3,16 @@ import { ConvexError } from "convex/values";
 import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
+  invalidRequestFields,
+  toCompleteSubmission,
+  toRequestSubmission,
+  type AccompanimentRequest,
+  type RequestSubmission,
+  type RequestSubmissionDraft,
   toAccessNeedsText,
   toAccompanimentRequest,
-  toSprint1AccompanimentRequest,
 } from "../../domain/requests/request";
+import { okResult, type ApiResult } from "../../domain/errors/api_error";
 import { transitionRequest } from "../../domain/requests/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
@@ -22,42 +28,151 @@ import {
   getRequestById,
   insertActiveTake,
   insertReceivedRequest,
+  insertReceivedRequestOnce,
   logRequestTransition,
   markRequestTaken,
   setRequestStatus,
 } from "../../infrastructure/requests/repository";
-import { requireActiveProfessional, requireActiveStudent } from "./identity";
+import {
+  findActiveProfessional,
+  findActiveStudent,
+  requireActiveProfessional,
+  requireActiveStudent,
+} from "./identity";
+import { denied, stateConflict } from "./results";
+import { toStatusChange } from "./status_change";
 
 /**
- * Casos de uso de escritura de solicitudes (TI2-9, TI2-85).
+ * Casos de uso de escritura de solicitudes (TI2-9, TI2-85, TI2-141).
  *
  * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
  * `ctx.auth.getUserIdentity()`, exige el rol con cuenta habilitada y
- * vigente, y persiste con Infraestructura. Convertir el contenido
- * estructurado a la forma persistida es alcance de TI2-23: aquí solo se
- * guarda el texto de necesidades de acceso. Opera con datos ficticios.
+ * vigente, y persiste con Infraestructura. El envío completo de TI2-141
+ * guarda la lista de necesidades de acceso como `accessNeedSelections` y el
+ * repositorio deriva de ella el texto unido; la forma anterior guarda solo
+ * ese texto. Opera con datos ficticios.
  */
 
+/** Denegación de Sprint 1, que conservan sus operaciones y la forma anterior de `createRequest`. */
 function deny(): never {
   throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+}
+
+/*
+ * Las operaciones que publica TI2-141 (envío completo, cancelación y cierre
+ * aquí; la respuesta, en `respond.ts`) devuelven `ApiResult` y Presentación lo
+ * traduce con `unwrapApiResult`, como espacios y atenciones: la denegación es
+ * `unauthorized`, un campo inválido `request_fields_invalid` y un estado que
+ * no admite el paso `conflict`. Las de Sprint 1 y la forma anterior de
+ * `createRequest` todavía lanzan su `Error` y su denegación como texto. Este
+ * archivo sigue ligado al contexto de Convex y a repositorios concretos; la
+ * respuesta ya recibe puertos y el resto pasa en TI2-181.
+ */
+
+/** Solicitud pública con los identificadores de Convex, para los validadores de la API. */
+type StoredRequest = AccompanimentRequest & {
+  readonly _id: Id<"requests">;
+  readonly studentId: Id<"users">;
+};
+
+/** Campos que solo existen en la forma completa. */
+const FULL_FORM_FIELDS = [
+  "needSummary",
+  "expectedOutcome",
+  "otherAccessNeed",
+  "modalityPreference",
+  "generalAvailability",
+  "preferredAccessibleInformationChannel",
+  "idempotencyKey",
+] as const;
+
+/** Forma anterior: `accessNeeds` como texto y ningún campo de la forma completa. */
+function isLegacySubmission(
+  input: RequestSubmissionDraft,
+): input is RequestSubmissionDraft & { readonly accessNeeds: string } {
+  return (
+    typeof input.accessNeeds === "string" &&
+    FULL_FORM_FIELDS.every((field) => input[field] === undefined)
+  );
 }
 
 /**
  * Registra la solicitud del Estudiante en estado `received`. Solo el propio
  * Estudiante con cuenta vigente puede registrar; cualquier otro caso recibe
- * denegación genérica, sin motivo ni existencia del recurso. La necesidad de
- * acceso se valida como texto no vacío hasta el tope del contrato
- * (`ACCESS_NEEDS_MAX_LENGTH`, valor acordado en TI2-23) y se persiste
- * recortada; el rechazo por forma es un error operativo que indica qué
- * corregir, no una denegación.
+ * denegación genérica, sin motivo ni existencia del recurso.
+ *
+ * El `ApiResult` solo trae `error` en la forma completa (TI2-141). La forma
+ * anterior (solo `accessNeeds` como texto) todavía lanza hasta TI2-181:
+ * deniega con `ConvexError("No autorizado")` y rechaza el texto con `Error`.
+ * Valida el texto como siempre, hasta `ACCESS_NEEDS_MAX_LENGTH`, y no es
+ * idempotente porque no trae clave. Cualquier otra entrada sigue la forma
+ * completa: autoriza antes de validar, exige sus campos con
+ * `toCompleteSubmission`, los valida con `toRequestSubmission` y se guarda con
+ * `insertReceivedRequestOnce`: un reintento con la misma clave devuelve la
+ * solicitud ya creada sin escribir otra.
  */
 export async function registerRequest(
   ctx: MutationCtx,
   identity: UserIdentity | null,
-  input: { readonly accessNeeds: string },
-) {
-  const student = await requireActiveStudent(ctx, identity);
-  const accessNeeds = toAccessNeedsText(input.accessNeeds);
+  input: RequestSubmissionDraft,
+): Promise<ApiResult<StoredRequest>> {
+  if (isLegacySubmission(input)) {
+    const student = await requireActiveStudent(ctx, identity);
+    const requestId = await registerLegacyRequest(ctx, student._id, input.accessNeeds);
+    return okResult(await readRegistered(ctx, requestId));
+  }
+  const student = await findActiveStudent(ctx, identity?.tokenIdentifier ?? null);
+  if (student === null) return denied();
+  const complete = toCompleteSubmission(input);
+  if (complete.status === "error") return complete;
+  const submission = toRequestSubmission(complete.data);
+  if (submission.status === "error") return submission;
+  const requestId = await registerFullRequest(ctx, student._id, submission.data);
+  return okResult(await readRegistered(ctx, requestId));
+}
+
+/** Solicitud recién registrada, leída de vuelta en la misma mutation. */
+async function readRegistered(ctx: MutationCtx, requestId: Id<"requests">): Promise<StoredRequest> {
+  const row = await getRequestById(ctx, requestId);
+  if (row === null) throw new Error("La solicitud registrada no quedó guardada.");
+  return toAccompanimentRequest({
+    _id: row._id,
+    studentId: row.studentId,
+    status: row.status,
+    accessNeeds: row.accessNeeds,
+    createdAt: row.createdAt,
+  });
+}
+
+/** Guarda el envío completo ya validado. */
+async function registerFullRequest(
+  ctx: MutationCtx,
+  studentId: Id<"users">,
+  submission: RequestSubmission,
+): Promise<Id<"requests">> {
+  const { accessNeeds, generalAvailability, ...content } = submission;
+  const { requestId } = await insertReceivedRequestOnce(ctx, {
+    ...content,
+    // La lista del contrato se persiste como `accessNeedSelections` (TI2-135),
+    // y el repositorio deriva de ella el texto unido. El esquema tipa los
+    // arreglos como mutables; el dominio, de solo lectura.
+    accessNeedSelections: [...accessNeeds],
+    generalAvailability: {
+      ...generalAvailability,
+      preferredWeekdays: [...generalAvailability.preferredWeekdays],
+    },
+    studentId,
+    provenance: { channel: "student", receivedAt: Date.now() },
+  });
+  return requestId;
+}
+
+async function registerLegacyRequest(
+  ctx: MutationCtx,
+  studentId: Id<"users">,
+  raw: string,
+): Promise<Id<"requests">> {
+  const accessNeeds = toAccessNeedsText(raw);
   if (accessNeeds === null) {
     throw new Error("Se requiere describir la necesidad de acceso");
   }
@@ -66,19 +181,7 @@ export async function registerRequest(
       `La necesidad de acceso supera el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres)`,
     );
   }
-  const requestId = await insertReceivedRequest(ctx, {
-    studentId: student._id,
-    accessNeeds,
-  });
-  const row = await getRequestById(ctx, requestId);
-  if (row === null) deny();
-  return toSprint1AccompanimentRequest({
-    _id: row._id,
-    studentId: row.studentId,
-    status: row.status,
-    accessNeeds: row.accessNeeds,
-    createdAt: row.createdAt,
-  });
+  return await insertReceivedRequest(ctx, { studentId, accessNeeds });
 }
 
 /**
@@ -113,7 +216,7 @@ export async function requestAdditionalInformation(
     }
     throw new Error("La solicitud no admite pedir información adicional en su estado actual");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -122,7 +225,7 @@ export async function requestAdditionalInformation(
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
-  return toSprint1AccompanimentRequest({
+  return toAccompanimentRequest({
     _id: row._id,
     studentId: row.studentId,
     status: result.change.to,
@@ -170,7 +273,7 @@ export async function takeRequest(
   if (result.status === "rejected") {
     throw new Error("La solicitud no admite iniciar la revisión en su estado actual");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -178,7 +281,7 @@ export async function takeRequest(
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
-  return toSprint1AccompanimentRequest({
+  return toAccompanimentRequest({
     _id: row._id,
     studentId: row.studentId,
     status: result.change.to,
@@ -231,7 +334,7 @@ export async function acceptRequest(
   if (objective === null) {
     throw new Error("Se requiere el objetivo para abrir el acompañamiento");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -275,19 +378,16 @@ export async function acceptRequest(
  * estado no admite el paso, incluida una solicitud ya cancelada, se rechaza
  * sin modificar nada. Persiste el estado y el registro del cambio (motivo,
  * actor y fecha) en la misma transacción y nunca abre acompañamiento.
- *
- * Sin entrada pública todavía: la tarea que la publique amplía también el
- * contrato de estados de `api.presentation.*` junto con TI4.
  */
 export async function cancelRequest(
   ctx: MutationCtx,
   identity: UserIdentity | null,
   input: { readonly requestId: Id<"requests">; readonly reason: string },
-) {
-  const student = await requireActiveStudent(ctx, identity);
+): Promise<ApiResult<StoredRequest>> {
+  const student = await findActiveStudent(ctx, identity?.tokenIdentifier ?? null);
+  if (student === null) return denied();
   const row = await getRequestById(ctx, input.requestId);
-  if (row === null) deny();
-  if (row.studentId !== student._id) deny();
+  if (row === null || row.studentId !== student._id) return denied();
   const result = transitionRequest({
     from: row.status,
     to: "cancelled",
@@ -296,12 +396,11 @@ export async function cancelRequest(
     reason: input.reason,
   });
   if (result.status === "rejected") {
-    if (result.cause === "reason_required") {
-      throw new Error("Se requiere el motivo para cancelar la solicitud");
-    }
-    throw new Error("La solicitud no admite la cancelación en su estado actual");
+    return result.cause === "reason_required"
+      ? invalidRequestFields("Se requiere el motivo para cancelar la solicitud.")
+      : stateConflict("La solicitud no admite la cancelación en su estado actual.");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -310,13 +409,15 @@ export async function cancelRequest(
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
-  return toAccompanimentRequest({
-    _id: row._id,
-    studentId: row.studentId,
-    status: result.change.to,
-    accessNeeds: row.accessNeeds,
-    createdAt: row.createdAt,
-  });
+  return okResult(
+    toAccompanimentRequest({
+      _id: row._id,
+      studentId: row.studentId,
+      status: result.change.to,
+      accessNeeds: row.accessNeeds,
+      createdAt: row.createdAt,
+    }),
+  );
 }
 
 /**
@@ -327,21 +428,21 @@ export async function cancelRequest(
  * otro caso recibe denegación genérica. El motivo es la razón comprensible
  * que pide la especificación y es obligatorio. Si el estado no admite el
  * paso, incluida una solicitud aceptada o ya cerrada, se rechaza sin
- * modificar nada. Persiste el estado y el registro del cambio en la misma
- * transacción; la toma queda tal cual, como rastro de quién revisó.
- *
- * Sin entrada pública todavía, por la misma razón que `cancelRequest`.
+ * modificar nada. Persiste el estado, la razón vigente (`closureReason`) y
+ * el registro del cambio en la misma transacción; la toma queda tal cual,
+ * como rastro de quién revisó.
  */
 export async function closeRequestWithoutAccompaniment(
   ctx: MutationCtx,
   identity: UserIdentity | null,
   input: { readonly requestId: Id<"requests">; readonly reason: string },
-) {
-  const professional = await requireActiveProfessional(ctx, identity);
+): Promise<ApiResult<StoredRequest>> {
+  const professional = await findActiveProfessional(ctx, identity?.tokenIdentifier ?? null);
+  if (professional === null) return denied();
   const row = await getRequestById(ctx, input.requestId);
-  if (row === null) deny();
+  if (row === null) return denied();
   const take = await findActiveTake(ctx, input.requestId, professional._id);
-  if (take === null) deny();
+  if (take === null) return denied();
   const result = transitionRequest({
     from: row.status,
     to: "closed_without_accompaniment",
@@ -350,12 +451,11 @@ export async function closeRequestWithoutAccompaniment(
     reason: input.reason,
   });
   if (result.status === "rejected") {
-    if (result.cause === "reason_required") {
-      throw new Error("Se requiere el motivo para cerrar la solicitud sin acompañamiento");
-    }
-    throw new Error("La solicitud no admite el cierre sin acompañamiento en su estado actual");
+    return result.cause === "reason_required"
+      ? invalidRequestFields("Se requiere el motivo para cerrar la solicitud sin acompañamiento.")
+      : stateConflict("La solicitud no admite el cierre sin acompañamiento en su estado actual.");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -364,11 +464,13 @@ export async function closeRequestWithoutAccompaniment(
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
-  return toAccompanimentRequest({
-    _id: row._id,
-    studentId: row.studentId,
-    status: result.change.to,
-    accessNeeds: row.accessNeeds,
-    createdAt: row.createdAt,
-  });
+  return okResult(
+    toAccompanimentRequest({
+      _id: row._id,
+      studentId: row.studentId,
+      status: result.change.to,
+      accessNeeds: row.accessNeeds,
+      createdAt: row.createdAt,
+    }),
+  );
 }

@@ -106,6 +106,18 @@ export function isProfileActive(input: {
   return input.institutionalStatus === "enabled" && input.accountStatus === "active";
 }
 
+/** El perfil tiene el rol pedido y su cuenta está habilitada y vigente. */
+export function isActiveInRole(
+  profile: {
+    readonly role: Role;
+    readonly institutionalStatus: InstitutionalStatus;
+    readonly accountStatus: AccountStatus;
+  },
+  role: Role,
+): boolean {
+  return profile.role === role && isProfileActive(profile);
+}
+
 /**
  * Vista permitida de un acompañamiento o `null` cuando se deniega.
  *
