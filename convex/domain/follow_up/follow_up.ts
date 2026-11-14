@@ -369,20 +369,49 @@ export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpVali
   };
 }
 
-/** Mismas entradas en el mismo orden, comparando identificador y contenido. */
-function sameEntries<T extends { readonly id: string }>(
-  confirmed: readonly T[],
-  incoming: readonly T[],
-  sameContent: (left: T, right: T) => boolean,
-): boolean {
-  return (
+/**
+ * Un comparador por cada clave de `T`, incluidas las opcionales: si el tipo
+ * suma un campo, el mapa deja de compilar hasta que se decida cómo se compara.
+ */
+type FieldComparators<T> = { readonly [K in keyof T]-?: (left: T[K], right: T[K]) => boolean };
+
+function same<V>(left: V, right: V): boolean {
+  return left === right;
+}
+
+function sameFields<T>(left: T, right: T, fields: FieldComparators<T>): boolean {
+  return (Object.keys(fields) as (keyof T)[]).every((key) => fields[key](left[key], right[key]));
+}
+
+/** Misma cantidad, mismo orden y cada entrada igual campo por campo. */
+function sameEntries<T>(fields: FieldComparators<T>) {
+  return (confirmed: readonly T[], incoming: readonly T[]): boolean =>
     confirmed.length === incoming.length &&
     confirmed.every((entry, index) => {
       const other = incoming[index];
-      return other !== undefined && entry.id === other.id && sameContent(entry, other);
-    })
-  );
+      return other !== undefined && sameFields(entry, other, fields);
+    });
 }
+
+const AGREEMENT_FIELDS: FieldComparators<FollowUpAgreement> = { id: same, description: same };
+
+const TASK_FIELDS: FieldComparators<FollowUpTask> = {
+  id: same,
+  description: same,
+  responsible: same,
+  status: same,
+};
+
+const RECORD_FIELDS: FieldComparators<FollowUpRecord> = {
+  appointmentId: same,
+  accompanimentId: same,
+  agreements: sameEntries(AGREEMENT_FIELDS),
+  tasks: sameEntries(TASK_FIELDS),
+  nextSteps: same,
+  suggestedNextAppointmentDate: same,
+  internalNote: same,
+  version: same,
+};
 
 /**
  * Verdadero cuando el guardado repite el registro ya confirmado (TI2-146).
@@ -392,30 +421,11 @@ function sameEntries<T extends { readonly id: string }>(
  * los dos registros ya validados, así los espacios que el validador recorta no
  * cuentan como cambio; el orden de acuerdos y tareas sí cuenta, porque es el
  * que se guardó. Cualquier diferencia, incluida la nota interna, es un intento
- * de edición.
+ * de edición. `RECORD_FIELDS` cubre cada campo por tipo: uno nuevo sin
+ * comparar no compila, así que no puede volverse una edición silenciosa.
  */
 export function isFollowUpRetry(confirmed: FollowUpRecord, incoming: FollowUpRecord): boolean {
-  return (
-    confirmed.appointmentId === incoming.appointmentId &&
-    confirmed.accompanimentId === incoming.accompanimentId &&
-    confirmed.nextSteps === incoming.nextSteps &&
-    confirmed.suggestedNextAppointmentDate === incoming.suggestedNextAppointmentDate &&
-    confirmed.internalNote === incoming.internalNote &&
-    confirmed.version === incoming.version &&
-    sameEntries(
-      confirmed.agreements,
-      incoming.agreements,
-      (left, right) => left.description === right.description,
-    ) &&
-    sameEntries(
-      confirmed.tasks,
-      incoming.tasks,
-      (left, right) =>
-        left.description === right.description &&
-        left.responsible === right.responsible &&
-        left.status === right.status,
-    )
-  );
+  return sameFields(confirmed, incoming, RECORD_FIELDS);
 }
 
 /**
