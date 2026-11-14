@@ -2,6 +2,7 @@ import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { toStoredAccessNeeds } from "../../domain/requests/request";
+import type { RequestStatusChange } from "../../domain/requests/transitions";
 
 /**
  * Repositorio de solicitudes (TI2-9).
@@ -175,13 +176,14 @@ export async function getRequestById(
 export async function setRequestStatus(
   ctx: MutationCtx,
   requestId: Id<"requests">,
-  status: Doc<"requests">["status"],
-  closureReason?: string,
+  change: RequestStatusChange,
 ): Promise<void> {
-  await ctx.db.patch(requestId, {
-    status,
-    ...(closureReason === undefined ? {} : { closureReason }),
-  });
+  await ctx.db.patch(
+    requestId,
+    change.status === "closed_without_accompaniment"
+      ? { status: change.status, closureReason: change.closureReason }
+      : { status: change.status },
+  );
 }
 
 /** Registra el cambio de estado con motivo, actor y fecha. */

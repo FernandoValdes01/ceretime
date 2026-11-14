@@ -46,6 +46,7 @@ import {
   requireActiveProfessional,
   requireActiveStudent,
 } from "./identity";
+import { toStatusChange } from "./status_change";
 
 /**
  * Casos de uso de escritura de solicitudes (TI2-9, TI2-85, TI2-141).
@@ -231,7 +232,7 @@ export async function requestAdditionalInformation(
     }
     throw new Error("La solicitud no admite pedir información adicional en su estado actual");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -288,7 +289,7 @@ export async function takeRequest(
   if (result.status === "rejected") {
     throw new Error("La solicitud no admite iniciar la revisión en su estado actual");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -349,7 +350,7 @@ export async function acceptRequest(
   if (objective === null) {
     throw new Error("Se requiere el objetivo para abrir el acompañamiento");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -415,7 +416,7 @@ export async function cancelRequest(
       ? invalidFields("Se requiere el motivo para cancelar la solicitud.")
       : stateConflict("La solicitud no admite la cancelación en su estado actual.");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
@@ -470,19 +471,13 @@ export async function closeRequestWithoutAccompaniment(
       ? invalidFields("Se requiere el motivo para cerrar la solicitud sin acompañamiento.")
       : stateConflict("La solicitud no admite el cierre sin acompañamiento en su estado actual.");
   }
-  // La política ya exigió el motivo: si faltara, es un fallo interno, no una
-  // denegación, y responder «No autorizado» lo escondería.
-  const closureReason = result.change.reason;
-  if (closureReason === undefined) {
-    throw new Error("La política de solicitudes cerró sin dejar la razón del cierre.");
-  }
-  await setRequestStatus(ctx, input.requestId, result.change.to, closureReason);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,
     to: result.change.to,
     actorId: professional._id,
-    reason: closureReason,
+    ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
   return okResult(
@@ -531,7 +526,7 @@ export async function respondToInformationRequest(
   if (result.status === "rejected") {
     return stateConflict("La solicitud no admite una respuesta en su estado actual.");
   }
-  await setRequestStatus(ctx, input.requestId, result.change.to);
+  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
   await logRequestTransition(ctx, {
     requestId: input.requestId,
     from: result.change.from,

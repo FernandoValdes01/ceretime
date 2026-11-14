@@ -117,5 +117,18 @@ export type RequestStateChange = {
   readonly reason?: string;
 };
 
+/**
+ * Escritura del estado vigente de la solicitud (TI2-141). El cierre sin
+ * acompañamiento lleva su razón, que lee el Estudiante, y ningún otro estado
+ * la lleva: así no compila una razón de cierre en una solicitud aceptada ni un
+ * cierre sin razón.
+ */
+export type RequestStatusChange =
+  | { readonly status: "closed_without_accompaniment"; readonly closureReason: string }
+  | {
+      readonly status: Exclude<PersistableRequestState, "closed_without_accompaniment">;
+      readonly closureReason?: never;
+    };
+
 /** Llegar acá habilita la apertura de exactamente un acompañamiento (TI2-24). */
 export const ACCEPTANCE_STATE: Sprint1RequestState = "accepted";
