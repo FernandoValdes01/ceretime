@@ -99,6 +99,12 @@ export default defineSchema({
     grantedAt: v.optional(v.number()),
     revokedBy: v.optional(v.id("users")),
     revokedAt: v.optional(v.number()),
+    // Vigencia opcional de la asignación (TI2-138): desde y hasta cuándo vale
+    // el acceso. Ausentes en las filas anteriores y cuando la asignación no
+    // declara límites. La vigencia efectiva la sigue decidiendo `status`; estas
+    // fechas solo permiten expresar una ventana sin inventar revocaciones.
+    validFrom: v.optional(v.number()),
+    validUntil: v.optional(v.number()),
   })
     // Paginado keyset del listado asignado: ordena por acompañamiento para
     // que las filas duplicadas queden adyacentes y el cursor las excluya
@@ -340,6 +346,19 @@ export default defineSchema({
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
     supportingDocumentReceived: v.optional(v.boolean()),
+    // Copia de las necesidades de acceso aplicada al reservar (TI2-138): la
+    // lista `{ id, label }` que tenía el acompañamiento en ese momento. Queda
+    // congelada en la atención para que cambiar las necesidades actuales no
+    // reescriba lo ya registrado; las filas anteriores no la tienen y se leen
+    // igual. La migración la completa con la necesidad vigente cuando la fila
+    // no puede reconstruir otra.
+    appliedAccessNeeds: v.optional(v.array(accessNeedSelectionValidator)),
+    // Apoyos de la atención en línea y referencia de su acceso privado
+    // (TI2-138). Opcionales porque las atenciones presenciales no los usan y
+    // las filas anteriores no los tienen; solo persistencia, sin exponerlos en
+    // la API todavía.
+    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
+    privateAccessReference: v.optional(v.string()),
     createdAt: v.number(),
   })
     // Atenciones propias del estudiante.
@@ -362,6 +381,29 @@ export default defineSchema({
     // Atenciones del acompañamiento por rango de inicio, sin filtrar en
     // memoria; también ordena el listado acotado del detalle (TI2-122).
     .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"]),
+
+  // Tabla 'appointmentProfessionals': profesionales que participan en una
+  // atención (TI2-138). `appointments.professionalId` sigue siendo el
+  // profesional responsable principal para conservar la compatibilidad; esta
+  // tabla registra el conjunto completo sin crear otra atención ni otra
+  // asignación. Cada fila copia la ventana `startsAt`/`endsAt` de la atención
+  // para detectar cruces con una sola consulta de rango, igual que
+  // `appointments`. Como máximo una fila por atención y profesional; la
+  // garantía la da la vía de escritura, porque Convex no impone unicidad. El
+  // repositorio la mantiene sincronizada al crear o mover la atención y la
+  // migración la completa para las filas anteriores.
+  appointmentProfessionals: defineTable({
+    appointmentId: v.id("appointments"),
+    professionalId: v.id("users"),
+    startsAt: v.number(),
+    endsAt: v.number(),
+  })
+    // Participantes de la atención: una fila basta para decidir y el conjunto
+    // se lee sin filtrar en memoria.
+    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"])
+    // Cruces del profesional desde un instante: ventana de la agenda de todos
+    // sus participantes, sin recorrer las atenciones.
+    .index("by_professionalId_and_startsAt", ["professionalId", "startsAt"]),
 
   // Tabla 'notificationEvents': eventos de notificación de la atención
   // (forma de TI2-105, persistida por TI2-118). Cada fila guarda solo las

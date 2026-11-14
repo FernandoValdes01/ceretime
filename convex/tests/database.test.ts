@@ -37,6 +37,10 @@ import {
   MAX_EXCEPTIONS_IN_RANGE,
 } from "../infrastructure/availability/repository";
 import {
+  appointmentAgendaReader,
+  occupySlotAtomically,
+} from "../infrastructure/appointments/repository";
+import {
   accessNeedsFromLines,
   compatibilitySpaceSource,
   findSpaceRowByLocation,
@@ -3659,4 +3663,347 @@ test("TI2-135: la migración de solicitudes avanza por páginas hasta agotar las
   });
   expect(second.migrated).toBe(1);
   expect(second.isDone).toBe(true);
+});
+
+/**
+ * Ciclo completo de la atención (TI2-138): participantes, apoyos en línea,
+ * copia de necesidades y migración de las filas anteriores.
+ *
+ * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
+ * que reservar congela las necesidades del acompañamiento, que cambiarlas
+ * después no altera la atención, que mover la atención con otro responsable
+ * reemplaza al anterior en la ventana de participantes y que la migración
+ * completa las filas anteriores sin inventar apoyos ni referencia privada.
+ */
+
+const TI138_NEEDS = ["Necesidad ficticia A", "Necesidad ficticia B"] as const;
+
+test("TI2-138: reservar copia las necesidades vigentes y registra a los participantes", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti138-book-est",
+    email: "ti138book@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti138-book-pro",
+    email: "ti138bookpro@uct.cl",
+    role: "professional",
+  });
+  const accompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
+
+  const occupied = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: professional,
+      modality: "online",
+      startsAt: TI83_MONDAY_9H,
+      endsAt: TI83_MONDAY_10H,
+      onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
+      privateAccessReference: "https://acceso.example/ficticio",
+    });
+  });
+  expect(occupied.status).toBe("ok");
+  if (occupied.status !== "ok") return;
+  const appointmentId = occupied.data.appointmentId;
+
+  const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
+  const expectedNeeds = TI138_NEEDS.map((label) => ({ id: label, label }));
+  expect(row).toMatchObject({
+    appliedAccessNeeds: expectedNeeds,
+    onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
+    privateAccessReference: "https://acceso.example/ficticio",
+  });
+
+  // Índice de cruces: la fila del profesional copia la ventana de la atención.
+  const windows = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointmentProfessionals")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", professional).gte("startsAt", TI83_MONDAY_9H),
+      )
+      .take(10);
+  });
+  expect(windows).toHaveLength(1);
+  expect(windows[0]).toMatchObject({
+    appointmentId,
+    professionalId: professional,
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+  });
+
+  // Cambiar las necesidades actuales no reescribe la copia ya registrada.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
+  });
+  expect((await t.run(async (ctx) => await ctx.db.get(appointmentId)))?.appliedAccessNeeds).toEqual(
+    expectedNeeds,
+  );
+});
+
+test("TI2-138: mover la atención cambia al responsable sin reescribir necesidades", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti138-move-est",
+    email: "ti138move@alu.uct.cl",
+    role: "student",
+  });
+  const otherStudent = await seedUser(t, {
+    subject: "ti138-move-otro-est",
+    email: "ti138moveotro@alu.uct.cl",
+    role: "student",
+  });
+  const firstProfessional = await seedUser(t, {
+    subject: "ti138-move-pro-1",
+    email: "ti138movepro1@uct.cl",
+    role: "professional",
+  });
+  const secondProfessional = await seedUser(t, {
+    subject: "ti138-move-pro-2",
+    email: "ti138movepro2@uct.cl",
+    role: "professional",
+  });
+  const accompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
+  const otherAccompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: otherStudent,
+      status: "active",
+      objective: "Otro objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
+
+  const created = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: firstProfessional,
+      modality: "inPerson",
+      startsAt: TI83_MONDAY_9H,
+      endsAt: TI83_MONDAY_10H,
+    });
+  });
+  expect(created.status).toBe("ok");
+  if (created.status !== "ok") return;
+
+  // Otra atención del responsable anterior a la hora del destino: si su fila
+  // se conservara con el horario nuevo, aparecería ocupado dos veces.
+  const otherAttention = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: otherAccompaniment,
+      studentId: otherStudent,
+      professionalId: firstProfessional,
+      modality: "inPerson",
+      startsAt: TI83_MONDAY_10H,
+      endsAt: TI83_MONDAY_10H + 3_600_000,
+    });
+  });
+  expect(otherAttention.status).toBe("ok");
+  if (otherAttention.status !== "ok") return;
+
+  await t.run(async (ctx) => {
+    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
+  });
+
+  const moved = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: secondProfessional,
+      modality: "inPerson",
+      startsAt: TI83_MONDAY_10H,
+      endsAt: TI83_MONDAY_10H + 3_600_000,
+      movedAppointmentId: created.data.appointmentId,
+    });
+  });
+  expect(moved).toEqual({ status: "ok", data: { appointmentId: created.data.appointmentId } });
+
+  const participants = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointmentProfessionals")
+      .withIndex("by_appointmentId_and_professionalId", (q) =>
+        q.eq("appointmentId", created.data.appointmentId),
+      )
+      .take(10);
+  });
+  // El responsable anterior deja de participar: la fila pasa a ser la del
+  // nuevo y la atención sigue teniendo una sola fila por responsable.
+  expect(participants.map((row) => row.professionalId)).toEqual([secondProfessional]);
+  expect(participants[0]).toMatchObject({
+    startsAt: TI83_MONDAY_10H,
+    endsAt: TI83_MONDAY_10H + 3_600_000,
+  });
+
+  // El índice de cruces del anterior solo devuelve su otra atención a las
+  // 10:00, no la que ya no le pertenece.
+  const previousWindows = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointmentProfessionals")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", firstProfessional).gte("startsAt", TI83_MONDAY_10H),
+      )
+      .take(10);
+  });
+  expect(previousWindows.map((row) => row.appointmentId)).toEqual([
+    otherAttention.data.appointmentId,
+  ]);
+
+  const row = await t.run(async (ctx) => await ctx.db.get(created.data.appointmentId));
+  expect(row?.appliedAccessNeeds).toEqual(TI138_NEEDS.map((label) => ({ id: label, label })));
+});
+
+test("TI2-138: la migración completa las atenciones anteriores sin inventar contenido", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
+    email: "ti138admin@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti138-mig-adm`,
+  });
+  const student = await seedUser(t, {
+    subject: "ti138-mig-est",
+    email: "ti138mig@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti138-mig-pro",
+    email: "ti138migpro@uct.cl",
+    role: "professional",
+  });
+  const accompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
+  const first = await seedTi83Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: professional,
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+  });
+  const second = await seedTi83Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: professional,
+    startsAt: TI83_MONDAY_10H,
+    endsAt: TI83_MONDAY_10H + 3_600_000,
+    modality: "online",
+  });
+
+  // Las filas anteriores se leen sin error por la agenda vigente.
+  const legacyRead = await t.run(async (ctx) => {
+    return await appointmentAgendaReader(ctx).listByAccompaniment(accompaniment, {
+      startAt: TI83_MONDAY_9H,
+      endAt: TI83_TUESDAY,
+    });
+  });
+  expect(legacyRead.status).toBe("ok");
+  if (legacyRead.status !== "ok") return;
+  expect(legacyRead.data).toHaveLength(2);
+
+  const audit = await t.query(internal.operations.migrations.auditAppointmentParticipants, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(audit).toMatchObject({
+    scanned: 2,
+    missingAppliedAccessNeeds: 2,
+    missingParticipants: 2,
+    isDone: true,
+  });
+  expect([...audit.sampleLegacyIds].sort()).toEqual([first, second].sort());
+
+  // Solo un Administrador vigente migra, y un intento rechazado no escribe.
+  const asStudent = t.withIdentity(identityFor("ti138-mig-est", "ti138mig@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(internal.operations.migrations.migrateLegacyAppointments, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
+  ).rejects.toThrow("No autorizado");
+  expect((await t.run(async (ctx) => await ctx.db.get(first)))?.appliedAccessNeeds).toBeUndefined();
+
+  const asAdmin = t.withIdentity(identityFor("ti138-mig-adm", "ti138admin@uct.cl"));
+  const firstPage = await asAdmin.mutation(
+    internal.operations.migrations.migrateLegacyAppointments,
+    { paginationOpts: { numItems: 1, cursor: null } },
+  );
+  expect(firstPage).toMatchObject({
+    scanned: 1,
+    migratedNeeds: 1,
+    createdParticipants: 1,
+    unresolvedNeeds: 0,
+    isDone: false,
+  });
+  const secondPage = await asAdmin.mutation(
+    internal.operations.migrations.migrateLegacyAppointments,
+    { paginationOpts: { numItems: 1, cursor: firstPage.continueCursor } },
+  );
+  expect(secondPage).toMatchObject({
+    scanned: 1,
+    migratedNeeds: 1,
+    createdParticipants: 1,
+    unresolvedNeeds: 0,
+    isDone: true,
+  });
+
+  // La copia usa la necesidad que el acompañamiento tenía al migrar y no
+  // inventa apoyos en línea ni referencia privada.
+  const expectedNeeds = TI138_NEEDS.map((label) => ({ id: label, label }));
+  for (const appointmentId of [first, second]) {
+    const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
+    expect(row?.appliedAccessNeeds).toEqual(expectedNeeds);
+    expect(row?.onlineSupports).toBeUndefined();
+    expect(row?.privateAccessReference).toBeUndefined();
+  }
+  const participantRows = await t.run(async (ctx) => {
+    return await ctx.db.query("appointmentProfessionals").take(10);
+  });
+  expect(participantRows).toHaveLength(2);
+  expect(participantRows.map((row) => row.appointmentId).sort()).toEqual([first, second].sort());
+
+  // Cambiar las necesidades actuales no toca lo ya migrado y repetirla no
+  // escribe de nuevo.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
+  });
+  const repeated = await asAdmin.mutation(
+    internal.operations.migrations.migrateLegacyAppointments,
+    { paginationOpts: { numItems: 10, cursor: null } },
+  );
+  expect(repeated).toMatchObject({
+    scanned: 2,
+    migratedNeeds: 0,
+    createdParticipants: 0,
+    unresolvedNeeds: 0,
+    isDone: true,
+  });
+  for (const appointmentId of [first, second]) {
+    expect(
+      (await t.run(async (ctx) => await ctx.db.get(appointmentId)))?.appliedAccessNeeds,
+    ).toEqual(expectedNeeds);
+  }
+  const clean = await t.query(internal.operations.migrations.auditAppointmentParticipants, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(clean).toMatchObject({
+    missingAppliedAccessNeeds: 0,
+    missingParticipants: 0,
+  });
 });

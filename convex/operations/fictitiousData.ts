@@ -1,5 +1,6 @@
 import type { UserIdentity } from "convex/server";
 import { internal } from "../_generated/api";
+import type { Doc } from "../_generated/dataModel";
 import { env, internalMutation } from "../_generated/server";
 import { assignAccompaniment } from "../application/accompaniments/commands";
 import {
@@ -10,6 +11,10 @@ import {
 } from "../application/requests/commands";
 import { AGENDA_TIME_ZONE, civilRangeToInstantRange } from "../domain/availability/availability";
 import { findProfileByTokenIdentifier } from "../infrastructure/accompaniments/repository";
+import {
+  appliedAccessNeedsFor,
+  syncAppointmentProfessional,
+} from "../infrastructure/appointments/repository";
 
 /**
  * Dataset ficticio mínimo del Sprint 1 (TI2-30).
@@ -208,7 +213,11 @@ export const load = internalMutation({
 
     // Atenciones deterministas, una por estado, en el cupo presencial de las
     // 10:00 civiles de cada lunes. La del 2026-10-12 coincide con el bloque
-    // cancelado por la excepción; las demás, con el bloque recurrente.
+    // cancelado por la excepción; las demás, con el bloque recurrente. No
+    // pasan por `occupySlotAtomically` porque la semilla incluye un cupo
+    // cancelado a propósito, así que se insertan con la misma forma que esa
+    // vía de escritura: copia congelada de necesidades y fila del profesional
+    // responsable.
     const seededAt = agendaInstant("2026-09-21", 8 * 60);
     const attendance = (day: string) => ({
       accompanimentId: accompaniment._id,
@@ -220,27 +229,36 @@ export const load = internalMutation({
       endsAt: agendaInstant(day, 660),
       createdAt: seededAt,
     });
+    const appliedAccessNeeds = await appliedAccessNeedsFor(ctx, accompaniment._id);
+    const seedAppointment = async (
+      day: string,
+      status: Doc<"appointments">["status"],
+      cancelReason?: string,
+    ) => {
+      const row = attendance(day);
+      const appointmentId = await ctx.db.insert("appointments", {
+        ...row,
+        status,
+        ...(cancelReason === undefined ? {} : { cancelReason }),
+        ...(appliedAccessNeeds === undefined ? {} : { appliedAccessNeeds }),
+      });
+      await syncAppointmentProfessional(ctx, {
+        appointmentId,
+        professionalId: row.professionalId,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+      });
+      return appointmentId;
+    };
 
-    await ctx.db.insert("appointments", {
-      ...attendance("2026-09-28"),
-      status: "no_show",
-    });
-
-    await ctx.db.insert("appointments", {
-      ...attendance("2026-10-05"),
-      status: "completed",
-    });
-
-    await ctx.db.insert("appointments", {
-      ...attendance("2026-10-12"),
-      status: "cancelled_by_student",
-      cancelReason: "Conflicto de horario imprevisto con otra actividad académica.",
-    });
-
-    await ctx.db.insert("appointments", {
-      ...attendance("2026-10-19"),
-      status: "scheduled",
-    });
+    await seedAppointment("2026-09-28", "no_show");
+    await seedAppointment("2026-10-05", "completed");
+    await seedAppointment(
+      "2026-10-12",
+      "cancelled_by_student",
+      "Conflicto de horario imprevisto con otra actividad académica.",
+    );
+    await seedAppointment("2026-10-19", "scheduled");
 
     return { loaded: true };
   },
