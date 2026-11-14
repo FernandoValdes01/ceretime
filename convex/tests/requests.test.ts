@@ -1463,6 +1463,26 @@ test("TI2-141: responder una solicitud ajena o inexistente, o sin ser Estudiante
   expect(await snapshotOf(t, requestId)).toEqual(before);
 });
 
+test("TI2-141: el dueño sin rol Estudiante o sin cuenta vigente no responde su propia solicitud", async () => {
+  const t = convexTest(schema, modules);
+  // Cada perfil es dueño de la solicitud que intenta responder: la denegación
+  // sale del rol o de la vigencia, no de la pertenencia
+  for (const [subject, role, status] of [
+    ["ti141-resp-pro", "professional", ENABLED],
+    ["ti141-resp-inh", "student", { institutionalStatus: "disabled", accountStatus: "active" }],
+    ["ti141-resp-pen", "student", { institutionalStatus: "pending", accountStatus: "active" }],
+    ["ti141-resp-ina", "student", { institutionalStatus: "enabled", accountStatus: "inactive" }],
+  ] as const) {
+    const ownerId = await seedProfile(t, subject, role, status);
+    const requestId = await seedRequestIn(t, ownerId, "awaiting_information_or_acceptance");
+    const before = await snapshotOf(t, requestId);
+    expect(await publicErrorOf(respondAs(t, identityOf(subject), requestId, "Respuesta"))).toEqual(
+      UNAUTHORIZED,
+    );
+    expect(await snapshotOf(t, requestId)).toEqual(before);
+  }
+});
+
 test("TI2-141: responder exige la espera, una respuesta con texto y dentro del tope", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti141-est-4", "student");

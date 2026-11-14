@@ -8,7 +8,6 @@ import {
   requestAdditionalInformation as requestAdditionalInformationUseCase,
   takeRequest as takeRequestUseCase,
 } from "../application/requests/commands";
-import { activeStudentReader } from "../application/requests/identity";
 import { respondToInformationRequest as respondToInformationRequestUseCase } from "../application/requests/respond";
 import {
   listAuthorizedRequestsUseCase,
@@ -23,7 +22,7 @@ import {
   modalityUnion,
   requestStatusUnion,
 } from "../infrastructure/validators";
-import { requestStore } from "../infrastructure/requests/repository";
+import { activeStudentReader, requestStore } from "../infrastructure/requests/repository";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 import { unwrapApiResult } from "./session";
 

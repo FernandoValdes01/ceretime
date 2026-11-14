@@ -2,6 +2,7 @@ import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { isActiveInRole } from "../../domain/authorization/permissions";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 
@@ -9,8 +10,9 @@ import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
  * Identidad de quien llama para solicitudes (TI2-9).
  *
  * Resuelve el perfil en el servidor desde `ctx.auth.getUserIdentity()` y
- * exige el rol con cuenta habilitada y vigente. La regla de vigencia vive en
- * `findActiveProfile`: las variantes `find*` devuelven `null` para que las
+ * exige el rol con cuenta habilitada y vigente con `isActiveInRole`, la
+ * regla de Dominio que también aplica `activeStudentReader` de
+ * Infraestructura. Las variantes `find*` devuelven `null` para que las
  * operaciones de TI2-141 respondan `unauthorized` como valor, y las
  * `require*` de Sprint 1 lanzan el texto «No autorizado» de siempre. Ninguna
  * dice el motivo ni si el recurso existe.
@@ -25,15 +27,7 @@ async function findActiveProfile(
 ): Promise<Doc<"users"> | null> {
   if (tokenIdentifier === null) return null;
   const caller = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
-  if (
-    caller === null ||
-    caller.role !== role ||
-    caller.institutionalStatus !== "enabled" ||
-    caller.accountStatus !== "active"
-  ) {
-    return null;
-  }
-  return caller;
+  return caller !== null && isActiveInRole(caller, role) ? caller : null;
 }
 
 /** Estudiante con cuenta habilitada y vigente, o `null`. */
@@ -42,13 +36,6 @@ export async function findActiveStudent(
   tokenIdentifier: string | null,
 ): Promise<Doc<"users"> | null> {
   return await findActiveProfile(ctx, tokenIdentifier, "student");
-}
-
-/** Cumple `ActiveStudentReader` sobre el `ctx` de la mutation que lo compone. */
-export function activeStudentReader(ctx: DbContext) {
-  return {
-    findActiveStudent: (tokenIdentifier: string | null) => findActiveStudent(ctx, tokenIdentifier),
-  };
 }
 
 /** Profesional con cuenta habilitada y vigente, o `null`. */

@@ -1,15 +1,18 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { isActiveInRole } from "../../domain/authorization/permissions";
 import { toStoredAccessNeeds } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
+import { findProfileByTokenIdentifier } from "../accompaniments/repository";
 
 /**
  * Repositorio de solicitudes (TI2-9).
  *
  * Capa de Infraestructura: único lugar que toca `ctx.db` en el flujo de
- * solicitudes. No decide autorización ni resuelve identidad; solo
- * persiste/recupera con los índices declarados en `convex/schema.ts`.
+ * solicitudes. No decide autorización: persiste/recupera con los índices
+ * declarados en `convex/schema.ts`, y `activeStudentReader` filtra el perfil
+ * con la regla de Dominio `isActiveInRole`.
  *
  * Opera con datos ficticios.
  */
@@ -221,6 +224,21 @@ export function requestStore(ctx: MutationCtx) {
       setRequestStatus(ctx, requestId, change),
     logRequestTransition: (entry: Parameters<typeof logRequestTransition>[1]) =>
       logRequestTransition(ctx, entry),
+  };
+}
+
+/**
+ * Estudiante de quien llama para el puerto `ActiveStudentReader` (TI2-141):
+ * el perfil solo si tiene el rol Estudiante con cuenta habilitada y vigente.
+ * Presentación lo crea con el `ctx` de la mutation, como `requestStore`.
+ */
+export function activeStudentReader(ctx: DbReader) {
+  return {
+    findActiveStudent: async (tokenIdentifier: string | null) => {
+      if (tokenIdentifier === null) return null;
+      const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+      return profile !== null && isActiveInRole(profile, "student") ? profile : null;
+    },
   };
 }
 
