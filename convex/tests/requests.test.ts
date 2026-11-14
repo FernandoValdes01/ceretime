@@ -904,6 +904,24 @@ function sessionOf(t: SchemaTest, identity: Identity) {
   return identity === null ? t : t.withIdentity(identity);
 }
 
+/**
+ * Datos del `ConvexError` con que se rechazó la promesa. Distingue las dos
+ * formas de denegación: con datos de objeto, `ConvexError` copia el objeto
+ * como texto en `message`, así que `toThrow("No autorizado")` acepta las dos.
+ */
+async function publicErrorOf(promise: Promise<unknown>) {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof ConvexError) return error.data as unknown;
+    throw error;
+  }
+  throw new Error("Se esperaba un rechazo");
+}
+
+/** Denegación del contrato común que usan las operaciones de TI2-141. */
+const UNAUTHORIZED = { code: "unauthorized", message: "No autorizado" };
+
 function cancelAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">, reason: string) {
   return sessionOf(t, identity).mutation(api.presentation.requests.cancelRequest, {
     requestId,
@@ -983,9 +1001,9 @@ test("TI2-85: cancelar una solicitud ajena o inexistente se deniega igual, sin e
 
   // Otro Estudiante vigente no distingue una solicitud ajena de una inexistente
   for (const requestId of [foreignId, missingId]) {
-    await expect(
-      cancelAs(t, identityOf("ti85-est-4"), requestId, "Motivo ficticio"),
-    ).rejects.toThrow("No autorizado");
+    expect(
+      await publicErrorOf(cancelAs(t, identityOf("ti85-est-4"), requestId, "Motivo ficticio")),
+    ).toEqual(UNAUTHORIZED);
   }
   expect(await snapshotOf(t, foreignId)).toEqual(before);
 });
@@ -997,8 +1015,8 @@ test("TI2-85: sin identidad, sin rol Estudiante o sin cuenta vigente no se cance
   const before = await snapshotOf(t, requestId);
 
   for (const identity of [null, identityOf("ti85-sin-perfil")]) {
-    await expect(cancelAs(t, identity, requestId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(cancelAs(t, identity, requestId, "Motivo ficticio"))).toEqual(
+      UNAUTHORIZED,
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
@@ -1012,8 +1030,8 @@ test("TI2-85: sin identidad, sin rol Estudiante o sin cuenta vigente no se cance
   ] as const) {
     const profileId = await seedProfile(t, subject, role);
     const ownId = await seedRequestIn(t, profileId, "received");
-    await expect(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio"))).toEqual(
+      UNAUTHORIZED,
     );
     expect((await snapshotOf(t, ownId)).status).toBe("received");
   }
@@ -1027,8 +1045,8 @@ test("TI2-85: sin identidad, sin rol Estudiante o sin cuenta vigente no se cance
   ] as const) {
     const studentId = await seedProfile(t, subject, "student", status);
     const ownId = await seedRequestIn(t, studentId, "received");
-    await expect(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(cancelAs(t, identityOf(subject), ownId, "Motivo ficticio"))).toEqual(
+      UNAUTHORIZED,
     );
     expect((await snapshotOf(t, ownId)).status).toBe("received");
   }
@@ -1147,14 +1165,14 @@ test("TI2-85: cerrar exige toma activa; sin ella o con una revocada se deniega s
 
   // Otro Profesional sin toma y uno con la toma revocada no operan
   for (const subject of ["ti85-pro-4", "ti85-pro-5"]) {
-    await expect(closeAs(t, identityOf(subject), requestId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
-    );
+    expect(
+      await publicErrorOf(closeAs(t, identityOf(subject), requestId, "Motivo ficticio")),
+    ).toEqual(UNAUTHORIZED);
   }
   // Una solicitud inexistente responde igual que una sin toma
-  await expect(closeAs(t, identityOf("ti85-pro-3"), missingId, "Motivo ficticio")).rejects.toThrow(
-    "No autorizado",
-  );
+  expect(
+    await publicErrorOf(closeAs(t, identityOf("ti85-pro-3"), missingId, "Motivo ficticio")),
+  ).toEqual(UNAUTHORIZED);
   expect(await snapshotOf(t, requestId)).toEqual(before);
 });
 
@@ -1195,8 +1213,8 @@ test("TI2-85: sin identidad, sin rol Profesional o sin cuenta vigente no se cier
 
   const subjects = ["ti85-est-10", ...others.map(([subject]) => subject)];
   for (const identity of [null, identityOf("ti85-sin-perfil"), ...subjects.map(identityOf)]) {
-    await expect(closeAs(t, identity, requestId, "Motivo ficticio")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(closeAs(t, identity, requestId, "Motivo ficticio"))).toEqual(
+      UNAUTHORIZED,
     );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
@@ -1425,8 +1443,8 @@ test("TI2-141: responder una solicitud ajena o inexistente, o sin ser Estudiante
 
   // Otro Estudiante no distingue una solicitud ajena de una inexistente
   for (const id of [requestId, missingId]) {
-    await expect(respondAs(t, identityOf("ti141-est-3"), id, "Respuesta")).rejects.toThrow(
-      "No autorizado",
+    expect(await publicErrorOf(respondAs(t, identityOf("ti141-est-3"), id, "Respuesta"))).toEqual(
+      UNAUTHORIZED,
     );
   }
   // Ni el Profesional con toma responde por el Estudiante
@@ -1438,7 +1456,9 @@ test("TI2-141: responder una solicitud ajena o inexistente, o sin ser Estudiante
     identityOf("ti141-adm-1"),
     identityOf("ti141-est-ina"),
   ]) {
-    await expect(respondAs(t, identity, requestId, "Respuesta")).rejects.toThrow("No autorizado");
+    expect(await publicErrorOf(respondAs(t, identity, requestId, "Respuesta"))).toEqual(
+      UNAUTHORIZED,
+    );
   }
   expect(await snapshotOf(t, requestId)).toEqual(before);
 });
@@ -1720,23 +1740,14 @@ test("TI2-141: el envío no admite RUT, diagnóstico ni campos fuera del contrat
     ).rejects.toThrow("Validator error");
   }
   for (const identity of [null, identityOf("ti141-env-pro")]) {
-    await expect(
-      sessionOf(t, identity).mutation(api.presentation.requests.createRequest, FULL_SUBMISSION),
-    ).rejects.toThrow("No autorizado");
+    expect(
+      await publicErrorOf(
+        sessionOf(t, identity).mutation(api.presentation.requests.createRequest, FULL_SUBMISSION),
+      ),
+    ).toEqual(UNAUTHORIZED);
   }
   expect(await requestsOf(t, studentId)).toHaveLength(0);
 });
-
-/** Datos del `ConvexError` con que se rechazó la promesa. */
-async function publicErrorOf(promise: Promise<unknown>) {
-  try {
-    await promise;
-  } catch (error) {
-    if (error instanceof ConvexError) return error.data as unknown;
-    throw error;
-  }
-  throw new Error("Se esperaba un rechazo");
-}
 
 test("TI2-141: los rechazos de las operaciones nuevas llegan como error público con código", async () => {
   const t = convexTest(schema, modules);
@@ -1817,6 +1828,32 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
     expect(await publicErrorOf(promise)).toEqual({ code: "conflict", message });
   }
 
-  // La denegación conserva la forma de Sprint 1
-  expect(await publicErrorOf(cancelAs(t, professional, waiting, "Motivo"))).toBe("No autorizado");
+  // Las cuatro operaciones nuevas deniegan con el código del contrato común
+  for (const promise of [
+    t.withIdentity(identityOf("ti141-err-pro")).mutation(api.presentation.requests.createRequest, {
+      ...FULL_SUBMISSION,
+      needSummary: "",
+    }),
+    cancelAs(t, professional, waiting, "Motivo"),
+    closeAs(t, student, waiting, "Motivo"),
+    respondAs(t, professional, waiting, "Respuesta"),
+  ]) {
+    expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
+  }
+
+  // La forma anterior de `createRequest` y Sprint 1 siguen denegando con texto hasta TI2-181,
+  // tanto por rol como por falta de toma sobre la solicitud
+  const untaken = await seedRequestIn(t, studentId, "under_review");
+  for (const promise of [
+    t.withIdentity(professional).mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId: untaken,
+      reason: "Motivo",
+    }),
+    t
+      .withIdentity(professional)
+      .mutation(api.presentation.requests.createRequest, { accessNeeds: "Texto ficticio" }),
+    t.withIdentity(student).mutation(api.presentation.requests.takeRequest, { requestId: waiting }),
+  ]) {
+    expect(await publicErrorOf(promise)).toBe("No autorizado");
+  }
 });

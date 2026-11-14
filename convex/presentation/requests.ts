@@ -23,6 +23,7 @@ import {
   requestStatusUnion,
 } from "../infrastructure/validators";
 import { acceptedAccompanimentValidator } from "./accompaniments";
+import { unwrapApiResult } from "./session";
 
 /**
  * Borde de Presentación: solicitudes del Estudiante (TI2-9) y API pública de
@@ -33,7 +34,11 @@ import { acceptedAccompanimentValidator } from "./accompaniments";
  * `userId` del cliente como prueba ni toca `ctx.db` directamente.
  *
  * Toda denegación responde con el mismo error genérico, sin exponer el
- * motivo. Opera con datos ficticios.
+ * motivo. Las operaciones de TI2-141 (envío completo, respuesta, cancelación y
+ * cierre) traducen su `ApiResult` con `unwrapApiResult`: la denegación llega
+ * como `{ code: "unauthorized" }`. Las de Sprint 1 y la forma anterior de
+ * `createRequest` siguen denegando con el texto «No autorizado» hasta
+ * TI2-181. Opera con datos ficticios.
  *
  * TI2-26: `createRequest`, `takeRequest`, `requestAdditionalInformation` y
  * `acceptRequest` son la escritura pública del Sprint 1; la habilitación de
@@ -112,7 +117,7 @@ export const createRequest = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await registerRequest(ctx, identity, args);
+    return unwrapApiResult(await registerRequest(ctx, identity, args));
   },
 });
 
@@ -222,7 +227,7 @@ export const cancelRequest = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await cancelRequestUseCase(ctx, identity, args);
+    return unwrapApiResult(await cancelRequestUseCase(ctx, identity, args));
   },
 });
 
@@ -236,7 +241,7 @@ export const closeRequestWithoutAccompaniment = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await closeRequestWithoutAccompanimentUseCase(ctx, identity, args);
+    return unwrapApiResult(await closeRequestWithoutAccompanimentUseCase(ctx, identity, args));
   },
 });
 
@@ -250,6 +255,6 @@ export const respondToInformationRequest = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await respondToInformationRequestUseCase(ctx, identity, args);
+    return unwrapApiResult(await respondToInformationRequestUseCase(ctx, identity, args));
   },
 });
