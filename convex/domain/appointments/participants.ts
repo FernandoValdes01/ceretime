@@ -4,7 +4,8 @@
  * Dominio puro: no importa Convex, React ni Expo. La atención conserva
  * `professionalId` como Profesional responsable (contrato v1 que ya consumen
  * Web y Mobile) y suma `additionalProfessionalIds` con los demás profesionales
- * que participan; ninguna lista reemplaza a la otra. La detección de cruces
+ * que participan, que se guardan en `appointmentProfessionals` (TI2-138);
+ * ninguna lista reemplaza a la otra. La detección de cruces
  * sigue siendo una sola (`occupySlotAtomically`, TI2-84/TI2-96): este módulo
  * solo entrega el conjunto de profesionales que esa comprobación debe recorrer
  * y la regla de quién participa, sin otra comprobación de ocupación.
