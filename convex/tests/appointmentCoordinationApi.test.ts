@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
 import { ConvexError } from "convex/values";
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { conflictError, noAvailabilityError } from "../domain/errors/api_error";
@@ -14,8 +14,9 @@ const modules = import.meta.glob("../**/*.ts");
  * por la API pública y con datos ficticios.
  *
  * La agenda es el lunes 2027-01-04 en la zona de la agenda (`America/Santiago`,
- * UTC−3 ese día), en el futuro para que el reagendamiento no lo trate como
- * pasado. El Profesional responsable atiende en línea de 12:00 a 14:00
+ * UTC−3 ese día). El reloj se fija el viernes anterior: el reagendamiento
+ * rechaza mover una atención al pasado, y con el reloj real estas pruebas
+ * dejarían de pasar en cuanto llegue esa fecha. El Profesional responsable atiende en línea de 12:00 a 14:00
  * en cupos de una hora; el adicional, de 12:00 a 14:00 en cupos de media hora.
  * El acompañamiento del Estudiante necesita subtítulos, así que una atención
  * en línea solo es compatible si la coordinación declara ese apoyo.
@@ -34,6 +35,19 @@ const OTHER_LINK = "https://meet.google.com/mar-roca-sal";
  * los 5 s por defecto, como la prueba de calendario de TI2-122.
  */
 const API_TEST_TIMEOUT_MS = 20_000;
+
+/** Viernes 2027-01-01 a mediodía UTC: antes de toda la agenda de estas pruebas. */
+const NOW = Date.UTC(2027, 0, 1, 12);
+
+beforeEach(() => {
+  // Solo `Date`: los temporizadores siguen reales para no detener `convex-test`.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(NOW);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const DENIED = { code: "unauthorized", message: "No autorizado" };
 const CONFLICT = { code: "conflict", message: conflictError().message };
@@ -215,7 +229,7 @@ test(
 );
 
 test(
-  "TI2-142 API: reagendar una atención coordinada mueve a todos sus profesionales y exige que el adicional pueda",
+  "TI2-142 API: reagendar una atención coordinada mueve a todos sus profesionales, exige que el adicional pueda y saca al que ya no es reservable",
   async () => {
     const t = convexTest(schema, modules);
     const seeded = await seed(t);
@@ -248,6 +262,24 @@ test(
         { professionalId: seeded.additional, startsAt: at(13), endsAt: at(14) },
       ]),
     );
+
+    // Revocada su asignación, el adicional ya no es reservable: no impide
+    // reagendar a las 15:00 y sale de la atención en el mismo cambio.
+    await t.run(async (ctx) => {
+      const assignments = await ctx.db
+        .query("accompanimentAssignments")
+        .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+          q.eq("accompanimentId", seeded.accompanimentId).eq("userId", seeded.additional),
+        )
+        .take(5);
+      for (const assignment of assignments) {
+        await ctx.db.patch(assignment._id, { status: "revoked" });
+      }
+    });
+    await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, toFifteen);
+    expect(await participantsOf(t, appointmentId)).toEqual([
+      { professionalId: seeded.responsible, startsAt: at(15), endsAt: at(16) },
+    ]);
   },
   API_TEST_TIMEOUT_MS,
 );
@@ -320,6 +352,8 @@ test(
     // El mismo enlace no vuelve a avisar; reemplazarlo sí.
     await asResponsible.mutation(set, { ...read, link: LINK });
     expect(await notifications()).toHaveLength(1);
+    // El reemplazo ocurre después: la clave del aviso usa el instante del cambio.
+    vi.setSystemTime(NOW + 60_000);
     await asResponsible.mutation(set, { ...read, link: OTHER_LINK });
     expect(await notifications()).toHaveLength(2);
 
@@ -349,12 +383,29 @@ test(
       ),
     ).toStrictEqual(CONFLICT);
 
+    // Mientras la atención sigue vigente, el adicional está ocupado a las 12:00.
+    const additionalAtNoon = {
+      ...slot(seeded, 12),
+      endAt: at(12) + HALF_HOUR,
+      accompanimentId: seeded.otherAccompanimentId as string,
+      professionalId: seeded.additional as string,
+    };
+    expect(
+      await publicError(
+        asAdditional.mutation(api.presentation.appointments.bookAppointment, additionalAtNoon),
+      ),
+    ).toStrictEqual(CONFLICT);
+
     // Cancelada la atención, el enlace deja de entregarse y no se cambia.
     await asStudent.mutation(api.presentation.appointments.cancelAppointment, read);
     expect(await asStudent.query(get, read)).toEqual({ status: "not_applicable", version: "v1" });
     expect(await publicError(asResponsible.mutation(set, { ...read, link: LINK }))).toStrictEqual(
       CONFLICT,
     );
+
+    // La cancelación también libera al adicional: su fila de participante
+    // sigue, pero la atención ya no ocupa. La misma reserva ahora procede.
+    await asAdditional.mutation(api.presentation.appointments.bookAppointment, additionalAtNoon);
   },
   API_TEST_TIMEOUT_MS,
 );
