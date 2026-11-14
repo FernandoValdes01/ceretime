@@ -5,10 +5,11 @@ import {
   cancelRequest as cancelRequestUseCase,
   closeRequestWithoutAccompaniment as closeRequestWithoutAccompanimentUseCase,
   registerRequest,
-  respondToInformationRequest as respondToInformationRequestUseCase,
   requestAdditionalInformation as requestAdditionalInformationUseCase,
   takeRequest as takeRequestUseCase,
 } from "../application/requests/commands";
+import { activeStudentReader } from "../application/requests/identity";
+import { respondToInformationRequest as respondToInformationRequestUseCase } from "../application/requests/respond";
 import {
   listAuthorizedRequestsUseCase,
   listOpenRequestsUseCase,
@@ -22,6 +23,7 @@ import {
   modalityUnion,
   requestStatusUnion,
 } from "../infrastructure/validators";
+import { requestStore } from "../infrastructure/requests/repository";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 import { unwrapApiResult } from "./session";
 
@@ -248,13 +250,19 @@ export const closeRequestWithoutAccompaniment = mutation({
 /**
  * Responde a la información pedida (TI2-141). Solo el Estudiante dueño con
  * cuenta vigente y mientras la solicitud espera respuesta; la solicitud
- * vuelve a revisión.
+ * vuelve a revisión. Compone los adaptadores de los puertos con el mismo
+ * `ctx`: la operación sigue siendo una sola mutation.
  */
 export const respondToInformationRequest = mutation({
   args: { requestId: v.id("requests"), response: v.string() },
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await respondToInformationRequestUseCase(ctx, identity, args));
+    return unwrapApiResult(
+      await respondToInformationRequestUseCase(
+        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });

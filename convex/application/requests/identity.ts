@@ -44,6 +44,13 @@ export async function findActiveStudent(
   return await findActiveProfile(ctx, tokenIdentifier, "student");
 }
 
+/** Cumple `ActiveStudentReader` sobre el `ctx` de la mutation que lo compone. */
+export function activeStudentReader(ctx: DbContext) {
+  return {
+    findActiveStudent: (tokenIdentifier: string | null) => findActiveStudent(ctx, tokenIdentifier),
+  };
+}
+
 /** Profesional con cuenta habilitada y vigente, o `null`. */
 export async function findActiveProfessional(
   ctx: DbContext,

@@ -208,6 +208,22 @@ export async function logRequestTransition(
   });
 }
 
+/**
+ * Lecturas y escrituras de una solicitud para los puertos de Aplicación
+ * (TI2-141). Cumple `RequestReader`, `RequestStatusWriter` y
+ * `RequestTransitionRecorder` por forma, sin importarlos; Presentación lo crea
+ * con el `ctx` de la mutation, así todo queda en la misma transacción.
+ */
+export function requestStore(ctx: MutationCtx) {
+  return {
+    getRequest: (requestId: Id<"requests">) => getRequestById(ctx, requestId),
+    setRequestStatus: (requestId: Id<"requests">, change: RequestStatusChange) =>
+      setRequestStatus(ctx, requestId, change),
+    logRequestTransition: (entry: Parameters<typeof logRequestTransition>[1]) =>
+      logRequestTransition(ctx, entry),
+  };
+}
+
 /** Tope de cambios recientes que se leen para armar el detalle. */
 const RECENT_TRANSITIONS_LIMIT = 50;
 

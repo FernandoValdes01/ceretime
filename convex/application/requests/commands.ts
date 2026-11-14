@@ -4,7 +4,6 @@ import { toOpeningObjective, type Accompaniment } from "../../domain/accompanime
 import {
   ACCESS_NEEDS_MAX_LENGTH,
   toCompleteSubmission,
-  toInformationResponse,
   toRequestSubmission,
   type AccompanimentRequest,
   type RequestSubmission,
@@ -12,14 +11,7 @@ import {
   toAccessNeedsText,
   toAccompanimentRequest,
 } from "../../domain/requests/request";
-import {
-  CONFLICT_ERROR_CODE,
-  REQUEST_FIELDS_INVALID_ERROR_CODE,
-  errResult,
-  okResult,
-  unauthorizedError,
-  type ApiResult,
-} from "../../domain/errors/api_error";
+import { okResult, type ApiResult } from "../../domain/errors/api_error";
 import { transitionRequest } from "../../domain/requests/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
@@ -46,6 +38,7 @@ import {
   requireActiveProfessional,
   requireActiveStudent,
 } from "./identity";
+import { denied, invalidFields, stateConflict } from "./results";
 import { toStatusChange } from "./status_change";
 
 /**
@@ -65,26 +58,15 @@ function deny(): never {
 }
 
 /*
- * Las operaciones que publica TI2-141 (envío completo, respuesta, cancelación
- * y cierre) devuelven `ApiResult` y Presentación lo traduce con
- * `unwrapApiResult`, como espacios y atenciones: la denegación es
+ * Las operaciones que publica TI2-141 (envío completo, cancelación y cierre
+ * aquí; la respuesta, en `respond.ts`) devuelven `ApiResult` y Presentación lo
+ * traduce con `unwrapApiResult`, como espacios y atenciones: la denegación es
  * `unauthorized`, un campo inválido `request_fields_invalid` y un estado que
  * no admite el paso `conflict`. Las de Sprint 1 y la forma anterior de
- * `createRequest` conservan su `Error` y su denegación como texto hasta
- * TI2-181.
+ * `createRequest` conservan su `Error` y su denegación como texto. Este
+ * archivo sigue ligado al contexto de Convex y a repositorios concretos; la
+ * respuesta ya recibe puertos y el resto pasa en TI2-181.
  */
-
-function denied<T>(): ApiResult<T> {
-  return errResult(unauthorizedError());
-}
-
-function invalidFields<T>(message: string): ApiResult<T> {
-  return errResult({ code: REQUEST_FIELDS_INVALID_ERROR_CODE, message });
-}
-
-function stateConflict<T>(message: string): ApiResult<T> {
-  return errResult({ code: CONFLICT_ERROR_CODE, message });
-}
 
 /** Solicitud pública con los identificadores de Convex, para los validadores de la API. */
 type StoredRequest = AccompanimentRequest & {
@@ -478,61 +460,6 @@ export async function closeRequestWithoutAccompaniment(
     to: result.change.to,
     actorId: professional._id,
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
-    occurredAt: result.change.occurredAt,
-  });
-  return okResult(
-    toAccompanimentRequest({
-      _id: row._id,
-      studentId: row.studentId,
-      status: result.change.to,
-      accessNeeds: row.accessNeeds,
-      createdAt: row.createdAt,
-    }),
-  );
-}
-
-/**
- * Responde a la información que pidió el Profesional (TI2-141): devuelve la
- * solicitud de `awaiting_information_or_acceptance` a `under_review` para
- * que quien la tomó la retome. Solo el Estudiante dueño con cuenta vigente;
- * una solicitud ajena o inexistente recibe la misma denegación genérica. La
- * respuesta es obligatoria, tiene tope y queda como motivo del cambio en el
- * historial, junto al actor y la fecha, en la misma transacción. Fuera de la
- * espera se rechaza sin modificar nada y nunca abre acompañamiento.
- */
-export async function respondToInformationRequest(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-  input: { readonly requestId: Id<"requests">; readonly response: string },
-): Promise<ApiResult<StoredRequest>> {
-  const student = await findActiveStudent(ctx, identity?.tokenIdentifier ?? null);
-  if (student === null) return denied();
-  const row = await getRequestById(ctx, input.requestId);
-  if (row === null || row.studentId !== student._id) return denied();
-  // Solo la espera admite respuesta: `received -> under_review` existe en la
-  // tabla, pero es la toma del Profesional, no un paso del Estudiante.
-  if (row.status !== "awaiting_information_or_acceptance") {
-    return stateConflict("La solicitud no admite una respuesta en su estado actual.");
-  }
-  const response = toInformationResponse(input.response);
-  if (response.status === "error") return response;
-  const result = transitionRequest({
-    from: row.status,
-    to: "under_review",
-    actorId: student._id,
-    occurredAt: Date.now(),
-    reason: response.data,
-  });
-  if (result.status === "rejected") {
-    return stateConflict("La solicitud no admite una respuesta en su estado actual.");
-  }
-  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
-  await logRequestTransition(ctx, {
-    requestId: input.requestId,
-    from: result.change.from,
-    to: result.change.to,
-    actorId: student._id,
-    reason: response.data,
     occurredAt: result.change.occurredAt,
   });
   return okResult(
