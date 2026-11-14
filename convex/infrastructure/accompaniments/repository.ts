@@ -288,6 +288,46 @@ export async function revokeAssignmentRow(
 }
 
 /**
+ * Modifica la ventana de vigencia acordada de una fila activa (TI2-140).
+ *
+ * Solo persistencia: reescribe `validFrom`/`validUntil` sin tocar `status`,
+ * que sigue decidiendo el acceso, ni el historial de concesión. `undefined`
+ * conserva el extremo actual y `null` lo quita para dejar la asignación sin
+ * esa cota; el esquema solo guarda números, así que `null` se traduce a
+ * ausencia.
+ */
+export async function patchAssignmentValidity(
+  ctx: MutationCtx,
+  assignmentId: Id<"accompanimentAssignments">,
+  validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
+) {
+  const patch: { validFrom?: number; validUntil?: number } = {};
+  const unset: { validFrom?: undefined; validUntil?: undefined } = {};
+  let hasSet = false;
+  let hasUnset = false;
+  if (validity.validFrom !== undefined) {
+    if (validity.validFrom === null) {
+      unset.validFrom = undefined;
+      hasUnset = true;
+    } else {
+      patch.validFrom = validity.validFrom;
+      hasSet = true;
+    }
+  }
+  if (validity.validUntil !== undefined) {
+    if (validity.validUntil === null) {
+      unset.validUntil = undefined;
+      hasUnset = true;
+    } else {
+      patch.validUntil = validity.validUntil;
+      hasSet = true;
+    }
+  }
+  if (hasSet) await ctx.db.patch(assignmentId, patch);
+  if (hasUnset) await ctx.db.patch(assignmentId, unset);
+}
+
+/**
  * Lecturas de la autorización de agenda (TI2-86). Cumple por forma el puerto
  * `AuthorizationReader` de Aplicación sin importarlo, para que
  * Infraestructura no dependa de Aplicación. Los identificadores llegan como

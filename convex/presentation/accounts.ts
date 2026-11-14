@@ -1,7 +1,9 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 import {
+  enableInternByProfessional,
   enableStaffAccount,
+  enableTestProfessionalAccount,
   getAccountDetailUseCase,
   listAccountsUseCase,
   revokeStaffAccount,
@@ -15,7 +17,9 @@ import {
 import { unwrapApiResult } from "./session";
 
 /**
- * Borde de Presentación: cuentas profesionales y administrativas (TI2-137).
+ * Borde de Presentación: cuentas profesionales y administrativas (TI2-137)
+ * más habilitación de practicantes y cuenta de prueba por el profesional
+ * (TI2-140).
  *
  * Adaptador delgado: valida la entrada, resuelve la identidad en el servidor
  * con `ctx.auth.getUserIdentity()` y delega en Aplicación, que carga el
@@ -24,14 +28,18 @@ import { unwrapApiResult } from "./session";
  *
  * Solo el Administrador con cuenta habilitada y vigente lista, lee,
  * habilita y revoca cuentas de personal (profesional o administrador),
- * filtradas por rol con el índice `by_role`. Los errores usan el contrato
- * común de TI2-88 (`ConvexError({code, message})` vía `unwrapApiResult`):
- * `unauthorized` ante falta de identidad, perfil o vigencia, rol ajeno u
- * objetivo inexistente o fuera de esta vía, y `conflict` ante un tránsito
- * inválido que un administrador autorizado puede explicar. Administrar no
- * concede acompañamientos ni notas: esa lectura sigue denegada. El detalle
- * es mínimo, sin `tokenIdentifier`, acompañamientos ni notas. Opera con
- * datos ficticios.
+ * filtradas por rol con el índice `by_role`. El profesional con cuenta
+ * habilitada y vigente habilita practicantes pendientes y cuentas de prueba
+ * `@alu.uct.cl` como profesional de prueba; el administrador también puede
+ * hacerlo por esta vía. Habilitar no concede acompañamientos: la lectura
+ * exige ambas condiciones (cuenta habilitada y asignación activa). Los
+ * errores usan el contrato común de TI2-88 (`ConvexError({code, message})`
+ * vía `unwrapApiResult`): `unauthorized` ante falta de identidad, perfil o
+ * vigencia, rol ajeno u objetivo inexistente o fuera de esta vía, y
+ * `conflict` ante un tránsito inválido que un llamante autorizado puede
+ * explicar. Administrar no concede acompañamientos ni notas: esa lectura
+ * sigue denegada. El detalle es mínimo, sin `tokenIdentifier`,
+ * acompañamientos ni notas. Opera con datos ficticios.
  */
 
 const accountSummaryValidator = v.object({
@@ -95,5 +103,39 @@ export const revokeAccount = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(await revokeStaffAccount(ctx, identity, args));
+  },
+});
+
+/**
+ * Habilita una cuenta de practicante pendiente (TI2-140, RF-39).
+ *
+ * La llama el profesional con cuenta habilitada y vigente (o el
+ * administrador por esta misma vía) y registra actor y fecha. Habilitar no
+ * concede acompañamientos: el practicante solo lee lo que el profesional
+ * autorizado le asigne después.
+ */
+export const enableIntern = mutation({
+  args: { userId: v.id("users") },
+  returns: accountIdValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(await enableInternByProfessional(ctx, identity, args));
+  },
+});
+
+/**
+ * Habilita una cuenta `@alu.uct.cl` como profesional de prueba (TI2-140, RF-38/RN-25).
+ *
+ * La llama el administrador vigente o el profesional vigente y registra
+ * actor y fecha. Habilitar no concede acompañamientos: la cuenta de prueba
+ * solo opera dentro de acompañamientos explícitamente asignados y auditados,
+ * con ambas condiciones (cuenta habilitada y asignación activa).
+ */
+export const enableTestProfessional = mutation({
+  args: { userId: v.id("users") },
+  returns: accountIdValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(await enableTestProfessionalAccount(ctx, identity, args));
   },
 });

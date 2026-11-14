@@ -4,6 +4,8 @@ import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import {
   checkEnablement,
+  checkProfessionalInternEnablement,
+  checkTestProfessionalEnablement,
   validateBootstrapCandidate,
   validateStaffEnablementTarget,
   validateStaffRevocationTarget,
@@ -334,6 +336,157 @@ export async function enableInternAccount(
     enabledAt: Date.now(),
   });
   return target._id;
+}
+
+/**
+ * Habilita la cuenta de un Practicante pendiente por el profesional (TI2-140, RF-39).
+ *
+ * Vía pública: el profesional con cuenta habilitada y vigente habilita al
+ * practicante pendiente y registra actor (`enabledBy`) y fecha (`enabledAt`);
+ * el administrador vigente también puede hacerlo por esta vía. Habilitar no
+ * concede acompañamientos: la asignación posterior la realiza el profesional
+ * autorizado sobre cada acompañamiento. La falta de permiso responde
+ * `unauthorized`; el objetivo inexistente o fuera de esta vía también, sin
+ * revelar existencia; el tránsito inválido responde `conflict` sin escribir.
+ */
+export async function enableInternByProfessional(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  args: { readonly userId: Id<"users"> },
+): Promise<ApiResult<{ userId: Id<"users"> }>> {
+  const caller = await requireAdminCaller(ctx, identity);
+  if (caller === null) return unauthorized();
+  const isAdminActive =
+    caller.role === "admin" &&
+    caller.institutionalStatus === "enabled" &&
+    caller.accountStatus === "active";
+  const isProfessionalActive =
+    caller.role === "professional" &&
+    caller.institutionalStatus === "enabled" &&
+    caller.accountStatus === "active";
+  if (!isAdminActive && !isProfessionalActive) return unauthorized();
+
+  const target = await getUserById(ctx, args.userId);
+  if (target === null) return unauthorized();
+
+  const check = isProfessionalActive
+    ? checkProfessionalInternEnablement({
+        caller: {
+          role: caller.role,
+          institutionalStatus: caller.institutionalStatus,
+          accountStatus: caller.accountStatus,
+        },
+        target: {
+          role: target.role,
+          email: target.email,
+          institutionalStatus: target.institutionalStatus,
+          accountStatus: target.accountStatus,
+        },
+      })
+    : checkEnablement({
+        caller: {
+          role: caller.role,
+          institutionalStatus: caller.institutionalStatus,
+          accountStatus: caller.accountStatus,
+        },
+        target: {
+          role: target.role,
+          email: target.email,
+          institutionalStatus: target.institutionalStatus,
+          accountStatus: target.accountStatus,
+        },
+      });
+  if (!check.ok) {
+    switch (check.reason) {
+      case "caller-not-admin":
+      case "caller-not-professional":
+      case "caller-not-authorized":
+      case "caller-not-active":
+      case "target-not-intern":
+        return unauthorized();
+      case "target-already-enabled":
+        return conflict("La cuenta ya está habilitada.");
+      case "target-email-not-institutional":
+        return conflict("El objetivo debe tener correo institucional.");
+      case "target-account-not-active":
+        return conflict("La cuenta objetivo no está vigente.");
+      case "target-not-pending":
+        return conflict("La cuenta no está pendiente de habilitación.");
+      default:
+        return conflict("La cuenta no admite la habilitación en su estado actual.");
+    }
+  }
+  await patchEnablement(ctx, {
+    userId: target._id,
+    enabledBy: caller._id,
+    enabledAt: Date.now(),
+  });
+  return okResult({ userId: target._id });
+}
+
+/**
+ * Habilita la cuenta de prueba profesional `@alu.uct.cl` (TI2-140, RF-38/RN-25).
+ *
+ * Vía pública: el administrador vigente o el profesional vigente habilita al
+ * profesional de prueba pendiente o deshabilitado y registra actor y fecha.
+ * Habilitar no concede acompañamientos: el alcance se asigna después por
+ * acompañamiento explícito y auditado, y la lectura exige ambas condiciones
+ * (cuenta habilitada y asignación activa). La falta de permiso responde
+ * `unauthorized`; el objetivo inexistente o fuera de esta vía también, sin
+ * revelar existencia; el tránsito inválido responde `conflict` sin escribir.
+ */
+export async function enableTestProfessionalAccount(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  args: { readonly userId: Id<"users"> },
+): Promise<ApiResult<{ userId: Id<"users"> }>> {
+  const caller = await requireAdminCaller(ctx, identity);
+  if (caller === null) return unauthorized();
+
+  const target = await getUserById(ctx, args.userId);
+  if (target === null) return unauthorized();
+
+  const check = checkTestProfessionalEnablement({
+    caller: {
+      role: caller.role,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    },
+    target: {
+      role: target.role,
+      email: target.email,
+      institutionalStatus: target.institutionalStatus,
+      accountStatus: target.accountStatus,
+    },
+  });
+  if (!check.ok) {
+    switch (check.reason) {
+      case "caller-not-authorized":
+      case "caller-not-admin":
+      case "caller-not-professional":
+      case "caller-not-active":
+      case "target-not-professional":
+        return unauthorized();
+      case "target-already-enabled":
+        return conflict("La cuenta ya está habilitada.");
+      case "target-email-not-test":
+        return conflict("La cuenta de prueba debe tener correo @alu.uct.cl.");
+      case "target-email-not-institutional":
+        return conflict("El objetivo debe tener correo institucional.");
+      case "target-account-not-active":
+        return conflict("La cuenta objetivo no está vigente.");
+      case "target-not-pending":
+        return conflict("La cuenta no está pendiente de habilitación.");
+      default:
+        return conflict("La cuenta no admite la habilitación en su estado actual.");
+    }
+  }
+  await patchEnablement(ctx, {
+    userId: target._id,
+    enabledBy: caller._id,
+    enabledAt: Date.now(),
+  });
+  return okResult({ userId: target._id });
 }
 
 export type BootstrapAdminInput = {

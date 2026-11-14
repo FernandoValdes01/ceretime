@@ -15,7 +15,9 @@
  * TI2-138 la fila admite además una vigencia opcional (`validFrom`/
  * `validUntil`): expresa la ventana sin inventar revocaciones y no reemplaza
  * a `status`. El cambio de profesional asignado se rastrea con la fila
- * revocada y la nueva concesión, sin tabla ni vínculo paralelo.
+ * revocada y la nueva concesión, sin tabla ni vínculo paralelo. TI2-140
+ * comprueba la coherencia de esa ventana cuando se acuerda: `validFrom` no
+ * puede ser posterior a `validUntil`.
  */
 
 /** Rol con el que una persona queda asignada al acompañamiento. */
@@ -86,4 +88,57 @@ export function toAssignmentReadPermission(
     view: ASSIGNMENT_VIEW_BY_ROLE[assignment.assignedRole],
     grantedAt: assignment.grantedAt,
   };
+}
+
+/** Ventana de vigencia acordada al conceder o modificar una asignación (TI2-140). */
+export type AssignmentValidity = {
+  readonly validFrom?: number | null;
+  readonly validUntil?: number | null;
+};
+
+export type AssignmentValidityCheck =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: "validity-not-finite" | "validity-range-invalid" };
+
+/**
+ * Comprueba la vigencia acordada sin inventar revocaciones.
+ *
+ * Acepta ausencia total (sin ventana), un solo extremo o ambos. Rechaza
+ * valores no finitos o negativos y el rango invertido (`validFrom` posterior
+ * a `validUntil`). No mira `status`: una ventana coherente no autoriza por
+ * sí sola y una fila revocada sigue sin autorizar.
+ */
+export function validateAssignmentValidity(input: AssignmentValidity): AssignmentValidityCheck {
+  const { validFrom, validUntil } = input;
+  const from = validFrom ?? null;
+  const until = validUntil ?? null;
+  for (const value of [from, until]) {
+    if (value === null) continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      return { ok: false, reason: "validity-not-finite" };
+    }
+  }
+  if (from !== null && until !== null && from > until) {
+    return { ok: false, reason: "validity-range-invalid" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Verdadero cuando el instante cae dentro de la ventana acordada.
+ *
+ * Sin ventana declara vigente: la vigencia efectiva la sigue decidiendo
+ * `status` y esta comprobación solo acota cuando hay fechas. Sirve para que
+ * la concesión y la modificación rechacen una ventana incoherente y para
+ * documentar la lectura esperada sin crear otra política de practicante.
+ */
+export function isAssignmentWithinValidity(
+  assignment: Pick<PractitionerAssignment, "validFrom" | "validUntil">,
+  now: number,
+): boolean {
+  const from = assignment.validFrom ?? null;
+  const until = assignment.validUntil ?? null;
+  if (from !== null && now < from) return false;
+  if (until !== null && now > until) return false;
+  return true;
 }

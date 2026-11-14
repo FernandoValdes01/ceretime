@@ -1,11 +1,16 @@
 import { describe, expect, test } from "vitest";
 import {
   canEnableAsAdmin,
+  canEnableAsProfessional,
+  canEnableInternAsProfessional,
   checkEnablement,
+  checkProfessionalInternEnablement,
+  checkTestProfessionalEnablement,
   validateBootstrapCandidate,
   validateEnablementTarget,
   validateStaffEnablementTarget,
   validateStaffRevocationTarget,
+  validateTestProfessionalTarget,
   type EnablementCaller,
   type EnablementTarget,
 } from "./enablement";
@@ -222,5 +227,110 @@ describe("validateStaffRevocationTarget", () => {
         accountStatus: "active",
       }),
     ).toEqual({ ok: false, reason: "target-not-staff" });
+  });
+});
+
+describe("habilitación por el profesional y cuenta de prueba (TI2-140)", () => {
+  test("solo el profesional vigente habilita practicantes", () => {
+    expect(canEnableAsProfessional(caller({ role: "professional" }))).toBe(true);
+    expect(canEnableInternAsProfessional(caller({ role: "professional" }))).toBe(true);
+    expect(canEnableAsProfessional(caller({ role: "admin" }))).toBe(false);
+    expect(
+      canEnableAsProfessional(caller({ role: "professional", institutionalStatus: "disabled" })),
+    ).toBe(false);
+  });
+
+  test("el profesional habilita al practicante pendiente", () => {
+    expect(
+      checkProfessionalInternEnablement({
+        caller: caller({ role: "professional" }),
+        target: target({}),
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      checkProfessionalInternEnablement({
+        caller: caller({ role: "admin" }),
+        target: target({}),
+      }),
+    ).toEqual({ ok: false, reason: "caller-not-professional" });
+    expect(
+      checkProfessionalInternEnablement({
+        caller: caller({ role: "professional", institutionalStatus: "disabled" }),
+        target: target({}),
+      }),
+    ).toEqual({ ok: false, reason: "caller-not-active" });
+  });
+
+  test("la cuenta de prueba exige rol profesional con correo @alu.uct.cl", () => {
+    expect(
+      validateTestProfessionalTarget({
+        role: "professional",
+        email: "prueba@alu.uct.cl",
+        institutionalStatus: "pending",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      validateTestProfessionalTarget({
+        role: "professional",
+        email: "prueba@alu.uct.cl",
+        institutionalStatus: "disabled",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      validateTestProfessionalTarget({
+        role: "professional",
+        email: "pro@uct.cl",
+        institutionalStatus: "pending",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-email-not-test" });
+    expect(
+      validateTestProfessionalTarget({
+        role: "intern",
+        email: "prueba@alu.uct.cl",
+        institutionalStatus: "pending",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-not-professional" });
+    expect(
+      validateTestProfessionalTarget({
+        role: "professional",
+        email: "prueba@alu.uct.cl",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-already-enabled" });
+  });
+
+  test("administrador o profesional vigente habilita la cuenta de prueba", () => {
+    const targetArg = {
+      role: "professional" as const,
+      email: "prueba@alu.uct.cl",
+      institutionalStatus: "pending" as const,
+      accountStatus: "active" as const,
+    };
+    expect(checkTestProfessionalEnablement({ caller: caller({}), target: targetArg })).toEqual({
+      ok: true,
+    });
+    expect(
+      checkTestProfessionalEnablement({
+        caller: caller({ role: "professional" }),
+        target: targetArg,
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      checkTestProfessionalEnablement({
+        caller: caller({ role: "student" }),
+        target: targetArg,
+      }),
+    ).toEqual({ ok: false, reason: "caller-not-authorized" });
+    expect(
+      checkTestProfessionalEnablement({
+        caller: caller({ role: "professional", institutionalStatus: "disabled" }),
+        target: targetArg,
+      }),
+    ).toEqual({ ok: false, reason: "caller-not-active" });
   });
 });

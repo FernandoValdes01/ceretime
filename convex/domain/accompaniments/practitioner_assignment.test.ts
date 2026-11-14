@@ -1,7 +1,9 @@
 ﻿import { describe, expect, test } from "vitest";
 import {
   ASSIGNMENT_VIEW_BY_ROLE,
+  isAssignmentWithinValidity,
   toAssignmentReadPermission,
+  validateAssignmentValidity,
   type PractitionerAssignment,
 } from "./practitioner_assignment";
 
@@ -89,5 +91,43 @@ describe("toAssignmentReadPermission", () => {
       view: "minimized",
       grantedAt: 1000,
     });
+  });
+});
+
+describe("validateAssignmentValidity", () => {
+  test("acepta ausencia y ventanas coherentes", () => {
+    expect(validateAssignmentValidity({})).toEqual({ ok: true });
+    expect(validateAssignmentValidity({ validFrom: 1000 })).toEqual({ ok: true });
+    expect(validateAssignmentValidity({ validUntil: 2000 })).toEqual({ ok: true });
+    expect(validateAssignmentValidity({ validFrom: 1000, validUntil: 2000 })).toEqual({
+      ok: true,
+    });
+    expect(validateAssignmentValidity({ validFrom: 2000, validUntil: 2000 })).toEqual({
+      ok: true,
+    });
+  });
+
+  test("rechaza rango invertido y valores no finitos", () => {
+    expect(validateAssignmentValidity({ validFrom: 3000, validUntil: 2000 })).toEqual({
+      ok: false,
+      reason: "validity-range-invalid",
+    });
+    expect(validateAssignmentValidity({ validFrom: -1 })).toEqual({
+      ok: false,
+      reason: "validity-not-finite",
+    });
+    expect(validateAssignmentValidity({ validUntil: Number.NaN })).toEqual({
+      ok: false,
+      reason: "validity-not-finite",
+    });
+  });
+});
+
+describe("isAssignmentWithinValidity", () => {
+  test("sin ventana declara vigente y con ventana acota", () => {
+    expect(isAssignmentWithinValidity({}, 1500)).toBe(true);
+    expect(isAssignmentWithinValidity({ validFrom: 1000, validUntil: 2000 }, 1500)).toBe(true);
+    expect(isAssignmentWithinValidity({ validFrom: 1000, validUntil: 2000 }, 500)).toBe(false);
+    expect(isAssignmentWithinValidity({ validFrom: 1000, validUntil: 2000 }, 2500)).toBe(false);
   });
 });
