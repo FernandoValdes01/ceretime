@@ -16,6 +16,10 @@
  * que la proyección compartida con el estudiante la omita. La persistencia
  * vive en el repositorio de seguimiento (TI2-118); sin política de acceso
  * (TI2-127) y sin segunda tabla de notas.
+ *
+ * El primer guardado confirma el registro (TI2-146): desde entonces solo se
+ * admite repetirlo idéntico, como reintento. `isFollowUpRetry` decide qué
+ * cuenta como repetición; editar, reemplazar o eliminar no tiene vía.
  */
 
 import { APPOINTMENT_STATUS_VALUES, type AppointmentStatus } from "../appointments/appointment";
@@ -363,6 +367,65 @@ export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpVali
       version: FOLLOW_UP_CONTRACT_VERSION,
     },
   };
+}
+
+/**
+ * Un comparador por cada clave de `T`, incluidas las opcionales: si el tipo
+ * suma un campo, el mapa deja de compilar hasta que se decida cómo se compara.
+ */
+type FieldComparators<T> = { readonly [K in keyof T]-?: (left: T[K], right: T[K]) => boolean };
+
+function same<V>(left: V, right: V): boolean {
+  return left === right;
+}
+
+function sameFields<T>(left: T, right: T, fields: FieldComparators<T>): boolean {
+  return (Object.keys(fields) as (keyof T)[]).every((key) => fields[key](left[key], right[key]));
+}
+
+/** Misma cantidad, mismo orden y cada entrada igual campo por campo. */
+function sameEntries<T>(fields: FieldComparators<T>) {
+  return (confirmed: readonly T[], incoming: readonly T[]): boolean =>
+    confirmed.length === incoming.length &&
+    confirmed.every((entry, index) => {
+      const other = incoming[index];
+      return other !== undefined && sameFields(entry, other, fields);
+    });
+}
+
+const AGREEMENT_FIELDS: FieldComparators<FollowUpAgreement> = { id: same, description: same };
+
+const TASK_FIELDS: FieldComparators<FollowUpTask> = {
+  id: same,
+  description: same,
+  responsible: same,
+  status: same,
+};
+
+const RECORD_FIELDS: FieldComparators<FollowUpRecord> = {
+  appointmentId: same,
+  accompanimentId: same,
+  agreements: sameEntries(AGREEMENT_FIELDS),
+  tasks: sameEntries(TASK_FIELDS),
+  nextSteps: same,
+  suggestedNextAppointmentDate: same,
+  internalNote: same,
+  version: same,
+};
+
+/**
+ * Verdadero cuando el guardado repite el registro ya confirmado (TI2-146).
+ *
+ * Un registro confirmado no se edita: la única escritura posterior que se
+ * acepta es el reintento de la misma constancia, que no escribe nada. Compara
+ * los dos registros ya validados, así los espacios que el validador recorta no
+ * cuentan como cambio; el orden de acuerdos y tareas sí cuenta, porque es el
+ * que se guardó. Cualquier diferencia, incluida la nota interna, es un intento
+ * de edición. `RECORD_FIELDS` cubre cada campo por tipo: uno nuevo sin
+ * comparar no compila, así que no puede volverse una edición silenciosa.
+ */
+export function isFollowUpRetry(confirmed: FollowUpRecord, incoming: FollowUpRecord): boolean {
+  return sameFields(confirmed, incoming, RECORD_FIELDS);
 }
 
 /**
