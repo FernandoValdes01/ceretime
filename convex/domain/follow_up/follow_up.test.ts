@@ -6,6 +6,7 @@ import {
   FOLLOW_UP_TASK_STATUS_VALUES,
   FOLLOW_UP_TEXT_MAX_LENGTH,
   isFollowUpResponsible,
+  isFollowUpRetry,
   isFollowUpTaskStatus,
   toFollowUpProjection,
   toSharedFollowUpProjection,
@@ -294,6 +295,64 @@ describe("Registro de seguimiento (TI2-106)", () => {
       "task_status_unknown",
       "clinical_content_not_allowed",
     ]);
+  });
+});
+
+describe("isFollowUpRetry (TI2-146)", () => {
+  const confirmed = recordOf({ ...validInput, internalNote: "Nota interna ficticia" });
+
+  test("el mismo contenido, con otros espacios, es un reintento", () => {
+    const retry = recordOf({
+      ...validInput,
+      nextSteps: `  ${validInput.nextSteps}  `,
+      internalNote: " Nota interna ficticia ",
+    });
+    expect(isFollowUpRetry(confirmed, retry)).toBe(true);
+  });
+
+  test.each<[string, Partial<FollowUpRecordInput>]>([
+    ["otro acuerdo", { agreements: [{ id: "acuerdo-1", description: "Otro acuerdo." }] }],
+    ["un acuerdo menos", { agreements: [] }],
+    [
+      "otro identificador de acuerdo",
+      { agreements: [{ ...validInput.agreements[0], id: "acuerdo-2" }] },
+    ],
+    ["otro estado de tarea", { tasks: [{ ...validInput.tasks[0], status: "done" }] }],
+    ["otro responsable", { tasks: [{ ...validInput.tasks[0], responsible: "student" }] }],
+    ["otra descripción de tarea", { tasks: [{ ...validInput.tasks[0], description: "Otra." }] }],
+    ["otros próximos pasos", { nextSteps: "Otros pasos." }],
+    ["otra fecha", { suggestedNextAppointmentDate: "2026-11-04" }],
+    ["sin fecha", { suggestedNextAppointmentDate: undefined }],
+    ["otra nota", { internalNote: "Otra nota ficticia" }],
+    ["sin nota", { internalNote: undefined }],
+    ["otra atención", { appointmentId: "atencion-ficticia-2" }],
+    ["otro acompañamiento", { accompanimentId: "acompanamiento-ficticio-2" }],
+  ])("%s es una edición, no un reintento", (_label, change) => {
+    const incoming = recordOf({ ...validInput, internalNote: "Nota interna ficticia", ...change });
+    expect(isFollowUpRetry(confirmed, incoming)).toBe(false);
+  });
+
+  test("el orden de las tareas cuenta, porque es el que se guardó", () => {
+    const second = {
+      id: "tarea-2",
+      description: "Otra tarea.",
+      responsible: "student",
+      status: "pending",
+    };
+    const ordered = recordOf({ ...validInput, tasks: [...validInput.tasks, second] });
+    const swapped = recordOf({ ...validInput, tasks: [second, ...validInput.tasks] });
+    expect(isFollowUpRetry(ordered, swapped)).toBe(false);
+  });
+
+  test("una tarea de más tampoco es un reintento", () => {
+    const second = {
+      id: "tarea-2",
+      description: "Otra tarea.",
+      responsible: "student",
+      status: "pending",
+    };
+    const longer = recordOf({ ...validInput, tasks: [...validInput.tasks, second] });
+    expect(isFollowUpRetry(recordOf(validInput), longer)).toBe(false);
   });
 });
 

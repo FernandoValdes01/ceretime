@@ -21,6 +21,8 @@ import type * as application_authorization_authorize from "../application/author
 import type * as application_availability_availability from "../application/availability/availability.js";
 import type * as application_availability_ports from "../application/availability/ports.js";
 import type * as application_calendar_calendar from "../application/calendar/calendar.js";
+import type * as application_follow_up_commands from "../application/follow_up/commands.js";
+import type * as application_follow_up_queries from "../application/follow_up/queries.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_identity from "../application/requests/identity.js";
 import type * as application_requests_ports from "../application/requests/ports.js";
@@ -81,6 +83,7 @@ import type * as presentation_accompaniments from "../presentation/accompaniment
 import type * as presentation_accounts from "../presentation/accounts.js";
 import type * as presentation_appointments from "../presentation/appointments.js";
 import type * as presentation_availability from "../presentation/availability.js";
+import type * as presentation_follow_up from "../presentation/follow_up.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as presentation_spaces from "../presentation/spaces.js";
@@ -105,6 +108,8 @@ declare const fullApi: ApiFromModules<{
   "application/availability/availability": typeof application_availability_availability;
   "application/availability/ports": typeof application_availability_ports;
   "application/calendar/calendar": typeof application_calendar_calendar;
+  "application/follow_up/commands": typeof application_follow_up_commands;
+  "application/follow_up/queries": typeof application_follow_up_queries;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/identity": typeof application_requests_identity;
   "application/requests/ports": typeof application_requests_ports;
@@ -165,6 +170,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/accounts": typeof presentation_accounts;
   "presentation/appointments": typeof presentation_appointments;
   "presentation/availability": typeof presentation_availability;
+  "presentation/follow_up": typeof presentation_follow_up;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   "presentation/spaces": typeof presentation_spaces;

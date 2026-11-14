@@ -176,15 +176,6 @@ export async function insertInternalNote(
   return await ctx.db.insert("followUpNotes", { ...input });
 }
 
-/** Reemplaza el texto de una nota interna existente y registra quién la escribió. */
-export async function updateInternalNote(
-  ctx: MutationCtx,
-  noteId: Id<"followUpNotes">,
-  input: { readonly authorId: Id<"users">; readonly body: string },
-): Promise<void> {
-  await ctx.db.patch(noteId, { authorId: input.authorId, body: input.body });
-}
-
 export type AssignmentTriple = {
   readonly accompanimentId: Id<"accompaniments">;
   readonly userId: Id<"users">;
