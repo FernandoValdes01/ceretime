@@ -8,6 +8,7 @@ import {
   canEditAvailability,
   canReadAvailability,
   canReadInternalNote,
+  canManageSpaceCatalog,
   canReadSpaceCatalog,
   canRecordAppointmentAttendance,
   canRescheduleAppointment,
@@ -545,5 +546,19 @@ export async function authorizeSpaceCatalogRead(
 ): Promise<ApiResult<AgendaGrant>> {
   const profile = await findCaller(reader, request.tokenIdentifier);
   if (profile === null || !canReadSpaceCatalog(profile)) return denied();
+  return okResult({ callerId: profile._id });
+}
+
+/**
+ * Gestión del catálogo de espacios (TI2-148): solo el Administrador con
+ * cuenta habilitada y vigente. Toda denegación responde el mismo error
+ * genérico, sin exponer el motivo ni la existencia del recurso.
+ */
+export async function authorizeSpaceCatalogManage(
+  reader: AuthorizationReader,
+  request: { readonly tokenIdentifier: string | null },
+): Promise<ApiResult<AgendaGrant>> {
+  const profile = await findCaller(reader, request.tokenIdentifier);
+  if (profile === null || !canManageSpaceCatalog(profile)) return denied();
   return okResult({ callerId: profile._id });
 }

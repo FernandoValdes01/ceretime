@@ -1,3 +1,4 @@
+import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 
@@ -70,6 +71,41 @@ export async function patchEnablement(
     enabledBy: input.enabledBy,
     enabledAt: input.enabledAt,
   });
+}
+
+/**
+ * Marca la cuenta profesional o administrativa como revocada (TI2-137).
+ *
+ * Fija `institutionalStatus` en `disabled` junto al actor administrador y la
+ * fecha de la operación. Conserva `enabledBy`/`enabledAt` como historial y
+ * no cambia el rol. La cuenta revocada deja de operar en la petición
+ * siguiente porque ya no cumple `institutionalStatus === "enabled"`.
+ */
+export async function patchRevocation(
+  ctx: MutationCtx,
+  input: {
+    readonly userId: Id<"users">;
+    readonly revokedBy: Id<"users">;
+    readonly revokedAt: number;
+  },
+): Promise<void> {
+  await ctx.db.patch(input.userId, {
+    institutionalStatus: "disabled",
+    revokedBy: input.revokedBy,
+    revokedAt: input.revokedAt,
+  });
+}
+
+/** Página de cuentas de personal para el listado administrativo (TI2-137). */
+export async function paginateStaffAccounts(
+  ctx: QueryCtx,
+  role: "professional" | "admin",
+  paginationOpts: PaginationOptions,
+) {
+  return await ctx.db
+    .query("users")
+    .withIndex("by_role", (q) => q.eq("role", role))
+    .paginate(paginationOpts);
 }
 
 /** Crea la cuenta administrativa inicial del entorno, ya habilitada. */

@@ -4,6 +4,8 @@ import {
   checkEnablement,
   validateBootstrapCandidate,
   validateEnablementTarget,
+  validateStaffEnablementTarget,
+  validateStaffRevocationTarget,
   type EnablementCaller,
   type EnablementTarget,
 } from "./enablement";
@@ -127,5 +129,98 @@ describe("validateBootstrapCandidate", () => {
         reason: "bootstrap-email-not-institutional",
       });
     }
+  });
+});
+
+describe("validateStaffEnablementTarget", () => {
+  test("acepta profesional y administrador de personal pendientes o revocados", () => {
+    expect(
+      validateStaffEnablementTarget({
+        role: "professional",
+        email: "pro@uct.cl",
+        institutionalStatus: "pending",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      validateStaffEnablementTarget({
+        role: "professional",
+        email: "pro@uct.cl",
+        institutionalStatus: "disabled",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      validateStaffEnablementTarget({
+        role: "admin",
+        email: "adm@uct.cl",
+        institutionalStatus: "pending",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rechaza practicante, correo no personal y cuenta ya habilitada", () => {
+    expect(
+      validateStaffEnablementTarget({
+        role: "intern",
+        email: "practicante@alu.uct.cl",
+        institutionalStatus: "pending",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-not-staff" });
+    expect(
+      validateStaffEnablementTarget({
+        role: "professional",
+        email: "pro@alu.uct.cl",
+        institutionalStatus: "disabled",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-email-not-institutional" });
+    expect(
+      validateStaffEnablementTarget({
+        role: "admin",
+        email: "adm@alu.uct.cl",
+        institutionalStatus: "pending",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-email-not-institutional" });
+    expect(
+      validateStaffEnablementTarget({
+        role: "professional",
+        email: "pro@uct.cl",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-already-enabled" });
+  });
+});
+
+describe("validateStaffRevocationTarget", () => {
+  test("solo revoca profesional o administrador habilitado y vigente", () => {
+    expect(
+      validateStaffRevocationTarget({
+        role: "professional",
+        email: "pro@uct.cl",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      validateStaffRevocationTarget({
+        role: "professional",
+        email: "pro@uct.cl",
+        institutionalStatus: "pending",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-not-enabled" });
+    expect(
+      validateStaffRevocationTarget({
+        role: "intern",
+        email: "practicante@alu.uct.cl",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+      }),
+    ).toEqual({ ok: false, reason: "target-not-staff" });
   });
 });

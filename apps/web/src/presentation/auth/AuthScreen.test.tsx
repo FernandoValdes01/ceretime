@@ -11,6 +11,7 @@ type ServerState =
 
 let mockedServerState: ServerState;
 const signOutMock = vi.fn();
+const signInOAuth2Mock = vi.fn();
 
 vi.mock("convex/react", () => ({
   useQuery: () => mockedServerState,
@@ -19,7 +20,7 @@ vi.mock("convex/react", () => ({
 vi.mock("../../infrastructure/auth/auth-client", () => ({
   authClient: {
     useSession: () => ({ isPending: false }),
-    signIn: { social: vi.fn() },
+    signIn: { oauth2: (...args: unknown[]) => signInOAuth2Mock(...args) },
     signOut: (...args: unknown[]) => signOutMock(...args),
   },
 }));
@@ -42,6 +43,7 @@ const SESION_ESTUDIANTE: ServerState = {
 beforeEach(() => {
   mockedServerState = { status: "unauthenticated" };
   signOutMock.mockReset().mockResolvedValue({});
+  signInOAuth2Mock.mockReset().mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -117,5 +119,32 @@ describe("aviso de sesión expirada (TI2-15)", () => {
     view.rerender(<AuthScreen />);
     await screen.findByText(GENERIC_AUTH_MESSAGES.sessionExpired);
     expect(await screen.findByRole("heading", { name: "Acceso institucional" })).toBeDefined();
+  });
+});
+
+describe("inicio por población (TI2-131)", () => {
+  test("cada botón abre el proveedor de su dominio", async () => {
+    render(<AuthScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con cuenta @alu.uct.cl" }));
+    await waitFor(() => expect(signInOAuth2Mock).toHaveBeenCalledTimes(1));
+    expect(signInOAuth2Mock.mock.calls[0][0]).toEqual({
+      providerId: "google-alu",
+      callbackURL: "/",
+      errorCallbackURL: "/?auth=error",
+    });
+
+    cleanup();
+    render(<AuthScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con cuenta @uct.cl" }));
+    await waitFor(() => expect(signInOAuth2Mock).toHaveBeenCalledTimes(2));
+    expect(signInOAuth2Mock.mock.calls[1][0]).toMatchObject({ providerId: "google-uct" });
+  });
+
+  test("muestra el mensaje genérico cuando el inicio falla sin redirigir", async () => {
+    signInOAuth2Mock.mockRejectedValue(new Error("fallo de red ficticio"));
+    render(<AuthScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Continuar con cuenta @uct.cl" }));
+    expect(await screen.findByText(GENERIC_AUTH_MESSAGES.signInError)).toBeTruthy();
+    expect(screen.queryByText(/fallo de red/)).toBeNull();
   });
 });

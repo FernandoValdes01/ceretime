@@ -9,6 +9,14 @@ import {
   formatAppointmentTime,
   formatAppointmentTimeRange,
 } from "./gestion-labels.ts";
+import { AGENDA_TIME_ZONE_LABEL } from "../shared/date-format.ts";
+import {
+  ACCESS_DENIED_MESSAGE,
+  DeniedState,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../shared/view-states.tsx";
 import { availabilityModalityLabel } from "./professional-availability-labels.ts";
 import {
   getAgendaPort,
@@ -88,6 +96,7 @@ export function ProfessionalAgendaPage() {
       </h1>
       <p>Tus atenciones reservadas con la fecha vigente y su estado.</p>
       <p>Agenda consultada a la API; la autorización la decide el Backend.</p>
+      <p>Horarios en {AGENDA_TIME_ZONE_LABEL}.</p>
       <StudentPanelErrorBoundary subject="la agenda" level="section">
         <AgendaBody attempt={attempt} onRetry={() => setAttempt((value) => value + 1)} />
       </StudentPanelErrorBoundary>
@@ -100,46 +109,22 @@ function AgendaBody({ attempt, onRetry }: { attempt: number; onRetry: () => void
   const spaceLabels = useSpaceLabels();
 
   if (result === undefined) {
-    return (
-      <p role="status" className="student-portal__loading">
-        Cargando la agenda…
-      </p>
-    );
+    return <LoadingState label="Cargando la agenda…" />;
   }
 
   if (result.status === "error") {
-    return (
-      <div>
-        <p role="alert" className="student-portal__error">
-          {result.message}
-        </p>
-        <div className="student-portal__cta">
-          <button
-            type="button"
-            className="student-portal__btn student-portal__btn--primary"
-            onClick={onRetry}
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
-    );
+    return <ErrorState message={result.message} onRetry={onRetry} />;
   }
 
   if (result.status === "denied") {
-    return (
-      <p role="alert" className="student-portal__error">
-        No autorizado. Pide acceso por el canal oficial si corresponde.
-      </p>
-    );
+    return <DeniedState />;
   }
 
   if (result.status === "empty") {
     return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No tienes atenciones agendadas.</p>
+      <EmptyState title="No tienes atenciones agendadas.">
         <p>Cuando se reserve una atención contigo, aparecerá aquí.</p>
-      </div>
+      </EmptyState>
     );
   }
 
@@ -277,38 +262,15 @@ function AppointmentDetailBody({
   const shown = current ?? appointment;
 
   if (result === undefined) {
-    return (
-      <p role="status" className="student-portal__loading">
-        Cargando la atención…
-      </p>
-    );
+    return <LoadingState label="Cargando la atención…" />;
   }
 
   if (result.status === "error") {
-    return (
-      <div>
-        <p role="alert" className="student-portal__error">
-          {result.message}
-        </p>
-        <div className="student-portal__cta">
-          <button
-            type="button"
-            className="student-portal__btn student-portal__btn--primary"
-            onClick={onRetry}
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
-    );
+    return <ErrorState message={result.message} onRetry={onRetry} />;
   }
 
   if (result.status === "denied" || shown === undefined) {
-    return (
-      <p role="alert" className="student-portal__error">
-        No autorizado. Pide acceso por el canal oficial si corresponde.
-      </p>
-    );
+    return <DeniedState />;
   }
 
   const spaceLabel = spaceLabelOf(shown, spaceLabels);
@@ -322,6 +284,7 @@ function AppointmentDetailBody({
           <span className="block">{formatAppointmentTimeRange(shown.startAt, shown.endAt)}</span>
         </DetailRow>
         <DetailRow label="Modalidad">{availabilityModalityLabel(shown.modality)}</DetailRow>
+        <DetailRow label="Zona horaria">{AGENDA_TIME_ZONE_LABEL}</DetailRow>
         {spaceLabel === undefined ? null : <DetailRow label="Espacio">{spaceLabel}</DetailRow>}
         {shown.originalStartAt === undefined ? null : (
           <DetailRow label="Fecha original conservada">
@@ -503,7 +466,7 @@ function StatusChangeSection({
           ) : null}
           {denied ? (
             <p role="alert" className="student-portal__error">
-              No autorizado. Pide acceso por el canal oficial si corresponde.
+              {ACCESS_DENIED_MESSAGE}
             </p>
           ) : null}
           {resultError !== null ? (

@@ -39,7 +39,7 @@ Las reglas de concurrency, checkout y reruns se contrastaron con [GitHub: concur
 
 ## Ruleset y cambios manuales propuestos
 
-protectedmain exige una PR, una aprobación, aprobación del último push, descarte de aprobaciones antiguas y los cuatro checks de GitHub Actions con strict_required_status_checks_policy true. Conserva dos actores de bypass y prohíbe eliminar o forzar main. La consulta del 10/10/2026 confirmó que los únicos checks obligatorios son los cuatro de CI; el estado vigente está en docs/ci-protections.md.
+protectedmain exige una PR, una aprobación, aprobación del último push, descarte de aprobaciones antiguas y los cuatro checks de GitHub Actions con strict_required_status_checks_policy true. Conserva dos actores de bypass y prohíbe eliminar o forzar main. La consulta del 10/10/2026 confirmó que los únicos checks obligatorios son los cuatro de CI; el estado vigente está en docs/operaciones/ci-protections.md.
 
 En Settings → Rules → Rulesets → protectedmain → Require a pull request before merging, conviene activar Require conversation resolution before merging, que corresponde a required_review_thread_resolution = true. Obliga a cerrar también hilos humanos; el equipo debe resolver manualmente los hilos pendientes antes de integrar.
 

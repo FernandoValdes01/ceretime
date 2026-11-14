@@ -172,6 +172,53 @@ test("una segunda carga no escribe nada", async () => {
   expect(await snapshot(t)).toEqual(first);
 });
 
+test("las atenciones sembradas quedan completas para la auditoría (TI2-138)", async () => {
+  vi.stubEnv("TEST_SEEDS_ENABLED", "true");
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.operations.fictitiousData.load, {});
+
+  // La semilla no pasa por `occupySlotAtomically`, pero deja las atenciones
+  // con la misma forma: la auditoría no encuentra nada pendiente de migrar.
+  const audit = await t.query(internal.operations.migrations.auditAppointmentParticipants, {
+    paginationOpts: { numItems: 20, cursor: null },
+  });
+  expect(audit).toMatchObject({
+    scanned: 4,
+    missingAppliedAccessNeeds: 0,
+    missingParticipants: 0,
+    isDone: true,
+    sampleLegacyIds: [],
+  });
+
+  const data = await t.run(async (ctx) => ({
+    appointments: await ctx.db.query("appointments").collect(),
+    participants: await ctx.db.query("appointmentProfessionals").collect(),
+    professionals: await ctx.db.query("users").collect(),
+  }));
+  const expectedNeeds = [
+    {
+      id: "Sala con acceso sin escaleras para las clases prácticas.",
+      label: "Sala con acceso sin escaleras para las clases prácticas.",
+    },
+  ];
+  const professionalId = data.professionals.find((user) => user.role === "professional")?._id;
+  expect(professionalId).toBeDefined();
+  expect(data.appointments).toHaveLength(4);
+  expect(data.participants).toHaveLength(4);
+  for (const appointment of data.appointments) {
+    expect(appointment.appliedAccessNeeds).toEqual(expectedNeeds);
+    const participants = data.participants.filter(
+      (participant) => participant.appointmentId === appointment._id,
+    );
+    expect(participants).toHaveLength(1);
+    expect(participants[0]).toMatchObject({
+      professionalId,
+      startsAt: appointment.startsAt,
+      endsAt: appointment.endsAt,
+    });
+  }
+});
+
 test("consultas por rol respetan aislamiento sobre el dataset cargado", async () => {
   vi.stubEnv("TEST_SEEDS_ENABLED", "true");
   const t = convexTest(schema, modules);

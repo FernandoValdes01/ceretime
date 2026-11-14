@@ -17,12 +17,20 @@ export type {
   Role,
 } from "./identity/roles";
 
+// Inicio institucional con Google: proveedor de cada población (TI2-131).
+export { GOOGLE_PROVIDER_ID_BY_POPULATION } from "./auth/institutional_domain";
+export type { InstitutionalPopulation } from "./auth/institutional_domain";
+
 // Solicitud de acompañamiento y sus estados.
 export {
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
+  LEGACY_REQUEST_PROVENANCE_CHANNEL,
+  REQUEST_PROVENANCE_CHANNEL_VALUES,
+  requestProvenanceChannelOf,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toStoredAccessNeeds,
   toStoredRequestFields,
 } from "./requests/request";
 export type {
@@ -31,6 +39,7 @@ export type {
   AccompanimentRequestContent,
   GeneralAvailability,
   ModalityPreference,
+  RequestProvenanceChannel,
   StoredRequestFields,
 } from "./requests/request";
 export {
@@ -92,6 +101,8 @@ export {
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_CODE,
   NO_AVAILABILITY_ERROR_MESSAGE,
+  SPACE_FIELDS_INVALID_ERROR_CODE,
+  SPACE_FIELDS_INVALID_ERROR_MESSAGE,
   UNAUTHORIZED_ERROR_CODE,
   UNAUTHORIZED_ERROR_MESSAGE,
   conflictError,

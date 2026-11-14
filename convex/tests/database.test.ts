@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type {
   AccompanimentNeedsReader,
   AvailabilityReader,
@@ -11,7 +11,11 @@ import type {
 } from "../application/availability/ports";
 import type { SpaceReader } from "../application/spaces/ports";
 import { expandAvailabilitySlots } from "../domain/availability/availability";
-import { toAccompanimentRequest } from "../domain/requests/request";
+import {
+  LEGACY_REQUEST_PROVENANCE_CHANNEL,
+  requestProvenanceChannelOf,
+  toAccompanimentRequest,
+} from "../domain/requests/request";
 import { transitionRequest } from "../domain/requests/transition_policy";
 import { assessCompatibility } from "../domain/spaces/compatibility";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
@@ -32,6 +36,10 @@ import {
   MAX_ACTIVE_BLOCKS,
   MAX_EXCEPTIONS_IN_RANGE,
 } from "../infrastructure/availability/repository";
+import {
+  appointmentAgendaReader,
+  occupySlotAtomically,
+} from "../infrastructure/appointments/repository";
 import {
   accessNeedsFromLines,
   compatibilitySpaceSource,
@@ -55,6 +63,13 @@ import {
   paginateAppointmentAuditEventsByActor,
   recordAppointmentAuditEvent,
 } from "../infrastructure/audit/repository";
+import {
+  findRequestByIdempotencyKey,
+  getRequestById,
+  insertReceivedRequest,
+  insertReceivedRequestOnce,
+  type ReceivedRequestExtras,
+} from "../infrastructure/requests/repository";
 import type { AppointmentAuditEvent } from "../domain/appointments/audit";
 import schema from "../schema";
 
@@ -3189,4 +3204,805 @@ test("TI2-128: texto extra, literales desconocidos y referencias inválidas no s
   expect(
     await t.run(async (ctx) => await ctx.db.query("appointmentAuditEvents").take(10)),
   ).toHaveLength(1);
+});
+
+/**
+ * Esquema de solicitudes (TI2-135): necesidades, preferencias, procedencia y
+ * derivación.
+ *
+ * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
+ * que las filas anteriores se leen igual, que la solicitud completa conserva
+ * todos sus campos sin cambiar lo que entrega la API vigente, que el esquema
+ * rechaza RUT, diagnóstico, certificados y área interna, que la clave de
+ * idempotencia evita el duplicado y que la migración solo escribe lo que la
+ * fila ya sabe. Casos de uso, API y pantallas no se tocan.
+ */
+
+/** Texto unido de las necesidades, tal como lo entrega la API vigente. */
+const TI135_ACCESS_NEEDS_TEXT =
+  "Comunicación escrita\nMás tiempo para comunicarme\nMaterial enviado con anticipación";
+
+/** Contenido completo ficticio de una solicitud, sin datos clínicos. */
+const TI135_CONTENT = {
+  needSummary: "Necesito apoyo para seguir las clases en línea",
+  expectedOutcome: "Acordar ajustes de comunicación con mis docentes",
+  accessNeedSelections: [
+    { id: "written-communication", label: "Comunicación escrita" },
+    { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
+  ],
+  otherAccessNeed: "Material enviado con anticipación",
+  modalityPreference: "online",
+  generalAvailability: {
+    preferredWeekdays: [1, 3],
+    preferredTimeRange: { from: "09:00", to: "12:00" },
+  },
+  preferredAccessibleInformationChannel: "Correo con letra grande",
+} satisfies ReceivedRequestExtras;
+
+/** Fila de `requests` por id; falla si no existe. */
+async function ti135Row(t: ReturnType<typeof convexTest>, requestId: Id<"requests">) {
+  const row = await t.run(async (ctx) => await getRequestById(ctx, requestId));
+  if (row === null) throw new Error("La solicitud ficticia debería existir");
+  return row;
+}
+
+test("TI2-135: una solicitud anterior sin campos nuevos se lee sin error", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti135-legacy-est",
+    email: "ti135legacy@alu.uct.cl",
+    role: "student",
+  });
+  const legacyId = await seedRequest(t, student, "received");
+
+  // La fila anterior conserva exactamente los campos de siempre.
+  const row = await ti135Row(t, legacyId);
+  expect(Object.keys(row).sort()).toEqual([
+    "_creationTime",
+    "_id",
+    "accessNeeds",
+    "createdAt",
+    "status",
+    "studentId",
+  ]);
+  expect(toAccompanimentRequest(row)).toMatchObject({ _id: legacyId, status: "received" });
+  // Sin procedencia declarada se lee como la del Estudiante.
+  expect(requestProvenanceChannelOf(row)).toBe(LEGACY_REQUEST_PROVENANCE_CHANNEL);
+
+  // La API vigente la entrega igual que antes, en el detalle y en el listado propio.
+  const asStudent = t.withIdentity(identityFor("ti135-legacy-est", "ti135legacy@alu.uct.cl"));
+  const detail = await asStudent.query(api.presentation.requests.getRequest, {
+    requestId: legacyId,
+  });
+  expect(detail).toEqual({
+    _id: legacyId,
+    studentId: student,
+    status: "received",
+    accessNeeds: "Necesidad de acceso ficticia",
+    createdAt: 1,
+  });
+  const listed = await asStudent.query(api.presentation.requests.listOwnRequests, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(listed.page).toEqual([detail]);
+
+  // El índice de solicitudes propias la sigue encontrando; el de idempotencia no.
+  const own = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("requests")
+      .withIndex("by_student", (q) => q.eq("studentId", student))
+      .take(10);
+  });
+  expect(own.map((request) => request._id)).toEqual([legacyId]);
+  expect(
+    await t.run(async (ctx) => await findRequestByIdempotencyKey(ctx, student, "ti135-clave")),
+  ).toBeNull();
+});
+
+test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente no los entrega", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti135-full-est",
+    email: "ti135full@alu.uct.cl",
+    role: "student",
+  });
+  const staff = await seedUser(t, {
+    subject: "ti135-full-pro",
+    email: "ti135fullpro@uct.cl",
+    role: "professional",
+  });
+  // Sin truncar: 2000 caracteres, el tope del texto de necesidades de acceso.
+  const content = {
+    ...TI135_CONTENT,
+    expectedOutcome: "Resultado ficticio. ".repeat(100),
+  } satisfies ReceivedRequestExtras;
+  const provenance: NonNullable<Doc<"requests">["provenance"]> = {
+    channel: "official_channel",
+    registeredBy: staff,
+    receivedAt: 1000,
+  };
+  const incomingReferral: NonNullable<Doc<"requests">["incomingReferral"]> = {
+    originUnit: "Unidad ficticia de la Universidad",
+    referredAt: 500,
+    contactedAt: 1500,
+    contactedBy: staff,
+    acceptedAt: 2000,
+  };
+  const outgoingReferral: NonNullable<Doc<"requests">["outgoingReferral"]> = {
+    destinationUnit: "Otra unidad ficticia",
+    referredAt: 3000,
+    referredBy: staff,
+    reason: "Tu necesidad corresponde a otra unidad",
+  };
+  const { requestId } = await t.run(async (ctx) => {
+    return await insertReceivedRequestOnce(ctx, {
+      ...content,
+      studentId: student,
+      provenance,
+      incomingReferral,
+      idempotencyKey: "ti135-clave-completa",
+    });
+  });
+  // La derivación de salida y la razón de cierre se escriben al derivar o cerrar.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(requestId, {
+      outgoingReferral,
+      closureReason: "Tu necesidad corresponde a otra unidad",
+    });
+  });
+
+  const row = await ti135Row(t, requestId);
+  expect(row).toMatchObject({
+    ...content,
+    studentId: student,
+    status: "received",
+    accessNeeds: TI135_ACCESS_NEEDS_TEXT,
+    provenance,
+    incomingReferral,
+    outgoingReferral,
+    closureReason: "Tu necesidad corresponde a otra unidad",
+    idempotencyKey: "ti135-clave-completa",
+  });
+  expect(row.expectedOutcome).toHaveLength(2000);
+  expect(requestProvenanceChannelOf(row)).toBe("official_channel");
+
+  // La API vigente no cambió: los mismos cinco campos, sin contenido ni derivaciones.
+  const asStudent = t.withIdentity(identityFor("ti135-full-est", "ti135full@alu.uct.cl"));
+  const detail = await asStudent.query(api.presentation.requests.getRequest, { requestId });
+  expect(Object.keys(detail).sort()).toEqual([
+    "_id",
+    "accessNeeds",
+    "createdAt",
+    "status",
+    "studentId",
+  ]);
+  expect(detail.accessNeeds).toBe(TI135_ACCESS_NEEDS_TEXT);
+});
+
+test("TI2-135: el esquema rechaza RUT, diagnóstico, certificados y área interna", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti135-schema-est",
+    email: "ti135schema@alu.uct.cl",
+    role: "student",
+  });
+  const base = {
+    studentId: student,
+    status: "received",
+    accessNeeds: "Necesidad ficticia",
+    createdAt: 1,
+  };
+
+  for (const field of ["rut", "diagnosis", "certificate", "internalArea"]) {
+    await expect(
+      t.run(async (ctx) => {
+        await ctx.db.insert("requests", { ...base, [field]: "dato ficticio" } as never);
+      }),
+    ).rejects.toThrow(new RegExp(field));
+  }
+
+  // Valores fuera del contrato y formas incompletas tampoco se persisten.
+  const invalid = [
+    { modalityPreference: "hybrid" },
+    { provenance: { channel: "email" } },
+    // El canal oficial exige autor y fecha de recepción.
+    { provenance: { channel: "official_channel" } },
+    { provenance: { channel: "official_channel", registeredBy: student } },
+    { incomingReferral: { referredAt: 1 } },
+    { outgoingReferral: { destinationUnit: "Unidad ficticia", referredAt: 1, reason: "Motivo" } },
+    { generalAvailability: { preferredWeekdays: ["lunes"] } },
+  ];
+  for (const fields of invalid) {
+    await expect(
+      t.run(async (ctx) => {
+        await ctx.db.insert("requests", { ...base, ...fields } as never);
+      }),
+    ).rejects.toThrow("Validator error");
+  }
+  expect(await t.run(async (ctx) => await ctx.db.query("requests").take(10))).toHaveLength(0);
+});
+
+test("TI2-135: la clave de idempotencia evita duplicar el envío del mismo estudiante", async () => {
+  const t = convexTest(schema, modules);
+  const studentA = await seedUser(t, {
+    subject: "ti135-idem-a",
+    email: "ti135idema@alu.uct.cl",
+    role: "student",
+  });
+  const studentB = await seedUser(t, {
+    subject: "ti135-idem-b",
+    email: "ti135idemb@alu.uct.cl",
+    role: "student",
+  });
+  const send = async (studentId: Id<"users">, idempotencyKey: string) => {
+    return await t.run(async (ctx) => {
+      return await insertReceivedRequestOnce(ctx, {
+        studentId,
+        accessNeeds: "Necesidad ficticia",
+        idempotencyKey,
+      });
+    });
+  };
+
+  const first = await send(studentA, "ti135-clave-1");
+  expect(first.created).toBe(true);
+  // El reintento con la misma clave devuelve la misma solicitud sin escribir.
+  expect(await send(studentA, "ti135-clave-1")).toEqual({
+    requestId: first.requestId,
+    created: false,
+  });
+
+  // Otro estudiante con la misma clave, o el mismo con otra clave, crea la suya.
+  const otherStudent = await send(studentB, "ti135-clave-1");
+  const otherKey = await send(studentA, "ti135-clave-2");
+  expect(otherStudent.created).toBe(true);
+  expect(otherKey.created).toBe(true);
+  expect(new Set([first.requestId, otherStudent.requestId, otherKey.requestId]).size).toBe(3);
+
+  // Dos envíos simultáneos con la misma clave dejan una sola fila.
+  const raced = await Promise.all([
+    send(studentA, "ti135-clave-3"),
+    send(studentA, "ti135-clave-3"),
+  ]);
+  expect(raced.filter((result) => result.created)).toHaveLength(1);
+  expect(raced[0]?.requestId).toBe(raced[1]?.requestId);
+
+  // El índice encuentra la solicitud por estudiante y clave; sin envío no hay nada.
+  const withKey = async (studentId: Id<"users">, key: string) => {
+    return await t.run(async (ctx) => await findRequestByIdempotencyKey(ctx, studentId, key));
+  };
+  expect((await withKey(studentA, "ti135-clave-3"))?._id).toBe(raced[0]?.requestId);
+  expect((await withKey(studentB, "ti135-clave-1"))?._id).toBe(otherStudent.requestId);
+  expect(await withKey(studentA, "ti135-sin-envío")).toBeNull();
+  const ownA = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("requests")
+      .withIndex("by_student", (q) => q.eq("studentId", studentA))
+      .take(10);
+  });
+  expect(ownA).toHaveLength(3);
+
+  // Sin clave el comportamiento no cambia: cada envío crea su solicitud.
+  const plain = async () => {
+    return await t.run(async (ctx) => {
+      return await insertReceivedRequest(ctx, {
+        studentId: studentB,
+        accessNeeds: "Necesidad ficticia",
+      });
+    });
+  };
+  expect(await plain()).not.toBe(await plain());
+});
+
+test("TI2-135: insertReceivedRequest no acepta la clave de idempotencia", () => {
+  const receive = (input: Parameters<typeof insertReceivedRequest>[1]) => input;
+  expect(
+    receive({ studentId: "student-id" as Id<"users">, accessNeeds: "Necesidad ficticia" }),
+  ).toEqual({ studentId: "student-id", accessNeeds: "Necesidad ficticia" });
+  // La clave solo se escribe por insertReceivedRequestOnce, que busca el duplicado.
+  receive({
+    studentId: "student-id" as Id<"users">,
+    accessNeeds: "Necesidad ficticia",
+    // @ts-expect-error: `idempotencyKey` no forma parte de ReceivedRequestInput
+    idempotencyKey: "ti135-clave-directa",
+  });
+});
+
+test("TI2-135: un spread no cuela la clave por la inserción directa", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti135-spread-est",
+    email: "ti135spread@alu.uct.cl",
+    role: "student",
+  });
+  // `args` llega como el payload de una mutation: el spread evita la revisión
+  // de propiedades extra de TypeScript, pero la fila no debe guardar la clave.
+  const args = { accessNeeds: "Necesidad ficticia", idempotencyKey: "ti135-clave-spread" };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await t.run(async (ctx) => await insertReceivedRequest(ctx, { ...args, studentId: student }));
+  }
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("requests").take(10));
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    expect(row.idempotencyKey).toBeUndefined();
+  }
+  expect(
+    await t.run(
+      async (ctx) => await findRequestByIdempotencyKey(ctx, student, args.idempotencyKey),
+    ),
+  ).toBeNull();
+});
+
+test("TI2-135: la auditoría y la migración escriben la procedencia sin inventar contenido", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
+    email: "ti135admin@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti135-mig-adm`,
+  });
+  const student = await seedUser(t, {
+    subject: "ti135-mig-est",
+    email: "ti135mig@alu.uct.cl",
+    role: "student",
+  });
+  const staff = await seedUser(t, {
+    subject: "ti135-mig-pro",
+    email: "ti135migpro@uct.cl",
+    role: "professional",
+  });
+  const legacy = await t.run(async (ctx) => {
+    const first = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "received",
+      accessNeeds: "Necesidad ficticia A",
+      createdAt: 11,
+    });
+    const second = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "under_review",
+      accessNeeds: "Necesidad ficticia B",
+      createdAt: 22,
+    });
+    return { first, second };
+  });
+  const completeId = await t.run(async (ctx) => {
+    return await insertReceivedRequest(ctx, {
+      ...TI135_CONTENT,
+      studentId: student,
+      provenance: { channel: "official_channel", registeredBy: staff, receivedAt: 33 },
+    });
+  });
+
+  // La auditoría solo lee: cuenta las filas sin procedencia y las sin contenido ampliado.
+  const audit = await t.query(internal.operations.migrations.auditRequestProvenance, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(audit).toMatchObject({
+    scanned: 3,
+    missingProvenance: 2,
+    withoutExtendedContent: 2,
+    isDone: true,
+  });
+  expect([...audit.sampleLegacyIds].sort()).toEqual([legacy.first, legacy.second].sort());
+
+  // Solo un Administrador vigente migra, y un intento rechazado no escribe.
+  const input = { paginationOpts: { numItems: 10, cursor: null } };
+  await expect(
+    t.mutation(internal.operations.migrations.migrateLegacyRequests, input),
+  ).rejects.toThrow("No autorizado");
+  const asStudent = t.withIdentity(identityFor("ti135-mig-est", "ti135mig@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(internal.operations.migrations.migrateLegacyRequests, input),
+  ).rejects.toThrow("No autorizado");
+  expect((await ti135Row(t, legacy.first)).provenance).toBeUndefined();
+
+  const before = {
+    first: await ti135Row(t, legacy.first),
+    second: await ti135Row(t, legacy.second),
+    complete: await ti135Row(t, completeId),
+  };
+  const asAdmin = t.withIdentity(identityFor("ti135-mig-adm", "ti135admin@uct.cl"));
+  const migrated = await asAdmin.mutation(
+    internal.operations.migrations.migrateLegacyRequests,
+    input,
+  );
+  expect(migrated).toMatchObject({ scanned: 3, migrated: 2, isDone: true });
+
+  // Solo escribe lo que la fila ya sabe: el canal del Estudiante y su fecha de creación.
+  expect(await ti135Row(t, legacy.first)).toEqual({
+    ...before.first,
+    provenance: { channel: LEGACY_REQUEST_PROVENANCE_CHANNEL, receivedAt: 11 },
+  });
+  expect(await ti135Row(t, legacy.second)).toEqual({
+    ...before.second,
+    provenance: { channel: LEGACY_REQUEST_PROVENANCE_CHANNEL, receivedAt: 22 },
+  });
+  // La que ya tenía procedencia no se toca.
+  expect(await ti135Row(t, completeId)).toEqual(before.complete);
+
+  // Repetirla no cambia nada y la auditoría queda en cero.
+  const repeated = await asAdmin.mutation(
+    internal.operations.migrations.migrateLegacyRequests,
+    input,
+  );
+  expect(repeated).toMatchObject({ scanned: 3, migrated: 0, isDone: true });
+  const clean = await t.query(internal.operations.migrations.auditRequestProvenance, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(clean.missingProvenance).toBe(0);
+  expect(requestProvenanceChannelOf(await ti135Row(t, legacy.first))).toBe("student");
+});
+
+test("TI2-135: la migración de solicitudes avanza por páginas hasta agotar las filas", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
+    email: "ti135pag@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti135-mig-pag`,
+  });
+  const student = await seedUser(t, {
+    subject: "ti135-pag-est",
+    email: "ti135pagest@alu.uct.cl",
+    role: "student",
+  });
+  for (let round = 0; round < 3; round++) {
+    await seedRequest(t, student, "received");
+  }
+
+  const asAdmin = t.withIdentity(identityFor("ti135-mig-pag", "ti135pag@uct.cl"));
+  const first = await asAdmin.mutation(internal.operations.migrations.migrateLegacyRequests, {
+    paginationOpts: { numItems: 2, cursor: null },
+  });
+  expect(first.migrated).toBe(2);
+  expect(first.isDone).toBe(false);
+
+  const second = await asAdmin.mutation(internal.operations.migrations.migrateLegacyRequests, {
+    paginationOpts: { numItems: 2, cursor: first.continueCursor },
+  });
+  expect(second.migrated).toBe(1);
+  expect(second.isDone).toBe(true);
+});
+
+/**
+ * Ciclo completo de la atención (TI2-138): participantes, apoyos en línea,
+ * copia de necesidades y migración de las filas anteriores.
+ *
+ * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
+ * que reservar congela las necesidades del acompañamiento, que cambiarlas
+ * después no altera la atención, que mover la atención con otro responsable
+ * reemplaza al anterior en la ventana de participantes y que la migración
+ * completa las filas anteriores sin inventar apoyos ni referencia privada.
+ */
+
+const TI138_NEEDS = ["Necesidad ficticia A", "Necesidad ficticia B"] as const;
+
+test("TI2-138: reservar copia las necesidades vigentes y registra a los participantes", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti138-book-est",
+    email: "ti138book@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti138-book-pro",
+    email: "ti138bookpro@uct.cl",
+    role: "professional",
+  });
+  const accompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
+
+  const occupied = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: professional,
+      modality: "online",
+      startsAt: TI83_MONDAY_9H,
+      endsAt: TI83_MONDAY_10H,
+      onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
+      privateAccessReference: "https://acceso.example/ficticio",
+    });
+  });
+  expect(occupied.status).toBe("ok");
+  if (occupied.status !== "ok") return;
+  const appointmentId = occupied.data.appointmentId;
+
+  const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
+  const expectedNeeds = TI138_NEEDS.map((label) => ({ id: label, label }));
+  expect(row).toMatchObject({
+    appliedAccessNeeds: expectedNeeds,
+    onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
+    privateAccessReference: "https://acceso.example/ficticio",
+  });
+
+  // Índice de cruces: la fila del profesional copia la ventana de la atención.
+  const windows = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointmentProfessionals")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", professional).gte("startsAt", TI83_MONDAY_9H),
+      )
+      .take(10);
+  });
+  expect(windows).toHaveLength(1);
+  expect(windows[0]).toMatchObject({
+    appointmentId,
+    professionalId: professional,
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+  });
+
+  // Cambiar las necesidades actuales no reescribe la copia ya registrada.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
+  });
+  expect((await t.run(async (ctx) => await ctx.db.get(appointmentId)))?.appliedAccessNeeds).toEqual(
+    expectedNeeds,
+  );
+});
+
+test("TI2-138: mover la atención cambia al responsable sin reescribir necesidades", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti138-move-est",
+    email: "ti138move@alu.uct.cl",
+    role: "student",
+  });
+  const otherStudent = await seedUser(t, {
+    subject: "ti138-move-otro-est",
+    email: "ti138moveotro@alu.uct.cl",
+    role: "student",
+  });
+  const firstProfessional = await seedUser(t, {
+    subject: "ti138-move-pro-1",
+    email: "ti138movepro1@uct.cl",
+    role: "professional",
+  });
+  const secondProfessional = await seedUser(t, {
+    subject: "ti138-move-pro-2",
+    email: "ti138movepro2@uct.cl",
+    role: "professional",
+  });
+  const accompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
+  const otherAccompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: otherStudent,
+      status: "active",
+      objective: "Otro objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
+
+  const created = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: firstProfessional,
+      modality: "inPerson",
+      startsAt: TI83_MONDAY_9H,
+      endsAt: TI83_MONDAY_10H,
+    });
+  });
+  expect(created.status).toBe("ok");
+  if (created.status !== "ok") return;
+
+  // Otra atención del responsable anterior a la hora del destino: si su fila
+  // se conservara con el horario nuevo, aparecería ocupado dos veces.
+  const otherAttention = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: otherAccompaniment,
+      studentId: otherStudent,
+      professionalId: firstProfessional,
+      modality: "inPerson",
+      startsAt: TI83_MONDAY_10H,
+      endsAt: TI83_MONDAY_10H + 3_600_000,
+    });
+  });
+  expect(otherAttention.status).toBe("ok");
+  if (otherAttention.status !== "ok") return;
+
+  await t.run(async (ctx) => {
+    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
+  });
+
+  const moved = await t.run(async (ctx) => {
+    return await occupySlotAtomically(ctx, {
+      accompanimentId: accompaniment,
+      studentId: student,
+      professionalId: secondProfessional,
+      modality: "inPerson",
+      startsAt: TI83_MONDAY_10H,
+      endsAt: TI83_MONDAY_10H + 3_600_000,
+      movedAppointmentId: created.data.appointmentId,
+    });
+  });
+  expect(moved).toEqual({ status: "ok", data: { appointmentId: created.data.appointmentId } });
+
+  const participants = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointmentProfessionals")
+      .withIndex("by_appointmentId_and_professionalId", (q) =>
+        q.eq("appointmentId", created.data.appointmentId),
+      )
+      .take(10);
+  });
+  // El responsable anterior deja de participar: la fila pasa a ser la del
+  // nuevo y la atención sigue teniendo una sola fila por responsable.
+  expect(participants.map((row) => row.professionalId)).toEqual([secondProfessional]);
+  expect(participants[0]).toMatchObject({
+    startsAt: TI83_MONDAY_10H,
+    endsAt: TI83_MONDAY_10H + 3_600_000,
+  });
+
+  // El índice de cruces del anterior solo devuelve su otra atención a las
+  // 10:00, no la que ya no le pertenece.
+  const previousWindows = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("appointmentProfessionals")
+      .withIndex("by_professionalId_and_startsAt", (q) =>
+        q.eq("professionalId", firstProfessional).gte("startsAt", TI83_MONDAY_10H),
+      )
+      .take(10);
+  });
+  expect(previousWindows.map((row) => row.appointmentId)).toEqual([
+    otherAttention.data.appointmentId,
+  ]);
+
+  const row = await t.run(async (ctx) => await ctx.db.get(created.data.appointmentId));
+  expect(row?.appliedAccessNeeds).toEqual(TI138_NEEDS.map((label) => ({ id: label, label })));
+});
+
+test("TI2-138: la migración completa las atenciones anteriores sin inventar contenido", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
+    email: "ti138admin@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti138-mig-adm`,
+  });
+  const student = await seedUser(t, {
+    subject: "ti138-mig-est",
+    email: "ti138mig@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti138-mig-pro",
+    email: "ti138migpro@uct.cl",
+    role: "professional",
+  });
+  const accompaniment = await t.run(async (ctx) => {
+    return await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: TI138_NEEDS.join("\n"),
+    });
+  });
+  const first = await seedTi83Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: professional,
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+  });
+  const second = await seedTi83Appointment(t, {
+    accompanimentId: accompaniment,
+    studentId: student,
+    professionalId: professional,
+    startsAt: TI83_MONDAY_10H,
+    endsAt: TI83_MONDAY_10H + 3_600_000,
+    modality: "online",
+  });
+
+  // Las filas anteriores se leen sin error por la agenda vigente.
+  const legacyRead = await t.run(async (ctx) => {
+    return await appointmentAgendaReader(ctx).listByAccompaniment(accompaniment, {
+      startAt: TI83_MONDAY_9H,
+      endAt: TI83_TUESDAY,
+    });
+  });
+  expect(legacyRead.status).toBe("ok");
+  if (legacyRead.status !== "ok") return;
+  expect(legacyRead.data).toHaveLength(2);
+
+  const audit = await t.query(internal.operations.migrations.auditAppointmentParticipants, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(audit).toMatchObject({
+    scanned: 2,
+    missingAppliedAccessNeeds: 2,
+    missingParticipants: 2,
+    isDone: true,
+  });
+  expect([...audit.sampleLegacyIds].sort()).toEqual([first, second].sort());
+
+  // Solo un Administrador vigente migra, y un intento rechazado no escribe.
+  const asStudent = t.withIdentity(identityFor("ti138-mig-est", "ti138mig@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(internal.operations.migrations.migrateLegacyAppointments, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
+  ).rejects.toThrow("No autorizado");
+  expect((await t.run(async (ctx) => await ctx.db.get(first)))?.appliedAccessNeeds).toBeUndefined();
+
+  const asAdmin = t.withIdentity(identityFor("ti138-mig-adm", "ti138admin@uct.cl"));
+  const firstPage = await asAdmin.mutation(
+    internal.operations.migrations.migrateLegacyAppointments,
+    { paginationOpts: { numItems: 1, cursor: null } },
+  );
+  expect(firstPage).toMatchObject({
+    scanned: 1,
+    migratedNeeds: 1,
+    createdParticipants: 1,
+    unresolvedNeeds: 0,
+    isDone: false,
+  });
+  const secondPage = await asAdmin.mutation(
+    internal.operations.migrations.migrateLegacyAppointments,
+    { paginationOpts: { numItems: 1, cursor: firstPage.continueCursor } },
+  );
+  expect(secondPage).toMatchObject({
+    scanned: 1,
+    migratedNeeds: 1,
+    createdParticipants: 1,
+    unresolvedNeeds: 0,
+    isDone: true,
+  });
+
+  // La copia usa la necesidad que el acompañamiento tenía al migrar y no
+  // inventa apoyos en línea ni referencia privada.
+  const expectedNeeds = TI138_NEEDS.map((label) => ({ id: label, label }));
+  for (const appointmentId of [first, second]) {
+    const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
+    expect(row?.appliedAccessNeeds).toEqual(expectedNeeds);
+    expect(row?.onlineSupports).toBeUndefined();
+    expect(row?.privateAccessReference).toBeUndefined();
+  }
+  const participantRows = await t.run(async (ctx) => {
+    return await ctx.db.query("appointmentProfessionals").take(10);
+  });
+  expect(participantRows).toHaveLength(2);
+  expect(participantRows.map((row) => row.appointmentId).sort()).toEqual([first, second].sort());
+
+  // Cambiar las necesidades actuales no toca lo ya migrado y repetirla no
+  // escribe de nuevo.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
+  });
+  const repeated = await asAdmin.mutation(
+    internal.operations.migrations.migrateLegacyAppointments,
+    { paginationOpts: { numItems: 10, cursor: null } },
+  );
+  expect(repeated).toMatchObject({
+    scanned: 2,
+    migratedNeeds: 0,
+    createdParticipants: 0,
+    unresolvedNeeds: 0,
+    isDone: true,
+  });
+  for (const appointmentId of [first, second]) {
+    expect(
+      (await t.run(async (ctx) => await ctx.db.get(appointmentId)))?.appliedAccessNeeds,
+    ).toEqual(expectedNeeds);
+  }
+  const clean = await t.query(internal.operations.migrations.auditAppointmentParticipants, {
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+  expect(clean).toMatchObject({
+    missingAppliedAccessNeeds: 0,
+    missingParticipants: 0,
+  });
 });

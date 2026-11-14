@@ -8,6 +8,9 @@ import {
 import {
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
+  LEGACY_REQUEST_PROVENANCE_CHANNEL,
+  REQUEST_PROVENANCE_CHANNEL_VALUES,
+  requestProvenanceChannelOf,
   toAccessNeedsText,
   toAccompanimentRequest,
   toSprint1AccompanimentRequest,
@@ -236,5 +239,23 @@ describe("REQUEST_STATE_LABELS (TI2-8)", () => {
     expect(REQUEST_STATE_LABELS.referred).toBe("Derivada");
     expect(REQUEST_STATE_LABELS.closed_without_accompaniment).toBe("Cerrada sin acompañamiento");
     expect(REQUEST_STATE_LABELS.cancelled).toBe("Cancelada");
+  });
+});
+
+describe("Procedencia de la solicitud (TI2-135)", () => {
+  test("declara los dos canales y el del Estudiante para las filas anteriores", () => {
+    expect(REQUEST_PROVENANCE_CHANNEL_VALUES).toEqual(["student", "official_channel"]);
+    expect(LEGACY_REQUEST_PROVENANCE_CHANNEL).toBe("student");
+    expect(REQUEST_PROVENANCE_CHANNEL_VALUES).toContain(LEGACY_REQUEST_PROVENANCE_CHANNEL);
+  });
+
+  test("una fila sin procedencia se lee como la del Estudiante", () => {
+    expect(requestProvenanceChannelOf({})).toBe("student");
+  });
+
+  test("una fila con procedencia conserva su canal", () => {
+    const official = requestProvenanceChannelOf({ provenance: { channel: "official_channel" } });
+    expect(official).toBe("official_channel");
+    expect(requestProvenanceChannelOf({ provenance: { channel: "student" } })).toBe("student");
   });
 });

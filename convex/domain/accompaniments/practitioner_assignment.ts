@@ -11,7 +11,11 @@
  * borrar el historial. Los cuatro campos son opcionales porque el schema los
  * declara así: las filas legacy (anteriores a TI2-16) no los tienen y las
  * filas activas nuevas todavía no tienen fecha de revocación. La vigencia
- * del acceso la decide `status`, no la presencia de estos campos.
+ * del acceso la decide `status`, no la presencia de estos campos. Desde
+ * TI2-138 la fila admite además una vigencia opcional (`validFrom`/
+ * `validUntil`): expresa la ventana sin inventar revocaciones y no reemplaza
+ * a `status`. El cambio de profesional asignado se rastrea con la fila
+ * revocada y la nueva concesión, sin tabla ni vínculo paralelo.
  */
 
 /** Rol con el que una persona queda asignada al acompañamiento. */
@@ -42,6 +46,9 @@ export interface PractitionerAssignment {
   grantedAt?: number;
   revokedBy?: string | null;
   revokedAt?: number | null;
+  /** Vigencia opcional (TI2-138); ausente cuando la asignación no la declara. */
+  validFrom?: number | null;
+  validUntil?: number | null;
 }
 
 /**
