@@ -241,6 +241,10 @@ function conflict(message: string) {
   return { code: "conflict", message };
 }
 
+function fieldsInvalid(message: string) {
+  return { code: "follow_up_fields_invalid", message };
+}
+
 const SHARED_KEYS = [
   "accompanimentId",
   "agreements",
@@ -384,6 +388,21 @@ describe("TI2-146 API: guardar y confirmar", () => {
         ),
       ).toEqual(conflict(FOLLOW_UP_ALREADY_CONFIRMED_MESSAGE));
     }
+    expect(await readTables(t)).toEqual(before);
+  });
+
+  test("tras confirmar, un contenido inválido responde que ya está confirmado, no qué corregir", async () => {
+    const t = convexTest(schema, modules);
+    const scenario = await seedScenario(t, "invalid-after");
+    const appointmentId = await seedAppointment(t, scenario);
+    await save(scenario, "professional", appointmentId, followUpContent());
+    const before = await readTables(t);
+
+    expect(
+      await publicErrorData(
+        save(scenario, "professional", appointmentId, followUpContent({ nextSteps: "  " })),
+      ),
+    ).toEqual(conflict(FOLLOW_UP_ALREADY_CONFIRMED_MESSAGE));
     expect(await readTables(t)).toEqual(before);
   });
 
@@ -539,7 +558,7 @@ describe("TI2-146 API: denegaciones y estados de la atención", () => {
     },
   );
 
-  test("un diagnóstico o una fecha inválida responden conflict con cada causa y no escriben", async () => {
+  test("un diagnóstico o una fecha inválida responden follow_up_fields_invalid con cada causa y no escriben", async () => {
     const t = convexTest(schema, modules);
     const scenario = await seedScenario(t, "invalid");
     const appointmentId = await seedAppointment(t, scenario);
@@ -557,7 +576,7 @@ describe("TI2-146 API: denegaciones y estados de la atención", () => {
         ),
       ),
     ).toEqual(
-      conflict(
+      fieldsInvalid(
         "La fecha sugerida debe ser una fecha válida con formato AAAA-MM-DD. El seguimiento no admite diagnósticos, evaluaciones psicológicas ni documentos clínicos.",
       ),
     );
@@ -574,7 +593,7 @@ describe("TI2-146 API: denegaciones y estados de la atención", () => {
         save(scenario, "professional", appointmentId, followUpContent({ internalNote: "   " })),
       ),
     ).toEqual(
-      conflict(
+      fieldsInvalid(
         "Hay textos vacíos: completa los acuerdos, las tareas, los próximos pasos y, si la incluyes, la nota interna.",
       ),
     );
@@ -808,6 +827,20 @@ describe("TI2-146 API: historial por acompañamiento", () => {
         UNAUTHORIZED,
       );
     }
+  });
+
+  test("un cursor alterado responde conflict para que el cliente reinicie el historial", async () => {
+    const t = convexTest(schema, modules);
+    const scenario = await seedScenario(t, "list-cursor");
+
+    expect(
+      await publicErrorData(
+        list(scenario, "professional", scenario.accompanimentId, {
+          limit: 2,
+          cursor: "cursor-alterado",
+        }),
+      ),
+    ).toEqual(conflict(conflictError().message));
   });
 
   test.each([0, 21, 1.5])("un límite de %s responde conflict sin leer", async (limit) => {

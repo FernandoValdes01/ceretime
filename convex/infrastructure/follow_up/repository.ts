@@ -167,7 +167,9 @@ async function readConfirmedRecord(
  * autor debe existir; el estado vigente de la atención decide si el
  * seguimiento procede. Hay como máximo un registro por atención y el primer
  * guardado lo confirma: un reintento idéntico devuelve el mismo registro sin
- * escribir, y cualquier otro contenido responde `already_confirmed`. Esta es
+ * escribir, y cualquier otro contenido responde `already_confirmed`, también
+ * uno inválido: no tiene sentido pedir que corrija campos que ya no se pueden
+ * cambiar. Esta es
  * la única vía de escritura del registro, así que no hay forma de editarlo,
  * reemplazarlo ni eliminarlo. Dos guardados simultáneos leen el mismo índice:
  * Convex reintenta el que pierde y ese reintento ya encuentra el registro.
@@ -180,8 +182,12 @@ export async function saveFollowUpRecord(
   const appointment = appointmentId === null ? null : await ctx.db.get(appointmentId);
   if (appointment === null) return { status: "invalid_reference" };
 
+  const existing = await findRecordRow(ctx, appointment._id);
   const validation = validateFollowUpRecord({ ...input, appointmentStatus: appointment.status });
-  if (validation.status === "invalid") return validation;
+  if (validation.status === "invalid") {
+    // Un contenido inválido nunca repite el registro confirmado.
+    return existing === null ? validation : { status: "already_confirmed" };
+  }
   const { record } = validation;
 
   const authorId = ctx.db.normalizeId("users", input.authorId);
@@ -193,7 +199,6 @@ export async function saveFollowUpRecord(
     return { status: "invalid_reference" };
   }
 
-  const existing = await findRecordRow(ctx, appointment._id);
   if (existing !== null) {
     const confirmed = await readConfirmedRecord(ctx, existing, appointment.accompanimentId);
     return isFollowUpRetry(confirmed, record)
@@ -271,7 +276,8 @@ export async function findFollowUpRecordByAppointment(
  * más antigua. Pagina atenciones, no registros: una página puede traer menos
  * registros que `limit`, y un acompañamiento sin forma devuelve una página
  * vacía. Solo recorre el índice del acompañamiento, así que no mezcla
- * historiales.
+ * historiales. Devuelve `null` si `paginate` rechaza el cursor, por ejemplo
+ * uno de otro acompañamiento o alterado.
  */
 async function paginateFollowUpRecordsByAccompaniment(
   ctx: DbReader,
@@ -281,14 +287,21 @@ async function paginateFollowUpRecordsByAccompaniment(
   readonly items: readonly StoredFollowUpRecord[];
   readonly hasMore: boolean;
   readonly nextCursor: string | null;
-}> {
+} | null> {
   const id = ctx.db.normalizeId("accompaniments", accompanimentId);
   if (id === null) return { items: [], hasMore: false, nextCursor: null };
-  const appointments = await ctx.db
+  const query = ctx.db
     .query("appointments")
     .withIndex("by_accompanimentId_and_startsAt", (q) => q.eq("accompanimentId", id))
-    .order("desc")
-    .paginate({ numItems: page.limit, cursor: page.cursor });
+    .order("desc");
+  let appointments: Awaited<ReturnType<typeof query.paginate>>;
+  try {
+    appointments = await query.paginate({ numItems: page.limit, cursor: page.cursor });
+  } catch (error) {
+    // Sin cursor, el error no es del cliente: se propaga como interno.
+    if (page.cursor === null) throw error;
+    return null;
+  }
 
   const items: StoredFollowUpRecord[] = [];
   for (const appointment of appointments.page) {

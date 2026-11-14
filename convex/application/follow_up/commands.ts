@@ -1,6 +1,6 @@
-import type { Appointment } from "../../domain/appointments/appointment";
 import {
   CONFLICT_ERROR_CODE,
+  FOLLOW_UP_FIELDS_INVALID_ERROR_CODE,
   errResult,
   okResult,
   unauthorizedError,
@@ -9,11 +9,10 @@ import {
 import {
   FOLLOW_UP_ENTRIES_MAX,
   FOLLOW_UP_TEXT_MAX_LENGTH,
-  type FollowUpAgreementInput,
   type FollowUpRejectionCause,
-  type FollowUpTaskInput,
 } from "../../domain/follow_up/follow_up";
 import { authorizeFollowUpWrite, type AuthorizationReader } from "../authorization/authorize";
+import type { FollowUpAppointmentReader, FollowUpContent, FollowUpRecorder } from "./ports";
 
 /**
  * Guardar y confirmar el registro de seguimiento de una atención (TI2-146).
@@ -26,50 +25,14 @@ import { authorizeFollowUpWrite, type AuthorizationReader } from "../authorizati
  * identificador del cliente.
  *
  * El primer guardado confirma el registro. Repetirlo idéntico responde lo
- * mismo sin escribir; otro contenido se rechaza con `conflict`, igual que los
- * datos que no cumplen las reglas de TI2-106. Una atención inexistente o
- * ajena responde `unauthorized`, sin revelar si existe.
+ * mismo sin escribir; otro contenido, o una atención que todavía no admite
+ * seguimiento, se rechaza con `conflict`, porque depende del estado. Los datos
+ * que no cumplen las reglas de TI2-106 responden `follow_up_fields_invalid`,
+ * con qué corregir. Una atención inexistente o ajena responde
+ * `unauthorized`, sin revelar si existe.
  *
  * Opera con datos ficticios.
  */
-
-/** Atención leída en el servidor: lo único que el guardado necesita de ella. */
-export interface FollowUpAppointmentReader {
-  getAppointment(
-    appointmentId: string,
-  ): Promise<Pick<Appointment, "id" | "accompanimentId" | "status"> | null>;
-}
-
-/** Contenido del registro que escribe el Profesional. */
-export interface FollowUpContent {
-  readonly agreements: readonly FollowUpAgreementInput[];
-  readonly tasks: readonly FollowUpTaskInput[];
-  readonly nextSteps: string;
-  readonly suggestedNextAppointmentDate?: string;
-  readonly internalNote?: string;
-}
-
-/** Resultado de la escritura atómica: validación, unicidad e inserción. */
-export type FollowUpSaveOutcome =
-  | { readonly status: "saved" }
-  | { readonly status: "invalid"; readonly causes: readonly FollowUpRejectionCause[] }
-  | { readonly status: "invalid_reference" }
-  | { readonly status: "already_confirmed" };
-
-/**
- * Escritura del registro. Valida contra el estado vigente de la atención,
- * comprueba el registro confirmado e inserta en una sola transacción: partirla
- * en llamadas separadas permitiría dos registros para la misma atención.
- */
-export interface FollowUpRecorder {
-  save(
-    input: FollowUpContent & {
-      readonly appointmentId: string;
-      readonly accompanimentId: string;
-      readonly authorId: string;
-    },
-  ): Promise<FollowUpSaveOutcome>;
-}
 
 /** Dependencias del guardado, todas por puerto. */
 export interface SaveFollowUpRecordDeps {
@@ -111,10 +74,26 @@ const FOLLOW_UP_REJECTION_MESSAGES: Readonly<Record<FollowUpRejectionCause, stri
     "El seguimiento no admite diagnósticos, evaluaciones psicológicas ni documentos clínicos.",
 };
 
-/** `conflict` con el mensaje de lo que hay que corregir, en el orden de las causas. */
+/**
+ * Causas que dependen del estado de la atención, no de lo que escribió el
+ * Profesional: corregir el formulario no las resuelve.
+ */
+const STATE_CAUSES: ReadonlySet<FollowUpRejectionCause> = new Set([
+  "appointment_status_unknown",
+  "follow_up_not_admissible",
+]);
+
+/**
+ * Si la atención no admite seguimiento, `conflict` con ese motivo, porque
+ * los campos no importan todavía. Si no, `follow_up_fields_invalid` con lo
+ * que hay que corregir, en el orden de las causas.
+ */
 function rejected<T>(causes: readonly FollowUpRejectionCause[]): ApiResult<T> {
-  const message = causes.map((cause) => FOLLOW_UP_REJECTION_MESSAGES[cause]).join(" ");
-  return errResult({ code: CONFLICT_ERROR_CODE, message });
+  const stateCauses = causes.filter((cause) => STATE_CAUSES.has(cause));
+  const reported = stateCauses.length > 0 ? stateCauses : causes;
+  const message = reported.map((cause) => FOLLOW_UP_REJECTION_MESSAGES[cause]).join(" ");
+  const code = stateCauses.length > 0 ? CONFLICT_ERROR_CODE : FOLLOW_UP_FIELDS_INVALID_ERROR_CODE;
+  return errResult({ code, message });
 }
 
 /**
@@ -149,8 +128,10 @@ export async function saveFollowUpRecord(
     case "already_confirmed":
       return errResult({ code: CONFLICT_ERROR_CODE, message: FOLLOW_UP_ALREADY_CONFIRMED_MESSAGE });
     case "invalid_reference":
-      // La atención ya se leyó y el autor es el perfil de la sesión, así que
-      // no debería ocurrir; si ocurre, se responde como acceso denegado.
-      return errResult(unauthorizedError());
+      // La atención ya se leyó y el autor es el perfil de la sesión: llegar
+      // aquí es un defecto del servidor, no un problema de permisos.
+      throw new Error(
+        "El guardado del seguimiento recibió una referencia que el servidor ya había resuelto.",
+      );
   }
 }

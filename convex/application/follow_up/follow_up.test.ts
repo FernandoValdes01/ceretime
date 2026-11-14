@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { AppointmentStatus } from "../../domain/appointments/appointment";
 import {
   CONFLICT_ERROR_CODE,
+  FOLLOW_UP_FIELDS_INVALID_ERROR_CODE,
   conflictError,
   errResult,
   unauthorizedError,
@@ -15,16 +16,14 @@ import type {
 import {
   FOLLOW_UP_ALREADY_CONFIRMED_MESSAGE,
   saveFollowUpRecord,
-  type FollowUpRecorder,
-  type FollowUpSaveOutcome,
   type SaveFollowUpRecordCommand,
 } from "./commands";
+import type { FollowUpRecorder, FollowUpSaveOutcome, StoredFollowUp } from "./ports";
 import {
   LIST_FOLLOW_UP_PAGE_LIMIT_MAX,
   getFollowUpRecord,
   listAccompanimentFollowUpRecords,
   type FollowUpQueryDeps,
-  type StoredFollowUp,
 } from "./queries";
 
 type FakeProfile = AuthorizableProfile & { readonly tokenIdentifier: string };
@@ -191,7 +190,25 @@ describe("saveFollowUpRecord (TI2-146)", () => {
     );
   });
 
-  test("los datos inválidos responden conflict con qué corregir, en el orden de las causas", async () => {
+  test("los datos inválidos responden follow_up_fields_invalid con qué corregir, en el orden de las causas", async () => {
+    const { recorder } = recorderReturning({
+      status: "invalid",
+      causes: ["text_required", "clinical_content_not_allowed"],
+    });
+    const result = await saveFollowUpRecord(
+      { auth, appointments: appointmentReader, recorder },
+      command(),
+    );
+    expect(result).toEqual(
+      errResult({
+        code: FOLLOW_UP_FIELDS_INVALID_ERROR_CODE,
+        message:
+          "Hay textos vacíos: completa los acuerdos, las tareas, los próximos pasos y, si la incluyes, la nota interna. El seguimiento no admite diagnósticos, evaluaciones psicológicas ni documentos clínicos.",
+      }),
+    );
+  });
+
+  test("una atención que no admite seguimiento responde conflict solo con ese motivo, aunque los campos también fallen", async () => {
     const { recorder } = recorderReturning({
       status: "invalid",
       causes: ["follow_up_not_admissible", "clinical_content_not_allowed"],
@@ -204,16 +221,16 @@ describe("saveFollowUpRecord (TI2-146)", () => {
       errResult({
         code: CONFLICT_ERROR_CODE,
         message:
-          "La atención todavía no admite seguimiento: debe estar realizada o con la inasistencia registrada. El seguimiento no admite diagnósticos, evaluaciones psicológicas ni documentos clínicos.",
+          "La atención todavía no admite seguimiento: debe estar realizada o con la inasistencia registrada.",
       }),
     );
   });
 
-  test("una referencia que no corresponde se responde como acceso denegado", async () => {
+  test("una referencia que el servidor ya resolvió lanza un error interno, no una denegación", async () => {
     const { recorder } = recorderReturning({ status: "invalid_reference" });
-    expect(
-      await saveFollowUpRecord({ auth, appointments: appointmentReader, recorder }, command()),
-    ).toEqual(denied);
+    await expect(
+      saveFollowUpRecord({ auth, appointments: appointmentReader, recorder }, command()),
+    ).rejects.toThrow("referencia que el servidor ya había resuelto");
   });
 });
 
@@ -243,6 +260,7 @@ function queryDeps(records: readonly StoredFollowUp[] = [stored]) {
         records.find((row) => row.record.appointmentId === appointmentId) ?? null,
       listByAccompaniment: async (accompanimentId, page) => {
         pageReads.push({ ...page });
+        if (page.cursor === "cursor-ajeno") return null;
         return {
           items: records.filter((row) => row.record.accompanimentId === accompanimentId),
           hasMore: false,
@@ -337,6 +355,19 @@ describe("listAccompanimentFollowUpRecords (TI2-146)", () => {
       expect(pageReads).toEqual([]);
     },
   );
+
+  test("un cursor que no es de esta consulta responde conflict", async () => {
+    const { deps, pageReads } = queryDeps();
+    expect(
+      await listAccompanimentFollowUpRecords(deps, {
+        tokenIdentifier: student.tokenIdentifier,
+        accompanimentId: active._id,
+        limit: 5,
+        cursor: "cursor-ajeno",
+      }),
+    ).toEqual(errResult(conflictError()));
+    expect(pageReads).toEqual([{ limit: 5, cursor: "cursor-ajeno" }]);
+  });
 
   test("sin acceso al acompañamiento no se lee la página", async () => {
     const { deps, pageReads } = queryDeps();

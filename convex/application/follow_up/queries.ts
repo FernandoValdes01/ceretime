@@ -1,4 +1,3 @@
-import type { AppointmentStatus } from "../../domain/appointments/appointment";
 import {
   conflictError,
   errResult,
@@ -11,11 +10,10 @@ import {
   toFollowUpProjection,
   type FollowUpContractVersion,
   type FollowUpProjection,
-  type FollowUpRecord,
   type FollowUpView,
 } from "../../domain/follow_up/follow_up";
 import { authorizeFollowUpRead, type AuthorizationReader } from "../authorization/authorize";
-import type { FollowUpAppointmentReader } from "./commands";
+import type { FollowUpAppointmentReader, FollowUpRecordReader, StoredFollowUp } from "./ports";
 
 /**
  * Lectura del registro de seguimiento por atención y por acompañamiento
@@ -37,39 +35,6 @@ import type { FollowUpAppointmentReader } from "./commands";
 
 /** Tope de atenciones por página: se rechaza el exceso, nunca se trunca. */
 export const LIST_FOLLOW_UP_PAGE_LIMIT_MAX = 20;
-
-/**
- * Registro guardado, sin el texto de la nota. El estado y el acompañamiento
- * vienen de la atención vigente; `internalNoteId` es la única vía a la nota.
- */
-export interface StoredFollowUp {
-  readonly record: Omit<FollowUpRecord, "internalNote">;
-  readonly appointmentStatus: AppointmentStatus;
-  readonly internalNoteId?: string;
-}
-
-/** Página de registros de un acompañamiento, de la atención más reciente a la más antigua. */
-export interface StoredFollowUpPage {
-  readonly items: readonly StoredFollowUp[];
-  readonly hasMore: boolean;
-  readonly nextCursor: string | null;
-}
-
-/** Lecturas del seguimiento. Ninguna autoriza: eso ocurre antes de llamarlas. */
-export interface FollowUpRecordReader {
-  findByAppointment(appointmentId: string): Promise<StoredFollowUp | null>;
-  /**
-   * Recorre las atenciones del acompañamiento y entrega las que tienen
-   * registro. Una página puede traer menos registros que `limit`, porque
-   * cuenta atenciones, no registros.
-   */
-  listByAccompaniment(
-    accompanimentId: string,
-    page: { readonly limit: number; readonly cursor: string | null },
-  ): Promise<StoredFollowUpPage>;
-  /** Texto de la nota, solo si pertenece al acompañamiento indicado. */
-  readInternalNote(noteId: string, accompanimentId: string): Promise<string | null>;
-}
 
 /** Dependencias de las lecturas, todas por puerto. */
 export interface FollowUpQueryDeps {
@@ -156,6 +121,9 @@ export async function listAccompanimentFollowUpRecords(
     limit: query.limit,
     cursor: query.cursor ?? null,
   });
+  // Un cursor de otra consulta, por ejemplo de otro acompañamiento o
+  // alterado: el cliente reinicia el historial sin cursor.
+  if (page === null) return errResult(conflictError());
   const items: FollowUpProjection[] = [];
   for (const stored of page.items) {
     items.push(await project(deps.followUp, stored, grant.data.view));

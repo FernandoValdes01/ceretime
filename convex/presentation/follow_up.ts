@@ -30,8 +30,10 @@ import { unwrapApiResult } from "./session";
  * Solo hay guardar y leer. El primer guardado confirma el registro y no
  * existen mutations de edición ni de eliminación. Los errores usan la
  * traducción compartida de TI2-88: `unauthorized` sin permiso o con una
- * atención o acompañamiento ajeno o inexistente, y `conflict` ante datos
- * inválidos o un registro ya confirmado con otro contenido.
+ * atención o acompañamiento ajeno o inexistente; `follow_up_fields_invalid`
+ * ante datos inválidos, y `conflict` ante una atención que no admite
+ * seguimiento, un registro ya confirmado con otro contenido o un cursor de
+ * otra consulta.
  *
  * Los validadores de salida fijan las claves de cada vista: si una proyección
  * trajera la nota interna fuera de la vista `professional`, la respuesta
