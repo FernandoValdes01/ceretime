@@ -176,6 +176,77 @@ export type RequestSubmission = Readonly<AccompanimentRequestContent> & {
 
 const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/*
+ * Mensajes de los campos del envío completo. Los usan `toCompleteSubmission`,
+ * cuando el campo no llega, y `toRequestSubmission`, cuando llega vacío: el
+ * Estudiante lee lo mismo en los dos casos.
+ */
+const NEED_SUMMARY_REQUIRED = "Describe la barrera o necesidad.";
+const EXPECTED_OUTCOME_REQUIRED = "Indica qué esperas de CERETI.";
+const ACCESS_NEEDS_LIST_REQUIRED =
+  "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.";
+const MODALITY_PREFERENCE_REQUIRED = "Indica si prefieres la modalidad presencial o en línea.";
+const PREFERRED_WEEKDAYS_REQUIRED = "Selecciona al menos un día disponible.";
+const INFORMATION_CHANNEL_REQUIRED = "Indica cómo prefieres recibir información.";
+const IDEMPOTENCY_KEY_INVALID = `La clave del envío debe tener entre 1 y ${IDEMPOTENCY_KEY_MAX_LENGTH} caracteres.`;
+
+function invalidRequestFields<T>(message: string): ApiResult<T> {
+  return { status: "error", error: { code: REQUEST_FIELDS_INVALID_ERROR_CODE, message } };
+}
+
+/**
+ * Envío tal como llega al borde: en la forma completa, `accessNeeds` es la
+ * lista de necesidades; en la forma anterior, el texto unido sin ningún otro
+ * campo. Convex exige un objeto, así que los campos de la forma completa
+ * llegan opcionales.
+ */
+export type RequestSubmissionDraft = {
+  readonly accessNeeds?: string | readonly AccessNeed[];
+} & Partial<Omit<RequestSubmission, "accessNeeds">>;
+
+/**
+ * Exige los campos obligatorios de la forma completa (TI2-141), en el orden
+ * del formulario. Si falta uno, el mensaje lo nombra con el mismo texto que
+ * usa `toRequestSubmission` cuando llega vacío; `accessNeeds` como texto
+ * pide la lista. No valida contenido: eso es de `toRequestSubmission`.
+ */
+export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<RequestSubmission> {
+  const {
+    needSummary,
+    expectedOutcome,
+    accessNeeds,
+    otherAccessNeed,
+    modalityPreference,
+    generalAvailability,
+    preferredAccessibleInformationChannel,
+    idempotencyKey,
+  } = draft;
+  if (needSummary === undefined) return invalidRequestFields(NEED_SUMMARY_REQUIRED);
+  if (expectedOutcome === undefined) return invalidRequestFields(EXPECTED_OUTCOME_REQUIRED);
+  if (accessNeeds === undefined || typeof accessNeeds === "string") {
+    return invalidRequestFields(ACCESS_NEEDS_LIST_REQUIRED);
+  }
+  if (modalityPreference === undefined) return invalidRequestFields(MODALITY_PREFERENCE_REQUIRED);
+  if (generalAvailability === undefined) return invalidRequestFields(PREFERRED_WEEKDAYS_REQUIRED);
+  if (preferredAccessibleInformationChannel === undefined) {
+    return invalidRequestFields(INFORMATION_CHANNEL_REQUIRED);
+  }
+  if (idempotencyKey === undefined) return invalidRequestFields(IDEMPOTENCY_KEY_INVALID);
+  return {
+    status: "ok",
+    data: {
+      needSummary,
+      expectedOutcome,
+      accessNeeds,
+      ...(otherAccessNeed === undefined ? {} : { otherAccessNeed }),
+      modalityPreference,
+      generalAvailability,
+      preferredAccessibleInformationChannel,
+      idempotencyKey,
+    },
+  };
+}
+
 /** Texto recortado dentro del tope, o el mensaje que indica qué corregir. */
 function boundedText(
   raw: string,
@@ -201,15 +272,12 @@ function boundedText(
  * existen en el contrato.
  */
 export function toRequestSubmission(input: RequestSubmission): ApiResult<RequestSubmission> {
-  const fail = (message: string): ApiResult<RequestSubmission> => ({
-    status: "error",
-    error: { code: REQUEST_FIELDS_INVALID_ERROR_CODE, message },
-  });
+  const fail = (message: string): ApiResult<RequestSubmission> => invalidRequestFields(message);
 
   const needSummary = boundedText(
     input.needSummary,
     REQUEST_TEXT_MAX_LENGTH,
-    "Describe la barrera o necesidad.",
+    NEED_SUMMARY_REQUIRED,
     `La descripción de la necesidad supera el máximo permitido (${REQUEST_TEXT_MAX_LENGTH} caracteres).`,
   );
   if ("error" in needSummary) return fail(needSummary.error);
@@ -217,7 +285,7 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
   const expectedOutcome = boundedText(
     input.expectedOutcome,
     REQUEST_TEXT_MAX_LENGTH,
-    "Indica qué esperas de CERETI.",
+    EXPECTED_OUTCOME_REQUIRED,
     `El resultado esperado supera el máximo permitido (${REQUEST_TEXT_MAX_LENGTH} caracteres).`,
   );
   if ("error" in expectedOutcome) return fail(expectedOutcome.error);
@@ -262,7 +330,7 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
   }
 
   const { preferredWeekdays, preferredTimeRange } = input.generalAvailability;
-  if (preferredWeekdays.length === 0) return fail("Selecciona al menos un día disponible.");
+  if (preferredWeekdays.length === 0) return fail(PREFERRED_WEEKDAYS_REQUIRED);
   const days = new Set<number>();
   for (const day of preferredWeekdays) {
     if (!Number.isInteger(day) || day < 0 || day > 6) {
@@ -282,16 +350,14 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
   const channel = boundedText(
     input.preferredAccessibleInformationChannel,
     INFORMATION_CHANNEL_MAX_LENGTH,
-    "Indica cómo prefieres recibir información.",
+    INFORMATION_CHANNEL_REQUIRED,
     `El medio para recibir información supera el máximo permitido (${INFORMATION_CHANNEL_MAX_LENGTH} caracteres).`,
   );
   if ("error" in channel) return fail(channel.error);
 
   const idempotencyKey = input.idempotencyKey;
   if (idempotencyKey.trim() === "" || idempotencyKey.length > IDEMPOTENCY_KEY_MAX_LENGTH) {
-    return fail(
-      `La clave del envío debe tener entre 1 y ${IDEMPOTENCY_KEY_MAX_LENGTH} caracteres.`,
-    );
+    return fail(IDEMPOTENCY_KEY_INVALID);
   }
 
   return {
@@ -316,6 +382,22 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
 
 /** Tope de la respuesta del Estudiante a la información pedida (TI2-141). */
 export const REQUEST_RESPONSE_MAX_LENGTH = 2000;
+
+/**
+ * Respuesta del Estudiante a la información pedida (TI2-141), recortada.
+ * Es obligatoria y se rechaza sobre `REQUEST_RESPONSE_MAX_LENGTH` sin
+ * cortarla, igual que los demás textos de la solicitud.
+ */
+export function toInformationResponse(raw: string): ApiResult<string> {
+  const response = boundedText(
+    raw,
+    REQUEST_RESPONSE_MAX_LENGTH,
+    "Se requiere la respuesta a la información pedida.",
+    `La respuesta supera el máximo permitido (${REQUEST_RESPONSE_MAX_LENGTH} caracteres).`,
+  );
+  if ("error" in response) return invalidRequestFields(response.error);
+  return { status: "ok", data: response.text };
+}
 
 /**
  * Textos del intercambio que acompañan al detalle de una solicitud (TI2-141),

@@ -8,9 +8,12 @@ import {
   isAccessNeedsWithinLimit,
   LEGACY_REQUEST_PROVENANCE_CHANNEL,
   REQUEST_PROVENANCE_CHANNEL_VALUES,
+  REQUEST_RESPONSE_MAX_LENGTH,
   requestProvenanceChannelOf,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toCompleteSubmission,
+  toInformationResponse,
   toRequestExchange,
   toRequestSubmission,
   toStoredRequestFields,
@@ -375,6 +378,106 @@ describe("toRequestSubmission (TI2-141)", () => {
     expect(toRequestSubmission({ ...valid, generalAvailability })).toMatchObject({
       status: "error",
       error: { message: expect.stringContaining(message) },
+    });
+  });
+});
+
+describe("toCompleteSubmission (TI2-141)", () => {
+  const complete = {
+    needSummary: "",
+    expectedOutcome: "Resultado ficticio",
+    accessNeeds: [{ id: "written", label: "Comunicación escrita" }],
+    modalityPreference: "online",
+    generalAvailability: { preferredWeekdays: [1] },
+    preferredAccessibleInformationChannel: "Correo",
+    idempotencyKey: "clave",
+  } as const;
+
+  test("con todos los campos entrega el envío sin validar su contenido", () => {
+    // `needSummary` vacío llega: lo rechaza `toRequestSubmission`, no esta función
+    expect(toCompleteSubmission(complete)).toEqual({ status: "ok", data: complete });
+    expect(toCompleteSubmission({ ...complete, otherAccessNeed: " Apoyo " })).toMatchObject({
+      status: "ok",
+      data: { otherAccessNeed: " Apoyo " },
+    });
+  });
+
+  test.each([
+    ["needSummary", "Describe la barrera o necesidad."],
+    ["expectedOutcome", "Indica qué esperas de CERETI."],
+    [
+      "accessNeeds",
+      "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.",
+    ],
+    ["modalityPreference", "Indica si prefieres la modalidad presencial o en línea."],
+    ["generalAvailability", "Selecciona al menos un día disponible."],
+    ["preferredAccessibleInformationChannel", "Indica cómo prefieres recibir información."],
+    ["idempotencyKey", "La clave del envío debe tener entre 1 y 128 caracteres."],
+  ] as const)("sin %s, el mensaje nombra ese campo", (field, message) => {
+    const { [field]: _missing, ...draft } = complete;
+    expect(toCompleteSubmission(draft)).toEqual({
+      status: "error",
+      error: { code: "request_fields_invalid", message },
+    });
+  });
+
+  test("las necesidades como texto piden la lista", () => {
+    expect(toCompleteSubmission({ ...complete, accessNeeds: "Texto suelto" })).toEqual({
+      status: "error",
+      error: {
+        code: "request_fields_invalid",
+        message:
+          "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.",
+      },
+    });
+  });
+
+  test("un campo vacío que llega se rechaza con el mismo texto que uno ausente", () => {
+    expect(
+      toRequestSubmission({
+        ...complete,
+        needSummary: "Necesidad ficticia",
+        preferredAccessibleInformationChannel: " ",
+      }),
+    ).toEqual({
+      status: "error",
+      error: {
+        code: "request_fields_invalid",
+        message: "Indica cómo prefieres recibir información.",
+      },
+    });
+  });
+});
+
+describe("toInformationResponse (TI2-141)", () => {
+  const required = {
+    status: "error",
+    error: {
+      code: "request_fields_invalid",
+      message: "Se requiere la respuesta a la información pedida.",
+    },
+  };
+
+  test.each(["", "   ", "\n\t"])("una respuesta sin texto (%j) se rechaza", (raw) => {
+    expect(toInformationResponse(raw)).toEqual(required);
+  });
+
+  test("recorta la respuesta", () => {
+    expect(toInformationResponse("  Puedo los martes  ")).toEqual({
+      status: "ok",
+      data: "Puedo los martes",
+    });
+  });
+
+  test("el tope cuenta el texto recortado: 2000 pasa y 2001 se rechaza", () => {
+    const atLimit = "a".repeat(REQUEST_RESPONSE_MAX_LENGTH);
+    expect(toInformationResponse(`  ${atLimit}  `)).toEqual({ status: "ok", data: atLimit });
+    expect(toInformationResponse(`${atLimit}a`)).toEqual({
+      status: "error",
+      error: {
+        code: "request_fields_invalid",
+        message: "La respuesta supera el máximo permitido (2000 caracteres).",
+      },
     });
   });
 });

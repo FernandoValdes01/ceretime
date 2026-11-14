@@ -3,11 +3,12 @@ import { ConvexError } from "convex/values";
 import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
-  REQUEST_RESPONSE_MAX_LENGTH,
+  toCompleteSubmission,
+  toInformationResponse,
   toRequestSubmission,
-  type AccessNeed,
   type AccompanimentRequest,
   type RequestSubmission,
+  type RequestSubmissionDraft,
   toAccessNeedsText,
   toAccompanimentRequest,
 } from "../../domain/requests/request";
@@ -90,16 +91,6 @@ type StoredRequest = AccompanimentRequest & {
   readonly studentId: Id<"users">;
 };
 
-/**
- * Envío de una solicitud tal como lo recibe el borde. En la forma completa de
- * TI2-141, `accessNeeds` es la lista de necesidades de `AccompanimentRequestContent`;
- * en la forma anterior es el texto unido y no viaja ningún otro campo. La
- * forma anterior se conserva mientras Web y Mobile migran.
- */
-export type RegisterRequestInput = {
-  readonly accessNeeds?: string | readonly AccessNeed[];
-} & Partial<Omit<RequestSubmission, "accessNeeds">>;
-
 /** Campos que solo existen en la forma completa. */
 const FULL_FORM_FIELDS = [
   "needSummary",
@@ -113,52 +104,12 @@ const FULL_FORM_FIELDS = [
 
 /** Forma anterior: `accessNeeds` como texto y ningún campo de la forma completa. */
 function isLegacySubmission(
-  input: RegisterRequestInput,
-): input is RegisterRequestInput & { readonly accessNeeds: string } {
+  input: RequestSubmissionDraft,
+): input is RequestSubmissionDraft & { readonly accessNeeds: string } {
   return (
     typeof input.accessNeeds === "string" &&
     FULL_FORM_FIELDS.every((field) => input[field] === undefined)
   );
-}
-
-/** La forma completa con todos sus campos obligatorios, o el error que indica qué falta. */
-function toFullSubmission(input: RegisterRequestInput): ApiResult<RequestSubmission> {
-  const {
-    needSummary,
-    expectedOutcome,
-    accessNeeds,
-    otherAccessNeed,
-    modalityPreference,
-    generalAvailability,
-    preferredAccessibleInformationChannel,
-    idempotencyKey,
-  } = input;
-  if (typeof accessNeeds === "string") {
-    return invalidFields(
-      "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.",
-    );
-  }
-  if (
-    needSummary === undefined ||
-    expectedOutcome === undefined ||
-    accessNeeds === undefined ||
-    modalityPreference === undefined ||
-    generalAvailability === undefined ||
-    preferredAccessibleInformationChannel === undefined ||
-    idempotencyKey === undefined
-  ) {
-    return invalidFields("Faltan datos de la solicitud.");
-  }
-  return okResult({
-    needSummary,
-    expectedOutcome,
-    accessNeeds,
-    ...(otherAccessNeed === undefined ? {} : { otherAccessNeed }),
-    modalityPreference,
-    generalAvailability,
-    preferredAccessibleInformationChannel,
-    idempotencyKey,
-  });
 }
 
 /**
@@ -169,15 +120,16 @@ function toFullSubmission(input: RegisterRequestInput): ApiResult<RequestSubmiss
  * La forma anterior (solo `accessNeeds` como texto) valida el texto como
  * siempre, hasta `ACCESS_NEEDS_MAX_LENGTH`, no es idempotente porque no trae
  * clave y conserva su `Error` y su denegación como texto. Cualquier otra
- * entrada sigue la forma completa (TI2-141): autoriza antes de validar, se
- * valida con `toRequestSubmission` y se guarda con `insertReceivedRequestOnce`,
- * así un reintento con la misma clave devuelve la solicitud ya creada sin
- * escribir otra. Sus rechazos van en el `ApiResult`.
+ * entrada sigue la forma completa (TI2-141): autoriza antes de validar, exige
+ * sus campos con `toCompleteSubmission`, los valida con `toRequestSubmission`
+ * y se guarda con `insertReceivedRequestOnce`: un reintento con la misma
+ * clave devuelve la solicitud ya creada sin escribir otra. Sus rechazos van
+ * en el `ApiResult`.
  */
 export async function registerRequest(
   ctx: MutationCtx,
   identity: UserIdentity | null,
-  input: RegisterRequestInput,
+  input: RequestSubmissionDraft,
 ): Promise<ApiResult<StoredRequest>> {
   if (isLegacySubmission(input)) {
     const student = await requireActiveStudent(ctx, identity);
@@ -186,7 +138,7 @@ export async function registerRequest(
   }
   const student = await findActiveStudent(ctx, identity?.tokenIdentifier ?? null);
   if (student === null) return denied();
-  const complete = toFullSubmission(input);
+  const complete = toCompleteSubmission(input);
   if (complete.status === "error") return complete;
   const submission = toRequestSubmission(complete.data);
   if (submission.status === "error") return submission;
@@ -567,27 +519,17 @@ export async function respondToInformationRequest(
   if (row.status !== "awaiting_information_or_acceptance") {
     return stateConflict("La solicitud no admite una respuesta en su estado actual.");
   }
+  const response = toInformationResponse(input.response);
+  if (response.status === "error") return response;
   const result = transitionRequest({
     from: row.status,
     to: "under_review",
     actorId: student._id,
     occurredAt: Date.now(),
-    reason: input.response,
+    reason: response.data,
   });
   if (result.status === "rejected") {
-    return result.cause === "reason_required"
-      ? invalidFields("Se requiere la respuesta a la información pedida.")
-      : stateConflict("La solicitud no admite una respuesta en su estado actual.");
-  }
-  // Igual que en el cierre: la política ya exigió la respuesta.
-  const response = result.change.reason;
-  if (response === undefined) {
-    throw new Error("La política de solicitudes aceptó la respuesta sin dejar su texto.");
-  }
-  if (response.length > REQUEST_RESPONSE_MAX_LENGTH) {
-    return invalidFields(
-      `La respuesta supera el máximo permitido (${REQUEST_RESPONSE_MAX_LENGTH} caracteres).`,
-    );
+    return stateConflict("La solicitud no admite una respuesta en su estado actual.");
   }
   await setRequestStatus(ctx, input.requestId, result.change.to);
   await logRequestTransition(ctx, {
@@ -595,7 +537,7 @@ export async function respondToInformationRequest(
     from: result.change.from,
     to: result.change.to,
     actorId: student._id,
-    reason: response,
+    reason: response.data,
     occurredAt: result.change.occurredAt,
   });
   return okResult(

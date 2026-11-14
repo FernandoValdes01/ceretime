@@ -1564,6 +1564,17 @@ const FULL_SUBMISSION = {
   idempotencyKey: "clave-ficticia-1",
 };
 
+/**
+ * Envío completo con cambios. El cast deja pasar campos ausentes o de otra
+ * forma a propósito: son los casos que el validador o Aplicación rechazan.
+ */
+function submitAs(t: SchemaTest, identity: Identity, changes: Record<string, unknown> = {}) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.createRequest, {
+    ...FULL_SUBMISSION,
+    ...changes,
+  } as typeof FULL_SUBMISSION);
+}
+
 async function requestsOf(t: SchemaTest, studentId: Id<"users">) {
   return await t.run((ctx) =>
     ctx.db
@@ -1650,12 +1661,8 @@ test("TI2-141: reintentar el envío con la misma clave no duplica; otra clave u 
 test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas inválidas sin escribir", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti141-env-4", "student");
-  const asStudent = t.withIdentity(identityOf("ti141-env-4"));
   const send = (changes: Record<string, unknown>) =>
-    asStudent.mutation(api.presentation.requests.createRequest, {
-      ...FULL_SUBMISSION,
-      ...changes,
-    } as typeof FULL_SUBMISSION);
+    submitAs(t, identityOf("ti141-env-4"), changes);
 
   const cases: [Record<string, unknown>, string][] = [
     [{ needSummary: "   " }, "Describe la barrera o necesidad."],
@@ -1707,9 +1714,13 @@ test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas invá
     [{ preferredAccessibleInformationChannel: "a".repeat(201) }, "supera el máximo permitido (200"],
     [{ idempotencyKey: "  " }, "La clave del envío debe tener entre 1 y 128"],
     [{ idempotencyKey: "a".repeat(129) }, "La clave del envío debe tener entre 1 y 128"],
-    [{ idempotencyKey: undefined }, "Faltan datos de la solicitud."],
+    // Un campo ausente se nombra con el mismo texto que cuando llega vacío
+    [{ needSummary: undefined }, "Describe la barrera o necesidad."],
+    [{ modalityPreference: undefined }, "Indica si prefieres la modalidad presencial o en línea."],
+    [{ generalAvailability: undefined }, "Selecciona al menos un día disponible."],
+    [{ idempotencyKey: undefined }, "La clave del envío debe tener entre 1 y 128"],
     [{ accessNeeds: "Texto suelto" }, "como lista junto con los demás datos"],
-    [{ accessNeeds: undefined }, "Faltan datos de la solicitud."],
+    [{ accessNeeds: undefined }, "como lista junto con los demás datos"],
   ];
   for (const [changes, message] of cases) {
     await expect(send(changes)).rejects.toThrow(message);
@@ -1729,15 +1740,9 @@ test("TI2-141: el envío no admite RUT, diagnóstico ni campos fuera del contrat
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti141-env-5", "student");
   await seedProfile(t, "ti141-env-pro", "professional");
-  const asStudent = t.withIdentity(identityOf("ti141-env-5"));
 
   for (const extra of [{ rut: "11.111.111-1" }, { diagnosis: "Ficticio" }, { internalArea: "X" }]) {
-    await expect(
-      asStudent.mutation(api.presentation.requests.createRequest, {
-        ...FULL_SUBMISSION,
-        ...extra,
-      } as typeof FULL_SUBMISSION),
-    ).rejects.toThrow("Validator error");
+    await expect(submitAs(t, identityOf("ti141-env-5"), extra)).rejects.toThrow("Validator error");
   }
   for (const identity of [null, identityOf("ti141-env-pro")]) {
     expect(
@@ -1768,24 +1773,14 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
       "Se requiere el motivo para cerrar la solicitud sin acompañamiento.",
     ],
     [respondAs(t, student, waiting, " "), "Se requiere la respuesta a la información pedida."],
-    [
-      t.withIdentity(student).mutation(api.presentation.requests.createRequest, {
-        ...FULL_SUBMISSION,
-        needSummary: "",
-      }),
-      "Describe la barrera o necesidad.",
-    ],
+    [submitAs(t, student, { needSummary: "" }), "Describe la barrera o necesidad."],
   ] as const) {
     expect(await publicErrorOf(promise)).toEqual({ code: "request_fields_invalid", message });
   }
 
   // Las necesidades de acceso conservan sus códigos de Sprint 1, que los clientes traducen
   const requestsBefore = (await requestsOf(t, studentId)).length;
-  const createWith = (changes: Record<string, unknown>) =>
-    t.withIdentity(student).mutation(api.presentation.requests.createRequest, {
-      ...FULL_SUBMISSION,
-      ...changes,
-    } as typeof FULL_SUBMISSION);
+  const createWith = (changes: Record<string, unknown>) => submitAs(t, student, changes);
   expect(await publicErrorOf(createWith({ accessNeeds: [], otherAccessNeed: " " }))).toEqual({
     code: "access_needs_empty",
     message: "Se requiere describir la necesidad de acceso.",
@@ -1830,10 +1825,7 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
 
   // Las cuatro operaciones nuevas deniegan con el código del contrato común
   for (const promise of [
-    t.withIdentity(identityOf("ti141-err-pro")).mutation(api.presentation.requests.createRequest, {
-      ...FULL_SUBMISSION,
-      needSummary: "",
-    }),
+    submitAs(t, professional, { needSummary: "" }),
     cancelAs(t, professional, waiting, "Motivo"),
     closeAs(t, student, waiting, "Motivo"),
     respondAs(t, professional, waiting, "Respuesta"),
