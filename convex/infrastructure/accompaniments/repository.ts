@@ -1,6 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { isAssignmentWithinValidity } from "../../domain/accompaniments/practitioner_assignment";
 import { accessNeedsFromLines } from "../spaces/repository";
 
 /**
@@ -79,12 +80,18 @@ export async function getUserById(
 
 /**
  * Filas de asignación para la tripla exacta (acompañamiento, usuario), una
- * como máximo por rol. Basta para decidir sin lecturas ilimitadas.
+ * como máximo por rol. Basta para decidir sin lecturas ilimitadas. Solo
+ * devuelve las vigentes: una fila con `status === "active"` pero fuera de la
+ * ventana acordada (`validFrom`/`validUntil`, TI2-140) no autoriza, igual que
+ * una revocada. La política vive en
+ * `domain/accompaniments/practitioner_assignment.ts`; acá solo se aplica al
+ * leer para que todas las consultas compartan la misma vigencia.
  */
 export async function findActiveAssignmentsForUser(
   ctx: DbReader,
   accompanimentId: Id<"accompaniments">,
   userId: Id<"users">,
+  now: number = Date.now(),
 ): Promise<Doc<"accompanimentAssignments">[]> {
   const professional = await ctx.db
     .query("accompanimentAssignments")
@@ -106,7 +113,7 @@ export async function findActiveAssignmentsForUser(
         .eq("assignedRole", "intern"),
     )
     .take(1);
-  return [...professional, ...intern];
+  return [...professional, ...intern].filter((row) => isAssignmentWithinValidity(row, now));
 }
 
 /** Página de acompañamientos propios del estudiante. */
@@ -124,7 +131,9 @@ export async function paginateOwnedAccompaniments(
 /**
  * Ventana del listado asignado con paginación keyset sobre el
  * acompañamiento. El índice ordena por esa columna, así que las filas
- * duplicadas quedan adyacentes y el cursor las excluye enteras.
+ * duplicadas quedan adyacentes y el cursor las excluye enteras. Solo
+ * devuelve filas vigentes (TI2-140): las vencidas se barren igual para no
+ * romper el cursor, pero no aparecen.
  */
 export async function queryAssignedRowsAfter(
   ctx: DbReader,
@@ -133,9 +142,10 @@ export async function queryAssignedRowsAfter(
     readonly assignedRole: "professional" | "intern";
     readonly cursor: Id<"accompaniments"> | undefined;
     readonly take: number;
+    readonly now?: number;
   },
 ) {
-  return await ctx.db
+  const rows = await ctx.db
     .query("accompanimentAssignments")
     .withIndex("by_user_and_status_and_assigned_role_and_accompaniment", (q) => {
       const ranged = q
@@ -146,6 +156,8 @@ export async function queryAssignedRowsAfter(
     })
     .order("asc")
     .take(input.take);
+  const now = input.now ?? Date.now();
+  return rows.filter((row) => isAssignmentWithinValidity(row, now));
 }
 
 /** Página de notas internas del acompañamiento. */
@@ -210,9 +222,10 @@ export async function findExistingActiveAssignment(
 }
 
 /**
- * Verdadero cuando el usuario tiene asignación profesional activa sobre el
- * acompañamiento (TI2-28). Chequeo de presencia exacto: una fila basta para
- * decidir, sin lecturas ilimitadas.
+ * Verdadero cuando el usuario tiene asignación profesional activa y vigente
+ * sobre el acompañamiento (TI2-28, TI2-140). Chequeo de presencia exacto: una
+ * fila basta para decidir, sin lecturas ilimitadas. Una fila vencida no
+ * autoriza, igual que una revocada.
  */
 export async function hasActiveProfessionalAssignment(
   ctx: MutationCtx,
@@ -220,6 +233,7 @@ export async function hasActiveProfessionalAssignment(
     readonly accompanimentId: Id<"accompaniments">;
     readonly userId: Id<"users">;
   },
+  now: number = Date.now(),
 ): Promise<boolean> {
   const rows = await ctx.db
     .query("accompanimentAssignments")
@@ -231,14 +245,14 @@ export async function hasActiveProfessionalAssignment(
         .eq("assignedRole", "professional"),
     )
     .take(1);
-  return rows.length > 0;
+  return rows.some((row) => isAssignmentWithinValidity(row, now));
 }
 
 /**
  * Crea la fila activa de la combinación, registrando quién concede y cuándo.
  * La vigencia es opcional (TI2-138): `validFrom`/`validUntil` solo se escriben
- * si quien llama los entrega y no reemplazan a `status`, que sigue decidiendo
- * el acceso.
+ * si quien llama los entrega. La lectura exige `status === "active"` y ventana
+ * vigente (TI2-140).
  */
 export async function insertActiveAssignment(
   ctx: MutationCtx,
@@ -290,41 +304,22 @@ export async function revokeAssignmentRow(
 /**
  * Modifica la ventana de vigencia acordada de una fila activa (TI2-140).
  *
- * Solo persistencia: reescribe `validFrom`/`validUntil` sin tocar `status`,
- * que sigue decidiendo el acceso, ni el historial de concesión. `undefined`
- * conserva el extremo actual y `null` lo quita para dejar la asignación sin
- * esa cota; el esquema solo guarda números, así que `null` se traduce a
- * ausencia.
+ * Solo persistencia: reescribe `validFrom`/`validUntil` sin tocar `status`
+ * ni el historial de concesión. `undefined` conserva el extremo actual y
+ * `null` lo quita para dejar la asignación sin esa cota; en Convex, un campo
+ * con `undefined` en `patch` se elimina, así que una sola escritura basta.
  */
 export async function patchAssignmentValidity(
   ctx: MutationCtx,
   assignmentId: Id<"accompanimentAssignments">,
   validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
 ) {
-  const patch: { validFrom?: number; validUntil?: number } = {};
-  const unset: { validFrom?: undefined; validUntil?: undefined } = {};
-  let hasSet = false;
-  let hasUnset = false;
-  if (validity.validFrom !== undefined) {
-    if (validity.validFrom === null) {
-      unset.validFrom = undefined;
-      hasUnset = true;
-    } else {
-      patch.validFrom = validity.validFrom;
-      hasSet = true;
-    }
-  }
-  if (validity.validUntil !== undefined) {
-    if (validity.validUntil === null) {
-      unset.validUntil = undefined;
-      hasUnset = true;
-    } else {
-      patch.validUntil = validity.validUntil;
-      hasSet = true;
-    }
-  }
-  if (hasSet) await ctx.db.patch(assignmentId, patch);
-  if (hasUnset) await ctx.db.patch(assignmentId, unset);
+  const toField = (value: number | null | undefined): number | undefined =>
+    value === null ? undefined : value;
+  await ctx.db.patch(assignmentId, {
+    ...(validity.validFrom === undefined ? {} : { validFrom: toField(validity.validFrom) }),
+    ...(validity.validUntil === undefined ? {} : { validUntil: toField(validity.validUntil) }),
+  });
 }
 
 /**

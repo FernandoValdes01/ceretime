@@ -107,18 +107,18 @@ describe("validateAssignmentValidity", () => {
     });
   });
 
-  test("rechaza rango invertido y valores no finitos", () => {
+  test("rechaza rango invertido e instantes inválidos", () => {
     expect(validateAssignmentValidity({ validFrom: 3000, validUntil: 2000 })).toEqual({
       ok: false,
       reason: "validity-range-invalid",
     });
     expect(validateAssignmentValidity({ validFrom: -1 })).toEqual({
       ok: false,
-      reason: "validity-not-finite",
+      reason: "validity-invalid-instant",
     });
     expect(validateAssignmentValidity({ validUntil: Number.NaN })).toEqual({
       ok: false,
-      reason: "validity-not-finite",
+      reason: "validity-invalid-instant",
     });
   });
 });

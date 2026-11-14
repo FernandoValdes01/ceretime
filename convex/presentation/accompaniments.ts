@@ -13,6 +13,7 @@ import {
 } from "../application/accompaniments/queries";
 import { mutation, query } from "../_generated/server";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
+import { unwrapApiResult } from "./session";
 
 /**
  * Borde de Presentación: acompañamientos con autorización en Backend (S2)
@@ -28,9 +29,9 @@ import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure
  * responde con el mismo error genérico, sin exponer el motivo ni la
  * existencia del recurso. Los listados se paginan: nunca se truncan en
  * silencio. La gestión (asignar, modificar vigencia, revocar) la realiza el
- * profesional autorizado sobre el mismo acompañamiento y registra actor y
- * fecha; la lectura exige ambas condiciones (cuenta habilitada y asignación
- * activa) y el practicante nunca escribe ni ve notas internas.
+ * profesional de personal autorizado sobre el mismo acompañamiento y registra
+ * actor y fecha; la lectura exige cuenta habilitada y asignación activa y
+ * vigente, y el practicante nunca escribe ni ve notas internas.
  */
 
 const fullAccompanimentValidator = v.object({
@@ -129,11 +130,11 @@ export const getInternalNotes = query({
 /**
  * Asigna un acompañamiento a un practicante o a una cuenta de prueba (TI2-140).
  *
- * Solo el profesional autorizado sobre el mismo acompañamiento concede, con
- * la cuenta objetivo habilitada y vigente. Rechaza concesiones fuera de su
- * alcance y la vigencia incoherente (`validFrom` posterior a `validUntil`)
- * con el mismo error genérico o un error de regla en español, sin revelar
- * existencia.
+ * Solo el profesional de personal autorizado sobre el mismo acompañamiento
+ * concede, con la cuenta objetivo habilitada y vigente. Los errores usan el
+ * contrato común de TI2-88: `unauthorized` genérico (sin identidad, perfil,
+ * vigencia, alcance o existencia), `conflict` ante rol distinto o fila
+ * duplicada, y `assignment_fields_invalid` ante vigencia incoherente.
  */
 export const assignAccompanimentAccess = mutation({
   args: {
@@ -147,14 +148,13 @@ export const assignAccompanimentAccess = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
-    return await assignAccompaniment(
-      ctx,
-      identity,
-      { accompanimentId, userId, assignedRole },
-      {
-        ...(validFrom === undefined ? {} : { validFrom }),
-        ...(validUntil === undefined ? {} : { validUntil }),
-      },
+    return unwrapApiResult(
+      await assignAccompaniment(
+        ctx,
+        identity,
+        { accompanimentId, userId, assignedRole },
+        { validFrom, validUntil },
+      ),
     );
   },
 });
@@ -162,9 +162,11 @@ export const assignAccompanimentAccess = mutation({
 /**
  * Modifica la vigencia acordada de una asignación activa (TI2-140).
  *
- * Solo el profesional autorizado sobre el mismo acompañamiento modifica.
- * `null` quita el extremo y deja la asignación sin esa cota; omitido
- * conserva el valor actual. Comprueba la coherencia de la ventana resultante.
+ * Solo el profesional de personal autorizado sobre el mismo acompañamiento
+ * modifica. `null` quita el extremo y deja la asignación sin esa cota;
+ * omitido conserva el valor actual. `unauthorized` genérico ante permiso,
+ * alcance, existencia o fila inactiva; `conflict` ante rol distinto y
+ * `assignment_fields_invalid` ante ventana incoherente.
  */
 export const updateAccompanimentAccess = mutation({
   args: {
@@ -178,14 +180,13 @@ export const updateAccompanimentAccess = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
-    return await updateAccompanimentAssignment(
-      ctx,
-      identity,
-      { accompanimentId, userId, assignedRole },
-      {
-        ...(validFrom === undefined ? {} : { validFrom }),
-        ...(validUntil === undefined ? {} : { validUntil }),
-      },
+    return unwrapApiResult(
+      await updateAccompanimentAssignment(
+        ctx,
+        identity,
+        { accompanimentId, userId, assignedRole },
+        { validFrom, validUntil },
+      ),
     );
   },
 });
@@ -193,9 +194,9 @@ export const updateAccompanimentAccess = mutation({
 /**
  * Retira el acceso asignado a un practicante o a una cuenta de prueba (TI2-140).
  *
- * Solo el profesional autorizado sobre el mismo acompañamiento retira, aunque
- * el objetivo haya perdido habilitación. Es idempotente y corta las nuevas
- * consultas aunque se conserve el enlace.
+ * Solo el profesional de personal autorizado sobre el mismo acompañamiento
+ * retira, aunque el objetivo haya perdido habilitación. Es idempotente y
+ * corta las nuevas consultas aunque se conserve el enlace.
  */
 export const revokeAccompanimentAccess = mutation({
   args: {
@@ -206,6 +207,6 @@ export const revokeAccompanimentAccess = mutation({
   returns: v.union(v.number(), v.null()),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await revokeAccompaniment(ctx, identity, args);
+    return unwrapApiResult(await revokeAccompaniment(ctx, identity, args));
   },
 });

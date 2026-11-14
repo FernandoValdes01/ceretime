@@ -10,14 +10,13 @@
  * (`grantedAt`) y, si se revoca, quién y cuándo (fecha de revocación), sin
  * borrar el historial. Los cuatro campos son opcionales porque el schema los
  * declara así: las filas legacy (anteriores a TI2-16) no los tienen y las
- * filas activas nuevas todavía no tienen fecha de revocación. La vigencia
- * del acceso la decide `status`, no la presencia de estos campos. Desde
- * TI2-138 la fila admite además una vigencia opcional (`validFrom`/
- * `validUntil`): expresa la ventana sin inventar revocaciones y no reemplaza
- * a `status`. El cambio de profesional asignado se rastrea con la fila
- * revocada y la nueva concesión, sin tabla ni vínculo paralelo. TI2-140
- * comprueba la coherencia de esa ventana cuando se acuerda: `validFrom` no
- * puede ser posterior a `validUntil`.
+ * filas activas nuevas todavía no tienen fecha de revocación. La lectura
+ * exige `status === "active"` y ventana vigente: desde TI2-138 la fila admite
+ * además una vigencia opcional (`validFrom`/`validUntil`) y desde TI2-140 una
+ * fila vencida no autoriza, igual que una revocada. El cambio de profesional
+ * asignado se rastrea con la fila revocada y la nueva concesión, sin tabla ni
+ * vínculo paralelo. TI2-140 comprueba la coherencia de esa ventana cuando se
+ * acuerda: `validFrom` no puede ser posterior a `validUntil`.
  */
 
 /** Rol con el que una persona queda asignada al acompañamiento. */
@@ -98,15 +97,15 @@ export type AssignmentValidity = {
 
 export type AssignmentValidityCheck =
   | { readonly ok: true }
-  | { readonly ok: false; readonly reason: "validity-not-finite" | "validity-range-invalid" };
+  | { readonly ok: false; readonly reason: "validity-invalid-instant" | "validity-range-invalid" };
 
 /**
  * Comprueba la vigencia acordada sin inventar revocaciones.
  *
  * Acepta ausencia total (sin ventana), un solo extremo o ambos. Rechaza
- * valores no finitos o negativos y el rango invertido (`validFrom` posterior
- * a `validUntil`). No mira `status`: una ventana coherente no autoriza por
- * sí sola y una fila revocada sigue sin autorizar.
+ * instantes inválidos (no finitos o negativos) y el rango invertido
+ * (`validFrom` posterior a `validUntil`). No mira `status`: una ventana
+ * coherente no autoriza por sí sola y una fila revocada sigue sin autorizar.
  */
 export function validateAssignmentValidity(input: AssignmentValidity): AssignmentValidityCheck {
   const { validFrom, validUntil } = input;
@@ -115,7 +114,7 @@ export function validateAssignmentValidity(input: AssignmentValidity): Assignmen
   for (const value of [from, until]) {
     if (value === null) continue;
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-      return { ok: false, reason: "validity-not-finite" };
+      return { ok: false, reason: "validity-invalid-instant" };
     }
   }
   if (from !== null && until !== null && from > until) {
@@ -127,10 +126,10 @@ export function validateAssignmentValidity(input: AssignmentValidity): Assignmen
 /**
  * Verdadero cuando el instante cae dentro de la ventana acordada.
  *
- * Sin ventana declara vigente: la vigencia efectiva la sigue decidiendo
- * `status` y esta comprobación solo acota cuando hay fechas. Sirve para que
- * la concesión y la modificación rechacen una ventana incoherente y para
- * documentar la lectura esperada sin crear otra política de practicante.
+ * Sin ventana declara vigente. La lectura la aplica junto a
+ * `status === "active"`: una fila vencida no autoriza, igual que una
+ * revocada (TI2-140). Reutiliza la única política de practicante, sin crear
+ * otra.
  */
 export function isAssignmentWithinValidity(
   assignment: Pick<PractitionerAssignment, "validFrom" | "validUntil">,

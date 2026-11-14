@@ -70,6 +70,16 @@ async function publicErrorData(promise: Promise<unknown>): Promise<unknown> {
   );
 }
 
+async function expectPublicError(
+  promise: Promise<unknown>,
+  code: "unauthorized" | "conflict" | "assignment_fields_invalid",
+  message: string,
+) {
+  expect(await publicErrorData(promise)).toEqual({ code, message });
+}
+
+const UNAUTHORIZED = { code: "unauthorized", message: "No autorizado" } as const;
+
 async function denyMessage(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
@@ -79,7 +89,7 @@ async function denyMessage(promise: Promise<unknown>): Promise<string> {
   throw new Error("Se esperaba denegación y la operación fue permitida");
 }
 
-/** Profesional con asignación activa sobre el acompañamiento por la vía interna. */
+/** Profesional de personal con asignación activa y vigente por la vía interna. */
 async function authorizeProfessional(
   t: ReturnType<typeof convexTest>,
   input: { accompanimentId: Id<"accompaniments">; professionalId: Id<"users"> },
@@ -120,7 +130,7 @@ test("profesional habilita practicante pendiente y registra actor y fecha", asyn
   expect(typeof stored?.enabledAt).toBe("number");
 });
 
-test("habilitación exige profesional o administrador vigente", async () => {
+test("habilitación exige profesional de personal o administrador vigente", async () => {
   const t = convexTest(schema, modules);
   await seedUser(t, {
     subject: "ti140-adm-2",
@@ -132,6 +142,12 @@ test("habilitación exige profesional o administrador vigente", async () => {
     email: "ti140-est-2@alu.uct.cl",
     role: "student",
   });
+  const testPro = await seedUser(t, {
+    subject: "ti140-prueba-2",
+    email: "ti140-prueba-2@alu.uct.cl",
+    role: "professional",
+  });
+  expect(testPro.id).toBeDefined();
   const target = await seedUser(t, {
     subject: "ti140-int-2",
     email: "ti140-int-2@alu.uct.cl",
@@ -140,18 +156,30 @@ test("habilitación exige profesional o administrador vigente", async () => {
   });
 
   const asStudent = t.withIdentity(identityFor("ti140-est-2", "ti140-est-2@alu.uct.cl"));
-  expect(
-    await publicErrorData(
-      asStudent.mutation(api.presentation.accounts.enableIntern, { userId: target.id }),
-    ),
-  ).toEqual({ code: "unauthorized", message: "No autorizado" });
+  await expectPublicError(
+    asStudent.mutation(api.presentation.accounts.enableIntern, { userId: target.id }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
   expect(student.id).toBeDefined();
 
-  expect(
-    await publicErrorData(
-      t.mutation(api.presentation.accounts.enableIntern, { userId: target.id }),
-    ),
-  ).toEqual({ code: "unauthorized", message: "No autorizado" });
+  await expectPublicError(
+    t.mutation(api.presentation.accounts.enableIntern, { userId: target.id }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+
+  const asTest = t.withIdentity(identityFor("ti140-prueba-2", "ti140-prueba-2@alu.uct.cl"));
+  await expectPublicError(
+    asTest.mutation(api.presentation.accounts.enableIntern, { userId: target.id }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+  await expectPublicError(
+    asTest.mutation(api.presentation.accounts.enableTestProfessional, { userId: target.id }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
 });
 
 test("profesional habilita cuenta de prueba y solo opera en lo asignado con auditoría", async () => {
@@ -267,14 +295,130 @@ test("cuenta de prueba fuera del alcance no recibe ni concede", async () => {
   await asPro.mutation(api.presentation.accounts.enableTestProfessional, { userId: testPro.id });
 
   const outsider = t.withIdentity(identityFor("ti140-prueba-4", "ti140-prueba-4@alu.uct.cl"));
-  const message = await denyMessage(
+  await expectPublicError(
     outsider.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
       accompanimentId,
       userId: intern.id,
       assignedRole: "intern",
     }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
   );
-  expect(message).toContain("No autorizado");
+
+  const leaked = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", accompanimentId)
+          .eq("userId", intern.id)
+          .eq("status", "active")
+          .eq("assignedRole", "intern"),
+      )
+      .unique();
+  });
+  expect(leaked).toBeNull();
+});
+
+test("la cuenta de prueba jamás habilita, concede, modifica ni retira", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedUser(t, {
+    subject: "ti140-pro-8",
+    email: "ti140-pro-8@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti140-pro-8b",
+    email: "ti140-pro-8b@uct.cl",
+    role: "professional",
+  });
+  const student = await seedUser(t, {
+    subject: "ti140-est-8",
+    email: "ti140-est-8@alu.uct.cl",
+    role: "student",
+  });
+  const testPro = await seedUser(t, {
+    subject: "ti140-prueba-8",
+    email: "ti140-prueba-8@alu.uct.cl",
+    role: "professional",
+    institutionalStatus: "pending",
+  });
+  const intern = await seedUser(t, {
+    subject: "ti140-int-8",
+    email: "ti140-int-8@alu.uct.cl",
+    role: "intern",
+  });
+  const pendingIntern = await seedUser(t, {
+    subject: "ti140-int-8b",
+    email: "ti140-int-8b@alu.uct.cl",
+    role: "intern",
+    institutionalStatus: "pending",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  await authorizeProfessional(
+    t,
+    { accompanimentId, professionalId: pro.id },
+    { subject: "ti140-pro-8b", email: "ti140-pro-8b@uct.cl" },
+  );
+
+  const asPro = t.withIdentity(identityFor("ti140-pro-8", "ti140-pro-8@uct.cl"));
+  await asPro.mutation(api.presentation.accounts.enableTestProfessional, { userId: testPro.id });
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId,
+    userId: testPro.id,
+    assignedRole: "professional",
+  });
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId,
+    userId: intern.id,
+    assignedRole: "intern",
+  });
+
+  const asTest = t.withIdentity(identityFor("ti140-prueba-8", "ti140-prueba-8@alu.uct.cl"));
+  await expectPublicError(
+    asTest.mutation(api.presentation.accounts.enableIntern, { userId: pendingIntern.id }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+  await expectPublicError(
+    asTest.mutation(api.presentation.accounts.enableTestProfessional, {
+      userId: pendingIntern.id,
+    }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+  await expectPublicError(
+    asTest.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+      accompanimentId,
+      userId: pendingIntern.id,
+      assignedRole: "intern",
+    }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+  await expectPublicError(
+    asTest.mutation(api.presentation.accompaniments.updateAccompanimentAccess, {
+      accompanimentId,
+      userId: intern.id,
+      assignedRole: "intern",
+      validUntil: Date.now() + 3_600_000,
+    }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+  await expectPublicError(
+    asTest.mutation(api.presentation.accompaniments.revokeAccompanimentAccess, {
+      accompanimentId,
+      userId: intern.id,
+      assignedRole: "intern",
+    }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+
+  const untouched = await t.run(async (ctx) => ctx.db.get(pendingIntern.id));
+  expect(untouched?.institutionalStatus).toBe("pending");
+  expect(untouched?.enabledBy).toBeUndefined();
 });
 
 test("rechazo sin habilitación, fuera de alcance y después de revocar por la vía pública", async () => {
@@ -318,24 +462,26 @@ test("rechazo sin habilitación, fuera de alcance y después de revocar por la v
   );
 
   const asPro = t.withIdentity(identityFor("ti140-pro-5", "ti140-pro-5@uct.cl"));
-  const withoutEnable = await denyMessage(
+  await expectPublicError(
     asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
       accompanimentId,
       userId: pendingIntern.id,
       assignedRole: "intern",
     }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
   );
-  expect(withoutEnable).toContain("No autorizado");
 
   const asOutsider = t.withIdentity(identityFor("ti140-pro-5c", "ti140-pro-5c@uct.cl"));
-  const outOfScope = await denyMessage(
+  await expectPublicError(
     asOutsider.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
       accompanimentId,
       userId: enabledIntern.id,
       assignedRole: "intern",
     }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
   );
-  expect(outOfScope).toContain("No autorizado");
 
   await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
     accompanimentId,
@@ -363,6 +509,91 @@ test("rechazo sin habilitación, fuera de alcance y después de revocar por la v
     limit: 10,
   });
   expect(list.items).toHaveLength(0);
+});
+
+test("duplicada y rol distinto responden conflict con el motivo", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedUser(t, {
+    subject: "ti140-pro-9",
+    email: "ti140-pro-9@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti140-pro-9b",
+    email: "ti140-pro-9b@uct.cl",
+    role: "professional",
+  });
+  const otherPro = await seedUser(t, {
+    subject: "ti140-pro-9c",
+    email: "ti140-pro-9c@uct.cl",
+    role: "professional",
+  });
+  const student = await seedUser(t, {
+    subject: "ti140-est-9",
+    email: "ti140-est-9@alu.uct.cl",
+    role: "student",
+  });
+  const intern = await seedUser(t, {
+    subject: "ti140-int-9",
+    email: "ti140-int-9@alu.uct.cl",
+    role: "intern",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  await authorizeProfessional(
+    t,
+    { accompanimentId, professionalId: pro.id },
+    { subject: "ti140-pro-9b", email: "ti140-pro-9b@uct.cl" },
+  );
+
+  const asPro = t.withIdentity(identityFor("ti140-pro-9", "ti140-pro-9@uct.cl"));
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId,
+    userId: intern.id,
+    assignedRole: "intern",
+  });
+  await expectPublicError(
+    asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+      accompanimentId,
+      userId: intern.id,
+      assignedRole: "intern",
+    }),
+    "conflict",
+    "Ya existe una asignación activa para este acompañamiento y rol",
+  );
+  await expectPublicError(
+    asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+      accompanimentId,
+      userId: otherPro.id,
+      assignedRole: "intern",
+    }),
+    "conflict",
+    "El rol del usuario no coincide con el rol asignado",
+  );
+  await expectPublicError(
+    asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+      accompanimentId,
+      userId: intern.id,
+      assignedRole: "intern",
+      validFrom: 3000,
+      validUntil: 2000,
+    }),
+    "assignment_fields_invalid",
+    "La vigencia acordada es inválida: el inicio no puede ser posterior al fin.",
+  );
+
+  const single = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", accompanimentId)
+          .eq("userId", intern.id)
+          .eq("status", "active")
+          .eq("assignedRole", "intern"),
+      )
+      .take(2);
+  });
+  expect(single).toHaveLength(1);
 });
 
 test("modificación comprueba la vigencia y solo la hace el autorizado", async () => {
@@ -408,18 +639,8 @@ test("modificación comprueba la vigencia y solo la hace el autorizado", async (
     validUntil: 2000,
   });
 
-  await expect(
-    asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
-      accompanimentId,
-      userId: intern.id,
-      assignedRole: "intern",
-      validFrom: 3000,
-      validUntil: 2000,
-    }),
-  ).rejects.toThrow("vigencia");
-
   const asOutsider = t.withIdentity(identityFor("ti140-pro-6c", "ti140-pro-6c@uct.cl"));
-  await expect(
+  await expectPublicError(
     asOutsider.mutation(api.presentation.accompaniments.updateAccompanimentAccess, {
       accompanimentId,
       userId: intern.id,
@@ -427,9 +648,11 @@ test("modificación comprueba la vigencia y solo la hace el autorizado", async (
       validFrom: 1000,
       validUntil: 3000,
     }),
-  ).rejects.toThrow("No autorizado");
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
 
-  await expect(
+  await expectPublicError(
     asPro.mutation(api.presentation.accompaniments.updateAccompanimentAccess, {
       accompanimentId,
       userId: intern.id,
@@ -437,7 +660,9 @@ test("modificación comprueba la vigencia y solo la hace el autorizado", async (
       validFrom: 4000,
       validUntil: 3000,
     }),
-  ).rejects.toThrow("vigencia");
+    "assignment_fields_invalid",
+    "La vigencia acordada es inválida: el inicio no puede ser posterior al fin.",
+  );
 
   const updated = await asPro.mutation(api.presentation.accompaniments.updateAccompanimentAccess, {
     accompanimentId,
@@ -486,6 +711,164 @@ test("modificación comprueba la vigencia y solo la hace el autorizado", async (
   expect(clearedRow?.validUntil).toBeUndefined();
 });
 
+test("la ventana vencida o futura corta la lectura y el alcance", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedUser(t, {
+    subject: "ti140-pro-10",
+    email: "ti140-pro-10@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti140-pro-10b",
+    email: "ti140-pro-10b@uct.cl",
+    role: "professional",
+  });
+  const student = await seedUser(t, {
+    subject: "ti140-est-10",
+    email: "ti140-est-10@alu.uct.cl",
+    role: "student",
+  });
+  const expiredIntern = await seedUser(t, {
+    subject: "ti140-int-10",
+    email: "ti140-int-10@alu.uct.cl",
+    role: "intern",
+  });
+  const futureIntern = await seedUser(t, {
+    subject: "ti140-int-10b",
+    email: "ti140-int-10b@alu.uct.cl",
+    role: "intern",
+  });
+  const currentIntern = await seedUser(t, {
+    subject: "ti140-int-10c",
+    email: "ti140-int-10c@alu.uct.cl",
+    role: "intern",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  await authorizeProfessional(
+    t,
+    { accompanimentId, professionalId: pro.id },
+    { subject: "ti140-pro-10b", email: "ti140-pro-10b@uct.cl" },
+  );
+
+  const asPro = t.withIdentity(identityFor("ti140-pro-10", "ti140-pro-10@uct.cl"));
+  const now = Date.now();
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId,
+    userId: expiredIntern.id,
+    assignedRole: "intern",
+    validFrom: now - 3_600_000,
+    validUntil: now - 1_000,
+  });
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId,
+    userId: futureIntern.id,
+    assignedRole: "intern",
+    validFrom: now + 1_000,
+    validUntil: now + 3_600_000,
+  });
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId,
+    userId: currentIntern.id,
+    assignedRole: "intern",
+    validFrom: now - 1_000,
+    validUntil: now + 3_600_000,
+  });
+
+  const asExpired = t.withIdentity(identityFor("ti140-int-10", "ti140-int-10@alu.uct.cl"));
+  const expiredDenied = await denyMessage(
+    asExpired.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+  );
+  expect(expiredDenied).toContain("No autorizado");
+  const expiredList = await asExpired.query(
+    api.presentation.accompaniments.listAssignedAccompaniments,
+    { limit: 10 },
+  );
+  expect(expiredList.items).toHaveLength(0);
+
+  const asFuture = t.withIdentity(identityFor("ti140-int-10b", "ti140-int-10b@alu.uct.cl"));
+  const futureDenied = await denyMessage(
+    asFuture.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+  );
+  expect(futureDenied).toContain("No autorizado");
+
+  const asCurrent = t.withIdentity(identityFor("ti140-int-10c", "ti140-int-10c@alu.uct.cl"));
+  const current = await asCurrent.query(api.presentation.accompaniments.getAccompaniment, {
+    accompanimentId,
+  });
+  expect(current.view).toBe("minimized");
+});
+
+test("el alcance vencido del profesional no autoriza a conceder", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedUser(t, {
+    subject: "ti140-pro-11",
+    email: "ti140-pro-11@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti140-pro-11b",
+    email: "ti140-pro-11b@uct.cl",
+    role: "professional",
+  });
+  const student = await seedUser(t, {
+    subject: "ti140-est-11",
+    email: "ti140-est-11@alu.uct.cl",
+    role: "student",
+  });
+  const intern = await seedUser(t, {
+    subject: "ti140-int-11",
+    email: "ti140-int-11@alu.uct.cl",
+    role: "intern",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  const now = Date.now();
+  await t
+    .withIdentity(identityFor("ti140-pro-11b", "ti140-pro-11b@uct.cl"))
+    .mutation(internal.operations.assignments.assign, {
+      accompanimentId,
+      userId: pro.id,
+      assignedRole: "professional",
+    });
+  await t.run(async (ctx) => {
+    const row = await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", accompanimentId)
+          .eq("userId", pro.id)
+          .eq("status", "active")
+          .eq("assignedRole", "professional"),
+      )
+      .unique();
+    if (row !== null) await ctx.db.patch(row._id, { validUntil: now - 1_000 });
+  });
+
+  const asPro = t.withIdentity(identityFor("ti140-pro-11", "ti140-pro-11@uct.cl"));
+  await expectPublicError(
+    asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+      accompanimentId,
+      userId: intern.id,
+      assignedRole: "intern",
+    }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+
+  const leaked = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", accompanimentId)
+          .eq("userId", intern.id)
+          .eq("status", "active")
+          .eq("assignedRole", "intern"),
+      )
+      .unique();
+  });
+  expect(leaked).toBeNull();
+});
+
 test("practicante no escribe ni ve notas internas por la vía pública", async () => {
   const t = convexTest(schema, modules);
   const pro = await seedUser(t, {
@@ -528,28 +911,34 @@ test("practicante no escribe ni ve notas internas por la vía pública", async (
   });
 
   const asIntern = t.withIdentity(identityFor("ti140-int-7", "ti140-int-7@alu.uct.cl"));
-  await expect(
+  await expectPublicError(
     asIntern.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
       accompanimentId,
       userId: otherIntern.id,
       assignedRole: "intern",
     }),
-  ).rejects.toThrow("No autorizado");
-  await expect(
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+  await expectPublicError(
     asIntern.mutation(api.presentation.accompaniments.updateAccompanimentAccess, {
       accompanimentId,
       userId: intern.id,
       assignedRole: "intern",
       validUntil: 9999,
     }),
-  ).rejects.toThrow("No autorizado");
-  await expect(
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+  await expectPublicError(
     asIntern.mutation(api.presentation.accompaniments.revokeAccompanimentAccess, {
       accompanimentId,
       userId: intern.id,
       assignedRole: "intern",
     }),
-  ).rejects.toThrow("No autorizado");
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
   await expect(
     asIntern.query(api.presentation.accompaniments.getInternalNotes, {
       accompanimentId,

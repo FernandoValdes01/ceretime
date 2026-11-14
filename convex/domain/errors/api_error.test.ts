@@ -2,6 +2,8 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import {
   API_ERROR_CODE_VALUES,
   API_ERROR_MESSAGES,
+  ASSIGNMENT_FIELDS_INVALID_ERROR_CODE,
+  ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
   CONFLICT_ERROR_CODE,
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_CODE,
@@ -51,6 +53,7 @@ describe("Códigos estables de conflicto, acceso denegado y ausencia de cupo (TI
       "conflict",
       "no_availability",
       "space_fields_invalid",
+      "assignment_fields_invalid",
     ]);
   });
 
@@ -80,6 +83,15 @@ describe("Códigos estables de conflicto, acceso denegado y ausencia de cupo (TI
       SPACE_FIELDS_INVALID_ERROR_MESSAGE,
     );
     expect(isApiErrorCode(SPACE_FIELDS_INVALID_ERROR_CODE)).toBe(true);
+  });
+
+  test("la validación de asignaciones usa código estable con mensaje específico (TI2-140)", () => {
+    expect(ASSIGNMENT_FIELDS_INVALID_ERROR_CODE).toBe("assignment_fields_invalid");
+    expect(ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE).toContain("campos de la asignación");
+    expect(API_ERROR_MESSAGES[ASSIGNMENT_FIELDS_INVALID_ERROR_CODE]).toBe(
+      ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
+    );
+    expect(isApiErrorCode(ASSIGNMENT_FIELDS_INVALID_ERROR_CODE)).toBe(true);
   });
 
   test("la ausencia de cupo pide coordinación por el canal oficial, no reserva incompatible", () => {
