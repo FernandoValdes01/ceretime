@@ -22,10 +22,10 @@ Fuente: `CONTEXT.md` (solicitud de acompañamiento y sus estados), sección «So
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
-| `presentation/requests.createRequest` | Forma completa o forma anterior (ver «Envío») | Solicitud en `received` | Estudiante vigente | `No autorizado` sin motivo |
-| `presentation/requests.respondToInformationRequest` | `requestId`, `response` | Solicitud en `under_review` | Estudiante vigente, dueño de la solicitud | `No autorizado`; ajena o inexistente responde igual |
-| `presentation/requests.cancelRequest` | `requestId`, `reason` | Solicitud en `cancelled` | Estudiante vigente, dueño de la solicitud | `No autorizado`; ajena o inexistente responde igual |
-| `presentation/requests.closeRequestWithoutAccompaniment` | `requestId`, `reason` | Solicitud en `closed_without_accompaniment` | Profesional vigente con toma activa | `No autorizado`; sin toma o inexistente responde igual |
+| `presentation/requests.createRequest` | Forma completa o forma anterior (ver «Envío») | Solicitud en `received` | Estudiante vigente | `unauthorized` sin motivo; la forma anterior, el texto `No autorizado` |
+| `presentation/requests.respondToInformationRequest` | `requestId`, `response` | Solicitud en `under_review` | Estudiante vigente, dueño de la solicitud | `unauthorized`; ajena o inexistente responde igual |
+| `presentation/requests.cancelRequest` | `requestId`, `reason` | Solicitud en `cancelled` | Estudiante vigente, dueño de la solicitud | `unauthorized`; ajena o inexistente responde igual |
+| `presentation/requests.closeRequestWithoutAccompaniment` | `requestId`, `reason` | Solicitud en `closed_without_accompaniment` | Profesional vigente con toma activa | `unauthorized`; sin toma o inexistente responde igual |
 
 Las cuatro devuelven la entidad de siempre: `_id`, `studentId`, `status`, `accessNeeds` y `createdAt`.
 
@@ -90,11 +90,12 @@ Debe haber al menos una necesidad seleccionada o un `otherAccessNeed` con texto.
 
 ## Errores
 
-Las cuatro mutations de «Mutations públicas» rechazan con el contrato común de TI2-88, `ConvexError({ code, message })`: los clientes distinguen por `error.data.code` y muestran `error.data.message`, que ya está en español.
+Las cuatro mutations de «Mutations públicas» rechazan con el contrato común de TI2-88, `ConvexError({ code, message })`, también al denegar: los clientes distinguen por `error.data.code` y muestran `error.data.message`, que ya está en español.
 
 | Código | Cuándo | Mensajes |
 | --- | --- | --- |
-| `request_fields_invalid` | Falta un dato o no cumple su regla | Por ejemplo: «Describe la barrera o necesidad.», «Selecciona al menos un día disponible.», «Se requiere el motivo para cancelar la solicitud.», «Se requiere la respuesta a la información pedida.», «Faltan datos de la solicitud.», «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.» |
+| `unauthorized` | Identidad ausente, perfil ausente o no vigente, rol ajeno, solicitud ajena o inexistente, o toma ausente | «No autorizado» |
+| `request_fields_invalid` | Falta un dato o no cumple su regla. Un campo que no llega se nombra con el mismo texto que cuando llega vacío | Por ejemplo: «Describe la barrera o necesidad.», «Indica si prefieres la modalidad presencial o en línea.», «Selecciona al menos un día disponible.», «Se requiere el motivo para cancelar la solicitud.», «Se requiere la respuesta a la información pedida.», «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.» |
 | `access_needs_empty` | No hay ninguna necesidad seleccionada ni `otherAccessNeed` con texto | «Se requiere describir la necesidad de acceso.» |
 | `access_needs_too_long` | Los nombres seleccionados y `otherAccessNeed`, unidos, superan 2000 caracteres | «Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (2000 caracteres).» |
 | `conflict` | El estado actual no admite el paso | «La solicitud no admite la cancelación en su estado actual.», «La solicitud no admite el cierre sin acompañamiento en su estado actual.», «La solicitud no admite una respuesta en su estado actual.» |
@@ -105,9 +106,9 @@ Las cuatro mutations de «Mutations públicas» rechazan con el contrato común 
 
 Los códigos `access_needs_*` son los mismos de Sprint 1, que los clientes ya traducen; el resto de los campos usa `request_fields_invalid`.
 
-La denegación conserva la forma de Sprint 1: `ConvexError("No autorizado")`, con el texto en `error.data` en vez de un objeto, sin motivo y sin revelar si la solicitud existe. Aplica a identidad ausente, perfil ausente o no vigente, rol ajeno, solicitud ajena o inexistente y toma ausente. Todas las operaciones de solicitudes deniegan igual; pasar la denegación al código `unauthorized` del contrato común se hará para todo el módulo a la vez, junto con las operaciones de Sprint 1, en una issue aparte.
+La denegación de las cuatro mutations es `{ "code": "unauthorized", "message": "No autorizado" }`, sin motivo y sin revelar si la solicitud existe. El envío completo autoriza antes de validar: quien no puede enviar recibe `unauthorized` aunque mande campos inválidos.
 
-La forma anterior de `createRequest` y las operaciones de Sprint 1 siguen rechazando con `Error` y un mensaje en español. Ese mensaje solo llega al cliente en desarrollo: en producción Convex lo reemplaza por «Server Error». Pasarlas al contrato común cambia lo que reciben sus consumidores actuales y queda fuera de TI2-141.
+La forma anterior de `createRequest` y las operaciones de Sprint 1 (`takeRequest`, `requestAdditionalInformation`, `acceptRequest` y las consultas) no cambian en TI2-141. Deniegan con `ConvexError("No autorizado")`, con el texto en `error.data` en vez de un objeto, y rechazan con `Error` y un mensaje en español que solo llega al cliente en desarrollo: en producción Convex lo reemplaza por «Server Error». Pasarlas al contrato común cambia lo que reciben sus consumidores actuales; lo resuelve TI2-181.
 
 ## Ejemplos para Web y Mobile
 
@@ -131,9 +132,32 @@ try {
     idempotencyKey,
   });
 } catch (error) {
-  if (error instanceof ConvexError) {
-    // La denegación llega como texto; los demás rechazos, como `{ code, message }`.
-    muestraMensaje(typeof error.data === "string" ? error.data : error.data.message);
+  muestraMensaje(mensajeDeError(error));
+}
+
+const MENSAJE_POR_DEFECTO = "No pudimos completar la acción. Intenta de nuevo.";
+const MENSAJE_SIN_ACCESO = "No tienes acceso a esta solicitud.";
+
+// Distingue por código estable. Lo que no es un código conocido, incluido el
+// «Server Error» que reciben en producción las operaciones de Sprint 1, usa el
+// mensaje genérico: nunca se muestra el texto del SDK.
+function mensajeDeError(error: unknown): string {
+  if (!(error instanceof ConvexError)) return MENSAJE_POR_DEFECTO;
+  const data: unknown = error.data;
+  // La forma anterior y Sprint 1 todavía deniegan con texto (TI2-181).
+  if (data === "No autorizado") return MENSAJE_SIN_ACCESO;
+  if (typeof data !== "object" || data === null || !("code" in data)) return MENSAJE_POR_DEFECTO;
+  const message = "message" in data && typeof data.message === "string" ? data.message : null;
+  switch (data.code) {
+    case "unauthorized":
+      return MENSAJE_SIN_ACCESO;
+    case "request_fields_invalid":
+    case "access_needs_empty":
+    case "access_needs_too_long":
+    case "conflict":
+      return message ?? MENSAJE_POR_DEFECTO;
+    default:
+      return MENSAJE_POR_DEFECTO;
   }
 }
 ```
@@ -151,4 +175,4 @@ await cancel({ requestId, reason: "Ya recibí el apoyo por otra vía" });
 - **Mobile:** TI2-141 agregó los tres estados nuevos al `switch` de `mapBackendRequestStatus` (`apps/mobile/src/infrastructure/backend-contract-mappers.ts`), que el modelo de Mobile ya tenía. Mobile sigue enviando la forma anterior y no cambia de comportamiento. Pasar a la forma completa y mostrar el detalle es trabajo de TI4.
 - **Web:** compila sin cambios. Sus listados y su detalle ahora pueden recibir solicitudes canceladas o cerradas, y ya tienen etiqueta para los siete estados (`apps/web/src/presentation/routes/student-panel-labels.ts` y `apps/web/src/presentation/gestion/gestion-labels.ts`). El formulario completo es TI2-149 y la revisión del Profesional es TI2-157.
 
-Comprobación: pruebas «TI2-141: …» y «TI2-85: …» en `convex/tests/requests.test.ts` y `convex/tests/acceptance.test.ts`, y `convex/domain/requests/` (`toRequestSubmission`, `toRequestExchange` y las tablas de transiciones).
+Comprobación: pruebas «TI2-141: …» y «TI2-85: …» en `convex/tests/requests.test.ts` y `convex/tests/acceptance.test.ts`, la respuesta con dobles en `convex/application/requests/respond.test.ts`, y `convex/domain/requests/` (`toCompleteSubmission`, `toRequestSubmission`, `toInformationResponse`, `toRequestExchange` y las tablas de transiciones).

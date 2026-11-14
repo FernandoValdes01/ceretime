@@ -14,7 +14,7 @@ Evidencia de cierre de TI2-9: endpoints públicos de solicitudes para Estudiante
 | `presentation/requests.requestAdditionalInformation` | Profesional vigente | Mueve `under_review` a `awaiting_information_or_acceptance` con motivo obligatorio, aplicando la política de TI2-21       |
 | `presentation/requests.acceptRequest`                | Profesional vigente | Acepta (`under_review` o espera hacia `accepted`) y abre exactamente un acompañamiento con su asignación inicial (TI2-24) |
 
-Toda denegación responde el error genérico, sin motivo ni existencia del recurso. El `studentId` siempre sale del perfil del servidor, nunca del cliente.
+Toda denegación responde el error genérico «No autorizado», sin motivo ni existencia del recurso: como texto en estas operaciones de Sprint 1 y en la forma anterior de `createRequest`, y como `{ code: "unauthorized" }` en las de TI2-141. El `studentId` siempre sale del perfil del servidor, nunca del cliente.
 
 ## Cierres sin acompañamiento (TI2-85, TI2-141)
 
@@ -25,19 +25,25 @@ Dos casos de uso de `commands.ts`, con entrada pública desde TI2-141. Se prueba
 | `presentation/requests.cancelRequest`                    | Estudiante vigente, dueño de la solicitud | Mueve `received`, `under_review` o `awaiting_information_or_acceptance` a `cancelled` con motivo obligatorio                                                       |
 | `presentation/requests.closeRequestWithoutAccompaniment` | Profesional vigente con toma activa       | Mueve `under_review` o `awaiting_information_or_acceptance` a `closed_without_accompaniment` con razón obligatoria, que queda como `closureReason` de la solicitud |
 
-Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la misma transacción, y un rechazo no escribe nada. Al cerrar, la razón se escribe además en `closureReason`, en esa misma transacción. Desde TI2-141 los rechazos usan el contrato común `ConvexError({code, message})`: `request_fields_invalid` para "Se requiere el motivo para cancelar la solicitud." y "Se requiere el motivo para cerrar la solicitud sin acompañamiento.", y `conflict` para "La solicitud no admite la cancelación en su estado actual." y "La solicitud no admite el cierre sin acompañamiento en su estado actual.". Una solicitud ajena, inexistente o sin toma recibe la denegación genérica.
+Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la misma transacción, y un rechazo no escribe nada. Al cerrar, la razón se escribe además en `closureReason`, en esa misma transacción. Desde TI2-141 devuelven `ApiResult` y Presentación lo traduce con `unwrapApiResult` al contrato común `ConvexError({code, message})`: `request_fields_invalid` para "Se requiere el motivo para cancelar la solicitud." y "Se requiere el motivo para cerrar la solicitud sin acompañamiento.", y `conflict` para "La solicitud no admite la cancelación en su estado actual." y "La solicitud no admite el cierre sin acompañamiento en su estado actual.". Una solicitud ajena, inexistente o sin toma recibe `unauthorized`.
 
 `listOwnRequests`, `listAuthorizedRequests` y `getRequest` entregan las solicitudes canceladas o cerradas con su estado: el contrato público declara los siete estados (ver [`state-model.md`](../../domain/requests/state-model.md#contrato-público)).
 
 ## Respuesta del Estudiante (TI2-141)
 
-`presentation/requests.respondToInformationRequest` recibe `requestId` y `response`. Solo el Estudiante dueño con cuenta vigente, y solo mientras la solicitud está en `awaiting_information_or_acceptance`: la devuelve a `under_review` y guarda la respuesta como motivo del cambio, con actor y fecha, en la misma transacción. Rechazos con el contrato común: `request_fields_invalid` para "Se requiere la respuesta a la información pedida." y "La respuesta supera el máximo permitido (2000 caracteres).", y `conflict` para "La solicitud no admite una respuesta en su estado actual.". Una solicitud ajena o inexistente recibe la denegación genérica.
+`presentation/requests.respondToInformationRequest` recibe `requestId` y `response`. Solo el Estudiante dueño con cuenta vigente, y solo mientras la solicitud está en `awaiting_information_or_acceptance`: la devuelve a `under_review` y guarda la respuesta como motivo del cambio, con actor y fecha, en la misma transacción. La respuesta la normaliza Dominio con `toInformationResponse`. Rechazos con el contrato común: `request_fields_invalid` para "Se requiere la respuesta a la información pedida." y "La respuesta supera el máximo permitido (2000 caracteres).", y `conflict` para "La solicitud no admite una respuesta en su estado actual.". Una solicitud ajena o inexistente recibe `unauthorized`.
+
+Es el único caso de uso del módulo que recibe sus dependencias como puertos: `respond.ts` declara `RespondToInformationRequestDeps` con los puertos de `ports.ts` (perfil vigente, lectura de la solicitud, escritura del estado, registro del cambio y reloj), y `presentation/requests.ts` compone `activeStudentReader(ctx)` y `requestStore(ctx)` con el mismo `ctx`, así todo sigue en una sola mutation. Se prueba con dobles en memoria en `respond.test.ts`.
 
 `getRequest` entrega además `informationRequest` (lo pedido, solo mientras espera respuesta), `informationResponse` (la respuesta al último pedido: si el Profesional vuelve a pedir, la anterior deja de venir hasta que llegue la nueva) y `closureReason`, al Estudiante dueño y al Profesional con toma.
 
 ## Envío completo (TI2-141)
 
-`presentation/requests.createRequest` acepta la forma completa (necesidad, resultado esperado, necesidades de acceso como lista y texto libre, modalidad, disponibilidad general, medio accesible e `idempotencyKey`) o la forma anterior, solo con `accessNeeds`. La forma completa se valida en Dominio con `toRequestSubmission` y se guarda con `insertReceivedRequestOnce`: un reintento con la misma clave devuelve la solicitud ya creada. Sus rechazos usan `request_fields_invalid`; la forma anterior conserva su `Error` de Sprint 1. Topes, reglas y ejemplos en [`docs/contratos-sprint-3/solicitudes.md`](../../../docs/contratos-sprint-3/solicitudes.md).
+`presentation/requests.createRequest` acepta la forma completa (necesidad, resultado esperado, necesidades de acceso como lista y texto libre, modalidad, disponibilidad general, medio accesible e `idempotencyKey`) o la forma anterior, solo con `accessNeeds`. La forma completa autoriza antes de validar, exige sus campos con `toCompleteSubmission`, los valida en Dominio con `toRequestSubmission` y se guarda con `insertReceivedRequestOnce`: un reintento con la misma clave devuelve la solicitud ya creada. Sus rechazos usan `request_fields_invalid` (y `access_needs_*` para las necesidades de acceso) y su denegación `unauthorized`; la forma anterior conserva su `Error` y su denegación de Sprint 1. Topes, reglas y ejemplos en [`docs/contratos-sprint-3/solicitudes.md`](../../../docs/contratos-sprint-3/solicitudes.md).
+
+## Pendiente para TI2-181
+
+Los demás casos de uso de `commands.ts` (`takeRequest`, `requestAdditionalInformation`, `acceptRequest`, la forma anterior de `createRequest`, `cancelRequest` y `closeRequestWithoutAccompaniment`) y las consultas de `queries.ts` siguen ligados al contexto de Convex y a repositorios concretos, incluida la importación de `listRecentRequestTransitions` en `queries.ts`. TI2-181 los pasa a puertos y al contrato común, con `unauthorized` en todo el módulo.
 
 ## Alcance explícito
 
@@ -57,7 +63,7 @@ El Sprint 1 no usa `action`: no hay integraciones ni trabajo que lo requiera y l
 
 La validación de forma vive en Aplicación/Dominio (`toAccessNeedsText`, política de TI2-21, `toOpeningObjective`): texto recortado, no vacío y hasta `ACCESS_NEEDS_MAX_LENGTH` (valor acordado con el responsable de TI2-23). Los permisos se evalúan en el servidor desde `ctx.auth.getUserIdentity()` y el `tokenIdentifier` vinculado, nunca desde identificadores del cliente.
 
-Los errores están normalizados: toda denegación responde `No autorizado` sin motivo ni existencia del recurso, y todo rechazo operativo responde un mensaje en español que indica qué corregir (motivo faltante, estado que no admite el paso, duplicados, objetivo o necesidad de acceso) sin modificar nada.
+Los errores están normalizados: toda denegación de Sprint 1 responde el texto `No autorizado` sin motivo ni existencia del recurso (las operaciones de TI2-141 usan `unauthorized`, ver arriba), y todo rechazo operativo responde un mensaje en español que indica qué corregir (motivo faltante, estado que no admite el paso, duplicados, objetivo o necesidad de acceso) sin modificar nada.
 
 ## Validación
 
