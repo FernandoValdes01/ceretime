@@ -4,9 +4,12 @@ import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import {
   checkEnablement,
+  checkInternEnablement,
+  checkTestProfessionalEnablement,
   validateBootstrapCandidate,
   validateStaffEnablementTarget,
   validateStaffRevocationTarget,
+  type EnablementRejectionReason,
 } from "../../domain/accounts/enablement";
 import {
   canEnableAccount,
@@ -35,7 +38,7 @@ import {
 
 /**
  * Casos de uso de habilitación institucional y arranque administrativo
- * (TI2-11, TI2-137).
+ * (TI2-11, TI2-137, TI2-140).
  *
  * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
  * `ctx.auth.getUserIdentity()`, exige un Administrador con cuenta
@@ -63,13 +66,14 @@ function conflict<T>(message: string): ApiResult<T> {
 type DbProfile = Doc<"users">;
 
 /**
- * Perfil de quien llama, vinculado a la identidad (TI2-137).
+ * Perfil de quien llama, vinculado a la identidad.
  *
  * Solo carga el perfil; cada caso de uso exige su permiso específico de la
  * matriz (`canListAccounts`, `canReadAccount`, `canEnableAccount`,
- * `canRevokeAccount`) para que la matriz y el código hablen igual.
+ * `canRevokeAccount`) o la regla de habilitación de Dominio, para que la
+ * matriz, el dominio y el código hablen igual.
  */
-async function requireAdminCaller(
+async function findCallerProfile(
   ctx: QueryCtx | MutationCtx,
   identity: UserIdentity | null,
 ): Promise<DbProfile | null> {
@@ -125,7 +129,7 @@ export async function listAccountsUseCase(
   identity: UserIdentity | null,
   args: { readonly role: "professional" | "admin"; readonly paginationOpts: PaginationOptions },
 ): Promise<ApiResult<{ page: AccountSummary[]; isDone: boolean; continueCursor: string }>> {
-  const caller = await requireAdminCaller(ctx, identity);
+  const caller = await findCallerProfile(ctx, identity);
   if (
     caller === null ||
     !canListAccounts({
@@ -159,7 +163,7 @@ export async function getAccountDetailUseCase(
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<AccountSummary>> {
-  const caller = await requireAdminCaller(ctx, identity);
+  const caller = await findCallerProfile(ctx, identity);
   if (
     caller === null ||
     !canReadAccount({
@@ -193,7 +197,7 @@ export async function enableStaffAccount(
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await requireAdminCaller(ctx, identity);
+  const caller = await findCallerProfile(ctx, identity);
   if (
     caller === null ||
     !canEnableAccount({
@@ -252,7 +256,7 @@ export async function revokeStaffAccount(
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await requireAdminCaller(ctx, identity);
+  const caller = await findCallerProfile(ctx, identity);
   if (
     caller === null ||
     !canRevokeAccount({
@@ -307,7 +311,7 @@ export async function enableInternAccount(
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<Id<"users">> {
-  const caller = await requireAdminCaller(ctx, identity);
+  const caller = await findCallerProfile(ctx, identity);
   if (caller === null) deny();
 
   const target = await getUserById(ctx, args.userId);
@@ -334,6 +338,127 @@ export async function enableInternAccount(
     enabledAt: Date.now(),
   });
   return target._id;
+}
+
+/**
+ * Traduce un rechazo de habilitación de Dominio al `ApiResult` común de
+ * TI2-88 (TI2-140). Única fuente para las dos vías nuevas: la falta de
+ * permiso o el objetivo fuera de la vía responde `unauthorized` sin revelar
+ * existencia, y el tránsito inválido responde `conflict` con el motivo en
+ * español, sin escribir.
+ */
+function enablementRejection<T>(reason: EnablementRejectionReason): ApiResult<T> {
+  switch (reason) {
+    case "caller-not-admin":
+    case "caller-not-professional":
+    case "caller-not-authorized":
+    case "caller-not-active":
+    case "target-not-intern":
+    case "target-not-staff":
+    case "target-not-professional":
+      return unauthorized();
+    case "target-email-not-test":
+      return conflict("La cuenta de prueba debe tener correo @alu.uct.cl.");
+    case "target-email-not-institutional":
+      return conflict("El objetivo debe tener correo institucional.");
+    case "target-account-not-active":
+      return conflict("La cuenta objetivo no está vigente.");
+    case "target-not-pending":
+      return conflict("La cuenta no está pendiente de habilitación.");
+    case "target-not-enabled":
+      return conflict("La cuenta no está habilitada.");
+    case "target-already-enabled":
+      return conflict("La cuenta ya está habilitada.");
+    default:
+      return conflict("La cuenta no admite la habilitación en su estado actual.");
+  }
+}
+
+/**
+ * Habilita la cuenta de un Practicante pendiente (TI2-140, RF-39).
+ *
+ * Vía pública: el administrador vigente o el profesional de personal con
+ * cuenta habilitada y vigente habilita al practicante pendiente y registra
+ * actor (`enabledBy`) y fecha (`enabledAt`); la cuenta de prueba jamás
+ * habilita. Habilitar no concede acompañamientos: la asignación posterior la
+ * realiza el profesional autorizado sobre cada acompañamiento.
+ */
+export async function enableInternByProfessional(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  args: { readonly userId: Id<"users"> },
+): Promise<ApiResult<{ userId: Id<"users"> }>> {
+  const caller = await findCallerProfile(ctx, identity);
+  if (caller === null) return unauthorized();
+
+  const target = await getUserById(ctx, args.userId);
+  if (target === null) return unauthorized();
+
+  const check = checkInternEnablement({
+    caller: {
+      role: caller.role,
+      email: caller.email,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    },
+    target: {
+      role: target.role,
+      email: target.email,
+      institutionalStatus: target.institutionalStatus,
+      accountStatus: target.accountStatus,
+    },
+  });
+  if (!check.ok) return enablementRejection(check.reason);
+  await patchEnablement(ctx, {
+    userId: target._id,
+    enabledBy: caller._id,
+    enabledAt: Date.now(),
+  });
+  return okResult({ userId: target._id });
+}
+
+/**
+ * Habilita la cuenta de prueba profesional `@alu.uct.cl` (TI2-140, RF-38/RN-25).
+ *
+ * Vía pública: el administrador vigente o el profesional de personal con
+ * cuenta habilitada y vigente habilita al profesional de prueba pendiente o
+ * deshabilitado y registra actor y fecha; la cuenta de prueba jamás habilita.
+ * Habilitar no concede acompañamientos: el alcance se asigna después por
+ * acompañamiento explícito y auditado, y la lectura exige ambas condiciones
+ * (cuenta habilitada y asignación activa).
+ */
+export async function enableTestProfessionalAccount(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  args: { readonly userId: Id<"users"> },
+): Promise<ApiResult<{ userId: Id<"users"> }>> {
+  const caller = await findCallerProfile(ctx, identity);
+  if (caller === null) return unauthorized();
+
+  const target = await getUserById(ctx, args.userId);
+  if (target === null) return unauthorized();
+
+  const check = checkTestProfessionalEnablement({
+    caller: {
+      role: caller.role,
+      email: caller.email,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    },
+    target: {
+      role: target.role,
+      email: target.email,
+      institutionalStatus: target.institutionalStatus,
+      accountStatus: target.accountStatus,
+    },
+  });
+  if (!check.ok) return enablementRejection(check.reason);
+  await patchEnablement(ctx, {
+    userId: target._id,
+    enabledBy: caller._id,
+    enabledAt: Date.now(),
+  });
+  return okResult({ userId: target._id });
 }
 
 export type BootstrapAdminInput = {

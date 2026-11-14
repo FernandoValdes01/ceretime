@@ -39,10 +39,14 @@ export type EnablementTarget = {
 
 export type EnablementRejectionReason =
   | "caller-not-admin"
+  | "caller-not-professional"
+  | "caller-not-authorized"
   | "caller-not-active"
   | "target-not-intern"
   | "target-not-staff"
+  | "target-not-professional"
   | "target-email-not-institutional"
+  | "target-email-not-test"
   | "target-account-not-active"
   | "target-not-pending"
   | "target-not-enabled"
@@ -59,6 +63,52 @@ export function canEnableAsAdmin(caller: EnablementCaller): boolean {
     caller.institutionalStatus === "enabled" &&
     caller.accountStatus === "active"
   );
+}
+
+/** Verdadero solo cuando el actor es Profesional con cuenta habilitada y vigente (TI2-140). */
+export function canEnableAsProfessional(caller: EnablementCaller): boolean {
+  return (
+    caller.role === "professional" &&
+    caller.institutionalStatus === "enabled" &&
+    caller.accountStatus === "active"
+  );
+}
+
+/**
+ * Actor que habilita cuentas (TI2-140).
+ *
+ * Igual que el llamante, más el correo: distingue al profesional de personal
+ * (`@uct.cl`), único que puede habilitar junto al administrador, de la cuenta
+ * de prueba (`@alu.uct.cl`), que jamás habilita a nadie (RN-25).
+ */
+export type AccountEnabler = {
+  readonly role: EnablementRole;
+  readonly email: string;
+  readonly institutionalStatus: EnablementInstitutionalStatus;
+  readonly accountStatus: EnablementAccountStatus;
+};
+
+/**
+ * Verdadero cuando el actor es profesional de personal con cuenta habilitada
+ * y vigente (TI2-140, RN-25). Única fuente para decidir si un profesional
+ * habilita, concede, modifica o retira: la cuenta de prueba queda fuera.
+ */
+export function isPersonalProfessionalActive(caller: AccountEnabler): boolean {
+  return canEnableAsProfessional(caller) && getInstitutionalPopulation(caller.email) === "personal";
+}
+
+/** Rechazo del actor que habilita, o `null` cuando puede habilitar (TI2-140). */
+function staffEnablerRejection(caller: AccountEnabler): EnablementRejectionReason | null {
+  if (caller.role !== "admin" && caller.role !== "professional") {
+    return "caller-not-authorized";
+  }
+  if (caller.institutionalStatus !== "enabled" || caller.accountStatus !== "active") {
+    return "caller-not-active";
+  }
+  if (caller.role === "professional" && getInstitutionalPopulation(caller.email) !== "personal") {
+    return "caller-not-authorized";
+  }
+  return null;
 }
 
 /**
@@ -102,6 +152,80 @@ export function checkEnablement(input: {
     return { ok: false, reason: "caller-not-active" };
   }
   return validateEnablementTarget(input.target);
+}
+
+/**
+ * Decisión de habilitación de practicante (TI2-140, RF-39).
+ *
+ * El administrador vigente o el profesional de personal con cuenta habilitada
+ * y vigente habilita cuentas de practicante pendientes; la cuenta de prueba
+ * jamás habilita. Habilitar no concede acompañamientos, solo deja la cuenta
+ * en condiciones de operar y la asignación posterior la realiza el
+ * profesional autorizado sobre el acompañamiento. El orden revela primero la
+ * falta de permiso del llamante.
+ */
+export function checkInternEnablement(input: {
+  readonly caller: AccountEnabler;
+  readonly target: EnablementTarget;
+}): EnablementCheck {
+  const rejection = staffEnablerRejection(input.caller);
+  if (rejection !== null) return { ok: false, reason: rejection };
+  return validateEnablementTarget(input.target);
+}
+
+/** Objetivo cuenta de prueba: profesional con correo estudiantil (TI2-140, RF-38/RN-25). */
+export type TestProfessionalTarget = {
+  readonly role: Role;
+  readonly email: string;
+  readonly institutionalStatus: EnablementInstitutionalStatus;
+  readonly accountStatus: EnablementAccountStatus;
+};
+
+/**
+ * Valida que el objetivo pueda operar como profesional de prueba (TI2-140).
+ *
+ * Exige rol profesional con correo `@alu.uct.cl` (población estudiante), cuenta
+ * vigente y estado pendiente o deshabilitado (primera habilitación o
+ * rehabilitación). Rechaza la cuenta ya habilitada para no sobrescribir la
+ * auditoría. Nunca cambia el rol: un `@alu.uct.cl` solo actúa dentro de
+ * acompañamientos explícitamente asignados y auditados (RN-25/RD-11).
+ */
+export function validateTestProfessionalTarget(target: TestProfessionalTarget): EnablementCheck {
+  if (target.role !== "professional") {
+    return { ok: false, reason: "target-not-professional" };
+  }
+  if (getInstitutionalPopulation(target.email) !== "estudiante") {
+    return { ok: false, reason: "target-email-not-test" };
+  }
+  if (!isInstitutionalEmail(normalizeEmail(target.email))) {
+    return { ok: false, reason: "target-email-not-institutional" };
+  }
+  if (target.accountStatus !== "active") {
+    return { ok: false, reason: "target-account-not-active" };
+  }
+  if (target.institutionalStatus === "enabled") {
+    return { ok: false, reason: "target-already-enabled" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Decisión de habilitación de cuenta de prueba (TI2-140, RF-38).
+ *
+ * El administrador vigente o el profesional de personal con cuenta habilitada
+ * habilita al profesional de prueba; la cuenta de prueba jamás habilita a
+ * otra. El orden revela primero la falta de permiso del actor, sin distinguir
+ * el estado del objetivo ante quien no administra. Habilitar no concede
+ * acompañamientos: el alcance se asigna después por acompañamiento explícito
+ * y auditado.
+ */
+export function checkTestProfessionalEnablement(input: {
+  readonly caller: AccountEnabler;
+  readonly target: TestProfessionalTarget;
+}): EnablementCheck {
+  const rejection = staffEnablerRejection(input.caller);
+  if (rejection !== null) return { ok: false, reason: rejection };
+  return validateTestProfessionalTarget(input.target);
 }
 
 /** Objetivo profesional o administrativo de TI2-137. */

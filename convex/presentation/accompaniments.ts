@@ -1,16 +1,23 @@
 import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 import {
+  assignAccompaniment,
+  revokeAccompaniment,
+  updateAccompanimentAssignment,
+} from "../application/accompaniments/commands";
+import {
   getAccompanimentDetail,
   getInternalNotesUseCase,
   listAssignedAccompanimentsUseCase,
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
-import { query } from "../_generated/server";
-import { accompanimentStatusUnion } from "../infrastructure/validators";
+import { mutation, query } from "../_generated/server";
+import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
+import { unwrapApiResult } from "./session";
 
 /**
- * Borde de Presentación: acompañamientos con autorización en Backend (S2).
+ * Borde de Presentación: acompañamientos con autorización en Backend (S2)
+ * más gestión de practicantes y cuenta de prueba por el profesional (TI2-140).
  *
  * Adaptador delgado: valida la entrada, resuelve la identidad en el servidor
  * con `ctx.auth.getUserIdentity()` y delega en Aplicación, que carga el
@@ -21,7 +28,10 @@ import { accompanimentStatusUnion } from "../infrastructure/validators";
  * alcance, acompañamiento inexistente o acceso general de Administrador)
  * responde con el mismo error genérico, sin exponer el motivo ni la
  * existencia del recurso. Los listados se paginan: nunca se truncan en
- * silencio.
+ * silencio. La gestión (asignar, modificar vigencia, revocar) la realiza el
+ * profesional de personal autorizado sobre el mismo acompañamiento y registra
+ * actor y fecha; la lectura exige cuenta habilitada y asignación activa y
+ * vigente, y el practicante nunca escribe ni ve notas internas.
  */
 
 const fullAccompanimentValidator = v.object({
@@ -114,5 +124,89 @@ export const getInternalNotes = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await getInternalNotesUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Asigna un acompañamiento a un practicante o a una cuenta de prueba (TI2-140).
+ *
+ * Solo el profesional de personal autorizado sobre el mismo acompañamiento
+ * concede, con la cuenta objetivo habilitada y vigente. Los errores usan el
+ * contrato común de TI2-88: `unauthorized` genérico (sin identidad, perfil,
+ * vigencia, alcance o existencia), `conflict` ante rol distinto o fila
+ * duplicada, y `assignment_fields_invalid` ante vigencia incoherente.
+ */
+export const assignAccompanimentAccess = mutation({
+  args: {
+    accompanimentId: v.id("accompaniments"),
+    userId: v.id("users"),
+    assignedRole: assignmentRoleUnion,
+    validFrom: v.optional(v.number()),
+    validUntil: v.optional(v.number()),
+  },
+  returns: v.id("accompanimentAssignments"),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
+    return unwrapApiResult(
+      await assignAccompaniment(
+        ctx,
+        identity,
+        { accompanimentId, userId, assignedRole },
+        { validFrom, validUntil },
+      ),
+    );
+  },
+});
+
+/**
+ * Modifica la vigencia acordada de una asignación activa (TI2-140).
+ *
+ * Solo el profesional de personal autorizado sobre el mismo acompañamiento
+ * modifica. `null` quita el extremo y deja la asignación sin esa cota;
+ * omitido conserva el valor actual. `unauthorized` genérico ante permiso,
+ * alcance, existencia o fila inactiva; `conflict` ante rol distinto y
+ * `assignment_fields_invalid` ante ventana incoherente.
+ */
+export const updateAccompanimentAccess = mutation({
+  args: {
+    accompanimentId: v.id("accompaniments"),
+    userId: v.id("users"),
+    assignedRole: assignmentRoleUnion,
+    validFrom: v.optional(v.union(v.number(), v.null())),
+    validUntil: v.optional(v.union(v.number(), v.null())),
+  },
+  returns: v.id("accompanimentAssignments"),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
+    return unwrapApiResult(
+      await updateAccompanimentAssignment(
+        ctx,
+        identity,
+        { accompanimentId, userId, assignedRole },
+        { validFrom, validUntil },
+      ),
+    );
+  },
+});
+
+/**
+ * Retira el acceso asignado a un practicante o a una cuenta de prueba (TI2-140).
+ *
+ * Solo el profesional de personal autorizado sobre el mismo acompañamiento
+ * retira, aunque el objetivo haya perdido habilitación. Es idempotente y
+ * corta las nuevas consultas aunque se conserve el enlace.
+ */
+export const revokeAccompanimentAccess = mutation({
+  args: {
+    accompanimentId: v.id("accompaniments"),
+    userId: v.id("users"),
+    assignedRole: assignmentRoleUnion,
+  },
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(await revokeAccompaniment(ctx, identity, args));
   },
 });

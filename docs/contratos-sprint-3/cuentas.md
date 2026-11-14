@@ -1,6 +1,6 @@
-# Cuentas profesionales y administrativas — TI2-137
+# Cuentas y gestión de practicantes — TI2-137 y TI2-140
 
-Fuente: `CONTEXT.md` (Administrador sin acceso irrestricto), matriz de `convex/domain/authorization/permissions-matrix.md` y habilitación de `convex/domain/accounts/enablement.md`. Superficie pública bajo `api.presentation.accounts.*`; todo opera con datos ficticios.
+Fuente: `CONTEXT.md` (Administrador sin acceso irrestricto, Practicante con asignación explícita), matriz de `convex/domain/authorization/permissions-matrix.md` y habilitación de `convex/domain/accounts/enablement.md`. Superficie pública bajo `api.presentation.accounts.*` y `api.presentation.accompaniments.*`; todo opera con datos ficticios.
 
 ## Queries públicas
 
@@ -43,7 +43,7 @@ Revocar a un Profesional no reasigna sus acompañamientos ni atenciones: las fil
 
 ## Errores
 
-Los errores usan el contrato común de TI2-88 (`ConvexError({ code, message })`): los clientes distinguen por `error.data.code`, nunca por el texto. `unauthorized` (`No autorizado`) responde ante falta de identidad, perfil o vigencia, rol ajeno u objetivo inexistente o fuera de esta vía. `conflict` explica un tránsito inválido a un administrador autorizado: cuenta ya habilitada, cuenta no habilitada, objetivo sin correo de personal, cuenta no vigente o auto-revocación. El `numItems` fuera de 1–100 no es un problema de permiso: falla con error de regla en español antes de leer. Las validaciones de tipo de argumentos fallan con error de validador de Convex, sin detalles sensibles.
+Los errores usan el contrato común de TI2-88 (`ConvexError({ code, message })`): los clientes distinguen por `error.data.code`, nunca por el texto. `unauthorized` (`No autorizado`) responde ante falta de identidad, perfil o vigencia, rol ajeno u objetivo inexistente o fuera de esta vía. `conflict` explica un tránsito inválido a un llamante autorizado: cuenta ya habilitada, cuenta no habilitada, objetivo sin correo de personal, cuenta no vigente, auto-revocación, rol distinto o fila duplicada. `assignment_fields_invalid` (TI2-140) explica una vigencia incoherente con el detalle en español. El `numItems` fuera de 1–100 no es un problema de permiso: falla con error de regla en español antes de leer. Las validaciones de tipo de argumentos fallan con error de validador de Convex, sin detalles sensibles.
 
 ```json
 { "code": "unauthorized", "message": "No autorizado" }
@@ -78,4 +78,51 @@ try {
     muestraMensaje(error.data.message);
   }
 }
+```
+
+## Habilitación por el profesional — TI2-140
+
+| Operación | Argumentos | Devuelve | Quién | Denegación |
+| --- | --- | --- | --- | --- |
+| `presentation/accounts.enableIntern` | `userId` | `{ userId }` habilitado | Profesional de personal vigente o Administrador vigente, objetivo practicante pendiente | `unauthorized` sin permiso de personal, con cuenta de prueba como llamante u objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido (ya habilitada, sin correo institucional, no vigente o no pendiente) |
+| `presentation/accounts.enableTestProfessional` | `userId` | `{ userId }` habilitado | Profesional de personal vigente o Administrador vigente, objetivo profesional `@alu.uct.cl` pendiente o deshabilitado | `unauthorized` sin permiso, con cuenta de prueba como llamante u objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido (ya habilitada, sin correo `@alu.uct.cl`, no vigente o no pendiente) |
+
+## Gestión de accesos por acompañamiento — TI2-140
+
+| Operación | Argumentos | Devuelve | Quién | Denegación |
+| --- | --- | --- | --- | --- |
+| `presentation/accompaniments.assignAccompanimentAccess` | `accompanimentId`, `userId`, `assignedRole` (`professional` o `intern`), `validFrom?`, `validUntil?` | `Id<"accompanimentAssignments">` | Profesional de personal autorizado sobre el mismo acompañamiento, objetivo habilitado y vigente | `unauthorized` genérico sin permiso de personal, identidad, vigencia, alcance o existencia; `conflict` ante rol distinto o fila duplicada; `assignment_fields_invalid` ante vigencia incoherente (`validFrom` posterior a `validUntil` o instante inválido) |
+| `presentation/accompaniments.updateAccompanimentAccess` | `accompanimentId`, `userId`, `assignedRole`, `validFrom?` (`number` o `null`), `validUntil?` (`number` o `null`) | `Id<"accompanimentAssignments">` | Profesional de personal autorizado sobre el mismo acompañamiento | `unauthorized` genérico ante permiso de personal, alcance, existencia o fila inactiva; `conflict` ante rol distinto; `assignment_fields_invalid` ante ventana incoherente; `null` quita el extremo y omitido conserva el valor actual |
+| `presentation/accompaniments.revokeAccompanimentAccess` | `accompanimentId`, `userId`, `assignedRole` | `number` revocadas o `null` si ya estaba sin acceso | Profesional de personal autorizado sobre el mismo acompañamiento (practicante y cuenta de prueba) | `unauthorized` genérico ante permiso de personal, alcance o existencia; `conflict` ante rol distinto o filas sin revocar; idempotente ante fila ya revocada |
+
+## Alcance, vigencia y cuenta de prueba — TI2-140
+
+La lectura exige cuenta habilitada (`institutionalStatus === "enabled"`) y vigente (`accountStatus === "active"`) más asignación activa y vigente sobre el acompañamiento; una cuenta habilitada sin asignación sigue sin leer, una asignación revocada deja de autorizar en la petición siguiente aunque se conserve el enlace y una ventana vencida o futura tampoco autoriza.
+
+Solo el profesional de personal con cuenta habilitada y vigente habilita, concede, modifica o retira: la cuenta de prueba jamás habilita ni concede, aunque tenga asignación vigente. La concesión a practicante exige llamante autorizado sobre el mismo acompañamiento y objetivo practicante habilitado y vigente; la concesión a cuenta de prueba (`professional` con correo `@alu.uct.cl`) exige lo mismo y queda limitada a esos acompañamientos explícitos y auditados (`grantedBy`, `grantedAt`, `revokedBy`, `revokedAt`). La vía entre profesionales de personal sigue en arranque y su recorte queda fuera de TI2-140.
+
+La vigencia acordada (`validFrom`/`validUntil`) es opcional y se aplica en la lectura junto a `status`: al conceder y modificar se comprueba su coherencia (`validFrom` no posterior a `validUntil`, instantes finitos no negativos) y la modificación no cambia `status` ni el historial de concesión; el retiro cierra todas las filas activas de la combinación para no dejar acceso tras informar éxito.
+
+El practicante asignado lee la vista minimizada (`_id`, `status`, `objective`, `view`) y no escribe ni ve notas internas: asignar, modificar o revocar por su parte responde `unauthorized` y `getInternalNotes` también. La cuenta de prueba lee vista completa solo en lo asignado y vigente, sin acceso general por dominio institucional.
+
+## Ejemplos TI2-140 para Web
+
+```ts
+import { useMutation } from "convex/react";
+import { api } from "./_generated/api";
+
+const enableIntern = useMutation(api.presentation.accounts.enableIntern);
+await enableIntern({ userId: internId });
+
+const enableTestProfessional = useMutation(api.presentation.accounts.enableTestProfessional);
+await enableTestProfessional({ userId: testProfessionalId });
+
+const assignAccess = useMutation(api.presentation.accompaniments.assignAccompanimentAccess);
+await assignAccess({ accompanimentId, userId: internId, assignedRole: "intern", validFrom: 1762700000000, validUntil: 1765300000000 });
+
+const updateAccess = useMutation(api.presentation.accompaniments.updateAccompanimentAccess);
+await updateAccess({ accompanimentId, userId: internId, assignedRole: "intern", validUntil: null });
+
+const revokeAccess = useMutation(api.presentation.accompaniments.revokeAccompanimentAccess);
+await revokeAccess({ accompanimentId, userId: internId, assignedRole: "intern" });
 ```

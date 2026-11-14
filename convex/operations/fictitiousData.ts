@@ -205,11 +205,12 @@ export const load = internalMutation({
       requestId: accepted._id,
       objective: "Coordinar los apoyos de acceso para las clases prácticas del semestre.",
     });
-    await assignAccompaniment(ctx, professional, {
+    const granted = await assignAccompaniment(ctx, professional, {
       accompanimentId: accompaniment._id,
       userId: internId,
       assignedRole: "intern",
     });
+    if (granted.status === "error") throw new Error(granted.error.message);
 
     // Atenciones deterministas, una por estado, en el cupo presencial de las
     // 10:00 civiles de cada lunes. La del 2026-10-12 coincide con el bloque
