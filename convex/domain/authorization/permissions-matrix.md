@@ -78,6 +78,17 @@ Agenda y detalle (TI2-112): Aplicación se prueba con dobles de la autorización
 
 El detalle mínimo entrega `_id`, `email`, `fullName`, `role`, `institutionalStatus`, `accountStatus` y la auditoría (`enabledBy`, `enabledAt`, `revokedBy`, `revokedAt`); nunca `tokenIdentifier`, acompañamientos, necesidades de acceso ni notas internas. Habilitar exige correo de personal en ambos roles; revocar no revisa el dominio: cortar el acceso siempre está permitido. Los errores usan el contrato común de TI2-88: `unauthorized` ante falta de identidad, perfil o vigencia, rol ajeno u objetivo inexistente o fuera de esta vía, y `conflict` ante un tránsito inválido que un administrador autorizado puede explicar (cuenta ya habilitada, cuenta no habilitada, correo sin personal, cuenta no vigente o auto-revocación). Tener correo institucional no concede acceso: sin perfil vinculado y vigente la respuesta es denegación. Administrar no concede acompañamientos ni notas: el Administrador sigue denegado en `accompaniment:read` e `internalNote:read`. Una cuenta revocada (`disabled`) deja de operar en la petición siguiente. La habilitación y la rehabilitación registran el nuevo actor y fecha. La gestión de Practicantes corresponde al Profesional y se resuelve en TI2-140, fuera de esta matriz.
 
+## Matriz de privacidad (TI2-136)
+
+Esta sección fija el acuerdo del procedimiento de prueba, no una autorización implementada: todavía no existe una función pública de solicitudes de privacidad. La aplicación deberá resolver identidad y rol en el servidor y aplicar la misma regla genérica de denegación de TI2-88 cuando TI2-151 abra el caso de uso.
+
+| Caso de uso              | Estudiante                                                    | Profesional                    | Practicante                    | Administrador                                                    |
+| ------------------------ | ------------------------------------------------------------- | ------------------------------ | ------------------------------ | ---------------------------------------------------------------- |
+| `privacyRequest:submit`  | Permitido desde la aplicación, solo con la sesión del titular | Canal institucional, no la app | Canal institucional, no la app | Canal institucional, no la app                                   |
+| `privacyRequest:respond` | Denegado                                                      | Denegado                       | Denegado                       | Permitido de forma provisional, como responsable de la solicitud |
+
+El canal de cada rol se deriva de `privacyRequestChannelForRole` y no se acepta desde el cliente. En la respuesta, el actor de la sesión y `responsibleId` deben ser la misma persona; el dominio rechaza la discrepancia. La designación del responsable institucional definitivo y la dirección del canal externo siguen pendientes de la UCT. El detalle del procedimiento vive en [Procedimiento de prueba para solicitudes de derechos de privacidad](../../../docs/privacidad-procedimiento.md).
+
 ## Qué queda pendiente de validación
 
 La matriz definitiva, su correspondencia con cargos reales y los permisos exactos del Practicante requieren validación de CERETI y UCT (PV-01, PV-16, PV-17). Los reportes agregados quedan fuera de esta matriz y seguirán la misma separación por capas cuando se implementen. La coordinación de una atención entre varios profesionales (RF-16) sigue fuera de alcance: el Profesional solo cambia de horario su propia atención dentro de su propia agenda.
