@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   ONLINE_ACCESS_ALLOWED_HOSTS,
   ONLINE_ACCESS_LINK_MAX_LENGTH,
+  MAX_ONLINE_SUPPORTS,
+  ONLINE_SUPPORT_TEXT_MAX_LENGTH,
   decideOnlineAccessUpdate,
   normalizeOnlineAccessLink,
   normalizeOnlineSupports,
@@ -228,6 +230,30 @@ describe("Apoyos de la atención en línea (TI2-142)", () => {
       status: "rejected",
       cause: "support_invalid",
     });
+  });
+
+  test("acota la cantidad de apoyos distintos y el largo de cada texto", () => {
+    const support = (index: number) => ({ id: `apoyo-${index}`, label: `Apoyo ${index}` });
+    const atLimit = Array.from({ length: MAX_ONLINE_SUPPORTS }, (_, index) => support(index));
+    expect(normalizeOnlineSupports("online", [...atLimit, support(0)]).status).toBe("valid");
+    expect(normalizeOnlineSupports("online", [...atLimit, support(MAX_ONLINE_SUPPORTS)])).toEqual({
+      status: "rejected",
+      cause: "too_many_supports",
+    });
+
+    const longest = "a".repeat(ONLINE_SUPPORT_TEXT_MAX_LENGTH);
+    expect(normalizeOnlineSupports("online", [{ id: ` ${longest} `, label: longest }]).status).toBe(
+      "valid",
+    );
+    for (const tooLong of [
+      { id: `${longest}a`, label: "Apoyo" },
+      { id: "apoyo", label: `${longest}a` },
+    ]) {
+      expect(normalizeOnlineSupports("online", [tooLong])).toEqual({
+        status: "rejected",
+        cause: "support_too_long",
+      });
+    }
   });
 
   test("en presencial los apoyos van en el espacio, no en la atención", () => {

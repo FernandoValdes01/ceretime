@@ -194,7 +194,28 @@ export function toOnlineAccessView(
 }
 
 /** Causas de rechazo de los apoyos de la atención en línea. */
-export const ONLINE_SUPPORTS_REJECTION_CAUSES = ["not_online", "support_invalid"] as const;
+/**
+ * Máximo provisional de apoyos distintos por atención en línea. Los apoyos los
+ * escribe el personal como texto: el tope evita guardar listas o textos
+ * arbitrarios en la atención (minimización, Ley 21.719) y se ajusta cuando
+ * CERETI confirme su catálogo.
+ */
+export const MAX_ONLINE_SUPPORTS = 10 as const;
+
+/**
+ * Largo máximo provisional del identificador y de la etiqueta de cada apoyo,
+ * tras recortar. El identificador repite una línea de las necesidades del
+ * acompañamiento para cubrirla, así que una necesidad más larga no se puede
+ * declarar como apoyo.
+ */
+export const ONLINE_SUPPORT_TEXT_MAX_LENGTH = 300 as const;
+
+export const ONLINE_SUPPORTS_REJECTION_CAUSES = [
+  "not_online",
+  "support_invalid",
+  "support_too_long",
+  "too_many_supports",
+] as const;
 
 export type OnlineSupportsRejectionCause = (typeof ONLINE_SUPPORTS_REJECTION_CAUSES)[number];
 
@@ -208,10 +229,11 @@ export type OnlineSupportsResult =
  *
  * Usa la misma forma `AccessNeed` que la compatibilidad de TI2-82, así la
  * reserva puede comprobar que los apoyos cubren las necesidades vigentes con
- * `assessCompatibility`. Recorta, exige identificador y etiqueta, y deja el
- * primero de cada identificador repetido. Una lista vacía es válida: la
- * atención no declara apoyos. En presencial los apoyos van en el espacio, no
- * acá.
+ * `assessCompatibility`. Recorta, exige identificador y etiqueta de hasta
+ * `ONLINE_SUPPORT_TEXT_MAX_LENGTH` caracteres, deja el primero de cada
+ * identificador repetido y admite hasta `MAX_ONLINE_SUPPORTS` apoyos distintos.
+ * Una lista vacía es válida: la atención no declara apoyos. En presencial los
+ * apoyos van en el espacio, no acá.
  */
 export function normalizeOnlineSupports(
   modality: ModalityPreference,
@@ -228,7 +250,16 @@ export function normalizeOnlineSupports(
     const id = support.id.trim();
     const label = support.label.trim();
     if (id === "" || label === "") return { status: "rejected", cause: "support_invalid" };
+    if (
+      id.length > ONLINE_SUPPORT_TEXT_MAX_LENGTH ||
+      label.length > ONLINE_SUPPORT_TEXT_MAX_LENGTH
+    ) {
+      return { status: "rejected", cause: "support_too_long" };
+    }
     if (seen.has(id)) continue;
+    if (normalized.length === MAX_ONLINE_SUPPORTS) {
+      return { status: "rejected", cause: "too_many_supports" };
+    }
     seen.add(id);
     normalized.push({ id, label });
   }
