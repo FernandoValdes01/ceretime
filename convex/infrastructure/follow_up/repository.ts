@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import type { AppointmentStatus } from "../../domain/appointments/appointment";
@@ -169,10 +170,10 @@ async function readConfirmedRecord(
  * guardado lo confirma: un reintento idéntico devuelve el mismo registro sin
  * escribir, y cualquier otro contenido responde `already_confirmed`, también
  * uno inválido: no tiene sentido pedir que corrija campos que ya no se pueden
- * cambiar. Esta es
- * la única vía de escritura del registro, así que no hay forma de editarlo,
- * reemplazarlo ni eliminarlo. Dos guardados simultáneos leen el mismo índice:
- * Convex reintenta el que pierde y ese reintento ya encuentra el registro.
+ * cambiar. Esta es la única vía de escritura del registro, así que no hay
+ * forma de editarlo, reemplazarlo ni eliminarlo. Dos guardados simultáneos
+ * leen el mismo índice: Convex reintenta el que pierde y ese reintento ya
+ * encuentra el registro.
  */
 export async function saveFollowUpRecord(
   ctx: MutationCtx,
@@ -276,8 +277,8 @@ export async function findFollowUpRecordByAppointment(
  * más antigua. Pagina atenciones, no registros: una página puede traer menos
  * registros que `limit`, y un acompañamiento sin forma devuelve una página
  * vacía. Solo recorre el índice del acompañamiento, así que no mezcla
- * historiales. Devuelve `null` si `paginate` rechaza el cursor, por ejemplo
- * uno de otro acompañamiento o alterado.
+ * historiales. Devuelve `null` solo si Convex rechaza el cursor, por ejemplo
+ * uno alterado; cualquier otro error de `paginate` se propaga como interno.
  */
 async function paginateFollowUpRecordsByAccompaniment(
   ctx: DbReader,
@@ -298,9 +299,8 @@ async function paginateFollowUpRecordsByAccompaniment(
   try {
     appointments = await query.paginate({ numItems: page.limit, cursor: page.cursor });
   } catch (error) {
-    // Sin cursor, el error no es del cliente: se propaga como interno.
-    if (page.cursor === null) throw error;
-    return null;
+    if (isInvalidCursorError(error)) return null;
+    throw error;
   }
 
   const items: StoredFollowUpRecord[] = [];
@@ -313,6 +313,28 @@ async function paginateFollowUpRecordsByAccompaniment(
     hasMore: !appointments.isDone,
     nextCursor: appointments.isDone ? null : appointments.continueCursor,
   };
+}
+
+/**
+ * Rechazo de un cursor por Convex. Convex no expone una clase para este error:
+ * se reconoce igual que lo hace su propio `usePaginatedQuery`
+ * (`convex/react`), por el texto `InvalidCursor` o por el
+ * `paginationError` de un error de sistema. Si Convex cambia esa forma, el
+ * cursor rechazado llega como error interno, nunca al revés.
+ */
+export function isInvalidCursorError(error: unknown): boolean {
+  if (error instanceof ConvexError) {
+    const data: unknown = error.data;
+    if (
+      typeof data === "object" &&
+      data !== null &&
+      "paginationError" in data &&
+      data.paginationError === "InvalidCursor"
+    ) {
+      return true;
+    }
+  }
+  return error instanceof Error && error.message.includes("InvalidCursor");
 }
 
 /**

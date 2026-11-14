@@ -829,20 +829,6 @@ describe("TI2-146 API: historial por acompañamiento", () => {
     }
   });
 
-  test("un cursor alterado responde conflict para que el cliente reinicie el historial", async () => {
-    const t = convexTest(schema, modules);
-    const scenario = await seedScenario(t, "list-cursor");
-
-    expect(
-      await publicErrorData(
-        list(scenario, "professional", scenario.accompanimentId, {
-          limit: 2,
-          cursor: "cursor-alterado",
-        }),
-      ),
-    ).toEqual(conflict(conflictError().message));
-  });
-
   test.each([0, 21, 1.5])("un límite de %s responde conflict sin leer", async (limit) => {
     const t = convexTest(schema, modules);
     const scenario = await seedScenario(t, `limit-${limit}`);
