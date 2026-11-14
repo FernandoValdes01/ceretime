@@ -1,10 +1,12 @@
 import type { AccompanimentStatus } from "../../domain/accompaniments/accompaniment";
 import type { AppointmentView } from "../../domain/appointments/appointment";
+import { isAppointmentProfessional } from "../../domain/appointments/participants";
 import type { FollowUpView } from "../../domain/follow_up/follow_up";
 import {
   appointmentCancellationTarget,
   canAddAppointmentToCalendar,
   canBookAppointment,
+  canCoordinateAppointment,
   canEditAvailability,
   canReadAvailability,
   canReadInternalNote,
@@ -14,6 +16,7 @@ import {
   canRescheduleAppointment,
   canReviewAppointmentJustification,
   canSubmitAppointmentJustification,
+  canUseAppointmentOnlineAccess,
   canWriteFollowUp,
   getAccompanimentView,
   getAppointmentView,
@@ -277,7 +280,11 @@ async function findCaller(
 async function loadAgendaContext(
   reader: AuthorizationReader,
   request: AgendaRequest,
-): Promise<{ readonly callerId: string; readonly context: AgendaAuthorizationContext } | null> {
+): Promise<{
+  readonly callerId: string;
+  readonly studentId: string;
+  readonly context: AgendaAuthorizationContext;
+} | null> {
   const profile = await findCaller(reader, request.tokenIdentifier);
   if (profile === null) return null;
   const accompaniment = await reader.getAccompaniment(request.accompanimentId);
@@ -285,6 +292,7 @@ async function loadAgendaContext(
   const assignments = await reader.findActiveAssignments(accompaniment._id, profile._id);
   return {
     callerId: profile._id,
+    studentId: accompaniment.studentId,
     context: {
       ...buildAuthorizationContext({ profile, accompaniment, assignments }),
       accompanimentStatus: accompaniment.status,
@@ -365,14 +373,34 @@ export async function authorizeFollowUpWrite(
   return okResult({ callerId: loaded.callerId });
 }
 
-/** Reserva de un cupo en el acompañamiento. */
+/**
+ * Reserva concedida: quién reserva y para qué Estudiante. `studentId` sale del
+ * acompañamiento leído en el servidor, así el Profesional que coordina nunca
+ * elige al Estudiante desde el cliente.
+ */
+export type AppointmentBookGrant = AgendaGrant & {
+  readonly actor: AppointmentChangeActor;
+  readonly studentId: string;
+};
+
+/**
+ * Reserva de un cupo en el acompañamiento: el Estudiante dueño reserva lo
+ * suyo (RF-15) y el Profesional asignado coordina en su nombre (RF-16,
+ * TI2-142). Ambos exigen un acompañamiento activo.
+ */
 export async function authorizeAppointmentBook(
   reader: AuthorizationReader,
   request: AgendaRequest,
-): Promise<ApiResult<AgendaGrant>> {
+): Promise<ApiResult<AppointmentBookGrant>> {
   const loaded = await loadAgendaContext(reader, request);
-  if (loaded === null || !canBookAppointment(loaded.context)) return denied();
-  return okResult({ callerId: loaded.callerId });
+  if (loaded === null) return denied();
+  const actor: AppointmentChangeActor | null = canBookAppointment(loaded.context)
+    ? "student"
+    : canCoordinateAppointment(loaded.context)
+      ? "professional"
+      : null;
+  if (actor === null) return denied();
+  return okResult({ callerId: loaded.callerId, actor, studentId: loaded.studentId });
 }
 
 /**
@@ -511,6 +539,47 @@ export async function authorizeAppointmentCalendar(
   const loaded = await loadAppointmentChangeContext(reader, request);
   if (loaded === null || !canAddAppointmentToCalendar(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });
+}
+
+/**
+ * Atención con todos sus profesionales: el responsable de la fila y los
+ * adicionales leídos de `appointmentProfessionals` (TI2-142).
+ */
+export type AuthorizableAppointmentWithParticipants = AuthorizableAppointment & {
+  readonly additionalProfessionalIds: readonly string[];
+};
+
+/**
+ * Acceso en línea de una atención (TI2-142): el Estudiante dueño o cualquiera
+ * de sus profesionales, responsable o adicional, con perfil vigente, asignación
+ * activa si es Profesional y acompañamiento activo. Es más amplio que un cambio
+ * de la atención, que solo admite al responsable.
+ */
+export async function authorizeAppointmentOnlineAccess(
+  reader: AuthorizationReader,
+  request: {
+    readonly tokenIdentifier: string | null;
+    readonly appointment: AuthorizableAppointmentWithParticipants;
+  },
+): Promise<ApiResult<AppointmentChangeGrant>> {
+  const profile = await findCaller(reader, request.tokenIdentifier);
+  if (profile === null) return denied();
+  const accompaniment = await reader.getAccompaniment(request.appointment.accompanimentId);
+  if (accompaniment === null || accompaniment._id !== request.appointment.accompanimentId) {
+    return denied();
+  }
+  const assignments = await reader.findActiveAssignments(accompaniment._id, profile._id);
+  const context: AppointmentChangeAuthorizationContext = {
+    ...buildAuthorizationContext({ profile, accompaniment, assignments }),
+    accompanimentStatus: accompaniment.status,
+    isAppointmentStudent:
+      request.appointment.studentId === profile._id &&
+      accompaniment.studentId === request.appointment.studentId,
+    isAppointmentProfessional: isAppointmentProfessional(profile._id, request.appointment),
+  };
+  const actor = appointmentChangeActorForRole(context.role);
+  if (actor === null || !canUseAppointmentOnlineAccess(context)) return denied();
+  return okResult({ callerId: profile._id, actor });
 }
 
 /**

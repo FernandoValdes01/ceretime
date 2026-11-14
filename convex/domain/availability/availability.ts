@@ -570,3 +570,25 @@ export function civilRangeToInstantRange(input: {
     endAt: civilMidnightToEpochMs(input.to, DAY_END_MINUTE, input.timeZone),
   };
 }
+
+/**
+ * Verdadero cuando los cupos dados cubren todo el intervalo `[startAt, endAt)` sin huecos (TI2-142).
+ *
+ * La coordinación con varios profesionales exige que cada profesional adicional tenga disponibilidad vigente durante toda la atención, aunque su agenda esté partida en cupos de otra duración: dos cupos contiguos de 30 minutos cubren una atención de 60. Un hueco entre cupos, o un cupo que empieza después del inicio, deja el intervalo sin cubrir. Quien llama decide qué cupos cuentan (por ejemplo, solo los de la misma modalidad).
+ */
+export function slotsCoverInterval(
+  slots: readonly Pick<AvailabilitySlot, "startAt" | "endAt">[],
+  interval: InstantRange,
+): boolean {
+  if (interval.startAt >= interval.endAt) return false;
+  const overlapping = slots
+    .filter((slot) => slot.startAt < interval.endAt && slot.endAt > interval.startAt)
+    .sort((a, b) => a.startAt - b.startAt);
+  let coveredUntil = interval.startAt;
+  for (const slot of overlapping) {
+    if (slot.startAt > coveredUntil) return false;
+    coveredUntil = Math.max(coveredUntil, slot.endAt);
+    if (coveredUntil >= interval.endAt) return true;
+  }
+  return false;
+}

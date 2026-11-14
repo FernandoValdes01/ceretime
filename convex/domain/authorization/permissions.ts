@@ -212,11 +212,27 @@ export function canReadAvailability(context: AgendaAuthorizationContext): boolea
 
 /**
  * Reserva de un cupo: solo el Estudiante dueño de un acompañamiento activo
- * (RF-15). La coordinación entre varios profesionales (RF-16) queda fuera.
+ * (RF-15). La coordinación entre varios profesionales (RF-16) es
+ * `canCoordinateAppointment`.
  */
 export function canBookAppointment(context: AgendaAuthorizationContext): boolean {
   if (!isProfileActive(context)) return false;
   return context.role === "student" && context.isOwner && context.accompanimentStatus === "active";
+}
+
+/**
+ * Coordinación de una atención con uno o más profesionales (RF-16, TI2-142):
+ * el Profesional con asignación activa en un acompañamiento activo reserva en
+ * nombre del Estudiante dueño. Que el Profesional sea uno de los profesionales
+ * de la atención lo exige el caso de uso con la selección ya normalizada.
+ */
+export function canCoordinateAppointment(context: AgendaAuthorizationContext): boolean {
+  if (!isProfileActive(context)) return false;
+  return (
+    context.role === "professional" &&
+    context.hasActiveProfessionalAssignment &&
+    context.accompanimentStatus === "active"
+  );
 }
 
 /**
@@ -241,6 +257,18 @@ function canChangeAppointment(context: AppointmentChangeAuthorizationContext): b
 
 /** Verdadero solo cuando el actor puede cancelar esta atención. */
 export function canCancelAppointment(context: AppointmentChangeAuthorizationContext): boolean {
+  return canChangeAppointment(context);
+}
+
+/**
+ * Acceso en línea de una atención (TI2-142): leer el enlace privado o, si es
+ * profesional, agregarlo. Exige la misma vigencia que un cambio, pero aquí
+ * `isAppointmentProfessional` cuenta a todos los profesionales de la atención,
+ * no solo al responsable. Practicante y Administrador se deniegan igual.
+ */
+export function canUseAppointmentOnlineAccess(
+  context: AppointmentChangeAuthorizationContext,
+): boolean {
   return canChangeAppointment(context);
 }
 

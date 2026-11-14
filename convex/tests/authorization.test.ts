@@ -1092,7 +1092,7 @@ test("agenda: ajeno, inexistente, habilitado sin asignación e inactivo se denie
   expect(await read(inactive.tokenIdentifier, inactiveOwn)).toEqual(AGENDA_DENIED);
 });
 
-test("agenda: el Practicante asignado lee atenciones minimizadas, pero no consulta cupos ni reserva", async () => {
+test("agenda: el Practicante asignado lee atenciones minimizadas, pero no consulta cupos ni reserva; el Profesional asignado coordina", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "s2-ag-est-5",
@@ -1148,6 +1148,14 @@ test("agenda: el Practicante asignado lee atenciones minimizadas, pero no consul
   });
   expect(results.internSlots).toEqual(AGENDA_DENIED);
   expect(results.internBook).toEqual(AGENDA_DENIED);
-  expect(results.studentBook).toEqual({ status: "ok", data: { callerId: student.id } });
-  expect(results.professionalBook).toEqual(AGENDA_DENIED);
+  expect(results.studentBook).toEqual({
+    status: "ok",
+    data: { callerId: student.id, actor: "student", studentId: student.id },
+  });
+  // TI2-142: el Profesional asignado coordina la reserva en nombre del
+  // Estudiante dueño; el Practicante sigue sin reservar.
+  expect(results.professionalBook).toEqual({
+    status: "ok",
+    data: { callerId: professional.id, actor: "professional", studentId: student.id },
+  });
 });

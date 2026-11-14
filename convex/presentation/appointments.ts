@@ -10,6 +10,10 @@ import {
 } from "../application/calendar/calendar";
 import { bookAppointment as bookAppointmentUseCase } from "../application/appointments/booking";
 import {
+  getOnlineAccess as getOnlineAccessUseCase,
+  setOnlineAccessLink as setOnlineAccessLinkUseCase,
+} from "../application/appointments/online_access";
+import {
   cancelAppointment as cancelAppointmentUseCase,
   recordAppointmentAttendance as recordAppointmentAttendanceUseCase,
   rescheduleAppointment as rescheduleAppointmentUseCase,
@@ -36,14 +40,18 @@ import {
   appointmentListReader,
   appointmentOccupier,
   appointmentTransitionRepository,
+  onlineAccessReader,
+  onlineAccessStore,
 } from "../infrastructure/appointments/repository";
 import { availabilityReader } from "../infrastructure/availability/repository";
 import {
   googleCalendarConnectionReader,
   googleCalendarGateway,
 } from "../infrastructure/calendar/google_calendar";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
+  accessNeedSelectionValidator,
   appointmentAttendanceOutcomeUnion,
   appointmentStatusUnion,
   justificationDecisionUnion,
@@ -93,7 +101,12 @@ import { unwrapApiResult } from "./session";
 /** Éxito de una reserva o cambio: la misma atención, con identificador genérico. */
 const appointmentResultValidator = v.object({ appointmentId: v.string() });
 
-/** Reserva el cupo elegido para un acompañamiento activo del Estudiante. */
+/**
+ * Reserva el cupo elegido para un acompañamiento activo. El Estudiante dueño
+ * reserva lo suyo; el Profesional asignado coordina en su nombre y puede sumar
+ * profesionales adicionales y apoyos de la atención en línea (TI2-142). Un
+ * Estudiante que envía adicionales o apoyos recibe `unauthorized`.
+ */
 export const bookAppointment = mutation({
   args: {
     accompanimentId: v.string(),
@@ -102,6 +115,8 @@ export const bookAppointment = mutation({
     spaceId: v.optional(v.string()),
     startAt: v.number(),
     endAt: v.number(),
+    additionalProfessionalIds: v.optional(v.array(v.string())),
+    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
     version: v.literal(APPOINTMENT_CONTRACT_VERSION),
   },
   returns: appointmentResultValidator,
@@ -562,5 +577,74 @@ export const addAppointmentToGoogleCalendar = action({
         },
       ),
     );
+  },
+});
+
+/**
+ * Agrega o reemplaza el enlace de Google Meet de una atención en línea
+ * (TI2-142). Solo un profesional de la atención; el enlace debe usar `https`,
+ * el dominio `meet.google.com` y un código de reunión, y no puede estar en otra
+ * atención. Agregarlo o reemplazarlo avisa al Estudiante; repetir el mismo
+ * enlace no escribe. `unauthorized` sin permiso o ante una atención ajena o
+ * inexistente; `conflict` ante un enlace inválido o reutilizado, una atención
+ * presencial o una que ya no está vigente.
+ */
+export const setOnlineAccessLink = mutation({
+  args: {
+    appointmentId: v.string(),
+    link: v.string(),
+    version: v.literal(APPOINTMENT_CONTRACT_VERSION),
+  },
+  returns: appointmentResultValidator,
+  handler: async (ctx, { version: _version, appointmentId, link }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await setOnlineAccessLinkUseCase(
+        {
+          auth: authorizationReader(ctx),
+          appointments: onlineAccessStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, appointmentId, link },
+      ),
+    );
+  },
+});
+
+/** Estado del acceso en línea; `link` solo viaja cuando está disponible. */
+const onlineAccessViewValidator = v.union(
+  v.object({ status: v.literal("pending"), version: v.literal(APPOINTMENT_CONTRACT_VERSION) }),
+  v.object({
+    status: v.literal("available"),
+    link: v.string(),
+    version: v.literal(APPOINTMENT_CONTRACT_VERSION),
+  }),
+  v.object({
+    status: v.literal("not_applicable"),
+    version: v.literal(APPOINTMENT_CONTRACT_VERSION),
+  }),
+);
+
+/**
+ * Acceso en línea de una atención para sus participantes (TI2-142): el
+ * Estudiante dueño y cada profesional, responsable o adicional. Los listados
+ * de agenda nunca traen el enlace; quien no participa recibe `unauthorized`
+ * sin saber si la atención existe ni si tiene enlace.
+ */
+export const getOnlineAccess = query({
+  args: {
+    appointmentId: v.string(),
+    version: v.literal(APPOINTMENT_CONTRACT_VERSION),
+  },
+  returns: onlineAccessViewValidator,
+  handler: async (ctx, { version: _version, appointmentId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const view = unwrapApiResult(
+      await getOnlineAccessUseCase(
+        { auth: authorizationReader(ctx), appointments: onlineAccessReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, appointmentId },
+      ),
+    );
+    return { ...view, version: APPOINTMENT_CONTRACT_VERSION };
   },
 });

@@ -1469,12 +1469,12 @@ test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", a
   };
   const before = await ti111Appointments(t);
 
-  // Quien no es el Estudiante dueño no reserva, aunque sea el profesional.
+  // Sin identidad u otro Estudiante no reservan. El Profesional asignado sí
+  // puede coordinar la reserva desde TI2-142 (`appointmentCoordinationApi.test.ts`).
   const denied = { code: "unauthorized", message: "No autorizado" };
   for (const caller of [
     t,
     t.withIdentity(identityFor("ti111-ag-est-2", "ti111-ag-est-2@alu.uct.cl")),
-    t.withIdentity(identityFor("ti111-ag-pro-1", "ti111-ag-pro-1@uct.cl")),
   ]) {
     expect(
       await ti111PublicError(caller.mutation(api.presentation.appointments.bookAppointment, slot)),
