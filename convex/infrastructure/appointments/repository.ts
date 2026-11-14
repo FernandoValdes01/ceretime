@@ -144,6 +144,42 @@ async function isResourceTaken(
   return rows.some((row) => row._id !== ownId && isBlocking(row) && row.endsAt > interval.startsAt);
 }
 
+/**
+ * Verdadero cuando el profesional no está libre en el intervalo (TI2-142).
+ *
+ * Un profesional ocupa su agenda como responsable (`appointments`) y como
+ * participante (`appointmentProfessionals`); se leen ambas ventanas porque una
+ * atención anterior a la migración de TI2-138 todavía no tiene su fila de
+ * participante. La fila de participante copia la ventana de su atención, pero
+ * no su estado: cada cruce candidato se confirma con la atención, así una
+ * cancelada libera a todos sus profesionales. El tope de lectura responde
+ * ocupado, como en `isResourceTaken`, en vez de decidir con una lista cortada.
+ */
+async function isProfessionalTaken(
+  ctx: DbReader,
+  professionalId: Id<"users">,
+  interval: Interval,
+  ownId: Id<"appointments"> | null,
+): Promise<boolean> {
+  if (await isResourceTaken(ctx, { kind: "professional", id: professionalId }, interval, ownId)) {
+    return true;
+  }
+  const from = interval.startsAt - MAX_APPOINTMENT_MS;
+  const rows = await ctx.db
+    .query("appointmentProfessionals")
+    .withIndex("by_professionalId_and_startsAt", (q) =>
+      q.eq("professionalId", professionalId).gt("startsAt", from).lt("startsAt", interval.endsAt),
+    )
+    .take(MAX_APPOINTMENTS_IN_WINDOW + 1);
+  if (rows.length > MAX_APPOINTMENTS_IN_WINDOW) return true;
+  for (const row of rows) {
+    if (row.appointmentId === ownId || row.endsAt <= interval.startsAt) continue;
+    const appointment = await ctx.db.get(row.appointmentId);
+    if (appointment !== null && isBlocking(appointment)) return true;
+  }
+  return false;
+}
+
 // ── TI2-138: profesionales participantes y necesidades aplicadas ───────────
 //
 // `appointments.professionalId` sigue siendo el profesional responsable
@@ -153,8 +189,13 @@ async function isResourceTaken(
 // mover la atención; agregar o retirar participantes fuera de eso es de los
 // casos de uso futuros.
 
-/** Tope de participantes leídos por atención; acota la lectura y la escritura. */
-export const MAX_APPOINTMENT_PROFESSIONALS = 200;
+/**
+ * Tope técnico de filas de participantes leídas por atención; acota la lectura
+ * y la escritura. No es la regla de negocio: cuántos profesionales admite una
+ * atención lo fija `MAX_APPOINTMENT_PROFESSIONALS` del dominio (TI2-142), que
+ * la reserva aplica antes de escribir.
+ */
+export const MAX_APPOINTMENT_PROFESSIONAL_ROWS = 200;
 
 /** Fila del profesional en la atención, o `null` si no participa. */
 export async function findAppointmentProfessional(
@@ -179,7 +220,7 @@ export async function listAppointmentProfessionals(
   return await ctx.db
     .query("appointmentProfessionals")
     .withIndex("by_appointmentId_and_professionalId", (q) => q.eq("appointmentId", appointmentId))
-    .take(MAX_APPOINTMENT_PROFESSIONALS);
+    .take(MAX_APPOINTMENT_PROFESSIONAL_ROWS);
 }
 
 /**
@@ -281,6 +322,13 @@ export interface OccupySlotRow {
   readonly onlineSupports?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   readonly privateAccessReference?: string;
   /**
+   * Profesionales que acompañan al responsable (TI2-142), ya normalizados por
+   * la reserva. Al crear, cada uno debe estar libre y queda registrado como
+   * participante. Al mover se ignoran: los participantes guardados siguen a la
+   * atención y se comprueban todos.
+   */
+  readonly additionalProfessionalIds?: ReadonlyArray<Id<"users">>;
+  /**
    * Atención que se cambia de horario o de recursos. Tiene que seguir
    * ocupando su cupo y ser del mismo estudiante y acompañamiento; sin ella
    * se crea una atención nueva.
@@ -329,6 +377,31 @@ async function findMovedAppointment(
 }
 
 /**
+ * Profesionales que deben estar libres en el destino, sin repetir (TI2-142).
+ *
+ * Al crear son el responsable y los adicionales pedidos. Al mover son los
+ * participantes guardados de la atención, con el responsable nuevo en lugar
+ * del anterior, porque el traslado conserva a los demás profesionales. `null`
+ * cuando la atención tiene más participantes que el tope de lectura y no se
+ * puede decidir.
+ */
+async function professionalsToCheck(
+  ctx: DbReader,
+  input: OccupySlotRow,
+  moved: Doc<"appointments"> | null,
+): Promise<Id<"users">[] | null> {
+  if (moved === null) {
+    return [...new Set([input.professionalId, ...(input.additionalProfessionalIds ?? [])])];
+  }
+  const participants = await listAppointmentProfessionals(ctx, moved._id);
+  if (participants.length >= MAX_APPOINTMENT_PROFESSIONAL_ROWS) return null;
+  const kept = participants
+    .map((row) => row.professionalId)
+    .filter((professionalId) => professionalId !== moved.professionalId);
+  return [...new Set([input.professionalId, ...kept])];
+}
+
+/**
  * Ocupa el cupo de forma atómica: lee la ocupación y escribe la atención en
  * la misma transacción. Si el estudiante, el profesional o la sala ya están
  * ocupados en el intervalo devuelve el error estable `conflict` sin escribir
@@ -367,10 +440,7 @@ export async function occupySlotAtomically(
   if (input.originalStartsAt !== undefined && !Number.isFinite(input.originalStartsAt)) {
     throw new Error("La fecha original del cupo debe ser un instante finito");
   }
-  const resources: OccupiedResource[] = [
-    { kind: "professional", id: input.professionalId },
-    { kind: "student", id: input.studentId },
-  ];
+  const resources: OccupiedResource[] = [{ kind: "student", id: input.studentId }];
   if (input.spaceId !== undefined) {
     resources.push({ kind: "space", id: input.spaceId });
   }
@@ -378,8 +448,18 @@ export async function occupySlotAtomically(
   if (moved === "invalid") {
     return errResult(conflictError());
   }
+  const ownId = moved === null ? null : moved._id;
+  const professionalIds = await professionalsToCheck(ctx, input, moved);
+  if (professionalIds === null) {
+    return errResult(conflictError());
+  }
+  for (const professionalId of professionalIds) {
+    if (await isProfessionalTaken(ctx, professionalId, input, ownId)) {
+      return errResult(conflictError());
+    }
+  }
   for (const resource of resources) {
-    if (await isResourceTaken(ctx, resource, input, moved === null ? null : moved._id)) {
+    if (await isResourceTaken(ctx, resource, input, ownId)) {
       return errResult(conflictError());
     }
   }
@@ -432,12 +512,14 @@ export async function occupySlotAtomically(
       : { privateAccessReference: input.privateAccessReference }),
     createdAt: Date.now(),
   });
-  await syncAppointmentProfessional(ctx, {
-    appointmentId,
-    professionalId: input.professionalId,
-    startsAt: input.startsAt,
-    endsAt: input.endsAt,
-  });
+  for (const professionalId of [input.professionalId, ...(input.additionalProfessionalIds ?? [])]) {
+    await syncAppointmentProfessional(ctx, {
+      appointmentId,
+      professionalId,
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+    });
+  }
   return okResult({ appointmentId });
 }
 
@@ -616,6 +698,7 @@ export function appointmentChangeReader(ctx: DbReader) {
       const id = normalizeAppointmentId(ctx, appointmentId);
       const doc = id === null ? null : await getAppointmentById(ctx, id);
       if (doc === null) return null;
+      const additionalProfessionalIds = await additionalProfessionalIdsOf(ctx, doc);
       return {
         id: doc._id,
         accompanimentId: doc.accompanimentId,
@@ -637,6 +720,72 @@ export function appointmentChangeReader(ctx: DbReader) {
         ...(doc.supportingDocumentReceived === undefined
           ? {}
           : { supportingDocumentReceived: doc.supportingDocumentReceived }),
+        ...(doc.onlineSupports === undefined ? {} : { onlineSupports: doc.onlineSupports }),
+        ...(additionalProfessionalIds.length === 0 ? {} : { additionalProfessionalIds }),
+      };
+    },
+  };
+}
+
+/**
+ * Profesionales de la atención distintos del responsable, en el orden del
+ * índice. Una atención sin filas de participante (anterior a la migración) no
+ * tiene adicionales.
+ */
+async function additionalProfessionalIdsOf(
+  ctx: DbReader,
+  doc: Doc<"appointments">,
+): Promise<Id<"users">[]> {
+  const rows = await listAppointmentProfessionals(ctx, doc._id);
+  return rows
+    .map((row) => row.professionalId)
+    .filter((professionalId) => professionalId !== doc.professionalId);
+}
+
+// ── TI2-142: acceso privado de la atención en línea ────────────────────────
+
+/**
+ * Lectura y escritura del enlace privado de la atención. Cumple por forma
+ * `OnlineAccessStore` de Aplicación sin importarla. La lectura entrega los
+ * profesionales adicionales para autorizar a todos los participantes; la
+ * reutilización se comprueba con el índice `by_privateAccessReference`.
+ */
+export function onlineAccessStore(ctx: MutationCtx) {
+  return {
+    ...onlineAccessReader(ctx),
+    isReferenceInUse: async (reference: string, exceptAppointmentId: string) => {
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_privateAccessReference", (q) => q.eq("privateAccessReference", reference))
+        .take(2);
+      return rows.some((row) => row._id !== exceptAppointmentId);
+    },
+    saveReference: async (appointmentId: string, reference: string) => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      if (id === null) throw new Error("La atención del enlace privado no existe.");
+      await ctx.db.patch(id, { privateAccessReference: reference });
+    },
+  };
+}
+
+/** Lectura del acceso en línea para las consultas, sin escritura. */
+export function onlineAccessReader(ctx: DbReader) {
+  return {
+    getAppointment: async (appointmentId: string) => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      const doc = id === null ? null : await getAppointmentById(ctx, id);
+      if (doc === null) return null;
+      return {
+        id: doc._id,
+        accompanimentId: doc.accompanimentId,
+        studentId: doc.studentId,
+        professionalId: doc.professionalId,
+        additionalProfessionalIds: await additionalProfessionalIdsOf(ctx, doc),
+        modality: doc.modality,
+        status: doc.status,
+        ...(doc.privateAccessReference === undefined
+          ? {}
+          : { privateAccessReference: doc.privateAccessReference }),
       };
     },
   };
@@ -766,8 +915,12 @@ export function appointmentOccupier(ctx: MutationCtx) {
       readonly endAt: number;
       readonly onlineSupports?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
       readonly privateAccessReference?: string;
+      readonly additionalProfessionalIds?: readonly string[];
       readonly movedAppointmentId?: string;
     }): Promise<ApiResult<{ appointmentId: string }>> => {
+      const additionalProfessionalIds = (slot.additionalProfessionalIds ?? []).map((id) =>
+        ctx.db.normalizeId("users", id),
+      );
       const accompanimentId = ctx.db.normalizeId("accompaniments", slot.accompanimentId);
       const studentId = ctx.db.normalizeId("users", slot.studentId);
       const professionalId = ctx.db.normalizeId("users", slot.professionalId);
@@ -782,7 +935,8 @@ export function appointmentOccupier(ctx: MutationCtx) {
         studentId === null ||
         professionalId === null ||
         spaceId === null ||
-        movedAppointmentId === null
+        movedAppointmentId === null ||
+        additionalProfessionalIds.includes(null)
       ) {
         return errResult(conflictError());
       }
@@ -798,6 +952,13 @@ export function appointmentOccupier(ctx: MutationCtx) {
         ...(slot.privateAccessReference === undefined
           ? {}
           : { privateAccessReference: slot.privateAccessReference }),
+        ...(additionalProfessionalIds.length === 0
+          ? {}
+          : {
+              additionalProfessionalIds: additionalProfessionalIds.filter(
+                (id): id is Id<"users"> => id !== null,
+              ),
+            }),
         ...(movedAppointmentId === undefined ? {} : { movedAppointmentId }),
       });
     },

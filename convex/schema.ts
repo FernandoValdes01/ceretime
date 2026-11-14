@@ -380,7 +380,10 @@ export default defineSchema({
     .index("by_accompanimentId", ["accompanimentId"])
     // Atenciones del acompañamiento por rango de inicio, sin filtrar en
     // memoria; también ordena el listado acotado del detalle (TI2-122).
-    .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"]),
+    .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"])
+    // Atención que ya guarda un enlace privado (TI2-142): un enlace por
+    // atención, así el mismo enlace no se reutiliza como sala fija.
+    .index("by_privateAccessReference", ["privateAccessReference"]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
   // atención (TI2-138). `appointments.professionalId` sigue siendo el

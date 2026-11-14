@@ -326,28 +326,33 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
     expect(occupier.calls).toHaveLength(0);
   });
 
-  test("el profesional asignado no reserva por el estudiante", async () => {
+  test("el profesional asignado coordina la reserva en nombre del estudiante dueño (TI2-142)", async () => {
     const occupier = fakeOccupier();
+    const audit = fakeAudit();
     const deps = bookingDeps(
       fakeAuth({
         profiles: [professional],
         accompaniments: [activeAccompaniment],
-        assignments: [
-          {
-            accompanimentId: "acc-1",
-            userId: "user-pro",
-            assignedRole: "professional",
-            status: "active",
-          },
-        ],
+        assignments: [activeProfessionalAssignment()],
       }),
-      { occupier },
+      { occupier, audit },
     );
 
-    expect(await bookAppointment(deps, bookingInput({ tokenIdentifier: "token-pro" }))).toEqual(
-      DENIED,
-    );
-    expect(occupier.calls).toHaveLength(0);
+    expect(await bookAppointment(deps, bookingInput({ tokenIdentifier: "token-pro" }))).toEqual({
+      status: "ok",
+      data: { appointmentId: "appointment-1" },
+    });
+    expect(occupier.calls).toEqual([
+      {
+        accompanimentId: "acc-1",
+        studentId: "user-student",
+        professionalId: "user-pro",
+        modality: "online",
+        startAt: SLOT_START,
+        endAt: SLOT_END,
+      },
+    ]);
+    expect(audit.events[0]?.actorId).toBe("user-pro");
   });
 
   test("un bloque retirado o una excepción cancelada dejan el cupo sin disponibilidad", async () => {
@@ -588,5 +593,209 @@ describe("auditoría de la reserva (TI2-128)", () => {
       ),
     ).toEqual(CONFLICT);
     expect(audit.events).toHaveLength(0);
+  });
+});
+
+describe("coordinación con varios profesionales (TI2-142)", () => {
+  const second: FakeProfile = {
+    ...professional,
+    _id: "user-pro-2",
+    tokenIdentifier: "token-pro-2",
+  };
+  const third: FakeProfile = { ...professional, _id: "user-pro-3", tokenIdentifier: "token-pro-3" };
+  const captions: AccessNeed = { id: "subtítulos-ficticios", label: "Subtítulos (ficticio)" };
+
+  /** Disponibilidad por profesional: cada uno lee solo sus bloques. */
+  function availabilityByProfessional(
+    blocks: Readonly<Record<string, ReadonlyArray<StoredAvailabilityBlock>>>,
+  ): AvailabilityReader {
+    return {
+      getBlock: async () => null,
+      listActiveBlocks: async (professionalId) => ({
+        status: "ok",
+        data: blocks[professionalId] ?? [],
+      }),
+      getException: async () => null,
+      listExceptions: async () => ({ status: "ok", data: [] }),
+    };
+  }
+
+  /** Bloques en línea de 9:00 a 10:00 partidos en cupos de 30 minutos. */
+  function halfHourOnlineBlocks(professionalId: string): StoredAvailabilityBlock[] {
+    return dailyOnlineBlocks(professionalId).map((block) => ({
+      ...block,
+      id: `${block.id}-${professionalId}`,
+      slotMinutes: 30,
+    }));
+  }
+
+  function coordinationAuth(extraProfiles: ReadonlyArray<FakeProfile> = [second]) {
+    return fakeAuth({
+      profiles: [student, professional, ...extraProfiles],
+      accompaniments: [activeAccompaniment],
+      assignments: [
+        activeProfessionalAssignment(),
+        ...extraProfiles.map((profile) => activeProfessionalAssignment({ userId: profile._id })),
+      ],
+    });
+  }
+
+  function coordinationDeps(
+    overrides: Partial<Omit<BookAppointmentDeps, "auth">> & { auth?: AuthorizationReader } = {},
+  ): BookAppointmentDeps {
+    const { auth, ...rest } = overrides;
+    return bookingDeps(auth ?? coordinationAuth(), {
+      availability: availabilityByProfessional({
+        "user-pro": dailyOnlineBlocks("user-pro"),
+        "user-pro-2": halfHourOnlineBlocks("user-pro-2"),
+      }),
+      ...rest,
+    });
+  }
+
+  test("el profesional coordina con un adicional cuya agenda cubre la atención con cupos más cortos", async () => {
+    const occupier = fakeOccupier();
+    const result = await bookAppointment(
+      coordinationDeps({ occupier }),
+      bookingInput({
+        tokenIdentifier: "token-pro",
+        additionalProfessionalIds: [" user-pro-2 ", "user-pro"],
+        onlineSupports: [captions],
+      }),
+    );
+
+    expect(result).toEqual({ status: "ok", data: { appointmentId: "appointment-1" } });
+    expect(occupier.calls).toEqual([
+      {
+        accompanimentId: "acc-1",
+        studentId: "user-student",
+        professionalId: "user-pro",
+        modality: "online",
+        startAt: SLOT_START,
+        endAt: SLOT_END,
+        additionalProfessionalIds: ["user-pro-2"],
+        onlineSupports: [captions],
+      },
+    ]);
+  });
+
+  test("un profesional adicional también puede coordinar, aunque no sea el responsable", async () => {
+    const occupier = fakeOccupier();
+    const result = await bookAppointment(
+      coordinationDeps({ occupier }),
+      bookingInput({ tokenIdentifier: "token-pro-2", additionalProfessionalIds: ["user-pro-2"] }),
+    );
+    expect(result.status).toBe("ok");
+    expect(occupier.calls[0]?.studentId).toBe("user-student");
+  });
+
+  test("el estudiante no elige profesionales adicionales ni declara apoyos", async () => {
+    const occupier = fakeOccupier();
+    for (const input of [
+      bookingInput({ additionalProfessionalIds: ["user-pro-2"] }),
+      bookingInput({ onlineSupports: [captions] }),
+    ]) {
+      expect(await bookAppointment(coordinationDeps({ occupier }), input)).toEqual(DENIED);
+    }
+    expect(occupier.calls).toHaveLength(0);
+  });
+
+  test("el profesional que coordina tiene que participar en la atención", async () => {
+    const occupier = fakeOccupier();
+    const result = await bookAppointment(
+      coordinationDeps({ occupier, auth: coordinationAuth([second, third]) }),
+      bookingInput({ tokenIdentifier: "token-pro-3", additionalProfessionalIds: ["user-pro-2"] }),
+    );
+    expect(result).toEqual(DENIED);
+    expect(occupier.calls).toHaveLength(0);
+  });
+
+  test("un adicional vacío o más del máximo responden conflicto sin escribir", async () => {
+    const occupier = fakeOccupier();
+    for (const additionalProfessionalIds of [
+      ["user-pro-2", " "],
+      ["user-pro-2", "user-pro-3", "user-pro-4"],
+    ]) {
+      const result = await bookAppointment(
+        coordinationDeps({ occupier }),
+        bookingInput({ tokenIdentifier: "token-pro", additionalProfessionalIds }),
+      );
+      expect(result).toEqual(CONFLICT);
+    }
+    expect(occupier.calls).toHaveLength(0);
+  });
+
+  test("un adicional sin asignación activa o sin disponibilidad que cubra la atención no tiene cupo", async () => {
+    const occupier = fakeOccupier();
+    const notAssigned = fakeAuth({
+      profiles: [student, professional, second],
+      accompaniments: [activeAccompaniment],
+      assignments: [activeProfessionalAssignment()],
+    });
+    const gapBlocks = halfHourOnlineBlocks("user-pro-2").map((block) => ({
+      ...block,
+      endMinute: 570,
+    }));
+    const inPersonOnly = dailyInPersonBlocks("user-pro-2", "space-1");
+
+    const cases: BookAppointmentDeps[] = [
+      coordinationDeps({ occupier, auth: notAssigned }),
+      coordinationDeps({
+        occupier,
+        availability: availabilityByProfessional({
+          "user-pro": dailyOnlineBlocks("user-pro"),
+          "user-pro-2": gapBlocks,
+        }),
+      }),
+      coordinationDeps({
+        occupier,
+        availability: availabilityByProfessional({
+          "user-pro": dailyOnlineBlocks("user-pro"),
+          "user-pro-2": inPersonOnly,
+        }),
+      }),
+    ];
+    for (const deps of cases) {
+      const result = await bookAppointment(
+        deps,
+        bookingInput({ tokenIdentifier: "token-pro", additionalProfessionalIds: ["user-pro-2"] }),
+      );
+      expect(result).toEqual(NO_AVAILABILITY);
+    }
+    expect(occupier.calls).toHaveLength(0);
+  });
+
+  test("los apoyos declarados cubren las necesidades de la atención en línea", async () => {
+    const occupier = fakeOccupier();
+    const withNeed = { needs: fakeNeeds([captions]), occupier };
+
+    expect(
+      await bookAppointment(
+        coordinationDeps(withNeed),
+        bookingInput({ tokenIdentifier: "token-pro" }),
+      ),
+    ).toEqual(NO_AVAILABILITY);
+    expect(
+      await bookAppointment(
+        coordinationDeps(withNeed),
+        bookingInput({ tokenIdentifier: "token-pro", onlineSupports: [captions] }),
+      ),
+    ).toEqual({ status: "ok", data: { appointmentId: "appointment-1" } });
+    expect(occupier.calls).toHaveLength(1);
+  });
+
+  test("los apoyos no se declaran en una atención presencial", async () => {
+    const occupier = fakeOccupier();
+    const result = await bookAppointment(
+      coordinationDeps({ occupier }),
+      bookingInput({
+        tokenIdentifier: "token-pro",
+        modality: "inPerson",
+        spaceId: "space-1",
+        onlineSupports: [captions],
+      }),
+    );
+    expect(result).toEqual(CONFLICT);
+    expect(occupier.calls).toHaveLength(0);
   });
 });

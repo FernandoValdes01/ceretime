@@ -1,5 +1,5 @@
 import type { ApiResult } from "../../domain/errors/api_error";
-import type { ModalityPreference } from "../../domain/requests/request";
+import type { AccessNeed, ModalityPreference } from "../../domain/requests/request";
 
 /**
  * Puerto mínimo de ocupación de cupo (TI2-84).
@@ -21,7 +21,8 @@ import type { ModalityPreference } from "../../domain/requests/request";
  * (TI2-88); `no_availability` queda para la ausencia de cupo en búsqueda
  * (TI2-98), no para la carrera. `conflict` no dice qué recurso estaba
  * ocupado ni por quién. TI2-96 comprueba sobre este mismo puerto los cruces de estudiante,
- * profesional y sala en `[startAt, endAt)`; el estado lo persiste
+ * profesional y sala en `[startAt, endAt)`, y TI2-142 los extiende a todos los
+ * profesionales de la atención; el estado lo persiste
  * `persistAppointmentTransition` (Infraestructura) tras aplicar la política
  * (`applyAppointmentTransition`), y el reagendamiento con fecha nueva queda
  * pendiente de TI2-109. Opera con datos ficticios.
@@ -39,6 +40,16 @@ export interface OccupySlotInput {
   readonly startAt: number;
   /** Fin del cupo como milésimas de segundo epoch (vocabulario TI2-87). */
   readonly endAt: number;
+  /**
+   * Profesionales que acompañan al responsable (TI2-142), ya normalizados por
+   * `normalizeAppointmentProfessionals`. Cada uno debe estar libre en el
+   * intervalo, igual que el responsable; al crear se registran como
+   * participantes. Al mover se ignora: los participantes guardados siguen a la
+   * atención y la ocupación los comprueba a todos.
+   */
+  readonly additionalProfessionalIds?: readonly string[];
+  /** Apoyos de la atención en línea (TI2-142); solo se guardan al crear. */
+  readonly onlineSupports?: readonly AccessNeed[];
   /**
    * Atención que se cambia de horario o de recursos (TI2-96). Tiene que seguir
    * ocupando su cupo y ser del mismo estudiante y acompañamiento; si no, la

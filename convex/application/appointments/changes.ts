@@ -16,6 +16,7 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import type { AccessNeed } from "../../domain/requests/request";
 import {
   authorizeAppointmentAttendance,
   authorizeAppointmentCancel,
@@ -27,6 +28,7 @@ import {
 } from "../authorization/authorize";
 import { auditAppointmentChange, type AppointmentAuditRecorder } from "./audit";
 import {
+  confirmAdditionalProfessionals,
   resolveBookableSlot,
   slotSelectionProblem,
   type SlotSelectionDeps,
@@ -82,6 +84,10 @@ export interface StoredAppointmentForChange {
   readonly justificationSubmittedAt?: number;
   readonly justificationReview?: JustificationReview;
   readonly supportingDocumentReceived?: boolean;
+  /** Profesionales que acompañan al responsable (TI2-142); ausente si no hay. */
+  readonly additionalProfessionalIds?: readonly string[];
+  /** Apoyos guardados de la atención en línea (TI2-142). */
+  readonly onlineSupports?: readonly AccessNeed[];
 }
 
 /**
@@ -270,6 +276,10 @@ export async function cancelAppointment(
  * se ocupa con `movedAppointmentId`, que descuenta la atención que se mueve y
  * solo escribe si el estudiante, el profesional y la sala están libres. Si la
  * ocupación falla, el persister no se llama y el origen sigue intacto.
+ *
+ * Una atención coordinada (TI2-142) conserva sus apoyos para la compatibilidad
+ * y sus profesionales adicionales: cada uno debe poder atender el destino
+ * (`confirmAdditionalProfessionals`) y la ocupación comprueba sus cruces.
  */
 export async function rescheduleAppointment(
   deps: RescheduleAppointmentDeps,
@@ -320,8 +330,21 @@ export async function rescheduleAppointment(
     startAt: input.startAt,
     endAt: input.endAt,
     timeZone: input.timeZone,
+    ...(stored.onlineSupports === undefined ? {} : { onlineSupports: stored.onlineSupports }),
   });
   if (slot.status === "error") return slot;
+
+  // Si el destino cambia al responsable por uno de los adicionales, ese ya no
+  // se revisa como adicional: es el responsable recién revalidado.
+  const additional = await confirmAdditionalProfessionals(deps, {
+    accompanimentId: stored.accompanimentId,
+    slot: slot.data,
+    additionalProfessionalIds: (stored.additionalProfessionalIds ?? []).filter(
+      (professionalId) => professionalId !== slot.data.professionalId,
+    ),
+    timeZone: input.timeZone,
+  });
+  if (additional.status === "error") return additional;
 
   const occupied = await deps.occupier.occupySlot({
     accompanimentId: stored.accompanimentId,

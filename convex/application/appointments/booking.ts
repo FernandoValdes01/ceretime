@@ -1,16 +1,23 @@
 import { INITIAL_APPOINTMENT_STATUS } from "../../domain/appointments/appointment";
+import { normalizeOnlineSupports } from "../../domain/appointments/online_access";
+import {
+  isAppointmentProfessional,
+  normalizeAppointmentProfessionals,
+} from "../../domain/appointments/participants";
 import {
   expandAvailabilitySlots,
+  slotsCoverInterval,
   type AvailabilitySlot,
 } from "../../domain/availability/availability";
 import {
   conflictError,
   errResult,
   noAvailabilityError,
+  okResult,
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
-import type { ModalityPreference } from "../../domain/requests/request";
+import type { AccessNeed, ModalityPreference } from "../../domain/requests/request";
 import { assessCompatibility } from "../../domain/spaces/compatibility";
 import {
   authorizeAppointmentBook,
@@ -51,6 +58,14 @@ import type { AppointmentOccupier, OccupySlotSuccess } from "./occupancy";
  * de TI2-109: ambos casos de uso aceptan solo un cupo vigente y compatible,
  * sin duplicar la regla en dos módulos.
  *
+ * Coordinación con varios profesionales (TI2-142): el Profesional asignado
+ * también reserva, en nombre del Estudiante dueño, y puede sumar profesionales
+ * adicionales y apoyos de la atención en línea. Cada adicional debe ser
+ * reservable y tener disponibilidad vigente de la misma modalidad durante toda
+ * la atención (`confirmAdditionalProfessionals`); la ocupación atómica
+ * comprueba los cruces de todos. El Estudiante reserva como antes: no elige
+ * profesionales adicionales ni declara apoyos.
+ *
  * Opera con datos ficticios.
  */
 
@@ -71,11 +86,18 @@ export interface SlotSelectionShape {
 /** Cupo elegido más el acompañamiento que lo admite. */
 export interface SlotSelectionInput extends SlotSelectionShape {
   readonly accompanimentId: string;
+  /**
+   * Apoyos ya normalizados que la atención en línea declara (TI2-142). Se
+   * suman a los de la plataforma para cubrir las necesidades vigentes.
+   */
+  readonly onlineSupports?: readonly AccessNeed[];
 }
 
 /** Entrada de reserva: el cupo elegido más la identidad de la sesión. */
 export interface BookAppointmentInput extends SlotSelectionInput {
   readonly tokenIdentifier: string | null;
+  /** Profesionales que acompañan al responsable; solo los elige un Profesional. */
+  readonly additionalProfessionalIds?: readonly string[];
 }
 
 /** Dependencias de la revalidación de cupo, compartidas con TI2-109. */
@@ -158,6 +180,40 @@ export function slotSelectionProblem(input: SlotSelectionShape): boolean {
 }
 
 /**
+ * Cupos vigentes del profesional en la fecha civil, releídos de sus bloques y
+ * excepciones. Una lectura truncada o una expansión inválida responden
+ * `conflict`, nunca una lista cortada.
+ */
+async function expandProfessionalSlots(
+  deps: SlotSelectionDeps,
+  professionalId: string,
+  date: string,
+  timeZone: string,
+): Promise<ApiResult<AvailabilitySlot[]>> {
+  const [blocksResult, exceptionsResult] = await Promise.all([
+    deps.availability.listActiveBlocks(professionalId),
+    deps.availability.listExceptions({ professionalId, from: date, to: date }),
+  ]);
+  if (blocksResult.status === "error" || exceptionsResult.status === "error") {
+    return conflict();
+  }
+  try {
+    return okResult(
+      expandAvailabilitySlots({
+        professionalId,
+        blocks: blocksResult.data,
+        exceptions: exceptionsResult.data,
+        from: date,
+        to: date,
+        timeZone,
+      }),
+    );
+  } catch {
+    return conflict();
+  }
+}
+
+/**
  * Relee disponibilidad y devuelve el cupo vigente que coincide exactamente
  * con la selección. Un bloque retirado, una excepción cancelada, un horario
  * que ya no existe o una modalidad/sala distinta responden `no_availability`;
@@ -169,33 +225,10 @@ async function findCurrentSlot(
   spaceId: string | undefined,
   date: string,
 ): Promise<ApiResult<AvailabilitySlot>> {
-  const [blocksResult, exceptionsResult] = await Promise.all([
-    deps.availability.listActiveBlocks(input.professionalId),
-    deps.availability.listExceptions({
-      professionalId: input.professionalId,
-      from: date,
-      to: date,
-    }),
-  ]);
-  if (blocksResult.status === "error" || exceptionsResult.status === "error") {
-    return conflict();
-  }
+  const current = await expandProfessionalSlots(deps, input.professionalId, date, input.timeZone);
+  if (current.status === "error") return current;
 
-  let expanded: AvailabilitySlot[];
-  try {
-    expanded = expandAvailabilitySlots({
-      professionalId: input.professionalId,
-      blocks: blocksResult.data,
-      exceptions: exceptionsResult.data,
-      from: date,
-      to: date,
-      timeZone: input.timeZone,
-    });
-  } catch {
-    return conflict();
-  }
-
-  const selected = expanded.find(
+  const selected = current.data.find(
     (slot) =>
       slot.startAt === input.startAt &&
       slot.endAt === input.endAt &&
@@ -240,7 +273,9 @@ export async function resolveBookableSlot(
   if (needs === null) return conflict();
 
   const onlineSupports =
-    current.data.modality === "online" ? await deps.compatibility.listOnlineSupports() : [];
+    current.data.modality === "online"
+      ? [...(await deps.compatibility.listOnlineSupports()), ...(input.onlineSupports ?? [])]
+      : [];
   const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, current.data);
   if (option === null) return noAvailability();
   if (!assessCompatibility(needs.needs, option).compatible) return noAvailability();
@@ -249,12 +284,48 @@ export async function resolveBookableSlot(
 }
 
 /**
+ * Confirma que cada profesional adicional puede atender el cupo ya revalidado
+ * del responsable (TI2-142): sigue siendo reservable en el acompañamiento y su
+ * disponibilidad vigente de la misma modalidad cubre todo el intervalo, aunque
+ * esté partida en cupos de otra duración. La sala la fija el cupo del
+ * responsable. Un adicional que no cumple responde `no_availability`, igual
+ * que un responsable no reservable; los cruces los decide la ocupación.
+ */
+export async function confirmAdditionalProfessionals(
+  deps: SlotSelectionDeps,
+  input: {
+    readonly accompanimentId: string;
+    readonly slot: AvailabilitySlot;
+    readonly additionalProfessionalIds: readonly string[];
+    readonly timeZone: string;
+  },
+): Promise<ApiResult<null>> {
+  const date = civilDateOfInstant(input.slot.startAt, input.timeZone);
+  for (const professionalId of input.additionalProfessionalIds) {
+    if (
+      !(await isBookableProfessional(deps.auth, {
+        accompanimentId: input.accompanimentId,
+        professionalId,
+      }))
+    ) {
+      return noAvailability();
+    }
+    const slots = await expandProfessionalSlots(deps, professionalId, date, input.timeZone);
+    if (slots.status === "error") return slots;
+    const sameModality = slots.data.filter((slot) => slot.modality === input.slot.modality);
+    if (!slotsCoverInterval(sameModality, input.slot)) return noAvailability();
+  }
+  return okResult(null);
+}
+
+/**
  * Reserva un cupo propio, activo y compatible.
  *
  * Valida la forma de la entrada, autoriza con TI2-86, revalida la
  * disponibilidad y la compatibilidad con las necesidades vigentes, y solo
- * entonces pide la ocupación atómica. La atención creada usa el estudiante
- * de la sesión, nunca un identificador enviado por el cliente, y conserva
+ * entonces pide la ocupación atómica. La atención creada usa el Estudiante
+ * dueño del acompañamiento leído en el servidor (el de la sesión, si reserva
+ * él), nunca un identificador enviado por el cliente, y conserva
  * como fecha efectiva el inicio del cupo revalidado. Una reserva exitosa
  * deja su evento mínimo de auditoría (TI2-128) en la misma mutation.
  */
@@ -272,17 +343,60 @@ export async function bookAppointment(
   });
   if (grant.status === "error") return denied();
 
-  const slot = await resolveBookableSlot(deps, input);
+  // El Estudiante reserva su atención como antes: elegir otros profesionales
+  // o declarar apoyos es coordinación del personal autorizado.
+  const requestedAdditional = input.additionalProfessionalIds ?? [];
+  const requestedSupports = input.onlineSupports ?? [];
+  if (
+    grant.data.actor === "student" &&
+    (requestedAdditional.length > 0 || requestedSupports.length > 0)
+  ) {
+    return denied();
+  }
+
+  const professionals = normalizeAppointmentProfessionals({
+    professionalId: input.professionalId,
+    additionalProfessionalIds: requestedAdditional,
+  });
+  if (professionals.status === "rejected") return conflict();
+  // Quien coordina participa: un Profesional no agenda una atención ajena.
+  if (
+    grant.data.actor === "professional" &&
+    !isAppointmentProfessional(grant.data.callerId, professionals)
+  ) {
+    return denied();
+  }
+
+  const supports = normalizeOnlineSupports(input.modality, requestedSupports);
+  if (supports.status === "rejected") return conflict();
+
+  const slot = await resolveBookableSlot(deps, {
+    ...input,
+    professionalId: professionals.professionalId,
+    onlineSupports: supports.supports,
+  });
   if (slot.status === "error") return slot;
+
+  const additional = await confirmAdditionalProfessionals(deps, {
+    accompanimentId: input.accompanimentId,
+    slot: slot.data,
+    additionalProfessionalIds: professionals.additionalProfessionalIds,
+    timeZone: input.timeZone,
+  });
+  if (additional.status === "error") return additional;
 
   const occupied = await deps.occupier.occupySlot({
     accompanimentId: input.accompanimentId,
-    studentId: grant.data.callerId,
+    studentId: grant.data.studentId,
     professionalId: slot.data.professionalId,
     modality: slot.data.modality,
     ...(slot.data.spaceId === undefined ? {} : { spaceId: slot.data.spaceId }),
     startAt: slot.data.startAt,
     endAt: slot.data.endAt,
+    ...(professionals.additionalProfessionalIds.length === 0
+      ? {}
+      : { additionalProfessionalIds: professionals.additionalProfessionalIds }),
+    ...(supports.supports.length === 0 ? {} : { onlineSupports: supports.supports }),
   });
   if (occupied.status === "error") return occupied;
 
