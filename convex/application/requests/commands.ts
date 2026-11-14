@@ -64,7 +64,7 @@ function deny(): never {
  * traduce con `unwrapApiResult`, como espacios y atenciones: la denegación es
  * `unauthorized`, un campo inválido `request_fields_invalid` y un estado que
  * no admite el paso `conflict`. Las de Sprint 1 y la forma anterior de
- * `createRequest` conservan su `Error` y su denegación como texto. Este
+ * `createRequest` todavía lanzan su `Error` y su denegación como texto. Este
  * archivo sigue ligado al contexto de Convex y a repositorios concretos; la
  * respuesta ya recibe puertos y el resto pasa en TI2-181.
  */
@@ -101,14 +101,15 @@ function isLegacySubmission(
  * Estudiante con cuenta vigente puede registrar; cualquier otro caso recibe
  * denegación genérica, sin motivo ni existencia del recurso.
  *
- * La forma anterior (solo `accessNeeds` como texto) valida el texto como
- * siempre, hasta `ACCESS_NEEDS_MAX_LENGTH`, no es idempotente porque no trae
- * clave y conserva su `Error` y su denegación como texto. Cualquier otra
- * entrada sigue la forma completa (TI2-141): autoriza antes de validar, exige
- * sus campos con `toCompleteSubmission`, los valida con `toRequestSubmission`
- * y se guarda con `insertReceivedRequestOnce`: un reintento con la misma
- * clave devuelve la solicitud ya creada sin escribir otra. Sus rechazos van
- * en el `ApiResult`.
+ * El `ApiResult` solo trae `error` en la forma completa (TI2-141). La forma
+ * anterior (solo `accessNeeds` como texto) todavía lanza hasta TI2-181:
+ * deniega con `ConvexError("No autorizado")` y rechaza el texto con `Error`.
+ * Valida el texto como siempre, hasta `ACCESS_NEEDS_MAX_LENGTH`, y no es
+ * idempotente porque no trae clave. Cualquier otra entrada sigue la forma
+ * completa: autoriza antes de validar, exige sus campos con
+ * `toCompleteSubmission`, los valida con `toRequestSubmission` y se guarda con
+ * `insertReceivedRequestOnce`: un reintento con la misma clave devuelve la
+ * solicitud ya creada sin escribir otra.
  */
 export async function registerRequest(
   ctx: MutationCtx,

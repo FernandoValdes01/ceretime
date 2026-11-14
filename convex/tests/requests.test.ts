@@ -1892,4 +1892,12 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
   ]) {
     expect(await publicErrorOf(promise)).toBe("No autorizado");
   }
+  // y la forma anterior rechaza el texto con `Error`, sin código
+  await expect(
+    publicErrorOf(
+      t
+        .withIdentity(student)
+        .mutation(api.presentation.requests.createRequest, { accessNeeds: " " }),
+    ),
+  ).rejects.toThrow("Se requiere describir la necesidad de acceso");
 });
