@@ -1088,7 +1088,7 @@ test("TI2-85: el Profesional con toma cierra sin acompañamiento desde revisión
   const asStudent = t.withIdentity(identityFor("ti85-est-7", "ti85-est-7@alu.uct.cl"));
   const asProfessional = t.withIdentity(identityOf("ti85-pro-2"));
 
-  // En revisión: registrar y tomar por la vía pública, cerrar por el caso de uso
+  // En revisión: registrar, tomar y cerrar por la vía pública
   const reviewed = await asStudent.mutation(api.presentation.requests.createRequest, {
     accessNeeds: "Necesidad de acceso ficticia",
   });
@@ -1879,10 +1879,10 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
 
   // La forma anterior de `createRequest` y Sprint 1 siguen denegando con texto hasta TI2-181,
   // tanto por rol como por falta de toma sobre la solicitud
-  const untaken = await seedRequestIn(t, studentId, "under_review");
+  const withoutTake = await seedRequestIn(t, studentId, "under_review");
   for (const promise of [
     t.withIdentity(professional).mutation(api.presentation.requests.requestAdditionalInformation, {
-      requestId: untaken,
+      requestId: withoutTake,
       reason: "Motivo",
     }),
     t
