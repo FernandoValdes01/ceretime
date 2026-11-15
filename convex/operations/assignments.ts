@@ -1,5 +1,10 @@
 import { ConvexError, v } from "convex/values";
-import { assignAccompaniment, revokeAccompaniment } from "../application/accompaniments/commands";
+import {
+  assignAccompaniment,
+  clearAssignmentStartWindow,
+  expireAssignmentWindow,
+  revokeAccompaniment,
+} from "../application/accompaniments/commands";
 import { internalMutation } from "../_generated/server";
 import { assignmentRoleUnion } from "../infrastructure/validators";
 
@@ -18,8 +23,8 @@ import { assignmentRoleUnion } from "../infrastructure/validators";
  * mismo y la lectura además exige ventana vigente. El acompañamiento
  * inexistente o no autorizado responde el mismo error genérico. La asignación
  * entre profesionales de personal sigue en arranque. Las lecturas además
- * deduplican por `accompanimentId` ante filas escritas a mano fuera del
- * Backend. Opera con datos ficticios.
+ * eliminan duplicados por `accompanimentId` ante filas escritas a mano fuera
+ * del Backend. Opera con datos ficticios.
  */
 export const assign = internalMutation({
   args: {
@@ -42,7 +47,7 @@ export const assign = internalMutation({
  * la realiza un Profesional de personal autorizado sobre el mismo
  * acompañamiento, aunque el objetivo haya perdido habilitación o vigencia;
  * el acompañamiento inexistente o no autorizado responde el mismo error
- * genérico. Revoca TODAS las filas activas de la tripla en lugar de una
+ * genérico. Revoca TODAS las filas activas de la terna en lugar de una
  * sola, para que ninguna fila escrita fuera del Backend deje acceso activo
  * tras informar éxito. Si no alcanza a cerrarlas todas, falla en vez de
  * informar éxito parcial. Completa la vía de escritura para que ningún flujo
@@ -59,5 +64,48 @@ export const revoke = internalMutation({
     const result = await revokeAccompaniment(ctx, identity, args);
     if (result.status === "error") throw new ConvexError(result.error.message);
     return result.data;
+  },
+});
+
+/**
+ * Revoca la fila al vencer su ventana acordada (TI2-140).
+ *
+ * La programa la vía pública al conceder o modificar con `validUntil`
+ * (`ctx.scheduler.runAt`): al vencer cambia el dato para que las consultas
+ * suscritas vuelvan a ejecutarse, ya que el paso del tiempo por sí solo no invalida
+ * la caché. Con guarda idempotente: fila activa, misma ventana y fecha
+ * alcanzada; si no, no escribe. El actor es el sistema.
+ */
+export const expireAssignment = internalMutation({
+  args: {
+    assignmentId: v.id("accompanimentAssignments"),
+    validUntil: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await expireAssignmentWindow(ctx, {
+      assignmentId: args.assignmentId,
+      validUntil: args.validUntil,
+    });
+  },
+});
+
+/**
+ * Limpia el inicio de la ventana al comenzar (TI2-140).
+ *
+ * La programa la vía pública al conceder o modificar con `validFrom` futuro:
+ * con la cota ya pasada la ventana equivale a no tenerla, y al escribir las
+ * consultas suscritas vuelvan a ejecutarse y la asignación aparece. Con la misma
+ * guarda idempotente que el vencimiento.
+ */
+export const clearAssignmentStart = internalMutation({
+  args: {
+    assignmentId: v.id("accompanimentAssignments"),
+    validFrom: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await clearAssignmentStartWindow(ctx, {
+      assignmentId: args.assignmentId,
+      validFrom: args.validFrom,
+    });
   },
 });

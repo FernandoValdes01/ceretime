@@ -1,7 +1,7 @@
 import type { UserIdentity } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
-import { isPersonalProfessionalActive } from "../../domain/accounts/enablement";
+import { isPersonalProfessionalActive, isTestProfessional } from "../../domain/accounts/enablement";
 import {
   validateAssignmentValidity,
   type AssignmentValidity,
@@ -10,7 +10,6 @@ import {
   checkGrantInternAccess,
   checkRevokeInternAccess,
 } from "../../domain/accompaniments/intern_access";
-import { getInstitutionalPopulation } from "../../domain/auth/institutional_domain";
 import { isProfileActive } from "../../domain/authorization/permissions";
 import {
   ASSIGNMENT_FIELDS_INVALID_ERROR_CODE,
@@ -21,9 +20,11 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import {
+  expireAssignmentRow,
   findExistingActiveAssignment,
   findProfileByTokenIdentifier,
   getAccompanimentById,
+  getAssignmentById,
   getUserById,
   hasActiveProfessionalAssignment,
   insertActiveAssignment,
@@ -71,29 +72,15 @@ function invalidValidity<T>(message: string): ApiResult<T> {
   return errResult({ code: ASSIGNMENT_FIELDS_INVALID_ERROR_CODE, message });
 }
 
-/** Llamante profesional con cuenta habilitada y vigente, o `null` sin permiso. */
-async function findProfessionalCaller(
+/** Profesional de personal con cuenta habilitada y vigente, o `null` sin permiso. */
+async function findStaffProfessionalCaller(
   ctx: MutationCtx,
   identity: UserIdentity | null,
 ): Promise<Doc<"users"> | null> {
   if (identity === null) return null;
-  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
-  if (
-    caller === null ||
-    caller.role !== "professional" ||
-    caller.institutionalStatus !== "enabled" ||
-    caller.accountStatus !== "active"
-  ) {
-    return null;
-  }
+  const caller = await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier);
+  if (caller === null || !isPersonalProfessionalActive(caller)) return null;
   return caller;
-}
-
-/** Verdadero cuando el objetivo es cuenta de prueba profesional `@alu.uct.cl` (TI2-140). */
-function isTestProfessionalTarget(target: Pick<Doc<"users">, "role" | "email">): boolean {
-  return (
-    target.role === "professional" && getInstitutionalPopulation(target.email) === "estudiante"
-  );
 }
 
 /**
@@ -114,7 +101,7 @@ function validityError<T>(validity: AssignmentValidity): ApiResult<T> | null {
 }
 
 /**
- * Crea la fila activa de la tripla. Primero autoriza (llamante de personal,
+ * Crea la fila activa de la terna. Primero autoriza (llamante de personal,
  * existencia y alcance con el mismo error genérico, sin revelar existencia)
  * y después valida (coherencia de la vigencia y duplicada). Rechaza que el
  * llamante se asigne acceso a sí mismo. Registra actor (`grantedBy`),
@@ -127,19 +114,10 @@ export async function assignAccompaniment(
   identity: UserIdentity | null,
   triple: AssignmentTriple,
   validity?: AssignmentValidity,
+  options?: { readonly requireScopeForStaff?: boolean },
 ): Promise<ApiResult<Id<"accompanimentAssignments">>> {
-  const caller = await findProfessionalCaller(ctx, identity);
+  const caller = await findStaffProfessionalCaller(ctx, identity);
   if (caller === null) return unauthorized();
-  if (
-    !isPersonalProfessionalActive({
-      role: caller.role,
-      email: caller.email,
-      institutionalStatus: caller.institutionalStatus,
-      accountStatus: caller.accountStatus,
-    })
-  ) {
-    return unauthorized();
-  }
   if (caller._id === triple.userId) return unauthorized();
 
   const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
@@ -180,7 +158,7 @@ export async function assignAccompaniment(
     // Cuenta de prueba (TI2-140/RN-25): solo opera habilitada y vigente, y
     // solo dentro de acompañamientos asignados por un profesional autorizado
     // sobre el mismo acompañamiento.
-    if (isTestProfessionalTarget(target)) {
+    if (isTestProfessional(target) || options?.requireScopeForStaff === true) {
       if (!isProfileActive(target)) return unauthorized();
       const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
         accompanimentId: triple.accompanimentId,
@@ -188,9 +166,8 @@ export async function assignAccompaniment(
       });
       if (!callerAssigned) return unauthorized();
     }
-    // La vía entre profesionales de personal sigue en arranque: cualquier
-    // profesional de personal vigente puede otorgarla y su recorte queda
-    // fuera de TI2-140.
+    // La vía interna entre profesionales de personal sigue en arranque; la
+    // vía pública exige alcance con `requireScopeForStaff` (TI2-140).
   }
 
   const invalid =
@@ -228,18 +205,8 @@ export async function updateAccompanimentAssignment(
   triple: AssignmentTriple,
   validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
 ): Promise<ApiResult<Id<"accompanimentAssignments">>> {
-  const caller = await findProfessionalCaller(ctx, identity);
+  const caller = await findStaffProfessionalCaller(ctx, identity);
   if (caller === null) return unauthorized();
-  if (
-    !isPersonalProfessionalActive({
-      role: caller.role,
-      email: caller.email,
-      institutionalStatus: caller.institutionalStatus,
-      accountStatus: caller.accountStatus,
-    })
-  ) {
-    return unauthorized();
-  }
 
   const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
   if (accompaniment === null) return unauthorized();
@@ -277,8 +244,9 @@ export async function updateAccompanimentAssignment(
  * mismo acompañamiento puede retirar o revocar la asignación de Practicante
  * o de cuenta de prueba, aunque el objetivo haya perdido habilitación o
  * vigencia; el acompañamiento inexistente o no autorizado responde el mismo
- * error genérico. La revocación entre profesionales de personal sigue en
- * arranque y no exige alcance. Revoca TODAS las filas activas de la tripla en
+ * error genérico. La vía interna entre profesionales de personal sigue en
+ * arranque y no exige alcance; la vía pública lo exige con
+ * `requireScopeForStaff`. Revoca TODAS las filas activas de la terna en
  * lugar de una sola, para que ninguna fila escrita fuera del Backend deje
  * acceso activo tras informar éxito. Si tras los lotes acotados quedan filas
  * activas, falla en vez de informar un éxito parcial. Registra actor
@@ -289,19 +257,10 @@ export async function revokeAccompaniment(
   ctx: MutationCtx,
   identity: UserIdentity | null,
   triple: AssignmentTriple,
+  options?: { readonly requireScopeForStaff?: boolean },
 ): Promise<ApiResult<number | null>> {
-  const caller = await findProfessionalCaller(ctx, identity);
+  const caller = await findStaffProfessionalCaller(ctx, identity);
   if (caller === null) return unauthorized();
-  if (
-    !isPersonalProfessionalActive({
-      role: caller.role,
-      email: caller.email,
-      institutionalStatus: caller.institutionalStatus,
-      accountStatus: caller.accountStatus,
-    })
-  ) {
-    return unauthorized();
-  }
 
   const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
   if (accompaniment === null) return unauthorized();
@@ -338,7 +297,7 @@ export async function revokeAccompaniment(
     if (target.role !== triple.assignedRole) {
       return conflict("El rol del usuario no coincide con el rol asignado");
     }
-    if (isTestProfessionalTarget(target)) {
+    if (isTestProfessional(target) || options?.requireScopeForStaff === true) {
       const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
         accompanimentId: triple.accompanimentId,
         userId: caller._id,
@@ -363,4 +322,46 @@ export async function revokeAccompaniment(
     return conflict("Quedaron asignaciones activas sin revocar");
   }
   return okResult(revoked);
+}
+
+/**
+ * Revoca la fila al vencer su ventana acordada (TI2-140).
+ *
+ * La ejecuta el programador (`ctx.scheduler.runAt(validUntil, ...)`): cambia
+ * el dato para que las consultas suscritas vuelvan a ejecutarse al vencer, ya que el
+ * paso del tiempo por sí solo no invalida la caché. Es idempotente y con
+ * guarda: si la fila ya no está activa, si la ventana cambió o si aún no
+ * vence, no escribe. El actor es el sistema (`revokedBy` ausente con
+ * `revokedAt`), distinto de la revocación de una persona.
+ */
+export async function expireAssignmentWindow(
+  ctx: MutationCtx,
+  input: { readonly assignmentId: Id<"accompanimentAssignments">; readonly validUntil: number },
+): Promise<Id<"accompanimentAssignments"> | null> {
+  const row = await getAssignmentById(ctx, input.assignmentId);
+  if (row === null || row.status !== "active") return null;
+  if (row.validUntil !== input.validUntil) return null;
+  if (Date.now() < input.validUntil) return null;
+  await expireAssignmentRow(ctx, row._id);
+  return row._id;
+}
+
+/**
+ * Limpia el inicio de la ventana acordada al comenzar (TI2-140).
+ *
+ * La ejecuta el programador (`ctx.scheduler.runAt(validFrom, ...)`): con la
+ * cota ya pasada la ventana equivale a no tenerla, y al escribir las consultas
+ * suscritas vuelvan a ejecutarse y la asignación aparece. Guarda idéntica a la del
+ * vencimiento: fila activa, misma cota y fecha alcanzada; si no, no escribe.
+ */
+export async function clearAssignmentStartWindow(
+  ctx: MutationCtx,
+  input: { readonly assignmentId: Id<"accompanimentAssignments">; readonly validFrom: number },
+): Promise<Id<"accompanimentAssignments"> | null> {
+  const row = await getAssignmentById(ctx, input.assignmentId);
+  if (row === null || row.status !== "active") return null;
+  if (row.validFrom !== input.validFrom) return null;
+  if (Date.now() < input.validFrom) return null;
+  await patchAssignmentValidity(ctx, row._id, { validFrom: null });
+  return row._id;
 }

@@ -811,6 +811,37 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
   expect(untouched?.status).toBe("under_review");
 });
 
+test("TI2-140: la cuenta de prueba habilitada no toma solicitudes", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti140-est-sol");
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+  const testProId = await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti140-prueba-sol@alu.uct.cl",
+      fullName: "Profesional de Prueba",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti140-prueba-sol`,
+    });
+  });
+
+  // La prueba, aunque habilitada y vigente, no opera solicitudes: la toma
+  // exige profesional de personal y la denegación no revela el motivo
+  const asTest = t.withIdentity(identityFor("ti140-prueba-sol", "ti140-prueba-sol@alu.uct.cl"));
+  await expect(
+    asTest.mutation(api.presentation.requests.takeRequest, { requestId }),
+  ).rejects.toThrow("No autorizado");
+  expect(testProId).toBeDefined();
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
+  expect(untouched?.status).toBe("received");
+});
+
 /*
  * TI2-85 y TI2-141: cancelar y cerrar sin acompañamiento. Desde TI2-141 los
  * dos casos de uso tienen entrada pública, así que estas pruebas pasan por

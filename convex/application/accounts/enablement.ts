@@ -9,7 +9,10 @@ import {
   validateBootstrapCandidate,
   validateStaffEnablementTarget,
   validateStaffRevocationTarget,
+  type AccountEnabler,
+  type EnablementCheck,
   type EnablementRejectionReason,
+  type EnablementTarget,
 } from "../../domain/accounts/enablement";
 import {
   canEnableAccount,
@@ -345,7 +348,8 @@ export async function enableInternAccount(
  * TI2-88 (TI2-140). Única fuente para las dos vías nuevas: la falta de
  * permiso o el objetivo fuera de la vía responde `unauthorized` sin revelar
  * existencia, y el tránsito inválido responde `conflict` con el motivo en
- * español, sin escribir.
+ * español, sin escribir. Sin `default`: cada motivo de la unión cerrada debe
+ * mapearse acá para que el compilador avise del faltante.
  */
 function enablementRejection<T>(reason: EnablementRejectionReason): ApiResult<T> {
   switch (reason) {
@@ -369,9 +373,49 @@ function enablementRejection<T>(reason: EnablementRejectionReason): ApiResult<T>
       return conflict("La cuenta no está habilitada.");
     case "target-already-enabled":
       return conflict("La cuenta ya está habilitada.");
-    default:
-      return conflict("La cuenta no admite la habilitación en su estado actual.");
   }
+}
+
+/**
+ * Habilita una cuenta cargando llamante y objetivo una sola vez (TI2-140).
+ * Recibe la decisión de Dominio (`checkInternEnablement` o
+ * `checkTestProfessionalEnablement`) y traduce su rechazo con
+ * `enablementRejection`.
+ */
+async function enableWithDecision(
+  ctx: MutationCtx,
+  identity: UserIdentity | null,
+  args: { readonly userId: Id<"users"> },
+  check: (input: {
+    readonly caller: AccountEnabler;
+    readonly target: EnablementTarget;
+  }) => EnablementCheck,
+): Promise<ApiResult<{ userId: Id<"users"> }>> {
+  const caller = await findCallerProfile(ctx, identity);
+  if (caller === null) return unauthorized();
+  const target = await getUserById(ctx, args.userId);
+  if (target === null) return unauthorized();
+  const decision = check({
+    caller: {
+      role: caller.role,
+      email: caller.email,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    },
+    target: {
+      role: target.role,
+      email: target.email,
+      institutionalStatus: target.institutionalStatus,
+      accountStatus: target.accountStatus,
+    },
+  });
+  if (!decision.ok) return enablementRejection(decision.reason);
+  await patchEnablement(ctx, {
+    userId: target._id,
+    enabledBy: caller._id,
+    enabledAt: Date.now(),
+  });
+  return okResult({ userId: target._id });
 }
 
 /**
@@ -388,33 +432,7 @@ export async function enableInternByProfessional(
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await findCallerProfile(ctx, identity);
-  if (caller === null) return unauthorized();
-
-  const target = await getUserById(ctx, args.userId);
-  if (target === null) return unauthorized();
-
-  const check = checkInternEnablement({
-    caller: {
-      role: caller.role,
-      email: caller.email,
-      institutionalStatus: caller.institutionalStatus,
-      accountStatus: caller.accountStatus,
-    },
-    target: {
-      role: target.role,
-      email: target.email,
-      institutionalStatus: target.institutionalStatus,
-      accountStatus: target.accountStatus,
-    },
-  });
-  if (!check.ok) return enablementRejection(check.reason);
-  await patchEnablement(ctx, {
-    userId: target._id,
-    enabledBy: caller._id,
-    enabledAt: Date.now(),
-  });
-  return okResult({ userId: target._id });
+  return await enableWithDecision(ctx, identity, args, checkInternEnablement);
 }
 
 /**
@@ -432,33 +450,7 @@ export async function enableTestProfessionalAccount(
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await findCallerProfile(ctx, identity);
-  if (caller === null) return unauthorized();
-
-  const target = await getUserById(ctx, args.userId);
-  if (target === null) return unauthorized();
-
-  const check = checkTestProfessionalEnablement({
-    caller: {
-      role: caller.role,
-      email: caller.email,
-      institutionalStatus: caller.institutionalStatus,
-      accountStatus: caller.accountStatus,
-    },
-    target: {
-      role: target.role,
-      email: target.email,
-      institutionalStatus: target.institutionalStatus,
-      accountStatus: target.accountStatus,
-    },
-  });
-  if (!check.ok) return enablementRejection(check.reason);
-  await patchEnablement(ctx, {
-    userId: target._id,
-    enabledBy: caller._id,
-    enabledAt: Date.now(),
-  });
-  return okResult({ userId: target._id });
+  return await enableWithDecision(ctx, identity, args, checkTestProfessionalEnablement);
 }
 
 export type BootstrapAdminInput = {

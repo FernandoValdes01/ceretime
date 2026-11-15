@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { ConvexError } from "convex/values";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
@@ -867,6 +867,215 @@ test("el alcance vencido del profesional no autoriza a conceder", async () => {
       .unique();
   });
   expect(leaked).toBeNull();
+});
+
+test("la vía pública exige alcance también entre profesionales de personal", async () => {
+  const t = convexTest(schema, modules);
+  const pro = await seedUser(t, {
+    subject: "ti140-pro-12",
+    email: "ti140-pro-12@uct.cl",
+    role: "professional",
+  });
+  const outsider = await seedUser(t, {
+    subject: "ti140-pro-12b",
+    email: "ti140-pro-12b@uct.cl",
+    role: "professional",
+  });
+  const other = await seedUser(t, {
+    subject: "ti140-pro-12c",
+    email: "ti140-pro-12c@uct.cl",
+    role: "professional",
+  });
+  await seedUser(t, {
+    subject: "ti140-pro-12d",
+    email: "ti140-pro-12d@uct.cl",
+    role: "professional",
+  });
+  const student = await seedUser(t, {
+    subject: "ti140-est-12",
+    email: "ti140-est-12@alu.uct.cl",
+    role: "student",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  await authorizeProfessional(
+    t,
+    { accompanimentId, professionalId: pro.id },
+    { subject: "ti140-pro-12d", email: "ti140-pro-12d@uct.cl" },
+  );
+
+  const asOutsider = t.withIdentity(identityFor("ti140-pro-12b", "ti140-pro-12b@uct.cl"));
+  await expectPublicError(
+    asOutsider.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+      accompanimentId,
+      userId: other.id,
+      assignedRole: "professional",
+    }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+
+  const asBootstrap = t.withIdentity(identityFor("ti140-pro-12d", "ti140-pro-12d@uct.cl"));
+  await asBootstrap.mutation(internal.operations.assignments.assign, {
+    accompanimentId,
+    userId: other.id,
+    assignedRole: "professional",
+  });
+  await expectPublicError(
+    asOutsider.mutation(api.presentation.accompaniments.revokeAccompanimentAccess, {
+      accompanimentId,
+      userId: other.id,
+      assignedRole: "professional",
+    }),
+    UNAUTHORIZED.code,
+    UNAUTHORIZED.message,
+  );
+  const kept = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q
+          .eq("accompanimentId", accompanimentId)
+          .eq("userId", other.id)
+          .eq("status", "active")
+          .eq("assignedRole", "professional"),
+      )
+      .unique();
+  });
+  expect(kept).not.toBeNull();
+  expect(outsider.id).toBeDefined();
+});
+
+test("el vencimiento programa la revocación y se ejecuta aunque nadie consulte", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    const pro = await seedUser(t, {
+      subject: "ti140-pro-13",
+      email: "ti140-pro-13@uct.cl",
+      role: "professional",
+    });
+    await seedUser(t, {
+      subject: "ti140-pro-13b",
+      email: "ti140-pro-13b@uct.cl",
+      role: "professional",
+    });
+    const student = await seedUser(t, {
+      subject: "ti140-est-13",
+      email: "ti140-est-13@alu.uct.cl",
+      role: "student",
+    });
+    const intern = await seedUser(t, {
+      subject: "ti140-int-13",
+      email: "ti140-int-13@alu.uct.cl",
+      role: "intern",
+    });
+    const accompanimentId = await seedAccompaniment(t, student.id);
+    await authorizeProfessional(
+      t,
+      { accompanimentId, professionalId: pro.id },
+      { subject: "ti140-pro-13b", email: "ti140-pro-13b@uct.cl" },
+    );
+
+    const asPro = t.withIdentity(identityFor("ti140-pro-13", "ti140-pro-13@uct.cl"));
+    const base = Date.now();
+    const assignmentId = await asPro.mutation(
+      api.presentation.accompaniments.assignAccompanimentAccess,
+      {
+        accompanimentId,
+        userId: intern.id,
+        assignedRole: "intern",
+        validFrom: base - 3_600_000,
+        validUntil: base + 1_000,
+      },
+    );
+
+    vi.advanceTimersByTime(2_000);
+    await t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(100));
+    const expired = await t.run(async (ctx) => ctx.db.get(assignmentId));
+    expect(expired?.status).toBe("revoked");
+    expect(typeof expired?.revokedAt).toBe("number");
+    expect(expired?.revokedBy).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("el comienzo programa la limpieza de la cota y las guardas ignoran lo obsoleto", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    const pro = await seedUser(t, {
+      subject: "ti140-pro-14",
+      email: "ti140-pro-14@uct.cl",
+      role: "professional",
+    });
+    await seedUser(t, {
+      subject: "ti140-pro-14b",
+      email: "ti140-pro-14b@uct.cl",
+      role: "professional",
+    });
+    const student = await seedUser(t, {
+      subject: "ti140-est-14",
+      email: "ti140-est-14@alu.uct.cl",
+      role: "student",
+    });
+    const intern = await seedUser(t, {
+      subject: "ti140-int-14",
+      email: "ti140-int-14@alu.uct.cl",
+      role: "intern",
+    });
+    const accompanimentId = await seedAccompaniment(t, student.id);
+    await authorizeProfessional(
+      t,
+      { accompanimentId, professionalId: pro.id },
+      { subject: "ti140-pro-14b", email: "ti140-pro-14b@uct.cl" },
+    );
+
+    const asPro = t.withIdentity(identityFor("ti140-pro-14", "ti140-pro-14@uct.cl"));
+    const base = Date.now();
+    const assignmentId = await asPro.mutation(
+      api.presentation.accompaniments.assignAccompanimentAccess,
+      {
+        accompanimentId,
+        userId: intern.id,
+        assignedRole: "intern",
+        validFrom: base + 1_000,
+        validUntil: base + 3_600_000,
+      },
+    );
+
+    const asIntern = t.withIdentity(identityFor("ti140-int-14", "ti140-int-14@alu.uct.cl"));
+    const earlyDenied = await denyMessage(
+      asIntern.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+    );
+    expect(earlyDenied).toContain("No autorizado");
+
+    vi.advanceTimersByTime(2_000);
+    await t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(100));
+    const started = await t.run(async (ctx) => ctx.db.get(assignmentId));
+    expect(started?.status).toBe("active");
+    expect(started?.validFrom).toBeUndefined();
+    expect(started?.validUntil).toBe(base + 3_600_000);
+    const nowVisible = await asIntern.query(api.presentation.accompaniments.getAccompaniment, {
+      accompanimentId,
+    });
+    expect(nowVisible.view).toBe("minimized");
+
+    const staleExpire = await t.mutation(internal.operations.assignments.expireAssignment, {
+      assignmentId,
+      validUntil: base + 9_999_999,
+    });
+    expect(staleExpire).toBeNull();
+    const staleClear = await t.mutation(internal.operations.assignments.clearAssignmentStart, {
+      assignmentId,
+      validFrom: base + 1_000,
+    });
+    expect(staleClear).toBeNull();
+    const untouched = await t.run(async (ctx) => ctx.db.get(assignmentId));
+    expect(untouched?.status).toBe("active");
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("practicante no escribe ni ve notas internas por la vía pública", async () => {

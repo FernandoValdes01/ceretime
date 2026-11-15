@@ -279,6 +279,14 @@ export async function takeActiveTripleRows(
     .take(take);
 }
 
+/** Fila de asignación por id, o `null` si no existe. */
+export async function getAssignmentById(
+  ctx: MutationCtx,
+  assignmentId: Id<"accompanimentAssignments">,
+): Promise<Doc<"accompanimentAssignments"> | null> {
+  return await ctx.db.get(assignmentId);
+}
+
 /** Marca una fila de asignación como revocada, registrando quién revoca y cuándo. */
 export async function revokeAssignmentRow(
   ctx: MutationCtx,
@@ -288,6 +296,25 @@ export async function revokeAssignmentRow(
   await ctx.db.patch(assignmentId, {
     status: "revoked",
     revokedBy,
+    revokedAt: Date.now(),
+  });
+}
+
+/**
+ * Revoca la fila por vencimiento de la ventana acordada (TI2-140).
+ *
+ * Solo persistencia: fija `status` en `revoked` con fecha, sin `revokedBy`
+ * porque el actor es el sistema, no una persona. La lectura ya excluía la
+ * fila vencida; esto cambia el dato para que las consultas suscritas se
+ * vuelvan a ejecutarse al vencer, ya que el paso del tiempo por sí solo no invalida la
+ * caché de Convex.
+ */
+export async function expireAssignmentRow(
+  ctx: MutationCtx,
+  assignmentId: Id<"accompanimentAssignments">,
+) {
+  await ctx.db.patch(assignmentId, {
+    status: "revoked",
     revokedAt: Date.now(),
   });
 }

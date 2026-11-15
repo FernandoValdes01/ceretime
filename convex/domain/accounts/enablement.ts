@@ -182,6 +182,22 @@ export type TestProfessionalTarget = {
 };
 
 /**
+ * Verdadero cuando la cuenta es de prueba: rol profesional con correo
+ * estudiantil (RN-25, TI2-140). Única fuente: la usan
+ * `validateTestProfessionalTarget`, los casos de uso de acompañamientos y el
+ * flujo de solicitudes, para que la prueba jamás habilite, conceda ni opere
+ * solicitudes.
+ */
+export function isTestProfessional(target: {
+  readonly role: EnablementRole;
+  readonly email: string;
+}): boolean {
+  return (
+    target.role === "professional" && getInstitutionalPopulation(target.email) === "estudiante"
+  );
+}
+
+/**
  * Valida que el objetivo pueda operar como profesional de prueba (TI2-140).
  *
  * Exige rol profesional con correo `@alu.uct.cl` (población estudiante), cuenta
@@ -191,11 +207,10 @@ export type TestProfessionalTarget = {
  * acompañamientos explícitamente asignados y auditados (RN-25/RD-11).
  */
 export function validateTestProfessionalTarget(target: TestProfessionalTarget): EnablementCheck {
-  if (target.role !== "professional") {
-    return { ok: false, reason: "target-not-professional" };
-  }
-  if (getInstitutionalPopulation(target.email) !== "estudiante") {
-    return { ok: false, reason: "target-email-not-test" };
+  if (!isTestProfessional(target)) {
+    return target.role !== "professional"
+      ? { ok: false, reason: "target-not-professional" }
+      : { ok: false, reason: "target-email-not-test" };
   }
   if (!isInstitutionalEmail(normalizeEmail(target.email))) {
     return { ok: false, reason: "target-email-not-institutional" };

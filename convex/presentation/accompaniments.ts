@@ -12,6 +12,7 @@ import {
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
 import { mutation, query } from "../_generated/server";
+import { internal } from "../_generated/api";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
 
@@ -128,13 +129,15 @@ export const getInternalNotes = query({
 });
 
 /**
- * Asigna un acompañamiento a un practicante o a una cuenta de prueba (TI2-140).
+ * Asigna un acompañamiento a un practicante, a una cuenta de prueba o a otro
+ * profesional (TI2-140).
  *
  * Solo el profesional de personal autorizado sobre el mismo acompañamiento
- * concede, con la cuenta objetivo habilitada y vigente. Los errores usan el
- * contrato común de TI2-88: `unauthorized` genérico (sin identidad, perfil,
- * vigencia, alcance o existencia), `conflict` ante rol distinto o fila
- * duplicada, y `assignment_fields_invalid` ante vigencia incoherente.
+ * concede, con la cuenta objetivo habilitada y vigente y alcance en todos los
+ * casos. Los errores usan el contrato común de TI2-88: `unauthorized` genérico
+ * (sin identidad, perfil, vigencia, alcance o existencia), `conflict` ante rol
+ * distinto o fila duplicada, y `assignment_fields_invalid` ante vigencia
+ * incoherente.
  */
 export const assignAccompanimentAccess = mutation({
   args: {
@@ -148,14 +151,31 @@ export const assignAccompanimentAccess = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
-    return unwrapApiResult(
+    const id = unwrapApiResult(
       await assignAccompaniment(
         ctx,
         identity,
         { accompanimentId, userId, assignedRole },
         { validFrom, validUntil },
+        { requireScopeForStaff: true },
       ),
     );
+    // Vencimiento en vivo (TI2-140): el paso del tiempo no invalida la caché
+    // de consultas suscritas, así que al vencer se revoca la fila y al
+    // comenzar se limpia la cota; el filtro de lectura queda como defensa.
+    if (validUntil !== undefined) {
+      await ctx.scheduler.runAt(validUntil, internal.operations.assignments.expireAssignment, {
+        assignmentId: id,
+        validUntil,
+      });
+    }
+    if (validFrom !== undefined) {
+      await ctx.scheduler.runAt(validFrom, internal.operations.assignments.clearAssignmentStart, {
+        assignmentId: id,
+        validFrom,
+      });
+    }
+    return id;
   },
 });
 
@@ -180,7 +200,7 @@ export const updateAccompanimentAccess = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
-    return unwrapApiResult(
+    const id = unwrapApiResult(
       await updateAccompanimentAssignment(
         ctx,
         identity,
@@ -188,11 +208,27 @@ export const updateAccompanimentAccess = mutation({
         { validFrom, validUntil },
       ),
     );
+    // La ventana nueva también vence en vivo; la guarda idempotente ignora la
+    // programación anterior si la ventana cambió o se quitó.
+    if (validUntil !== undefined && validUntil !== null) {
+      await ctx.scheduler.runAt(validUntil, internal.operations.assignments.expireAssignment, {
+        assignmentId: id,
+        validUntil,
+      });
+    }
+    if (validFrom !== undefined && validFrom !== null) {
+      await ctx.scheduler.runAt(validFrom, internal.operations.assignments.clearAssignmentStart, {
+        assignmentId: id,
+        validFrom,
+      });
+    }
+    return id;
   },
 });
 
 /**
- * Retira el acceso asignado a un practicante o a una cuenta de prueba (TI2-140).
+ * Retira el acceso asignado a un practicante, a una cuenta de prueba o a otro
+ * profesional (TI2-140).
  *
  * Solo el profesional de personal autorizado sobre el mismo acompañamiento
  * retira, aunque el objetivo haya perdido habilitación. Es idempotente y
@@ -207,6 +243,8 @@ export const revokeAccompanimentAccess = mutation({
   returns: v.union(v.number(), v.null()),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await revokeAccompaniment(ctx, identity, args));
+    return unwrapApiResult(
+      await revokeAccompaniment(ctx, identity, args, { requireScopeForStaff: true }),
+    );
   },
 });

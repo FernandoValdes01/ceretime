@@ -2,6 +2,7 @@ import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { isTestProfessional } from "../../domain/accounts/enablement";
 import { isActiveInRole } from "../../domain/authorization/permissions";
 import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
@@ -38,12 +39,16 @@ export async function findActiveStudent(
   return await findActiveProfile(ctx, tokenIdentifier, "student");
 }
 
-/** Profesional con cuenta habilitada y vigente, o `null`. */
+/** Profesional de personal con cuenta habilitada y vigente, o `null`. */
 export async function findActiveProfessional(
   ctx: DbContext,
   tokenIdentifier: string | null,
 ): Promise<Doc<"users"> | null> {
-  return await findActiveProfile(ctx, tokenIdentifier, "professional");
+  const caller = await findActiveProfile(ctx, tokenIdentifier, "professional");
+  // TI2-140/RN-25: la cuenta de prueba jamás opera solicitudes (toma,
+  // aceptación, respuesta o cierre); solo actúa dentro de acompañamientos
+  // explícitamente asignados.
+  return caller !== null && !isTestProfessional(caller) ? caller : null;
 }
 
 function orDeny(caller: Doc<"users"> | null): Doc<"users"> {
