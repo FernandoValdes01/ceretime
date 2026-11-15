@@ -1,6 +1,6 @@
-# Solicitudes de acompañamiento — TI2-141
+# Solicitudes de acompañamiento — TI2-141, TI2-181
 
-Fuente: `CONTEXT.md` (solicitud de acompañamiento y sus estados), sección «Solicitudes» de `docs/especificacion-prototipo.md`, modelo de estados de `convex/domain/requests/state-model.md` y esquema de TI2-135 en `convex/domain/database/integrity.md`. Superficie pública bajo `api.presentation.requests.*`; todo opera con datos ficticios. Las operaciones de Sprint 1 que no cambian (`listOpenRequests`, `takeRequest`, `requestAdditionalInformation` y `acceptRequest`) siguen descritas en `docs/contratos-sprint-1.md`.
+Fuente: `CONTEXT.md` (solicitud de acompañamiento y sus estados), sección «Solicitudes» de `docs/especificacion-prototipo.md`, modelo de estados de `convex/domain/requests/state-model.md` y esquema de TI2-135 en `convex/domain/database/integrity.md`. Superficie pública bajo `api.presentation.requests.*`; todo opera con datos ficticios. Las operaciones de Sprint 1 (`listOpenRequests`, `takeRequest`, `requestAdditionalInformation` y `acceptRequest`) conservan los argumentos y respuestas de `docs/contratos-sprint-1.md`; desde TI2-181 rechazan con el contrato común de «Errores».
 
 ## Estados
 
@@ -22,7 +22,7 @@ Fuente: `CONTEXT.md` (solicitud de acompañamiento y sus estados), sección «So
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
-| `presentation/requests.createRequest` | Forma completa o forma anterior (ver «Envío») | Solicitud en `received` | Estudiante vigente | `unauthorized` sin motivo; la forma anterior, el texto `No autorizado` |
+| `presentation/requests.createRequest` | Forma completa o forma anterior (ver «Envío») | Solicitud en `received` | Estudiante vigente | `unauthorized` sin motivo, en las dos formas |
 | `presentation/requests.respondToInformationRequest` | `requestId`, `response` | Solicitud en `under_review` | Estudiante vigente, dueño de la solicitud | `unauthorized`; ajena o inexistente responde igual |
 | `presentation/requests.cancelRequest` | `requestId`, `reason` | Solicitud en `cancelled` | Estudiante vigente, dueño de la solicitud | `unauthorized`; ajena o inexistente responde igual |
 | `presentation/requests.closeRequestWithoutAccompaniment` | `requestId`, `reason` | Solicitud en `closed_without_accompaniment` | Profesional vigente con toma activa | `unauthorized`; sin toma o inexistente responde igual |
@@ -90,15 +90,15 @@ Debe haber al menos una necesidad seleccionada o un `otherAccessNeed` con texto.
 
 ## Errores
 
-Las cuatro mutations de «Mutations públicas» rechazan con el contrato común de TI2-88, `ConvexError({ code, message })`, también al denegar: los clientes distinguen por `error.data.code` y muestran `error.data.message`, que ya está en español.
+Todas las operaciones de `api.presentation.requests.*`, mutations y consultas, rechazan con el contrato común de TI2-88, `ConvexError({ code, message })`, también al denegar: los clientes distinguen por `error.data.code` y muestran `error.data.message`, que ya está en español. Desde TI2-181 incluye las operaciones de Sprint 1 y la forma anterior de `createRequest`.
 
 | Código | Cuándo | Mensajes |
 | --- | --- | --- |
 | `unauthorized` | Identidad ausente, perfil ausente o no vigente, rol ajeno, solicitud ajena o inexistente, o toma ausente | «No autorizado» |
-| `request_fields_invalid` | Falta un dato o no cumple su regla. Un campo que no llega se nombra con el mismo texto que cuando llega vacío | Por ejemplo: «Describe la barrera o necesidad.», «Indica si prefieres la modalidad presencial o en línea.», «Selecciona al menos un día disponible.», «Se requiere el motivo para cancelar la solicitud.», «Se requiere la respuesta a la información pedida.», «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.» |
-| `access_needs_empty` | No hay ninguna necesidad seleccionada ni `otherAccessNeed` con texto | «Se requiere describir la necesidad de acceso.» |
-| `access_needs_too_long` | Los nombres seleccionados y `otherAccessNeed`, unidos, superan 2000 caracteres | «Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (2000 caracteres).» |
-| `conflict` | El estado actual no admite el paso | «La solicitud no admite la cancelación en su estado actual.», «La solicitud no admite el cierre sin acompañamiento en su estado actual.», «La solicitud no admite una respuesta en su estado actual.» |
+| `request_fields_invalid` | Falta un dato o no cumple su regla. Un campo que no llega se nombra con el mismo texto que cuando llega vacío | Por ejemplo: «Describe la barrera o necesidad.», «Indica si prefieres la modalidad presencial o en línea.», «Selecciona al menos un día disponible.», «Se requiere el motivo para cancelar la solicitud.», «Se requiere la respuesta a la información pedida.», «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.», «Se requiere el motivo para pedir información adicional», «Se requiere el objetivo para abrir el acompañamiento» |
+| `access_needs_empty` | No hay ninguna necesidad seleccionada ni `otherAccessNeed` con texto; en la forma anterior, `accessNeeds` llega vacío | «Se requiere describir la necesidad de acceso.»; en la forma anterior, «Se requiere describir la necesidad de acceso» |
+| `access_needs_too_long` | Los nombres seleccionados y `otherAccessNeed`, unidos, superan 2000 caracteres; en la forma anterior, `accessNeeds` los supera | «Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (2000 caracteres).»; en la forma anterior, «La necesidad de acceso supera el máximo permitido (2000 caracteres)» |
+| `conflict` | El estado actual no admite el paso, o quien llama ya tomó la solicitud | «La solicitud no admite la cancelación en su estado actual.», «La solicitud no admite el cierre sin acompañamiento en su estado actual.», «La solicitud no admite una respuesta en su estado actual.», «Solo se pueden tomar solicitudes recibidas», «Ya tomaste esta solicitud», «La solicitud no admite pedir información adicional en su estado actual», «La solicitud ya fue aceptada», «La solicitud no admite la aceptación en su estado actual» |
 
 ```json
 { "code": "request_fields_invalid", "message": "Selecciona al menos un día disponible." }
@@ -106,9 +106,9 @@ Las cuatro mutations de «Mutations públicas» rechazan con el contrato común 
 
 Los códigos `access_needs_*` son los mismos de Sprint 1, que los clientes ya traducen; el resto de los campos usa `request_fields_invalid`.
 
-La denegación de las cuatro mutations es `{ "code": "unauthorized", "message": "No autorizado" }`, sin motivo y sin revelar si la solicitud existe. El envío completo autoriza antes de validar: quien no puede enviar recibe `unauthorized` aunque mande campos inválidos.
+La denegación de todas las operaciones es `{ "code": "unauthorized", "message": "No autorizado" }`, sin motivo y sin revelar si la solicitud existe. Tomar una solicitud que ya no está recibida, o que ya tomaste, responde `conflict`, distinto de la denegación. El envío completo autoriza antes de validar: quien no puede enviar recibe `unauthorized` aunque mande campos inválidos.
 
-La forma anterior de `createRequest` y las operaciones de Sprint 1 (`takeRequest`, `requestAdditionalInformation`, `acceptRequest` y las consultas) no cambian en TI2-141. Deniegan con `ConvexError("No autorizado")`, con el texto en `error.data` en vez de un objeto, y rechazan con `Error` y un mensaje en español que solo llega al cliente en desarrollo: en producción Convex lo reemplaza por «Server Error». Pasarlas al contrato común cambia lo que reciben sus consumidores actuales; lo resuelve TI2-181.
+Hasta TI2-181, la forma anterior de `createRequest` y las operaciones de Sprint 1 denegaban con `ConvexError("No autorizado")`, con el texto en `error.data` en vez de un objeto, y rechazaban con `Error`, que en producción llegaba como «Server Error». Un cliente que compara `error.data` con el texto «No autorizado» deja de reconocer la denegación: debe comparar `error.data.code`. Como Web y Convex se despliegan por separado, un cliente puede aceptar las dos formas mientras dura la transición.
 
 ## Ejemplos para Web y Mobile
 
@@ -138,14 +138,11 @@ try {
 const MENSAJE_POR_DEFECTO = "No pudimos completar la acción. Intenta de nuevo.";
 const MENSAJE_SIN_ACCESO = "No tienes acceso a esta solicitud.";
 
-// Distingue por código estable. Lo que no es un código conocido, incluido el
-// «Server Error» que reciben en producción las operaciones de Sprint 1, usa el
-// mensaje genérico: nunca se muestra el texto del SDK.
+// Distingue por código estable. Lo que no es un código conocido usa el mensaje
+// genérico: nunca se muestra el texto del SDK.
 function mensajeDeError(error: unknown): string {
   if (!(error instanceof ConvexError)) return MENSAJE_POR_DEFECTO;
   const data: unknown = error.data;
-  // La forma anterior y Sprint 1 todavía deniegan con texto (TI2-181).
-  if (data === "No autorizado") return MENSAJE_SIN_ACCESO;
   if (typeof data !== "object" || data === null || !("code" in data)) return MENSAJE_POR_DEFECTO;
   const message = "message" in data && typeof data.message === "string" ? data.message : null;
   switch (data.code) {
