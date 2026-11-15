@@ -24,7 +24,7 @@ Las pruebas del flujo y de sus denegaciones son parte de la verificación. Que e
 
 ## Una dependencia que conviene evitar
 
-En [commands.ts de solicitudes](../convex/application/requests/commands.ts), Aplicación importa tipos del contexto y repositorios concretos de Convex. El caso de uso queda ligado a esa infraestructura. En el flujo de reserva, en cambio, `BookAppointmentDeps` declara las capacidades que la operación necesita y la composición entrega los adaptadores. Al modificar solicitudes, el equipo propietario puede trasladar esa responsabilidad a puertos según el cambio lo justifique, conservando autorización, contrato y atomicidad. No añadas un adaptador de paso sin ocultar una dependencia real ni cambies una transacción por llamadas independientes.
+En [commands.ts de acompañamientos](../convex/application/accompaniments/commands.ts), Aplicación importa tipos del contexto y repositorios concretos de Convex. El caso de uso queda ligado a esa infraestructura. En el flujo de reserva y en [commands.ts de solicitudes](../convex/application/requests/commands.ts) desde TI2-181, en cambio, los `deps` declaran las capacidades que la operación necesita y la composición entrega los adaptadores. Al modificar un módulo así ligado, el equipo propietario puede trasladar esa responsabilidad a puertos según el cambio lo justifique, conservando autorización, contrato y atomicidad. No añadas un adaptador de paso sin ocultar una dependencia real ni cambies una transacción por llamadas independientes.
 
 ## Cómo revisar un cambio
 

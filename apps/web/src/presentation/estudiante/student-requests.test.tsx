@@ -271,20 +271,28 @@ describe("detalle propio del Estudiante (TI2-89)", () => {
     expect(screen.getByRole("link", { name: "Volver a solicitudes" })).toBeDefined();
   });
 
-  test("la solicitud ajena muestra denegación permanente sin reintento ni contenido", async () => {
-    // El SDK decora el mensaje con su contexto; el valor canónico viaja en `data`.
-    const denial = new ConvexError("No autorizado");
-    denial.message =
-      "[CONVEX Q(presentation/requests:getRequest)] [Request ID: abc123] Server Error: No autorizado";
-    detailThrows = denial;
-    renderAt("/estudiante/solicitudes/req-ajena");
+  // TI2-181: el código del contrato común y el texto de Sprint 1, que se sigue
+  // aceptando mientras Web y Convex se despliegan por separado.
+  test.each([
+    ["el código del contrato común", { code: "unauthorized", message: "No autorizado" }],
+    ["el texto de Sprint 1", "No autorizado"],
+  ])(
+    "la solicitud ajena con %s muestra denegación permanente sin reintento ni contenido",
+    async (_, data) => {
+      // El SDK decora el mensaje con su contexto; el valor canónico viaja en `data`.
+      const denial = new ConvexError<string | { code: string; message: string }>(data);
+      denial.message =
+        "[CONVEX Q(presentation/requests:getRequest)] [Request ID: abc123] Server Error: No autorizado";
+      detailThrows = denial;
+      renderAt("/estudiante/solicitudes/req-ajena");
 
-    expect(await screen.findByText("No tienes acceso a esta solicitud.")).toBeDefined();
-    expect(screen.getByRole("alert").textContent).toMatch(/no tienes acceso/i);
-    expect(screen.queryByText(/apoyo ficticio/i)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Volver a solicitudes" })).toBeDefined();
-  });
+      expect(await screen.findByText("No tienes acceso a esta solicitud.")).toBeDefined();
+      expect(screen.getByRole("alert").textContent).toMatch(/no tienes acceso/i);
+      expect(screen.queryByText(/apoyo ficticio/i)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+      expect(screen.getByRole("link", { name: "Volver a solicitudes" })).toBeDefined();
+    },
+  );
 
   test("el fallo transitorio del detalle conserva aviso con reintento", async () => {
     detailThrows = new Error("backend caído");

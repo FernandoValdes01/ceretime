@@ -350,3 +350,41 @@ export function accompanimentNeedsReader(ctx: DbReader) {
     },
   };
 }
+
+/**
+ * Apertura del acompañamiento al aceptar una solicitud, para el puerto
+ * `AccompanimentOpener` de TI2-181. Inserta el acompañamiento y la asignación
+ * inicial del Profesional que acepta con el mismo `ctx`, así quedan en la
+ * transacción de la aceptación, y devuelve la fila leída de vuelta: la vista
+ * la decide Aplicación.
+ */
+export function accompanimentOpener(ctx: MutationCtx) {
+  return {
+    hasAccompanimentForRequest: async (requestId: Id<"requests">) =>
+      (await findAccompanimentByRequest(ctx, requestId)) !== null,
+    openAccompaniment: async (input: {
+      readonly requestId: Id<"requests">;
+      readonly studentId: Id<"users">;
+      readonly objective: string;
+      readonly accessNeeds: string;
+      readonly professionalId: Id<"users">;
+    }) => {
+      const { professionalId, ...opening } = input;
+      const accompanimentId = await insertAccompaniment(ctx, opening);
+      await insertActiveAssignment(
+        ctx,
+        { accompanimentId, userId: professionalId, assignedRole: "professional" },
+        professionalId,
+      );
+      const opened = await getAccompanimentById(ctx, accompanimentId);
+      if (opened === null) throw new Error("El acompañamiento abierto no quedó guardado.");
+      return {
+        _id: opened._id,
+        studentId: opened.studentId,
+        status: opened.status,
+        objective: opened.objective,
+        accessNeeds: opened.accessNeeds,
+      };
+    },
+  };
+}

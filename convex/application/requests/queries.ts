@@ -1,20 +1,27 @@
-import type { PaginationOptions, UserIdentity } from "convex/server";
-import { ConvexError } from "convex/values";
-import { toAccompanimentRequest, toRequestExchange } from "../../domain/requests/request";
-import type { PersistableRequestState } from "../../domain/requests/state";
-import type { Doc, Id } from "../../_generated/dataModel";
-import type { QueryCtx } from "../../_generated/server";
-import { findProfileByTokenIdentifier } from "../../infrastructure/accompaniments/repository";
-import {
-  findActiveTake,
-  getRequestById,
-  listActiveTakes,
-  listOwnedRequests,
-  listRecentRequestTransitions,
-  listRequestsByStatus,
-} from "../../infrastructure/requests/repository";
-import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
-import { requireActiveProfessional, requireActiveStudent } from "./identity";
+import type { PaginationOptions, PaginationResult } from "convex/server";
+import { okResult, type ApiResult } from "../../domain/errors/api_error";
+import { invalidRequestFields, toRequestExchange } from "../../domain/requests/request";
+import type {
+  ActiveProfessionalReader,
+  ActiveRequestViewerReader,
+  ActiveStudentReader,
+  RequestListReader,
+  RequestReader,
+  RequestTakeReader,
+  StoredRequestRow,
+} from "./ports";
+import { denied, toEntity, type RequestEntity } from "./results";
+
+/**
+ * Casos de uso de lectura de solicitudes (TI2-9, TI2-10, TI2-141, TI2-181).
+ *
+ * Capa de Aplicación: cada consulta recibe sus dependencias como puertos y
+ * devuelve `ApiResult`; Presentación lo traduce con `unwrapApiResult`, así toda
+ * denegación llega como `{ code: "unauthorized" }`, sin motivo ni existencia
+ * de recursos. El Estudiante solo ve sus recursos propios: el `studentId`
+ * siempre sale del perfil del servidor, nunca del cliente. Opera con datos
+ * ficticios.
+ */
 
 /** Posición del barrido y última solicitud emitida u omitida dentro del cursor (O(1)). */
 type AuthorizedTakesCursor = {
@@ -46,54 +53,32 @@ function encodeTakesCursor(cursor: AuthorizedTakesCursor): string {
   return JSON.stringify(cursor);
 }
 
-/**
- * Casos de uso de lectura de solicitudes (TI2-9).
- *
- * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
- * `ctx.auth.getUserIdentity()`, exige Estudiante con cuenta habilitada y
- * vigente, y lee con Infraestructura. El Estudiante solo ve sus recursos
- * propios: el `studentId` siempre sale del perfil del servidor, nunca del
- * cliente. Opera con datos ficticios.
- */
-
-function deny(): never {
-  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+/** Capacidades del listado propio del Estudiante. */
+export interface ListOwnRequestsDeps<RequestId extends string, UserId extends string> {
+  readonly students: ActiveStudentReader<UserId>;
+  readonly requests: RequestListReader<RequestId, UserId>;
 }
 
 /**
  * Lista las solicitudes propias del Estudiante, paginado y en cualquier
  * estado, incluidas las canceladas y las cerradas sin acompañamiento
- * (TI2-141). Cualquier otro rol recibe denegación genérica, sin motivo ni
- * existencia de recursos.
+ * (TI2-141). Cualquier otro rol recibe `unauthorized`.
  */
-export async function listOwnRequestsUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-  args: { readonly paginationOpts: PaginationOptions },
-) {
-  const student = await requireActiveStudent(ctx, identity);
-  const result = await listOwnedRequests(ctx, student._id, args.paginationOpts);
-  return {
-    ...result,
-    page: result.page.map((row) =>
-      toAccompanimentRequest({
-        _id: row._id,
-        studentId: row.studentId,
-        status: row.status,
-        accessNeeds: row.accessNeeds,
-        createdAt: row.createdAt,
-      }),
-    ),
-  };
+export async function listOwnRequestsUseCase<RequestId extends string, UserId extends string>(
+  deps: ListOwnRequestsDeps<RequestId, UserId>,
+  input: { readonly tokenIdentifier: string | null; readonly paginationOpts: PaginationOptions },
+): Promise<ApiResult<PaginationResult<RequestEntity<RequestId, UserId>>>> {
+  const student = await deps.students.findActiveStudent(input.tokenIdentifier);
+  if (student === null) return denied();
+  const result = await deps.requests.listOwnedRequests(student._id, input.paginationOpts);
+  return okResult({ ...result, page: result.page.map((row) => toEntity(row)) });
 }
 
-export type AuthorizedRequestItem = {
-  readonly _id: Id<"requests">;
-  readonly studentId: Id<"users">;
-  readonly status: PersistableRequestState;
-  readonly accessNeeds: string;
-  readonly createdAt: number;
-};
+/** Capacidades del listado de solicitudes tomadas por el Profesional. */
+export interface ListAuthorizedRequestsDeps<RequestId extends string, UserId extends string> {
+  readonly professionals: ActiveProfessionalReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> & RequestListReader<RequestId, UserId>;
+}
 
 /**
  * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
@@ -102,48 +87,53 @@ export type AuthorizedRequestItem = {
  * Un único `.paginate()` por llamada (límite de Convex) sobre las tomas
  * ordenadas por solicitud: las filas duplicadas quedan adyacentes y el
  * cursor solo guarda la posición y la última solicitud emitida u omitida (O(1)), sin
- * historial lineal. Cualquier otro rol recibe denegación genérica.
+ * historial lineal. Cualquier otro rol recibe `unauthorized`; un tamaño de
+ * página no finito es un argumento inválido y recibe `request_fields_invalid`
+ * (TI2-181).
  *
  * Cerrar o cancelar no revoca la toma, así que una solicitud cancelada o
  * cerrada sin acompañamiento sigue en el listado con su estado (TI2-141).
  */
-export async function listAuthorizedRequestsUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-  args: { readonly paginationOpts: PaginationOptions },
-) {
-  const professional = await requireActiveProfessional(ctx, identity);
-  if (!Number.isFinite(args.paginationOpts.numItems)) deny();
-  const limit = Math.min(Math.max(Math.floor(args.paginationOpts.numItems), 1), 100);
-  const cursor = decodeTakesCursor(args.paginationOpts.cursor);
-  const page = await listActiveTakes(ctx, professional._id, {
+export async function listAuthorizedRequestsUseCase<
+  RequestId extends string,
+  UserId extends string,
+>(
+  deps: ListAuthorizedRequestsDeps<RequestId, UserId>,
+  input: { readonly tokenIdentifier: string | null; readonly paginationOpts: PaginationOptions },
+): Promise<ApiResult<PaginationResult<RequestEntity<RequestId, UserId>>>> {
+  const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
+  if (professional === null) return denied();
+  if (!Number.isFinite(input.paginationOpts.numItems)) {
+    return invalidRequestFields("El tamaño de página debe ser un número finito.");
+  }
+  const limit = Math.min(Math.max(Math.floor(input.paginationOpts.numItems), 1), 100);
+  const cursor = decodeTakesCursor(input.paginationOpts.cursor);
+  const page = await deps.requests.listActiveTakes(professional._id, {
     numItems: limit,
     cursor: cursor.pos,
   });
-  const items: AuthorizedRequestItem[] = [];
+  const items: RequestEntity<RequestId, UserId>[] = [];
   const seenInPage = new Set<string>();
   let last = cursor.last;
   for (const take of page.page) {
     if (take.requestId === last || seenInPage.has(take.requestId)) continue;
     seenInPage.add(take.requestId);
-    const request = await getRequestById(ctx, take.requestId);
+    const request = await deps.requests.getRequest(take.requestId);
     if (request === null) continue;
     last = take.requestId;
-    items.push(
-      toAccompanimentRequest({
-        _id: request._id,
-        studentId: request.studentId,
-        status: request.status,
-        accessNeeds: request.accessNeeds,
-        createdAt: request.createdAt,
-      }),
-    );
+    items.push(toEntity(request));
   }
-  return {
+  return okResult({
     page: items,
     isDone: page.isDone,
     continueCursor: encodeTakesCursor({ pos: page.continueCursor, last }),
-  };
+  });
+}
+
+/** Capacidades de la bandeja de triage. */
+export interface ListOpenRequestsDeps<RequestId extends string, UserId extends string> {
+  readonly professionals: ActiveProfessionalReader<UserId>;
+  readonly requests: RequestListReader<RequestId, UserId>;
 }
 
 /**
@@ -151,25 +141,25 @@ export async function listAuthorizedRequestsUseCase(
  * solo solicitudes `received` (abiertas, sin tomar), con `_id`,
  * `studentId`, `status` y `createdAt`, nunca `accessNeeds`. Solo descubrir,
  * no autoriza a operar: cada solicitud requiere su toma. Cualquier otro rol
- * recibe denegación genérica.
+ * recibe `unauthorized`.
  */
-export async function listOpenRequestsUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-  args: { readonly paginationOpts: PaginationOptions },
-) {
-  await requireActiveProfessional(ctx, identity);
-  const result = await listRequestsByStatus(ctx, "received", args.paginationOpts);
-  return {
+export async function listOpenRequestsUseCase<RequestId extends string, UserId extends string>(
+  deps: ListOpenRequestsDeps<RequestId, UserId>,
+  input: { readonly tokenIdentifier: string | null; readonly paginationOpts: PaginationOptions },
+): Promise<
+  ApiResult<
+    PaginationResult<
+      Pick<RequestEntity<RequestId, UserId>, "_id" | "studentId" | "status" | "createdAt">
+    >
+  >
+> {
+  const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
+  if (professional === null) return denied();
+  const result = await deps.requests.listReceivedRequests(input.paginationOpts);
+  return okResult({
     ...result,
     page: result.page.map((row) => {
-      const adapted = toAccompanimentRequest({
-        _id: row._id,
-        studentId: row.studentId,
-        status: row.status,
-        accessNeeds: row.accessNeeds,
-        createdAt: row.createdAt,
-      });
+      const adapted = toEntity(row);
       return {
         _id: adapted._id,
         studentId: adapted.studentId,
@@ -177,8 +167,26 @@ export async function listOpenRequestsUseCase(
         createdAt: adapted.createdAt,
       };
     }),
-  };
+  });
 }
+
+/** Capacidades del detalle. */
+export interface GetRequestDetailDeps<RequestId extends string, UserId extends string> {
+  readonly viewers: ActiveRequestViewerReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> &
+    RequestTakeReader<RequestId, UserId> &
+    RequestListReader<RequestId, UserId>;
+}
+
+/** Detalle público: la entidad más los textos del intercambio y la razón de cierre. */
+type RequestDetail<RequestId extends string, UserId extends string> = RequestEntity<
+  RequestId,
+  UserId
+> & {
+  readonly informationRequest?: string;
+  readonly informationResponse?: string;
+  readonly closureReason?: string;
+};
 
 /**
  * Detalle que recibe quien ya puede leer la solicitud (TI2-141): la entidad
@@ -186,15 +194,12 @@ export async function listOpenRequestsUseCase(
  * Estudiante y la razón de cierre. Son textos libres, por eso no viajan en
  * los listados ni en la bandeja.
  */
-async function toRequestDetail(ctx: QueryCtx, request: Doc<"requests">) {
-  const entity = toAccompanimentRequest({
-    _id: request._id,
-    studentId: request.studentId,
-    status: request.status,
-    accessNeeds: request.accessNeeds,
-    createdAt: request.createdAt,
-  });
-  const changes = await listRecentRequestTransitions(ctx, request._id);
+async function toRequestDetail<RequestId extends string, UserId extends string>(
+  requests: RequestListReader<RequestId, UserId>,
+  request: StoredRequestRow<RequestId, UserId>,
+): Promise<RequestDetail<RequestId, UserId>> {
+  const entity = toEntity(request);
+  const changes = await requests.listRecentTransitions(request._id);
   return {
     ...entity,
     ...toRequestExchange(entity.status, changes),
@@ -207,40 +212,24 @@ async function toRequestDetail(ctx: QueryCtx, request: Doc<"requests">) {
  *
  * El Estudiante solo lee sus solicitudes propias y el Profesional solo las
  * que tomó con una toma activa a su nombre; en ambos casos se devuelve la
- * entidad completa. Cualquier otro caso (sin identidad, sin perfil, cuenta
+ * entidad completa. Cualquier otra persona (sin identidad, sin perfil, cuenta
  * inhabilitada, Practicante, Administrador, solicitud inexistente o ajena,
- * o Profesional sin toma) recibe la misma denegación genérica, sin revelar
+ * o Profesional sin toma) recibe la misma `unauthorized`, sin revelar
  * existencia ni motivo. La bandeja minimizada sigue siendo la única vía de
  * descubrimiento: una solicitud abierta sin toma no se detalla.
  */
-export async function getRequestDetailUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-  args: { readonly requestId: Id<"requests"> },
-) {
-  if (identity === null) deny();
-  const caller = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
-  if (
-    caller === null ||
-    caller.institutionalStatus !== "enabled" ||
-    caller.accountStatus !== "active"
-  ) {
-    deny();
-  }
-
-  const request = await getRequestById(ctx, args.requestId);
-  if (request === null) deny();
-
-  if (caller.role === "student") {
-    if (request.studentId !== caller._id) deny();
-    return await toRequestDetail(ctx, request);
-  }
-
-  if (caller.role === "professional") {
-    const take = await findActiveTake(ctx, args.requestId, caller._id);
-    if (take === null) deny();
-    return await toRequestDetail(ctx, request);
-  }
-
-  deny();
+export async function getRequestDetailUseCase<RequestId extends string, UserId extends string>(
+  deps: GetRequestDetailDeps<RequestId, UserId>,
+  input: { readonly tokenIdentifier: string | null; readonly requestId: RequestId },
+): Promise<ApiResult<RequestDetail<RequestId, UserId>>> {
+  const viewer = await deps.viewers.findActiveViewer(input.tokenIdentifier);
+  if (viewer === null) return denied();
+  const request = await deps.requests.getRequest(input.requestId);
+  if (request === null) return denied();
+  const allowed =
+    viewer.role === "student"
+      ? request.studentId === viewer._id
+      : await deps.requests.hasActiveTake(request._id, viewer._id);
+  if (!allowed) return denied();
+  return okResult(await toRequestDetail(deps.requests, request));
 }
