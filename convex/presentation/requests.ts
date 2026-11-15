@@ -22,6 +22,7 @@ import {
   modalityUnion,
   requestStatusUnion,
 } from "../infrastructure/validators";
+import { accompanimentOpener } from "../infrastructure/accompaniments/repository";
 import {
   activeProfessionalReader,
   activeStudentReader,
@@ -207,14 +208,24 @@ export const takeRequest = mutation({
 
 /**
  * Pide información adicional al Estudiante sobre una solicitud en revisión.
- * Solo un Profesional con cuenta vigente; el motivo es obligatorio.
+ * Solo un Profesional con toma activa y cuenta vigente; el motivo es
+ * obligatorio.
  */
 export const requestAdditionalInformation = mutation({
   args: { requestId: v.id("requests"), reason: v.string() },
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await requestAdditionalInformationUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await requestAdditionalInformationUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -228,7 +239,17 @@ export const acceptRequest = mutation({
   returns: acceptedAccompanimentValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await acceptRequestUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await acceptRequestUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          accompaniments: accompanimentOpener(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 

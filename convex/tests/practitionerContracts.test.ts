@@ -431,13 +431,17 @@ test("apertura única no duplica ante aceptación repetida", async () => {
   });
   expect(opened.status).toBe("active");
 
+  // TI2-181: la repetición es `conflict` del contrato común y no trae datos de la solicitud
   const repeatMessage = await denyMessage(
     asProfessional.mutation(api.presentation.requests.acceptRequest, {
       requestId,
       objective: "Otro objetivo ficticio",
     }),
   );
-  expect(repeatMessage).toBe("La solicitud ya fue aceptada");
+  expect(JSON.parse(repeatMessage)).toEqual({
+    code: "conflict",
+    message: "La solicitud ya fue aceptada",
+  });
   expect(repeatMessage).not.toContain(String(requestId));
   expect(repeatMessage).not.toContain("Objetivo ficticio de apertura única");
   expect(repeatMessage).not.toContain("Otro objetivo ficticio");

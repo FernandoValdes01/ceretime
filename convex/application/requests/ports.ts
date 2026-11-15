@@ -1,3 +1,4 @@
+import type { Accompaniment } from "../../domain/accompaniments/accompaniment";
 import type { PersistableRequestState } from "../../domain/requests/state";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 
@@ -62,4 +63,25 @@ export interface RequestTakeReader<RequestId extends string, UserId extends stri
 /** Crea la toma activa del Profesional y marca la solicitud como tomada por él. */
 export interface RequestTakeRecorder<RequestId extends string, UserId extends string> {
   recordTake(requestId: RequestId, professionalId: UserId): Promise<void>;
+}
+
+/**
+ * Abre el acompañamiento de una solicitud aceptada (TI2-24) con la asignación
+ * inicial de quien acepta, y lo devuelve leído de vuelta.
+ * `hasAccompanimentForRequest` comprueba la unicidad en la misma mutation que
+ * la apertura.
+ */
+export interface AccompanimentOpener<
+  RequestId extends string,
+  UserId extends string,
+  AccompanimentId extends string,
+> {
+  hasAccompanimentForRequest(requestId: RequestId): Promise<boolean>;
+  openAccompaniment(input: {
+    readonly requestId: RequestId;
+    readonly studentId: UserId;
+    readonly objective: string;
+    readonly accessNeeds: string;
+    readonly professionalId: UserId;
+  }): Promise<Accompaniment<AccompanimentId, UserId>>;
 }

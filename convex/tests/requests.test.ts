@@ -1923,20 +1923,14 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
     expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
   }
 
-  // La forma anterior de `createRequest` y Sprint 1 siguen denegando con texto hasta TI2-181,
-  // tanto por rol como por falta de toma sobre la solicitud
-  const withoutTake = await seedRequestIn(t, studentId, "under_review");
-  for (const promise of [
-    t.withIdentity(professional).mutation(api.presentation.requests.requestAdditionalInformation, {
-      requestId: withoutTake,
-      reason: "Motivo",
-    }),
-    t
-      .withIdentity(professional)
-      .mutation(api.presentation.requests.createRequest, { accessNeeds: "Texto ficticio" }),
-  ]) {
-    expect(await publicErrorOf(promise)).toBe("No autorizado");
-  }
+  // La forma anterior de `createRequest` sigue denegando con texto
+  expect(
+    await publicErrorOf(
+      t
+        .withIdentity(professional)
+        .mutation(api.presentation.requests.createRequest, { accessNeeds: "Texto ficticio" }),
+    ),
+  ).toBe("No autorizado");
   // y la forma anterior rechaza el texto con `Error`, sin código
   await expect(
     publicErrorOf(
@@ -1945,4 +1939,66 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
         .mutation(api.presentation.requests.createRequest, { accessNeeds: " " }),
     ),
   ).rejects.toThrow("Se requiere describir la necesidad de acceso");
+});
+
+test("TI2-181: pedir información y aceptar rechazan con el contrato común sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti181-est-1", "student");
+  const professionalId = await seedProfile(t, "ti181-pro-1", "professional");
+  await seedProfile(t, "ti181-pro-2", "professional");
+  const professional = identityOf("ti181-pro-1");
+  const asProfessional = t.withIdentity(professional);
+  const reviewing = await seedRequestIn(t, studentId, "under_review");
+  const closed = await seedRequestIn(t, studentId, "closed_without_accompaniment");
+  await seedTake(t, reviewing, professionalId);
+  await seedTake(t, closed, professionalId);
+  const askFor = (requestId: Id<"requests">, reason: string, as = asProfessional) =>
+    as.mutation(api.presentation.requests.requestAdditionalInformation, { requestId, reason });
+  const accept = (requestId: Id<"requests">, objective: string, as = asProfessional) =>
+    as.mutation(api.presentation.requests.acceptRequest, { requestId, objective });
+  const before = await snapshotOf(t, reviewing);
+  const closedBefore = await snapshotOf(t, closed);
+
+  // Sin toma, o con otro rol, la denegación es `unauthorized`
+  const other = t.withIdentity(identityOf("ti181-pro-2"));
+  const asStudent = t.withIdentity(identityOf("ti181-est-1"));
+  for (const promise of [
+    askFor(reviewing, "Motivo ficticio", other),
+    accept(reviewing, "Objetivo ficticio", other),
+    askFor(reviewing, "Motivo ficticio", asStudent),
+    accept(reviewing, "Objetivo ficticio", asStudent),
+  ]) {
+    expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
+  }
+
+  // Los campos faltantes son `request_fields_invalid`
+  expect(await publicErrorOf(askFor(reviewing, "  "))).toEqual({
+    code: "request_fields_invalid",
+    message: "Se requiere el motivo para pedir información adicional",
+  });
+  expect(await publicErrorOf(accept(reviewing, "  "))).toEqual({
+    code: "request_fields_invalid",
+    message: "Se requiere el objetivo para abrir el acompañamiento",
+  });
+
+  // Un estado que no admite el paso es `conflict`
+  expect(await publicErrorOf(askFor(closed, "Motivo ficticio"))).toEqual({
+    code: "conflict",
+    message: "La solicitud no admite pedir información adicional en su estado actual",
+  });
+  expect(await publicErrorOf(accept(closed, "Objetivo ficticio"))).toEqual({
+    code: "conflict",
+    message: "La solicitud no admite la aceptación en su estado actual",
+  });
+  expect(await snapshotOf(t, reviewing)).toEqual(before);
+  expect(await snapshotOf(t, closed)).toEqual(closedBefore);
+
+  // Aceptar dos veces abre un solo acompañamiento y la repetición es `conflict`
+  const opened = await accept(reviewing, "Objetivo ficticio");
+  expect(opened.status).toBe("active");
+  expect(await publicErrorOf(accept(reviewing, "Otro objetivo ficticio"))).toEqual({
+    code: "conflict",
+    message: "La solicitud ya fue aceptada",
+  });
+  expect((await snapshotOf(t, reviewing)).accompaniments).toBe(1);
 });

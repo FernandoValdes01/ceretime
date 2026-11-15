@@ -1,5 +1,4 @@
 import type { UserIdentity } from "convex/server";
-import { ConvexError } from "convex/values";
 import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
@@ -16,13 +15,6 @@ import { okResult, type ApiResult } from "../../domain/errors/api_error";
 import { transitionRequest } from "../../domain/requests/transition_policy";
 import type { Id } from "../../_generated/dataModel";
 import type { MutationCtx } from "../../_generated/server";
-import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
-import {
-  findAccompanimentByRequest,
-  getAccompanimentById,
-  insertAccompaniment,
-  insertActiveAssignment,
-} from "../../infrastructure/accompaniments/repository";
 import {
   findActiveTake,
   getRequestById,
@@ -31,13 +23,9 @@ import {
   logRequestTransition,
   setRequestStatus,
 } from "../../infrastructure/requests/repository";
-import {
-  findActiveProfessional,
-  findActiveStudent,
-  requireActiveProfessional,
-  requireActiveStudent,
-} from "./identity";
+import { findActiveProfessional, findActiveStudent, requireActiveStudent } from "./identity";
 import type {
+  AccompanimentOpener,
   ActiveProfessionalReader,
   RequestReader,
   RequestStatusWriter,
@@ -58,11 +46,6 @@ import { toStatusChange } from "./status_change";
  * repositorio deriva de ella el texto unido; la forma anterior guarda solo
  * ese texto. Opera con datos ficticios.
  */
-
-/** Denegación de Sprint 1, que conservan sus operaciones y la forma anterior de `createRequest`. */
-function deny(): never {
-  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
-}
 
 /*
  * Las operaciones que publica TI2-141 (envío completo, cancelación y cierre
@@ -193,54 +176,70 @@ async function registerLegacyRequest(
   return await insertReceivedRequest(ctx, { studentId, accessNeeds });
 }
 
+/** Capacidades que necesita pedir información; la composición entrega los adaptadores. */
+export interface RequestAdditionalInformationDeps<RequestId extends string, UserId extends string> {
+  readonly professionals: ActiveProfessionalReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> &
+    RequestTakeReader<RequestId, UserId> &
+    RequestStatusWriter<RequestId> &
+    RequestTransitionRecorder<RequestId, UserId>;
+  /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
+  readonly now: () => number;
+}
+
 /**
  * Pide información adicional al Estudiante: mueve la solicitud a
  * `awaiting_information_or_acceptance` aplicando la política de TI2-21. Solo
- * un Profesional con cuenta vigente; cualquier otro caso recibe denegación
- * genérica. Exige toma activa previa: sin relación explícita con la
- * solicitud no se opera. Si el estado actual no admite el paso o falta el
- * motivo, se rechaza sin modificar nada. Persiste el estado y el registro
- * del cambio (motivo, actor y fecha) en la misma transacción.
+ * un Profesional con cuenta vigente y toma activa previa: sin relación
+ * explícita con la solicitud no se opera, y cualquier otra persona o una
+ * solicitud inexistente recibe `unauthorized`. Sin motivo responde
+ * `request_fields_invalid`, y un estado que no admite el paso `conflict`
+ * (TI2-181), sin modificar nada. Persiste el estado y el registro del cambio
+ * (motivo, actor y fecha) en la misma transacción.
  */
-export async function requestAdditionalInformation(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-  input: { readonly requestId: Id<"requests">; readonly reason: string },
-) {
-  const professional = await requireActiveProfessional(ctx, identity);
-  const row = await getRequestById(ctx, input.requestId);
-  if (row === null) deny();
-  const take = await findActiveTake(ctx, input.requestId, professional._id);
-  if (take === null) deny();
+export async function requestAdditionalInformation<RequestId extends string, UserId extends string>(
+  deps: RequestAdditionalInformationDeps<RequestId, UserId>,
+  input: {
+    readonly tokenIdentifier: string | null;
+    readonly requestId: RequestId;
+    readonly reason: string;
+  },
+): Promise<ApiResult<RequestEntity<RequestId, UserId>>> {
+  const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
+  if (professional === null) return denied();
+  const row = await deps.requests.getRequest(input.requestId);
+  if (row === null) return denied();
+  if (!(await deps.requests.hasActiveTake(row._id, professional._id))) return denied();
   const result = transitionRequest({
     from: row.status,
     to: "awaiting_information_or_acceptance",
     actorId: professional._id,
-    occurredAt: Date.now(),
+    occurredAt: deps.now(),
     reason: input.reason,
   });
   if (result.status === "rejected") {
-    if (result.cause === "reason_required") {
-      throw new Error("Se requiere el motivo para pedir información adicional");
-    }
-    throw new Error("La solicitud no admite pedir información adicional en su estado actual");
+    return result.cause === "reason_required"
+      ? invalidRequestFields("Se requiere el motivo para pedir información adicional")
+      : stateConflict("La solicitud no admite pedir información adicional en su estado actual");
   }
-  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
-  await logRequestTransition(ctx, {
-    requestId: input.requestId,
+  await deps.requests.setRequestStatus(row._id, toStatusChange(result.change));
+  await deps.requests.logRequestTransition({
+    requestId: row._id,
     from: result.change.from,
     to: result.change.to,
     actorId: professional._id,
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
-  return toAccompanimentRequest({
-    _id: row._id,
-    studentId: row.studentId,
-    status: result.change.to,
-    accessNeeds: row.accessNeeds,
-    createdAt: row.createdAt,
-  });
+  return okResult(
+    toAccompanimentRequest({
+      _id: row._id,
+      studentId: row.studentId,
+      status: result.change.to,
+      accessNeeds: row.accessNeeds,
+      createdAt: row.createdAt,
+    }),
+  );
 }
 
 /** Capacidades que necesita la toma; la composición entrega los adaptadores. */
@@ -312,14 +311,32 @@ export async function takeRequest<RequestId extends string, UserId extends strin
   );
 }
 
+/** Capacidades que necesita la aceptación; la composición entrega los adaptadores. */
+export interface AcceptRequestDeps<
+  RequestId extends string,
+  UserId extends string,
+  AccompanimentId extends string,
+> {
+  readonly professionals: ActiveProfessionalReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> &
+    RequestTakeReader<RequestId, UserId> &
+    RequestStatusWriter<RequestId> &
+    RequestTransitionRecorder<RequestId, UserId>;
+  readonly accompaniments: AccompanimentOpener<RequestId, UserId, AccompanimentId>;
+  /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
+  readonly now: () => number;
+}
+
 /**
  * Acepta la solicitud y abre exactamente un acompañamiento (TI2-24).
  *
  * Solo un Profesional con cuenta vigente y con toma activa sobre la
- * solicitud; cualquier otro caso recibe denegación genérica. La transición
- * válida es `under_review` o `awaiting_information_or_acceptance` hacia
- * `accepted` según la política de TI2-21; otro estado se rechaza sin
- * modificar nada. El objetivo lo aporta quien acepta y es obligatorio.
+ * solicitud; cualquier otra persona o una solicitud inexistente recibe
+ * `unauthorized`. La transición válida es `under_review` o
+ * `awaiting_information_or_acceptance` hacia `accepted` según la política de
+ * TI2-21; otro estado, o una solicitud ya aceptada, responde `conflict`. El
+ * objetivo lo aporta quien acepta y es obligatorio: sin él responde
+ * `request_fields_invalid` (TI2-181). Ningún rechazo modifica nada.
  *
  * Todo ocurre en la misma transacción: estado, bitácora (actor y fecha),
  * acompañamiento (estudiante, necesidades de acceso y vínculo a la solicitud
@@ -329,66 +346,56 @@ export async function takeRequest<RequestId extends string, UserId extends strin
  * la otorga el propio acto de aceptación; la regla de no auto-otorgarse de
  * TI2-28 rige las concesiones posteriores a terceros, no la apertura.
  */
-export async function acceptRequest(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-  input: { readonly requestId: Id<"requests">; readonly objective: string },
-): Promise<Accompaniment<Id<"accompaniments">, Id<"users">>> {
-  const professional = await requireActiveProfessional(ctx, identity);
-  const row = await getRequestById(ctx, input.requestId);
-  if (row === null) deny();
-  const take = await findActiveTake(ctx, input.requestId, professional._id);
-  if (take === null) deny();
-  const existing = await findAccompanimentByRequest(ctx, input.requestId);
-  if (existing !== null) {
-    throw new Error("La solicitud ya fue aceptada");
+export async function acceptRequest<
+  RequestId extends string,
+  UserId extends string,
+  AccompanimentId extends string,
+>(
+  deps: AcceptRequestDeps<RequestId, UserId, AccompanimentId>,
+  input: {
+    readonly tokenIdentifier: string | null;
+    readonly requestId: RequestId;
+    readonly objective: string;
+  },
+): Promise<ApiResult<Accompaniment<AccompanimentId, UserId>>> {
+  const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
+  if (professional === null) return denied();
+  const row = await deps.requests.getRequest(input.requestId);
+  if (row === null) return denied();
+  if (!(await deps.requests.hasActiveTake(row._id, professional._id))) return denied();
+  if (await deps.accompaniments.hasAccompanimentForRequest(row._id)) {
+    return stateConflict("La solicitud ya fue aceptada");
   }
   const result = transitionRequest({
     from: row.status,
     to: "accepted",
     actorId: professional._id,
-    occurredAt: Date.now(),
+    occurredAt: deps.now(),
   });
   if (result.status === "rejected") {
-    throw new Error("La solicitud no admite la aceptación en su estado actual");
+    return stateConflict("La solicitud no admite la aceptación en su estado actual");
   }
   const objective = toOpeningObjective(input.objective);
   if (objective === null) {
-    throw new Error("Se requiere el objetivo para abrir el acompañamiento");
+    return invalidRequestFields("Se requiere el objetivo para abrir el acompañamiento");
   }
-  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
-  await logRequestTransition(ctx, {
-    requestId: input.requestId,
+  await deps.requests.setRequestStatus(row._id, toStatusChange(result.change));
+  await deps.requests.logRequestTransition({
+    requestId: row._id,
     from: result.change.from,
     to: result.change.to,
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
-  const accompanimentId = await insertAccompaniment(ctx, {
-    studentId: row.studentId,
-    objective,
-    accessNeeds: row.accessNeeds,
-    requestId: input.requestId,
-  });
-  await insertActiveAssignment(
-    ctx,
-    {
-      accompanimentId,
-      userId: professional._id,
-      assignedRole: "professional",
-    },
-    professional._id,
+  return okResult(
+    await deps.accompaniments.openAccompaniment({
+      requestId: row._id,
+      studentId: row.studentId,
+      objective,
+      accessNeeds: row.accessNeeds,
+      professionalId: professional._id,
+    }),
   );
-  const opened = await getAccompanimentById(ctx, accompanimentId);
-  if (opened === null) deny();
-  return {
-    _id: opened._id,
-    studentId: opened.studentId,
-    status: opened.status,
-    objective: opened.objective,
-    accessNeeds: opened.accessNeeds,
-    view: "full" as const,
-  };
 }
 
 /**

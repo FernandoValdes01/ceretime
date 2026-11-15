@@ -11,7 +11,10 @@ import {
 } from "../application/requests/commands";
 import { AGENDA_TIME_ZONE, civilRangeToInstantRange } from "../domain/availability/availability";
 import type { ApiResult } from "../domain/errors/api_error";
-import { findProfileByTokenIdentifier } from "../infrastructure/accompaniments/repository";
+import {
+  accompanimentOpener,
+  findProfileByTokenIdentifier,
+} from "../infrastructure/accompaniments/repository";
 import { activeProfessionalReader, requestStore } from "../infrastructure/requests/repository";
 import {
   appliedAccessNeedsFor,
@@ -187,17 +190,15 @@ export const load = internalMutation({
     // Las solicitudes pasan por los casos de uso reales, con las identidades
     // ficticias: el dataset cumple las mismas reglas que el flujo del cliente.
     const professional = identityOf("professional");
+    const asProfessional = {
+      professionals: activeProfessionalReader(ctx),
+      requests: requestStore(ctx),
+      accompaniments: accompanimentOpener(ctx),
+      now: Date.now,
+    };
+    const tokenIdentifier = professional.tokenIdentifier;
     const take = async (requestId: Id<"requests">) =>
-      registered(
-        await takeRequest(
-          {
-            professionals: activeProfessionalReader(ctx),
-            requests: requestStore(ctx),
-            now: Date.now,
-          },
-          { tokenIdentifier: professional.tokenIdentifier, requestId },
-        ),
-      );
+      registered(await takeRequest(asProfessional, { tokenIdentifier, requestId }));
     registered(
       await registerRequest(ctx, identityOf("studentReceived"), {
         accessNeeds: "Material de clases en formato digital compatible con lector de pantalla.",
@@ -217,10 +218,13 @@ export const load = internalMutation({
       }),
     );
     await take(awaiting._id);
-    await requestAdditionalInformation(ctx, professional, {
-      requestId: awaiting._id,
-      reason: "Falta indicar en qué asignaturas se necesita el apoyo.",
-    });
+    registered(
+      await requestAdditionalInformation(asProfessional, {
+        tokenIdentifier,
+        requestId: awaiting._id,
+        reason: "Falta indicar en qué asignaturas se necesita el apoyo.",
+      }),
+    );
 
     const accepted = registered(
       await registerRequest(ctx, identityOf("studentAccepted"), {
@@ -228,10 +232,13 @@ export const load = internalMutation({
       }),
     );
     await take(accepted._id);
-    const accompaniment = await acceptRequest(ctx, professional, {
-      requestId: accepted._id,
-      objective: "Coordinar los apoyos de acceso para las clases prácticas del semestre.",
-    });
+    const accompaniment = registered(
+      await acceptRequest(asProfessional, {
+        tokenIdentifier,
+        requestId: accepted._id,
+        objective: "Coordinar los apoyos de acceso para las clases prácticas del semestre.",
+      }),
+    );
     await assignAccompaniment(ctx, professional, {
       accompanimentId: accompaniment._id,
       userId: internId,
