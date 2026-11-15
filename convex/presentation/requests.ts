@@ -123,7 +123,12 @@ export const createRequest = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await registerRequest(ctx, identity, args));
+    return unwrapApiResult(
+      await registerRequest(
+        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, submission: args },
+      ),
+    );
   },
 });
 
@@ -263,7 +268,12 @@ export const cancelRequest = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await cancelRequestUseCase(ctx, identity, args));
+    return unwrapApiResult(
+      await cancelRequestUseCase(
+        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -277,7 +287,16 @@ export const closeRequestWithoutAccompaniment = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await closeRequestWithoutAccompanimentUseCase(ctx, identity, args));
+    return unwrapApiResult(
+      await closeRequestWithoutAccompanimentUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 

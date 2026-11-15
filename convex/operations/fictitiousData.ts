@@ -15,7 +15,11 @@ import {
   accompanimentOpener,
   findProfileByTokenIdentifier,
 } from "../infrastructure/accompaniments/repository";
-import { activeProfessionalReader, requestStore } from "../infrastructure/requests/repository";
+import {
+  activeProfessionalReader,
+  activeStudentReader,
+  requestStore,
+} from "../infrastructure/requests/repository";
 import {
   appliedAccessNeedsFor,
   syncAppointmentProfessional,
@@ -199,23 +203,27 @@ export const load = internalMutation({
     const tokenIdentifier = professional.tokenIdentifier;
     const take = async (requestId: Id<"requests">) =>
       registered(await takeRequest(asProfessional, { tokenIdentifier, requestId }));
-    registered(
-      await registerRequest(ctx, identityOf("studentReceived"), {
-        accessNeeds: "Material de clases en formato digital compatible con lector de pantalla.",
-      }),
+    const register = async (student: AccountKey, accessNeeds: string) =>
+      registered(
+        await registerRequest(
+          { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+          { tokenIdentifier: identityOf(student).tokenIdentifier, submission: { accessNeeds } },
+        ),
+      );
+    await register(
+      "studentReceived",
+      "Material de clases en formato digital compatible con lector de pantalla.",
     );
 
-    const underReview = registered(
-      await registerRequest(ctx, identityOf("studentUnderReview"), {
-        accessNeeds: "Tiempo adicional en evaluaciones escritas.",
-      }),
+    const underReview = await register(
+      "studentUnderReview",
+      "Tiempo adicional en evaluaciones escritas.",
     );
     await take(underReview._id);
 
-    const awaiting = registered(
-      await registerRequest(ctx, identityOf("studentAwaiting"), {
-        accessNeeds: "Apoyo para organizar la entrega de trabajos del semestre.",
-      }),
+    const awaiting = await register(
+      "studentAwaiting",
+      "Apoyo para organizar la entrega de trabajos del semestre.",
     );
     await take(awaiting._id);
     registered(
@@ -226,10 +234,9 @@ export const load = internalMutation({
       }),
     );
 
-    const accepted = registered(
-      await registerRequest(ctx, identityOf("studentAccepted"), {
-        accessNeeds: "Sala con acceso sin escaleras para las clases prácticas.",
-      }),
+    const accepted = await register(
+      "studentAccepted",
+      "Sala con acceso sin escaleras para las clases prácticas.",
     );
     await take(accepted._id);
     const accompaniment = registered(

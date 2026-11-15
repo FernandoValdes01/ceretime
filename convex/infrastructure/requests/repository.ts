@@ -2,7 +2,7 @@ import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { isActiveInRole } from "../../domain/authorization/permissions";
-import { toStoredAccessNeeds } from "../../domain/requests/request";
+import { toStoredAccessNeeds, type RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 import { findProfileByTokenIdentifier } from "../accompaniments/repository";
 
@@ -213,10 +213,10 @@ export async function logRequestTransition(
 
 /**
  * Lecturas y escrituras de una solicitud para los puertos de Aplicación
- * (TI2-141, TI2-181). Cumple `RequestReader`, `RequestStatusWriter`,
- * `RequestTransitionRecorder`, `RequestTakeReader` y `RequestTakeRecorder` por
- * forma, sin importarlos; Presentación lo crea con el `ctx` de la mutation,
- * así todo queda en la misma transacción.
+ * (TI2-141, TI2-181). Cumple `RequestReader`, `RequestRegistrar`,
+ * `RequestStatusWriter`, `RequestTransitionRecorder`, `RequestTakeReader` y
+ * `RequestTakeRecorder` por forma, sin importarlos; Presentación lo crea con
+ * el `ctx` de la mutation, así todo queda en la misma transacción.
  */
 export function requestStore(ctx: MutationCtx) {
   return {
@@ -231,6 +231,29 @@ export function requestStore(ctx: MutationCtx) {
       await insertActiveTake(ctx, { requestId, userId: professionalId, grantedBy: professionalId });
       await markRequestTaken(ctx, requestId, professionalId);
     },
+    registerOnce: async (
+      studentId: Id<"users">,
+      submission: RequestSubmission,
+      receivedAt: number,
+    ) => {
+      const { accessNeeds, generalAvailability, ...content } = submission;
+      const { requestId } = await insertReceivedRequestOnce(ctx, {
+        ...content,
+        // La lista del contrato se persiste como `accessNeedSelections`
+        // (TI2-135), y de ella sale el texto unido. El esquema tipa los
+        // arreglos como mutables; el dominio, de solo lectura.
+        accessNeedSelections: [...accessNeeds],
+        generalAvailability: {
+          ...generalAvailability,
+          preferredWeekdays: [...generalAvailability.preferredWeekdays],
+        },
+        studentId,
+        provenance: { channel: "student", receivedAt },
+      });
+      return requestId;
+    },
+    registerLegacy: (studentId: Id<"users">, accessNeeds: string) =>
+      insertReceivedRequest(ctx, { studentId, accessNeeds }),
   };
 }
 

@@ -1923,22 +1923,23 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
     expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
   }
 
-  // La forma anterior de `createRequest` sigue denegando con texto
-  expect(
-    await publicErrorOf(
-      t
-        .withIdentity(professional)
-        .mutation(api.presentation.requests.createRequest, { accessNeeds: "Texto ficticio" }),
-    ),
-  ).toBe("No autorizado");
-  // y la forma anterior rechaza el texto con `Error`, sin código
-  await expect(
+  // TI2-181: la forma anterior de `createRequest` deniega con `unauthorized`
+  // y rechaza el texto con los códigos `access_needs_*`, sin escribir
+  const legacy = (identity: Identity, accessNeeds: string) =>
     publicErrorOf(
-      t
-        .withIdentity(student)
-        .mutation(api.presentation.requests.createRequest, { accessNeeds: " " }),
-    ),
-  ).rejects.toThrow("Se requiere describir la necesidad de acceso");
+      sessionOf(t, identity).mutation(api.presentation.requests.createRequest, { accessNeeds }),
+    );
+  expect(await legacy(professional, "Texto ficticio")).toEqual(UNAUTHORIZED);
+  expect(await legacy(null, " ")).toEqual(UNAUTHORIZED);
+  expect(await legacy(student, " ")).toEqual({
+    code: "access_needs_empty",
+    message: "Se requiere describir la necesidad de acceso",
+  });
+  expect(await legacy(student, "a".repeat(2001))).toEqual({
+    code: "access_needs_too_long",
+    message: "La necesidad de acceso supera el máximo permitido (2000 caracteres)",
+  });
+  expect(await requestsOf(t, studentId)).toHaveLength(requestsBefore);
 });
 
 test("TI2-181: pedir información y aceptar rechazan con el contrato común sin escribir", async () => {

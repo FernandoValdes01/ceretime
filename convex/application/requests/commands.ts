@@ -1,4 +1,3 @@
-import type { UserIdentity } from "convex/server";
 import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
 import {
   ACCESS_NEEDS_MAX_LENGTH,
@@ -6,28 +5,18 @@ import {
   toCompleteSubmission,
   toRequestSubmission,
   type AccompanimentRequest,
-  type RequestSubmission,
   type RequestSubmissionDraft,
   toAccessNeedsText,
   toAccompanimentRequest,
 } from "../../domain/requests/request";
-import { okResult, type ApiResult } from "../../domain/errors/api_error";
+import { errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
 import { transitionRequest } from "../../domain/requests/transition_policy";
-import type { Id } from "../../_generated/dataModel";
-import type { MutationCtx } from "../../_generated/server";
-import {
-  findActiveTake,
-  getRequestById,
-  insertReceivedRequest,
-  insertReceivedRequestOnce,
-  logRequestTransition,
-  setRequestStatus,
-} from "../../infrastructure/requests/repository";
-import { findActiveProfessional, findActiveStudent, requireActiveStudent } from "./identity";
 import type {
   AccompanimentOpener,
   ActiveProfessionalReader,
+  ActiveStudentReader,
   RequestReader,
+  RequestRegistrar,
   RequestStatusWriter,
   RequestTakeReader,
   RequestTakeRecorder,
@@ -37,25 +26,18 @@ import { denied, stateConflict } from "./results";
 import { toStatusChange } from "./status_change";
 
 /**
- * Casos de uso de escritura de solicitudes (TI2-9, TI2-85, TI2-141).
+ * Casos de uso de escritura de solicitudes (TI2-9, TI2-85, TI2-141, TI2-181).
  *
- * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
- * `ctx.auth.getUserIdentity()`, exige el rol con cuenta habilitada y
- * vigente, y persiste con Infraestructura. El envío completo de TI2-141
- * guarda la lista de necesidades de acceso como `accessNeedSelections` y el
- * repositorio deriva de ella el texto unido; la forma anterior guarda solo
- * ese texto. Opera con datos ficticios.
- */
-
-/*
- * Las operaciones que publica TI2-141 (envío completo, cancelación y cierre
- * aquí; la respuesta, en `respond.ts`) devuelven `ApiResult` y Presentación lo
- * traduce con `unwrapApiResult`, como espacios y atenciones: la denegación es
- * `unauthorized`, un campo inválido `request_fields_invalid` y un estado que
- * no admite el paso `conflict`. Las de Sprint 1 y la forma anterior de
- * `createRequest` todavía lanzan su `Error` y su denegación como texto. Este
- * archivo sigue ligado al contexto de Convex y a repositorios concretos; la
- * respuesta ya recibe puertos y el resto pasa en TI2-181.
+ * Capa de Aplicación: cada operación recibe sus dependencias como puertos de
+ * `ports.ts` y no conoce Convex ni repositorios concretos. Presentación
+ * compone los adaptadores de Infraestructura con el `ctx` de la mutation, así
+ * cada operación sigue siendo una sola transacción. El perfil sale de la
+ * sesión del servidor, nunca de un identificador del cliente.
+ *
+ * Todas devuelven `ApiResult` y Presentación lo traduce con
+ * `unwrapApiResult`: la denegación es `unauthorized`, un campo inválido
+ * `request_fields_invalid` (o `access_needs_*` en las necesidades de acceso)
+ * y un estado que no admite el paso `conflict`. Opera con datos ficticios.
  */
 
 /** Solicitud pública con los identificadores que instancia Presentación. */
@@ -63,9 +45,6 @@ type RequestEntity<RequestId extends string, UserId extends string> = Accompanim
   readonly _id: RequestId;
   readonly studentId: UserId;
 };
-
-/** Solicitud pública con los identificadores de Convex, para los validadores de la API. */
-type StoredRequest = RequestEntity<Id<"requests">, Id<"users">>;
 
 /** Campos que solo existen en la forma completa. */
 const FULL_FORM_FIELDS = [
@@ -88,44 +67,73 @@ function isLegacySubmission(
   );
 }
 
+/** Capacidades que necesita el registro; la composición entrega los adaptadores. */
+export interface RegisterRequestDeps<RequestId extends string, UserId extends string> {
+  readonly students: ActiveStudentReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> & RequestRegistrar<RequestId, UserId>;
+  /** Reloj del servidor para la procedencia del envío; las pruebas lo fijan. */
+  readonly now: () => number;
+}
+
 /**
  * Registra la solicitud del Estudiante en estado `received`. Solo el propio
- * Estudiante con cuenta vigente puede registrar; cualquier otro caso recibe
- * denegación genérica, sin motivo ni existencia del recurso.
+ * Estudiante con cuenta vigente puede registrar; cualquier otra persona recibe
+ * `unauthorized`, sin motivo ni existencia del recurso, aunque los campos
+ * también fallen.
  *
- * El `ApiResult` solo trae `error` en la forma completa (TI2-141). La forma
- * anterior (solo `accessNeeds` como texto) todavía lanza hasta TI2-181:
- * deniega con `ConvexError("No autorizado")` y rechaza el texto con `Error`.
- * Valida el texto como siempre, hasta `ACCESS_NEEDS_MAX_LENGTH`, y no es
- * idempotente porque no trae clave. Cualquier otra entrada sigue la forma
- * completa: autoriza antes de validar, exige sus campos con
- * `toCompleteSubmission`, los valida con `toRequestSubmission` y se guarda con
- * `insertReceivedRequestOnce`: un reintento con la misma clave devuelve la
- * solicitud ya creada sin escribir otra.
+ * La forma anterior (solo `accessNeeds` como texto) valida el texto como
+ * siempre, hasta `ACCESS_NEEDS_MAX_LENGTH`, con los códigos `access_needs_*`
+ * (TI2-181), y no es idempotente porque no trae clave. Cualquier otra entrada
+ * sigue la forma completa de TI2-141: exige sus campos con
+ * `toCompleteSubmission`, los valida con `toRequestSubmission` y se guarda una
+ * sola vez por clave: un reintento con la misma clave devuelve la solicitud
+ * ya creada sin escribir otra.
  */
-export async function registerRequest(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-  input: RequestSubmissionDraft,
-): Promise<ApiResult<StoredRequest>> {
-  if (isLegacySubmission(input)) {
-    const student = await requireActiveStudent(ctx, identity);
-    const requestId = await registerLegacyRequest(ctx, student._id, input.accessNeeds);
-    return okResult(await readRegistered(ctx, requestId));
-  }
-  const student = await findActiveStudent(ctx, identity?.tokenIdentifier ?? null);
+export async function registerRequest<RequestId extends string, UserId extends string>(
+  deps: RegisterRequestDeps<RequestId, UserId>,
+  input: { readonly tokenIdentifier: string | null; readonly submission: RequestSubmissionDraft },
+): Promise<ApiResult<RequestEntity<RequestId, UserId>>> {
+  const student = await deps.students.findActiveStudent(input.tokenIdentifier);
   if (student === null) return denied();
-  const complete = toCompleteSubmission(input);
+  const draft = input.submission;
+  if (isLegacySubmission(draft)) {
+    const accessNeeds = toLegacyAccessNeeds(draft.accessNeeds);
+    if (accessNeeds.status === "error") return accessNeeds;
+    const requestId = await deps.requests.registerLegacy(student._id, accessNeeds.data);
+    return okResult(await readRegistered(deps.requests, requestId));
+  }
+  const complete = toCompleteSubmission(draft);
   if (complete.status === "error") return complete;
   const submission = toRequestSubmission(complete.data);
   if (submission.status === "error") return submission;
-  const requestId = await registerFullRequest(ctx, student._id, submission.data);
-  return okResult(await readRegistered(ctx, requestId));
+  const requestId = await deps.requests.registerOnce(student._id, submission.data, deps.now());
+  return okResult(await readRegistered(deps.requests, requestId));
+}
+
+/** Texto de la forma anterior, recortado y dentro del tope, con los mensajes de Sprint 1. */
+function toLegacyAccessNeeds(raw: string): ApiResult<string> {
+  const accessNeeds = toAccessNeedsText(raw);
+  if (accessNeeds === null) {
+    return errResult({
+      code: "access_needs_empty",
+      message: "Se requiere describir la necesidad de acceso",
+    });
+  }
+  if (accessNeeds.length > ACCESS_NEEDS_MAX_LENGTH) {
+    return errResult({
+      code: "access_needs_too_long",
+      message: `La necesidad de acceso supera el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres)`,
+    });
+  }
+  return okResult(accessNeeds);
 }
 
 /** Solicitud recién registrada, leída de vuelta en la misma mutation. */
-async function readRegistered(ctx: MutationCtx, requestId: Id<"requests">): Promise<StoredRequest> {
-  const row = await getRequestById(ctx, requestId);
+async function readRegistered<RequestId extends string, UserId extends string>(
+  requests: RequestReader<RequestId, UserId>,
+  requestId: RequestId,
+): Promise<RequestEntity<RequestId, UserId>> {
+  const row = await requests.getRequest(requestId);
   if (row === null) throw new Error("La solicitud registrada no quedó guardada.");
   return toAccompanimentRequest({
     _id: row._id,
@@ -134,46 +142,6 @@ async function readRegistered(ctx: MutationCtx, requestId: Id<"requests">): Prom
     accessNeeds: row.accessNeeds,
     createdAt: row.createdAt,
   });
-}
-
-/** Guarda el envío completo ya validado. */
-async function registerFullRequest(
-  ctx: MutationCtx,
-  studentId: Id<"users">,
-  submission: RequestSubmission,
-): Promise<Id<"requests">> {
-  const { accessNeeds, generalAvailability, ...content } = submission;
-  const { requestId } = await insertReceivedRequestOnce(ctx, {
-    ...content,
-    // La lista del contrato se persiste como `accessNeedSelections` (TI2-135),
-    // y el repositorio deriva de ella el texto unido. El esquema tipa los
-    // arreglos como mutables; el dominio, de solo lectura.
-    accessNeedSelections: [...accessNeeds],
-    generalAvailability: {
-      ...generalAvailability,
-      preferredWeekdays: [...generalAvailability.preferredWeekdays],
-    },
-    studentId,
-    provenance: { channel: "student", receivedAt: Date.now() },
-  });
-  return requestId;
-}
-
-async function registerLegacyRequest(
-  ctx: MutationCtx,
-  studentId: Id<"users">,
-  raw: string,
-): Promise<Id<"requests">> {
-  const accessNeeds = toAccessNeedsText(raw);
-  if (accessNeeds === null) {
-    throw new Error("Se requiere describir la necesidad de acceso");
-  }
-  if (accessNeeds.length > ACCESS_NEEDS_MAX_LENGTH) {
-    throw new Error(
-      `La necesidad de acceso supera el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres)`,
-    );
-  }
-  return await insertReceivedRequest(ctx, { studentId, accessNeeds });
 }
 
 /** Capacidades que necesita pedir información; la composición entrega los adaptadores. */
@@ -398,6 +366,16 @@ export async function acceptRequest<
   );
 }
 
+/** Capacidades que necesita la cancelación; la composición entrega los adaptadores. */
+export interface CancelRequestDeps<RequestId extends string, UserId extends string> {
+  readonly students: ActiveStudentReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> &
+    RequestStatusWriter<RequestId> &
+    RequestTransitionRecorder<RequestId, UserId>;
+  /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
+  readonly now: () => number;
+}
+
 /**
  * Cancela la solicitud propia del Estudiante (TI2-85): mueve `received`,
  * `under_review` o `awaiting_information_or_acceptance` a `cancelled`
@@ -408,20 +386,23 @@ export async function acceptRequest<
  * sin modificar nada. Persiste el estado y el registro del cambio (motivo,
  * actor y fecha) en la misma transacción y nunca abre acompañamiento.
  */
-export async function cancelRequest(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-  input: { readonly requestId: Id<"requests">; readonly reason: string },
-): Promise<ApiResult<StoredRequest>> {
-  const student = await findActiveStudent(ctx, identity?.tokenIdentifier ?? null);
+export async function cancelRequest<RequestId extends string, UserId extends string>(
+  deps: CancelRequestDeps<RequestId, UserId>,
+  input: {
+    readonly tokenIdentifier: string | null;
+    readonly requestId: RequestId;
+    readonly reason: string;
+  },
+): Promise<ApiResult<RequestEntity<RequestId, UserId>>> {
+  const student = await deps.students.findActiveStudent(input.tokenIdentifier);
   if (student === null) return denied();
-  const row = await getRequestById(ctx, input.requestId);
+  const row = await deps.requests.getRequest(input.requestId);
   if (row === null || row.studentId !== student._id) return denied();
   const result = transitionRequest({
     from: row.status,
     to: "cancelled",
     actorId: student._id,
-    occurredAt: Date.now(),
+    occurredAt: deps.now(),
     reason: input.reason,
   });
   if (result.status === "rejected") {
@@ -429,9 +410,9 @@ export async function cancelRequest(
       ? invalidRequestFields("Se requiere el motivo para cancelar la solicitud.")
       : stateConflict("La solicitud no admite la cancelación en su estado actual.");
   }
-  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
-  await logRequestTransition(ctx, {
-    requestId: input.requestId,
+  await deps.requests.setRequestStatus(row._id, toStatusChange(result.change));
+  await deps.requests.logRequestTransition({
+    requestId: row._id,
     from: result.change.from,
     to: result.change.to,
     actorId: student._id,
@@ -449,34 +430,50 @@ export async function cancelRequest(
   );
 }
 
+/** Capacidades que necesita el cierre; la composición entrega los adaptadores. */
+export interface CloseRequestDeps<RequestId extends string, UserId extends string> {
+  readonly professionals: ActiveProfessionalReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> &
+    RequestTakeReader<RequestId, UserId> &
+    RequestStatusWriter<RequestId> &
+    RequestTransitionRecorder<RequestId, UserId>;
+  /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
+  readonly now: () => number;
+}
+
 /**
  * Cierra la solicitud sin abrir acompañamiento (TI2-85): mueve
  * `under_review` o `awaiting_information_or_acceptance` a
  * `closed_without_accompaniment` aplicando la política de TI2-21. Solo un
  * Profesional con cuenta vigente y toma activa sobre la solicitud; cualquier
- * otro caso recibe denegación genérica. El motivo es la razón comprensible
+ * otra persona recibe denegación genérica. El motivo es la razón comprensible
  * que pide la especificación y es obligatorio. Si el estado no admite el
  * paso, incluida una solicitud aceptada o ya cerrada, se rechaza sin
  * modificar nada. Persiste el estado, la razón vigente (`closureReason`) y
  * el registro del cambio en la misma transacción; la toma queda tal cual,
  * como rastro de quién revisó.
  */
-export async function closeRequestWithoutAccompaniment(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-  input: { readonly requestId: Id<"requests">; readonly reason: string },
-): Promise<ApiResult<StoredRequest>> {
-  const professional = await findActiveProfessional(ctx, identity?.tokenIdentifier ?? null);
+export async function closeRequestWithoutAccompaniment<
+  RequestId extends string,
+  UserId extends string,
+>(
+  deps: CloseRequestDeps<RequestId, UserId>,
+  input: {
+    readonly tokenIdentifier: string | null;
+    readonly requestId: RequestId;
+    readonly reason: string;
+  },
+): Promise<ApiResult<RequestEntity<RequestId, UserId>>> {
+  const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
   if (professional === null) return denied();
-  const row = await getRequestById(ctx, input.requestId);
+  const row = await deps.requests.getRequest(input.requestId);
   if (row === null) return denied();
-  const take = await findActiveTake(ctx, input.requestId, professional._id);
-  if (take === null) return denied();
+  if (!(await deps.requests.hasActiveTake(row._id, professional._id))) return denied();
   const result = transitionRequest({
     from: row.status,
     to: "closed_without_accompaniment",
     actorId: professional._id,
-    occurredAt: Date.now(),
+    occurredAt: deps.now(),
     reason: input.reason,
   });
   if (result.status === "rejected") {
@@ -484,9 +481,9 @@ export async function closeRequestWithoutAccompaniment(
       ? invalidRequestFields("Se requiere el motivo para cerrar la solicitud sin acompañamiento.")
       : stateConflict("La solicitud no admite el cierre sin acompañamiento en su estado actual.");
   }
-  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
-  await logRequestTransition(ctx, {
-    requestId: input.requestId,
+  await deps.requests.setRequestStatus(row._id, toStatusChange(result.change));
+  await deps.requests.logRequestTransition({
+    requestId: row._id,
     from: result.change.from,
     to: result.change.to,
     actorId: professional._id,
