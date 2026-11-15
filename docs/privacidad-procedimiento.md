@@ -44,13 +44,13 @@ La UCT es la responsable legal del tratamiento según el análisis vigente, pend
 
 Resolver exige una respuesta fundada con tres datos: `outcome` (`granted`, `partially_granted` o `denied`), `reasons` en lenguaje comprensible para el titular y `responsibleId` de la sesión autenticada. El actor que ejecuta la transición y quien firma la respuesta deben ser la misma persona; el dominio rechaza la discrepancia para que el historial no atribuya una decisión a otra persona. `respondedAt` lo fija el servidor. El dominio no conoce sesiones ni roles: que el retiro lo haga el titular y que la respuesta la firme el Administrador se verifica en Aplicación, con la identidad del servidor y `isPrivacyRequestResponsibleRole`.
 
-Una respuesta de bloqueo concedida, total o parcialmente, lleva `temporaryBlockUntil`: el instante hasta el que se mantiene la suspensión, que debe ser posterior a la respuesta. Un bloqueo denegado no lo lleva y ningún otro derecho puede usarlo, para no crear una representación paralela del bloqueo. La respuesta denegada debe informar que el titular puede reclamar ante la Agencia; el texto jurídico definitivo queda pendiente de validación.
+Una respuesta de bloqueo concedida, total o parcialmente, lleva obligatoriamente `temporaryBlockUntil`: el instante hasta el que se mantiene la suspensión, que debe ser posterior a la respuesta. Un bloqueo denegado no lo lleva y ningún otro derecho puede usarlo, para no crear una representación paralela del bloqueo. La respuesta denegada debe informar que el titular puede reclamar ante la Agencia; el texto jurídico definitivo queda pendiente de validación.
 
 `respondedAt` es el instante en que se emite la respuesta; la notificación al titular puede ocurrir después. El reclamo ante la Agencia se cuenta desde `notifiedAt`, no desde `respondedAt`, porque el plazo existe cuando el titular conoce la decisión.
 
 ## Plazos
 
-Los plazos son dominio puro y deterministas: reciben el instante de recepción o notificación, la zona horaria IANA y los feriados explícitos. No leen `Date.now`, no usan la zona del servidor y no consultan un proveedor externo. La agenda institucional usa `America/Santiago`; los plazos de privacidad reciben la zona como dato y el caso de uso deberá pasar esa misma zona. Los feriados son datos explícitos porque el calendario institucional todavía no está aprobado.
+Los plazos son dominio puro y deterministas: reciben el instante de recepción o notificación, la zona horaria IANA y los feriados explícitos. No leen `Date.now`, no usan la zona del servidor y no consultan un proveedor externo. La agenda institucional usa `America/Santiago`; los plazos de privacidad reciben la zona como dato y la capa de Aplicación deberá pasar esa misma zona. Los feriados son datos explícitos porque el calendario institucional todavía no está aprobado.
 
 | Plazo                         | Regla                                                 | Cómputo                                                                 | Función canónica                           |
 | ----------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------ |
@@ -63,7 +63,7 @@ El vencimiento es exclusivo: una respuesta en el instante exacto del vencimiento
 
 Ejemplos con datos ficticios, sin feriados:
 
-| Caso                                              | Recepción o notificación          | Último día cubierto | Vencimiento exclusivo             |
+| Ejemplo                                           | Recepción o notificación          | Último día cubierto | Vencimiento exclusivo             |
 | ------------------------------------------------- | --------------------------------- | ------------------- | --------------------------------- |
 | Acceso recibido miércoles 4 de noviembre de 2026  | 2026-11-04 12:00 America/Santiago | 2026-12-04          | 2026-12-05 00:00 America/Santiago |
 | Bloqueo recibido viernes 6 de noviembre de 2026   | 2026-11-06 15:00 America/Santiago | 2026-11-10          | 2026-11-11 00:00 America/Santiago |
@@ -90,6 +90,6 @@ Requiere decisión institucional antes de usar datos reales:
 - Validar jurídicamente la fundamentación y el texto de la respuesta, incluida la indicación del reclamo ante la Agencia.
 - Confirmar el cómputo de los plazos, el día de recepción que se cuenta y los feriados aplicables.
 - Definir cómo se ejecutan el bloqueo, la supresión y la portabilidad sobre los datos reales.
-- Aprobar este procedimiento como política de la UCT antes de un piloto con casos reales.
+- Aprobar este procedimiento como política de la UCT antes de un piloto con solicitudes reales.
 
 `PENDING_INSTITUTIONAL_DECISIONS` enumera las cinco primeras en código para que ningún consumidor las presente como decisiones ya tomadas. La sexta es el acto institucional que las agrupa.

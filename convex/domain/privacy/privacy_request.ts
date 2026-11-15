@@ -190,7 +190,7 @@ export interface PrivacyResponseInput {
   readonly reasons: string;
   readonly responsibleId: string;
   /**
-   * Solo para una solicitud de bloqueo concedida, total o parcialmente:
+   * Obligatorio en una solicitud de bloqueo concedida, total o parcialmente:
    * instante epoch en milisegundos hasta el que se mantiene el bloqueo. Un
    * bloqueo denegado no lo lleva y otro derecho tampoco.
    */
@@ -314,9 +314,9 @@ function rejected(cause: PrivacyRequestRejectionCause): PrivacyRequestTransition
  * Valida la respuesta fundada y la normaliza con el instante del cambio.
  *
  * Devuelve la respuesta lista para el historial o la causa del rechazo. El
- * bloqueo temporal solo existe en una solicitud de bloqueo: concedido lo
- * exige, parcialmente concedido lo admite y denegado no lo lleva. Quien firma
- * la respuesta debe ser el mismo actor que ejecuta la transición para que el
+ * bloqueo temporal solo existe en una solicitud de bloqueo: la concesión
+ * total o parcial lo exige y la denegación no lo lleva. Quien firma la
+ * respuesta debe ser el mismo actor que ejecuta la transición para que el
  * historial no atribuya una decisión a otra persona.
  */
 function resolveResponse(
@@ -341,7 +341,10 @@ function resolveResponse(
     if (response.outcome === "denied" && hasTemporaryBlock) {
       return "temporary_block_not_allowed";
     }
-    if (response.outcome === "granted" && !hasTemporaryBlock) {
+    if (
+      (response.outcome === "granted" || response.outcome === "partially_granted") &&
+      !hasTemporaryBlock
+    ) {
       return "temporary_block_required";
     }
   }

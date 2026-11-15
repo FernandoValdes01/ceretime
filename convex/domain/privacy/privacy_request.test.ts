@@ -185,6 +185,25 @@ describe("solicitud de privacidad (TI2-136)", () => {
     ).toEqual({ status: "rejected", cause: "response_not_allowed" });
   });
 
+  test("toda transición que exige motivo se rechaza sin él", () => {
+    const transitionsWithReason = PRIVACY_REQUEST_TRANSITIONS.filter(
+      (transition) => transition.requiresReason,
+    );
+
+    expect(transitionsWithReason).toHaveLength(5);
+    for (const transition of transitionsWithReason) {
+      expect(
+        transitionPrivacyRequest({
+          kind: "access",
+          from: transition.from,
+          to: transition.to,
+          actorId: "user-admin",
+          occurredAt: OCCURRED_AT,
+        }),
+      ).toEqual({ status: "rejected", cause: "reason_required" });
+    }
+  });
+
   test("resolver exige una respuesta fundada y completa", () => {
     expect(attempt({ response: undefined })).toEqual({
       status: "rejected",
@@ -306,22 +325,32 @@ describe("solicitud de privacidad (TI2-136)", () => {
     });
   });
 
-  test("el bloqueo parcialmente concedido puede o no llevar plazo de bloqueo", () => {
-    const withoutBlock = attempt({
-      kind: "blocking",
-      response: { ...base.response!, outcome: "partially_granted" },
-    });
-    expect(withoutBlock.status).toBe("applied");
+  test("el bloqueo parcialmente concedido también exige plazo de bloqueo", () => {
+    expect(
+      attempt({
+        kind: "blocking",
+        response: { ...base.response!, outcome: "partially_granted" },
+      }),
+    ).toEqual({ status: "rejected", cause: "temporary_block_required" });
 
-    const withBlock = attempt({
-      kind: "blocking",
-      response: {
-        ...base.response!,
-        outcome: "partially_granted",
-        temporaryBlockUntil: OCCURRED_AT + 86_400_000,
+    expect(
+      attempt({
+        kind: "blocking",
+        response: {
+          ...base.response!,
+          outcome: "partially_granted",
+          temporaryBlockUntil: OCCURRED_AT + 86_400_000,
+        },
+      }),
+    ).toMatchObject({
+      status: "applied",
+      change: {
+        response: {
+          outcome: "partially_granted",
+          temporaryBlockUntil: OCCURRED_AT + 86_400_000,
+        },
       },
     });
-    expect(withBlock.status).toBe("applied");
   });
 
   test("toda transición declarada se aplica con los datos mínimos", () => {
