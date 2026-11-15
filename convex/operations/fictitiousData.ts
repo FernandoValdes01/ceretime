@@ -1,6 +1,6 @@
 import type { UserIdentity } from "convex/server";
 import { internal } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { env, internalMutation } from "../_generated/server";
 import { assignAccompaniment } from "../application/accompaniments/commands";
 import {
@@ -11,7 +11,15 @@ import {
 } from "../application/requests/commands";
 import { AGENDA_TIME_ZONE, civilRangeToInstantRange } from "../domain/availability/availability";
 import type { ApiResult } from "../domain/errors/api_error";
-import { findProfileByTokenIdentifier } from "../infrastructure/accompaniments/repository";
+import {
+  accompanimentOpener,
+  findProfileByTokenIdentifier,
+} from "../infrastructure/accompaniments/repository";
+import {
+  activeProfessionalReader,
+  activeStudentReader,
+  requestStore,
+} from "../infrastructure/requests/repository";
 import {
   appliedAccessNeedsFor,
   syncAppointmentProfessional,
@@ -186,40 +194,58 @@ export const load = internalMutation({
     // Las solicitudes pasan por los casos de uso reales, con las identidades
     // ficticias: el dataset cumple las mismas reglas que el flujo del cliente.
     const professional = identityOf("professional");
+    const asProfessional = {
+      professionals: activeProfessionalReader(ctx),
+      requests: requestStore(ctx),
+      accompaniments: accompanimentOpener(ctx),
+      now: Date.now,
+    };
+    const tokenIdentifier = professional.tokenIdentifier;
+    const take = async (requestId: Id<"requests">) =>
+      registered(await takeRequest(asProfessional, { tokenIdentifier, requestId }));
+    const register = async (student: AccountKey, accessNeeds: string) =>
+      registered(
+        await registerRequest(
+          { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+          { tokenIdentifier: identityOf(student).tokenIdentifier, submission: { accessNeeds } },
+        ),
+      );
+    await register(
+      "studentReceived",
+      "Material de clases en formato digital compatible con lector de pantalla.",
+    );
+
+    const underReview = await register(
+      "studentUnderReview",
+      "Tiempo adicional en evaluaciones escritas.",
+    );
+    await take(underReview._id);
+
+    const awaiting = await register(
+      "studentAwaiting",
+      "Apoyo para organizar la entrega de trabajos del semestre.",
+    );
+    await take(awaiting._id);
     registered(
-      await registerRequest(ctx, identityOf("studentReceived"), {
-        accessNeeds: "Material de clases en formato digital compatible con lector de pantalla.",
+      await requestAdditionalInformation(asProfessional, {
+        tokenIdentifier,
+        requestId: awaiting._id,
+        reason: "Falta indicar en qué asignaturas se necesita el apoyo.",
       }),
     );
 
-    const underReview = registered(
-      await registerRequest(ctx, identityOf("studentUnderReview"), {
-        accessNeeds: "Tiempo adicional en evaluaciones escritas.",
+    const accepted = await register(
+      "studentAccepted",
+      "Sala con acceso sin escaleras para las clases prácticas.",
+    );
+    await take(accepted._id);
+    const accompaniment = registered(
+      await acceptRequest(asProfessional, {
+        tokenIdentifier,
+        requestId: accepted._id,
+        objective: "Coordinar los apoyos de acceso para las clases prácticas del semestre.",
       }),
     );
-    await takeRequest(ctx, professional, { requestId: underReview._id });
-
-    const awaiting = registered(
-      await registerRequest(ctx, identityOf("studentAwaiting"), {
-        accessNeeds: "Apoyo para organizar la entrega de trabajos del semestre.",
-      }),
-    );
-    await takeRequest(ctx, professional, { requestId: awaiting._id });
-    await requestAdditionalInformation(ctx, professional, {
-      requestId: awaiting._id,
-      reason: "Falta indicar en qué asignaturas se necesita el apoyo.",
-    });
-
-    const accepted = registered(
-      await registerRequest(ctx, identityOf("studentAccepted"), {
-        accessNeeds: "Sala con acceso sin escaleras para las clases prácticas.",
-      }),
-    );
-    await takeRequest(ctx, professional, { requestId: accepted._id });
-    const accompaniment = await acceptRequest(ctx, professional, {
-      requestId: accepted._id,
-      objective: "Coordinar los apoyos de acceso para las clases prácticas del semestre.",
-    });
     const granted = await assignAccompaniment(ctx, professional, {
       accompanimentId: accompaniment._id,
       userId: internId,

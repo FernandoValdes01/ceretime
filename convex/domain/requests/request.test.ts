@@ -12,6 +12,7 @@ import {
   requestProvenanceChannelOf,
   toAccessNeedsText,
   toAccompanimentRequest,
+  toLegacyAccessNeeds,
   toCompleteSubmission,
   toInformationResponse,
   toRequestExchange,
@@ -133,6 +134,36 @@ describe("toAccessNeedsText (TI2-26)", () => {
   test("el tope acordado se comparte desde el barrel sin duplicarlo", () => {
     expect(ACCESS_NEEDS_MAX_LENGTH).toBe(2000);
     expect(BARREL_MAX_LENGTH).toBe(ACCESS_NEEDS_MAX_LENGTH);
+  });
+});
+
+describe("toLegacyAccessNeeds (TI2-181)", () => {
+  test("recorta el texto y acepta justo el tope", () => {
+    expect(toLegacyAccessNeeds("  Necesidad ficticia  ")).toEqual({
+      status: "ok",
+      data: "Necesidad ficticia",
+    });
+    expect(toLegacyAccessNeeds(` ${"a".repeat(ACCESS_NEEDS_MAX_LENGTH)} `)).toEqual({
+      status: "ok",
+      data: "a".repeat(ACCESS_NEEDS_MAX_LENGTH),
+    });
+  });
+
+  test("rechaza el vacío y el exceso con los códigos de Sprint 1", () => {
+    expect(toLegacyAccessNeeds("   ")).toEqual({
+      status: "error",
+      error: {
+        code: "access_needs_empty",
+        message: "Se requiere describir la necesidad de acceso",
+      },
+    });
+    expect(toLegacyAccessNeeds("a".repeat(ACCESS_NEEDS_MAX_LENGTH + 1))).toEqual({
+      status: "error",
+      error: {
+        code: "access_needs_too_long",
+        message: "La necesidad de acceso supera el máximo permitido (2000 caracteres)",
+      },
+    });
   });
 });
 

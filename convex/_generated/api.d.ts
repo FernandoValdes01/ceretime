@@ -24,7 +24,6 @@ import type * as application_calendar_calendar from "../application/calendar/cal
 import type * as application_follow_up_commands from "../application/follow_up/commands.js";
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
-import type * as application_requests_identity from "../application/requests/identity.js";
 import type * as application_requests_ports from "../application/requests/ports.js";
 import type * as application_requests_queries from "../application/requests/queries.js";
 import type * as application_requests_respond from "../application/requests/respond.js";
@@ -111,7 +110,6 @@ declare const fullApi: ApiFromModules<{
   "application/follow_up/commands": typeof application_follow_up_commands;
   "application/follow_up/queries": typeof application_follow_up_queries;
   "application/requests/commands": typeof application_requests_commands;
-  "application/requests/identity": typeof application_requests_identity;
   "application/requests/ports": typeof application_requests_ports;
   "application/requests/queries": typeof application_requests_queries;
   "application/requests/respond": typeof application_requests_respond;
