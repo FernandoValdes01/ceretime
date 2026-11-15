@@ -79,7 +79,7 @@ export async function getUserById(
 }
 
 /**
- * Filas de asignación para la tripla exacta (acompañamiento, usuario), una
+ * Filas de asignación para la terna exacta (acompañamiento, usuario), una
  * como máximo por rol. Basta para decidir sin lecturas ilimitadas. Solo
  * devuelve las vigentes: una fila con `status === "active"` pero fuera de la
  * ventana acordada (`validFrom`/`validUntil`, TI2-140) no autoriza, igual que
@@ -194,7 +194,7 @@ export type AssignmentTriple = {
   readonly assignedRole: "professional" | "intern";
 };
 
-/** Fila activa exacta de la tripla, si existe. */
+/** Fila activa exacta de la terna, si existe. */
 export async function findExistingActiveAssignment(
   ctx: MutationCtx,
   triple: AssignmentTriple,
@@ -261,7 +261,7 @@ export async function insertActiveAssignment(
   });
 }
 
-/** Lote de filas activas de la tripla para revocación. */
+/** Lote de filas activas de la terna para revocación. */
 export async function takeActiveTripleRows(
   ctx: MutationCtx,
   triple: AssignmentTriple,

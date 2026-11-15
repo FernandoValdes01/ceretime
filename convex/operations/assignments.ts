@@ -34,7 +34,7 @@ export const assign = internalMutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     const result = await assignAccompaniment(ctx, identity, args, undefined, {
-      bootstrapStaffGrant: true,
+      bootstrapStaff: true,
     });
     if (result.status === "error") throw new ConvexError(result.error.message);
     return result.data;
@@ -62,7 +62,7 @@ export const revoke = internalMutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    const result = await revokeAccompaniment(ctx, identity, args, { bootstrapStaffGrant: true });
+    const result = await revokeAccompaniment(ctx, identity, args, { bootstrapStaff: true });
     if (result.status === "error") throw new ConvexError(result.error.message);
     return result.data;
   },

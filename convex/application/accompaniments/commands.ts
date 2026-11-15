@@ -53,7 +53,7 @@ import {
  * acompañamientos. La concesión a cuenta de prueba (`professional` con correo
  * `@alu.uct.cl`, TI2-140/RN-25) exige lo mismo y solo accede a esos
  * acompañamientos explícitos. Entre profesionales de personal, el alcance se
- * exige siempre salvo arranque explícito (`bootstrapStaffGrant`, solo vía
+ * exige siempre salvo arranque explícito (`bootstrapStaff`, solo vía
  * interna); la vía pública nunca arranca sin alcance. La lectura exige
  * `status === "active"` y ventana vigente (TI2-140): al vencer, una función
  * programada revoca la fila para que las consultas suscritas se actualicen.
@@ -150,8 +150,15 @@ export async function assignAccompaniment(
   identity: UserIdentity | null,
   triple: AssignmentTriple,
   validity?: AssignmentValidity,
-  options?: { readonly bootstrapStaffGrant?: boolean; readonly schedule?: AssignmentScheduler },
+  options?: { readonly bootstrapStaff?: boolean; readonly schedule?: AssignmentScheduler },
 ): Promise<ApiResult<Id<"accompanimentAssignments">>> {
+  if (
+    validity?.validUntil !== undefined &&
+    validity.validUntil !== null &&
+    options?.schedule === undefined
+  ) {
+    throw new Error("La vigencia con vencimiento exige un programador (AssignmentScheduler).");
+  }
   const caller = await findStaffProfessionalCaller(ctx, identity);
   if (caller === null) return unauthorized();
   if (caller._id === triple.userId) return unauthorized();
@@ -194,9 +201,8 @@ export async function assignAccompaniment(
     // Alcance (TI2-140): la prueba solo opera habilitada y vigente dentro de
     // acompañamientos asignados por un profesional autorizado sobre el mismo
     // acompañamiento. Entre profesionales de personal el alcance se exige
-    // siempre, salvo arranque explícito de la vía interna; la vía pública
-    // nunca arranca sin alcance.
-    if (isTestProfessional(target) || options?.bootstrapStaffGrant !== true) {
+    // siempre, salvo arranque explícito de la vía interna (`bootstrapStaff`).
+    if (isTestProfessional(target) || options?.bootstrapStaff !== true) {
       if (!isProfileActive(target)) return unauthorized();
       const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
         accompanimentId: triple.accompanimentId,
@@ -204,7 +210,7 @@ export async function assignAccompaniment(
       });
       if (!callerAssigned) return unauthorized();
     }
-    // La vía interna en arranque (`bootstrapStaffGrant`) no exige alcance.
+    // La vía interna en arranque (`bootstrapStaff`) no exige alcance.
   }
 
   const invalid =
@@ -242,8 +248,15 @@ export async function updateAccompanimentAssignment(
   identity: UserIdentity | null,
   triple: AssignmentTriple,
   validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
-  schedule?: AssignmentScheduler,
+  options?: { readonly schedule?: AssignmentScheduler },
 ): Promise<ApiResult<Id<"accompanimentAssignments">>> {
+  if (
+    validity.validUntil !== undefined &&
+    validity.validUntil !== null &&
+    options?.schedule === undefined
+  ) {
+    throw new Error("La vigencia con vencimiento exige un programador (AssignmentScheduler).");
+  }
   const caller = await findStaffProfessionalCaller(ctx, identity);
   if (caller === null) return unauthorized();
 
@@ -274,7 +287,7 @@ export async function updateAccompanimentAssignment(
   if (invalid !== null) return invalid;
 
   await patchAssignmentValidity(ctx, existing._id, validity);
-  await scheduleValidityWindow(schedule, existing._id, validity);
+  await scheduleValidityWindow(options?.schedule, existing._id, validity);
   return okResult(existing._id);
 }
 
@@ -284,19 +297,19 @@ export async function updateAccompanimentAssignment(
  * mismo acompañamiento puede retirar o revocar la asignación de Practicante
  * o de cuenta de prueba, aunque el objetivo haya perdido habilitación o
  * vigencia; el acompañamiento inexistente o no autorizado responde el mismo
- * error genérico. Entre profesionales de personal, la vía interna en arranque
- * (`bootstrapStaffGrant`) no exige alcance y la vía pública siempre lo exige.
- * Revoca TODAS las filas activas de la terna en lugar de una sola, para que ninguna fila escrita fuera del Backend deje
- * acceso activo tras informar éxito. Si tras los lotes acotados quedan filas
- * activas, falla en vez de informar un éxito parcial. Registra actor
- * (`revokedBy`) y fecha (`revokedAt`); la vigencia termina con
+ * error genérico. La vía interna en arranque (`bootstrapStaff`) no exige
+ * alcance y la vía pública siempre lo exige. Revoca TODAS las filas activas
+ * de la terna en lugar de una sola, para que ninguna fila escrita fuera del
+ * Backend deje acceso activo tras informar éxito. Si tras los lotes acotados
+ * quedan filas activas, falla en vez de informar un éxito parcial. Registra
+ * actor (`revokedBy`) y fecha (`revokedAt`); la vigencia termina con
  * `status === "revoked"`.
  */
 export async function revokeAccompaniment(
   ctx: MutationCtx,
   identity: UserIdentity | null,
   triple: AssignmentTriple,
-  options?: { readonly bootstrapStaffGrant?: boolean },
+  options?: { readonly bootstrapStaff?: boolean },
 ): Promise<ApiResult<number | null>> {
   const caller = await findStaffProfessionalCaller(ctx, identity);
   if (caller === null) return unauthorized();
@@ -336,14 +349,14 @@ export async function revokeAccompaniment(
     if (target.role !== triple.assignedRole) {
       return conflict("El rol del usuario no coincide con el rol asignado");
     }
-    if (isTestProfessional(target) || options?.bootstrapStaffGrant !== true) {
+    if (isTestProfessional(target) || options?.bootstrapStaff !== true) {
       const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
         accompanimentId: triple.accompanimentId,
         userId: caller._id,
       });
       if (!callerAssigned) return unauthorized();
     }
-    // La vía interna en arranque (`bootstrapStaffGrant`) no exige alcance.
+    // La vía interna en arranque (`bootstrapStaff`) no exige alcance.
   }
 
   let revoked = 0;

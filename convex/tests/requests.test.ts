@@ -832,7 +832,8 @@ test("TI2-140: la cuenta de prueba no opera solicitudes por ninguna vía", async
   });
 
   // La prueba, aunque habilitada y vigente, no opera solicitudes: bandeja,
-  // toma, lectura y aceptación responden la misma denegación genérica
+  // toma, lectura, detalle y aceptación responden la misma denegación
+  // genérica; el detalle (único que lee accessNeeds) tampoco se entrega
   const asTest = t.withIdentity(identityFor("ti140-prueba-sol", "ti140-prueba-sol@alu.uct.cl"));
   await expect(
     asTest.query(api.presentation.requests.listOpenRequests, {
@@ -853,6 +854,9 @@ test("TI2-140: la cuenta de prueba no opera solicitudes por ninguna vía", async
       objective: "Objetivo ficticio",
     }),
   ).rejects.toThrow("No autorizado");
+  await expect(asTest.query(api.presentation.requests.getRequest, { requestId })).rejects.toThrow(
+    "No autorizado",
+  );
 
   // Sin toma ni cambio de estado: la solicitud sigue recibida
   const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });

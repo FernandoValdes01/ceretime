@@ -3,7 +3,6 @@ import { v } from "convex/values";
 import {
   assignAccompaniment,
   revokeAccompaniment,
-  scheduleValidityWindow,
   updateAccompanimentAssignment,
   type AssignmentScheduler,
 } from "../application/accompaniments/commands";
@@ -173,7 +172,7 @@ export const assignAccompanimentAccess = mutation({
     const identity = await ctx.auth.getUserIdentity();
     const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
     const schedule = schedulingFor(ctx);
-    const id = unwrapApiResult(
+    return unwrapApiResult(
       await assignAccompaniment(
         ctx,
         identity,
@@ -182,8 +181,6 @@ export const assignAccompanimentAccess = mutation({
         { schedule },
       ),
     );
-    await scheduleValidityWindow(schedule, id, { validFrom, validUntil });
-    return id;
   },
 });
 
@@ -209,19 +206,15 @@ export const updateAccompanimentAccess = mutation({
     const identity = await ctx.auth.getUserIdentity();
     const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
     const schedule = schedulingFor(ctx);
-    const id = unwrapApiResult(
+    return unwrapApiResult(
       await updateAccompanimentAssignment(
         ctx,
         identity,
         { accompanimentId, userId, assignedRole },
         { validFrom, validUntil },
-        schedule,
+        { schedule },
       ),
     );
-    // La ventana nueva también vence en vivo; la guarda idempotente ignora la
-    // programación anterior si la ventana cambió o se quitó.
-    await scheduleValidityWindow(schedule, id, { validFrom, validUntil });
-    return id;
   },
 });
 

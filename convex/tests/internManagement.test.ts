@@ -3,6 +3,10 @@ import { convexTest } from "convex-test";
 import { ConvexError } from "convex/values";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
+import {
+  assignAccompaniment,
+  updateAccompanimentAssignment,
+} from "../application/accompaniments/commands";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 
@@ -867,6 +871,88 @@ test("el alcance vencido del profesional no autoriza a conceder", async () => {
       .unique();
   });
   expect(leaked).toBeNull();
+});
+
+test("la modificación también programa el vencimiento", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    const pro = await seedUser(t, {
+      subject: "ti140-pro-16",
+      email: "ti140-pro-16@uct.cl",
+      role: "professional",
+    });
+    await seedUser(t, {
+      subject: "ti140-pro-16b",
+      email: "ti140-pro-16b@uct.cl",
+      role: "professional",
+    });
+    const student = await seedUser(t, {
+      subject: "ti140-est-16",
+      email: "ti140-est-16@alu.uct.cl",
+      role: "student",
+    });
+    const intern = await seedUser(t, {
+      subject: "ti140-int-16",
+      email: "ti140-int-16@alu.uct.cl",
+      role: "intern",
+    });
+    const accompanimentId = await seedAccompaniment(t, student.id);
+    await authorizeProfessional(
+      t,
+      { accompanimentId, professionalId: pro.id },
+      { subject: "ti140-pro-16b", email: "ti140-pro-16b@uct.cl" },
+    );
+
+    const asPro = t.withIdentity(identityFor("ti140-pro-16", "ti140-pro-16@uct.cl"));
+    const assignmentId = await asPro.mutation(
+      api.presentation.accompaniments.assignAccompanimentAccess,
+      { accompanimentId, userId: intern.id, assignedRole: "intern" },
+    );
+
+    const base = Date.now();
+    await asPro.mutation(api.presentation.accompaniments.updateAccompanimentAccess, {
+      accompanimentId,
+      userId: intern.id,
+      assignedRole: "intern",
+      validUntil: base + 1_000,
+    });
+
+    vi.advanceTimersByTime(2_000);
+    await t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(100));
+    const expired = await t.run(async (ctx) => ctx.db.get(assignmentId));
+    expect(expired?.status).toBe("revoked");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("conceder o modificar con vencimiento exige programador", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti140-est-15",
+    email: "ti140-est-15@alu.uct.cl",
+    role: "student",
+  });
+  const intern = await seedUser(t, {
+    subject: "ti140-int-15",
+    email: "ti140-int-15@alu.uct.cl",
+    role: "intern",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  const triple = { accompanimentId, userId: intern.id, assignedRole: "intern" as const };
+  const identity = identityFor("ti140-pro-15", "ti140-pro-15@uct.cl");
+
+  // Sin programador el vencimiento nunca se ejecutaría: falla fuerte en vez
+  // de conceder un acceso que no vence en vivo
+  await expect(
+    t.run((ctx) => assignAccompaniment(ctx, identity, triple, { validUntil: Date.now() + 1_000 })),
+  ).rejects.toThrow("programador");
+  await expect(
+    t.run((ctx) =>
+      updateAccompanimentAssignment(ctx, identity, triple, { validUntil: Date.now() + 1_000 }),
+    ),
+  ).rejects.toThrow("programador");
 });
 
 test("la vía pública exige alcance también entre profesionales de personal", async () => {
