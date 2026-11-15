@@ -1,15 +1,12 @@
 import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
 import {
-  ACCESS_NEEDS_MAX_LENGTH,
   invalidRequestFields,
   toCompleteSubmission,
+  toLegacyAccessNeeds,
   toRequestSubmission,
-  type AccompanimentRequest,
   type RequestSubmissionDraft,
-  toAccessNeedsText,
-  toAccompanimentRequest,
 } from "../../domain/requests/request";
-import { errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
+import { okResult, type ApiResult } from "../../domain/errors/api_error";
 import { transitionRequest } from "../../domain/requests/transition_policy";
 import type {
   AccompanimentOpener,
@@ -22,7 +19,7 @@ import type {
   RequestTakeRecorder,
   RequestTransitionRecorder,
 } from "./ports";
-import { denied, stateConflict } from "./results";
+import { denied, stateConflict, toEntity, type RequestEntity } from "./results";
 import { toStatusChange } from "./status_change";
 
 /**
@@ -39,12 +36,6 @@ import { toStatusChange } from "./status_change";
  * `request_fields_invalid` (o `access_needs_*` en las necesidades de acceso)
  * y un estado que no admite el paso `conflict`. Opera con datos ficticios.
  */
-
-/** Solicitud pública con los identificadores que instancia Presentación. */
-type RequestEntity<RequestId extends string, UserId extends string> = AccompanimentRequest & {
-  readonly _id: RequestId;
-  readonly studentId: UserId;
-};
 
 /** Campos que solo existen en la forma completa. */
 const FULL_FORM_FIELDS = [
@@ -81,8 +72,8 @@ export interface RegisterRequestDeps<RequestId extends string, UserId extends st
  * `unauthorized`, sin motivo ni existencia del recurso, aunque los campos
  * también fallen.
  *
- * La forma anterior (solo `accessNeeds` como texto) valida el texto como
- * siempre, hasta `ACCESS_NEEDS_MAX_LENGTH`, con los códigos `access_needs_*`
+ * La forma anterior (solo `accessNeeds` como texto) valida el texto con
+ * `toLegacyAccessNeeds` de Dominio, con los códigos `access_needs_*`
  * (TI2-181), y no es idempotente porque no trae clave. Cualquier otra entrada
  * sigue la forma completa de TI2-141: exige sus campos con
  * `toCompleteSubmission`, los valida con `toRequestSubmission` y se guarda una
@@ -110,24 +101,6 @@ export async function registerRequest<RequestId extends string, UserId extends s
   return okResult(await readRegistered(deps.requests, requestId));
 }
 
-/** Texto de la forma anterior, recortado y dentro del tope, con los mensajes de Sprint 1. */
-function toLegacyAccessNeeds(raw: string): ApiResult<string> {
-  const accessNeeds = toAccessNeedsText(raw);
-  if (accessNeeds === null) {
-    return errResult({
-      code: "access_needs_empty",
-      message: "Se requiere describir la necesidad de acceso",
-    });
-  }
-  if (accessNeeds.length > ACCESS_NEEDS_MAX_LENGTH) {
-    return errResult({
-      code: "access_needs_too_long",
-      message: `La necesidad de acceso supera el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres)`,
-    });
-  }
-  return okResult(accessNeeds);
-}
-
 /** Solicitud recién registrada, leída de vuelta en la misma mutation. */
 async function readRegistered<RequestId extends string, UserId extends string>(
   requests: RequestReader<RequestId, UserId>,
@@ -135,13 +108,7 @@ async function readRegistered<RequestId extends string, UserId extends string>(
 ): Promise<RequestEntity<RequestId, UserId>> {
   const row = await requests.getRequest(requestId);
   if (row === null) throw new Error("La solicitud registrada no quedó guardada.");
-  return toAccompanimentRequest({
-    _id: row._id,
-    studentId: row.studentId,
-    status: row.status,
-    accessNeeds: row.accessNeeds,
-    createdAt: row.createdAt,
-  });
+  return toEntity(row);
 }
 
 /** Capacidades que necesita pedir información; la composición entrega los adaptadores. */
@@ -199,15 +166,7 @@ export async function requestAdditionalInformation<RequestId extends string, Use
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
-  return okResult(
-    toAccompanimentRequest({
-      _id: row._id,
-      studentId: row.studentId,
-      status: result.change.to,
-      accessNeeds: row.accessNeeds,
-      createdAt: row.createdAt,
-    }),
-  );
+  return okResult(toEntity(row, result.change.to));
 }
 
 /** Capacidades que necesita la toma; la composición entrega los adaptadores. */
@@ -269,15 +228,7 @@ export async function takeRequest<RequestId extends string, UserId extends strin
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
-  return okResult(
-    toAccompanimentRequest({
-      _id: row._id,
-      studentId: row.studentId,
-      status: result.change.to,
-      accessNeeds: row.accessNeeds,
-      createdAt: row.createdAt,
-    }),
-  );
+  return okResult(toEntity(row, result.change.to));
 }
 
 /** Capacidades que necesita la aceptación; la composición entrega los adaptadores. */
@@ -420,15 +371,7 @@ export async function cancelRequest<RequestId extends string, UserId extends str
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
-  return okResult(
-    toAccompanimentRequest({
-      _id: row._id,
-      studentId: row.studentId,
-      status: result.change.to,
-      accessNeeds: row.accessNeeds,
-      createdAt: row.createdAt,
-    }),
-  );
+  return okResult(toEntity(row, result.change.to));
 }
 
 /** Capacidades que necesita el cierre; la composición entrega los adaptadores. */
@@ -491,13 +434,5 @@ export async function closeRequestWithoutAccompaniment<
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
-  return okResult(
-    toAccompanimentRequest({
-      _id: row._id,
-      studentId: row.studentId,
-      status: result.change.to,
-      accessNeeds: row.accessNeeds,
-      createdAt: row.createdAt,
-    }),
-  );
+  return okResult(toEntity(row, result.change.to));
 }
