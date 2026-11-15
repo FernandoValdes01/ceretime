@@ -1,10 +1,6 @@
 import type { PaginationOptions, PaginationResult } from "convex/server";
 import { okResult, type ApiResult } from "../../domain/errors/api_error";
-import {
-  toAccompanimentRequest,
-  toRequestExchange,
-  type AccompanimentRequest,
-} from "../../domain/requests/request";
+import { invalidRequestFields, toRequestExchange } from "../../domain/requests/request";
 import type {
   ActiveProfessionalReader,
   ActiveRequestViewerReader,
@@ -14,7 +10,7 @@ import type {
   RequestTakeReader,
   StoredRequestRow,
 } from "./ports";
-import { denied } from "./results";
+import { denied, toEntity, type RequestEntity } from "./results";
 
 /**
  * Casos de uso de lectura de solicitudes (TI2-9, TI2-10, TI2-141, TI2-181).
@@ -26,25 +22,6 @@ import { denied } from "./results";
  * siempre sale del perfil del servidor, nunca del cliente. Opera con datos
  * ficticios.
  */
-
-/** Solicitud pública con los identificadores que instancia Presentación. */
-type RequestEntity<RequestId extends string, UserId extends string> = AccompanimentRequest & {
-  readonly _id: RequestId;
-  readonly studentId: UserId;
-};
-
-/** Entidad pública de una fila: valida el estado y nunca agrega campos. */
-function toEntity<RequestId extends string, UserId extends string>(
-  row: StoredRequestRow<RequestId, UserId>,
-): RequestEntity<RequestId, UserId> {
-  return toAccompanimentRequest({
-    _id: row._id,
-    studentId: row.studentId,
-    status: row.status,
-    accessNeeds: row.accessNeeds,
-    createdAt: row.createdAt,
-  });
-}
 
 /** Posición del barrido y última solicitud emitida u omitida dentro del cursor (O(1)). */
 type AuthorizedTakesCursor = {
@@ -94,7 +71,7 @@ export async function listOwnRequestsUseCase<RequestId extends string, UserId ex
   const student = await deps.students.findActiveStudent(input.tokenIdentifier);
   if (student === null) return denied();
   const result = await deps.requests.listOwnedRequests(student._id, input.paginationOpts);
-  return okResult({ ...result, page: result.page.map(toEntity) });
+  return okResult({ ...result, page: result.page.map((row) => toEntity(row)) });
 }
 
 /** Capacidades del listado de solicitudes tomadas por el Profesional. */
@@ -110,8 +87,9 @@ export interface ListAuthorizedRequestsDeps<RequestId extends string, UserId ext
  * Un único `.paginate()` por llamada (límite de Convex) sobre las tomas
  * ordenadas por solicitud: las filas duplicadas quedan adyacentes y el
  * cursor solo guarda la posición y la última solicitud emitida u omitida (O(1)), sin
- * historial lineal. Cualquier otro rol, o un tamaño de página no finito,
- * recibe `unauthorized`.
+ * historial lineal. Cualquier otro rol recibe `unauthorized`; un tamaño de
+ * página no finito es un argumento inválido y recibe `request_fields_invalid`
+ * (TI2-181).
  *
  * Cerrar o cancelar no revoca la toma, así que una solicitud cancelada o
  * cerrada sin acompañamiento sigue en el listado con su estado (TI2-141).
@@ -125,7 +103,9 @@ export async function listAuthorizedRequestsUseCase<
 ): Promise<ApiResult<PaginationResult<RequestEntity<RequestId, UserId>>>> {
   const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
   if (professional === null) return denied();
-  if (!Number.isFinite(input.paginationOpts.numItems)) return denied();
+  if (!Number.isFinite(input.paginationOpts.numItems)) {
+    return invalidRequestFields("El tamaño de página debe ser un número finito.");
+  }
   const limit = Math.min(Math.max(Math.floor(input.paginationOpts.numItems), 1), 100);
   const cursor = decodeTakesCursor(input.paginationOpts.cursor);
   const page = await deps.requests.listActiveTakes(professional._id, {

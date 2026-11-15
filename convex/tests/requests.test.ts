@@ -2010,19 +2010,21 @@ test("TI2-181: las consultas de solicitudes deniegan con unauthorized del contra
   await seedProfile(t, "ti181-q-est-2", "student");
   await seedProfile(t, "ti181-q-pro", "professional");
   const adminId = await seedProfile(t, "ti181-q-adm", "admin");
-  await seedProfile(t, "ti181-q-off", "professional", {
+  const inactiveId = await seedProfile(t, "ti181-q-off", "professional", {
     institutionalStatus: "enabled",
     accountStatus: "inactive",
   });
   const requestId = await seedRequestIn(t, ownerId, "under_review");
   // Una toma escrita a mano no convierte al Administrador en lector del detalle
   await seedTake(t, requestId, adminId);
+  // Con toma, la cuenta no vigente es lo único que deniega al Profesional
+  await seedTake(t, requestId, inactiveId);
   const page = { paginationOpts: { numItems: 10, cursor: null } };
   const as = (subject: string | null) =>
     sessionOf(t, subject === null ? null : identityOf(subject));
 
   for (const promise of [
-    // Detalle: sin sesión, Estudiante ajeno, Profesional sin toma, Administrador y cuenta suspendida
+    // Detalle: sin sesión, Estudiante ajeno, Profesional sin toma, Administrador y cuenta inactiva con toma
     as(null).query(api.presentation.requests.getRequest, { requestId }),
     as("ti181-q-est-2").query(api.presentation.requests.getRequest, { requestId }),
     as("ti181-q-pro").query(api.presentation.requests.getRequest, { requestId }),
@@ -2044,4 +2046,34 @@ test("TI2-181: las consultas de solicitudes deniegan con unauthorized del contra
     requestId,
   });
   expect(detail._id).toEqual(requestId);
+});
+
+test("TI2-181: un tamaño de página no finito es un argumento inválido, no una denegación", async () => {
+  const t = convexTest(schema, modules);
+  await seedProfile(t, "ti181-n-pro", "professional");
+  await seedProfile(t, "ti181-n-est", "student");
+  const asProfessional = sessionOf(t, identityOf("ti181-n-pro"));
+
+  for (const numItems of [Number.POSITIVE_INFINITY, Number.NaN]) {
+    expect(
+      await publicErrorOf(
+        asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+          paginationOpts: { numItems, cursor: null },
+        }),
+      ),
+    ).toEqual({
+      code: "request_fields_invalid",
+      message: "El tamaño de página debe ser un número finito.",
+    });
+  }
+
+  // Quien no es Profesional sigue recibiendo la denegación antes que la validación
+  expect(
+    await publicErrorOf(
+      sessionOf(t, identityOf("ti181-n-est")).query(
+        api.presentation.requests.listAuthorizedRequests,
+        { paginationOpts: { numItems: Number.NaN, cursor: null } },
+      ),
+    ),
+  ).toEqual(UNAUTHORIZED);
 });

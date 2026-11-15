@@ -1,7 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
-import { isActiveInRole, isProfileActive } from "../../domain/authorization/permissions";
+import { isActiveInRole } from "../../domain/authorization/permissions";
 import { toStoredAccessNeeds, type RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 import { findProfileByTokenIdentifier } from "../accompaniments/repository";
@@ -297,10 +297,13 @@ export function activeRequestViewerReader(ctx: DbReader) {
     findActiveViewer: async (tokenIdentifier: string | null) => {
       if (tokenIdentifier === null) return null;
       const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
-      if (profile === null || !isProfileActive(profile)) return null;
-      return profile.role === "student" || profile.role === "professional"
-        ? { _id: profile._id, role: profile.role }
-        : null;
+      if (profile === null) return null;
+      // La misma regla de Dominio que `findActiveProfileInRole`, para cada rol que lee.
+      if (isActiveInRole(profile, "student")) return { _id: profile._id, role: "student" as const };
+      if (isActiveInRole(profile, "professional")) {
+        return { _id: profile._id, role: "professional" as const };
+      }
+      return null;
     },
   };
 }
