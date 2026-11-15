@@ -31,7 +31,10 @@ export type ApiResult<T> = { status: "ok"; data: T } | { status: "error"; error:
  * ausencia de cupo. Conflicto y ausencia de cupo son códigos distintos y
  * ninguno revela si el recurso existe. TI2-148 suma `space_fields_invalid`
  * para la validación de campos del catálogo de espacios, con el mensaje
- * específico en español.
+ * específico en español. TI2-141 suma `request_fields_invalid` para los
+ * campos de una solicitud, con la misma idea: un código y el detalle en el
+ * mensaje. TI2-146 suma `follow_up_fields_invalid` para los campos del
+ * registro de seguimiento: `conflict` queda para lo que depende del estado.
  */
 export const API_ERROR_CODE_VALUES = [
   "access_needs_empty",
@@ -41,6 +44,8 @@ export const API_ERROR_CODE_VALUES = [
   "no_availability",
   "space_fields_invalid",
   "assignment_fields_invalid",
+  "request_fields_invalid",
+  "follow_up_fields_invalid",
 ] as const;
 
 /** Código estable de un error público del contrato común. */
@@ -68,6 +73,12 @@ export const ASSIGNMENT_FIELDS_INVALID_ERROR_CODE = "assignment_fields_invalid" 
  * afecta a nadie porque mobile no gestiona espacios.
  */
 
+/** Campos de la solicitud inválidos: el mensaje indica qué corregir en español. */
+export const REQUEST_FIELDS_INVALID_ERROR_CODE = "request_fields_invalid" as const;
+
+/** Campos del registro de seguimiento inválidos: el mensaje indica qué corregir. */
+export const FOLLOW_UP_FIELDS_INVALID_ERROR_CODE = "follow_up_fields_invalid" as const;
+
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
 
@@ -86,6 +97,12 @@ export const SPACE_FIELDS_INVALID_ERROR_MESSAGE = "Los campos del espacio no son
 /** Mensaje genérico para campos de la asignación inválidos; el detalle va en el error. */
 export const ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE =
   "Los campos de la asignación no son válidos.";
+
+/** Mensaje genérico para campos de la solicitud inválidos; el detalle va en el error. */
+export const REQUEST_FIELDS_INVALID_ERROR_MESSAGE = "Los datos de la solicitud no son válidos.";
+
+/** Mensaje genérico para campos del seguimiento inválidos; el detalle va en el error. */
+export const FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE = "Los datos del seguimiento no son válidos.";
 
 /** Mensaje comprensible para conflicto, sin detalles sensibles. */
 export const CONFLICT_ERROR_MESSAGE = "La solicitud entra en conflicto con el estado actual.";
@@ -107,6 +124,8 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   no_availability: NO_AVAILABILITY_ERROR_MESSAGE,
   space_fields_invalid: SPACE_FIELDS_INVALID_ERROR_MESSAGE,
   assignment_fields_invalid: ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
+  request_fields_invalid: REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
+  follow_up_fields_invalid: FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE,
 };
 
 /** Verdadero cuando el código pertenece al contrato público estable. */

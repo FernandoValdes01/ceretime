@@ -45,7 +45,6 @@ export type {
 export {
   FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
-  isSprint1RequestState,
   PERSISTABLE_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
@@ -257,6 +256,7 @@ export {
   FOLLOW_UP_TEXT_MAX_LENGTH,
   FOLLOW_UP_VIEW_VALUES,
   isFollowUpResponsible,
+  isFollowUpRetry,
   isFollowUpTaskStatus,
   toFollowUpProjection,
   toSharedFollowUpProjection,
