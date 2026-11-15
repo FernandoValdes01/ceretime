@@ -11,13 +11,16 @@ import type { RequestStatusChange } from "../../domain/requests/transitions";
  *
  * Los identificadores son genéricos: Presentación los instancia con los `Id`
  * de Convex y el caso de uso los compara y los devuelve sin convertirlos.
- * Hoy solo los usa `respondToInformationRequest`; el resto del módulo pasa a
- * puertos en TI2-181.
  */
 
 /** Estudiante con cuenta habilitada y vigente; cualquier otro caso es `null`. */
 export interface ActiveStudentReader<UserId extends string> {
   findActiveStudent(tokenIdentifier: string | null): Promise<{ readonly _id: UserId } | null>;
+}
+
+/** Profesional con cuenta habilitada y vigente; si no, `null`. */
+export interface ActiveProfessionalReader<UserId extends string> {
+  findActiveProfessional(tokenIdentifier: string | null): Promise<{ readonly _id: UserId } | null>;
 }
 
 /** Lo que el caso de uso necesita de una solicitud guardada. */
@@ -49,4 +52,14 @@ export interface RequestTransitionRecorder<RequestId extends string, UserId exte
     readonly reason?: string;
     readonly occurredAt: number;
   }): Promise<void>;
+}
+
+/** Si el Profesional tiene una toma activa de la solicitud. */
+export interface RequestTakeReader<RequestId extends string, UserId extends string> {
+  hasActiveTake(requestId: RequestId, userId: UserId): Promise<boolean>;
+}
+
+/** Crea la toma activa del Profesional y marca la solicitud como tomada por él. */
+export interface RequestTakeRecorder<RequestId extends string, UserId extends string> {
+  recordTake(requestId: RequestId, professionalId: UserId): Promise<void>;
 }

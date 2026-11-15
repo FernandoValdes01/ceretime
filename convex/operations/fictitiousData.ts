@@ -1,6 +1,6 @@
 import type { UserIdentity } from "convex/server";
 import { internal } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { env, internalMutation } from "../_generated/server";
 import { assignAccompaniment } from "../application/accompaniments/commands";
 import {
@@ -12,6 +12,7 @@ import {
 import { AGENDA_TIME_ZONE, civilRangeToInstantRange } from "../domain/availability/availability";
 import type { ApiResult } from "../domain/errors/api_error";
 import { findProfileByTokenIdentifier } from "../infrastructure/accompaniments/repository";
+import { activeProfessionalReader, requestStore } from "../infrastructure/requests/repository";
 import {
   appliedAccessNeedsFor,
   syncAppointmentProfessional,
@@ -186,6 +187,17 @@ export const load = internalMutation({
     // Las solicitudes pasan por los casos de uso reales, con las identidades
     // ficticias: el dataset cumple las mismas reglas que el flujo del cliente.
     const professional = identityOf("professional");
+    const take = async (requestId: Id<"requests">) =>
+      registered(
+        await takeRequest(
+          {
+            professionals: activeProfessionalReader(ctx),
+            requests: requestStore(ctx),
+            now: Date.now,
+          },
+          { tokenIdentifier: professional.tokenIdentifier, requestId },
+        ),
+      );
     registered(
       await registerRequest(ctx, identityOf("studentReceived"), {
         accessNeeds: "Material de clases en formato digital compatible con lector de pantalla.",
@@ -197,14 +209,14 @@ export const load = internalMutation({
         accessNeeds: "Tiempo adicional en evaluaciones escritas.",
       }),
     );
-    await takeRequest(ctx, professional, { requestId: underReview._id });
+    await take(underReview._id);
 
     const awaiting = registered(
       await registerRequest(ctx, identityOf("studentAwaiting"), {
         accessNeeds: "Apoyo para organizar la entrega de trabajos del semestre.",
       }),
     );
-    await takeRequest(ctx, professional, { requestId: awaiting._id });
+    await take(awaiting._id);
     await requestAdditionalInformation(ctx, professional, {
       requestId: awaiting._id,
       reason: "Falta indicar en qué asignaturas se necesita el apoyo.",
@@ -215,7 +227,7 @@ export const load = internalMutation({
         accessNeeds: "Sala con acceso sin escaleras para las clases prácticas.",
       }),
     );
-    await takeRequest(ctx, professional, { requestId: accepted._id });
+    await take(accepted._id);
     const accompaniment = await acceptRequest(ctx, professional, {
       requestId: accepted._id,
       objective: "Coordinar los apoyos de acceso para las clases prácticas del semestre.",

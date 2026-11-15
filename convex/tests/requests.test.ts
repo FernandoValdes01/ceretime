@@ -507,9 +507,14 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
     return profile._id;
   });
   expect(pointed?.takenBy).toEqual(proId);
-  await expect(
-    asProfessional.mutation(api.presentation.requests.takeRequest, { requestId }),
-  ).rejects.toThrow("recibidas");
+  // TI2-181: la retoma es `conflict`, distinguible de `unauthorized`, y no escribe
+  const before = await takesOf(t, requestId);
+  expect(
+    await publicErrorOf(
+      asProfessional.mutation(api.presentation.requests.takeRequest, { requestId }),
+    ),
+  ).toEqual({ code: "conflict", message: "Solo se pueden tomar solicitudes recibidas" });
+  expect(await takesOf(t, requestId)).toEqual(before);
 
   // Una toma activa sobre una recibida también se rechaza como duplicada
   const freshId = await t.mutation(internal.operations.requests.createTestRequest, {
@@ -526,16 +531,31 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
       status: "active",
     });
   });
-  await expect(
-    asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: freshId }),
-  ).rejects.toThrow("Ya tomaste");
+  expect(
+    await publicErrorOf(
+      asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: freshId }),
+    ),
+  ).toEqual({ code: "conflict", message: "Ya tomaste esta solicitud" });
+  expect(await takesOf(t, freshId)).toHaveLength(1);
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: freshId });
+  expect(untouched?.status).toBe("received");
 
   // Sin rol Profesional no se toma
   const asStudent = t.withIdentity(identityFor("ti9-est-12", "ti9-est-12@alu.uct.cl"));
-  await expect(
-    asStudent.mutation(api.presentation.requests.takeRequest, { requestId }),
-  ).rejects.toThrow("No autorizado");
+  expect(
+    await publicErrorOf(asStudent.mutation(api.presentation.requests.takeRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
 });
+
+/** Tomas de la solicitud, en cualquier estado. */
+async function takesOf(t: SchemaTest, requestId: Id<"requests">) {
+  return await t.run(async (ctx) =>
+    ctx.db
+      .query("requestAssignments")
+      .filter((q) => q.eq(q.field("requestId"), requestId))
+      .collect(),
+  );
+}
 
 test("Tomar exige solicitud recibida sin otra toma activa", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
@@ -559,11 +579,36 @@ test("Tomar exige solicitud recibida sin otra toma activa", async () => {
 
   // Fuera de recibida no se toma, aunque no exista toma previa
   const asProfessional = t.withIdentity(identityFor("ti9-pro-14", "ti9-pro-14@uct.cl"));
-  await expect(
-    asProfessional.mutation(api.presentation.requests.takeRequest, {
-      requestId: reviewingId,
-    }),
-  ).rejects.toThrow("recibidas");
+  expect(
+    await publicErrorOf(
+      asProfessional.mutation(api.presentation.requests.takeRequest, {
+        requestId: reviewingId,
+      }),
+    ),
+  ).toEqual({ code: "conflict", message: "Solo se pueden tomar solicitudes recibidas" });
+  expect(await takesOf(t, reviewingId)).toEqual([]);
+
+  // Sin perfil, o con una solicitud inexistente, la denegación es la misma
+  expect(
+    await publicErrorOf(
+      t.mutation(api.presentation.requests.takeRequest, { requestId: reviewingId }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  const missingId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("requests", {
+      studentId,
+      status: "received",
+      accessNeeds: "Borrada ficticia",
+      createdAt: 1,
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+  expect(
+    await publicErrorOf(
+      asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: missingId }),
+    ),
+  ).toEqual(UNAUTHORIZED);
 });
 
 test("Bandeja muestra solo recibidas sin datos sensibles", async () => {
@@ -1867,12 +1912,13 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
     expect(await publicErrorOf(promise)).toEqual({ code: "conflict", message });
   }
 
-  // Las cuatro operaciones nuevas deniegan con el código del contrato común
+  // Las operaciones nuevas y las que ya pasó TI2-181 deniegan con el código del contrato común
   for (const promise of [
     submitAs(t, professional, { needSummary: "" }),
     cancelAs(t, professional, waiting, "Motivo"),
     closeAs(t, student, waiting, "Motivo"),
     respondAs(t, professional, waiting, "Respuesta"),
+    t.withIdentity(student).mutation(api.presentation.requests.takeRequest, { requestId: waiting }),
   ]) {
     expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
   }
@@ -1888,7 +1934,6 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
     t
       .withIdentity(professional)
       .mutation(api.presentation.requests.createRequest, { accessNeeds: "Texto ficticio" }),
-    t.withIdentity(student).mutation(api.presentation.requests.takeRequest, { requestId: waiting }),
   ]) {
     expect(await publicErrorOf(promise)).toBe("No autorizado");
   }

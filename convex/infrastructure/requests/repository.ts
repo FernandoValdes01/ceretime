@@ -213,9 +213,10 @@ export async function logRequestTransition(
 
 /**
  * Lecturas y escrituras de una solicitud para los puertos de Aplicación
- * (TI2-141). Cumple `RequestReader`, `RequestStatusWriter` y
- * `RequestTransitionRecorder` por forma, sin importarlos; Presentación lo crea
- * con el `ctx` de la mutation, así todo queda en la misma transacción.
+ * (TI2-141, TI2-181). Cumple `RequestReader`, `RequestStatusWriter`,
+ * `RequestTransitionRecorder`, `RequestTakeReader` y `RequestTakeRecorder` por
+ * forma, sin importarlos; Presentación lo crea con el `ctx` de la mutation,
+ * así todo queda en la misma transacción.
  */
 export function requestStore(ctx: MutationCtx) {
   return {
@@ -224,6 +225,12 @@ export function requestStore(ctx: MutationCtx) {
       setRequestStatus(ctx, requestId, change),
     logRequestTransition: (entry: Parameters<typeof logRequestTransition>[1]) =>
       logRequestTransition(ctx, entry),
+    hasActiveTake: async (requestId: Id<"requests">, userId: Id<"users">) =>
+      (await findActiveTake(ctx, requestId, userId)) !== null,
+    recordTake: async (requestId: Id<"requests">, professionalId: Id<"users">) => {
+      await insertActiveTake(ctx, { requestId, userId: professionalId, grantedBy: professionalId });
+      await markRequestTaken(ctx, requestId, professionalId);
+    },
   };
 }
 
@@ -234,12 +241,30 @@ export function requestStore(ctx: MutationCtx) {
  */
 export function activeStudentReader(ctx: DbReader) {
   return {
-    findActiveStudent: async (tokenIdentifier: string | null) => {
-      if (tokenIdentifier === null) return null;
-      const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
-      return profile !== null && isActiveInRole(profile, "student") ? profile : null;
-    },
+    findActiveStudent: (tokenIdentifier: string | null) =>
+      findActiveProfileInRole(ctx, tokenIdentifier, "student"),
   };
+}
+
+/**
+ * Profesional de quien llama para el puerto `ActiveProfessionalReader`
+ * (TI2-181), con la misma regla que `activeStudentReader`.
+ */
+export function activeProfessionalReader(ctx: DbReader) {
+  return {
+    findActiveProfessional: (tokenIdentifier: string | null) =>
+      findActiveProfileInRole(ctx, tokenIdentifier, "professional"),
+  };
+}
+
+async function findActiveProfileInRole(
+  ctx: DbReader,
+  tokenIdentifier: string | null,
+  role: Doc<"users">["role"],
+): Promise<Doc<"users"> | null> {
+  if (tokenIdentifier === null) return null;
+  const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+  return profile !== null && isActiveInRole(profile, role) ? profile : null;
 }
 
 /** Tope de cambios recientes que se leen para armar el detalle. */

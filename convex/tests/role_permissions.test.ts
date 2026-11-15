@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import { ConvexError } from "convex/values";
 import { describe, expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -25,6 +26,26 @@ const ISSUER = "https://accounts.google.com";
 
 // Exacto y no por inclusión: un mensaje que agregue el motivo debe fallar.
 const DENIED = /^No autorizado$/;
+
+/**
+ * Denegación exacta de solicitudes: el texto de Sprint 1 o, en las operaciones
+ * que ya pasó TI2-181, `{ code: "unauthorized" }` del contrato común. Igual
+ * que `DENIED`, un motivo agregado hace fallar la prueba.
+ */
+function isExactRequestDenial(error: unknown): boolean {
+  if (!(error instanceof ConvexError)) return false;
+  const data: unknown = error.data;
+  if (typeof data === "string") return DENIED.test(data);
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    Object.keys(data).length === 2 &&
+    "code" in data &&
+    data.code === "unauthorized" &&
+    "message" in data &&
+    data.message === "No autorizado"
+  );
+}
 
 type Role = "student" | "professional" | "intern" | "admin";
 type TestConvex = ReturnType<typeof convexTest>;
@@ -176,7 +197,7 @@ describe.each([
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(asRole(t, role), scenario)).rejects.toThrow(DENIED);
+    await expect(operation.call(asRole(t, role), scenario)).rejects.toSatisfy(isExactRequestDenial);
   });
 });
 
@@ -185,14 +206,16 @@ describe("bandeja y toma fuera del Profesional (TI2-12)", () => {
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(asRole(t, "student"), scenario)).rejects.toThrow(DENIED);
+    await expect(operation.call(asRole(t, "student"), scenario)).rejects.toSatisfy(
+      isExactRequestDenial,
+    );
   });
 
   test.each(TRIAGE_OPERATIONS)("sin identidad no se puede $name", async (operation) => {
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(t, scenario)).rejects.toThrow(DENIED);
+    await expect(operation.call(t, scenario)).rejects.toSatisfy(isExactRequestDenial);
   });
 });
 

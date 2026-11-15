@@ -26,11 +26,9 @@ import {
 import {
   findActiveTake,
   getRequestById,
-  insertActiveTake,
   insertReceivedRequest,
   insertReceivedRequestOnce,
   logRequestTransition,
-  markRequestTaken,
   setRequestStatus,
 } from "../../infrastructure/requests/repository";
 import {
@@ -39,6 +37,14 @@ import {
   requireActiveProfessional,
   requireActiveStudent,
 } from "./identity";
+import type {
+  ActiveProfessionalReader,
+  RequestReader,
+  RequestStatusWriter,
+  RequestTakeReader,
+  RequestTakeRecorder,
+  RequestTransitionRecorder,
+} from "./ports";
 import { denied, stateConflict } from "./results";
 import { toStatusChange } from "./status_change";
 
@@ -69,11 +75,14 @@ function deny(): never {
  * respuesta ya recibe puertos y el resto pasa en TI2-181.
  */
 
-/** Solicitud pública con los identificadores de Convex, para los validadores de la API. */
-type StoredRequest = AccompanimentRequest & {
-  readonly _id: Id<"requests">;
-  readonly studentId: Id<"users">;
+/** Solicitud pública con los identificadores que instancia Presentación. */
+type RequestEntity<RequestId extends string, UserId extends string> = AccompanimentRequest & {
+  readonly _id: RequestId;
+  readonly studentId: UserId;
 };
+
+/** Solicitud pública con los identificadores de Convex, para los validadores de la API. */
+type StoredRequest = RequestEntity<Id<"requests">, Id<"users">>;
 
 /** Campos que solo existen en la forma completa. */
 const FULL_FORM_FIELDS = [
@@ -234,60 +243,73 @@ export async function requestAdditionalInformation(
   });
 }
 
+/** Capacidades que necesita la toma; la composición entrega los adaptadores. */
+export interface TakeRequestDeps<RequestId extends string, UserId extends string> {
+  readonly professionals: ActiveProfessionalReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> &
+    RequestTakeReader<RequestId, UserId> &
+    RequestTakeRecorder<RequestId, UserId> &
+    RequestStatusWriter<RequestId> &
+    RequestTransitionRecorder<RequestId, UserId>;
+  /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
+  readonly now: () => number;
+}
+
 /**
  * Toma una solicitud recibida para revisión: crea la relación explícita
  * entre el Profesional y la solicitud, auditando quién y cuándo. Solo el
- * propio Profesional con cuenta vigente puede tomar para sí, solo en estado
- * `received` y sin otra toma activa; si no, se rechaza. Tomar inicia la
- * revisión (`received` → `under_review`) para que el flujo público no quede
- * bloqueado: `createRequest` siempre crea en `received` y ninguna otra
- * mutación pública avanza ese paso.
+ * propio Profesional con cuenta vigente puede tomar para sí; cualquier otra
+ * persona, o una solicitud inexistente, recibe `unauthorized`. Una solicitud que
+ * ya no está recibida, o que ya tomó, responde `conflict` (TI2-181) sin
+ * escribir nada. Tomar inicia la revisión (`received` → `under_review`) para
+ * que el flujo público no quede bloqueado: `createRequest` siempre crea en
+ * `received` y ninguna otra mutación pública avanza ese paso.
+ *
+ * Una solicitud que existe y no está recibida responde `conflict` y no
+ * `unauthorized`: la bandeja ya muestra las recibidas a todo Profesional
+ * vigente, así que el código no revela más que ella.
  */
-export async function takeRequest(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-  input: { readonly requestId: Id<"requests"> },
-) {
-  const professional = await requireActiveProfessional(ctx, identity);
-  const row = await getRequestById(ctx, input.requestId);
-  if (row === null) deny();
+export async function takeRequest<RequestId extends string, UserId extends string>(
+  deps: TakeRequestDeps<RequestId, UserId>,
+  input: { readonly tokenIdentifier: string | null; readonly requestId: RequestId },
+): Promise<ApiResult<RequestEntity<RequestId, UserId>>> {
+  const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
+  if (professional === null) return denied();
+  const row = await deps.requests.getRequest(input.requestId);
+  if (row === null) return denied();
   if (row.status !== "received") {
-    throw new Error("Solo se pueden tomar solicitudes recibidas");
+    return stateConflict("Solo se pueden tomar solicitudes recibidas");
   }
-  const existing = await findActiveTake(ctx, input.requestId, professional._id);
-  if (existing !== null) {
-    throw new Error("Ya tomaste esta solicitud");
+  if (await deps.requests.hasActiveTake(row._id, professional._id)) {
+    return stateConflict("Ya tomaste esta solicitud");
   }
-  await insertActiveTake(ctx, {
-    requestId: input.requestId,
-    userId: professional._id,
-    grantedBy: professional._id,
-  });
-  await markRequestTaken(ctx, input.requestId, professional._id);
   const result = transitionRequest({
     from: row.status,
     to: "under_review",
     actorId: professional._id,
-    occurredAt: Date.now(),
+    occurredAt: deps.now(),
   });
   if (result.status === "rejected") {
-    throw new Error("La solicitud no admite iniciar la revisión en su estado actual");
+    return stateConflict("La solicitud no admite iniciar la revisión en su estado actual");
   }
-  await setRequestStatus(ctx, input.requestId, toStatusChange(result.change));
-  await logRequestTransition(ctx, {
-    requestId: input.requestId,
+  await deps.requests.recordTake(row._id, professional._id);
+  await deps.requests.setRequestStatus(row._id, toStatusChange(result.change));
+  await deps.requests.logRequestTransition({
+    requestId: row._id,
     from: result.change.from,
     to: result.change.to,
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
-  return toAccompanimentRequest({
-    _id: row._id,
-    studentId: row.studentId,
-    status: result.change.to,
-    accessNeeds: row.accessNeeds,
-    createdAt: row.createdAt,
-  });
+  return okResult(
+    toAccompanimentRequest({
+      _id: row._id,
+      studentId: row.studentId,
+      status: result.change.to,
+      accessNeeds: row.accessNeeds,
+      createdAt: row.createdAt,
+    }),
+  );
 }
 
 /**

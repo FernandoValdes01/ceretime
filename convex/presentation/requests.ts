@@ -22,7 +22,11 @@ import {
   modalityUnion,
   requestStatusUnion,
 } from "../infrastructure/validators";
-import { activeStudentReader, requestStore } from "../infrastructure/requests/repository";
+import {
+  activeProfessionalReader,
+  activeStudentReader,
+  requestStore,
+} from "../infrastructure/requests/repository";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 import { unwrapApiResult } from "./session";
 
@@ -180,14 +184,24 @@ export const listOpenRequests = query({
 
 /**
  * Toma una solicitud para revisión. Solo el propio Profesional con cuenta
- * vigente; una toma activa existente se rechaza.
+ * vigente; una solicitud que ya no está recibida, o ya tomada, responde
+ * `conflict` (TI2-181).
  */
 export const takeRequest = mutation({
   args: { requestId: v.id("requests") },
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await takeRequestUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await takeRequestUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
