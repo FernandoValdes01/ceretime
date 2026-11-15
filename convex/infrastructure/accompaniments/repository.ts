@@ -176,15 +176,6 @@ export async function insertInternalNote(
   return await ctx.db.insert("followUpNotes", { ...input });
 }
 
-/** Reemplaza el texto de una nota interna existente y registra quién la escribió. */
-export async function updateInternalNote(
-  ctx: MutationCtx,
-  noteId: Id<"followUpNotes">,
-  input: { readonly authorId: Id<"users">; readonly body: string },
-): Promise<void> {
-  await ctx.db.patch(noteId, { authorId: input.authorId, body: input.body });
-}
-
 export type AssignmentTriple = {
   readonly accompanimentId: Id<"accompaniments">;
   readonly userId: Id<"users">;
@@ -356,6 +347,44 @@ export function accompanimentNeedsReader(ctx: DbReader) {
       const id = ctx.db.normalizeId("accompaniments", accompanimentId);
       const row = id === null ? null : await getAccompanimentById(ctx, id);
       return row === null ? null : { _id: row._id, needs: accessNeedsFromLines(row.accessNeeds) };
+    },
+  };
+}
+
+/**
+ * Apertura del acompañamiento al aceptar una solicitud, para el puerto
+ * `AccompanimentOpener` de TI2-181. Inserta el acompañamiento y la asignación
+ * inicial del Profesional que acepta con el mismo `ctx`, así quedan en la
+ * transacción de la aceptación, y devuelve la fila leída de vuelta: la vista
+ * la decide Aplicación.
+ */
+export function accompanimentOpener(ctx: MutationCtx) {
+  return {
+    hasAccompanimentForRequest: async (requestId: Id<"requests">) =>
+      (await findAccompanimentByRequest(ctx, requestId)) !== null,
+    openAccompaniment: async (input: {
+      readonly requestId: Id<"requests">;
+      readonly studentId: Id<"users">;
+      readonly objective: string;
+      readonly accessNeeds: string;
+      readonly professionalId: Id<"users">;
+    }) => {
+      const { professionalId, ...opening } = input;
+      const accompanimentId = await insertAccompaniment(ctx, opening);
+      await insertActiveAssignment(
+        ctx,
+        { accompanimentId, userId: professionalId, assignedRole: "professional" },
+        professionalId,
+      );
+      const opened = await getAccompanimentById(ctx, accompanimentId);
+      if (opened === null) throw new Error("El acompañamiento abierto no quedó guardado.");
+      return {
+        _id: opened._id,
+        studentId: opened.studentId,
+        status: opened.status,
+        objective: opened.objective,
+        accessNeeds: opened.accessNeeds,
+      };
     },
   };
 }

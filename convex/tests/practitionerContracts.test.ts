@@ -162,6 +162,20 @@ async function denyMessage(promise: Promise<unknown>): Promise<string> {
   throw new Error("Se esperaba denegación y la operación fue permitida");
 }
 
+/** Rechazo del contrato común: `data` lleva el código y `message` lo que llega al cliente. */
+async function contractRejectionOf(
+  promise: Promise<unknown>,
+): Promise<{ readonly data: unknown; readonly message: string }> {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof ConvexError)
+      return { data: error.data as unknown, message: error.message };
+    throw error;
+  }
+  throw new Error("Se esperaba un rechazo y la operación fue permitida");
+}
+
 test("practicante asignado lee minimizado con claves exactas en la ruta crítica", async () => {
   const t = convexTest(schema, modules);
   const { accompanimentId, internSubject } = await seedCriticalPathWithIntern(t, "ti29-1");
@@ -431,17 +445,18 @@ test("apertura única no duplica ante aceptación repetida", async () => {
   });
   expect(opened.status).toBe("active");
 
-  const repeatMessage = await denyMessage(
+  // TI2-181: la repetición es `conflict` del contrato común y no trae datos de la solicitud
+  const repeat = await contractRejectionOf(
     asProfessional.mutation(api.presentation.requests.acceptRequest, {
       requestId,
       objective: "Otro objetivo ficticio",
     }),
   );
-  expect(repeatMessage).toBe("La solicitud ya fue aceptada");
-  expect(repeatMessage).not.toContain(String(requestId));
-  expect(repeatMessage).not.toContain("Objetivo ficticio de apertura única");
-  expect(repeatMessage).not.toContain("Otro objetivo ficticio");
-  expect(repeatMessage).not.toContain("Necesidad de acceso ficticia");
+  expect(repeat.data).toEqual({ code: "conflict", message: "La solicitud ya fue aceptada" });
+  expect(repeat.message).not.toContain(String(requestId));
+  expect(repeat.message).not.toContain("Objetivo ficticio de apertura única");
+  expect(repeat.message).not.toContain("Otro objetivo ficticio");
+  expect(repeat.message).not.toContain("Necesidad de acceso ficticia");
   expect(await countAccompanimentsFor(t, requestId)).toBe(1);
   const accepted = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(accepted?.status).toBe("accepted");
