@@ -25,7 +25,9 @@ import {
 import { accompanimentOpener } from "../infrastructure/accompaniments/repository";
 import {
   activeProfessionalReader,
+  activeRequestViewerReader,
   activeStudentReader,
+  requestReader,
   requestStore,
 } from "../infrastructure/requests/repository";
 import { acceptedAccompanimentValidator } from "./accompaniments";
@@ -39,12 +41,10 @@ import { unwrapApiResult } from "./session";
  * con `ctx.auth.getUserIdentity()` y delega en Aplicación. Nunca acepta un
  * `userId` del cliente como prueba ni toca `ctx.db` directamente.
  *
- * Toda denegación responde con el mismo error genérico, sin exponer el
- * motivo. Las operaciones de TI2-141 (envío completo, respuesta, cancelación y
- * cierre) traducen su `ApiResult` con `unwrapApiResult`: la denegación llega
- * como `{ code: "unauthorized" }`. Las de Sprint 1 y la forma anterior de
- * `createRequest` siguen denegando con el texto «No autorizado» hasta
- * TI2-181. Opera con datos ficticios.
+ * Toda operación compone los adaptadores de Infraestructura con su `ctx` y
+ * traduce el `ApiResult` de Aplicación con `unwrapApiResult` (TI2-181): la
+ * denegación llega como `{ code: "unauthorized" }`, sin exponer el motivo, y
+ * los rechazos con su código del contrato común. Opera con datos ficticios.
  *
  * TI2-26: `createRequest`, `takeRequest`, `requestAdditionalInformation` y
  * `acceptRequest` son la escritura pública del Sprint 1; la habilitación de
@@ -141,7 +141,12 @@ export const listOwnRequests = query({
   returns: requestPageValidator,
   handler: async (ctx, args): Promise<PublicRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listOwnRequestsUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await listOwnRequestsUseCase(
+        { students: activeStudentReader(ctx), requests: requestReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -157,7 +162,12 @@ export const getRequest = query({
   returns: requestDetailValidator,
   handler: async (ctx, args): Promise<PublicRequestDetail> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await getRequestDetailUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await getRequestDetailUseCase(
+        { viewers: activeRequestViewerReader(ctx), requests: requestReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -170,7 +180,12 @@ export const listAuthorizedRequests = query({
   returns: requestPageValidator,
   handler: async (ctx, args): Promise<PublicRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listAuthorizedRequestsUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await listAuthorizedRequestsUseCase(
+        { professionals: activeProfessionalReader(ctx), requests: requestReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -184,7 +199,12 @@ export const listOpenRequests = query({
   returns: minimizedRequestPageValidator,
   handler: async (ctx, args): Promise<PublicMinimizedRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listOpenRequestsUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await listOpenRequestsUseCase(
+        { professionals: activeProfessionalReader(ctx), requests: requestReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 

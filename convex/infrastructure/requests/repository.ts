@@ -1,7 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
-import { isActiveInRole } from "../../domain/authorization/permissions";
+import { isActiveInRole, isProfileActive } from "../../domain/authorization/permissions";
 import { toStoredAccessNeeds, type RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 import { findProfileByTokenIdentifier } from "../accompaniments/repository";
@@ -220,13 +220,11 @@ export async function logRequestTransition(
  */
 export function requestStore(ctx: MutationCtx) {
   return {
-    getRequest: (requestId: Id<"requests">) => getRequestById(ctx, requestId),
+    ...requestReader(ctx),
     setRequestStatus: (requestId: Id<"requests">, change: RequestStatusChange) =>
       setRequestStatus(ctx, requestId, change),
     logRequestTransition: (entry: Parameters<typeof logRequestTransition>[1]) =>
       logRequestTransition(ctx, entry),
-    hasActiveTake: async (requestId: Id<"requests">, userId: Id<"users">) =>
-      (await findActiveTake(ctx, requestId, userId)) !== null,
     recordTake: async (requestId: Id<"requests">, professionalId: Id<"users">) => {
       await insertActiveTake(ctx, { requestId, userId: professionalId, grantedBy: professionalId });
       await markRequestTaken(ctx, requestId, professionalId);
@@ -266,6 +264,44 @@ export function activeStudentReader(ctx: DbReader) {
   return {
     findActiveStudent: (tokenIdentifier: string | null) =>
       findActiveProfileInRole(ctx, tokenIdentifier, "student"),
+  };
+}
+
+/**
+ * Lecturas de solicitudes para los puertos `RequestReader`, `RequestTakeReader`
+ * y `RequestListReader` (TI2-181). Las consultas lo crean con su `ctx` y
+ * `requestStore` lo reutiliza en las mutations.
+ */
+export function requestReader(ctx: DbReader) {
+  return {
+    getRequest: (requestId: Id<"requests">) => getRequestById(ctx, requestId),
+    hasActiveTake: async (requestId: Id<"requests">, userId: Id<"users">) =>
+      (await findActiveTake(ctx, requestId, userId)) !== null,
+    listOwnedRequests: (studentId: Id<"users">, options: PaginationOptions) =>
+      listOwnedRequests(ctx, studentId, options),
+    listReceivedRequests: (options: PaginationOptions) =>
+      listRequestsByStatus(ctx, "received", options),
+    listActiveTakes: (userId: Id<"users">, options: PaginationOptions) =>
+      listActiveTakes(ctx, userId, options),
+    listRecentTransitions: (requestId: Id<"requests">) =>
+      listRecentRequestTransitions(ctx, requestId),
+  };
+}
+
+/**
+ * Perfil de quien lee solicitudes para el puerto `ActiveRequestViewerReader`
+ * (TI2-181): Estudiante o Profesional con cuenta habilitada y vigente.
+ */
+export function activeRequestViewerReader(ctx: DbReader) {
+  return {
+    findActiveViewer: async (tokenIdentifier: string | null) => {
+      if (tokenIdentifier === null) return null;
+      const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+      if (profile === null || !isProfileActive(profile)) return null;
+      return profile.role === "student" || profile.role === "professional"
+        ? { _id: profile._id, role: profile.role }
+        : null;
+    },
   };
 }
 

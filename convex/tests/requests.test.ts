@@ -2003,3 +2003,45 @@ test("TI2-181: pedir información y aceptar rechazan con el contrato común sin 
   });
   expect((await snapshotOf(t, reviewing)).accompaniments).toBe(1);
 });
+
+test("TI2-181: las consultas de solicitudes deniegan con unauthorized del contrato común", async () => {
+  const t = convexTest(schema, modules);
+  const ownerId = await seedProfile(t, "ti181-q-est", "student");
+  await seedProfile(t, "ti181-q-est-2", "student");
+  await seedProfile(t, "ti181-q-pro", "professional");
+  const adminId = await seedProfile(t, "ti181-q-adm", "admin");
+  await seedProfile(t, "ti181-q-off", "professional", {
+    institutionalStatus: "enabled",
+    accountStatus: "inactive",
+  });
+  const requestId = await seedRequestIn(t, ownerId, "under_review");
+  // Una toma escrita a mano no convierte al Administrador en lector del detalle
+  await seedTake(t, requestId, adminId);
+  const page = { paginationOpts: { numItems: 10, cursor: null } };
+  const as = (subject: string | null) =>
+    sessionOf(t, subject === null ? null : identityOf(subject));
+
+  for (const promise of [
+    // Detalle: sin sesión, Estudiante ajeno, Profesional sin toma, Administrador y cuenta suspendida
+    as(null).query(api.presentation.requests.getRequest, { requestId }),
+    as("ti181-q-est-2").query(api.presentation.requests.getRequest, { requestId }),
+    as("ti181-q-pro").query(api.presentation.requests.getRequest, { requestId }),
+    as("ti181-q-adm").query(api.presentation.requests.getRequest, { requestId }),
+    as("ti181-q-off").query(api.presentation.requests.getRequest, { requestId }),
+    // Listados fuera de su rol
+    as("ti181-q-pro").query(api.presentation.requests.listOwnRequests, page),
+    as(null).query(api.presentation.requests.listOwnRequests, page),
+    as("ti181-q-est").query(api.presentation.requests.listAuthorizedRequests, page),
+    as("ti181-q-adm").query(api.presentation.requests.listAuthorizedRequests, page),
+    as("ti181-q-est").query(api.presentation.requests.listOpenRequests, page),
+    as("ti181-q-off").query(api.presentation.requests.listOpenRequests, page),
+  ]) {
+    expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
+  }
+
+  // Control: el dueño sí lee el detalle
+  const detail = await as("ti181-q-est").query(api.presentation.requests.getRequest, {
+    requestId,
+  });
+  expect(detail._id).toEqual(requestId);
+});

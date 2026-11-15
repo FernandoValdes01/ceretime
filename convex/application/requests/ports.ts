@@ -1,3 +1,4 @@
+import type { PaginationOptions, PaginationResult } from "convex/server";
 import type { Accompaniment } from "../../domain/accompaniments/accompaniment";
 import type { PersistableRequestState } from "../../domain/requests/state";
 import type { RequestSubmission } from "../../domain/requests/request";
@@ -13,7 +14,10 @@ import type { RequestStatusChange } from "../../domain/requests/transitions";
  * todo ocurre en una sola mutation. Las pruebas pasan dobles en memoria.
  *
  * Los identificadores son genéricos: Presentación los instancia con los `Id`
- * de Convex y el caso de uso los compara y los devuelve sin convertirlos.
+ * de Convex y el caso de uso los compara y los devuelve sin convertirlos. La
+ * paginación usa solo los tipos `PaginationOptions` y `PaginationResult` de
+ * Convex, sin su contexto: así las opciones del cliente, incluido `endCursor`,
+ * llegan al índice sin que Aplicación las rearme.
  */
 
 /** Estudiante con cuenta habilitada y vigente; si no, `null`. */
@@ -33,6 +37,8 @@ export type StoredRequestRow<RequestId extends string, UserId extends string> = 
   readonly status: PersistableRequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
+  /** Razón vigente del cierre sin acompañamiento; solo la entrega el detalle. */
+  readonly closureReason?: string;
 };
 
 /** Solicitud por id, o `null` si no existe. */
@@ -101,4 +107,39 @@ export interface RequestRegistrar<RequestId extends string, UserId extends strin
     receivedAt: number,
   ): Promise<RequestId>;
   registerLegacy(studentId: UserId, accessNeeds: string): Promise<RequestId>;
+}
+
+/**
+ * Perfil vigente de quien llama con un rol que lee solicitudes: Estudiante o
+ * Profesional. Cualquier otro rol, o una cuenta no vigente, es `null`.
+ */
+export interface ActiveRequestViewerReader<UserId extends string> {
+  findActiveViewer(tokenIdentifier: string | null): Promise<{
+    readonly _id: UserId;
+    readonly role: "student" | "professional";
+  } | null>;
+}
+
+/** Cambio de estado registrado, del más reciente al más antiguo. */
+export type RecentRequestTransition = {
+  readonly from: PersistableRequestState;
+  readonly to: PersistableRequestState;
+  readonly reason?: string;
+};
+
+/** Lecturas paginadas y del detalle que necesitan las consultas. */
+export interface RequestListReader<RequestId extends string, UserId extends string> {
+  listOwnedRequests(
+    studentId: UserId,
+    options: PaginationOptions,
+  ): Promise<PaginationResult<StoredRequestRow<RequestId, UserId>>>;
+  listReceivedRequests(
+    options: PaginationOptions,
+  ): Promise<PaginationResult<StoredRequestRow<RequestId, UserId>>>;
+  /** Tomas activas del usuario ordenadas por solicitud, así las duplicadas quedan juntas. */
+  listActiveTakes(
+    userId: UserId,
+    options: PaginationOptions,
+  ): Promise<PaginationResult<{ readonly requestId: RequestId }>>;
+  listRecentTransitions(requestId: RequestId): Promise<readonly RecentRequestTransition[]>;
 }

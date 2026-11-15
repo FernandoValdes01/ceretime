@@ -28,14 +28,13 @@ const ISSUER = "https://accounts.google.com";
 const DENIED = /^No autorizado$/;
 
 /**
- * Denegación exacta de solicitudes: el texto de Sprint 1 o, en las operaciones
- * que ya pasó TI2-181, `{ code: "unauthorized" }` del contrato común. Igual
- * que `DENIED`, un motivo agregado hace fallar la prueba.
+ * Denegación exacta de solicitudes: desde TI2-181 todo el módulo responde
+ * `{ code: "unauthorized" }` del contrato común. Igual que `DENIED`, un motivo
+ * agregado o una clave de más hacen fallar la prueba.
  */
 function isExactRequestDenial(error: unknown): boolean {
   if (!(error instanceof ConvexError)) return false;
   const data: unknown = error.data;
-  if (typeof data === "string") return DENIED.test(data);
   return (
     typeof data === "object" &&
     data !== null &&
