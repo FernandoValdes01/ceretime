@@ -4,12 +4,42 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import { toAccompanimentRequest, type AccompanimentRequest } from "../../domain/requests/request";
+import type { PersistableRequestState } from "../../domain/requests/state";
+import type { StoredRequestRow } from "./ports";
 
 /*
- * Rechazos de las operaciones de solicitudes que devuelven `ApiResult`
- * (TI2-141). Presentación los traduce con `unwrapApiResult`. El de un campo
- * inválido es `invalidRequestFields`, de Dominio, junto a la validación.
+ * Resultados de las operaciones de solicitudes que devuelven `ApiResult`
+ * (TI2-141, TI2-181): la entidad pública y los rechazos. Presentación los
+ * traduce con `unwrapApiResult`. El de un campo inválido es
+ * `invalidRequestFields`, de Dominio, junto a la validación.
  */
+
+/** Solicitud pública con los identificadores que instancia Presentación. */
+export type RequestEntity<
+  RequestId extends string,
+  UserId extends string,
+> = AccompanimentRequest & {
+  readonly _id: RequestId;
+  readonly studentId: UserId;
+};
+
+/**
+ * Entidad pública de una fila, con el estado que deja la operación. Es la
+ * única conversión del módulo: un campo nuevo de la entidad se agrega aquí.
+ */
+export function toEntity<RequestId extends string, UserId extends string>(
+  row: StoredRequestRow<RequestId, UserId>,
+  status: PersistableRequestState = row.status,
+): RequestEntity<RequestId, UserId> {
+  return toAccompanimentRequest({
+    _id: row._id,
+    studentId: row.studentId,
+    status,
+    accessNeeds: row.accessNeeds,
+    createdAt: row.createdAt,
+  });
+}
 
 /** Denegación genérica, sin motivo ni existencia del recurso. */
 export function denied<T>(): ApiResult<T> {
