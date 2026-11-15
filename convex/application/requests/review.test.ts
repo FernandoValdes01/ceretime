@@ -52,7 +52,6 @@ function memoryDeps(
           status: "active",
           objective: input.objective,
           accessNeeds: input.accessNeeds,
-          view: "full",
         };
       },
     },

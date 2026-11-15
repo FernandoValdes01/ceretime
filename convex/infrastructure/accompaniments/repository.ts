@@ -355,7 +355,8 @@ export function accompanimentNeedsReader(ctx: DbReader) {
  * Apertura del acompañamiento al aceptar una solicitud, para el puerto
  * `AccompanimentOpener` de TI2-181. Inserta el acompañamiento y la asignación
  * inicial del Profesional que acepta con el mismo `ctx`, así quedan en la
- * transacción de la aceptación, y lo devuelve leído de vuelta.
+ * transacción de la aceptación, y devuelve la fila leída de vuelta: la vista
+ * la decide Aplicación.
  */
 export function accompanimentOpener(ctx: MutationCtx) {
   return {
@@ -383,7 +384,6 @@ export function accompanimentOpener(ctx: MutationCtx) {
         status: opened.status,
         objective: opened.objective,
         accessNeeds: opened.accessNeeds,
-        view: "full" as const,
       };
     },
   };

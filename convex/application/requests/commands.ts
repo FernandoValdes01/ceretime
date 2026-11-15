@@ -233,8 +233,9 @@ export interface TakeRequestDeps<RequestId extends string, UserId extends string
  * `received` y ninguna otra mutación pública avanza ese paso.
  *
  * Una solicitud que existe y no está recibida responde `conflict` y no
- * `unauthorized`: la bandeja ya muestra las recibidas a todo Profesional
- * vigente, así que el código no revela más que ella.
+ * `unauthorized`, como pide TI2-181 (hallazgo 4 de TI4-83): revela a un
+ * Profesional vigente solo que la solicitud existe, algo que pudo ver en la
+ * bandeja mientras estaba recibida, y nunca su contenido.
  */
 export async function takeRequest<RequestId extends string, UserId extends string>(
   deps: TakeRequestDeps<RequestId, UserId>,
@@ -355,15 +356,15 @@ export async function acceptRequest<
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
-  return okResult(
-    await deps.accompaniments.openAccompaniment({
-      requestId: row._id,
-      studentId: row.studentId,
-      objective,
-      accessNeeds: row.accessNeeds,
-      professionalId: professional._id,
-    }),
-  );
+  const opened = await deps.accompaniments.openAccompaniment({
+    requestId: row._id,
+    studentId: row.studentId,
+    objective,
+    accessNeeds: row.accessNeeds,
+    professionalId: professional._id,
+  });
+  // Quien acepta queda asignado como Profesional responsable: recibe la vista completa.
+  return okResult({ ...opened, view: "full" });
 }
 
 /** Capacidades que necesita la cancelación; la composición entrega los adaptadores. */

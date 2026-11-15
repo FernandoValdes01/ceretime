@@ -1,5 +1,5 @@
 import type { PaginationOptions, PaginationResult } from "convex/server";
-import type { Accompaniment } from "../../domain/accompaniments/accompaniment";
+import type { AccompanimentRow } from "../../domain/accompaniments/accompaniment";
 import type { PersistableRequestState } from "../../domain/requests/state";
 import type { RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
@@ -9,9 +9,11 @@ import type { RequestStatusChange } from "../../domain/requests/transitions";
  *
  * Capa de Aplicación: fija lo que un caso de uso lee y escribe, sin Convex.
  * Infraestructura los cumple por forma con `requestStore(ctx)`,
- * `activeStudentReader(ctx)`, `activeProfessionalReader(ctx)` y
+ * `requestReader(ctx)`, `activeStudentReader(ctx)`,
+ * `activeProfessionalReader(ctx)`, `activeRequestViewerReader(ctx)` y
  * `accompanimentOpener(ctx)`, creados en Presentación con el mismo `ctx`, así
- * todo ocurre en una sola mutation. Las pruebas pasan dobles en memoria.
+ * cada operación ocurre en una sola transacción. Las pruebas pasan dobles en
+ * memoria.
  *
  * Los identificadores son genéricos: Presentación los instancia con los `Id`
  * de Convex y el caso de uso los compara y los devuelve sin convertirlos. La
@@ -91,7 +93,7 @@ export interface AccompanimentOpener<
     readonly objective: string;
     readonly accessNeeds: string;
     readonly professionalId: UserId;
-  }): Promise<Accompaniment<AccompanimentId, UserId>>;
+  }): Promise<AccompanimentRow<AccompanimentId, UserId>>;
 }
 
 /**
