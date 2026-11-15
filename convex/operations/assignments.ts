@@ -1,7 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import {
   assignAccompaniment,
-  clearAssignmentStartWindow,
   expireAssignmentWindow,
   revokeAccompaniment,
 } from "../application/accompaniments/commands";
@@ -34,7 +33,9 @@ export const assign = internalMutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    const result = await assignAccompaniment(ctx, identity, args);
+    const result = await assignAccompaniment(ctx, identity, args, undefined, {
+      bootstrapStaffGrant: true,
+    });
     if (result.status === "error") throw new ConvexError(result.error.message);
     return result.data;
   },
@@ -61,7 +62,7 @@ export const revoke = internalMutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    const result = await revokeAccompaniment(ctx, identity, args);
+    const result = await revokeAccompaniment(ctx, identity, args, { bootstrapStaffGrant: true });
     if (result.status === "error") throw new ConvexError(result.error.message);
     return result.data;
   },
@@ -72,9 +73,9 @@ export const revoke = internalMutation({
  *
  * La programa la vía pública al conceder o modificar con `validUntil`
  * (`ctx.scheduler.runAt`): al vencer cambia el dato para que las consultas
- * suscritas vuelvan a ejecutarse, ya que el paso del tiempo por sí solo no invalida
- * la caché. Con guarda idempotente: fila activa, misma ventana y fecha
- * alcanzada; si no, no escribe. El actor es el sistema.
+ * suscritas vuelvan a ejecutarse, ya que el paso del tiempo por sí solo no
+ * invalida la caché. Con guarda idempotente: fila activa, misma ventana y
+ * fecha alcanzada; si no, no escribe. El actor es el sistema.
  */
 export const expireAssignment = internalMutation({
   args: {
@@ -85,27 +86,6 @@ export const expireAssignment = internalMutation({
     return await expireAssignmentWindow(ctx, {
       assignmentId: args.assignmentId,
       validUntil: args.validUntil,
-    });
-  },
-});
-
-/**
- * Limpia el inicio de la ventana al comenzar (TI2-140).
- *
- * La programa la vía pública al conceder o modificar con `validFrom` futuro:
- * con la cota ya pasada la ventana equivale a no tenerla, y al escribir las
- * consultas suscritas vuelvan a ejecutarse y la asignación aparece. Con la misma
- * guarda idempotente que el vencimiento.
- */
-export const clearAssignmentStart = internalMutation({
-  args: {
-    assignmentId: v.id("accompanimentAssignments"),
-    validFrom: v.number(),
-  },
-  handler: async (ctx, args) => {
-    return await clearAssignmentStartWindow(ctx, {
-      assignmentId: args.assignmentId,
-      validFrom: args.validFrom,
     });
   },
 });

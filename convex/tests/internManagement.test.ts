@@ -1000,7 +1000,7 @@ test("el vencimiento programa la revocación y se ejecuta aunque nadie consulte"
   }
 });
 
-test("el comienzo programa la limpieza de la cota y las guardas ignoran lo obsoleto", async () => {
+test("el comienzo no se programa: validFrom sigue en la fila y la lectura decide", async () => {
   vi.useFakeTimers();
   try {
     const t = convexTest(schema, modules);
@@ -1050,29 +1050,27 @@ test("el comienzo programa la limpieza de la cota y las guardas ignoran lo obsol
     );
     expect(earlyDenied).toContain("No autorizado");
 
+    // La historia acordada no se borra: aunque pase el inicio, validFrom
+    // sigue en la fila y es la lectura quien decide con la ventana
     vi.advanceTimersByTime(2_000);
     await t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(100));
     const started = await t.run(async (ctx) => ctx.db.get(assignmentId));
     expect(started?.status).toBe("active");
-    expect(started?.validFrom).toBeUndefined();
-    expect(started?.validUntil).toBe(base + 3_600_000);
+    expect(started?.validFrom).toBe(base + 1_000);
     const nowVisible = await asIntern.query(api.presentation.accompaniments.getAccompaniment, {
       accompanimentId,
     });
     expect(nowVisible.view).toBe("minimized");
 
+    // La guarda ignora programaciones obsoletas: con otra ventana no escribe
     const staleExpire = await t.mutation(internal.operations.assignments.expireAssignment, {
       assignmentId,
       validUntil: base + 9_999_999,
     });
     expect(staleExpire).toBeNull();
-    const staleClear = await t.mutation(internal.operations.assignments.clearAssignmentStart, {
-      assignmentId,
-      validFrom: base + 1_000,
-    });
-    expect(staleClear).toBeNull();
     const untouched = await t.run(async (ctx) => ctx.db.get(assignmentId));
     expect(untouched?.status).toBe("active");
+    expect(untouched?.validUntil).toBe(base + 3_600_000);
   } finally {
     vi.useRealTimers();
   }

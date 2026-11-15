@@ -3,7 +3,9 @@ import { v } from "convex/values";
 import {
   assignAccompaniment,
   revokeAccompaniment,
+  scheduleValidityWindow,
   updateAccompanimentAssignment,
+  type AssignmentScheduler,
 } from "../application/accompaniments/commands";
 import {
   getAccompanimentDetail,
@@ -11,10 +13,29 @@ import {
   listAssignedAccompanimentsUseCase,
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
-import { mutation, query } from "../_generated/server";
+import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
+
+/**
+ * Programación del vencimiento para la vía pública (TI2-140).
+ *
+ * Implementa el puerto `AssignmentScheduler` con `ctx.scheduler.runAt`:
+ * presentar solo compone; la decisión de qué programar vive en Aplicación
+ * (`scheduleValidityWindow`).
+ */
+function schedulingFor(ctx: MutationCtx): AssignmentScheduler {
+  return {
+    scheduleExpiry: async (input) => {
+      await ctx.scheduler.runAt(
+        input.validUntil,
+        internal.operations.assignments.expireAssignment,
+        input,
+      );
+    },
+  };
+}
 
 /**
  * Borde de Presentación: acompañamientos con autorización en Backend (S2)
@@ -151,30 +172,17 @@ export const assignAccompanimentAccess = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
+    const schedule = schedulingFor(ctx);
     const id = unwrapApiResult(
       await assignAccompaniment(
         ctx,
         identity,
         { accompanimentId, userId, assignedRole },
         { validFrom, validUntil },
-        { requireScopeForStaff: true },
+        { schedule },
       ),
     );
-    // Vencimiento en vivo (TI2-140): el paso del tiempo no invalida la caché
-    // de consultas suscritas, así que al vencer se revoca la fila y al
-    // comenzar se limpia la cota; el filtro de lectura queda como defensa.
-    if (validUntil !== undefined) {
-      await ctx.scheduler.runAt(validUntil, internal.operations.assignments.expireAssignment, {
-        assignmentId: id,
-        validUntil,
-      });
-    }
-    if (validFrom !== undefined) {
-      await ctx.scheduler.runAt(validFrom, internal.operations.assignments.clearAssignmentStart, {
-        assignmentId: id,
-        validFrom,
-      });
-    }
+    await scheduleValidityWindow(schedule, id, { validFrom, validUntil });
     return id;
   },
 });
@@ -200,28 +208,19 @@ export const updateAccompanimentAccess = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     const { accompanimentId, userId, assignedRole, validFrom, validUntil } = args;
+    const schedule = schedulingFor(ctx);
     const id = unwrapApiResult(
       await updateAccompanimentAssignment(
         ctx,
         identity,
         { accompanimentId, userId, assignedRole },
         { validFrom, validUntil },
+        schedule,
       ),
     );
     // La ventana nueva también vence en vivo; la guarda idempotente ignora la
     // programación anterior si la ventana cambió o se quitó.
-    if (validUntil !== undefined && validUntil !== null) {
-      await ctx.scheduler.runAt(validUntil, internal.operations.assignments.expireAssignment, {
-        assignmentId: id,
-        validUntil,
-      });
-    }
-    if (validFrom !== undefined && validFrom !== null) {
-      await ctx.scheduler.runAt(validFrom, internal.operations.assignments.clearAssignmentStart, {
-        assignmentId: id,
-        validFrom,
-      });
-    }
+    await scheduleValidityWindow(schedule, id, { validFrom, validUntil });
     return id;
   },
 });
@@ -243,8 +242,6 @@ export const revokeAccompanimentAccess = mutation({
   returns: v.union(v.number(), v.null()),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(
-      await revokeAccompaniment(ctx, identity, args, { requireScopeForStaff: true }),
-    );
+    return unwrapApiResult(await revokeAccompaniment(ctx, identity, args));
   },
 });

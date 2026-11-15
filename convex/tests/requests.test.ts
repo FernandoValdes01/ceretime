@@ -811,7 +811,7 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
   expect(untouched?.status).toBe("under_review");
 });
 
-test("TI2-140: la cuenta de prueba habilitada no toma solicitudes", async () => {
+test("TI2-140: la cuenta de prueba no opera solicitudes por ninguna vía", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti140-est-sol");
@@ -820,7 +820,7 @@ test("TI2-140: la cuenta de prueba habilitada no toma solicitudes", async () => 
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
   });
-  const testProId = await t.run(async (ctx) => {
+  await t.run(async (ctx) => {
     return await ctx.db.insert("users", {
       email: "ti140-prueba-sol@alu.uct.cl",
       fullName: "Profesional de Prueba",
@@ -831,15 +831,39 @@ test("TI2-140: la cuenta de prueba habilitada no toma solicitudes", async () => 
     });
   });
 
-  // La prueba, aunque habilitada y vigente, no opera solicitudes: la toma
-  // exige profesional de personal y la denegación no revela el motivo
+  // La prueba, aunque habilitada y vigente, no opera solicitudes: bandeja,
+  // toma, lectura y aceptación responden la misma denegación genérica
   const asTest = t.withIdentity(identityFor("ti140-prueba-sol", "ti140-prueba-sol@alu.uct.cl"));
+  await expect(
+    asTest.query(api.presentation.requests.listOpenRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
+  ).rejects.toThrow("No autorizado");
   await expect(
     asTest.mutation(api.presentation.requests.takeRequest, { requestId }),
   ).rejects.toThrow("No autorizado");
-  expect(testProId).toBeDefined();
+  await expect(
+    asTest.query(api.presentation.requests.listAuthorizedRequests, {
+      paginationOpts: { numItems: 10, cursor: null },
+    }),
+  ).rejects.toThrow("No autorizado");
+  await expect(
+    asTest.mutation(api.presentation.requests.acceptRequest, {
+      requestId,
+      objective: "Objetivo ficticio",
+    }),
+  ).rejects.toThrow("No autorizado");
+
+  // Sin toma ni cambio de estado: la solicitud sigue recibida
   const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(untouched?.status).toBe("received");
+  const takes = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("requestAssignments")
+      .withIndex("by_request_and_user_and_status", (q) => q.eq("requestId", requestId))
+      .take(1);
+  });
+  expect(takes).toHaveLength(0);
 });
 
 /*

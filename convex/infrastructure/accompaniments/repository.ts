@@ -305,9 +305,9 @@ export async function revokeAssignmentRow(
  *
  * Solo persistencia: fija `status` en `revoked` con fecha, sin `revokedBy`
  * porque el actor es el sistema, no una persona. La lectura ya excluía la
- * fila vencida; esto cambia el dato para que las consultas suscritas se
- * vuelvan a ejecutarse al vencer, ya que el paso del tiempo por sí solo no invalida la
- * caché de Convex.
+ * fila vencida; esto cambia el dato para que las consultas suscritas vuelvan
+ * a ejecutarse al vencer, ya que el paso del tiempo por sí solo no invalida
+ * la caché de Convex.
  */
 export async function expireAssignmentRow(
   ctx: MutationCtx,
