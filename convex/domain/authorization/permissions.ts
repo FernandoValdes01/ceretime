@@ -35,6 +35,7 @@ export const AUTHORIZATION_ACTIONS = [
   "appointment:reschedule",
   "appointment:recordAttendance",
   "appointment:calendar",
+  "appointment:onlineAccess",
   "followUp:read",
   "followUp:write",
   "space:read",
@@ -493,8 +494,9 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   },
   {
     action: "appointment:book",
-    student: "permitido solo propios con acompañamiento activo",
-    professional: "denegado",
+    student: "permitido solo propios con acompañamiento activo, sin adicionales ni apoyos",
+    professional:
+      "coordina solo asignados activos con acompañamiento activo, si participa en la atención",
     intern: "denegado",
     admin: "denegado",
   },
@@ -524,6 +526,14 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     student: "permitido solo sus propias atenciones con acompañamiento activo",
     professional: "denegado",
     intern: "denegado",
+    admin: "denegado",
+  },
+  {
+    action: "appointment:onlineAccess",
+    student: "lee el enlace solo de sus propias atenciones con acompañamiento activo",
+    professional:
+      "lee y agrega el enlace solo si participa en la atención, con asignación y acompañamiento activos",
+    intern: "denegado aunque tenga asignación",
     admin: "denegado",
   },
   {
