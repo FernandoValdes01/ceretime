@@ -41,9 +41,28 @@ Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la
 
 `presentation/requests.createRequest` acepta la forma completa (necesidad, resultado esperado, necesidades de acceso como lista y texto libre, modalidad, disponibilidad general, medio accesible e `idempotencyKey`) o la forma anterior, solo con `accessNeeds`. La forma completa autoriza antes de validar, exige sus campos con `toCompleteSubmission`, los valida en Dominio con `toRequestSubmission` y se guarda una sola vez por `idempotencyKey`: un reintento con la misma clave devuelve la solicitud ya creada. Sus rechazos usan `request_fields_invalid` (y `access_needs_*` para las necesidades de acceso) y su denegación `unauthorized`. Desde TI2-181 la forma anterior deniega con `unauthorized` y rechaza con `access_needs_empty` o `access_needs_too_long`. Topes, reglas y ejemplos en [`docs/contratos-sprint-3/solicitudes.md`](../../../docs/contratos-sprint-3/solicitudes.md).
 
+## Canal oficial y derivaciones (TI2-143)
+
+Cuatro casos de uso de `referrals.ts`, con las reglas en Dominio ([`referral.ts`](../../domain/requests/referral.ts) y la política de transición). El personal autorizado es el Profesional con cuenta vigente.
+
+| Endpoint                                         | Quién                               | Qué hace                                                                                                                                |
+| ------------------------------------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `presentation/requests.registerOfficialRequest`  | Profesional vigente                 | Registra en `received` la solicitud de un Estudiante, con procedencia `official_channel`; con `originUnit` es una derivación de entrada |
+| `presentation/requests.recordReferralContact`    | Profesional vigente con toma activa | Guarda quién contactó al estudiante y cuándo, una sola vez, sin cambiar el estado                                                       |
+| `presentation/requests.recordReferralAcceptance` | Profesional vigente con toma activa | Guarda cuándo aceptó el estudiante; exige el contacto previo                                                                            |
+| `presentation/requests.referRequest`             | Profesional vigente con toma activa | Mueve `under_review` o `awaiting_information_or_acceptance` a `referred` con la unidad de destino y la razón, sin abrir acompañamiento  |
+
+El registro reutiliza `toCompleteSubmission`, `toRequestSubmission` y la clave de idempotencia de `createRequest`: no hay otra forma de solicitud. El Estudiante se identifica por su correo, que el puerto `ActiveStudentByEmailReader` resuelve solo si es de una cuenta de Estudiante vigente.
+
+`acceptRequest` consulta `referralAllowsAccompaniment` antes de escribir: una derivación de entrada sin contacto o sin aceptación responde `conflict` y no abre acompañamiento.
+
+`referRequest` escribe el estado y la derivación de salida en una sola escritura, por `recordOutgoingReferral`, que es la única vía hacia `referred`: `RequestStatusChange` no admite ese estado. El registro del cambio en `requestTransitions`, con la razón, el actor y la fecha, es el aviso al estudiante que queda en el sistema. El evento de aviso y su envío son de TI2-150.
+
+Se prueban por `api.presentation.requests.*` en `convex/tests/requests.test.ts` (permisos, transiciones inválidas y rechazos sin escritura) y en `convex/domain/requests/referral.test.ts`.
+
 ## Puertos y contrato común (TI2-181)
 
-Ningún caso de uso de `convex/application/requests/` importa el contexto de Convex ni repositorios concretos. Cada operación de `commands.ts` y `queries.ts` declara sus `deps` con los puertos de `ports.ts` y devuelve `ApiResult`; `presentation/requests.ts` compone los adaptadores de Infraestructura (`requestStore`, `requestReader`, `activeStudentReader`, `activeProfessionalReader`, `activeRequestViewerReader` y `accompanimentOpener`) con el mismo `ctx`, así cada mutation sigue siendo una sola transacción, y traduce el resultado con `unwrapApiResult`. La paginación usa solo los tipos `PaginationOptions` y `PaginationResult` de Convex, para que las opciones del cliente lleguen al índice sin rearmarlas. Se prueba con dobles en memoria en `take.test.ts`, `review.test.ts` y `register.test.ts`, y por la API pública en `convex/tests/requests.test.ts`.
+Ningún caso de uso de `convex/application/requests/` importa el contexto de Convex ni repositorios concretos. Cada operación de `commands.ts` y `queries.ts` declara sus `deps` con los puertos de `ports.ts` y devuelve `ApiResult`; `presentation/requests.ts` compone los adaptadores de Infraestructura (`requestStore`, `requestReader`, `activeStudentReader`, `activeStudentByEmailReader`, `activeProfessionalReader`, `activeRequestViewerReader` y `accompanimentOpener`) con el mismo `ctx`, así cada mutation sigue siendo una sola transacción, y traduce el resultado con `unwrapApiResult`. La paginación usa solo los tipos `PaginationOptions` y `PaginationResult` de Convex, para que las opciones del cliente lleguen al índice sin rearmarlas. Se prueba con dobles en memoria en `take.test.ts`, `review.test.ts` y `register.test.ts`, y por la API pública en `convex/tests/requests.test.ts`.
 
 ## Alcance explícito
 
