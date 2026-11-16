@@ -45,6 +45,22 @@ export interface AccessNeed {
   readonly label: string;
 }
 
+/**
+ * Necesidades de acceso que los clientes ofrecen como opciones al solicitar
+ * (TI2-149), en el orden de «Necesidades de acceso» de
+ * `docs/especificacion-prototipo.md`. El `id` se guarda con la solicitud, así
+ * que Web y Mobile deben usar estos mismos valores; «otra condición» no es una
+ * opción, sino el texto libre `otherAccessNeed`.
+ */
+export const ACCESS_NEED_OPTIONS: readonly AccessNeed[] = [
+  { id: "written-communication", label: "Comunicación escrita" },
+  { id: "sign-language-interpreter", label: "Intérprete de lengua de señas" },
+  { id: "physically-accessible-room", label: "Sala físicamente accesible" },
+  { id: "reduced-stimulation", label: "Reducción de estímulos" },
+  { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
+  { id: "support-person", label: "Persona de apoyo" },
+];
+
 /** Rangos generales de disponibilidad del estudiante para el acompañamiento. */
 export interface GeneralAvailability {
   readonly preferredWeekdays: readonly number[];

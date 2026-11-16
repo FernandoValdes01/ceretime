@@ -23,6 +23,7 @@ export type { InstitutionalPopulation } from "./auth/institutional_domain";
 
 // Solicitud de acompañamiento y sus estados.
 export {
+  ACCESS_NEED_OPTIONS,
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
   LEGACY_REQUEST_PROVENANCE_CHANNEL,
