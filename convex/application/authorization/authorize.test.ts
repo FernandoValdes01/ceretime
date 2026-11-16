@@ -326,24 +326,40 @@ describe("authorizeAppointmentRead", () => {
 });
 
 describe("authorizeAppointmentBook", () => {
-  test("solo el Estudiante dueño reserva, y no con el acompañamiento pausado", async () => {
+  test("el Estudiante dueño reserva y el Profesional asignado coordina, nunca con el acompañamiento pausado", async () => {
     const request = (tokenIdentifier: string) => ({ tokenIdentifier, accompanimentId: "acc-1" });
     const active = fakeReader({
-      profiles: [student, professional],
+      profiles: [student, professional, intern, admin],
       accompaniments: [activeAccompaniment],
-      assignments: [assignment({})],
+      assignments: [assignment({}), assignment({ userId: "user-intern", assignedRole: "intern" })],
     });
     expect(await authorizeAppointmentBook(active, request("token-student"))).toEqual({
       status: "ok",
-      data: { callerId: "user-student" },
+      data: { callerId: "user-student", actor: "student", studentId: "user-student" },
     });
-    expect(await authorizeAppointmentBook(active, request("token-pro"))).toEqual(DENIED);
+    // TI2-142: el Profesional reserva en nombre del Estudiante dueño, que sale
+    // del acompañamiento leído en el servidor.
+    expect(await authorizeAppointmentBook(active, request("token-pro"))).toEqual({
+      status: "ok",
+      data: { callerId: "user-pro", actor: "professional", studentId: "user-student" },
+    });
+    expect(await authorizeAppointmentBook(active, request("token-intern"))).toEqual(DENIED);
+    expect(await authorizeAppointmentBook(active, request("token-admin"))).toEqual(DENIED);
+
+    const withoutAssignment = fakeReader({
+      profiles: [professional],
+      accompaniments: [activeAccompaniment],
+      assignments: [assignment({ status: "revoked" })],
+    });
+    expect(await authorizeAppointmentBook(withoutAssignment, request("token-pro"))).toEqual(DENIED);
 
     const paused = fakeReader({
-      profiles: [student],
+      profiles: [student, professional],
       accompaniments: [{ ...activeAccompaniment, status: "paused" }],
+      assignments: [assignment({})],
     });
     expect(await authorizeAppointmentBook(paused, request("token-student"))).toEqual(DENIED);
+    expect(await authorizeAppointmentBook(paused, request("token-pro"))).toEqual(DENIED);
   });
 });
 
