@@ -1,6 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { isTestProfessional } from "../../domain/accounts/enablement";
 import { isActiveInRole } from "../../domain/authorization/permissions";
 import { toStoredAccessNeeds, type RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
@@ -290,7 +291,9 @@ export function requestReader(ctx: DbReader) {
 
 /**
  * Perfil de quien lee solicitudes para el puerto `ActiveRequestViewerReader`
- * (TI2-181): Estudiante o Profesional con cuenta habilitada y vigente.
+ * (TI2-181): Estudiante o Profesional de personal con cuenta habilitada y
+ * vigente. La cuenta de prueba jamás lee el detalle (TI2-140): aunque tenga
+ * una toma escrita a mano, no recibe `accessNeeds`.
  */
 export function activeRequestViewerReader(ctx: DbReader) {
   return {
@@ -300,7 +303,7 @@ export function activeRequestViewerReader(ctx: DbReader) {
       if (profile === null) return null;
       // La misma regla de Dominio que `findActiveProfileInRole`, para cada rol que lee.
       if (isActiveInRole(profile, "student")) return { _id: profile._id, role: "student" as const };
-      if (isActiveInRole(profile, "professional")) {
+      if (isActiveInRole(profile, "professional") && !isTestProfessional(profile)) {
         return { _id: profile._id, role: "professional" as const };
       }
       return null;
@@ -310,12 +313,16 @@ export function activeRequestViewerReader(ctx: DbReader) {
 
 /**
  * Profesional de quien llama para el puerto `ActiveProfessionalReader`
- * (TI2-181), con la misma regla que `activeStudentReader`.
+ * (TI2-181), con la misma regla que `activeStudentReader` más el veto de
+ * TI2-140: la cuenta de prueba jamás opera solicitudes (toma, aceptación,
+ * respuesta, cierre ni bandejas), aunque esté habilitada y vigente.
  */
 export function activeProfessionalReader(ctx: DbReader) {
   return {
-    findActiveProfessional: (tokenIdentifier: string | null) =>
-      findActiveProfileInRole(ctx, tokenIdentifier, "professional"),
+    findActiveProfessional: async (tokenIdentifier: string | null) => {
+      const profile = await findActiveProfileInRole(ctx, tokenIdentifier, "professional");
+      return profile !== null && !isTestProfessional(profile) ? profile : null;
+    },
   };
 }
 
