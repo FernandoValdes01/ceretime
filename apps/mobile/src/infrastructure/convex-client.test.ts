@@ -48,6 +48,26 @@ test("consulta la API pública con el SDK real y conserva la respuesta sin inven
   expect(init!.headers).not.toHaveProperty("Authorization");
 });
 
+test("envía el token de la sesión vigente en cada llamada y vuelve a anónimo sin sesión", async () => {
+  const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
+  fetchMock.mockResolvedValue(
+    httpResponse({ status: "success", value: { status: "unauthenticated" } }),
+  );
+  const getAuthToken = jest
+    .fn<Promise<string | null>, []>()
+    .mockResolvedValueOnce("token-de-la-sesion")
+    .mockResolvedValueOnce(null);
+  const client = createMobileConvexClient(deploymentUrl, fetchMock, undefined, getAuthToken);
+
+  await client.query(api.presentation.session.getSessionState, {});
+  await client.query(api.presentation.session.getSessionState, {});
+
+  expect(fetchMock.mock.calls[0][1]!.headers).toMatchObject({
+    Authorization: "Bearer token-de-la-sesion",
+  });
+  expect(fetchMock.mock.calls[1][1]!.headers).not.toHaveProperty("Authorization");
+});
+
 test("conserva null como ausencia de datos válida", async () => {
   const { client, fetchMock } = setup();
   fetchMock.mockResolvedValue(httpResponse({ status: "success", value: null }));

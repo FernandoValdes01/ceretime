@@ -1,3 +1,9 @@
+import type { AuthPort } from "../application/auth-port";
+import {
+  createAuthTokenSupplier,
+  createConvexAuthAdapter,
+} from "../infrastructure/convex-authentication";
+import { createInstitutionalAuthClient } from "../infrastructure/institutional-auth-client";
 import { createMobileConvexClient, type MobileConvexClient } from "../infrastructure/convex-client";
 import {
   createDemoAuthAdapter,
@@ -66,14 +72,46 @@ export function createDemoDataDependencies() {
   };
 }
 
-// Punto único donde la app elige las implementaciones de cada puerto. Hoy todo es demostración local,
-// salvo preferencias (AsyncStorage) y voz (módulos nativos); conectar Convex se hace aquí.
+// Con el Site URL de Convex configurado el ingreso es el institucional real; sin él, la demostración local.
+const convexSiteUrl = process.env.EXPO_PUBLIC_CONVEX_SITE_URL?.trim();
+export const authMode: "institutional" | "demo" = convexSiteUrl ? "institutional" : "demo";
+
+let institutionalAuth:
+  | {
+      readonly authClient: ReturnType<typeof createInstitutionalAuthClient>;
+      readonly tokens: ReturnType<typeof createAuthTokenSupplier>;
+    }
+  | undefined;
+
+// El cliente de Better Auth y su proveedor de tokens se comparten con el transporte de Convex.
+function getInstitutionalAuth() {
+  if (!convexSiteUrl) throw new Error("Configura EXPO_PUBLIC_CONVEX_SITE_URL.");
+  if (!institutionalAuth) {
+    const authClient = createInstitutionalAuthClient(convexSiteUrl);
+    institutionalAuth = { authClient, tokens: createAuthTokenSupplier(authClient) };
+  }
+  return institutionalAuth;
+}
+
+function createAuthPort(): AuthPort {
+  if (authMode === "demo") return createDemoAuthAdapter();
+  const { authClient, tokens } = getInstitutionalAuth();
+  // El transporte se crea en la primera consulta: una URL ausente falla al verificar la sesión, no al abrir la app.
+  const convexClient: Pick<MobileConvexClient, "query"> = {
+    query: (query, args) => getMobileConvexClient().query(query, args),
+  };
+  return createConvexAuthAdapter({ authClient, convexClient, tokens });
+}
+
+// Punto único donde la app elige las implementaciones de cada puerto. Los datos siguen siendo
+// demostración local salvo la sesión (ingreso institucional, si hay Site URL), preferencias
+// (AsyncStorage) y voz (módulos nativos); conectar el resto de Convex se hace aquí.
 export const mobileDependencies = {
   ...createDemoDataDependencies(),
   accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
   speechPort: createNativeSpeechAdapter(),
   speechRecognitionPort: createNativeSpeechRecognitionAdapter(),
-  authPort: createDemoAuthAdapter(),
+  authPort: createAuthPort(),
   demoCredentials: demoAuthCredentials,
   unassignedInternCredentials,
   resetDemo(): void {
@@ -85,7 +123,12 @@ let convexClient: MobileConvexClient | undefined;
 
 // Se crea al usarlo: la demostración local no requiere configurar un backend.
 export function getMobileConvexClient(): MobileConvexClient {
-  convexClient ??= createMobileConvexClient(process.env.EXPO_PUBLIC_CONVEX_URL);
+  convexClient ??= createMobileConvexClient(
+    process.env.EXPO_PUBLIC_CONVEX_URL,
+    undefined,
+    undefined,
+    authMode === "institutional" ? getInstitutionalAuth().tokens.getAuthToken : undefined,
+  );
   return convexClient;
 }
 

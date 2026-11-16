@@ -8,13 +8,17 @@ import {
   NavigationSessionProvider,
   useNavigationSession,
 } from "../src/presentation/navigation/session";
+import { Screen } from "../src/presentation/components/screen";
 import { appHeaderOptions } from "../src/presentation/navigation/app-header-options";
 import { AccessibilityPreferencesProvider } from "../src/presentation/accessibility/accessibility-preferences-provider";
 
 LogBox.ignoreLogs(["[Reanimated] Reduced motion setting is enabled on this device."]);
 
 function RootNavigator() {
-  const { role } = useNavigationSession();
+  const { role, isRestoring } = useNavigationSession();
+
+  // Sin esperar, la persona con sesión guardada vería el acceso un instante antes de su inicio.
+  if (isRestoring) return <Screen title="Cargando CERETI…" description="Recuperando tu sesión." />;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
