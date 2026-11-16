@@ -5,12 +5,7 @@ import { toSubmitFailure } from "./student-request-form-data.ts";
 /** Traducción de los errores de `createRequest` (TI2-149). */
 describe("TI2-149: desenlace de un envío fallido", () => {
   test("los rechazos de los datos muestran el mensaje público del Backend", () => {
-    for (const code of [
-      "request_fields_invalid",
-      "access_needs_empty",
-      "access_needs_too_long",
-      "conflict",
-    ]) {
+    for (const code of ["request_fields_invalid", "access_needs_empty", "access_needs_too_long"]) {
       expect(toSubmitFailure(new ConvexError({ code, message: "Mensaje público." }))).toEqual({
         status: "rejected",
         message: "Mensaje público.",
@@ -35,8 +30,10 @@ describe("TI2-149: desenlace de un envío fallido", () => {
     expect(toSubmitFailure(new ConvexError({ code: "request_fields_invalid" }))).toEqual({
       status: "failed",
     });
-    expect(toSubmitFailure(new ConvexError({ code: "no_availability", message: "x" }))).toEqual({
-      status: "failed",
-    });
+    for (const code of ["no_availability", "conflict"]) {
+      expect(toSubmitFailure(new ConvexError({ code, message: "x" }))).toEqual({
+        status: "failed",
+      });
+    }
   });
 });

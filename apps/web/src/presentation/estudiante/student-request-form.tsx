@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { ACCESS_NEED_OPTIONS } from "../../../../../convex/domain/index.ts";
 import { ACCESS_DENIED_MESSAGE, LoadingState } from "../shared/view-states.tsx";
 import { useSessionState } from "../session/session-state.ts";
 import {
-  ACCESS_NEED_OPTIONS,
   clearRequestDraft,
   findMissingFields,
   loadRequestDraft,
@@ -102,16 +102,44 @@ const FIELD_LABELS: Record<RequestDraftField, string> = {
   preferredAccessibleInformationChannel: "Medio para recibir información",
 };
 
-/** Control que recibe el foco al elegir un error del resumen. */
+/**
+ * Elemento al que lleva cada error del resumen: el campo de texto o el
+ * `fieldset` del grupo, cuyo primer control recibe el foco.
+ */
 const FIELD_FOCUS_TARGET: Record<RequestDraftField, string> = {
   needSummary: "request-need-summary",
   expectedOutcome: "request-expected-outcome",
-  accessNeeds: `request-access-need-${ACCESS_NEED_OPTIONS[0]?.id ?? "other"}`,
-  modalityPreference: `request-modality-${MODALITY_OPTIONS[0]?.value ?? "inPerson"}`,
-  preferredWeekdays: `request-weekday-${WEEKDAY_OPTIONS[0].value}`,
-  availableTime: "request-available-from",
+  accessNeeds: groupId("accessNeeds"),
+  modalityPreference: groupId("modalityPreference"),
+  preferredWeekdays: groupId("preferredWeekdays"),
+  availableTime: groupId("availableTime"),
   preferredAccessibleInformationChannel: "request-information-channel",
 };
+
+function groupId(field: RequestDraftField): string {
+  return `request-${field}-group`;
+}
+
+/** Lleva el foco al campo o al primer control del grupo. */
+function focusField(field: RequestDraftField) {
+  const target = document.getElementById(FIELD_FOCUS_TARGET[field]);
+  const control = target instanceof HTMLFieldSetElement ? target.querySelector("input") : target;
+  control?.focus();
+}
+
+/** Mensaje del resumen cuando el Backend no registró la solicitud; `null` si no hubo envío fallido. */
+function submitFailureMessage(state: SubmitState): string | null {
+  switch (state.status) {
+    case "rejected":
+      return state.message;
+    case "denied":
+      return ACCESS_DENIED_MESSAGE;
+    case "failed":
+      return FAILED_MESSAGE;
+    default:
+      return null;
+  }
+}
 
 function errorId(field: RequestDraftField): string {
   return `request-${field}-error`;
@@ -126,7 +154,7 @@ function RequestForm({ ownerEmail, ownerName }: { ownerEmail: string; ownerName:
   // Cada intento fallido pide llevar el foco al resumen una vez que se dibujó.
   const [summaryFocusRequest, setSummaryFocusRequest] = useState(0);
   const pendingRef = useRef(false);
-  const summaryRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLHeadingElement>(null);
   const sentRef = useRef<HTMLHeadingElement>(null);
 
   const sent = submitState.status === "sent";
@@ -150,6 +178,11 @@ function RequestForm({ ownerEmail, ownerName }: { ownerEmail: string; ownerName:
   }, [summaryFocusRequest]);
 
   function update(changes: Partial<RequestDraft>) {
+    // Lo enviado es lo que se guarda: editar durante el envío se perdería al
+    // borrar el borrador, así que los campos quedan bloqueados mientras tanto.
+    if (pendingRef.current) {
+      return;
+    }
     const next = { ...draft, ...changes };
     setDraft(next);
     // Tras el primer intento, cada error desaparece en cuanto se corrige.
@@ -216,28 +249,18 @@ function RequestForm({ ownerEmail, ownerName }: { ownerEmail: string; ownerName:
 
   const pending = submitState.status === "pending";
   const listedErrors = REQUEST_DRAFT_FIELD_ORDER.filter((field) => errors[field] !== undefined);
-  const serverMessage =
-    submitState.status === "rejected"
-      ? submitState.message
-      : submitState.status === "denied"
-        ? ACCESS_DENIED_MESSAGE
-        : submitState.status === "failed"
-          ? FAILED_MESSAGE
-          : null;
+  const serverMessage = submitFailureMessage(submitState);
   const showSummary = listedErrors.length > 0 || serverMessage !== null;
 
   return (
     <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-8">
       {showSummary ? (
-        <div
-          ref={summaryRef}
-          tabIndex={-1}
-          aria-labelledby="request-summary-title"
-          className="rounded-lg border-l-4 border-error bg-error-container p-6 text-on-error-container focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-        >
+        <div className="rounded-lg border-l-4 border-error bg-error-container p-6 text-on-error-container">
+          {/* El foco llega al título: un lector anuncia qué pasó y luego lee la lista. */}
           <h2
-            id="request-summary-title"
-            className={`${HEADING_RESET_CLASS} mb-2! text-lg! font-bold! text-on-error-container!`}
+            ref={summaryRef}
+            tabIndex={-1}
+            className={`${HEADING_RESET_CLASS} mb-2! text-lg! font-bold! text-on-error-container! ${FOCUS_CLASS}`}
           >
             {listedErrors.length > 0
               ? "Revisa estos campos antes de enviar"
@@ -253,7 +276,7 @@ function RequestForm({ ownerEmail, ownerName }: { ownerEmail: string; ownerName:
                     className="inline-flex min-h-[44px] items-center font-semibold text-on-error-container underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
                     onClick={(event) => {
                       event.preventDefault();
-                      document.getElementById(FIELD_FOCUS_TARGET[field])?.focus();
+                      focusField(field);
                     }}
                   >
                     {FIELD_LABELS[field]}: {errors[field]}
@@ -270,206 +293,216 @@ function RequestForm({ ownerEmail, ownerName }: { ownerEmail: string; ownerName:
         hasta que envíes la solicitud.
       </p>
 
-      <section aria-labelledby="request-account-title" className={SECTION_CLASS}>
-        <h2 id="request-account-title" className={SECTION_TITLE_CLASS}>
-          Tus datos
-        </h2>
-        <p className="m-0 text-base text-on-surface-variant">
-          Provienen de tu cuenta Google institucional y no se pueden editar aquí.
-        </p>
-        <dl className="m-0 grid gap-2">
-          <div>
-            <dt className="font-semibold text-on-surface">Nombre</dt>
-            <dd className="m-0 text-on-surface">{ownerName}</dd>
-          </div>
-          <div>
-            <dt className="font-semibold text-on-surface">Correo</dt>
-            <dd className="m-0 break-words text-on-surface">{ownerEmail}</dd>
-          </div>
-        </dl>
-      </section>
-
-      <section aria-labelledby="request-need-title" className={SECTION_CLASS}>
-        <h2 id="request-need-title" className={SECTION_TITLE_CLASS}>
-          Tu necesidad
-        </h2>
-        <TextAreaField
-          id="request-need-summary"
-          field="needSummary"
-          label="Describe la barrera o necesidad"
-          required
-          hint="Cuéntalo con tus palabras. No es necesario indicar un diagnóstico."
-          value={draft.needSummary}
-          error={errors.needSummary}
-          onChange={(value) => update({ needSummary: value })}
-        />
-        <TextAreaField
-          id="request-expected-outcome"
-          field="expectedOutcome"
-          label="Qué esperas de CERETI"
-          required
-          hint="Por ejemplo: acordar ajustes con tus docentes o recibir orientación."
-          value={draft.expectedOutcome}
-          error={errors.expectedOutcome}
-          onChange={(value) => update({ expectedOutcome: value })}
-        />
-      </section>
-
-      <section aria-labelledby="request-access-title" className={SECTION_CLASS}>
-        <h2 id="request-access-title" className={SECTION_TITLE_CLASS}>
-          Condiciones de acceso
-        </h2>
-        <ChoiceGroup
-          field="accessNeeds"
-          legend="Necesidades de acceso"
-          required
-          hint="Puedes elegir varias. Si la tuya no aparece, escribe cuál es en «Otra necesidad de acceso»."
-          error={errors.accessNeeds}
-        >
-          {ACCESS_NEED_OPTIONS.map((option) => (
-            <ChoiceOption
-              key={option.id}
-              id={`request-access-need-${option.id}`}
-              type="checkbox"
-              name="accessNeeds"
-              label={option.label}
-              checked={draft.accessNeedIds.includes(option.id)}
-              invalid={errors.accessNeeds !== undefined}
-              onChange={(checked) =>
-                update({
-                  accessNeedIds: checked
-                    ? [...draft.accessNeedIds, option.id]
-                    : draft.accessNeedIds.filter((id) => id !== option.id),
-                })
-              }
-            />
-          ))}
-        </ChoiceGroup>
-        <TextAreaField
-          id="request-other-access-need"
-          label="Otra necesidad de acceso"
-          hint="Describe cualquier otra condición o apoyo que necesites para participar."
-          value={draft.otherAccessNeed}
-          onChange={(value) => update({ otherAccessNeed: value })}
-        />
-        <ChoiceGroup
-          field="modalityPreference"
-          legend="Modalidad preferida"
-          required
-          error={errors.modalityPreference}
-        >
-          {MODALITY_OPTIONS.map((option) => (
-            <ChoiceOption
-              key={option.value}
-              id={`request-modality-${option.value}`}
-              type="radio"
-              name="modalityPreference"
-              label={option.label}
-              checked={draft.modalityPreference === option.value}
-              invalid={errors.modalityPreference !== undefined}
-              onChange={() => update({ modalityPreference: option.value })}
-            />
-          ))}
-        </ChoiceGroup>
-      </section>
-
-      <section aria-labelledby="request-availability-title" className={SECTION_CLASS}>
-        <h2 id="request-availability-title" className={SECTION_TITLE_CLASS}>
-          Disponibilidad general
-        </h2>
-        <ChoiceGroup
-          field="preferredWeekdays"
-          legend="Días disponibles"
-          required
-          hint="Elige los días en que podrías asistir. No es un compromiso de horario."
-          error={errors.preferredWeekdays}
-        >
-          {WEEKDAY_OPTIONS.map((day) => (
-            <ChoiceOption
-              key={day.value}
-              id={`request-weekday-${day.value}`}
-              type="checkbox"
-              name="preferredWeekdays"
-              label={day.label}
-              checked={draft.preferredWeekdays.includes(day.value)}
-              invalid={errors.preferredWeekdays !== undefined}
-              onChange={(checked) =>
-                update({
-                  preferredWeekdays: checked
-                    ? [...draft.preferredWeekdays, day.value]
-                    : draft.preferredWeekdays.filter((value) => value !== day.value),
-                })
-              }
-            />
-          ))}
-        </ChoiceGroup>
-        <fieldset
-          className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0"
-          aria-describedby={
-            errors.availableTime === undefined
-              ? "request-availableTime-hint"
-              : `request-availableTime-hint ${errorId("availableTime")}`
-          }
-        >
-          <legend className={LEGEND_CLASS}>
-            Horario disponible <OptionalMark />
-          </legend>
-          <p id="request-availableTime-hint" className={HINT_CLASS}>
-            Si tienes un rango de horas preferido, indica el inicio y el término.
+      {/* Bloquea los campos mientras se envía; vuelven a estar disponibles si el envío falla. */}
+      <fieldset disabled={pending} className="m-0 flex min-w-0 flex-col gap-8 border-0 p-0">
+        <section aria-labelledby="request-account-title" className={SECTION_CLASS}>
+          <h2 id="request-account-title" className={SECTION_TITLE_CLASS}>
+            Tus datos
+          </h2>
+          <p className="m-0 text-base text-on-surface-variant">
+            Provienen de tu cuenta Google institucional y no se pueden editar aquí.
           </p>
-          <div className="flex flex-wrap gap-4">
-            <TimeInput
-              id="request-available-from"
-              label="Desde"
-              value={draft.availableFrom}
-              invalid={errors.availableTime !== undefined}
-              onChange={(value) => update({ availableFrom: value })}
-            />
-            <TimeInput
-              id="request-available-to"
-              label="Hasta"
-              value={draft.availableTo}
-              invalid={errors.availableTime !== undefined}
-              onChange={(value) => update({ availableTo: value })}
-            />
-          </div>
-          <FieldError field="availableTime" message={errors.availableTime} />
-        </fieldset>
-      </section>
+          <dl className="m-0 grid gap-2">
+            <div>
+              <dt className="font-semibold text-on-surface">Nombre</dt>
+              <dd className="m-0 text-on-surface">{ownerName}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-on-surface">Correo</dt>
+              <dd className="m-0 break-words text-on-surface">{ownerEmail}</dd>
+            </div>
+          </dl>
+        </section>
 
-      <section aria-labelledby="request-channel-title" className={SECTION_CLASS}>
-        <h2 id="request-channel-title" className={SECTION_TITLE_CLASS}>
-          Comunicación
-        </h2>
-        <div className="flex flex-col gap-2">
-          <label htmlFor="request-information-channel" className={LEGEND_CLASS}>
-            Medio accesible para recibir información <RequiredMark />
-          </label>
-          <p id="request-information-channel-hint" className={HINT_CLASS}>
-            Por ejemplo: correo con letra grande, mensajes de texto o llamada telefónica.
-          </p>
-          <input
-            id="request-information-channel"
-            type="text"
-            className={fieldClass(errors.preferredAccessibleInformationChannel !== undefined)}
-            value={draft.preferredAccessibleInformationChannel}
-            onChange={(event) =>
-              update({ preferredAccessibleInformationChannel: event.target.value })
+        <section aria-labelledby="request-need-title" className={SECTION_CLASS}>
+          <h2 id="request-need-title" className={SECTION_TITLE_CLASS}>
+            Tu necesidad
+          </h2>
+          <TextAreaField
+            id="request-need-summary"
+            field="needSummary"
+            label="Describe la barrera o necesidad"
+            required
+            hint="Cuéntalo con tus palabras. No es necesario indicar un diagnóstico."
+            value={draft.needSummary}
+            error={errors.needSummary}
+            onChange={(value) => update({ needSummary: value })}
+          />
+          <TextAreaField
+            id="request-expected-outcome"
+            field="expectedOutcome"
+            label="Qué esperas de CERETI"
+            required
+            hint="Por ejemplo: acordar ajustes con tus docentes o recibir orientación."
+            value={draft.expectedOutcome}
+            error={errors.expectedOutcome}
+            onChange={(value) => update({ expectedOutcome: value })}
+          />
+        </section>
+
+        <section aria-labelledby="request-access-title" className={SECTION_CLASS}>
+          <h2 id="request-access-title" className={SECTION_TITLE_CLASS}>
+            Condiciones de acceso
+          </h2>
+          <ChoiceGroup
+            field="accessNeeds"
+            legend="Necesidades de acceso"
+            required
+            hint="Puedes elegir varias. Si la tuya no aparece, escribe cuál es en «Otra necesidad de acceso»."
+            error={errors.accessNeeds}
+          >
+            {ACCESS_NEED_OPTIONS.map((option) => (
+              <ChoiceOption
+                key={option.id}
+                id={`request-access-need-${option.id}`}
+                type="checkbox"
+                name="accessNeeds"
+                label={option.label}
+                checked={draft.accessNeedIds.includes(option.id)}
+                errorId={errors.accessNeeds === undefined ? undefined : errorId("accessNeeds")}
+                onChange={(checked) =>
+                  update({
+                    accessNeedIds: checked
+                      ? [...draft.accessNeedIds, option.id]
+                      : draft.accessNeedIds.filter((id) => id !== option.id),
+                  })
+                }
+              />
+            ))}
+          </ChoiceGroup>
+          <TextAreaField
+            id="request-other-access-need"
+            label="Otra necesidad de acceso"
+            hint="Describe cualquier otra condición o apoyo que necesites para participar."
+            value={draft.otherAccessNeed}
+            onChange={(value) => update({ otherAccessNeed: value })}
+          />
+          <ChoiceGroup
+            field="modalityPreference"
+            legend="Modalidad preferida"
+            required
+            error={errors.modalityPreference}
+          >
+            {MODALITY_OPTIONS.map((option) => (
+              <ChoiceOption
+                key={option.value}
+                id={`request-modality-${option.value}`}
+                type="radio"
+                name="modalityPreference"
+                label={option.label}
+                checked={draft.modalityPreference === option.value}
+                errorId={
+                  errors.modalityPreference === undefined
+                    ? undefined
+                    : errorId("modalityPreference")
+                }
+                onChange={() => update({ modalityPreference: option.value })}
+              />
+            ))}
+          </ChoiceGroup>
+        </section>
+
+        <section aria-labelledby="request-availability-title" className={SECTION_CLASS}>
+          <h2 id="request-availability-title" className={SECTION_TITLE_CLASS}>
+            Disponibilidad general
+          </h2>
+          <ChoiceGroup
+            field="preferredWeekdays"
+            legend="Días disponibles"
+            required
+            hint="Elige los días en que podrías asistir. No es un compromiso de horario."
+            error={errors.preferredWeekdays}
+          >
+            {WEEKDAY_OPTIONS.map((day) => (
+              <ChoiceOption
+                key={day.value}
+                id={`request-weekday-${day.value}`}
+                type="checkbox"
+                name="preferredWeekdays"
+                label={day.label}
+                checked={draft.preferredWeekdays.includes(day.value)}
+                errorId={
+                  errors.preferredWeekdays === undefined ? undefined : errorId("preferredWeekdays")
+                }
+                onChange={(checked) =>
+                  update({
+                    preferredWeekdays: checked
+                      ? [...draft.preferredWeekdays, day.value]
+                      : draft.preferredWeekdays.filter((value) => value !== day.value),
+                  })
+                }
+              />
+            ))}
+          </ChoiceGroup>
+          <fieldset
+            id={groupId("availableTime")}
+            className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0"
+            aria-describedby={
+              errors.availableTime === undefined
+                ? "request-availableTime-hint"
+                : `request-availableTime-hint ${errorId("availableTime")}`
             }
-            aria-required="true"
-            aria-invalid={errors.preferredAccessibleInformationChannel !== undefined}
-            aria-describedby={describedBy(
-              "request-information-channel-hint",
-              "preferredAccessibleInformationChannel",
-              errors.preferredAccessibleInformationChannel,
-            )}
-          />
-          <FieldError
-            field="preferredAccessibleInformationChannel"
-            message={errors.preferredAccessibleInformationChannel}
-          />
-        </div>
-      </section>
+          >
+            <legend className={LEGEND_CLASS}>
+              Horario disponible <OptionalMark />
+            </legend>
+            <p id="request-availableTime-hint" className={HINT_CLASS}>
+              Si tienes un rango de horas preferido, indica el inicio y el término.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <TimeInput
+                id="request-available-from"
+                label="Desde"
+                value={draft.availableFrom}
+                errorId={errors.availableTime === undefined ? undefined : errorId("availableTime")}
+                onChange={(value) => update({ availableFrom: value })}
+              />
+              <TimeInput
+                id="request-available-to"
+                label="Hasta"
+                value={draft.availableTo}
+                errorId={errors.availableTime === undefined ? undefined : errorId("availableTime")}
+                onChange={(value) => update({ availableTo: value })}
+              />
+            </div>
+            <FieldError field="availableTime" message={errors.availableTime} />
+          </fieldset>
+        </section>
+
+        <section aria-labelledby="request-channel-title" className={SECTION_CLASS}>
+          <h2 id="request-channel-title" className={SECTION_TITLE_CLASS}>
+            Comunicación
+          </h2>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="request-information-channel" className={LEGEND_CLASS}>
+              Medio accesible para recibir información <RequiredMark />
+            </label>
+            <p id="request-information-channel-hint" className={HINT_CLASS}>
+              Por ejemplo: correo con letra grande, mensajes de texto o llamada telefónica.
+            </p>
+            <input
+              id="request-information-channel"
+              type="text"
+              className={fieldClass(errors.preferredAccessibleInformationChannel !== undefined)}
+              value={draft.preferredAccessibleInformationChannel}
+              onChange={(event) =>
+                update({ preferredAccessibleInformationChannel: event.target.value })
+              }
+              aria-required="true"
+              aria-invalid={errors.preferredAccessibleInformationChannel !== undefined}
+              aria-describedby={describedBy(
+                "request-information-channel-hint",
+                "preferredAccessibleInformationChannel",
+                errors.preferredAccessibleInformationChannel,
+              )}
+            />
+            <FieldError
+              field="preferredAccessibleInformationChannel"
+              message={errors.preferredAccessibleInformationChannel}
+            />
+          </div>
+        </section>
+      </fieldset>
 
       <div className="flex flex-col gap-3">
         <button
@@ -608,6 +641,7 @@ function ChoiceGroup({
   const hintId = hint === undefined ? undefined : `request-${field}-hint`;
   return (
     <fieldset
+      id={groupId(field)}
       className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0"
       aria-describedby={describedBy(hintId, field, error)}
     >
@@ -633,7 +667,7 @@ function ChoiceOption({
   name,
   label,
   checked,
-  invalid,
+  errorId: describedById,
   onChange,
 }: {
   id: string;
@@ -641,14 +675,15 @@ function ChoiceOption({
   name: string;
   label: string;
   checked: boolean;
-  invalid: boolean;
+  /** Error del grupo: se anuncia en cada control, no solo en el `fieldset`. */
+  errorId?: string;
   onChange: (checked: boolean) => void;
 }) {
   return (
     <label
       htmlFor={id}
       className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-[0.5rem] border px-3 py-2 text-base text-on-surface has-[:checked]:border-primary has-[:checked]:bg-surface-container-low has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus-ring ${
-        invalid ? "border-error" : "border-outline"
+        describedById === undefined ? "border-outline" : "border-error"
       }`}
     >
       <input
@@ -656,6 +691,8 @@ function ChoiceOption({
         type={type}
         name={name}
         checked={checked}
+        aria-invalid={describedById !== undefined}
+        aria-describedby={describedById}
         onChange={(event) => onChange(event.target.checked)}
         className="size-5 shrink-0 accent-primary focus-visible:outline-none"
       />
@@ -668,13 +705,13 @@ function TimeInput({
   id,
   label,
   value,
-  invalid,
+  errorId: describedById,
   onChange,
 }: {
   id: string;
   label: string;
   value: string;
-  invalid: boolean;
+  errorId?: string;
   onChange: (value: string) => void;
 }) {
   return (
@@ -685,10 +722,11 @@ function TimeInput({
       <input
         id={id}
         type="time"
-        className={`${fieldClass(invalid)} w-auto`}
+        className={`${fieldClass(describedById !== undefined)} w-auto`}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        aria-invalid={invalid}
+        aria-invalid={describedById !== undefined}
+        aria-describedby={describedById}
       />
     </div>
   );

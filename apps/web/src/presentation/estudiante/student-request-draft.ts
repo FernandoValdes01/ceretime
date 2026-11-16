@@ -1,4 +1,7 @@
-import type { AccessNeed, ModalityPreference } from "../../../../../convex/domain/index.ts";
+import {
+  ACCESS_NEED_OPTIONS,
+  type ModalityPreference,
+} from "../../../../../convex/domain/index.ts";
 import type { OwnRequestSubmission } from "./student-request-form-data.ts";
 
 /**
@@ -16,16 +19,6 @@ import type { OwnRequestSubmission } from "./student-request-form-data.ts";
  * después de cerrar la pestaña. Las comprobaciones de este módulo solo
  * ayudan a completar el formulario; el Backend valida el envío.
  */
-
-/** Opciones de necesidad de acceso de `docs/especificacion-prototipo.md`; los `id` son los de Mobile. */
-export const ACCESS_NEED_OPTIONS: readonly AccessNeed[] = [
-  { id: "written-communication", label: "Comunicación escrita" },
-  { id: "sign-language-interpreter", label: "Intérprete de lengua de señas" },
-  { id: "physically-accessible-room", label: "Sala físicamente accesible" },
-  { id: "reduced-stimulation", label: "Reducción de estímulos" },
-  { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
-  { id: "support-person", label: "Persona de apoyo" },
-];
 
 /** Días en el orden de la semana chilena; el valor es el del contrato (0 = domingo). */
 export const WEEKDAY_OPTIONS = [
