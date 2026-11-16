@@ -1,8 +1,9 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import { isTestProfessional } from "../../domain/accounts/enablement";
 import { isActiveInRole } from "../../domain/authorization/permissions";
-import { toStoredAccessNeeds } from "../../domain/requests/request";
+import { toStoredAccessNeeds, type RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 import { findProfileByTokenIdentifier } from "../accompaniments/repository";
 
@@ -213,17 +214,45 @@ export async function logRequestTransition(
 
 /**
  * Lecturas y escrituras de una solicitud para los puertos de Aplicación
- * (TI2-141). Cumple `RequestReader`, `RequestStatusWriter` y
- * `RequestTransitionRecorder` por forma, sin importarlos; Presentación lo crea
- * con el `ctx` de la mutation, así todo queda en la misma transacción.
+ * (TI2-141, TI2-181). Cumple `RequestReader`, `RequestRegistrar`,
+ * `RequestStatusWriter`, `RequestTransitionRecorder`, `RequestTakeReader` y
+ * `RequestTakeRecorder` por forma, sin importarlos; Presentación lo crea con
+ * el `ctx` de la mutation, así todo queda en la misma transacción.
  */
 export function requestStore(ctx: MutationCtx) {
   return {
-    getRequest: (requestId: Id<"requests">) => getRequestById(ctx, requestId),
+    ...requestReader(ctx),
     setRequestStatus: (requestId: Id<"requests">, change: RequestStatusChange) =>
       setRequestStatus(ctx, requestId, change),
     logRequestTransition: (entry: Parameters<typeof logRequestTransition>[1]) =>
       logRequestTransition(ctx, entry),
+    recordTake: async (requestId: Id<"requests">, professionalId: Id<"users">) => {
+      await insertActiveTake(ctx, { requestId, userId: professionalId, grantedBy: professionalId });
+      await markRequestTaken(ctx, requestId, professionalId);
+    },
+    registerOnce: async (
+      studentId: Id<"users">,
+      submission: RequestSubmission,
+      receivedAt: number,
+    ) => {
+      const { accessNeeds, generalAvailability, ...content } = submission;
+      const { requestId } = await insertReceivedRequestOnce(ctx, {
+        ...content,
+        // La lista del contrato se persiste como `accessNeedSelections`
+        // (TI2-135), y de ella sale el texto unido. El esquema tipa los
+        // arreglos como mutables; el dominio, de solo lectura.
+        accessNeedSelections: [...accessNeeds],
+        generalAvailability: {
+          ...generalAvailability,
+          preferredWeekdays: [...generalAvailability.preferredWeekdays],
+        },
+        studentId,
+        provenance: { channel: "student", receivedAt },
+      });
+      return requestId;
+    },
+    registerLegacy: (studentId: Id<"users">, accessNeeds: string) =>
+      insertReceivedRequest(ctx, { studentId, accessNeeds }),
   };
 }
 
@@ -234,12 +263,77 @@ export function requestStore(ctx: MutationCtx) {
  */
 export function activeStudentReader(ctx: DbReader) {
   return {
-    findActiveStudent: async (tokenIdentifier: string | null) => {
+    findActiveStudent: (tokenIdentifier: string | null) =>
+      findActiveProfileInRole(ctx, tokenIdentifier, "student"),
+  };
+}
+
+/**
+ * Lecturas de solicitudes para los puertos `RequestReader`, `RequestTakeReader`
+ * y `RequestListReader` (TI2-181). Las consultas lo crean con su `ctx` y
+ * `requestStore` lo reutiliza en las mutations.
+ */
+export function requestReader(ctx: DbReader) {
+  return {
+    getRequest: (requestId: Id<"requests">) => getRequestById(ctx, requestId),
+    hasActiveTake: async (requestId: Id<"requests">, userId: Id<"users">) =>
+      (await findActiveTake(ctx, requestId, userId)) !== null,
+    listOwnedRequests: (studentId: Id<"users">, options: PaginationOptions) =>
+      listOwnedRequests(ctx, studentId, options),
+    listReceivedRequests: (options: PaginationOptions) =>
+      listRequestsByStatus(ctx, "received", options),
+    listActiveTakes: (userId: Id<"users">, options: PaginationOptions) =>
+      listActiveTakes(ctx, userId, options),
+    listRecentTransitions: (requestId: Id<"requests">) =>
+      listRecentRequestTransitions(ctx, requestId),
+  };
+}
+
+/**
+ * Perfil de quien lee solicitudes para el puerto `ActiveRequestViewerReader`
+ * (TI2-181): Estudiante o Profesional de personal con cuenta habilitada y
+ * vigente. La cuenta de prueba jamás lee el detalle (TI2-140): aunque tenga
+ * una toma escrita a mano, no recibe `accessNeeds`.
+ */
+export function activeRequestViewerReader(ctx: DbReader) {
+  return {
+    findActiveViewer: async (tokenIdentifier: string | null) => {
       if (tokenIdentifier === null) return null;
       const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
-      return profile !== null && isActiveInRole(profile, "student") ? profile : null;
+      if (profile === null) return null;
+      // La misma regla de Dominio que `findActiveProfileInRole`, para cada rol que lee.
+      if (isActiveInRole(profile, "student")) return { _id: profile._id, role: "student" as const };
+      if (isActiveInRole(profile, "professional") && !isTestProfessional(profile)) {
+        return { _id: profile._id, role: "professional" as const };
+      }
+      return null;
     },
   };
+}
+
+/**
+ * Profesional de quien llama para el puerto `ActiveProfessionalReader`
+ * (TI2-181), con la misma regla que `activeStudentReader` más el veto de
+ * TI2-140: la cuenta de prueba jamás opera solicitudes (toma, aceptación,
+ * respuesta, cierre ni bandejas), aunque esté habilitada y vigente.
+ */
+export function activeProfessionalReader(ctx: DbReader) {
+  return {
+    findActiveProfessional: async (tokenIdentifier: string | null) => {
+      const profile = await findActiveProfileInRole(ctx, tokenIdentifier, "professional");
+      return profile !== null && !isTestProfessional(profile) ? profile : null;
+    },
+  };
+}
+
+async function findActiveProfileInRole(
+  ctx: DbReader,
+  tokenIdentifier: string | null,
+  role: Doc<"users">["role"],
+): Promise<Doc<"users"> | null> {
+  if (tokenIdentifier === null) return null;
+  const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+  return profile !== null && isActiveInRole(profile, role) ? profile : null;
 }
 
 /** Tope de cambios recientes que se leen para armar el detalle. */

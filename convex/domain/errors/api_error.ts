@@ -43,6 +43,7 @@ export const API_ERROR_CODE_VALUES = [
   "conflict",
   "no_availability",
   "space_fields_invalid",
+  "assignment_fields_invalid",
   "request_fields_invalid",
   "follow_up_fields_invalid",
 ] as const;
@@ -55,6 +56,9 @@ export const UNAUTHORIZED_ERROR_CODE = "unauthorized" as const;
 
 /** Campos del espacio inválidos: el mensaje indica el campo en español. */
 export const SPACE_FIELDS_INVALID_ERROR_CODE = "space_fields_invalid" as const;
+
+/** Campos de la asignación inválidos: el mensaje indica la vigencia en español. */
+export const ASSIGNMENT_FIELDS_INVALID_ERROR_CODE = "assignment_fields_invalid" as const;
 
 /**
  * Nota de traducción para `space_fields_invalid` (TI2-148, revisión).
@@ -90,6 +94,10 @@ export const UNAUTHORIZED_ERROR_MESSAGE = "No autorizado";
 /** Mensaje genérico para campos del espacio inválidos; el detalle va en el error. */
 export const SPACE_FIELDS_INVALID_ERROR_MESSAGE = "Los campos del espacio no son válidos.";
 
+/** Mensaje genérico para campos de la asignación inválidos; el detalle va en el error. */
+export const ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE =
+  "Los campos de la asignación no son válidos.";
+
 /** Mensaje genérico para campos de la solicitud inválidos; el detalle va en el error. */
 export const REQUEST_FIELDS_INVALID_ERROR_MESSAGE = "Los datos de la solicitud no son válidos.";
 
@@ -115,6 +123,7 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   conflict: CONFLICT_ERROR_MESSAGE,
   no_availability: NO_AVAILABILITY_ERROR_MESSAGE,
   space_fields_invalid: SPACE_FIELDS_INVALID_ERROR_MESSAGE,
+  assignment_fields_invalid: ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
   request_fields_invalid: REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
   follow_up_fields_invalid: FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE,
 };

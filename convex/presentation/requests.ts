@@ -22,7 +22,14 @@ import {
   modalityUnion,
   requestStatusUnion,
 } from "../infrastructure/validators";
-import { activeStudentReader, requestStore } from "../infrastructure/requests/repository";
+import { accompanimentOpener } from "../infrastructure/accompaniments/repository";
+import {
+  activeProfessionalReader,
+  activeRequestViewerReader,
+  activeStudentReader,
+  requestReader,
+  requestStore,
+} from "../infrastructure/requests/repository";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 import { unwrapApiResult } from "./session";
 
@@ -34,12 +41,10 @@ import { unwrapApiResult } from "./session";
  * con `ctx.auth.getUserIdentity()` y delega en Aplicación. Nunca acepta un
  * `userId` del cliente como prueba ni toca `ctx.db` directamente.
  *
- * Toda denegación responde con el mismo error genérico, sin exponer el
- * motivo. Las operaciones de TI2-141 (envío completo, respuesta, cancelación y
- * cierre) traducen su `ApiResult` con `unwrapApiResult`: la denegación llega
- * como `{ code: "unauthorized" }`. Las de Sprint 1 y la forma anterior de
- * `createRequest` siguen denegando con el texto «No autorizado» hasta
- * TI2-181. Opera con datos ficticios.
+ * Toda operación compone los adaptadores de Infraestructura con su `ctx` y
+ * traduce el `ApiResult` de Aplicación con `unwrapApiResult` (TI2-181): la
+ * denegación llega como `{ code: "unauthorized" }`, sin exponer el motivo, y
+ * los rechazos con su código del contrato común. Opera con datos ficticios.
  *
  * TI2-26: `createRequest`, `takeRequest`, `requestAdditionalInformation` y
  * `acceptRequest` son la escritura pública del Sprint 1; la habilitación de
@@ -118,7 +123,12 @@ export const createRequest = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await registerRequest(ctx, identity, args));
+    return unwrapApiResult(
+      await registerRequest(
+        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, submission: args },
+      ),
+    );
   },
 });
 
@@ -131,7 +141,12 @@ export const listOwnRequests = query({
   returns: requestPageValidator,
   handler: async (ctx, args): Promise<PublicRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listOwnRequestsUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await listOwnRequestsUseCase(
+        { students: activeStudentReader(ctx), requests: requestReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -147,7 +162,12 @@ export const getRequest = query({
   returns: requestDetailValidator,
   handler: async (ctx, args): Promise<PublicRequestDetail> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await getRequestDetailUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await getRequestDetailUseCase(
+        { viewers: activeRequestViewerReader(ctx), requests: requestReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -160,7 +180,12 @@ export const listAuthorizedRequests = query({
   returns: requestPageValidator,
   handler: async (ctx, args): Promise<PublicRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listAuthorizedRequestsUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await listAuthorizedRequestsUseCase(
+        { professionals: activeProfessionalReader(ctx), requests: requestReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -174,33 +199,58 @@ export const listOpenRequests = query({
   returns: minimizedRequestPageValidator,
   handler: async (ctx, args): Promise<PublicMinimizedRequestPage> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listOpenRequestsUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await listOpenRequestsUseCase(
+        { professionals: activeProfessionalReader(ctx), requests: requestReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
 /**
  * Toma una solicitud para revisión. Solo el propio Profesional con cuenta
- * vigente; una toma activa existente se rechaza.
+ * vigente; una solicitud que ya no está recibida, o ya tomada, responde
+ * `conflict` (TI2-181).
  */
 export const takeRequest = mutation({
   args: { requestId: v.id("requests") },
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await takeRequestUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await takeRequestUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
 /**
  * Pide información adicional al Estudiante sobre una solicitud en revisión.
- * Solo un Profesional con cuenta vigente; el motivo es obligatorio.
+ * Solo un Profesional con toma activa y cuenta vigente; el motivo es
+ * obligatorio.
  */
 export const requestAdditionalInformation = mutation({
   args: { requestId: v.id("requests"), reason: v.string() },
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return await requestAdditionalInformationUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await requestAdditionalInformationUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -214,7 +264,17 @@ export const acceptRequest = mutation({
   returns: acceptedAccompanimentValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await acceptRequestUseCase(ctx, identity, args);
+    return unwrapApiResult(
+      await acceptRequestUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          accompaniments: accompanimentOpener(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -228,7 +288,12 @@ export const cancelRequest = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await cancelRequestUseCase(ctx, identity, args));
+    return unwrapApiResult(
+      await cancelRequestUseCase(
+        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 
@@ -242,7 +307,16 @@ export const closeRequestWithoutAccompaniment = mutation({
   returns: requestValidator,
   handler: async (ctx, args): Promise<PublicRequest> => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await closeRequestWithoutAccompanimentUseCase(ctx, identity, args));
+    return unwrapApiResult(
+      await closeRequestWithoutAccompanimentUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
   },
 });
 

@@ -113,11 +113,34 @@ export function requestProvenanceChannelOf(row: {
 /**
  * Texto de necesidades de acceso para registrar una solicitud (TI2-26).
  *
- * Dominio puro: recorta el texto del estudiante y rechaza el vacío, sin persistir nada. Devuelve el texto recortado o `null` cuando no hay contenido válido; el tope de longitud lo aplica la capa de aplicación junto a este recorte, para que el mensaje de rechazo indique el máximo vigente.
+ * Dominio puro: recorta el texto del estudiante y rechaza el vacío, sin persistir nada. Devuelve el texto recortado o `null` cuando no hay contenido válido; el tope de longitud lo aplica `toLegacyAccessNeeds`.
  */
 export function toAccessNeedsText(raw: string): string | null {
   const accessNeeds = raw.trim();
   return accessNeeds === "" ? null : accessNeeds;
+}
+
+/**
+ * Necesidades de acceso de la forma anterior de `createRequest` (TI2-26,
+ * TI2-181): texto recortado, no vacío y dentro de `ACCESS_NEEDS_MAX_LENGTH`.
+ * Rechaza con los códigos `access_needs_*` y los mensajes de Sprint 1, que el
+ * contrato documenta y los clientes ya reconocen.
+ */
+export function toLegacyAccessNeeds(raw: string): ApiResult<string> {
+  const accessNeeds = toAccessNeedsText(raw);
+  if (accessNeeds === null) {
+    return errResult({
+      code: "access_needs_empty",
+      message: "Se requiere describir la necesidad de acceso",
+    });
+  }
+  if (!isAccessNeedsWithinLimit(accessNeeds)) {
+    return errResult({
+      code: "access_needs_too_long",
+      message: `La necesidad de acceso supera el máximo permitido (${ACCESS_NEEDS_MAX_LENGTH} caracteres)`,
+    });
+  }
+  return { status: "ok", data: accessNeeds };
 }
 
 /**

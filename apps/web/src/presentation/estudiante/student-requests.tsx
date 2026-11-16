@@ -2,9 +2,12 @@ import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { ConvexError } from "convex/values";
 // Fuente canónica del contrato de errores (TI2-23, TI2-88): el Backend
-// responde toda denegación con este mensaje genérico, sin motivo ni
+// responde toda denegación con este código genérico, sin motivo ni
 // existencia del recurso. Se importa del barrel, no se duplica el literal.
-import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
+import {
+  UNAUTHORIZED_ERROR_CODE,
+  UNAUTHORIZED_ERROR_MESSAGE,
+} from "../../../../../convex/domain/index.ts";
 import { formatPanelDate, requestStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import {
@@ -162,16 +165,26 @@ function LoadMoreButton({ pending, onLoadMore }: { pending: boolean; onLoadMore:
 }
 
 /**
- * La denegación del Backend es el mensaje genérico documentado: no revela
+ * La denegación del Backend es el código genérico documentado: no revela
  * si la solicitud existe ni de quién es. También cubre la sesión expirada,
  * que se recupera desde el acceso (el layout enlaza la sesión).
  *
  * El valor canónico viaja en `error.data`: el SDK del cliente decora
  * `error.message` con su contexto (query y request ID), así que comparar el
- * mensaje falla contra el Backend real.
+ * mensaje falla contra el Backend real. Desde TI2-181 `getRequest` responde
+ * `{ code: "unauthorized" }`; el texto de Sprint 1 se sigue aceptando mientras
+ * Web y Convex se despliegan por separado.
  */
 function isAuthorizationDenial(error: unknown): boolean {
-  return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
+  if (!(error instanceof ConvexError)) return false;
+  const data: unknown = error.data;
+  if (data === UNAUTHORIZED_ERROR_MESSAGE) return true;
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "code" in data &&
+    data.code === UNAUTHORIZED_ERROR_CODE
+  );
 }
 
 /**

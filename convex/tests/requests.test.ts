@@ -507,9 +507,14 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
     return profile._id;
   });
   expect(pointed?.takenBy).toEqual(proId);
-  await expect(
-    asProfessional.mutation(api.presentation.requests.takeRequest, { requestId }),
-  ).rejects.toThrow("recibidas");
+  // TI2-181: la retoma es `conflict`, distinguible de `unauthorized`, y no escribe
+  const before = await takesOf(t, requestId);
+  expect(
+    await publicErrorOf(
+      asProfessional.mutation(api.presentation.requests.takeRequest, { requestId }),
+    ),
+  ).toEqual({ code: "conflict", message: "Solo se pueden tomar solicitudes recibidas" });
+  expect(await takesOf(t, requestId)).toEqual(before);
 
   // Una toma activa sobre una recibida también se rechaza como duplicada
   const freshId = await t.mutation(internal.operations.requests.createTestRequest, {
@@ -526,16 +531,31 @@ test("Profesional toma una solicitud y la retoma se rechaza", async () => {
       status: "active",
     });
   });
-  await expect(
-    asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: freshId }),
-  ).rejects.toThrow("Ya tomaste");
+  expect(
+    await publicErrorOf(
+      asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: freshId }),
+    ),
+  ).toEqual({ code: "conflict", message: "Ya tomaste esta solicitud" });
+  expect(await takesOf(t, freshId)).toHaveLength(1);
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: freshId });
+  expect(untouched?.status).toBe("received");
 
   // Sin rol Profesional no se toma
   const asStudent = t.withIdentity(identityFor("ti9-est-12", "ti9-est-12@alu.uct.cl"));
-  await expect(
-    asStudent.mutation(api.presentation.requests.takeRequest, { requestId }),
-  ).rejects.toThrow("No autorizado");
+  expect(
+    await publicErrorOf(asStudent.mutation(api.presentation.requests.takeRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
 });
+
+/** Tomas de la solicitud, en cualquier estado. */
+async function takesOf(t: SchemaTest, requestId: Id<"requests">) {
+  return await t.run(async (ctx) =>
+    ctx.db
+      .query("requestAssignments")
+      .filter((q) => q.eq(q.field("requestId"), requestId))
+      .collect(),
+  );
+}
 
 test("Tomar exige solicitud recibida sin otra toma activa", async () => {
   // Instancia el entorno de prueba con el esquema y funciones reales
@@ -559,11 +579,36 @@ test("Tomar exige solicitud recibida sin otra toma activa", async () => {
 
   // Fuera de recibida no se toma, aunque no exista toma previa
   const asProfessional = t.withIdentity(identityFor("ti9-pro-14", "ti9-pro-14@uct.cl"));
-  await expect(
-    asProfessional.mutation(api.presentation.requests.takeRequest, {
-      requestId: reviewingId,
-    }),
-  ).rejects.toThrow("recibidas");
+  expect(
+    await publicErrorOf(
+      asProfessional.mutation(api.presentation.requests.takeRequest, {
+        requestId: reviewingId,
+      }),
+    ),
+  ).toEqual({ code: "conflict", message: "Solo se pueden tomar solicitudes recibidas" });
+  expect(await takesOf(t, reviewingId)).toEqual([]);
+
+  // Sin perfil, o con una solicitud inexistente, la denegación es la misma
+  expect(
+    await publicErrorOf(
+      t.mutation(api.presentation.requests.takeRequest, { requestId: reviewingId }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  const missingId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("requests", {
+      studentId,
+      status: "received",
+      accessNeeds: "Borrada ficticia",
+      createdAt: 1,
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+  expect(
+    await publicErrorOf(
+      asProfessional.mutation(api.presentation.requests.takeRequest, { requestId: missingId }),
+    ),
+  ).toEqual(UNAUTHORIZED);
 });
 
 test("Bandeja muestra solo recibidas sin datos sensibles", async () => {
@@ -809,6 +854,88 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
   ).rejects.toThrow("No autorizado");
   const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
   expect(untouched?.status).toBe("under_review");
+});
+
+test("TI2-140: la cuenta de prueba no opera solicitudes por ninguna vía", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti140-est-sol");
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+  const testProId = await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti140-prueba-sol@alu.uct.cl",
+      fullName: "Profesional de Prueba",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti140-prueba-sol`,
+    });
+  });
+  expect(testProId).toBeDefined();
+
+  // La prueba, aunque habilitada y vigente, no opera solicitudes: bandeja,
+  // toma, lectura, detalle y aceptación responden el mismo código
+  // `unauthorized` del contrato común; el detalle (único que lee
+  // accessNeeds) tampoco se entrega
+  const asTest = t.withIdentity(identityFor("ti140-prueba-sol", "ti140-prueba-sol@alu.uct.cl"));
+  expect(
+    await publicErrorOf(
+      asTest.query(api.presentation.requests.listOpenRequests, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(asTest.mutation(api.presentation.requests.takeRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(
+      asTest.query(api.presentation.requests.listAuthorizedRequests, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(
+      asTest.mutation(api.presentation.requests.acceptRequest, {
+        requestId,
+        objective: "Objetivo ficticio",
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(asTest.query(api.presentation.requests.getRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
+
+  // Sin toma ni cambio de estado: la solicitud sigue recibida
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
+  expect(untouched?.status).toBe("received");
+  const takes = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("requestAssignments")
+      .withIndex("by_request_and_user_and_status", (q) => q.eq("requestId", requestId))
+      .take(1);
+  });
+  expect(takes).toHaveLength(0);
+
+  // Ni siquiera con una toma escrita a mano la prueba lee el detalle: el
+  // visor también la excluye, así que accessNeeds nunca se entrega
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("requestAssignments", {
+      requestId,
+      userId: testProId,
+      grantedBy: testProId,
+      grantedAt: Date.now(),
+      status: "active",
+    });
+  });
+  expect(
+    await publicErrorOf(asTest.query(api.presentation.requests.getRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
 });
 
 /*
@@ -1867,37 +1994,168 @@ test("TI2-141: los rechazos de las operaciones nuevas llegan como error público
     expect(await publicErrorOf(promise)).toEqual({ code: "conflict", message });
   }
 
-  // Las cuatro operaciones nuevas deniegan con el código del contrato común
+  // Las operaciones nuevas y las que ya pasó TI2-181 deniegan con el código del contrato común
   for (const promise of [
     submitAs(t, professional, { needSummary: "" }),
     cancelAs(t, professional, waiting, "Motivo"),
     closeAs(t, student, waiting, "Motivo"),
     respondAs(t, professional, waiting, "Respuesta"),
+    t.withIdentity(student).mutation(api.presentation.requests.takeRequest, { requestId: waiting }),
   ]) {
     expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
   }
 
-  // La forma anterior de `createRequest` y Sprint 1 siguen denegando con texto hasta TI2-181,
-  // tanto por rol como por falta de toma sobre la solicitud
-  const withoutTake = await seedRequestIn(t, studentId, "under_review");
-  for (const promise of [
-    t.withIdentity(professional).mutation(api.presentation.requests.requestAdditionalInformation, {
-      requestId: withoutTake,
-      reason: "Motivo",
-    }),
-    t
-      .withIdentity(professional)
-      .mutation(api.presentation.requests.createRequest, { accessNeeds: "Texto ficticio" }),
-    t.withIdentity(student).mutation(api.presentation.requests.takeRequest, { requestId: waiting }),
-  ]) {
-    expect(await publicErrorOf(promise)).toBe("No autorizado");
-  }
-  // y la forma anterior rechaza el texto con `Error`, sin código
-  await expect(
+  // TI2-181: la forma anterior de `createRequest` deniega con `unauthorized`
+  // y rechaza el texto con los códigos `access_needs_*`, sin escribir
+  const legacy = (identity: Identity, accessNeeds: string) =>
     publicErrorOf(
-      t
-        .withIdentity(student)
-        .mutation(api.presentation.requests.createRequest, { accessNeeds: " " }),
+      sessionOf(t, identity).mutation(api.presentation.requests.createRequest, { accessNeeds }),
+    );
+  expect(await legacy(professional, "Texto ficticio")).toEqual(UNAUTHORIZED);
+  expect(await legacy(null, " ")).toEqual(UNAUTHORIZED);
+  expect(await legacy(student, " ")).toEqual({
+    code: "access_needs_empty",
+    message: "Se requiere describir la necesidad de acceso",
+  });
+  expect(await legacy(student, "a".repeat(2001))).toEqual({
+    code: "access_needs_too_long",
+    message: "La necesidad de acceso supera el máximo permitido (2000 caracteres)",
+  });
+  expect(await requestsOf(t, studentId)).toHaveLength(requestsBefore);
+});
+
+test("TI2-181: pedir información y aceptar rechazan con el contrato común sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti181-est-1", "student");
+  const professionalId = await seedProfile(t, "ti181-pro-1", "professional");
+  await seedProfile(t, "ti181-pro-2", "professional");
+  const professional = identityOf("ti181-pro-1");
+  const asProfessional = t.withIdentity(professional);
+  const reviewing = await seedRequestIn(t, studentId, "under_review");
+  const closed = await seedRequestIn(t, studentId, "closed_without_accompaniment");
+  await seedTake(t, reviewing, professionalId);
+  await seedTake(t, closed, professionalId);
+  const askFor = (requestId: Id<"requests">, reason: string, as = asProfessional) =>
+    as.mutation(api.presentation.requests.requestAdditionalInformation, { requestId, reason });
+  const accept = (requestId: Id<"requests">, objective: string, as = asProfessional) =>
+    as.mutation(api.presentation.requests.acceptRequest, { requestId, objective });
+  const before = await snapshotOf(t, reviewing);
+  const closedBefore = await snapshotOf(t, closed);
+
+  // Sin toma, o con otro rol, la denegación es `unauthorized`
+  const other = t.withIdentity(identityOf("ti181-pro-2"));
+  const asStudent = t.withIdentity(identityOf("ti181-est-1"));
+  for (const promise of [
+    askFor(reviewing, "Motivo ficticio", other),
+    accept(reviewing, "Objetivo ficticio", other),
+    askFor(reviewing, "Motivo ficticio", asStudent),
+    accept(reviewing, "Objetivo ficticio", asStudent),
+  ]) {
+    expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
+  }
+
+  // Los campos faltantes son `request_fields_invalid`
+  expect(await publicErrorOf(askFor(reviewing, "  "))).toEqual({
+    code: "request_fields_invalid",
+    message: "Se requiere el motivo para pedir información adicional",
+  });
+  expect(await publicErrorOf(accept(reviewing, "  "))).toEqual({
+    code: "request_fields_invalid",
+    message: "Se requiere el objetivo para abrir el acompañamiento",
+  });
+
+  // Un estado que no admite el paso es `conflict`
+  expect(await publicErrorOf(askFor(closed, "Motivo ficticio"))).toEqual({
+    code: "conflict",
+    message: "La solicitud no admite pedir información adicional en su estado actual",
+  });
+  expect(await publicErrorOf(accept(closed, "Objetivo ficticio"))).toEqual({
+    code: "conflict",
+    message: "La solicitud no admite la aceptación en su estado actual",
+  });
+  expect(await snapshotOf(t, reviewing)).toEqual(before);
+  expect(await snapshotOf(t, closed)).toEqual(closedBefore);
+
+  // Aceptar dos veces abre un solo acompañamiento y la repetición es `conflict`
+  const opened = await accept(reviewing, "Objetivo ficticio");
+  expect(opened.status).toBe("active");
+  expect(await publicErrorOf(accept(reviewing, "Otro objetivo ficticio"))).toEqual({
+    code: "conflict",
+    message: "La solicitud ya fue aceptada",
+  });
+  expect((await snapshotOf(t, reviewing)).accompaniments).toBe(1);
+});
+
+test("TI2-181: las consultas de solicitudes deniegan con unauthorized del contrato común", async () => {
+  const t = convexTest(schema, modules);
+  const ownerId = await seedProfile(t, "ti181-q-est", "student");
+  await seedProfile(t, "ti181-q-est-2", "student");
+  await seedProfile(t, "ti181-q-pro", "professional");
+  const adminId = await seedProfile(t, "ti181-q-adm", "admin");
+  const inactiveId = await seedProfile(t, "ti181-q-off", "professional", {
+    institutionalStatus: "enabled",
+    accountStatus: "inactive",
+  });
+  const requestId = await seedRequestIn(t, ownerId, "under_review");
+  // Una toma escrita a mano no convierte al Administrador en lector del detalle
+  await seedTake(t, requestId, adminId);
+  // Con toma, la cuenta no vigente es lo único que deniega al Profesional
+  await seedTake(t, requestId, inactiveId);
+  const page = { paginationOpts: { numItems: 10, cursor: null } };
+  const as = (subject: string | null) =>
+    sessionOf(t, subject === null ? null : identityOf(subject));
+
+  for (const promise of [
+    // Detalle: sin sesión, Estudiante ajeno, Profesional sin toma, Administrador y cuenta inactiva con toma
+    as(null).query(api.presentation.requests.getRequest, { requestId }),
+    as("ti181-q-est-2").query(api.presentation.requests.getRequest, { requestId }),
+    as("ti181-q-pro").query(api.presentation.requests.getRequest, { requestId }),
+    as("ti181-q-adm").query(api.presentation.requests.getRequest, { requestId }),
+    as("ti181-q-off").query(api.presentation.requests.getRequest, { requestId }),
+    // Listados fuera de su rol
+    as("ti181-q-pro").query(api.presentation.requests.listOwnRequests, page),
+    as(null).query(api.presentation.requests.listOwnRequests, page),
+    as("ti181-q-est").query(api.presentation.requests.listAuthorizedRequests, page),
+    as("ti181-q-adm").query(api.presentation.requests.listAuthorizedRequests, page),
+    as("ti181-q-est").query(api.presentation.requests.listOpenRequests, page),
+    as("ti181-q-off").query(api.presentation.requests.listOpenRequests, page),
+  ]) {
+    expect(await publicErrorOf(promise)).toEqual(UNAUTHORIZED);
+  }
+
+  // Control: el dueño sí lee el detalle
+  const detail = await as("ti181-q-est").query(api.presentation.requests.getRequest, {
+    requestId,
+  });
+  expect(detail._id).toEqual(requestId);
+});
+
+test("TI2-181: un tamaño de página no finito es un argumento inválido, no una denegación", async () => {
+  const t = convexTest(schema, modules);
+  await seedProfile(t, "ti181-n-pro", "professional");
+  await seedProfile(t, "ti181-n-est", "student");
+  const asProfessional = sessionOf(t, identityOf("ti181-n-pro"));
+
+  for (const numItems of [Number.POSITIVE_INFINITY, Number.NaN]) {
+    expect(
+      await publicErrorOf(
+        asProfessional.query(api.presentation.requests.listAuthorizedRequests, {
+          paginationOpts: { numItems, cursor: null },
+        }),
+      ),
+    ).toEqual({
+      code: "request_fields_invalid",
+      message: "El tamaño de página debe ser un número finito.",
+    });
+  }
+
+  // Quien no es Profesional sigue recibiendo la denegación antes que la validación
+  expect(
+    await publicErrorOf(
+      sessionOf(t, identityOf("ti181-n-est")).query(
+        api.presentation.requests.listAuthorizedRequests,
+        { paginationOpts: { numItems: Number.NaN, cursor: null } },
+      ),
     ),
-  ).rejects.toThrow("Se requiere describir la necesidad de acceso");
+  ).toEqual(UNAUTHORIZED);
 });
