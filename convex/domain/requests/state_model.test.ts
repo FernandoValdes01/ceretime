@@ -2,13 +2,18 @@ import { describe, expect, test } from "vitest";
 import stateModel from "./state-model.md?raw";
 import {
   CLOSURE_REQUEST_STATES,
-  FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
+  REFERRAL_REQUEST_STATES,
   REQUEST_STATE_LABELS,
   REQUEST_STATES,
   SPRINT_1_REQUEST_STATES,
 } from "./state";
-import { ACCEPTANCE_STATE, CLOSURE_REQUEST_TRANSITIONS, REQUEST_TRANSITIONS } from "./transitions";
+import {
+  ACCEPTANCE_STATE,
+  CLOSURE_REQUEST_TRANSITIONS,
+  REFERRAL_REQUEST_TRANSITIONS,
+  REQUEST_TRANSITIONS,
+} from "./transitions";
 
 /**
  * `state-model.md` es la evidencia de cierre del modelo, pero nada lo ataba al
@@ -35,7 +40,7 @@ function sectionLines(title: string): string[] {
 const STATE_TABLE_SECTIONS = [
   "Implementado en Sprint 1",
   "Implementado en Sprint 2 (TI2-85)",
-  "Declarado, no habilitado",
+  "Implementado en Sprint 3 (TI2-143)",
 ];
 
 type StateRow = { readonly state: string; readonly cells: readonly string[] };
@@ -101,9 +106,18 @@ describe("diagrama de state-model.md", () => {
     expect(entries).toEqual([INITIAL_REQUEST_STATE]);
   });
 
-  test("termina en la aceptación, que abre el acompañamiento, o en un cierre", () => {
+  test("termina en la aceptación, que abre el acompañamiento, en la derivación o en un cierre", () => {
     const exits = edges.filter((edge) => edge.to === "[*]").map((edge) => edge.from);
-    expect(exits.sort()).toEqual([ACCEPTANCE_STATE, ...CLOSURE_REQUEST_STATES].sort());
+    expect(exits.sort()).toEqual(
+      [ACCEPTANCE_STATE, ...REFERRAL_REQUEST_STATES, ...CLOSURE_REQUEST_STATES].sort(),
+    );
+  });
+
+  test("solo la aceptación sale del diagrama abriendo un acompañamiento", () => {
+    const opening = edges
+      .filter((edge) => edge.to === "[*]" && edge.label !== undefined)
+      .map((edge) => edge.from);
+    expect(opening).toEqual([ACCEPTANCE_STATE]);
   });
 
   test("resalta como Sprint 1 exactamente los estados con operación", () => {
@@ -122,9 +136,12 @@ describe("diagrama de state-model.md", () => {
     expect(highlighted?.sort()).toEqual([...CLOSURE_REQUEST_STATES].sort());
   });
 
-  test("no dibuja estados de un Cycle futuro, como decide «Declarado, no habilitado»", () => {
-    const words = new Set(mermaidLines().flatMap((line) => line.split(/[^a-z_]+/)));
-    expect(FUTURE_REQUEST_STATES.filter((state) => words.has(state))).toEqual([]);
+  test("resalta como derivación exactamente el estado de la derivación de salida", () => {
+    const highlighted = mermaidLines()
+      .find((line) => line.startsWith("class ") && line.endsWith(" referral"))
+      ?.split(/\s+/)[1]
+      ?.split(",");
+    expect(highlighted?.sort()).toEqual([...REFERRAL_REQUEST_STATES].sort());
   });
 });
 
@@ -157,10 +174,26 @@ describe("tablas de state-model.md", () => {
     );
   });
 
-  test("«Declarado, no habilitado» tiene una fila por estado declarado, sin repetir ni sobrar", () => {
-    expect(stateRows("Declarado, no habilitado").map((row) => row.state)).toEqual([
-      ...FUTURE_REQUEST_STATES,
+  test("«Implementado en Sprint 3 (TI2-143)» tiene una fila por estado de derivación, sin repetir ni sobrar", () => {
+    expect(stateRows("Implementado en Sprint 3 (TI2-143)").map((row) => row.state)).toEqual([
+      ...REFERRAL_REQUEST_STATES,
     ]);
+  });
+
+  test("«Derivación de salida (TI2-143)» describe exactamente REFERRAL_REQUEST_TRANSITIONS", () => {
+    const unquote = (cell: string | undefined) => cell?.replace(/`/g, "") ?? "";
+    const documented = stateRows("Derivación de salida (TI2-143)").map((row) => ({
+      from: unquote(row.cells[0]),
+      to: unquote(row.cells[1]),
+      requiresReason: row.cells[3] === "Sí",
+    }));
+    expect(documented).toEqual(
+      REFERRAL_REQUEST_TRANSITIONS.map((row) => ({
+        from: row.from,
+        to: row.to,
+        requiresReason: row.requiresReason,
+      })),
+    );
   });
 
   test.each(REQUEST_STATES)("muestra para %s la etiqueta de REQUEST_STATE_LABELS", (state) => {

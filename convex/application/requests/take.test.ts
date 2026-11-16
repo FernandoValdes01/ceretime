@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { PersistableRequestState } from "../../domain/requests/state";
+import type { RequestState } from "../../domain/requests/state";
 import { takeRequest, type TakeRequestDeps } from "./commands";
 import type { StoredRequestRow } from "./ports";
 
@@ -46,7 +46,7 @@ function memoryDeps(
   return { deps, writes };
 }
 
-function rowIn(status: PersistableRequestState): Row {
+function rowIn(status: RequestState): Row {
   return {
     _id: "sol-1",
     studentId: "est-1",
@@ -107,7 +107,7 @@ describe("takeRequest con puertos (TI2-181)", () => {
     expect(writes).toEqual([]);
   });
 
-  test.each<PersistableRequestState>([
+  test.each<RequestState>([
     "under_review",
     "awaiting_information_or_acceptance",
     "accepted",

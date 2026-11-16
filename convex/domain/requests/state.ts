@@ -17,12 +17,11 @@ export const SPRINT_1_REQUEST_STATES = [
 ] as const;
 
 /**
- * Declarado para que nadie invente un nombre alternativo, no habilitado:
- * ninguna transición llega a él. La derivación exige contacto y aceptación
- * del estudiante antes de abrir acompañamiento (RN-24) y su flujo sigue
- * pendiente de definición en el documento de requerimientos.
+ * Derivación de salida (TI2-143): CERETI deriva al estudiante a otra unidad.
+ * Es terminal y nunca abre acompañamiento. La comunicación con la unidad de
+ * destino ocurre fuera de la aplicación.
  */
-export const FUTURE_REQUEST_STATES = ["referred"] as const;
+export const REFERRAL_REQUEST_STATES = ["referred"] as const;
 
 /**
  * Estados terminales que cierran la solicitud sin abrir acompañamiento
@@ -31,29 +30,22 @@ export const FUTURE_REQUEST_STATES = ["referred"] as const;
  */
 export const CLOSURE_REQUEST_STATES = ["closed_without_accompaniment", "cancelled"] as const;
 
-/** Conserva el orden previo a TI2-85: Sprint 1, derivación y cierres. */
+/**
+ * Todos los estados de la solicitud, en el orden previo a TI2-85: Sprint 1,
+ * derivación y cierres. Son los que declara el contrato público y, desde
+ * TI2-143, también los que puede traer una fila de `requests` o de
+ * `requestTransitions`: no hay una lista aparte para lo que se guarda.
+ */
 export const REQUEST_STATES = [
   ...SPRINT_1_REQUEST_STATES,
-  ...FUTURE_REQUEST_STATES,
+  ...REFERRAL_REQUEST_STATES,
   ...CLOSURE_REQUEST_STATES,
 ] as const;
 
 export type Sprint1RequestState = (typeof SPRINT_1_REQUEST_STATES)[number];
-export type FutureRequestState = (typeof FUTURE_REQUEST_STATES)[number];
+export type ReferralRequestState = (typeof REFERRAL_REQUEST_STATES)[number];
 export type ClosureRequestState = (typeof CLOSURE_REQUEST_STATES)[number];
 export type RequestState = (typeof REQUEST_STATES)[number];
-
-/**
- * Estados que puede traer una fila de `requests` o de `requestTransitions`:
- * los operativos de Sprint 1 más los cierres de TI2-85. `referred` sigue sin
- * habilitarse porque no tiene reglas ni proyección acordada.
- */
-export const PERSISTABLE_REQUEST_STATES = [
-  ...SPRINT_1_REQUEST_STATES,
-  ...CLOSURE_REQUEST_STATES,
-] as const;
-
-export type PersistableRequestState = (typeof PERSISTABLE_REQUEST_STATES)[number];
 
 export const INITIAL_REQUEST_STATE: Sprint1RequestState = "received";
 
@@ -74,8 +66,8 @@ export const REQUEST_STATE_LABELS: Record<RequestState, string> = {
 
 /**
  * Recibe `string` porque valida lo que trae una fila leída: un literal fuera
- * de la lista es corrupción o un estado sin reglas, como `referred`.
+ * de la lista es corrupción.
  */
-export function isPersistableRequestState(state: string): state is PersistableRequestState {
-  return (PERSISTABLE_REQUEST_STATES as readonly string[]).includes(state);
+export function isRequestState(state: string): state is RequestState {
+  return (REQUEST_STATES as readonly string[]).includes(state);
 }

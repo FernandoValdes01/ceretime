@@ -20,7 +20,7 @@ import {
   notificationContractVersionLiteral,
   notificationEventKindUnion,
   outgoingReferralValidator,
-  persistableRequestStatusUnion,
+  requestStatusUnion,
   requestProvenanceValidator,
   roleUnion,
 } from "./infrastructure/validators";
@@ -132,10 +132,10 @@ export default defineSchema({
     body: v.string(),
   }).index("by_accompaniment", ["accompanimentId"]),
 
-  // Tabla 'requests': solicitudes de acompañamiento. El estado usa los
-  // literales persistibles del dominio (Sprint 1 de TI2-7 más la cancelación
-  // y el cierre de TI2-85, sin `referred`); desde TI2-141 el contrato de
-  // presentación declara los siete estados del dominio (`requestStatusUnion`).
+  // Tabla 'requests': solicitudes de acompañamiento. El estado usa los siete
+  // literales del dominio (`requestStatusUnion`): Sprint 1 de TI2-7, la
+  // cancelación y el cierre de TI2-85 y, desde TI2-143, la derivación
+  // `referred`. Es la misma unión que declara el contrato de presentación.
   // `createdAt` es la fecha de creación como número. Solo persistencia: las
   // transiciones las aplica TI2-21 y las reglas de cancelación y cierre son
   // de TI2-85. TI2-135 suma el contenido completo de la solicitud, su
@@ -144,7 +144,7 @@ export default defineSchema({
   // y se leen igual (ver `domain/database/integrity.md`).
   requests: defineTable({
     studentId: v.id("users"),
-    status: persistableRequestStatusUnion,
+    status: requestStatusUnion,
     accessNeeds: v.string(),
     createdAt: v.number(),
     // Profesional que la tomó para revisión, si alguien la tomó. Puntero de
@@ -167,8 +167,8 @@ export default defineSchema({
     // Procedencia (TI2-135): canal por el que llegó la solicitud. Una fila sin
     // ella nació por el canal del Estudiante (ver `requestProvenanceChannelOf`).
     provenance: v.optional(requestProvenanceValidator),
-    // Derivación de entrada y de salida (TI2-135). El estado `referred` sigue
-    // sin habilitarse: estos campos solo guardan el dato.
+    // Derivación de entrada y de salida (TI2-135). Desde TI2-143 la de salida
+    // se escribe junto con el estado `referred`.
     incomingReferral: v.optional(incomingReferralValidator),
     outgoingReferral: v.optional(outgoingReferralValidator),
     // Razón comprensible de cierre (TI2-135): la vigente y legible para el
@@ -199,8 +199,8 @@ export default defineSchema({
   // en la misma transacción. Solo se escribe, nunca se modifica.
   requestTransitions: defineTable({
     requestId: v.id("requests"),
-    from: persistableRequestStatusUnion,
-    to: persistableRequestStatusUnion,
+    from: requestStatusUnion,
+    to: requestStatusUnion,
     actorId: v.id("users"),
     reason: v.optional(v.string()),
     occurredAt: v.number(),

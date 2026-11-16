@@ -5,7 +5,7 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { toAccompanimentRequest, type AccompanimentRequest } from "../../domain/requests/request";
-import type { PersistableRequestState } from "../../domain/requests/state";
+import type { RequestState } from "../../domain/requests/state";
 import type { StoredRequestRow } from "./ports";
 
 /*
@@ -30,7 +30,7 @@ export type RequestEntity<
  */
 export function toEntity<RequestId extends string, UserId extends string>(
   row: StoredRequestRow<RequestId, UserId>,
-  status: PersistableRequestState = row.status,
+  status: RequestState = row.status,
 ): RequestEntity<RequestId, UserId> {
   return toAccompanimentRequest({
     _id: row._id,
