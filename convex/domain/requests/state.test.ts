@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 import {
   CLOSURE_REQUEST_STATES,
-  FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
   isPersistableRequestState,
   PERSISTABLE_REQUEST_STATES,
+  REFERRAL_REQUEST_STATES,
   REQUEST_STATE_LABELS,
   REQUEST_STATES,
   SPRINT_1_REQUEST_STATES,
@@ -25,9 +25,9 @@ describe("SPRINT_1_REQUEST_STATES", () => {
   });
 });
 
-describe("FUTURE_REQUEST_STATES", () => {
-  test("solo la derivación sigue declarada sin operación", () => {
-    expect(FUTURE_REQUEST_STATES).toEqual(["referred"]);
+describe("REFERRAL_REQUEST_STATES", () => {
+  test("es el estado de la derivación de salida que habilita TI2-143", () => {
+    expect(REFERRAL_REQUEST_STATES).toEqual(["referred"]);
   });
 });
 
@@ -59,11 +59,8 @@ describe("REQUEST_STATES", () => {
 });
 
 describe("PERSISTABLE_REQUEST_STATES", () => {
-  test("suma los cierres a Sprint 1 y deja fuera la derivación", () => {
-    expect(PERSISTABLE_REQUEST_STATES).toEqual([
-      ...SPRINT_1_REQUEST_STATES,
-      ...CLOSURE_REQUEST_STATES,
-    ]);
+  test("desde TI2-143 son todos los estados declarados, en el mismo orden", () => {
+    expect(PERSISTABLE_REQUEST_STATES).toEqual([...REQUEST_STATES]);
   });
 });
 
@@ -79,8 +76,8 @@ describe("isPersistableRequestState", () => {
     expect(isPersistableRequestState(state)).toBe(true);
   });
 
-  test.each(["referred", "cancelada", "", "CANCELLED", "closed"])(
-    "rechaza %j, sin reglas o desconocido",
+  test.each(["cancelada", "", "CANCELLED", "closed", "derivada"])(
+    "rechaza %j, un literal desconocido",
     (state) => {
       expect(isPersistableRequestState(state)).toBe(false);
     },

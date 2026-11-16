@@ -1786,14 +1786,34 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen", async (
     }),
   ).toEqual({ status: "rejected", cause: "transition_not_allowed" });
 
-  // `referred` sigue sin habilitarse en el esquema.
+  // Desde TI2-143 el esquema admite `referred` en la solicitud y en su historial.
+  const referredId = await t.run(async (ctx) => {
+    const requestId = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "referred",
+      accessNeeds: "Necesidad de acceso ficticia",
+      createdAt: 6,
+    });
+    await ctx.db.insert("requestTransitions", {
+      requestId,
+      from: "under_review",
+      to: "referred",
+      actorId: pro,
+      reason: "Motivo ficticio",
+      occurredAt: 7,
+    });
+    return requestId;
+  });
+  expect((await t.run(async (ctx) => await ctx.db.get(referredId)))?.status).toBe("referred");
+
+  // Un literal fuera del dominio se sigue rechazando.
   await expect(
     t.run(async (ctx) => {
       await ctx.db.insert("requests", {
         studentId: student,
-        status: "referred" as unknown as "received",
+        status: "derivada" as unknown as "received",
         accessNeeds: "Necesidad de acceso ficticia",
-        createdAt: 6,
+        createdAt: 8,
       });
     }),
   ).rejects.toThrow("Validator error");

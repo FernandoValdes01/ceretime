@@ -103,10 +103,8 @@ describe("toAccompanimentRequest (TI2-8, TI2-85)", () => {
     ).toThrow("Estado de solicitud desconocido");
   });
 
-  test("rechaza una fila derivada, estado sin reglas ni proyección acordada", () => {
-    expect(() => toAccompanimentRequest(rowWith("referred"))).toThrow(
-      "Estado de solicitud desconocido",
-    );
+  test("adapta una fila derivada: desde TI2-143 `referred` es un estado que una fila trae", () => {
+    expect(toAccompanimentRequest(rowWith("referred")).status).toBe("referred");
   });
 
   test("la entidad publica se importa desde el barrel", () => {

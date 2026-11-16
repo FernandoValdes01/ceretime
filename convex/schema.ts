@@ -133,9 +133,10 @@ export default defineSchema({
   }).index("by_accompaniment", ["accompanimentId"]),
 
   // Tabla 'requests': solicitudes de acompañamiento. El estado usa los
-  // literales persistibles del dominio (Sprint 1 de TI2-7 más la cancelación
-  // y el cierre de TI2-85, sin `referred`); desde TI2-141 el contrato de
-  // presentación declara los siete estados del dominio (`requestStatusUnion`).
+  // literales persistibles del dominio (Sprint 1 de TI2-7, la cancelación y
+  // el cierre de TI2-85 y, desde TI2-143, la derivación `referred`); desde
+  // TI2-141 el contrato de presentación declara los siete estados del dominio
+  // (`requestStatusUnion`).
   // `createdAt` es la fecha de creación como número. Solo persistencia: las
   // transiciones las aplica TI2-21 y las reglas de cancelación y cierre son
   // de TI2-85. TI2-135 suma el contenido completo de la solicitud, su
@@ -167,8 +168,8 @@ export default defineSchema({
     // Procedencia (TI2-135): canal por el que llegó la solicitud. Una fila sin
     // ella nació por el canal del Estudiante (ver `requestProvenanceChannelOf`).
     provenance: v.optional(requestProvenanceValidator),
-    // Derivación de entrada y de salida (TI2-135). El estado `referred` sigue
-    // sin habilitarse: estos campos solo guardan el dato.
+    // Derivación de entrada y de salida (TI2-135). Desde TI2-143 la de salida
+    // se escribe junto con el estado `referred`.
     incomingReferral: v.optional(incomingReferralValidator),
     outgoingReferral: v.optional(outgoingReferralValidator),
     // Razón comprensible de cierre (TI2-135): la vigente y legible para el

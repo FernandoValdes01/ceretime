@@ -67,17 +67,14 @@ export const assignmentStatusUnion = v.union(
 /**
  * Estados de solicitud del contrato de presentación (TI2-141): los siete que
  * declara el dominio. Derivados de `REQUEST_STATES` para que el borde no
- * defina nombres por su cuenta. Incluye `referred` aunque todavía ninguna fila
- * lo trae, para que Web y Mobile mapeen el conjunto completo una sola vez: lo
- * habilita la tarea de derivaciones.
+ * defina nombres por su cuenta.
  */
 export const requestStatusUnion = v.union(...REQUEST_STATES.map((state) => v.literal(state)));
 
 /**
  * Estados de solicitud persistibles (TI2-83 adapta validadores para TI2-85):
- * operativos de Sprint 1 más `closed_without_accompaniment` y `cancelled`,
- * sin `referred`. Es lo que puede traer una fila de `requests` o de
- * `requestTransitions`; la presentación declara además `referred` (ver arriba).
+ * lo que puede traer una fila de `requests` o de `requestTransitions`. Desde
+ * TI2-143 incluye `referred`, la derivación de salida.
  */
 export const persistableRequestStatusUnion = v.union(
   ...PERSISTABLE_REQUEST_STATES.map((state) => v.literal(state)),
@@ -139,8 +136,8 @@ export const incomingReferralValidator = v.object({
 
 /**
  * Derivación de salida (TI2-135): CERETI deriva al estudiante a otra unidad,
- * con la razón comprensible. El estado `referred` sigue sin habilitarse; esto
- * solo da dónde guardar el dato cuando un caso de uso lo habilite.
+ * con la razón comprensible. Desde TI2-143 se escribe junto con el estado
+ * `referred`, en la misma operación.
  */
 export const outgoingReferralValidator = v.object({
   destinationUnit: v.string(),

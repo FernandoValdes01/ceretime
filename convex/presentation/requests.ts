@@ -86,8 +86,8 @@ const requestPageValidator = paginationResultValidator(requestValidator);
 const minimizedRequestPageValidator = paginationResultValidator(minimizedRequestValidator);
 
 // Los handlers declaran el tipo del validador y no el que infiere TypeScript
-// desde la fila: así Web y Mobile derivan los siete estados del contrato,
-// incluido `referred`, y no solo los que hoy puede traer una fila.
+// desde la fila: así Web y Mobile derivan los siete estados del contrato
+// aunque el tipo de la fila cambie.
 type PublicRequest = Infer<typeof requestValidator>;
 type PublicRequestDetail = Infer<typeof requestDetailValidator>;
 type PublicRequestPage = Infer<typeof requestPageValidator>;

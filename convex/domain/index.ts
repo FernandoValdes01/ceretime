@@ -43,16 +43,16 @@ export type {
   StoredRequestFields,
 } from "./requests/request";
 export {
-  FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
   PERSISTABLE_REQUEST_STATES,
+  REFERRAL_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
 } from "./requests/state";
 export type {
-  FutureRequestState,
   PersistableRequestState,
+  ReferralRequestState,
   RequestState,
   Sprint1RequestState,
 } from "./requests/state";
