@@ -121,14 +121,21 @@ export const FOLLOW_UP_VIEW_VALUES = ["professional", "shared", "minimized"] as 
 export type FollowUpView = (typeof FOLLOW_UP_VIEW_VALUES)[number];
 
 /**
- * Proyección minimizada para el Practicante: estado y fecha sugerida.
+ * Proyección minimizada para el Practicante con asignación activa y vigente.
  *
- * Omite todo texto libre y el vínculo con el acompañamiento: acuerdos, tareas
- * y próximos pasos pueden mencionar necesidades de acceso.
+ * Incluye acuerdos, tareas y próximos pasos con la misma forma que la vista
+ * compartida, por decisión del 2026-11-15 (TI2-186): gana el diagrama. Solo
+ * para el seguimiento, reemplaza la minimización de TI2-127, que omitía esos
+ * textos por posible mención de necesidades de acceso. Mantiene fuera la nota
+ * interna y el vínculo con el acompañamiento, que el diagrama no asigna al
+ * practicante.
  */
 export interface MinimizedFollowUpProjection {
   readonly appointmentId: string;
   readonly appointmentStatus: AppointmentStatus;
+  readonly agreements: readonly FollowUpAgreement[];
+  readonly tasks: readonly FollowUpTask[];
+  readonly nextSteps: string;
   readonly suggestedNextAppointmentDate?: string;
   readonly version: FollowUpContractVersion;
   readonly view: "minimized";
@@ -473,6 +480,14 @@ export function toFollowUpProjection(
     return {
       appointmentId: record.appointmentId,
       appointmentStatus,
+      agreements: record.agreements.map(({ id, description }) => ({ id, description })),
+      tasks: record.tasks.map(({ id, description, responsible, status }) => ({
+        id,
+        description,
+        responsible,
+        status,
+      })),
+      nextSteps: record.nextSteps,
       ...(record.suggestedNextAppointmentDate === undefined
         ? {}
         : { suggestedNextAppointmentDate: record.suggestedNextAppointmentDate }),

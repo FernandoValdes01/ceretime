@@ -502,7 +502,8 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     action: "followUp:read",
     student: "shared solo propios, sin nota interna",
     professional: "professional solo asignados activos, con nota interna",
-    intern: "minimized solo asignados activos, sin textos libres",
+    intern:
+      "minimized solo asignados activos, con acuerdos, tareas y próximos pasos, sin nota interna",
     admin: "denegado sin acceso general",
   },
   {
