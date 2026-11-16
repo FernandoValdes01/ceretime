@@ -856,6 +856,88 @@ test("Otro Profesional sin toma recibe denegación sin modificar estado", async 
   expect(untouched?.status).toBe("under_review");
 });
 
+test("TI2-140: la cuenta de prueba no opera solicitudes por ninguna vía", async () => {
+  // Instancia el entorno de prueba con el esquema y funciones reales
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti140-est-sol");
+  const requestId = await t.mutation(internal.operations.requests.createTestRequest, {
+    studentId,
+    status: "received",
+    accessNeeds: "Necesidad de acceso ficticia",
+  });
+  const testProId = await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: "ti140-prueba-sol@alu.uct.cl",
+      fullName: "Profesional de Prueba",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti140-prueba-sol`,
+    });
+  });
+  expect(testProId).toBeDefined();
+
+  // La prueba, aunque habilitada y vigente, no opera solicitudes: bandeja,
+  // toma, lectura, detalle y aceptación responden el mismo código
+  // `unauthorized` del contrato común; el detalle (único que lee
+  // accessNeeds) tampoco se entrega
+  const asTest = t.withIdentity(identityFor("ti140-prueba-sol", "ti140-prueba-sol@alu.uct.cl"));
+  expect(
+    await publicErrorOf(
+      asTest.query(api.presentation.requests.listOpenRequests, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(asTest.mutation(api.presentation.requests.takeRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(
+      asTest.query(api.presentation.requests.listAuthorizedRequests, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(
+      asTest.mutation(api.presentation.requests.acceptRequest, {
+        requestId,
+        objective: "Objetivo ficticio",
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(asTest.query(api.presentation.requests.getRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
+
+  // Sin toma ni cambio de estado: la solicitud sigue recibida
+  const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
+  expect(untouched?.status).toBe("received");
+  const takes = await t.run(async (ctx) => {
+    return await ctx.db
+      .query("requestAssignments")
+      .withIndex("by_request_and_user_and_status", (q) => q.eq("requestId", requestId))
+      .take(1);
+  });
+  expect(takes).toHaveLength(0);
+
+  // Ni siquiera con una toma escrita a mano la prueba lee el detalle: el
+  // visor también la excluye, así que accessNeeds nunca se entrega
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("requestAssignments", {
+      requestId,
+      userId: testProId,
+      grantedBy: testProId,
+      grantedAt: Date.now(),
+      status: "active",
+    });
+  });
+  expect(
+    await publicErrorOf(asTest.query(api.presentation.requests.getRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
+});
+
 /*
  * TI2-85 y TI2-141: cancelar y cerrar sin acompañamiento. Desde TI2-141 los
  * dos casos de uso tienen entrada pública, así que estas pruebas pasan por
