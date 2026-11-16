@@ -107,7 +107,7 @@ describe("TI2-149: formulario de solicitud", () => {
     submit();
 
     const summary = screen.getByRole("heading", { name: "Revisa estos campos antes de enviar" });
-    expect(document.activeElement).toBe(summary.parentElement);
+    expect(document.activeElement).toBe(summary);
     expect(submitMock).not.toHaveBeenCalled();
     const needSummary = screen.getByLabelText(/Describe la barrera o necesidad/);
     expect(needSummary.getAttribute("aria-invalid")).toBe("true");
@@ -116,7 +116,14 @@ describe("TI2-149: formulario de solicitud", () => {
     fireEvent.click(
       screen.getByRole("link", { name: /Días disponibles: Selecciona al menos un día/ }),
     );
-    expect(document.activeElement).toBe(screen.getByLabelText("Lunes"));
+    const monday = screen.getByLabelText("Lunes");
+    expect(document.activeElement).toBe(monday);
+    // El error del grupo se anuncia también en cada opción, no solo en el fieldset.
+    expect(monday.getAttribute("aria-invalid")).toBe("true");
+    expect(monday.getAttribute("aria-describedby")).toBe("request-preferredWeekdays-error");
+    expect(document.getElementById("request-preferredWeekdays-error")?.textContent).toContain(
+      "Selecciona al menos un día disponible.",
+    );
   });
 
   test("permite varias necesidades más texto libre y envía la forma completa", async () => {
@@ -140,7 +147,11 @@ describe("TI2-149: formulario de solicitud", () => {
       modalityPreference: "online",
       generalAvailability: { preferredWeekdays: [2] },
     });
-    expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Solicitud enviada" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("heading", { name: "Solicitud enviada" }),
+      ),
+    );
     expect(screen.getByRole("link", { name: "Ver la solicitud" }).getAttribute("href")).toBe(
       "/estudiante/solicitudes/req-1",
     );
@@ -206,6 +217,10 @@ describe("TI2-149: formulario de solicitud", () => {
     submit();
     const button = await screen.findByRole("button", { name: "Enviando…" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
+    // Lo enviado es lo que queda guardado: no se puede editar mientras se envía.
+    const needSummary = screen.getByLabelText(/Describe la barrera o necesidad/);
+    expect(needSummary.matches(":disabled")).toBe(true);
+    expect(screen.getByLabelText("Martes").matches(":disabled")).toBe(true);
     fireEvent.submit(button.closest("form") as HTMLFormElement);
     resolve({ status: "sent", requestId: "req-1" });
 

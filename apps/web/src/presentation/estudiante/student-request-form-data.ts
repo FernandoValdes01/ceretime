@@ -1,14 +1,10 @@
 import { useMutation } from "convex/react";
 import type { FunctionArgs } from "convex/server";
-import { ConvexError } from "convex/values";
 // Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
 // el monorepo defina el alias o paquete interno compartido.
 import { api } from "../../../../../convex/_generated/api";
-import {
-  isApiErrorCode,
-  UNAUTHORIZED_ERROR_MESSAGE,
-  type ApiErrorCode,
-} from "../../../../../convex/domain/index.ts";
+import { UNAUTHORIZED_ERROR_CODE, type ApiErrorCode } from "../../../../../convex/domain/index.ts";
+import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 
 /**
  * Envío de la solicitud propia del Estudiante (TI2-149).
@@ -37,39 +33,29 @@ export type SubmitOwnRequestOutcome =
   | { status: "denied" }
   | { status: "failed" };
 
-/** Códigos cuyo mensaje público explica qué corregir en el formulario. */
-const CORRECTABLE_CODES: ReadonlySet<ApiErrorCode> = new Set<ApiErrorCode>([
+/**
+ * Códigos cuyo mensaje público explica qué corregir en el formulario.
+ * `createRequest` no responde `conflict`: su envío no depende de un estado.
+ */
+const CORRECTABLE_CODES: ReadonlySet<string> = new Set<ApiErrorCode>([
   "request_fields_invalid",
   "access_needs_empty",
   "access_needs_too_long",
-  "conflict",
 ]);
 
 /** Traduce el error de `createRequest` al desenlace que muestra el formulario. */
 export function toSubmitFailure(
   error: unknown,
 ): Exclude<SubmitOwnRequestOutcome, { status: "sent" }> {
-  if (!(error instanceof ConvexError)) {
+  const publicError = publicErrorOf(error);
+  if (publicError === null) {
     return { status: "failed" };
   }
-  const data: unknown = error.data;
-  // La forma anterior todavía deniega con texto (TI2-181).
-  if (data === UNAUTHORIZED_ERROR_MESSAGE) {
+  if (publicError.code === UNAUTHORIZED_ERROR_CODE) {
     return { status: "denied" };
   }
-  if (typeof data !== "object" || data === null || !("code" in data)) {
-    return { status: "failed" };
-  }
-  const { code } = data;
-  if (typeof code !== "string" || !isApiErrorCode(code)) {
-    return { status: "failed" };
-  }
-  if (code === "unauthorized") {
-    return { status: "denied" };
-  }
-  const message = "message" in data && typeof data.message === "string" ? data.message : null;
-  if (CORRECTABLE_CODES.has(code) && message !== null) {
-    return { status: "rejected", message };
+  if (CORRECTABLE_CODES.has(publicError.code)) {
+    return { status: "rejected", message: publicError.message };
   }
   return { status: "failed" };
 }
