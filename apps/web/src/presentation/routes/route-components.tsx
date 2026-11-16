@@ -15,6 +15,7 @@ import {
   StudentAppointmentDetailPage,
   StudentAppointmentsPage,
 } from "../estudiante/student-appointments-page.tsx";
+import { StudentRequestFormPage } from "../estudiante/student-request-form.tsx";
 import { StudentRequestDetailPage, StudentRequestsPage } from "../estudiante/student-requests.tsx";
 import {
   ProfessionalRequestDetailPage,
@@ -120,6 +121,10 @@ const studentAccompanimentDetailApi = getRouteApi("/estudiante/acompanamientos/$
 
 export function StudentRequestsRouteComponent() {
   return <StudentRequestsPage />;
+}
+
+export function StudentRequestFormRouteComponent() {
+  return <StudentRequestFormPage />;
 }
 
 export function StudentRequestDetailRouteComponent() {
