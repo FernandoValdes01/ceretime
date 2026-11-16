@@ -37,10 +37,10 @@ describe("toStatusChange (TI2-141)", () => {
       status: "referred",
       outgoingReferral,
     });
-    // La derivación solo acompaña a `referred`: en otro destino no se escribe
-    expect(toStatusChange({ ...base, to: "accepted" }, outgoingReferral)).toEqual({
-      status: "accepted",
-    });
+    // La derivación solo acompaña a `referred`: con otro destino es un fallo interno
+    expect(() => toStatusChange({ ...base, to: "accepted" }, outgoingReferral)).toThrow(
+      "La derivación de salida solo acompaña al estado de derivación.",
+    );
     expect(() => toStatusChange({ ...base, to: "referred", reason: "Razón" })).toThrow(
       "La solicitud se derivó sin dejar la derivación de salida.",
     );

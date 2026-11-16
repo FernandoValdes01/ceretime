@@ -7,8 +7,8 @@ import type { RequestStateChange, RequestStatusChange } from "../../domain/reque
  * mano. El cierre lleva su razón y la derivación de salida (TI2-143) su
  * unidad de destino, que entrega el caso de uso. La política ya exigió la
  * razón del cierre, y solo `referRequest` deriva: si faltara cualquiera de
- * los dos datos, es un fallo interno, no una denegación, y responder «No
- * autorizado» lo escondería.
+ * los dos datos, o llegara una derivación con otro destino, es un fallo
+ * interno, no una denegación, y responder «No autorizado» lo escondería.
  */
 export function toStatusChange<UserId extends string = string>(
   change: RequestStateChange,
@@ -19,6 +19,10 @@ export function toStatusChange<UserId extends string = string>(
       throw new Error("La solicitud se derivó sin dejar la derivación de salida.");
     }
     return { status: change.to, outgoingReferral };
+  }
+  // Caso inverso: perderla en silencio dejaría la solicitud en otro estado sin su derivación.
+  if (outgoingReferral !== undefined) {
+    throw new Error("La derivación de salida solo acompaña al estado de derivación.");
   }
   if (change.to !== "closed_without_accompaniment") return { status: change.to };
   if (change.reason === undefined) {
