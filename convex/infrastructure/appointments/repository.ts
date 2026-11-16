@@ -664,8 +664,9 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
 // (`startAt`/`endAt` e identificadores de texto) al de este repositorio.
 
 /**
- * Ocupación para la búsqueda: el cupo está ocupado cuando el profesional, el
- * estudiante o la sala ya tienen una atención que lo cruza, los mismos
+ * Ocupación para la búsqueda: el cupo está ocupado cuando el profesional (como
+ * responsable o participante), el estudiante o la sala ya tienen una atención
+ * que lo cruza, los mismos
  * recursos y la misma lectura por ventana que `occupySlotAtomically`. Una
  * ventana sobre el tope o un identificador que no es de su tabla cuentan como
  * ocupados, así la búsqueda no ofrece un cupo que la reserva rechazaría.
@@ -684,14 +685,15 @@ export function slotOccupancyReader(ctx: DbReader) {
       const spaceId =
         slot.spaceId === undefined ? undefined : ctx.db.normalizeId("spaces", slot.spaceId);
       if (professionalId === null || studentId === null || spaceId === null) return true;
-      const resources: OccupiedResource[] = [
-        { kind: "professional", id: professionalId },
-        { kind: "student", id: studentId },
-      ];
+      const interval = { startsAt: slot.startAt, endsAt: slot.endAt };
+      // El profesional se revisa como responsable y como participante, con la
+      // misma comprobación que la reserva (TI2-142): así la búsqueda no ofrece
+      // un cupo que la reserva rechazaría por una atención coordinada.
+      if (await isProfessionalTaken(ctx, professionalId, interval, null)) return true;
+      const resources: OccupiedResource[] = [{ kind: "student", id: studentId }];
       if (spaceId !== undefined) {
         resources.push({ kind: "space", id: spaceId });
       }
-      const interval = { startsAt: slot.startAt, endsAt: slot.endAt };
       for (const resource of resources) {
         if (await isResourceTaken(ctx, resource, interval, null)) return true;
       }
