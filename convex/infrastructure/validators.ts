@@ -100,6 +100,11 @@ export const generalAvailabilityValidator = v.object({
 
 const [studentProvenanceChannel, officialProvenanceChannel] = REQUEST_PROVENANCE_CHANNEL_VALUES;
 
+/** Canal de procedencia que entrega el detalle de la solicitud (TI2-143). */
+export const requestProvenanceChannelUnion = v.union(
+  ...REQUEST_PROVENANCE_CHANNEL_VALUES.map((channel) => v.literal(channel)),
+);
+
 /**
  * Procedencia de una solicitud (TI2-135): el canal, quién la registró cuando
  * no fue el propio Estudiante y cuándo la recibió CERETI.

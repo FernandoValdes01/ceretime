@@ -26,6 +26,7 @@ import type * as application_follow_up_queries from "../application/follow_up/qu
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_ports from "../application/requests/ports.js";
 import type * as application_requests_queries from "../application/requests/queries.js";
+import type * as application_requests_referrals from "../application/requests/referrals.js";
 import type * as application_requests_respond from "../application/requests/respond.js";
 import type * as application_requests_results from "../application/requests/results.js";
 import type * as application_requests_status_change from "../application/requests/status_change.js";
@@ -52,6 +53,7 @@ import type * as domain_follow_up_follow_up from "../domain/follow_up/follow_up.
 import type * as domain_identity_roles from "../domain/identity/roles.js";
 import type * as domain_index from "../domain/index.js";
 import type * as domain_notifications_notification from "../domain/notifications/notification.js";
+import type * as domain_requests_referral from "../domain/requests/referral.js";
 import type * as domain_requests_request from "../domain/requests/request.js";
 import type * as domain_requests_state from "../domain/requests/state.js";
 import type * as domain_requests_transition_policy from "../domain/requests/transition_policy.js";
@@ -112,6 +114,7 @@ declare const fullApi: ApiFromModules<{
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/ports": typeof application_requests_ports;
   "application/requests/queries": typeof application_requests_queries;
+  "application/requests/referrals": typeof application_requests_referrals;
   "application/requests/respond": typeof application_requests_respond;
   "application/requests/results": typeof application_requests_results;
   "application/requests/status_change": typeof application_requests_status_change;
@@ -138,6 +141,7 @@ declare const fullApi: ApiFromModules<{
   "domain/identity/roles": typeof domain_identity_roles;
   "domain/index": typeof domain_index;
   "domain/notifications/notification": typeof domain_notifications_notification;
+  "domain/requests/referral": typeof domain_requests_referral;
   "domain/requests/request": typeof domain_requests_request;
   "domain/requests/state": typeof domain_requests_state;
   "domain/requests/transition_policy": typeof domain_requests_transition_policy;

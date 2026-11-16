@@ -1,17 +1,19 @@
 import type { PaginationOptions, PaginationResult } from "convex/server";
 import type { AccompanimentRow } from "../../domain/accompaniments/accompaniment";
+import type { IncomingReferral, OutgoingReferral } from "../../domain/requests/referral";
 import type { PersistableRequestState } from "../../domain/requests/state";
-import type { RequestSubmission } from "../../domain/requests/request";
+import type { RequestProvenanceChannel, RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 
 /**
- * Puertos de los casos de uso de solicitudes (TI2-141, TI2-181).
+ * Puertos de los casos de uso de solicitudes (TI2-141, TI2-181, TI2-143).
  *
  * Capa de Aplicación: fija lo que un caso de uso lee y escribe, sin Convex.
  * Infraestructura los cumple por forma con `requestStore(ctx)`,
  * `requestReader(ctx)`, `activeStudentReader(ctx)`,
- * `activeProfessionalReader(ctx)`, `activeRequestViewerReader(ctx)` y
- * `accompanimentOpener(ctx)`, creados en Presentación con el mismo `ctx`, así
+ * `activeStudentByEmailReader(ctx)`, `activeProfessionalReader(ctx)`,
+ * `activeRequestViewerReader(ctx)` y `accompanimentOpener(ctx)`, creados en
+ * Presentación con el mismo `ctx`, así
  * cada operación ocurre en una sola transacción. Las pruebas pasan dobles en
  * memoria.
  *
@@ -41,6 +43,12 @@ export type StoredRequestRow<RequestId extends string, UserId extends string> = 
   readonly createdAt: number;
   /** Razón vigente del cierre sin acompañamiento; solo la entrega el detalle. */
   readonly closureReason?: string;
+  /** Canal por el que llegó; ausente en las filas anteriores a TI2-135. */
+  readonly provenance?: { readonly channel: RequestProvenanceChannel };
+  /** Derivación de entrada, si otra unidad avisó a CERETI (TI2-143). */
+  readonly incomingReferral?: IncomingReferral<UserId>;
+  /** Derivación de salida, si CERETI derivó la solicitud (TI2-143). */
+  readonly outgoingReferral?: OutgoingReferral<UserId>;
 };
 
 /** Solicitud por id, o `null` si no existe. */
@@ -109,6 +117,39 @@ export interface RequestRegistrar<RequestId extends string, UserId extends strin
     receivedAt: number,
   ): Promise<RequestId>;
   registerLegacy(studentId: UserId, accessNeeds: string): Promise<RequestId>;
+}
+
+/** Estudiante con cuenta habilitada y vigente que tiene ese correo; si no, `null`. */
+export interface ActiveStudentByEmailReader<UserId extends string> {
+  findActiveStudentByEmail(email: string): Promise<{ readonly _id: UserId } | null>;
+}
+
+/**
+ * Guarda una solicitud recibida por canal oficial (TI2-143), una sola vez por
+ * clave de idempotencia como `registerOnce`. La procedencia lleva quién la
+ * registró y cuándo la recibió CERETI; con `originUnit` queda además como
+ * derivación de entrada, avisada en esa misma fecha.
+ */
+export interface OfficialRequestRegistrar<RequestId extends string, UserId extends string> {
+  registerOfficialOnce(input: {
+    readonly studentId: UserId;
+    readonly submission: RequestSubmission;
+    readonly registeredBy: UserId;
+    readonly receivedAt: number;
+    readonly originUnit?: string;
+  }): Promise<RequestId>;
+}
+
+/**
+ * Escrituras de las derivaciones (TI2-143). `setIncomingReferral` guarda la
+ * derivación de entrada con el contacto o la aceptación ya aplicados.
+ * `recordOutgoingReferral` deja la solicitud en `referred` junto con su
+ * derivación de salida, en una sola escritura: es la única vía hacia ese
+ * estado.
+ */
+export interface RequestReferralWriter<RequestId extends string, UserId extends string> {
+  setIncomingReferral(requestId: RequestId, referral: IncomingReferral<UserId>): Promise<void>;
+  recordOutgoingReferral(requestId: RequestId, referral: OutgoingReferral<UserId>): Promise<void>;
 }
 
 /**
