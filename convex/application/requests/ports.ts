@@ -43,8 +43,14 @@ export type StoredRequestRow<RequestId extends string, UserId extends string> = 
   readonly createdAt: number;
   /** Razón vigente del cierre sin acompañamiento; solo la entrega el detalle. */
   readonly closureReason?: string;
-  /** Canal por el que llegó; ausente en las filas anteriores a TI2-135. */
-  readonly provenance?: { readonly channel: RequestProvenanceChannel };
+  /**
+   * Canal por el que llegó y, en el canal oficial, quién la registró; ausente
+   * en las filas anteriores a TI2-135.
+   */
+  readonly provenance?: {
+    readonly channel: RequestProvenanceChannel;
+    readonly registeredBy?: UserId;
+  };
   /** Derivación de entrada, si otra unidad avisó a CERETI (TI2-143). */
   readonly incomingReferral?: IncomingReferral<UserId>;
   /** Derivación de salida, si CERETI derivó la solicitud (TI2-143). */

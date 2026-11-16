@@ -87,14 +87,16 @@ const minimizedRequestValidator = v.object(requestBaseFields);
 // Detalle (TI2-141): suma los textos del intercambio y la razón de cierre.
 // Solo lo entrega `getRequest`, a quien ya puede leer la solicitud. TI2-143
 // suma el canal de procedencia y las derivaciones, sin identificadores de
-// personal.
+// personal. El canal siempre viaja, pero se declara opcional: Mobile reutiliza
+// el tipo del detalle para los elementos de un listado, y un campo obligatorio
+// nuevo deja de compilar ahí.
 const requestDetailValidator = v.object({
   ...requestBaseFields,
   accessNeeds: v.string(),
   informationRequest: v.optional(v.string()),
   informationResponse: v.optional(v.string()),
   closureReason: v.optional(v.string()),
-  provenanceChannel: requestProvenanceChannelUnion,
+  provenanceChannel: v.optional(requestProvenanceChannelUnion),
   incomingReferral: v.optional(
     v.object({
       originUnit: v.string(),

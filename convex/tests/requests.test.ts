@@ -2295,6 +2295,32 @@ test("TI2-143: repetir el registro por canal oficial con la misma clave no dupli
   expect(await requestsOf(t, studentId)).toHaveLength(1);
 });
 
+test("TI2-143: una clave que ya usó otra persona no entrega esa solicitud a quien registra", async () => {
+  const t = convexTest(schema, modules);
+  await seedProfile(t, "ti143-pro-2a", "professional");
+  await seedProfile(t, "ti143-pro-2b", "professional");
+  const studentId = await seedProfile(t, "ti143-est-2a", "student");
+  const email = "ti143-est-2a@uct.cl";
+  const duplicated = CONFLICT(
+    "Ya existe otra solicitud de este estudiante con esa clave de envío. Genera una clave nueva.",
+  );
+
+  // El Estudiante envió la suya: un Profesional sin toma no la recibe por repetir la clave
+  await submitAs(t, identityOf("ti143-est-2a"));
+  expect(await publicErrorOf(registerOfficialAs(t, identityOf("ti143-pro-2a"), email))).toEqual(
+    duplicated,
+  );
+
+  // Tampoco la que registró otro Profesional
+  await registerOfficialAs(t, identityOf("ti143-pro-2a"), email, { idempotencyKey: "clave-2a" });
+  expect(
+    await publicErrorOf(
+      registerOfficialAs(t, identityOf("ti143-pro-2b"), email, { idempotencyKey: "clave-2a" }),
+    ),
+  ).toEqual(duplicated);
+  expect(await requestsOf(t, studentId)).toHaveLength(2);
+});
+
 test("TI2-143: solo un Profesional vigente registra por canal oficial, aunque los campos fallen", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti143-est-3", "student");
