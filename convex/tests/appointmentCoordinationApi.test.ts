@@ -25,6 +25,7 @@ const modules = import.meta.glob("../**/*.ts");
 const ISSUER = "https://accounts.google.com";
 const at = (hour: number) => Date.UTC(2027, 0, 4, hour + 3);
 const HALF_HOUR = 30 * 60_000;
+const DAY = "2027-01-04";
 const CAPTIONS = { id: "Subtítulos en la atención", label: "Subtítulos en la atención" };
 const LINK = "https://meet.google.com/sol-casa-pan";
 const OTHER_LINK = "https://meet.google.com/mar-roca-sal";
@@ -223,7 +224,69 @@ test(
       professionalId: seeded.additional as string,
     });
     expect(await publicError(asAdditional.mutation(book, otherSlot(12)))).toStrictEqual(CONFLICT);
+
+    // La búsqueda tampoco los ofrece: sería un cupo que la reserva rechaza.
+    const search = await asAdditional.query(api.presentation.availability.searchSlots, {
+      accompanimentId: seeded.otherAccompanimentId as string,
+      professionalId: seeded.additional as string,
+      from: DAY,
+      to: DAY,
+      limit: 50,
+      version: "v1",
+    });
+    const offered = search.items.map((item) => item.startAt);
+    expect(offered).not.toContain(at(12));
+    expect(offered).not.toContain(at(12) + HALF_HOUR);
+    expect(offered).toContain(at(13));
+
     await asAdditional.mutation(book, otherSlot(13));
+  },
+  API_TEST_TIMEOUT_MS,
+);
+
+test(
+  "TI2-142 API: un adicional ya ocupado impide coordinar o reagendar la atención a esa hora",
+  async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seed(t);
+    const asStudent = t.withIdentity(identityFor("ti142-est-1"));
+    const asResponsible = t.withIdentity(identityFor("ti142-pro-1"));
+    const asAdditional = t.withIdentity(identityFor("ti142-pro-2"));
+    const book = api.presentation.appointments.bookAppointment;
+    const ownSlot = (hour: number) => ({
+      ...slot(seeded, hour),
+      endAt: at(hour) + HALF_HOUR,
+      accompanimentId: seeded.otherAccompanimentId as string,
+      professionalId: seeded.additional as string,
+    });
+    const coordinated = (hour: number) => ({
+      ...slot(seeded, hour),
+      additionalProfessionalIds: [seeded.additional as string],
+      onlineSupports: [CAPTIONS],
+    });
+
+    // El adicional ya atiende a otro Estudiante a las 12:00 como responsable.
+    await asAdditional.mutation(book, ownSlot(12));
+
+    // Al crear: el responsable y el Estudiante están libres; solo choca el adicional.
+    expect(await publicError(asResponsible.mutation(book, coordinated(12)))).toStrictEqual(
+      CONFLICT,
+    );
+
+    // Al mover: la atención coordinada de las 13:00 no puede pasar a las 12:00.
+    const { appointmentId } = await asResponsible.mutation(book, coordinated(13));
+    const { accompanimentId: _accompanimentId, ...toNoon } = { ...slot(seeded, 12), appointmentId };
+    expect(
+      await publicError(
+        asStudent.mutation(api.presentation.appointments.rescheduleAppointment, toNoon),
+      ),
+    ).toStrictEqual(CONFLICT);
+    expect(await participantsOf(t, appointmentId)).toEqual(
+      expect.arrayContaining([
+        { professionalId: seeded.responsible, startsAt: at(13), endsAt: at(14) },
+        { professionalId: seeded.additional, startsAt: at(13), endsAt: at(14) },
+      ]),
+    );
   },
   API_TEST_TIMEOUT_MS,
 );
@@ -349,10 +412,12 @@ test(
       recipientId: seeded.student,
     });
 
-    // El mismo enlace no vuelve a avisar; reemplazarlo sí.
+    // El mismo enlace no vuelve a avisar; reemplazarlo sí. El reloj avanza antes
+    // de repetirlo: con el mismo instante, un segundo aviso tendría la misma
+    // clave y no se guardaría aunque el caso de uso escribiera de nuevo.
+    vi.setSystemTime(NOW + 30_000);
     await asResponsible.mutation(set, { ...read, link: LINK });
     expect(await notifications()).toHaveLength(1);
-    // El reemplazo ocurre después: la clave del aviso usa el instante del cambio.
     vi.setSystemTime(NOW + 60_000);
     await asResponsible.mutation(set, { ...read, link: OTHER_LINK });
     expect(await notifications()).toHaveLength(2);
