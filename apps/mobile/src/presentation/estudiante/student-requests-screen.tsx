@@ -92,6 +92,7 @@ function RequestCard({ request }: { request: StudentRequest }) {
 function listAnnouncement(status: StudentAreaCollectionStatus): string | null {
   if (status === "loading") return "Cargando solicitudes.";
   if (status === "error") return "No pudimos cargar tus solicitudes.";
+  if (status === "access-denied") return "No tienes acceso a estas solicitudes.";
   if (status === "empty") return "Aún no tienes solicitudes.";
   if (status === "success") return "Solicitudes cargadas.";
   return null;
@@ -109,6 +110,13 @@ export default function StudentRequestsScreen() {
         <StateMessage title="No pudimos cargar tus solicitudes">
           <StudentAction label="Reintentar" onPress={requests.reload} />
         </StateMessage>
+      ) : null}
+
+      {requests.status === "access-denied" ? (
+        <StateMessage
+          title="No tienes acceso a estas solicitudes"
+          message="Vuelve al inicio o consulta con CERETI si necesitas ayuda."
+        />
       ) : null}
 
       {requests.status === "empty" ? (
