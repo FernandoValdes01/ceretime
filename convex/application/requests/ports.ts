@@ -63,8 +63,8 @@ export interface RequestReader<RequestId extends string, UserId extends string> 
 }
 
 /** Escribe el estado vigente con el cambio que dejó la política. */
-export interface RequestStatusWriter<RequestId extends string> {
-  setRequestStatus(requestId: RequestId, change: RequestStatusChange): Promise<void>;
+export interface RequestStatusWriter<RequestId extends string, UserId extends string> {
+  setRequestStatus(requestId: RequestId, change: RequestStatusChange<UserId>): Promise<void>;
 }
 
 /** Registra el cambio de estado con motivo, actor y fecha. */
@@ -147,15 +147,12 @@ export interface OfficialRequestRegistrar<RequestId extends string, UserId exten
 }
 
 /**
- * Escrituras de las derivaciones (TI2-143). `setIncomingReferral` guarda la
- * derivación de entrada con el contacto o la aceptación ya aplicados.
- * `recordOutgoingReferral` deja la solicitud en `referred` junto con su
- * derivación de salida, en una sola escritura: es la única vía hacia ese
- * estado.
+ * Escritura de la derivación de entrada (TI2-143): la guarda con el contacto
+ * o la aceptación ya aplicados. La de salida no tiene puerto propio: va con
+ * el estado `referred`, por `RequestStatusWriter`.
  */
 export interface RequestReferralWriter<RequestId extends string, UserId extends string> {
   setIncomingReferral(requestId: RequestId, referral: IncomingReferral<UserId>): Promise<void>;
-  recordOutgoingReferral(requestId: RequestId, referral: OutgoingReferral<UserId>): Promise<void>;
 }
 
 /**

@@ -117,7 +117,7 @@ export interface RequestAdditionalInformationDeps<RequestId extends string, User
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
@@ -176,7 +176,7 @@ export interface TakeRequestDeps<RequestId extends string, UserId extends string
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
     RequestTakeRecorder<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
@@ -241,7 +241,7 @@ export interface AcceptRequestDeps<
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   readonly accompaniments: AccompanimentOpener<RequestId, UserId, AccompanimentId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
@@ -331,7 +331,7 @@ export async function acceptRequest<
 export interface CancelRequestDeps<RequestId extends string, UserId extends string> {
   readonly students: ActiveStudentReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
@@ -388,7 +388,7 @@ export interface CloseRequestDeps<RequestId extends string, UserId extends strin
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;

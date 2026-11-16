@@ -1,16 +1,24 @@
+import type { OutgoingReferral } from "../../domain/requests/referral";
 import type { RequestStateChange, RequestStatusChange } from "../../domain/requests/transitions";
 
 /**
  * Cambio de estado vigente que deja la política (TI2-141), para las
  * operaciones de solicitudes. El destino sale de `change.to`, nunca escrito a
- * mano. La política ya exigió la razón del cierre: si faltara, es un fallo
- * interno, no una denegación, y responder «No autorizado» lo escondería.
- * La derivación de salida no pasa por acá (TI2-143): se escribe con su unidad
- * de destino por una vía propia.
+ * mano. El cierre lleva su razón y la derivación de salida (TI2-143) su
+ * unidad de destino, que entrega el caso de uso. La política ya exigió la
+ * razón del cierre, y solo `referRequest` deriva: si faltara cualquiera de
+ * los dos datos, es un fallo interno, no una denegación, y responder «No
+ * autorizado» lo escondería.
  */
-export function toStatusChange(change: RequestStateChange): RequestStatusChange {
+export function toStatusChange<UserId extends string = string>(
+  change: RequestStateChange,
+  outgoingReferral?: OutgoingReferral<UserId>,
+): RequestStatusChange<UserId> {
   if (change.to === "referred") {
-    throw new Error("La derivación de salida se escribe junto con su unidad de destino.");
+    if (outgoingReferral === undefined) {
+      throw new Error("La solicitud se derivó sin dejar la derivación de salida.");
+    }
+    return { status: change.to, outgoingReferral };
   }
   if (change.to !== "closed_without_accompaniment") return { status: change.to };
   if (change.reason === undefined) {

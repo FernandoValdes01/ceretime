@@ -56,7 +56,7 @@ El registro reutiliza `toCompleteSubmission`, `toRequestSubmission` y la clave d
 
 `acceptRequest` consulta `referralAllowsAccompaniment` antes de escribir: una derivación de entrada sin contacto o sin aceptación responde `conflict` y no abre acompañamiento.
 
-`referRequest` escribe el estado y la derivación de salida en una sola escritura, por `recordOutgoingReferral`, que es la única vía hacia `referred`: `RequestStatusChange` no admite ese estado. El registro del cambio en `requestTransitions`, con la razón, el actor y la fecha, es el aviso al estudiante que queda en el sistema. El evento de aviso y su envío son de TI2-150.
+`referRequest` escribe el estado y la derivación de salida en una sola escritura, por el mismo camino que los demás cambios de estado: `toStatusChange` arma la variante `{ status: "referred", outgoingReferral }` de `RequestStatusChange` y `setRequestStatus` la guarda, igual que el cierre con su razón. El registro del cambio en `requestTransitions`, con la razón, el actor y la fecha, es el aviso al estudiante que queda en el sistema. El evento de aviso y su envío son de TI2-150.
 
 Se prueban por `api.presentation.requests.*` en `convex/tests/requests.test.ts` (permisos, transiciones inválidas y rechazos sin escritura) y en `convex/domain/requests/referral.test.ts`.
 

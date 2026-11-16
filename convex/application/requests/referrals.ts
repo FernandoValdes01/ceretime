@@ -25,9 +25,11 @@ import type {
   OfficialRequestRegistrar,
   RequestReader,
   RequestReferralWriter,
+  RequestStatusWriter,
   RequestTakeReader,
   RequestTransitionRecorder,
 } from "./ports";
+import { toStatusChange } from "./status_change";
 import { denied, stateConflict, toEntity, type RequestEntity } from "./results";
 
 /**
@@ -193,7 +195,7 @@ export interface ReferRequestDeps<RequestId extends string, UserId extends strin
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
-    RequestReferralWriter<RequestId, UserId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
@@ -242,12 +244,16 @@ export async function referRequest<RequestId extends string, UserId extends stri
   // La política ya exigió y recortó la razón de toda fila hacia `referred`.
   const reason = toReferralReason(result.change.reason ?? "");
   if (reason.status === "error") return reason;
-  await deps.requests.recordOutgoingReferral(row._id, {
-    destinationUnit: destinationUnit.data,
-    referredAt: result.change.occurredAt,
-    referredBy: professional._id,
-    reason: reason.data,
-  });
+  // El estado y su derivación van en la misma escritura, como el cierre y su razón.
+  await deps.requests.setRequestStatus(
+    row._id,
+    toStatusChange(result.change, {
+      destinationUnit: destinationUnit.data,
+      referredAt: result.change.occurredAt,
+      referredBy: professional._id,
+      reason: reason.data,
+    }),
+  );
   await deps.requests.logRequestTransition({
     requestId: row._id,
     from: result.change.from,

@@ -7,6 +7,7 @@
  * saltos y la exigencia de motivo son alcance de TI2-21.
  */
 
+import type { OutgoingReferral } from "./referral";
 import type {
   ClosureRequestState,
   RequestState,
@@ -148,15 +149,26 @@ export type RequestStateChange = {
  * la lleva: así no compila una razón de cierre en una solicitud aceptada ni un
  * cierre sin razón.
  *
- * `referred` no está: la derivación de salida se escribe junto con su unidad
- * de destino por una vía propia (TI2-143), así no compila una solicitud
- * derivada que no diga a dónde.
+ * `referred` lleva su derivación de salida de la misma forma (TI2-143): no
+ * compila una solicitud derivada que no diga a dónde, ni una derivación en
+ * otro estado. El identificador es genérico para no importar
+ * `convex/_generated`.
  */
-export type RequestStatusChange =
-  | { readonly status: "closed_without_accompaniment"; readonly closureReason: string }
+export type RequestStatusChange<UserId extends string = string> =
+  | {
+      readonly status: "closed_without_accompaniment";
+      readonly closureReason: string;
+      readonly outgoingReferral?: never;
+    }
+  | {
+      readonly status: ReferralRequestState;
+      readonly outgoingReferral: OutgoingReferral<UserId>;
+      readonly closureReason?: never;
+    }
   | {
       readonly status: Exclude<RequestState, "closed_without_accompaniment" | ReferralRequestState>;
       readonly closureReason?: never;
+      readonly outgoingReferral?: never;
     };
 
 /** Llegar acá habilita la apertura de exactamente un acompañamiento (TI2-24). */

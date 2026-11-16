@@ -3,7 +3,7 @@ import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { isTestProfessional } from "../../domain/accounts/enablement";
 import { isActiveInRole } from "../../domain/authorization/permissions";
-import type { IncomingReferral, OutgoingReferral } from "../../domain/requests/referral";
+import type { IncomingReferral } from "../../domain/requests/referral";
 import { toStoredAccessNeeds, type RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 import { findProfileByTokenIdentifier } from "../accompaniments/repository";
@@ -176,20 +176,33 @@ export async function getRequestById(
 /**
  * Actualiza el estado de una solicitud con el destino que decidió la política.
  * Al cerrar sin acompañamiento (TI2-141), la razón comprensible va en la misma
- * escritura; el rastro histórico va aparte, en `logRequestTransition`, dentro
- * de la misma mutation.
+ * escritura, y al derivar (TI2-143), la derivación de salida; el rastro
+ * histórico va aparte, en `logRequestTransition`, dentro de la misma mutation.
  */
 export async function setRequestStatus(
   ctx: MutationCtx,
   requestId: Id<"requests">,
-  change: RequestStatusChange,
+  change: RequestStatusChange<Id<"users">>,
 ): Promise<void> {
-  await ctx.db.patch(
-    requestId,
-    change.status === "closed_without_accompaniment"
-      ? { status: change.status, closureReason: change.closureReason }
-      : { status: change.status },
-  );
+  if (change.status === "closed_without_accompaniment") {
+    await ctx.db.patch(requestId, { status: change.status, closureReason: change.closureReason });
+  } else if (change.status === "referred") {
+    await ctx.db.patch(requestId, {
+      status: change.status,
+      outgoingReferral: { ...change.outgoingReferral },
+    });
+  } else {
+    await ctx.db.patch(requestId, { status: change.status });
+  }
+}
+
+/** Guarda la derivación de entrada con el contacto o la aceptación ya aplicados (TI2-143). */
+export async function setIncomingReferral(
+  ctx: MutationCtx,
+  requestId: Id<"requests">,
+  referral: IncomingReferral<Id<"users">>,
+): Promise<void> {
+  await ctx.db.patch(requestId, { incomingReferral: { ...referral } });
 }
 
 /** Registra el cambio de estado con motivo, actor y fecha. */
@@ -243,7 +256,7 @@ function toReceivedContent(submission: RequestSubmission) {
 export function requestStore(ctx: MutationCtx) {
   return {
     ...requestReader(ctx),
-    setRequestStatus: (requestId: Id<"requests">, change: RequestStatusChange) =>
+    setRequestStatus: (requestId: Id<"requests">, change: RequestStatusChange<Id<"users">>) =>
       setRequestStatus(ctx, requestId, change),
     logRequestTransition: (entry: Parameters<typeof logRequestTransition>[1]) =>
       logRequestTransition(ctx, entry),
@@ -284,19 +297,8 @@ export function requestStore(ctx: MutationCtx) {
       });
       return requestId;
     },
-    setIncomingReferral: async (
-      requestId: Id<"requests">,
-      referral: IncomingReferral<Id<"users">>,
-    ) => {
-      await ctx.db.patch(requestId, { incomingReferral: { ...referral } });
-    },
-    // Única escritura hacia `referred`: el estado y su derivación van juntos.
-    recordOutgoingReferral: async (
-      requestId: Id<"requests">,
-      referral: OutgoingReferral<Id<"users">>,
-    ) => {
-      await ctx.db.patch(requestId, { status: "referred", outgoingReferral: { ...referral } });
-    },
+    setIncomingReferral: (requestId: Id<"requests">, referral: IncomingReferral<Id<"users">>) =>
+      setIncomingReferral(ctx, requestId, referral),
     registerLegacy: (studentId: Id<"users">, accessNeeds: string) =>
       insertReceivedRequest(ctx, { studentId, accessNeeds }),
   };

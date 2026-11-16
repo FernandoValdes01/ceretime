@@ -155,7 +155,7 @@ Lo que sí garantiza esta capa es que, partiendo del estado real, no hay segunda
 
 `SPRINT_1_REQUEST_TRANSITIONS` tipa `from` y `to` como `Sprint1RequestState`, `CLOSURE_REQUEST_TRANSITIONS` tipa `from` como `Sprint1RequestState` y `to` como `ClosureRequestState`, y `REFERRAL_REQUEST_TRANSITIONS` tipa `from` como `Sprint1RequestState` y `to` como `ReferralRequestState`. Agregar a la primera un cierre o una derivación, o agregar a cualquiera de las otras una salida desde un estado terminal, no compila. La garantía es del compilador, no de la disciplina de quien edite el archivo.
 
-`RequestStatusChange`, la escritura del estado vigente, no admite `referred`: una solicitud solo queda derivada por la vía que guarda también su unidad de destino.
+`RequestStatusChange`, la escritura del estado vigente, solo admite `referred` junto con su derivación de salida, igual que el cierre con su razón: una solicitud derivada que no diga a dónde no compila.
 
 ## Contrato público
 
