@@ -291,7 +291,9 @@ export function requestReader(ctx: DbReader) {
 
 /**
  * Perfil de quien lee solicitudes para el puerto `ActiveRequestViewerReader`
- * (TI2-181): Estudiante o Profesional con cuenta habilitada y vigente.
+ * (TI2-181): Estudiante o Profesional de personal con cuenta habilitada y
+ * vigente. La cuenta de prueba jamás lee el detalle (TI2-140): aunque tenga
+ * una toma escrita a mano, no recibe `accessNeeds`.
  */
 export function activeRequestViewerReader(ctx: DbReader) {
   return {
@@ -301,7 +303,7 @@ export function activeRequestViewerReader(ctx: DbReader) {
       if (profile === null) return null;
       // La misma regla de Dominio que `findActiveProfileInRole`, para cada rol que lee.
       if (isActiveInRole(profile, "student")) return { _id: profile._id, role: "student" as const };
-      if (isActiveInRole(profile, "professional")) {
+      if (isActiveInRole(profile, "professional") && !isTestProfessional(profile)) {
         return { _id: profile._id, role: "professional" as const };
       }
       return null;

@@ -137,6 +137,27 @@ function validityError<T>(validity: AssignmentValidity): ApiResult<T> | null {
 }
 
 /**
+ * Exige programador cuando hay vencimiento que programar (TI2-140).
+ *
+ * Única fuente para conceder y modificar: sin `schedule`, una vigencia con
+ * `validUntil` nunca vencería en vivo y nada lo detectaría. Es un error
+ * interno de programación, no un rechazo al cliente: la vía pública siempre
+ * lo entrega y las vías internas no conceden con vigencia.
+ */
+function assertSchedulerFor(
+  validity: AssignmentValidity | undefined,
+  schedule: AssignmentScheduler | undefined,
+): void {
+  if (
+    validity?.validUntil !== undefined &&
+    validity.validUntil !== null &&
+    schedule === undefined
+  ) {
+    throw new Error("La vigencia con vencimiento exige un programador (AssignmentScheduler).");
+  }
+}
+
+/**
  * Crea la fila activa de la terna. Primero autoriza (llamante de personal,
  * existencia y alcance con el mismo error genérico, sin revelar existencia)
  * y después valida (coherencia de la vigencia y duplicada). Rechaza que el
@@ -152,13 +173,7 @@ export async function assignAccompaniment(
   validity?: AssignmentValidity,
   options?: { readonly bootstrapStaff?: boolean; readonly schedule?: AssignmentScheduler },
 ): Promise<ApiResult<Id<"accompanimentAssignments">>> {
-  if (
-    validity?.validUntil !== undefined &&
-    validity.validUntil !== null &&
-    options?.schedule === undefined
-  ) {
-    throw new Error("La vigencia con vencimiento exige un programador (AssignmentScheduler).");
-  }
+  assertSchedulerFor(validity, options?.schedule);
   const caller = await findStaffProfessionalCaller(ctx, identity);
   if (caller === null) return unauthorized();
   if (caller._id === triple.userId) return unauthorized();
@@ -250,13 +265,7 @@ export async function updateAccompanimentAssignment(
   validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
   options?: { readonly schedule?: AssignmentScheduler },
 ): Promise<ApiResult<Id<"accompanimentAssignments">>> {
-  if (
-    validity.validUntil !== undefined &&
-    validity.validUntil !== null &&
-    options?.schedule === undefined
-  ) {
-    throw new Error("La vigencia con vencimiento exige un programador (AssignmentScheduler).");
-  }
+  assertSchedulerFor(validity, options?.schedule);
   const caller = await findStaffProfessionalCaller(ctx, identity);
   if (caller === null) return unauthorized();
 

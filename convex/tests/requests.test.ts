@@ -865,7 +865,7 @@ test("TI2-140: la cuenta de prueba no opera solicitudes por ninguna vía", async
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
   });
-  await t.run(async (ctx) => {
+  const testProId = await t.run(async (ctx) => {
     return await ctx.db.insert("users", {
       email: "ti140-prueba-sol@alu.uct.cl",
       fullName: "Profesional de Prueba",
@@ -875,33 +875,41 @@ test("TI2-140: la cuenta de prueba no opera solicitudes por ninguna vía", async
       tokenIdentifier: `${ISSUER}|ti140-prueba-sol`,
     });
   });
+  expect(testProId).toBeDefined();
 
   // La prueba, aunque habilitada y vigente, no opera solicitudes: bandeja,
-  // toma, lectura, detalle y aceptación responden la misma denegación
-  // genérica; el detalle (único que lee accessNeeds) tampoco se entrega
+  // toma, lectura, detalle y aceptación responden el mismo código
+  // `unauthorized` del contrato común; el detalle (único que lee
+  // accessNeeds) tampoco se entrega
   const asTest = t.withIdentity(identityFor("ti140-prueba-sol", "ti140-prueba-sol@alu.uct.cl"));
-  await expect(
-    asTest.query(api.presentation.requests.listOpenRequests, {
-      paginationOpts: { numItems: 10, cursor: null },
-    }),
-  ).rejects.toThrow("No autorizado");
-  await expect(
-    asTest.mutation(api.presentation.requests.takeRequest, { requestId }),
-  ).rejects.toThrow("No autorizado");
-  await expect(
-    asTest.query(api.presentation.requests.listAuthorizedRequests, {
-      paginationOpts: { numItems: 10, cursor: null },
-    }),
-  ).rejects.toThrow("No autorizado");
-  await expect(
-    asTest.mutation(api.presentation.requests.acceptRequest, {
-      requestId,
-      objective: "Objetivo ficticio",
-    }),
-  ).rejects.toThrow("No autorizado");
-  await expect(asTest.query(api.presentation.requests.getRequest, { requestId })).rejects.toThrow(
-    "No autorizado",
-  );
+  expect(
+    await publicErrorOf(
+      asTest.query(api.presentation.requests.listOpenRequests, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(asTest.mutation(api.presentation.requests.takeRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(
+      asTest.query(api.presentation.requests.listAuthorizedRequests, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(
+      asTest.mutation(api.presentation.requests.acceptRequest, {
+        requestId,
+        objective: "Objetivo ficticio",
+      }),
+    ),
+  ).toEqual(UNAUTHORIZED);
+  expect(
+    await publicErrorOf(asTest.query(api.presentation.requests.getRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
 
   // Sin toma ni cambio de estado: la solicitud sigue recibida
   const untouched = await t.query(internal.operations.requests.getRequestById, { id: requestId });
@@ -913,6 +921,21 @@ test("TI2-140: la cuenta de prueba no opera solicitudes por ninguna vía", async
       .take(1);
   });
   expect(takes).toHaveLength(0);
+
+  // Ni siquiera con una toma escrita a mano la prueba lee el detalle: el
+  // visor también la excluye, así que accessNeeds nunca se entrega
+  await t.run(async (ctx) => {
+    return await ctx.db.insert("requestAssignments", {
+      requestId,
+      userId: testProId,
+      grantedBy: testProId,
+      grantedAt: Date.now(),
+      status: "active",
+    });
+  });
+  expect(
+    await publicErrorOf(asTest.query(api.presentation.requests.getRequest, { requestId })),
+  ).toEqual(UNAUTHORIZED);
 });
 
 /*
