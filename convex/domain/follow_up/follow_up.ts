@@ -468,8 +468,10 @@ export function toSharedFollowUpProjection(
 
 /**
  * Adaptador explícito de registro a vista de lectura. La vista ya viene
- * decidida por la autorización; acá solo se recorta la forma. Cada rama arma
- * su salida desde cero para que la nota no pueda colarse por una copia.
+ * decidida por la autorización; acá solo se recorta la forma. La vista
+ * minimizada deriva de la compartida quitando solo el vínculo: como lo
+ * compartido nunca trae la nota, la garantía se conserva sin duplicar el
+ * mapeo. Solo la vista profesional agrega la nota, de forma explícita.
  */
 export function toFollowUpProjection(
   record: FollowUpRecord,
@@ -477,23 +479,11 @@ export function toFollowUpProjection(
   view: FollowUpView,
 ): FollowUpProjection {
   if (view === "minimized") {
-    return {
-      appointmentId: record.appointmentId,
+    const { accompanimentId: _link, ...content } = toSharedFollowUpProjection(
+      record,
       appointmentStatus,
-      agreements: record.agreements.map(({ id, description }) => ({ id, description })),
-      tasks: record.tasks.map(({ id, description, responsible, status }) => ({
-        id,
-        description,
-        responsible,
-        status,
-      })),
-      nextSteps: record.nextSteps,
-      ...(record.suggestedNextAppointmentDate === undefined
-        ? {}
-        : { suggestedNextAppointmentDate: record.suggestedNextAppointmentDate }),
-      version: record.version,
-      view,
-    };
+    );
+    return { ...content, view };
   }
   const shared = toSharedFollowUpProjection(record, appointmentStatus);
   if (view === "shared") return { ...shared, view };

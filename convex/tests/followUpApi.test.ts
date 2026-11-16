@@ -480,8 +480,16 @@ describe("TI2-146 API: denegaciones y estados de la atención", () => {
       const scenario = await seedScenario(t, `intern-${label}`);
       const appointmentId = await seedAppointment(t, scenario);
       await save(scenario, "professional", appointmentId, followUpContent());
-      await t.run(async (ctx) => {
+
+      // El practicante lee minimizado antes de tocar la asignación: si la
+      // semilla no la creara, la denegación posterior sería por otro motivo
+      expect(await read(scenario, "intern", appointmentId)).toMatchObject({
+        view: "minimized",
+      });
+
+      const modified = await t.run(async (ctx) => {
         const assignments = await ctx.db.query("accompanimentAssignments").take(10);
+        let count = 0;
         for (const assignment of assignments) {
           if (assignment.assignedRole !== "intern") continue;
           if (label === "revocada") await ctx.db.patch(assignment._id, { status: "revoked" });
@@ -489,8 +497,11 @@ describe("TI2-146 API: denegaciones y estados de la atención", () => {
             await ctx.db.patch(assignment._id, { validUntil: Date.now() - HOUR });
           if (label === "futura")
             await ctx.db.patch(assignment._id, { validFrom: Date.now() + HOUR });
+          count += 1;
         }
+        return count;
       });
+      expect(modified).toBeGreaterThan(0);
 
       expect(await publicErrorData(read(scenario, "intern", appointmentId))).toEqual(UNAUTHORIZED);
       expect(await publicErrorData(list(scenario, "intern", scenario.accompanimentId))).toEqual(
