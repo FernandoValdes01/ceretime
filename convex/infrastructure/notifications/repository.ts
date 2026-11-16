@@ -99,6 +99,20 @@ export async function recordNotificationEvents(
   return results;
 }
 
+/**
+ * Puerto de registro para los casos de uso (TI2-142): cumple por forma
+ * `NotificationEventRecorder` de Aplicación sin importarla. Un evento con
+ * referencia inválida no se escribe; el caso de uso ya leyó la atención y el
+ * destinatario sale de ella, así que no se espera ese resultado.
+ */
+export function notificationEventRecorder(ctx: MutationCtx) {
+  return {
+    record: async (events: readonly NotificationEvent[]): Promise<void> => {
+      await recordNotificationEvents(ctx, events);
+    },
+  };
+}
+
 /** Evento guardado con su identificador, en la forma del contrato de TI2-105. */
 export type StoredNotificationEvent = NotificationEvent & {
   readonly id: Id<"notificationEvents">;

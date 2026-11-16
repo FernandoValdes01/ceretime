@@ -16,17 +16,20 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import type { AccessNeed } from "../../domain/requests/request";
 import {
   authorizeAppointmentAttendance,
   authorizeAppointmentCancel,
   authorizeAppointmentReschedule,
   authorizeAppointmentJustificationSubmit,
   authorizeAppointmentJustificationReview,
+  isBookableProfessional,
   type AuthorizableAppointment,
   type AuthorizationReader,
 } from "../authorization/authorize";
 import { auditAppointmentChange, type AppointmentAuditRecorder } from "./audit";
 import {
+  availabilityCoversSlot,
   resolveBookableSlot,
   slotSelectionProblem,
   type SlotSelectionDeps,
@@ -82,6 +85,10 @@ export interface StoredAppointmentForChange {
   readonly justificationSubmittedAt?: number;
   readonly justificationReview?: JustificationReview;
   readonly supportingDocumentReceived?: boolean;
+  /** Profesionales que acompañan al responsable (TI2-142); ausente si no hay. */
+  readonly additionalProfessionalIds?: readonly string[];
+  /** Apoyos guardados de la atención en línea (TI2-142). */
+  readonly onlineSupports?: readonly AccessNeed[];
 }
 
 /**
@@ -270,6 +277,14 @@ export async function cancelAppointment(
  * se ocupa con `movedAppointmentId`, que descuenta la atención que se mueve y
  * solo escribe si el estudiante, el profesional y la sala están libres. Si la
  * ocupación falla, el persister no se llama y el origen sigue intacto.
+ *
+ * Una atención coordinada (TI2-142) conserva sus apoyos para la compatibilidad
+ * y sus profesionales adicionales: cada uno que siga siendo reservable debe
+ * tener disponibilidad que cubra el destino (`availabilityCoversSlot`) y la
+ * ocupación comprueba sus cruces. Un adicional que ya no es reservable
+ * (asignación revocada o cuenta no vigente) sale de la atención en el mismo
+ * cambio, en vez de impedir el reagendamiento: no hay otra vía para retirarlo
+ * y ya no podría atenderla.
  */
 export async function rescheduleAppointment(
   deps: RescheduleAppointmentDeps,
@@ -320,8 +335,29 @@ export async function rescheduleAppointment(
     startAt: input.startAt,
     endAt: input.endAt,
     timeZone: input.timeZone,
+    ...(stored.onlineSupports === undefined ? {} : { onlineSupports: stored.onlineSupports }),
   });
   if (slot.status === "error") return slot;
+
+  // Si el destino cambia al responsable por uno de los adicionales, ese ya no
+  // se revisa como adicional: es el responsable recién revalidado.
+  const additionalProfessionalIds = (stored.additionalProfessionalIds ?? []).filter(
+    (professionalId) => professionalId !== slot.data.professionalId,
+  );
+  const removedProfessionalIds: string[] = [];
+  for (const professionalId of additionalProfessionalIds) {
+    if (
+      !(await isBookableProfessional(deps.auth, {
+        accompanimentId: stored.accompanimentId,
+        professionalId,
+      }))
+    ) {
+      removedProfessionalIds.push(professionalId);
+      continue;
+    }
+    const covered = await availabilityCoversSlot(deps, professionalId, slot.data, input.timeZone);
+    if (covered.status === "error") return covered;
+  }
 
   const occupied = await deps.occupier.occupySlot({
     accompanimentId: stored.accompanimentId,
@@ -332,6 +368,7 @@ export async function rescheduleAppointment(
     startAt: slot.data.startAt,
     endAt: slot.data.endAt,
     movedAppointmentId: stored.id,
+    ...(removedProfessionalIds.length === 0 ? {} : { removedProfessionalIds }),
   });
   if (occupied.status === "error") return occupied;
 

@@ -13,6 +13,7 @@ import {
   isValidCivilDate,
   isValidMinuteRange,
   isValidWeekday,
+  slotsCoverInterval,
   type AvailabilityBlock,
   type AvailabilityException,
   type AvailabilitySlotPage,
@@ -950,5 +951,37 @@ describe("Disponibilidad en sus bordes (TI2-117)", () => {
 
     expect(slots).toHaveLength(2);
     expect(slots.every((slot) => slot.date === WINTER_WEDNESDAY)).toBe(true);
+  });
+});
+
+describe("Cobertura de una atención por la disponibilidad de un profesional (TI2-142)", () => {
+  const minute = 60_000;
+  const start = 1_800_000_000_000;
+  const slot = (from: number, to: number) => ({
+    startAt: start + from * minute,
+    endAt: start + to * minute,
+  });
+  const interval = { startAt: start, endAt: start + 60 * minute };
+
+  test("un cupo que contiene la atención la cubre", () => {
+    expect(slotsCoverInterval([slot(-30, 90)], interval)).toBe(true);
+    expect(slotsCoverInterval([slot(0, 60)], interval)).toBe(true);
+  });
+
+  test("cupos contiguos de otra duración también la cubren, en cualquier orden", () => {
+    expect(slotsCoverInterval([slot(30, 60), slot(0, 30)], interval)).toBe(true);
+    expect(slotsCoverInterval([slot(0, 40), slot(20, 60)], interval)).toBe(true);
+  });
+
+  test("un hueco, un inicio tardío o un fin temprano la dejan sin cubrir", () => {
+    expect(slotsCoverInterval([slot(0, 25), slot(30, 60)], interval)).toBe(false);
+    expect(slotsCoverInterval([slot(10, 60)], interval)).toBe(false);
+    expect(slotsCoverInterval([slot(0, 50)], interval)).toBe(false);
+    expect(slotsCoverInterval([], interval)).toBe(false);
+    expect(slotsCoverInterval([slot(60, 120), slot(-60, 0)], interval)).toBe(false);
+  });
+
+  test("un intervalo vacío o invertido no se considera cubierto", () => {
+    expect(slotsCoverInterval([slot(-60, 120)], { startAt: start, endAt: start })).toBe(false);
   });
 });
