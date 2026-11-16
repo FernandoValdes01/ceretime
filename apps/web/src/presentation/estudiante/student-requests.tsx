@@ -22,8 +22,9 @@ import {
  * existentes; la autorización vive en Convex. `listOwnRequests` devuelve solo
  * filas propias y `getRequest` detalla la solicitud del titular. Otra cuenta,
  * otro rol o una cuenta pendiente de habilitación reciben la denegación
- * genérica del Backend sin filtrar existencia ni titularidad. Sin acciones de
- * crear ni operar: eso es de otras entregas.
+ * genérica del Backend sin filtrar existencia ni titularidad. El envío vive
+ * en `student-request-form.tsx` (TI2-149); operar una solicitud es de otras
+ * entregas.
  */
 export function StudentRequestsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -44,6 +45,14 @@ export function StudentRequestsPage() {
       </h1>
       <p className="text-base text-on-surface">
         Consulta el estado de tus solicitudes registradas.
+      </p>
+      <p>
+        <Link
+          to="/estudiante/solicitudes/nueva"
+          className="inline-flex min-h-12 items-center rounded-[0.5rem] bg-primary-container px-6 py-2.5 font-semibold text-on-primary no-underline hover:bg-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+        >
+          Nueva solicitud
+        </Link>
       </p>
       <StudentPanelErrorBoundary subject="tus solicitudes" level="section">
         <OwnRequestsBody />

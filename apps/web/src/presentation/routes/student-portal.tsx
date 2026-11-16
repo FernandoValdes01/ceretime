@@ -161,19 +161,16 @@ function StudentPanelContent() {
           acompañamientos.
         </Speakable>
         <div className="student-portal__cta">
-          <button
-            type="button"
+          <Link
+            to="/estudiante/solicitudes/nueva"
             className="student-portal__btn student-portal__btn--primary"
-            disabled
-            title="Pronto podrás enviar tu solicitud desde aquí"
           >
             Solicitar acompañamiento
-          </button>
+          </Link>
           <a href="#como-funciona" className="student-portal__btn student-portal__btn--ghost">
             Cómo funciona
           </a>
         </div>
-        <p className="student-portal__hint">Pronto podrás enviar tu solicitud desde aquí.</p>
       </section>
 
       <section
