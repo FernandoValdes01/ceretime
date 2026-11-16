@@ -19,7 +19,15 @@
  */
 
 import type { ModalityPreference } from "../requests/request";
-import { isValidCivilDate } from "../availability/availability";
+import {
+  addBusinessDays,
+  addCivilDays,
+  assertTimeZone,
+  assertUsableInstant,
+  civilDateOfInstant,
+  midnightToEpochMs,
+  normalizeHolidays,
+} from "../calendar/civil_days";
 
 /** Versión del contrato público de la atención reservada. */
 export const APPOINTMENT_CONTRACT_VERSION = "v1" as const;
@@ -130,7 +138,7 @@ export type AppointmentStateTransition = {
  * Tabla única de transiciones válidas (TI2-93).
  *
  * Desde `scheduled` o `rescheduled` la atención puede realizarse,
- * cancelarse, reagendarse o registrar inasistencia pendiente. Un segundo
+ * cancelarse, cambiar de fecha o registrar inasistencia pendiente. Un segundo
  * reagendamiento conserva la primera fecha original. Desde `no_show` solo se
  * resuelve la justificación; el plazo lo calcula TI2-94 y no hay sanción
  * automática. Los demás estados son terminales.
@@ -384,8 +392,8 @@ export function transitionAppointment(
  *
  * Límite exclusivo: el plazo vence al inicio del día civil siguiente a la
  * fecha límite en la zona horaria dada (`deadlineAt`). Una entrega en el
- * instante exacto del vencimiento queda fuera; un milisegundo antes queda
- * dentro. La comparación usa instantes epoch en milisegundos, como Convex.
+ * instante exacto del vencimiento queda fuera; cualquier instante anterior
+ * queda dentro. La comparación usa instantes epoch en milisegundos, como Convex.
  */
 
 /** Días hábiles posteriores a la inasistencia que abarca el plazo. */
@@ -431,118 +439,6 @@ export interface JustificationTimeliness extends JustificationDeadline {
   readonly withinDeadline: boolean;
 }
 
-const JUSTIFICATION_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
-
-function justificationFormatterFor(timeZone: string): Intl.DateTimeFormat {
-  const cached = JUSTIFICATION_FORMATTER_CACHE.get(timeZone);
-  if (cached !== undefined) return cached;
-  const created = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  JUSTIFICATION_FORMATTER_CACHE.set(timeZone, created);
-  return created;
-}
-
-function justificationParts(epochMs: number, timeZone: string): Record<string, string> {
-  return justificationFormatterFor(timeZone)
-    .formatToParts(new Date(epochMs))
-    .reduce<Record<string, string>>((accumulator, part) => {
-      accumulator[part.type] = part.value;
-      return accumulator;
-    }, {});
-}
-
-function justificationOffsetMs(timeZone: string, utcMs: number): number {
-  const parts = justificationParts(utcMs, timeZone);
-  const asUtc = Date.UTC(
-    Number(parts["year"]),
-    Number(parts["month"]) - 1,
-    Number(parts["day"]),
-    Number(parts["hour"]) % 24,
-    Number(parts["minute"]),
-    Number(parts["second"]),
-  );
-  return asUtc - utcMs;
-}
-
-function justificationMidnightToEpochMs(date: string, timeZone: string): number {
-  const year = Number(date.slice(0, 4));
-  const month = Number(date.slice(5, 7));
-  const day = Number(date.slice(8, 10));
-  const targetLocal = Date.UTC(year, month - 1, day, 0, 0, 0);
-  const firstPass = targetLocal - justificationOffsetMs(timeZone, targetLocal);
-  return targetLocal - justificationOffsetMs(timeZone, firstPass);
-}
-
-function justificationCivilDateOfInstant(epochMs: number, timeZone: string): string {
-  const parts = justificationParts(epochMs, timeZone);
-  return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
-}
-
-function justificationCivilWeekday(date: string): number {
-  const year = Number(date.slice(0, 4));
-  const month = Number(date.slice(5, 7));
-  const day = Number(date.slice(8, 10));
-  const days = Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
-  return (((days + 4) % 7) + 7) % 7;
-}
-
-function justificationNextCivilDate(date: string): string {
-  const year = Number(date.slice(0, 4));
-  const month = Number(date.slice(5, 7));
-  const day = Number(date.slice(8, 10));
-  const next = new Date(Date.UTC(year, month - 1, day) + 86_400_000);
-  const nextYear = next.getUTCFullYear();
-  const nextMonth = String(next.getUTCMonth() + 1).padStart(2, "0");
-  const nextDay = String(next.getUTCDate()).padStart(2, "0");
-  return `${nextYear}-${nextMonth}-${nextDay}`;
-}
-
-/**
- * Verdadero cuando el instante es representable como fecha (`new Date` válido).
- *
- * `isValidInstant` (TI2-93) solo exige finito positivo; magnitudes absurdas
- * como `1e30` lo pasan pero `Intl` lanzaría `RangeError`. Este resguardo las
- * convierte en el error propio del plazo para no filtrar excepciones crudas.
- */
-function assertUsableJustificationInstant(value: number, message: string): void {
-  if (!isValidInstant(value) || Number.isNaN(new Date(value).getTime())) {
-    throw new Error(message);
-  }
-}
-
-function assertJustificationTimeZone(timeZone: string): void {
-  if (typeof timeZone !== "string" || timeZone.trim() === "") {
-    throw new Error("El plazo requiere una zona horaria IANA explícita.");
-  }
-  try {
-    new Intl.DateTimeFormat(undefined, { timeZone });
-  } catch {
-    throw new Error("La zona horaria del plazo es desconocida.");
-  }
-}
-
-function normalizeJustificationHolidays(
-  holidays: readonly string[] | undefined,
-): readonly string[] {
-  if (holidays === undefined) return [];
-  const seen = new Set<string>();
-  for (const holiday of holidays) {
-    if (typeof holiday !== "string" || !isValidCivilDate(holiday)) {
-      throw new Error(`El feriado ${String(holiday)} no es una fecha civil válida YYYY-MM-DD.`);
-    }
-    seen.add(holiday);
-  }
-  return [...seen].sort();
-}
-
 /**
  * Calcula el plazo de cinco días hábiles posteriores a una inasistencia.
  *
@@ -553,38 +449,17 @@ function normalizeJustificationHolidays(
 export function calculateJustificationDeadline(
   input: CalculateJustificationDeadlineInput,
 ): JustificationDeadline {
-  assertUsableJustificationInstant(
+  assertUsableInstant(
     input.missedAt,
     "La inasistencia requiere un instante válido en milisegundos.",
   );
-  assertJustificationTimeZone(input.timeZone);
-  const holidays = normalizeJustificationHolidays(input.holidays);
+  assertTimeZone(input.timeZone);
+  const holidays = normalizeHolidays(input.holidays);
   const holidaySet = new Set(holidays);
 
-  const absenceDate = justificationCivilDateOfInstant(input.missedAt, input.timeZone);
-  let counted = 0;
-  let current = absenceDate;
-  let deadlineDate = absenceDate;
-  for (let step = 0; step < 370; step += 1) {
-    current = justificationNextCivilDate(current);
-    const weekday = justificationCivilWeekday(current);
-    const isWeekend = weekday === 0 || weekday === 6;
-    if (!isWeekend && !holidaySet.has(current)) {
-      counted += 1;
-      if (counted === JUSTIFICATION_BUSINESS_DAYS) {
-        deadlineDate = current;
-        break;
-      }
-    }
-  }
-  if (counted !== JUSTIFICATION_BUSINESS_DAYS) {
-    throw new Error("El plazo no encontró cinco días hábiles en el horizonte de búsqueda.");
-  }
-
-  const deadlineAt = justificationMidnightToEpochMs(
-    justificationNextCivilDate(deadlineDate),
-    input.timeZone,
-  );
+  const absenceDate = civilDateOfInstant(input.missedAt, input.timeZone);
+  const deadlineDate = addBusinessDays(absenceDate, JUSTIFICATION_BUSINESS_DAYS, holidaySet);
+  const deadlineAt = midnightToEpochMs(addCivilDays(deadlineDate, 1), input.timeZone);
 
   return {
     absenceDate,
@@ -606,18 +481,15 @@ export function calculateJustificationDeadline(
 export function decideJustificationTimeliness(
   input: DecideJustificationTimelinessInput,
 ): JustificationTimeliness {
-  assertUsableJustificationInstant(
-    input.submittedAt,
-    "La entrega requiere un instante válido en milisegundos.",
-  );
+  assertUsableInstant(input.submittedAt, "La entrega requiere un instante válido en milisegundos.");
   const deadline = calculateJustificationDeadline(input);
-  const submittedDate = justificationCivilDateOfInstant(input.submittedAt, input.timeZone);
+  const submittedDate = civilDateOfInstant(input.submittedAt, input.timeZone);
   const withinDeadline =
     input.submittedAt >= input.missedAt && input.submittedAt < deadline.deadlineAt;
   return { ...deadline, submittedAt: input.submittedAt, submittedDate, withinDeadline };
 }
 
-/** Entrada mínima para listar atenciones: filtros opcionales y paginación. */
+/** Entrada mínima para listar atenciones: filtros opcionales y tamaño de página. */
 export interface ListAppointmentsInput {
   readonly accompanimentId?: string;
   readonly professionalId?: string;
