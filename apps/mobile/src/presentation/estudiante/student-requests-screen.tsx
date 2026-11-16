@@ -9,6 +9,7 @@ import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
 import { useStudentAreaContext } from "./student-area-provider";
 import { formatRequestDate } from "./student-request-formatters";
+import { getStudentRequestStatusPresentation } from "./student-request-status-indicator";
 
 function StateMessage({
   title,
@@ -44,12 +45,13 @@ function StateMessage({
 
 function RequestCard({ request }: { request: StudentRequest }) {
   const createdAt = formatRequestDate(request.createdAt);
+  const status = getStudentRequestStatusPresentation(request.status).label;
   const [isFocused, setIsFocused] = useState(false);
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Solicitud enviada el ${createdAt}. ${request.needSummary ?? "Solicitud de acompañamiento"}`}
+      accessibilityLabel={`Solicitud enviada el ${createdAt}. ${request.needSummary ?? "Solicitud de acompañamiento"}. Estado: ${status}`}
       accessibilityHint="Abre el detalle"
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
@@ -76,6 +78,9 @@ function RequestCard({ request }: { request: StudentRequest }) {
         selectable
       >
         {request.needSummary ?? "Solicitud de acompañamiento"}
+      </StudentText>
+      <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
+        Estado: {status}
       </StudentText>
       <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
         Ver detalle

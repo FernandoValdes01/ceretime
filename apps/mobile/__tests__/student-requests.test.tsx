@@ -109,7 +109,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
 
     const requestCard = await screen.findByRole("button", {
-      name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
+      name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento. Estado: Aceptada",
     });
     expect(screen.queryByText("Mis solicitudes")).not.toBeOnTheScreen();
     expect(
@@ -146,7 +146,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
     expect(
       await screen.findByRole("button", {
-        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
+        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento. Estado: Aceptada",
       }),
     ).toBeOnTheScreen();
     fireEvent.press(screen.getByLabelText("Inicio, pestaña, 1 de 3"));
@@ -199,7 +199,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
     fireEvent.press(
       await screen.findByRole("button", {
-        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
+        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento. Estado: Aceptada",
       }),
     );
 
