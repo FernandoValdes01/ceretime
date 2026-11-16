@@ -2,8 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   CLOSURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
-  isPersistableRequestState,
-  PERSISTABLE_REQUEST_STATES,
+  isRequestState,
   REFERRAL_REQUEST_STATES,
   REQUEST_STATE_LABELS,
   REQUEST_STATES,
@@ -58,12 +57,6 @@ describe("REQUEST_STATES", () => {
   });
 });
 
-describe("PERSISTABLE_REQUEST_STATES", () => {
-  test("desde TI2-143 son todos los estados declarados, en el mismo orden", () => {
-    expect(PERSISTABLE_REQUEST_STATES).toEqual([...REQUEST_STATES]);
-  });
-});
-
 describe("INITIAL_REQUEST_STATE", () => {
   test("toda solicitud nace recibida, un estado con operación en Sprint 1", () => {
     expect(INITIAL_REQUEST_STATE).toBe("received");
@@ -71,15 +64,15 @@ describe("INITIAL_REQUEST_STATE", () => {
   });
 });
 
-describe("isPersistableRequestState", () => {
-  test.each(PERSISTABLE_REQUEST_STATES)("acepta %s como valor de una fila", (state) => {
-    expect(isPersistableRequestState(state)).toBe(true);
+describe("isRequestState", () => {
+  test.each(REQUEST_STATES)("acepta %s como valor de una fila", (state) => {
+    expect(isRequestState(state)).toBe(true);
   });
 
   test.each(["cancelada", "", "CANCELLED", "closed", "derivada"])(
     "rechaza %j, un literal desconocido",
     (state) => {
-      expect(isPersistableRequestState(state)).toBe(false);
+      expect(isRequestState(state)).toBe(false);
     },
   );
 });

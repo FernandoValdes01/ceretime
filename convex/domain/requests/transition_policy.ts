@@ -80,7 +80,7 @@ export function findRequestTransition(
  * primera que el llamador tiene que resolver.
  *
  * `change` se construye desde la fila de la tabla y no desde el intento: así la
- * entrada solo puede contener estados persistibles, sin conversiones de tipo.
+ * entrada solo trae los estados de una transición declarada, sin conversiones de tipo.
  */
 export function transitionRequest(attempt: RequestTransitionAttempt): RequestTransitionResult {
   const transition = findRequestTransition(attempt.from, attempt.to);

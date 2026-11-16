@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import type { PersistableRequestState, Sprint1RequestState } from "./state";
+import type { RequestState, Sprint1RequestState } from "./state";
 import {
   CLOSURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
-  PERSISTABLE_REQUEST_STATES,
+  REQUEST_STATES,
   REFERRAL_REQUEST_STATES,
   SPRINT_1_REQUEST_STATES,
 } from "./state";
@@ -28,7 +28,7 @@ const pair = (row: { readonly from: string; readonly to: string }) => `${row.fro
  * se le agregan elementos está definido en JavaScript: lo agregado entra en el
  * mismo recorrido, así que el grafo se cierra sin llevar una cola aparte.
  */
-function closure<State extends PersistableRequestState>(
+function closure<State extends RequestState>(
   start: State,
   next: (state: State) => readonly State[],
 ): Set<State> {
@@ -135,7 +135,7 @@ describe("RESPONSE_REQUEST_TRANSITIONS (TI2-141)", () => {
   });
 
   test("es el único retroceso: ninguna otra fila vuelve a un estado anterior del flujo", () => {
-    const order = (state: PersistableRequestState) => PERSISTABLE_REQUEST_STATES.indexOf(state);
+    const order = (state: RequestState) => REQUEST_STATES.indexOf(state);
     const backwards = REQUEST_TRANSITIONS.filter((row) => order(row.to) < order(row.from));
     expect(backwards.map(pair)).toEqual(RESPONSE_REQUEST_TRANSITIONS.map(pair));
   });
@@ -168,7 +168,7 @@ describe("REFERRAL_REQUEST_TRANSITIONS (TI2-143)", () => {
   });
 });
 
-const allSuccessors = (state: PersistableRequestState) =>
+const allSuccessors = (state: RequestState) =>
   REQUEST_TRANSITIONS.filter((row) => row.from === state).map((row) => row.to);
 
 describe("REQUEST_TRANSITIONS como grafo", () => {
@@ -183,9 +183,9 @@ describe("REQUEST_TRANSITIONS como grafo", () => {
     expect(pairs.filter((value, index) => pairs.indexOf(value) !== index)).toEqual([]);
   });
 
-  test("todo estado persistible se alcanza desde el inicial", () => {
-    const reached = closure<PersistableRequestState>(INITIAL_REQUEST_STATE, allSuccessors);
-    expect(PERSISTABLE_REQUEST_STATES.filter((state) => !reached.has(state))).toEqual([]);
+  test("todo estado se alcanza desde el inicial", () => {
+    const reached = closure<RequestState>(INITIAL_REQUEST_STATE, allSuccessors);
+    expect(REQUEST_STATES.filter((state) => !reached.has(state))).toEqual([]);
   });
 
   test.each([ACCEPTANCE_STATE, ...REFERRAL_REQUEST_STATES, ...CLOSURE_REQUEST_STATES])(

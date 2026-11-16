@@ -44,18 +44,12 @@ export type {
 } from "./requests/request";
 export {
   INITIAL_REQUEST_STATE,
-  PERSISTABLE_REQUEST_STATES,
   REFERRAL_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
 } from "./requests/state";
-export type {
-  PersistableRequestState,
-  ReferralRequestState,
-  RequestState,
-  Sprint1RequestState,
-} from "./requests/state";
+export type { ReferralRequestState, RequestState, Sprint1RequestState } from "./requests/state";
 
 // Acompañamiento y sus vistas de lectura.
 export {

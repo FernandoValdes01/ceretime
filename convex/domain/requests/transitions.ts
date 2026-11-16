@@ -9,15 +9,15 @@
 
 import type {
   ClosureRequestState,
-  PersistableRequestState,
+  RequestState,
   ReferralRequestState,
   Sprint1RequestState,
 } from "./state";
 
 /** `from` y `to` son estados que una fila puede traer. */
 export type RequestStateTransition = {
-  readonly from: PersistableRequestState;
-  readonly to: PersistableRequestState;
+  readonly from: RequestState;
+  readonly to: RequestState;
   /**
    * Al pedir información, cerrar o derivar, el motivo le explica al estudiante
    * qué falta, por qué se cerró o por qué se derivó; al cancelar lo escribe el
@@ -135,8 +135,8 @@ export const REQUEST_TRANSITIONS = [
  * Convex.
  */
 export type RequestStateChange = {
-  readonly from: PersistableRequestState;
-  readonly to: PersistableRequestState;
+  readonly from: RequestState;
+  readonly to: RequestState;
   readonly actorId: string;
   readonly occurredAt: number;
   readonly reason?: string;
@@ -155,10 +155,7 @@ export type RequestStateChange = {
 export type RequestStatusChange =
   | { readonly status: "closed_without_accompaniment"; readonly closureReason: string }
   | {
-      readonly status: Exclude<
-        PersistableRequestState,
-        "closed_without_accompaniment" | ReferralRequestState
-      >;
+      readonly status: Exclude<RequestState, "closed_without_accompaniment" | ReferralRequestState>;
       readonly closureReason?: never;
     };
 

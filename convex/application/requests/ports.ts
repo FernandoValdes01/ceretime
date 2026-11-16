@@ -1,7 +1,7 @@
 import type { PaginationOptions, PaginationResult } from "convex/server";
 import type { AccompanimentRow } from "../../domain/accompaniments/accompaniment";
 import type { IncomingReferral, OutgoingReferral } from "../../domain/requests/referral";
-import type { PersistableRequestState } from "../../domain/requests/state";
+import type { RequestState } from "../../domain/requests/state";
 import type { RequestProvenanceChannel, RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 
@@ -38,7 +38,7 @@ export interface ActiveProfessionalReader<UserId extends string> {
 export type StoredRequestRow<RequestId extends string, UserId extends string> = {
   readonly _id: RequestId;
   readonly studentId: UserId;
-  readonly status: PersistableRequestState;
+  readonly status: RequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
   /** Razón vigente del cierre sin acompañamiento; solo la entrega el detalle. */
@@ -65,8 +65,8 @@ export interface RequestStatusWriter<RequestId extends string> {
 export interface RequestTransitionRecorder<RequestId extends string, UserId extends string> {
   logRequestTransition(entry: {
     readonly requestId: RequestId;
-    readonly from: PersistableRequestState;
-    readonly to: PersistableRequestState;
+    readonly from: RequestState;
+    readonly to: RequestState;
     readonly actorId: UserId;
     readonly reason?: string;
     readonly occurredAt: number;
@@ -165,8 +165,8 @@ export interface ActiveRequestViewerReader<UserId extends string> {
 
 /** Cambio de estado registrado, del más reciente al más antiguo. */
 export type RecentRequestTransition = {
-  readonly from: PersistableRequestState;
-  readonly to: PersistableRequestState;
+  readonly from: RequestState;
+  readonly to: RequestState;
   readonly reason?: string;
 };
 
