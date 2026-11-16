@@ -5,7 +5,7 @@
  * atención agrega un enlace de Google Meet institucional; CERETI lo guarda en
  * esa atención y lo entrega solo a sus participantes. No se genera desde
  * Google Calendar: vincular Calendar es opcional y el evento no lleva enlaces
- * privados (`docs/google-calendar.md`). La generación con la API de Meet
+ * privados (`docs/integraciones/google-calendar.md`). La generación con la API de Meet
  * queda para una fase posterior.
  *
  * El enlace no forma parte de `Appointment` ni de sus proyecciones: los

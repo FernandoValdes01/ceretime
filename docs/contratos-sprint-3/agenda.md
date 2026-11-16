@@ -20,7 +20,7 @@ Participan de la atención el Estudiante dueño y cada uno de sus profesionales 
 
 ## Acceso privado de la atención en línea
 
-Decisión del 08/11/2026: un Profesional de la atención agrega un enlace de Google Meet institucional y CERETI lo guarda en `appointments.privateAccessReference`. No se genera desde Google Calendar, porque vincular Calendar es opcional y rechazarlo no puede impedir una atención en línea, y porque `docs/google-calendar.md` define que el evento no incluye enlaces privados. La generación automática con la API de Meet queda para una fase posterior, y Google ya figura como proveedor, así que no se agrega otro al inventario de TI2-139.
+Decisión del 08/11/2026: un Profesional de la atención agrega un enlace de Google Meet institucional y CERETI lo guarda en `appointments.privateAccessReference`. No se genera desde Google Calendar, porque vincular Calendar es opcional y rechazarlo no puede impedir una atención en línea, y porque `docs/integraciones/google-calendar.md` define que el evento no incluye enlaces privados. La generación automática con la API de Meet queda para una fase posterior, y Google ya figura como proveedor, así que no se agrega otro al inventario de TI2-139.
 
 `normalizeOnlineAccessLink` exige `https`, el dominio exacto `meet.google.com` (sin subdominios parecidos, credenciales ni puerto) y un código de reunión de tres, cuatro y tres letras, como `sol-casa-pan`. Descarta la consulta y el fragmento, que suelen traer la cuenta de quien copió el enlace, y guarda la forma canónica `https://meet.google.com/sol-casa-pan`. La forma canónica permite comparar enlaces: el índice `appointments.by_privateAccessReference` rechaza el mismo enlace en otra atención, así es un enlace por atención y no una sala fija reutilizada entre estudiantes.
 
@@ -74,14 +74,17 @@ El cambio es aditivo. `bookAppointment` suma argumentos opcionales; `Appointment
 
 ## Comprobación
 
-`convex/tests/appointmentCoordinationApi.test.ts` recorre la API con datos ficticios y el reloj fijo: coordinación con dos profesionales, apoyos que cubren la necesidad, adicional no asignado, segundo intento por el mismo cupo, adicional ocupado en otro acompañamiento, reagendamiento que exige la agenda del adicional, mueve a todos y saca al adicional revocado, el enlace (quién lo agrega y lo lee, validación, aviso único, reemplazo, reutilización rechazada y atención cancelada) y que cancelar libere al adicional. Las reglas tienen pruebas propias en `participants.test.ts`, `online_access.test.ts`, `availability.test.ts`, `permissions.test.ts`, `notification.test.ts` y `booking.test.ts`.
+`convex/tests/appointmentCoordinationApi.test.ts` recorre la API con datos ficticios y el reloj fijo: coordinación con dos profesionales, apoyos que cubren la necesidad, adicional no asignado, segundo intento por el mismo cupo, adicional ocupado en otro acompañamiento (también en la búsqueda de cupos), adicional ya ocupado que impide coordinar o reagendar, reagendamiento que exige la agenda del adicional, mueve a todos y saca al adicional revocado, el enlace (quién lo agrega y lo lee, validación, aviso único, reemplazo, reutilización rechazada y atención cancelada) y que cancelar libere al adicional. Las reglas tienen pruebas propias en `participants.test.ts`, `online_access.test.ts`, `availability.test.ts`, `permissions.test.ts`, `notification.test.ts` y `booking.test.ts`.
+
+Comprobación real del enlace (criterio de aceptación): sobre `0c19dac`, desplegado con `bunx convex dev --once` en el deployment de desarrollo `dev/ray` y con el dataset ficticio, se reservó por la API una atención en línea coordinada por el Profesional Ficticio y se le agregó un enlace de Google Meet real creado con una cuenta institucional. `getOnlineAccess` lo entregó en forma canónica al Estudiante y al Profesional, la practicante y otro Estudiante recibieron `unauthorized`, repetirlo no dejó un segundo aviso y el enlace devuelto abrió la reunión. Los cambios posteriores a `0c19dac` no tocan la escritura ni la lectura del enlace.
 
 ## Pendientes
 
-- `NotificationSubject` tiene un solo `professionalId`: la cancelación del Estudiante avisa solo al responsable. Falta decidir si avisa también a los adicionales.
-- El detalle de la atención (`getAppointment`) todavía no devuelve los profesionales adicionales ni los apoyos, y `Appointment` no los declara para no anunciar campos que nunca llegan; TI2-164 puede pedirlos si su pantalla los muestra.
-- Un adicional que sale al reagendar no recibe aviso: la política de notificación solo conoce al Estudiante y al responsable.
+Siguen en otras issues, que se apoyan en lo que entrega esta:
+
+- Avisar a los profesionales adicionales cuando el Estudiante cancela o cuando uno sale al reagendar: TI2-150. `NotificationSubject` tiene un solo `professionalId` y hoy solo se avisa al responsable.
+- Mostrar en la agenda los profesionales adicionales, los apoyos y qué atenciones en línea no tienen enlace: TI2-164. `getAppointment` todavía no los entrega y `Appointment` no los declara para no anunciar campos que nunca llegan.
+- Registrar en la bitácora que se agregó o reemplazó el enlace: TI2-176, porque la lista de acciones de TI2-128 no lo contempla.
+- Sacar de las atenciones futuras a un profesional que se retira del acompañamiento: TI2-152. Hoy solo sale al reagendar la atención.
 - La búsqueda de cupos comunes a varios profesionales (`searchSlots` recibe un solo `professionalId`) queda para la coordinación en Web; la reserva igual revalida la disponibilidad de cada uno.
-- Agregar o reemplazar el enlace no deja evento en la bitácora de TI2-128, porque su lista de acciones no lo contempla; sumarlo cambia ese contrato.
-- El máximo de profesionales por atención es provisional.
-- La comprobación del enlace con una atención y un enlace de Meet reales en un deployment queda para el cierre de la integración: las pruebas con `convex-test` no cuentan como esa comprobación.
+- El máximo de profesionales por atención y los topes de apoyos son provisionales.
