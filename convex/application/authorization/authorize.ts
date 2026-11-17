@@ -4,9 +4,9 @@ import { isAppointmentProfessional } from "../../domain/appointments/participant
 import type { FollowUpView } from "../../domain/follow_up/follow_up";
 import {
   appointmentCancellationTarget,
-  canChangeAccompanimentStatus,
   canAddAppointmentToCalendar,
   canBookAppointment,
+  canChangeAccompanimentStatus,
   canCoordinateAppointment,
   canEditAvailability,
   canReadAvailability,

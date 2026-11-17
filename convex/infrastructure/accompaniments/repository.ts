@@ -241,9 +241,11 @@ export async function hasActiveProfessionalAssignment(
 
 /**
  * Verdadero cuando otro usuario conserva una asignación profesional activa y
- * vigente sobre el acompañamiento (TI2-152). Lee un lote acotado por rol: el
- * índice no ordena por rol antes que por usuario, así que el rol se compara
- * en memoria dentro del tope.
+ * vigente sobre el acompañamiento (TI2-152). El índice ordena por usuario
+ * antes que por estado y rol, así que lee las asignaciones del acompañamiento
+ * hasta el tope y compara en memoria. Sobre el tope puede responder `false`
+ * aunque exista otro profesional: el retiro se rechaza, nunca se permite de
+ * más.
  */
 export async function hasAnotherActiveProfessional(
   ctx: MutationCtx,
