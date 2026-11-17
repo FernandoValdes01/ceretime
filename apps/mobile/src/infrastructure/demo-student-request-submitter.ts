@@ -4,6 +4,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import type { BackendCreatedRequest } from "@/infrastructure/backend-contracts";
+import { createDemoStudentRequestActions } from "./demo-student-request-actions";
 import type { DemoStudentAreaStore } from "./demo-student-area-store";
 import {
   mapCreatedRequestToReceipt,
@@ -28,6 +29,9 @@ export function createDemoStudentRequestSubmitter({
   let shouldFail = failureMode === "once";
 
   return {
+    requestActions: store
+      ? createDemoStudentRequestActions({ store, delayMs, failureMode, now })
+      : undefined,
     async submitStudentRequest(command) {
       if (delayMs > 0) {
         await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
