@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test } from "vitest";
 import {
+  clearAllRequestDrafts,
   clearRequestDraft,
   emptyRequestDraft,
   findMissingFields,
@@ -128,5 +129,27 @@ describe("TI2-149: conservación del borrador", () => {
       JSON.stringify({ ...borradorCompleto(), modalityPreference: "sin-modalidad" }),
     );
     expect(loadRequestDraft(TITULAR).needSummary).toBe("");
+  });
+
+  test("un borrador sin clave de idempotencia se descarta y el nuevo trae una", () => {
+    window.sessionStorage.setItem(
+      `cereti:solicitud-borrador:${TITULAR}`,
+      JSON.stringify({ ...borradorCompleto(), idempotencyKey: "" }),
+    );
+    const draft = loadRequestDraft(TITULAR);
+    expect(draft.needSummary).toBe("");
+    expect(draft.idempotencyKey).not.toBe("");
+  });
+
+  test("al cerrar sesión se borran los borradores de todas las cuentas y nada más", () => {
+    saveRequestDraft(TITULAR, borradorCompleto());
+    saveRequestDraft("otra@alu.uct.cl", borradorCompleto());
+    window.sessionStorage.setItem("otra-clave", "se conserva");
+
+    clearAllRequestDrafts();
+
+    expect(window.sessionStorage.getItem(`cereti:solicitud-borrador:${TITULAR}`)).toBeNull();
+    expect(window.sessionStorage.getItem("cereti:solicitud-borrador:otra@alu.uct.cl")).toBeNull();
+    expect(window.sessionStorage.getItem("otra-clave")).toBe("se conserva");
   });
 });

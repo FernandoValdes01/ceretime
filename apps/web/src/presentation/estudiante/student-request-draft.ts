@@ -15,8 +15,9 @@ import type { OwnRequestSubmission } from "./student-request-form-data.ts";
  * clave.
  *
  * Vive en `sessionStorage`, separado por cuenta: las necesidades de acceso
- * son datos personales y en un equipo compartido no deben quedar guardadas
- * después de cerrar la pestaña. Las comprobaciones de este módulo solo
+ * son datos personales y en un equipo compartido no deben quedar guardadas.
+ * El borrador se borra al enviar con éxito, al cerrar sesión
+ * (`clearAllRequestDrafts`) o al cerrar la pestaña, lo que ocurra primero. Las comprobaciones de este módulo solo
  * ayudan a completar el formulario; el Backend valida el envío.
  */
 
@@ -181,6 +182,25 @@ export function saveRequestDraft(ownerEmail: string, draft: RequestDraft): void 
 export function clearRequestDraft(ownerEmail: string): void {
   try {
     window.sessionStorage.removeItem(storageKey(ownerEmail));
+  } catch {
+    // Nada que borrar si el almacenamiento no está disponible.
+  }
+}
+
+/**
+ * Borra los borradores de todas las cuentas de esta pestaña. Se llama al
+ * cerrar sesión: quien use después el mismo navegador no debe poder leer lo
+ * que otra persona escribió y no envió.
+ */
+export function clearAllRequestDrafts(): void {
+  try {
+    const storage = window.sessionStorage;
+    const draftKeys = Array.from({ length: storage.length }, (_, index) =>
+      storage.key(index),
+    ).filter((key): key is string => key !== null && key.startsWith(STORAGE_PREFIX));
+    for (const key of draftKeys) {
+      storage.removeItem(key);
+    }
   } catch {
     // Nada que borrar si el almacenamiento no está disponible.
   }

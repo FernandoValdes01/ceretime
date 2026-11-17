@@ -18,6 +18,7 @@ import type { OwnRequestSubmission, SubmitOwnRequestOutcome } from "./student-re
 let mockedSession: WebSessionState;
 let mockedPair: { session: WebSessionState; role: WebSessionRole } | undefined;
 const submitMock = vi.fn<(submission: OwnRequestSubmission) => Promise<SubmitOwnRequestOutcome>>();
+const signOutMock = vi.hoisted(() => vi.fn());
 
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
@@ -31,7 +32,7 @@ vi.mock("./student-request-form-data.ts", () => ({
 }));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
-  authClient: { useSession: () => ({ isPending: false }) },
+  authClient: { useSession: () => ({ isPending: false }), signOut: signOutMock },
 }));
 
 vi.mock("../../infrastructure/convex/convex-client", () => ({
@@ -83,7 +84,17 @@ beforeEach(() => {
   mockedSession = SESION_ESTUDIANTE;
   mockedPair = PAR_ESTUDIANTE;
   submitMock.mockReset();
+  signOutMock.mockReset();
+  signOutMock.mockResolvedValue({ data: {}, error: null });
 });
+
+const DRAFT_KEY = "cereti:solicitud-borrador:estudiante@alu.uct.cl";
+
+/** Tras un envío que el Backend no registró, el foco llega al título del resumen. */
+async function expectFocusOnFailedSubmitSummary() {
+  const summary = await screen.findByRole("heading", { name: "No se envió la solicitud" });
+  await waitFor(() => expect(document.activeElement).toBe(summary));
+}
 
 afterEach(() => {
   cleanup();
@@ -165,6 +176,7 @@ describe("TI2-149: formulario de solicitud", () => {
     submit();
 
     expect(await screen.findByText(/No pudimos enviar tu solicitud/)).toBeTruthy();
+    await expectFocusOnFailedSubmitSummary();
     expect(
       (screen.getByLabelText(/Describe la barrera o necesidad/) as HTMLTextAreaElement).value,
     ).toBe("Necesidad ficticia");
@@ -188,7 +200,7 @@ describe("TI2-149: formulario de solicitud", () => {
     expect(
       await screen.findByText("El horario disponible debe empezar antes de terminar."),
     ).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "No se envió la solicitud" })).toBeTruthy();
+    await expectFocusOnFailedSubmitSummary();
     expect((screen.getByLabelText(/Qué esperas de CERETI/) as HTMLTextAreaElement).value).toBe(
       "Resultado ficticio",
     );
@@ -203,6 +215,7 @@ describe("TI2-149: formulario de solicitud", () => {
     expect(
       await screen.findByText("No autorizado. Pide acceso por el canal oficial si corresponde."),
     ).toBeTruthy();
+    await expectFocusOnFailedSubmitSummary();
   });
 
   test("un segundo clic durante el envío no repite la solicitud", async () => {
@@ -250,5 +263,30 @@ describe("TI2-149: formulario de solicitud", () => {
         (screen.getByLabelText(/Describe la barrera o necesidad/) as HTMLTextAreaElement).value,
       ).toBe(""),
     );
+  });
+
+  test("cerrar sesión borra el borrador sin enviar", async () => {
+    renderForm();
+    await fillRequiredFields();
+    await waitFor(() =>
+      expect(window.sessionStorage.getItem(DRAFT_KEY)).toContain("Necesidad ficticia"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
+
+    await waitFor(() => expect(window.sessionStorage.getItem(DRAFT_KEY)).toBeNull());
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("si el cierre de sesión falla, el borrador se conserva", async () => {
+    signOutMock.mockResolvedValue({ data: null, error: { status: 500, message: "fallo" } });
+    renderForm();
+    await fillRequiredFields();
+    await waitFor(() => expect(window.sessionStorage.getItem(DRAFT_KEY)).not.toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Cerrar sesión" }));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(window.sessionStorage.getItem(DRAFT_KEY)).toContain("Necesidad ficticia");
   });
 });
