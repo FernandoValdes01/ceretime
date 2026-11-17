@@ -775,7 +775,6 @@ describe("PERMISSION_MATRIX", () => {
  */
 describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => {
   const NOTE = "marcador-nota";
-  const FREE_TEXTS = ["marcador-acuerdo", "marcador-tarea", "marcador-pasos", NOTE];
   const CANCEL_REASON = "marcador-motivo";
 
   const record: FollowUpRecord = {
@@ -859,15 +858,21 @@ describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => 
     expect(checked).toBeGreaterThan(0);
   });
 
-  test("la vista minimizada no lleva textos libres ni el vínculo con el acompañamiento", () => {
-    // Detecta un campo de texto libre o `accompanimentId` agregado a la vista del Practicante.
+  test("la vista minimizada lleva acuerdos, tareas y pasos, sin nota ni vínculo (TI2-186)", () => {
+    // Detecta un cambio en el alcance del Practicante: debe recibir los textos
+    // operativos con la misma forma que la vista compartida, sin la nota
+    // interna ni `accompanimentId`. Decisión del 2026-11-15: gana el diagrama.
     let checked = 0;
     for (const context of contexts) {
       if (getFollowUpView(context) !== "minimized") continue;
       const projected = toFollowUpProjection(record, "completed", "minimized");
       const output = JSON.stringify(projected);
-      for (const text of FREE_TEXTS) expect(output.includes(text)).toBe(false);
+      for (const text of ["marcador-acuerdo", "marcador-tarea", "marcador-pasos"]) {
+        expect(output.includes(text)).toBe(true);
+      }
+      expect(output.includes(NOTE)).toBe(false);
       expect(Object.keys(projected)).not.toContain("accompanimentId");
+      expect(Object.keys(projected)).not.toContain("internalNote");
       checked += 1;
     }
     expect(checked).toBeGreaterThan(0);
