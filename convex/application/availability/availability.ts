@@ -380,8 +380,14 @@ export async function searchAvailabilitySlots(
       continue;
     }
     const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, slot);
-    if (option === null || !assessCompatibility(needsEntry.needs, option).compatible) {
-      discarded.incompatible += 1;
+    // Una sala sin catálogo no se puede ofrecer a nadie: no es una necesidad
+    // sin cubrir, así que no cambia el motivo.
+    if (option === null) continue;
+    const decision = assessCompatibility(needsEntry.needs, option);
+    if (!decision.compatible) {
+      if (decision.issues.some((issue) => issue.code === "unmet_needs")) {
+        discarded.incompatible += 1;
+      }
       continue;
     }
     compatible.push(

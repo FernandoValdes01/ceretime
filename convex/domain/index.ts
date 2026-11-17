@@ -130,14 +130,9 @@ export type {
 
 // Coordinación por canal oficial sin horario compatible (TI2-144).
 export {
-  COORDINATION_REFERENCE_PREFIX,
-  NO_COMPATIBLE_SLOT_EXPLANATIONS,
   NO_COMPATIBLE_SLOT_REASON_VALUES,
-  OFFICIAL_CHANNEL_KIND_VALUES,
   OFFICIAL_CHANNELS,
   combineNoCompatibleSlotReasons,
-  decideNoCompatibleSlotReason,
-  deriveCoordinationReferenceCode,
   toOfficialChannelCoordination,
 } from "./availability/official_channel";
 export type {

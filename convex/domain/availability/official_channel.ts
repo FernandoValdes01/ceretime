@@ -12,9 +12,9 @@ import type { SpaceFields } from "../spaces/space";
 /**
  * Motivos de la ausencia de horario compatible, en orden de prioridad:
  *
- * - `needs_not_met`: hubo horarios libres, pero ninguno cubre las necesidades de acceso (sala incompatible o retirada, o modalidad en línea sin apoyos).
+ * - `needs_not_met`: hubo horarios libres, pero ninguno cubre las necesidades de acceso (sala sin las condiciones requeridas, o modalidad en línea sin apoyos).
  * - `slots_occupied`: todos los horarios compatibles en el rango ya están ocupados.
- * - `no_published_slots`: no hay horarios publicados en el rango. Un profesional no reservable responde igual, para no revelar si existe o tiene agenda.
+ * - `no_published_slots`: no hay horarios que se puedan ofrecer en el rango: no se publicaron o su sala ya no está en el catálogo. Un profesional no reservable responde igual, para no revelar si existe o tiene agenda.
  */
 export const NO_COMPATIBLE_SLOT_REASON_VALUES = [
   "needs_not_met",
@@ -86,12 +86,6 @@ export interface PhoneOfficialChannel {
 /** Canal oficial accesible de CERETI, discriminado por `kind`. */
 export type OfficialChannel = InPersonOfficialChannel | EmailOfficialChannel | PhoneOfficialChannel;
 
-export const OFFICIAL_CHANNEL_KIND_VALUES = [
-  "inPerson",
-  "email",
-  "phone",
-] as const satisfies readonly OfficialChannel["kind"][];
-
 /** Canales oficiales con datos ficticios, provisionales hasta que CERETI confirme los reales. */
 export const OFFICIAL_CHANNELS: readonly OfficialChannel[] = [
   {
@@ -127,7 +121,7 @@ export const OFFICIAL_CHANNELS: readonly OfficialChannel[] = [
 ];
 
 /** Prefijo visible del código de referencia. */
-export const COORDINATION_REFERENCE_PREFIX = "CER";
+const COORDINATION_REFERENCE_PREFIX = "CER";
 
 /** Base32 de Crockford: sin I, L, O ni U, para dictarlo o copiarlo sin confundir letras. */
 // cspell:ignore ABCDEFGHJKMNPQRSTVWXYZ

@@ -3,7 +3,6 @@ import { describe, expect, test } from "vitest";
 import {
   NO_COMPATIBLE_SLOT_EXPLANATIONS,
   NO_COMPATIBLE_SLOT_REASON_VALUES,
-  OFFICIAL_CHANNEL_KIND_VALUES,
   OFFICIAL_CHANNELS,
   combineNoCompatibleSlotReasons,
   decideNoCompatibleSlotReason,
@@ -83,12 +82,9 @@ describe("canales oficiales (TI2-144)", () => {
     }
   });
 
-  test("los canales tienen identificador único y una clase conocida", () => {
+  test("los canales tienen identificador único", () => {
     const ids = OFFICIAL_CHANNELS.map((channel) => channel.id);
     expect(new Set(ids).size).toBe(ids.length);
-    for (const channel of OFFICIAL_CHANNELS) {
-      expect(OFFICIAL_CHANNEL_KIND_VALUES).toContain(channel.kind);
-    }
   });
 
   test("la coordinación reúne motivo, explicación, código y canales", () => {

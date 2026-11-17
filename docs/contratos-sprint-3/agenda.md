@@ -95,9 +95,9 @@ El motivo (`reason`) sale de lo que la búsqueda descartó, con `decideNoCompati
 
 | `reason`             | Cuándo                                                                                               |
 | -------------------- | ---------------------------------------------------------------------------------------------------- |
-| `needs_not_met`      | Hubo horarios libres, pero ninguno cubre las necesidades: sala que no las cubre o retirada, o modalidad en línea sin apoyos. Prima aunque otros estén ocupados |
+| `needs_not_met`      | Hubo horarios libres, pero ninguno cubre las necesidades: sala que no las cubre o modalidad en línea sin apoyos. Prima aunque otros estén ocupados |
 | `slots_occupied`     | Todos los horarios del rango ya están ocupados por el profesional, el Estudiante o la sala                 |
-| `no_published_slots` | No hay horarios publicados en el rango. Un profesional no reservable responde igual, sin revelar si existe |
+| `no_published_slots` | No hay horarios que se puedan ofrecer en el rango: no se publicaron o su sala ya no está en el catálogo. Un profesional no reservable responde igual, sin revelar si existe |
 
 El código de referencia (`deriveCoordinationReferenceCode`) tiene la forma `CER-XXXX-XXXX` en Base32 de Crockford, sin I, L, O ni U. Se deriva con FNV-1a del identificador del acompañamiento: no contiene nombre, correo, RUT, necesidades ni fechas, y no se revierte al identificador. Es determinista, así el mismo acompañamiento entrega siempre el mismo código aunque busque otra semana u otro profesional. No es un secreto ni prueba identidad. El hash se comparte con la clave del evento de calendario en `convex/domain/hashing/fnv1a.ts`.
 
@@ -107,7 +107,7 @@ Web consume el resultado en `convex-agenda-adapter.ts`: junta los cupos de todos
 
 Compatibilidad: el cambio de forma de `searchSlots` rompe a un cliente que leía `items` directamente o esperaba el error `no_availability`. El único consumidor es el adaptador Web, que se actualiza en el mismo cambio; la versión sigue siendo `v1`.
 
-Comprobación: `convex/domain/availability/official_channel.test.ts` prueba motivo, código y canales; `convex/application/availability/availability.test.ts` prueba cupo ocupado, sala incompatible (también cuando cubre solo una de dos necesidades), sala retirada, la mezcla de ocupados e incompatibles, que el código no lleva datos personales y que el cupo presencial trae su sala; `convex/tests/apiBackend.test.ts` recorre la API con datos ficticios.
+Comprobación: `convex/domain/availability/official_channel.test.ts` prueba motivo, código y canales; `convex/application/availability/availability.test.ts` prueba cupo ocupado, sala incompatible (también cuando cubre solo una de dos necesidades), sala retirada (que no se atribuye a las necesidades), la mezcla de ocupados e incompatibles, que el código no lleva datos personales y que el cupo presencial trae su sala; `convex/tests/apiBackend.test.ts` recorre la API con datos ficticios.
 
 ## Pendientes
 

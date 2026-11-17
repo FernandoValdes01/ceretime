@@ -876,14 +876,25 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(byProfessional.received[0]?.studentId).toBe("user-student");
   });
 
-  test("la sala retirada no se ofrece y explica la incompatibilidad", async () => {
+  test("la sala retirada no se ofrece y no se explica como necesidad sin cubrir", async () => {
+    // Sin necesidades declaradas, culpar a las necesidades sería falso: el
+    // cupo simplemente no se puede ofrecer.
     const auth = studentSearchAuth();
-    const deps = searchDeps(auth, {
+    const missing = searchDeps(auth, {
       availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
       compatibility: fakeCompatibility(),
     });
-    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
-      noCompatibleSlot("needs_not_met"),
+    expect(await searchAvailabilitySlots(missing, searchInput())).toEqual(
+      noCompatibleSlot("no_published_slots"),
+    );
+    const inactive = searchDeps(auth, {
+      availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
+      compatibility: fakeCompatibility({
+        spaces: { "space-1": { space: fictitiousSpace, isActive: false, satisfiedNeeds: [] } },
+      }),
+    });
+    expect(await searchAvailabilitySlots(inactive, searchInput())).toEqual(
+      noCompatibleSlot("no_published_slots"),
     );
   });
 
