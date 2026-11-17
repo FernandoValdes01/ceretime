@@ -120,19 +120,43 @@ export type {
   AvailabilityContractVersion,
   AvailabilityException,
   AvailabilityExceptionKind,
+  AvailabilitySearchResult,
   AvailabilitySlot,
   AvailabilitySlotPage,
   AvailabilityWindow,
   ListAvailabilityInput,
+  SearchedAvailabilitySlot,
 } from "./availability/availability";
 
+// Coordinación por canal oficial sin horario compatible (TI2-144).
+export {
+  COORDINATION_REFERENCE_PREFIX,
+  NO_COMPATIBLE_SLOT_EXPLANATIONS,
+  NO_COMPATIBLE_SLOT_REASON_VALUES,
+  OFFICIAL_CHANNEL_KIND_VALUES,
+  OFFICIAL_CHANNELS,
+  combineNoCompatibleSlotReasons,
+  decideNoCompatibleSlotReason,
+  deriveCoordinationReferenceCode,
+  toOfficialChannelCoordination,
+} from "./availability/official_channel";
+export type {
+  EmailOfficialChannel,
+  InPersonOfficialChannel,
+  NoCompatibleSlotReason,
+  OfficialChannel,
+  OfficialChannelCoordination,
+  PhoneOfficialChannel,
+} from "./availability/official_channel";
+
 // Espacios de atención: catálogo con acceso e instrucciones (TI2-87).
-export { SPACE_CATALOG_CONTRACT_VERSION, toSpaceLabel } from "./spaces/space";
+export { SPACE_CATALOG_CONTRACT_VERSION, toSpaceFields, toSpaceLabel } from "./spaces/space";
 export type {
   ListSpacesInput,
   Space,
   SpaceCatalogContractVersion,
   SpaceCatalogPage,
+  SpaceFields,
 } from "./spaces/space";
 
 // Compatibilidad de modalidad y espacio con necesidades de acceso (TI2-82).
