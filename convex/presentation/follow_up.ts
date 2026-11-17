@@ -74,6 +74,9 @@ const followUpProjectionValidator = v.union(
   v.object({
     appointmentId: v.string(),
     appointmentStatus: appointmentStatusUnion,
+    agreements: v.array(agreementValidator),
+    tasks: v.array(taskValidator),
+    nextSteps: v.string(),
     suggestedNextAppointmentDate: v.optional(v.string()),
     version,
     view: v.literal("minimized"),
@@ -82,7 +85,6 @@ const followUpProjectionValidator = v.union(
 
 /** La proyección del dominio es de solo lectura; los validadores esperan arreglos. */
 function toPublicFollowUp(projection: FollowUpProjection) {
-  if (projection.view === "minimized") return projection;
   return { ...projection, agreements: [...projection.agreements], tasks: [...projection.tasks] };
 }
 
