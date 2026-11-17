@@ -1,10 +1,5 @@
 import { assert, describe, expect, test } from "vitest";
-import {
-  CLOSURE_REQUEST_STATES,
-  FUTURE_REQUEST_STATES,
-  REQUEST_STATES,
-  SPRINT_1_REQUEST_STATES,
-} from "./state";
+import { CLOSURE_REQUEST_STATES, REFERRAL_REQUEST_STATES, REQUEST_STATES } from "./state";
 import {
   findRequestTransition,
   TRANSITION_REJECTION_CAUSES,
@@ -15,6 +10,7 @@ import {
 import {
   ACCEPTANCE_STATE,
   CLOSURE_REQUEST_TRANSITIONS,
+  REFERRAL_REQUEST_TRANSITIONS,
   REQUEST_TRANSITIONS,
   SPRINT_1_REQUEST_TRANSITIONS,
 } from "./transitions";
@@ -36,7 +32,8 @@ describe("findRequestTransition", () => {
     expect(findRequestTransition("accepted", "cancelled")).toBeUndefined();
     expect(findRequestTransition("received", "closed_without_accompaniment")).toBeUndefined();
     expect(findRequestTransition("cancelled", "received")).toBeUndefined();
-    expect(findRequestTransition("under_review", "referred")).toBeUndefined();
+    expect(findRequestTransition("received", "referred")).toBeUndefined();
+    expect(findRequestTransition("referred", "under_review")).toBeUndefined();
   });
 });
 
@@ -169,26 +166,45 @@ describe("transitionRequest", () => {
     },
   );
 
-  test.each(FUTURE_REQUEST_STATES)(
-    "rechaza %s, sin reglas acordadas, como destino desde todo estado de Sprint 1",
-    (future) => {
-      for (const from of SPRINT_1_REQUEST_STATES) {
-        expect(transitionRequest({ ...actor, from, to: future, reason: "motivo" })).toStrictEqual({
-          status: "rejected",
-          cause: "transition_not_allowed",
-        });
+  test.each(REFERRAL_REQUEST_TRANSITIONS)(
+    "derivar desde $from conserva el motivo recortado y nunca abre acompañamiento (TI2-143)",
+    (row) => {
+      const result = transitionRequest({
+        ...actor,
+        from: row.from,
+        to: row.to,
+        reason: "  corresponde a otra unidad  ",
+      });
+      expect(result).toStrictEqual({
+        status: "applied",
+        change: { from: row.from, to: row.to, ...actor, reason: "corresponde a otra unidad" },
+        opensAccompaniment: false,
+      });
+    },
+  );
+
+  test.each(REFERRAL_REQUEST_STATES)(
+    "rechaza %s como destino desde todo estado sin fila de derivación (TI2-143)",
+    (referred) => {
+      const origins: readonly string[] = REFERRAL_REQUEST_TRANSITIONS.map((row) => row.from);
+      for (const from of REQUEST_STATES.filter((state) => !origins.includes(state))) {
+        expect(transitionRequest({ ...actor, from, to: referred, reason: "motivo" })).toStrictEqual(
+          { status: "rejected", cause: "transition_not_allowed" },
+        );
       }
     },
   );
 
-  test.each(FUTURE_REQUEST_STATES)("rechaza %s como origen hacia cualquier estado", (future) => {
-    for (const to of REQUEST_STATES) {
-      expect(transitionRequest({ ...actor, from: future, to, reason: "motivo" })).toStrictEqual({
-        status: "rejected",
-        cause: "transition_not_allowed",
-      });
-    }
-  });
+  test.each(REFERRAL_REQUEST_STATES)(
+    "%s es terminal: se rechaza como origen hacia cualquier estado (TI2-143)",
+    (referred) => {
+      for (const to of REQUEST_STATES) {
+        expect(transitionRequest({ ...actor, from: referred, to, reason: "motivo" })).toStrictEqual(
+          { status: "rejected", cause: "transition_not_allowed" },
+        );
+      }
+    },
+  );
 
   test("entre los pasos de Sprint 1, exige motivo solo en el paso a espera", () => {
     const toAwaiting = {

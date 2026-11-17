@@ -35,6 +35,7 @@ export const AUTHORIZATION_ACTIONS = [
   "appointment:reschedule",
   "appointment:recordAttendance",
   "appointment:calendar",
+  "appointment:onlineAccess",
   "followUp:read",
   "followUp:write",
   "space:read",
@@ -224,11 +225,27 @@ export function canReadAvailability(context: AgendaAuthorizationContext): boolea
 
 /**
  * Reserva de un cupo: solo el Estudiante dueño de un acompañamiento activo
- * (RF-15). La coordinación entre varios profesionales (RF-16) queda fuera.
+ * (RF-15). La coordinación entre varios profesionales (RF-16) es
+ * `canCoordinateAppointment`.
  */
 export function canBookAppointment(context: AgendaAuthorizationContext): boolean {
   if (!isProfileActive(context)) return false;
   return context.role === "student" && context.isOwner && context.accompanimentStatus === "active";
+}
+
+/**
+ * Coordinación de una atención con uno o más profesionales (RF-16, TI2-142):
+ * el Profesional con asignación activa en un acompañamiento activo reserva en
+ * nombre del Estudiante dueño. Que el Profesional sea uno de los profesionales
+ * de la atención lo exige el caso de uso con la selección ya normalizada.
+ */
+export function canCoordinateAppointment(context: AgendaAuthorizationContext): boolean {
+  if (!isProfileActive(context)) return false;
+  return (
+    context.role === "professional" &&
+    context.hasActiveProfessionalAssignment &&
+    context.accompanimentStatus === "active"
+  );
 }
 
 /**
@@ -253,6 +270,18 @@ function canChangeAppointment(context: AppointmentChangeAuthorizationContext): b
 
 /** Verdadero solo cuando el actor puede cancelar esta atención. */
 export function canCancelAppointment(context: AppointmentChangeAuthorizationContext): boolean {
+  return canChangeAppointment(context);
+}
+
+/**
+ * Acceso en línea de una atención (TI2-142): leer el enlace privado o, si es
+ * profesional, agregarlo. Exige la misma vigencia que un cambio, pero aquí
+ * `isAppointmentProfessional` cuenta a todos los profesionales de la atención,
+ * no solo al responsable. Practicante y Administrador se deniegan igual.
+ */
+export function canUseAppointmentOnlineAccess(
+  context: AppointmentChangeAuthorizationContext,
+): boolean {
   return canChangeAppointment(context);
 }
 
@@ -465,8 +494,9 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   },
   {
     action: "appointment:book",
-    student: "permitido solo propios con acompañamiento activo",
-    professional: "denegado",
+    student: "permitido solo propios con acompañamiento activo, sin adicionales ni apoyos",
+    professional:
+      "coordina solo asignados activos con acompañamiento activo, si participa en la atención",
     intern: "denegado",
     admin: "denegado",
   },
@@ -496,6 +526,14 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     student: "permitido solo sus propias atenciones con acompañamiento activo",
     professional: "denegado",
     intern: "denegado",
+    admin: "denegado",
+  },
+  {
+    action: "appointment:onlineAccess",
+    student: "lee el enlace solo de sus propias atenciones con acompañamiento activo",
+    professional:
+      "lee y agrega el enlace solo si participa en la atención, con asignación y acompañamiento activos",
+    intern: "denegado aunque tenga asignación",
     admin: "denegado",
   },
   {

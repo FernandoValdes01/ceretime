@@ -7,6 +7,7 @@ import {
   type RequestSubmissionDraft,
 } from "../../domain/requests/request";
 import { okResult, type ApiResult } from "../../domain/errors/api_error";
+import { referralAllowsAccompaniment } from "../../domain/requests/referral";
 import { transitionRequest } from "../../domain/requests/transition_policy";
 import type {
   AccompanimentOpener,
@@ -116,7 +117,7 @@ export interface RequestAdditionalInformationDeps<RequestId extends string, User
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
@@ -175,7 +176,7 @@ export interface TakeRequestDeps<RequestId extends string, UserId extends string
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
     RequestTakeRecorder<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
@@ -240,7 +241,7 @@ export interface AcceptRequestDeps<
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   readonly accompaniments: AccompanimentOpener<RequestId, UserId, AccompanimentId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
@@ -256,7 +257,9 @@ export interface AcceptRequestDeps<
  * `awaiting_information_or_acceptance` hacia `accepted` según la política de
  * TI2-21; otro estado, o una solicitud ya aceptada, responde `conflict`. El
  * objetivo lo aporta quien acepta y es obligatorio: sin él responde
- * `request_fields_invalid` (TI2-181). Ningún rechazo modifica nada.
+ * `request_fields_invalid` (TI2-181). Una derivación de entrada sin contacto
+ * o sin aceptación del estudiante responde `conflict` (TI2-143). Ningún
+ * rechazo modifica nada.
  *
  * Todo ocurre en la misma transacción: estado, bitácora (actor y fecha),
  * acompañamiento (estudiante, necesidades de acceso y vínculo a la solicitud
@@ -295,6 +298,12 @@ export async function acceptRequest<
   if (result.status === "rejected") {
     return stateConflict("La solicitud no admite la aceptación en su estado actual");
   }
+  // Una derivación de entrada no abre acompañamiento sin contacto y aceptación (TI2-143).
+  if (!referralAllowsAccompaniment(row.incomingReferral)) {
+    return stateConflict(
+      "La derivación necesita el contacto con el estudiante y su aceptación antes de abrir el acompañamiento",
+    );
+  }
   const objective = toOpeningObjective(input.objective);
   if (objective === null) {
     return invalidRequestFields("Se requiere el objetivo para abrir el acompañamiento");
@@ -322,7 +331,7 @@ export async function acceptRequest<
 export interface CancelRequestDeps<RequestId extends string, UserId extends string> {
   readonly students: ActiveStudentReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
@@ -379,7 +388,7 @@ export interface CloseRequestDeps<RequestId extends string, UserId extends strin
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
