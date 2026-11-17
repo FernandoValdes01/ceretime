@@ -769,7 +769,7 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
     const fake = createFakeClient({
       query: {
         [SEARCH_SLOTS]: (args) =>
-          noCompatibleSlot(args.professionalId === "pro-1" ? "slots_occupied" : "needs_not_met")(),
+          noCompatibleSlot(args.professionalId === "pro-1" ? "needs_not_met" : "slots_occupied")(),
       },
     });
 
@@ -781,7 +781,7 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
     ).resolves.toEqual({
       status: "no_availability",
       code: "no_availability",
-      coordination: toOfficialChannelCoordination("acompanamiento-1", "needs_not_met"),
+      coordination: toOfficialChannelCoordination("acompanamiento-1", "slots_occupied"),
     });
   });
 

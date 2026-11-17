@@ -19,21 +19,25 @@ describe("motivo de la ausencia de horario compatible (TI2-144)", () => {
     );
   });
 
-  test("solo ocupados explica que están ocupados", () => {
+  test("solo compatibles ocupados explica que están ocupados", () => {
     expect(decideNoCompatibleSlotReason({ occupied: 3, incompatible: 0 })).toBe("slots_occupied");
   });
 
-  test("un libre incompatible prima sobre los ocupados", () => {
-    expect(decideNoCompatibleSlotReason({ occupied: 3, incompatible: 1 })).toBe("needs_not_met");
+  test("solo incompatibles explica la compatibilidad", () => {
+    expect(decideNoCompatibleSlotReason({ occupied: 0, incompatible: 2 })).toBe("needs_not_met");
+  });
+
+  test("un compatible ocupado prima sobre los incompatibles: hay un horario que sirve", () => {
+    expect(decideNoCompatibleSlotReason({ occupied: 1, incompatible: 3 })).toBe("slots_occupied");
   });
 
   test("varias búsquedas se resumen en el motivo de mayor prioridad", () => {
-    expect(combineNoCompatibleSlotReasons(["no_published_slots", "slots_occupied"])).toBe(
-      "slots_occupied",
+    expect(combineNoCompatibleSlotReasons(["no_published_slots", "needs_not_met"])).toBe(
+      "needs_not_met",
     );
     expect(
-      combineNoCompatibleSlotReasons(["slots_occupied", "needs_not_met", "no_published_slots"]),
-    ).toBe("needs_not_met");
+      combineNoCompatibleSlotReasons(["needs_not_met", "slots_occupied", "no_published_slots"]),
+    ).toBe("slots_occupied");
     expect(combineNoCompatibleSlotReasons([])).toBe("no_published_slots");
   });
 
@@ -62,6 +66,12 @@ describe("código de referencia (TI2-144)", () => {
       Array.from({ length: 200 }, (_, index) => deriveCoordinationReferenceCode(`acc-${index}`)),
     );
     expect(codes.size).toBe(200);
+  });
+
+  test("conserva el código ya entregado a los estudiantes", () => {
+    // Si la derivación cambia, el personal no reconocería un código que el
+    // estudiante recibió antes.
+    expect(deriveCoordinationReferenceCode("acc-ficticio-1")).toBe("CER-GF48-8D7W");
   });
 
   test("rechaza un acompañamiento vacío", () => {

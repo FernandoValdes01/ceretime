@@ -644,23 +644,21 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     );
   });
 
-  test("con cupos ocupados y libres incompatibles el motivo es la compatibilidad", async () => {
-    // Dos cupos el mismo día: el de la mañana ocupado, el de la tarde libre
-    // pero en una sala que no cubre la necesidad.
+  test("si ningún horario cubre las necesidades, aunque todos estén ocupados, el motivo es la compatibilidad", async () => {
+    // Dos cupos presenciales y uno en línea, todos ocupados por otras
+    // personas; ni la sala ni la plataforma cubren la necesidad.
     const auth = studentSearchAuth();
-    const need = { id: "need-1", label: "Sala accesible" };
-    const blocks = dailyInPersonBlocks("user-pro", "space-1").map((block) => ({
-      ...block,
-      endMinute: 660,
-    }));
-    // Ocupa el primer cupo consultado, sea cual sea su instante.
-    let occupiedStart: number | undefined;
-    const occupancy = fakeOccupancy({
-      overlaps: (startAt) => {
-        occupiedStart ??= startAt;
-        return startAt === occupiedStart;
-      },
-    });
+    const need = { id: "need-1", label: "Intérprete de lengua de señas" };
+    const blocks = [
+      ...dailyInPersonBlocks("user-pro", "space-1").map((block) => ({ ...block, endMinute: 660 })),
+      ...dailyOnlineBlocks("user-pro").map((block) => ({
+        ...block,
+        id: `online-${block.id}`,
+        startMinute: 720,
+        endMinute: 780,
+      })),
+    ];
+    const occupancy = fakeOccupancy({ occupyAll: true });
     const deps = searchDeps(auth, {
       availability: fakeAvailability({ blocks }),
       needs: fakeNeeds([need]),
@@ -672,7 +670,45 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
       noCompatibleSlot("needs_not_met"),
     );
-    expect(occupancy.received).toHaveLength(2);
+    // La ocupación de otras personas no se consulta para horarios que no sirven.
+    expect(occupancy.received).toHaveLength(0);
+  });
+
+  test("si el único horario compatible está ocupado, el motivo es la ocupación aunque otros sean incompatibles", async () => {
+    // La sala accesible cubre la necesidad pero está ocupada; la otra sala no
+    // la cubre y está libre.
+    const auth = studentSearchAuth();
+    const need = { id: "need-1", label: "Sala accesible" };
+    const blocks = [
+      ...dailyInPersonBlocks("user-pro", "space-1"),
+      ...dailyInPersonBlocks("user-pro", "space-2").map((block) => ({
+        ...block,
+        id: `other-${block.id}`,
+        startMinute: 600,
+        endMinute: 660,
+      })),
+    ];
+    const occupancy = fakeOccupancy({ occupyAll: true });
+    const deps = searchDeps(auth, {
+      availability: fakeAvailability({ blocks }),
+      needs: fakeNeeds([need]),
+      compatibility: fakeCompatibility({
+        spaces: {
+          "space-1": { space: fictitiousSpace, isActive: true, satisfiedNeeds: [need] },
+          "space-2": {
+            space: { ...fictitiousSpace, id: "space-2", room: "Sala 102" },
+            isActive: true,
+            satisfiedNeeds: [],
+          },
+        },
+      }),
+      occupancy,
+    });
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
+      noCompatibleSlot("slots_occupied"),
+    );
+    // Solo se consulta la ocupación del horario compatible.
+    expect(occupancy.received).toHaveLength(1);
   });
 
   test("el intervalo decide: conserva el cupo contiguo y descarta el solapado con igual inicio", async () => {
@@ -932,6 +968,26 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(second.items).toHaveLength(1);
     expect(second.hasMore).toBe(false);
     expect(second.nextCursor).toBeNull();
+  });
+
+  test("la página que sigue al último cupo llega vacía, no como ausencia de horario", async () => {
+    // Hay cupos compatibles: pedir la página siguiente al último no es una
+    // ausencia de horario compatible ni un conflicto.
+    const deps = searchDeps(studentSearchAuth());
+    const range = searchInput({ from: "2026-10-26", to: "2026-10-26" });
+    const first = requireAvailable(await searchAvailabilitySlots(deps, range));
+    const last = first.items[first.items.length - 1];
+    if (last === undefined) throw new Error("La primera página debe traer un cupo");
+    expect(await searchAvailabilitySlots(deps, { ...range, cursor: last.id })).toEqual({
+      status: "ok",
+      data: {
+        status: "available",
+        items: [],
+        hasMore: false,
+        nextCursor: null,
+        version: AVAILABILITY_CONTRACT_VERSION,
+      },
+    });
   });
 
   test("el cursor ocupado entre páginas responde conflicto sin repetir resultados", async () => {

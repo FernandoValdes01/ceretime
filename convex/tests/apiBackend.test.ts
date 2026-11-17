@@ -1176,6 +1176,30 @@ test("TI2-111: la búsqueda entrega solo cupos libres y compatibles a quien pued
     ),
   ).toStrictEqual(ti144NoCompatibleSlot(agenda.otherAccompanimentId, "needs_not_met"));
 
+  // Con las 10:00 y las 12:00 también ocupadas (las 9:00 ya lo estaban), el
+  // motivo no cambia: la ocupación de otras personas no vuelve compatible un
+  // horario que no cubre sus necesidades.
+  await t.run(async (ctx) => {
+    for (const hour of [10, 12]) {
+      await ctx.db.insert("appointments", {
+        accompanimentId: agenda.accompanimentId,
+        studentId: agenda.studentId,
+        professionalId: agenda.professionalId,
+        modality: "online",
+        status: "scheduled",
+        startsAt: ti111At(hour),
+        endsAt: ti111At(hour + 1),
+        createdAt: 1,
+      });
+    }
+  });
+  expect(
+    await asOther.query(
+      api.presentation.availability.searchSlots,
+      ti111Search(agenda.otherAccompanimentId, agenda.professionalId),
+    ),
+  ).toStrictEqual(ti144NoCompatibleSlot(agenda.otherAccompanimentId, "needs_not_met"));
+
   const otherVersion = { ...search, version: "v2" } as unknown as typeof search;
   await expect(
     asStudent.query(api.presentation.availability.searchSlots, otherVersion),
@@ -1416,9 +1440,9 @@ test("TI2-111: la búsqueda no ofrece un cupo que choca con el estudiante o la s
       api.presentation.availability.searchSlots,
       ti111Search(agenda.accompanimentId, agenda.professionalId),
     );
-    // El cupo de las 10:00 queda ocupado y el de las 12:00 en línea no cubre la
-    // necesidad: el motivo es la compatibilidad, que no se rebaja.
-    expect(consulta).toStrictEqual(ti144NoCompatibleSlot(agenda.accompanimentId, "needs_not_met"));
+    // El cupo compatible de las 10:00 queda ocupado; el de las 12:00 en línea no
+    // cubre la necesidad y no cuenta: hay un horario que sirve, solo que tomado.
+    expect(consulta).toStrictEqual(ti144NoCompatibleSlot(agenda.accompanimentId, "slots_occupied"));
     results[scenario] = {
       reserva: await ti111PublicError(
         asStudent.mutation(api.presentation.appointments.bookAppointment, {
@@ -1563,7 +1587,8 @@ test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", a
     endsAt: ti111At(11),
   });
 
-  // Repetir la reserva choca consigo misma, y la búsqueda ya no ofrece el cupo.
+  // Repetir la reserva choca consigo misma, y la búsqueda ya no ofrece el cupo:
+  // el único compatible ahora está ocupado por la propia reserva.
   const afterBooking = await ti111Appointments(t);
   expect(
     await ti111PublicError(asStudent.mutation(api.presentation.appointments.bookAppointment, slot)),
@@ -1574,7 +1599,7 @@ test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", a
       api.presentation.availability.searchSlots,
       ti111Search(agenda.accompanimentId, agenda.professionalId),
     ),
-  ).toStrictEqual(ti144NoCompatibleSlot(agenda.accompanimentId, "needs_not_met"));
+  ).toStrictEqual(ti144NoCompatibleSlot(agenda.accompanimentId, "slots_occupied"));
 
   const otherVersion = { ...slot, version: "v2" } as unknown as typeof slot;
   await expect(

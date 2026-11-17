@@ -363,8 +363,22 @@ export async function searchAvailabilitySlots(
 
   const compatible: SearchedAvailabilitySlot[] = [];
   // Lo descartado solo decide el motivo de la ausencia; nunca se ofrece.
+  // La compatibilidad se evalúa antes que la ocupación: un cupo ocupado solo
+  // cuenta como `occupied` si cubría las necesidades, así el motivo no depende
+  // de cuánto ocupan otras personas.
   const discarded = { occupied: 0, incompatible: 0 };
   for (const slot of expanded) {
+    const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, slot);
+    // Una sala sin catálogo no se puede ofrecer a nadie: no es una necesidad
+    // sin cubrir, así que no cambia el motivo.
+    if (option === null) continue;
+    const decision = assessCompatibility(needsEntry.needs, option);
+    if (!decision.compatible) {
+      if (decision.issues.some((issue) => issue.code === "unmet_needs")) {
+        discarded.incompatible += 1;
+      }
+      continue;
+    }
     // Los mismos recursos que comprueba la reserva: el profesional, el
     // estudiante del acompañamiento (también cuando busca el profesional) y
     // la sala del cupo presencial.
@@ -377,17 +391,6 @@ export async function searchAvailabilitySlots(
     });
     if (occupied) {
       discarded.occupied += 1;
-      continue;
-    }
-    const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, slot);
-    // Una sala sin catálogo no se puede ofrecer a nadie: no es una necesidad
-    // sin cubrir, así que no cambia el motivo.
-    if (option === null) continue;
-    const decision = assessCompatibility(needsEntry.needs, option);
-    if (!decision.compatible) {
-      if (decision.issues.some((issue) => issue.code === "unmet_needs")) {
-        discarded.incompatible += 1;
-      }
       continue;
     }
     compatible.push(

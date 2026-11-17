@@ -91,12 +91,12 @@ Cuando `presentation/availability.searchSlots` no encuentra un cupo compatible y
 
 Cada cupo presencial de `items` suma `space` con `campus`, `building`, `floor`, `room`, `accessConditions` y `arrivalInstructions` de su sala, leídos del catálogo en el servidor (`toSpaceFields`). El cupo en línea no lo trae. `spaceId` se conserva.
 
-El motivo (`reason`) sale de lo que la búsqueda descartó, con `decideNoCompatibleSlotReason`, y la explicación en español está en `NO_COMPATIBLE_SLOT_EXPLANATIONS`:
+El motivo (`reason`) sale de lo que la búsqueda descartó, con `decideNoCompatibleSlotReason`, y la explicación en español está en `NO_COMPATIBLE_SLOT_EXPLANATIONS`. La búsqueda evalúa la compatibilidad antes que la ocupación: un horario ocupado solo cuenta como ocupado si cubría las necesidades, así el motivo no depende de cuánto ocupan otras personas. En orden de prioridad:
 
 | `reason`             | Cuándo                                                                                               |
 | -------------------- | ---------------------------------------------------------------------------------------------------- |
-| `needs_not_met`      | Hubo horarios libres, pero ninguno cubre las necesidades: sala que no las cubre o modalidad en línea sin apoyos. Prima aunque otros estén ocupados |
-| `slots_occupied`     | Todos los horarios del rango ya están ocupados por el profesional, el Estudiante o la sala                 |
+| `slots_occupied`     | Hay horarios que cubren las necesidades, pero todos están ocupados por el profesional, el Estudiante o la sala. Prima aunque otros horarios sean incompatibles |
+| `needs_not_met`      | Ningún horario del rango cubre las necesidades, esté ocupado o libre: sala que no las cubre o modalidad en línea sin apoyos |
 | `no_published_slots` | No hay horarios que se puedan ofrecer en el rango: no se publicaron o su sala ya no está en el catálogo. Un profesional no reservable responde igual, sin revelar si existe |
 
 El código de referencia (`deriveCoordinationReferenceCode`) tiene la forma `CER-XXXX-XXXX` en Base32 de Crockford, sin I, L, O ni U. Se deriva con FNV-1a del identificador del acompañamiento: no contiene nombre, correo, RUT, necesidades ni fechas, y no se revierte al identificador. Es determinista, así el mismo acompañamiento entrega siempre el mismo código aunque busque otra semana u otro profesional. No es un secreto ni prueba identidad. El hash se comparte con la clave del evento de calendario en `convex/domain/hashing/fnv1a.ts`.
@@ -107,15 +107,14 @@ Web consume el resultado en `convex-agenda-adapter.ts`: junta los cupos de todos
 
 Compatibilidad: el cambio de forma de `searchSlots` rompe a un cliente que leía `items` directamente o esperaba el error `no_availability`. El único consumidor es el adaptador Web, que se actualiza en el mismo cambio; la versión sigue siendo `v1`.
 
-Comprobación: `convex/domain/availability/official_channel.test.ts` prueba motivo, código y canales; `convex/application/availability/availability.test.ts` prueba cupo ocupado, sala incompatible (también cuando cubre solo una de dos necesidades), sala retirada (que no se atribuye a las necesidades), la mezcla de ocupados e incompatibles, que el código no lleva datos personales y que el cupo presencial trae su sala; `convex/tests/apiBackend.test.ts` recorre la API con datos ficticios.
+Comprobación: `convex/domain/availability/official_channel.test.ts` prueba motivo, código y canales; `convex/application/availability/availability.test.ts` prueba cupo ocupado, sala incompatible (también cuando cubre solo una de dos necesidades), sala retirada (que no se atribuye a las necesidades), que todos los horarios ocupados e incompatibles responden `needs_not_met` y que el único compatible ocupado responde `slots_occupied`, que la página tras el último cupo llega vacía, que el código no lleva datos personales y es estable, y que el cupo presencial trae su sala; `convex/tests/apiBackend.test.ts` recorre la API con datos ficticios, y `calendar_event.test.ts` fija una clave literal para que mover el hash no cambie los eventos ya creados.
 
 ## Pendientes
 
 Siguen en otras issues, que se apoyan en lo que entrega esta:
 
 - Mostrar la explicación, el código de referencia y los canales oficiales al Estudiante: TI2-163.
-- Que el personal reconozca un código de referencia que recibe por un canal oficial: hoy no hay una consulta que lo resuelva al acompañamiento.
-
+- Que el profesional autorizado reconozca el código de referencia que recibe por un canal oficial: TI2-183 entrega `referenceCode` en la vista completa del acompañamiento.
 - Avisar a los profesionales adicionales cuando el Estudiante cancela o cuando uno sale al reagendar: TI2-150. `NotificationSubject` tiene un solo `professionalId` y hoy solo se avisa al responsable.
 - Mostrar en la agenda los profesionales adicionales, los apoyos y qué atenciones en línea no tienen enlace: TI2-164. `getAppointment` todavía no los entrega y `Appointment` no los declara para no anunciar campos que nunca llegan.
 - Registrar en la bitácora que se agregó o reemplazó el enlace: TI2-176, porque la lista de acciones de TI2-128 no lo contempla.

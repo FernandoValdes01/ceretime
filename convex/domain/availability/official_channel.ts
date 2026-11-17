@@ -1,7 +1,7 @@
 /**
  * Coordinación por canal oficial (TI2-144).
  *
- * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile muestren el mismo resultado sin levantar el backend. Cuando la búsqueda de cupos no encuentra una hora compatible y libre, explica por qué, entrega los canales oficiales accesibles de CERETI y un código de referencia para que el Estudiante coordine sin repetir su caso. Nunca rebaja las necesidades de acceso: la compatibilidad sigue siendo la de TI2-82.
+ * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile muestren el mismo resultado sin levantar el backend. Cuando la búsqueda de cupos no encuentra una hora compatible y libre, explica por qué, entrega los canales oficiales accesibles de CERETI y un código de referencia para que el Estudiante coordine sin volver a explicar su situación. Nunca rebaja las necesidades de acceso: la compatibilidad sigue siendo la de TI2-82.
  *
  * Los canales son un catálogo fijo con datos ficticios: la especificación deja los canales reales como pendiente de validación con CERETI. Se reemplazan aquí, en un solo lugar, cuando CERETI los confirme.
  */
@@ -12,13 +12,13 @@ import type { SpaceFields } from "../spaces/space";
 /**
  * Motivos de la ausencia de horario compatible, en orden de prioridad:
  *
- * - `needs_not_met`: hubo horarios libres, pero ninguno cubre las necesidades de acceso (sala sin las condiciones requeridas, o modalidad en línea sin apoyos).
- * - `slots_occupied`: todos los horarios compatibles en el rango ya están ocupados.
+ * - `slots_occupied`: hay horarios que cubren las necesidades de acceso, pero todos están ocupados.
+ * - `needs_not_met`: ningún horario del rango cubre las necesidades de acceso, esté ocupado o libre (sala sin las condiciones requeridas, o modalidad en línea sin apoyos).
  * - `no_published_slots`: no hay horarios que se puedan ofrecer en el rango: no se publicaron o su sala ya no está en el catálogo. Un profesional no reservable responde igual, para no revelar si existe o tiene agenda.
  */
 export const NO_COMPATIBLE_SLOT_REASON_VALUES = [
-  "needs_not_met",
   "slots_occupied",
+  "needs_not_met",
   "no_published_slots",
 ] as const;
 
@@ -26,23 +26,23 @@ export type NoCompatibleSlotReason = (typeof NO_COMPATIBLE_SLOT_REASON_VALUES)[n
 
 /** Explicación pública de cada motivo, en español y sin datos de otras personas. */
 export const NO_COMPATIBLE_SLOT_EXPLANATIONS: Readonly<Record<NoCompatibleSlotReason, string>> = {
-  needs_not_met:
-    "Los horarios libres de este período no cubren tus necesidades de acceso. No las reducimos para encontrar un cupo: coordina tu atención por un canal oficial.",
   slots_occupied:
     "Los horarios compatibles con tus necesidades de acceso de este período ya están ocupados. Coordina tu atención por un canal oficial.",
+  needs_not_met:
+    "Los horarios de este período no cubren tus necesidades de acceso. No las reducimos para encontrar un cupo: coordina tu atención por un canal oficial.",
   no_published_slots:
     "No hay horarios publicados en este período. Coordina tu atención por un canal oficial.",
 };
 
 /**
- * Elige el motivo a partir de lo que descartó la búsqueda. Si hubo horarios libres incompatibles, el motivo es la compatibilidad aunque otros estuvieran ocupados: es lo que el Estudiante no podría resolver esperando un cupo.
+ * Elige el motivo a partir de lo que descartó la búsqueda: `occupied` cuenta solo horarios que cubrían las necesidades y `incompatible`, los que no las cubren, ocupados o libres. Si existe un horario compatible ocupado, el motivo es la ocupación aunque otros sean incompatibles: hay un horario que sirve, solo que tomado.
  */
 export function decideNoCompatibleSlotReason(discarded: {
   readonly occupied: number;
   readonly incompatible: number;
 }): NoCompatibleSlotReason {
-  if (discarded.incompatible > 0) return "needs_not_met";
   if (discarded.occupied > 0) return "slots_occupied";
+  if (discarded.incompatible > 0) return "needs_not_met";
   return "no_published_slots";
 }
 
@@ -132,7 +132,7 @@ const REFERENCE_CODE_LENGTH = 8;
 /**
  * Código de referencia del acompañamiento, como `CER-7KQ2-M9XD`.
  *
- * Se deriva con FNV-1a del identificador opaco del acompañamiento: no contiene nombre, correo, RUT, necesidades ni fechas, y no se puede revertir al identificador. Es determinista, así el mismo acompañamiento entrega siempre el mismo código, aunque busque otra semana u otro profesional, y el personal puede reconocer un caso que llega varias veces. Son 40 bits: no es un secreto ni prueba identidad, solo orienta la coordinación.
+ * Se deriva con FNV-1a del identificador opaco del acompañamiento: no contiene nombre, correo, RUT, necesidades ni fechas, y no se puede revertir al identificador. Es determinista, así el mismo acompañamiento entrega siempre el mismo código, aunque busque otra semana u otro profesional, y el personal puede reconocer un acompañamiento que llega varias veces. Son 40 bits: no es un secreto ni prueba identidad, solo orienta la coordinación.
  */
 export function deriveCoordinationReferenceCode(accompanimentId: string): string {
   const id = accompanimentId.trim();
