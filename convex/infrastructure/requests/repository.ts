@@ -3,9 +3,11 @@ import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import { isTestProfessional } from "../../domain/accounts/enablement";
 import { isActiveInRole } from "../../domain/authorization/permissions";
+import type { IncomingReferral } from "../../domain/requests/referral";
 import { toStoredAccessNeeds, type RequestSubmission } from "../../domain/requests/request";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 import { findProfileByTokenIdentifier } from "../accompaniments/repository";
+import { findUserByEmail } from "../accounts/repository";
 
 /**
  * Repositorio de solicitudes (TI2-9).
@@ -25,7 +27,7 @@ type DbReader = QueryCtx | MutationCtx;
  * Campos de la solicitud completa que se pueden fijar al recibirla (TI2-135).
  * Todos son opcionales: sin ellos la fila queda como las anteriores. La razón
  * de cierre y la derivación de salida no están porque se escriben al cerrar o
- * derivar, no al recibir. La clave de idempotencia tampoco está: solo la
+ * derivar (TI2-143), no al recibir. La clave de idempotencia tampoco está: solo la
  * escribe `insertReceivedRequestOnce`, que comprueba el duplicado.
  */
 export type ReceivedRequestExtras = Pick<
@@ -174,20 +176,33 @@ export async function getRequestById(
 /**
  * Actualiza el estado de una solicitud con el destino que decidió la política.
  * Al cerrar sin acompañamiento (TI2-141), la razón comprensible va en la misma
- * escritura; el rastro histórico va aparte, en `logRequestTransition`, dentro
- * de la misma mutation.
+ * escritura, y al derivar (TI2-143), la derivación de salida; el rastro
+ * histórico va aparte, en `logRequestTransition`, dentro de la misma mutation.
  */
 export async function setRequestStatus(
   ctx: MutationCtx,
   requestId: Id<"requests">,
-  change: RequestStatusChange,
+  change: RequestStatusChange<Id<"users">>,
 ): Promise<void> {
-  await ctx.db.patch(
-    requestId,
-    change.status === "closed_without_accompaniment"
-      ? { status: change.status, closureReason: change.closureReason }
-      : { status: change.status },
-  );
+  if (change.status === "closed_without_accompaniment") {
+    await ctx.db.patch(requestId, { status: change.status, closureReason: change.closureReason });
+  } else if (change.status === "referred") {
+    await ctx.db.patch(requestId, {
+      status: change.status,
+      outgoingReferral: { ...change.outgoingReferral },
+    });
+  } else {
+    await ctx.db.patch(requestId, { status: change.status });
+  }
+}
+
+/** Guarda la derivación de entrada con el contacto o la aceptación ya aplicados (TI2-143). */
+export async function setIncomingReferral(
+  ctx: MutationCtx,
+  requestId: Id<"requests">,
+  referral: IncomingReferral<Id<"users">>,
+): Promise<void> {
+  await ctx.db.patch(requestId, { incomingReferral: { ...referral } });
 }
 
 /** Registra el cambio de estado con motivo, actor y fecha. */
@@ -213,16 +228,35 @@ export async function logRequestTransition(
 }
 
 /**
+ * Contenido del envío completo en la forma de la fila. La lista del contrato
+ * se persiste como `accessNeedSelections` (TI2-135), y de ella sale el texto
+ * unido. El esquema tipa los arreglos como mutables; el dominio, de solo
+ * lectura.
+ */
+function toReceivedContent(submission: RequestSubmission) {
+  const { accessNeeds, generalAvailability, ...content } = submission;
+  return {
+    ...content,
+    accessNeedSelections: [...accessNeeds],
+    generalAvailability: {
+      ...generalAvailability,
+      preferredWeekdays: [...generalAvailability.preferredWeekdays],
+    },
+  };
+}
+
+/**
  * Lecturas y escrituras de una solicitud para los puertos de Aplicación
- * (TI2-141, TI2-181). Cumple `RequestReader`, `RequestRegistrar`,
- * `RequestStatusWriter`, `RequestTransitionRecorder`, `RequestTakeReader` y
+ * (TI2-141, TI2-181, TI2-143). Cumple `RequestReader`, `RequestRegistrar`,
+ * `OfficialRequestRegistrar`, `RequestStatusWriter`,
+ * `RequestTransitionRecorder`, `RequestReferralWriter`, `RequestTakeReader` y
  * `RequestTakeRecorder` por forma, sin importarlos; Presentación lo crea con
  * el `ctx` de la mutation, así todo queda en la misma transacción.
  */
 export function requestStore(ctx: MutationCtx) {
   return {
     ...requestReader(ctx),
-    setRequestStatus: (requestId: Id<"requests">, change: RequestStatusChange) =>
+    setRequestStatus: (requestId: Id<"requests">, change: RequestStatusChange<Id<"users">>) =>
       setRequestStatus(ctx, requestId, change),
     logRequestTransition: (entry: Parameters<typeof logRequestTransition>[1]) =>
       logRequestTransition(ctx, entry),
@@ -235,22 +269,36 @@ export function requestStore(ctx: MutationCtx) {
       submission: RequestSubmission,
       receivedAt: number,
     ) => {
-      const { accessNeeds, generalAvailability, ...content } = submission;
       const { requestId } = await insertReceivedRequestOnce(ctx, {
-        ...content,
-        // La lista del contrato se persiste como `accessNeedSelections`
-        // (TI2-135), y de ella sale el texto unido. El esquema tipa los
-        // arreglos como mutables; el dominio, de solo lectura.
-        accessNeedSelections: [...accessNeeds],
-        generalAvailability: {
-          ...generalAvailability,
-          preferredWeekdays: [...generalAvailability.preferredWeekdays],
-        },
+        ...toReceivedContent(submission),
         studentId,
         provenance: { channel: "student", receivedAt },
       });
       return requestId;
     },
+    registerOfficialOnce: async (input: {
+      readonly studentId: Id<"users">;
+      readonly submission: RequestSubmission;
+      readonly registeredBy: Id<"users">;
+      readonly receivedAt: number;
+      readonly originUnit?: string;
+    }) => {
+      const { requestId } = await insertReceivedRequestOnce(ctx, {
+        ...toReceivedContent(input.submission),
+        studentId: input.studentId,
+        provenance: {
+          channel: "official_channel",
+          registeredBy: input.registeredBy,
+          receivedAt: input.receivedAt,
+        },
+        ...(input.originUnit === undefined
+          ? {}
+          : { incomingReferral: { originUnit: input.originUnit, referredAt: input.receivedAt } }),
+      });
+      return requestId;
+    },
+    setIncomingReferral: (requestId: Id<"requests">, referral: IncomingReferral<Id<"users">>) =>
+      setIncomingReferral(ctx, requestId, referral),
     registerLegacy: (studentId: Id<"users">, accessNeeds: string) =>
       insertReceivedRequest(ctx, { studentId, accessNeeds }),
   };
@@ -265,6 +313,20 @@ export function activeStudentReader(ctx: DbReader) {
   return {
     findActiveStudent: (tokenIdentifier: string | null) =>
       findActiveProfileInRole(ctx, tokenIdentifier, "student"),
+  };
+}
+
+/**
+ * Estudiante por correo para el puerto `ActiveStudentByEmailReader` (TI2-143):
+ * el perfil solo si tiene el rol Estudiante con cuenta habilitada y vigente.
+ * El correo llega ya normalizado desde Aplicación.
+ */
+export function activeStudentByEmailReader(ctx: DbReader) {
+  return {
+    findActiveStudentByEmail: async (email: string) => {
+      const profile = await findUserByEmail(ctx, email);
+      return profile !== null && isActiveInRole(profile, "student") ? profile : null;
+    },
   };
 }
 

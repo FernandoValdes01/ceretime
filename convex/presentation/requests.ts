@@ -8,6 +8,12 @@ import {
   requestAdditionalInformation as requestAdditionalInformationUseCase,
   takeRequest as takeRequestUseCase,
 } from "../application/requests/commands";
+import {
+  recordReferralAcceptance as recordReferralAcceptanceUseCase,
+  recordReferralContact as recordReferralContactUseCase,
+  referRequest as referRequestUseCase,
+  registerOfficialRequest as registerOfficialRequestUseCase,
+} from "../application/requests/referrals";
 import { respondToInformationRequest as respondToInformationRequestUseCase } from "../application/requests/respond";
 import {
   listAuthorizedRequestsUseCase,
@@ -20,12 +26,14 @@ import {
   accessNeedSelectionValidator,
   generalAvailabilityValidator,
   modalityUnion,
+  requestProvenanceChannelUnion,
   requestStatusUnion,
 } from "../infrastructure/validators";
 import { accompanimentOpener } from "../infrastructure/accompaniments/repository";
 import {
   activeProfessionalReader,
   activeRequestViewerReader,
+  activeStudentByEmailReader,
   activeStudentReader,
   requestReader,
   requestStore,
@@ -56,6 +64,10 @@ import { unwrapApiResult } from "./session";
  * TI2-141: suma la cancelación y el cierre sin acompañamiento, y el estado
  * de toda respuesta puede ser cualquiera de los siete del contrato
  * (`requestStatusUnion`).
+ *
+ * TI2-143: suma el registro por canal oficial, el contacto y la aceptación
+ * de una derivación de entrada y la derivación de salida. Ninguna envía
+ * avisos ni se comunica con otra unidad: eso ocurre fuera de la aplicación.
  */
 
 const requestBaseFields = {
@@ -73,21 +85,41 @@ const requestValidator = v.object({
 const minimizedRequestValidator = v.object(requestBaseFields);
 
 // Detalle (TI2-141): suma los textos del intercambio y la razón de cierre.
-// Solo lo entrega `getRequest`, a quien ya puede leer la solicitud.
+// Solo lo entrega `getRequest`, a quien ya puede leer la solicitud. TI2-143
+// suma el canal de procedencia y las derivaciones, sin identificadores de
+// personal. El canal siempre viaja, pero se declara opcional: Mobile reutiliza
+// el tipo del detalle para los elementos de un listado, y un campo obligatorio
+// nuevo deja de compilar ahí.
 const requestDetailValidator = v.object({
   ...requestBaseFields,
   accessNeeds: v.string(),
   informationRequest: v.optional(v.string()),
   informationResponse: v.optional(v.string()),
   closureReason: v.optional(v.string()),
+  provenanceChannel: v.optional(requestProvenanceChannelUnion),
+  incomingReferral: v.optional(
+    v.object({
+      originUnit: v.string(),
+      referredAt: v.number(),
+      contactedAt: v.optional(v.number()),
+      acceptedAt: v.optional(v.number()),
+    }),
+  ),
+  outgoingReferral: v.optional(
+    v.object({
+      destinationUnit: v.string(),
+      referredAt: v.number(),
+      reason: v.string(),
+    }),
+  ),
 });
 
 const requestPageValidator = paginationResultValidator(requestValidator);
 const minimizedRequestPageValidator = paginationResultValidator(minimizedRequestValidator);
 
 // Los handlers declaran el tipo del validador y no el que infiere TypeScript
-// desde la fila: así Web y Mobile derivan los siete estados del contrato,
-// incluido `referred`, y no solo los que hoy puede traer una fila.
+// desde la fila: así Web y Mobile derivan los siete estados del contrato
+// aunque el tipo de la fila cambie.
 type PublicRequest = Infer<typeof requestValidator>;
 type PublicRequestDetail = Infer<typeof requestDetailValidator>;
 type PublicRequestPage = Infer<typeof requestPageValidator>;
@@ -334,6 +366,115 @@ export const respondToInformationRequest = mutation({
     return unwrapApiResult(
       await respondToInformationRequestUseCase(
         { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
+  },
+});
+
+/**
+ * Registra una solicitud recibida por canal oficial (TI2-143), a nombre del
+ * Estudiante indicado por su correo institucional. Solo un Profesional con
+ * cuenta vigente. El contenido sigue la forma completa de `createRequest`,
+ * con su clave de idempotencia. `receivedAt` es cuándo la recibió CERETI y,
+ * si falta, es el momento del registro. Con `originUnit` queda además como
+ * derivación de entrada.
+ */
+export const registerOfficialRequest = mutation({
+  args: {
+    ...createRequestArgs,
+    studentEmail: v.string(),
+    receivedAt: v.optional(v.number()),
+    originUnit: v.optional(v.string()),
+  },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    const { studentEmail, receivedAt, originUnit, ...submission } = args;
+    return unwrapApiResult(
+      await registerOfficialRequestUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          students: activeStudentByEmailReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          studentEmail,
+          submission,
+          ...(receivedAt === undefined ? {} : { receivedAt }),
+          ...(originUnit === undefined ? {} : { originUnit }),
+        },
+      ),
+    );
+  },
+});
+
+/**
+ * Registra el contacto de CERETI con el estudiante por una derivación de
+ * entrada (TI2-143). Solo el Profesional con toma activa y cuenta vigente;
+ * se registra una sola vez.
+ */
+export const recordReferralContact = mutation({
+  args: { requestId: v.id("requests") },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await recordReferralContactUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
+  },
+});
+
+/**
+ * Registra la aceptación del estudiante de una derivación de entrada
+ * (TI2-143), después del contacto. Solo el Profesional con toma activa y
+ * cuenta vigente. Sin ella, `acceptRequest` no abre el acompañamiento.
+ */
+export const recordReferralAcceptance = mutation({
+  args: { requestId: v.id("requests") },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await recordReferralAcceptanceUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
+  },
+});
+
+/**
+ * Deriva la solicitud a otra unidad (TI2-143). Solo el Profesional con toma
+ * activa y cuenta vigente. Pide el nombre de la unidad de destino y la razón
+ * que lee el estudiante, sin destinatarios ni antecedentes. La solicitud
+ * queda `referred` y no abre acompañamiento.
+ */
+export const referRequest = mutation({
+  args: { requestId: v.id("requests"), destinationUnit: v.string(), reason: v.string() },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await referRequestUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
       ),
     );

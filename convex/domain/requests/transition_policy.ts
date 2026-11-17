@@ -15,9 +15,9 @@ import {
 } from "./transitions";
 
 /**
- * `from` y `to` admiten cualquier estado declarado, incluido `referred`: la
- * política es el único punto que los rechaza, así ninguna capa superior
- * necesita filtrarlos antes.
+ * `from` y `to` admiten cualquier estado declarado: la política es el único
+ * punto que rechaza un par, así ninguna capa superior necesita filtrarlo
+ * antes.
  */
 export type RequestTransitionAttempt = {
   readonly from: RequestState;
@@ -51,8 +51,8 @@ export type RequestTransitionResult =
        */
       readonly change: RequestStateChange;
       /**
-       * Verdadero cuando este intento llega a `accepted`; cancelar o cerrar
-       * nunca lo activan. No garantiza unicidad: la política no conoce la
+       * Verdadero cuando este intento llega a `accepted`; cancelar, cerrar o
+       * derivar nunca lo activan. No garantiza unicidad: la política no conoce la
        * solicitud ni su historial, así que repetir un intento válido la vuelve
        * a emitir. La apertura única (TI2-24) exige leer y actualizar el estado
        * persistido de forma atómica; con el `from` real, el segundo intento no
@@ -80,7 +80,7 @@ export function findRequestTransition(
  * primera que el llamador tiene que resolver.
  *
  * `change` se construye desde la fila de la tabla y no desde el intento: así la
- * entrada solo puede contener estados persistibles, sin conversiones de tipo.
+ * entrada solo trae los estados de una transición declarada, sin conversiones de tipo.
  */
 export function transitionRequest(attempt: RequestTransitionAttempt): RequestTransitionResult {
   const transition = findRequestTransition(attempt.from, attempt.to);

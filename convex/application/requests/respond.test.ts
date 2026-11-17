@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { PersistableRequestState } from "../../domain/requests/state";
+import type { RequestState } from "../../domain/requests/state";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 import type { StoredRequestRow } from "./ports";
 import { respondToInformationRequest, type RespondToInformationRequestDeps } from "./respond";
@@ -39,7 +39,7 @@ function memoryDeps(rows: readonly Row[], activeStudents: readonly string[] = [O
   return { deps, statuses, transitions };
 }
 
-function rowIn(status: PersistableRequestState, studentId = OWNER): Row {
+function rowIn(status: RequestState, studentId = OWNER): Row {
   return { _id: "sol-1", studentId, status, accessNeeds: "Necesidad ficticia", createdAt: 1 };
 }
 

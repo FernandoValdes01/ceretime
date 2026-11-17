@@ -25,7 +25,7 @@ import {
   ASSIGNMENT_STATUS_VALUES,
 } from "../domain/accompaniments/practitioner_assignment";
 import { REQUEST_PROVENANCE_CHANNEL_VALUES } from "../domain/requests/request";
-import { PERSISTABLE_REQUEST_STATES, REQUEST_STATES } from "../domain/requests/state";
+import { REQUEST_STATES } from "../domain/requests/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,
@@ -65,23 +65,13 @@ export const assignmentStatusUnion = v.union(
 );
 
 /**
- * Estados de solicitud del contrato de presentación (TI2-141): los siete que
- * declara el dominio. Derivados de `REQUEST_STATES` para que el borde no
- * defina nombres por su cuenta. Incluye `referred` aunque todavía ninguna fila
- * lo trae, para que Web y Mobile mapeen el conjunto completo una sola vez: lo
- * habilita la tarea de derivaciones.
+ * Estados de solicitud (TI2-141, TI2-143): los siete que declara el dominio,
+ * derivados de `REQUEST_STATES` para que el borde no defina nombres por su
+ * cuenta. Los usan el contrato de presentación y, desde TI2-143, las tablas
+ * `requests` y `requestTransitions`: una sola unión para lo que se publica y
+ * lo que se guarda.
  */
 export const requestStatusUnion = v.union(...REQUEST_STATES.map((state) => v.literal(state)));
-
-/**
- * Estados de solicitud persistibles (TI2-83 adapta validadores para TI2-85):
- * operativos de Sprint 1 más `closed_without_accompaniment` y `cancelled`,
- * sin `referred`. Es lo que puede traer una fila de `requests` o de
- * `requestTransitions`; la presentación declara además `referred` (ver arriba).
- */
-export const persistableRequestStatusUnion = v.union(
-  ...PERSISTABLE_REQUEST_STATES.map((state) => v.literal(state)),
-);
 
 /**
  * Contenido ampliado de la solicitud (TI2-135): formas persistidas de las
@@ -102,6 +92,11 @@ export const generalAvailabilityValidator = v.object({
 });
 
 const [studentProvenanceChannel, officialProvenanceChannel] = REQUEST_PROVENANCE_CHANNEL_VALUES;
+
+/** Canal de procedencia que entrega el detalle de la solicitud (TI2-143). */
+export const requestProvenanceChannelUnion = v.union(
+  ...REQUEST_PROVENANCE_CHANNEL_VALUES.map((channel) => v.literal(channel)),
+);
 
 /**
  * Procedencia de una solicitud (TI2-135): el canal, quién la registró cuando
@@ -139,8 +134,8 @@ export const incomingReferralValidator = v.object({
 
 /**
  * Derivación de salida (TI2-135): CERETI deriva al estudiante a otra unidad,
- * con la razón comprensible. El estado `referred` sigue sin habilitarse; esto
- * solo da dónde guardar el dato cuando un caso de uso lo habilite.
+ * con la razón comprensible. Desde TI2-143 se escribe junto con el estado
+ * `referred`, en la misma operación.
  */
 export const outgoingReferralValidator = v.object({
   destinationUnit: v.string(),

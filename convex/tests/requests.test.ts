@@ -2159,3 +2159,568 @@ test("TI2-181: un tamaño de página no finito es un argumento inválido, no una
     ),
   ).toEqual(UNAUTHORIZED);
 });
+
+/*
+ * TI2-143: registro por canal oficial, derivación de entrada y derivación de
+ * salida, por `api.presentation.requests.*` con la identidad de la sesión.
+ */
+
+const CONFLICT = (message: string) => ({ code: "conflict", message });
+const INVALID = (message: string) => ({ code: "request_fields_invalid", message });
+
+/** Registro por canal oficial con cambios; el cast deja pasar formas inválidas a propósito. */
+function registerOfficialAs(
+  t: SchemaTest,
+  identity: Identity,
+  studentEmail: string,
+  changes: Record<string, unknown> = {},
+) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.registerOfficialRequest, {
+    ...FULL_SUBMISSION,
+    studentEmail,
+    ...changes,
+  } as typeof FULL_SUBMISSION & { studentEmail: string });
+}
+
+function contactAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.recordReferralContact, {
+    requestId,
+  });
+}
+
+function referralAcceptanceAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.recordReferralAcceptance, {
+    requestId,
+  });
+}
+
+function referAs(
+  t: SchemaTest,
+  identity: Identity,
+  requestId: Id<"requests">,
+  destinationUnit = "Unidad ficticia de destino",
+  reason = "La necesidad corresponde a otra unidad",
+) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.referRequest, {
+    requestId,
+    destinationUnit,
+    reason,
+  });
+}
+
+function acceptAs(t: SchemaTest, identity: Identity, requestId: Id<"requests">) {
+  return sessionOf(t, identity).mutation(api.presentation.requests.acceptRequest, {
+    requestId,
+    objective: "Objetivo ficticio",
+  });
+}
+
+/** Fila completa de la solicitud y lo que la rodea, para comprobar que un rechazo no escribe. */
+async function fullSnapshotOf(t: SchemaTest, requestId: Id<"requests">) {
+  const row = await t.run(async (ctx) => await ctx.db.get(requestId));
+  return { row, ...(await snapshotOf(t, requestId)) };
+}
+
+/** Solicitud sembrada como derivación de entrada, en el estado indicado y con toma del Profesional. */
+async function seedIncomingReferral(
+  t: SchemaTest,
+  studentId: Id<"users">,
+  professionalId: Id<"users">,
+  status: Doc<"requests">["status"] = "under_review",
+) {
+  const requestId = await seedRequestIn(t, studentId, status);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(requestId, {
+      provenance: { channel: "official_channel", registeredBy: professionalId, receivedAt: 1 },
+      incomingReferral: { originUnit: "Unidad ficticia de origen", referredAt: 1 },
+    });
+  });
+  await seedTake(t, requestId, professionalId);
+  return requestId;
+}
+
+test("TI2-143: el Profesional registra una solicitud recibida por canal oficial con su procedencia", async () => {
+  const t = convexTest(schema, modules);
+  const proId = await seedProfile(t, "ti143-pro-1", "professional");
+  const studentId = await seedProfile(t, "ti143-est-1", "student");
+  const pro = identityOf("ti143-pro-1");
+
+  // El correo se normaliza: mayúsculas y espacios no cambian a quién se registra
+  const created = await registerOfficialAs(t, pro, "  TI143-Est-1@uct.cl ", { receivedAt: 1000 });
+  expect(created).toMatchObject({ studentId, status: "received" });
+  expect(Object.keys(created).sort()).toEqual([
+    "_id",
+    "accessNeeds",
+    "createdAt",
+    "status",
+    "studentId",
+  ]);
+
+  const [row] = await requestsOf(t, studentId);
+  expect(row).toMatchObject({
+    status: "received",
+    needSummary: "Necesito apoyo para seguir las clases en línea",
+    provenance: { channel: "official_channel", registeredBy: proId, receivedAt: 1000 },
+    idempotencyKey: FULL_SUBMISSION.idempotencyKey,
+  });
+  expect(row?.incomingReferral).toBeUndefined();
+  expect(row?.takenBy).toBeUndefined();
+
+  // El Estudiante la ve como propia, con el canal por el que llegó
+  const detail = await detailAs(t, identityOf("ti143-est-1"), created._id);
+  expect(detail.provenanceChannel).toBe("official_channel");
+  expect(detail).not.toHaveProperty("incomingReferral");
+  expect(detail).not.toHaveProperty("outgoingReferral");
+
+  // Sin fecha de recepción, es el momento del registro
+  const before = Date.now();
+  await registerOfficialAs(t, pro, "ti143-est-1@uct.cl", { idempotencyKey: "clave-ficticia-2" });
+  const rows = await requestsOf(t, studentId);
+  const second = rows.find((request) => request.idempotencyKey === "clave-ficticia-2");
+  expect(second?.provenance?.receivedAt).toBeGreaterThanOrEqual(before);
+  expect(second?.provenance?.receivedAt).toBeLessThanOrEqual(Date.now());
+});
+
+test("TI2-143: repetir el registro por canal oficial con la misma clave no duplica", async () => {
+  const t = convexTest(schema, modules);
+  await seedProfile(t, "ti143-pro-2", "professional");
+  const studentId = await seedProfile(t, "ti143-est-2", "student");
+  const pro = identityOf("ti143-pro-2");
+
+  const first = await registerOfficialAs(t, pro, "ti143-est-2@uct.cl");
+  const retry = await registerOfficialAs(t, pro, "ti143-est-2@uct.cl", {
+    needSummary: "Otro texto ficticio",
+  });
+  expect(retry._id).toEqual(first._id);
+  expect(await requestsOf(t, studentId)).toHaveLength(1);
+});
+
+test("TI2-143: una clave que ya usó otra persona no entrega esa solicitud a quien registra", async () => {
+  const t = convexTest(schema, modules);
+  await seedProfile(t, "ti143-pro-2a", "professional");
+  await seedProfile(t, "ti143-pro-2b", "professional");
+  const studentId = await seedProfile(t, "ti143-est-2a", "student");
+  const email = "ti143-est-2a@uct.cl";
+  const duplicated = CONFLICT(
+    "Ya existe otra solicitud de este estudiante con esa clave de envío. Genera una clave nueva.",
+  );
+
+  // El Estudiante envió la suya: un Profesional sin toma no la recibe por repetir la clave
+  await submitAs(t, identityOf("ti143-est-2a"));
+  expect(await publicErrorOf(registerOfficialAs(t, identityOf("ti143-pro-2a"), email))).toEqual(
+    duplicated,
+  );
+
+  // Tampoco la que registró otro Profesional
+  await registerOfficialAs(t, identityOf("ti143-pro-2a"), email, { idempotencyKey: "clave-2a" });
+  expect(
+    await publicErrorOf(
+      registerOfficialAs(t, identityOf("ti143-pro-2b"), email, { idempotencyKey: "clave-2a" }),
+    ),
+  ).toEqual(duplicated);
+  expect(await requestsOf(t, studentId)).toHaveLength(2);
+});
+
+test("TI2-143: solo un Profesional vigente registra por canal oficial, aunque los campos fallen", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedProfile(t, "ti143-est-3", "student");
+  await seedProfile(t, "ti143-int-3", "intern");
+  await seedProfile(t, "ti143-adm-3", "admin");
+  await seedProfile(t, "ti143-pro-inh-3", "professional", {
+    institutionalStatus: "disabled",
+    accountStatus: "active",
+  });
+  await seedProfile(t, "ti143-pro-ina-3", "professional", {
+    institutionalStatus: "enabled",
+    accountStatus: "inactive",
+  });
+  // Cuenta de prueba de TI2-140: Profesional con correo de la población estudiante
+  await t.run(async (ctx) => {
+    await ctx.db.insert("users", {
+      email: "ti143-prueba-3@alu.uct.cl",
+      fullName: "Profesional de Prueba",
+      role: "professional",
+      ...ENABLED,
+      tokenIdentifier: `${ISSUER}|ti143-prueba-3`,
+    });
+  });
+
+  const identities = [
+    null,
+    identityOf("ti143-sin-perfil"),
+    identityOf("ti143-est-3"),
+    identityOf("ti143-int-3"),
+    identityOf("ti143-adm-3"),
+    identityOf("ti143-pro-inh-3"),
+    identityOf("ti143-pro-ina-3"),
+    identityFor("ti143-prueba-3", "ti143-prueba-3@alu.uct.cl"),
+  ];
+  for (const identity of identities) {
+    expect(await publicErrorOf(registerOfficialAs(t, identity, "ti143-est-3@uct.cl"))).toEqual(
+      UNAUTHORIZED,
+    );
+    // Autoriza antes de validar: un campo inválido no cambia la respuesta
+    expect(
+      await publicErrorOf(
+        registerOfficialAs(t, identity, "ti143-est-3@uct.cl", { needSummary: "   " }),
+      ),
+    ).toEqual(UNAUTHORIZED);
+  }
+  expect(await requestsOf(t, studentId)).toHaveLength(0);
+});
+
+test("TI2-143: el registro por canal oficial rechaza correo, fecha, unidad y contenido inválidos sin escribir", async () => {
+  const t = convexTest(schema, modules);
+  await seedProfile(t, "ti143-pro-4", "professional");
+  const studentId = await seedProfile(t, "ti143-est-4", "student");
+  await seedProfile(t, "ti143-est-ina-4", "student", {
+    institutionalStatus: "enabled",
+    accountStatus: "inactive",
+  });
+  const pro = identityOf("ti143-pro-4");
+  const noAccount = INVALID("No hay una cuenta de Estudiante vigente con ese correo.");
+
+  // El correo debe ser de una cuenta de Estudiante vigente
+  for (const email of ["nadie-ficticio@uct.cl", "ti143-pro-4@uct.cl", "ti143-est-ina-4@uct.cl"]) {
+    expect(await publicErrorOf(registerOfficialAs(t, pro, email))).toEqual(noAccount);
+  }
+  expect(await publicErrorOf(registerOfficialAs(t, pro, "   "))).toEqual(
+    INVALID("Indica el correo institucional del estudiante."),
+  );
+
+  const email = "ti143-est-4@uct.cl";
+  expect(
+    await publicErrorOf(registerOfficialAs(t, pro, email, { receivedAt: Date.now() + 60_000 })),
+  ).toEqual(INVALID("La fecha de recepción no puede ser futura."));
+  for (const receivedAt of [0, -5]) {
+    expect(await publicErrorOf(registerOfficialAs(t, pro, email, { receivedAt }))).toEqual(
+      INVALID("La fecha de recepción no es válida."),
+    );
+  }
+  expect(await publicErrorOf(registerOfficialAs(t, pro, email, { originUnit: "   " }))).toEqual(
+    INVALID("Indica la unidad que derivó al estudiante."),
+  );
+  expect(
+    await publicErrorOf(registerOfficialAs(t, pro, email, { originUnit: "u".repeat(201) })),
+  ).toMatchObject({ code: "request_fields_invalid" });
+
+  // El contenido sigue las reglas del envío completo
+  expect(await publicErrorOf(registerOfficialAs(t, pro, email, { needSummary: "   " }))).toEqual(
+    INVALID("Describe la barrera o necesidad."),
+  );
+  expect(
+    await publicErrorOf(registerOfficialAs(t, pro, email, { accessNeeds: "Texto suelto" })),
+  ).toEqual(
+    INVALID(
+      "Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.",
+    ),
+  );
+
+  // El validador rechaza campos fuera del contrato, como un identificador de estudiante
+  await expect(registerOfficialAs(t, pro, email, { studentId })).rejects.toThrow("Validator error");
+  expect(await requestsOf(t, studentId)).toHaveLength(0);
+});
+
+test("TI2-143: una derivación de entrada no abre acompañamiento sin contacto y aceptación", async () => {
+  const t = convexTest(schema, modules);
+  const proId = await seedProfile(t, "ti143-pro-5", "professional");
+  const studentId = await seedProfile(t, "ti143-est-5", "student");
+  const pro = identityOf("ti143-pro-5");
+  const needsAcceptance = CONFLICT(
+    "La derivación necesita el contacto con el estudiante y su aceptación antes de abrir el acompañamiento",
+  );
+
+  // Otra unidad avisa: se registra por canal oficial con la unidad de origen
+  const created = await registerOfficialAs(t, pro, "ti143-est-5@uct.cl", {
+    originUnit: "  Unidad ficticia de origen  ",
+    receivedAt: 2000,
+  });
+  const requestId = created._id;
+  expect((await fullSnapshotOf(t, requestId)).row).toMatchObject({
+    status: "received",
+    provenance: { channel: "official_channel", registeredBy: proId, receivedAt: 2000 },
+    incomingReferral: { originUnit: "Unidad ficticia de origen", referredAt: 2000 },
+  });
+  await sessionOf(t, pro).mutation(api.presentation.requests.takeRequest, { requestId });
+
+  // Sin contacto ni aceptación, aceptar la solicitud no abre nada
+  const untouched = await fullSnapshotOf(t, requestId);
+  expect(await publicErrorOf(acceptAs(t, pro, requestId))).toEqual(needsAcceptance);
+  expect(await fullSnapshotOf(t, requestId)).toEqual(untouched);
+  expect(untouched.accompaniments).toBe(0);
+
+  // La aceptación del estudiante exige el contacto previo
+  expect(await publicErrorOf(referralAcceptanceAs(t, pro, requestId))).toEqual(
+    CONFLICT("Registra primero el contacto con el estudiante."),
+  );
+  expect(await fullSnapshotOf(t, requestId)).toEqual(untouched);
+
+  // El contacto guarda quién y cuándo, una sola vez, y no cambia el estado
+  const contacted = await contactAs(t, pro, requestId);
+  expect(contacted.status).toBe("under_review");
+  const afterContact = await fullSnapshotOf(t, requestId);
+  expect(afterContact.row?.incomingReferral).toMatchObject({ contactedBy: proId });
+  expect(afterContact.row?.incomingReferral?.contactedAt).toBeGreaterThan(0);
+  expect(afterContact.row?.incomingReferral?.acceptedAt).toBeUndefined();
+  expect(afterContact.transitions).toHaveLength(untouched.transitions.length);
+  expect(await publicErrorOf(contactAs(t, pro, requestId))).toEqual(
+    CONFLICT("El contacto con el estudiante ya está registrado."),
+  );
+
+  // Con contacto pero sin aceptación, sigue sin abrir acompañamiento
+  expect(await publicErrorOf(acceptAs(t, pro, requestId))).toEqual(needsAcceptance);
+  expect(await fullSnapshotOf(t, requestId)).toEqual(afterContact);
+
+  // Con la aceptación registrada, aceptar abre exactamente un acompañamiento
+  await referralAcceptanceAs(t, pro, requestId);
+  expect(await publicErrorOf(referralAcceptanceAs(t, pro, requestId))).toEqual(
+    CONFLICT("La aceptación del estudiante ya está registrada."),
+  );
+  const detail = await detailAs(t, identityOf("ti143-est-5"), requestId);
+  expect(detail.incomingReferral).toEqual({
+    originUnit: "Unidad ficticia de origen",
+    referredAt: 2000,
+    contactedAt: afterContact.row?.incomingReferral?.contactedAt,
+    acceptedAt: expect.any(Number),
+  });
+  await acceptAs(t, pro, requestId);
+  const accepted = await fullSnapshotOf(t, requestId);
+  expect(accepted.status).toBe("accepted");
+  expect(accepted.accompaniments).toBe(1);
+  expect(studentId).toEqual(accepted.row?.studentId);
+
+  // Tras aceptar, los pasos de la derivación ya no cambian nada
+  expect(await publicErrorOf(contactAs(t, pro, requestId))).toEqual(
+    CONFLICT("La solicitud ya no admite este registro en su estado actual."),
+  );
+});
+
+test("TI2-143: una solicitud que no viene de una derivación no registra contacto ni aceptación, y se acepta como siempre", async () => {
+  const t = convexTest(schema, modules);
+  const proId = await seedProfile(t, "ti143-pro-6", "professional");
+  const studentId = await seedProfile(t, "ti143-est-6", "student");
+  const pro = identityOf("ti143-pro-6");
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+  await seedTake(t, requestId, proId);
+  const before = await fullSnapshotOf(t, requestId);
+
+  const notReferral = CONFLICT("La solicitud no viene de una derivación.");
+  expect(await publicErrorOf(contactAs(t, pro, requestId))).toEqual(notReferral);
+  expect(await publicErrorOf(referralAcceptanceAs(t, pro, requestId))).toEqual(notReferral);
+  expect(await fullSnapshotOf(t, requestId)).toEqual(before);
+
+  await acceptAs(t, pro, requestId);
+  expect((await fullSnapshotOf(t, requestId)).accompaniments).toBe(1);
+});
+
+test("TI2-143: el contacto, la aceptación y la derivación de salida exigen Profesional vigente con toma activa", async () => {
+  const t = convexTest(schema, modules);
+  const ownerId = await seedProfile(t, "ti143-est-7", "student");
+  const takerId = await seedProfile(t, "ti143-pro-7", "professional");
+  const requestId = await seedIncomingReferral(t, ownerId, takerId);
+
+  // Sin toma, o con una toma revocada, el Profesional vigente no opera
+  await seedProfile(t, "ti143-pro-sin-7", "professional");
+  await seedTake(t, requestId, await seedProfile(t, "ti143-pro-rev-7", "professional"), "revoked");
+  // Con toma sembrada, la denegación sale del rol o de la vigencia
+  const others = [
+    ["ti143-int-7", "intern", ENABLED],
+    ["ti143-adm-7", "admin", ENABLED],
+    [
+      "ti143-pro-inh-7",
+      "professional",
+      { institutionalStatus: "disabled", accountStatus: "active" },
+    ],
+    [
+      "ti143-pro-ina-7",
+      "professional",
+      { institutionalStatus: "enabled", accountStatus: "inactive" },
+    ],
+  ] as const;
+  for (const [subject, role, status] of others) {
+    await seedTake(t, requestId, await seedProfile(t, subject, role, status));
+  }
+  await seedTake(t, requestId, ownerId);
+  const missingId = await t.run(async (ctx) => {
+    const id = await ctx.db.insert("requests", {
+      studentId: ownerId,
+      status: "under_review",
+      accessNeeds: "Temporal ficticia",
+      createdAt: 1,
+    });
+    await ctx.db.delete(id);
+    return id;
+  });
+  const before = await fullSnapshotOf(t, requestId);
+
+  const identities = [
+    null,
+    identityOf("ti143-sin-perfil"),
+    identityOf("ti143-est-7"),
+    identityOf("ti143-pro-sin-7"),
+    identityOf("ti143-pro-rev-7"),
+    ...others.map(([subject]) => identityOf(subject)),
+  ];
+  for (const identity of identities) {
+    for (const attempt of [contactAs, referralAcceptanceAs, referAs]) {
+      expect(await publicErrorOf(attempt(t, identity, requestId))).toEqual(UNAUTHORIZED);
+    }
+  }
+  // Una solicitud inexistente responde igual que una ajena
+  for (const attempt of [contactAs, referralAcceptanceAs, referAs]) {
+    expect(await publicErrorOf(attempt(t, identityOf("ti143-pro-7"), missingId))).toEqual(
+      UNAUTHORIZED,
+    );
+  }
+  expect(await fullSnapshotOf(t, requestId)).toEqual(before);
+});
+
+test("TI2-143: el Profesional con toma deriva la solicitud solo con la unidad y la razón, sin abrir acompañamiento", async () => {
+  const t = convexTest(schema, modules);
+  const proId = await seedProfile(t, "ti143-pro-8", "professional");
+  const studentId = await seedProfile(t, "ti143-est-8", "student");
+  const pro = identityOf("ti143-pro-8");
+  const student = identityOf("ti143-est-8");
+
+  for (const from of ["under_review", "awaiting_information_or_acceptance"] as const) {
+    const requestId = await seedRequestIn(t, studentId, from);
+    await seedTake(t, requestId, proId);
+
+    // Solo la unidad de destino y la razón: no hay destinatarios ni antecedentes que enviar
+    const referred = await referAs(
+      t,
+      pro,
+      requestId,
+      "  Unidad ficticia de destino  ",
+      "  La necesidad corresponde a otra unidad  ",
+    );
+    expect(referred).toMatchObject({ _id: requestId, status: "referred" });
+
+    const after = await fullSnapshotOf(t, requestId);
+    expect(after.status).toBe("referred");
+    expect(after.accompaniments).toBe(0);
+    expect(after.transitions).toHaveLength(1);
+    expect(after.transitions[0]).toMatchObject({
+      from,
+      to: "referred",
+      actorId: proId,
+      reason: "La necesidad corresponde a otra unidad",
+    });
+    // El estado, la derivación y el registro del cambio comparten fecha y actor
+    expect(after.row?.outgoingReferral).toEqual({
+      destinationUnit: "Unidad ficticia de destino",
+      referredAt: after.transitions[0]?.occurredAt,
+      referredBy: proId,
+      reason: "La necesidad corresponde a otra unidad",
+    });
+
+    // El Estudiante lee a dónde y por qué, sin el identificador de quien derivó
+    const detail = await detailAs(t, student, requestId);
+    expect(detail.status).toBe("referred");
+    expect(detail.outgoingReferral).toEqual({
+      destinationUnit: "Unidad ficticia de destino",
+      referredAt: after.transitions[0]?.occurredAt,
+      reason: "La necesidad corresponde a otra unidad",
+    });
+  }
+
+  // Los listados entregan las derivadas con su estado, sin los textos de la derivación
+  const own = await sessionOf(t, student).query(api.presentation.requests.listOwnRequests, {
+    paginationOpts: PAGE,
+  });
+  expect(own.page.map((request) => request.status)).toEqual(["referred", "referred"]);
+  expect(own.page[0]).not.toHaveProperty("outgoingReferral");
+  const authorized = await sessionOf(t, pro).query(
+    api.presentation.requests.listAuthorizedRequests,
+    { paginationOpts: PAGE },
+  );
+  expect(authorized.page.map((request) => request.status)).toEqual(["referred", "referred"]);
+});
+
+test("TI2-143: derivar exige un estado con revisión en curso, la unidad y la razón, y no escribe al rechazar", async () => {
+  const t = convexTest(schema, modules);
+  const proId = await seedProfile(t, "ti143-pro-9", "professional");
+  const studentId = await seedProfile(t, "ti143-est-9", "student");
+  const pro = identityOf("ti143-pro-9");
+  const notAllowed = CONFLICT("La solicitud no admite la derivación en su estado actual.");
+
+  // Transiciones inválidas: recibida, aceptada, cerrada, cancelada y ya derivada
+  for (const status of [
+    "received",
+    "accepted",
+    "closed_without_accompaniment",
+    "cancelled",
+    "referred",
+  ] as const) {
+    const requestId = await seedRequestIn(t, studentId, status);
+    await seedTake(t, requestId, proId);
+    const before = await fullSnapshotOf(t, requestId);
+    expect(await publicErrorOf(referAs(t, pro, requestId))).toEqual(notAllowed);
+    // El estado gana sobre un campo vacío: primero se informa que no admite el paso
+    expect(await publicErrorOf(referAs(t, pro, requestId, "", ""))).toEqual(notAllowed);
+    expect(await fullSnapshotOf(t, requestId)).toEqual(before);
+  }
+
+  const requestId = await seedRequestIn(t, studentId, "under_review");
+  await seedTake(t, requestId, proId);
+  const before = await fullSnapshotOf(t, requestId);
+  expect(await publicErrorOf(referAs(t, pro, requestId, "Unidad ficticia", "   "))).toEqual(
+    INVALID("Se requiere la razón de la derivación."),
+  );
+  expect(await publicErrorOf(referAs(t, pro, requestId, "   "))).toEqual(
+    INVALID("Indica la unidad a la que se deriva al estudiante."),
+  );
+  expect(await publicErrorOf(referAs(t, pro, requestId, "u".repeat(201)))).toMatchObject({
+    code: "request_fields_invalid",
+  });
+  expect(
+    await publicErrorOf(referAs(t, pro, requestId, "Unidad ficticia", "r".repeat(2001))),
+  ).toMatchObject({ code: "request_fields_invalid" });
+  expect(await fullSnapshotOf(t, requestId)).toEqual(before);
+
+  // Los argumentos no admiten destinatarios ni antecedentes
+  await expect(
+    sessionOf(t, pro).mutation(api.presentation.requests.referRequest, {
+      requestId,
+      destinationUnit: "Unidad ficticia",
+      reason: "Razón ficticia",
+      recipients: ["persona-ficticia@uct.cl"],
+    } as never),
+  ).rejects.toThrow("Validator error");
+  expect(await fullSnapshotOf(t, requestId)).toEqual(before);
+});
+
+test("TI2-143: una solicitud derivada es terminal: no admite ningún paso más", async () => {
+  const t = convexTest(schema, modules);
+  const proId = await seedProfile(t, "ti143-pro-10", "professional");
+  const studentId = await seedProfile(t, "ti143-est-10", "student");
+  const pro = identityOf("ti143-pro-10");
+  const student = identityOf("ti143-est-10");
+  const requestId = await seedIncomingReferral(
+    t,
+    studentId,
+    proId,
+    "awaiting_information_or_acceptance",
+  );
+  await referAs(t, pro, requestId);
+  const referred = await fullSnapshotOf(t, requestId);
+
+  for (const attempt of [
+    acceptAs(t, pro, requestId),
+    closeAs(t, pro, requestId, "Motivo ficticio"),
+    referAs(t, pro, requestId),
+    contactAs(t, pro, requestId),
+    referralAcceptanceAs(t, pro, requestId),
+    sessionOf(t, pro).mutation(api.presentation.requests.requestAdditionalInformation, {
+      requestId,
+      reason: "Motivo ficticio",
+    }),
+    sessionOf(t, pro).mutation(api.presentation.requests.takeRequest, { requestId }),
+    cancelAs(t, student, requestId, "Motivo ficticio"),
+    respondAs(t, student, requestId, "Respuesta ficticia"),
+  ]) {
+    expect(await publicErrorOf(attempt)).toMatchObject({ code: "conflict" });
+  }
+  expect(await fullSnapshotOf(t, requestId)).toEqual(referred);
+  expect(referred.accompaniments).toBe(0);
+});

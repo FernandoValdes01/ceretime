@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { PERSISTABLE_REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
+import { REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
 import {
   ACCESS_NEED_ID_MAX_LENGTH,
   ACCESS_NEED_OPTIONS,
@@ -72,8 +72,8 @@ const rowWith = (status: string) => ({
 });
 
 describe("toAccompanimentRequest (TI2-8, TI2-85)", () => {
-  test("adapta una fila existente con cada estado persistible, cierres incluidos", () => {
-    for (const status of PERSISTABLE_REQUEST_STATES) {
+  test("adapta una fila existente con cada estado, cierres y derivación incluidos", () => {
+    for (const status of REQUEST_STATES) {
       expect(
         toAccompanimentRequest({
           _id: "request-id",
@@ -104,10 +104,8 @@ describe("toAccompanimentRequest (TI2-8, TI2-85)", () => {
     ).toThrow("Estado de solicitud desconocido");
   });
 
-  test("rechaza una fila derivada, estado sin reglas ni proyección acordada", () => {
-    expect(() => toAccompanimentRequest(rowWith("referred"))).toThrow(
-      "Estado de solicitud desconocido",
-    );
+  test("adapta una fila derivada: desde TI2-143 `referred` es un estado que una fila trae", () => {
+    expect(toAccompanimentRequest(rowWith("referred")).status).toBe("referred");
   });
 
   test("la entidad publica se importa desde el barrel", () => {

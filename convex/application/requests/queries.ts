@@ -1,6 +1,11 @@
 import type { PaginationOptions, PaginationResult } from "convex/server";
 import { okResult, type ApiResult } from "../../domain/errors/api_error";
-import { invalidRequestFields, toRequestExchange } from "../../domain/requests/request";
+import {
+  invalidRequestFields,
+  requestProvenanceChannelOf,
+  toRequestExchange,
+  type RequestProvenanceChannel,
+} from "../../domain/requests/request";
 import type {
   ActiveProfessionalReader,
   ActiveRequestViewerReader,
@@ -178,7 +183,12 @@ export interface GetRequestDetailDeps<RequestId extends string, UserId extends s
     RequestListReader<RequestId, UserId>;
 }
 
-/** Detalle público: la entidad más los textos del intercambio y la razón de cierre. */
+/**
+ * Detalle público: la entidad más los textos del intercambio, la razón de
+ * cierre, el canal de procedencia y las derivaciones (TI2-143). De las
+ * derivaciones no viaja quién contactó ni quién derivó: el detalle no entrega
+ * identificadores de personal.
+ */
 type RequestDetail<RequestId extends string, UserId extends string> = RequestEntity<
   RequestId,
   UserId
@@ -186,6 +196,18 @@ type RequestDetail<RequestId extends string, UserId extends string> = RequestEnt
   readonly informationRequest?: string;
   readonly informationResponse?: string;
   readonly closureReason?: string;
+  readonly provenanceChannel: RequestProvenanceChannel;
+  readonly incomingReferral?: {
+    readonly originUnit: string;
+    readonly referredAt: number;
+    readonly contactedAt?: number;
+    readonly acceptedAt?: number;
+  };
+  readonly outgoingReferral?: {
+    readonly destinationUnit: string;
+    readonly referredAt: number;
+    readonly reason: string;
+  };
 };
 
 /**
@@ -200,10 +222,35 @@ async function toRequestDetail<RequestId extends string, UserId extends string>(
 ): Promise<RequestDetail<RequestId, UserId>> {
   const entity = toEntity(request);
   const changes = await requests.listRecentTransitions(request._id);
+  const { incomingReferral, outgoingReferral } = request;
   return {
     ...entity,
     ...toRequestExchange(entity.status, changes),
     ...(request.closureReason === undefined ? {} : { closureReason: request.closureReason }),
+    provenanceChannel: requestProvenanceChannelOf(request),
+    ...(incomingReferral === undefined
+      ? {}
+      : {
+          incomingReferral: {
+            originUnit: incomingReferral.originUnit,
+            referredAt: incomingReferral.referredAt,
+            ...(incomingReferral.contactedAt === undefined
+              ? {}
+              : { contactedAt: incomingReferral.contactedAt }),
+            ...(incomingReferral.acceptedAt === undefined
+              ? {}
+              : { acceptedAt: incomingReferral.acceptedAt }),
+          },
+        }),
+    ...(outgoingReferral === undefined
+      ? {}
+      : {
+          outgoingReferral: {
+            destinationUnit: outgoingReferral.destinationUnit,
+            referredAt: outgoingReferral.referredAt,
+            reason: outgoingReferral.reason,
+          },
+        }),
   };
 }
 

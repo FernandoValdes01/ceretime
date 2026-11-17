@@ -1,15 +1,17 @@
 import { describe, expect, test } from "vitest";
-import type { PersistableRequestState, Sprint1RequestState } from "./state";
+import type { RequestState, Sprint1RequestState } from "./state";
 import {
   CLOSURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
-  PERSISTABLE_REQUEST_STATES,
+  REQUEST_STATES,
+  REFERRAL_REQUEST_STATES,
   SPRINT_1_REQUEST_STATES,
 } from "./state";
 import {
   ACCEPTANCE_STATE,
   CLOSURE_REQUEST_TRANSITIONS,
   isOpenRequestState,
+  REFERRAL_REQUEST_TRANSITIONS,
   REQUEST_TRANSITIONS,
   RESPONSE_REQUEST_TRANSITIONS,
   SPRINT_1_REQUEST_TRANSITIONS,
@@ -27,7 +29,7 @@ const pair = (row: { readonly from: string; readonly to: string }) => `${row.fro
  * se le agregan elementos está definido en JavaScript: lo agregado entra en el
  * mismo recorrido, así que el grafo se cierra sin llevar una cola aparte.
  */
-function closure<State extends PersistableRequestState>(
+function closure<State extends RequestState>(
   start: State,
   next: (state: State) => readonly State[],
 ): Set<State> {
@@ -134,32 +136,60 @@ describe("RESPONSE_REQUEST_TRANSITIONS (TI2-141)", () => {
   });
 
   test("es el único retroceso: ninguna otra fila vuelve a un estado anterior del flujo", () => {
-    const order = (state: PersistableRequestState) => PERSISTABLE_REQUEST_STATES.indexOf(state);
+    const order = (state: RequestState) => REQUEST_STATES.indexOf(state);
     const backwards = REQUEST_TRANSITIONS.filter((row) => order(row.to) < order(row.from));
     expect(backwards.map(pair)).toEqual(RESPONSE_REQUEST_TRANSITIONS.map(pair));
   });
 });
 
-const allSuccessors = (state: PersistableRequestState) =>
+describe("REFERRAL_REQUEST_TRANSITIONS (TI2-143)", () => {
+  test("declara exactamente la derivación de salida desde los estados con toma", () => {
+    expect(REFERRAL_REQUEST_TRANSITIONS.map(pair)).toEqual([
+      "under_review -> referred",
+      "awaiting_information_or_acceptance -> referred",
+    ]);
+  });
+
+  test("toda fila exige motivo: es la razón que lee el estudiante", () => {
+    const withoutReason = REFERRAL_REQUEST_TRANSITIONS.filter((row) => !row.requiresReason);
+    expect(withoutReason.map(pair)).toEqual([]);
+  });
+
+  test("no deriva una recibida, que nadie tomó, ni una aceptada, que ya abrió su acompañamiento", () => {
+    const origins: readonly string[] = REFERRAL_REQUEST_TRANSITIONS.map((row) => row.from);
+    expect(origins).not.toContain(INITIAL_REQUEST_STATE);
+    expect(origins).not.toContain(ACCEPTANCE_STATE);
+  });
+
+  test("sale de los mismos estados que el cierre sin acompañamiento", () => {
+    const closable = CLOSURE_REQUEST_TRANSITIONS.filter(
+      (row) => row.to === "closed_without_accompaniment",
+    ).map((row) => row.from);
+    expect(REFERRAL_REQUEST_TRANSITIONS.map((row) => row.from).sort()).toEqual(closable.sort());
+  });
+});
+
+const allSuccessors = (state: RequestState) =>
   REQUEST_TRANSITIONS.filter((row) => row.from === state).map((row) => row.to);
 
 describe("REQUEST_TRANSITIONS como grafo", () => {
-  test("es la suma exacta de las tres tablas, sin repetir pares", () => {
+  test("es la suma exacta de las cuatro tablas, sin repetir pares", () => {
     const pairs = REQUEST_TRANSITIONS.map(pair);
     expect(pairs).toEqual([
       ...SPRINT_1_REQUEST_TRANSITIONS.map(pair),
       ...RESPONSE_REQUEST_TRANSITIONS.map(pair),
+      ...REFERRAL_REQUEST_TRANSITIONS.map(pair),
       ...CLOSURE_REQUEST_TRANSITIONS.map(pair),
     ]);
     expect(pairs.filter((value, index) => pairs.indexOf(value) !== index)).toEqual([]);
   });
 
-  test("todo estado persistible se alcanza desde el inicial", () => {
-    const reached = closure<PersistableRequestState>(INITIAL_REQUEST_STATE, allSuccessors);
-    expect(PERSISTABLE_REQUEST_STATES.filter((state) => !reached.has(state))).toEqual([]);
+  test("todo estado se alcanza desde el inicial", () => {
+    const reached = closure<RequestState>(INITIAL_REQUEST_STATE, allSuccessors);
+    expect(REQUEST_STATES.filter((state) => !reached.has(state))).toEqual([]);
   });
 
-  test.each([ACCEPTANCE_STATE, ...CLOSURE_REQUEST_STATES])(
+  test.each([ACCEPTANCE_STATE, ...REFERRAL_REQUEST_STATES, ...CLOSURE_REQUEST_STATES])(
     "%s es terminal: ninguna fila sale de ahí",
     (terminal) => {
       expect(REQUEST_TRANSITIONS.filter((row) => row.from === terminal).map(pair)).toEqual([]);
