@@ -3,19 +3,25 @@ import {
   expandAvailabilitySlots,
   isValidCivilDate,
   type AvailabilityBlock,
+  type AvailabilitySearchResult,
   type AvailabilitySlot,
-  type AvailabilitySlotPage,
+  type SearchedAvailabilitySlot,
 } from "../../domain/availability/availability";
+import {
+  decideNoCompatibleSlotReason,
+  toOfficialChannelCoordination,
+  type NoCompatibleSlotReason,
+} from "../../domain/availability/official_channel";
 import {
   conflictError,
   errResult,
-  noAvailabilityError,
   okResult,
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
 import type { AccessNeed } from "../../domain/requests/request";
 import { assessCompatibility, type CompatibilityOption } from "../../domain/spaces/compatibility";
+import { toSpaceFields } from "../../domain/spaces/space";
 import {
   authorizeAvailabilityEdit,
   authorizeAvailabilityRead,
@@ -51,9 +57,10 @@ import type {
  * Búsqueda: solo expone cupos de un profesional reservable para el
  * acompañamiento (TI2-111), y combina recurrencia y excepciones (TI2-81),
  * ocupación por puerto (TI2-84/TI2-96) y compatibilidad de modalidad y
- * espacio con las necesidades vigentes sin rebajarlas (TI2-82). Sin opción compatible y
- * libre responde `no_availability` (TI2-88) con la referencia mínima
- * `accompanimentId` de la entrada, sin crear reserva incompatible. Rango
+ * espacio con las necesidades vigentes sin rebajarlas (TI2-82). Sin opción
+ * compatible y libre responde el resultado explícito `no_compatible_slot`
+ * (TI2-144) con su motivo, el código de referencia y los canales oficiales,
+ * sin crear reserva incompatible. Rango
  * y página acotados: la consulta nunca expone el calendario completo. Un
  * cursor que ya no figura (cupo ocupado o incompatible entre consultas)
  * responde `conflict` para reiniciar la búsqueda, nunca repite resultados
@@ -280,20 +287,24 @@ export async function resolveCompatibilityOption(
  * Autoriza con TI2-86 (acompañamiento activo con pertenencia o asignación
  * vigente; pausado, cerrado, revocado, practicante o administrador se
  * deniegan), exige que el profesional buscado sea reservable para ese
- * acompañamiento (si no, `no_availability` sin leer su disponibilidad),
- * expande con TI2-81, descuenta la ocupación del profesional, del
- * estudiante y de la sala (TI2-84/TI2-96) y
- * filtra por compatibilidad con las necesidades vigentes sin rebajarlas
- * (TI2-82). Sin opción compatible y libre responde `no_availability`
- * (TI2-88) con la referencia mínima `accompanimentId` de la entrada, sin
- * crear reserva incompatible. Rango y página acotados: la consulta nunca
- * expone el calendario completo. Un cursor ausente en la lista vigente
- * responde `conflict` para reiniciar la búsqueda.
+ * acompañamiento (si no, `no_compatible_slot` con `no_published_slots` sin
+ * leer su disponibilidad, igual que uno sin agenda), expande con TI2-81,
+ * descuenta la ocupación del profesional, del estudiante y de la sala
+ * (TI2-84/TI2-96) y filtra por compatibilidad con las necesidades vigentes
+ * sin rebajarlas (TI2-82). Cada cupo presencial ofrecido trae la ubicación y
+ * el acceso de su sala.
+ *
+ * Sin opción compatible y libre responde `no_compatible_slot` (TI2-144): el
+ * motivo sale de lo descartado (`decideNoCompatibleSlotReason`) y el código
+ * de referencia, del acompañamiento, sin datos personales. Rango y página
+ * acotados: la consulta nunca expone el calendario completo. Un cursor
+ * ausente en la lista vigente responde `conflict` para reiniciar la
+ * búsqueda; tras el último cupo, la página siguiente llega vacía.
  */
 export async function searchAvailabilitySlots(
   deps: SearchAvailabilityDeps,
   input: SearchAvailabilityInput,
-): Promise<ApiResult<AvailabilitySlotPage>> {
+): Promise<ApiResult<AvailabilitySearchResult>> {
   if (input.version !== AVAILABILITY_CONTRACT_VERSION) return conflict();
   if (!Number.isInteger(input.limit) || input.limit < 1) return conflict();
   if (input.limit > SEARCH_AVAILABILITY_PAGE_LIMIT_MAX) return conflict();
@@ -316,7 +327,7 @@ export async function searchAvailabilitySlots(
       professionalId: input.professionalId,
     }))
   ) {
-    return errResult(noAvailabilityError());
+    return noCompatibleSlot(input.accompanimentId, "no_published_slots");
   }
 
   const [blocksResult, exceptionsResult, needsEntry, onlineSupports, accompaniment] =
@@ -350,7 +361,9 @@ export async function searchAvailabilitySlots(
     return conflict();
   }
 
-  const compatible: AvailabilitySlot[] = [];
+  const compatible: SearchedAvailabilitySlot[] = [];
+  // Lo descartado solo decide el motivo de la ausencia; nunca se ofrece.
+  const discarded = { occupied: 0, incompatible: 0 };
   for (const slot of expanded) {
     // Los mismos recursos que comprueba la reserva: el profesional, el
     // estudiante del acompañamiento (también cuando busca el profesional) y
@@ -362,10 +375,18 @@ export async function searchAvailabilitySlots(
       startAt: slot.startAt,
       endAt: slot.endAt,
     });
-    if (occupied) continue;
+    if (occupied) {
+      discarded.occupied += 1;
+      continue;
+    }
     const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, slot);
-    if (option === null) continue;
-    if (assessCompatibility(needsEntry.needs, option).compatible) compatible.push(slot);
+    if (option === null || !assessCompatibility(needsEntry.needs, option).compatible) {
+      discarded.incompatible += 1;
+      continue;
+    }
+    compatible.push(
+      option.space === undefined ? slot : { ...slot, space: toSpaceFields(option.space.space) },
+    );
   }
 
   let startIndex = 0;
@@ -374,14 +395,29 @@ export async function searchAvailabilitySlots(
     if (found === -1) return conflict();
     startIndex = found + 1;
   }
+  if (compatible.length === 0) {
+    return noCompatibleSlot(input.accompanimentId, decideNoCompatibleSlotReason(discarded));
+  }
   const window = compatible.slice(startIndex, startIndex + input.limit + 1);
   const items = window.slice(0, input.limit);
   const hasMore = window.length > items.length;
-  if (items.length === 0) return errResult(noAvailabilityError());
   return okResult({
+    status: "available",
     items,
     hasMore,
     nextCursor: hasMore ? (items[items.length - 1]?.id ?? null) : null,
+    version: AVAILABILITY_CONTRACT_VERSION,
+  });
+}
+
+/** Ausencia explícita de horario compatible, con su motivo, referencia y canales (TI2-144). */
+function noCompatibleSlot(
+  accompanimentId: string,
+  reason: NoCompatibleSlotReason,
+): ApiResult<AvailabilitySearchResult> {
+  return okResult({
+    status: "no_compatible_slot",
+    coordination: toOfficialChannelCoordination(accompanimentId, reason),
     version: AVAILABILITY_CONTRACT_VERSION,
   });
 }

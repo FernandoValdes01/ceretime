@@ -1,6 +1,10 @@
 import { getFunctionName, type FunctionReference } from "convex/server";
 import { ConvexError } from "convex/values";
 import { describe, expect, test } from "vitest";
+import {
+  toOfficialChannelCoordination,
+  type NoCompatibleSlotReason,
+} from "../../../../../convex/domain/index.ts";
 import { createConvexAgendaAdapter, type ConvexAgendaClient } from "./convex-agenda-adapter.ts";
 
 /**
@@ -618,6 +622,17 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
     nextCursor,
     version: "v1",
   });
+  /** Búsqueda con cupos: la forma `available` de TI2-144. */
+  const slotsPage = (items: ReadonlyArray<unknown>, nextCursor: string | null = null) => ({
+    status: "available",
+    ...page(items, nextCursor),
+  });
+  /** Búsqueda sin horario compatible, como la entrega el Backend (TI2-144). */
+  const noCompatibleSlot = (reason: NoCompatibleSlotReason) => () => ({
+    status: "no_compatible_slot",
+    coordination: toOfficialChannelCoordination("acompanamiento-1", reason),
+    version: "v1",
+  });
   const publicError = (code: string, message: string) => () => {
     throw new ConvexError({ code, message });
   };
@@ -630,7 +645,7 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
     const fake = createFakeClient({
       query: {
         [SEARCH_SLOTS]: (args) =>
-          args.cursor === undefined ? page([SLOT_IN_PERSON], "c2") : page([SLOT_ONLINE]),
+          args.cursor === undefined ? slotsPage([SLOT_IN_PERSON], "c2") : slotsPage([SLOT_ONLINE]),
         [LIST_SPACES]: () => page([SPACE]),
       },
     });
@@ -667,8 +682,8 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
       query: {
         [SEARCH_SLOTS]: (args) =>
           args.professionalId === "pro-1"
-            ? page([SLOT_ONLINE])
-            : page([{ ...OTHER, version: "v1" }]),
+            ? slotsPage([SLOT_ONLINE])
+            : slotsPage([{ ...OTHER, version: "v1" }]),
       },
     });
 
@@ -698,8 +713,8 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
       query: {
         [SEARCH_SLOTS]: (args) =>
           args.professionalId === "pro-1"
-            ? page([SLOT_IN_PERSON, SLOT_ONLINE])
-            : page([OTRA_SALA, OTRO_PROFESIONAL, OTRO_FIN]),
+            ? slotsPage([SLOT_IN_PERSON, SLOT_ONLINE])
+            : slotsPage([OTRA_SALA, OTRO_PROFESIONAL, OTRO_FIN]),
         [LIST_SPACES]: () => page([SPACE]),
       },
     });
@@ -720,7 +735,7 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
 
   test("superar el tope de páginas responde error y nunca una lista parcial", async () => {
     const fake = createFakeClient({
-      query: { [SEARCH_SLOTS]: () => page([SLOT_ONLINE], "siguiente") },
+      query: { [SEARCH_SLOTS]: () => slotsPage([SLOT_ONLINE], "siguiente") },
     });
 
     await expect(
@@ -735,12 +750,10 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
   test("un profesional sin cupo no oculta los cupos de los demás", async () => {
     const fake = createFakeClient({
       query: {
-        [SEARCH_SLOTS]: (args) => {
-          if (args.professionalId === "pro-1") {
-            throw new ConvexError({ code: "no_availability", message: "Sin cupo" });
-          }
-          return page([SLOT_ONLINE]);
-        },
+        [SEARCH_SLOTS]: (args) =>
+          args.professionalId === "pro-1"
+            ? noCompatibleSlot("slots_occupied")()
+            : slotsPage([SLOT_ONLINE]),
       },
     });
 
@@ -752,8 +765,28 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
     ).resolves.toEqual({ status: "ok", slots: [ONLINE] });
   });
 
+  test("sin cupo con ningún profesional entrega la coordinación del motivo de mayor prioridad", async () => {
+    const fake = createFakeClient({
+      query: {
+        [SEARCH_SLOTS]: (args) =>
+          noCompatibleSlot(args.professionalId === "pro-1" ? "slots_occupied" : "needs_not_met")(),
+      },
+    });
+
+    await expect(
+      fake.adapter().searchSlots({
+        modality: "all",
+        context: { accompanimentId: "acompanamiento-1", professionalIds: ["pro-1", "pro-2"] },
+      }),
+    ).resolves.toEqual({
+      status: "no_availability",
+      code: "no_availability",
+      coordination: toOfficialChannelCoordination("acompanamiento-1", "needs_not_met"),
+    });
+  });
+
   test("filtrar una modalidad sin filas responde vacío, no falta de cupo", async () => {
-    const fake = createFakeClient({ query: { [SEARCH_SLOTS]: () => page([SLOT_ONLINE]) } });
+    const fake = createFakeClient({ query: { [SEARCH_SLOTS]: () => slotsPage([SLOT_ONLINE]) } });
 
     await expect(
       fake.adapter().searchSlots({ modality: "inPerson", context: CONTEXT }),
@@ -763,7 +796,7 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
   test("si falla el catálogo, el cupo sigue disponible sin etiqueta", async () => {
     const fake = createFakeClient({
       query: {
-        [SEARCH_SLOTS]: () => page([SLOT_IN_PERSON]),
+        [SEARCH_SLOTS]: () => slotsPage([SLOT_IN_PERSON]),
         [LIST_SPACES]: publicError("unauthorized", "No autorizado"),
       },
     });
@@ -776,8 +809,12 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
   test.each([
     [
       "falta de cupo",
-      publicError("no_availability", "Sin cupo"),
-      { status: "no_availability", code: "no_availability" },
+      noCompatibleSlot("no_published_slots"),
+      {
+        status: "no_availability",
+        code: "no_availability",
+        coordination: toOfficialChannelCoordination("acompanamiento-1", "no_published_slots"),
+      },
     ],
     ["denegación", publicError("unauthorized", "No autorizado"), { status: "denied" }],
     [

@@ -3,7 +3,13 @@ import type { ApiResult } from "../../domain/errors/api_error";
 import {
   AVAILABILITY_CONTRACT_VERSION,
   type AvailabilityBlock,
+  type AvailabilitySearchResult,
 } from "../../domain/availability/availability";
+import {
+  OFFICIAL_CHANNELS,
+  toOfficialChannelCoordination,
+  type NoCompatibleSlotReason,
+} from "../../domain/availability/official_channel";
 import type { AccessNeed } from "../../domain/requests/request";
 import type { CompatibilitySpace } from "../../domain/spaces/compatibility";
 import type { Space } from "../../domain/spaces/space";
@@ -264,18 +270,31 @@ const CONFLICT = {
   status: "error",
   error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
 };
-const NO_AVAILABILITY = {
-  status: "error",
-  error: {
-    code: "no_availability",
-    message: "Sin cupo disponible. Coordina por el canal oficial con la referencia indicada.",
-  },
-};
+/** Ausencia explícita de horario compatible de `acc-1` con su motivo (TI2-144). */
+function noCompatibleSlot(reason: NoCompatibleSlotReason) {
+  return {
+    status: "ok",
+    data: {
+      status: "no_compatible_slot",
+      coordination: toOfficialChannelCoordination("acc-1", reason),
+      version: AVAILABILITY_CONTRACT_VERSION,
+    },
+  };
+}
 
 /** Extrae el éxito o falla la prueba sin `expect` condicional (regla de lint). */
 function requireOk<T>(result: ApiResult<T>): T {
   if (result.status !== "ok") throw new Error(`Se esperaba éxito y llegó ${result.error.code}`);
   return result.data;
+}
+
+/** Extrae la página con cupos o falla la prueba. */
+function requireAvailable(result: ApiResult<AvailabilitySearchResult>) {
+  const data = requireOk(result);
+  if (data.status !== "available") {
+    throw new Error(`Se esperaban cupos y llegó ${data.coordination.reason}`);
+  }
+  return data;
 }
 
 describe("publicación de bloques propios (TI2-97)", () => {
@@ -426,7 +445,7 @@ describe("publicación de bloques propios (TI2-97)", () => {
 describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
   test("el estudiante dueño y el profesional asignado consultan el día activo", async () => {
     const studentAuth = studentSearchAuth();
-    const studentData = requireOk(
+    const studentData = requireAvailable(
       await searchAvailabilitySlots(searchDeps(studentAuth), searchInput()),
     );
     expect(studentData.items).toHaveLength(1);
@@ -517,16 +536,19 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     }
     expect(results).toEqual(
       Object.fromEntries(
-        cases.map(({ label }) => [label, { result: NO_AVAILABILITY, evaluated: 0 }]),
+        cases.map(({ label }) => [
+          label,
+          { result: noCompatibleSlot("no_published_slots"), evaluated: 0 },
+        ]),
       ),
     );
-    // El profesional inexistente responde igual.
+    // El profesional inexistente responde igual que uno sin agenda publicada.
     expect(
       await searchAvailabilitySlots(
         searchDeps(studentSearchAuth()),
         searchInput({ professionalId: "user-inexistente" }),
       ),
-    ).toEqual(NO_AVAILABILITY);
+    ).toEqual(noCompatibleSlot("no_published_slots"));
   });
 
   test("el acompañamiento pausado o cerrado no admite consulta, pero su historial sí se lee aparte", async () => {
@@ -606,16 +628,51 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(CONFLICT);
   });
 
-  test("sin bloques el vacío responde ausencia de cupo para coordinar por el canal oficial", async () => {
+  test("sin bloques responde la ausencia de horario publicado con los canales oficiales", async () => {
     const auth = studentSearchAuth();
     const deps = searchDeps(auth, { availability: fakeAvailability({ blocks: [] }) });
-    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
+      noCompatibleSlot("no_published_slots"),
+    );
   });
 
-  test("el cupo ocupado se descuenta y el vacío responde ausencia de cupo", async () => {
+  test("el cupo ocupado no aparece como disponible y explica que está ocupado", async () => {
     const auth = studentSearchAuth();
     const deps = searchDeps(auth, { occupancy: fakeOccupancy({ occupyAll: true }) });
-    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
+      noCompatibleSlot("slots_occupied"),
+    );
+  });
+
+  test("con cupos ocupados y libres incompatibles el motivo es la compatibilidad", async () => {
+    // Dos cupos el mismo día: el de la mañana ocupado, el de la tarde libre
+    // pero en una sala que no cubre la necesidad.
+    const auth = studentSearchAuth();
+    const need = { id: "need-1", label: "Sala accesible" };
+    const blocks = dailyInPersonBlocks("user-pro", "space-1").map((block) => ({
+      ...block,
+      endMinute: 660,
+    }));
+    // Ocupa el primer cupo consultado, sea cual sea su instante.
+    let occupiedStart: number | undefined;
+    const occupancy = fakeOccupancy({
+      overlaps: (startAt) => {
+        occupiedStart ??= startAt;
+        return startAt === occupiedStart;
+      },
+    });
+    const deps = searchDeps(auth, {
+      availability: fakeAvailability({ blocks }),
+      needs: fakeNeeds([need]),
+      compatibility: fakeCompatibility({
+        spaces: { "space-1": { space: fictitiousSpace, isActive: true, satisfiedNeeds: [] } },
+      }),
+      occupancy,
+    });
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
+      noCompatibleSlot("needs_not_met"),
+    );
+    expect(occupancy.received).toHaveLength(2);
   });
 
   test("el intervalo decide: conserva el cupo contiguo y descarta el solapado con igual inicio", async () => {
@@ -646,7 +703,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     ]);
     const availability = fakeAvailability({ blocks: windows });
     const probe = searchDeps(auth, { availability });
-    const first = requireOk(await searchAvailabilitySlots(probe, searchInput()));
+    const first = requireAvailable(await searchAvailabilitySlots(probe, searchInput()));
     expect(first.items).toHaveLength(2);
     const ordered = [...first.items].sort((a, b) => a.endAt - b.endAt);
     const short = ordered[0];
@@ -661,7 +718,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
       overlaps: (startAt, endAt) => startAt < appointment.end && appointment.start < endAt,
     });
     const deps = searchDeps(auth, { availability, occupancy });
-    const second = requireOk(await searchAvailabilitySlots(deps, searchInput()));
+    const second = requireAvailable(await searchAvailabilitySlots(deps, searchInput()));
     expect(second.items).toHaveLength(1);
     expect(second.items[0]?.endAt).toBe(short.endAt);
 
@@ -671,12 +728,54 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(occupancy.received[0]?.endAt).not.toBe(occupancy.received[1]?.endAt);
   });
 
-  test("la necesidad sin cobertura no se rebaja: responde ausencia de cupo", async () => {
+  test("la necesidad sin cobertura no se rebaja: explica la incompatibilidad", async () => {
     const auth = studentSearchAuth();
     const deps = searchDeps(auth, {
       needs: fakeNeeds([{ id: "need-1", label: "Sala accesible" }]),
     });
-    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
+      noCompatibleSlot("needs_not_met"),
+    );
+  });
+
+  test("la sala incompatible no aparece aunque otra necesidad sí quede cubierta", async () => {
+    // La sala cubre una de las dos necesidades: no basta, y la búsqueda no
+    // ofrece el cupo quitando la que falta.
+    const auth = studentSearchAuth();
+    const ramp = { id: "need-1", label: "Rampa de acceso" };
+    const loop = { id: "need-2", label: "Bucle magnético" };
+    const deps = searchDeps(auth, {
+      availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
+      needs: fakeNeeds([ramp, loop]),
+      compatibility: fakeCompatibility({
+        spaces: { "space-1": { space: fictitiousSpace, isActive: true, satisfiedNeeds: [ramp] } },
+      }),
+    });
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
+      noCompatibleSlot("needs_not_met"),
+    );
+  });
+
+  test("la ausencia trae los canales oficiales y un código de referencia sin datos personales", async () => {
+    const auth = studentSearchAuth();
+    const deps = searchDeps(auth, { availability: fakeAvailability({ blocks: [] }) });
+    const data = requireOk(await searchAvailabilitySlots(deps, searchInput()));
+    if (data.status !== "no_compatible_slot") throw new Error("Se esperaba la ausencia de cupo");
+    const { coordination } = data;
+    expect(coordination.channels).toEqual(OFFICIAL_CHANNELS);
+    // cspell:ignore HJKMNP
+    expect(coordination.referenceCode).toMatch(/^CER-[0-9A-HJKMNP-TV-Z]{4}-[0-9A-HJKMNP-TV-Z]{4}$/);
+    // No lleva identificadores ni datos del estudiante o del profesional.
+    for (const fragment of ["acc-1", "user-student", "user-pro", "token-student"]) {
+      expect(JSON.stringify(coordination)).not.toContain(fragment);
+    }
+    // Otra semana del mismo acompañamiento entrega el mismo código.
+    const otherWeek = requireOk(
+      await searchAvailabilitySlots(deps, searchInput({ from: "2026-11-02", to: "2026-11-02" })),
+    );
+    expect(otherWeek.status === "no_compatible_slot" && otherWeek.coordination.referenceCode).toBe(
+      coordination.referenceCode,
+    );
   });
 
   test("el cupo presencial con sala vigente que cubre las necesidades se ofrece", async () => {
@@ -689,9 +788,25 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
         spaces: { "space-1": { space: fictitiousSpace, isActive: true, satisfiedNeeds: [need] } },
       }),
     });
-    const data = requireOk(await searchAvailabilitySlots(deps, searchInput()));
+    const data = requireAvailable(await searchAvailabilitySlots(deps, searchInput()));
     expect(data.items).toHaveLength(1);
     expect(data.items[0]?.spaceId).toBe("space-1");
+    // Trae la ubicación y el acceso de su sala, sin la versión del catálogo.
+    expect(data.items[0]?.space).toEqual({
+      campus: "Campus ficticio",
+      building: "Edificio ficticio",
+      floor: "Piso 1",
+      room: "Sala 101",
+      accessConditions: "Acceso ficticio sin barreras",
+      arrivalInstructions: "Instrucciones ficticias de llegada",
+    });
+  });
+
+  test("el cupo en línea no trae sala", async () => {
+    const data = requireAvailable(
+      await searchAvailabilitySlots(searchDeps(studentSearchAuth()), searchInput()),
+    );
+    expect(data.items[0]).not.toHaveProperty("space");
   });
 
   test("la ocupación se consulta con el profesional, el estudiante del acompañamiento y la sala del cupo", async () => {
@@ -761,13 +876,15 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     expect(byProfessional.received[0]?.studentId).toBe("user-student");
   });
 
-  test("la sala retirada no se ofrece y el vacío responde ausencia de cupo", async () => {
+  test("la sala retirada no se ofrece y explica la incompatibilidad", async () => {
     const auth = studentSearchAuth();
     const deps = searchDeps(auth, {
       availability: fakeAvailability({ blocks: dailyInPersonBlocks("user-pro", "space-1") }),
       compatibility: fakeCompatibility(),
     });
-    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(NO_AVAILABILITY);
+    expect(await searchAvailabilitySlots(deps, searchInput())).toEqual(
+      noCompatibleSlot("needs_not_met"),
+    );
   });
 
   test("versión, límite, rango y zona inválidos responden conflicto sin filtrar", async () => {
@@ -793,12 +910,12 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     const auth = studentSearchAuth();
     const deps = searchDeps(auth);
     const range = searchInput({ from: "2026-10-26", to: "2026-10-28", limit: 2 });
-    const first = requireOk(await searchAvailabilitySlots(deps, range));
+    const first = requireAvailable(await searchAvailabilitySlots(deps, range));
     expect(first.items).toHaveLength(2);
     expect(first.hasMore).toBe(true);
     expect(first.nextCursor).not.toBeNull();
 
-    const second = requireOk(
+    const second = requireAvailable(
       await searchAvailabilitySlots(deps, { ...range, cursor: first.nextCursor ?? undefined }),
     );
     expect(second.items).toHaveLength(1);
@@ -811,7 +928,7 @@ describe("búsqueda de cupos para el acompañamiento (TI2-97)", () => {
     const occupancy = fakeOccupancy();
     const deps = searchDeps(auth, { occupancy });
     const range = searchInput({ from: "2026-10-26", to: "2026-10-27", limit: 1 });
-    const first = requireOk(await searchAvailabilitySlots(deps, range));
+    const first = requireAvailable(await searchAvailabilitySlots(deps, range));
     expect(first.items).toHaveLength(1);
     expect(first.hasMore).toBe(true);
 

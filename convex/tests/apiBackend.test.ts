@@ -1,10 +1,15 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
+import type { FunctionReturnType } from "convex/server";
 import { ConvexError } from "convex/values";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { deniedPublicError } from "../application/authorization/authorize";
+import {
+  toOfficialChannelCoordination,
+  type NoCompatibleSlotReason,
+} from "../domain/availability/official_channel";
 import {
   conflictError,
   errResult,
@@ -1087,11 +1092,42 @@ async function ti111Appointments(t: ReturnType<typeof convexTest>) {
   return await t.run(async (ctx) => await ctx.db.query("appointments").take(20));
 }
 
+/** Ubicación y acceso de la sala de `ti111SeedAgenda`, como los entrega la búsqueda (TI2-144). */
+const TI111_SPACE_FIELDS = {
+  campus: "Campus ficticio",
+  building: "A",
+  floor: "1",
+  room: "Sala accesible",
+  accessConditions: "Sala físicamente accesible\nReducción de estímulos",
+  arrivalInstructions: "Instrucciones ficticias",
+};
+
+/** Ausencia explícita de horario compatible de un acompañamiento (TI2-144). */
+function ti144NoCompatibleSlot(accompanimentId: string, reason: NoCompatibleSlotReason) {
+  return {
+    status: "no_compatible_slot",
+    coordination: toOfficialChannelCoordination(accompanimentId, reason),
+    version: "v1",
+  };
+}
+
+/** Cupos de una búsqueda con resultado, o falla la prueba. */
+async function ti111SlotItems(
+  promise: Promise<FunctionReturnType<typeof api.presentation.availability.searchSlots>>,
+) {
+  const result = await promise;
+  if (result.status !== "available") {
+    throw new Error(`Se esperaban cupos y llegó ${result.coordination.reason}`);
+  }
+  return result.items;
+}
+
 test("TI2-111: la búsqueda entrega solo cupos libres y compatibles a quien puede ver la agenda", async () => {
   const t = convexTest(schema, modules);
   const agenda = await ti111SeedAgenda(t);
   const search = ti111Search(agenda.accompanimentId, agenda.professionalId);
   const expected = {
+    status: "available",
     items: [
       {
         id: `${agenda.professionalId}:${TI111_DAY}:${ti111At(10)}`,
@@ -1101,6 +1137,7 @@ test("TI2-111: la búsqueda entrega solo cupos libres y compatibles a quien pued
         endAt: ti111At(11),
         modality: "inPerson",
         spaceId: agenda.spaceId,
+        space: TI111_SPACE_FIELDS,
         version: "v1",
       },
     ],
@@ -1129,16 +1166,15 @@ test("TI2-111: la búsqueda entrega solo cupos libres y compatibles a quien pued
     ).toStrictEqual(denied);
   }
 
-  // Sus necesidades no las cubre ninguna sala ni la plataforma en línea.
+  // Sus necesidades no las cubre ninguna sala ni la plataforma en línea: la
+  // búsqueda lo explica sin rebajarlas y entrega los canales oficiales.
   const asOther = t.withIdentity(identityFor("ti111-ag-est-2", "ti111-ag-est-2@alu.uct.cl"));
   expect(
-    await ti111PublicError(
-      asOther.query(
-        api.presentation.availability.searchSlots,
-        ti111Search(agenda.otherAccompanimentId, agenda.professionalId),
-      ),
+    await asOther.query(
+      api.presentation.availability.searchSlots,
+      ti111Search(agenda.otherAccompanimentId, agenda.professionalId),
     ),
-  ).toStrictEqual({ code: "no_availability", message: noAvailabilityError().message });
+  ).toStrictEqual(ti144NoCompatibleSlot(agenda.otherAccompanimentId, "needs_not_met"));
 
   const otherVersion = { ...search, version: "v2" } as unknown as typeof search;
   await expect(
@@ -1190,11 +1226,13 @@ test("TI2-123: el Estudiante conoce a sus profesionales reservables antes de la 
   expect(await asAssigned.query(list, args)).toStrictEqual(expected);
   expect(
     (
-      await asStudent.query(
-        api.presentation.availability.searchSlots,
-        ti111Search(agenda.accompanimentId, agenda.professionalId),
+      await ti111SlotItems(
+        asStudent.query(
+          api.presentation.availability.searchSlots,
+          ti111Search(agenda.accompanimentId, agenda.professionalId),
+        ),
       )
-    ).items.map((slot) => slot.startAt),
+    ).map((slot) => slot.startAt),
   ).toStrictEqual([ti111At(10)]);
 
   const denied = { code: "unauthorized", message: "No autorizado" };
@@ -1306,7 +1344,7 @@ test("TI2-111: la búsqueda no expone cupos de un profesional no asignado, revoc
     );
 
   // Control: con asignación activa y cuenta vigente el cupo sí se ofrece.
-  expect((await search(professionals.assigned)).items).toStrictEqual([
+  expect(await ti111SlotItems(search(professionals.assigned))).toStrictEqual([
     {
       id: `${professionals.assigned}:${TI111_DAY}:${ti111At(15)}`,
       professionalId: professionals.assigned,
@@ -1315,16 +1353,19 @@ test("TI2-111: la búsqueda no expone cupos de un profesional no asignado, revoc
       endAt: ti111At(16),
       modality: "inPerson",
       spaceId: agenda.spaceId,
+      space: TI111_SPACE_FIELDS,
       version: "v1",
     },
   ]);
-  const noAvailability = { code: "no_availability", message: noAvailabilityError().message };
+  // Responden igual que un profesional sin agenda publicada.
   for (const professionalId of [
     professionals.unassigned,
     professionals.revoked,
     professionals.inactive,
   ]) {
-    expect(await ti111PublicError(search(professionalId))).toStrictEqual(noAvailability);
+    expect(await search(professionalId)).toStrictEqual(
+      ti144NoCompatibleSlot(agenda.accompanimentId, "no_published_slots"),
+    );
   }
 });
 
@@ -1371,13 +1412,14 @@ test("TI2-111: la búsqueda no ofrece un cupo que choca con el estudiante o la s
     });
     const asStudent = t.withIdentity(identityFor("ti111-ag-est-1", "ti111-ag-est-1@alu.uct.cl"));
     const before = await ti111Appointments(t);
+    const consulta = await asStudent.query(
+      api.presentation.availability.searchSlots,
+      ti111Search(agenda.accompanimentId, agenda.professionalId),
+    );
+    // El cupo de las 10:00 queda ocupado y el de las 12:00 en línea no cubre la
+    // necesidad: el motivo es la compatibilidad, que no se rebaja.
+    expect(consulta).toStrictEqual(ti144NoCompatibleSlot(agenda.accompanimentId, "needs_not_met"));
     results[scenario] = {
-      consulta: await ti111PublicError(
-        asStudent.query(
-          api.presentation.availability.searchSlots,
-          ti111Search(agenda.accompanimentId, agenda.professionalId),
-        ),
-      ),
       reserva: await ti111PublicError(
         asStudent.mutation(api.presentation.appointments.bookAppointment, {
           accompanimentId: agenda.accompanimentId,
@@ -1393,7 +1435,6 @@ test("TI2-111: la búsqueda no ofrece un cupo que choca con el estudiante o la s
     };
   }
   const expected = {
-    consulta: { code: "no_availability", message: noAvailabilityError().message },
     reserva: { code: "conflict", message: conflictError().message },
     sinEscribir: true,
   };
@@ -1529,13 +1570,11 @@ test("TI2-111: el Estudiante reserva el cupo libre y compatible, y nada más", a
   ).toStrictEqual(conflict);
   expect(await ti111Appointments(t)).toEqual(afterBooking);
   expect(
-    await ti111PublicError(
-      asStudent.query(
-        api.presentation.availability.searchSlots,
-        ti111Search(agenda.accompanimentId, agenda.professionalId),
-      ),
+    await asStudent.query(
+      api.presentation.availability.searchSlots,
+      ti111Search(agenda.accompanimentId, agenda.professionalId),
     ),
-  ).toStrictEqual(noAvailability);
+  ).toStrictEqual(ti144NoCompatibleSlot(agenda.accompanimentId, "needs_not_met"));
 
   const otherVersion = { ...slot, version: "v2" } as unknown as typeof slot;
   await expect(
