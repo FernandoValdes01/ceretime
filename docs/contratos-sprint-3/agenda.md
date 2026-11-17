@@ -1,4 +1,4 @@
-# Contrato de agenda de Sprint 3 — varios profesionales y acceso en línea privado (TI2-142)
+# Contrato de agenda de Sprint 3 — varios profesionales, acceso en línea privado y coordinación por canal oficial (TI2-142, TI2-144)
 
 Superficie que TI2-142 agrega a la agenda: una atención coordinada con varios profesionales, los apoyos de la atención en línea y su enlace privado. Todo es aditivo sobre el contrato v1 de `appointments` (TI2-87, TI2-111, TI2-121): ninguna operación existente cambia su forma, no se crea otra operación de reserva ni otra comprobación de ocupación, y la persistencia es la de TI2-138 (`appointmentProfessionals`, `onlineSupports` y `privateAccessReference`).
 
@@ -78,9 +78,43 @@ El cambio es aditivo. `bookAppointment` suma argumentos opcionales; `Appointment
 
 Comprobación real del enlace (criterio de aceptación): sobre `0c19dac`, desplegado con `bunx convex dev --once` en el deployment de desarrollo `dev/ray` y con el dataset ficticio, se reservó por la API una atención en línea coordinada por el Profesional Ficticio y se le agregó un enlace de Google Meet real creado con una cuenta institucional. `getOnlineAccess` lo entregó en forma canónica al Estudiante y al Profesional, la practicante y otro Estudiante recibieron `unauthorized`, repetirlo no dejó un segundo aviso y el enlace devuelto abrió la reunión. Los cambios posteriores a `0c19dac` no tocan la escritura ni la lectura del enlace.
 
+## Sin horario compatible: coordinación por canal oficial (TI2-144)
+
+Cuando `presentation/availability.searchSlots` no encuentra un cupo compatible y libre, ya no lanza `no_availability`: devuelve un resultado explícito. `ConvexError` solo lleva `code` y `message` (TI2-88), así que no podía entregar el código de referencia ni los canales. La búsqueda es la misma de TI2-97: no hay otra búsqueda ni otra regla de compatibilidad, y `assessCompatibility` (TI2-82) sigue decidiendo sin rebajar necesidades.
+
+`searchSlots` devuelve una unión discriminada por `status`:
+
+| `status`             | Campos                                                    | Cuándo                                                                  |
+| -------------------- | --------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `available`          | `items`, `hasMore`, `nextCursor`, `version`               | Hay al menos un cupo compatible y libre en el rango                     |
+| `no_compatible_slot` | `coordination: {reason, explanation, referenceCode, channels}`, `version` | Ningún cupo del rango es compatible y libre                |
+
+Cada cupo presencial de `items` suma `space` con `campus`, `building`, `floor`, `room`, `accessConditions` y `arrivalInstructions` de su sala, leídos del catálogo en el servidor (`toSpaceFields`). El cupo en línea no lo trae. `spaceId` se conserva.
+
+El motivo (`reason`) sale de lo que la búsqueda descartó, con `decideNoCompatibleSlotReason`, y la explicación en español está en `NO_COMPATIBLE_SLOT_EXPLANATIONS`:
+
+| `reason`             | Cuándo                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| `needs_not_met`      | Hubo horarios libres, pero ninguno cubre las necesidades: sala que no las cubre o retirada, o modalidad en línea sin apoyos. Prima aunque otros estén ocupados |
+| `slots_occupied`     | Todos los horarios del rango ya están ocupados por el profesional, el Estudiante o la sala                 |
+| `no_published_slots` | No hay horarios publicados en el rango. Un profesional no reservable responde igual, sin revelar si existe |
+
+El código de referencia (`deriveCoordinationReferenceCode`) tiene la forma `CER-XXXX-XXXX` en Base32 de Crockford, sin I, L, O ni U. Se deriva con FNV-1a del identificador del acompañamiento: no contiene nombre, correo, RUT, necesidades ni fechas, y no se revierte al identificador. Es determinista, así el mismo acompañamiento entrega siempre el mismo código aunque busque otra semana u otro profesional. No es un secreto ni prueba identidad. El hash se comparte con la clave del evento de calendario en `convex/domain/hashing/fnv1a.ts`.
+
+Los canales (`OFFICIAL_CHANNELS`, en `convex/domain/availability/official_channel.ts`) son una unión por `kind`: `inPerson` con `location` (los mismos campos de ubicación y acceso de un espacio), `email` con `address` y `phone` con `phoneNumber`; todos llevan `id`, `name` y `hours`. Son datos ficticios: la especificación deja los canales reales como pendiente de validación con CERETI, y se reemplazan en ese único archivo.
+
+Web consume el resultado en `convex-agenda-adapter.ts`: junta los cupos de todos los profesionales reservables y, si ninguno tiene, entrega `no_availability` con la `coordination` del motivo de mayor prioridad (`combineNoCompatibleSlotReasons`). La pantalla que la muestra es de TI2-163. Mobile no consume `searchSlots` y no necesita cambios. `bookAppointment` y `rescheduleAppointment` siguen respondiendo `no_availability` como error.
+
+Compatibilidad: el cambio de forma de `searchSlots` rompe a un cliente que leía `items` directamente o esperaba el error `no_availability`. El único consumidor es el adaptador Web, que se actualiza en el mismo cambio; la versión sigue siendo `v1`.
+
+Comprobación: `convex/domain/availability/official_channel.test.ts` prueba motivo, código y canales; `convex/application/availability/availability.test.ts` prueba cupo ocupado, sala incompatible (también cuando cubre solo una de dos necesidades), sala retirada, la mezcla de ocupados e incompatibles, que el código no lleva datos personales y que el cupo presencial trae su sala; `convex/tests/apiBackend.test.ts` recorre la API con datos ficticios.
+
 ## Pendientes
 
 Siguen en otras issues, que se apoyan en lo que entrega esta:
+
+- Mostrar la explicación, el código de referencia y los canales oficiales al Estudiante: TI2-163.
+- Que el personal reconozca un código de referencia que recibe por un canal oficial: hoy no hay una consulta que lo resuelva al acompañamiento.
 
 - Avisar a los profesionales adicionales cuando el Estudiante cancela o cuando uno sale al reagendar: TI2-150. `NotificationSubject` tiene un solo `professionalId` y hoy solo se avisa al responsable.
 - Mostrar en la agenda los profesionales adicionales, los apoyos y qué atenciones en línea no tienen enlace: TI2-164. `getAppointment` todavía no los entrega y `Appointment` no los declara para no anunciar campos que nunca llegan.
