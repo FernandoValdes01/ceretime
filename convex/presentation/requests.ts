@@ -29,7 +29,10 @@ import {
   requestProvenanceChannelUnion,
   requestStatusUnion,
 } from "../infrastructure/validators";
-import { accompanimentOpener } from "../infrastructure/accompaniments/repository";
+import {
+  accompanimentOpener,
+  resultingAccompanimentReader,
+} from "../infrastructure/accompaniments/repository";
 import {
   activeProfessionalReader,
   activeRequestViewerReader,
@@ -112,6 +115,8 @@ const requestDetailValidator = v.object({
       reason: v.string(),
     }),
   ),
+  // Acompañamiento que abrió la solicitud aceptada (TI2-183).
+  accompanimentId: v.optional(v.id("accompaniments")),
 });
 
 const requestPageValidator = paginationResultValidator(requestValidator);
@@ -196,7 +201,11 @@ export const getRequest = query({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await getRequestDetailUseCase(
-        { viewers: activeRequestViewerReader(ctx), requests: requestReader(ctx) },
+        {
+          viewers: activeRequestViewerReader(ctx),
+          requests: requestReader(ctx),
+          accompaniments: resultingAccompanimentReader(ctx),
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
       ),
     );
