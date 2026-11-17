@@ -102,13 +102,18 @@ const PAR_SIN_SESION = {
 } as const;
 
 function filaPropia(
-  overrides: Partial<{ _id: string; status: "received" | "under_review"; createdAt: number }> = {},
+  overrides: Partial<{
+    _id: string;
+    status: OwnRequestItem["status"];
+    createdAt: number;
+    accessNeeds: string;
+  }> = {},
 ): OwnRequestItem {
   return {
     _id: (overrides._id ?? "req-1") as Id<"requests">,
     studentId: "stu-1" as Id<"users">,
     status: overrides.status ?? "received",
-    accessNeeds: "Apoyo ficticio para la prueba",
+    accessNeeds: overrides.accessNeeds ?? "Apoyo ficticio para la prueba",
     createdAt: overrides.createdAt ?? 1700000000000,
   };
 }
@@ -171,6 +176,49 @@ describe("listado propio del Estudiante (TI2-89)", () => {
     );
   });
 
+  test("TI2-149: separa en curso de finalizadas y muestra las necesidades de acceso", async () => {
+    paginatedState = estadoPaginado(
+      [
+        filaPropia({
+          _id: "req-1",
+          status: "awaiting_information_or_acceptance",
+          accessNeeds: [
+            "Comunicación escrita",
+            "Persona de apoyo",
+            "Reducción de estímulos",
+            "Otra ficticia",
+          ].join("\n"),
+        }),
+        filaPropia({ _id: "req-2", status: "cancelled" }),
+      ],
+      "Exhausted",
+    );
+    renderAt("/estudiante/solicitudes");
+
+    const enCurso = await screen.findByRole("region", { name: "En curso (1)" });
+    const finalizadas = screen.getByRole("region", { name: "Finalizadas (1)" });
+    expect(enCurso.textContent).toContain("Esperando información o aceptación");
+    expect(enCurso.textContent).toContain("Comunicación escrita");
+    // Tres necesidades a la vista; el resto se resume y el detalle muestra todas.
+    expect(enCurso.textContent).toContain("y 1 más");
+    expect(enCurso.textContent).not.toContain("Otra ficticia");
+    expect(finalizadas.textContent).toContain("Cancelada");
+    expect(
+      screen.getAllByRole("link", { name: /Ver detalle/ }).map((link) => link.getAttribute("href")),
+    ).toEqual(["/estudiante/solicitudes/req-1", "/estudiante/solicitudes/req-2"]);
+  });
+
+  test("TI2-149: sin solicitudes explica el proceso y ofrece empezar", async () => {
+    paginatedState = estadoPaginado([], "Exhausted");
+    renderAt("/estudiante/solicitudes");
+
+    expect(await screen.findByRole("heading", { name: "Aún no tienes solicitudes" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "CERETI la revisa" })).toBeDefined();
+    expect(
+      screen.getByRole("link", { name: "Enviar mi primera solicitud" }).getAttribute("href"),
+    ).toBe("/estudiante/solicitudes/nueva");
+  });
+
   test("el avance de página no pierde ni repite filas", async () => {
     const primera = [filaPropia({ _id: "req-1" })];
     const acumuladas = [...primera, filaPropia({ _id: "req-2", status: "under_review" })];
@@ -221,7 +269,7 @@ describe("listado propio del Estudiante (TI2-89)", () => {
     const view = renderAt("/estudiante/solicitudes");
 
     expect(await screen.findByRole("button", { name: "Cargar más" })).toBeDefined();
-    expect(screen.queryByText("Aún no tienes solicitudes registradas.")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Aún no tienes solicitudes" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Cargar más" }));
     expect(loadMore).toHaveBeenCalledTimes(1);
@@ -234,7 +282,7 @@ describe("listado propio del Estudiante (TI2-89)", () => {
     paginatedState = estadoPaginado([], "Exhausted");
     renderAt("/estudiante/solicitudes");
 
-    expect(await screen.findByText("Aún no tienes solicitudes registradas.")).toBeDefined();
+    expect(await screen.findByRole("heading", { name: "Aún no tienes solicitudes" })).toBeDefined();
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
   });
 
@@ -256,7 +304,7 @@ describe("listado propio del Estudiante (TI2-89)", () => {
     paginatedThrows = null;
     paginatedState = estadoPaginado([], "Exhausted");
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
-    expect(await screen.findByText("Aún no tienes solicitudes registradas.")).toBeDefined();
+    expect(await screen.findByRole("heading", { name: "Aún no tienes solicitudes" })).toBeDefined();
   });
 });
 
