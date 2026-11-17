@@ -398,15 +398,18 @@ test("contratos públicos conservan forma estable en respuestas exitosas", async
   );
 
   expect(opened.view).toBe("full");
+  // TI2-183: la vista completa suma la solicitud de origen.
   expect(Object.keys(opened).sort()).toEqual([
     "_id",
     "accessNeeds",
     "objective",
+    "requestId",
     "status",
     "studentId",
     "view",
   ]);
   expect(opened._id).toEqual(accompanimentId);
+  expect(opened.requestId).toEqual(requestId);
   expect(opened.accessNeeds).toBe("Necesidad de acceso ficticia");
 
   const asIntern = t.withIdentity(identityFor(internSubject, `${internSubject}@alu.uct.cl`));

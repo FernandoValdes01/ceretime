@@ -414,6 +414,17 @@ export function accompanimentNeedsReader(ctx: DbReader) {
 }
 
 /**
+ * Acompañamiento abierto por una solicitud, para el puerto
+ * `ResultingAccompanimentReader` del detalle de solicitud (TI2-183).
+ */
+export function resultingAccompanimentReader(ctx: DbReader) {
+  return {
+    findAccompanimentIdForRequest: async (requestId: Id<"requests">) =>
+      (await findAccompanimentByRequest(ctx, requestId))?._id ?? null,
+  };
+}
+
+/**
  * Apertura del acompañamiento al aceptar una solicitud, para el puerto
  * `AccompanimentOpener` de TI2-181. Inserta el acompañamiento y la asignación
  * inicial del Profesional que acepta con el mismo `ctx`, así quedan en la
@@ -446,6 +457,7 @@ export function accompanimentOpener(ctx: MutationCtx) {
         status: opened.status,
         objective: opened.objective,
         accessNeeds: opened.accessNeeds,
+        requestId: opened.requestId,
       };
     },
   };

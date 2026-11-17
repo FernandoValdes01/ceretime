@@ -61,6 +61,8 @@ const fullAccompanimentValidator = v.object({
   status: accompanimentStatusUnion,
   objective: v.string(),
   accessNeeds: v.string(),
+  // Solicitud aceptada que lo abrió (TI2-183); falta si no nació de una.
+  requestId: v.optional(v.id("requests")),
   view: v.literal("full"),
 });
 

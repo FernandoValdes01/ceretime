@@ -77,4 +77,13 @@ describe("toAccompanimentProjection (TI2-8)", () => {
     expect("studentId" in projected).toBe(false);
     expect("accessNeeds" in projected).toBe(false);
   });
+
+  test("solo la vista completa lleva el requestId de origen (TI2-183)", () => {
+    const fromRequest: AccompanimentRow = { ...row, requestId: "request-id" };
+    expect(toAccompanimentProjection(fromRequest, "full")).toMatchObject({
+      requestId: "request-id",
+    });
+    expect("requestId" in toAccompanimentProjection(row, "full")).toBe(false);
+    expect("requestId" in toAccompanimentProjection(fromRequest, "minimized")).toBe(false);
+  });
 });

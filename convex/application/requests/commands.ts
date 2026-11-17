@@ -280,7 +280,7 @@ export async function acceptRequest<
     readonly requestId: RequestId;
     readonly objective: string;
   },
-): Promise<ApiResult<Accompaniment<AccompanimentId, UserId>>> {
+): Promise<ApiResult<Accompaniment<AccompanimentId, UserId, RequestId>>> {
   const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
   if (professional === null) return denied();
   const row = await deps.requests.getRequest(input.requestId);
