@@ -57,6 +57,7 @@ export type {
   RequestState,
   Sprint1RequestState,
 } from "./requests/state";
+export { isOpenRequestState } from "./requests/transitions";
 
 // Acompañamiento y sus vistas de lectura.
 export {
