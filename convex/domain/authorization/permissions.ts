@@ -26,6 +26,7 @@ export type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles
 /** Casos de uso cubiertos por la matriz, en el orden de `PERMISSION_MATRIX`. */
 export const AUTHORIZATION_ACTIONS = [
   "accompaniment:read",
+  "accompaniment:changeStatus",
   "internalNote:read",
   "availability:edit",
   "availability:read",
@@ -268,9 +269,37 @@ function canChangeAppointment(context: AppointmentChangeAuthorizationContext): b
   }
 }
 
-/** Verdadero solo cuando el actor puede cancelar esta atención. */
+/**
+ * Verdadero solo cuando el actor puede cancelar esta atención. Con el
+ * acompañamiento en pausa (TI2-152) las atenciones existentes se mantienen y
+ * solo el Profesional que la tiene a su cargo puede cancelarla; el Estudiante
+ * recupera la cancelación al reactivarse. Reagendar sigue exigiendo `active`.
+ */
 export function canCancelAppointment(context: AppointmentChangeAuthorizationContext): boolean {
+  if (context.accompanimentStatus === "paused") {
+    return (
+      isProfileActive(context) &&
+      context.role === "professional" &&
+      context.hasActiveProfessionalAssignment &&
+      context.isAppointmentProfessional
+    );
+  }
   return canChangeAppointment(context);
+}
+
+/**
+ * Pausar, reactivar o cerrar un acompañamiento (TI2-152): solo el Profesional
+ * con cuenta vigente y asignación activa sobre ese acompañamiento. No mira el
+ * estado actual: qué cambios admite cada estado lo decide
+ * `transitionAccompaniment`. Estudiante, Practicante y Administrador se
+ * deniegan igual.
+ */
+export function canChangeAccompanimentStatus(context: AuthorizationContext): boolean {
+  return (
+    isProfileActive(context) &&
+    context.role === "professional" &&
+    context.hasActiveProfessionalAssignment
+  );
 }
 
 /**
@@ -465,6 +494,13 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     admin: "denegado sin acceso general",
   },
   {
+    action: "accompaniment:changeStatus",
+    student: "denegado",
+    professional: "permitido solo asignados activos",
+    intern: "denegado",
+    admin: "denegado",
+  },
+  {
     action: "internalNote:read",
     student: "denegado",
     professional: "permitido solo asignados activos",
@@ -503,7 +539,8 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   {
     action: "appointment:cancel",
     student: "permitido solo sus propias atenciones con acompañamiento activo",
-    professional: "permitido solo la atención propia asignada, con acompañamiento activo",
+    professional:
+      "permitido solo la atención propia asignada, con acompañamiento activo o en pausa",
     intern: "denegado",
     admin: "denegado",
   },
