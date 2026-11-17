@@ -17,6 +17,15 @@ import {
   type RequestDraftField,
 } from "./student-request-draft.ts";
 import { useSubmitOwnRequest } from "./student-request-form-data.ts";
+import {
+  FOCUS_CLASS,
+  HEADING_RESET_CLASS,
+  LINK_CLASS,
+  PAGE_CLASS,
+  PAGE_TITLE_CLASS,
+  PRIMARY_LINK_CLASS,
+  SECTION_TITLE_CLASS,
+} from "./student-page-classes.ts";
 
 /**
  * Formulario de solicitud de acompañamiento del Estudiante (TI2-149).
@@ -45,10 +54,7 @@ export function StudentRequestFormPage() {
   }, []);
 
   return (
-    <section
-      aria-labelledby="student-request-form-title"
-      className="mx-auto flex w-full max-w-3xl flex-col gap-6 text-left"
-    >
+    <section aria-labelledby="student-request-form-title" className={PAGE_CLASS}>
       <h1
         id="student-request-form-title"
         ref={headingRef}
@@ -525,26 +531,10 @@ function RequestForm({ ownerEmail, ownerName }: { ownerEmail: string; ownerName:
   );
 }
 
-/*
- * El bloque de compatibilidad de `index.css` (TI2-130) centra el texto de
- * `#root` y fija tamaño, color, peso y márgenes de `h1` y `h2` fuera de las
- * capas de Tailwind, por lo que gana a las utilidades. Hasta que se migre,
- * esta pantalla alinea a la izquierda (DESIGN.md) y marca como importantes
- * las utilidades de sus títulos.
- */
-const HEADING_RESET_CLASS = "m-0! font-sans! tracking-normal!";
-const PAGE_TITLE_CLASS = `${HEADING_RESET_CLASS} text-[1.75rem]! leading-snug! font-semibold! text-primary! sm:text-[2rem]!`;
-const LINK_CLASS =
-  "inline-flex min-h-[44px] w-fit items-center rounded-[0.5rem] py-2 font-semibold text-primary underline underline-offset-4 focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
-const PRIMARY_LINK_CLASS =
-  "inline-flex min-h-12 items-center rounded-[0.5rem] bg-primary-container px-6 py-2.5 font-semibold text-on-primary no-underline hover:bg-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 const SECTION_CLASS =
   "flex flex-col gap-5 rounded-lg border border-border-low bg-surface-container-lowest p-6";
-const SECTION_TITLE_CLASS = `${HEADING_RESET_CLASS} text-xl! leading-snug! font-semibold! text-on-surface!`;
 const LEGEND_CLASS = "mb-1 p-0 text-base font-semibold text-on-surface";
 const HINT_CLASS = "m-0 text-base text-on-surface-variant";
-const FOCUS_CLASS =
-  "focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring";
 
 function fieldClass(invalid: boolean): string {
   return `min-h-[44px] w-full min-w-0 box-border rounded-[0.5rem] border bg-surface-container-lowest px-3 py-2 text-base text-on-surface ${
