@@ -41,9 +41,9 @@ Los validadores de salida fijan estas claves: si una proyección trajera otra cl
 | -------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `professional` | Profesional con asignación activa   | `appointmentId`, `accompanimentId`, `appointmentStatus`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `internalNote?`, `version`, `view` |
 | `shared`       | Estudiante dueño del acompañamiento | Las mismas sin `internalNote`                                                                                                                                    |
-| `minimized`    | Practicante con asignación activa   | `appointmentId`, `appointmentStatus`, `suggestedNextAppointmentDate?`, `version`, `view`                                                                         |
+| `minimized`    | Practicante con asignación activa   | `appointmentId`, `appointmentStatus`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `version`, `view`                                       |
 
-`appointmentStatus` es el estado vigente de la atención, leído al responder. La vista `minimized` omite todo texto libre y el acompañamiento, porque acuerdos, tareas y próximos pasos pueden mencionar necesidades de acceso.
+`appointmentStatus` es el estado vigente de la atención, leído al responder. Decisión del 2026-11-15 (TI2-186): gana el diagrama, así que la vista `minimized` incluye acuerdos, tareas y próximos pasos con la misma forma que la vista `shared`. Esto reemplaza, solo para el seguimiento, la minimización de TI2-127, que los omitía porque esos textos pueden mencionar necesidades de acceso. La vista `minimized` mantiene fuera la nota interna y el vínculo con el acompañamiento, que el diagrama no asigna al practicante.
 
 ```json
 {
