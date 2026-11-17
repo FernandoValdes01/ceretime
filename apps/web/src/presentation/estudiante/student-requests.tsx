@@ -117,11 +117,16 @@ function OwnRequestsBody() {
       <RequestGroup
         id="open"
         title="En curso"
-        emptyText="No tienes solicitudes en curso."
+        emptyText={
+          exhausted
+            ? "No tienes solicitudes en curso."
+            : "No hay solicitudes en curso entre las cargadas."
+        }
         requests={open}
+        complete={exhausted}
       />
       {finished.length > 0 ? (
-        <RequestGroup id="finished" title="Finalizadas" requests={finished} />
+        <RequestGroup id="finished" title="Finalizadas" requests={finished} complete={exhausted} />
       ) : null}
       {canLoadMore ? (
         <div className="flex flex-col gap-4">
@@ -145,7 +150,8 @@ function NoRequestsYet() {
           Cuando envíes una, aparecerá aquí con su estado. Así funciona:
         </p>
       </div>
-      <ol className="m-0 grid list-none gap-4 p-0 sm:grid-cols-3">
+      {/* `role="list"`: con `list-none`, Safari deja de anunciarla como lista. */}
+      <ol role="list" className="m-0 grid list-none gap-4 p-0 sm:grid-cols-3">
         {REQUEST_PROCESS_STEPS.map((step, index) => (
           <li key={step.title} className="flex gap-3">
             <span
@@ -173,22 +179,31 @@ function RequestGroup({
   title,
   emptyText,
   requests,
+  complete,
 }: {
   id: string;
   title: string;
   emptyText?: string;
   requests: readonly OwnRequestItem[];
+  /** Falso mientras quedan páginas: la cantidad cargada no es el total. */
+  complete: boolean;
 }) {
   const titleId = `student-requests-${id}-title`;
   return (
     <section aria-labelledby={titleId} className="flex flex-col gap-3">
       <h2 id={titleId} className={SECTION_TITLE_CLASS}>
-        {title} <span className="font-normal text-on-surface-variant">({requests.length})</span>
+        {title}
+        {complete ? (
+          <>
+            {" "}
+            <span className="font-normal text-on-surface-variant">({requests.length})</span>
+          </>
+        ) : null}
       </h2>
       {requests.length === 0 ? (
         <p className="m-0 text-base text-on-surface-variant">{emptyText}</p>
       ) : (
-        <ul className="m-0 grid list-none gap-3 p-0">
+        <ul role="list" className="m-0 grid list-none gap-3 p-0">
           {requests.map((request) => (
             <li key={request._id}>
               <RequestCard request={request} />
@@ -236,9 +251,10 @@ function RequestCard({ request }: { request: OwnRequestItem }) {
       {needs.length > 0 ? (
         <span className="flex flex-wrap gap-2">
           <span className="sr-only">Necesidades de acceso:</span>
-          {needs.slice(0, VISIBLE_ACCESS_NEEDS).map((need) => (
+          {needs.slice(0, VISIBLE_ACCESS_NEEDS).map((need, index) => (
             <span
-              key={need}
+              // El texto libre puede repetir una etiqueta: la posición es la clave estable.
+              key={index}
               className="max-w-full truncate rounded-full bg-surface-container px-3 py-1 text-sm text-on-surface"
             >
               {need}

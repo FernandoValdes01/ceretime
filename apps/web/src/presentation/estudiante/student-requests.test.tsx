@@ -208,6 +208,19 @@ describe("listado propio del Estudiante (TI2-89)", () => {
     ).toEqual(["/estudiante/solicitudes/req-1", "/estudiante/solicitudes/req-2"]);
   });
 
+  test("TI2-149: con páginas por cargar no afirma totales ni que no hay solicitudes en curso", async () => {
+    paginatedState = estadoPaginado(
+      [filaPropia({ _id: "req-1", status: "cancelled" })],
+      "CanLoadMore",
+    );
+    renderAt("/estudiante/solicitudes");
+
+    const enCurso = await screen.findByRole("region", { name: "En curso" });
+    expect(enCurso.textContent).toContain("No hay solicitudes en curso entre las cargadas.");
+    expect(screen.getByRole("region", { name: "Finalizadas" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Cargar más" })).toBeDefined();
+  });
+
   test("TI2-149: sin solicitudes explica el proceso y ofrece empezar", async () => {
     paginatedState = estadoPaginado([], "Exhausted");
     renderAt("/estudiante/solicitudes");
