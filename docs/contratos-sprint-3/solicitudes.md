@@ -1,4 +1,4 @@
-# Solicitudes de acompañamiento — TI2-141, TI2-181, TI2-143
+# Solicitudes de acompañamiento — TI2-141, TI2-181, TI2-143, TI2-183
 
 Fuente: `CONTEXT.md` (solicitud de acompañamiento y sus estados), sección «Solicitudes» de `docs/especificacion-prototipo.md`, modelo de estados de `convex/domain/requests/state-model.md` y esquema de TI2-135 en `convex/domain/database/integrity.md`. Superficie pública bajo `api.presentation.requests.*`; todo opera con datos ficticios. Las operaciones de Sprint 1 (`listOpenRequests`, `takeRequest`, `requestAdditionalInformation` y `acceptRequest`) conservan los argumentos y respuestas de `docs/contratos-sprint-1.md`; desde TI2-181 rechazan con el contrato común de «Errores».
 
@@ -146,6 +146,28 @@ await refer({
 
 Los nombres de unidad y las razones son texto libre: no deben incluir diagnósticos ni etiquetas clínicas, y no se copian a la bitácora de auditoría.
 
+## Vínculo con el acompañamiento
+
+Desde TI2-183 la solicitud aceptada y el acompañamiento que abrió se enlazan en los dos sentidos. El vínculo sale de `requestId` en la fila del acompañamiento y del índice `accompaniments.by_request`; no hay otra tabla ni otro campo.
+
+- `getRequest` suma `accompanimentId`, opcional. Está cuando la aceptación abrió el acompañamiento; una solicitud que nunca se aceptó no lo trae. Lo recibe quien ya lee el detalle: el Estudiante dueño o el Profesional con toma activa. El identificador no concede acceso: `getAccompaniment` vuelve a autorizar con la asignación al acompañamiento.
+- La vista completa del acompañamiento suma `requestId`, opcional. La entregan `getAccompaniment`, `listOwnedAccompaniments`, `listAssignedAccompaniments` y `acceptRequest`. Falta en un acompañamiento que no nació de una solicitud.
+- La vista minimizada del Practicante no cambia: sigue siendo `_id`, `status`, `objective` y `view`.
+
+Los dos campos son opcionales en el tipo, así que Web y Mobile compilan sin cambios. Las denegaciones no cambian: `getRequest` responde `unauthorized` del contrato común y `getAccompaniment` conserva su error genérico de Sprint 1.
+
+```json
+{
+  "_id": "k17abc...",
+  "studentId": "j97def...",
+  "status": "accepted",
+  "accessNeeds": "Comunicación escrita",
+  "createdAt": 1762900000000,
+  "provenanceChannel": "student",
+  "accompanimentId": "m33ghi..."
+}
+```
+
 ## Errores
 
 Todas las operaciones de `api.presentation.requests.*`, mutations y consultas, rechazan con el contrato común de TI2-88, `ConvexError({ code, message })`, también al denegar: los clientes distinguen por `error.data.code` y muestran `error.data.message`, que ya está en español. Desde TI2-181 incluye las operaciones de Sprint 1 y la forma anterior de `createRequest`.
@@ -232,4 +254,6 @@ await cancel({ requestId, reason: "Ya recibí el apoyo por otra vía" });
 
 - **TI2-143:** una solicitud puede traer `referred`, que significa que CERETI la derivó a otra unidad y ya no admite pasos. Una derivación de entrada pendiente de contacto o aceptación no es `referred`: sigue en `under_review` o en espera y se reconoce por `incomingReferral` en el detalle. Mobile muestra hoy para `referred` el texto «Solicitud derivada; queda pendiente del contacto y aceptación del estudiante.» (`apps/mobile/src/presentation/profesional/professional-requests-screen.tsx`), que describe la derivación de entrada y no la de salida. Las pantallas de Web para estas operaciones son TI2-158.
 
-Comprobación: pruebas «TI2-143: …» en `convex/tests/requests.test.ts` y `convex/domain/requests/referral.test.ts`, pruebas «TI2-141: …» y «TI2-85: …» en `convex/tests/requests.test.ts` y `convex/tests/acceptance.test.ts`, la respuesta con dobles en `convex/application/requests/respond.test.ts`, y `convex/domain/requests/` (`toCompleteSubmission`, `toRequestSubmission`, `toInformationResponse`, `toRequestExchange` y las tablas de transiciones).
+- **TI2-183:** la Web puede enlazar el detalle de una solicitud aceptada con su acompañamiento (TI2-153) y Mobile puede hacer lo mismo cuando lo necesite. Ningún cliente tiene que cambiar para seguir compilando.
+
+Comprobación: pruebas «TI2-183: …» en `convex/tests/requestAccompanimentLink.test.ts` y `convex/domain/accompaniments/accompaniment.test.ts`, pruebas «TI2-143: …» en `convex/tests/requests.test.ts` y `convex/domain/requests/referral.test.ts`, pruebas «TI2-141: …» y «TI2-85: …» en `convex/tests/requests.test.ts` y `convex/tests/acceptance.test.ts`, la respuesta con dobles en `convex/application/requests/respond.test.ts`, y `convex/domain/requests/` (`toCompleteSubmission`, `toRequestSubmission`, `toInformationResponse`, `toRequestExchange` y las tablas de transiciones).
