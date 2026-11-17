@@ -121,14 +121,21 @@ export const FOLLOW_UP_VIEW_VALUES = ["professional", "shared", "minimized"] as 
 export type FollowUpView = (typeof FOLLOW_UP_VIEW_VALUES)[number];
 
 /**
- * Proyección minimizada para el Practicante: estado y fecha sugerida.
+ * Proyección minimizada para el Practicante con asignación activa y vigente.
  *
- * Omite todo texto libre y el vínculo con el acompañamiento: acuerdos, tareas
- * y próximos pasos pueden mencionar necesidades de acceso.
+ * Incluye acuerdos, tareas y próximos pasos con la misma forma que la vista
+ * compartida, por decisión del 2026-11-15 (TI2-186): gana el diagrama. Solo
+ * para el seguimiento, reemplaza la minimización de TI2-127, que omitía esos
+ * textos por posible mención de necesidades de acceso. Mantiene fuera la nota
+ * interna y el vínculo con el acompañamiento, que el diagrama no asigna al
+ * practicante.
  */
 export interface MinimizedFollowUpProjection {
   readonly appointmentId: string;
   readonly appointmentStatus: AppointmentStatus;
+  readonly agreements: readonly FollowUpAgreement[];
+  readonly tasks: readonly FollowUpTask[];
+  readonly nextSteps: string;
   readonly suggestedNextAppointmentDate?: string;
   readonly version: FollowUpContractVersion;
   readonly view: "minimized";
@@ -461,8 +468,10 @@ export function toSharedFollowUpProjection(
 
 /**
  * Adaptador explícito de registro a vista de lectura. La vista ya viene
- * decidida por la autorización; acá solo se recorta la forma. Cada rama arma
- * su salida desde cero para que la nota no pueda colarse por una copia.
+ * decidida por la autorización; acá solo se recorta la forma. La vista
+ * minimizada deriva de la compartida quitando solo el vínculo: como lo
+ * compartido nunca trae la nota, la garantía se conserva sin duplicar el
+ * mapeo. Solo la vista profesional agrega la nota, de forma explícita.
  */
 export function toFollowUpProjection(
   record: FollowUpRecord,
@@ -470,15 +479,11 @@ export function toFollowUpProjection(
   view: FollowUpView,
 ): FollowUpProjection {
   if (view === "minimized") {
-    return {
-      appointmentId: record.appointmentId,
+    const { accompanimentId: _link, ...content } = toSharedFollowUpProjection(
+      record,
       appointmentStatus,
-      ...(record.suggestedNextAppointmentDate === undefined
-        ? {}
-        : { suggestedNextAppointmentDate: record.suggestedNextAppointmentDate }),
-      version: record.version,
-      view,
-    };
+    );
+    return { ...content, view };
   }
   const shared = toSharedFollowUpProjection(record, appointmentStatus);
   if (view === "shared") return { ...shared, view };
