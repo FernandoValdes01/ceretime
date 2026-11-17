@@ -240,6 +240,35 @@ export async function hasActiveProfessionalAssignment(
 }
 
 /**
+ * Verdadero cuando otro usuario conserva una asignación profesional activa y
+ * vigente sobre el acompañamiento (TI2-152). Lee un lote acotado por rol: el
+ * índice no ordena por rol antes que por usuario, así que el rol se compara
+ * en memoria dentro del tope.
+ */
+export async function hasAnotherActiveProfessional(
+  ctx: MutationCtx,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly userId: Id<"users">;
+  },
+  now: number = Date.now(),
+): Promise<boolean> {
+  const rows = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q.eq("accompanimentId", input.accompanimentId),
+    )
+    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT);
+  return rows.some(
+    (row) =>
+      row.userId !== input.userId &&
+      row.status === "active" &&
+      row.assignedRole === "professional" &&
+      isAssignmentWithinValidity(row, now),
+  );
+}
+
+/**
  * Crea la fila activa de la combinación, registrando quién concede y cuándo.
  * La vigencia es opcional (TI2-138): `validFrom`/`validUntil` solo se escriben
  * si quien llama los entrega. La lectura exige `status === "active"` y ventana
@@ -447,6 +476,44 @@ export function accompanimentOpener(ctx: MutationCtx) {
         objective: opened.objective,
         accessNeeds: opened.accessNeeds,
       };
+    },
+  };
+}
+
+/**
+ * Escritura del cambio de estado del acompañamiento (TI2-152). Cumple por
+ * forma el puerto `AccompanimentStatusWriter` de Aplicación sin importarla.
+ * Guarda el estado nuevo y su entrada en `accompanimentTransitions` en la
+ * misma transacción. Los identificadores ya fueron leídos y autorizados en el
+ * servidor: uno que no pertenezca a su tabla es un fallo interno, no un
+ * rechazo al cliente.
+ */
+export function accompanimentStatusWriter(ctx: MutationCtx) {
+  return {
+    persistStatusChange: async (
+      accompanimentId: string,
+      change: {
+        readonly from: Doc<"accompaniments">["status"];
+        readonly to: Doc<"accompaniments">["status"];
+        readonly actorId: string;
+        readonly occurredAt: number;
+        readonly reason?: string;
+      },
+    ) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      const actorId = ctx.db.normalizeId("users", change.actorId);
+      if (id === null || actorId === null) {
+        throw new Error("El cambio de estado referencia un acompañamiento o actor inexistente.");
+      }
+      await ctx.db.patch(id, { status: change.to });
+      await ctx.db.insert("accompanimentTransitions", {
+        accompanimentId: id,
+        from: change.from,
+        to: change.to,
+        actorId,
+        occurredAt: change.occurredAt,
+        ...(change.reason === undefined ? {} : { reason: change.reason }),
+      });
     },
   };
 }

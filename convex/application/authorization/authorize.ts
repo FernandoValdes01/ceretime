@@ -4,6 +4,7 @@ import { isAppointmentProfessional } from "../../domain/appointments/participant
 import type { FollowUpView } from "../../domain/follow_up/follow_up";
 import {
   appointmentCancellationTarget,
+  canChangeAccompanimentStatus,
   canAddAppointmentToCalendar,
   canBookAppointment,
   canCoordinateAppointment,
@@ -298,6 +299,25 @@ async function loadAgendaContext(
       accompanimentStatus: accompaniment.status,
     },
   };
+}
+
+/** Cambio de estado concedido, con el estado vigente leído en el servidor. */
+export type AccompanimentStatusGrant = AgendaGrant & {
+  readonly status: AccompanimentStatus;
+};
+
+/**
+ * Pausar, reactivar o cerrar un acompañamiento (TI2-152): solo el Profesional
+ * vigente con asignación activa. Entrega el estado leído en el servidor para
+ * que el caso de uso aplique la política sin confiar en el cliente.
+ */
+export async function authorizeAccompanimentStatusChange(
+  reader: AuthorizationReader,
+  request: AgendaRequest,
+): Promise<ApiResult<AccompanimentStatusGrant>> {
+  const loaded = await loadAgendaContext(reader, request);
+  if (loaded === null || !canChangeAccompanimentStatus(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId, status: loaded.context.accompanimentStatus });
 }
 
 /**
