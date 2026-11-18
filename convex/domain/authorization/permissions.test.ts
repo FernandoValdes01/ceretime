@@ -544,7 +544,7 @@ describe("canCancelAppointment y canRescheduleAppointment", () => {
     }
   });
 
-  test("en pausa solo el Profesional a cargo cancela, y nadie cambia el horario", () => {
+  test("en pausa el Estudiante dueño y el Profesional a cargo cancelan, y nadie cambia el horario", () => {
     const professional = changeContext({
       role: "professional",
       hasActiveProfessionalAssignment: true,
@@ -555,6 +555,16 @@ describe("canCancelAppointment y canRescheduleAppointment", () => {
     expect(appointmentCancellationTarget(professional)).toBe("cancelled_by_cereti");
     expect(canRescheduleAppointment(professional)).toBe(false);
 
+    const student = changeContext({
+      role: "student",
+      isOwner: true,
+      isAppointmentStudent: true,
+      accompanimentStatus: "paused",
+    });
+    expect(canCancelAppointment(student)).toBe(true);
+    expect(appointmentCancellationTarget(student)).toBe("cancelled_by_student");
+    expect(canRescheduleAppointment(student)).toBe(false);
+
     for (const denied of [
       { isAppointmentProfessional: false },
       { hasActiveProfessionalAssignment: false },
@@ -562,19 +572,18 @@ describe("canCancelAppointment y canRescheduleAppointment", () => {
     ]) {
       expect(canCancelAppointment({ ...professional, ...denied })).toBe(false);
     }
+    expect(canCancelAppointment({ ...student, isAppointmentStudent: false })).toBe(false);
   });
 
-  test("acompañamiento no activo y cuenta no vigente no cambian la atención", () => {
-    for (const accompanimentStatus of ["paused", "closed"] as const) {
-      const context = changeContext({
-        role: "student",
-        isOwner: true,
-        isAppointmentStudent: true,
-        accompanimentStatus,
-      });
-      expect(canCancelAppointment(context)).toBe(false);
-      expect(canRescheduleAppointment(context)).toBe(false);
-    }
+  test("acompañamiento cerrado y cuenta no vigente no cambian la atención", () => {
+    const closedStudent = changeContext({
+      role: "student",
+      isOwner: true,
+      isAppointmentStudent: true,
+      accompanimentStatus: "closed",
+    });
+    expect(canCancelAppointment(closedStudent)).toBe(false);
+    expect(canRescheduleAppointment(closedStudent)).toBe(false);
     const closed = changeContext({
       role: "professional",
       hasActiveProfessionalAssignment: true,
@@ -680,19 +689,30 @@ describe("canRecordAppointmentAttendance", () => {
     }
   });
 
-  test("acompañamiento no activo y cuenta no vigente no registran la atención", () => {
-    for (const accompanimentStatus of ["paused", "closed"] as const) {
-      expect(
-        canRecordAppointmentAttendance(
-          changeContext({
-            role: "professional",
-            hasActiveProfessionalAssignment: true,
-            isAppointmentProfessional: true,
-            accompanimentStatus,
-          }),
-        ),
-      ).toBe(false);
-    }
+  test("en pausa el Profesional a cargo registra la atención que se mantiene", () => {
+    expect(
+      canRecordAppointmentAttendance(
+        changeContext({
+          role: "professional",
+          hasActiveProfessionalAssignment: true,
+          isAppointmentProfessional: true,
+          accompanimentStatus: "paused",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  test("acompañamiento cerrado y cuenta no vigente no registran la atención", () => {
+    expect(
+      canRecordAppointmentAttendance(
+        changeContext({
+          role: "professional",
+          hasActiveProfessionalAssignment: true,
+          isAppointmentProfessional: true,
+          accompanimentStatus: "closed",
+        }),
+      ),
+    ).toBe(false);
     for (const account of INACTIVE_ACCOUNTS) {
       expect(
         canRecordAppointmentAttendance(

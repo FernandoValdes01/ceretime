@@ -268,9 +268,10 @@ const statusChangeResultValidator = v.object({
  * Pausa un acompañamiento activo (TI2-152).
  *
  * Solo el Profesional vigente con asignación activa. Las atenciones
- * existentes se mantienen; mientras dure la pausa se rechazan reservas y
- * cambios de horario, y solo el Profesional a cargo cancela una atención. El
- * motivo es opcional. `unauthorized` genérico sin permiso o ante un
+ * existentes se mantienen: mientras dure la pausa se rechazan reservas y
+ * cambios de horario, pero el Estudiante dueño y el Profesional a cargo
+ * todavía cancelan, y el Profesional registra el resultado. El motivo es
+ * opcional. `unauthorized` genérico sin permiso o ante un
  * acompañamiento ajeno o inexistente; `conflict` si no está activo o el motivo
  * supera el tope.
  */

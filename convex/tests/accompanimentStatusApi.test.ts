@@ -269,15 +269,18 @@ test("TI2-152 API: solo el Profesional vigente y asignado cambia el estado", asy
   expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active", transitions: [] });
 });
 
-test("TI2-152 API: en pausa las atenciones se mantienen y solo el Profesional a cargo cancela", async () => {
+test("TI2-152 API: en pausa las atenciones se mantienen y las cancelan el Estudiante dueño y el Profesional a cargo", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "pausa-agenda");
-  const startsAt = Date.now() + DAY;
-  const appointmentId = await seedAppointment(t, {
+  const base = {
     accompanimentId: seed.accompanimentId,
     studentId: seed.student,
     professionalId: seed.pro,
-    startsAt,
+  };
+  const appointmentId = await seedAppointment(t, { ...base, startsAt: Date.now() + DAY });
+  const studentAppointmentId = await seedAppointment(t, {
+    ...base,
+    startsAt: Date.now() + 2 * DAY,
   });
   const cancelArgs = {
     appointmentId,
@@ -292,13 +295,18 @@ test("TI2-152 API: en pausa las atenciones se mantienen y solo el Profesional a 
     });
   expect((await t.run((ctx) => ctx.db.get(appointmentId)))?.status).toBe("scheduled");
 
-  await expectPublicError(
-    t.withIdentity(seed.studentIdentity).mutation(api.presentation.appointments.cancelAppointment, {
-      appointmentId,
-      version: APPOINTMENT_CONTRACT_VERSION,
-    }),
-    "unauthorized",
+  expect(
+    await t
+      .withIdentity(seed.studentIdentity)
+      .mutation(api.presentation.appointments.cancelAppointment, {
+        appointmentId: studentAppointmentId,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+  ).toEqual({ appointmentId: studentAppointmentId });
+  expect((await t.run((ctx) => ctx.db.get(studentAppointmentId)))?.status).toBe(
+    "cancelled_by_student",
   );
+
   await expectPublicError(
     t
       .withIdentity(seed.otherProIdentity)
@@ -473,8 +481,15 @@ test("TI2-152 API: una atención vigente cuya hora ya pasó impide el cierre y n
   expect((await t.run((ctx) => ctx.db.get(future)))?.status).toBe("scheduled");
   expect(await readState(t, seed.accompanimentId)).toEqual({ status: "paused", transitions: [] });
 
-  // Registrado el resultado pendiente, el cierre desde la pausa procede.
-  await t.run((ctx) => ctx.db.patch(unrecorded, { status: "completed" }));
+  // En pausa el Profesional a cargo registra el resultado pendiente por la
+  // API, y con eso el cierre desde la pausa procede.
+  expect(
+    await pro.mutation(api.presentation.appointments.recordAppointmentAttendance, {
+      appointmentId: unrecorded,
+      outcome: "completed",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+  ).toEqual({ appointmentId: unrecorded });
   expect(
     await pro.mutation(api.presentation.accompaniments.closeAccompaniment, args),
   ).toMatchObject({ status: "closed", cancelledAppointments: 1 });
