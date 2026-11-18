@@ -16,6 +16,8 @@ const modules = import.meta.glob("../**/*.ts");
 const ISSUER = "https://accounts.google.com";
 const HOUR = 60 * 60_000;
 const DAY = 24 * HOUR;
+const MEET_LINK = "https://meet.google.com/sol-casa-pan";
+const OTHER_MEET_LINK = "https://meet.google.com/mar-roca-sal";
 
 /**
  * Pruebas de la API pública del estado del acompañamiento (TI2-152): pausar,
@@ -323,6 +325,47 @@ test("TI2-152 API: en pausa las atenciones se mantienen y las cancelan el Estudi
     status: "cancelled_by_cereti",
     cancelReason: "Motivo ficticio",
   });
+});
+
+test("TI2-152 API: en pausa los participantes leen y reemplazan el enlace en línea, y cerrado se rechaza", async () => {
+  const t = convexTest(schema, modules);
+  const seed = await seedAccompaniment(t, "pausa-enlace");
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: seed.accompanimentId,
+    studentId: seed.student,
+    professionalId: seed.pro,
+    startsAt: Date.now() + DAY,
+  });
+  const { getOnlineAccess, setOnlineAccessLink } = api.presentation.appointments;
+  const read = { appointmentId, version: APPOINTMENT_CONTRACT_VERSION };
+  const student = t.withIdentity(seed.studentIdentity);
+  const pro = t.withIdentity(seed.proIdentity);
+  const args = { accompanimentId: seed.accompanimentId };
+
+  await pro.mutation(setOnlineAccessLink, { ...read, link: MEET_LINK });
+  await pro.mutation(api.presentation.accompaniments.pauseAccompaniment, args);
+
+  for (const caller of [student, pro]) {
+    expect(await caller.query(getOnlineAccess, read)).toEqual({
+      status: "available",
+      link: MEET_LINK,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    });
+  }
+  expect(await pro.mutation(setOnlineAccessLink, { ...read, link: OTHER_MEET_LINK })).toEqual({
+    appointmentId,
+  });
+  expect(await student.query(getOnlineAccess, read)).toMatchObject({ link: OTHER_MEET_LINK });
+
+  // El cierre cancela la atención futura y el enlace deja de entregarse.
+  await pro.mutation(api.presentation.accompaniments.closeAccompaniment, args);
+  for (const caller of [student, pro]) {
+    await expectPublicError(caller.query(getOnlineAccess, read), "unauthorized");
+  }
+  await expectPublicError(
+    pro.mutation(setOnlineAccessLink, { ...read, link: MEET_LINK }),
+    "unauthorized",
+  );
 });
 
 test("TI2-152 API: fuera de un acompañamiento activo no se reserva ni se cambia el horario", async () => {

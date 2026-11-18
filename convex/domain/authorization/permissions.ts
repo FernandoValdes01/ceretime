@@ -303,15 +303,17 @@ export function canChangeAccompanimentStatus(context: AuthorizationContext): boo
 
 /**
  * Acceso en línea de una atención (TI2-142): leer el enlace privado o, si es
- * profesional, agregarlo. Exige la misma vigencia que reagendar, con
- * acompañamiento activo, pero aquí `isAppointmentProfessional` cuenta a todos
- * los profesionales de la atención, no solo al responsable. Practicante y
- * Administrador se deniegan igual.
+ * profesional, agregarlo o reemplazarlo. Se permite con el acompañamiento
+ * activo o en pausa (TI2-152), porque en pausa la atención se mantiene y sus
+ * participantes necesitan el enlace para entrar. Aquí
+ * `isAppointmentProfessional` cuenta a todos los profesionales de la
+ * atención, no solo al responsable. Practicante y Administrador se deniegan
+ * igual.
  */
 export function canUseAppointmentOnlineAccess(
   context: AppointmentChangeAuthorizationContext,
 ): boolean {
-  return context.accompanimentStatus === "active" && isAppointmentParty(context);
+  return keepsAppointments(context.accompanimentStatus) && isAppointmentParty(context);
 }
 
 /**
@@ -568,9 +570,9 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   },
   {
     action: "appointment:onlineAccess",
-    student: "lee el enlace solo de sus propias atenciones con acompañamiento activo",
+    student: "lee el enlace solo de sus propias atenciones con acompañamiento activo o en pausa",
     professional:
-      "lee y agrega el enlace solo si participa en la atención, con asignación y acompañamiento activos",
+      "lee y agrega el enlace solo si participa en la atención, con asignación activa y acompañamiento activo o en pausa",
     intern: "denegado aunque tenga asignación",
     admin: "denegado",
   },

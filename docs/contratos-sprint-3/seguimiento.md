@@ -173,17 +173,17 @@ Estudiante, Practicante y Administrador reciben `unauthorized` en las cuatro. El
 
 `getAccompaniment`, `listOwnedAccompaniments` y `listAssignedAccompaniments` entregan `status` con uno de estos tres valores, sin otros:
 
-| `status` | Significado | Reservar y cambiar horario | Cancelar una atención | Registrar realización o inasistencia | Justificar y guardar seguimiento | Leer |
-| --- | --- | --- | --- | --- | --- | --- |
-| `active` | En curso | Sí | Estudiante dueño y Profesional a cargo | Profesional a cargo | Sí | Sí |
-| `paused` | En pausa; vuelve a `active` al reactivarse | No: `unauthorized` | Estudiante dueño y Profesional a cargo | Profesional a cargo | No: `unauthorized` | Sí |
-| `closed` | Cerrado; es definitivo | No: `unauthorized` | No: `unauthorized` | No: `unauthorized` | No: `unauthorized` | Sí, de solo lectura |
+| `status` | Significado | Reservar y cambiar horario | Cancelar una atención | Registrar realización o inasistencia | Leer y agregar el enlace en línea | Justificar y guardar seguimiento | Leer |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `active` | En curso | Sí | Estudiante dueño y Profesional a cargo | Profesional a cargo | Participantes de la atención | Sí | Sí |
+| `paused` | En pausa; vuelve a `active` al reactivarse | No: `unauthorized` | Estudiante dueño y Profesional a cargo | Profesional a cargo | Participantes de la atención | No: `unauthorized` | Sí |
+| `closed` | Cerrado; es definitivo | No: `unauthorized` | No: `unauthorized` | No: `unauthorized` | No: `unauthorized` | No: `unauthorized` | Sí, de solo lectura |
 
 Los cambios válidos son `active → paused`, `paused → active`, `active → closed` y `paused → closed`. Un acompañamiento cerrado no se reabre: una necesidad posterior comienza con una solicitud nueva. Los clientes deben tratar `status` como un conjunto cerrado de estos tres valores.
 
 ### Decisión sobre las reservas futuras (08/11/2026)
 
-- **Pausar** mantiene las atenciones existentes y solo rechaza las reservas nuevas y los cambios de horario. Mientras dure la pausa, el Estudiante dueño y el Profesional a cargo pueden cancelar una atención de forma individual con `presentation.appointments.cancelAppointment`, con las mismas reglas de motivo que fuera de la pausa, y el Profesional a cargo registra su realización o inasistencia con `presentation.appointments.recordAppointmentAttendance`. Justificar una inasistencia y guardar el seguimiento siguen exigiendo `active`.
+- **Pausar** mantiene las atenciones existentes y solo rechaza las reservas nuevas y los cambios de horario. Mientras dure la pausa, el Estudiante dueño y el Profesional a cargo pueden cancelar una atención de forma individual con `presentation.appointments.cancelAppointment`, con las mismas reglas de motivo que fuera de la pausa, y el Profesional a cargo registra su realización o inasistencia con `presentation.appointments.recordAppointmentAttendance`. Una atención en línea conserva su enlace: el Estudiante dueño y los profesionales de la atención lo leen con `presentation.appointments.getOnlineAccess`, y esos profesionales lo agregan o reemplazan con `presentation.appointments.setOnlineAccessLink`, con las reglas de `docs/contratos-sprint-3/agenda.md`. Justificar una inasistencia y guardar el seguimiento siguen exigiendo `active`.
 - **Cerrar** cancela todas las atenciones futuras del acompañamiento como `cancelled_by_cereti`, también las que están a cargo de otro profesional, y libera cada cupo. Quien cierra queda como actor de cada cancelación. El acompañamiento cerrado no conserva atenciones vigentes.
 - Antes de confirmar, la pantalla consulta `getAccompanimentClosurePreview` y muestra `appointmentsToCancel`. La cifra es informativa y no se actualiza sola con el paso del tiempo; `closeAccompaniment` vuelve a leer y devuelve la cifra real en `cancelledAppointments`.
 - Una atención agendada cuya hora ya pasó no se cancela, porque diría que no ocurrió. Mientras exista alguna, `unrecordedAppointments` es mayor que cero y el cierre responde `conflict` sin guardar nada: primero se registra su realización o inasistencia, lo que también se puede hacer en pausa, así que `paused → closed` no exige reactivar.

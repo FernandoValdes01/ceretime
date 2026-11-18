@@ -572,8 +572,8 @@ export type AuthorizableAppointmentWithParticipants = AuthorizableAppointment & 
 /**
  * Acceso en línea de una atención (TI2-142): el Estudiante dueño o cualquiera
  * de sus profesionales, responsable o adicional, con perfil vigente, asignación
- * activa si es Profesional y acompañamiento activo. Es más amplio que un cambio
- * de la atención, que solo admite al responsable.
+ * activa si es Profesional y acompañamiento activo o en pausa (TI2-152). Es
+ * más amplio que un cambio de la atención, que solo admite al responsable.
  */
 export async function authorizeAppointmentOnlineAccess(
   reader: AuthorizationReader,

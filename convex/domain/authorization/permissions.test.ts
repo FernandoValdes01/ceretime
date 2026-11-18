@@ -454,16 +454,23 @@ describe("canUseAppointmentOnlineAccess (TI2-142)", () => {
         changeContext({ role: "intern", hasActiveInternAssignment: true }),
       ),
     ).toBe(false);
-    expect(
-      canUseAppointmentOnlineAccess(
-        changeContext({
-          role: "student",
-          isOwner: true,
-          isAppointmentStudent: true,
-          accompanimentStatus: "paused",
-        }),
-      ),
-    ).toBe(false);
+  });
+
+  test("en pausa los participantes siguen usando el enlace, y cerrado nadie", () => {
+    const student = changeContext({ role: "student", isOwner: true, isAppointmentStudent: true });
+    const professional = changeContext({
+      role: "professional",
+      hasActiveProfessionalAssignment: true,
+      isAppointmentProfessional: true,
+    });
+    for (const context of [student, professional]) {
+      expect(canUseAppointmentOnlineAccess({ ...context, accompanimentStatus: "paused" })).toBe(
+        true,
+      );
+      expect(canUseAppointmentOnlineAccess({ ...context, accompanimentStatus: "closed" })).toBe(
+        false,
+      );
+    }
   });
 });
 
