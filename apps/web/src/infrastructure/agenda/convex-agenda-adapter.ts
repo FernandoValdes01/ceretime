@@ -1,6 +1,5 @@
 import type { ConvexReactClient } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ConvexError } from "convex/values";
 import { api } from "../../../../../convex/_generated/api";
 import {
   AGENDA_TIME_ZONE,
@@ -10,7 +9,6 @@ import {
   NO_AVAILABILITY_ERROR_CODE,
   SPACE_CATALOG_CONTRACT_VERSION,
   UNAUTHORIZED_ERROR_CODE,
-  UNAUTHORIZED_ERROR_MESSAGE,
   combineNoCompatibleSlotReasons,
   toSpaceLabel,
   type AvailabilityBlock,
@@ -44,6 +42,7 @@ import type {
   SlotSearchFilter,
   SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
+import { publicErrorOf } from "../convex/public-error.ts";
 import { createFictitiousAgendaAdapter } from "./fictitious-agenda-adapter.ts";
 
 /**
@@ -225,25 +224,6 @@ function toAgendaAppointment(projection: AppointmentProjection): AgendaAppointme
       ? { cancelReason: projection.cancelReason }
       : {}),
   };
-}
-
-/** Error público del Backend, sin stack ni datos internos; `null` si no lo es. */
-function publicErrorOf(error: unknown): PublicApiError | null {
-  if (!(error instanceof ConvexError)) {
-    return null;
-  }
-  const data: unknown = error.data;
-  if (typeof data === "object" && data !== null) {
-    const record = data as { code?: unknown; message?: unknown };
-    if (typeof record.code === "string" && typeof record.message === "string") {
-      return { code: record.code, message: record.message };
-    }
-  }
-  // Sprint 1 conserva `ConvexError("No autorizado")` sin código.
-  if (data === UNAUTHORIZED_ERROR_MESSAGE) {
-    return { code: UNAUTHORIZED_ERROR_CODE, message: UNAUTHORIZED_ERROR_MESSAGE };
-  }
-  return null;
 }
 
 type ClassifiedError = { readonly denied: true } | { readonly error: PublicApiError };

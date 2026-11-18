@@ -9,6 +9,7 @@ import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
 import { useStudentAreaContext } from "./student-area-provider";
 import { formatRequestDate } from "./student-request-formatters";
+import { getStudentRequestStatusPresentation } from "./student-request-status-indicator";
 
 function StateMessage({
   title,
@@ -44,12 +45,13 @@ function StateMessage({
 
 function RequestCard({ request }: { request: StudentRequest }) {
   const createdAt = formatRequestDate(request.createdAt);
+  const status = getStudentRequestStatusPresentation(request.status).label;
   const [isFocused, setIsFocused] = useState(false);
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Solicitud enviada el ${createdAt}. ${request.needSummary ?? "Solicitud de acompañamiento"}`}
+      accessibilityLabel={`Solicitud enviada el ${createdAt}. ${request.needSummary ?? "Solicitud de acompañamiento"}. Estado: ${status}`}
       accessibilityHint="Abre el detalle"
       onFocus={() => setIsFocused(true)}
       onBlur={() => setIsFocused(false)}
@@ -78,6 +80,9 @@ function RequestCard({ request }: { request: StudentRequest }) {
         {request.needSummary ?? "Solicitud de acompañamiento"}
       </StudentText>
       <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
+        Estado: {status}
+      </StudentText>
+      <StudentText className="text-student-secondary text-base leading-[26px]" selectable>
         Ver detalle
       </StudentText>
     </Pressable>
@@ -87,6 +92,7 @@ function RequestCard({ request }: { request: StudentRequest }) {
 function listAnnouncement(status: StudentAreaCollectionStatus): string | null {
   if (status === "loading") return "Cargando solicitudes.";
   if (status === "error") return "No pudimos cargar tus solicitudes.";
+  if (status === "access-denied") return "No tienes acceso a estas solicitudes.";
   if (status === "empty") return "Aún no tienes solicitudes.";
   if (status === "success") return "Solicitudes cargadas.";
   return null;
@@ -104,6 +110,13 @@ export default function StudentRequestsScreen() {
         <StateMessage title="No pudimos cargar tus solicitudes">
           <StudentAction label="Reintentar" onPress={requests.reload} />
         </StateMessage>
+      ) : null}
+
+      {requests.status === "access-denied" ? (
+        <StateMessage
+          title="No tienes acceso a estas solicitudes"
+          message="Vuelve al inicio o consulta con CERETI si necesitas ayuda."
+        />
       ) : null}
 
       {requests.status === "empty" ? (
