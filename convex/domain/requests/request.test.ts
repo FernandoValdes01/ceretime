@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { REQUEST_STATES, REQUEST_STATE_LABELS } from "./state";
 import {
   ACCESS_NEED_ID_MAX_LENGTH,
+  ACCESS_NEED_OPTIONS,
   ACCESS_NEED_LABEL_MAX_LENGTH,
   ACCESS_NEED_SELECTIONS_MAX,
   ACCESS_NEEDS_MAX_LENGTH,
@@ -524,5 +525,20 @@ describe("toInformationResponse (TI2-141)", () => {
         message: "La respuesta supera el máximo permitido (2000 caracteres).",
       },
     });
+  });
+});
+
+describe("ACCESS_NEED_OPTIONS (TI2-149)", () => {
+  test("el envío completo acepta todas las opciones sin cambiarlas", () => {
+    const result = toRequestSubmission({
+      needSummary: "Necesidad ficticia",
+      expectedOutcome: "Resultado ficticio",
+      accessNeeds: ACCESS_NEED_OPTIONS,
+      modalityPreference: "online",
+      generalAvailability: { preferredWeekdays: [1] },
+      preferredAccessibleInformationChannel: "Correo ficticio",
+      idempotencyKey: "clave-ficticia",
+    });
+    expect(result).toMatchObject({ status: "ok", data: { accessNeeds: ACCESS_NEED_OPTIONS } });
   });
 });
