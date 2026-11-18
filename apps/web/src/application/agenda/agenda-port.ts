@@ -9,6 +9,7 @@ import {
   type AvailabilityExceptionKind,
   type AvailabilitySlot,
   type AvailabilityWindow,
+  type OfficialChannelCoordination,
   type PublicApiError,
   type Space,
 } from "../../../../../convex/domain/index.ts";
@@ -72,7 +73,9 @@ export type SlotSearchFilter = {
 
 /**
  * Respuesta tipada de la búsqueda: vacío, falta de cupo y denegación son
- * distintos. La denegación llega sin motivo y sin revelar existencia.
+ * distintos. La denegación llega sin motivo y sin revelar existencia. La falta
+ * de cupo trae, cuando la entrega el Backend, la coordinación por canal oficial
+ * (TI2-144): motivo, explicación, código de referencia y canales.
  */
 export type SlotSearchResult =
   | { readonly status: "ok"; readonly slots: ReadonlyArray<AgendaSlot> }
@@ -80,6 +83,7 @@ export type SlotSearchResult =
   | {
       readonly status: "no_availability";
       readonly code: typeof NO_AVAILABILITY_ERROR_CODE;
+      readonly coordination?: OfficialChannelCoordination;
     }
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly message: string };

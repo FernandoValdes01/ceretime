@@ -54,6 +54,13 @@ describe("deriveCalendarEventKey", () => {
     );
   });
 
+  test("conserva la clave ya publicada en Google Calendar", () => {
+    // Clave calculada con la implementación anterior a TI2-144: si el hash
+    // compartido cambia, los eventos ya creados se duplicarían.
+    // cspell:ignore bqc6lk0mmfgb97h3drjndq9b4m
+    expect(deriveCalendarEventKey("appointment-ficticio-1")).toBe("bqc6lk0mmfgb97h3drjndq9b4m");
+  });
+
   test("cambia entre atenciones distintas", () => {
     expect(deriveCalendarEventKey("appointment-123")).not.toBe(
       deriveCalendarEventKey("appointment-124"),

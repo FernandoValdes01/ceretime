@@ -18,9 +18,9 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import {
   CONFLICT_ERROR_CODE,
   CONFLICT_ERROR_MESSAGE,
-  NO_AVAILABILITY_ERROR_CODE,
-  NO_AVAILABILITY_ERROR_MESSAGE,
+  OFFICIAL_CHANNELS,
   UNAUTHORIZED_ERROR_MESSAGE,
+  toOfficialChannelCoordination,
 } from "../../../../../convex/domain/index.ts";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
@@ -261,12 +261,22 @@ function createFakeBackend() {
     [SEARCH]: (args): Returns<typeof fn.availability.searchSlots> => {
       assertOwn(args.accompanimentId);
       if (slots.length === 0) {
-        throw new ConvexError({
-          code: NO_AVAILABILITY_ERROR_CODE,
-          message: NO_AVAILABILITY_ERROR_MESSAGE,
-        });
+        return {
+          status: "no_compatible_slot",
+          coordination: {
+            ...toOfficialChannelCoordination(String(args.accompanimentId), "slots_occupied"),
+            channels: [...OFFICIAL_CHANNELS],
+          },
+          version: "v1",
+        };
       }
-      return { items: [...slots], hasMore: false, nextCursor: null, version: "v1" };
+      return {
+        status: "available",
+        items: [...slots],
+        hasMore: false,
+        nextCursor: null,
+        version: "v1",
+      };
     },
     [getFunctionName(fn.spaces.listSpaces)]: (): Returns<typeof fn.spaces.listSpaces> => ({
       items: [SPACE],

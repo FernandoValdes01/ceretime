@@ -9,9 +9,11 @@ import {
   NO_AVAILABILITY_ERROR_CODE,
   SPACE_CATALOG_CONTRACT_VERSION,
   UNAUTHORIZED_ERROR_CODE,
+  combineNoCompatibleSlotReasons,
   toSpaceLabel,
   type AvailabilityBlock,
   type AvailabilityException,
+  type OfficialChannelCoordination,
   type PublicApiError,
   type Space,
 } from "../../../../../convex/domain/index.ts";
@@ -136,9 +138,15 @@ export interface ConvexAgendaClient {
 type AppointmentsPage = FunctionReturnType<typeof api.presentation.appointments.listAppointments>;
 type AppointmentProjection = AppointmentsPage["items"][number];
 type SpacesPage = FunctionReturnType<typeof api.presentation.spaces.listSpaces>;
-type SearchedSlot = FunctionReturnType<
-  typeof api.presentation.availability.searchSlots
+type SearchedSlot = Extract<
+  FunctionReturnType<typeof api.presentation.availability.searchSlots>,
+  { status: "available" }
 >["items"][number];
+
+/** Cupos de un profesional, o la coordinación por canal oficial sin cupo compatible (TI2-144). */
+type ProfessionalSlots =
+  | { readonly slots: ReadonlyArray<SearchedSlot> }
+  | { readonly slots: readonly []; readonly coordination: OfficialChannelCoordination };
 type OwnAvailability = FunctionReturnType<typeof api.presentation.availability.listOwnAvailability>;
 type AppointmentsArgs = {
   readonly from: string;
@@ -349,34 +357,34 @@ export function createConvexAgendaAdapter(
 
   /**
    * Todos los cupos de un profesional en la ventana; `null` si supera el tope de
-   * páginas. Que uno no tenga cupo no debe ocultar los de los demás.
+   * páginas. Que uno no tenga cupo no debe ocultar los de los demás. Sin cupo
+   * compatible conserva la coordinación que entrega el Backend (TI2-144).
    */
-  async function readProfessionalSlots(accompanimentId: string, professionalId: string) {
+  async function readProfessionalSlots(
+    accompanimentId: string,
+    professionalId: string,
+  ): Promise<ProfessionalSlots | null> {
     const range = availabilityRange(now());
     const slots: SearchedSlot[] = [];
     let cursor: string | undefined;
-    try {
-      for (let pages = 0; pages < AGENDA_MAX_PAGES; pages += 1) {
-        const page = await client.query(api.presentation.availability.searchSlots, {
-          accompanimentId,
-          professionalId,
-          from: range.from,
-          to: range.to,
-          limit: SLOT_PAGE_LIMIT,
-          ...(cursor === undefined ? {} : { cursor }),
-          version: AVAILABILITY_CONTRACT_VERSION,
-        });
-        slots.push(...page.items);
-        if (!page.hasMore || page.nextCursor === null) {
-          return slots;
-        }
-        cursor = page.nextCursor;
+    for (let pages = 0; pages < AGENDA_MAX_PAGES; pages += 1) {
+      const page = await client.query(api.presentation.availability.searchSlots, {
+        accompanimentId,
+        professionalId,
+        from: range.from,
+        to: range.to,
+        limit: SLOT_PAGE_LIMIT,
+        ...(cursor === undefined ? {} : { cursor }),
+        version: AVAILABILITY_CONTRACT_VERSION,
+      });
+      if (page.status === "no_compatible_slot") {
+        return { slots: [], coordination: page.coordination };
       }
-    } catch (error) {
-      if (publicErrorOf(error)?.code === NO_AVAILABILITY_ERROR_CODE) {
-        return slots;
+      slots.push(...page.items);
+      if (!page.hasMore || page.nextCursor === null) {
+        return { slots };
       }
-      throw error;
+      cursor = page.nextCursor;
     }
     return null;
   }
@@ -408,14 +416,26 @@ export function createConvexAgendaAdapter(
         professionalIds.map((id) => readProfessionalSlots(accompanimentId, id)),
       );
       const found: SearchedSlot[] = [];
-      for (const slots of perProfessional) {
-        if (slots === null) {
+      const coordinations: OfficialChannelCoordination[] = [];
+      for (const result of perProfessional) {
+        if (result === null) {
           return { status: "error", message: TOO_MANY_SLOTS_MESSAGE };
         }
-        found.push(...slots);
+        found.push(...result.slots);
+        if ("coordination" in result) {
+          coordinations.push(result.coordination);
+        }
       }
       if (found.length === 0) {
-        return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
+        // El código y los canales dependen solo del acompañamiento; entre los
+        // profesionales se muestra el motivo de mayor prioridad del dominio.
+        const reason = combineNoCompatibleSlotReasons(coordinations.map((item) => item.reason));
+        const coordination = coordinations.find((item) => item.reason === reason);
+        return {
+          status: "no_availability",
+          code: NO_AVAILABILITY_ERROR_CODE,
+          ...(coordination === undefined ? {} : { coordination }),
+        };
       }
       found.sort((left, right) => left.startAt - right.startAt);
       const options = withoutRepeatedOptions(found);

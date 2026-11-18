@@ -253,6 +253,8 @@
     "VCALENDAR",
     "VEVENT",
     "PRODID",
-    "CALSCALE"
+    "CALSCALE",
+    "Crockford",
+    "CROCKFORD"
   ]
 }
