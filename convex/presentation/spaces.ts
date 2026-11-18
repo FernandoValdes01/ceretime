@@ -10,6 +10,7 @@ import { mutation, query } from "../_generated/server";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import { spaceReader, spaceWriter } from "../infrastructure/spaces/repository";
+import { spaceFieldsShape } from "../infrastructure/validators";
 import { unwrapApiResult as unwrap } from "./session";
 
 /**
@@ -27,12 +28,7 @@ import { unwrapApiResult as unwrap } from "./session";
  */
 
 const spaceContentFields = {
-  campus: v.string(),
-  building: v.string(),
-  floor: v.string(),
-  room: v.string(),
-  accessConditions: v.string(),
-  arrivalInstructions: v.string(),
+  ...spaceFieldsShape,
   version: v.literal(SPACE_CATALOG_CONTRACT_VERSION),
 };
 

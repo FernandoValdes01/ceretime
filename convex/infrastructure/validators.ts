@@ -11,6 +11,7 @@ import {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
   MODALITY_VALUES,
 } from "../domain/availability/availability";
+import { NO_COMPATIBLE_SLOT_REASON_VALUES } from "../domain/availability/official_channel";
 import {
   FOLLOW_UP_CONTRACT_VERSION,
   FOLLOW_UP_RESPONSIBLE_VALUES,
@@ -149,6 +150,49 @@ export const outgoingReferralValidator = v.object({
  * del dominio para que el esquema no defina nombres por su cuenta.
  */
 export const modalityUnion = v.union(...MODALITY_VALUES.map((value) => v.literal(value)));
+
+/**
+ * Ubicación y acceso de un espacio (`SpaceFields`): la comparten el catálogo de
+ * espacios, los cupos de la búsqueda y el canal oficial presencial (TI2-144).
+ */
+export const spaceFieldsShape = {
+  campus: v.string(),
+  building: v.string(),
+  floor: v.string(),
+  room: v.string(),
+  accessConditions: v.string(),
+  arrivalInstructions: v.string(),
+};
+
+/** Motivos de la ausencia de horario compatible (TI2-144), derivados del dominio. */
+export const noCompatibleSlotReasonUnion = v.union(
+  ...NO_COMPATIBLE_SLOT_REASON_VALUES.map((value) => v.literal(value)),
+);
+
+/** Canal oficial de CERETI (TI2-144), discriminado por `kind` como en el dominio. */
+export const officialChannelValidator = v.union(
+  v.object({
+    id: v.string(),
+    kind: v.literal("inPerson"),
+    name: v.string(),
+    hours: v.string(),
+    location: v.object(spaceFieldsShape),
+  }),
+  v.object({
+    id: v.string(),
+    kind: v.literal("email"),
+    name: v.string(),
+    hours: v.string(),
+    address: v.string(),
+  }),
+  v.object({
+    id: v.string(),
+    kind: v.literal("phone"),
+    name: v.string(),
+    hours: v.string(),
+    phoneNumber: v.string(),
+  }),
+);
 
 /**
  * Clases de excepción de disponibilidad (TI2-83), derivadas del dominio.

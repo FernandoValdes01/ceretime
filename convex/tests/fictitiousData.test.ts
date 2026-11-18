@@ -4,7 +4,7 @@ import { ConvexError } from "convex/values";
 import { expect, test, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import { AGENDA_TIME_ZONE, civilRangeToInstantRange } from "../domain/availability/availability";
-import { noAvailabilityError, unauthorizedError } from "../domain/errors/api_error";
+import { unauthorizedError } from "../domain/errors/api_error";
 import { SPRINT_1_REQUEST_STATES } from "../domain/requests/state";
 import schema from "../schema";
 
@@ -436,13 +436,15 @@ test("la disponibilidad sembrada distingue el bloque cancelado y la ventana agre
 
   // El lunes 2026-10-12 el bloque presencial está cancelado y el bloque en
   // línea no cubre las necesidades: no queda cupo compatible.
-  expect(await publicError(search("2026-10-12", "2026-10-12"))).toStrictEqual(
-    noAvailabilityError(),
-  );
+  expect(await search("2026-10-12", "2026-10-12")).toMatchObject({
+    status: "no_compatible_slot",
+    coordination: { reason: "needs_not_met" },
+  });
 
   // La ventana agregada del sábado 2026-10-17 sí ofrece el cupo presencial,
   // en las 10:00 civiles de la agenda.
   const added = await search("2026-10-17", "2026-10-17");
+  if (added.status !== "available") throw new Error("Se esperaba el cupo agregado");
   expect(added.items).toHaveLength(1);
   expect(added.items[0]).toMatchObject({
     date: "2026-10-17",
@@ -455,6 +457,7 @@ test("la disponibilidad sembrada distingue el bloque cancelado y la ventana agre
   // Un lunes sin excepciones recupera el cupo recurrente en la misma hora
   // civil que las atenciones sembradas.
   const recurring = await search("2026-10-26", "2026-10-26");
+  if (recurring.status !== "available") throw new Error("Se esperaba el cupo recurrente");
   expect(recurring.items).toHaveLength(1);
   expect(recurring.items[0]?.startAt).toBe(agendaInstant("2026-10-26", 600));
 

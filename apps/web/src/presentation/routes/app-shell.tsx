@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-login.ts";
 import { authClient } from "../../infrastructure/auth/auth-client.ts";
 import { AccessibilityMenu } from "../accessibility/AccessibilityMenu.tsx";
+import { clearAllRequestDrafts } from "../estudiante/student-request-draft.ts";
 import { PORTAL_NAVIGATION, type PortalArea } from "./navigation.ts";
 import "./app-shell.css";
 
@@ -58,6 +59,9 @@ export function AppShell({ area }: { area: PortalArea }) {
         setSignOutError(GENERIC_AUTH_MESSAGES.signOutError);
         return;
       }
+      // Solo tras cerrar la sesión: si falla, la persona sigue dentro y no
+      // pierde lo que escribió en una solicitud sin enviar.
+      clearAllRequestDrafts();
       await navigate({ to: "/", replace: true });
     } catch {
       setSignOutError(GENERIC_AUTH_MESSAGES.signOutError);

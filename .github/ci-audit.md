@@ -33,6 +33,8 @@ Se escucha edited sin omitir ninguno de los cuatro jobs requeridos. GitHub no fi
 
 Preview conserva PR_HEAD_SHA como identidad de la PR y PREVIEW_BUILD_SHA como el SHA obtenido de git rev-parse HEAD. Añade PR_BASE_SHA y PR_BASE_REF para comprobar vigencia. Vercel Git deployments permanece deshabilitado; los despliegues CLI son independientes de las validaciones y no confieren aprobación de merge.
 
+Las cabeceras de seguridad de `apps/web/vercel.json` forman parte del artefacto de `vercel build` y `vercel deploy --prebuilt` las publica; no se configuran en el panel de Vercel ni se duplican en `vite.config.ts`. La política, la decisión sobre los orígenes de Convex y la comprobación local están en [Cabeceras de seguridad](../docs/operaciones/vercel-deployment.md#cabeceras-de-seguridad).
+
 Tras bypass, consultar CI para el SHA exacto de main, no el último run verde de otra rama. Si un runner no adquirió el job, usar Actions → CI → run de main → Re-run failed jobs. Si un paso ejecutado falla, investigar su log. Mientras falte un check satisfactorio, main permanece sin validación completa y Production no se ejecuta. El commit main 975e056 tenía Backend cancelled por infraestructura, no un test fallido. No se añadió un status artificial verde ni se ejecutó un despliegue manual de producción durante esta auditoría.
 
 Las reglas de concurrency, checkout y reruns se contrastaron con [GitHub: concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), [eventos pull_request](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request) y [reruns](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
