@@ -28,6 +28,7 @@ import {
 } from "../domain/notifications/notification";
 import {
   accompanimentNeedsReader,
+  accompanimentStatusWriter,
   paginateInternalNotes,
 } from "../infrastructure/accompaniments/repository";
 import {
@@ -4042,4 +4043,77 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
     missingAppliedAccessNeeds: 0,
     missingParticipants: 0,
   });
+});
+
+test("TI2-152: el historial de estados guarda cada cambio y su índice responde en orden", async () => {
+  const t = convexTest(schema, modules);
+  const { professional, accompanimentId } = await seedTi118Appointment(t, "estado-a");
+  const other = await seedTi118Appointment(t, "estado-b");
+
+  // Se escriben fuera de orden para que el índice, y no la inserción, ordene;
+  // el cierre va al final porque cada escritura deja su estado en la fila.
+  await t.run(async (ctx) => {
+    const writer = accompanimentStatusWriter(ctx);
+    await writer.persistStatusChange(accompanimentId, {
+      from: "paused",
+      to: "active",
+      actorId: professional,
+      occurredAt: TI83_MONDAY_9H,
+    });
+    await writer.persistStatusChange(accompanimentId, {
+      from: "active",
+      to: "paused",
+      actorId: professional,
+      occurredAt: TI83_MONDAY,
+      reason: "Receso ficticio",
+    });
+    await writer.persistStatusChange(other.accompanimentId, {
+      from: "active",
+      to: "closed",
+      actorId: other.professional,
+      occurredAt: TI83_MONDAY_9H,
+    });
+    await writer.persistStatusChange(accompanimentId, {
+      from: "active",
+      to: "closed",
+      actorId: professional,
+      occurredAt: TI83_MONDAY_10H,
+    });
+  });
+
+  const history = await t.run(
+    async (ctx) =>
+      await ctx.db
+        .query("accompanimentTransitions")
+        .withIndex("by_accompanimentId_and_occurredAt", (q) =>
+          q.eq("accompanimentId", accompanimentId),
+        )
+        .take(10),
+  );
+  expect(history.map(({ from, to, occurredAt }) => ({ from, to, occurredAt }))).toEqual([
+    { from: "active", to: "paused", occurredAt: TI83_MONDAY },
+    { from: "paused", to: "active", occurredAt: TI83_MONDAY_9H },
+    { from: "active", to: "closed", occurredAt: TI83_MONDAY_10H },
+  ]);
+  expect(history[0]?.reason).toBe("Receso ficticio");
+  expect(history.slice(1).every((row) => !("reason" in row))).toBe(true);
+
+  // El cierre es la última fila con `to: "closed"`; el acompañamiento no
+  // guarda otra copia de quién cerró, cuándo ni por qué.
+  const closure = await t.run(
+    async (ctx) =>
+      await ctx.db
+        .query("accompanimentTransitions")
+        .withIndex("by_accompanimentId_and_occurredAt", (q) =>
+          q.eq("accompanimentId", accompanimentId),
+        )
+        .order("desc")
+        .first(),
+  );
+  expect(closure).toMatchObject({ to: "closed", actorId: professional });
+  const accompaniment = await t.run(async (ctx) => await ctx.db.get(accompanimentId));
+  expect(accompaniment?.status).toBe("closed");
+  expect(Object.keys(accompaniment ?? {}).sort()).toEqual(
+    ["_creationTime", "_id", "accessNeeds", "objective", "status", "studentId"].sort(),
+  );
 });
