@@ -117,12 +117,13 @@ export function toAccompanimentProjection<AccompanimentId extends string, UserId
 /**
  * Cambios de estado del acompañamiento (TI2-152): pausar, reactivar y cerrar.
  *
- * `closed` no aparece como origen: un acompañamiento cerrado no se reabre ni
+ * `closed` no puede ser origen: un acompañamiento cerrado no se reabre ni
  * vuelve a pausarse, y una necesidad posterior comienza con otra solicitud.
- * Un par ausente de esta tabla es una transición inválida.
+ * El tipo de `from` lo excluye, así que agregar una salida desde `closed` no
+ * compila. Un par ausente de esta tabla es una transición inválida.
  */
 export type AccompanimentStateTransition = {
-  readonly from: AccompanimentStatus;
+  readonly from: Exclude<AccompanimentStatus, "closed">;
   readonly to: AccompanimentStatus;
 };
 
@@ -151,14 +152,12 @@ export type AccompanimentTransitionAttempt = {
   readonly reason?: string;
 };
 
-/** Entrada del historial de estados: trae el motivo solo si se entregó. */
-export type AccompanimentStateChange = {
-  readonly from: AccompanimentStatus;
-  readonly to: AccompanimentStatus;
-  readonly actorId: string;
-  readonly occurredAt: number;
-  readonly reason?: string;
-};
+/**
+ * Entrada del historial de estados: el intento ya aceptado, con el origen de
+ * una transición válida y el motivo solo si se entregó.
+ */
+export type AccompanimentStateChange = AccompanimentTransitionAttempt &
+  AccompanimentStateTransition;
 
 export const ACCOMPANIMENT_TRANSITION_REJECTION_CAUSES = [
   "transition_not_allowed",
