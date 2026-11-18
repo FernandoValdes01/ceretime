@@ -29,6 +29,7 @@ function DetailField({ label, value }: { label: string; value: string }) {
 function detailAnnouncement(status: StudentAreaCollectionStatus, found: boolean): string | null {
   if (status === "loading") return "Cargando solicitud.";
   if (status === "error") return "No pudimos cargar la solicitud.";
+  if (status === "access-denied") return "No tienes acceso a esta solicitud.";
   if (!found) return "Solicitud no encontrada.";
   return "Solicitud cargada.";
 }
@@ -78,7 +79,25 @@ export default function StudentRequestDetailScreen() {
         </View>
       ) : null}
 
-      {requests.status !== "loading" && requests.status !== "error" && !request ? (
+      {requests.status === "access-denied" ? (
+        <View className="gap-4 rounded-xl border border-student-border bg-student-surface p-4">
+          <StudentText
+            weight="semibold"
+            accessibilityRole="header"
+            className="text-student-text text-xl leading-[28px]"
+            selectable
+          >
+            No tienes acceso a esta solicitud
+          </StudentText>
+          <StudentAction
+            label="Volver a mis solicitudes"
+            secondary
+            onPress={() => router.replace("/estudiante/solicitudes")}
+          />
+        </View>
+      ) : null}
+
+      {(requests.status === "success" || requests.status === "empty") && !request ? (
         <View
           className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
           style={{ borderCurve: "continuous" }}
