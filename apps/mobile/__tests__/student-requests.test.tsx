@@ -7,11 +7,13 @@ import { StrictMode } from "react";
 import { AccessibilityInfo } from "react-native";
 
 import type { StudentAreaSnapshot } from "@/domain/student-area-models";
-import type { StudentAreaReader } from "@/application/student-area-port";
+import { StudentOperationError, type StudentAreaReader } from "@/application/student-area-port";
 import { createDemoStudentAreaReader } from "@/infrastructure/demo-student-area-reader";
 import { createDemoStudentAreaStore } from "@/infrastructure/demo-student-area-store";
 import { StudentAreaProvider } from "@/presentation/estudiante/student-area-provider";
 import StudentRequestsScreen from "@/presentation/estudiante/student-requests-screen";
+import StudentRequestDetailScreen from "@/presentation/estudiante/student-request-detail-screen";
+import StudentAccompanimentScreen from "@/presentation/estudiante/student-accompaniment-screen";
 import { fillRequiredStudentRequestFields } from "./student-request-test-helpers";
 
 const appDirectory = path.resolve(__dirname, "../app");
@@ -103,13 +105,77 @@ describe("Solicitudes del estudiante", () => {
     expect(attempts).toBe(2);
   });
 
+  test.each([
+    ["error tipado", new StudentOperationError("listOwnRequests", "unauthorized", "No autorizado")],
+    ["código público", { data: { code: "unauthorized" } }],
+    ["respuesta anterior", { data: "No autorizado" }],
+  ])("distingue acceso denegado de un fallo recuperable: %s", async (_case, error) => {
+    const reader: StudentAreaReader = { readStudentArea: () => Promise.reject(error) };
+    render(
+      <StudentAreaProvider reader={reader}>
+        <StudentRequestsScreen />
+      </StudentAreaProvider>,
+    );
+
+    expect(await screen.findByText("No tienes acceso a estas solicitudes")).toBeOnTheScreen();
+    expect(screen.queryByText("No pudimos cargar tus solicitudes")).not.toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).not.toBeOnTheScreen();
+    expect(screen.queryByText("SOL-DEMO-001")).not.toBeOnTheScreen();
+  });
+
+  test("oculta las solicitudes anteriores al denegar una actualización", async () => {
+    let refresh = () => {};
+    let denied = false;
+    const reader: StudentAreaReader = {
+      readStudentArea: () =>
+        denied
+          ? Promise.reject({ data: { code: "unauthorized" } })
+          : createDemoStudentAreaReader().readStudentArea(),
+      subscribe: (onChange) => {
+        refresh = onChange;
+        return () => {};
+      },
+    };
+    render(
+      <StudentAreaProvider reader={reader}>
+        <StudentRequestsScreen />
+      </StudentAreaProvider>,
+    );
+
+    expect((await screen.findAllByText("Estado: Aceptada")).length).toBeGreaterThan(0);
+    denied = true;
+    await act(async () => refresh());
+    expect(await screen.findByText("No tienes acceso a estas solicitudes")).toBeOnTheScreen();
+    expect(screen.queryByText("Estado: Aceptada")).not.toBeOnTheScreen();
+  });
+
+  test.each([
+    [StudentRequestDetailScreen, "No tienes acceso a esta solicitud"],
+    [StudentAccompanimentScreen, "No tienes acceso a este acompañamiento"],
+  ])("la pantalla de detalle distingue la denegación", async (Component, message) => {
+    const reader: StudentAreaReader = {
+      readStudentArea: () =>
+        Promise.reject(new StudentOperationError("getRequest", "unauthorized", "No autorizado")),
+    };
+    render(
+      <StudentAreaProvider reader={reader}>
+        <Component />
+      </StudentAreaProvider>,
+    );
+
+    expect(await screen.findByText(message)).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).not.toBeOnTheScreen();
+    expect(screen.getByRole("button", { name: "Volver a mis solicitudes" })).toBeOnTheScreen();
+    expect(screen.queryByText(/no encontrad|no disponible/i)).not.toBeOnTheScreen();
+  });
+
   test("recorre Inicio → Mis solicitudes → Detalle", async () => {
     const navigation = renderRouter(appDirectory);
     fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
 
     const requestCard = await screen.findByRole("button", {
-      name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
+      name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento. Estado: Aceptada",
     });
     expect(screen.queryByText("Mis solicitudes")).not.toBeOnTheScreen();
     expect(
@@ -146,7 +212,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
     expect(
       await screen.findByRole("button", {
-        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
+        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento. Estado: Aceptada",
       }),
     ).toBeOnTheScreen();
     fireEvent.press(screen.getByLabelText("Inicio, pestaña, 1 de 3"));
@@ -199,7 +265,7 @@ describe("Solicitudes del estudiante", () => {
     fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
     fireEvent.press(
       await screen.findByRole("button", {
-        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento",
+        name: "Solicitud enviada el 10 de agosto de 2026. Solicitud de acompañamiento. Estado: Aceptada",
       }),
     );
 
