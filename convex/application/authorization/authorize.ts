@@ -6,6 +6,7 @@ import {
   appointmentCancellationTarget,
   canAddAppointmentToCalendar,
   canBookAppointment,
+  canChangeAccompanimentStatus,
   canCoordinateAppointment,
   canEditAvailability,
   canReadAvailability,
@@ -300,6 +301,25 @@ async function loadAgendaContext(
   };
 }
 
+/** Cambio de estado concedido, con el estado vigente leído en el servidor. */
+export type AccompanimentStatusGrant = AgendaGrant & {
+  readonly status: AccompanimentStatus;
+};
+
+/**
+ * Pausar, reactivar o cerrar un acompañamiento (TI2-152): solo el Profesional
+ * vigente con asignación activa. Entrega el estado leído en el servidor para
+ * que el caso de uso aplique la política sin confiar en el cliente.
+ */
+export async function authorizeAccompanimentStatusChange(
+  reader: AuthorizationReader,
+  request: AgendaRequest,
+): Promise<ApiResult<AccompanimentStatusGrant>> {
+  const loaded = await loadAgendaContext(reader, request);
+  if (loaded === null || !canChangeAccompanimentStatus(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId, status: loaded.context.accompanimentStatus });
+}
+
 /**
  * Edición de bloques y excepciones. `professionalId` es el dueño de la
  * disponibilidad que se quiere editar, no la identidad: se compara con el
@@ -552,8 +572,8 @@ export type AuthorizableAppointmentWithParticipants = AuthorizableAppointment & 
 /**
  * Acceso en línea de una atención (TI2-142): el Estudiante dueño o cualquiera
  * de sus profesionales, responsable o adicional, con perfil vigente, asignación
- * activa si es Profesional y acompañamiento activo. Es más amplio que un cambio
- * de la atención, que solo admite al responsable.
+ * activa si es Profesional y acompañamiento activo o en pausa (TI2-152). Es
+ * más amplio que un cambio de la atención, que solo admite al responsable.
  */
 export async function authorizeAppointmentOnlineAccess(
   reader: AuthorizationReader,

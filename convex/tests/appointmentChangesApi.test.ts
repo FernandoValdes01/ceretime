@@ -636,7 +636,7 @@ test("TI2-121 API: cancelar con identificadores ajenos, de otra tabla o vacíos 
   expect(await getAppointment(t, appointmentId)).toEqual(before);
 });
 
-test("TI2-121 API: cancelar exige perfil vigente, acompañamiento activo y asignación vigente", async () => {
+test("TI2-121 API: cancelar exige perfil vigente, acompañamiento no cerrado y asignación vigente", async () => {
   const t = convexTest(schema, modules);
   const startsAt = Date.now() + DAY;
 
@@ -663,7 +663,7 @@ test("TI2-121 API: cancelar exige perfil vigente, acompañamiento activo y asign
   );
 
   const inactiveAccompanimentAgenda = await seedAgenda(t, "cancel-inactive", {
-    accompanimentStatus: "paused",
+    accompanimentStatus: "closed",
   });
   const inactiveAppointment = await seedAppointment(t, {
     accompanimentId: inactiveAccompanimentAgenda.accompanimentId,
@@ -2249,7 +2249,7 @@ test("TI2-121 API: el registro deniega al Estudiante dueño, ajenos, roles y cue
   );
 
   const inactiveAccompanimentAgenda = await seedAgenda(t, "attendance-inactive", {
-    accompanimentStatus: "paused",
+    accompanimentStatus: "closed",
   });
   const inactiveAppointment = await seedAppointment(t, {
     accompanimentId: inactiveAccompanimentAgenda.accompanimentId,
