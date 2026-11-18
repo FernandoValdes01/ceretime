@@ -10,6 +10,7 @@ import {
 import {
   ACCEPTANCE_STATE,
   CLOSURE_REQUEST_TRANSITIONS,
+  isOpenRequestState,
   REFERRAL_REQUEST_TRANSITIONS,
   REQUEST_TRANSITIONS,
   RESPONSE_REQUEST_TRANSITIONS,
@@ -200,5 +201,18 @@ describe("REQUEST_TRANSITIONS como grafo", () => {
       (row) => row.from === row.to || row.to === INITIAL_REQUEST_STATE,
     );
     expect(loops.map(pair)).toEqual([]);
+  });
+});
+
+describe("isOpenRequestState (TI2-149)", () => {
+  test("en curso mientras admite un paso; terminada al aceptar, derivar, cerrar o cancelar", () => {
+    expect(
+      ["received", "under_review", "awaiting_information_or_acceptance"].every(isOpenRequestState),
+    ).toBe(true);
+    expect(
+      ["accepted", "referred", "closed_without_accompaniment", "cancelled", "desconocido"].some(
+        isOpenRequestState,
+      ),
+    ).toBe(false);
   });
 });

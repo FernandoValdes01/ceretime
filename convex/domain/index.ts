@@ -23,6 +23,7 @@ export type { InstitutionalPopulation } from "./auth/institutional_domain";
 
 // Solicitud de acompañamiento y sus estados.
 export {
+  ACCESS_NEED_OPTIONS,
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
   LEGACY_REQUEST_PROVENANCE_CHANNEL,
@@ -50,6 +51,7 @@ export {
   SPRINT_1_REQUEST_STATES,
 } from "./requests/state";
 export type { ReferralRequestState, RequestState, Sprint1RequestState } from "./requests/state";
+export { isOpenRequestState } from "./requests/transitions";
 
 // Acompañamiento y sus vistas de lectura.
 export {

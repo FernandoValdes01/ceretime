@@ -122,6 +122,15 @@ export const REQUEST_TRANSITIONS = [
 ] as const;
 
 /**
+ * Verdadero mientras la solicitud admite algún paso más (TI2-149): sale de la
+ * tabla de transiciones, así que una aceptada, derivada, cerrada o cancelada
+ * ya terminó. Recibe `string` para clasificar lo que muestra un cliente.
+ */
+export function isOpenRequestState(state: string): boolean {
+  return REQUEST_TRANSITIONS.some((transition) => transition.from === state);
+}
+
+/**
  * Entrada del historial de cambios de estado de la solicitud: se agrega, no se
  * edita ni se borra. No es el evento de auditoría de RD-03, que registra solo
  * actor, fecha, acción, recurso y resultado: `reason` es texto libre y puede
