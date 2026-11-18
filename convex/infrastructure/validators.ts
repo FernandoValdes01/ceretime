@@ -11,6 +11,7 @@ import {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
   MODALITY_VALUES,
 } from "../domain/availability/availability";
+import { NO_COMPATIBLE_SLOT_REASON_VALUES } from "../domain/availability/official_channel";
 import {
   FOLLOW_UP_CONTRACT_VERSION,
   FOLLOW_UP_RESPONSIBLE_VALUES,
@@ -25,7 +26,7 @@ import {
   ASSIGNMENT_STATUS_VALUES,
 } from "../domain/accompaniments/practitioner_assignment";
 import { REQUEST_PROVENANCE_CHANNEL_VALUES } from "../domain/requests/request";
-import { PERSISTABLE_REQUEST_STATES, REQUEST_STATES } from "../domain/requests/state";
+import { REQUEST_STATES } from "../domain/requests/state";
 import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,
@@ -65,23 +66,13 @@ export const assignmentStatusUnion = v.union(
 );
 
 /**
- * Estados de solicitud del contrato de presentación (TI2-141): los siete que
- * declara el dominio. Derivados de `REQUEST_STATES` para que el borde no
- * defina nombres por su cuenta. Incluye `referred` aunque todavía ninguna fila
- * lo trae, para que Web y Mobile mapeen el conjunto completo una sola vez: lo
- * habilita la tarea de derivaciones.
+ * Estados de solicitud (TI2-141, TI2-143): los siete que declara el dominio,
+ * derivados de `REQUEST_STATES` para que el borde no defina nombres por su
+ * cuenta. Los usan el contrato de presentación y, desde TI2-143, las tablas
+ * `requests` y `requestTransitions`: una sola unión para lo que se publica y
+ * lo que se guarda.
  */
 export const requestStatusUnion = v.union(...REQUEST_STATES.map((state) => v.literal(state)));
-
-/**
- * Estados de solicitud persistibles (TI2-83 adapta validadores para TI2-85):
- * operativos de Sprint 1 más `closed_without_accompaniment` y `cancelled`,
- * sin `referred`. Es lo que puede traer una fila de `requests` o de
- * `requestTransitions`; la presentación declara además `referred` (ver arriba).
- */
-export const persistableRequestStatusUnion = v.union(
-  ...PERSISTABLE_REQUEST_STATES.map((state) => v.literal(state)),
-);
 
 /**
  * Contenido ampliado de la solicitud (TI2-135): formas persistidas de las
@@ -102,6 +93,11 @@ export const generalAvailabilityValidator = v.object({
 });
 
 const [studentProvenanceChannel, officialProvenanceChannel] = REQUEST_PROVENANCE_CHANNEL_VALUES;
+
+/** Canal de procedencia que entrega el detalle de la solicitud (TI2-143). */
+export const requestProvenanceChannelUnion = v.union(
+  ...REQUEST_PROVENANCE_CHANNEL_VALUES.map((channel) => v.literal(channel)),
+);
 
 /**
  * Procedencia de una solicitud (TI2-135): el canal, quién la registró cuando
@@ -139,8 +135,8 @@ export const incomingReferralValidator = v.object({
 
 /**
  * Derivación de salida (TI2-135): CERETI deriva al estudiante a otra unidad,
- * con la razón comprensible. El estado `referred` sigue sin habilitarse; esto
- * solo da dónde guardar el dato cuando un caso de uso lo habilite.
+ * con la razón comprensible. Desde TI2-143 se escribe junto con el estado
+ * `referred`, en la misma operación.
  */
 export const outgoingReferralValidator = v.object({
   destinationUnit: v.string(),
@@ -154,6 +150,49 @@ export const outgoingReferralValidator = v.object({
  * del dominio para que el esquema no defina nombres por su cuenta.
  */
 export const modalityUnion = v.union(...MODALITY_VALUES.map((value) => v.literal(value)));
+
+/**
+ * Ubicación y acceso de un espacio (`SpaceFields`): la comparten el catálogo de
+ * espacios, los cupos de la búsqueda y el canal oficial presencial (TI2-144).
+ */
+export const spaceFieldsShape = {
+  campus: v.string(),
+  building: v.string(),
+  floor: v.string(),
+  room: v.string(),
+  accessConditions: v.string(),
+  arrivalInstructions: v.string(),
+};
+
+/** Motivos de la ausencia de horario compatible (TI2-144), derivados del dominio. */
+export const noCompatibleSlotReasonUnion = v.union(
+  ...NO_COMPATIBLE_SLOT_REASON_VALUES.map((value) => v.literal(value)),
+);
+
+/** Canal oficial de CERETI (TI2-144), discriminado por `kind` como en el dominio. */
+export const officialChannelValidator = v.union(
+  v.object({
+    id: v.string(),
+    kind: v.literal("inPerson"),
+    name: v.string(),
+    hours: v.string(),
+    location: v.object(spaceFieldsShape),
+  }),
+  v.object({
+    id: v.string(),
+    kind: v.literal("email"),
+    name: v.string(),
+    hours: v.string(),
+    address: v.string(),
+  }),
+  v.object({
+    id: v.string(),
+    kind: v.literal("phone"),
+    name: v.string(),
+    hours: v.string(),
+    phoneNumber: v.string(),
+  }),
+);
 
 /**
  * Clases de excepción de disponibilidad (TI2-83), derivadas del dominio.

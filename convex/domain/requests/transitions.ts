@@ -1,34 +1,39 @@
 /**
  * Transiciones de solicitud: las de Sprint 1 (TI2-7), los cierres sin
- * acompañamiento (TI2-85) y la respuesta del Estudiante (TI2-141).
+ * acompañamiento (TI2-85), la respuesta del Estudiante (TI2-141) y la
+ * derivación de salida (TI2-143).
  *
  * Declara qué transiciones existen. No las aplica ni las valida: el rechazo de
  * saltos y la exigencia de motivo son alcance de TI2-21.
  */
 
-import type { ClosureRequestState, PersistableRequestState, Sprint1RequestState } from "./state";
+import type { OutgoingReferral } from "./referral";
+import type {
+  ClosureRequestState,
+  RequestState,
+  ReferralRequestState,
+  Sprint1RequestState,
+} from "./state";
 
-/**
- * `from` y `to` se tipan como `PersistableRequestState`: una fila hacia
- * `referred` no compila, porque la derivación no tiene reglas acordadas.
- */
+/** `from` y `to` son estados que una fila puede traer. */
 export type RequestStateTransition = {
-  readonly from: PersistableRequestState;
-  readonly to: PersistableRequestState;
+  readonly from: RequestState;
+  readonly to: RequestState;
   /**
-   * Al pedir información o cerrar, el motivo le explica al estudiante qué falta
-   * o por qué se cerró; al cancelar lo escribe el propio Estudiante y deja
-   * trazado por qué terminó la solicitud.
+   * Al pedir información, cerrar o derivar, el motivo le explica al estudiante
+   * qué falta, por qué se cerró o por qué se derivó; al cancelar lo escribe el
+   * propio Estudiante y deja trazado por qué terminó la solicitud.
    */
   readonly requiresReason: boolean;
 };
 
 /**
- * Cualquier par que no esté en esta tabla, en la de respuesta ni en la de
- * cierres es inválido, incluidos los saltos y los demás retrocesos.
+ * Cualquier par que no esté en esta tabla, en la de respuesta, en la de
+ * derivación ni en la de cierres es inválido, incluidos los saltos y los
+ * demás retrocesos.
  *
  * Las filas se tipan como `Sprint1RequestState`: agregar acá una transición
- * hacia un cierre o un estado de Cycle futuro no compila.
+ * hacia un cierre o hacia la derivación no compila.
  */
 export const SPRINT_1_REQUEST_TRANSITIONS = [
   { from: "received", to: "under_review", requiresReason: false },
@@ -88,12 +93,42 @@ export const RESPONSE_REQUEST_TRANSITIONS = [
   readonly to: Sprint1RequestState;
 })[];
 
+/**
+ * Derivación de salida (TI2-143): CERETI deriva al estudiante a otra unidad
+ * mientras revisa la solicitud. Sale solo de los estados que ya tienen toma y
+ * llega a `referred`, que es terminal: de ahí no sale ninguna fila y nunca se
+ * abre acompañamiento. Exige motivo porque es la razón comprensible que lee el
+ * estudiante. No sale de `received` por la misma razón que el cierre: tomar
+ * la solicitud ya la pasa a `under_review`.
+ *
+ * La tabla no pide destinatarios ni antecedentes: la comunicación con la
+ * unidad de destino ocurre fuera de la aplicación. Quién la intenta (el
+ * Profesional con toma activa) lo exige Aplicación.
+ */
+export const REFERRAL_REQUEST_TRANSITIONS = [
+  { from: "under_review", to: "referred", requiresReason: true },
+  { from: "awaiting_information_or_acceptance", to: "referred", requiresReason: true },
+] as const satisfies readonly (RequestStateTransition & {
+  readonly from: Sprint1RequestState;
+  readonly to: ReferralRequestState;
+})[];
+
 /** Toda transición válida de la solicitud; la política busca solo acá. */
 export const REQUEST_TRANSITIONS = [
   ...SPRINT_1_REQUEST_TRANSITIONS,
   ...RESPONSE_REQUEST_TRANSITIONS,
+  ...REFERRAL_REQUEST_TRANSITIONS,
   ...CLOSURE_REQUEST_TRANSITIONS,
 ] as const;
+
+/**
+ * Verdadero mientras la solicitud admite algún paso más (TI2-149): sale de la
+ * tabla de transiciones, así que una aceptada, derivada, cerrada o cancelada
+ * ya terminó. Recibe `string` para clasificar lo que muestra un cliente.
+ */
+export function isOpenRequestState(state: string): boolean {
+  return REQUEST_TRANSITIONS.some((transition) => transition.from === state);
+}
 
 /**
  * Entrada del historial de cambios de estado de la solicitud: se agrega, no se
@@ -110,8 +145,8 @@ export const REQUEST_TRANSITIONS = [
  * Convex.
  */
 export type RequestStateChange = {
-  readonly from: PersistableRequestState;
-  readonly to: PersistableRequestState;
+  readonly from: RequestState;
+  readonly to: RequestState;
   readonly actorId: string;
   readonly occurredAt: number;
   readonly reason?: string;
@@ -122,12 +157,27 @@ export type RequestStateChange = {
  * acompañamiento lleva su razón, que lee el Estudiante, y ningún otro estado
  * la lleva: así no compila una razón de cierre en una solicitud aceptada ni un
  * cierre sin razón.
+ *
+ * `referred` lleva su derivación de salida de la misma forma (TI2-143): no
+ * compila una solicitud derivada que no diga a dónde, ni una derivación en
+ * otro estado. El identificador es genérico para no importar
+ * `convex/_generated`.
  */
-export type RequestStatusChange =
-  | { readonly status: "closed_without_accompaniment"; readonly closureReason: string }
+export type RequestStatusChange<UserId extends string = string> =
   | {
-      readonly status: Exclude<PersistableRequestState, "closed_without_accompaniment">;
+      readonly status: "closed_without_accompaniment";
+      readonly closureReason: string;
+      readonly outgoingReferral?: never;
+    }
+  | {
+      readonly status: ReferralRequestState;
+      readonly outgoingReferral: OutgoingReferral<UserId>;
       readonly closureReason?: never;
+    }
+  | {
+      readonly status: Exclude<RequestState, "closed_without_accompaniment" | ReferralRequestState>;
+      readonly closureReason?: never;
+      readonly outgoingReferral?: never;
     };
 
 /** Llegar acá habilita la apertura de exactamente un acompañamiento (TI2-24). */

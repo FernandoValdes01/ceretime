@@ -23,6 +23,7 @@ export type { InstitutionalPopulation } from "./auth/institutional_domain";
 
 // Solicitud de acompañamiento y sus estados.
 export {
+  ACCESS_NEED_OPTIONS,
   ACCESS_NEEDS_MAX_LENGTH,
   isAccessNeedsWithinLimit,
   LEGACY_REQUEST_PROVENANCE_CHANNEL,
@@ -43,19 +44,14 @@ export type {
   StoredRequestFields,
 } from "./requests/request";
 export {
-  FUTURE_REQUEST_STATES,
   INITIAL_REQUEST_STATE,
-  PERSISTABLE_REQUEST_STATES,
+  REFERRAL_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
 } from "./requests/state";
-export type {
-  FutureRequestState,
-  PersistableRequestState,
-  RequestState,
-  Sprint1RequestState,
-} from "./requests/state";
+export type { ReferralRequestState, RequestState, Sprint1RequestState } from "./requests/state";
+export { isOpenRequestState } from "./requests/transitions";
 
 // Acompañamiento y sus vistas de lectura.
 export {
@@ -126,19 +122,38 @@ export type {
   AvailabilityContractVersion,
   AvailabilityException,
   AvailabilityExceptionKind,
+  AvailabilitySearchResult,
   AvailabilitySlot,
   AvailabilitySlotPage,
   AvailabilityWindow,
   ListAvailabilityInput,
+  SearchedAvailabilitySlot,
 } from "./availability/availability";
 
+// Coordinación por canal oficial sin horario compatible (TI2-144).
+export {
+  NO_COMPATIBLE_SLOT_REASON_VALUES,
+  OFFICIAL_CHANNELS,
+  combineNoCompatibleSlotReasons,
+  toOfficialChannelCoordination,
+} from "./availability/official_channel";
+export type {
+  EmailOfficialChannel,
+  InPersonOfficialChannel,
+  NoCompatibleSlotReason,
+  OfficialChannel,
+  OfficialChannelCoordination,
+  PhoneOfficialChannel,
+} from "./availability/official_channel";
+
 // Espacios de atención: catálogo con acceso e instrucciones (TI2-87).
-export { SPACE_CATALOG_CONTRACT_VERSION, toSpaceLabel } from "./spaces/space";
+export { SPACE_CATALOG_CONTRACT_VERSION, toSpaceFields, toSpaceLabel } from "./spaces/space";
 export type {
   ListSpacesInput,
   Space,
   SpaceCatalogContractVersion,
   SpaceCatalogPage,
+  SpaceFields,
 } from "./spaces/space";
 
 // Compatibilidad de modalidad y espacio con necesidades de acceso (TI2-82).

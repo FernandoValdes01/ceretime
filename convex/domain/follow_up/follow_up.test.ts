@@ -386,14 +386,39 @@ describe("toFollowUpProjection", () => {
     expect(JSON.stringify(projected)).not.toContain("Nota interna ficticia");
   });
 
-  test("la vista minimizada entrega solo estado y fecha, sin textos libres ni vínculo", () => {
+  test("la vista minimizada entrega acuerdos, tareas y próximos pasos, sin nota ni vínculo", () => {
     expect(toFollowUpProjection(record, "no_show", "minimized")).toEqual({
       appointmentId: record.appointmentId,
       appointmentStatus: "no_show",
+      agreements: [{ id: "acuerdo-1", description: "Continuar con el plan acordado." }],
+      tasks: [
+        {
+          id: "tarea-1",
+          description: "Enviar el resumen de la atención.",
+          responsible: "professional",
+          status: "pending",
+        },
+      ],
+      nextSteps: "Revisar avances en dos semanas.",
       suggestedNextAppointmentDate: "2026-11-20",
       version: FOLLOW_UP_CONTRACT_VERSION,
       view: "minimized",
     });
+    const minimized = toFollowUpProjection(record, "completed", "minimized");
+    expect(Object.keys(minimized).sort()).toEqual(
+      [
+        "agreements",
+        "appointmentId",
+        "appointmentStatus",
+        "nextSteps",
+        "suggestedNextAppointmentDate",
+        "tasks",
+        "version",
+        "view",
+      ].sort(),
+    );
+    expect("internalNote" in minimized).toBe(false);
+    expect("accompanimentId" in minimized).toBe(false);
   });
 
   test("sin fecha ni nota, las claves opcionales no aparecen", () => {

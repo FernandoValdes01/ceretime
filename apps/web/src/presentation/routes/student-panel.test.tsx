@@ -119,6 +119,10 @@ describe("panel inicial del Estudiante", () => {
     expect(screen.getByText("Aún no tienes solicitudes registradas.")).toBeDefined();
     expect(screen.getByText("Aún no tienes acompañamientos asignados.")).toBeDefined();
     expect(screen.queryByRole("status")).toBeNull();
+    // TI2-149: la acción principal lleva al formulario de solicitud.
+    expect(
+      screen.getByRole("link", { name: "Solicitar acompañamiento" }).getAttribute("href"),
+    ).toBe("/estudiante/solicitudes/nueva");
   });
 
   test("la sección de atenciones enlaza la lista sin afirmar que no hay atenciones", async () => {

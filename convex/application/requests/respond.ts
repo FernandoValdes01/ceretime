@@ -18,7 +18,7 @@ import { toStatusChange } from "./status_change";
 export interface RespondToInformationRequestDeps<RequestId extends string, UserId extends string> {
   readonly students: ActiveStudentReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestStatusWriter<RequestId> &
+    RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;

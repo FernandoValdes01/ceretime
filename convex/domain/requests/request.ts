@@ -19,7 +19,7 @@
  */
 
 import { REQUEST_FIELDS_INVALID_ERROR_CODE, errResult, type ApiResult } from "../errors/api_error";
-import { isPersistableRequestState, type PersistableRequestState } from "./state";
+import { isRequestState, type RequestState } from "./state";
 
 /**
  * Tope del texto de necesidades de acceso en caracteres (TI2-23).
@@ -44,6 +44,22 @@ export interface AccessNeed {
   readonly id: string;
   readonly label: string;
 }
+
+/**
+ * Necesidades de acceso que los clientes ofrecen como opciones al solicitar
+ * (TI2-149), en el orden de «Necesidades de acceso» de
+ * `docs/especificacion-prototipo.md`. El `id` se guarda con la solicitud, así
+ * que Web y Mobile deben usar estos mismos valores; «otra condición» no es una
+ * opción, sino el texto libre `otherAccessNeed`.
+ */
+export const ACCESS_NEED_OPTIONS: readonly AccessNeed[] = [
+  { id: "written-communication", label: "Comunicación escrita" },
+  { id: "sign-language-interpreter", label: "Intérprete de lengua de señas" },
+  { id: "physically-accessible-room", label: "Sala físicamente accesible" },
+  { id: "reduced-stimulation", label: "Reducción de estímulos" },
+  { id: "extended-communication-time", label: "Más tiempo para comunicarme" },
+  { id: "support-person", label: "Persona de apoyo" },
+];
 
 /** Rangos generales de disponibilidad del estudiante para el acompañamiento. */
 export interface GeneralAvailability {
@@ -139,14 +155,14 @@ export function toLegacyAccessNeeds(raw: string): ApiResult<string> {
 export interface AccompanimentRequest {
   readonly _id: string;
   readonly studentId: string;
-  readonly status: PersistableRequestState;
+  readonly status: RequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
 }
 
 /**
  * Valida una fila persistida de `requests` y devuelve la entidad.
- * Rechaza un `status` que no sea persistible en vez de propagar un literal
+ * Rechaza un `status` que el dominio no declara en vez de propagar un literal
  * desconocido: una fila con estado inválido es corrupción, no una
  * solicitud. El identificador es genérico para no importar
  * `convex/_generated`: con `string` devuelve la entidad canónica y con un
@@ -162,7 +178,7 @@ export function toAccompanimentRequest<RowId extends string, StudentId extends s
   readonly createdAt: number;
 }): AccompanimentRequest & { readonly _id: RowId; readonly studentId: StudentId } {
   const status = row.status;
-  if (!isPersistableRequestState(status)) {
+  if (!isRequestState(status)) {
     throw new Error(`Estado de solicitud desconocido en la fila ${row._id}: ${status}`);
   }
   return {
@@ -439,10 +455,10 @@ export function toInformationResponse(raw: string): ApiResult<string> {
  * solo se entregan en el detalle, a quien ya puede leer la solicitud.
  */
 export function toRequestExchange(
-  status: PersistableRequestState,
+  status: RequestState,
   recentChanges: readonly {
-    readonly from: PersistableRequestState;
-    readonly to: PersistableRequestState;
+    readonly from: RequestState;
+    readonly to: RequestState;
     readonly reason?: string;
   }[],
 ): { readonly informationRequest?: string; readonly informationResponse?: string } {

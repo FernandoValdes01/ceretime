@@ -1786,14 +1786,34 @@ test("compatibilidad TI2-85: cancelación y cierre persisten y se leen", async (
     }),
   ).toEqual({ status: "rejected", cause: "transition_not_allowed" });
 
-  // `referred` sigue sin habilitarse en el esquema.
+  // Desde TI2-143 el esquema admite `referred` en la solicitud y en su historial.
+  const referredId = await t.run(async (ctx) => {
+    const requestId = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "referred",
+      accessNeeds: "Necesidad de acceso ficticia",
+      createdAt: 6,
+    });
+    await ctx.db.insert("requestTransitions", {
+      requestId,
+      from: "under_review",
+      to: "referred",
+      actorId: pro,
+      reason: "Motivo ficticio",
+      occurredAt: 7,
+    });
+    return requestId;
+  });
+  expect((await t.run(async (ctx) => await ctx.db.get(referredId)))?.status).toBe("referred");
+
+  // Un literal fuera del dominio se sigue rechazando.
   await expect(
     t.run(async (ctx) => {
       await ctx.db.insert("requests", {
         studentId: student,
-        status: "referred" as unknown as "received",
+        status: "derivada" as unknown as "received",
         accessNeeds: "Necesidad de acceso ficticia",
-        createdAt: 6,
+        createdAt: 8,
       });
     }),
   ).rejects.toThrow("Validator error");
@@ -3272,17 +3292,19 @@ test("TI2-135: una solicitud anterior sin campos nuevos se lee sin error", async
   const detail = await asStudent.query(api.presentation.requests.getRequest, {
     requestId: legacyId,
   });
-  expect(detail).toEqual({
+  const legacyEntity = {
     _id: legacyId,
     studentId: student,
     status: "received",
     accessNeeds: "Necesidad de acceso ficticia",
     createdAt: 1,
-  });
+  };
+  // Desde TI2-143 el detalle suma el canal: una fila anterior es del Estudiante.
+  expect(detail).toEqual({ ...legacyEntity, provenanceChannel: "student" });
   const listed = await asStudent.query(api.presentation.requests.listOwnRequests, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(listed.page).toEqual([detail]);
+  expect(listed.page).toEqual([legacyEntity]);
 
   // El índice de solicitudes propias la sigue encontrando; el de idempotencia no.
   const own = await t.run(async (ctx) => {
@@ -3364,7 +3386,8 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
   expect(row.expectedOutcome).toHaveLength(2000);
   expect(requestProvenanceChannelOf(row)).toBe("official_channel");
 
-  // El detalle suma la razón de cierre (TI2-141), sin contenido ni derivaciones.
+  // El detalle suma la razón de cierre (TI2-141) y, desde TI2-143, el canal y
+  // las derivaciones sin identificadores de personal. El contenido no viaja.
   const asStudent = t.withIdentity(identityFor("ti135-full-est", "ti135full@alu.uct.cl"));
   const detail = await asStudent.query(api.presentation.requests.getRequest, { requestId });
   expect(Object.keys(detail).sort()).toEqual([
@@ -3372,9 +3395,24 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
     "accessNeeds",
     "closureReason",
     "createdAt",
+    "incomingReferral",
+    "outgoingReferral",
+    "provenanceChannel",
     "status",
     "studentId",
   ]);
+  expect(detail.provenanceChannel).toBe("official_channel");
+  expect(detail.incomingReferral).toEqual({
+    originUnit: incomingReferral.originUnit,
+    referredAt: incomingReferral.referredAt,
+    contactedAt: incomingReferral.contactedAt,
+    acceptedAt: incomingReferral.acceptedAt,
+  });
+  expect(detail.outgoingReferral).toEqual({
+    destinationUnit: outgoingReferral.destinationUnit,
+    referredAt: outgoingReferral.referredAt,
+    reason: outgoingReferral.reason,
+  });
   expect(detail.accessNeeds).toBe(TI135_ACCESS_NEEDS_TEXT);
 });
 

@@ -7,9 +7,9 @@ import type {
 } from "../../domain/student-area-models";
 import type { Accompaniment } from "../../domain/request-models";
 import type { StudentAreaReader } from "../../application/student-area-port";
-import { toMobileOperationError } from "../to-mobile-operation-error";
+import { isMobileAccessDenied, toMobileOperationError } from "../to-mobile-operation-error";
 
-export type StudentAreaLoadStatus = "loading" | "success" | "error";
+export type StudentAreaLoadStatus = "loading" | "success" | "error" | "access-denied";
 export type StudentAreaCollectionStatus = StudentAreaLoadStatus | "empty";
 
 export interface StudentIdentityState {
@@ -56,7 +56,12 @@ function loadingLoad(reader: StudentAreaReader): StudentAreaLoad {
 }
 
 function errorLoad(reader: StudentAreaReader, error: unknown): StudentAreaLoad {
-  return { reader, status: "error", snapshot: null, error };
+  return {
+    reader,
+    status: isMobileAccessDenied(error) ? "access-denied" : "error",
+    snapshot: null,
+    error: toMobileOperationError(error, "No pudimos cargar tus solicitudes. Intenta nuevamente."),
+  };
 }
 
 function successLoad(reader: StudentAreaReader, snapshot: StudentAreaSnapshot): StudentAreaLoad {
@@ -95,12 +100,7 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
       pending = reader.readStudentArea();
     } catch (error) {
       if (isCurrent()) {
-        setLoad(
-          errorLoad(
-            reader,
-            toMobileOperationError(error, "No pudimos cargar tus solicitudes. Intenta nuevamente."),
-          ),
-        );
+        setLoad(errorLoad(reader, error));
       }
       return () => {
         disposed = true;
@@ -115,15 +115,7 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
       },
       (error: unknown) => {
         if (isCurrent()) {
-          setLoad(
-            errorLoad(
-              reader,
-              toMobileOperationError(
-                error,
-                "No pudimos cargar tus solicitudes. Intenta nuevamente.",
-              ),
-            ),
-          );
+          setLoad(errorLoad(reader, error));
         }
       },
     );

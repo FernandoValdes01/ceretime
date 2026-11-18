@@ -17,6 +17,41 @@ En un push a `main`, el job Production espera la misma CI y usa `vercel pull --e
 
 Las ramas de PR abiertas antes de integrar cambios en este workflow o en `apps/web/vercel.json` deben actualizarse con `main` y enviar un nuevo commit a GitHub para incorporar la configuración. Mientras sigan con la versión anterior, sus Preview pueden mostrar el SHA equivocado o provocar despliegues duplicados.
 
+## Cabeceras de seguridad
+
+`apps/web/vercel.json` declara en `headers` las cabeceras que Vercel aplica a las respuestas de la Web publicada. No se configuran en el panel de Vercel ni en el workflow: `vercel build` las incorpora al artefacto y `vercel deploy --prebuilt` las publica.
+
+| Cabecera                  | Valor                             | Efecto                                                                                                                  |
+| ------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `Content-Security-Policy` | Política descrita abajo           | Restringe scripts, estilos, fuentes, imágenes y conexiones; `frame-ancestors 'none'` impide incluir la Web en un marco. |
+| `X-Content-Type-Options`  | `nosniff`                         | Evita que el navegador adivine un tipo MIME distinto del declarado.                                                     |
+| `X-Frame-Options`         | `DENY`                            | Refuerza `frame-ancestors` en navegadores que no aplican esa directiva.                                                 |
+| `Referrer-Policy`         | `strict-origin-when-cross-origin` | Comparte solo el origen, no rutas ni parámetros, con otros orígenes.                                                    |
+
+La CSP permite scripts y estilos propios; `https://fonts.googleapis.com` para la hoja de Fira Sans de `index.html`, `https://fonts.gstatic.com` para sus fuentes y `'unsafe-inline'` solo en `style-src`, porque la interfaz usa atributos `style`. `connect-src` habilita la API de Convex por HTTPS y su sincronización por WebSocket; no se permite ningún otro origen externo.
+
+### Orígenes de Convex
+
+`vercel.json` es un archivo estático y no interpola `VITE_CONVEX_URL` ni `VITE_CONVEX_SITE_URL`. Cada entorno usa un deployment distinto (desarrollo local y producción tienen subdominios propios), así que una lista de orígenes explícitos quedaría incompleta al cambiar de deployment o al probar un entorno nuevo. La política admite los dominios de Convex en `connect-src`: `https://*.convex.cloud`, `wss://*.convex.cloud` y `https://*.convex.site`. El comodín no alcanza a otros servicios; agregar un origen externo exige editar la política de forma deliberada. Si más adelante se muestran archivos alojados en Convex Storage, hay que añadir `https://*.convex.cloud` a `img-src`; hoy no se usa.
+
+### Comprobación local
+
+`vite.config.ts` lee las cabeceras de `vercel.json` y las aplica en `server.headers` y `preview.headers`; no existe una segunda lista. `dev` agrega solo dos concesiones para el servidor de Vite, que no existen en la Web publicada: `'unsafe-inline'` en `script-src` por el script inline de React Refresh y `ws://localhost:* ws://127.0.0.1:*` en `connect-src` por HMR. `preview` sirve el build real y aplica la política publicada sin concesiones, así que es la comprobación fiel antes de integrar.
+
+```sh
+bun run --cwd apps/web dev
+curl -sI http://localhost:5173/
+bun run --cwd apps/web build
+bun run --cwd apps/web preview -- --port 5173
+curl -sI http://localhost:5173/
+```
+
+Comprueba las cuatro cabeceras en ambas respuestas y, en el navegador, abre la consola: no debe haber violaciones de CSP. El botón institucional debe llegar a `accounts.google.com` y el Site URL de Convex debe resolver la sesión con el WebSocket abierto. Completar el acceso requiere una cuenta autorizada. Detén el servidor de `dev` antes de usar `preview` en el mismo puerto; si el backend solo confía en `http://localhost:5173`, usa ese puerto, porque otro origen bloquea `get-session` por CORS y no por CSP.
+
+### Comprobación después de integrar
+
+Después del push a `main`, espera el job de Production y ejecuta `curl -sI https://ceretime.vercel.app/`. Deben aparecer las cuatro cabeceras con los valores de `vercel.json`. Abre la Web, inicia sesión con Google y confirma que la sesión y los datos en tiempo real de Convex funcionan sin errores de CSP en la consola. Si el acceso falla, revierte o corrige el cambio de inmediato; si faltan las cabeceras, comprueba que el despliegue corresponde al commit integrado y que `apps/web` sigue siendo el Root Directory del proyecto.
+
 ## Comprobación y despliegues duplicados
 
 Abre una PR interna y espera a que termine `CI`. Comprueba que el comentario `Preview Web` muestre `Commit de la PR` igual al SHA de la rama y `Commit construido` igual al `HEAD` del checkout registrado en ese run. En una PR, este último puede ser el merge temporal de GitHub. Abre la URL y recarga una ruta interna como `/estudiante`. Después de integrar la PR, comprueba que el run de `CI` del push a `main` publica una URL Production. Revisa en Vercel que ambas URLs pertenezcan al proyecto y entorno previstos.

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import type { PersistableRequestState } from "../../domain/requests/state";
+import type { RequestState } from "../../domain/requests/state";
 import { acceptRequest, requestAdditionalInformation, type AcceptRequestDeps } from "./commands";
 import type { StoredRequestRow } from "./ports";
 
@@ -15,7 +15,7 @@ const PROFESSIONAL = "pro-ficticio";
 type Row = StoredRequestRow<string, string>;
 
 function memoryDeps(
-  status: PersistableRequestState,
+  status: RequestState,
   options: { readonly taken?: boolean; readonly accepted?: boolean } = {},
 ) {
   const row: Row = {

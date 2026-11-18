@@ -9,6 +9,8 @@
  */
 
 import type { ModalityPreference } from "../requests/request";
+import type { SpaceFields } from "../spaces/space";
+import type { OfficialChannelCoordination } from "./official_channel";
 
 /** Versión del contrato público de disponibilidad. */
 export const AVAILABILITY_CONTRACT_VERSION = "v1" as const;
@@ -106,13 +108,31 @@ export interface AvailabilitySlot {
   readonly version: AvailabilityContractVersion;
 }
 
+/**
+ * Cupo que entrega la búsqueda (TI2-144): el cupo presencial suma la ubicación y el acceso de su sala (campus, edificio, piso, sala, condiciones e instrucciones de llegada), leídos del catálogo en el servidor, para que el Estudiante decida sin otra consulta. El cupo en línea no la trae.
+ */
+export interface SearchedAvailabilitySlot extends AvailabilitySlot {
+  readonly space?: SpaceFields;
+}
+
 /** Página de cupos con paginación keyset sobre el identificador. */
 export interface AvailabilitySlotPage {
-  readonly items: readonly AvailabilitySlot[];
+  readonly items: readonly SearchedAvailabilitySlot[];
   readonly hasMore: boolean;
   readonly nextCursor: string | null;
   readonly version: AvailabilityContractVersion;
 }
+
+/**
+ * Resultado de la búsqueda de cupos (TI2-144): una página de cupos compatibles y libres (la primera trae al menos uno; la que sigue al último cupo llega vacía), o la ausencia explícita de horario compatible con su motivo, el código de referencia y los canales oficiales. La ausencia no es un error: es un resultado que el cliente muestra.
+ */
+export type AvailabilitySearchResult =
+  | ({ readonly status: "available" } & AvailabilitySlotPage)
+  | {
+      readonly status: "no_compatible_slot";
+      readonly coordination: OfficialChannelCoordination;
+      readonly version: AvailabilityContractVersion;
+    };
 
 /** Primer día admitido en `weekday` (domingo, convención de `Date.getDay`). */
 export const WEEKDAY_MIN = 0;
