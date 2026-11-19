@@ -1,5 +1,11 @@
 // Estado editable de presentación, no contrato de creación ni entidad del backend.
 // Los campos corresponden al contenido canónico de solicitud.
+import {
+  ACCESS_NEEDS_MAX_LENGTH,
+  INFORMATION_CHANNEL_MAX_LENGTH,
+  REQUEST_TEXT_MAX_LENGTH,
+  toStoredAccessNeeds,
+} from "../../../../../convex/domain/requests/request";
 import type { AccessNeed } from "@/domain/request-models";
 
 export interface RequestFormValues {
@@ -71,6 +77,18 @@ export function validateRequestForm(values: RequestFormValues): RequestFormError
     ) {
       errors.availableTo = "La hora final debe ser posterior a la inicial.";
     }
+  }
+  for (const field of ["needSummary", "expectedOutcome"] as const) {
+    if (values[field].trim().length > REQUEST_TEXT_MAX_LENGTH) {
+      errors[field] = `Usa como máximo ${REQUEST_TEXT_MAX_LENGTH} caracteres.`;
+    }
+  }
+  if (values.preferredAccessibleInformationChannel.trim().length > INFORMATION_CHANNEL_MAX_LENGTH) {
+    errors.preferredAccessibleInformationChannel = `Usa como máximo ${INFORMATION_CHANNEL_MAX_LENGTH} caracteres.`;
+  }
+  const accessNeeds = toStoredAccessNeeds(values.accessNeeds, values.otherAccessNeed);
+  if (accessNeeds.status === "error" && accessNeeds.error.code === "access_needs_too_long") {
+    errors.otherAccessNeed = `Las necesidades seleccionadas y el texto adicional deben sumar como máximo ${ACCESS_NEEDS_MAX_LENGTH} caracteres.`;
   }
   return errors;
 }

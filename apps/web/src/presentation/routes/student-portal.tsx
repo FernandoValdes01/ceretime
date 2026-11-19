@@ -1,6 +1,7 @@
 import { Component, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { REQUEST_PROCESS_STEPS } from "../estudiante/request-process.ts";
 import { Speakable } from "../accessibility/Speakable.tsx";
 import {
   accompanimentStatusLabel,
@@ -161,19 +162,16 @@ function StudentPanelContent() {
           acompañamientos.
         </Speakable>
         <div className="student-portal__cta">
-          <button
-            type="button"
+          <Link
+            to="/estudiante/solicitudes/nueva"
             className="student-portal__btn student-portal__btn--primary"
-            disabled
-            title="Pronto podrás enviar tu solicitud desde aquí"
           >
             Solicitar acompañamiento
-          </button>
+          </Link>
           <a href="#como-funciona" className="student-portal__btn student-portal__btn--ghost">
             Cómo funciona
           </a>
         </div>
-        <p className="student-portal__hint">Pronto podrás enviar tu solicitud desde aquí.</p>
       </section>
 
       <section
@@ -183,27 +181,15 @@ function StudentPanelContent() {
       >
         <h2 id="como-funciona-title">Cómo funciona el acompañamiento</h2>
         <ol className="student-portal__steps">
-          <li className="student-portal__step">
-            <span className="student-portal__step-num" aria-hidden="true">
-              1
-            </span>
-            <h3>Envía tu solicitud</h3>
-            <p>Cuéntanos tu necesidad y las condiciones de acceso que requieres.</p>
-          </li>
-          <li className="student-portal__step">
-            <span className="student-portal__step-num" aria-hidden="true">
-              2
-            </span>
-            <h3>CERETI la revisa</h3>
-            <p>Un profesional revisa tu solicitud y te contacta con los próximos pasos.</p>
-          </li>
-          <li className="student-portal__step">
-            <span className="student-portal__step-num" aria-hidden="true">
-              3
-            </span>
-            <h3>Coordinan tu acompañamiento</h3>
-            <p>Agendan atenciones y registran el seguimiento de tu proceso.</p>
-          </li>
+          {REQUEST_PROCESS_STEPS.map((step, index) => (
+            <li key={step.title} className="student-portal__step">
+              <span className="student-portal__step-num" aria-hidden="true">
+                {index + 1}
+              </span>
+              <h3>{step.title}</h3>
+              <p>{step.text}</p>
+            </li>
+          ))}
         </ol>
       </section>
 

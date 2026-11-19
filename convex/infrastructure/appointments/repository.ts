@@ -1,6 +1,9 @@
 ﻿import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
-import { APPOINTMENT_CONTRACT_VERSION } from "../../domain/appointments/appointment";
+import {
+  APPOINTMENT_CONTRACT_VERSION,
+  isCalendarActionableStatus,
+} from "../../domain/appointments/appointment";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
 import { accessNeedsFromLines } from "../spaces/repository";
 
@@ -847,6 +850,43 @@ export function appointmentCalendarReader(ctx: DbReader) {
         ...(doc.calendarEventEndsAt === undefined
           ? {}
           : { calendarEventEndsAt: doc.calendarEventEndsAt }),
+      };
+    },
+  };
+}
+
+/** Tope de atenciones leídas de un acompañamiento para decidir su cierre. */
+export const MAX_ACCOMPANIMENT_APPOINTMENTS = 500;
+
+/**
+ * Atenciones vigentes (agendadas o con cambio de horario) del acompañamiento
+ * (TI2-152). Cumple por forma el puerto `PendingAppointmentsReader` de
+ * Aplicación sin importarla. No hay índice por estado, así que lee todas las
+ * atenciones del acompañamiento hasta el tope y entrega `complete: false`
+ * cuando lo supera, para que el cierre se rechace en vez de dejar atenciones
+ * vigentes sin revisar.
+ */
+export function pendingAppointmentsReader(ctx: DbReader) {
+  return {
+    listPendingAppointments: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return { complete: true, appointments: [] };
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_accompanimentId_and_startsAt", (q) => q.eq("accompanimentId", id))
+        .take(MAX_ACCOMPANIMENT_APPOINTMENTS + 1);
+      return {
+        complete: rows.length <= MAX_ACCOMPANIMENT_APPOINTMENTS,
+        appointments: rows
+          .filter((row) => isCalendarActionableStatus(row.status))
+          .map((row) => ({
+            id: row._id as string,
+            status: row.status,
+            startAt: row.startsAt,
+            ...(row.originalStartsAt === undefined
+              ? {}
+              : { originalStartAt: row.originalStartsAt }),
+          })),
       };
     },
   };

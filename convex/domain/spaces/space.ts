@@ -61,6 +61,18 @@ export interface SpaceFields {
   readonly arrivalInstructions: string;
 }
 
+/** Ubicación y acceso de un espacio, sin identidad ni versión (TI2-144). */
+export function toSpaceFields(space: Space): SpaceFields {
+  return {
+    campus: space.campus,
+    building: space.building,
+    floor: space.floor,
+    room: space.room,
+    accessConditions: space.accessConditions,
+    arrivalInstructions: space.arrivalInstructions,
+  };
+}
+
 /**
  * Normaliza los campos del catálogo recortando espacios. No valida: usar
  * `validateSpaceFields` antes para mensajes en español.

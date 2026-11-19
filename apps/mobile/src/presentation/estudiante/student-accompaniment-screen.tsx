@@ -63,8 +63,26 @@ export default function StudentAccompanimentScreen() {
         </View>
       ) : null}
 
-      {accompaniments.status !== "loading" &&
-      accompaniments.status !== "error" &&
+      {accompaniments.status === "access-denied" ? (
+        <View className="gap-4 rounded-xl border border-student-border bg-student-surface p-4">
+          <StudentText
+            weight="semibold"
+            accessibilityRole="header"
+            accessibilityLiveRegion="polite"
+            className="text-student-text text-xl leading-[28px]"
+            selectable
+          >
+            No tienes acceso a este acompañamiento
+          </StudentText>
+          <StudentAction
+            label="Volver a mis solicitudes"
+            secondary
+            onPress={() => router.replace("/estudiante/solicitudes")}
+          />
+        </View>
+      ) : null}
+
+      {(accompaniments.status === "success" || accompaniments.status === "empty") &&
       !accompaniment ? (
         <View className="gap-4 rounded-xl border border-student-border bg-student-surface p-4">
           <StudentText

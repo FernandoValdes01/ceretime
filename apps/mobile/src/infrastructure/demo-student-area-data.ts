@@ -62,6 +62,7 @@ export const demoStudentAreaResponses: BackendStudentAreaResponses = {
       status: "active",
       objective: "Apoyos para participar en actividades académicas",
       accessNeeds: "Material digital accesible",
+      referenceCode: "CER-7KQ2-M9XD",
       view: "full",
     },
     {
@@ -70,6 +71,7 @@ export const demoStudentAreaResponses: BackendStudentAreaResponses = {
       status: "paused",
       objective: "Continuar el semestre con apoyo accesible",
       accessNeeds: "Material digital accesible",
+      referenceCode: "CER-7KQ2-M9XD",
       view: "full",
     },
   ],
@@ -124,4 +126,9 @@ export const demoAccompanimentDetails: Readonly<
     requestId: "SOL-DEMO-005",
     createdAt: "2026-08-28T11:20:00.000Z",
   },
+};
+
+// Texto ficticio del intercambio; el listado público no incluye el detalle de la solicitud.
+export const demoStudentInformationRequests: Readonly<Record<string, string>> = {
+  "SOL-DEMO-004": "Indica en qué formato prefieres recibir el material del curso.",
 };

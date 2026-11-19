@@ -13,6 +13,7 @@ import type {
   RequestListReader,
   RequestReader,
   RequestTakeReader,
+  ResultingAccompanimentReader,
   StoredRequestRow,
 } from "./ports";
 import { denied, toEntity, type RequestEntity } from "./results";
@@ -176,23 +177,30 @@ export async function listOpenRequestsUseCase<RequestId extends string, UserId e
 }
 
 /** Capacidades del detalle. */
-export interface GetRequestDetailDeps<RequestId extends string, UserId extends string> {
+export interface GetRequestDetailDeps<
+  RequestId extends string,
+  UserId extends string,
+  AccompanimentId extends string,
+> {
   readonly viewers: ActiveRequestViewerReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
     RequestTakeReader<RequestId, UserId> &
     RequestListReader<RequestId, UserId>;
+  readonly accompaniments: ResultingAccompanimentReader<RequestId, AccompanimentId>;
 }
 
 /**
  * Detalle público: la entidad más los textos del intercambio, la razón de
  * cierre, el canal de procedencia y las derivaciones (TI2-143). De las
  * derivaciones no viaja quién contactó ni quién derivó: el detalle no entrega
- * identificadores de personal.
+ * identificadores de personal. Una solicitud aceptada suma el
+ * `accompanimentId` que abrió (TI2-183), para enlazar ambos.
  */
-type RequestDetail<RequestId extends string, UserId extends string> = RequestEntity<
-  RequestId,
-  UserId
-> & {
+type RequestDetail<
+  RequestId extends string,
+  UserId extends string,
+  AccompanimentId extends string,
+> = RequestEntity<RequestId, UserId> & {
   readonly informationRequest?: string;
   readonly informationResponse?: string;
   readonly closureReason?: string;
@@ -208,6 +216,7 @@ type RequestDetail<RequestId extends string, UserId extends string> = RequestEnt
     readonly referredAt: number;
     readonly reason: string;
   };
+  readonly accompanimentId?: AccompanimentId;
 };
 
 /**
@@ -216,12 +225,20 @@ type RequestDetail<RequestId extends string, UserId extends string> = RequestEnt
  * Estudiante y la razón de cierre. Son textos libres, por eso no viajan en
  * los listados ni en la bandeja.
  */
-async function toRequestDetail<RequestId extends string, UserId extends string>(
-  requests: RequestListReader<RequestId, UserId>,
+async function toRequestDetail<
+  RequestId extends string,
+  UserId extends string,
+  AccompanimentId extends string,
+>(
+  deps: Pick<
+    GetRequestDetailDeps<RequestId, UserId, AccompanimentId>,
+    "requests" | "accompaniments"
+  >,
   request: StoredRequestRow<RequestId, UserId>,
-): Promise<RequestDetail<RequestId, UserId>> {
+): Promise<RequestDetail<RequestId, UserId, AccompanimentId>> {
   const entity = toEntity(request);
-  const changes = await requests.listRecentTransitions(request._id);
+  const changes = await deps.requests.listRecentTransitions(request._id);
+  const accompanimentId = await deps.accompaniments.findAccompanimentIdForRequest(request._id);
   const { incomingReferral, outgoingReferral } = request;
   return {
     ...entity,
@@ -251,6 +268,7 @@ async function toRequestDetail<RequestId extends string, UserId extends string>(
             reason: outgoingReferral.reason,
           },
         }),
+    ...(accompanimentId === null ? {} : { accompanimentId }),
   };
 }
 
@@ -265,10 +283,14 @@ async function toRequestDetail<RequestId extends string, UserId extends string>(
  * existencia ni motivo. La bandeja minimizada sigue siendo la única vía de
  * descubrimiento: una solicitud abierta sin toma no se detalla.
  */
-export async function getRequestDetailUseCase<RequestId extends string, UserId extends string>(
-  deps: GetRequestDetailDeps<RequestId, UserId>,
+export async function getRequestDetailUseCase<
+  RequestId extends string,
+  UserId extends string,
+  AccompanimentId extends string,
+>(
+  deps: GetRequestDetailDeps<RequestId, UserId, AccompanimentId>,
   input: { readonly tokenIdentifier: string | null; readonly requestId: RequestId },
-): Promise<ApiResult<RequestDetail<RequestId, UserId>>> {
+): Promise<ApiResult<RequestDetail<RequestId, UserId, AccompanimentId>>> {
   const viewer = await deps.viewers.findActiveViewer(input.tokenIdentifier);
   if (viewer === null) return denied();
   const request = await deps.requests.getRequest(input.requestId);
@@ -278,5 +300,5 @@ export async function getRequestDetailUseCase<RequestId extends string, UserId e
       ? request.studentId === viewer._id
       : await deps.requests.hasActiveTake(request._id, viewer._id);
   if (!allowed) return denied();
-  return okResult(await toRequestDetail(deps.requests, request));
+  return okResult(await toRequestDetail(deps, request));
 }
