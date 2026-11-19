@@ -1,4 +1,5 @@
 import { getRouteApi, Navigate, Outlet } from "@tanstack/react-router";
+import { toRequestListSearch } from "../gestion/paged-requests.ts";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
 import { AdminSpaceEditorPage } from "../gestion/admin-space-editor.tsx";
 import {
@@ -158,15 +159,21 @@ export function ProfessionalIndexRouteComponent() {
   return <ProfessionalHome />;
 }
 
+const professionalRequestsApi = getRouteApi("/profesional/solicitudes");
 const professionalRequestDetailApi = getRouteApi("/profesional/solicitudes/$requestId");
 
+// La búsqueda de una ruta hija suma la de sus padres sin validar, así que un
+// `?estado=` desconocido llega igual: se vuelve a reducir al filtro válido.
 export function ProfessionalRequestsRouteComponent() {
-  return <ProfessionalRequestsPage />;
+  const search = toRequestListSearch(professionalRequestsApi.useSearch());
+  return <ProfessionalRequestsPage search={search} />;
 }
 
 export function ProfessionalRequestDetailRouteComponent() {
   const { requestId } = professionalRequestDetailApi.useParams();
-  return <ProfessionalRequestDetailPage requestId={requestId} />;
+  // El filtro de la bandeja viaja con el detalle para volver con el mismo contexto.
+  const search = toRequestListSearch(professionalRequestDetailApi.useSearch());
+  return <ProfessionalRequestDetailPage requestId={requestId} listSearch={search} />;
 }
 
 export function ProfessionalAvailabilityRouteComponent() {

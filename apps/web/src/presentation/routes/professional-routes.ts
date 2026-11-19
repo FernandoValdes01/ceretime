@@ -9,6 +9,7 @@ import {
   ProfessionalRequestsRouteComponent,
 } from "./route-components.tsx";
 import { rootRoute } from "./root-route.ts";
+import { toRequestListSearch } from "../gestion/paged-requests.ts";
 
 /**
  * Área del Profesional (TI2-133).
@@ -33,12 +34,14 @@ const professionalIndexRoute = createRoute({
 const professionalRequestsRoute = createRoute({
   getParentRoute: () => professionalLayoutRoute,
   path: "solicitudes",
+  validateSearch: toRequestListSearch,
   component: ProfessionalRequestsRouteComponent,
 });
 
 const professionalRequestDetailRoute = createRoute({
   getParentRoute: () => professionalLayoutRoute,
   path: "solicitudes/$requestId",
+  validateSearch: toRequestListSearch,
   component: ProfessionalRequestDetailRouteComponent,
 });
 
