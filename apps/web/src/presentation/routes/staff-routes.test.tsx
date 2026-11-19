@@ -1062,17 +1062,19 @@ describe("portal del Estudiante con sesión y rol independientes (TI2-12)", () =
     expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
   });
 
-  // Fija la decisión de TI2-6 y no la amplía: la portada no lee datos, y el
-  // Backend deniega el perfil propio a una cuenta sin fila en `sprint1Queries`.
-  test("la cuenta de estudiante sin perfil entra por población", async () => {
+  // TI2-6 deja entrar por población; desde TI2-182 una cuenta sin perfil
+  // habilitado ve su estado en vez de pantallas que el Backend denegaría.
+  test("la cuenta de estudiante sin perfil habilitado ve su estado y puede salir", async () => {
     sessionMocks.setPair({
-      session: sesionEstudiante("nueva@alu.uct.cl"),
+      session: sesionEstudiante("revocada@alu.uct.cl"),
       role: ROL_DESCONOCIDO,
     });
-    const { router } = renderAt("/estudiante");
+    const { router } = renderAt("/estudiante/horarios");
 
-    const portalHeading = await screen.findByRole("heading", { name: "Portal del Estudiante" });
-    expect(portalHeading).toBeDefined();
-    expect(router.state.location.pathname).toBe("/estudiante");
+    const heading = await screen.findByRole("heading", { name: "Tu cuenta no está habilitada" });
+    expect(heading).toBeDefined();
+    expect(router.state.location.pathname).toBe("/estudiante/horarios");
+    expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 });

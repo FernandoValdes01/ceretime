@@ -1,4 +1,4 @@
-import { Component, useEffect, useRef, useState } from "react";
+import { Component, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { REQUEST_PROCESS_STEPS } from "../estudiante/request-process.ts";
@@ -17,14 +17,39 @@ import { AppShell } from "./app-shell.tsx";
 import "./student-portal.css";
 
 /**
- * Estructura del portal del Estudiante (TI2-6, TI2-133).
+ * Estructura del portal del Estudiante (TI2-6, TI2-133, TI2-182).
  *
  * La navegación común vive en `AppShell`: marca el inicio, las pantallas
  * reales del rol y el cierre de sesión. Las vistas cuelgan de este layout
- * tras el mismo guard.
+ * tras el mismo guard. Una cuenta sin perfil habilitado y vigente ve su
+ * estado en lugar de cada vista: el Backend denegaría todas sus lecturas y
+ * cada pantalla mostraría un error de carga.
  */
-export function StudentLayout() {
-  return <AppShell area="student" />;
+export function StudentLayout({ accountEnabled }: { accountEnabled: boolean }) {
+  if (accountEnabled) return <AppShell area="student" />;
+  return (
+    <AppShell area="student">
+      <StudentAccountNotEnabled />
+    </AppShell>
+  );
+}
+
+/**
+ * Estado de una cuenta de estudiante que no puede operar. Las cuentas
+ * `@alu.uct.cl` nacen habilitadas, así que este estado corresponde a una
+ * cuenta revocada o inactiva, o a una que no pudo obtener su perfil.
+ */
+function StudentAccountNotEnabled() {
+  return (
+    <section aria-labelledby="student-not-enabled-title" className="student-portal__head">
+      <span className="student-portal__badge">Estudiante acompañado</span>
+      <h1 id="student-not-enabled-title">Tu cuenta no está habilitada</h1>
+      <p className="student-portal__lead">
+        Por ahora no puedes usar el portal del Estudiante con esta cuenta. Si crees que es un error,
+        comunícate con CERETI por sus canales oficiales.
+      </p>
+    </section>
+  );
 }
 
 /**
@@ -48,7 +73,7 @@ export function StudentHome() {
  * titula con h1; el nivel `section` no repite encabezados.
  */
 export class StudentPanelErrorBoundary extends Component<
-  { children: ReactNode; subject: string; level: "page" | "section"; onError?: () => void },
+  { children: ReactNode; subject: string; level: "page" | "section" },
   { hasError: boolean }
 > {
   state = { hasError: false };
@@ -57,18 +82,13 @@ export class StudentPanelErrorBoundary extends Component<
     return { hasError: true };
   }
 
-  componentDidCatch(): void {
-    this.props.onError?.();
-  }
-
   render() {
     if (this.state.hasError) {
       if (this.props.level === "section") {
         return (
           <div>
             <p role="alert" className="student-portal__error">
-              No pudimos cargar {this.props.subject}. Si el problema persiste, tu cuenta podría
-              estar pendiente de habilitación.
+              No pudimos cargar {this.props.subject}. Inténtalo de nuevo.
             </p>
             <div className="student-portal__cta">
               <button
@@ -86,8 +106,7 @@ export class StudentPanelErrorBoundary extends Component<
         <section aria-labelledby="student-panel-error-title" className="student-portal__head">
           <h1 id="student-panel-error-title">Portal del Estudiante</h1>
           <p role="alert" className="student-portal__error">
-            No pudimos cargar {this.props.subject}. Si el problema persiste, tu cuenta podría estar
-            pendiente de habilitación.
+            No pudimos cargar {this.props.subject}. Inténtalo de nuevo.
           </p>
           <div className="student-portal__cta">
             <button
@@ -107,8 +126,6 @@ export class StudentPanelErrorBoundary extends Component<
 
 function StudentPanelContent() {
   const session = useStudentSession();
-  const [requestsFailed, setRequestsFailed] = useState(false);
-  const [accompanimentsFailed, setAccompanimentsFailed] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const ready = session !== undefined;
 
@@ -141,11 +158,6 @@ function StudentPanelContent() {
       </section>
     );
   }
-
-  // Sesión válida pero ambas queries de recursos denegadas: la cuenta no
-  // está habilitada (el backend responde denegación genérica por diseño).
-  // Es un estado permanente, no un error transitorio: sin reintento.
-  const pendingEnablement = requestsFailed && accompanimentsFailed;
 
   return (
     <>
@@ -193,28 +205,9 @@ function StudentPanelContent() {
         </ol>
       </section>
 
-      {pendingEnablement ? (
-        <section aria-labelledby="pending-enablement-title" className="student-portal__section">
-          <div className="student-portal__section-head">
-            <h2 id="pending-enablement-title">Cuenta pendiente de habilitación</h2>
-          </div>
-          <div className="student-portal__empty">
-            <p className="student-portal__empty-title">
-              Tu cuenta aún no está habilitada para ver tus recursos.
-            </p>
-            <p>
-              Un integrante de CERETI debe habilitar tu cuenta de Estudiante. Revisa tu sesión o
-              consulta los canales oficiales.
-            </p>
-          </div>
-        </section>
-      ) : (
-        <>
-          <StudentRequestsSection onError={() => setRequestsFailed(true)} />
+      <StudentRequestsSection />
 
-          <StudentAccompanimentsSection onError={() => setAccompanimentsFailed(true)} />
-        </>
-      )}
+      <StudentAccompanimentsSection />
 
       <section aria-labelledby="student-attentions-title" className="student-portal__section">
         <div className="student-portal__section-head">
@@ -270,13 +263,13 @@ function StudentPanelContent() {
 }
 
 /** Sección de solicitudes propias con sus estados de carga, vacío y éxito. */
-function StudentRequestsSection({ onError }: { onError: () => void }) {
+function StudentRequestsSection() {
   return (
     <section aria-labelledby="student-requests-title" className="student-portal__section">
       <div className="student-portal__section-head">
         <h2 id="student-requests-title">Solicitudes</h2>
       </div>
-      <StudentPanelErrorBoundary subject="tus solicitudes" level="section" onError={onError}>
+      <StudentPanelErrorBoundary subject="tus solicitudes" level="section">
         <StudentRequestsBody />
       </StudentPanelErrorBoundary>
     </section>
@@ -323,13 +316,13 @@ function StudentRequestsBody() {
 }
 
 /** Sección de acompañamientos propios con sus estados de carga, vacío y éxito. */
-function StudentAccompanimentsSection({ onError }: { onError: () => void }) {
+function StudentAccompanimentsSection() {
   return (
     <section aria-labelledby="student-accompaniments-title" className="student-portal__section">
       <div className="student-portal__section-head">
         <h2 id="student-accompaniments-title">Acompañamientos</h2>
       </div>
-      <StudentPanelErrorBoundary subject="tus acompañamientos" level="section" onError={onError}>
+      <StudentPanelErrorBoundary subject="tus acompañamientos" level="section">
         <StudentAccompanimentsBody />
       </StudentPanelErrorBoundary>
     </section>

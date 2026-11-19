@@ -85,9 +85,10 @@ export function DeniedRouteComponent() {
 }
 
 export function StudentLayoutRouteComponent() {
+  const pair = useSessionAndRole();
   return (
-    <RequireStudent session={useSessionState()} pair={useSessionAndRole()}>
-      <StudentLayout />
+    <RequireStudent session={useSessionState()} pair={pair}>
+      <StudentLayout accountEnabled={pair?.role.status === "authenticated"} />
     </RequireStudent>
   );
 }

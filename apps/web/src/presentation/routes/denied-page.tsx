@@ -17,7 +17,7 @@ export function DeniedPage() {
       <p>Si eres estudiante, inicia sesión para continuar.</p>
       <p>
         Si eres parte del personal, CERETI debe habilitar tu cuenta antes de que puedas usar el área
-        de gestión. Si ya la solicitaste, vuelve a ingresar más tarde.
+        de gestión. Si crees que es un error, comunícate con CERETI por sus canales oficiales.
       </p>
       <p>
         <Link to="/login">Ir al acceso</Link>
