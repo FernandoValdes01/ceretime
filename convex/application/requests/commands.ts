@@ -1,4 +1,8 @@
-import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
+import {
+  toFullAccompaniment,
+  toOpeningObjective,
+  type Accompaniment,
+} from "../../domain/accompaniments/accompaniment";
 import {
   invalidRequestFields,
   toCompleteSubmission,
@@ -324,7 +328,7 @@ export async function acceptRequest<
     professionalId: professional._id,
   });
   // Quien acepta queda asignado como Profesional responsable: recibe la vista completa.
-  return okResult({ ...opened, view: "full" });
+  return okResult(toFullAccompaniment(opened));
 }
 
 /** Capacidades que necesita la cancelación; la composición entrega los adaptadores. */

@@ -10,8 +10,9 @@ import schema from "../schema";
  * Vínculo entre la solicitud aceptada y el acompañamiento que abrió (TI2-183),
  * comprobado solo por la API pública con datos ficticios: el detalle de la
  * solicitud entrega `accompanimentId` y la vista completa del acompañamiento
- * entrega `requestId`. La vista minimizada del practicante no gana claves y una
- * cuenta ajena sigue sin acceso.
+ * entrega `requestId` y el `referenceCode` que `searchSlots` entrega sin horario
+ * compatible (TI2-144). La vista minimizada del practicante no gana claves y
+ * una cuenta ajena sigue sin acceso.
  */
 
 const modules = import.meta.glob("../**/*.ts");
@@ -59,10 +60,10 @@ function isExactRequestDenial(error: unknown): boolean {
   );
 }
 
-/** El estudiante registra, el profesional toma y acepta: devuelve ambos ids. */
+/** El estudiante registra, el profesional toma y acepta: devuelve los ids y las identidades. */
 async function acceptOwnRequest(t: TestConvex) {
   const studentId = await seedUser(t, "ti183-est", "student");
-  await seedUser(t, "ti183-pro", "professional");
+  const professionalId = await seedUser(t, "ti183-pro", "professional");
   const asStudent = t.withIdentity(identityFor("ti183-est"));
   const asProfessional = t.withIdentity(identityFor("ti183-pro"));
   const created = await asStudent.mutation(api.presentation.requests.createRequest, {
@@ -74,7 +75,7 @@ async function acceptOwnRequest(t: TestConvex) {
     requestId,
     objective: "Objetivo ficticio",
   });
-  return { studentId, requestId, opened, asStudent, asProfessional };
+  return { studentId, professionalId, requestId, opened, asStudent, asProfessional };
 }
 
 test("TI2-183: el estudiante dueño y el profesional autorizado reciben el vínculo en ambos sentidos", async () => {
@@ -98,6 +99,7 @@ test("TI2-183: el estudiante dueño y el profesional autorizado reciben el vínc
       status: "active",
       objective: "Objetivo ficticio",
       accessNeeds: "Necesidad de acceso ficticia",
+      referenceCode: opened.referenceCode,
       requestId,
       view: "full",
     });
@@ -154,11 +156,15 @@ test("TI2-183: una cuenta ajena sigue sin acceso a la solicitud ni al acompañam
       );
     expect(isExactRequestDenial(requestError)).toBe(true);
 
-    await expect(
-      caller.query(api.presentation.accompaniments.getAccompaniment, {
-        accompanimentId: opened._id,
-      }),
-    ).rejects.toThrow(/^No autorizado$/);
+    // `getAccompaniment` conserva el error genérico de Sprint 1: el dato es el mensaje.
+    const accompanimentError = await caller
+      .query(api.presentation.accompaniments.getAccompaniment, { accompanimentId: opened._id })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(accompanimentError).toBeInstanceOf(ConvexError);
+    expect((accompanimentError as ConvexError<string>).data).toBe("No autorizado");
   }
 });
 
@@ -176,4 +182,27 @@ test("TI2-183: la vista minimizada del practicante no gana claves nuevas", async
     .withIdentity(identityFor("ti183-int"))
     .query(api.presentation.accompaniments.getAccompaniment, { accompanimentId: opened._id });
   expect(Object.keys(view).sort()).toEqual(["_id", "objective", "status", "view"]);
+});
+
+test("TI2-183: el referenceCode del acompañamiento coincide con el de searchSlots sin horario compatible", async () => {
+  const t = convexTest(schema, modules);
+  const { professionalId, opened, asStudent, asProfessional } = await acceptOwnRequest(t);
+
+  // El profesional no publicó horarios: la búsqueda responde con la coordinación.
+  const search = await asStudent.query(api.presentation.availability.searchSlots, {
+    accompanimentId: opened._id,
+    professionalId,
+    from: "2026-11-02",
+    to: "2026-11-02",
+    limit: 10,
+    version: "v1",
+  });
+  if (search.status !== "no_compatible_slot") throw new Error("Se esperaba no_compatible_slot");
+
+  const viewed = await asProfessional.query(api.presentation.accompaniments.getAccompaniment, {
+    accompanimentId: opened._id,
+  });
+  if (viewed.view !== "full") throw new Error("Se esperaba la vista completa");
+  expect(viewed.referenceCode).toBe(search.coordination.referenceCode);
+  expect(opened.referenceCode).toBe(search.coordination.referenceCode);
 });
