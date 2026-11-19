@@ -125,3 +125,8 @@ export const demoAccompanimentDetails: Readonly<
     createdAt: "2026-08-28T11:20:00.000Z",
   },
 };
+
+// Texto ficticio del intercambio; el listado público no incluye el detalle de la solicitud.
+export const demoStudentInformationRequests: Readonly<Record<string, string>> = {
+  "SOL-DEMO-004": "Indica en qué formato prefieres recibir el material del curso.",
+};

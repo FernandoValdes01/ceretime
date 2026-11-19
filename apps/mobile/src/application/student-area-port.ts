@@ -54,8 +54,8 @@ export class StudentOperationError extends UserFacingError {
   }
 }
 
-/** Intenciones provisionales, sin método ejecutable ni comprobante de éxito ficticio. */
-export type ProvisionalStudentRequestAction =
+/** Acciones de solicitud; su integración real corresponde a TI4-80. */
+export type StudentRequestActionCommand =
   | {
       readonly kind: "cancelRequest";
       readonly requestId: string;
@@ -75,7 +75,7 @@ export const PROVISIONAL_STUDENT_REQUEST_OPERATIONS = {
   },
   respondToInformationRequest: {
     status: "provisional",
-    // TI2-141 confirma que este caso de uso todavía no existe; la firma local no es su contrato.
+    // Referencia conservada de S1; la integración real de Mobile sigue pendiente de TI4-80.
     reference: "TI2-141: respuesta del estudiante a la información solicitada",
     publicationIssue: "TI2-141",
   },
@@ -89,7 +89,23 @@ export interface StudentAreaReader {
 
 /** Envío de contenido completo. La composición actual selecciona un simulador local. */
 export interface StudentRequestSubmitter {
+  readonly requestActions?: StudentRequestActions;
   submitStudentRequest(
     command: SubmitStudentRequestCommand,
   ): Promise<StudentRequestSubmissionReceipt>;
+}
+
+/** Acciones inyectadas; una respuesta confirma solamente la escritura del adaptador elegido. */
+export interface StudentRequestActions {
+  execute(command: StudentRequestActionCommand): Promise<StudentRequest>;
+}
+
+export class StudentRequestActionError extends UserFacingError {
+  constructor(
+    readonly code: "unauthorized" | "conflict" | "invalid",
+    message: string,
+  ) {
+    super(message);
+    this.name = "StudentRequestActionError";
+  }
 }

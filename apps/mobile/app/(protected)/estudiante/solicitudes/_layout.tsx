@@ -7,7 +7,10 @@ import { RoleGuard } from "../../../../src/presentation/navigation/role-guard";
 export default function StudentRequestsLayout() {
   return (
     <RoleGuard requiredRole="estudiante">
-      <StudentAreaProvider reader={mobileDependencies.studentAreaReader}>
+      <StudentAreaProvider
+        reader={mobileDependencies.studentAreaReader}
+        actions={mobileDependencies.studentRequestSubmitter.requestActions}
+      >
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" options={{ headerShown: false }} />
           <Stack.Screen name="[requestId]" options={{ headerShown: false }} />

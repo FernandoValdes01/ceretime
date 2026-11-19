@@ -4,8 +4,14 @@ import type {
   StudentRequestSubmissionReceipt,
   SubmitStudentRequestCommand,
 } from "@/domain/student-area-models";
-import type { StudentRequestSubmitter } from "@/application/student-area-port";
-import { toMobileOperationError } from "@/presentation/to-mobile-operation-error";
+import {
+  StudentOperationError,
+  type StudentRequestSubmitter,
+} from "@/application/student-area-port";
+import {
+  isMobileAccessDenied,
+  toMobileOperationError,
+} from "@/presentation/to-mobile-operation-error";
 
 export type StudentRequestSubmissionStatus = "idle" | "submitting" | "error" | "success";
 
@@ -65,10 +71,12 @@ export function useSubmitStudentRequest(
             result: {
               status: "error",
               receipt: null,
-              error: toMobileOperationError(
-                error,
-                "No pudimos enviar la solicitud. Intenta nuevamente.",
-              ),
+              error: isMobileAccessDenied(error)
+                ? new StudentOperationError("createRequest", "unauthorized", "No autorizado")
+                : toMobileOperationError(
+                    error,
+                    "No pudimos enviar la solicitud. Intenta nuevamente.",
+                  ),
             },
           });
         }
