@@ -62,6 +62,7 @@ export const demoStudentAreaResponses: BackendStudentAreaResponses = {
       status: "active",
       objective: "Apoyos para participar en actividades académicas",
       accessNeeds: "Material digital accesible",
+      referenceCode: "CER-7KQ2-M9XD",
       view: "full",
     },
     {
@@ -70,6 +71,7 @@ export const demoStudentAreaResponses: BackendStudentAreaResponses = {
       status: "paused",
       objective: "Continuar el semestre con apoyo accesible",
       accessNeeds: "Material digital accesible",
+      referenceCode: "CER-7KQ2-M9XD",
       view: "full",
     },
   ],

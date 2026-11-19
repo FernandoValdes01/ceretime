@@ -676,6 +676,7 @@ function vistaCompleta(id: string, objective: string): AccompanimentView {
     status: "paused",
     objective,
     accessNeeds: NECESIDAD_SENSIBLE,
+    referenceCode: "CER-7KQ2-M9XD",
     view: "full",
   };
 }

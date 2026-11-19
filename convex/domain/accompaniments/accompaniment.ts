@@ -14,6 +14,8 @@
  * adaptador entre la fila persistida y la vista devuelta.
  */
 
+import { deriveCoordinationReferenceCode } from "../availability/official_channel";
+
 /** Estados del acompañamiento (activo, pausado, cerrado). */
 export const ACCOMPANIMENT_STATUS_VALUES = ["active", "paused", "closed"] as const;
 
@@ -40,38 +42,46 @@ export type AccompanimentView = (typeof ACCOMPANIMENT_VIEW_VALUES)[number];
 /**
  * Fila mínima de la tabla `accompaniments` que necesita la proyección.
  * Espejo de la forma persistida; la decisión de qué vista devolver vive en
- * la capa de autorización, no acá.
+ * la capa de autorización, no acá. `requestId` es la solicitud aceptada que
+ * lo abrió; falta en los acompañamientos que no nacieron de una solicitud.
  */
 export interface AccompanimentRow<
   AccompanimentId extends string = string,
   UserId extends string = string,
+  RequestId extends string = string,
 > {
   readonly _id: AccompanimentId;
   readonly studentId: UserId;
   readonly status: AccompanimentStatus;
   readonly objective: string;
   readonly accessNeeds: string;
+  readonly requestId?: RequestId;
 }
 
 /**
  * Vista completa de un acompañamiento, para el Estudiante acompañado y el
- * Profesional asignado. Incluye `studentId` y `accessNeeds`.
+ * Profesional asignado. Incluye `studentId`, `accessNeeds`, el `referenceCode`
+ * que el Estudiante recibe al no encontrar horario compatible (TI2-144) y, si
+ * lo abrió una solicitud aceptada, su `requestId` (TI2-183) para enlazar ambos.
  */
 export interface Accompaniment<
   AccompanimentId extends string = string,
   UserId extends string = string,
+  RequestId extends string = string,
 > {
   _id: AccompanimentId;
   studentId: UserId;
   status: AccompanimentStatus;
   objective: string;
   accessNeeds: string;
+  referenceCode: string;
+  requestId?: RequestId;
   view: "full";
 }
 
 /**
  * Vista minimizada de un acompañamiento, para el Practicante asignado:
- * sin `studentId` ni `accessNeeds`.
+ * sin `studentId`, `accessNeeds`, `referenceCode` ni `requestId`.
  */
 export interface MinimizedAccompaniment<AccompanimentId extends string = string> {
   _id: AccompanimentId;
@@ -84,18 +94,47 @@ export interface MinimizedAccompaniment<AccompanimentId extends string = string>
 export type AccompanimentProjection<
   AccompanimentId extends string = string,
   UserId extends string = string,
-> = Accompaniment<AccompanimentId, UserId> | MinimizedAccompaniment<AccompanimentId>;
+  RequestId extends string = string,
+> = Accompaniment<AccompanimentId, UserId, RequestId> | MinimizedAccompaniment<AccompanimentId>;
+
+/**
+ * Vista completa de una fila. El `referenceCode` se deriva del `_id` con la
+ * misma función que usa `searchSlots`, así el Profesional reconoce el código
+ * que el Estudiante entrega por un canal oficial; no se persiste.
+ */
+export function toFullAccompaniment<
+  AccompanimentId extends string,
+  UserId extends string,
+  RequestId extends string,
+>(
+  row: AccompanimentRow<AccompanimentId, UserId, RequestId>,
+): Accompaniment<AccompanimentId, UserId, RequestId> {
+  return {
+    _id: row._id,
+    studentId: row.studentId,
+    status: row.status,
+    objective: row.objective,
+    accessNeeds: row.accessNeeds,
+    referenceCode: deriveCoordinationReferenceCode(row._id),
+    ...(row.requestId === undefined ? {} : { requestId: row.requestId }),
+    view: "full",
+  };
+}
 
 /**
  * Adaptador explícito de fila persistida a vista de lectura. La vista ya
  * viene decidida por la capa de autorización; acá solo se recorta la forma.
- * La vista minimizada nunca expone `studentId` ni `accessNeeds`, aunque la
- * fila los traiga.
+ * La vista minimizada nunca expone `studentId`, `accessNeeds`,
+ * `referenceCode` ni `requestId`, aunque la fila los traiga.
  */
-export function toAccompanimentProjection<AccompanimentId extends string, UserId extends string>(
-  row: AccompanimentRow<AccompanimentId, UserId>,
+export function toAccompanimentProjection<
+  AccompanimentId extends string,
+  UserId extends string,
+  RequestId extends string,
+>(
+  row: AccompanimentRow<AccompanimentId, UserId, RequestId>,
   view: AccompanimentView,
-): AccompanimentProjection<AccompanimentId, UserId> {
+): AccompanimentProjection<AccompanimentId, UserId, RequestId> {
   if (view === "minimized") {
     return {
       _id: row._id,
@@ -104,14 +143,7 @@ export function toAccompanimentProjection<AccompanimentId extends string, UserId
       view: "minimized",
     };
   }
-  return {
-    _id: row._id,
-    studentId: row.studentId,
-    status: row.status,
-    objective: row.objective,
-    accessNeeds: row.accessNeeds,
-    view: "full",
-  };
+  return toFullAccompaniment(row);
 }
 
 /**

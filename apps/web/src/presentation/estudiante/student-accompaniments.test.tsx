@@ -143,6 +143,7 @@ function detallePropio(
     status: overrides.status ?? "active",
     objective: "Objetivo ficticio del acompañamiento",
     accessNeeds: "Apoyo ficticio para la prueba",
+    referenceCode: "CER-7KQ2-M9XD",
     view: "full",
   };
 }

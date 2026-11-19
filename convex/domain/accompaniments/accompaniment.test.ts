@@ -5,6 +5,7 @@ import {
   toAccompanimentProjection,
   transitionAccompaniment,
 } from "./accompaniment";
+import { deriveCoordinationReferenceCode } from "../availability/official_channel";
 import type {
   Accompaniment,
   AccompanimentProjection,
@@ -13,13 +14,14 @@ import type {
 } from "./accompaniment";
 
 describe("Vistas de acompañamiento (TI2-8)", () => {
-  test("la vista completa lleva studentId y accessNeeds", () => {
+  test("la vista completa lleva studentId, accessNeeds y referenceCode", () => {
     expectTypeOf<Accompaniment>().toMatchTypeOf<{
       _id: string;
       studentId: string;
       status: string;
       objective: string;
       accessNeeds: string;
+      referenceCode: string;
       view: "full";
     }>();
   });
@@ -67,6 +69,7 @@ describe("toAccompanimentProjection (TI2-8)", () => {
       status: "active",
       objective: "Objetivo ficticio",
       accessNeeds: "Acceso ficticio",
+      referenceCode: deriveCoordinationReferenceCode("accompaniment-id"),
       view: "full",
     });
   });
@@ -81,6 +84,22 @@ describe("toAccompanimentProjection (TI2-8)", () => {
     });
     expect("studentId" in projected).toBe(false);
     expect("accessNeeds" in projected).toBe(false);
+  });
+
+  test("solo la vista completa lleva el requestId de origen (TI2-183)", () => {
+    const fromRequest: AccompanimentRow = { ...row, requestId: "request-id" };
+    expect(toAccompanimentProjection(fromRequest, "full")).toMatchObject({
+      requestId: "request-id",
+    });
+    expect("requestId" in toAccompanimentProjection(row, "full")).toBe(false);
+    expect("requestId" in toAccompanimentProjection(fromRequest, "minimized")).toBe(false);
+  });
+
+  test("solo la vista completa lleva el referenceCode de la coordinación (TI2-183)", () => {
+    expect(toAccompanimentProjection(row, "full")).toMatchObject({
+      referenceCode: deriveCoordinationReferenceCode(row._id),
+    });
+    expect("referenceCode" in toAccompanimentProjection(row, "minimized")).toBe(false);
   });
 });
 
