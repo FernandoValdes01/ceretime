@@ -12,6 +12,8 @@ import type * as application_accompaniments_commands from "../application/accomp
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accompaniments_status from "../application/accompaniments/status.js";
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
+import type * as application_accounts_ports from "../application/accounts/ports.js";
+import type * as application_accounts_reclassify_student from "../application/accounts/reclassify_student.js";
 import type * as application_appointments_audit from "../application/appointments/audit.js";
 import type * as application_appointments_booking from "../application/appointments/booking.js";
 import type * as application_appointments_changes from "../application/appointments/changes.js";
@@ -112,6 +114,8 @@ declare const fullApi: ApiFromModules<{
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accompaniments/status": typeof application_accompaniments_status;
   "application/accounts/enablement": typeof application_accounts_enablement;
+  "application/accounts/ports": typeof application_accounts_ports;
+  "application/accounts/reclassify_student": typeof application_accounts_reclassify_student;
   "application/appointments/audit": typeof application_appointments_audit;
   "application/appointments/booking": typeof application_appointments_booking;
   "application/appointments/changes": typeof application_appointments_changes;

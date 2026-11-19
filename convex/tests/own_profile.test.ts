@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
-import { api } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -160,4 +160,118 @@ test("sin identidad o con correo externo responde la denegación genérica", asy
     DENIED,
   );
   expect(await usersWithEmail(t, "persona@gmail.com")).toEqual([]);
+});
+
+async function profileIdOf(t: ReturnType<typeof newTest>, email: string) {
+  const [row] = await usersWithEmail(t, email);
+  if (row === undefined) throw new Error("Se esperaba el perfil");
+  return row._id;
+}
+
+/**
+ * Practicante que ingresa antes de ser registrado (TI2-182): el primer
+ * ingreso lo crea como Estudiante y el operador lo corrige a Practicante
+ * pendiente para que el profesional lo habilite con `enableIntern`.
+ */
+test("el operador corrige a Practicante al Estudiante del primer ingreso y el profesional lo habilita", async () => {
+  const t = newTest();
+  const professionalId = await t.run(async (ctx) =>
+    ctx.db.insert("users", {
+      email: "ti182-pro@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti182-pro`,
+    }),
+  );
+  const asIntern = t.withIdentity(identityFor("ti182-int", "ti182-int@alu.uct.cl"));
+  await asIntern.mutation(api.presentation.session.ensureMyProfile, {});
+  const userId = await profileIdOf(t, "ti182-int@alu.uct.cl");
+
+  await t.mutation(internal.operations.accounts.reclassifyFirstLoginStudent, {
+    userId,
+    role: "intern",
+  });
+  const pending = await t.run(async (ctx) => ctx.db.get(userId));
+  expect(pending).toMatchObject({ role: "intern", institutionalStatus: "pending" });
+  expect(pending?.enabledAt).toBeUndefined();
+  await expect(
+    asIntern.mutation(api.presentation.session.ensureMyProfile, {}),
+  ).resolves.toMatchObject({ role: "intern", institutionalStatus: "pending" });
+
+  const asPro = t.withIdentity(identityFor("ti182-pro", "ti182-pro@uct.cl"));
+  await asPro.mutation(api.presentation.accounts.enableIntern, { userId });
+  const enabled = await t.run(async (ctx) => ctx.db.get(userId));
+  expect(enabled).toMatchObject({
+    role: "intern",
+    institutionalStatus: "enabled",
+    enabledBy: professionalId,
+  });
+});
+
+test("la corrección no toca otro rol ni un Estudiante con solicitudes", async () => {
+  const t = newTest();
+  const asStudent = t.withIdentity(identityFor("ti182-est2", "ti182-est2@alu.uct.cl"));
+  await asStudent.mutation(api.presentation.session.ensureMyProfile, {});
+  const studentId = await profileIdOf(t, "ti182-est2@alu.uct.cl");
+  await t.run(async (ctx) => {
+    await ctx.db.insert("requests", {
+      studentId,
+      status: "received",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: 1,
+    });
+  });
+  await expect(
+    t.mutation(internal.operations.accounts.reclassifyFirstLoginStudent, {
+      userId: studentId,
+      role: "intern",
+    }),
+  ).rejects.toThrow("El perfil ya tiene solicitudes o acompañamientos como Estudiante");
+
+  const asStaff = t.withIdentity(identityFor("ti182-pro2", "ti182-pro2@uct.cl"));
+  await asStaff.mutation(api.presentation.session.ensureMyProfile, {});
+  const staffId = await profileIdOf(t, "ti182-pro2@uct.cl");
+  await expect(
+    t.mutation(internal.operations.accounts.reclassifyFirstLoginStudent, {
+      userId: staffId,
+      role: "professional",
+    }),
+  ).rejects.toThrow("Solo se puede corregir un perfil de Estudiante");
+
+  const rows = await t.run(async (ctx) =>
+    Promise.all([ctx.db.get(studentId), ctx.db.get(staffId)]),
+  );
+  expect(rows.map((row) => row?.role)).toEqual(["student", "professional"]);
+});
+
+test("el operador corrige a cuenta de prueba al Estudiante del primer ingreso y el profesional la habilita", async () => {
+  const t = newTest();
+  const professionalId = await t.run(async (ctx) =>
+    ctx.db.insert("users", {
+      email: "ti182-pro3@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti182-pro3`,
+    }),
+  );
+  const asTest = t.withIdentity(identityFor("ti182-prueba", "ti182-prueba@alu.uct.cl"));
+  await asTest.mutation(api.presentation.session.ensureMyProfile, {});
+  const userId = await profileIdOf(t, "ti182-prueba@alu.uct.cl");
+
+  await t.mutation(internal.operations.accounts.reclassifyFirstLoginStudent, {
+    userId,
+    role: "professional",
+  });
+  const asPro = t.withIdentity(identityFor("ti182-pro3", "ti182-pro3@uct.cl"));
+  await asPro.mutation(api.presentation.accounts.enableTestProfessional, { userId });
+  const enabled = await t.run(async (ctx) => ctx.db.get(userId));
+  expect(enabled).toMatchObject({
+    role: "professional",
+    institutionalStatus: "enabled",
+    enabledBy: professionalId,
+  });
 });
