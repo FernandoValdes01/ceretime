@@ -1,5 +1,10 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { toAccompanimentProjection } from "./accompaniment";
+import {
+  ACCOMPANIMENT_REASON_MAX_LENGTH,
+  ACCOMPANIMENT_STATUS_VALUES,
+  toAccompanimentProjection,
+  transitionAccompaniment,
+} from "./accompaniment";
 import type {
   Accompaniment,
   AccompanimentProjection,
@@ -76,5 +81,77 @@ describe("toAccompanimentProjection (TI2-8)", () => {
     });
     expect("studentId" in projected).toBe(false);
     expect("accessNeeds" in projected).toBe(false);
+  });
+});
+
+describe("Cambios de estado del acompañamiento (TI2-152)", () => {
+  const attempt = { actorId: "professional-1", occurredAt: 1_000 };
+
+  test("pausar, reactivar y cerrar son los únicos cambios válidos", () => {
+    const allowed = new Set(["active>paused", "paused>active", "active>closed", "paused>closed"]);
+    for (const from of ACCOMPANIMENT_STATUS_VALUES) {
+      for (const to of ACCOMPANIMENT_STATUS_VALUES) {
+        const result = transitionAccompaniment({ ...attempt, from, to });
+        expect(result.status).toBe(allowed.has(`${from}>${to}`) ? "applied" : "rejected");
+      }
+    }
+  });
+
+  test("un acompañamiento cerrado no se reabre ni vuelve a pausarse", () => {
+    for (const to of ACCOMPANIMENT_STATUS_VALUES) {
+      expect(transitionAccompaniment({ ...attempt, from: "closed", to })).toEqual({
+        status: "rejected",
+        cause: "transition_not_allowed",
+      });
+    }
+  });
+
+  test("el motivo es opcional: sin texto o en blanco no queda en el cambio", () => {
+    expect(transitionAccompaniment({ ...attempt, from: "active", to: "paused" })).toEqual({
+      status: "applied",
+      change: { from: "active", to: "paused", ...attempt },
+    });
+    const blank = transitionAccompaniment({
+      ...attempt,
+      from: "active",
+      to: "closed",
+      reason: "   ",
+    });
+    expect(blank).toEqual({
+      status: "applied",
+      change: { from: "active", to: "closed", ...attempt },
+    });
+  });
+
+  test("el motivo entregado se guarda recortado y respeta el tope", () => {
+    const result = transitionAccompaniment({
+      ...attempt,
+      from: "paused",
+      to: "active",
+      reason: "  Retoma el semestre  ",
+    });
+    expect(result).toEqual({
+      status: "applied",
+      change: { from: "paused", to: "active", ...attempt, reason: "Retoma el semestre" },
+    });
+    expect(
+      transitionAccompaniment({
+        ...attempt,
+        from: "active",
+        to: "paused",
+        reason: "a".repeat(ACCOMPANIMENT_REASON_MAX_LENGTH + 1),
+      }),
+    ).toEqual({ status: "rejected", cause: "reason_too_long" });
+  });
+
+  test("sin actor o sin instante válido no hay cambio", () => {
+    expect(
+      transitionAccompaniment({ from: "active", to: "paused", actorId: " ", occurredAt: 1_000 }),
+    ).toEqual({ status: "rejected", cause: "actor_required" });
+    for (const occurredAt of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        transitionAccompaniment({ from: "active", to: "paused", actorId: "p", occurredAt }),
+      ).toEqual({ status: "rejected", cause: "occurred_at_invalid" });
+    }
   });
 });
