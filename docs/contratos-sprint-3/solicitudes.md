@@ -152,9 +152,10 @@ Desde TI2-183 la solicitud aceptada y el acompañamiento que abrió se enlazan e
 
 - `getRequest` suma `accompanimentId`, opcional. Está cuando la aceptación abrió el acompañamiento; una solicitud que nunca se aceptó no lo trae. Lo recibe quien ya lee el detalle: el Estudiante dueño o el Profesional con toma activa. El identificador no concede acceso: `getAccompaniment` vuelve a autorizar con la asignación al acompañamiento.
 - La vista completa del acompañamiento suma `requestId`, opcional. La entregan `getAccompaniment`, `listOwnedAccompaniments`, `listAssignedAccompaniments` y `acceptRequest`. Falta en un acompañamiento que no nació de una solicitud.
-- La vista minimizada del Practicante no cambia: sigue siendo `_id`, `status`, `objective` y `view`.
+- La vista completa del acompañamiento suma también `referenceCode`, siempre presente. Es el mismo código `CER-XXXX-XXXX` que `searchSlots` entrega en `coordination.referenceCode` cuando no hay horario compatible (TI2-144, ver `agenda.md`): ambos salen de `deriveCoordinationReferenceCode` con el `_id` del acompañamiento y no se persiste. Así el Profesional autorizado reconoce el código que el Estudiante le entrega por un canal oficial. Lo entregan las mismas cuatro operaciones.
+- La vista minimizada del Practicante no cambia: sigue siendo `_id`, `status`, `objective` y `view`, sin `requestId` ni `referenceCode`.
 
-Los dos campos son opcionales en el tipo, así que Web y Mobile compilan sin cambios. Las denegaciones no cambian: `getRequest` responde `unauthorized` del contrato común y `getAccompaniment` conserva su error genérico de Sprint 1.
+`requestId` y `accompanimentId` son opcionales en el tipo. `referenceCode` es obligatorio en `Accompaniment`: un dato de prueba tipado de la vista completa tiene que incluirlo, y en este cambio se agregó a los de Web y Mobile; el código de las pantallas no cambia. Las denegaciones no cambian: `getRequest` responde `unauthorized` del contrato común y `getAccompaniment` conserva su error genérico de Sprint 1.
 
 ```json
 {
@@ -254,6 +255,6 @@ await cancel({ requestId, reason: "Ya recibí el apoyo por otra vía" });
 
 - **TI2-143:** una solicitud puede traer `referred`, que significa que CERETI la derivó a otra unidad y ya no admite pasos. Una derivación de entrada pendiente de contacto o aceptación no es `referred`: sigue en `under_review` o en espera y se reconoce por `incomingReferral` en el detalle. Mobile muestra hoy para `referred` el texto «Solicitud derivada; queda pendiente del contacto y aceptación del estudiante.» (`apps/mobile/src/presentation/profesional/professional-requests-screen.tsx`), que describe la derivación de entrada y no la de salida. Las pantallas de Web para estas operaciones son TI2-158.
 
-- **TI2-183:** la Web puede enlazar el detalle de una solicitud aceptada con su acompañamiento (TI2-153) y Mobile puede hacer lo mismo cuando lo necesite. Ningún cliente tiene que cambiar para seguir compilando.
+- **TI2-183:** la Web puede enlazar el detalle de una solicitud aceptada con su acompañamiento (TI2-153) y Mobile puede hacer lo mismo cuando lo necesite. Los datos de prueba y de demostración de la vista completa suman `referenceCode` (`apps/web/src/presentation/**/*.test.tsx`, `apps/mobile/__tests__/backend-contract-mappers.test.tsx`, `apps/mobile/src/infrastructure/demo-*.ts`); ninguna pantalla cambia.
 
 Comprobación: pruebas «TI2-183: …» en `convex/tests/requestAccompanimentLink.test.ts` y `convex/domain/accompaniments/accompaniment.test.ts`, pruebas «TI2-143: …» en `convex/tests/requests.test.ts` y `convex/domain/requests/referral.test.ts`, pruebas «TI2-141: …» y «TI2-85: …» en `convex/tests/requests.test.ts` y `convex/tests/acceptance.test.ts`, la respuesta con dobles en `convex/application/requests/respond.test.ts`, y `convex/domain/requests/` (`toCompleteSubmission`, `toRequestSubmission`, `toInformationResponse`, `toRequestExchange` y las tablas de transiciones).
