@@ -12,6 +12,8 @@
  * frágil y Google Calendar recibe el mismo instante con su zona de despliegue.
  */
 
+import { FNV_OFFSET_BASIS, fnv1a64 } from "../hashing/fnv1a";
+
 /** Versión del contrato público del evento de calendario. */
 export const CALENDAR_EVENT_CONTRACT_VERSION = "v1" as const;
 
@@ -66,21 +68,8 @@ export interface CalendarFile {
 }
 
 const BASE32_HEX_ALPHABET = "0123456789abcdefghijklmnopqrstuv";
-const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
 const FNV_SECOND_BASIS = 0x84222325cbf29ce4n;
-const FNV_PRIME = 0x100000001b3n;
-const UINT64_MASK = 0xffffffffffffffffn;
 const ICS_MAX_LINE_OCTETS = 75;
-
-/** FNV-1a de 64 bits: determinista, puro y suficiente para una clave estable. */
-function fnv1a64(value: string, basis: bigint): bigint {
-  let hash = basis;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= BigInt(value.charCodeAt(index));
-    hash = (hash * FNV_PRIME) & UINT64_MASK;
-  }
-  return hash;
-}
 
 function toBase32Hex(value: bigint, length: number): string {
   let remaining = value;

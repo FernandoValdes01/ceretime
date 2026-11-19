@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { View } from "react-native";
 
+import { StudentRequestActionsPanel } from "./student-request-actions";
 import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
 import { formatRequestDate } from "./student-request-formatters";
@@ -29,13 +30,14 @@ function DetailField({ label, value }: { label: string; value: string }) {
 function detailAnnouncement(status: StudentAreaCollectionStatus, found: boolean): string | null {
   if (status === "loading") return "Cargando solicitud.";
   if (status === "error") return "No pudimos cargar la solicitud.";
+  if (status === "access-denied") return "No tienes acceso a esta solicitud.";
   if (!found) return "Solicitud no encontrada.";
   return "Solicitud cargada.";
 }
 
 export default function StudentRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
-  const { requests, accompaniments } = useStudentAreaContext();
+  const { requests, accompaniments, actions } = useStudentAreaContext();
   const request = requests.data.find((item) => item.id === requestId);
   const accompaniment =
     request?.status === "accepted"
@@ -78,7 +80,25 @@ export default function StudentRequestDetailScreen() {
         </View>
       ) : null}
 
-      {requests.status !== "loading" && requests.status !== "error" && !request ? (
+      {requests.status === "access-denied" ? (
+        <View className="gap-4 rounded-xl border border-student-border bg-student-surface p-4">
+          <StudentText
+            weight="semibold"
+            accessibilityRole="header"
+            className="text-student-text text-xl leading-[28px]"
+            selectable
+          >
+            No tienes acceso a esta solicitud
+          </StudentText>
+          <StudentAction
+            label="Volver a mis solicitudes"
+            secondary
+            onPress={() => router.replace("/estudiante/solicitudes")}
+          />
+        </View>
+      ) : null}
+
+      {(requests.status === "success" || requests.status === "empty") && !request ? (
         <View
           className="gap-4 rounded-xl border border-student-border bg-student-surface p-4"
           style={{ borderCurve: "continuous" }}
@@ -138,6 +158,15 @@ export default function StudentRequestDetailScreen() {
               value={request.preferredAccessibleInformationChannel}
             />
           ) : null}
+          {request.informationRequest ? (
+            <DetailField label="Información solicitada" value={request.informationRequest} />
+          ) : null}
+          {request.informationResponse ? (
+            <DetailField label="Tu última respuesta" value={request.informationResponse} />
+          ) : null}
+          {request.closureReason ? (
+            <DetailField label="Motivo de cierre" value={request.closureReason} />
+          ) : null}
           {request.status === "accepted" ? (
             <View className="gap-3">
               <StudentText
@@ -167,6 +196,12 @@ export default function StudentRequestDetailScreen() {
           ) : null}
         </View>
       ) : null}
+      <StudentRequestActionsPanel
+        key={requestId}
+        request={request}
+        actions={actions}
+        onReload={requests.reload}
+      />
     </StudentScreen>
   );
 }

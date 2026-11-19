@@ -234,7 +234,7 @@ test(
       limit: 50,
       version: "v1",
     });
-    const offered = search.items.map((item) => item.startAt);
+    const offered = search.status === "available" ? search.items.map((item) => item.startAt) : [];
     expect(offered).not.toContain(at(12));
     expect(offered).not.toContain(at(12) + HALF_HOUR);
     expect(offered).toContain(at(13));

@@ -16,6 +16,7 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import type { AppointmentCancellationTarget } from "../../domain/authorization/permissions";
 import type { AccessNeed } from "../../domain/requests/request";
 import {
   authorizeAppointmentAttendance,
@@ -215,6 +216,58 @@ function toAuthorizableAppointment(row: StoredAppointmentForChange): Authorizabl
   };
 }
 
+/** Lo que la cancelación necesita de la atención ya leída. */
+export type CancellableAppointment = Pick<
+  StoredAppointmentForChange,
+  "id" | "status" | "startAt" | "originalStartAt"
+>;
+
+/**
+ * Cancelación ya autorizada: transición, guardado y auditoría.
+ *
+ * Único camino por el que una atención pasa a cancelada. Lo usan la
+ * cancelación individual y el cierre del acompañamiento (TI2-152), que
+ * autoriza una vez sobre el acompañamiento y no sobre cada atención. `false`
+ * cuando la política rechaza el cambio, y entonces no escribe nada.
+ */
+export async function cancelAuthorizedAppointment(
+  deps: Pick<CancelAppointmentDeps, "persister" | "audit">,
+  stored: CancellableAppointment,
+  cancellation: {
+    readonly target: AppointmentCancellationTarget;
+    readonly actorId: string;
+    readonly occurredAt: number;
+    readonly reason?: string;
+  },
+): Promise<boolean> {
+  const outcome = transitionAppointment({
+    from: stored.status,
+    to: cancellation.target,
+    actorId: cancellation.actorId,
+    occurredAt: cancellation.occurredAt,
+    ...(cancellation.reason === undefined ? {} : { reason: cancellation.reason }),
+    currentStartAt: stored.startAt,
+    ...(stored.originalStartAt === undefined
+      ? {}
+      : { currentOriginalStartAt: stored.originalStartAt }),
+  });
+  if (outcome.status === "rejected") return false;
+
+  await deps.persister.persistAppointmentTransition(stored.id, {
+    status: outcome.change.to,
+    ...(outcome.cancelReason === undefined ? {} : { cancelReason: outcome.cancelReason }),
+    ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
+  });
+  await auditAppointmentChange(deps.audit, {
+    action: "cancelled",
+    actorId: cancellation.actorId,
+    appointmentId: stored.id,
+    result: outcome.change.to,
+    occurredAt: cancellation.occurredAt,
+  });
+  return true;
+}
+
 /**
  * Cancela una atención existente.
  *
@@ -239,33 +292,13 @@ export async function cancelAppointment(
   });
   if (grant.status === "error") return denied();
 
-  const occurredAt = occurredNow(deps);
-  const outcome = transitionAppointment({
-    from: stored.status,
-    to: grant.data.target,
+  const cancelled = await cancelAuthorizedAppointment(deps, stored, {
+    target: grant.data.target,
     actorId: grant.data.callerId,
-    occurredAt,
+    occurredAt: occurredNow(deps),
     ...(input.reason === undefined ? {} : { reason: input.reason }),
-    currentStartAt: stored.startAt,
-    ...(stored.originalStartAt === undefined
-      ? {}
-      : { currentOriginalStartAt: stored.originalStartAt }),
   });
-  if (outcome.status === "rejected") return conflict();
-
-  await deps.persister.persistAppointmentTransition(stored.id, {
-    status: outcome.change.to,
-    ...(outcome.cancelReason === undefined ? {} : { cancelReason: outcome.cancelReason }),
-    ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
-  });
-  await auditAppointmentChange(deps.audit, {
-    action: "cancelled",
-    actorId: grant.data.callerId,
-    appointmentId: stored.id,
-    result: outcome.change.to,
-    occurredAt,
-  });
-  return okResult({ appointmentId: stored.id });
+  return cancelled ? okResult({ appointmentId: stored.id }) : conflict();
 }
 
 /**

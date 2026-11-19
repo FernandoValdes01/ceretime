@@ -1,13 +1,10 @@
 import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
-import { ConvexError } from "convex/values";
 // Fuente canónica del contrato de errores (TI2-23, TI2-88): el Backend
 // responde toda denegación con este código genérico, sin motivo ni
 // existencia del recurso. Se importa del barrel, no se duplica el literal.
-import {
-  UNAUTHORIZED_ERROR_CODE,
-  UNAUTHORIZED_ERROR_MESSAGE,
-} from "../../../../../convex/domain/index.ts";
+import { isOpenRequestState, UNAUTHORIZED_ERROR_CODE } from "../../../../../convex/domain/index.ts";
+import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import { formatPanelDate, requestStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import {
@@ -15,7 +12,16 @@ import {
   useOwnRequestDetail,
   useOwnRequestsPaginated,
   type OwnRequestDetail,
+  type OwnRequestItem,
 } from "./student-requests-data.ts";
+import { REQUEST_PROCESS_STEPS } from "./request-process.ts";
+import {
+  FOCUS_CLASS,
+  PAGE_CLASS,
+  PAGE_TITLE_CLASS,
+  PRIMARY_LINK_CLASS,
+  SECTION_TITLE_CLASS,
+} from "./student-page-classes.ts";
 
 /**
  * Listado y detalle de solicitudes propias del Estudiante (TI2-89).
@@ -25,8 +31,9 @@ import {
  * existentes; la autorización vive en Convex. `listOwnRequests` devuelve solo
  * filas propias y `getRequest` detalla la solicitud del titular. Otra cuenta,
  * otro rol o una cuenta pendiente de habilitación reciben la denegación
- * genérica del Backend sin filtrar existencia ni titularidad. Sin acciones de
- * crear ni operar: eso es de otras entregas.
+ * genérica del Backend sin filtrar existencia ni titularidad. El envío vive
+ * en `student-request-form.tsx` (TI2-149); operar una solicitud es de otras
+ * entregas.
  */
 export function StudentRequestsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -36,18 +43,25 @@ export function StudentRequestsPage() {
   }, []);
 
   return (
-    <section aria-labelledby="student-requests-page-title" className="flex flex-col gap-6">
-      <h1
-        id="student-requests-page-title"
-        ref={headingRef}
-        tabIndex={-1}
-        className="text-[1.75rem] leading-snug font-semibold text-primary"
-      >
-        Mis solicitudes
-      </h1>
-      <p className="text-base text-on-surface">
-        Consulta el estado de tus solicitudes registradas.
-      </p>
+    <section aria-labelledby="student-requests-page-title" className={PAGE_CLASS}>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <h1
+            id="student-requests-page-title"
+            ref={headingRef}
+            tabIndex={-1}
+            className={PAGE_TITLE_CLASS}
+          >
+            Mis solicitudes
+          </h1>
+          <p className="m-0 text-base text-on-surface-variant">
+            Consulta en qué estado está cada solicitud que enviaste a CERETI.
+          </p>
+        </div>
+        <Link to="/estudiante/solicitudes/nueva" className={`${PRIMARY_LINK_CLASS} shrink-0`}>
+          Nueva solicitud
+        </Link>
+      </header>
       <StudentPanelErrorBoundary subject="tus solicitudes" level="section">
         <OwnRequestsBody />
       </StudentPanelErrorBoundary>
@@ -73,14 +87,7 @@ function OwnRequestsBody() {
 
   if (results.length === 0) {
     if (exhausted) {
-      return (
-        <div className="rounded-lg border-t-4 border-secondary-container bg-surface-container-low p-6 text-on-surface-variant">
-          <p className="mb-2 font-semibold text-on-surface">
-            Aún no tienes solicitudes registradas.
-          </p>
-          <p>Cuando envíes tu primera solicitud, aparecerá aquí con su estado.</p>
-        </div>
-      );
+      return <NoRequestsYet />;
     }
     if (canLoadMore) {
       return (
@@ -102,35 +109,229 @@ function OwnRequestsBody() {
     );
   }
 
+  const open = results.filter((request) => isOpenRequestState(request.status));
+  const finished = results.filter((request) => !isOpenRequestState(request.status));
+
   return (
-    <>
-      <ul className="grid gap-3 p-0">
-        {results.map((request) => (
-          <li
-            key={request._id}
-            className="rounded-md border border-border-low bg-surface-container-lowest px-5 py-4"
-          >
-            <Link
-              to="/estudiante/solicitudes/$requestId"
-              params={{ requestId: request._id }}
-              className="flex min-h-[44px] items-center gap-2 rounded-[0.5rem] px-3 py-2 no-underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-            >
-              <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold text-on-surface">
-                {requestStatusLabel(request.status)}
-              </span>
-              <span className="text-base text-on-surface-variant">
-                Registrada el {formatPanelDate(request.createdAt)}
-              </span>
-            </Link>
-          </li>
-        ))}
-      </ul>
+    <div className="flex flex-col gap-8">
+      <RequestGroup
+        id="open"
+        title="En curso"
+        emptyText={
+          exhausted
+            ? "No tienes solicitudes en curso."
+            : "No hay solicitudes en curso entre las cargadas."
+        }
+        requests={open}
+        complete={exhausted}
+      />
+      {finished.length > 0 ? (
+        <RequestGroup id="finished" title="Finalizadas" requests={finished} complete={exhausted} />
+      ) : null}
       {canLoadMore ? (
-        <div className="mt-6 flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
           <LoadMoreButton pending={loadingMore} onLoadMore={() => loadMore(PAGE_SIZE)} />
         </div>
       ) : null}
-    </>
+    </div>
+  );
+}
+
+/**
+ * Sin solicitudes: explica el proceso con los mismos pasos de Inicio y
+ * ofrece empezar, en vez de dejar la página vacía.
+ */
+function NoRequestsYet() {
+  return (
+    <div className="flex flex-col gap-5 rounded-lg border border-border-low border-t-4 border-t-secondary-container bg-surface-container-lowest p-6">
+      <div className="flex flex-col gap-1">
+        <h2 className={SECTION_TITLE_CLASS}>Aún no tienes solicitudes</h2>
+        <p className="m-0 text-base text-on-surface-variant">
+          Cuando envíes una, aparecerá aquí con su estado. Así funciona:
+        </p>
+      </div>
+      {/* `role="list"`: con `list-none`, Safari deja de anunciarla como lista. */}
+      <ol role="list" className="m-0 grid list-none gap-4 p-0 sm:grid-cols-3">
+        {REQUEST_PROCESS_STEPS.map((step, index) => (
+          <li key={step.title} className="flex gap-3">
+            <span
+              aria-hidden="true"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-fixed font-bold text-on-primary-fixed"
+            >
+              {index + 1}
+            </span>
+            <div className="flex flex-col gap-1">
+              <h3 className="m-0 text-base font-semibold text-on-surface">{step.title}</h3>
+              <p className="m-0 text-base text-on-surface-variant">{step.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <Link to="/estudiante/solicitudes/nueva" className={PRIMARY_LINK_CLASS}>
+        Enviar mi primera solicitud
+      </Link>
+    </div>
+  );
+}
+
+function RequestGroup({
+  id,
+  title,
+  emptyText,
+  requests,
+  complete,
+}: {
+  id: string;
+  title: string;
+  emptyText?: string;
+  requests: readonly OwnRequestItem[];
+  /** Falso mientras quedan páginas: la cantidad cargada no es el total. */
+  complete: boolean;
+}) {
+  const titleId = `student-requests-${id}-title`;
+  return (
+    <section aria-labelledby={titleId} className="flex flex-col gap-3">
+      <h2 id={titleId} className={SECTION_TITLE_CLASS}>
+        {title}
+        {complete ? (
+          <>
+            {" "}
+            <span className="font-normal text-on-surface-variant">({requests.length})</span>
+          </>
+        ) : null}
+      </h2>
+      {requests.length === 0 ? (
+        <p className="m-0 text-base text-on-surface-variant">{emptyText}</p>
+      ) : (
+        <ul role="list" className="m-0 grid list-none gap-3 p-0">
+          {requests.map((request) => (
+            <li key={request._id}>
+              <RequestCard request={request} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** Máximo de necesidades visibles en la tarjeta; el detalle muestra todas. */
+const VISIBLE_ACCESS_NEEDS = 3;
+
+/**
+ * Tarjeta enlazada de una solicitud: toda la tarjeta lleva al detalle. El
+ * estado se lee en texto e ícono; el color del borde solo lo refuerza.
+ */
+function RequestCard({ request }: { request: OwnRequestItem }) {
+  const toneName = requestStatusTone(request.status);
+  const tone = REQUEST_STATUS_TONES[toneName];
+  // El Backend une las necesidades seleccionadas y el texto libre con saltos de línea.
+  const needs = request.accessNeeds
+    .split("\n")
+    .map((need) => need.trim())
+    .filter((need) => need !== "");
+  const hiddenNeeds = needs.length - VISIBLE_ACCESS_NEEDS;
+  return (
+    <Link
+      to="/estudiante/solicitudes/$requestId"
+      params={{ requestId: request._id }}
+      className={`group flex flex-col gap-3 rounded-lg border border-border-low border-t-4 bg-surface-container-lowest p-5 text-on-surface no-underline hover:bg-surface-container-low ${tone.border} ${FOCUS_CLASS}`}
+    >
+      <span className="flex flex-wrap items-center justify-between gap-2">
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-bold ${tone.chip}`}
+        >
+          <StatusIcon tone={toneName} />
+          {requestStatusLabel(request.status)}
+        </span>
+        <span className="text-sm text-on-surface-variant">
+          Enviada el {formatPanelDate(request.createdAt)}
+        </span>
+      </span>
+      {needs.length > 0 ? (
+        <span className="flex flex-wrap gap-2">
+          <span className="sr-only">Necesidades de acceso:</span>
+          {needs.slice(0, VISIBLE_ACCESS_NEEDS).map((need, index) => (
+            <span
+              // El texto libre puede repetir una etiqueta: la posición es la clave estable.
+              key={index}
+              className="max-w-full truncate rounded-full bg-surface-container px-3 py-1 text-sm text-on-surface"
+            >
+              {need}
+            </span>
+          ))}
+          {hiddenNeeds > 0 ? (
+            <span className="py-1 text-sm text-on-surface-variant">y {hiddenNeeds} más</span>
+          ) : null}
+        </span>
+      ) : null}
+      <span className="inline-flex items-center gap-1 font-semibold text-primary group-hover:underline">
+        Ver detalle
+        <span aria-hidden="true">›</span>
+      </span>
+    </Link>
+  );
+}
+
+type RequestStatusTone = "pending" | "inReview" | "attention" | "success" | "referred" | "closed";
+
+/** Presentación de cada estado: solo refuerza la etiqueta, que es la fuente del significado. */
+function requestStatusTone(status: string): RequestStatusTone {
+  switch (status) {
+    case "received":
+      return "pending";
+    case "under_review":
+      return "inReview";
+    case "awaiting_information_or_acceptance":
+      return "attention";
+    case "accepted":
+      return "success";
+    case "referred":
+      return "referred";
+    default:
+      return "closed";
+  }
+}
+
+const REQUEST_STATUS_TONES: Record<RequestStatusTone, { border: string; chip: string }> = {
+  pending: {
+    border: "border-t-secondary-container",
+    chip: "bg-secondary-fixed text-on-secondary-fixed",
+  },
+  inReview: { border: "border-t-calm-blue", chip: "bg-surface-container text-on-surface" },
+  attention: { border: "border-t-tertiary", chip: "bg-tertiary-fixed text-on-tertiary-fixed" },
+  success: { border: "border-t-support-green", chip: "bg-primary-fixed text-on-primary-fixed" },
+  referred: { border: "border-t-calm-blue", chip: "bg-surface-container text-on-surface" },
+  closed: {
+    border: "border-t-outline-variant",
+    chip: "bg-surface-container-high text-on-surface-variant",
+  },
+};
+
+const STATUS_ICON_PATHS: Record<RequestStatusTone, string> = {
+  pending: "M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z",
+  inReview: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm5 12 4 4",
+  attention: "M12 8v5m0 3h.01M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z",
+  success: "m8 12 3 3 5-6M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z",
+  referred: "M5 12h12m-4-4 4 4-4 4",
+  closed: "m9 9 6 6m0-6-6 6M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z",
+};
+
+/** Ícono decorativo del estado; la etiqueta de texto ya dice el estado. */
+function StatusIcon({ tone }: { tone: RequestStatusTone }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className="size-4 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={STATUS_ICON_PATHS[tone]} />
+    </svg>
   );
 }
 
@@ -167,15 +368,7 @@ function LoadMoreButton({ pending, onLoadMore }: { pending: boolean; onLoadMore:
  * Web y Convex se despliegan por separado.
  */
 function isAuthorizationDenial(error: unknown): boolean {
-  if (!(error instanceof ConvexError)) return false;
-  const data: unknown = error.data;
-  if (data === UNAUTHORIZED_ERROR_MESSAGE) return true;
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    "code" in data &&
-    data.code === UNAUTHORIZED_ERROR_CODE
-  );
+  return publicErrorOf(error)?.code === UNAUTHORIZED_ERROR_CODE;
 }
 
 /**

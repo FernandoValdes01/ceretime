@@ -125,3 +125,101 @@ export function toAccompanimentProjection<
     view: "full",
   };
 }
+
+/**
+ * Cambios de estado del acompañamiento (TI2-152): pausar, reactivar y cerrar.
+ *
+ * `closed` no puede ser origen: un acompañamiento cerrado no se reabre ni
+ * vuelve a pausarse, y una necesidad posterior comienza con otra solicitud.
+ * El tipo de `from` lo excluye, así que agregar una salida desde `closed` no
+ * compila. Un par ausente de esta tabla es una transición inválida.
+ */
+export type AccompanimentStateTransition = {
+  readonly from: Exclude<AccompanimentStatus, "closed">;
+  readonly to: AccompanimentStatus;
+};
+
+export const ACCOMPANIMENT_TRANSITIONS = [
+  { from: "active", to: "paused" },
+  { from: "paused", to: "active" },
+  { from: "active", to: "closed" },
+  { from: "paused", to: "closed" },
+] as const satisfies readonly AccompanimentStateTransition[];
+
+/** Tope del motivo opcional de un cambio de estado. */
+export const ACCOMPANIMENT_REASON_MAX_LENGTH = 500;
+
+/**
+ * Motivo con que el cierre cancela las atenciones futuras. La cancelación de
+ * CERETI exige motivo; el cierre no pide uno, así que usa este texto fijo y
+ * nunca copia el motivo opcional del cierre a las atenciones.
+ */
+export const ACCOMPANIMENT_CLOSURE_CANCEL_REASON = "Cierre del acompañamiento";
+
+export type AccompanimentTransitionAttempt = {
+  readonly from: AccompanimentStatus;
+  readonly to: AccompanimentStatus;
+  readonly actorId: string;
+  readonly occurredAt: number;
+  readonly reason?: string;
+};
+
+/**
+ * Entrada del historial de estados: el intento ya aceptado, con el origen de
+ * una transición válida y el motivo solo si se entregó.
+ */
+export type AccompanimentStateChange = AccompanimentTransitionAttempt &
+  AccompanimentStateTransition;
+
+export const ACCOMPANIMENT_TRANSITION_REJECTION_CAUSES = [
+  "transition_not_allowed",
+  "actor_required",
+  "occurred_at_invalid",
+  "reason_too_long",
+] as const;
+
+export type AccompanimentTransitionRejectionCause =
+  (typeof ACCOMPANIMENT_TRANSITION_REJECTION_CAUSES)[number];
+
+export type AccompanimentTransitionResult =
+  | { readonly status: "applied"; readonly change: AccompanimentStateChange }
+  | { readonly status: "rejected"; readonly cause: AccompanimentTransitionRejectionCause };
+
+/**
+ * Decide si un cambio de estado procede, sin persistir nada.
+ *
+ * El motivo es opcional en todos los cambios: en blanco equivale a no
+ * entregarlo. Los rechazos se devuelven como valor y ninguno construye
+ * `change`, así un intento inválido no deja entrada en el historial.
+ */
+export function transitionAccompaniment(
+  attempt: AccompanimentTransitionAttempt,
+): AccompanimentTransitionResult {
+  const transition = ACCOMPANIMENT_TRANSITIONS.find(
+    (candidate) => candidate.from === attempt.from && candidate.to === attempt.to,
+  );
+  if (transition === undefined) return { status: "rejected", cause: "transition_not_allowed" };
+
+  const actorId = attempt.actorId.trim();
+  if (actorId === "") return { status: "rejected", cause: "actor_required" };
+
+  if (!Number.isFinite(attempt.occurredAt) || attempt.occurredAt <= 0) {
+    return { status: "rejected", cause: "occurred_at_invalid" };
+  }
+
+  const reason = attempt.reason?.trim();
+  if (reason !== undefined && reason.length > ACCOMPANIMENT_REASON_MAX_LENGTH) {
+    return { status: "rejected", cause: "reason_too_long" };
+  }
+
+  return {
+    status: "applied",
+    change: {
+      from: transition.from,
+      to: transition.to,
+      actorId,
+      occurredAt: attempt.occurredAt,
+      ...(reason ? { reason } : {}),
+    },
+  };
+}

@@ -22,7 +22,13 @@ import {
 import { slotOccupancyReader } from "../infrastructure/appointments/repository";
 import { availabilityReader, availabilityWriter } from "../infrastructure/availability/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
-import { availabilityExceptionKindUnion, modalityUnion } from "../infrastructure/validators";
+import {
+  availabilityExceptionKindUnion,
+  modalityUnion,
+  noCompatibleSlotReasonUnion,
+  officialChannelValidator,
+  spaceFieldsShape,
+} from "../infrastructure/validators";
 import { unwrapApiResult as unwrap } from "./session";
 
 /**
@@ -38,8 +44,8 @@ import { unwrapApiResult as unwrap } from "./session";
  * Los identificadores viajan como texto plano, igual que en el contrato:
  * uno ajeno, inexistente o de otra tabla recibe la misma denegación. Los
  * errores se lanzan con `throwPublicApiError` (TI2-88): solo `code` y
- * `message`. La búsqueda sin cupo compatible y libre responde
- * `no_availability`. Opera con datos ficticios.
+ * `message`. La búsqueda sin cupo compatible y libre no es un error: responde
+ * el resultado `no_compatible_slot` (TI2-144). Opera con datos ficticios.
  */
 
 const windowFields = {
@@ -150,8 +156,29 @@ const slotValidator = v.object({
   endAt: v.number(),
   modality: modalityUnion,
   spaceId: v.optional(v.string()),
+  space: v.optional(v.object(spaceFieldsShape)),
   version,
 });
+
+const searchResultValidator = v.union(
+  v.object({
+    status: v.literal("available"),
+    items: v.array(slotValidator),
+    hasMore: v.boolean(),
+    nextCursor: v.union(v.string(), v.null()),
+    version,
+  }),
+  v.object({
+    status: v.literal("no_compatible_slot"),
+    coordination: v.object({
+      reason: noCompatibleSlotReasonUnion,
+      explanation: v.string(),
+      referenceCode: v.string(),
+      channels: v.array(officialChannelValidator),
+    }),
+    version,
+  }),
+);
 
 /**
  * Cupos compatibles y libres de un profesional para un acompañamiento
@@ -159,6 +186,11 @@ const slotValidator = v.object({
  * asignado pueden buscar; el rango y la página están acotados. Las fechas se
  * leen en la zona de la agenda (`AGENDA_TIME_ZONE`), que fija el servidor: el
  * cliente no la envía.
+ *
+ * Sin horario compatible responde `status: "no_compatible_slot"` con el
+ * motivo, el código de referencia y los canales oficiales (TI2-144); con
+ * cupos, `status: "available"` y la página, donde cada cupo presencial trae
+ * la ubicación y el acceso de su sala.
  */
 export const searchSlots = query({
   args: {
@@ -170,15 +202,10 @@ export const searchSlots = query({
     cursor: v.optional(v.string()),
     version,
   },
-  returns: v.object({
-    items: v.array(slotValidator),
-    hasMore: v.boolean(),
-    nextCursor: v.union(v.string(), v.null()),
-    version,
-  }),
+  returns: searchResultValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    const page = unwrap(
+    const result = unwrap(
       await searchAvailabilitySlots(
         {
           auth: authorizationReader(ctx),
@@ -190,8 +217,13 @@ export const searchSlots = query({
         { ...args, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );
-    // La página del dominio es de solo lectura; el validador espera un arreglo.
-    return { ...page, items: [...page.items] };
+    // Las listas del dominio son de solo lectura; el validador espera arreglos.
+    if (result.status === "available") return { ...result, items: [...result.items] };
+    const { coordination } = result;
+    return {
+      ...result,
+      coordination: { ...coordination, channels: [...coordination.channels] },
+    };
   },
 });
 

@@ -6,6 +6,7 @@ import {
   StudentIndexRouteComponent,
   StudentLayoutRouteComponent,
   StudentRequestDetailRouteComponent,
+  StudentRequestFormRouteComponent,
   StudentRequestsRouteComponent,
   StudentReservationRouteComponent,
   StudentScheduleRouteComponent,
@@ -74,6 +75,13 @@ const studentRequestsRoute = createRoute({
   component: StudentRequestsRouteComponent,
 });
 
+// Ruta estática: TanStack Router la prefiere sobre `solicitudes/$requestId`.
+const studentRequestFormRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "solicitudes/nueva",
+  component: StudentRequestFormRouteComponent,
+});
+
 const studentRequestDetailRoute = createRoute({
   getParentRoute: () => studentLayoutRoute,
   path: "solicitudes/$requestId",
@@ -102,6 +110,7 @@ export const studentRoutes = [
     studentAppointmentsRoute,
     studentAppointmentDetailRoute,
     studentRequestsRoute,
+    studentRequestFormRoute,
     studentRequestDetailRoute,
     studentAccompanimentDetailRoute,
   ]),

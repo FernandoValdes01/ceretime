@@ -317,6 +317,13 @@ describe("reserva de un cupo compatible (TI2-98)", () => {
         }),
         input: bookingInput(),
       },
+      {
+        auth: fakeAuth({
+          profiles: [student],
+          accompaniments: [{ ...activeAccompaniment, status: "closed" }],
+        }),
+        input: bookingInput(),
+      },
     ];
 
     for (const { auth, input } of cases) {

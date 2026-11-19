@@ -5,6 +5,7 @@ import {
   demoAccompanimentDetails,
   demoStudentAreaResponses,
   demoStudentIdentity,
+  demoStudentInformationRequests,
 } from "./demo-student-area-data";
 
 export type DemoStudentAreaMode = "success" | "empty" | "error";
@@ -47,7 +48,17 @@ export function createDemoStudentAreaReader({
       const snapshot = mapBackendStudentArea(demoStudentIdentity, demoStudentAreaResponses);
       return {
         ...snapshot,
-        requests: [...(store?.readRequests() ?? []), ...snapshot.requests],
+        requests: [
+          ...(store?.readRequests() ?? []),
+          ...snapshot.requests
+            .filter((request) => !store?.readRequests().some((local) => local.id === request.id))
+            .map((request) => ({
+              ...request,
+              ...(demoStudentInformationRequests[request.id]
+                ? { informationRequest: demoStudentInformationRequests[request.id] }
+                : {}),
+            })),
+        ],
         accompaniments: [
           ...(store?.readAccompaniments() ?? []),
           ...snapshot.accompaniments.map((accompaniment) => {

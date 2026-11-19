@@ -260,9 +260,12 @@ const SHARED_KEYS = [
 const PROFESSIONAL_KEYS = [...SHARED_KEYS, "internalNote"].sort();
 
 const MINIMIZED_KEYS = [
+  "agreements",
   "appointmentId",
   "appointmentStatus",
+  "nextSteps",
   "suggestedNextAppointmentDate",
+  "tasks",
   "version",
   "view",
 ];
@@ -471,6 +474,42 @@ describe("TI2-146 API: denegaciones y estados de la atención", () => {
     );
   });
 
+  test("un Practicante con la asignación revocada, vencida o futura no lee el seguimiento", async () => {
+    for (const label of ["revocada", "vencida", "futura"] as const) {
+      const t = convexTest(schema, modules);
+      const scenario = await seedScenario(t, `intern-${label}`);
+      const appointmentId = await seedAppointment(t, scenario);
+      await save(scenario, "professional", appointmentId, followUpContent());
+
+      // El practicante lee minimizado antes de tocar la asignación: si la
+      // semilla no la creara, la denegación posterior sería por otro motivo
+      expect(await read(scenario, "intern", appointmentId)).toMatchObject({
+        view: "minimized",
+      });
+
+      const modified = await t.run(async (ctx) => {
+        const assignments = await ctx.db.query("accompanimentAssignments").take(10);
+        let count = 0;
+        for (const assignment of assignments) {
+          if (assignment.assignedRole !== "intern") continue;
+          if (label === "revocada") await ctx.db.patch(assignment._id, { status: "revoked" });
+          if (label === "vencida")
+            await ctx.db.patch(assignment._id, { validUntil: Date.now() - HOUR });
+          if (label === "futura")
+            await ctx.db.patch(assignment._id, { validFrom: Date.now() + HOUR });
+          count += 1;
+        }
+        return count;
+      });
+      expect(modified).toBeGreaterThan(0);
+
+      expect(await publicErrorData(read(scenario, "intern", appointmentId))).toEqual(UNAUTHORIZED);
+      expect(await publicErrorData(list(scenario, "intern", scenario.accompanimentId))).toEqual(
+        UNAUTHORIZED,
+      );
+    }
+  });
+
   test.each(["closed", "paused"] as const)(
     "un acompañamiento %s no admite guardar, pero su historial se sigue leyendo",
     async (status) => {
@@ -645,6 +684,16 @@ describe("TI2-146 API: lectura por atención", () => {
     expect(intern).toEqual({
       appointmentId,
       appointmentStatus: "completed",
+      agreements: [{ id: "a1", description: "Recibir los apuntes en formato digital" }],
+      tasks: [
+        {
+          id: "t1",
+          description: "Enviar los apuntes de la semana",
+          responsible: "professional",
+          status: "pending",
+        },
+      ],
+      nextSteps: "Revisar el avance en la próxima atención",
       suggestedNextAppointmentDate: "2026-11-23",
       version: FOLLOW_UP_CONTRACT_VERSION,
       view: "minimized",

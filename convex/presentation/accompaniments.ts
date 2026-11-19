@@ -12,8 +12,23 @@ import {
   listAssignedAccompanimentsUseCase,
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
+import {
+  closeAccompaniment as closeAccompanimentUseCase,
+  pauseAccompaniment as pauseAccompanimentUseCase,
+  previewAccompanimentClosure,
+  reactivateAccompaniment as reactivateAccompanimentUseCase,
+} from "../application/accompaniments/status";
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
+import {
+  accompanimentStatusWriter,
+  authorizationReader,
+} from "../infrastructure/accompaniments/repository";
+import {
+  appointmentTransitionRepository,
+  pendingAppointmentsReader,
+} from "../infrastructure/appointments/repository";
+import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
 
@@ -238,5 +253,134 @@ export const revokeAccompanimentAccess = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(await revokeAccompaniment(ctx, identity, args));
+  },
+});
+
+const statusChangeArgs = {
+  accompanimentId: v.id("accompaniments"),
+  reason: v.optional(v.string()),
+};
+
+const statusChangeResultValidator = v.object({
+  accompanimentId: v.id("accompaniments"),
+  status: accompanimentStatusUnion,
+});
+
+/**
+ * Pausa un acompañamiento activo (TI2-152).
+ *
+ * Solo el Profesional vigente con asignación activa. Las atenciones
+ * existentes se mantienen: mientras dure la pausa se rechazan reservas y
+ * cambios de horario, pero el Estudiante dueño y el Profesional a cargo
+ * todavía cancelan, y el Profesional registra el resultado. El motivo es
+ * opcional. `unauthorized` genérico sin permiso o ante un
+ * acompañamiento ajeno o inexistente; `conflict` si no está activo o el motivo
+ * supera el tope.
+ */
+export const pauseAccompaniment = mutation({
+  args: statusChangeArgs,
+  returns: statusChangeResultValidator,
+  handler: async (ctx, { accompanimentId, reason }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrapApiResult(
+      await pauseAccompanimentUseCase(
+        { auth: authorizationReader(ctx), accompaniments: accompanimentStatusWriter(ctx) },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          accompanimentId,
+          ...(reason === undefined ? {} : { reason }),
+        },
+      ),
+    );
+    return { accompanimentId, status: result.status };
+  },
+});
+
+/**
+ * Reactiva un acompañamiento en pausa (TI2-152), con las mismas reglas de
+ * permiso y errores que la pausa. `conflict` si no está en pausa: un
+ * acompañamiento cerrado no se reabre.
+ */
+export const reactivateAccompaniment = mutation({
+  args: statusChangeArgs,
+  returns: statusChangeResultValidator,
+  handler: async (ctx, { accompanimentId, reason }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrapApiResult(
+      await reactivateAccompanimentUseCase(
+        { auth: authorizationReader(ctx), accompaniments: accompanimentStatusWriter(ctx) },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          accompanimentId,
+          ...(reason === undefined ? {} : { reason }),
+        },
+      ),
+    );
+    return { accompanimentId, status: result.status };
+  },
+});
+
+/**
+ * Cuántas atenciones cancelaría el cierre (TI2-152), para mostrarlo antes de
+ * confirmar. `unrecordedAppointments` cuenta las atenciones vigentes cuya hora
+ * ya pasó: mientras no sea cero, el cierre responde `conflict`. La cifra es
+ * informativa y no se actualiza sola con el paso del tiempo; el cierre
+ * devuelve la real.
+ */
+export const getAccompanimentClosurePreview = query({
+  args: { accompanimentId: v.id("accompaniments") },
+  returns: v.object({
+    appointmentsToCancel: v.number(),
+    unrecordedAppointments: v.number(),
+  }),
+  handler: async (ctx, { accompanimentId }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await previewAccompanimentClosure(
+        { auth: authorizationReader(ctx), appointments: pendingAppointmentsReader(ctx) },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, accompanimentId },
+      ),
+    );
+  },
+});
+
+/**
+ * Cierra un acompañamiento activo o en pausa (TI2-152).
+ *
+ * Cancela sus atenciones futuras como `cancelled_by_cereti`, libera cada cupo
+ * y devuelve cuántas canceló. Después el acompañamiento es de solo lectura y
+ * no se reabre. `conflict` si ya está cerrado o si queda una atención vigente
+ * cuya hora ya pasó, y entonces no se guarda nada.
+ */
+export const closeAccompaniment = mutation({
+  args: statusChangeArgs,
+  returns: v.object({
+    accompanimentId: v.id("accompaniments"),
+    status: accompanimentStatusUnion,
+    cancelledAppointments: v.number(),
+  }),
+  handler: async (ctx, { accompanimentId, reason }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrapApiResult(
+      await closeAccompanimentUseCase(
+        {
+          auth: authorizationReader(ctx),
+          accompaniments: accompanimentStatusWriter(ctx),
+          appointments: pendingAppointmentsReader(ctx),
+          persister: appointmentTransitionRepository(ctx).persister,
+          audit: appointmentAuditRecorder(ctx),
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          accompanimentId,
+          ...(reason === undefined ? {} : { reason }),
+        },
+      ),
+    );
+    return {
+      accompanimentId,
+      status: result.status,
+      cancelledAppointments: result.cancelledAppointments,
+    };
   },
 });

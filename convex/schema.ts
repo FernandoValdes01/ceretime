@@ -77,6 +77,21 @@ export default defineSchema({
     .index("by_student", ["studentId"])
     .index("by_request", ["requestId"]),
 
+  // Tabla 'accompanimentTransitions': historial append-only de pausas,
+  // reactivaciones y cierres (TI2-152). Cada cambio guarda actor, instante del
+  // servidor y motivo opcional junto al estado resultante, en la misma
+  // transacción. El motivo vive solo acá: no se copia al acompañamiento, a las
+  // atenciones ni a la bitácora de auditoría, y ninguna lectura pública lo
+  // entrega. Solo la escribe `accompanimentStatusWriter`.
+  accompanimentTransitions: defineTable({
+    accompanimentId: v.id("accompaniments"),
+    from: accompanimentStatusUnion,
+    to: accompanimentStatusUnion,
+    actorId: v.id("users"),
+    reason: v.optional(v.string()),
+    occurredAt: v.number(),
+  }).index("by_accompanimentId_and_occurredAt", ["accompanimentId", "occurredAt"]),
+
   // Tabla 'accompanimentAssignments': asignaciones revocables por
   // acompañamiento. Separa habilitación de cuenta y asignación explícita.
   // Invariante: como máximo una fila activa por cada combinación de

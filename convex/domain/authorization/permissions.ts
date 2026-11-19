@@ -26,6 +26,7 @@ export type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles
 /** Casos de uso cubiertos por la matriz, en el orden de `PERMISSION_MATRIX`. */
 export const AUTHORIZATION_ACTIONS = [
   "accompaniment:read",
+  "accompaniment:changeStatus",
   "internalNote:read",
   "availability:edit",
   "availability:read",
@@ -249,14 +250,23 @@ export function canCoordinateAppointment(context: AgendaAuthorizationContext): b
 }
 
 /**
- * Cambio de una atención existente (cancelar o reagendar): el Estudiante dueño
- * de esa atención o el Profesional asignado que la tiene a su cargo, siempre
- * con el acompañamiento activo. Practicante y Administrador no cambian
+ * Estados en que las atenciones existentes se mantienen (TI2-152): en pausa
+ * siguen vigentes, así que todavía se cancelan y se registra su resultado.
+ * Reservar y reagendar exigen `active`.
+ */
+function keepsAppointments(status: AccompanimentStatus): boolean {
+  return status === "active" || status === "paused";
+}
+
+/**
+ * Quién puede cambiar una atención existente, sin mirar el estado del
+ * acompañamiento: el Estudiante dueño de esa atención o el Profesional
+ * asignado que la tiene a su cargo. Practicante y Administrador no cambian
  * atenciones. La fila se revalida en la misma operación para que una
  * asignación revocada o una atención de otro profesional dejen de autorizar.
  */
-function canChangeAppointment(context: AppointmentChangeAuthorizationContext): boolean {
-  if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
+function isAppointmentParty(context: AppointmentChangeAuthorizationContext): boolean {
+  if (!isProfileActive(context)) return false;
   switch (context.role) {
     case "student":
       return context.isOwner && context.isAppointmentStudent;
@@ -268,21 +278,42 @@ function canChangeAppointment(context: AppointmentChangeAuthorizationContext): b
   }
 }
 
-/** Verdadero solo cuando el actor puede cancelar esta atención. */
+/**
+ * Verdadero solo cuando el actor puede cancelar esta atención, con el
+ * acompañamiento activo o en pausa (TI2-152).
+ */
 export function canCancelAppointment(context: AppointmentChangeAuthorizationContext): boolean {
-  return canChangeAppointment(context);
+  return keepsAppointments(context.accompanimentStatus) && isAppointmentParty(context);
+}
+
+/**
+ * Pausar, reactivar o cerrar un acompañamiento (TI2-152): solo el Profesional
+ * con cuenta vigente y asignación activa sobre ese acompañamiento. No mira el
+ * estado actual: qué cambios admite cada estado lo decide
+ * `transitionAccompaniment`. Estudiante, Practicante y Administrador se
+ * deniegan igual.
+ */
+export function canChangeAccompanimentStatus(context: AuthorizationContext): boolean {
+  return (
+    isProfileActive(context) &&
+    context.role === "professional" &&
+    context.hasActiveProfessionalAssignment
+  );
 }
 
 /**
  * Acceso en línea de una atención (TI2-142): leer el enlace privado o, si es
- * profesional, agregarlo. Exige la misma vigencia que un cambio, pero aquí
- * `isAppointmentProfessional` cuenta a todos los profesionales de la atención,
- * no solo al responsable. Practicante y Administrador se deniegan igual.
+ * profesional, agregarlo o reemplazarlo. Se permite con el acompañamiento
+ * activo o en pausa (TI2-152), porque en pausa la atención se mantiene y sus
+ * participantes necesitan el enlace para entrar. Aquí
+ * `isAppointmentProfessional` cuenta a todos los profesionales de la
+ * atención, no solo al responsable. Practicante y Administrador se deniegan
+ * igual.
  */
 export function canUseAppointmentOnlineAccess(
   context: AppointmentChangeAuthorizationContext,
 ): boolean {
-  return canChangeAppointment(context);
+  return keepsAppointments(context.accompanimentStatus) && isAppointmentParty(context);
 }
 
 /**
@@ -325,22 +356,22 @@ export function appointmentCancellationTarget(
   return context.role === "student" ? "cancelled_by_student" : "cancelled_by_cereti";
 }
 
-/** Verdadero solo cuando el actor puede reagendar esta atención. */
+/** Verdadero solo cuando el actor puede reagendar esta atención, con acompañamiento activo. */
 export function canRescheduleAppointment(context: AppointmentChangeAuthorizationContext): boolean {
-  return canChangeAppointment(context);
+  return context.accompanimentStatus === "active" && isAppointmentParty(context);
 }
 
 /**
  * Registro de realización o inasistencia (TI2-110): solo el Profesional
  * asignado que tiene la atención a su cargo, con perfil vigente y
- * acompañamiento activo. El Estudiante dueño no registra el resultado de su
- * propia atención, y Practicante y Administrador tampoco, aunque la fila los
- * nombre: el resultado lo declara quien realizó el encuentro.
+ * acompañamiento activo o en pausa (TI2-152). El Estudiante dueño no
+ * registra el resultado de su propia atención, y Practicante y Administrador
+ * tampoco, aunque la fila los nombre: el resultado lo declara quien realizó el encuentro.
  */
 export function canRecordAppointmentAttendance(
   context: AppointmentChangeAuthorizationContext,
 ): boolean {
-  if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
+  if (!isProfileActive(context) || !keepsAppointments(context.accompanimentStatus)) return false;
   return (
     context.role === "professional" &&
     context.hasActiveProfessionalAssignment &&
@@ -465,6 +496,13 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     admin: "denegado sin acceso general",
   },
   {
+    action: "accompaniment:changeStatus",
+    student: "denegado",
+    professional: "permitido solo asignados activos",
+    intern: "denegado",
+    admin: "denegado",
+  },
+  {
     action: "internalNote:read",
     student: "denegado",
     professional: "permitido solo asignados activos",
@@ -502,8 +540,9 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   },
   {
     action: "appointment:cancel",
-    student: "permitido solo sus propias atenciones con acompañamiento activo",
-    professional: "permitido solo la atención propia asignada, con acompañamiento activo",
+    student: "permitido solo sus propias atenciones con acompañamiento activo o en pausa",
+    professional:
+      "permitido solo la atención propia asignada, con acompañamiento activo o en pausa",
     intern: "denegado",
     admin: "denegado",
   },
@@ -517,7 +556,8 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   {
     action: "appointment:recordAttendance",
     student: "denegado aunque sea dueño de la atención",
-    professional: "permitido solo la atención propia asignada, con acompañamiento activo",
+    professional:
+      "permitido solo la atención propia asignada, con acompañamiento activo o en pausa",
     intern: "denegado",
     admin: "denegado",
   },
@@ -530,9 +570,9 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
   },
   {
     action: "appointment:onlineAccess",
-    student: "lee el enlace solo de sus propias atenciones con acompañamiento activo",
+    student: "lee el enlace solo de sus propias atenciones con acompañamiento activo o en pausa",
     professional:
-      "lee y agrega el enlace solo si participa en la atención, con asignación y acompañamiento activos",
+      "lee y agrega el enlace solo si participa en la atención, con asignación activa y acompañamiento activo o en pausa",
     intern: "denegado aunque tenga asignación",
     admin: "denegado",
   },
@@ -540,7 +580,8 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     action: "followUp:read",
     student: "shared solo propios, sin nota interna",
     professional: "professional solo asignados activos, con nota interna",
-    intern: "minimized solo asignados activos, sin textos libres",
+    intern:
+      "minimized solo asignados activos, con acuerdos, tareas y próximos pasos, sin nota interna",
     admin: "denegado sin acceso general",
   },
   {
