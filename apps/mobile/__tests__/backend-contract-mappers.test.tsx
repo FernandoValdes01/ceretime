@@ -43,6 +43,7 @@ describe("adaptadores de contratos TI2 para Mobile", () => {
       status: "active",
       objective: "Participar en actividades académicas",
       accessNeeds: "Comunicación escrita",
+      referenceCode: "CER-7KQ2-M9XD",
       view: "full",
     };
 
