@@ -110,7 +110,6 @@ export async function paginateStaffAccounts(
     .paginate(paginationOpts);
 }
 
-/** Crea la cuenta administrativa inicial del entorno, ya habilitada. */
 /** Perfil propio mínimo que ven la interfaz y los casos de uso de sesión. */
 export function toAuthenticatedProfile(profile: Doc<"users">): AuthenticatedProfile {
   return {
@@ -155,6 +154,7 @@ export function ownProfileStore(ctx: MutationCtx): OwnProfileStore {
   };
 }
 
+/** Crea la cuenta administrativa inicial del entorno, ya habilitada. */
 export async function insertBootstrapAdmin(
   ctx: MutationCtx,
   input: {
