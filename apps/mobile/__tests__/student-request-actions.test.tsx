@@ -199,3 +199,46 @@ test("descarta un resultado de un adaptador anterior", async () => {
     expect(screen.queryByText("Solicitud cancelada en la demostración.")).toBeNull(),
   );
 });
+
+test("permite operar con el nuevo adaptador sin que el anterior libere su bloqueo", async () => {
+  let resolveA!: (value: StudentRequest) => void;
+  let resolveB!: (value: StudentRequest) => void;
+  const executeA = jest.fn(
+    () =>
+      new Promise<StudentRequest>((done) => {
+        resolveA = done;
+      }),
+  );
+  const executeB = jest.fn(
+    () =>
+      new Promise<StudentRequest>((done) => {
+        resolveB = done;
+      }),
+  );
+  const view = open({ execute: executeA });
+  fireEvent.press(screen.getByRole("button", { name: "Cancelar solicitud" }));
+  fireEvent.changeText(screen.getByLabelText("Motivo de cancelación"), "Motivo anterior.");
+  fireEvent.press(screen.getByRole("button", { name: "Confirmar cancelación de prueba" }));
+  view.rerender(
+    <StudentRequestActionsPanel
+      request={request}
+      actions={{ execute: executeB }}
+      onReload={jest.fn()}
+    />,
+  );
+  fireEvent.press(screen.getByRole("button", { name: "Responder información" }));
+  fireEvent.changeText(
+    screen.getByLabelText("Respuesta a la información solicitada"),
+    "Respuesta nueva.",
+  );
+  const submitB = screen.getByRole("button", { name: "Enviar respuesta de prueba" });
+  fireEvent.press(submitB);
+  expect(executeB).toHaveBeenCalledTimes(1);
+  await act(async () => resolveA({ ...request, status: "cancelled" }));
+  expect(screen.queryByText("Solicitud cancelada en la demostración.")).toBeNull();
+  expect(screen.getByRole("button", { name: "Procesando acción…" })).toBeDisabled();
+  fireEvent.press(submitB);
+  expect(executeB).toHaveBeenCalledTimes(1);
+  await act(async () => resolveB({ ...request, status: "underReview" }));
+  expect(screen.getByText(/Respuesta enviada en la demostración/)).toBeOnTheScreen();
+});

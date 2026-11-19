@@ -33,13 +33,14 @@ export function StudentRequestActionsPanel({
   const [reason, setReason] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [result, setResult] = useState<ActionResult>({ status: "idle" });
-  const inFlight = useRef(false);
+  const inFlight = useRef<object | null>(null);
   const activeActions = useRef(actions);
   const input = useRef<TextInput>(null);
   useEffect(() => {
     activeActions.current = actions;
     return () => {
       activeActions.current = undefined;
+      inFlight.current = null;
     };
   }, [actions]);
 
@@ -80,7 +81,8 @@ export function StudentRequestActionsPanel({
       input.current?.focus();
       return;
     }
-    inFlight.current = true;
+    const operation = {};
+    inFlight.current = operation;
     Keyboard.dismiss();
     setResult({ status: "pending" });
     try {
@@ -89,7 +91,7 @@ export function StudentRequestActionsPanel({
           ? { kind, requestId: request.id, reason: text }
           : { kind, requestId: request.id, response: text },
       );
-      if (activeActions.current !== actions) return;
+      if (activeActions.current !== actions || inFlight.current !== operation) return;
       setResult({
         status: "success",
         message:
@@ -101,7 +103,7 @@ export function StudentRequestActionsPanel({
       setResponse("");
       setReason("");
     } catch (error) {
-      if (activeActions.current !== actions) return;
+      if (activeActions.current !== actions || inFlight.current !== operation) return;
       const denied = isMobileAccessDenied(error);
       const conflict = error instanceof StudentRequestActionError && error.code === "conflict";
       setResult({
@@ -115,7 +117,7 @@ export function StudentRequestActionsPanel({
         retryable: !denied && !conflict,
       });
     } finally {
-      inFlight.current = false;
+      if (inFlight.current === operation) inFlight.current = null;
     }
   }
 
