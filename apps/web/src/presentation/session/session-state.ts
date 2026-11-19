@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
+import { ConvexError } from "convex/values";
 import { useEffect, useState } from "react";
 // Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
 // el monorepo defina el alias o paquete interno compartido.
@@ -53,11 +54,21 @@ export type StaffRole = Extract<
 const provisioningByEmail = new Map<string, Promise<void>>();
 const provisionedEmails = new Set<string>();
 
+/**
+ * Pide el perfil propio y devuelve `true` mientras la petición sigue abierta.
+ *
+ * Solo una respuesta del Backend cierra el correo para la pestaña: el perfil
+ * creado o existente, o la denegación genérica (por ejemplo, un correo ya
+ * registrado con otra identidad), que no cambia al repetirla. Un fallo de red
+ * libera la navegación de este montaje sin cerrar el correo, así la siguiente
+ * ruta montada vuelve a intentarlo en vez de dejar sin perfil a la cuenta
+ * hasta recargar.
+ */
 function useOwnProfileProvisioning(
   pair: FunctionReturnType<typeof api.presentation.session.getSessionWithRole> | undefined,
 ): boolean {
   const ensureMyProfile = useMutation(api.presentation.session.ensureMyProfile);
-  const [, setSettledEmail] = useState<string | null>(null);
+  const [settledEmail, setSettledEmail] = useState<string | null>(null);
   const email =
     pair?.session.status === "authenticated" && pair.role.status === "unauthenticated"
       ? pair.session.email
@@ -67,15 +78,16 @@ function useOwnProfileProvisioning(
     if (email === null || provisionedEmails.has(email)) return;
     let pending = provisioningByEmail.get(email);
     if (pending === undefined) {
-      // Un fallo no bloquea la navegación: el par queda sin rol y los guards
-      // muestran el estado que corresponda, igual que antes de TI2-182.
       pending = ensureMyProfile()
         .then(
-          () => undefined,
-          () => undefined,
+          () => {
+            provisionedEmails.add(email);
+          },
+          (error: unknown) => {
+            if (error instanceof ConvexError) provisionedEmails.add(email);
+          },
         )
         .finally(() => {
-          provisionedEmails.add(email);
           provisioningByEmail.delete(email);
         });
       provisioningByEmail.set(email, pending);
@@ -89,5 +101,5 @@ function useOwnProfileProvisioning(
     };
   }, [email, ensureMyProfile]);
 
-  return email !== null && !provisionedEmails.has(email);
+  return email !== null && !provisionedEmails.has(email) && settledEmail !== email;
 }

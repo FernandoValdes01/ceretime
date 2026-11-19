@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 type Pair = {
@@ -82,13 +83,31 @@ describe("creación del perfil propio al iniciar sesión (TI2-182)", () => {
     expect(ensureMyProfile).toHaveBeenCalledTimes(1);
   });
 
-  test("un fallo de la petición no deja la navegación cargando", async () => {
-    ensureMyProfile.mockRejectedValue(new Error("red caída"));
+  test("un fallo de red libera la navegación y el siguiente montaje reintenta", async () => {
+    ensureMyProfile.mockRejectedValueOnce(new Error("red caída")).mockResolvedValue({});
     mockedPair = sinRol("falla@alu.uct.cl", "estudiante");
     const useSessionAndRole = await loadHook();
 
-    const { result } = renderHook(() => useSessionAndRole());
-    await waitFor(() => expect(result.current).toEqual(mockedPair));
+    const first = renderHook(() => useSessionAndRole());
+    await waitFor(() => expect(first.result.current).toEqual(mockedPair));
+    expect(ensureMyProfile).toHaveBeenCalledTimes(1);
+
+    const second = renderHook(() => useSessionAndRole());
+    await waitFor(() => expect(ensureMyProfile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(second.result.current).toEqual(mockedPair));
+    renderHook(() => useSessionAndRole());
+    expect(ensureMyProfile).toHaveBeenCalledTimes(2);
+  });
+
+  test("la denegación del Backend no se repite en cada ruta", async () => {
+    ensureMyProfile.mockRejectedValue(new ConvexError("No autorizado"));
+    mockedPair = sinRol("duplicado@uct.cl", "personal");
+    const useSessionAndRole = await loadHook();
+
+    const first = renderHook(() => useSessionAndRole());
+    await waitFor(() => expect(first.result.current).toEqual(mockedPair));
+    expect(renderHook(() => useSessionAndRole()).result.current).toEqual(mockedPair);
+    expect(ensureMyProfile).toHaveBeenCalledTimes(1);
   });
 
   test("una sesión con rol o sin sesión no pide el perfil", async () => {
