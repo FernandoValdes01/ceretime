@@ -35,6 +35,7 @@ import type * as application_requests_results from "../application/requests/resu
 import type * as application_requests_status_change from "../application/requests/status_change.js";
 import type * as application_session_minimal_identity from "../application/session/minimal_identity.js";
 import type * as application_session_portal_role from "../application/session/portal_role.js";
+import type * as application_session_ports from "../application/session/ports.js";
 import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
 import type * as application_spaces_mutations from "../application/spaces/mutations.js";
@@ -134,6 +135,7 @@ declare const fullApi: ApiFromModules<{
   "application/requests/status_change": typeof application_requests_status_change;
   "application/session/minimal_identity": typeof application_session_minimal_identity;
   "application/session/portal_role": typeof application_session_portal_role;
+  "application/session/ports": typeof application_session_ports;
   "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
   "application/spaces/mutations": typeof application_spaces_mutations;

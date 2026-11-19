@@ -1,6 +1,8 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import type { OwnProfileStore } from "../../application/session/ports";
+import type { AuthenticatedProfile } from "../../domain/identity/roles";
 
 /**
  * Repositorio de cuentas (TI2-11).
@@ -109,35 +111,48 @@ export async function paginateStaffAccounts(
 }
 
 /** Crea la cuenta administrativa inicial del entorno, ya habilitada. */
+/** Perfil propio mínimo que ven la interfaz y los casos de uso de sesión. */
+export function toAuthenticatedProfile(profile: Doc<"users">): AuthenticatedProfile {
+  return {
+    fullName: profile.fullName,
+    email: profile.email,
+    role: profile.role,
+    institutionalStatus: profile.institutionalStatus,
+    accountStatus: profile.accountStatus,
+  };
+}
+
 /**
- * Crea el perfil propio de una cuenta institucional en su primer ingreso
- * (TI2-182). La habilitación automática del Estudiante deja `enabledAt` sin
- * `enabledBy`, igual que el arranque: no hubo un administrador que actuara.
+ * Adaptador del puerto `OwnProfileStore` (TI2-182). La habilitación
+ * automática del Estudiante deja `enabledAt` sin `enabledBy`, igual que el
+ * arranque: no hubo un administrador que actuara.
  */
-export async function insertOwnProfile(
-  ctx: MutationCtx,
-  input: {
-    readonly email: string;
-    readonly fullName: string;
-    readonly role: Doc<"users">["role"];
-    readonly institutionalStatus: Doc<"users">["institutionalStatus"];
-    readonly accountStatus: Doc<"users">["accountStatus"];
-    readonly tokenIdentifier: string;
-    readonly enabledAt?: number;
-  },
-): Promise<Doc<"users">> {
-  const userId = await ctx.db.insert("users", {
-    email: input.email,
-    fullName: input.fullName,
-    role: input.role,
-    institutionalStatus: input.institutionalStatus,
-    accountStatus: input.accountStatus,
-    tokenIdentifier: input.tokenIdentifier,
-    ...(input.enabledAt === undefined ? {} : { enabledAt: input.enabledAt }),
-  });
-  const profile = await ctx.db.get(userId);
-  if (profile === null) throw new Error("El perfil recién creado no existe");
-  return profile;
+export function ownProfileStore(ctx: MutationCtx): OwnProfileStore {
+  return {
+    findByTokenIdentifier: async (tokenIdentifier) => {
+      const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+      return profile === null ? null : toAuthenticatedProfile(profile);
+    },
+    isEmailRegistered: async (email) => (await findUserByEmail(ctx, email)) !== null,
+    create: async (profile) => {
+      await ctx.db.insert("users", {
+        email: profile.email,
+        fullName: profile.fullName,
+        role: profile.role,
+        institutionalStatus: profile.institutionalStatus,
+        accountStatus: profile.accountStatus,
+        tokenIdentifier: profile.tokenIdentifier,
+        ...(profile.enabledAt === undefined ? {} : { enabledAt: profile.enabledAt }),
+      });
+      return {
+        fullName: profile.fullName,
+        email: profile.email,
+        role: profile.role,
+        institutionalStatus: profile.institutionalStatus,
+        accountStatus: profile.accountStatus,
+      };
+    },
+  };
 }
 
 export async function insertBootstrapAdmin(

@@ -5,6 +5,7 @@ import { resolveSessionAndRole } from "../application/session/portal_role";
 import { ensureOwnProfileUseCase, getMyProfileUseCase } from "../application/session/profile";
 import type { ApiResult, PublicApiError } from "../domain/errors/api_error";
 import { mutation, query } from "../_generated/server";
+import { ownProfileStore } from "../infrastructure/accounts/repository";
 import {
   accountStatusUnion,
   institutionalStatusUnion,
@@ -138,7 +139,10 @@ export const ensureMyProfile = mutation({
   returns: ownProfileValidator,
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await ensureOwnProfileUseCase(ctx, identity, Date.now());
+    return await ensureOwnProfileUseCase(identity, {
+      profiles: ownProfileStore(ctx),
+      now: Date.now,
+    });
   },
 });
 

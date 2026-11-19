@@ -6,6 +6,10 @@ import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
 
+function newTest() {
+  return convexTest(schema, modules);
+}
+
 const ISSUER = "https://accounts.google.com";
 
 // Exacto y no por inclusión: un mensaje que agregue el motivo debe fallar.
@@ -23,7 +27,7 @@ function identityFor(subject: string, email: string, name = "Persona Ficticia") 
   };
 }
 
-async function usersWithEmail(t: ReturnType<typeof convexTest>, email: string) {
+async function usersWithEmail(t: ReturnType<typeof newTest>, email: string) {
   return await t.run(async (ctx) =>
     ctx.db
       .query("users")
@@ -37,7 +41,7 @@ async function usersWithEmail(t: ReturnType<typeof convexTest>, email: string) {
  * guardada deniega aunque la sesión de Google sea válida.
  */
 test("el Estudiante obtiene su perfil habilitado y ya puede leer lo propio", async () => {
-  const t = convexTest(schema, modules);
+  const t = newTest();
   const caller = t.withIdentity(identityFor("ti182-est", "Ti182.Est@alu.uct.cl"));
 
   await expect(
@@ -72,7 +76,7 @@ test("el Estudiante obtiene su perfil habilitado y ya puede leer lo propio", asy
 });
 
 test("el personal obtiene un perfil pendiente que no opera hasta su habilitación", async () => {
-  const t = convexTest(schema, modules);
+  const t = newTest();
   const caller = t.withIdentity(identityFor("ti182-pro", "ti182-pro@uct.cl"));
 
   const profile = await caller.mutation(api.presentation.session.ensureMyProfile, {});
@@ -91,7 +95,7 @@ test("el personal obtiene un perfil pendiente que no opera hasta su habilitació
 });
 
 test("repetir la llamada devuelve el perfil existente sin duplicarlo ni cambiarlo", async () => {
-  const t = convexTest(schema, modules);
+  const t = newTest();
   const caller = t.withIdentity(identityFor("ti182-rep", "ti182-rep@uct.cl"));
   await caller.mutation(api.presentation.session.ensureMyProfile, {});
 
@@ -110,7 +114,7 @@ test("repetir la llamada devuelve el perfil existente sin duplicarlo ni cambiarl
 });
 
 test("un perfil ya vinculado conserva su rol aunque el dominio sugiera otro", async () => {
-  const t = convexTest(schema, modules);
+  const t = newTest();
   await t.run(async (ctx) => {
     await ctx.db.insert("users", {
       email: "ti182-int@alu.uct.cl",
@@ -127,7 +131,7 @@ test("un perfil ya vinculado conserva su rol aunque el dominio sugiera otro", as
 });
 
 test("un correo registrado con otra identidad no se vincula ni se duplica", async () => {
-  const t = convexTest(schema, modules);
+  const t = newTest();
   await t.run(async (ctx) => {
     await ctx.db.insert("users", {
       email: "ti182-dup@uct.cl",
@@ -148,7 +152,7 @@ test("un correo registrado con otra identidad no se vincula ni se duplica", asyn
 });
 
 test("sin identidad o con correo externo responde la denegación genérica", async () => {
-  const t = convexTest(schema, modules);
+  const t = newTest();
   await expect(t.mutation(api.presentation.session.ensureMyProfile, {})).rejects.toThrow(DENIED);
 
   const external = t.withIdentity(identityFor("ti182-ext", "persona@gmail.com"));

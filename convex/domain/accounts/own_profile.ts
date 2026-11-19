@@ -18,7 +18,7 @@ export type InitialProfile = {
   readonly accountStatus: AccountStatus;
 };
 
-export const INITIAL_PROFILE_BY_POPULATION = {
+const INITIAL_PROFILE_BY_POPULATION = {
   estudiante: { role: "student", institutionalStatus: "enabled", accountStatus: "active" },
   personal: { role: "professional", institutionalStatus: "pending", accountStatus: "active" },
 } as const satisfies Record<InstitutionalPopulation, InitialProfile>;

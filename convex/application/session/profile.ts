@@ -1,16 +1,15 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import type { Doc } from "../../_generated/dataModel";
 import type { AuthenticatedProfile } from "../../domain/identity/roles";
-import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import type { QueryCtx } from "../../_generated/server";
 import { initialProfileFor, profileFullName } from "../../domain/accounts/own_profile";
 import {
   findProfileByTokenIdentifier,
-  findUserByEmail,
-  insertOwnProfile,
+  toAuthenticatedProfile,
 } from "../../infrastructure/accounts/repository";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import { toMinimalIdentity } from "./minimal_identity";
+import type { OwnProfileStore } from "./ports";
 
 /**
  * Casos de uso del perfil propio autenticado (TI2-10, TI2-182).
@@ -27,16 +26,6 @@ function deny(): never {
   throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
 }
 
-function toAuthenticatedProfile(profile: Doc<"users">): AuthenticatedProfile {
-  return {
-    fullName: profile.fullName,
-    email: profile.email,
-    role: profile.role,
-    institutionalStatus: profile.institutionalStatus,
-    accountStatus: profile.accountStatus,
-  };
-}
-
 /** Perfil propio mínimo para la interfaz condicionada por rol. */
 export async function getMyProfileUseCase(
   ctx: QueryCtx,
@@ -47,6 +36,13 @@ export async function getMyProfileUseCase(
   if (profile === null) deny();
   return toAuthenticatedProfile(profile);
 }
+
+/** Lo que el primer ingreso necesita de la identidad autenticada. */
+export type OwnProfileIdentity = {
+  readonly tokenIdentifier: string;
+  readonly email?: unknown;
+  readonly name?: unknown;
+};
 
 /**
  * Perfil propio en el primer ingreso (TI2-182).
@@ -63,26 +59,24 @@ export async function getMyProfileUseCase(
  * genérica hasta que el operador corrija el vínculo.
  */
 export async function ensureOwnProfileUseCase(
-  ctx: MutationCtx,
-  identity: UserIdentity | null,
-  now: number,
+  identity: OwnProfileIdentity | null,
+  deps: { readonly profiles: OwnProfileStore; readonly now: () => number },
 ): Promise<AuthenticatedProfile> {
   if (identity === null) deny();
   const minimal = toMinimalIdentity({ email: identity.email, name: identity.name });
   if (minimal === null) deny();
 
-  const linked = await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier);
-  if (linked !== null) return toAuthenticatedProfile(linked);
+  const linked = await deps.profiles.findByTokenIdentifier(identity.tokenIdentifier);
+  if (linked !== null) return linked;
 
-  if ((await findUserByEmail(ctx, minimal.email)) !== null) deny();
+  if (await deps.profiles.isEmailRegistered(minimal.email)) deny();
 
   const initial = initialProfileFor(minimal.population);
-  const created = await insertOwnProfile(ctx, {
+  return await deps.profiles.create({
+    ...initial,
     email: minimal.email,
     fullName: profileFullName(minimal.name, minimal.email),
-    ...initial,
     tokenIdentifier: identity.tokenIdentifier,
-    ...(initial.institutionalStatus === "enabled" ? { enabledAt: now } : {}),
+    ...(initial.institutionalStatus === "enabled" ? { enabledAt: deps.now() } : {}),
   });
-  return toAuthenticatedProfile(created);
 }
