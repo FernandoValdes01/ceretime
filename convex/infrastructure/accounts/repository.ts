@@ -109,6 +109,37 @@ export async function paginateStaffAccounts(
 }
 
 /** Crea la cuenta administrativa inicial del entorno, ya habilitada. */
+/**
+ * Crea el perfil propio de una cuenta institucional en su primer ingreso
+ * (TI2-182). La habilitación automática del Estudiante deja `enabledAt` sin
+ * `enabledBy`, igual que el arranque: no hubo un administrador que actuara.
+ */
+export async function insertOwnProfile(
+  ctx: MutationCtx,
+  input: {
+    readonly email: string;
+    readonly fullName: string;
+    readonly role: Doc<"users">["role"];
+    readonly institutionalStatus: Doc<"users">["institutionalStatus"];
+    readonly accountStatus: Doc<"users">["accountStatus"];
+    readonly tokenIdentifier: string;
+    readonly enabledAt?: number;
+  },
+): Promise<Doc<"users">> {
+  const userId = await ctx.db.insert("users", {
+    email: input.email,
+    fullName: input.fullName,
+    role: input.role,
+    institutionalStatus: input.institutionalStatus,
+    accountStatus: input.accountStatus,
+    tokenIdentifier: input.tokenIdentifier,
+    ...(input.enabledAt === undefined ? {} : { enabledAt: input.enabledAt }),
+  });
+  const profile = await ctx.db.get(userId);
+  if (profile === null) throw new Error("El perfil recién creado no existe");
+  return profile;
+}
+
 export async function insertBootstrapAdmin(
   ctx: MutationCtx,
   input: {

@@ -45,6 +45,7 @@ import type * as domain_accompaniments_accompaniment from "../domain/accompanime
 import type * as domain_accompaniments_intern_access from "../domain/accompaniments/intern_access.js";
 import type * as domain_accompaniments_practitioner_assignment from "../domain/accompaniments/practitioner_assignment.js";
 import type * as domain_accounts_enablement from "../domain/accounts/enablement.js";
+import type * as domain_accounts_own_profile from "../domain/accounts/own_profile.js";
 import type * as domain_appointments_appointment from "../domain/appointments/appointment.js";
 import type * as domain_appointments_audit from "../domain/appointments/audit.js";
 import type * as domain_appointments_online_access from "../domain/appointments/online_access.js";
@@ -52,10 +53,12 @@ import type * as domain_appointments_participants from "../domain/appointments/p
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
 import type * as domain_authorization_permissions from "../domain/authorization/permissions.js";
 import type * as domain_availability_availability from "../domain/availability/availability.js";
+import type * as domain_availability_official_channel from "../domain/availability/official_channel.js";
 import type * as domain_calendar_calendar_event from "../domain/calendar/calendar_event.js";
 import type * as domain_calendar_civil_days from "../domain/calendar/civil_days.js";
 import type * as domain_errors_api_error from "../domain/errors/api_error.js";
 import type * as domain_follow_up_follow_up from "../domain/follow_up/follow_up.js";
+import type * as domain_hashing_fnv1a from "../domain/hashing/fnv1a.js";
 import type * as domain_identity_roles from "../domain/identity/roles.js";
 import type * as domain_index from "../domain/index.js";
 import type * as domain_notifications_notification from "../domain/notifications/notification.js";
@@ -141,6 +144,7 @@ declare const fullApi: ApiFromModules<{
   "domain/accompaniments/intern_access": typeof domain_accompaniments_intern_access;
   "domain/accompaniments/practitioner_assignment": typeof domain_accompaniments_practitioner_assignment;
   "domain/accounts/enablement": typeof domain_accounts_enablement;
+  "domain/accounts/own_profile": typeof domain_accounts_own_profile;
   "domain/appointments/appointment": typeof domain_appointments_appointment;
   "domain/appointments/audit": typeof domain_appointments_audit;
   "domain/appointments/online_access": typeof domain_appointments_online_access;
@@ -148,10 +152,12 @@ declare const fullApi: ApiFromModules<{
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
   "domain/authorization/permissions": typeof domain_authorization_permissions;
   "domain/availability/availability": typeof domain_availability_availability;
+  "domain/availability/official_channel": typeof domain_availability_official_channel;
   "domain/calendar/calendar_event": typeof domain_calendar_calendar_event;
   "domain/calendar/civil_days": typeof domain_calendar_civil_days;
   "domain/errors/api_error": typeof domain_errors_api_error;
   "domain/follow_up/follow_up": typeof domain_follow_up_follow_up;
+  "domain/hashing/fnv1a": typeof domain_hashing_fnv1a;
   "domain/identity/roles": typeof domain_identity_roles;
   "domain/index": typeof domain_index;
   "domain/notifications/notification": typeof domain_notifications_notification;

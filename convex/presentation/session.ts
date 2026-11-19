@@ -2,9 +2,9 @@ import { ConvexError, v } from "convex/values";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../application/authorization/authorize";
 import { toMinimalIdentity } from "../application/session/minimal_identity";
 import { resolveSessionAndRole } from "../application/session/portal_role";
-import { getMyProfileUseCase } from "../application/session/profile";
+import { ensureOwnProfileUseCase, getMyProfileUseCase } from "../application/session/profile";
 import type { ApiResult, PublicApiError } from "../domain/errors/api_error";
-import { query } from "../_generated/server";
+import { mutation, query } from "../_generated/server";
 import {
   accountStatusUnion,
   institutionalStatusUnion,
@@ -101,6 +101,14 @@ export const getSessionState = query({
   },
 });
 
+const ownProfileValidator = v.object({
+  fullName: v.string(),
+  email: v.string(),
+  role: roleUnion,
+  institutionalStatus: institutionalStatusUnion,
+  accountStatus: accountStatusUnion,
+});
+
 /**
  * Perfil propio autenticado (TI2-10).
  *
@@ -110,16 +118,27 @@ export const getSessionState = query({
  */
 export const getMyProfile = query({
   args: {},
-  returns: v.object({
-    fullName: v.string(),
-    email: v.string(),
-    role: roleUnion,
-    institutionalStatus: institutionalStatusUnion,
-    accountStatus: accountStatusUnion,
-  }),
+  returns: ownProfileValidator,
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     return await getMyProfileUseCase(ctx, identity);
+  },
+});
+
+/**
+ * Perfil propio en el primer ingreso (TI2-182).
+ *
+ * Adaptador delgado: Web y Mobile la llaman tras iniciar sesión cuando
+ * `getSessionWithRole` no trae rol. Crea el perfil de la identidad del
+ * servidor (nunca de un id del cliente) o devuelve el existente sin
+ * cambiarlo; sin identidad institucional responde la denegación genérica.
+ */
+export const ensureMyProfile = mutation({
+  args: {},
+  returns: ownProfileValidator,
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return await ensureOwnProfileUseCase(ctx, identity, Date.now());
   },
 });
 
