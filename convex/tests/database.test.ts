@@ -4045,75 +4045,50 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   });
 });
 
-test("TI2-152: el historial de estados guarda cada cambio y su índice responde en orden", async () => {
+test("TI2-152: el cierre queda en el propio acompañamiento y pausar solo cambia el estado", async () => {
   const t = convexTest(schema, modules);
   const { professional, accompanimentId } = await seedTi118Appointment(t, "estado-a");
   const other = await seedTi118Appointment(t, "estado-b");
 
-  // Se escriben fuera de orden para que el índice, y no la inserción, ordene;
-  // el cierre va al final porque cada escritura deja su estado en la fila.
+  await t.run(async (ctx) => {
+    await accompanimentStatusWriter(ctx).persistStatusChange(accompanimentId, { to: "paused" });
+  });
+  const paused = await t.run(async (ctx) => await ctx.db.get(accompanimentId));
+  expect(paused?.status).toBe("paused");
+  for (const field of ["closedById", "closedAt", "closureReason"]) {
+    expect(paused).not.toHaveProperty(field);
+  }
+
   await t.run(async (ctx) => {
     const writer = accompanimentStatusWriter(ctx);
     await writer.persistStatusChange(accompanimentId, {
-      from: "paused",
-      to: "active",
-      actorId: professional,
-      occurredAt: TI83_MONDAY_9H,
-    });
-    await writer.persistStatusChange(accompanimentId, {
-      from: "active",
-      to: "paused",
-      actorId: professional,
-      occurredAt: TI83_MONDAY,
-      reason: "Receso ficticio",
+      to: "closed",
+      closure: {
+        closedById: professional,
+        closedAt: TI83_MONDAY_10H,
+        closureReason: "Objetivo ficticio cumplido",
+      },
     });
     await writer.persistStatusChange(other.accompanimentId, {
-      from: "active",
       to: "closed",
-      actorId: other.professional,
-      occurredAt: TI83_MONDAY_9H,
-    });
-    await writer.persistStatusChange(accompanimentId, {
-      from: "active",
-      to: "closed",
-      actorId: professional,
-      occurredAt: TI83_MONDAY_10H,
+      closure: { closedById: other.professional, closedAt: TI83_MONDAY_9H },
     });
   });
-
-  const history = await t.run(
-    async (ctx) =>
-      await ctx.db
-        .query("accompanimentTransitions")
-        .withIndex("by_accompanimentId_and_occurredAt", (q) =>
-          q.eq("accompanimentId", accompanimentId),
-        )
-        .take(10),
-  );
-  expect(history.map(({ from, to, occurredAt }) => ({ from, to, occurredAt }))).toEqual([
-    { from: "active", to: "paused", occurredAt: TI83_MONDAY },
-    { from: "paused", to: "active", occurredAt: TI83_MONDAY_9H },
-    { from: "active", to: "closed", occurredAt: TI83_MONDAY_10H },
+  const closed = await t.run(async (ctx) => [
+    await ctx.db.get(accompanimentId),
+    await ctx.db.get(other.accompanimentId),
   ]);
-  expect(history[0]?.reason).toBe("Receso ficticio");
-  expect(history.slice(1).every((row) => !("reason" in row))).toBe(true);
-
-  // El cierre es la última fila con `to: "closed"`; el acompañamiento no
-  // guarda otra copia de quién cerró, cuándo ni por qué.
-  const closure = await t.run(
-    async (ctx) =>
-      await ctx.db
-        .query("accompanimentTransitions")
-        .withIndex("by_accompanimentId_and_occurredAt", (q) =>
-          q.eq("accompanimentId", accompanimentId),
-        )
-        .order("desc")
-        .first(),
-  );
-  expect(closure).toMatchObject({ to: "closed", actorId: professional });
-  const accompaniment = await t.run(async (ctx) => await ctx.db.get(accompanimentId));
-  expect(accompaniment?.status).toBe("closed");
-  expect(Object.keys(accompaniment ?? {}).sort()).toEqual(
-    ["_creationTime", "_id", "accessNeeds", "objective", "status", "studentId"].sort(),
-  );
+  expect(closed[0]).toMatchObject({
+    status: "closed",
+    closedById: professional,
+    closedAt: TI83_MONDAY_10H,
+    closureReason: "Objetivo ficticio cumplido",
+  });
+  // Sin motivo, el campo no se escribe.
+  expect(closed[1]).toMatchObject({
+    status: "closed",
+    closedById: other.professional,
+    closedAt: TI83_MONDAY_9H,
+  });
+  expect(closed[1]).not.toHaveProperty("closureReason");
 });

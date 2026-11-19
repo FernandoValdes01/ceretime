@@ -134,8 +134,12 @@ export const ACCOMPANIMENT_TRANSITIONS = [
   { from: "paused", to: "closed" },
 ] as const satisfies readonly AccompanimentStateTransition[];
 
-/** Tope del motivo opcional de un cambio de estado. */
-export const ACCOMPANIMENT_REASON_MAX_LENGTH = 500;
+/**
+ * Tope del motivo opcional del cierre. Es el único cambio de estado con
+ * motivo: el MER guarda `motivoCierre?` y no tiene dónde guardar uno de pausa
+ * o de reactivación.
+ */
+export const ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH = 500;
 
 /**
  * Motivo con que el cierre cancela las atenciones futuras. La cancelación de
@@ -149,21 +153,35 @@ export type AccompanimentTransitionAttempt = {
   readonly to: AccompanimentStatus;
   readonly actorId: string;
   readonly occurredAt: number;
-  readonly reason?: string;
+  /** Solo el cierre lo admite. */
+  readonly closureReason?: string;
 };
 
 /**
- * Entrada del historial de estados: el intento ya aceptado, con el origen de
- * una transición válida y el motivo solo si se entregó.
+ * Datos del cierre que el MER guarda en ACOMPAÑAMIENTOS: `cerradoPorId?`,
+ * `cerradoEn?` y `motivoCierre?`, este último solo si se entregó.
  */
-export type AccompanimentStateChange = AccompanimentTransitionAttempt &
-  AccompanimentStateTransition;
+export type AccompanimentClosure = {
+  readonly closedById: string;
+  readonly closedAt: number;
+  readonly closureReason?: string;
+};
+
+/**
+ * Cambio aceptado, listo para guardar en el propio acompañamiento. Pausar y
+ * reactivar solo cambian el estado, porque el MER no registra quién ni cuándo
+ * lo hizo.
+ */
+export type AccompanimentStateChange =
+  | { readonly to: "active" | "paused" }
+  | { readonly to: "closed"; readonly closure: AccompanimentClosure };
 
 export const ACCOMPANIMENT_TRANSITION_REJECTION_CAUSES = [
   "transition_not_allowed",
   "actor_required",
   "occurred_at_invalid",
-  "reason_too_long",
+  "closure_reason_not_allowed",
+  "closure_reason_too_long",
 ] as const;
 
 export type AccompanimentTransitionRejectionCause =
@@ -176,9 +194,9 @@ export type AccompanimentTransitionResult =
 /**
  * Decide si un cambio de estado procede, sin persistir nada.
  *
- * El motivo es opcional en todos los cambios: en blanco equivale a no
- * entregarlo. Los rechazos se devuelven como valor y ninguno construye
- * `change`, así un intento inválido no deja entrada en el historial.
+ * El motivo del cierre es opcional: en blanco equivale a no entregarlo. Un
+ * motivo en una pausa o una reactivación se rechaza en vez de descartarse.
+ * Los rechazos se devuelven como valor y ninguno construye `change`.
  */
 export function transitionAccompaniment(
   attempt: AccompanimentTransitionAttempt,
@@ -195,19 +213,27 @@ export function transitionAccompaniment(
     return { status: "rejected", cause: "occurred_at_invalid" };
   }
 
-  const reason = attempt.reason?.trim();
-  if (reason !== undefined && reason.length > ACCOMPANIMENT_REASON_MAX_LENGTH) {
-    return { status: "rejected", cause: "reason_too_long" };
+  const closureReason = attempt.closureReason?.trim();
+  if (transition.to !== "closed") {
+    if (closureReason) return { status: "rejected", cause: "closure_reason_not_allowed" };
+    return { status: "applied", change: { to: transition.to } };
+  }
+  if (
+    closureReason !== undefined &&
+    closureReason.length > ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH
+  ) {
+    return { status: "rejected", cause: "closure_reason_too_long" };
   }
 
   return {
     status: "applied",
     change: {
-      from: transition.from,
-      to: transition.to,
-      actorId,
-      occurredAt: attempt.occurredAt,
-      ...(reason ? { reason } : {}),
+      to: "closed",
+      closure: {
+        closedById: actorId,
+        closedAt: attempt.occurredAt,
+        ...(closureReason ? { closureReason } : {}),
+      },
     },
   };
 }

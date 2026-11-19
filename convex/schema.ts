@@ -67,30 +67,22 @@ export default defineSchema({
   // Tabla 'accompaniments': acompañamiento mínimo para probar la matriz.
   // `accessNeeds` es sensible (Ley 21.719) y se minimiza para Practicante.
   // `requestId` traza la solicitud aceptada que lo originó, si se conoce.
+  // `closedById`, `closedAt` y `closureReason` son `cerradoPorId?`,
+  // `cerradoEn?` y `motivoCierre?` del MER: los escribe una sola vez
+  // `accompanimentStatusWriter` al cerrar (TI2-152), y ninguna lectura pública
+  // los entrega. Pausar y reactivar solo cambian `status`.
   accompaniments: defineTable({
     studentId: v.id("users"),
     status: accompanimentStatusUnion,
     objective: v.string(),
     accessNeeds: v.string(),
     requestId: v.optional(v.id("requests")),
+    closedById: v.optional(v.id("users")),
+    closedAt: v.optional(v.number()),
+    closureReason: v.optional(v.string()),
   })
     .index("by_student", ["studentId"])
     .index("by_request", ["requestId"]),
-
-  // Tabla 'accompanimentTransitions': historial append-only de pausas,
-  // reactivaciones y cierres (TI2-152). Cada cambio guarda actor, instante del
-  // servidor y motivo opcional junto al estado resultante, en la misma
-  // transacción. El motivo vive solo acá: no se copia al acompañamiento, a las
-  // atenciones ni a la bitácora de auditoría, y ninguna lectura pública lo
-  // entrega. Solo la escribe `accompanimentStatusWriter`.
-  accompanimentTransitions: defineTable({
-    accompanimentId: v.id("accompaniments"),
-    from: accompanimentStatusUnion,
-    to: accompanimentStatusUnion,
-    actorId: v.id("users"),
-    reason: v.optional(v.string()),
-    occurredAt: v.number(),
-  }).index("by_accompanimentId_and_occurredAt", ["accompanimentId", "occurredAt"]),
 
   // Tabla 'accompanimentAssignments': asignaciones revocables por
   // acompañamiento. Separa habilitación de cuenta y asignación explícita.

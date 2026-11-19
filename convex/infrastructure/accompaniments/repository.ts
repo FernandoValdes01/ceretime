@@ -485,36 +485,44 @@ export function accompanimentOpener(ctx: MutationCtx) {
 /**
  * Escritura del cambio de estado del acompañamiento (TI2-152). Cumple por
  * forma el puerto `AccompanimentStatusWriter` de Aplicación sin importarla.
- * Guarda el estado nuevo y su entrada en `accompanimentTransitions` en la
- * misma transacción. Los identificadores ya fueron leídos y autorizados en el
- * servidor: uno que no pertenezca a su tabla es un fallo interno, no un
+ * Guarda el estado nuevo y, en un cierre, `closedById`, `closedAt` y
+ * `closureReason` en la misma fila, como `cerradoPorId?`, `cerradoEn?` y
+ * `motivoCierre?` del MER. Los identificadores ya fueron leídos y autorizados
+ * en el servidor: uno que no pertenezca a su tabla es un fallo interno, no un
  * rechazo al cliente.
  */
 export function accompanimentStatusWriter(ctx: MutationCtx) {
   return {
     persistStatusChange: async (
       accompanimentId: string,
-      change: {
-        readonly from: Doc<"accompaniments">["status"];
-        readonly to: Doc<"accompaniments">["status"];
-        readonly actorId: string;
-        readonly occurredAt: number;
-        readonly reason?: string;
-      },
+      change:
+        | { readonly to: "active" | "paused" }
+        | {
+            readonly to: "closed";
+            readonly closure: {
+              readonly closedById: string;
+              readonly closedAt: number;
+              readonly closureReason?: string;
+            };
+          },
     ) => {
       const id = ctx.db.normalizeId("accompaniments", accompanimentId);
-      const actorId = ctx.db.normalizeId("users", change.actorId);
-      if (id === null || actorId === null) {
-        throw new Error("El cambio de estado referencia un acompañamiento o actor inexistente.");
+      if (id === null) {
+        throw new Error("El cambio de estado referencia un acompañamiento inexistente.");
       }
-      await ctx.db.patch(id, { status: change.to });
-      await ctx.db.insert("accompanimentTransitions", {
-        accompanimentId: id,
-        from: change.from,
-        to: change.to,
-        actorId,
-        occurredAt: change.occurredAt,
-        ...(change.reason === undefined ? {} : { reason: change.reason }),
+      if (change.to !== "closed") {
+        await ctx.db.patch(id, { status: change.to });
+        return;
+      }
+      const closedById = ctx.db.normalizeId("users", change.closure.closedById);
+      if (closedById === null) throw new Error("El cierre referencia un actor inexistente.");
+      await ctx.db.patch(id, {
+        status: "closed",
+        closedById,
+        closedAt: change.closure.closedAt,
+        ...(change.closure.closureReason === undefined
+          ? {}
+          : { closureReason: change.closure.closureReason }),
       });
     },
   };

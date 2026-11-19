@@ -6,7 +6,7 @@ import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   ACCOMPANIMENT_CLOSURE_CANCEL_REASON,
-  ACCOMPANIMENT_REASON_MAX_LENGTH,
+  ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
 } from "../domain/accompaniments/accompaniment";
 import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
 import schema from "../schema";
@@ -128,14 +128,15 @@ async function seedAppointment(
   });
 }
 
+/** Estado y datos del cierre tal como quedan en la fila del acompañamiento. */
 async function readState(t: TestConvex, accompanimentId: Id<"accompaniments">) {
-  return await t.run(async (ctx) => {
-    const accompaniment = await ctx.db.get(accompanimentId);
-    // Base aislada por prueba: el historial completo cabe en una lectura.
-    const rows = await ctx.db.query("accompanimentTransitions").take(20);
-    const transitions = rows.filter((row) => row.accompanimentId === accompanimentId);
-    return { status: accompaniment?.status, transitions };
-  });
+  const row = await t.run(async (ctx) => await ctx.db.get(accompanimentId));
+  return {
+    status: row?.status,
+    closedById: row?.closedById,
+    closedAt: row?.closedAt,
+    closureReason: row?.closureReason,
+  };
 }
 
 async function expectPublicError(promise: Promise<unknown>, code: "unauthorized" | "conflict") {
@@ -153,35 +154,22 @@ async function expectPublicError(promise: Promise<unknown>, code: "unauthorized"
   );
 }
 
-test("TI2-152 API: pausar y reactivar dejan actor, instante y motivo opcional en el historial", async () => {
+test("TI2-152 API: pausar y reactivar solo cambian el estado y no reciben motivo", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "pausa");
   const pro = t.withIdentity(seed.proIdentity);
+  const { pauseAccompaniment, reactivateAccompaniment } = api.presentation.accompaniments;
+  const args = { accompanimentId: seed.accompanimentId };
 
-  expect(
-    await pro.mutation(api.presentation.accompaniments.pauseAccompaniment, {
-      accompanimentId: seed.accompanimentId,
-      reason: "  Receso de invierno  ",
-    }),
-  ).toEqual({ accompanimentId: seed.accompanimentId, status: "paused" });
-  expect(
-    await pro.mutation(api.presentation.accompaniments.reactivateAccompaniment, {
-      accompanimentId: seed.accompanimentId,
-    }),
-  ).toEqual({ accompanimentId: seed.accompanimentId, status: "active" });
+  expect(await pro.mutation(pauseAccompaniment, args)).toEqual({ ...args, status: "paused" });
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "paused" });
+  expect(await pro.mutation(reactivateAccompaniment, args)).toEqual({ ...args, status: "active" });
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active" });
 
-  const state = await readState(t, seed.accompanimentId);
-  expect(state.status).toBe("active");
-  expect(state.transitions).toHaveLength(2);
-  expect(state.transitions[0]).toMatchObject({
-    from: "active",
-    to: "paused",
-    actorId: seed.pro,
-    reason: "Receso de invierno",
-  });
-  expect(state.transitions[1]).toMatchObject({ from: "paused", to: "active", actorId: seed.pro });
-  expect(state.transitions[1]).not.toHaveProperty("reason");
-  expect(state.transitions[0]?.occurredAt).toBeGreaterThan(0);
+  // El motivo no es un argumento de estas operaciones: Convex lo rechaza.
+  const withReason = { ...args, reason: "Receso ficticio" };
+  await expect(pro.mutation(pauseAccompaniment, withReason)).rejects.toThrow(/reason/);
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active" });
 });
 
 test("TI2-152 API: las transiciones inválidas y el motivo sobre el tope responden conflict sin escribir", async () => {
@@ -197,9 +185,9 @@ test("TI2-152 API: las transiciones inválidas y el motivo sobre el tope respond
     "conflict",
   );
   await expectPublicError(
-    onActive.mutation(pauseAccompaniment, {
+    onActive.mutation(closeAccompaniment, {
       accompanimentId: active.accompanimentId,
-      reason: "a".repeat(ACCOMPANIMENT_REASON_MAX_LENGTH + 1),
+      reason: "a".repeat(ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH + 1),
     }),
     "conflict",
   );
@@ -208,7 +196,7 @@ test("TI2-152 API: las transiciones inválidas y el motivo sobre el tope respond
     onActive.mutation(pauseAccompaniment, { accompanimentId: active.accompanimentId }),
     "conflict",
   );
-  expect((await readState(t, active.accompanimentId)).transitions).toHaveLength(1);
+  expect(await readState(t, active.accompanimentId)).toEqual({ status: "paused" });
 
   // Un acompañamiento cerrado no se reabre, no se pausa ni se vuelve a cerrar.
   const onClosed = t.withIdentity(closed.proIdentity);
@@ -224,7 +212,7 @@ test("TI2-152 API: las transiciones inválidas y el motivo sobre el tope respond
     }),
     "conflict",
   );
-  expect(await readState(t, closed.accompanimentId)).toEqual({ status: "closed", transitions: [] });
+  expect(await readState(t, closed.accompanimentId)).toEqual({ status: "closed" });
 });
 
 test("TI2-152 API: solo el Profesional vigente y asignado cambia el estado", async () => {
@@ -268,7 +256,7 @@ test("TI2-152 API: solo el Profesional vigente y asignado cambia el estado", asy
     t.withIdentity(seed.proIdentity).mutation(pauseAccompaniment, { accompanimentId: removed }),
     "unauthorized",
   );
-  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active", transitions: [] });
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active" });
 });
 
 test("TI2-152 API: en pausa las atenciones se mantienen, pero no se cancelan ni se registra su resultado", async () => {
@@ -390,7 +378,7 @@ test("TI2-152 API: fuera de un acompañamiento activo no se reserva ni se cambia
   }
 });
 
-test("TI2-152 API: cerrar cancela las atenciones futuras de todos los profesionales y conserva el historial", async () => {
+test("TI2-152 API: cerrar cancela las atenciones futuras de todos los profesionales y guarda el cierre en el acompañamiento", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "cierre");
   const base = {
@@ -458,21 +446,22 @@ test("TI2-152 API: cerrar cancela las atenciones futuras de todos los profesiona
   }
 
   const state = await readState(t, seed.accompanimentId);
-  expect(state.status).toBe("closed");
-  expect(state.transitions).toHaveLength(1);
-  expect(state.transitions[0]).toMatchObject({
-    from: "active",
-    to: "closed",
-    actorId: seed.pro,
-    reason: "Motivo ficticio del cierre",
+  expect(state).toMatchObject({
+    status: "closed",
+    closedById: seed.pro,
+    closureReason: "Motivo ficticio del cierre",
   });
+  expect(state.closedAt).toBeGreaterThan(0);
 
-  // El historial se sigue leyendo, con el estado cerrado, para ambos lados.
-  expect(
-    await pro.query(api.presentation.accompaniments.getAccompaniment, {
-      accompanimentId: seed.accompanimentId,
-    }),
-  ).toMatchObject({ status: "closed", view: "full" });
+  // El historial se sigue leyendo, con el estado cerrado, para ambos lados, y
+  // ninguna lectura entrega los datos del cierre.
+  const read = await pro.query(api.presentation.accompaniments.getAccompaniment, {
+    accompanimentId: seed.accompanimentId,
+  });
+  expect(read).toMatchObject({ status: "closed", view: "full" });
+  for (const field of ["closedById", "closedAt", "closureReason"]) {
+    expect(read).not.toHaveProperty(field);
+  }
   const owned = await t
     .withIdentity(seed.studentIdentity)
     .query(api.presentation.accompaniments.listOwnedAccompaniments, {
@@ -503,7 +492,7 @@ test("TI2-152 API: una atención vigente cuya hora ya pasó impide el cierre, y 
     "conflict",
   );
   expect((await t.run((ctx) => ctx.db.get(future)))?.status).toBe("scheduled");
-  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "paused", transitions: [] });
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "paused" });
 
   // En pausa no se registra el resultado: se reactiva, se registra y se cierra.
   const record = {
@@ -522,9 +511,9 @@ test("TI2-152 API: una atención vigente cuya hora ya pasó impide el cierre, y 
   expect(
     await pro.mutation(api.presentation.accompaniments.closeAccompaniment, args),
   ).toMatchObject({ status: "closed", cancelledAppointments: 1 });
-  expect((await readState(t, seed.accompanimentId)).transitions.at(-1)).toMatchObject({
-    from: "active",
-    to: "closed",
+  expect(await readState(t, seed.accompanimentId)).toMatchObject({
+    status: "closed",
+    closedById: seed.pro,
   });
 });
 
