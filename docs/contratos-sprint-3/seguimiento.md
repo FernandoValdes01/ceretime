@@ -162,12 +162,12 @@ Superficie pública para que el Profesional pause, reactive y cierre un acompañ
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
-| `presentation.accompaniments.pauseAccompaniment` (mutation) | `accompanimentId`, `reason?` | `{accompanimentId, status: "paused"}` | Profesional con asignación activa y cuenta vigente | `unauthorized` sin permiso o con un acompañamiento ajeno o inexistente; `conflict` si no está `active` o el motivo supera 500 caracteres |
-| `presentation.accompaniments.reactivateAccompaniment` (mutation) | `accompanimentId`, `reason?` | `{accompanimentId, status: "active"}` | El mismo | `unauthorized` igual; `conflict` si no está `paused` o el motivo supera 500 caracteres |
+| `presentation.accompaniments.pauseAccompaniment` (mutation) | `accompanimentId` | `{accompanimentId, status: "paused"}` | Profesional con asignación activa y cuenta vigente | `unauthorized` sin permiso o con un acompañamiento ajeno o inexistente; `conflict` si no está `active` |
+| `presentation.accompaniments.reactivateAccompaniment` (mutation) | `accompanimentId` | `{accompanimentId, status: "active"}` | El mismo | `unauthorized` igual; `conflict` si no está `paused` |
 | `presentation.accompaniments.getAccompanimentClosurePreview` (query) | `accompanimentId` | `{appointmentsToCancel, unrecordedAppointments}` | El mismo | `unauthorized` igual; `conflict` si ya está `closed` |
 | `presentation.accompaniments.closeAccompaniment` (mutation) | `accompanimentId`, `reason?` | `{accompanimentId, status: "closed", cancelledAppointments}` | El mismo | `unauthorized` igual; `conflict` si ya está `closed`, si `unrecordedAppointments` no es cero o si el motivo supera 500 caracteres |
 
-Estudiante, Practicante y Administrador reciben `unauthorized` en las cuatro. El motivo es opcional en todos los cambios: se recorta, y uno en blanco equivale a no enviarlo. Los `conflict` de estas operaciones traen el mensaje genérico.
+Estudiante, Practicante y Administrador reciben `unauthorized` en las cuatro. Solo el cierre recibe motivo, y es opcional: se recorta, y uno en blanco equivale a no enviarlo. Pausar y reactivar no lo reciben, porque el MER no lo guarda. Los `conflict` de estas operaciones traen el mensaje genérico.
 
 ### Estados que llegan a las lecturas
 
@@ -193,9 +193,9 @@ Los cambios válidos son `active → paused`, `paused → active`, `active → c
 - Límite actual: la cancelación todavía no registra un aviso para el Estudiante ni modifica el evento de Google Calendar, ni en la individual ni en el cierre. Cuando TI2-150 emita el aviso de cancelación en ese camino, el cierre lo hereda sin cambios en esta superficie.
 - El cierre revisa hasta 500 atenciones del acompañamiento. Si hay más, responde `conflict` en vez de cerrar con atenciones sin revisar.
 
-### Historial de cambios de estado
+### Datos del cierre
 
-Cada pausa, reactivación y cierre guarda una fila en `accompanimentTransitions` con el estado anterior, el nuevo, el actor de la sesión, el instante del servidor y el motivo si se entregó. La tabla solo se escribe, en la misma transacción del cambio. El motivo queda únicamente ahí: ninguna lectura pública lo entrega y no se copia a la bitácora de auditoría.
+El cierre guarda en el propio acompañamiento quién cerró (`closedById`), cuándo (`closedAt`, con el reloj del servidor) y el motivo si se entregó (`closureReason`), como `cerradoPorId?`, `cerradoEn?` y `motivoCierre?` de ACOMPAÑAMIENTOS en el MER. Pausar y reactivar solo cambian `status`: no queda registro de quién ni cuándo, porque el MER no lo modela. Ninguna lectura pública entrega estos tres campos y el motivo no se copia a la bitácora de auditoría.
 
 ### Cambio de profesionales
 
