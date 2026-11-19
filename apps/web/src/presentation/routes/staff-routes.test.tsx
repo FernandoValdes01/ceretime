@@ -275,12 +275,16 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
     expect(screen.queryByRole("heading", { name: portal.titulo })).toBeNull();
   });
 
-  test("la sesión sin perfil ve denegado aunque esté autenticada", async () => {
-    sessionMocks.setPair({ session: sesionPersonal("fantasma@uct.cl"), role: ROL_DESCONOCIDO });
+  test("la cuenta de personal sin habilitar ve en denegado que CERETI debe habilitarla", async () => {
+    sessionMocks.setPair({ session: sesionPersonal("pendiente@uct.cl"), role: ROL_DESCONOCIDO });
     const { router } = renderAt(portal.ruta);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
     expect(screen.queryByRole("heading", { name: portal.titulo })).toBeNull();
+    // TI2-182: el personal pendiente llega acá; ve por qué, no un error de carga.
+    expect(
+      await screen.findByText(/CERETI debe habilitar tu cuenta antes de que puedas usar el área/),
+    ).toBeDefined();
   });
 
   test("el rol permitido ve su portal sin redirigir", async () => {
