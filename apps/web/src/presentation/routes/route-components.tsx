@@ -2,6 +2,7 @@ import { getRouteApi, Navigate, Outlet } from "@tanstack/react-router";
 import { toRequestListSearch } from "../gestion/paged-requests.ts";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
 import { AdminSpaceEditorPage } from "../gestion/admin-space-editor.tsx";
+import { OfficialRequestFormPage } from "../gestion/official-request-form.tsx";
 import {
   ProfessionalAgendaDetailPage,
   ProfessionalAgendaPage,
@@ -174,6 +175,10 @@ export function ProfessionalRequestDetailRouteComponent() {
   // El filtro de la bandeja viaja con el detalle para volver con el mismo contexto.
   const search = toRequestListSearch(professionalRequestDetailApi.useSearch());
   return <ProfessionalRequestDetailPage requestId={requestId} listSearch={search} />;
+}
+
+export function ProfessionalOfficialRequestRouteComponent() {
+  return <OfficialRequestFormPage />;
 }
 
 export function ProfessionalAvailabilityRouteComponent() {

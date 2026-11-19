@@ -29,7 +29,7 @@ Cada área define su árbol en un archivo propio. `router.tsx` solo compone la r
 | `root-route.ts` | Raíz | Envoltorio común, 404 y destino desconocido |
 | `public-routes.ts` | Pública | `/`, `/login` y `/denegado` |
 | `student-routes.ts` | Estudiante | `/estudiante`, `/estudiante/solicitudes`, `/estudiante/solicitudes/$requestId`, `/estudiante/horarios`, `/estudiante/reservar`, `/estudiante/atenciones`, `/estudiante/atenciones/$appointmentId` y `/estudiante/acompanamientos/$accompanimentId` |
-| `professional-routes.ts` | Profesional | `/profesional`, `/profesional/solicitudes`, `/profesional/solicitudes/$requestId`, `/profesional/disponibilidad`, `/profesional/agenda` y `/profesional/agenda/$appointmentId` |
+| `professional-routes.ts` | Profesional | `/profesional`, `/profesional/solicitudes`, `/profesional/solicitudes/$requestId`, `/profesional/solicitudes/registrar`, `/profesional/disponibilidad`, `/profesional/agenda` y `/profesional/agenda/$appointmentId` |
 | `practitioner-routes.ts` | Practicante | `/practicante`, `/practicante/acompanamientos` y `/practicante/acompanamientos/$accompanimentId` |
 | `admin-routes.ts` | Administrador | `/administrador` y `/administrador/espacios` |
 

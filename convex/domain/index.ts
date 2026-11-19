@@ -53,6 +53,12 @@ export {
 } from "./requests/state";
 export type { ReferralRequestState, RequestState, Sprint1RequestState } from "./requests/state";
 export { isOpenRequestState, isRequestTransitionDeclared } from "./requests/transitions";
+// Derivaciones de entrada y de salida (TI2-143): límites y condición de apertura.
+export {
+  REFERRAL_REASON_MAX_LENGTH,
+  REFERRAL_UNIT_MAX_LENGTH,
+  referralAllowsAccompaniment,
+} from "./requests/referral";
 
 // Acompañamiento y sus vistas de lectura.
 export {
