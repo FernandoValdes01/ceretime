@@ -23,14 +23,52 @@ import "./student-portal.css";
  * reales del rol y el cierre de sesión. Las vistas cuelgan de este layout
  * tras el mismo guard. Una cuenta sin perfil habilitado y vigente ve su
  * estado en lugar de cada vista: el Backend denegaría todas sus lecturas y
- * cada pantalla mostraría un error de carga.
+ * cada pantalla mostraría un error de carga. Si el perfil no pudo crearse por
+ * un fallo pasajero, se ofrece reintentar en vez de declarar la cuenta no
+ * habilitada.
  */
-export function StudentLayout({ accountEnabled }: { accountEnabled: boolean }) {
-  if (accountEnabled) return <AppShell area="student" />;
+export function StudentLayout({
+  account,
+  onRetry,
+}: {
+  account: "enabled" | "not-enabled" | "unavailable";
+  onRetry: () => void;
+}) {
+  if (account === "enabled") return <AppShell area="student" />;
   return (
     <AppShell area="student">
-      <StudentAccountNotEnabled />
+      {account === "unavailable" ? (
+        <StudentAccountUnavailable onRetry={onRetry} />
+      ) : (
+        <StudentAccountNotEnabled />
+      )}
     </AppShell>
+  );
+}
+
+/**
+ * La cuenta aún no tiene perfil porque su creación falló por una causa
+ * pasajera (TI2-182): no es un estado de la cuenta, así que se ofrece
+ * reintentar sin salir del portal.
+ */
+function StudentAccountUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <section aria-labelledby="student-unavailable-title" className="student-portal__head">
+      <span className="student-portal__badge">Estudiante acompañado</span>
+      <h1 id="student-unavailable-title">Portal del Estudiante</h1>
+      <p role="alert" className="student-portal__error">
+        No pudimos preparar tu cuenta. Inténtalo de nuevo.
+      </p>
+      <div className="student-portal__cta">
+        <button
+          type="button"
+          className="student-portal__btn student-portal__btn--primary"
+          onClick={onRetry}
+        >
+          Reintentar
+        </button>
+      </div>
+    </section>
   );
 }
 

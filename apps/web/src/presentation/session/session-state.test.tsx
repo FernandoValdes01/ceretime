@@ -83,19 +83,23 @@ describe("creación del perfil propio al iniciar sesión (TI2-182)", () => {
     expect(ensureMyProfile).toHaveBeenCalledTimes(1);
   });
 
-  test("un fallo de red libera la navegación y el siguiente montaje reintenta", async () => {
+  test("un fallo pasajero libera la navegación y se reintenta sin desmontar", async () => {
     ensureMyProfile.mockRejectedValueOnce(new Error("red caída")).mockResolvedValue({});
     mockedPair = sinRol("falla@alu.uct.cl", "estudiante");
     const useSessionAndRole = await loadHook();
+    const { retryOwnProfile, useOwnProfileProvisioning } =
+      await import("./own-profile-provisioning.ts");
 
-    const first = renderHook(() => useSessionAndRole());
-    await waitFor(() => expect(first.result.current).toEqual(mockedPair));
-    expect(ensureMyProfile).toHaveBeenCalledTimes(1);
+    const { result } = renderHook(() => ({
+      pair: useSessionAndRole(),
+      provisioning: useOwnProfileProvisioning("falla@alu.uct.cl"),
+    }));
+    await waitFor(() => expect(result.current.provisioning).toBe("failed"));
+    expect(result.current.pair).toEqual(mockedPair);
 
-    const second = renderHook(() => useSessionAndRole());
-    await waitFor(() => expect(ensureMyProfile).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(second.result.current).toEqual(mockedPair));
-    renderHook(() => useSessionAndRole());
+    act(() => retryOwnProfile("falla@alu.uct.cl"));
+    expect(result.current.pair).toBeUndefined();
+    await waitFor(() => expect(result.current.provisioning).toBe("settled"));
     expect(ensureMyProfile).toHaveBeenCalledTimes(2);
   });
 

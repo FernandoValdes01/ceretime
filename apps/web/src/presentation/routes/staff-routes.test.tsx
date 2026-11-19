@@ -7,6 +7,7 @@ import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.t
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-login.ts";
 import type { AssignedAccompanimentsPage } from "../gestion/practitioner-accompaniments-data.ts";
+import { requestOwnProfile } from "../session/own-profile-provisioning.ts";
 import { createAppRouter } from "./router.tsx";
 import type {
   WebSessionAndRole,
@@ -1060,6 +1061,33 @@ describe("portal del Estudiante con sesión y rol independientes (TI2-12)", () =
     const deniedHeading = await screen.findByRole("heading", { name: "Acceso denegado" });
     expect(deniedHeading).toBeDefined();
     expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
+  });
+
+  test("un fallo pasajero al crear el perfil ofrece reintentar, no la cuenta no habilitada", async () => {
+    const ensure = vi
+      .fn<() => Promise<unknown>>()
+      .mockRejectedValueOnce(new Error("red caída"))
+      .mockResolvedValue({});
+    requestOwnProfile("pasajero@alu.uct.cl", ensure);
+    sessionMocks.setPair({
+      session: sesionEstudiante("pasajero@alu.uct.cl"),
+      role: ROL_DESCONOCIDO,
+    });
+    renderAt("/estudiante/horarios");
+
+    const retry = await screen.findByRole("button", { name: "Reintentar" });
+    expect(screen.getByText("No pudimos preparar tu cuenta. Inténtalo de nuevo.")).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Tu cuenta no está habilitada" })).toBeNull();
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(ensure).toHaveBeenCalledTimes(2));
+    act(() => {
+      sessionMocks.setPair({
+        session: sesionEstudiante("pasajero@alu.uct.cl"),
+        role: rolDe("student", "pasajero@alu.uct.cl"),
+      });
+    });
+    expect(await screen.findByRole("heading", { name: "Buscar horarios" })).toBeDefined();
   });
 
   // TI2-6 deja entrar por población; desde TI2-182 una cuenta sin perfil

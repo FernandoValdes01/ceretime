@@ -1,10 +1,10 @@
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { ConvexError } from "convex/values";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 // Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
 // el monorepo defina el alias o paquete interno compartido.
 import { api } from "../../../../../convex/_generated/api";
+import { requestOwnProfile, useOwnProfileProvisioning } from "./own-profile-provisioning.ts";
 
 /**
  * Estado de sesión web (TI2-6): `undefined` mientras carga, union
@@ -33,7 +33,7 @@ export type WebSessionState = ReturnType<typeof useSessionState>;
  */
 export function useSessionAndRole() {
   const pair = useQuery(api.presentation.session.getSessionWithRole);
-  const provisioning = useOwnProfileProvisioning(pair);
+  const provisioning = useOwnProfilePending(pair);
   return provisioning ? undefined : pair;
 }
 
@@ -49,57 +49,26 @@ export type StaffRole = Extract<
   { status: "authenticated" }
 >["role"];
 
-// Compartido entre las rutas montadas: cada guard y el índice usan el mismo
-// par, así la creación del perfil se pide una sola vez por correo y pestaña.
-const provisioningByEmail = new Map<string, Promise<void>>();
-const provisionedEmails = new Set<string>();
-
 /**
- * Pide el perfil propio y devuelve `true` mientras la petición sigue abierta.
- *
- * Solo una respuesta del Backend cierra el correo para la pestaña: el perfil
- * creado o existente, o la denegación genérica (por ejemplo, un correo ya
- * registrado con otra identidad), que no cambia al repetirla. Un fallo de red
- * libera la navegación de este montaje sin cerrar el correo, así la siguiente
- * ruta montada vuelve a intentarlo en vez de dejar sin perfil a la cuenta
- * hasta recargar.
+ * Pide el perfil propio cuando la sesión no trae rol y devuelve `true`
+ * mientras la petición sigue abierta. Un fallo pasajero libera la navegación;
+ * el portal del Estudiante lo distingue de una cuenta no habilitada con
+ * `useOwnProfileProvisioning` y ofrece el reintento.
  */
-function useOwnProfileProvisioning(
+function useOwnProfilePending(
   pair: FunctionReturnType<typeof api.presentation.session.getSessionWithRole> | undefined,
 ): boolean {
   const ensureMyProfile = useMutation(api.presentation.session.ensureMyProfile);
-  const [settledEmail, setSettledEmail] = useState<string | null>(null);
   const email =
     pair?.session.status === "authenticated" && pair.role.status === "unauthenticated"
       ? pair.session.email
       : null;
+  const status = useOwnProfileProvisioning(email);
 
   useEffect(() => {
-    if (email === null || provisionedEmails.has(email)) return;
-    let pending = provisioningByEmail.get(email);
-    if (pending === undefined) {
-      pending = ensureMyProfile()
-        .then(
-          () => {
-            provisionedEmails.add(email);
-          },
-          (error: unknown) => {
-            if (error instanceof ConvexError) provisionedEmails.add(email);
-          },
-        )
-        .finally(() => {
-          provisioningByEmail.delete(email);
-        });
-      provisioningByEmail.set(email, pending);
-    }
-    let active = true;
-    void pending.then(() => {
-      if (active) setSettledEmail(email);
-    });
-    return () => {
-      active = false;
-    };
+    if (email !== null) requestOwnProfile(email, ensureMyProfile);
   }, [email, ensureMyProfile]);
 
-  return email !== null && !provisionedEmails.has(email) && settledEmail !== email;
+  // Sin estado todavía, el efecto está por pedirlo: se espera igual.
+  return email !== null && (status === null || status === "pending");
 }

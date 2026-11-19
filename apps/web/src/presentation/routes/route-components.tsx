@@ -21,6 +21,7 @@ import {
   ProfessionalRequestDetailPage,
   ProfessionalRequestsPage,
 } from "../gestion/professional-requests.tsx";
+import { retryOwnProfile, useOwnProfileProvisioning } from "../session/own-profile-provisioning.ts";
 import { useSessionAndRole, useSessionState } from "../session/session-state.ts";
 import { PublicMain, SkipLink } from "./app-shell.tsx";
 import { DeniedPage } from "./denied-page.tsx";
@@ -86,9 +87,22 @@ export function DeniedRouteComponent() {
 
 export function StudentLayoutRouteComponent() {
   const pair = useSessionAndRole();
+  const email = pair?.session.status === "authenticated" ? pair.session.email : null;
+  const provisioning = useOwnProfileProvisioning(email);
+  const account =
+    pair?.role.status === "authenticated"
+      ? "enabled"
+      : provisioning === "failed"
+        ? "unavailable"
+        : "not-enabled";
   return (
     <RequireStudent session={useSessionState()} pair={pair}>
-      <StudentLayout accountEnabled={pair?.role.status === "authenticated"} />
+      <StudentLayout
+        account={account}
+        onRetry={() => {
+          if (email !== null) retryOwnProfile(email);
+        }}
+      />
     </RequireStudent>
   );
 }
