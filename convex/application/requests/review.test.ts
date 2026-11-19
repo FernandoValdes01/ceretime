@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { deriveCoordinationReferenceCode } from "../../domain/availability/official_channel";
 import type { RequestState } from "../../domain/requests/state";
 import { acceptRequest, requestAdditionalInformation, type AcceptRequestDeps } from "./commands";
 import type { StoredRequestRow } from "./ports";
@@ -140,6 +141,7 @@ describe("acceptRequest con puertos (TI2-181)", () => {
         status: "active",
         objective: "Objetivo ficticio",
         accessNeeds: "Necesidad ficticia",
+        referenceCode: deriveCoordinationReferenceCode("aco-1"),
         view: "full",
       },
     });

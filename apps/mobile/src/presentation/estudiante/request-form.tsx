@@ -10,6 +10,7 @@ import {
   useSubmitStudentRequest,
   type StudentRequestSubmissionStatus,
 } from "@/presentation/hooks/use-submit-student-request";
+import { isMobileAccessDenied } from "../to-mobile-operation-error";
 import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text } from "./student-text";
@@ -251,6 +252,13 @@ export function RequestForm({
     }
   }
 
+  const accessDenied = submission.status === "error" && isMobileAccessDenied(submission.error);
+  const failureMessage = accessDenied
+    ? "No tienes permiso para enviar esta solicitud."
+    : "No pudimos enviar la solicitud ficticia.";
+  const failureHelp = accessDenied
+    ? "Tus datos siguen en el formulario. Vuelve al inicio para comprobar tu cuenta."
+    : "Tus datos siguen en el formulario. Puedes intentar nuevamente.";
   const announcement = submissionAnnouncement(submission.status);
 
   if (submission.status === "success") {
@@ -386,7 +394,11 @@ export function RequestForm({
             ref={submissionError}
             accessible
             accessibilityRole="text"
-            accessibilityLabel="No pudimos enviar la solicitud ficticia. Tus datos siguen en el formulario. Puedes reintentar."
+            accessibilityLabel={
+              accessDenied
+                ? `${failureMessage} ${failureHelp}`
+                : "No pudimos enviar la solicitud ficticia. Tus datos siguen en el formulario. Puedes reintentar."
+            }
             className="gap-3"
           >
             <Text
@@ -394,13 +406,13 @@ export function RequestForm({
               weight="semibold"
               className="text-student-error text-lg leading-[29px]"
             >
-              No pudimos enviar la solicitud ficticia.
+              {failureMessage}
             </Text>
             <Text selectable className="text-student-secondary text-base leading-[26px]">
-              Tus datos siguen en el formulario. Puedes intentar nuevamente.
+              {failureHelp}
             </Text>
           </View>
-          <StudentAction label="Reintentar envío" onPress={submit} />
+          {!accessDenied && <StudentAction label="Reintentar envío" onPress={submit} />}
         </Animated.View>
       )}
       {currentStepIndex > 0 && (

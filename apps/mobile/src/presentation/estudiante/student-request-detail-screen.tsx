@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { View } from "react-native";
 
+import { StudentRequestActionsPanel } from "./student-request-actions";
 import { StudentAction, StudentScreen } from "./student-screen";
 import { StudentText } from "./student-text";
 import { formatRequestDate } from "./student-request-formatters";
@@ -36,7 +37,7 @@ function detailAnnouncement(status: StudentAreaCollectionStatus, found: boolean)
 
 export default function StudentRequestDetailScreen() {
   const { requestId } = useLocalSearchParams<{ requestId: string }>();
-  const { requests, accompaniments } = useStudentAreaContext();
+  const { requests, accompaniments, actions } = useStudentAreaContext();
   const request = requests.data.find((item) => item.id === requestId);
   const accompaniment =
     request?.status === "accepted"
@@ -157,6 +158,15 @@ export default function StudentRequestDetailScreen() {
               value={request.preferredAccessibleInformationChannel}
             />
           ) : null}
+          {request.informationRequest ? (
+            <DetailField label="Información solicitada" value={request.informationRequest} />
+          ) : null}
+          {request.informationResponse ? (
+            <DetailField label="Tu última respuesta" value={request.informationResponse} />
+          ) : null}
+          {request.closureReason ? (
+            <DetailField label="Motivo de cierre" value={request.closureReason} />
+          ) : null}
           {request.status === "accepted" ? (
             <View className="gap-3">
               <StudentText
@@ -186,6 +196,12 @@ export default function StudentRequestDetailScreen() {
           ) : null}
         </View>
       ) : null}
+      <StudentRequestActionsPanel
+        key={requestId}
+        request={request}
+        actions={actions}
+        onReload={requests.reload}
+      />
     </StudentScreen>
   );
 }
