@@ -76,6 +76,10 @@ const fullAccompanimentValidator = v.object({
   status: accompanimentStatusUnion,
   objective: v.string(),
   accessNeeds: v.string(),
+  // Código de referencia de la coordinación por canal oficial (TI2-144, TI2-183).
+  referenceCode: v.string(),
+  // Solicitud aceptada que lo abrió (TI2-183); falta si no nació de una.
+  requestId: v.optional(v.id("requests")),
   view: v.literal("full"),
 });
 

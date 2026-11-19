@@ -107,7 +107,7 @@ export interface AccompanimentOpener<
     readonly objective: string;
     readonly accessNeeds: string;
     readonly professionalId: UserId;
-  }): Promise<AccompanimentRow<AccompanimentId, UserId>>;
+  }): Promise<AccompanimentRow<AccompanimentId, UserId, RequestId>>;
 }
 
 /**
@@ -164,6 +164,17 @@ export interface ActiveRequestViewerReader<UserId extends string> {
     readonly _id: UserId;
     readonly role: "student" | "professional";
   } | null>;
+}
+
+/**
+ * Acompañamiento que abrió la solicitud al aceptarse (TI2-183), o `null` si
+ * no se abrió ninguno. La aceptación abre como máximo uno por solicitud.
+ */
+export interface ResultingAccompanimentReader<
+  RequestId extends string,
+  AccompanimentId extends string,
+> {
+  findAccompanimentIdForRequest(requestId: RequestId): Promise<AccompanimentId | null>;
 }
 
 /** Cambio de estado registrado, del más reciente al más antiguo. */

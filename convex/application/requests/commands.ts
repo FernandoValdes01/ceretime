@@ -1,4 +1,8 @@
-import { toOpeningObjective, type Accompaniment } from "../../domain/accompaniments/accompaniment";
+import {
+  toFullAccompaniment,
+  toOpeningObjective,
+  type Accompaniment,
+} from "../../domain/accompaniments/accompaniment";
 import {
   invalidRequestFields,
   toCompleteSubmission,
@@ -280,7 +284,7 @@ export async function acceptRequest<
     readonly requestId: RequestId;
     readonly objective: string;
   },
-): Promise<ApiResult<Accompaniment<AccompanimentId, UserId>>> {
+): Promise<ApiResult<Accompaniment<AccompanimentId, UserId, RequestId>>> {
   const professional = await deps.professionals.findActiveProfessional(input.tokenIdentifier);
   if (professional === null) return denied();
   const row = await deps.requests.getRequest(input.requestId);
@@ -324,7 +328,7 @@ export async function acceptRequest<
     professionalId: professional._id,
   });
   // Quien acepta queda asignado como Profesional responsable: recibe la vista completa.
-  return okResult({ ...opened, view: "full" });
+  return okResult(toFullAccompaniment(opened));
 }
 
 /** Capacidades que necesita la cancelación; la composición entrega los adaptadores. */

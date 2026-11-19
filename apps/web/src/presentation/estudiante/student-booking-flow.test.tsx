@@ -106,6 +106,7 @@ const OWN_ACCOMPANIMENT_VIEW = {
   status: "active",
   objective: OBJECTIVE,
   accessNeeds: "",
+  referenceCode: "CER-7KQ2-M9XD",
   view: "full",
 } as const;
 

@@ -589,6 +589,7 @@ test("trazabilidad mínima no expone datos innecesarios", async () => {
     "_id",
     "accessNeeds",
     "objective",
+    "referenceCode",
     "status",
     "studentId",
     "view",
