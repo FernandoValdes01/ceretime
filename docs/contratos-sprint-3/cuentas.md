@@ -82,6 +82,19 @@ try {
 }
 ```
 
+## Perfil propio en el primer ingreso — TI2-182
+
+| Operación | Argumentos | Devuelve | Quién | Denegación |
+| --- | --- | --- | --- | --- |
+| `presentation/session.ensureMyProfile` | — | `{ fullName, email, role, institutionalStatus, accountStatus }`, igual que `getMyProfile` | Titular con sesión institucional | `No autorizado` sin identidad, con correo no institucional o con un correo que ya figura en otro perfil |
+
+Iniciar sesión con Google solo crea el usuario de Better Auth; sin una fila en `users` vinculada por `tokenIdentifier`, cada consulta guardada deniega. Web y Mobile llaman `ensureMyProfile` tras iniciar sesión cuando `getSessionWithRole` no trae rol. Siguiendo el ADR 0002, una cuenta `@alu.uct.cl` nace como Estudiante habilitado y vigente (`enabledAt` sin `enabledBy`) y una cuenta `@uct.cl` nace como Profesional pendiente, que el Administrador habilita con `enableAccount`. Si el perfil ya existe se devuelve sin cambios: repetir la llamada nunca habilita, rehabilita ni cambia el rol, y una cuenta revocada sigue revocada. Un correo que ya figura en otro perfil no se vincula ni se duplica, porque el correo no prueba que sea la misma persona que registró el operador. Practicantes y cuentas de prueba siguen naciendo por la vía del operador, porque su rol no se deduce del dominio del correo: si su titular ingresa antes, su perfil nace como Estudiante y el operador debe corregirlo.
+
+```ts
+const ensureMyProfile = useMutation(api.presentation.session.ensureMyProfile);
+const profile = await ensureMyProfile();
+```
+
 ## Habilitación por el profesional — TI2-140
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
