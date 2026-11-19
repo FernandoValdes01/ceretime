@@ -331,3 +331,43 @@ export function validateBootstrapCandidate(candidate: BootstrapCandidate): Boots
   }
   return { ok: true };
 }
+
+/** Perfil que el operador quiere corregir a Practicante (TI2-182). */
+export type InternReclassificationTarget = {
+  readonly role: Role;
+  readonly email: string;
+  /** Verdadero si el perfil ya tiene solicitudes o acompañamientos como Estudiante. */
+  readonly hasStudentActivity: boolean;
+};
+
+export type InternReclassificationRejection =
+  | "target-not-student"
+  | "target-email-not-institutional"
+  | "target-has-student-activity";
+
+export type InternReclassificationCheck =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: InternReclassificationRejection };
+
+/**
+ * Decide si un perfil de Estudiante puede pasar a Practicante pendiente
+ * (TI2-182).
+ *
+ * El primer ingreso crea como Estudiante a cualquier cuenta `@alu.uct.cl`,
+ * también a quien el operador aún no registraba como Practicante. La
+ * corrección solo aplica a un Estudiante con correo institucional y sin
+ * actividad propia: una solicitud o un acompañamiento ya registrados son
+ * datos del Estudiante que no deben quedar a nombre de un Practicante. El
+ * resultado queda pendiente, así que la habilitación sigue siendo decisión
+ * del profesional o del Administrador (`checkInternEnablement`).
+ */
+export function checkInternReclassification(
+  target: InternReclassificationTarget,
+): InternReclassificationCheck {
+  if (target.role !== "student") return { ok: false, reason: "target-not-student" };
+  if (!isInstitutionalEmail(normalizeEmail(target.email))) {
+    return { ok: false, reason: "target-email-not-institutional" };
+  }
+  if (target.hasStudentActivity) return { ok: false, reason: "target-has-student-activity" };
+  return { ok: true };
+}

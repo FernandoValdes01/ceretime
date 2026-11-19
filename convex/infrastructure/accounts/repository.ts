@@ -1,6 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import type { InternReclassificationStore } from "../../application/accounts/ports";
 import type { OwnProfileReader, OwnProfileStore } from "../../application/session/ports";
 import type { AuthenticatedProfile } from "../../domain/identity/roles";
 
@@ -180,4 +181,37 @@ export async function insertBootstrapAdmin(
     tokenIdentifier: input.tokenIdentifier,
     enabledAt: input.enabledAt,
   });
+}
+
+/**
+ * Adaptador del puerto `InternReclassificationStore` (TI2-182). Quita
+ * `enabledAt` porque la habilitación automática del Estudiante no vale para
+ * el Practicante, que espera la suya con actor y fecha.
+ */
+export function internReclassificationStore(ctx: MutationCtx): InternReclassificationStore {
+  return {
+    findAccount: async (userId) => {
+      const profile = await ctx.db.get(userId);
+      return profile === null ? null : { role: profile.role, email: profile.email };
+    },
+    hasStudentActivity: async (userId) => {
+      const request = await ctx.db
+        .query("requests")
+        .withIndex("by_student", (q) => q.eq("studentId", userId))
+        .first();
+      if (request !== null) return true;
+      const accompaniment = await ctx.db
+        .query("accompaniments")
+        .withIndex("by_student", (q) => q.eq("studentId", userId))
+        .first();
+      return accompaniment !== null;
+    },
+    markPendingIntern: async (userId) => {
+      await ctx.db.patch(userId, {
+        role: "intern",
+        institutionalStatus: "pending",
+        enabledAt: undefined,
+      });
+    },
+  };
 }

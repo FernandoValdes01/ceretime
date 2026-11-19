@@ -16,7 +16,7 @@ Cada habilitación registra actor (`enabledBy` con el `_id` del Administrador) y
 
 ## Ausencia de auto-escalamiento
 
-No existe función pública (`query`, `mutation` o `action`) que cambie roles, y la única que crea un perfil es `presentation/session.ensureMyProfile` (TI2-182), que solo crea el de la propia identidad en su primer ingreso con el perfil inicial que fija el dominio del correo (Estudiante habilitado para `@alu.uct.cl`, Profesional pendiente para `@uct.cl`) y nunca modifica uno existente; `internal.operations.users.createTestUser` y `internal.operations.accounts.ensureBootstrapAdmin` son internas y no forman parte del contrato expuesto, `enableIntern` jamás escribe el campo `role` y el arranque solo crea el primer Administrador, por lo que ningún usuario puede promoverse a sí mismo desde el cliente.
+No existe función pública (`query`, `mutation` o `action`) que cambie roles, y la única que crea un perfil es `presentation/session.ensureMyProfile` (TI2-182), que solo crea el de la propia identidad en su primer ingreso con el perfil inicial que fija el dominio del correo (Estudiante habilitado para `@alu.uct.cl`, Profesional pendiente para `@uct.cl`) y nunca modifica uno existente; `internal.operations.users.createTestUser`, `internal.operations.accounts.ensureBootstrapAdmin` y `internal.operations.accounts.reclassifyAsIntern` (que solo pasa a Practicante pendiente un Estudiante sin actividad) son internas y no forman parte del contrato expuesto, `enableIntern` jamás escribe el campo `role` y el arranque solo crea el primer Administrador, por lo que ningún usuario puede promoverse a sí mismo desde el cliente.
 
 ## Procedimiento de arranque por entorno
 
