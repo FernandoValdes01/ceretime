@@ -42,6 +42,10 @@ const takeRequestMock = vi.fn();
 const requestInfoMock = vi.fn();
 const acceptRequestMock = vi.fn();
 const closeRequestMock = vi.fn();
+const recordContactMock = vi.fn();
+const recordAcceptanceMock = vi.fn();
+const referRequestMock = vi.fn();
+const registerOfficialMock = vi.fn();
 
 /** Denegación del contrato común (TI2-181), tal como la entrega el SDK. */
 const UNAUTHORIZED_ERROR = new ConvexError({ code: "unauthorized", message: "No autorizado" });
@@ -113,6 +117,10 @@ vi.mock("./professional-requests-data.ts", () => ({
   useRequestAdditionalInformation: () => requestInfoMock,
   useAcceptRequest: () => acceptRequestMock,
   useCloseRequestWithoutAccompaniment: () => closeRequestMock,
+  useRecordReferralContact: () => recordContactMock,
+  useRecordReferralAcceptance: () => recordAcceptanceMock,
+  useReferRequest: () => referRequestMock,
+  useRegisterOfficialRequest: () => registerOfficialMock,
 }));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
@@ -229,6 +237,10 @@ beforeEach(() => {
   requestInfoMock.mockReset();
   acceptRequestMock.mockReset();
   closeRequestMock.mockReset();
+  recordContactMock.mockReset();
+  recordAcceptanceMock.mockReset();
+  referRequestMock.mockReset();
+  registerOfficialMock.mockReset();
 });
 
 afterEach(() => {
@@ -1033,16 +1045,22 @@ describe("acciones del Profesional (TI2-92)", () => {
       "Aceptar y abrir acompañamiento",
       "Pedir información",
       "Cerrar sin acompañamiento",
+      "Derivar a otra unidad",
     ];
     const casos: ReadonlyArray<[RequestDetail["status"], readonly string[]]> = [
       ["received", ["Tomar solicitud"]],
       [
         "under_review",
-        ["Aceptar y abrir acompañamiento", "Pedir información", "Cerrar sin acompañamiento"],
+        [
+          "Aceptar y abrir acompañamiento",
+          "Pedir información",
+          "Cerrar sin acompañamiento",
+          "Derivar a otra unidad",
+        ],
       ],
       [
         "awaiting_information_or_acceptance",
-        ["Aceptar y abrir acompañamiento", "Cerrar sin acompañamiento"],
+        ["Aceptar y abrir acompañamiento", "Cerrar sin acompañamiento", "Derivar a otra unidad"],
       ],
       ["accepted", []],
       ["referred", []],
@@ -1376,5 +1394,339 @@ describe("revisión completa del Profesional (TI2-157)", () => {
     expect(((await screen.findByLabelText("Filtrar por estado")) as HTMLSelectElement).value).toBe(
       "",
     );
+  });
+});
+
+describe("derivaciones en el detalle del Profesional (TI2-158)", () => {
+  const DERIVADA: RequestDetail = {
+    _id: "req-9" as Id<"requests">,
+    studentId: "stu-1" as Id<"users">,
+    status: "under_review",
+    accessNeeds: "Necesidad ficticia de acceso",
+    createdAt: 1700000000000,
+    provenanceChannel: "official_channel",
+    incomingReferral: { originUnit: "Unidad ficticia de origen", referredAt: 1700000000000 },
+  };
+
+  test("sin aceptación del estudiante no se ofrece abrir acompañamiento", async () => {
+    comoProfesional();
+    mockedDetail = DERIVADA;
+    renderAt("/profesional/solicitudes/req-9");
+
+    expect(await screen.findByRole("heading", { name: "Derivación de entrada" })).toBeDefined();
+    expect(screen.getByText(/Unidad ficticia de origen/)).toBeDefined();
+    expect(screen.getAllByText("Pendiente")).toHaveLength(2);
+    expect(screen.getByText("Registrada por CERETI desde un canal oficial")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Aceptar y abrir acompañamiento" })).toBeNull();
+    expect(screen.getByText(/registra primero el contacto con el estudiante/)).toBeDefined();
+    // Solo el siguiente paso: la aceptación exige el contacto previo.
+    expect(
+      screen.getByRole("button", { name: "Registrar contacto con el estudiante" }),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Registrar aceptación del estudiante" }),
+    ).toBeNull();
+  });
+
+  test("contacto y aceptación se registran en orden y recién entonces se ofrece aceptar", async () => {
+    comoProfesional();
+    mockedDetail = DERIVADA;
+    recordContactMock.mockImplementation(async () => {
+      actualizarDetalle({
+        ...DERIVADA,
+        incomingReferral: { ...DERIVADA.incomingReferral!, contactedAt: 1700000100000 },
+      });
+    });
+    recordAcceptanceMock.mockImplementation(async () => {
+      actualizarDetalle({
+        ...DERIVADA,
+        incomingReferral: {
+          ...DERIVADA.incomingReferral!,
+          contactedAt: 1700000100000,
+          acceptedAt: 1700000200000,
+        },
+      });
+    });
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Registrar contacto con el estudiante" }),
+    );
+    await waitFor(() => expect(recordContactMock).toHaveBeenCalledWith({ requestId: "req-9" }));
+    expect(await screen.findByText("Registraste el contacto con el estudiante.")).toBeDefined();
+    expect(document.activeElement).toBe(screen.getByText("En revisión"));
+    expect(screen.queryByRole("button", { name: "Aceptar y abrir acompañamiento" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Registrar aceptación del estudiante" }));
+    await waitFor(() => expect(recordAcceptanceMock).toHaveBeenCalledWith({ requestId: "req-9" }));
+    expect(
+      await screen.findByRole("button", { name: "Aceptar y abrir acompañamiento" }),
+    ).toBeDefined();
+    expect(screen.queryByText("Pendiente")).toBeNull();
+    expect(screen.queryByText(/registra primero el contacto/)).toBeNull();
+  });
+
+  test("un registro rechazado por conflicto explica cómo seguir", async () => {
+    comoProfesional();
+    mockedDetail = DERIVADA;
+    recordContactMock.mockRejectedValue(
+      new ConvexError({
+        code: "conflict",
+        message: "El contacto con el estudiante ya está registrado.",
+      }),
+    );
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Registrar contacto con el estudiante" }),
+    );
+    expect(
+      await screen.findByText(
+        "El contacto con el estudiante ya está registrado. El detalle ya muestra el estado vigente; continúa desde ahí.",
+      ),
+    ).toBeDefined();
+  });
+
+  test("derivar a otra unidad informa que la comunicación ocurre fuera de la aplicación", async () => {
+    comoProfesional();
+    mockedDetail = { ...DERIVADA, incomingReferral: undefined, provenanceChannel: "student" };
+    referRequestMock.mockImplementation(async () => {
+      actualizarDetalle({
+        ...DERIVADA,
+        incomingReferral: undefined,
+        provenanceChannel: "student",
+        status: "referred",
+        outgoingReferral: {
+          destinationUnit: "Unidad ficticia de destino",
+          referredAt: 1700000300000,
+          reason: "El apoyo lo entrega esa unidad",
+        },
+      });
+    });
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Derivar a otra unidad" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Derivar a otra unidad" });
+    expect(
+      within(dialogo).getByText(/ocurre fuera de la aplicación/, { exact: false }),
+    ).toBeDefined();
+    expect(
+      within(dialogo).getByText(/no se eligen destinatarios ni se envían antecedentes/),
+    ).toBeDefined();
+    const unidad = within(dialogo).getByLabelText("Unidad de destino *");
+    await waitFor(() => expect(document.activeElement).toBe(unidad));
+
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Derivar" }));
+    expect(await within(dialogo).findByText("La unidad de destino es obligatoria")).toBeDefined();
+    expect(unidad.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(unidad);
+    expect(referRequestMock).not.toHaveBeenCalled();
+
+    fireEvent.change(unidad, { target: { value: "  Unidad ficticia de destino " } });
+    fireEvent.change(within(dialogo).getByLabelText("Razón de la derivación *"), {
+      target: { value: "El apoyo lo entrega esa unidad" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Derivar" }));
+
+    await waitFor(() =>
+      expect(referRequestMock).toHaveBeenCalledWith({
+        requestId: "req-9",
+        destinationUnit: "Unidad ficticia de destino",
+        reason: "El apoyo lo entrega esa unidad",
+      }),
+    );
+    expect(await screen.findByText("Derivada")).toBeDefined();
+    expect(screen.getByText(/Unidad ficticia de destino, el/)).toBeDefined();
+    expect(screen.getByText("El apoyo lo entrega esa unidad")).toBeDefined();
+    expect(screen.getByText("Enviada por el estudiante")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Aceptar y abrir acompañamiento" })).toBeNull();
+  });
+
+  test("Tab recorre la unidad, la razón y los botones sin salir del diálogo", async () => {
+    comoProfesional();
+    mockedDetail = { ...DERIVADA, incomingReferral: undefined };
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Derivar a otra unidad" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Derivar a otra unidad" });
+    const unidad = within(dialogo).getByLabelText("Unidad de destino *");
+    const derivar = within(dialogo).getByRole("button", { name: "Derivar" });
+
+    derivar.focus();
+    fireEvent.keyDown(dialogo, { key: "Tab" });
+    expect(document.activeElement).toBe(unidad);
+    fireEvent.keyDown(dialogo, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(derivar);
+  });
+});
+
+describe("registro por canal oficial (TI2-158)", () => {
+  function completarContenido() {
+    fireEvent.change(screen.getByLabelText(/Correo institucional del estudiante/), {
+      target: { value: "  estudiante.ficticio@alu.uct.cl " },
+    });
+    fireEvent.change(screen.getByLabelText(/Describe la barrera o necesidad/), {
+      target: { value: "Necesidad ficticia" },
+    });
+    fireEvent.change(screen.getByLabelText(/Qué espera el estudiante de CERETI/), {
+      target: { value: "Resultado ficticio" },
+    });
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByRole("radio", { name: "En línea" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Martes" }));
+    fireEvent.change(screen.getByLabelText(/Medio accesible para recibir información/), {
+      target: { value: "Correo con letra grande" },
+    });
+  }
+
+  test("se llega desde Solicitudes", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([], true);
+    mockedAuthorized = paginaTomadas([], true);
+    renderAt("/profesional/solicitudes");
+
+    const enlace = await screen.findByRole("link", {
+      name: "Registrar solicitud por canal oficial",
+    });
+    expect(enlace.getAttribute("href")).toBe("/profesional/solicitudes/registrar");
+  });
+
+  test("cada campo tiene nombre accesible y dice si es obligatorio u opcional", async () => {
+    comoProfesional();
+    renderAt("/profesional/solicitudes/registrar");
+
+    expect(
+      await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" }),
+    ).toBeDefined();
+    expect(screen.getByText("Canal oficial de CERETI")).toBeDefined();
+    expect(
+      screen.getByLabelText("Correo institucional del estudiante (obligatorio)"),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Fecha en que CERETI la recibió (opcional)")).toBeDefined();
+    expect(screen.getByLabelText("Unidad que derivó al estudiante (opcional)")).toBeDefined();
+    expect(
+      screen.getByRole("group", { name: "Necesidades de acceso (obligatorio)" }),
+    ).toBeDefined();
+    expect(screen.getByRole("group", { name: "Modalidad preferida (obligatorio)" })).toBeDefined();
+    expect(screen.getByRole("group", { name: "Días disponibles (obligatorio)" })).toBeDefined();
+    // La voz es la del personal: habla del estudiante.
+    expect(screen.getByRole("heading", { name: "Necesidad del estudiante" })).toBeDefined();
+    expect(screen.queryByText("Tu necesidad")).toBeNull();
+  });
+
+  test("lo que falta se resume, enlaza a cada campo y no se envía", async () => {
+    comoProfesional();
+    renderAt("/profesional/solicitudes/registrar");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Registrar solicitud" }));
+
+    const resumen = await screen.findByRole("heading", {
+      name: "Revisa estos campos antes de registrar",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(resumen));
+    const enlaceCorreo = screen.getByRole("link", {
+      name: "Correo del estudiante: Indica el correo institucional del estudiante.",
+    });
+    expect(
+      screen.getByRole("link", {
+        name: "Qué espera el estudiante de CERETI: Indica qué espera el estudiante de CERETI.",
+      }),
+    ).toBeDefined();
+    fireEvent.click(enlaceCorreo);
+    expect(document.activeElement).toBe(
+      screen.getByLabelText(/Correo institucional del estudiante/),
+    );
+    const correo = screen.getByLabelText(/Correo institucional del estudiante/);
+    expect(correo.getAttribute("aria-invalid")).toBe("true");
+    expect(correo.getAttribute("aria-describedby")).toContain("request-studentEmail-error");
+    expect(registerOfficialMock).not.toHaveBeenCalled();
+  });
+
+  test("registra con procedencia y queda como derivación de entrada", async () => {
+    comoProfesional();
+    registerOfficialMock.mockResolvedValue({ _id: "req-nueva" });
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    fireEvent.change(screen.getByLabelText(/Unidad que derivó al estudiante/), {
+      target: { value: " Unidad ficticia de origen " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
+
+    await waitFor(() => expect(registerOfficialMock).toHaveBeenCalledTimes(1));
+    const [datos] = registerOfficialMock.mock.calls[0] as [Record<string, unknown>];
+    expect(datos).toMatchObject({
+      studentEmail: "estudiante.ficticio@alu.uct.cl",
+      originUnit: "Unidad ficticia de origen",
+      needSummary: "Necesidad ficticia",
+      expectedOutcome: "Resultado ficticio",
+      modalityPreference: "online",
+      generalAvailability: { preferredWeekdays: [2] },
+      preferredAccessibleInformationChannel: "Correo con letra grande",
+    });
+    expect(typeof datos.idempotencyKey).toBe("string");
+    expect(datos).not.toHaveProperty("receivedAt");
+
+    const registrada = await screen.findByRole("heading", { name: "Solicitud registrada" });
+    await waitFor(() => expect(document.activeElement).toBe(registrada));
+    expect(screen.getByText(/Quedó también como derivación de entrada/)).toBeDefined();
+  });
+
+  test("la fecha de recepción se envía y nunca queda en el futuro", async () => {
+    comoProfesional();
+    registerOfficialMock.mockResolvedValue({ _id: "req-nueva" });
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    fireEvent.change(screen.getByLabelText(/Fecha en que CERETI la recibió/), {
+      target: { value: "2026-03-10" },
+    });
+    const antes = Date.now();
+    fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
+
+    await waitFor(() => expect(registerOfficialMock).toHaveBeenCalledTimes(1));
+    const [datos] = registerOfficialMock.mock.calls[0] as [{ receivedAt: number }];
+    expect(datos.receivedAt).toBe(Date.UTC(2026, 2, 10, 12));
+    expect(datos.receivedAt).toBeLessThanOrEqual(antes);
+    expect(screen.queryByText(/derivación de entrada/)).toBeNull();
+  });
+
+  test("un rechazo muestra el mensaje público y el reintento conserva la clave", async () => {
+    comoProfesional();
+    registerOfficialMock.mockRejectedValueOnce(
+      new ConvexError({
+        code: "request_fields_invalid",
+        message: "No hay una cuenta de Estudiante vigente con ese correo.",
+      }),
+    );
+    registerOfficialMock.mockRejectedValueOnce(SDK_ERROR);
+    registerOfficialMock.mockRejectedValueOnce(UNAUTHORIZED_ERROR);
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    const registrar = screen.getByRole("button", { name: "Registrar solicitud" });
+
+    fireEvent.click(registrar);
+    expect(
+      await screen.findByText("No hay una cuenta de Estudiante vigente con ese correo."),
+    ).toBeDefined();
+    expect(
+      await screen.findByRole("heading", { name: "No se registró la solicitud" }),
+    ).toBeDefined();
+
+    fireEvent.click(registrar);
+    expect(await screen.findByText(REQUEST_ACTION_FALLBACK_MESSAGE)).toBeDefined();
+    expect(screen.queryByText(/CONVEX|Server Error/)).toBeNull();
+
+    fireEvent.click(registrar);
+    expect(await screen.findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();
+
+    const claves = registerOfficialMock.mock.calls.map(
+      ([datos]) => (datos as { idempotencyKey: string }).idempotencyKey,
+    );
+    expect(new Set(claves).size).toBe(1);
   });
 });

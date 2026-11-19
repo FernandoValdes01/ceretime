@@ -2,6 +2,7 @@ import {
   CONFLICT_ERROR_CODE,
   REQUEST_FIELDS_INVALID_ERROR_CODE,
   UNAUTHORIZED_ERROR_CODE,
+  type ApiErrorCode,
 } from "../../../../../convex/domain/index.ts";
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 
@@ -14,7 +15,8 @@ import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
  * `docs/contratos-sprint-3/solicitudes.md`):
  *
  * - `unauthorized`: acceso denegado genérico, sin motivo ni existencia.
- * - `request_fields_invalid`: el mensaje público dice qué dato corregir.
+ * - `request_fields_invalid` y `access_needs_*`: el mensaje público dice qué
+ *   dato corregir.
  * - `conflict`: el estado cambió; el mensaje público dice por qué y la Web
  *   agrega cómo seguir, según la acción.
  * - Cualquier otro fallo, incluida una red caída: mensaje de respaldo.
@@ -24,7 +26,17 @@ export type RequestActionFailure =
   | { readonly status: "rejected"; readonly message: string };
 
 /** Acciones del Profesional sobre una solicitud, para elegir cómo seguir. */
-export type RequestAction = "take" | "requestInformation" | "accept" | "close";
+export type RequestAction =
+  | "take"
+  | "requestInformation"
+  | "accept"
+  | "close"
+  | "registerOfficial"
+  | "recordReferralContact"
+  | "recordReferralAcceptance"
+  | "refer";
+
+const DETAIL_NEXT_STEP = "El detalle ya muestra el estado vigente; continúa desde ahí.";
 
 /** Mensaje de respaldo: no expone el error y propone el siguiente paso. */
 export const REQUEST_ACTION_FALLBACK_MESSAGE =
@@ -32,9 +44,13 @@ export const REQUEST_ACTION_FALLBACK_MESSAGE =
 
 const CONFLICT_NEXT_STEP: Record<RequestAction, string> = {
   take: "Revisa «Mis tomadas» o elige otra solicitud de la bandeja.",
-  requestInformation: "El detalle ya muestra el estado vigente; continúa desde ahí.",
-  accept: "El detalle ya muestra el estado vigente; continúa desde ahí.",
-  close: "El detalle ya muestra el estado vigente; continúa desde ahí.",
+  requestInformation: DETAIL_NEXT_STEP,
+  accept: DETAIL_NEXT_STEP,
+  close: DETAIL_NEXT_STEP,
+  registerOfficial: "Revisa la bandeja de triage antes de registrarla de nuevo.",
+  recordReferralContact: DETAIL_NEXT_STEP,
+  recordReferralAcceptance: DETAIL_NEXT_STEP,
+  refer: DETAIL_NEXT_STEP,
 };
 
 /** Termina el mensaje público en punto para unirle el siguiente paso. */
@@ -55,7 +71,10 @@ export function requestActionFailureOf(
   switch (publicError.code) {
     case UNAUTHORIZED_ERROR_CODE:
       return { status: "denied" };
+    // Los códigos de Sprint 1 del contenido no tienen constante propia.
     case REQUEST_FIELDS_INVALID_ERROR_CODE:
+    case "access_needs_empty" satisfies ApiErrorCode:
+    case "access_needs_too_long" satisfies ApiErrorCode:
       return { status: "rejected", message: asSentence(publicError.message) };
     case CONFLICT_ERROR_CODE:
       return {
