@@ -5,7 +5,7 @@ import { resolveSessionAndRole } from "../application/session/portal_role";
 import { ensureOwnProfileUseCase, getMyProfileUseCase } from "../application/session/profile";
 import type { ApiResult, PublicApiError } from "../domain/errors/api_error";
 import { mutation, query } from "../_generated/server";
-import { ownProfileStore } from "../infrastructure/accounts/repository";
+import { ownProfileReader, ownProfileStore } from "../infrastructure/accounts/repository";
 import {
   accountStatusUnion,
   institutionalStatusUnion,
@@ -122,7 +122,7 @@ export const getMyProfile = query({
   returns: ownProfileValidator,
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await getMyProfileUseCase(ctx, identity);
+    return await getMyProfileUseCase(identity, { profiles: ownProfileReader(ctx) });
   },
 });
 

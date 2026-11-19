@@ -1,7 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
-import type { OwnProfileStore } from "../../application/session/ports";
+import type { OwnProfileReader, OwnProfileStore } from "../../application/session/ports";
 import type { AuthenticatedProfile } from "../../domain/identity/roles";
 
 /**
@@ -111,13 +111,23 @@ export async function paginateStaffAccounts(
 }
 
 /** Perfil propio mínimo que ven la interfaz y los casos de uso de sesión. */
-export function toAuthenticatedProfile(profile: Doc<"users">): AuthenticatedProfile {
+function toAuthenticatedProfile(profile: Doc<"users">): AuthenticatedProfile {
   return {
     fullName: profile.fullName,
     email: profile.email,
     role: profile.role,
     institutionalStatus: profile.institutionalStatus,
     accountStatus: profile.accountStatus,
+  };
+}
+
+/** Adaptador del puerto `OwnProfileReader` (TI2-10, TI2-182). */
+export function ownProfileReader(ctx: DbReader): OwnProfileReader {
+  return {
+    findByTokenIdentifier: async (tokenIdentifier) => {
+      const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+      return profile === null ? null : toAuthenticatedProfile(profile);
+    },
   };
 }
 
@@ -128,10 +138,7 @@ export function toAuthenticatedProfile(profile: Doc<"users">): AuthenticatedProf
  */
 export function ownProfileStore(ctx: MutationCtx): OwnProfileStore {
   return {
-    findByTokenIdentifier: async (tokenIdentifier) => {
-      const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
-      return profile === null ? null : toAuthenticatedProfile(profile);
-    },
+    ...ownProfileReader(ctx),
     isEmailRegistered: async (email) => (await findUserByEmail(ctx, email)) !== null,
     create: async (profile) => {
       await ctx.db.insert("users", {

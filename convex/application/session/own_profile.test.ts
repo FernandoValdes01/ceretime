@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import type { AuthenticatedProfile } from "../../domain/identity/roles";
 import type { NewOwnProfile, OwnProfileStore } from "./ports";
-import { ensureOwnProfileUseCase } from "./profile";
+import { ensureOwnProfileUseCase, getMyProfileUseCase } from "./profile";
 
 function memoryStore(existing: ReadonlyArray<NewOwnProfile> = []) {
   const rows: NewOwnProfile[] = [...existing];
@@ -76,5 +76,37 @@ describe("ensureOwnProfileUseCase (TI2-182)", () => {
       ensureOwnProfileUseCase({ tokenIdentifier: "t|dup", email: "dup@uct.cl" }, deps),
     ).rejects.toThrow("No autorizado");
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe("getMyProfileUseCase (TI2-10)", () => {
+  const seeded: NewOwnProfile = {
+    email: "est@alu.uct.cl",
+    fullName: "Estudiante Ficticio",
+    tokenIdentifier: "t|est",
+    role: "student",
+    institutionalStatus: "enabled",
+    accountStatus: "active",
+  };
+
+  test("devuelve el perfil vinculado por el puerto de lectura", async () => {
+    const { store } = memoryStore([seeded]);
+    await expect(
+      getMyProfileUseCase({ tokenIdentifier: "t|est" }, { profiles: store }),
+    ).resolves.toEqual({
+      fullName: "Estudiante Ficticio",
+      email: "est@alu.uct.cl",
+      role: "student",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+    });
+  });
+
+  test("deniega sin identidad o sin perfil vinculado", async () => {
+    const { store } = memoryStore([seeded]);
+    await expect(getMyProfileUseCase(null, { profiles: store })).rejects.toThrow(/^No autorizado$/);
+    await expect(
+      getMyProfileUseCase({ tokenIdentifier: "t|otro" }, { profiles: store }),
+    ).rejects.toThrow(/^No autorizado$/);
   });
 });

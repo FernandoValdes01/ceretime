@@ -1,15 +1,9 @@
-import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { AuthenticatedProfile } from "../../domain/identity/roles";
-import type { QueryCtx } from "../../_generated/server";
 import { initialProfileFor, profileFullName } from "../../domain/accounts/own_profile";
-import {
-  findProfileByTokenIdentifier,
-  toAuthenticatedProfile,
-} from "../../infrastructure/accounts/repository";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../authorization/authorize";
 import { toMinimalIdentity } from "./minimal_identity";
-import type { OwnProfileStore } from "./ports";
+import type { OwnProfileReader, OwnProfileStore } from "./ports";
 
 /**
  * Casos de uso del perfil propio autenticado (TI2-10, TI2-182).
@@ -28,13 +22,13 @@ function deny(): never {
 
 /** Perfil propio mínimo para la interfaz condicionada por rol. */
 export async function getMyProfileUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
+  identity: { readonly tokenIdentifier: string } | null,
+  deps: { readonly profiles: OwnProfileReader },
 ): Promise<AuthenticatedProfile> {
   if (identity === null) deny();
-  const profile = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
+  const profile = await deps.profiles.findByTokenIdentifier(identity.tokenIdentifier);
   if (profile === null) deny();
-  return toAuthenticatedProfile(profile);
+  return profile;
 }
 
 /** Lo que el primer ingreso necesita de la identidad autenticada. */
