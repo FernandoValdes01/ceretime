@@ -246,6 +246,31 @@ test("la corrección no toca otro rol ni un Estudiante con solicitudes", async (
   expect(rows.map((row) => row?.role)).toEqual(["student", "professional"]);
 });
 
+test("la corrección no toca a un Estudiante con un acompañamiento sin solicitud", async () => {
+  const t = newTest();
+  const asStudent = t.withIdentity(identityFor("ti182-est3", "ti182-est3@alu.uct.cl"));
+  await asStudent.mutation(api.presentation.session.ensureMyProfile, {});
+  const studentId = await profileIdOf(t, "ti182-est3@alu.uct.cl");
+  // Abierto desde una derivación recibida: sin `requestId`.
+  await t.run(async (ctx) => {
+    await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "Necesidad ficticia",
+    });
+  });
+  await expect(
+    t.mutation(internal.operations.accounts.reclassifyFirstLoginStudent, {
+      userId: studentId,
+      role: "intern",
+    }),
+  ).rejects.toThrow("El perfil ya tiene solicitudes o acompañamientos como Estudiante");
+
+  const row = await t.run(async (ctx) => ctx.db.get(studentId));
+  expect(row).toMatchObject({ role: "student", institutionalStatus: "enabled" });
+});
+
 test("el operador corrige a cuenta de prueba al Estudiante del primer ingreso y el profesional la habilita", async () => {
   const t = newTest();
   const professionalId = await t.run(async (ctx) =>
