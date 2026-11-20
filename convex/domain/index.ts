@@ -45,13 +45,14 @@ export type {
 } from "./requests/request";
 export {
   INITIAL_REQUEST_STATE,
+  isRequestState,
   REFERRAL_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
   SPRINT_1_REQUEST_STATES,
 } from "./requests/state";
 export type { ReferralRequestState, RequestState, Sprint1RequestState } from "./requests/state";
-export { isOpenRequestState } from "./requests/transitions";
+export { isOpenRequestState, isRequestTransitionDeclared } from "./requests/transitions";
 
 // Acompañamiento y sus vistas de lectura.
 export {
@@ -96,6 +97,7 @@ export {
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_CODE,
   NO_AVAILABILITY_ERROR_MESSAGE,
+  REQUEST_FIELDS_INVALID_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_MESSAGE,
   UNAUTHORIZED_ERROR_CODE,

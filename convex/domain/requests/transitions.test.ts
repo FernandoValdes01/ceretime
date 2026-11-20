@@ -11,6 +11,7 @@ import {
   ACCEPTANCE_STATE,
   CLOSURE_REQUEST_TRANSITIONS,
   isOpenRequestState,
+  isRequestTransitionDeclared,
   REFERRAL_REQUEST_TRANSITIONS,
   REQUEST_TRANSITIONS,
   RESPONSE_REQUEST_TRANSITIONS,
@@ -214,5 +215,20 @@ describe("isOpenRequestState (TI2-149)", () => {
         isOpenRequestState,
       ),
     ).toBe(false);
+  });
+});
+
+describe("isRequestTransitionDeclared (TI2-157)", () => {
+  test("responde lo mismo que la tabla para cada par de estados", () => {
+    for (const from of REQUEST_STATES) {
+      for (const to of REQUEST_STATES) {
+        const declared = REQUEST_TRANSITIONS.some((row) => row.from === from && row.to === to);
+        expect(isRequestTransitionDeclared(from, to)).toBe(declared);
+      }
+    }
+  });
+
+  test("un estado desconocido no admite ningún paso", () => {
+    expect(isRequestTransitionDeclared("desconocido", "accepted")).toBe(false);
   });
 });

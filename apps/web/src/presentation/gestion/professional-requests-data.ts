@@ -6,7 +6,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
- * Lecturas y escrituras de solicitudes del Profesional (TI2-91/92).
+ * Lecturas y escrituras de solicitudes del Profesional (TI2-91/92/157).
  *
  * Cableado delgado, un hook por recurso: consume solo queries/mutations públicas
  * ya existentes. Cada query responde `undefined` mientras carga y la
@@ -44,6 +44,19 @@ export function useTakeRequest() {
 /** Mutación para pedir información adicional (TI2-92). */
 export function useRequestAdditionalInformation() {
   return useMutation(api.presentation.requests.requestAdditionalInformation);
+}
+
+/**
+ * Mutación para aceptar y abrir el acompañamiento (TI2-157). El Backend
+ * rechaza repetirla sin abrir otro acompañamiento.
+ */
+export function useAcceptRequest() {
+  return useMutation(api.presentation.requests.acceptRequest);
+}
+
+/** Mutación para cerrar sin acompañamiento con una razón (TI2-157). */
+export function useCloseRequestWithoutAccompaniment() {
+  return useMutation(api.presentation.requests.closeRequestWithoutAccompaniment);
 }
 
 /** Página de bandeja o tomadas, derivada del contrato generado (sin duplicar formas). */
