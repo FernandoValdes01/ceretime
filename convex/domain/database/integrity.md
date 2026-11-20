@@ -87,3 +87,4 @@ El cierre se guarda en `accompaniments` con `closedById`, `closedAt` y `closureR
 Se quitan del esquema los campos que no figuran en el MER detalle de `docs/diagramas/integra4.drawio` ni en sus casos de uso. Lo que el MER guarda en otra entidad se conserva hasta implementarla.
 
 - `availabilityExceptions.reason`: EXCEPCIONES_DISPONIBILIDAD no tiene motivo. `publishException` ya no lo recibe, `listOwnAvailability` no lo entrega y los datos ficticios no lo cargan.
+- La regla de TI2-152 que impedía retirar al último profesional: ASIGNACIONES_PROFESIONALES se relaciona con ACOMPAÑAMIENTOS como 1 : 0..*, así que un acompañamiento puede quedar sin asignaciones. No cambia el esquema.

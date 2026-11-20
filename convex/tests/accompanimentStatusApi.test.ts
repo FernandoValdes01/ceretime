@@ -517,7 +517,7 @@ test("TI2-152 API: una atención vigente cuya hora ya pasó impide el cierre, y 
   });
 });
 
-test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta y el último profesional no se retira", async () => {
+test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta, también el último profesional", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "retiro");
   const { getAccompaniment, revokeAccompanimentAccess, pauseAccompaniment } =
@@ -551,17 +551,19 @@ test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta y el �
   expect(revoked[0]).toMatchObject({ status: "revoked", revokedBy: seed.pro });
   expect(revoked[0]?.revokedAt).toBeGreaterThan(0);
 
-  // Queda un solo profesional: retirarse dejaría el acompañamiento sin nadie.
+  // El MER admite un acompañamiento sin asignaciones (ASIGNA 1 : 0..*): el
+  // último profesional también se retira y pierde el acceso (TI2-165).
   const last = t.withIdentity(seed.proIdentity);
-  await expectPublicError(
-    last.mutation(revokeAccompanimentAccess, {
+  expect(
+    await last.mutation(revokeAccompanimentAccess, {
       ...args,
       userId: seed.pro,
       assignedRole: "professional",
     }),
-    "conflict",
-  );
-  expect(await last.query(getAccompaniment, args)).toMatchObject({ view: "full" });
+  ).toBe(1);
+  await expect(last.query(getAccompaniment, args)).rejects.toMatchObject({
+    data: "No autorizado",
+  });
 });
 
 test("TI2-152 API: un acompañamiento cerrado no admite conceder ni modificar accesos, pero sí retirarlos", async () => {

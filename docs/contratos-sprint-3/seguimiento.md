@@ -202,7 +202,7 @@ El cierre guarda en el propio acompañamiento quién cerró (`closedById`), cuá
 No hay una operación nueva: el cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` de TI2-140 (`docs/contratos-sprint-3/cuentas.md`), que ya registran quién concede o retira y cuándo. TI2-152 agrega estas reglas:
 
 - Quien se retira pierde el acceso en la consulta siguiente, porque cada lectura vuelve a exigir la asignación activa.
-- Un acompañamiento no queda sin profesional: retirar al único profesional asignado responde `conflict`. Para reemplazarlo, primero se asigna al nuevo y después se retira al anterior.
+- Retirar al último profesional asignado también procede, porque el MER admite un acompañamiento sin asignaciones (ASIGNA 1 : 0..*, TI2-165). Mientras nadie quede asignado, ningún Profesional opera sobre ese acompañamiento.
 - Un acompañamiento cerrado no admite conceder ni modificar accesos (`conflict`). Retirar un acceso sigue permitido.
 - Retirar a un profesional no cancela ni reasigna sus atenciones futuras: siguen a su nombre y solo el Estudiante puede cancelarlas o cambiarles el horario, con el acompañamiento activo. El cierre sí las cancela.
 
