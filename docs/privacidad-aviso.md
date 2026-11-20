@@ -1,11 +1,11 @@
 ---
 created: 2026-11-17T00:00
-updated: 2026-11-17T00:00
+updated: 2026-11-20T00:00
 ---
 
 # Aviso de privacidad de CERETI
 
-**Versión:** 0.1, borrador del 17 de noviembre de 2026.
+**Versión:** 0.2, borrador del 20 de noviembre de 2026.
 
 **Estado:** no publicado. Este texto no es una política aprobada por la UCT y no debe usarse con datos reales. Las secciones marcadas como pendientes requieren una decisión institucional.
 
@@ -105,13 +105,13 @@ Ningún sistema es infalible. El procedimiento de incidentes, los responsables y
 
 ## Cambios a este aviso
 
-Este aviso tiene fecha y versión. La versión 0.1 es un borrador y no se ha publicado. Cuando la UCT apruebe un cambio material, informará la nueva versión antes de aplicarla y conservará la anterior para consulta.
+Este aviso tiene fecha y versión. La versión 0.2 es un borrador y no se ha publicado. Cuando la UCT apruebe un cambio material, informará la nueva versión antes de aplicarla y conservará la anterior para consulta.
 
 ## Lo que este aviso no autoriza
 
 - Iniciar sesión con Google no es consentimiento para tratar tus datos. Es la autenticación institucional.
 - Leer este aviso no es una autorización general.
-- Conectar Google Calendar solo autoriza el alcance `calendar.events` para crear o actualizar el evento de una atención. No autoriza el resto del tratamiento.
+- Conectar Google Calendar autoriza `calendar.events` para crear o actualizar el evento de una atención, junto con los alcances básicos de identidad `openid`, `email` y `profile` que se solicitan al vincular la cuenta. No autoriza el resto del tratamiento.
 - La publicación de este aviso no activa notificaciones opcionales ni usos secundarios.
 
 ## Pendientes antes de publicar

@@ -1,6 +1,6 @@
 ---
 created: 2026-11-17T00:00
-updated: 2026-11-17T00:00
+updated: 2026-11-20T00:00
 ---
 
 # Inventario de datos personales, finalidades y bases propuestas
@@ -11,13 +11,13 @@ La Ley 21.719 entra en vigencia el 1 de diciembre de 2026. El análisis general 
 
 ## Cómo leer el inventario
 
-- **Alcance.** Cubre las 17 tablas de `convex/schema.ts`, las tablas del componente de autenticación Better Auth y los datos que quedan en el navegador o en el dispositivo. Las tablas sin datos personales se listan igual para que el inventario no tenga huecos.
+- **Alcance.** Cubre las 18 tablas de `convex/schema.ts`, las tablas del componente de autenticación Better Auth y los datos que quedan en el navegador o en el dispositivo. Las tablas sin datos personales se listan igual para que el inventario no tenga huecos.
 - **Datos personales.** Cualquier dato que identifique o pueda identificar a una persona, sola o combinada con otros datos. Los identificadores internos (`_id`, `studentId`, `professionalId`, `actorId`) cuentan porque vinculan filas con una persona.
 - **Datos sensibles.** El prototipo trata como sensibles las necesidades de acceso, los antecedentes de discapacidad o salud, las justificaciones de inasistencia y cualquier texto libre que pueda revelarlos. La calificación jurídica definitiva está pendiente.
 - **Base propuesta.** Es una propuesta de TI2 para que la UCT la apruebe o la reemplace. Las etiquetas «relación de acompañamiento», «relación institucional», «seguridad» y «rendición de cuentas» son categorías de trabajo, no bases legales definitivas; la traducción a las bases de la Ley 21.719 y el análisis de interés legítimo quedan pendientes. Ninguna base está aprobada.
 - **Acceso.** Describe la lectura y la escritura que existen hoy en el Backend o en los contratos. La matriz ejecutable vive en [`convex/domain/authorization/permissions-matrix.md`](../convex/domain/authorization/permissions-matrix.md).
 - **Proveedor.** Indica dónde se aloja el dato y quién lo procesa. Los contratos, países y garantías se detallan en [Proveedores y transferencias](#proveedores-y-transferencias).
-- **Fecha.** El inventario corresponde al esquema de `convex/schema.ts` y al código de la rama al 17 de noviembre de 2026.
+- **Fecha.** El inventario corresponde al esquema de `convex/schema.ts` y al código de la rama al 20 de noviembre de 2026.
 
 ## Resumen por tabla
 
@@ -25,6 +25,7 @@ La Ley 21.719 entra en vigencia el 1 de diciembre de 2026. El análisis general 
 | -------------------------- | ---------------------------------------------- | ---------------- | --------------- | --------------------------------------------------- | ------------------------------------- |
 | `users`                    | Identificar, autenticar y habilitar cuentas    | Sí               | No              | Relación institucional y seguridad                  | Convex; Google Workspace como origen  |
 | `accompaniments`           | Coordinar el acompañamiento                    | Sí               | Sí              | Consentimiento expreso y relación de acompañamiento | Convex                                |
+| `accompanimentTransitions` | Auditar pausas, reactivaciones y cierres       | Sí               | Posible         | Rendición de cuentas y cumplimiento                 | Convex                                |
 | `accompanimentAssignments` | Controlar quién accede al acompañamiento       | Sí               | No              | Seguridad y control de acceso                       | Convex                                |
 | `followUpNotes`            | Registrar notas internas                       | Sí               | Posible         | Relación de acompañamiento                          | Convex                                |
 | `requests`                 | Recibir y revisar solicitudes                  | Sí               | Sí              | Consentimiento expreso y relación de acompañamiento | Convex                                |
@@ -47,7 +48,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `users`
 
-- **Datos personales.** `email`, `fullName`, `role`, `institutionalStatus`, `accountStatus`, `tokenIdentifier`, `enabledBy`, `enabledAt`, `revokedBy` y `revokedAt`. `tokenIdentifier` es la clave estable que Better Auth asigna a la identidad; el identificador de Google vive en `account.accountId`. `enabledBy` y `revokedBy` identifican al Administrador o al Profesional de personal que habilitó, revocó o rehabilitó la cuenta.
+- **Datos personales.** `email`, `fullName`, `role`, `institutionalStatus`, `accountStatus`, `tokenIdentifier`, `enabledBy`, `enabledAt`, `revokedBy` y `revokedAt`. `tokenIdentifier` es la clave estable que Better Auth asigna a la identidad; el identificador de Google vive en `account.accountId`. `enabledBy` identifica al Administrador o al Profesional de personal que habilitó o rehabilitó la cuenta; `revokedBy`, al Administrador que la revocó.
 - **Finalidad.** Identificar a la persona, verificar su identidad con Google Workspace, decidir su rol, habilitar o revocar cuentas de personal y conservar el rastro de esas decisiones.
 - **Base propuesta.** Ejecución de la relación institucional para la cuenta y el acceso, y seguridad para la auditoría. Pendiente de aprobación.
 - **Acceso por rol.** El titular lee su propio perfil con `presentation/session.getMyProfile`. El Administrador lista y lee cuentas de personal con `presentation/accounts.listAccounts` y `getAccount`; no lee cuentas de estudiantes. Ningún otro rol lee perfiles ajenos.
@@ -57,8 +58,17 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 - **Datos personales.** `studentId`, `status`, `objective`, `accessNeeds` y `requestId`. `objective` y `accessNeeds` son texto libre y pueden revelar una discapacidad o una condición de salud.
 - **Finalidad.** Mantener el objetivo del acompañamiento, su estado y las necesidades de acceso vigentes, y vincularlo con la solicitud que lo originó.
+- **Código de referencia.** El «código de referencia» que muestra el aviso se deriva del `_id` del acompañamiento con `deriveCoordinationReferenceCode` (FNV-1a de 40 bits) y no se guarda en esta tabla; el MER objetivo lo ubica en `COORDINACION_CANAL_OFICIAL`. No contiene nombre, correo, RUT, necesidades ni fechas y no permite revertir al identificador.
 - **Base propuesta.** Consentimiento expreso para `accessNeeds` y relación de acompañamiento para el resto. Pendiente de aprobación.
 - **Acceso por rol.** El Estudiante dueño lee la vista completa. El Profesional asignado lee la vista completa. El Practicante asignado lee la vista minimizada, sin `studentId` ni `accessNeeds`. El Administrador está denegado siempre.
+- **Proveedor.** Convex.
+
+### `accompanimentTransitions`
+
+- **Datos personales.** `accompanimentId`, `from`, `to`, `actorId`, `reason` y `occurredAt`. `reason` es texto libre y puede contener datos personales o sensibles.
+- **Finalidad.** Conservar un historial append-only de pausas, reactivaciones y cierres del acompañamiento, con actor, fecha y motivo opcional (TI2-152). El motivo vive solo en esta tabla: no se copia al acompañamiento, a las atenciones ni a la auditoría de agenda.
+- **Base propuesta.** Rendición de cuentas y cumplimiento. Pendiente de aprobación.
+- **Acceso por rol.** No hay lectura pública, ni siquiera para el Administrador. Solo `accompanimentStatusWriter` escribe una fila por cambio, en la misma transacción. Las lecturas del acompañamiento muestran el estado resultante, no el historial ni el motivo.
 - **Proveedor.** Convex.
 
 ### `accompanimentAssignments`
@@ -226,7 +236,7 @@ El nombre y el correo de una cuenta de prueba son datos personales aunque la cue
 
 1. Google Workspace entrega nombre, correo y un identificador estable al iniciar sesión. Better Auth guarda la cuenta y la sesión; `users` guarda el perfil y el rol.
 2. La persona envía una solicitud. `requests` guarda el contenido y `requestTransitions` registra cada cambio de estado. Un Profesional la toma y `requestAssignments` deja la toma activa.
-3. La aceptación abre `accompaniments`. `accompanimentAssignments` decide qué profesionales y practicantes acceden.
+3. La aceptación abre `accompaniments`; `accompanimentTransitions` registra sus pausas, reactivaciones y cierres, y `accompanimentAssignments` decide qué profesionales y practicantes acceden.
 4. La agenda usa `availabilityBlocks`, `availabilityExceptions`, `spaces` y `appointments`. `appointmentProfessionals` registra a los participantes y `notificationEvents` el aviso del enlace en línea.
 5. Después de la atención, `followUpRecords`, `followUpAgreements`, `followUpTasks` y `followUpNotes` guardan el seguimiento.
 6. `appointmentAuditEvents` y `requestTransitions` conservan la trazabilidad. La futura consulta de derechos deberá usar el mismo conjunto de datos para responder al titular; su persistencia y su pantalla siguen pendientes.
@@ -235,7 +245,7 @@ El nombre y el correo de una cuenta de prueba son datos personales aunque la cue
 
 Hoy no existe una tabla de consentimientos en `convex/schema.ts`. El inicio de sesión con Google no es consentimiento para tratar datos personales: es la autenticación institucional. Leer el aviso de privacidad tampoco es una autorización general. La vinculación con Google Calendar es un consentimiento OAuth que pide `calendar.events` junto con los alcances básicos de identidad, no una autorización para el resto del sistema.
 
-El MER objetivo del Sprint 2 tiene `AVISO_PRIVACIDAD` y `LECTURA_AVISO`, pero ninguna entidad de consentimiento: `LECTURA_AVISO` registra que la persona leyó el aviso, no que consintió. Si la UCT elige consentimiento, el modelo necesita una entidad nueva y una issue aparte.
+El MER objetivo del Sprint 2 (carpeta del Drive «Diagramas Sprint 2 actualizado», MER2; el MER del repositorio todavía no incluye esas entidades) tiene `AVISO_PRIVACIDAD` y `LECTURA_AVISO`, pero ninguna entidad de consentimiento: `LECTURA_AVISO` registra que la persona leyó el aviso, no que consintió. Si la UCT elige consentimiento, el modelo necesita una entidad nueva y una issue aparte.
 
 Si la UCT decide que el consentimiento es la base para una finalidad, la propuesta de TI2 es esta:
 
