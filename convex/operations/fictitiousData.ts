@@ -177,7 +177,6 @@ export const load = internalMutation({
       date: Date.UTC(2026, 9, 12),
       kind: "cancelled",
       blockId: inPersonBlockId,
-      reason: "Bloque presencial cancelado para la demostración de excepciones.",
     });
     await ctx.db.insert("availabilityExceptions", {
       professionalId,
@@ -188,7 +187,6 @@ export const load = internalMutation({
       slotMinutes: 60,
       modality: "inPerson",
       spaceId,
-      reason: "Ventana adicional para la demostración de excepciones.",
     });
 
     // Las solicitudes pasan por los casos de uso reales, con las identidades

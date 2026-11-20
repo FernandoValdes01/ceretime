@@ -293,9 +293,10 @@ export default defineSchema({
   // al bloque recurrente afectado, que aporta ventana, duración, modalidad
   // y lugar) o la agrega (`added`, con su propia ventana completa:
   // `startMinute`/`endMinute`, `slotMinutes`, `modality` y `spaceId` cuando
-  // es presencial, ausente en línea). `reason` deja constancia opcional del
-  // motivo. Solo persistencia, sin reglas de autorización; las reglas de
-  // ventanas y compatibilidad son de TI2-81/TI2-82.
+  // es presencial, ausente en línea). No guarda motivo, porque
+  // EXCEPCIONES_DISPONIBILIDAD del MER no lo tiene (TI2-165). Solo
+  // persistencia, sin reglas de autorización; las reglas de ventanas y
+  // compatibilidad son de TI2-81/TI2-82.
   availabilityExceptions: defineTable({
     professionalId: v.id("users"),
     date: v.number(),
@@ -306,7 +307,6 @@ export default defineSchema({
     slotMinutes: v.optional(v.number()),
     modality: v.optional(modalityUnion),
     spaceId: v.optional(v.id("spaces")),
-    reason: v.optional(v.string()),
   })
     // Excepciones del profesional en un día: lo que la vista diaria descuenta
     // o agrega sobre los bloques recurrentes.

@@ -1057,7 +1057,6 @@ async function seedTi83Exception(
       ...(input.slotMinutes === undefined ? {} : { slotMinutes: input.slotMinutes }),
       ...(input.modality === undefined ? {} : { modality: input.modality }),
       ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
-      reason: "Motivo ficticio",
     });
   });
 }
@@ -1955,7 +1954,6 @@ test("repositorio de disponibilidad TI2-95: excepciones por rango civil inclusiv
       professionalId: proA,
       date: "2026-10-13",
       kind: "added",
-      reason: "Motivo ficticio",
       windows: [
         { startMinute: 600, endMinute: 660, slotMinutes: 30, modality: "inPerson", spaceId: room },
       ],
@@ -1972,7 +1970,6 @@ test("repositorio de disponibilidad TI2-95: excepciones por rango civil inclusiv
           date: "2026-10-12",
           kind: "cancelled",
           blockId: block,
-          reason: "Motivo ficticio",
           version: "v1",
         },
         addedException,
@@ -2360,7 +2357,6 @@ test("repositorio de disponibilidad TI2-95: guarda excepciones válidas y rechaz
       professionalId: proA,
       date: "2026-10-12",
       kind: "cancelled",
-      reason: "Motivo ficticio",
     });
     if (own.status !== "ok" || foreign.status !== "ok" || dayCancel.status !== "ok") {
       throw new Error("Escritura válida rechazada.");
@@ -2423,7 +2419,8 @@ test("repositorio de disponibilidad TI2-95: guarda excepciones válidas y rechaz
       ["2026-10-13", "added"],
       ["2026-10-19", "cancelled"],
     ]);
-    expect(exceptions.data[0]).toMatchObject({ reason: "Motivo ficticio" });
+    // EXCEPCIONES_DISPONIBILIDAD del MER no tiene motivo (TI2-165).
+    expect(exceptions.data[0]).not.toHaveProperty("reason");
     // Lo escrito siempre se puede expandir.
     const slots = expandAvailabilitySlots({
       professionalId: proA,
