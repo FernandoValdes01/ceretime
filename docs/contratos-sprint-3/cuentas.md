@@ -95,6 +95,10 @@ const ensureMyProfile = useMutation(api.presentation.session.ensureMyProfile);
 const profile = await ensureMyProfile();
 ```
 
+## Inicio de sesión desde la app móvil — TI2-182
+
+Better Auth confía en el esquema `ceretime://` (`scheme` de `apps/mobile/app.json`) en todos los deployments, y el plugin `expo()` devuelve la sesión a la app. Tras el callback de Google, si la redirección apunta a un esquema que no es `http(s)`, el backend agrega la cookie de sesión al enlace: la app recibe `ceretime://…?cookie=…` y la guarda. Android no verifica qué app es dueña de un esquema propio, así que otra app instalada que declare `ceretime://` podría recibir ese enlace con la sesión. El ingreso por la Web no cambia: el plugin solo actúa cuando se redirige a esquemas que no son `http(s)` o con el encabezado `expo-origin` sin `Origin`.
+
 ## Habilitación por el profesional — TI2-140
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
