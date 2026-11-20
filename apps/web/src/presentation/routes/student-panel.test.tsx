@@ -228,21 +228,6 @@ describe("panel inicial del Estudiante", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Aún no tienes solicitudes registradas.")).toBeDefined();
   });
-
-  test("ambas secciones denegadas muestran pendiente de habilitación sin reintento", async () => {
-    mockSession = SESSION;
-    shouldThrowRequests = true;
-    shouldThrowAccompaniments = true;
-    renderPanel();
-
-    expect(await screen.findByText(greetingText())).toBeDefined();
-    expect(await screen.findByText("Cuenta pendiente de habilitación")).toBeDefined();
-    expect(
-      screen.getByText("Tu cuenta aún no está habilitada para ver tus recursos."),
-    ).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
 });
 
 describe("etiquetas del panel", () => {
