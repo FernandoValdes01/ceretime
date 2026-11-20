@@ -178,11 +178,6 @@ export default defineSchema({
     // se escribe junto con el estado `referred`.
     incomingReferral: v.optional(incomingReferralValidator),
     outgoingReferral: v.optional(outgoingReferralValidator),
-    // Razón comprensible de cierre (TI2-135): la vigente y legible para el
-    // estudiante. `requestTransitions.reason` conserva el rastro histórico de
-    // cada transición; desde TI2-141 el cierre sin acompañamiento escribe
-    // ambas en la misma transacción.
-    closureReason: v.optional(v.string()),
     // Clave de idempotencia del envío (TI2-135), única por estudiante: un
     // reintento con la misma clave no crea otra solicitud.
     idempotencyKey: v.optional(v.string()),

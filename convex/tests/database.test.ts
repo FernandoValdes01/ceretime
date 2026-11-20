@@ -3361,12 +3361,10 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
       idempotencyKey: "ti135-clave-completa",
     });
   });
-  // La derivación de salida y la razón de cierre se escriben al derivar o cerrar.
+  // La derivación de salida se escribe al derivar. La razón de cierre queda
+  // solo en `requestTransitions`, como en el MER (TI2-165).
   await t.run(async (ctx) => {
-    await ctx.db.patch(requestId, {
-      outgoingReferral,
-      closureReason: "Tu necesidad corresponde a otra unidad",
-    });
+    await ctx.db.patch(requestId, { outgoingReferral });
   });
 
   const row = await ti135Row(t, requestId);
@@ -3378,20 +3376,20 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
     provenance,
     incomingReferral,
     outgoingReferral,
-    closureReason: "Tu necesidad corresponde a otra unidad",
     idempotencyKey: "ti135-clave-completa",
   });
+  expect(row).not.toHaveProperty("closureReason");
   expect(row.expectedOutcome).toHaveLength(2000);
   expect(requestProvenanceChannelOf(row)).toBe("official_channel");
 
-  // El detalle suma la razón de cierre (TI2-141) y, desde TI2-143, el canal y
-  // las derivaciones sin identificadores de personal. El contenido no viaja.
+  // El detalle suma, desde TI2-143, el canal y las derivaciones sin
+  // identificadores de personal; la razón de cierre solo aparece en una
+  // solicitud cerrada (TI2-141, TI2-165). El contenido no viaja.
   const asStudent = t.withIdentity(identityFor("ti135-full-est", "ti135full@alu.uct.cl"));
   const detail = await asStudent.query(api.presentation.requests.getRequest, { requestId });
   expect(Object.keys(detail).sort()).toEqual([
     "_id",
     "accessNeeds",
-    "closureReason",
     "createdAt",
     "incomingReferral",
     "outgoingReferral",

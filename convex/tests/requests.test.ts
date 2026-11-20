@@ -1019,7 +1019,6 @@ async function snapshotOf(t: SchemaTest, requestId: Id<"requests">) {
       .take(2);
     return {
       status: request?.status,
-      closureReason: request?.closureReason,
       transitions,
       accompaniments: accompaniments.length,
     };
@@ -1087,8 +1086,7 @@ test("TI2-85: el Estudiante cancela su solicitud abierta y queda el registro con
     // y el motivo recortado; no se abre ningún acompañamiento
     const after = await snapshotOf(t, requestId);
     expect(after.status).toBe("cancelled");
-    // Cancelar no escribe razón de cierre: el motivo del Estudiante queda en el registro
-    expect(after.closureReason).toBeUndefined();
+    // El motivo del Estudiante queda solo en el registro del cambio
     expect(after.accompaniments).toBe(0);
     expect(after.transitions).toHaveLength(1);
     expect(after.transitions[0]).toMatchObject({
@@ -1201,7 +1199,6 @@ test("TI2-85: repetir la cancelación o cancelar una aceptada o cerrada se recha
     );
     expect(await snapshotOf(t, endedId)).toEqual({
       status,
-      closureReason: undefined,
       transitions: [],
       accompaniments: 0,
     });
@@ -1231,10 +1228,13 @@ test("TI2-85: el Profesional con toma cierra sin acompañamiento desde revisión
   expect(closed.status).toBe("closed_without_accompaniment");
   const afterReview = await snapshotOf(t, reviewed._id);
   expect(afterReview.status).toBe("closed_without_accompaniment");
-  // La razón vigente queda en la fila, recortada e igual a la del registro
-  expect(afterReview.closureReason).toBe(
-    "La necesidad corresponde a otra unidad de la universidad",
-  );
+  // La razón queda recortada en el registro del cambio y no en la fila (TI2-165)
+  expect(afterReview.transitions.at(-1)).toMatchObject({
+    to: "closed_without_accompaniment",
+    reason: "La necesidad corresponde a otra unidad de la universidad",
+  });
+  const closedRow = await t.run(async (ctx) => await ctx.db.get(reviewed._id));
+  expect(closedRow).not.toHaveProperty("closureReason");
   expect(afterReview.accompaniments).toBe(0);
   expect(afterReview.transitions.map((row) => `${row.from} -> ${row.to}`)).toEqual([
     "received -> under_review",
@@ -1362,7 +1362,6 @@ test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza si
     );
     expect(await snapshotOf(t, requestId)).toEqual({
       status,
-      closureReason: undefined,
       transitions: [],
       accompaniments: 0,
     });

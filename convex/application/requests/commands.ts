@@ -406,9 +406,9 @@ export interface CloseRequestDeps<RequestId extends string, UserId extends strin
  * otra persona recibe denegación genérica. El motivo es la razón comprensible
  * que pide la especificación y es obligatorio. Si el estado no admite el
  * paso, incluida una solicitud aceptada o ya cerrada, se rechaza sin
- * modificar nada. Persiste el estado, la razón vigente (`closureReason`) y
- * el registro del cambio en la misma transacción; la toma queda tal cual,
- * como rastro de quién revisó.
+ * modificar nada. Persiste el estado y el registro del cambio, que guarda la
+ * razón, en la misma transacción; la toma queda tal cual, como rastro de
+ * quién revisó.
  */
 export async function closeRequestWithoutAccompaniment<
   RequestId extends string,

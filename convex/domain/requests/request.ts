@@ -451,8 +451,11 @@ export function toInformationResponse(raw: string): ApiResult<string> {
  * la solicitud espera respuesta: después deja de ser lo pendiente.
  * `informationResponse` es la respuesta al último pedido: si el Profesional
  * vuelve a pedir, la respuesta anterior deja de entregarse hasta que llegue la
- * nueva, así una pregunta pendiente no parece respondida. Son texto libre:
- * solo se entregan en el detalle, a quien ya puede leer la solicitud.
+ * nueva, así una pregunta pendiente no parece respondida.
+ * `closureReason` es la razón del cierre sin acompañamiento, que el MER guarda
+ * en TRANSICIONES_SOLICITUD (`motivo?`) y no en la solicitud (TI2-165): sale
+ * del último cambio, porque el cierre es terminal. Son texto libre: solo se
+ * entregan en el detalle, a quien ya puede leer la solicitud.
  */
 export function toRequestExchange(
   status: RequestState,
@@ -461,7 +464,11 @@ export function toRequestExchange(
     readonly to: RequestState;
     readonly reason?: string;
   }[],
-): { readonly informationRequest?: string; readonly informationResponse?: string } {
+): {
+  readonly informationRequest?: string;
+  readonly informationResponse?: string;
+  readonly closureReason?: string;
+} {
   const requestAt = recentChanges.findIndex(
     (change) => change.to === "awaiting_information_or_acceptance",
   );
@@ -476,11 +483,17 @@ export function toRequestExchange(
     responseAt !== -1 && (requestAt === -1 || responseAt < requestAt)
       ? recentChanges[responseAt]
       : undefined;
+  const closure = recentChanges[0];
   return {
     ...(status === "awaiting_information_or_acceptance" && lastRequest?.reason !== undefined
       ? { informationRequest: lastRequest.reason }
       : {}),
     ...(lastResponse?.reason === undefined ? {} : { informationResponse: lastResponse.reason }),
+    ...(status === "closed_without_accompaniment" &&
+    closure?.to === "closed_without_accompaniment" &&
+    closure.reason !== undefined
+      ? { closureReason: closure.reason }
+      : {}),
   };
 }
 

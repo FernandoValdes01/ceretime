@@ -14,16 +14,14 @@ import { setRequestStatus } from "../infrastructure/requests/repository";
 describe("toStatusChange (TI2-141)", () => {
   const base = { from: "under_review", actorId: "pro-ficticio", occurredAt: 1 } as const;
 
-  test("el destino sale de la política y solo el cierre lleva su razón", () => {
+  test("el destino sale de la política y la razón del cierre no viaja en la solicitud", () => {
     expect(
       toStatusChange({ ...base, to: "awaiting_information_or_acceptance", reason: "Pedido" }),
     ).toEqual({ status: "awaiting_information_or_acceptance" });
+    // TI2-165: el MER guarda la razón solo en TRANSICIONES_SOLICITUD.
     expect(
       toStatusChange({ ...base, to: "closed_without_accompaniment", reason: "Razón" }),
-    ).toEqual({
-      status: "closed_without_accompaniment",
-      closureReason: "Razón",
-    });
+    ).toEqual({ status: "closed_without_accompaniment" });
   });
 
   test("TI2-143: la derivación de salida lleva su unidad de destino por el mismo camino", () => {
@@ -52,10 +50,9 @@ describe("toStatusChange (TI2-141)", () => {
     );
   });
 
-  test("la firma rechaza una razón de cierre con otro estado y un cierre sin razón", () => {
-    // @ts-expect-error una razón de cierre en una solicitud aceptada no compila
+  test("la firma rechaza una razón de cierre en la solicitud y una derivación sin destino", () => {
+    // @ts-expect-error la razón de cierre ya no se escribe en la solicitud (TI2-165)
     const acceptedWithReason: RequestStatusChange = { status: "accepted", closureReason: "x" };
-    // @ts-expect-error un cierre sin razón no compila
     const closedWithoutReason: RequestStatusChange = { status: "closed_without_accompaniment" };
     // @ts-expect-error una solicitud derivada sin su derivación de salida no compila
     const referredWithoutDestination: RequestStatusChange = { status: "referred" };

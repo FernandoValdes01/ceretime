@@ -48,7 +48,7 @@ El detalle suma campos que no viajan en los listados ni en la bandeja. Tres son 
 
 - `informationRequest`: lo que pidió el Profesional. Solo está mientras la solicitud espera respuesta.
 - `informationResponse`: la respuesta del Estudiante al último pedido. Si el Profesional vuelve a pedir información, la respuesta anterior deja de venir hasta que llegue la nueva, así una pregunta pendiente nunca aparece junto a una respuesta vieja.
-- `closureReason`: la razón de cierre, legible para el Estudiante.
+- `closureReason`: la razón de cierre, legible para el Estudiante. Solo aparece en una solicitud `closed_without_accompaniment` y sale del registro del cierre en `requestTransitions`, como `motivo?` de TRANSICIONES_SOLICITUD en el MER (TI2-165).
 
 Desde TI2-143 suma además la procedencia y las derivaciones, sin identificadores de personal:
 
@@ -98,7 +98,7 @@ Debe haber al menos una necesidad seleccionada o un `otherAccessNeed` con texto.
 
 - **Responder** solo es posible desde `awaiting_information_or_acceptance`. La solicitud vuelve a `under_review` para que quien la tomó la retome. La respuesta es obligatoria, de hasta 2000 caracteres, y queda en el historial de la solicitud.
 - **Cancelar** es posible desde `received`, `under_review` o `awaiting_information_or_acceptance`. El motivo es obligatorio.
-- **Cerrar sin acompañamiento** es posible desde `under_review` o `awaiting_information_or_acceptance`. La razón es obligatoria y queda como `closureReason`.
+- **Cerrar sin acompañamiento** es posible desde `under_review` o `awaiting_information_or_acceptance`. La razón es obligatoria, queda en el registro del cambio y el detalle la entrega como `closureReason`.
 - Cancelar o cerrar nunca abre un acompañamiento. Una solicitud cancelada, cerrada o aceptada no admite ningún paso más. Una necesidad posterior empieza con una solicitud nueva.
 - Cada cambio queda en el historial de la solicitud con actor y fecha. Los motivos y respuestas son texto libre: no deben incluir diagnósticos ni etiquetas clínicas, y no se copian a la bitácora de auditoría.
 

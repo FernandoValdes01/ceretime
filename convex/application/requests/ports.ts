@@ -41,8 +41,6 @@ export type StoredRequestRow<RequestId extends string, UserId extends string> = 
   readonly status: RequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
-  /** Razón vigente del cierre sin acompañamiento; solo la entrega el detalle. */
-  readonly closureReason?: string;
   /**
    * Canal por el que llegó y, en el canal oficial, quién la registró; ausente
    * en las filas anteriores a TI2-135.
