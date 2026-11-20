@@ -35,7 +35,7 @@ export const authComponent = createClient<DataModel>(components.betterAuth);
  */
 const MOBILE_APP_ORIGIN = "ceretime://";
 
-function resolveTrustedOrigins(siteUrl: string): string[] {
+export function resolveTrustedOrigins(siteUrl: string): string[] {
   const origins = new Set<string>([siteUrl, env.CONVEX_SITE_URL, MOBILE_APP_ORIGIN]);
   const extra = env.BETTER_AUTH_TRUSTED_ORIGINS;
   if (typeof extra === "string" && extra.length > 0) {
