@@ -22,6 +22,8 @@ import { createNativeSpeechRecognitionAdapter } from "../infrastructure/native-s
 import { createDemoStudentAreaReader } from "../infrastructure/demo-student-area-reader";
 import { createDemoStudentRequestSubmitter } from "../infrastructure/demo-student-request-submitter";
 import { createDemoStudentAreaStore } from "../infrastructure/demo-student-area-store";
+import { createConvexProfessionalReviewAdapter } from "../infrastructure/convex-professional-review-adapter";
+import { createConvexProfessionalAccompanimentReader } from "../infrastructure/convex-professional-accompaniment-reader";
 
 type DemoReadMode = "success" | "empty" | "error";
 
@@ -93,22 +95,38 @@ function getInstitutionalAuth() {
   return institutionalAuth;
 }
 
-function createAuthPort(): AuthPort {
-  if (authMode === "demo") return createDemoAuthAdapter();
-  const { authClient, tokens } = getInstitutionalAuth();
-  // El transporte se crea en la primera consulta: una URL ausente falla al verificar la sesión, no al abrir la app.
-  const convexClient: Pick<MobileConvexClient, "query" | "mutation"> = {
+// Con ingreso institucional, los módulos ya conectados leen y escriben en Convex con la sesión real;
+// el resto conserva la demostración local hasta que su issue lo conecte.
+function createDataDependencies() {
+  const demo = createDemoDataDependencies();
+  if (authMode === "demo") return demo;
+  const client = lazyConvexClient();
+  return {
+    ...demo,
+    professionalReviewPort: createConvexProfessionalReviewAdapter(client),
+    professionalAccompanimentReader: createConvexProfessionalAccompanimentReader(client),
+  };
+}
+
+// El transporte se crea en la primera llamada: una URL ausente falla al consultar, no al abrir la app.
+function lazyConvexClient(): Pick<MobileConvexClient, "query" | "mutation"> {
+  return {
     query: (query, args) => getMobileConvexClient().query(query, args),
     mutation: (mutation, args) => getMobileConvexClient().mutation(mutation, args),
   };
-  return createConvexAuthAdapter({ authClient, convexClient, tokens });
+}
+
+function createAuthPort(): AuthPort {
+  if (authMode === "demo") return createDemoAuthAdapter();
+  const { authClient, tokens } = getInstitutionalAuth();
+  return createConvexAuthAdapter({ authClient, convexClient: lazyConvexClient(), tokens });
 }
 
 // Punto único donde la app elige las implementaciones de cada puerto. Los datos siguen siendo
 // demostración local salvo la sesión (ingreso institucional, si hay Site URL), preferencias
 // (AsyncStorage) y voz (módulos nativos); conectar el resto de Convex se hace aquí.
 export const mobileDependencies = {
-  ...createDemoDataDependencies(),
+  ...createDataDependencies(),
   accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
   speechPort: createNativeSpeechAdapter(),
   speechRecognitionPort: createNativeSpeechRecognitionAdapter(),
@@ -116,7 +134,7 @@ export const mobileDependencies = {
   demoCredentials: demoAuthCredentials,
   unassignedInternCredentials,
   resetDemo(): void {
-    Object.assign(mobileDependencies, createDemoDataDependencies());
+    Object.assign(mobileDependencies, createDataDependencies());
   },
 };
 
