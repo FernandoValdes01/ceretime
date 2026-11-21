@@ -13,7 +13,7 @@ import type { OwnRequestDetail, OwnRequestItem } from "./student-requests-data.t
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Estudiante titular, salvo los casos de denegación. Las queries de datos
- * se mockean por módulo porque `convex/react` no distingue referencias del
+ * se simulan por módulo porque `convex/react` no distingue referencias del
  * `api` generado (crea un objeto nuevo por acceso); el cableado real
  * query→referencia lo cubren `tsc`, el build y la verificación manual contra
  * el entorno ficticio de TI2-30. Todos los datos son ficticios.
@@ -60,6 +60,18 @@ vi.mock("./student-requests-data.ts", () => ({
     }
     return mockedDetail;
   },
+}));
+
+type ActionOutcome = import("./student-request-actions.ts").OwnRequestActionOutcome;
+const cancelOwnRequest = vi.fn<(requestId: string, reason: string) => Promise<ActionOutcome>>();
+const respondToInformation =
+  vi.fn<(requestId: string, response: string) => Promise<ActionOutcome>>();
+
+// La traducción de errores se prueba en `student-request-actions.test.ts`;
+// acá cada acción entrega directamente su desenlace.
+vi.mock("./student-request-actions.ts", () => ({
+  useCancelOwnRequest: () => cancelOwnRequest,
+  useRespondToInformationRequest: () => respondToInformation,
 }));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
@@ -127,14 +139,16 @@ function estadoPaginado(
 }
 
 function detallePropio(
-  overrides: Partial<{ _id: string; status: "under_review"; accessNeeds: string }> = {},
+  overrides: Partial<Omit<OwnRequestDetail, "_id" | "studentId">> & { _id?: string } = {},
 ): OwnRequestDetail {
+  const { _id, ...rest } = overrides;
   return {
-    _id: (overrides._id ?? "req-1") as Id<"requests">,
-    studentId: "stu-1" as Id<"users">,
-    status: overrides.status ?? "under_review",
-    accessNeeds: overrides.accessNeeds ?? "Apoyo ficticio para la prueba",
+    status: "under_review",
+    accessNeeds: "Apoyo ficticio para la prueba",
     createdAt: 1700000000000,
+    ...rest,
+    _id: (_id ?? "req-1") as Id<"requests">,
+    studentId: "stu-1" as Id<"users">,
   };
 }
 
@@ -154,6 +168,8 @@ beforeEach(() => {
   paginatedThrows = null;
   mockedDetail = undefined;
   detailThrows = null;
+  cancelOwnRequest.mockReset();
+  respondToInformation.mockReset();
 });
 
 afterEach(() => {
@@ -366,6 +382,217 @@ describe("detalle propio del Estudiante (TI2-89)", () => {
     mockedDetail = detallePropio({ _id: "req-1" });
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Apoyo ficticio para la prueba")).toBeDefined();
+  });
+});
+
+describe("estado, respuesta y cancelación de la solicitud propia (TI2-153)", () => {
+  test.each([
+    ["received", "Recibida", /CERETI recibió tu solicitud/],
+    ["under_review", "En revisión", /está revisando tu solicitud/],
+    [
+      "awaiting_information_or_acceptance",
+      "Esperando información o aceptación",
+      /necesita tu respuesta/,
+    ],
+    ["accepted", "Aceptada", /abrió tu acompañamiento/],
+    ["referred", "Derivada", /derivó tu solicitud a otra unidad/],
+    ["closed_without_accompaniment", "Cerrada sin acompañamiento", /sin abrir un acompañamiento/],
+    ["cancelled", "Cancelada", /Cancelaste esta solicitud/],
+  ] as const)("el estado %s se nombra y se explica", async (status, label, description) => {
+    mockedDetail = detallePropio({ status });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    expect(await screen.findByText(label)).toBeDefined();
+    expect(screen.getByText(description)).toBeDefined();
+  });
+
+  test("en espera muestra lo pedido y ofrece responder y cancelar", async () => {
+    mockedDetail = detallePropio({
+      status: "awaiting_information_or_acceptance",
+      informationRequest: "Indica tu horario ficticio de clases.",
+    });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    expect(await screen.findByText("Indica tu horario ficticio de clases.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Responder a CERETI" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Cancelar solicitud" })).toBeDefined();
+  });
+
+  test("en revisión solo ofrece cancelar", async () => {
+    mockedDetail = detallePropio({ status: "under_review" });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    expect(await screen.findByRole("button", { name: "Cancelar solicitud" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Responder a CERETI" })).toBeNull();
+  });
+
+  test.each(["accepted", "referred", "closed_without_accompaniment", "cancelled"] as const)(
+    "la solicitud %s no ofrece acciones",
+    async (status) => {
+      mockedDetail = detallePropio({ status });
+      renderAt("/estudiante/solicitudes/req-1");
+
+      expect(await screen.findByRole("heading", { name: "Estado" })).toBeDefined();
+      expect(screen.queryByRole("button", { name: "Cancelar solicitud" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "Responder a CERETI" })).toBeNull();
+    },
+  );
+
+  test("responder confirma en un diálogo, anuncia el envío y devuelve el foco al estado", async () => {
+    mockedDetail = detallePropio({
+      status: "awaiting_information_or_acceptance",
+      informationRequest: "Indica tu horario ficticio.",
+    });
+    respondToInformation.mockResolvedValue({ status: "done" });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Responder a CERETI" }));
+    const dialog = screen.getByRole("dialog", { name: "Responder a CERETI" });
+    const field = screen.getByLabelText(/Tu respuesta/);
+    expect(document.activeElement).toBe(field);
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+
+    fireEvent.change(field, { target: { value: "Martes y jueves por la tarde." } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar respuesta" }));
+
+    expect(await screen.findByText(/Enviamos tu respuesta/)).toBeDefined();
+    expect(respondToInformation).toHaveBeenCalledWith("req-1", "Martes y jueves por la tarde.");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement?.textContent).toContain("Esperando información o aceptación");
+  });
+
+  test("cancelar pide confirmación y Escape cierra sin cancelar, con foco en el botón", async () => {
+    mockedDetail = detallePropio({ status: "received" });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    const open = await screen.findByRole("button", { name: "Cancelar solicitud" });
+    open.focus();
+    fireEvent.click(open);
+    const dialog = screen.getByRole("dialog", { name: "¿Cancelar esta solicitud?" });
+    expect(dialog.textContent).toMatch(/no podrás retomarla/);
+
+    fireEvent.keyDown(dialog, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(open);
+    expect(cancelOwnRequest).not.toHaveBeenCalled();
+  });
+
+  test("el diálogo mantiene Tab dentro de sus controles", async () => {
+    mockedDetail = detallePropio({ status: "received" });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar solicitud" }));
+    const dialog = screen.getByRole("dialog");
+    const confirm = screen.getByRole("button", { name: "Sí, cancelar solicitud" });
+    confirm.focus();
+    fireEvent.keyDown(dialog, { key: "Tab" });
+
+    expect(document.activeElement).toBe(screen.getByLabelText(/Motivo de la cancelación/));
+  });
+
+  test("una cancelación que el Backend rechaza explica el motivo y no anuncia éxito", async () => {
+    mockedDetail = detallePropio({ status: "under_review" });
+    cancelOwnRequest.mockResolvedValue({
+      status: "rejected",
+      message: "La solicitud no admite la cancelación en su estado actual.",
+    });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar solicitud" }));
+    const field = screen.getByLabelText(/Motivo de la cancelación/);
+    fireEvent.change(field, { target: { value: "Ya no lo necesito." } });
+    fireEvent.click(screen.getByRole("button", { name: "Sí, cancelar solicitud" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/no admite la cancelación en su estado actual/);
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByRole("dialog")).toBeDefined();
+    expect(screen.queryByText("Cancelaste la solicitud.")).toBeNull();
+  });
+
+  test.each([
+    ["denied", /No puedes hacer esto con esta solicitud/],
+    ["failed", /No pudimos completar la acción/],
+  ] as const)("el desenlace %s se explica sin éxito falso", async (status, message) => {
+    mockedDetail = detallePropio({ status: "received" });
+    cancelOwnRequest.mockResolvedValue({ status });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar solicitud" }));
+    fireEvent.change(screen.getByLabelText(/Motivo de la cancelación/), {
+      target: { value: "Motivo ficticio." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sí, cancelar solicitud" }));
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(message);
+    expect(screen.queryByText("Cancelaste la solicitud.")).toBeNull();
+  });
+
+  // El nuevo estado llega por la query reactiva, no por la acción: la vista no lo deduce.
+  test("la cancelación exitosa se anuncia y devuelve el foco al estado", async () => {
+    mockedDetail = detallePropio({ status: "received" });
+    cancelOwnRequest.mockResolvedValue({ status: "done" });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar solicitud" }));
+    fireEvent.change(screen.getByLabelText(/Motivo de la cancelación/), {
+      target: { value: "Ya no lo necesito." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sí, cancelar solicitud" }));
+
+    expect(await screen.findByText("Cancelaste la solicitud.")).toBeDefined();
+    expect(cancelOwnRequest).toHaveBeenCalledWith("req-1", "Ya no lo necesito.");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement?.textContent).toContain("Recibida");
+  });
+
+  test("la cerrada sin acompañamiento muestra la razón del cierre", async () => {
+    mockedDetail = detallePropio({
+      status: "closed_without_accompaniment",
+      closureReason: "La necesidad ficticia corresponde a otra unidad.",
+    });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    expect(await screen.findByText("Razón del cierre")).toBeDefined();
+    expect(screen.getByText("La necesidad ficticia corresponde a otra unidad.")).toBeDefined();
+  });
+
+  test("la derivada muestra la unidad de destino y el motivo", async () => {
+    mockedDetail = detallePropio({
+      status: "referred",
+      outgoingReferral: {
+        destinationUnit: "Unidad Ficticia",
+        referredAt: 1700000000000,
+        reason: "Motivo ficticio de derivación.",
+      },
+    });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    expect(await screen.findByText("Unidad Ficticia")).toBeDefined();
+    expect(screen.getByText("Motivo ficticio de derivación.")).toBeDefined();
+  });
+
+  test("la aceptada enlaza con su acompañamiento", async () => {
+    mockedDetail = detallePropio({
+      status: "accepted",
+      accompanimentId: "acc-1" as Id<"accompaniments">,
+    });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    const link = await screen.findByRole("link", { name: "Ver mi acompañamiento" });
+    expect(link.getAttribute("href")).toBe("/estudiante/acompanamientos/acc-1");
+  });
+
+  test("la respuesta enviada se conserva en el detalle", async () => {
+    mockedDetail = detallePropio({
+      status: "under_review",
+      informationResponse: "Respuesta ficticia ya enviada.",
+    });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    expect(await screen.findByText("Tu última respuesta")).toBeDefined();
+    expect(screen.getByText("Respuesta ficticia ya enviada.")).toBeDefined();
   });
 });
 
