@@ -378,30 +378,29 @@ export default defineSchema({
     .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"])
     // Atención que ya guarda un enlace privado (TI2-142): un enlace por
     // atención, así el mismo enlace no se reutiliza como sala fija.
-    .index("by_privateAccessReference", ["privateAccessReference"]),
+    .index("by_privateAccessReference", ["privateAccessReference"])
+    // Atenciones del centro por estado desde un instante: confirma los cruces
+    // de un profesional adicional, porque su fila de participante no guarda
+    // horario (TI2-165), sin leer las canceladas.
+    .index("by_status_and_startsAt", ["status", "startsAt"]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
-  // atención (TI2-138). `appointments.professionalId` sigue siendo el
-  // profesional responsable principal para conservar la compatibilidad; esta
-  // tabla registra el conjunto completo sin crear otra atención ni otra
-  // asignación. Cada fila copia la ventana `startsAt`/`endsAt` de la atención
-  // para detectar cruces con una sola consulta de rango, igual que
-  // `appointments`. Como máximo una fila por atención y profesional; la
-  // garantía la da la vía de escritura, porque Convex no impone unicidad. El
-  // repositorio la mantiene sincronizada al crear o mover la atención y la
-  // migración la completa para las filas anteriores.
+  // atención (TI2-138), ATENCION_PROFESIONALES del MER.
+  // `appointments.professionalId` sigue siendo el profesional responsable
+  // principal para conservar la compatibilidad; esta tabla registra el
+  // conjunto completo sin crear otra atención ni otra asignación. No copia el
+  // horario de la atención, porque el MER no lo tiene (TI2-165): los cruces se
+  // leen de `appointments`. Como máximo una fila por atención y profesional;
+  // la garantía la da la vía de escritura, porque Convex no impone unicidad.
+  // El repositorio la mantiene al crear o mover la atención y la migración la
+  // completa para las filas anteriores.
   appointmentProfessionals: defineTable({
     appointmentId: v.id("appointments"),
     professionalId: v.id("users"),
-    startsAt: v.number(),
-    endsAt: v.number(),
   })
     // Participantes de la atención: una fila basta para decidir y el conjunto
     // se lee sin filtrar en memoria.
-    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"])
-    // Cruces del profesional desde un instante: ventana de la agenda de todos
-    // sus participantes, sin recorrer las atenciones.
-    .index("by_professionalId_and_startsAt", ["professionalId", "startsAt"]),
+    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"]),
 
   // Tabla 'notificationEvents': eventos de notificación de la atención
   // (forma de TI2-105, persistida por TI2-118). Cada fila guarda solo las

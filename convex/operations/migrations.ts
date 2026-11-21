@@ -257,8 +257,6 @@ export const migrateLegacyAppointments = internalMutation({
       const inserted = await syncAppointmentProfessional(ctx, {
         appointmentId: row._id,
         professionalId: row.professionalId,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
       });
       if (!inserted) continue;
       createdParticipants += 1;

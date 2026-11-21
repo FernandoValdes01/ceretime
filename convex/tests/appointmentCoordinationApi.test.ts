@@ -162,8 +162,14 @@ async function participantsOf(t: TestConvex<typeof schema>, appointmentId: strin
           q.eq("appointmentId", appointmentId as Id<"appointments">),
         )
         .take(10)
-    ).map(({ professionalId, startsAt, endsAt }) => ({ professionalId, startsAt, endsAt })),
+    ).map(({ professionalId }) => professionalId),
   );
+}
+
+/** Inicio vigente de la atención: los participantes no copian su horario (TI2-165). */
+async function startsAtOf(t: TestConvex<typeof schema>, appointmentId: string) {
+  const row = await t.run(async (ctx) => await ctx.db.get(appointmentId as Id<"appointments">));
+  return row?.startsAt;
 }
 
 test(
@@ -203,10 +209,7 @@ test(
     });
     expect(row).not.toHaveProperty("onlineSupports");
     expect(await participantsOf(t, appointmentId)).toEqual(
-      expect.arrayContaining([
-        { professionalId: seeded.responsible, startsAt: at(12), endsAt: at(13) },
-        { professionalId: seeded.additional, startsAt: at(12), endsAt: at(13) },
-      ]),
+      expect.arrayContaining([seeded.responsible, seeded.additional]),
     );
 
     // Un segundo intento por el mismo cupo no se confirma.
@@ -279,11 +282,9 @@ test(
       ),
     ).toStrictEqual(CONFLICT);
     expect(await participantsOf(t, appointmentId)).toEqual(
-      expect.arrayContaining([
-        { professionalId: seeded.responsible, startsAt: at(13), endsAt: at(14) },
-        { professionalId: seeded.additional, startsAt: at(13), endsAt: at(14) },
-      ]),
+      expect.arrayContaining([seeded.responsible, seeded.additional]),
     );
+    expect(await startsAtOf(t, appointmentId)).toBe(at(13));
   },
   API_TEST_TIMEOUT_MS,
 );
@@ -316,11 +317,9 @@ test(
     // A las 13:00 ambos pueden.
     await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, toThirteen);
     expect(await participantsOf(t, appointmentId)).toEqual(
-      expect.arrayContaining([
-        { professionalId: seeded.responsible, startsAt: at(13), endsAt: at(14) },
-        { professionalId: seeded.additional, startsAt: at(13), endsAt: at(14) },
-      ]),
+      expect.arrayContaining([seeded.responsible, seeded.additional]),
     );
+    expect(await startsAtOf(t, appointmentId)).toBe(at(13));
 
     // Revocada su asignación, el adicional ya no es reservable: no impide
     // reagendar a las 15:00 y sale de la atención en el mismo cambio.
@@ -336,9 +335,8 @@ test(
       }
     });
     await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, toFifteen);
-    expect(await participantsOf(t, appointmentId)).toEqual([
-      { professionalId: seeded.responsible, startsAt: at(15), endsAt: at(16) },
-    ]);
+    expect(await participantsOf(t, appointmentId)).toEqual([seeded.responsible]);
+    expect(await startsAtOf(t, appointmentId)).toBe(at(15));
   },
   API_TEST_TIMEOUT_MS,
 );

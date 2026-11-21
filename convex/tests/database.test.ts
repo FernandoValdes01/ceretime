@@ -3704,7 +3704,7 @@ test("TI2-135: la migración de solicitudes avanza por páginas hasta agotar las
  * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
  * que reservar registra a los participantes sin copiar las necesidades (el MER
  * las versiona en NECESIDADES_ACCESO, TI2-165), que mover la atención con otro
- * responsable reemplaza al anterior en la ventana de participantes y que la
+ * responsable reemplaza al anterior entre los participantes y que la
  * migración completa las filas anteriores sin inventar la referencia privada.
  */
 
@@ -3751,25 +3751,21 @@ test("TI2-138: reservar registra a los participantes y no copia las necesidades"
   expect(row).not.toHaveProperty("appliedAccessNeeds");
   expect(row).not.toHaveProperty("onlineSupports");
 
-  // Índice de cruces: la fila del profesional copia la ventana de la atención.
-  const windows = await t.run(async (ctx) => {
+  // La fila del profesional no copia el horario: ATENCION_PROFESIONALES del
+  // MER no lo tiene y los cruces se leen de la atención (TI2-165).
+  const participants = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointmentProfessionals")
-      .withIndex("by_professionalId_and_startsAt", (q) =>
-        q.eq("professionalId", professional).gte("startsAt", TI83_MONDAY_9H),
-      )
+      .withIndex("by_appointmentId_and_professionalId", (q) => q.eq("appointmentId", appointmentId))
       .take(10);
   });
-  expect(windows).toHaveLength(1);
-  expect(windows[0]).toMatchObject({
-    appointmentId,
-    professionalId: professional,
-    startsAt: TI83_MONDAY_9H,
-    endsAt: TI83_MONDAY_10H,
-  });
+  expect(participants).toHaveLength(1);
+  expect(participants[0]).toMatchObject({ appointmentId, professionalId: professional });
+  expect(participants[0]).not.toHaveProperty("startsAt");
+  expect(participants[0]).not.toHaveProperty("endsAt");
 });
 
-test("TI2-138: mover la atención cambia al responsable en la ventana de participantes", async () => {
+test("TI2-138: mover la atención cambia al responsable entre los participantes", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti138-move-est",
@@ -3860,24 +3856,15 @@ test("TI2-138: mover la atención cambia al responsable en la ventana de partici
   // El responsable anterior deja de participar: la fila pasa a ser la del
   // nuevo y la atención sigue teniendo una sola fila por responsable.
   expect(participants.map((row) => row.professionalId)).toEqual([secondProfessional]);
-  expect(participants[0]).toMatchObject({
-    startsAt: TI83_MONDAY_10H,
-    endsAt: TI83_MONDAY_10H + 3_600_000,
-  });
 
-  // El índice de cruces del anterior solo devuelve su otra atención a las
-  // 10:00, no la que ya no le pertenece.
-  const previousWindows = await t.run(async (ctx) => {
-    return await ctx.db
-      .query("appointmentProfessionals")
-      .withIndex("by_professionalId_and_startsAt", (q) =>
-        q.eq("professionalId", firstProfessional).gte("startsAt", TI83_MONDAY_10H),
-      )
-      .take(10);
+  // El anterior solo participa en su otra atención de las 10:00, no en la que
+  // ya no le pertenece.
+  const previousRows = await t.run(async (ctx) => {
+    return (await ctx.db.query("appointmentProfessionals").take(10)).filter(
+      (row) => row.professionalId === firstProfessional,
+    );
   });
-  expect(previousWindows.map((row) => row.appointmentId)).toEqual([
-    otherAttention.data.appointmentId,
-  ]);
+  expect(previousRows.map((row) => row.appointmentId)).toEqual([otherAttention.data.appointmentId]);
 });
 
 test("TI2-138: la migración completa las atenciones anteriores sin inventar contenido", async () => {

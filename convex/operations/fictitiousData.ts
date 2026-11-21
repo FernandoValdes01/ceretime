@@ -279,8 +279,6 @@ export const load = internalMutation({
       await syncAppointmentProfessional(ctx, {
         appointmentId,
         professionalId: row.professionalId,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
       });
       return appointmentId;
     };

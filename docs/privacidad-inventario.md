@@ -137,7 +137,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `appointmentProfessionals`
 
-- **Datos personales.** `appointmentId`, `professionalId`, `startsAt` y `endsAt`. Vincula a los profesionales que participan en una atención y copia su ventana horaria.
+- **Datos personales.** `appointmentId` y `professionalId`. Vincula a los profesionales que participan en una atención; el horario vive solo en `appointments` (TI2-165).
 - **Finalidad.** Coordinar una atención entre varios profesionales y detectar cruces de agenda sin duplicar la atención.
 - **Base propuesta.** Relación de acompañamiento y organización del trabajo. Pendiente de aprobación.
 - **Acceso por rol.** No tiene lectura pública propia. La autorización y la agenda la usan para decidir quién participa y para detectar cruces. Los participantes ven la atención a través de `appointments`.

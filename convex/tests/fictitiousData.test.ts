@@ -204,11 +204,8 @@ test("las atenciones sembradas quedan completas para la auditoría (TI2-138)", a
       (participant) => participant.appointmentId === appointment._id,
     );
     expect(participants).toHaveLength(1);
-    expect(participants[0]).toMatchObject({
-      professionalId,
-      startsAt: appointment.startsAt,
-      endsAt: appointment.endsAt,
-    });
+    expect(participants[0]).toMatchObject({ professionalId });
+    expect(participants[0]).not.toHaveProperty("startsAt");
   }
 });
 

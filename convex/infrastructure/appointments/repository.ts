@@ -2,6 +2,7 @@
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import {
   APPOINTMENT_CONTRACT_VERSION,
+  APPOINTMENT_STATUS_VALUES,
   isCalendarActionableStatus,
 } from "../../domain/appointments/appointment";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
@@ -49,7 +50,9 @@ export const MAX_APPOINTMENT_MS = 1440 * 60_000;
 
 /**
  * Filas que se leen como máximo por recurso en esa ventana, canceladas
- * incluidas, porque el índice no distingue estados. Con más filas la
+ * incluidas, porque el índice no distingue estados. La participación de un
+ * profesional adicional se confirma con las atenciones activas de todo el
+ * centro en la ventana (TI2-165), con el mismo tope. Con más filas la
  * ocupación responde `conflict` en vez de decidir con una lista cortada, que
  * podría esconder una atención activa. Límite técnico provisional, no un
  * requisito de CERETI.
@@ -67,6 +70,11 @@ const CANCELLED_APPOINTMENT_STATUSES: ReadonlySet<Doc<"appointments">["status"]>
   "cancelled_by_student",
   "cancelled_by_cereti",
 ]);
+
+/** Estados que ocupan el cupo, para leer por índice solo las atenciones activas. */
+const BLOCKING_APPOINTMENT_STATUSES = APPOINTMENT_STATUS_VALUES.filter(
+  (status) => !CANCELLED_APPOINTMENT_STATUSES.has(status),
+);
 
 /** Verdadero cuando la atención existente sigue ocupando su cupo. */
 function isBlocking(existing: Doc<"appointments">): boolean {
@@ -150,12 +158,14 @@ async function isResourceTaken(
  * Verdadero cuando el profesional no está libre en el intervalo (TI2-142).
  *
  * Un profesional ocupa su agenda como responsable (`appointments`) y como
- * participante (`appointmentProfessionals`); se leen ambas ventanas porque una
- * atención anterior a la migración de TI2-138 todavía no tiene su fila de
- * participante. La fila de participante copia la ventana de su atención, pero
- * no su estado: cada cruce candidato se confirma con la atención, así una
- * cancelada libera a todos sus profesionales. El tope de lectura responde
- * ocupado, como en `isResourceTaken`, en vez de decidir con una lista cortada.
+ * participante (`appointmentProfessionals`); se revisan las dos vías porque
+ * una atención anterior a la migración de TI2-138 todavía no tiene su fila de
+ * participante. La fila de participante no guarda horario, porque
+ * ATENCION_PROFESIONALES del MER no lo tiene (TI2-165): la participación se
+ * confirma desde las atenciones activas del centro que se cruzan con el
+ * intervalo, leídas por estado para que las canceladas no cuenten ni ocupen
+ * el tope. Con más atenciones activas que el tope en la ventana responde
+ * ocupado, como `isResourceTaken`, en vez de decidir con una lista cortada.
  */
 async function isProfessionalTaken(
   ctx: DbReader,
@@ -167,17 +177,22 @@ async function isProfessionalTaken(
     return true;
   }
   const from = interval.startsAt - MAX_APPOINTMENT_MS;
-  const rows = await ctx.db
-    .query("appointmentProfessionals")
-    .withIndex("by_professionalId_and_startsAt", (q) =>
-      q.eq("professionalId", professionalId).gt("startsAt", from).lt("startsAt", interval.endsAt),
-    )
-    .take(MAX_APPOINTMENTS_IN_WINDOW + 1);
-  if (rows.length > MAX_APPOINTMENTS_IN_WINDOW) return true;
-  for (const row of rows) {
-    if (row.appointmentId === ownId || row.endsAt <= interval.startsAt) continue;
-    const appointment = await ctx.db.get(row.appointmentId);
-    if (appointment !== null && isBlocking(appointment)) return true;
+  let read = 0;
+  for (const status of BLOCKING_APPOINTMENT_STATUSES) {
+    const rows = await ctx.db
+      .query("appointments")
+      .withIndex("by_status_and_startsAt", (q) =>
+        q.eq("status", status).gt("startsAt", from).lt("startsAt", interval.endsAt),
+      )
+      .take(MAX_APPOINTMENTS_IN_WINDOW + 1 - read);
+    read += rows.length;
+    if (read > MAX_APPOINTMENTS_IN_WINDOW) return true;
+    for (const row of rows) {
+      // Como responsable ya lo resolvió `isResourceTaken`.
+      if (row._id === ownId || row.professionalId === professionalId) continue;
+      if (row.endsAt <= interval.startsAt) continue;
+      if ((await findAppointmentProfessional(ctx, row._id, professionalId)) !== null) return true;
+    }
   }
   return false;
 }
@@ -185,10 +200,10 @@ async function isProfessionalTaken(
 // ── TI2-138: profesionales participantes ───────────────────────────────────
 //
 // `appointments.professionalId` sigue siendo el profesional responsable
-// principal. La tabla `appointmentProfessionals` registra el conjunto completo
-// y copia la ventana de la atención para detectar cruces con
-// `by_professionalId_and_startsAt`. Acá se mantiene sincronizada al crear o
-// mover la atención; agregar o retirar participantes fuera de eso es de los
+// principal. La tabla `appointmentProfessionals` registra el conjunto
+// completo, sin horario: los cruces se leen de la atención (TI2-165). Acá se
+// mantiene al crear o mover la atención; agregar o retirar participantes
+// fuera de eso es de los
 // casos de uso futuros.
 
 /**
@@ -214,7 +229,7 @@ export async function findAppointmentProfessional(
   return rows[0] ?? null;
 }
 
-/** Participantes de la atención, con la ventana copiada de su horario. */
+/** Participantes de la atención. */
 export async function listAppointmentProfessionals(
   ctx: DbReader,
   appointmentId: Id<"appointments">,
@@ -226,11 +241,10 @@ export async function listAppointmentProfessionals(
 }
 
 /**
- * Sincroniza la fila del profesional con la atención: la inserta si falta y
- * copia en todas las filas de la atención la ventana nueva. No borra a otros
- * participantes porque solo los retira el caso de uso que los administra. Al
- * mover con otro responsable, la fila del anterior no se conserva: la
- * reemplaza `reassignAppointmentProfessional` antes de sincronizar. Devuelve
+ * Registra al profesional en la atención si todavía no participa. No borra a
+ * otros participantes porque solo los retira el caso de uso que los
+ * administra. Al mover con otro responsable, la fila del anterior no se
+ * conserva: la reemplaza `reassignAppointmentProfessional` antes. Devuelve
  * `true` cuando insertó la fila que faltaba.
  */
 export async function syncAppointmentProfessional(
@@ -238,23 +252,17 @@ export async function syncAppointmentProfessional(
   input: {
     readonly appointmentId: Id<"appointments">;
     readonly professionalId: Id<"users">;
-    readonly startsAt: number;
-    readonly endsAt: number;
   },
 ): Promise<boolean> {
-  const rows = await listAppointmentProfessionals(ctx, input.appointmentId);
-  const alreadyParticipates = rows.some((row) => row.professionalId === input.professionalId);
-  for (const row of rows) {
-    if (row.startsAt !== input.startsAt || row.endsAt !== input.endsAt) {
-      await ctx.db.patch(row._id, { startsAt: input.startsAt, endsAt: input.endsAt });
-    }
-  }
-  if (alreadyParticipates) return false;
+  const existing = await findAppointmentProfessional(
+    ctx,
+    input.appointmentId,
+    input.professionalId,
+  );
+  if (existing !== null) return false;
   await ctx.db.insert("appointmentProfessionals", {
     appointmentId: input.appointmentId,
     professionalId: input.professionalId,
-    startsAt: input.startsAt,
-    endsAt: input.endsAt,
   });
   return true;
 }
@@ -475,9 +483,8 @@ export async function occupySlotAtomically(
       ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
       ...(input.nextStatus === undefined ? {} : { status: input.nextStatus }),
     });
-    // La ventana copiada sigue al horario nuevo. Si el traslado cambia al
-    // responsable, la fila del anterior pasa a ser la del nuevo: no queda
-    // ocupado en un horario que nunca aceptó.
+    // Si el traslado cambia al responsable, la fila del anterior pasa a ser la
+    // del nuevo: no queda ocupado en un horario que nunca aceptó.
     await reassignAppointmentProfessional(ctx, {
       appointmentId: moved._id,
       previousProfessionalId: moved.professionalId,
@@ -493,8 +500,6 @@ export async function occupySlotAtomically(
     await syncAppointmentProfessional(ctx, {
       appointmentId: moved._id,
       professionalId: input.professionalId,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
     });
     return okResult({ appointmentId: moved._id });
   }
@@ -513,12 +518,7 @@ export async function occupySlotAtomically(
     createdAt: Date.now(),
   });
   for (const professionalId of [input.professionalId, ...(input.additionalProfessionalIds ?? [])]) {
-    await syncAppointmentProfessional(ctx, {
-      appointmentId,
-      professionalId,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-    });
+    await syncAppointmentProfessional(ctx, { appointmentId, professionalId });
   }
   return okResult({ appointmentId });
 }
