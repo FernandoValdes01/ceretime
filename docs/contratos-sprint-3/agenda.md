@@ -66,7 +66,7 @@ Se usan solo los códigos de TI2-88 (`ConvexError({code, message})` con esas dos
 
 ## Aviso al Estudiante
 
-Agregar o reemplazar el enlace emite `appointment_online_access_ready` solo al Estudiante, con `notificationEventsForOnlineAccess`, y lo registra en `notificationEvents` en la misma mutation (repositorio de TI2-118). El texto externo es genérico («Tu atención tiene su acceso disponible») y no lleva el enlace: el Estudiante lo lee en su sesión con `getOnlineAccess`. La clave de idempotencia usa el instante del cambio, así un reemplazo posterior produce otra. `unchanged` no emite aviso. El envío del aviso sigue siendo de TI2-122/TI2-145.
+Agregar o reemplazar el enlace emite `appointment_online_access_ready` solo al Estudiante, con `notificationEventsForOnlineAccess`, y lo registra en `notificationEvents` en la misma mutation (repositorio de TI2-118). El texto externo es genérico («Tu atención tiene su acceso disponible») y no lleva el enlace: el Estudiante lo lee en su sesión con `getOnlineAccess`. El reintento del mismo cambio se reconoce por su instante, así un reemplazo posterior deja otro evento. `unchanged` no emite aviso. El envío del aviso sigue siendo de TI2-122/TI2-145.
 
 ## Compatibilidad
 

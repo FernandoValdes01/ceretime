@@ -23,7 +23,6 @@ import { toSharedFollowUpProjection } from "../domain/follow_up/follow_up";
 import {
   notificationEventsForCreation,
   notificationEventsForTransition,
-  notificationIdempotencyKey,
   type NotificationEvent,
 } from "../domain/notifications/notification";
 import {
@@ -2813,8 +2812,6 @@ test("TI2-118: el evento guarda solo sus referencias mínimas y el reintento no 
     appointmentId,
     recipientId: student,
     occurredAt: TI83_MONDAY,
-    version: "v1",
-    idempotencyKey: notificationIdempotencyKey(event),
   });
 });
 
@@ -2835,16 +2832,7 @@ test("TI2-118: un campo extra con texto libre no llega a la fila del evento", as
   const rows = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
   expect(rows).toHaveLength(1);
   expect(Object.keys(rows[0]).sort()).toEqual(
-    [
-      "_creationTime",
-      "_id",
-      "appointmentId",
-      "idempotencyKey",
-      "kind",
-      "occurredAt",
-      "recipientId",
-      "version",
-    ].sort(),
+    ["_creationTime", "_id", "appointmentId", "kind", "occurredAt", "recipientId"].sort(),
   );
   expect(JSON.stringify(rows[0])).not.toMatch(/Motivo libre|Nota interna/);
 
@@ -2854,7 +2842,6 @@ test("TI2-118: un campo extra con texto libre no llega a la fila del evento", as
     t.run(async (ctx) => {
       await ctx.db.insert("notificationEvents", {
         ...fields,
-        idempotencyKey: "otra-clave",
         reason: "Motivo libre ficticio",
       } as never);
     }),
@@ -2889,6 +2876,8 @@ test("TI2-118: cada destinatario y cada cambio tienen su propio evento", async (
   );
   expect(studentPage.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 1, TI83_MONDAY]);
   expect(studentPage.page[0]).not.toHaveProperty("idempotencyKey");
+  // La versión sale del contrato vigente, no de la fila (TI2-165).
+  expect(studentPage.page[0]).toMatchObject({ version: "v1" });
 
   const appointmentPage = await t.run(
     async (ctx) =>

@@ -16,7 +16,6 @@ import {
   institutionalStatusUnion,
   justificationReviewUnion,
   modalityUnion,
-  notificationContractVersionLiteral,
   notificationEventKindUnion,
   outgoingReferralValidator,
   requestStatusUnion,
@@ -403,25 +402,22 @@ export default defineSchema({
 
   // Tabla 'notificationEvents': eventos de notificación de la atención
   // (forma de TI2-105, persistida por TI2-118). Cada fila guarda solo las
-  // referencias mínimas del evento (atención y destinatario), la clase, el
-  // instante persistido del cambio y la versión del contrato: no hay títulos,
-  // motivos, notas ni datos del acompañamiento. `idempotencyKey` es la clave
-  // de `notificationIdempotencyKey`; un reintento del mismo cambio la repite y
-  // el repositorio devuelve la fila existente en vez de crear otra. Sin envío
-  // ni estado de entrega: el envío es TI2-122.
+  // referencias mínimas del evento (atención y destinatario), la clase y el
+  // instante persistido del cambio: no hay títulos, motivos, notas ni datos
+  // del acompañamiento. No guarda la versión del contrato ni una clave de
+  // idempotencia, porque NOTIFICACIONES del MER no las tiene (TI2-165): el
+  // repositorio reconoce un reintento por su atención, instante, clase y
+  // destinatario. Sin envío ni estado de entrega: el envío es TI2-122.
   notificationEvents: defineTable({
     kind: notificationEventKindUnion,
     appointmentId: v.id("appointments"),
     recipientId: v.id("users"),
     occurredAt: v.number(),
-    version: notificationContractVersionLiteral,
-    idempotencyKey: v.string(),
   })
-    // Reintento del mismo cambio: una fila basta para decidir.
-    .index("by_idempotencyKey", ["idempotencyKey"])
     // Eventos del destinatario, del más reciente al más antiguo.
     .index("by_recipientId_and_occurredAt", ["recipientId", "occurredAt"])
-    // Eventos de la atención en orden de ocurrencia.
+    // Eventos de la atención en orden de ocurrencia; también reconoce el
+    // reintento de un mismo cambio, que repite atención e instante.
     .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"]),
 
   // Tabla 'appointmentAuditEvents': bitácora append-only de cambios de agenda
