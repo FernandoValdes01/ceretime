@@ -9,8 +9,7 @@ import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 /**
  * Envío de la solicitud propia del Estudiante (TI2-149).
  *
- * Usa la forma completa de `createRequest` (TI2-141), con la clave de
- * idempotencia que conserva el borrador. El desenlace distingue por código
+ * Usa la forma completa de `createRequest` (TI2-141). El desenlace distingue por código
  * estable: los rechazos de los datos muestran el mensaje público del
  * Backend, la denegación usa el aviso genérico y cualquier otro fallo
  * (incluida una red caída) se trata como recuperable con mensaje propio.
