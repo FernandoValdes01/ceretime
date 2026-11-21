@@ -232,19 +232,15 @@ export type {
   AppointmentProfessionalsResult,
 } from "./appointments/participants";
 
-// Acceso privado y apoyos de la atención en línea (TI2-142).
+// Acceso privado de la atención en línea (TI2-142).
 export {
   ONLINE_ACCESS_ALLOWED_HOSTS,
   ONLINE_ACCESS_LINK_MAX_LENGTH,
   ONLINE_ACCESS_LINK_REJECTION_CAUSES,
   ONLINE_ACCESS_STATUS_VALUES,
   ONLINE_ACCESS_UPDATE_REJECTION_CAUSES,
-  ONLINE_SUPPORTS_REJECTION_CAUSES,
-  MAX_ONLINE_SUPPORTS,
-  ONLINE_SUPPORT_TEXT_MAX_LENGTH,
   decideOnlineAccessUpdate,
   normalizeOnlineAccessLink,
-  normalizeOnlineSupports,
   toOnlineAccessView,
 } from "./appointments/online_access";
 export type {
@@ -256,8 +252,6 @@ export type {
   OnlineAccessUpdateRejectionCause,
   OnlineAccessUpdateResult,
   OnlineAccessView,
-  OnlineSupportsRejectionCause,
-  OnlineSupportsResult,
 } from "./appointments/online_access";
 
 // Evento de calendario por atención y alternativa .ics (TI2-122).

@@ -208,9 +208,8 @@ export const migrateLegacyRequests = internalMutation({
  *
  * Las filas de `appointments` anteriores a TI2-138 no tienen una fila en
  * `appointmentProfessionals`. La migración crea la del profesional responsable
- * para que el índice de cruces cubra el historial. No inventa apoyos en línea
- * ni referencia privada: esos campos siguen ausentes hasta que el caso de uso
- * que los obtiene los escriba.
+ * para que el índice de cruces cubra el historial. No inventa la referencia
+ * privada: sigue ausente hasta que `setOnlineAccessLink` la escriba.
  *
  * Es idempotente: solo escribe lo que falta y no toca las filas ya migradas.
  * La ejecuta un Administrador vigente y el barrido es paginado, repitiendo

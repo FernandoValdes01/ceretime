@@ -349,11 +349,10 @@ export default defineSchema({
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
     supportingDocumentReceived: v.optional(v.boolean()),
-    // Apoyos de la atención en línea y referencia de su acceso privado
-    // (TI2-138). Opcionales porque las atenciones presenciales no los usan y
-    // las filas anteriores no los tienen; solo persistencia, sin exponerlos en
-    // la API todavía.
-    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
+    // Referencia del acceso privado de la atención en línea (TI2-138),
+    // `urlPrivada?` de ATENCIONES. Opcional porque las atenciones presenciales
+    // no la usan y las filas anteriores no la tienen. La atención no guarda
+    // apoyos en línea: el MER no los tiene (TI2-165).
     privateAccessReference: v.optional(v.string()),
     createdAt: v.number(),
   })

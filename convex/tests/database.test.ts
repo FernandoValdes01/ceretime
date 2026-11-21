@@ -3698,15 +3698,14 @@ test("TI2-135: la migración de solicitudes avanza por páginas hasta agotar las
 });
 
 /**
- * Ciclo completo de la atención (TI2-138): participantes, apoyos en línea y
+ * Ciclo completo de la atención (TI2-138): participantes, referencia privada y
  * migración de las filas anteriores.
  *
  * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
  * que reservar registra a los participantes sin copiar las necesidades (el MER
  * las versiona en NECESIDADES_ACCESO, TI2-165), que mover la atención con otro
  * responsable reemplaza al anterior en la ventana de participantes y que la
- * migración completa las filas anteriores sin inventar apoyos ni referencia
- * privada.
+ * migración completa las filas anteriores sin inventar la referencia privada.
  */
 
 const TI138_NEEDS = ["Necesidad ficticia A", "Necesidad ficticia B"] as const;
@@ -3740,7 +3739,6 @@ test("TI2-138: reservar registra a los participantes y no copia las necesidades"
       modality: "online",
       startsAt: TI83_MONDAY_9H,
       endsAt: TI83_MONDAY_10H,
-      onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
       privateAccessReference: "https://acceso.example/ficticio",
     });
   });
@@ -3749,11 +3747,9 @@ test("TI2-138: reservar registra a los participantes y no copia las necesidades"
   const appointmentId = occupied.data.appointmentId;
 
   const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
-  expect(row).toMatchObject({
-    onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
-    privateAccessReference: "https://acceso.example/ficticio",
-  });
+  expect(row).toMatchObject({ privateAccessReference: "https://acceso.example/ficticio" });
   expect(row).not.toHaveProperty("appliedAccessNeeds");
+  expect(row).not.toHaveProperty("onlineSupports");
 
   // Índice de cruces: la fila del profesional copia la ventana de la atención.
   const windows = await t.run(async (ctx) => {
@@ -3977,11 +3973,11 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
     isDone: true,
   });
 
-  // No copia necesidades ni inventa apoyos en línea ni referencia privada.
+  // No copia necesidades, no guarda apoyos y no inventa la referencia privada.
   for (const appointmentId of [first, second]) {
     const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
     expect(row).not.toHaveProperty("appliedAccessNeeds");
-    expect(row?.onlineSupports).toBeUndefined();
+    expect(row).not.toHaveProperty("onlineSupports");
     expect(row?.privateAccessReference).toBeUndefined();
   }
   const participantRows = await t.run(async (ctx) => {

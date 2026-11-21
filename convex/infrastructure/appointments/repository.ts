@@ -302,11 +302,10 @@ export interface OccupySlotRow {
   readonly startsAt: number;
   readonly endsAt: number;
   /**
-   * Apoyos de la atención en línea y referencia de su acceso privado
-   * (TI2-138). Opcionales: la reserva actual no los obtiene todavía y las
-   * atenciones presenciales no los usan. Solo se persisten al crear.
+   * Referencia del acceso privado de la atención en línea (TI2-138).
+   * Opcional: las atenciones presenciales no la usan. Solo se persiste al
+   * crear.
    */
-  readonly onlineSupports?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
   readonly privateAccessReference?: string;
   /**
    * Profesionales que acompañan al responsable (TI2-142), ya normalizados por
@@ -508,7 +507,6 @@ export async function occupySlotAtomically(
     status: "scheduled",
     startsAt: input.startsAt,
     endsAt: input.endsAt,
-    ...(input.onlineSupports === undefined ? {} : { onlineSupports: [...input.onlineSupports] }),
     ...(input.privateAccessReference === undefined
       ? {}
       : { privateAccessReference: input.privateAccessReference }),
@@ -724,7 +722,6 @@ export function appointmentChangeReader(ctx: DbReader) {
         ...(doc.supportingDocumentReceived === undefined
           ? {}
           : { supportingDocumentReceived: doc.supportingDocumentReceived }),
-        ...(doc.onlineSupports === undefined ? {} : { onlineSupports: doc.onlineSupports }),
         ...(additionalProfessionalIds.length === 0 ? {} : { additionalProfessionalIds }),
       };
     },
@@ -954,7 +951,6 @@ export function appointmentOccupier(ctx: MutationCtx) {
       readonly spaceId?: string;
       readonly startAt: number;
       readonly endAt: number;
-      readonly onlineSupports?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
       readonly privateAccessReference?: string;
       readonly additionalProfessionalIds?: readonly string[];
       readonly removedProfessionalIds?: readonly string[];
@@ -994,7 +990,6 @@ export function appointmentOccupier(ctx: MutationCtx) {
         ...(spaceId === undefined ? {} : { spaceId }),
         startsAt: slot.startAt,
         endsAt: slot.endAt,
-        ...(slot.onlineSupports === undefined ? {} : { onlineSupports: slot.onlineSupports }),
         ...(slot.privateAccessReference === undefined
           ? {}
           : { privateAccessReference: slot.privateAccessReference }),
