@@ -23,6 +23,17 @@ export const sessionCheckFailedMessage =
 export const accountNotEnabledMessage =
   "Tu cuenta todavía no está habilitada en CERETI. Pide al equipo de CERETI que la habilite.";
 
+// `ensureMyProfile` deniega con ConvexError("No autorizado"); el transporte, con `code: "unauthorized"`.
+function isAuthorizationDenied(cause: unknown): boolean {
+  if (typeof cause !== "object" || cause === null) return false;
+  const { data, code } = cause as { data?: unknown; code?: unknown };
+  return (
+    data === "No autorizado" ||
+    code === "unauthorized" ||
+    (typeof data === "object" && data !== null && "code" in data && data.code === "unauthorized")
+  );
+}
+
 /** Mitad de Better Auth que usa la app; el cliente real la cumple y las pruebas la sustituyen. */
 export interface InstitutionalAuthClient {
   signIn: {
@@ -93,12 +104,12 @@ export function createConvexAuthAdapter({
   }
 
   // Crea el perfil de la cuenta en su primer ingreso (TI2-182). Una denegación deja la cuenta sin rol;
-  // solo un fallo de red interrumpe la comprobación para poder reintentar.
+  // cualquier otro fallo interrumpe la comprobación para poder reintentar.
   async function ensureOwnProfile() {
     try {
       await backend.mutation(api.presentation.session.ensureMyProfile, {});
     } catch (cause) {
-      if ((cause as { code?: unknown } | null)?.code === "network_error") throw cause;
+      if (!isAuthorizationDenied(cause)) throw cause;
     }
   }
 

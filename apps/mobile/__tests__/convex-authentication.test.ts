@@ -110,7 +110,7 @@ describe("restaurar la sesión", () => {
     [
       "el servidor rechaza crear el perfil",
       async () => {
-        throw new Error("No autorizado");
+        throw Object.assign(new Error("No autorizado"), { data: "No autorizado" });
       },
     ],
   ])("si %s, avisa que no está habilitada y descarta la sesión", async (_name, ensure) => {
@@ -125,20 +125,22 @@ describe("restaurar la sesión", () => {
     expect(authClient.signOut).toHaveBeenCalledTimes(1);
   });
 
-  test("un fallo de red al crear el perfil no cierra la sesión y se puede reintentar", async () => {
-    const { adapter, authClient, query, mutation } = setup();
-    authClient.convex.token.mockResolvedValue({ data: { token: "jwt" }, error: null });
-    query.mockResolvedValue(withoutRole());
-    mutation.mockRejectedValue(
-      Object.assign(new Error("Network request failed"), {
-        code: "network_error",
-      }),
-    );
+  test.each([
+    ["de red", Object.assign(new Error("Network request failed"), { code: "network_error" })],
+    ["del servidor", new Error("Server Error")],
+  ])(
+    "un fallo %s al crear el perfil no cierra la sesión y se puede reintentar",
+    async (_name, failure) => {
+      const { adapter, authClient, query, mutation } = setup();
+      authClient.convex.token.mockResolvedValue({ data: { token: "jwt" }, error: null });
+      query.mockResolvedValue(withoutRole());
+      mutation.mockRejectedValue(failure);
 
-    const error = await adapter.restoreSession().catch((cause: unknown) => cause);
-    expect((error as Error).message).toBe(sessionCheckFailedMessage);
-    expect(authClient.signOut).not.toHaveBeenCalled();
-  });
+      const error = await adapter.restoreSession().catch((cause: unknown) => cause);
+      expect((error as Error).message).toBe(sessionCheckFailedMessage);
+      expect(authClient.signOut).not.toHaveBeenCalled();
+    },
+  );
 
   test("un fallo de red no cierra la sesión guardada y se puede reintentar", async () => {
     const { adapter, authClient } = setup();
