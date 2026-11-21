@@ -349,13 +349,6 @@ export default defineSchema({
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
     supportingDocumentReceived: v.optional(v.boolean()),
-    // Copia de las necesidades de acceso aplicada al reservar (TI2-138): la
-    // lista `{ id, label }` que tenía el acompañamiento en ese momento. Queda
-    // congelada en la atención para que cambiar las necesidades actuales no
-    // reescriba lo ya registrado; las filas anteriores no la tienen y se leen
-    // igual. La migración la completa con la necesidad vigente cuando la fila
-    // no puede reconstruir otra.
-    appliedAccessNeeds: v.optional(v.array(accessNeedSelectionValidator)),
     // Apoyos de la atención en línea y referencia de su acceso privado
     // (TI2-138). Opcionales porque las atenciones presenciales no los usan y
     // las filas anteriores no los tienen; solo persistencia, sin exponerlos en

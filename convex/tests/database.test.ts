@@ -3698,19 +3698,20 @@ test("TI2-135: la migración de solicitudes avanza por páginas hasta agotar las
 });
 
 /**
- * Ciclo completo de la atención (TI2-138): participantes, apoyos en línea,
- * copia de necesidades y migración de las filas anteriores.
+ * Ciclo completo de la atención (TI2-138): participantes, apoyos en línea y
+ * migración de las filas anteriores.
  *
  * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
- * que reservar congela las necesidades del acompañamiento, que cambiarlas
- * después no altera la atención, que mover la atención con otro responsable
- * reemplaza al anterior en la ventana de participantes y que la migración
- * completa las filas anteriores sin inventar apoyos ni referencia privada.
+ * que reservar registra a los participantes sin copiar las necesidades (el MER
+ * las versiona en NECESIDADES_ACCESO, TI2-165), que mover la atención con otro
+ * responsable reemplaza al anterior en la ventana de participantes y que la
+ * migración completa las filas anteriores sin inventar apoyos ni referencia
+ * privada.
  */
 
 const TI138_NEEDS = ["Necesidad ficticia A", "Necesidad ficticia B"] as const;
 
-test("TI2-138: reservar copia las necesidades vigentes y registra a los participantes", async () => {
+test("TI2-138: reservar registra a los participantes y no copia las necesidades", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti138-book-est",
@@ -3748,12 +3749,11 @@ test("TI2-138: reservar copia las necesidades vigentes y registra a los particip
   const appointmentId = occupied.data.appointmentId;
 
   const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
-  const expectedNeeds = TI138_NEEDS.map((label) => ({ id: label, label }));
   expect(row).toMatchObject({
-    appliedAccessNeeds: expectedNeeds,
     onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
     privateAccessReference: "https://acceso.example/ficticio",
   });
+  expect(row).not.toHaveProperty("appliedAccessNeeds");
 
   // Índice de cruces: la fila del profesional copia la ventana de la atención.
   const windows = await t.run(async (ctx) => {
@@ -3771,17 +3771,9 @@ test("TI2-138: reservar copia las necesidades vigentes y registra a los particip
     startsAt: TI83_MONDAY_9H,
     endsAt: TI83_MONDAY_10H,
   });
-
-  // Cambiar las necesidades actuales no reescribe la copia ya registrada.
-  await t.run(async (ctx) => {
-    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
-  });
-  expect((await t.run(async (ctx) => await ctx.db.get(appointmentId)))?.appliedAccessNeeds).toEqual(
-    expectedNeeds,
-  );
 });
 
-test("TI2-138: mover la atención cambia al responsable sin reescribir necesidades", async () => {
+test("TI2-138: mover la atención cambia al responsable en la ventana de participantes", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti138-move-est",
@@ -3848,10 +3840,6 @@ test("TI2-138: mover la atención cambia al responsable sin reescribir necesidad
   expect(otherAttention.status).toBe("ok");
   if (otherAttention.status !== "ok") return;
 
-  await t.run(async (ctx) => {
-    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
-  });
-
   const moved = await t.run(async (ctx) => {
     return await occupySlotAtomically(ctx, {
       accompanimentId: accompaniment,
@@ -3894,9 +3882,6 @@ test("TI2-138: mover la atención cambia al responsable sin reescribir necesidad
   expect(previousWindows.map((row) => row.appointmentId)).toEqual([
     otherAttention.data.appointmentId,
   ]);
-
-  const row = await t.run(async (ctx) => await ctx.db.get(created.data.appointmentId));
-  expect(row?.appliedAccessNeeds).toEqual(TI138_NEEDS.map((label) => ({ id: label, label })));
 });
 
 test("TI2-138: la migración completa las atenciones anteriores sin inventar contenido", async () => {
@@ -3956,7 +3941,6 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   });
   expect(audit).toMatchObject({
     scanned: 2,
-    missingAppliedAccessNeeds: 2,
     missingParticipants: 2,
     isDone: true,
   });
@@ -3969,7 +3953,9 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
       paginationOpts: { numItems: 10, cursor: null },
     }),
   ).rejects.toThrow("No autorizado");
-  expect((await t.run(async (ctx) => await ctx.db.get(first)))?.appliedAccessNeeds).toBeUndefined();
+  expect(
+    await t.run(async (ctx) => await ctx.db.query("appointmentProfessionals").take(10)),
+  ).toHaveLength(0);
 
   const asAdmin = t.withIdentity(identityFor("ti138-mig-adm", "ti138admin@uct.cl"));
   const firstPage = await asAdmin.mutation(
@@ -3978,9 +3964,7 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   );
   expect(firstPage).toMatchObject({
     scanned: 1,
-    migratedNeeds: 1,
     createdParticipants: 1,
-    unresolvedNeeds: 0,
     isDone: false,
   });
   const secondPage = await asAdmin.mutation(
@@ -3989,18 +3973,14 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   );
   expect(secondPage).toMatchObject({
     scanned: 1,
-    migratedNeeds: 1,
     createdParticipants: 1,
-    unresolvedNeeds: 0,
     isDone: true,
   });
 
-  // La copia usa la necesidad que el acompañamiento tenía al migrar y no
-  // inventa apoyos en línea ni referencia privada.
-  const expectedNeeds = TI138_NEEDS.map((label) => ({ id: label, label }));
+  // No copia necesidades ni inventa apoyos en línea ni referencia privada.
   for (const appointmentId of [first, second]) {
     const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
-    expect(row?.appliedAccessNeeds).toEqual(expectedNeeds);
+    expect(row).not.toHaveProperty("appliedAccessNeeds");
     expect(row?.onlineSupports).toBeUndefined();
     expect(row?.privateAccessReference).toBeUndefined();
   }
@@ -4010,34 +3990,20 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   expect(participantRows).toHaveLength(2);
   expect(participantRows.map((row) => row.appointmentId).sort()).toEqual([first, second].sort());
 
-  // Cambiar las necesidades actuales no toca lo ya migrado y repetirla no
-  // escribe de nuevo.
-  await t.run(async (ctx) => {
-    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
-  });
+  // Repetirla no escribe de nuevo.
   const repeated = await asAdmin.mutation(
     internal.operations.migrations.migrateLegacyAppointments,
     { paginationOpts: { numItems: 10, cursor: null } },
   );
   expect(repeated).toMatchObject({
     scanned: 2,
-    migratedNeeds: 0,
     createdParticipants: 0,
-    unresolvedNeeds: 0,
     isDone: true,
   });
-  for (const appointmentId of [first, second]) {
-    expect(
-      (await t.run(async (ctx) => await ctx.db.get(appointmentId)))?.appliedAccessNeeds,
-    ).toEqual(expectedNeeds);
-  }
   const clean = await t.query(internal.operations.migrations.auditAppointmentParticipants, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(clean).toMatchObject({
-    missingAppliedAccessNeeds: 0,
-    missingParticipants: 0,
-  });
+  expect(clean).toMatchObject({ missingParticipants: 0 });
 });
 
 test("TI2-152: el cierre queda en el propio acompañamiento y pausar solo cambia el estado", async () => {

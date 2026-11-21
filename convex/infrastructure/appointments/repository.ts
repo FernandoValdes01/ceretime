@@ -5,7 +5,6 @@ import {
   isCalendarActionableStatus,
 } from "../../domain/appointments/appointment";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
-import { accessNeedsFromLines } from "../spaces/repository";
 
 /**
  * Repositorio de ocupación de cupo (TI2-84, cruces de TI2-96).
@@ -183,7 +182,7 @@ async function isProfessionalTaken(
   return false;
 }
 
-// ── TI2-138: profesionales participantes y necesidades aplicadas ───────────
+// ── TI2-138: profesionales participantes ───────────────────────────────────
 //
 // `appointments.professionalId` sigue siendo el profesional responsable
 // principal. La tabla `appointmentProfessionals` registra el conjunto completo
@@ -289,21 +288,6 @@ export async function reassignAppointmentProfessional(
     await ctx.db.delete(previous._id);
   }
   return true;
-}
-
-/**
- * Necesidades que se copian a la atención al crearla: la lista `{ id, label }`
- * vigente del acompañamiento en ese momento. Una vez escrita no se vuelve a
- * leer el acompañamiento, así cambiar sus necesidades no altera las atenciones
- * ya registradas. Un acompañamiento inexistente (identificador inválido) no
- * inventa una lista y deja el campo ausente.
- */
-export async function appliedAccessNeedsFor(
-  ctx: DbReader,
-  accompanimentId: Id<"accompaniments">,
-): Promise<Doc<"appointments">["appliedAccessNeeds"]> {
-  const accompaniment = await ctx.db.get(accompanimentId);
-  return accompaniment === null ? undefined : accessNeedsFromLines(accompaniment.accessNeeds);
 }
 
 /**
@@ -492,10 +476,9 @@ export async function occupySlotAtomically(
       ...(input.originalStartsAt === undefined ? {} : { originalStartsAt: input.originalStartsAt }),
       ...(input.nextStatus === undefined ? {} : { status: input.nextStatus }),
     });
-    // La ventana copiada sigue al horario nuevo. Las necesidades aplicadas no
-    // se reescriben: la atención conserva la copia con la que se registró. Si
-    // el traslado cambia al responsable, la fila del anterior pasa a ser la
-    // del nuevo: no queda ocupado en un horario que nunca aceptó.
+    // La ventana copiada sigue al horario nuevo. Si el traslado cambia al
+    // responsable, la fila del anterior pasa a ser la del nuevo: no queda
+    // ocupado en un horario que nunca aceptó.
     await reassignAppointmentProfessional(ctx, {
       appointmentId: moved._id,
       previousProfessionalId: moved.professionalId,
@@ -516,7 +499,6 @@ export async function occupySlotAtomically(
     });
     return okResult({ appointmentId: moved._id });
   }
-  const appliedAccessNeeds = await appliedAccessNeedsFor(ctx, input.accompanimentId);
   const appointmentId = await ctx.db.insert("appointments", {
     accompanimentId: input.accompanimentId,
     studentId: input.studentId,
@@ -526,7 +508,6 @@ export async function occupySlotAtomically(
     status: "scheduled",
     startsAt: input.startsAt,
     endsAt: input.endsAt,
-    ...(appliedAccessNeeds === undefined ? {} : { appliedAccessNeeds }),
     ...(input.onlineSupports === undefined ? {} : { onlineSupports: [...input.onlineSupports] }),
     ...(input.privateAccessReference === undefined
       ? {}
