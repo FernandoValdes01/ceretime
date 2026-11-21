@@ -61,15 +61,17 @@ export const FOLLOW_UP_TEXT_MAX_LENGTH = 500;
 /** Cantidad máxima de acuerdos y de tareas en un registro. */
 export const FOLLOW_UP_ENTRIES_MAX = 20;
 
-/** Acuerdo operativo: identificador estable y descripción breve. */
+/**
+ * Acuerdo operativo: una descripción breve. Acuerdos y tareas no llevan un
+ * identificador del cliente, porque ACUERDOS_SEGUIMIENTO y TAREAS_SEGUIMIENTO
+ * del MER no lo tienen (TI2-165): los distingue su posición en el registro.
+ */
 export interface FollowUpAgreement {
-  readonly id: string;
   readonly description: string;
 }
 
 /** Tarea operativa con responsable y estado, sin diagnóstico asociado. */
 export interface FollowUpTask {
-  readonly id: string;
   readonly description: string;
   readonly responsible: FollowUpResponsible;
   readonly status: FollowUpTaskStatus;
@@ -149,13 +151,11 @@ export type FollowUpProjection =
 
 /** Acuerdo de entrada: el adaptador puede traer texto sin normalizar. */
 export interface FollowUpAgreementInput {
-  readonly id: string;
   readonly description: string;
 }
 
 /** Tarea de entrada: responsable y estado llegan como texto a validar. */
 export interface FollowUpTaskInput {
-  readonly id: string;
   readonly description: string;
   readonly responsible: string;
   readonly status: string;
@@ -184,8 +184,6 @@ export const FOLLOW_UP_REJECTION_CAUSES = [
   "accompaniment_reference_required",
   "appointment_status_unknown",
   "follow_up_not_admissible",
-  "entry_id_required",
-  "duplicate_entry_id",
   "text_required",
   "text_too_long",
   "entries_limit_exceeded",
@@ -275,22 +273,15 @@ function validateText(value: string, found: Set<FollowUpRejectionCause>): void {
   }
 }
 
-/** Valida identificadores únicos y descripciones de acuerdos o tareas. */
+/** Valida la cantidad y las descripciones de acuerdos o tareas. */
 function validateEntries(
-  entries: ReadonlyArray<{ readonly id: string; readonly description: string }>,
+  entries: ReadonlyArray<{ readonly description: string }>,
   found: Set<FollowUpRejectionCause>,
 ): void {
   if (entries.length > FOLLOW_UP_ENTRIES_MAX) {
     found.add("entries_limit_exceeded");
   }
-  const seen = new Set<string>();
   for (const entry of entries) {
-    if (entry.id === "") {
-      found.add("entry_id_required");
-    } else if (seen.has(entry.id)) {
-      found.add("duplicate_entry_id");
-    }
-    seen.add(entry.id);
     validateText(entry.description, found);
   }
 }
@@ -300,7 +291,7 @@ function validateEntries(
  *
  * Devuelve todas las causas únicas en el orden declarado, no solo la primera,
  * para que un formulario pueda señalarlas juntas. Un registro válido sale con
- * textos e identificadores recortados y con la versión vigente. No persiste
+ * los textos recortados y con la versión vigente. No persiste
  * nada: el repositorio de seguimiento (TI2-118) guarda el registro válido.
  */
 export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpValidationResult {
@@ -319,11 +310,9 @@ export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpVali
   }
 
   const agreements = input.agreements.map((agreement) => ({
-    id: agreement.id.trim(),
     description: agreement.description.trim(),
   }));
   const tasks = input.tasks.map((task) => ({
-    id: task.id.trim(),
     description: task.description.trim(),
     responsible: task.responsible,
     status: task.status,
@@ -400,10 +389,9 @@ function sameEntries<T>(fields: FieldComparators<T>) {
     });
 }
 
-const AGREEMENT_FIELDS: FieldComparators<FollowUpAgreement> = { id: same, description: same };
+const AGREEMENT_FIELDS: FieldComparators<FollowUpAgreement> = { description: same };
 
 const TASK_FIELDS: FieldComparators<FollowUpTask> = {
-  id: same,
   description: same,
   responsible: same,
   status: same,
@@ -427,7 +415,8 @@ const RECORD_FIELDS: FieldComparators<FollowUpRecord> = {
  * acepta es el reintento de la misma constancia, que no escribe nada. Compara
  * los dos registros ya validados, así los espacios que el validador recorta no
  * cuentan como cambio; el orden de acuerdos y tareas sí cuenta, porque es el
- * que se guardó. Cualquier diferencia, incluida la nota interna, es un intento
+ * que se guardó y lo único que los distingue (TI2-165). Cualquier diferencia,
+ * incluida la nota interna, es un intento
  * de edición. `RECORD_FIELDS` cubre cada campo por tipo: uno nuevo sin
  * comparar no compila, así que no puede volverse una edición silenciosa.
  */
@@ -451,9 +440,8 @@ export function toSharedFollowUpProjection(
     appointmentId: record.appointmentId,
     accompanimentId: record.accompanimentId,
     appointmentStatus,
-    agreements: record.agreements.map(({ id, description }) => ({ id, description })),
-    tasks: record.tasks.map(({ id, description, responsible, status }) => ({
-      id,
+    agreements: record.agreements.map(({ description }) => ({ description })),
+    tasks: record.tasks.map(({ description, responsible, status }) => ({
       description,
       responsible,
       status,

@@ -2157,6 +2157,47 @@ test("TI2-111: la búsqueda ve ocupado lo mismo que la reserva rechazaría", asy
   });
 });
 
+test("TI2-165: la participación se decide con las atenciones activas del centro y falla cerrada sobre el tope", async () => {
+  const t = convexTest(schema, modules);
+  const busy = await seedProfessional(t, "ti165-occ-pro-a");
+  const free = await seedProfessional(t, "ti165-occ-pro-b");
+  const holder = await seedTi96Student(t, "ti165-occ-est-1");
+  const who = await seedTi96Student(t, "ti165-occ-est-2");
+  // Los participantes no guardan horario (TI2-165): la ocupación de `free`
+  // como participante se confirma leyendo las atenciones activas del centro.
+  const seedActive = async (count: number) =>
+    await t.run(async (ctx) => {
+      for (let index = 0; index < count; index += 1) {
+        await ctx.db.insert("appointments", {
+          ...holder,
+          professionalId: busy,
+          modality: "online",
+          status: "scheduled",
+          startsAt: ti96At(index - 600),
+          endsAt: ti96At(index - 590),
+          createdAt: 1,
+        });
+      }
+    });
+  const isOccupied = async () =>
+    await t.run(async (ctx) => {
+      const reader: SlotOccupancyReader = slotOccupancyReader(ctx);
+      return await reader.isSlotOccupied({
+        professionalId: free,
+        studentId: who.studentId,
+        startAt: ti96At(0),
+        endAt: ti96At(60),
+      });
+    });
+
+  // En el tope se leen todas y ninguna es de `free`: el cupo está libre.
+  await seedActive(MAX_APPOINTMENTS_IN_WINDOW);
+  expect(await isOccupied()).toBe(false);
+  // Una activa más y ya no se puede decidir: responde ocupado.
+  await seedActive(1);
+  expect(await isOccupied()).toBe(true);
+});
+
 test("TI2-111: la reserva traduce el contrato y rechaza identificadores sin forma sin escribir", async () => {
   const t = convexTest(schema, modules);
   const pro = await seedProfessional(t, "ti111-occ-pro-d");

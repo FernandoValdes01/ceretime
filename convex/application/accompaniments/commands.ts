@@ -27,7 +27,6 @@ import {
   getAssignmentById,
   getUserById,
   hasActiveProfessionalAssignment,
-  hasAnotherActiveProfessional,
   insertActiveAssignment,
   patchAssignmentValidity,
   revokeAssignmentRow,
@@ -62,7 +61,8 @@ import {
  *
  * Cambio de profesionales (TI2-152): se hace con estas mismas operaciones,
  * sin una paralela. Conceder y modificar se rechazan en un acompañamiento
- * cerrado, y retirar a un profesional exige que quede otro asignado.
+ * cerrado. Retirar siempre procede, también al último profesional, porque el
+ * MER admite un acompañamiento sin asignaciones (ASIGNA 1 : 0..*, TI2-165).
  */
 
 /**
@@ -381,16 +381,6 @@ export async function revokeAccompaniment(
       if (!callerAssigned) return unauthorized();
     }
     // La vía interna en arranque (`bootstrapStaff`) no exige alcance.
-  }
-
-  // Un acompañamiento no queda sin profesional (TI2-152): quien se retira
-  // necesita que otro profesional siga asignado. La vía interna en arranque
-  // conserva la revocación libre para migraciones y datos de prueba.
-  if (triple.assignedRole === "professional" && options?.bootstrapStaff !== true) {
-    const holdsAssignment = (await takeActiveTripleRows(ctx, triple, 1)).length > 0;
-    if (holdsAssignment && !(await hasAnotherActiveProfessional(ctx, triple))) {
-      return conflict("El acompañamiento no puede quedar sin profesional asignado");
-    }
   }
 
   let revoked = 0;

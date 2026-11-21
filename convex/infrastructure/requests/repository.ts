@@ -175,18 +175,16 @@ export async function getRequestById(
 
 /**
  * Actualiza el estado de una solicitud con el destino que decidió la política.
- * Al cerrar sin acompañamiento (TI2-141), la razón comprensible va en la misma
- * escritura, y al derivar (TI2-143), la derivación de salida; el rastro
- * histórico va aparte, en `logRequestTransition`, dentro de la misma mutation.
+ * Al derivar (TI2-143), la derivación de salida va en la misma escritura. La
+ * razón del cierre sin acompañamiento queda solo en `logRequestTransition`,
+ * dentro de la misma mutation, como en el MER (TI2-165).
  */
 export async function setRequestStatus(
   ctx: MutationCtx,
   requestId: Id<"requests">,
   change: RequestStatusChange<Id<"users">>,
 ): Promise<void> {
-  if (change.status === "closed_without_accompaniment") {
-    await ctx.db.patch(requestId, { status: change.status, closureReason: change.closureReason });
-  } else if (change.status === "referred") {
+  if (change.status === "referred") {
     await ctx.db.patch(requestId, {
       status: change.status,
       outgoingReferral: { ...change.outgoingReferral },

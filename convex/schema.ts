@@ -9,7 +9,6 @@ import {
   assignmentRoleUnion,
   assignmentStatusUnion,
   availabilityExceptionKindUnion,
-  followUpContractVersionLiteral,
   followUpResponsibleUnion,
   followUpTaskStatusUnion,
   generalAvailabilityValidator,
@@ -17,7 +16,6 @@ import {
   institutionalStatusUnion,
   justificationReviewUnion,
   modalityUnion,
-  notificationContractVersionLiteral,
   notificationEventKindUnion,
   outgoingReferralValidator,
   requestStatusUnion,
@@ -67,30 +65,22 @@ export default defineSchema({
   // Tabla 'accompaniments': acompañamiento mínimo para probar la matriz.
   // `accessNeeds` es sensible (Ley 21.719) y se minimiza para Practicante.
   // `requestId` traza la solicitud aceptada que lo originó, si se conoce.
+  // `closedById`, `closedAt` y `closureReason` son `cerradoPorId?`,
+  // `cerradoEn?` y `motivoCierre?` del MER: los escribe una sola vez
+  // `accompanimentStatusWriter` al cerrar (TI2-152), y ninguna lectura pública
+  // los entrega. Pausar y reactivar solo cambian `status`.
   accompaniments: defineTable({
     studentId: v.id("users"),
     status: accompanimentStatusUnion,
     objective: v.string(),
     accessNeeds: v.string(),
     requestId: v.optional(v.id("requests")),
+    closedById: v.optional(v.id("users")),
+    closedAt: v.optional(v.number()),
+    closureReason: v.optional(v.string()),
   })
     .index("by_student", ["studentId"])
     .index("by_request", ["requestId"]),
-
-  // Tabla 'accompanimentTransitions': historial append-only de pausas,
-  // reactivaciones y cierres (TI2-152). Cada cambio guarda actor, instante del
-  // servidor y motivo opcional junto al estado resultante, en la misma
-  // transacción. El motivo vive solo acá: no se copia al acompañamiento, a las
-  // atenciones ni a la bitácora de auditoría, y ninguna lectura pública lo
-  // entrega. Solo la escribe `accompanimentStatusWriter`.
-  accompanimentTransitions: defineTable({
-    accompanimentId: v.id("accompaniments"),
-    from: accompanimentStatusUnion,
-    to: accompanimentStatusUnion,
-    actorId: v.id("users"),
-    reason: v.optional(v.string()),
-    occurredAt: v.number(),
-  }).index("by_accompanimentId_and_occurredAt", ["accompanimentId", "occurredAt"]),
 
   // Tabla 'accompanimentAssignments': asignaciones revocables por
   // acompañamiento. Separa habilitación de cuenta y asignación explícita.
@@ -186,11 +176,6 @@ export default defineSchema({
     // se escribe junto con el estado `referred`.
     incomingReferral: v.optional(incomingReferralValidator),
     outgoingReferral: v.optional(outgoingReferralValidator),
-    // Razón comprensible de cierre (TI2-135): la vigente y legible para el
-    // estudiante. `requestTransitions.reason` conserva el rastro histórico de
-    // cada transición; desde TI2-141 el cierre sin acompañamiento escribe
-    // ambas en la misma transacción.
-    closureReason: v.optional(v.string()),
     // Clave de idempotencia del envío (TI2-135), única por estudiante: un
     // reintento con la misma clave no crea otra solicitud.
     idempotencyKey: v.optional(v.string()),
@@ -301,9 +286,10 @@ export default defineSchema({
   // al bloque recurrente afectado, que aporta ventana, duración, modalidad
   // y lugar) o la agrega (`added`, con su propia ventana completa:
   // `startMinute`/`endMinute`, `slotMinutes`, `modality` y `spaceId` cuando
-  // es presencial, ausente en línea). `reason` deja constancia opcional del
-  // motivo. Solo persistencia, sin reglas de autorización; las reglas de
-  // ventanas y compatibilidad son de TI2-81/TI2-82.
+  // es presencial, ausente en línea). No guarda motivo, porque
+  // EXCEPCIONES_DISPONIBILIDAD del MER no lo tiene (TI2-165). Solo
+  // persistencia, sin reglas de autorización; las reglas de ventanas y
+  // compatibilidad son de TI2-81/TI2-82.
   availabilityExceptions: defineTable({
     professionalId: v.id("users"),
     date: v.number(),
@@ -314,7 +300,6 @@ export default defineSchema({
     slotMinutes: v.optional(v.number()),
     modality: v.optional(modalityUnion),
     spaceId: v.optional(v.id("spaces")),
-    reason: v.optional(v.string()),
   })
     // Excepciones del profesional en un día: lo que la vista diaria descuenta
     // o agrega sobre los bloques recurrentes.
@@ -362,18 +347,10 @@ export default defineSchema({
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
     supportingDocumentReceived: v.optional(v.boolean()),
-    // Copia de las necesidades de acceso aplicada al reservar (TI2-138): la
-    // lista `{ id, label }` que tenía el acompañamiento en ese momento. Queda
-    // congelada en la atención para que cambiar las necesidades actuales no
-    // reescriba lo ya registrado; las filas anteriores no la tienen y se leen
-    // igual. La migración la completa con la necesidad vigente cuando la fila
-    // no puede reconstruir otra.
-    appliedAccessNeeds: v.optional(v.array(accessNeedSelectionValidator)),
-    // Apoyos de la atención en línea y referencia de su acceso privado
-    // (TI2-138). Opcionales porque las atenciones presenciales no los usan y
-    // las filas anteriores no los tienen; solo persistencia, sin exponerlos en
-    // la API todavía.
-    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
+    // Referencia del acceso privado de la atención en línea (TI2-138),
+    // `urlPrivada?` de ATENCIONES. Opcional porque las atenciones presenciales
+    // no la usan y las filas anteriores no la tienen. La atención no guarda
+    // apoyos en línea: el MER no los tiene (TI2-165).
     privateAccessReference: v.optional(v.string()),
     createdAt: v.number(),
   })
@@ -399,52 +376,48 @@ export default defineSchema({
     .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"])
     // Atención que ya guarda un enlace privado (TI2-142): un enlace por
     // atención, así el mismo enlace no se reutiliza como sala fija.
-    .index("by_privateAccessReference", ["privateAccessReference"]),
+    .index("by_privateAccessReference", ["privateAccessReference"])
+    // Atenciones del centro por estado desde un instante: confirma los cruces
+    // de un profesional adicional, porque su fila de participante no guarda
+    // horario (TI2-165), sin leer las canceladas.
+    .index("by_status_and_startsAt", ["status", "startsAt"]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
-  // atención (TI2-138). `appointments.professionalId` sigue siendo el
-  // profesional responsable principal para conservar la compatibilidad; esta
-  // tabla registra el conjunto completo sin crear otra atención ni otra
-  // asignación. Cada fila copia la ventana `startsAt`/`endsAt` de la atención
-  // para detectar cruces con una sola consulta de rango, igual que
-  // `appointments`. Como máximo una fila por atención y profesional; la
-  // garantía la da la vía de escritura, porque Convex no impone unicidad. El
-  // repositorio la mantiene sincronizada al crear o mover la atención y la
-  // migración la completa para las filas anteriores.
+  // atención (TI2-138), ATENCION_PROFESIONALES del MER.
+  // `appointments.professionalId` sigue siendo el profesional responsable
+  // principal para conservar la compatibilidad; esta tabla registra el
+  // conjunto completo sin crear otra atención ni otra asignación. No copia el
+  // horario de la atención, porque el MER no lo tiene (TI2-165): los cruces se
+  // leen de `appointments`. Como máximo una fila por atención y profesional;
+  // la garantía la da la vía de escritura, porque Convex no impone unicidad.
+  // El repositorio la mantiene al crear o mover la atención y la migración la
+  // completa para las filas anteriores.
   appointmentProfessionals: defineTable({
     appointmentId: v.id("appointments"),
     professionalId: v.id("users"),
-    startsAt: v.number(),
-    endsAt: v.number(),
   })
     // Participantes de la atención: una fila basta para decidir y el conjunto
     // se lee sin filtrar en memoria.
-    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"])
-    // Cruces del profesional desde un instante: ventana de la agenda de todos
-    // sus participantes, sin recorrer las atenciones.
-    .index("by_professionalId_and_startsAt", ["professionalId", "startsAt"]),
+    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"]),
 
   // Tabla 'notificationEvents': eventos de notificación de la atención
   // (forma de TI2-105, persistida por TI2-118). Cada fila guarda solo las
-  // referencias mínimas del evento (atención y destinatario), la clase, el
-  // instante persistido del cambio y la versión del contrato: no hay títulos,
-  // motivos, notas ni datos del acompañamiento. `idempotencyKey` es la clave
-  // de `notificationIdempotencyKey`; un reintento del mismo cambio la repite y
-  // el repositorio devuelve la fila existente en vez de crear otra. Sin envío
-  // ni estado de entrega: el envío es TI2-122.
+  // referencias mínimas del evento (atención y destinatario), la clase y el
+  // instante persistido del cambio: no hay títulos, motivos, notas ni datos
+  // del acompañamiento. No guarda la versión del contrato ni una clave de
+  // idempotencia, porque NOTIFICACIONES del MER no las tiene (TI2-165): el
+  // repositorio reconoce un reintento por su atención, instante, clase y
+  // destinatario. Sin envío ni estado de entrega: el envío es TI2-122.
   notificationEvents: defineTable({
     kind: notificationEventKindUnion,
     appointmentId: v.id("appointments"),
     recipientId: v.id("users"),
     occurredAt: v.number(),
-    version: notificationContractVersionLiteral,
-    idempotencyKey: v.string(),
   })
-    // Reintento del mismo cambio: una fila basta para decidir.
-    .index("by_idempotencyKey", ["idempotencyKey"])
     // Eventos del destinatario, del más reciente al más antiguo.
     .index("by_recipientId_and_occurredAt", ["recipientId", "occurredAt"])
-    // Eventos de la atención en orden de ocurrencia.
+    // Eventos de la atención en orden de ocurrencia; también reconoce el
+    // reintento de un mismo cambio, que repite atención e instante.
     .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"]),
 
   // Tabla 'appointmentAuditEvents': bitácora append-only de cambios de agenda
@@ -481,17 +454,16 @@ export default defineSchema({
     nextSteps: v.string(),
     suggestedNextAppointmentDate: v.optional(v.string()),
     internalNoteId: v.optional(v.id("followUpNotes")),
-    version: followUpContractVersionLiteral,
     updatedAt: v.number(),
   })
     // El registro de la atención: una fila basta para decidir.
     .index("by_appointmentId", ["appointmentId"]),
 
-  // Tabla 'followUpAgreements': acuerdos de un registro de seguimiento.
-  // `entryId` es el identificador estable del acuerdo dentro del registro.
+  // Tabla 'followUpAgreements': acuerdos de un registro de seguimiento. Ni
+  // los acuerdos ni las tareas guardan un identificador del cliente, porque
+  // el MER no lo tiene (TI2-165): se leen en el orden en que se guardaron.
   followUpAgreements: defineTable({
     recordId: v.id("followUpRecords"),
-    entryId: v.string(),
     description: v.string(),
   }).index("by_recordId", ["recordId"]),
 
@@ -500,7 +472,6 @@ export default defineSchema({
   // y estado operativo.
   followUpTasks: defineTable({
     recordId: v.id("followUpRecords"),
-    entryId: v.string(),
     description: v.string(),
     responsible: followUpResponsibleUnion,
     status: followUpTaskStatusUnion,

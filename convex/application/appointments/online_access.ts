@@ -94,7 +94,7 @@ function conflict<T>(): ApiResult<T> {
 
 /**
  * Lee la atención y autoriza a quien llama. Una atención inexistente, ajena o
- * de un acompañamiento cerrado se deniega igual, sin revelar cuál faltó.
+ * de un acompañamiento no activo se deniega igual, sin revelar cuál faltó.
  */
 async function loadAuthorizedAppointment(
   deps: OnlineAccessReadDeps,

@@ -313,6 +313,20 @@ describe("toRequestExchange (TI2-141)", () => {
     expect(toRequestExchange("under_review", [taken])).toEqual({});
     expect(toRequestExchange("received", [])).toEqual({});
   });
+
+  test("TI2-165: la razón de cierre sale del último cambio de una solicitud cerrada", () => {
+    const closed = {
+      from: "under_review",
+      to: "closed_without_accompaniment",
+      reason: "Corresponde a otra unidad",
+    } as const;
+    expect(toRequestExchange("closed_without_accompaniment", [closed, taken])).toEqual({
+      closureReason: "Corresponde a otra unidad",
+    });
+    // Sin estado cerrado, o si el último cambio no es el cierre, no hay razón.
+    expect(toRequestExchange("under_review", [closed, taken])).toEqual({});
+    expect(toRequestExchange("closed_without_accompaniment", [taken])).toEqual({});
+  });
 });
 
 describe("toRequestSubmission (TI2-141)", () => {

@@ -51,7 +51,6 @@ import {
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
-  accessNeedSelectionValidator,
   appointmentAttendanceOutcomeUnion,
   appointmentStatusUnion,
   justificationDecisionUnion,
@@ -104,8 +103,9 @@ const appointmentResultValidator = v.object({ appointmentId: v.string() });
 /**
  * Reserva el cupo elegido para un acompañamiento activo. El Estudiante dueño
  * reserva lo suyo; el Profesional asignado coordina en su nombre y puede sumar
- * profesionales adicionales y apoyos de la atención en línea (TI2-142). Un
- * Estudiante que envía adicionales o apoyos recibe `unauthorized`.
+ * profesionales adicionales (TI2-142). Un Estudiante que envía adicionales
+ * recibe `unauthorized`. No recibe apoyos en línea, porque el MER no los
+ * guarda en la atención (TI2-165).
  */
 export const bookAppointment = mutation({
   args: {
@@ -116,7 +116,6 @@ export const bookAppointment = mutation({
     startAt: v.number(),
     endAt: v.number(),
     additionalProfessionalIds: v.optional(v.array(v.string())),
-    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
     version: v.literal(APPOINTMENT_CONTRACT_VERSION),
   },
   returns: appointmentResultValidator,

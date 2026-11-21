@@ -17,10 +17,7 @@ import {
   FOLLOW_UP_RESPONSIBLE_VALUES,
   FOLLOW_UP_TASK_STATUS_VALUES,
 } from "../domain/follow_up/follow_up";
-import {
-  NOTIFICATION_CONTRACT_VERSION,
-  NOTIFICATION_EVENT_KIND_VALUES,
-} from "../domain/notifications/notification";
+import { NOTIFICATION_EVENT_KIND_VALUES } from "../domain/notifications/notification";
 import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
@@ -245,8 +242,6 @@ export const appointmentAuditActionUnion = v.union(
 export const notificationEventKindUnion = v.union(
   ...NOTIFICATION_EVENT_KIND_VALUES.map((value) => v.literal(value)),
 );
-
-export const notificationContractVersionLiteral = v.literal(NOTIFICATION_CONTRACT_VERSION);
 
 /**
  * Estados y responsables de las tareas de seguimiento (TI2-106, persistidos

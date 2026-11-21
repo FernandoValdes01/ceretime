@@ -2,6 +2,7 @@ import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import {
+  NOTIFICATION_CONTRACT_VERSION,
   notificationIdempotencyKey,
   toNotificationEvent,
   type NotificationEvent,
@@ -13,7 +14,9 @@ import {
  * Capa de Infraestructura: único lugar que toca `ctx.db` para
  * `notificationEvents`. Persiste la forma mínima de TI2-105 tal como la
  * producen `notificationEventsForCreation` y `notificationEventsForTransition`:
- * referencias a la atención y al destinatario, clase, instante y versión. No
+ * referencias a la atención y al destinatario, clase e instante. La versión es
+ * la del contrato vigente y no se guarda, igual que la clave de idempotencia,
+ * porque NOTIFICACIONES del MER no las tiene (TI2-165). No
  * acepta textos: el evento se reconstruye con `toNotificationEvent`, así un
  * campo extra (motivo, nota, nombre) no puede llegar a la base. No decide a
  * quién avisar (política de TI2-105), no autoriza lecturas (TI2-127) ni envía
@@ -34,15 +37,33 @@ export type NotificationEventRecordResult =
   | { readonly status: "duplicate"; readonly eventId: Id<"notificationEvents"> }
   | { readonly status: "invalid_reference" };
 
-/** Fila con esa clave de idempotencia, o `null` si el cambio aún no se registró. */
-async function findByIdempotencyKey(
+/**
+ * Eventos que se leen como máximo para reconocer un reintento: los de una
+ * atención en un mismo instante. Un cambio deja a lo sumo un evento por clase
+ * y destinatario, así que este tope técnico no recorta una emisión real.
+ */
+const MAX_EVENTS_PER_CHANGE = 100;
+
+/**
+ * Fila que ya registró el mismo cambio, o `null` si aún no se registró. Busca
+ * por atención e instante con el índice y compara la clave de
+ * `notificationIdempotencyKey` calculada sobre cada fila.
+ */
+async function findSameEvent(
   ctx: DbReader,
-  idempotencyKey: string,
+  appointmentId: Id<"appointments">,
+  event: NotificationEvent,
 ): Promise<Doc<"notificationEvents"> | null> {
-  return await ctx.db
+  const key = notificationIdempotencyKey(event);
+  const rows = await ctx.db
     .query("notificationEvents")
-    .withIndex("by_idempotencyKey", (q) => q.eq("idempotencyKey", idempotencyKey))
-    .unique();
+    .withIndex("by_appointmentId_and_occurredAt", (q) =>
+      q.eq("appointmentId", appointmentId).eq("occurredAt", event.occurredAt),
+    )
+    .take(MAX_EVENTS_PER_CHANGE);
+  return (
+    rows.find((row) => notificationIdempotencyKey(toStoredNotificationEvent(row)) === key) ?? null
+  );
 }
 
 /**
@@ -50,9 +71,9 @@ async function findByIdempotencyKey(
  *
  * La atención debe existir y el destinatario debe ser su estudiante o su
  * profesional: una referencia de otra tabla, inexistente o ajena a la atención
- * responde `invalid_reference` sin escribir. La clave de
- * `notificationIdempotencyKey` se comprueba y se escribe en la misma
- * transacción, así dos reintentos del mismo cambio dejan una sola fila.
+ * responde `invalid_reference` sin escribir. El reintento se reconoce en la
+ * misma transacción en que se escribe, así dos reintentos del mismo cambio
+ * dejan una sola fila.
  */
 export async function recordNotificationEvent(
   ctx: MutationCtx,
@@ -72,8 +93,7 @@ export async function recordNotificationEvent(
     return { status: "invalid_reference" };
   }
 
-  const idempotencyKey = notificationIdempotencyKey(event);
-  const existing = await findByIdempotencyKey(ctx, idempotencyKey);
+  const existing = await findSameEvent(ctx, appointmentId, event);
   if (existing !== null) return { status: "duplicate", eventId: existing._id };
 
   const eventId = await ctx.db.insert("notificationEvents", {
@@ -81,8 +101,6 @@ export async function recordNotificationEvent(
     appointmentId,
     recipientId,
     occurredAt: event.occurredAt,
-    version: event.version,
-    idempotencyKey,
   });
   return { status: "recorded", eventId };
 }
@@ -118,7 +136,7 @@ export type StoredNotificationEvent = NotificationEvent & {
   readonly id: Id<"notificationEvents">;
 };
 
-/** Traduce la fila al contrato; la clave de idempotencia no sale del repositorio. */
+/** Traduce la fila al contrato, con la versión vigente del contrato. */
 function toStoredNotificationEvent(row: Doc<"notificationEvents">): StoredNotificationEvent {
   return {
     id: row._id,
@@ -126,7 +144,7 @@ function toStoredNotificationEvent(row: Doc<"notificationEvents">): StoredNotifi
     appointmentId: row.appointmentId,
     recipientId: row.recipientId,
     occurredAt: row.occurredAt,
-    version: row.version,
+    version: NOTIFICATION_CONTRACT_VERSION,
   };
 }
 

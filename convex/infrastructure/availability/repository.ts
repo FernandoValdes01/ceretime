@@ -33,7 +33,6 @@ type BlockRecord = AvailabilityBlock & { readonly isActive: boolean };
 type ExceptionRecord = AvailabilityException & {
   readonly id: string;
   readonly professionalId: string;
-  readonly reason?: string;
 };
 
 /**
@@ -96,7 +95,6 @@ function toException(doc: Doc<"availabilityExceptions">): ExceptionRecord {
     professionalId: doc.professionalId,
     date: epochMsToCivilDate(doc.date),
     kind: doc.kind,
-    ...(doc.reason === undefined ? {} : { reason: doc.reason }),
     version: AVAILABILITY_CONTRACT_VERSION,
   };
   if (doc.kind === "cancelled") {
@@ -454,7 +452,6 @@ async function insertException(
         }
       : {}),
     ...space,
-    ...(exception.reason === undefined ? {} : { reason: exception.reason }),
   });
   return okResult({ exceptionId });
 }

@@ -240,37 +240,6 @@ export async function hasActiveProfessionalAssignment(
 }
 
 /**
- * Verdadero cuando otro usuario conserva una asignación profesional activa y
- * vigente sobre el acompañamiento (TI2-152). El índice ordena por usuario
- * antes que por estado y rol, así que lee las asignaciones del acompañamiento
- * hasta el tope y compara en memoria. Sobre el tope puede responder `false`
- * aunque exista otro profesional: el retiro se rechaza, nunca se permite de
- * más.
- */
-export async function hasAnotherActiveProfessional(
-  ctx: MutationCtx,
-  input: {
-    readonly accompanimentId: Id<"accompaniments">;
-    readonly userId: Id<"users">;
-  },
-  now: number = Date.now(),
-): Promise<boolean> {
-  const rows = await ctx.db
-    .query("accompanimentAssignments")
-    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
-      q.eq("accompanimentId", input.accompanimentId),
-    )
-    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT);
-  return rows.some(
-    (row) =>
-      row.userId !== input.userId &&
-      row.status === "active" &&
-      row.assignedRole === "professional" &&
-      isAssignmentWithinValidity(row, now),
-  );
-}
-
-/**
  * Crea la fila activa de la combinación, registrando quién concede y cuándo.
  * La vigencia es opcional (TI2-138): `validFrom`/`validUntil` solo se escriben
  * si quien llama los entrega. La lectura exige `status === "active"` y ventana
@@ -497,36 +466,44 @@ export function accompanimentOpener(ctx: MutationCtx) {
 /**
  * Escritura del cambio de estado del acompañamiento (TI2-152). Cumple por
  * forma el puerto `AccompanimentStatusWriter` de Aplicación sin importarla.
- * Guarda el estado nuevo y su entrada en `accompanimentTransitions` en la
- * misma transacción. Los identificadores ya fueron leídos y autorizados en el
- * servidor: uno que no pertenezca a su tabla es un fallo interno, no un
+ * Guarda el estado nuevo y, en un cierre, `closedById`, `closedAt` y
+ * `closureReason` en la misma fila, como `cerradoPorId?`, `cerradoEn?` y
+ * `motivoCierre?` del MER. Los identificadores ya fueron leídos y autorizados
+ * en el servidor: uno que no pertenezca a su tabla es un fallo interno, no un
  * rechazo al cliente.
  */
 export function accompanimentStatusWriter(ctx: MutationCtx) {
   return {
     persistStatusChange: async (
       accompanimentId: string,
-      change: {
-        readonly from: Doc<"accompaniments">["status"];
-        readonly to: Doc<"accompaniments">["status"];
-        readonly actorId: string;
-        readonly occurredAt: number;
-        readonly reason?: string;
-      },
+      change:
+        | { readonly to: "active" | "paused" }
+        | {
+            readonly to: "closed";
+            readonly closure: {
+              readonly closedById: string;
+              readonly closedAt: number;
+              readonly closureReason?: string;
+            };
+          },
     ) => {
       const id = ctx.db.normalizeId("accompaniments", accompanimentId);
-      const actorId = ctx.db.normalizeId("users", change.actorId);
-      if (id === null || actorId === null) {
-        throw new Error("El cambio de estado referencia un acompañamiento o actor inexistente.");
+      if (id === null) {
+        throw new Error("El cambio de estado referencia un acompañamiento inexistente.");
       }
-      await ctx.db.patch(id, { status: change.to });
-      await ctx.db.insert("accompanimentTransitions", {
-        accompanimentId: id,
-        from: change.from,
-        to: change.to,
-        actorId,
-        occurredAt: change.occurredAt,
-        ...(change.reason === undefined ? {} : { reason: change.reason }),
+      if (change.to !== "closed") {
+        await ctx.db.patch(id, { status: change.to });
+        return;
+      }
+      const closedById = ctx.db.normalizeId("users", change.closure.closedById);
+      if (closedById === null) throw new Error("El cierre referencia un actor inexistente.");
+      await ctx.db.patch(id, {
+        status: "closed",
+        closedById,
+        closedAt: change.closure.closedAt,
+        ...(change.closure.closureReason === undefined
+          ? {}
+          : { closureReason: change.closure.closureReason }),
       });
     },
   };
