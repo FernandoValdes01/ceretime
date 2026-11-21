@@ -35,6 +35,7 @@ const store = vi.hoisted(() => {
     pages: new Map<string, unknown>(),
     details: new Map<string, unknown>(),
     preview: { status: "loading" } as unknown,
+    team: undefined as unknown,
     history: new Map<string, unknown>(),
     historyCalls: [] as Array<string | null>,
     subscribe: (listener: () => void) => {
@@ -52,6 +53,7 @@ const store = vi.hoisted(() => {
       this.pages.clear();
       this.details.clear();
       this.preview = { status: "loading" };
+      this.team = EQUIPO;
       this.history.clear();
       this.historyCalls.length = 0;
       listeners.clear();
@@ -59,7 +61,18 @@ const store = vi.hoisted(() => {
   };
 });
 
+const EQUIPO = vi.hoisted(() => ({
+  assigned: [
+    { userId: "pro-1", fullName: "Profesional Uno Ficticio", assignedAt: 1, isCaller: true },
+    { userId: "pro-2", fullName: "Profesional Dos Ficticio", isCaller: false },
+  ],
+  assignable: [{ userId: "pro-3", fullName: "Profesional Tres Ficticio" }],
+  assignableComplete: true,
+}));
+
 const mutations = vi.hoisted(() => ({
+  assign: vi.fn(),
+  revoke: vi.fn(),
   pause: vi.fn(),
   reactivate: vi.fn(),
   close: vi.fn(),
@@ -108,6 +121,13 @@ vi.mock("./professional-accompaniments-data.ts", async (importOriginal) => {
     usePauseAccompaniment: () => mutations.pause,
     useReactivateAccompaniment: () => mutations.reactivate,
     useCloseAccompaniment: () => mutations.close,
+    useAssignAccompanimentAccess: () => mutations.assign,
+    useRevokeAccompanimentAccess: () => mutations.revoke,
+    useAccompanimentProfessionals: () => {
+      useSyncExternalStore(store.subscribe, store.getVersion);
+      if (store.team instanceof Error) throw store.team;
+      return store.team;
+    },
     useClosurePreview: () => {
       useSyncExternalStore(store.subscribe, store.getVersion);
       return store.preview as ClosurePreviewState;
@@ -228,6 +248,8 @@ beforeEach(() => {
   mutations.pause.mockReset();
   mutations.reactivate.mockReset();
   mutations.close.mockReset();
+  mutations.assign.mockReset();
+  mutations.revoke.mockReset();
   mockedSession = SESION_PROFESIONAL;
   mockedPair = PAR_PROFESIONAL;
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -470,5 +492,102 @@ describe("historial de seguimiento (TI2-165)", () => {
       expect(screen.getAllByRole("link", { name: "Ver la atención" })).toHaveLength(2),
     );
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
+  });
+});
+
+describe("cambio de profesionales (TI2-165)", () => {
+  function teamSection() {
+    return screen.getByRole("region", { name: "Profesionales del acompañamiento" });
+  }
+
+  test("muestra a los asignados con nombre y asigna a quien se elige", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1));
+    mutations.assign.mockResolvedValue("asignacion-1");
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    await screen.findByText(OBJETIVO_1);
+    const team = teamSection();
+    expect(team.textContent).toContain("Profesional Uno Ficticio (tú)");
+    expect(team.textContent).toContain("Profesional Dos Ficticio");
+    const assign = within(team).getByRole("button", { name: "Asignar" });
+    expect(assign.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(within(team).getByLabelText("Asignar a otro profesional"), {
+      target: { value: "pro-3" },
+    });
+    fireEvent.click(within(team).getByRole("button", { name: "Asignar" }));
+
+    expect((await within(team).findByRole("status")).textContent).toBe(
+      "Se asignó el acompañamiento a Profesional Tres Ficticio.",
+    );
+    expect(mutations.assign).toHaveBeenCalledWith({
+      accompanimentId: "acc-1",
+      userId: "pro-3",
+      assignedRole: "professional",
+    });
+  });
+
+  test("retirar pide confirmación antes de enviar", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1, "paused"));
+    mutations.revoke.mockResolvedValue(1);
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    await screen.findByText(OBJETIVO_1);
+    const team = teamSection();
+    fireEvent.click(
+      within(team).getByRole("button", { name: "Retirar a Profesional Dos Ficticio" }),
+    );
+    expect(mutations.revoke).not.toHaveBeenCalled();
+    expect(team.textContent).toContain("Sus atenciones futuras siguen a su nombre");
+    fireEvent.click(within(team).getByRole("button", { name: "Confirmar el retiro" }));
+
+    await waitFor(() =>
+      expect(mutations.revoke).toHaveBeenCalledWith({
+        accompanimentId: "acc-1",
+        userId: "pro-2",
+        assignedRole: "professional",
+      }),
+    );
+  });
+
+  test("retirarse avisa que se pierde el acceso", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1));
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    await screen.findByText(OBJETIVO_1);
+    const team = teamSection();
+    fireEvent.click(within(team).getByRole("button", { name: "Retirarme" }));
+    expect(team.textContent).toContain("dejas de ver este acompañamiento");
+    fireEvent.click(within(team).getByRole("button", { name: "No retirar" }));
+    expect(within(team).getByRole("button", { name: "Retirarme" })).toBeDefined();
+  });
+
+  test("un acompañamiento cerrado muestra el equipo sin acciones", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1, "closed"));
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    await screen.findByText(OBJETIVO_1);
+    const team = teamSection();
+    expect(team.textContent).toContain("Profesional Dos Ficticio");
+    expect(within(team).queryAllByRole("button")).toHaveLength(0);
+    expect(within(team).queryByRole("combobox")).toBeNull();
+  });
+
+  test("un rechazo al asignar se muestra sin el texto del SDK", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1));
+    mutations.assign.mockRejectedValue(
+      new ConvexError({ code: CONFLICT_ERROR_CODE, message: "texto interno ficticio" }),
+    );
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    await screen.findByText(OBJETIVO_1);
+    const team = teamSection();
+    fireEvent.change(within(team).getByLabelText("Asignar a otro profesional"), {
+      target: { value: "pro-3" },
+    });
+    fireEvent.click(within(team).getByRole("button", { name: "Asignar" }));
+    expect((await within(team).findByRole("alert")).textContent).toContain(
+      "sus asignaciones cambiaron",
+    );
+    expect(document.body.textContent).not.toContain("texto interno ficticio");
   });
 });

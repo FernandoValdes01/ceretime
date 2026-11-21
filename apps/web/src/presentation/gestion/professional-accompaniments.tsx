@@ -19,6 +19,7 @@ import {
   GESTION_FOCUS_VISIBLE,
   isAuthorizationDenial,
 } from "./assigned-accompaniments-list.tsx";
+import { AccompanimentProfessionalsSection } from "./accompaniment-professionals.tsx";
 import { FollowUpHistory } from "./follow-up-record.tsx";
 import { useAssignedAccompanimentDetail } from "./practitioner-accompaniments-data.ts";
 import {
@@ -35,8 +36,8 @@ import {
  * El listado reutiliza el del Practicante sobre `listAssignedAccompaniments`:
  * cada fila muestra solo el objetivo y el estado y abre su propio detalle,
  * así varios acompañamientos se recorren sin mezclarse. El detalle agrega
- * pausar, reactivar y cerrar con las operaciones de TI2-152, y el historial
- * de seguimiento en solo lectura; la autorización
+ * pausar, reactivar y cerrar con las operaciones de TI2-152, el cambio de
+ * profesionales y el historial de seguimiento en solo lectura; la autorización
  * y la política de estados las decide el Backend, y un acompañamiento
  * cerrado no ofrece ninguna acción.
  */
@@ -166,6 +167,11 @@ function AccompanimentDetailBody({ accompanimentId }: { accompanimentId: string 
         ) : null}
       </dl>
       <AccompanimentStatusSection accompanimentId={view._id} status={view.status} />
+      {view.view === "full" ? (
+        <StudentPanelErrorBoundary subject="los profesionales del acompañamiento" level="section">
+          <AccompanimentProfessionalsSection accompanimentId={view._id} status={view.status} />
+        </StudentPanelErrorBoundary>
+      ) : null}
       <StudentPanelErrorBoundary subject="el historial de seguimiento" level="section">
         <FollowUpHistory accompanimentId={view._id} />
       </StudentPanelErrorBoundary>

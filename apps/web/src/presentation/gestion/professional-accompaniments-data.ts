@@ -12,11 +12,13 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
- * Estado del acompañamiento desde la Web del Profesional (TI2-165).
+ * Estado y profesionales del acompañamiento desde la Web del Profesional
+ * (TI2-165).
  *
- * Cableado delgado sobre las operaciones públicas de TI2-152
+ * Cableado delgado sobre las operaciones públicas de TI2-140 y TI2-152
  * (`docs/contratos-sprint-3/seguimiento.md`): pausar, reactivar, consultar
- * cuántas atenciones cancelaría el cierre y cerrar. La autorización y la
+ * cuántas atenciones cancelaría el cierre, cerrar, y leer, asignar y retirar
+ * profesionales. La autorización y la
  * política de estados las aplica el Backend; acá solo se decide qué acciones
  * ofrecer, con la tabla canónica del dominio.
  */
@@ -32,6 +34,30 @@ export function useReactivateAccompaniment() {
 export function useCloseAccompaniment() {
   return useMutation(api.presentation.accompaniments.closeAccompaniment);
 }
+
+/**
+ * Profesionales asignados al acompañamiento y los que se le pueden asignar,
+ * con su nombre (TI2-165). Responde `undefined` mientras carga.
+ */
+export function useAccompanimentProfessionals(accompanimentId: string) {
+  return useQuery(api.presentation.accompaniments.listAccompanimentProfessionals, {
+    accompanimentId: accompanimentId as Id<"accompaniments">,
+  });
+}
+
+/** Asignar y retirar profesionales usan las operaciones de TI2-140. */
+export function useAssignAccompanimentAccess() {
+  return useMutation(api.presentation.accompaniments.assignAccompanimentAccess);
+}
+
+export function useRevokeAccompanimentAccess() {
+  return useMutation(api.presentation.accompaniments.revokeAccompanimentAccess);
+}
+
+/** Profesionales del acompañamiento, derivados del contrato generado. */
+export type AccompanimentProfessionals = NonNullable<
+  ReturnType<typeof useAccompanimentProfessionals>
+>;
 
 /** Lo que cancelaría el cierre, o por qué no se pudo consultar. */
 export type ClosurePreviewState =
