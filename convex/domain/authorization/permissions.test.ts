@@ -812,10 +812,8 @@ describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => 
   const record: FollowUpRecord = {
     appointmentId: "atencion-ficticia-1",
     accompanimentId: "acompanamiento-ficticio-1",
-    agreements: [{ id: "acuerdo-1", description: "marcador-acuerdo" }],
-    tasks: [
-      { id: "tarea-1", description: "marcador-tarea", responsible: "student", status: "pending" },
-    ],
+    agreements: [{ description: "marcador-acuerdo" }],
+    tasks: [{ description: "marcador-tarea", responsible: "student", status: "pending" }],
     nextSteps: "marcador-pasos",
     suggestedNextAppointmentDate: "2026-11-20",
     internalNote: NOTE,

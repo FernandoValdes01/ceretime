@@ -2951,16 +2951,14 @@ function ti118RecordInput(
     appointmentId,
     accompanimentId,
     authorId,
-    agreements: [{ id: "a1", description: "Usar lector de pantalla en la próxima sesión" }],
+    agreements: [{ description: "Usar lector de pantalla en la próxima sesión" }],
     tasks: [
       {
-        id: "t1",
         description: "Enviar el material en formato accesible",
         responsible: "professional",
         status: "pending",
       },
       {
-        id: "t2",
         description: "Probar el material antes de la sesión",
         responsible: "student",
         status: "in_progress",

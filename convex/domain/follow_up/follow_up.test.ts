@@ -31,10 +31,9 @@ const validInput: FollowUpRecordInput = {
   appointmentId: "atencion-ficticia-1",
   accompanimentId: "acompanamiento-ficticio-1",
   appointmentStatus: "completed",
-  agreements: [{ id: "acuerdo-1", description: " Continuar con el plan acordado. " }],
+  agreements: [{ description: " Continuar con el plan acordado. " }],
   tasks: [
     {
-      id: "tarea-1",
       description: " Enviar el resumen de la atención. ",
       responsible: "professional",
       status: "pending",
@@ -76,10 +75,9 @@ describe("Registro de seguimiento (TI2-106)", () => {
     expect(record).toEqual({
       appointmentId: "atencion-ficticia-1",
       accompanimentId: "acompanamiento-ficticio-1",
-      agreements: [{ id: "acuerdo-1", description: "Continuar con el plan acordado." }],
+      agreements: [{ description: "Continuar con el plan acordado." }],
       tasks: [
         {
-          id: "tarea-1",
           description: "Enviar el resumen de la atención.",
           responsible: "professional",
           status: "pending",
@@ -240,20 +238,16 @@ describe("Registro de seguimiento (TI2-106)", () => {
     ).toEqual(["text_too_long"]);
   });
 
-  test("los acuerdos y tareas exigen identificadores únicos y acotados", () => {
+  test("los acuerdos y tareas no llevan identificador y están acotados", () => {
+    // El MER no les da un identificador del cliente (TI2-165): dos entradas
+    // iguales son válidas y las distingue su posición.
     const agreement = validInput.agreements[0];
     const task = validInput.tasks[0];
-    expect(causesOf({ ...validInput, agreements: [{ ...agreement, id: " " }] })).toEqual([
-      "entry_id_required",
-    ]);
     expect(
-      causesOf({ ...validInput, agreements: [agreement, { ...agreement, description: "Otra." }] }),
-    ).toEqual(["duplicate_entry_id"]);
-    expect(causesOf({ ...validInput, tasks: [task, { ...task, id: "tarea-1" }] })).toEqual([
-      "duplicate_entry_id",
-    ]);
-    const manyAgreements = Array.from({ length: FOLLOW_UP_ENTRIES_MAX + 1 }, (_, index) => ({
-      id: `acuerdo-${index}`,
+      validateFollowUpRecord({ ...validInput, agreements: [agreement, agreement] }).status,
+    ).toBe("valid");
+    expect(validateFollowUpRecord({ ...validInput, tasks: [task, task] }).status).toBe("valid");
+    const manyAgreements = Array.from({ length: FOLLOW_UP_ENTRIES_MAX + 1 }, () => ({
       description: "Acuerdo operativo.",
     }));
     expect(causesOf({ ...validInput, agreements: manyAgreements })).toEqual([
@@ -279,7 +273,6 @@ describe("Registro de seguimiento (TI2-106)", () => {
         nextSteps: " ",
         tasks: [
           {
-            id: "",
             description: "Diagnóstico: ansiedad",
             responsible: "tutor",
             status: "unknown",
@@ -289,7 +282,6 @@ describe("Registro de seguimiento (TI2-106)", () => {
     ).toEqual([
       "appointment_reference_required",
       "appointment_status_unknown",
-      "entry_id_required",
       "text_required",
       "responsible_unknown",
       "task_status_unknown",
@@ -311,12 +303,8 @@ describe("isFollowUpRetry (TI2-146)", () => {
   });
 
   test.each<[string, Partial<FollowUpRecordInput>]>([
-    ["otro acuerdo", { agreements: [{ id: "acuerdo-1", description: "Otro acuerdo." }] }],
+    ["otro acuerdo", { agreements: [{ description: "Otro acuerdo." }] }],
     ["un acuerdo menos", { agreements: [] }],
-    [
-      "otro identificador de acuerdo",
-      { agreements: [{ ...validInput.agreements[0], id: "acuerdo-2" }] },
-    ],
     ["otro estado de tarea", { tasks: [{ ...validInput.tasks[0], status: "done" }] }],
     ["otro responsable", { tasks: [{ ...validInput.tasks[0], responsible: "student" }] }],
     ["otra descripción de tarea", { tasks: [{ ...validInput.tasks[0], description: "Otra." }] }],
@@ -334,7 +322,6 @@ describe("isFollowUpRetry (TI2-146)", () => {
 
   test("el orden de las tareas cuenta, porque es el que se guardó", () => {
     const second = {
-      id: "tarea-2",
       description: "Otra tarea.",
       responsible: "student",
       status: "pending",
@@ -346,7 +333,6 @@ describe("isFollowUpRetry (TI2-146)", () => {
 
   test("una tarea de más tampoco es un reintento", () => {
     const second = {
-      id: "tarea-2",
       description: "Otra tarea.",
       responsible: "student",
       status: "pending",
@@ -390,10 +376,9 @@ describe("toFollowUpProjection", () => {
     expect(toFollowUpProjection(record, "no_show", "minimized")).toEqual({
       appointmentId: record.appointmentId,
       appointmentStatus: "no_show",
-      agreements: [{ id: "acuerdo-1", description: "Continuar con el plan acordado." }],
+      agreements: [{ description: "Continuar con el plan acordado." }],
       tasks: [
         {
-          id: "tarea-1",
           description: "Enviar el resumen de la atención.",
           responsible: "professional",
           status: "pending",

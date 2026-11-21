@@ -9,7 +9,6 @@ import {
   assignmentRoleUnion,
   assignmentStatusUnion,
   availabilityExceptionKindUnion,
-  followUpContractVersionLiteral,
   followUpResponsibleUnion,
   followUpTaskStatusUnion,
   generalAvailabilityValidator,
@@ -459,17 +458,16 @@ export default defineSchema({
     nextSteps: v.string(),
     suggestedNextAppointmentDate: v.optional(v.string()),
     internalNoteId: v.optional(v.id("followUpNotes")),
-    version: followUpContractVersionLiteral,
     updatedAt: v.number(),
   })
     // El registro de la atención: una fila basta para decidir.
     .index("by_appointmentId", ["appointmentId"]),
 
-  // Tabla 'followUpAgreements': acuerdos de un registro de seguimiento.
-  // `entryId` es el identificador estable del acuerdo dentro del registro.
+  // Tabla 'followUpAgreements': acuerdos de un registro de seguimiento. Ni
+  // los acuerdos ni las tareas guardan un identificador del cliente, porque
+  // el MER no lo tiene (TI2-165): se leen en el orden en que se guardaron.
   followUpAgreements: defineTable({
     recordId: v.id("followUpRecords"),
-    entryId: v.string(),
     description: v.string(),
   }).index("by_recordId", ["recordId"]),
 
@@ -478,7 +476,6 @@ export default defineSchema({
   // y estado operativo.
   followUpTasks: defineTable({
     recordId: v.id("followUpRecords"),
-    entryId: v.string(),
     description: v.string(),
     responsible: followUpResponsibleUnion,
     status: followUpTaskStatusUnion,

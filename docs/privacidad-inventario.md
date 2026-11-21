@@ -161,7 +161,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `followUpRecords`
 
-- **Datos personales.** `appointmentId`, `authorId`, `nextSteps`, `suggestedNextAppointmentDate`, `internalNoteId`, `version` y `updatedAt`. `nextSteps` es texto libre y puede mencionar necesidades de acceso.
+- **Datos personales.** `appointmentId`, `authorId`, `nextSteps`, `suggestedNextAppointmentDate`, `internalNoteId` y `updatedAt`. `nextSteps` es texto libre y puede mencionar necesidades de acceso.
 - **Finalidad.** Registrar el seguimiento posterior a una atención con los próximos pasos y la fecha sugerida. Los acuerdos y las tareas viven en sus propias tablas.
 - **Base propuesta.** Relación de acompañamiento. Si el texto libre contiene datos sensibles, consentimiento expreso o la excepción legal que corresponda. Pendiente de aprobación.
 - **Acceso por rol.** El Estudiante dueño lee la vista compartida, sin nota interna. El Profesional asignado lee la vista completa con nota interna. El Practicante asignado lee la vista minimizada con los acuerdos, las tareas, los próximos pasos y la fecha sugerida (TI2-186), sin la nota interna ni el vínculo con el acompañamiento; esos textos son libres y pueden mencionar necesidades de acceso. El Administrador está denegado.
@@ -169,7 +169,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `followUpAgreements`
 
-- **Datos personales.** `recordId`, `entryId` y `description`. `description` es texto libre y puede contener datos personales o sensibles.
+- **Datos personales.** `recordId` y `description`. `description` es texto libre y puede contener datos personales o sensibles.
 - **Finalidad.** Guardar los acuerdos de un registro de seguimiento como filas propias.
 - **Base propuesta.** Relación de acompañamiento, con la misma salvedad sobre datos sensibles que `followUpRecords`. Pendiente de aprobación.
 - **Acceso por rol.** Se leen a través de `followUpRecords`: el Estudiante dueño y el Profesional asignado ven los acuerdos; el Practicante también los recibe en su vista minimizada; el Administrador está denegado.
@@ -177,7 +177,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `followUpTasks`
 
-- **Datos personales.** `recordId`, `entryId`, `description`, `responsible` y `status`. `description` es texto libre. `responsible` distingue estudiante, profesional o CERETI, sin guardar una identidad adicional.
+- **Datos personales.** `recordId`, `description`, `responsible` y `status`. `description` es texto libre. `responsible` distingue estudiante, profesional o CERETI, sin guardar una identidad adicional.
 - **Finalidad.** Guardar las tareas de un registro de seguimiento con su responsable y estado operativo.
 - **Base propuesta.** Relación de acompañamiento, con la misma salvedad sobre datos sensibles que `followUpRecords`. Pendiente de aprobación.
 - **Acceso por rol.** Se leen a través de `followUpRecords`: el Estudiante dueño y el Profesional asignado ven las tareas; el Practicante también las recibe en su vista minimizada; el Administrador está denegado.

@@ -14,12 +14,13 @@ No hay operaciones de edición, reemplazo ni eliminación: el primer guardado co
 
 ## Entrada del guardado
 
-- `agreements`: hasta 20 objetos `{id, description}`.
-- `tasks`: hasta 20 objetos `{id, description, responsible, status}`. `responsible` es `"student"`, `"professional"` o `"cereti"`; `status` es `"pending"`, `"in_progress"`, `"done"` o `"cancelled"`.
+- `agreements`: hasta 20 objetos `{description}`.
+- `tasks`: hasta 20 objetos `{description, responsible, status}`. `responsible` es `"student"`, `"professional"` o `"cereti"`; `status` es `"pending"`, `"in_progress"`, `"done"` o `"cancelled"`.
 - `nextSteps`: obligatorio.
 - `suggestedNextAppointmentDate`: opcional, fecha civil `AAAA-MM-DD` válida.
 - `internalNote`: opcional. Para no guardar nota se omite la clave; una nota vacía se rechaza.
-- Cada texto, incluida la nota, se recorta y admite de 1 a 500 caracteres. Los `id` se recortan, son obligatorios y no se repiten dentro de los acuerdos ni dentro de las tareas.
+- Cada texto, incluida la nota, se recorta y admite de 1 a 500 caracteres.
+- Acuerdos y tareas no llevan identificador, porque ACUERDOS_SEGUIMIENTO y TAREAS_SEGUIMIENTO del MER no tienen uno del cliente (TI2-165). Los distingue su posición: se guardan y se leen en el orden en que se enviaron.
 - El cliente no envía el acompañamiento, el autor ni el estado de la atención: el servidor los toma de la atención y de la sesión. Un campo de más, otra versión o un valor fuera de las listas anteriores falla con el error de validador de Convex antes de llegar al caso de uso.
 
 ## Reglas
@@ -50,10 +51,9 @@ Los validadores de salida fijan estas claves: si una proyección trajera otra cl
   "appointmentId": "k57abc...",
   "accompanimentId": "j97def...",
   "appointmentStatus": "completed",
-  "agreements": [{ "id": "a1", "description": "Recibir los apuntes en formato digital" }],
+  "agreements": [{ "description": "Recibir los apuntes en formato digital" }],
   "tasks": [
     {
-      "id": "t1",
       "description": "Enviar los apuntes de la semana",
       "responsible": "professional",
       "status": "pending"
@@ -80,8 +80,6 @@ Los errores usan el contrato común de TI2-88 (`ConvexError({ code, message })`)
 
 | Causa                                        | Mensaje                                                                                                          |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `id` vacío                                   | `"Cada acuerdo y cada tarea necesitan un identificador."`                                                        |
-| `id` repetido                                | `"Hay acuerdos o tareas con el identificador repetido."`                                                         |
 | Texto vacío, incluida una nota enviada vacía | `"Hay textos vacíos: completa los acuerdos, las tareas, los próximos pasos y, si la incluyes, la nota interna."` |
 | Texto largo                                  | `"Cada texto admite hasta 500 caracteres."`                                                                      |
 | Demasiadas entradas                          | `"Se admiten hasta 20 acuerdos y 20 tareas."`                                                                    |
@@ -103,10 +101,9 @@ const saveFollowUp = useMutation(api.presentation.follow_up.saveFollowUpRecord);
 try {
   await saveFollowUp({
     appointmentId,
-    agreements: [{ id: "a1", description: "Recibir los apuntes en formato digital" }],
+    agreements: [{ description: "Recibir los apuntes en formato digital" }],
     tasks: [
       {
-        id: "t1",
         description: "Enviar los apuntes",
         responsible: "professional",
         status: "pending",
