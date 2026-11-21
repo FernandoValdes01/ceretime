@@ -57,6 +57,23 @@ describe("ModalDialog", () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  // En el navegador, deshabilitar el control enfocado deja el foco en `<body>`:
+  // el teclado del diálogo no puede depender de que el foco siga adentro.
+  test("con el foco fuera del diálogo, Escape cierra y Tab vuelve adentro", () => {
+    render(<Harness />);
+    const opener = screen.getByRole("button", { name: "Abrir" });
+    opener.focus();
+    fireEvent.click(opener);
+
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
+
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   test("si el botón que lo abrió desapareció, el foco va al respaldo y no a body", () => {
     render(<Harness />);
     const opener = screen.getByRole("button", { name: "Abrir" });

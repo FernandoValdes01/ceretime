@@ -5,6 +5,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import { isOpenRequestState } from "../../../../../convex/domain/index.ts";
 import { ModalDialog } from "../shared/modal-dialog.tsx";
 import {
+  useBackendConnected,
   useCancelOwnRequest,
   useRespondToInformationRequest,
   type OwnRequestActionOutcome,
@@ -102,6 +103,7 @@ export function StudentRequestActions({
           fallbackFocusRef={statusRef}
           onSubmit={(text) => respond(requestId, text)}
           onDone={() => finish("Enviamos tu respuesta. CERETI continuará con la revisión.")}
+          onFailureAfterClose={setAnnouncement}
           onClose={() => setOpenDialog(null)}
         />
       ) : null}
@@ -117,6 +119,7 @@ export function StudentRequestActions({
           fallbackFocusRef={statusRef}
           onSubmit={(text) => cancelRequest(requestId, text)}
           onDone={() => finish("Cancelaste la solicitud.")}
+          onFailureAfterClose={setAnnouncement}
           onClose={() => setOpenDialog(null)}
         />
       ) : null}
@@ -126,7 +129,12 @@ export function StudentRequestActions({
 
 const DENIED_MESSAGE =
   "No puedes hacer esto con esta solicitud. Si crees que es un error, comunícate con CERETI por los canales oficiales.";
-const FAILED_MESSAGE = "No pudimos completar la acción. Revisa tu conexión e intenta de nuevo.";
+// No atribuye la causa: `failed` llega por un error del servidor o un código
+// inesperado, no por una red caída (esa queda en espera, ver `WAITING_MESSAGE`).
+const FAILED_MESSAGE =
+  "No pudimos completar la acción. Lo que escribiste se conserva: inténtalo de nuevo o comunícate con CERETI por los canales oficiales.";
+const WAITING_MESSAGE =
+  "Sin conexión con CERETI. Se enviará cuando vuelva la conexión. Puedes cerrar esta ventana: el estado de la solicitud se actualizará solo.";
 
 /** Mensaje del desenlace fallido; el rechazo trae la explicación pública del Backend. */
 function failureMessage(outcome: Exclude<OwnRequestActionOutcome, { status: "done" }>): string {
@@ -143,6 +151,12 @@ function failureMessage(outcome: Exclude<OwnRequestActionOutcome, { status: "don
 /**
  * Diálogo de confirmación con un texto obligatorio. No valida el texto: el
  * Backend lo exige y su rechazo se muestra junto al campo.
+ *
+ * Con conexión, el envío bloquea el cierre hasta tener respuesta. Sin
+ * conexión, Convex retiene la mutación hasta que vuelve la conexión: el
+ * diálogo lo avisa y deja salir. Si el desenlace llega con el diálogo ya
+ * cerrado, un éxito sigue por `onDone` y un fallo por `onFailureAfterClose`,
+ * para no perderlo.
  */
 function TextActionDialog({
   title,
@@ -155,6 +169,7 @@ function TextActionDialog({
   fallbackFocusRef,
   onSubmit,
   onDone,
+  onFailureAfterClose,
   onClose,
 }: {
   title: string;
@@ -167,6 +182,7 @@ function TextActionDialog({
   fallbackFocusRef: RefObject<HTMLElement | null>;
   onSubmit: (text: string) => Promise<OwnRequestActionOutcome>;
   onDone: () => void;
+  onFailureAfterClose: (message: string) => void;
   onClose: () => void;
 }) {
   const fieldId = useId();
@@ -175,6 +191,10 @@ function TextActionDialog({
   const [text, setText] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const connected = useBackendConnected();
+  // Solo con conexión se bloquea la salida: sin ella la espera puede no terminar.
+  const locked = pending && connected;
+  const waitingForConnection = pending && !connected;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -182,9 +202,15 @@ function TextActionDialog({
     setPending(true);
     setError(null);
     const outcome = await onSubmit(text);
+    // El campo solo existe mientras el diálogo sigue abierto.
+    const stillOpen = fieldRef.current !== null;
     setPending(false);
     if (outcome.status === "done") {
       onDone();
+      return;
+    }
+    if (!stillOpen) {
+      onFailureAfterClose(failureMessage(outcome));
       return;
     }
     setError(failureMessage(outcome));
@@ -195,7 +221,7 @@ function TextActionDialog({
     <ModalDialog
       title={title}
       description={description}
-      busy={pending}
+      busy={locked}
       initialFocusRef={fieldRef}
       returnFocusRef={returnFocusRef}
       fallbackFocusRef={fallbackFocusRef}
@@ -225,19 +251,25 @@ function TextActionDialog({
             </p>
           )}
         </div>
+        {/* Región viva siempre montada: así el lector anuncia la espera al aparecer. */}
+        <p role="status" className="m-0 text-base font-semibold text-on-surface empty:hidden">
+          {waitingForConnection ? WAITING_MESSAGE : null}
+        </p>
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
             type="button"
             className={SECONDARY_BUTTON_CLASS}
             onClick={onClose}
-            disabled={pending}
+            disabled={locked}
           >
             {dismissLabel}
           </button>
+          {/* `aria-disabled` y no `disabled`: un botón deshabilitado pierde el
+              foco y lo deja en `<body>`. `handleSubmit` ignora el envío repetido. */}
           <button
             type="submit"
-            className={PRIMARY_BUTTON_CLASS}
-            disabled={pending}
+            className={`${PRIMARY_BUTTON_CLASS} aria-disabled:cursor-not-allowed aria-disabled:opacity-60`}
+            aria-disabled={pending}
             aria-busy={pending}
           >
             {pending ? pendingLabel : submitLabel}

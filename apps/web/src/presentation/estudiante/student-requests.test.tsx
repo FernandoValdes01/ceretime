@@ -67,11 +67,15 @@ const cancelOwnRequest = vi.fn<(requestId: string, reason: string) => Promise<Ac
 const respondToInformation =
   vi.fn<(requestId: string, response: string) => Promise<ActionOutcome>>();
 
-// La traducción de errores se prueba en `student-request-actions.test.ts`;
-// acá cada acción entrega directamente su desenlace.
+let backendConnected = true;
+
+// La traducción de errores y lo que envía cada hook se prueban en
+// `student-request-actions.test.ts`; acá cada acción entrega directamente su
+// desenlace.
 vi.mock("./student-request-actions.ts", () => ({
   useCancelOwnRequest: () => cancelOwnRequest,
   useRespondToInformationRequest: () => respondToInformation,
+  useBackendConnected: () => backendConnected,
 }));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
@@ -170,6 +174,7 @@ beforeEach(() => {
   detailThrows = null;
   cancelOwnRequest.mockReset();
   respondToInformation.mockReset();
+  backendConnected = true;
 });
 
 afterEach(() => {
@@ -526,6 +531,118 @@ describe("estado, respuesta y cancelación de la solicitud propia (TI2-153)", ()
     fireEvent.click(screen.getByRole("button", { name: "Sí, cancelar solicitud" }));
 
     expect((await screen.findByRole("alert")).textContent).toMatch(message);
+    expect(screen.queryByText("Cancelaste la solicitud.")).toBeNull();
+  });
+
+  // `failed` llega por un error del servidor o un código inesperado, nunca por
+  // red caída: el mensaje no culpa a la conexión y ofrece cómo seguir.
+  test("el fallo no culpa a la conexión, conserva el texto y devuelve el foco al campo", async () => {
+    mockedDetail = detallePropio({ status: "received" });
+    cancelOwnRequest.mockResolvedValue({ status: "failed" });
+    renderAt("/estudiante/solicitudes/req-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar solicitud" }));
+    const field = screen.getByLabelText(/Motivo de la cancelación/);
+    fireEvent.change(field, { target: { value: "Motivo ficticio." } });
+    // En el navegador el clic deja el foco en el botón; jsdom no lo mueve solo.
+    const confirm = screen.getByRole("button", { name: "Sí, cancelar solicitud" });
+    confirm.focus();
+    fireEvent.click(confirm);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toMatch(/conexión/i);
+    expect(alert.textContent).toMatch(/Lo que escribiste se conserva/);
+    expect(alert.textContent).toMatch(/canales oficiales/);
+    expect((field as HTMLTextAreaElement).value).toBe("Motivo ficticio.");
+    expect(document.activeElement).toBe(field);
+  });
+
+  test("con conexión, el envío en curso no se cierra con Escape ni con el botón", async () => {
+    mockedDetail = detallePropio({ status: "received" });
+    cancelOwnRequest.mockReturnValue(new Promise(() => {}));
+    renderAt("/estudiante/solicitudes/req-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar solicitud" }));
+    fireEvent.change(screen.getByLabelText(/Motivo de la cancelación/), {
+      target: { value: "Motivo ficticio." },
+    });
+    const confirm = screen.getByRole("button", { name: "Sí, cancelar solicitud" });
+    confirm.focus();
+    fireEvent.click(confirm);
+    const sending = await screen.findByRole("button", { name: "Cancelando…" });
+
+    // Conserva el foco (no `disabled`) y no envía dos veces.
+    expect(sending.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(sending);
+    fireEvent.click(sending);
+    expect(cancelOwnRequest).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    expect(screen.getByRole("dialog")).toBeDefined();
+    expect(
+      (screen.getByRole("button", { name: "No, mantener solicitud" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(screen.queryByText(/Sin conexión con CERETI/)).toBeNull();
+  });
+
+  // Convex retiene la mutación sin conexión y la reenvía al volver: la promesa
+  // no termina, así que el diálogo avisa la espera y deja salir.
+  test("sin conexión, el diálogo avisa que espera y permite salir", async () => {
+    mockedDetail = detallePropio({ status: "received" });
+    backendConnected = false;
+    cancelOwnRequest.mockReturnValue(new Promise(() => {}));
+    renderAt("/estudiante/solicitudes/req-1");
+
+    const open = await screen.findByRole("button", { name: "Cancelar solicitud" });
+    open.focus();
+    fireEvent.click(open);
+    fireEvent.change(screen.getByLabelText(/Motivo de la cancelación/), {
+      target: { value: "Motivo ficticio." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sí, cancelar solicitud" }));
+
+    expect(await screen.findByText(/Sin conexión con CERETI/)).toBeDefined();
+    const dismiss = screen.getByRole("button", {
+      name: "No, mantener solicitud",
+    }) as HTMLButtonElement;
+    expect(dismiss.disabled).toBe(false);
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(open);
+  });
+
+  test("si el desenlace llega con el diálogo cerrado, se anuncia igual", async () => {
+    mockedDetail = detallePropio({ status: "received" });
+    backendConnected = false;
+    let settle: (outcome: ActionOutcome) => void = () => {};
+    cancelOwnRequest.mockReturnValue(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    renderAt("/estudiante/solicitudes/req-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar solicitud" }));
+    fireEvent.change(screen.getByLabelText(/Motivo de la cancelación/), {
+      target: { value: "Motivo ficticio." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sí, cancelar solicitud" }));
+    await screen.findByText(/Sin conexión con CERETI/);
+    fireEvent.click(screen.getByRole("button", { name: "No, mantener solicitud" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    settle({
+      status: "rejected",
+      message: "La solicitud no admite la cancelación en su estado actual.",
+    });
+
+    expect(
+      await screen.findByText("La solicitud no admite la cancelación en su estado actual."),
+    ).toBeDefined();
     expect(screen.queryByText("Cancelaste la solicitud.")).toBeNull();
   });
 

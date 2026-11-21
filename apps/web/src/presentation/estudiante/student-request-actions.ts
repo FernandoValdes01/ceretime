@@ -1,4 +1,4 @@
-import { useMutation } from "convex/react";
+import { useConvexConnectionState, useMutation } from "convex/react";
 // Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
 // el monorepo defina el alias o paquete interno compartido.
 import { api } from "../../../../../convex/_generated/api";
@@ -18,9 +18,14 @@ import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
  * desenlace distingue por código estable, igual que el envío
  * (`student-request-form-data.ts`): un rechazo por el estado actual o por los
  * datos muestra el mensaje público del Backend, que explica por qué; la
- * denegación usa el aviso genérico y cualquier otro fallo, incluida una red
- * caída, es recuperable con mensaje propio. Nunca se muestra `error.message`
- * del SDK.
+ * denegación usa el aviso genérico y cualquier otro fallo (un error del
+ * servidor o un código que la Web no espera) es recuperable con mensaje
+ * propio. Nunca se muestra `error.message` del SDK.
+ *
+ * Una red caída no llega como fallo: Convex guarda la mutación y la reenvía
+ * cuando vuelve la conexión, así que la promesa queda pendiente. Por eso la
+ * pantalla consulta `useBackendConnected` para avisar la espera en vez de
+ * esperar un rechazo.
  */
 
 export type OwnRequestActionOutcome =
@@ -55,7 +60,8 @@ export function toOwnRequestActionFailure(
   return { status: "failed" };
 }
 
-async function toOutcome(operation: Promise<unknown>): Promise<OwnRequestActionOutcome> {
+/** Desenlace de una mutación: `done` solo si se resolvió; cualquier rechazo se traduce. */
+export async function toOutcome(operation: Promise<unknown>): Promise<OwnRequestActionOutcome> {
   try {
     await operation;
     return { status: "done" };
@@ -82,4 +88,9 @@ export function useRespondToInformationRequest(): (
 ) => Promise<OwnRequestActionOutcome> {
   const respond = useMutation(api.presentation.requests.respondToInformationRequest);
   return (requestId, response) => toOutcome(respond({ requestId, response }));
+}
+
+/** Verdadero mientras el cliente de Convex tiene conexión con el Backend. */
+export function useBackendConnected(): boolean {
+  return useConvexConnectionState().isWebSocketConnected;
 }

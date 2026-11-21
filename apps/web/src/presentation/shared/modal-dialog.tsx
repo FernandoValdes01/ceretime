@@ -62,7 +62,10 @@ export function ModalDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+  // Escucha en el documento y no solo en el diálogo: si el foco sale a `<body>`
+  // (por ejemplo, porque se deshabilitó el control que lo tenía), Escape y Tab
+  // siguen funcionando y Tab lo devuelve adentro.
+  const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
     if (event.key === "Escape") {
       event.preventDefault();
       if (!busy) onClose();
@@ -80,14 +83,24 @@ export function ModalDialog({
     }
     const first = focusableElements[0];
     const last = focusableElements[focusableElements.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    const inside = dialogRef.current.contains(document.activeElement);
+    if (!inside) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
     } else if (!event.shiftKey && document.activeElement === last) {
       event.preventDefault();
       first.focus();
     }
-  }
+  });
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => handleKeyDown(event);
+    document.addEventListener("keydown", listener);
+    return () => document.removeEventListener("keydown", listener);
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
@@ -97,7 +110,6 @@ export function ModalDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description === undefined ? undefined : descriptionId}
-        onKeyDown={handleKeyDown}
         className="flex max-h-full w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-lg border border-border-low bg-surface-container-lowest p-6 text-left text-on-surface shadow-[0_4px_12px_rgb(0_0_0/0.05)]"
       >
         <h2 id={titleId} className="m-0! font-sans! text-xl! leading-snug! font-semibold!">
