@@ -39,9 +39,9 @@ export function useCloseAccompaniment() {
  * Profesionales asignados al acompañamiento y los que se le pueden asignar,
  * con su nombre (TI2-165). Responde `undefined` mientras carga.
  */
-export function useAccompanimentProfessionals(accompanimentId: string) {
+export function useAccompanimentProfessionals(accompanimentId: Id<"accompaniments">) {
   return useQuery(api.presentation.accompaniments.listAccompanimentProfessionals, {
-    accompanimentId: accompanimentId as Id<"accompaniments">,
+    accompanimentId,
   });
 }
 
@@ -74,13 +74,13 @@ export type ClosurePreviewState =
  * del cierre abierta. Un fallo de la query no rompe la pantalla: llega como
  * estado `error`, con el aviso genérico si es una denegación.
  */
-export function useClosurePreview(accompanimentId: string): ClosurePreviewState {
+export function useClosurePreview(accompanimentId: Id<"accompaniments">): ClosurePreviewState {
   try {
     // El hook se invoca siempre y en el mismo orden: el try solo clasifica
     // el error que ya lanzó.
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const preview = useQuery(api.presentation.accompaniments.getAccompanimentClosurePreview, {
-      accompanimentId: accompanimentId as Id<"accompaniments">,
+      accompanimentId,
     });
     return preview === undefined ? { status: "loading" } : { status: "ok", ...preview };
   } catch (error) {

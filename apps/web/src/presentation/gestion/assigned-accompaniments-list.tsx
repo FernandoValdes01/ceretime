@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { UNAUTHORIZED_ERROR_CODE } from "../../../../../convex/domain/index.ts";
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import { accompanimentStatusLabel } from "../routes/student-panel-labels.ts";
-// Reutiliza el lenguaje visual del panel (listas, fichas, errores): una sola
+// Reutiliza el lenguaje visual del panel (listas, tarjetas, errores): una sola
 // fuente para no duplicar el sistema de diseño entre portales.
 import "../routes/student-portal.css";
 import {
