@@ -31,11 +31,29 @@ const INTERNAL_BLOCK =
 const BLOCK_TITLE = "m-0 text-base font-bold text-on-surface";
 const LINK = `inline-flex min-h-[44px] w-fit items-center rounded-[0.5rem] text-base font-semibold text-primary underline ${GESTION_FOCUS_VISIBLE}`;
 
-export function FollowUpRecordContent({ record }: { record: FollowUpRecordView }) {
+/** Contenido de un seguimiento que se muestra, confirmado o por confirmar. */
+export type FollowUpContent = Pick<
+  FollowUpRecordView,
+  "agreements" | "tasks" | "nextSteps" | "suggestedNextAppointmentDate"
+> & { readonly internalNote?: string };
+
+/**
+ * Seguimiento en solo lectura. `pending` muestra el resumen antes de
+ * confirmar; sin él, es un registro ya confirmado.
+ */
+export function FollowUpRecordContent({
+  record,
+  pending = false,
+}: {
+  record: FollowUpContent;
+  pending?: boolean;
+}) {
   return (
     <div className="flex flex-col gap-4">
       <p className="m-0 text-sm text-on-surface-variant">
-        Seguimiento confirmado: no se puede editar.
+        {pending
+          ? "Revisa el seguimiento: al confirmarlo queda guardado y ya no se puede editar."
+          : "Seguimiento confirmado: no se puede editar."}
       </p>
       <section aria-label="Se comparte con el estudiante" className={SHARED_BLOCK}>
         <p className={BLOCK_TITLE}>Se comparte con el estudiante</p>
@@ -77,7 +95,7 @@ export function FollowUpRecordContent({ record }: { record: FollowUpRecordView }
           </FollowUpField>
         )}
       </section>
-      {record.view === "professional" && record.internalNote !== undefined ? (
+      {record.internalNote !== undefined ? (
         <section aria-label="Nota interna: no se comparte" className={INTERNAL_BLOCK}>
           <p className={BLOCK_TITLE}>Nota interna: no se comparte</p>
           <p className="m-0 mt-2 text-sm text-on-surface-variant">

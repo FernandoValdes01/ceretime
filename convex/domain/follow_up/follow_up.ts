@@ -212,6 +212,11 @@ const FOLLOW_UP_ADMISSIBLE_STATUSES: ReadonlySet<AppointmentStatus> = new Set([
   "no_show_unjustified",
 ]);
 
+/** Verdadero cuando una atención en ese estado admite registrar su seguimiento. */
+export function admitsFollowUp(status: AppointmentStatus): boolean {
+  return FOLLOW_UP_ADMISSIBLE_STATUSES.has(status);
+}
+
 /** Minúsculas sin tildes, para comparar etiquetas sin depender de la tilde. */
 function withoutDiacritics(value: string): string {
   return value
@@ -305,7 +310,7 @@ export function validateFollowUpRecord(input: FollowUpRecordInput): FollowUpVali
 
   if (!isAppointmentStatus(input.appointmentStatus)) {
     found.add("appointment_status_unknown");
-  } else if (!FOLLOW_UP_ADMISSIBLE_STATUSES.has(input.appointmentStatus)) {
+  } else if (!admitsFollowUp(input.appointmentStatus)) {
     found.add("follow_up_not_admissible");
   }
 

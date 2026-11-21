@@ -33,6 +33,13 @@ let mockedBackendConfigured = true;
 
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
+// El seguimiento tiene sus propias pruebas (`follow-up-form.test.tsx`): acá
+// la atención todavía no lo tiene.
+vi.mock("./follow-up-data.ts", () => ({
+  useFollowUpRecord: () => null,
+  useSaveFollowUpRecord: () => vi.fn(),
+}));
+
 vi.mock("../session/session-state", () => ({
   useSessionState: () => mockedSession,
   useSessionAndRole: () => mockedPair,

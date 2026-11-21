@@ -311,6 +311,7 @@ export {
   FOLLOW_UP_TASK_STATUS_VALUES,
   FOLLOW_UP_TEXT_MAX_LENGTH,
   FOLLOW_UP_VIEW_VALUES,
+  admitsFollowUp,
   isFollowUpResponsible,
   isFollowUpRetry,
   isFollowUpTaskStatus,
