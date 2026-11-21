@@ -39,8 +39,12 @@ export function PublicMain({ children }: { children: ReactNode }) {
   );
 }
 
-/** Portal con encabezado y navegación común para un área con sesión. */
-export function AppShell({ area }: { area: PortalArea }) {
+/**
+ * Portal con encabezado y navegación común para un área con sesión. Con
+ * `children` muestra ese contenido en lugar de la vista de la ruta, para que
+ * un estado de cuenta conserve la navegación y el cierre de sesión.
+ */
+export function AppShell({ area, children }: { area: PortalArea; children?: ReactNode }) {
   const navigation = PORTAL_NAVIGATION[area];
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
@@ -123,7 +127,7 @@ export function AppShell({ area }: { area: PortalArea }) {
         className={area === "student" ? "app-shell__main" : "app-shell__main app-shell__main--wide"}
         tabIndex={-1}
       >
-        <Outlet />
+        {children ?? <Outlet />}
       </main>
     </div>
   );
