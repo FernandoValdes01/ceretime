@@ -14,7 +14,8 @@ import {
 } from "../../../../../convex/domain/index.ts";
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import { ACCESS_DENIED_MESSAGE, DeniedState, LoadingState } from "../shared/view-states.tsx";
-import { GESTION_FOCUS_VISIBLE, isAuthorizationDenial } from "./assigned-accompaniments-list.tsx";
+import { GESTION_FOCUS_VISIBLE } from "./assigned-accompaniments-list.tsx";
+import { isAuthorizationDenial } from "./authorization-denial.ts";
 import { useFollowUpRecord, useSaveFollowUpRecord } from "./follow-up-data.ts";
 import { FollowUpRecordContent, type FollowUpContent } from "./follow-up-record.tsx";
 import { followUpResponsibleLabel, followUpTaskStatusLabel } from "./gestion-labels.ts";

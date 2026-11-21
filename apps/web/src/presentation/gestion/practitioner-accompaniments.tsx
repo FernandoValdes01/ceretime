@@ -7,8 +7,8 @@ import {
   ACCOMPANIMENT_BACK_LINK,
   ACCOMPANIMENT_TITLE,
   AssignedAccompanimentsList,
-  isAuthorizationDenial,
 } from "./assigned-accompaniments-list.tsx";
+import { isAuthorizationDenial } from "./authorization-denial.ts";
 import {
   toMinimizedAccompaniment,
   useAssignedAccompanimentDetail,

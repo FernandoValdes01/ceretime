@@ -17,8 +17,8 @@ import {
   ACCOMPANIMENT_TITLE,
   AssignedAccompanimentsList,
   GESTION_FOCUS_VISIBLE,
-  isAuthorizationDenial,
 } from "./assigned-accompaniments-list.tsx";
+import { isAuthorizationDenial } from "./authorization-denial.ts";
 import { AccompanimentProfessionalsSection } from "./accompaniment-professionals.tsx";
 import { FollowUpHistory } from "./follow-up-record.tsx";
 import { useAssignedAccompanimentDetail } from "./practitioner-accompaniments-data.ts";

@@ -78,7 +78,8 @@ export function useClosurePreview(accompanimentId: Id<"accompaniments">): Closur
   try {
     // El hook se invoca siempre y en el mismo orden: el try solo clasifica
     // el error que ya lanzó.
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // Solo oxlint lo marca: ESLint acepta el hook dentro de otro hook.
+    // oxlint-disable-next-line react-hooks/rules-of-hooks
     const preview = useQuery(api.presentation.accompaniments.getAccompanimentClosurePreview, {
       accompanimentId,
     });

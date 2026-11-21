@@ -1,7 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { UNAUTHORIZED_ERROR_CODE } from "../../../../../convex/domain/index.ts";
-import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import { accompanimentStatusLabel } from "../routes/student-panel-labels.ts";
 // Reutiliza el lenguaje visual del panel (listas, tarjetas, errores): una sola
 // fuente para no duplicar el sistema de diseño entre portales.
@@ -13,6 +11,7 @@ import {
   type MinimizedAccompaniment,
 } from "./practitioner-accompaniments-data.ts";
 import { DeniedState, EmptyState, LoadingState } from "../shared/view-states.tsx";
+import { isAuthorizationDenial } from "./authorization-denial.ts";
 
 /**
  * Listado paginado de los acompañamientos asignados (TI2-116, TI2-165).
@@ -41,16 +40,6 @@ export const ACCOMPANIMENT_BACK_LINK = `flex min-h-[44px] w-fit items-center gap
 const ACCOMPANIMENT_ITEM =
   "rounded-lg border border-border-low bg-surface-container-lowest transition-colors hover:border-outline";
 const ACCOMPANIMENT_ITEM_LINK = `flex min-h-[44px] flex-col gap-2 rounded-lg px-5 py-4 text-left text-on-surface no-underline ${GESTION_FOCUS_VISIBLE}`;
-
-/**
- * Denegación genérica del Backend. Lee el código con `publicErrorOf`, que
- * también reconoce la forma anterior con el texto en `error.data`: el SDK
- * decora `error.message`, así que comparar el mensaje falla contra el
- * Backend real.
- */
-export function isAuthorizationDenial(error: unknown): boolean {
-  return publicErrorOf(error)?.code === UNAUTHORIZED_ERROR_CODE;
-}
 
 /** Portal que muestra el listado: decide a qué detalle enlaza cada fila. */
 export type AssignedAccompanimentsArea = "practitioner" | "professional";

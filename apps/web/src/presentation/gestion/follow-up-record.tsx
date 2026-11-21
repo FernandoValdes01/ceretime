@@ -4,7 +4,8 @@ import { CONFLICT_ERROR_CODE } from "../../../../../convex/domain/index.ts";
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import { formatCivilDateWithYear } from "../shared/date-format.ts";
 import { DeniedState, EmptyState, LoadingState } from "../shared/view-states.tsx";
-import { GESTION_FOCUS_VISIBLE, isAuthorizationDenial } from "./assigned-accompaniments-list.tsx";
+import { GESTION_FOCUS_VISIBLE } from "./assigned-accompaniments-list.tsx";
+import { isAuthorizationDenial } from "./authorization-denial.ts";
 import {
   useFollowUpHistory,
   type FollowUpHistoryPage,
