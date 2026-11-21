@@ -331,3 +331,47 @@ export function validateBootstrapCandidate(candidate: BootstrapCandidate): Boots
   }
   return { ok: true };
 }
+
+/** Rol al que el operador puede corregir un Estudiante del primer ingreso (TI2-182). */
+export type ReclassifiedRole = "intern" | "professional";
+
+/** Perfil de Estudiante que el operador quiere corregir (TI2-182). */
+export type StudentReclassificationTarget = {
+  readonly role: Role;
+  readonly email: string;
+  /** Verdadero si el perfil ya tiene solicitudes o acompañamientos como Estudiante. */
+  readonly hasStudentActivity: boolean;
+};
+
+export type StudentReclassificationRejection =
+  | "target-not-student"
+  | "target-email-not-student"
+  | "target-has-student-activity";
+
+export type StudentReclassificationCheck =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: StudentReclassificationRejection };
+
+/**
+ * Decide si un perfil de Estudiante puede pasar a Practicante o a cuenta de
+ * prueba (Profesional `@alu.uct.cl`) pendiente (TI2-182).
+ *
+ * El primer ingreso crea como Estudiante a cualquier cuenta `@alu.uct.cl`,
+ * también a quien el operador aún no registraba con su rol: su rol no se
+ * deduce del correo. La corrección solo aplica a un Estudiante con correo
+ * `@alu.uct.cl`, el único que crea el primer ingreso, y sin actividad propia: una solicitud o un acompañamiento ya
+ * registrados son datos del Estudiante que no deben quedar a nombre de otro
+ * rol. El resultado queda pendiente, así que la habilitación sigue siendo
+ * decisión del profesional o del Administrador (`checkInternEnablement` o
+ * `checkTestProfessionalEnablement`).
+ */
+export function checkStudentReclassification(
+  target: StudentReclassificationTarget,
+): StudentReclassificationCheck {
+  if (target.role !== "student") return { ok: false, reason: "target-not-student" };
+  if (getInstitutionalPopulation(normalizeEmail(target.email)) !== "estudiante") {
+    return { ok: false, reason: "target-email-not-student" };
+  }
+  if (target.hasStudentActivity) return { ok: false, reason: "target-has-student-activity" };
+  return { ok: true };
+}

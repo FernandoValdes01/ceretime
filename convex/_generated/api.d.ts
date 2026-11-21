@@ -12,6 +12,8 @@ import type * as application_accompaniments_commands from "../application/accomp
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accompaniments_status from "../application/accompaniments/status.js";
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
+import type * as application_accounts_ports from "../application/accounts/ports.js";
+import type * as application_accounts_reclassify_student from "../application/accounts/reclassify_student.js";
 import type * as application_appointments_audit from "../application/appointments/audit.js";
 import type * as application_appointments_booking from "../application/appointments/booking.js";
 import type * as application_appointments_changes from "../application/appointments/changes.js";
@@ -35,6 +37,7 @@ import type * as application_requests_results from "../application/requests/resu
 import type * as application_requests_status_change from "../application/requests/status_change.js";
 import type * as application_session_minimal_identity from "../application/session/minimal_identity.js";
 import type * as application_session_portal_role from "../application/session/portal_role.js";
+import type * as application_session_ports from "../application/session/ports.js";
 import type * as application_session_profile from "../application/session/profile.js";
 import type * as application_session_reject_external_user from "../application/session/reject_external_user.js";
 import type * as application_spaces_mutations from "../application/spaces/mutations.js";
@@ -45,6 +48,7 @@ import type * as domain_accompaniments_accompaniment from "../domain/accompanime
 import type * as domain_accompaniments_intern_access from "../domain/accompaniments/intern_access.js";
 import type * as domain_accompaniments_practitioner_assignment from "../domain/accompaniments/practitioner_assignment.js";
 import type * as domain_accounts_enablement from "../domain/accounts/enablement.js";
+import type * as domain_accounts_own_profile from "../domain/accounts/own_profile.js";
 import type * as domain_appointments_appointment from "../domain/appointments/appointment.js";
 import type * as domain_appointments_audit from "../domain/appointments/audit.js";
 import type * as domain_appointments_online_access from "../domain/appointments/online_access.js";
@@ -52,10 +56,12 @@ import type * as domain_appointments_participants from "../domain/appointments/p
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
 import type * as domain_authorization_permissions from "../domain/authorization/permissions.js";
 import type * as domain_availability_availability from "../domain/availability/availability.js";
+import type * as domain_availability_official_channel from "../domain/availability/official_channel.js";
 import type * as domain_calendar_calendar_event from "../domain/calendar/calendar_event.js";
 import type * as domain_calendar_civil_days from "../domain/calendar/civil_days.js";
 import type * as domain_errors_api_error from "../domain/errors/api_error.js";
 import type * as domain_follow_up_follow_up from "../domain/follow_up/follow_up.js";
+import type * as domain_hashing_fnv1a from "../domain/hashing/fnv1a.js";
 import type * as domain_identity_roles from "../domain/identity/roles.js";
 import type * as domain_index from "../domain/index.js";
 import type * as domain_notifications_notification from "../domain/notifications/notification.js";
@@ -108,6 +114,8 @@ declare const fullApi: ApiFromModules<{
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accompaniments/status": typeof application_accompaniments_status;
   "application/accounts/enablement": typeof application_accounts_enablement;
+  "application/accounts/ports": typeof application_accounts_ports;
+  "application/accounts/reclassify_student": typeof application_accounts_reclassify_student;
   "application/appointments/audit": typeof application_appointments_audit;
   "application/appointments/booking": typeof application_appointments_booking;
   "application/appointments/changes": typeof application_appointments_changes;
@@ -131,6 +139,7 @@ declare const fullApi: ApiFromModules<{
   "application/requests/status_change": typeof application_requests_status_change;
   "application/session/minimal_identity": typeof application_session_minimal_identity;
   "application/session/portal_role": typeof application_session_portal_role;
+  "application/session/ports": typeof application_session_ports;
   "application/session/profile": typeof application_session_profile;
   "application/session/reject_external_user": typeof application_session_reject_external_user;
   "application/spaces/mutations": typeof application_spaces_mutations;
@@ -141,6 +150,7 @@ declare const fullApi: ApiFromModules<{
   "domain/accompaniments/intern_access": typeof domain_accompaniments_intern_access;
   "domain/accompaniments/practitioner_assignment": typeof domain_accompaniments_practitioner_assignment;
   "domain/accounts/enablement": typeof domain_accounts_enablement;
+  "domain/accounts/own_profile": typeof domain_accounts_own_profile;
   "domain/appointments/appointment": typeof domain_appointments_appointment;
   "domain/appointments/audit": typeof domain_appointments_audit;
   "domain/appointments/online_access": typeof domain_appointments_online_access;
@@ -148,10 +158,12 @@ declare const fullApi: ApiFromModules<{
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
   "domain/authorization/permissions": typeof domain_authorization_permissions;
   "domain/availability/availability": typeof domain_availability_availability;
+  "domain/availability/official_channel": typeof domain_availability_official_channel;
   "domain/calendar/calendar_event": typeof domain_calendar_calendar_event;
   "domain/calendar/civil_days": typeof domain_calendar_civil_days;
   "domain/errors/api_error": typeof domain_errors_api_error;
   "domain/follow_up/follow_up": typeof domain_follow_up_follow_up;
+  "domain/hashing/fnv1a": typeof domain_hashing_fnv1a;
   "domain/identity/roles": typeof domain_identity_roles;
   "domain/index": typeof domain_index;
   "domain/notifications/notification": typeof domain_notifications_notification;

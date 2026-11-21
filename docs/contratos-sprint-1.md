@@ -70,7 +70,7 @@ Los resultados de dominio que pueden fallar usan `ApiResult<T>` (`{status: "ok",
 
 ## Consumo Web (Sprint 1)
 
-La Web consume la misma superficie `api.presentation.*` sin endpoints propios: `apps/web/src/infrastructure/convex/convex-client.ts` abre el `ConvexReactClient` solo con `VITE_CONVEX_URL` y `VITE_CONVEX_SITE_URL` (localizadores públicos, sin secretos) y `apps/web/src/presentation/session/session-state.ts` expone `useSessionState` sobre `presentation/session.getSessionState` y `useSessionAndRole` sobre `presentation/session.getSessionWithRole` para el router y sus guards; la autorización efectiva siempre vive en Convex y las solicitudes y acompañamientos quedan documentados en las tablas de arriba para su cableado futuro, sin inventar estados ni errores.
+La Web consume la misma superficie `api.presentation.*` sin endpoints propios: `apps/web/src/infrastructure/convex/convex-client.ts` abre el `ConvexReactClient` solo con `VITE_CONVEX_URL` y `VITE_CONVEX_SITE_URL` (localizadores públicos, sin secretos) y `apps/web/src/presentation/session/session-state.ts` expone `useSessionState` sobre `presentation/session.getSessionState` y `useSessionAndRole` sobre `presentation/session.getSessionWithRole` para el router y sus guards, que además pide `presentation/session.ensureMyProfile` una vez cuando la sesión no trae rol (TI2-182, ver [`contratos-sprint-3/cuentas.md`](contratos-sprint-3/cuentas.md)); la autorización efectiva siempre vive en Convex y las solicitudes y acompañamientos quedan documentados en las tablas de arriba para su cableado futuro, sin inventar estados ni errores.
 
 ## Cierre de seguridad y concurrencia (TI2-27)
 
