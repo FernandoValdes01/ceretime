@@ -3,7 +3,7 @@
  *
  * Dominio puro: no importa Convex, React ni Expo, para que Web y Mobile
  * consuman la misma forma sin levantar el backend. Fija el evento interno
- * con referencias mínimas (atención y destinatario), la variante externa
+ * con referencias mínimas (un recurso y su destinatario), la variante externa
  * genérica que puede salir de una sesión autenticada sin revelar CERETI,
  * profesional, tipo de acompañamiento, necesidades ni motivo, y la política
  * que traduce el ciclo de la atención a eventos y destinatarios.
@@ -26,19 +26,45 @@ export const NOTIFICATION_CONTRACT_VERSION = "v1" as const;
 export type NotificationContractVersion = typeof NOTIFICATION_CONTRACT_VERSION;
 
 /**
- * Clases de evento conocidas. Desde TI2-145 la forma persistida admite una
- * solicitud como recurso; `request_received` es la primera clase de ese
- * recurso. TI2-150 amplía el resto de las clases de solicitud, reserva,
- * cambio y justificación y decide cuándo se emiten.
+ * Clases de evento de una atención. Desde TI2-145 la forma persistida admite
+ * una solicitud como recurso; TI2-150 amplía el resto de las clases de
+ * solicitud, reserva, cambio y justificación y decide cuándo se emiten.
  */
-export const NOTIFICATION_EVENT_KIND_VALUES = [
+export const APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES = [
   "appointment_scheduled",
   "appointment_rescheduled",
   "appointment_cancelled",
   "appointment_no_show",
   "appointment_reminder",
   "appointment_online_access_ready",
-  "request_received",
+] as const;
+
+export type AppointmentNotificationEventKind =
+  (typeof APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES)[number];
+
+/** Verdadero cuando la clase pertenece a una atención. */
+export function isAppointmentNotificationEventKind(
+  value: string,
+): value is AppointmentNotificationEventKind {
+  return (APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES as readonly string[]).includes(value);
+}
+
+/** Clases de evento de una solicitud. `request_received` es la primera. */
+export const REQUEST_NOTIFICATION_EVENT_KIND_VALUES = ["request_received"] as const;
+
+export type RequestNotificationEventKind = (typeof REQUEST_NOTIFICATION_EVENT_KIND_VALUES)[number];
+
+/** Verdadero cuando la clase pertenece a una solicitud. */
+export function isRequestNotificationEventKind(
+  value: string,
+): value is RequestNotificationEventKind {
+  return (REQUEST_NOTIFICATION_EVENT_KIND_VALUES as readonly string[]).includes(value);
+}
+
+/** Todas las clases conocidas, sin perder el recurso al que pertenecen. */
+export const NOTIFICATION_EVENT_KIND_VALUES = [
+  ...APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
+  ...REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
 ] as const;
 
 export type NotificationEventKind = (typeof NOTIFICATION_EVENT_KIND_VALUES)[number];
@@ -46,6 +72,20 @@ export type NotificationEventKind = (typeof NOTIFICATION_EVENT_KIND_VALUES)[numb
 /** Verdadero cuando el valor es una clase de evento conocida. */
 export function isNotificationEventKind(value: string): value is NotificationEventKind {
   return (NOTIFICATION_EVENT_KIND_VALUES as readonly string[]).includes(value);
+}
+
+/**
+ * Estado de lectura del aviso para su destinatario. Cada evento tiene un solo
+ * destinatario, así que el estado vive en la fila: `pending` mientras no se
+ * marcó y `read` desde que existe su instante de lectura.
+ */
+export const NOTIFICATION_READ_STATUS_VALUES = ["pending", "read"] as const;
+
+export type NotificationReadStatus = (typeof NOTIFICATION_READ_STATUS_VALUES)[number];
+
+/** Verdadero cuando el valor es un estado de lectura conocido. */
+export function isNotificationReadStatus(value: string): value is NotificationReadStatus {
+  return (NOTIFICATION_READ_STATUS_VALUES as readonly string[]).includes(value);
 }
 
 /**
@@ -61,7 +101,7 @@ export function isNotificationEventKind(value: string): value is NotificationEve
  * idempotencia.
  */
 export interface AppointmentNotificationEvent {
-  readonly kind: NotificationEventKind;
+  readonly kind: AppointmentNotificationEventKind;
   readonly appointmentId: string;
   readonly recipientId: string;
   readonly occurredAt: number;
@@ -69,7 +109,7 @@ export interface AppointmentNotificationEvent {
 }
 
 export interface RequestNotificationEvent {
-  readonly kind: NotificationEventKind;
+  readonly kind: RequestNotificationEventKind;
   readonly requestId: string;
   readonly recipientId: string;
   readonly occurredAt: number;
@@ -93,11 +133,11 @@ export interface RequestNotificationReference {
 /** Entrada del constructor: la clase y el recurso se validan en tiempo de ejecución. */
 export type NotificationEventInput =
   | (NotificationReference & {
-      readonly kind: NotificationEventKind;
+      readonly kind: AppointmentNotificationEventKind;
       readonly occurredAt: number;
     })
   | (RequestNotificationReference & {
-      readonly kind: NotificationEventKind;
+      readonly kind: RequestNotificationEventKind;
       readonly occurredAt: number;
     });
 
@@ -147,6 +187,9 @@ export function toNotificationEvent(input: NotificationEventInput): Notification
     throw new Error("El evento de notificación requiere exactamente un recurso.");
   }
   if (hasAppointment) {
+    if (!isAppointmentNotificationEventKind(input.kind)) {
+      throw new Error("La clase del evento de notificación no corresponde a una atención.");
+    }
     const appointmentId = (input as NotificationReference).appointmentId.trim();
     if (appointmentId === "") {
       throw new Error("El evento de notificación requiere una atención.");
@@ -158,6 +201,9 @@ export function toNotificationEvent(input: NotificationEventInput): Notification
       occurredAt: input.occurredAt,
       version: NOTIFICATION_CONTRACT_VERSION,
     };
+  }
+  if (!isRequestNotificationEventKind(input.kind)) {
+    throw new Error("La clase del evento de notificación no corresponde a una solicitud.");
   }
   const requestId = (input as RequestNotificationReference).requestId.trim();
   if (requestId === "") {
@@ -174,7 +220,7 @@ export function toNotificationEvent(input: NotificationEventInput): Notification
 
 /** Política de un estado resultante: clase a emitir y destinatarios. */
 interface NotificationPolicyEntry {
-  readonly kind: NotificationEventKind | null;
+  readonly kind: AppointmentNotificationEventKind | null;
   readonly audiences: readonly NotificationAudience[];
 }
 
@@ -208,7 +254,7 @@ function recipientIdFor(subject: NotificationSubject, audience: NotificationAudi
 
 /** Arma un evento por destinatario, sin duplicar la clase ni los textos. */
 function eventsFor(
-  kind: NotificationEventKind,
+  kind: AppointmentNotificationEventKind,
   subject: NotificationSubject,
   audiences: readonly NotificationAudience[],
   occurredAt: number,
@@ -254,6 +300,22 @@ export function notificationEventsForCreation(
   occurredAt: number,
 ): readonly NotificationEvent[] {
   return eventsFor("appointment_scheduled", subject, CREATION_AUDIENCES, occurredAt);
+}
+
+/**
+ * Aviso de recepción de una solicitud (TI2-145).
+ *
+ * Es la primera clase del recurso solicitud y solo fija la forma persistible:
+ * la política de quién la recibe y en qué momento la decide TI2-150. El
+ * constructor exige exactamente un recurso, así una solicitud no puede
+ * guardarse como si fuera una atención ni al revés.
+ */
+export function notificationEventsForRequestReceived(
+  requestId: string,
+  recipientId: string,
+  occurredAt: number,
+): readonly NotificationEvent[] {
+  return [toNotificationEvent({ kind: "request_received", requestId, recipientId, occurredAt })];
 }
 
 /**

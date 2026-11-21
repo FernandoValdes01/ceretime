@@ -17,9 +17,7 @@ export const NOTIFICATION_DELIVERY_CHANNEL_VALUES = ["email", "push"] as const;
 export type NotificationDeliveryChannel = (typeof NOTIFICATION_DELIVERY_CHANNEL_VALUES)[number];
 
 /** Verdadero cuando el valor es un canal conocido. */
-export function isNotificationDeliveryChannel(
-  value: string,
-): value is NotificationDeliveryChannel {
+export function isNotificationDeliveryChannel(value: string): value is NotificationDeliveryChannel {
   return (NOTIFICATION_DELIVERY_CHANNEL_VALUES as readonly string[]).includes(value);
 }
 
@@ -49,9 +47,7 @@ export const NOTIFICATION_DELIVERY_ERROR_VALUES = [
 export type NotificationDeliveryError = (typeof NOTIFICATION_DELIVERY_ERROR_VALUES)[number];
 
 /** Verdadero cuando el valor es un código de error de entrega conocido. */
-export function isNotificationDeliveryError(
-  value: string,
-): value is NotificationDeliveryError {
+export function isNotificationDeliveryError(value: string): value is NotificationDeliveryError {
   return (NOTIFICATION_DELIVERY_ERROR_VALUES as readonly string[]).includes(value);
 }
 
