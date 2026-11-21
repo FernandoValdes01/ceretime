@@ -64,23 +64,22 @@ async function toOutcome(operation: Promise<unknown>): Promise<OwnRequestActionO
   }
 }
 
-// El formato y la existencia del id los valida el Backend; un id inválido o
-// ajeno responde denegación genérica sin filtrar existencia.
+// Reciben el `_id` que entregó `getRequest`, con su tipo de origen: la acción
+// solo se ofrece sobre un detalle ya cargado y no hace falta convertir el
+// parámetro de la ruta.
 
 export function useCancelOwnRequest(): (
-  requestId: string,
+  requestId: Id<"requests">,
   reason: string,
 ) => Promise<OwnRequestActionOutcome> {
   const cancelRequest = useMutation(api.presentation.requests.cancelRequest);
-  return (requestId, reason) =>
-    toOutcome(cancelRequest({ requestId: requestId as Id<"requests">, reason }));
+  return (requestId, reason) => toOutcome(cancelRequest({ requestId, reason }));
 }
 
 export function useRespondToInformationRequest(): (
-  requestId: string,
+  requestId: Id<"requests">,
   response: string,
 ) => Promise<OwnRequestActionOutcome> {
   const respond = useMutation(api.presentation.requests.respondToInformationRequest);
-  return (requestId, response) =>
-    toOutcome(respond({ requestId: requestId as Id<"requests">, response }));
+  return (requestId, response) => toOutcome(respond({ requestId, response }));
 }

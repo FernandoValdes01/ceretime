@@ -450,7 +450,7 @@ function OwnRequestDetailBody({ requestId }: { requestId: string }) {
     );
   }
 
-  return <OwnRequestDetailContent requestId={requestId} request={request} />;
+  return <OwnRequestDetailContent request={request} />;
 }
 
 /**
@@ -458,13 +458,7 @@ function OwnRequestDetailBody({ requestId }: { requestId: string }) {
  * pidió, las acciones del Estudiante y lo que explica el desenlace. Cada dato
  * sale del contrato de `getRequest`; la Web no deduce estados ni razones.
  */
-function OwnRequestDetailContent({
-  requestId,
-  request,
-}: {
-  requestId: string;
-  request: OwnRequestDetail;
-}) {
+function OwnRequestDetailContent({ request }: { request: OwnRequestDetail }) {
   const statusRef = useRef<HTMLParagraphElement>(null);
   const toneName = requestStatusTone(request.status);
   const tone = REQUEST_STATUS_TONES[toneName];
@@ -511,7 +505,7 @@ function OwnRequestDetailContent({
           </Link>
         ) : null}
         <StudentRequestActions
-          requestId={requestId}
+          requestId={request._id}
           status={request.status}
           statusRef={statusRef}
         />

@@ -1,4 +1,7 @@
 import { useId, useRef, useState, type RefObject } from "react";
+// Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
+// el monorepo defina el alias o paquete interno compartido.
+import type { Id } from "../../../../../convex/_generated/dataModel";
 import { isOpenRequestState } from "../../../../../convex/domain/index.ts";
 import { ModalDialog } from "../shared/modal-dialog.tsx";
 import {
@@ -31,7 +34,7 @@ export function StudentRequestActions({
   status,
   statusRef,
 }: {
-  requestId: string;
+  requestId: Id<"requests">;
   status: string;
   statusRef: RefObject<HTMLElement | null>;
 }) {
