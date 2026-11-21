@@ -97,8 +97,9 @@ function createAuthPort(): AuthPort {
   if (authMode === "demo") return createDemoAuthAdapter();
   const { authClient, tokens } = getInstitutionalAuth();
   // El transporte se crea en la primera consulta: una URL ausente falla al verificar la sesión, no al abrir la app.
-  const convexClient: Pick<MobileConvexClient, "query"> = {
+  const convexClient: Pick<MobileConvexClient, "query" | "mutation"> = {
     query: (query, args) => getMobileConvexClient().query(query, args),
+    mutation: (mutation, args) => getMobileConvexClient().mutation(mutation, args),
   };
   return createConvexAuthAdapter({ authClient, convexClient, tokens });
 }

@@ -1,6 +1,7 @@
 import { UserFacingError } from "../src/application/user-facing-error";
 import {
   createAuthTokenSupplier,
+  accountNotEnabledMessage,
   createConvexAuthAdapter,
   institutionalSignInFailedMessage,
   sessionCheckFailedMessage,
@@ -29,6 +30,10 @@ function authenticated(role: string): SessionAndRole {
   };
 }
 
+function withoutRole() {
+  return { ...authenticated("student"), role: { status: "unauthenticated" } };
+}
+
 function setup() {
   const authClient = {
     signIn: { oauth2: jest.fn<ReturnType<InstitutionalAuthClient["signIn"]["oauth2"]>, never[]>() },
@@ -37,12 +42,13 @@ function setup() {
   };
   const tokens = createAuthTokenSupplier(authClient);
   const query = jest.fn();
+  const mutation = jest.fn(async () => ({}));
   const adapter = createConvexAuthAdapter({
     authClient: authClient as unknown as InstitutionalAuthClient,
-    convexClient: { query } as never,
+    convexClient: { query, mutation } as never,
     tokens,
   });
-  return { adapter, authClient, query, tokens };
+  return { adapter, authClient, query, mutation, tokens };
 }
 
 describe("restaurar la sesión", () => {
@@ -77,19 +83,61 @@ describe("restaurar la sesión", () => {
     expect(authClient.signOut).toHaveBeenCalledTimes(1);
   });
 
-  test.each([
-    ["sesión inválida", unauthenticated],
-    [
-      "cuenta sin rol vigente",
-      { ...authenticated("student"), role: { status: "unauthenticated" } },
-    ],
-  ])("una %s del servidor no entra a la app y se descarta", async (_name, response) => {
-    const { adapter, authClient, query } = setup();
+  test("una sesión inválida del servidor no entra a la app y se descarta", async () => {
+    const { adapter, authClient, query, mutation } = setup();
     authClient.convex.token.mockResolvedValue({ data: { token: "jwt" }, error: null });
-    query.mockResolvedValue(response);
+    query.mockResolvedValue(unauthenticated);
 
     await expect(adapter.restoreSession()).resolves.toBeNull();
+    expect(mutation).not.toHaveBeenCalled();
     expect(authClient.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  test("en el primer ingreso crea el perfil propio y entra con el rol del servidor", async () => {
+    const { adapter, authClient, query, mutation } = setup();
+    authClient.convex.token.mockResolvedValue({ data: { token: "jwt" }, error: null });
+    query.mockResolvedValueOnce(withoutRole()).mockResolvedValueOnce(authenticated("student"));
+
+    await expect(adapter.restoreSession()).resolves.toMatchObject({
+      user: { role: "estudiante" },
+    });
+    expect(mutation).toHaveBeenCalledTimes(1);
+    expect(authClient.signOut).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["la cuenta queda pendiente de habilitación", async () => ({})],
+    [
+      "el servidor rechaza crear el perfil",
+      async () => {
+        throw new Error("No autorizado");
+      },
+    ],
+  ])("si %s, avisa que no está habilitada y descarta la sesión", async (_name, ensure) => {
+    const { adapter, authClient, query, mutation } = setup();
+    authClient.convex.token.mockResolvedValue({ data: { token: "jwt" }, error: null });
+    query.mockResolvedValue(withoutRole());
+    mutation.mockImplementation(ensure);
+
+    const error = await adapter.restoreSession().catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(UserFacingError);
+    expect((error as Error).message).toBe(accountNotEnabledMessage);
+    expect(authClient.signOut).toHaveBeenCalledTimes(1);
+  });
+
+  test("un fallo de red al crear el perfil no cierra la sesión y se puede reintentar", async () => {
+    const { adapter, authClient, query, mutation } = setup();
+    authClient.convex.token.mockResolvedValue({ data: { token: "jwt" }, error: null });
+    query.mockResolvedValue(withoutRole());
+    mutation.mockRejectedValue(
+      Object.assign(new Error("Network request failed"), {
+        code: "network_error",
+      }),
+    );
+
+    const error = await adapter.restoreSession().catch((cause: unknown) => cause);
+    expect((error as Error).message).toBe(sessionCheckFailedMessage);
+    expect(authClient.signOut).not.toHaveBeenCalled();
   });
 
   test("un fallo de red no cierra la sesión guardada y se puede reintentar", async () => {

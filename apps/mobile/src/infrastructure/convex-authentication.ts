@@ -20,6 +20,8 @@ export const institutionalSignInFailedMessage =
   "No pudimos iniciar sesión con tu cuenta institucional. Inténtalo de nuevo.";
 export const sessionCheckFailedMessage =
   "No pudimos verificar tu sesión. Revisa tu conexión e inténtalo de nuevo.";
+export const accountNotEnabledMessage =
+  "Tu cuenta todavía no está habilitada en CERETI. Pide al equipo de CERETI que la habilite.";
 
 /** Mitad de Better Auth que usa la app; el cliente real la cumple y las pruebas la sustituyen. */
 export interface InstitutionalAuthClient {
@@ -77,7 +79,7 @@ export function createConvexAuthAdapter({
   tokens,
 }: {
   readonly authClient: InstitutionalAuthClient;
-  readonly convexClient: Pick<MobileConvexClient, "query">;
+  readonly convexClient: Pick<MobileConvexClient, "query" | "mutation">;
   readonly tokens: TokenSupplier;
 }): InstitutionalAuthPort {
   // Quita del dispositivo la cookie y el token de una sesión que el servidor ya no reconoce.
@@ -90,31 +92,56 @@ export function createConvexAuthAdapter({
     }
   }
 
+  // Crea el perfil de la cuenta en su primer ingreso (TI2-182). Una denegación deja la cuenta sin rol;
+  // solo un fallo de red interrumpe la comprobación para poder reintentar.
+  async function ensureOwnProfile() {
+    try {
+      await backend.mutation(api.presentation.session.ensureMyProfile, {});
+    } catch (cause) {
+      if ((cause as { code?: unknown } | null)?.code === "network_error") throw cause;
+    }
+  }
+
   // El rol sale del servidor: el cliente solo traduce el rol recibido a los de la navegación.
-  async function readServerSession(): Promise<AuthSession | null> {
-    if (!(await tokens.getAuthToken())) return null;
-    const { session, role } = await backend.query(api.presentation.session.getSessionWithRole, {});
-    if (session.status !== "authenticated" || role.status !== "authenticated") return null;
+  async function readServerSession(): Promise<
+    | { readonly status: "authenticated"; readonly session: AuthSession }
+    | { readonly status: "unauthenticated" | "not-enabled" }
+  > {
+    if (!(await tokens.getAuthToken())) return { status: "unauthenticated" };
+    const getSessionWithRole = api.presentation.session.getSessionWithRole;
+    let { session, role } = await backend.query(getSessionWithRole, {});
+    if (session.status === "authenticated" && role.status !== "authenticated") {
+      await ensureOwnProfile();
+      ({ session, role } = await backend.query(getSessionWithRole, {}));
+    }
+    if (session.status !== "authenticated") return { status: "unauthenticated" };
+    // Sesión válida sin rol: cuenta pendiente, revocada o rechazada por el servidor.
+    if (role.status !== "authenticated") return { status: "not-enabled" };
     return {
-      user: {
-        id: role.email,
-        displayName: session.name,
-        email: role.email,
-        role: roleByBackendRole[role.role],
-        assignedAccompaniments: [],
+      status: "authenticated",
+      session: {
+        user: {
+          id: role.email,
+          displayName: session.name,
+          email: role.email,
+          role: roleByBackendRole[role.role],
+          assignedAccompaniments: [],
+        },
       },
     };
   }
 
   async function restoreSession() {
-    let session: AuthSession | null;
+    let result: Awaited<ReturnType<typeof readServerSession>>;
     try {
-      session = await readServerSession();
+      result = await readServerSession();
     } catch {
       throw new UserFacingError(sessionCheckFailedMessage);
     }
-    if (!session) await discardLocalSession();
-    return session;
+    if (result.status === "authenticated") return result.session;
+    await discardLocalSession();
+    if (result.status === "not-enabled") throw new UserFacingError(accountNotEnabledMessage);
+    return null;
   }
 
   return {
