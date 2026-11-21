@@ -86,13 +86,12 @@ Las fechas son milisegundos de época. Los tres campos son opcionales en el tipo
 | `modalityPreference` | `"inPerson"` o `"online"` | Obligatorio |
 | `generalAvailability` | `{ preferredWeekdays: number[], preferredTimeRange?: { from: string, to: string } }` | Al menos un día, de 0 (domingo) a 6 (sábado), sin repetir; horario `HH:mm` con inicio antes del fin |
 | `preferredAccessibleInformationChannel` | `string` | Obligatorio, de 1 a 200 caracteres tras recortar |
-| `idempotencyKey` | `string` | Obligatorio, de 1 a 128 caracteres; la genera el cliente una vez por envío |
 
 Debe haber al menos una necesidad seleccionada o un `otherAccessNeed` con texto. `accessNeeds` de la respuesta es el texto unido que arma el Backend con las etiquetas y el texto libre, separados por salto de línea, hasta 2000 caracteres. La solicitud guarda su procedencia como canal del Estudiante. Los textos se guardan recortados y el exceso se rechaza, nunca se trunca. El validador rechaza cualquier campo fuera de esta lista, incluidos RUT, diagnóstico, certificados y área interna.
 
-**Idempotencia.** Repetir el envío con la misma `idempotencyKey` devuelve la misma solicitud sin crear otra, aunque el contenido cambie. La clave es del Estudiante: la misma clave en otra cuenta es otro envío. El cliente debe generar una clave nueva para cada solicitud distinta y reutilizarla solo al reintentar.
+**Sin clave de idempotencia.** Desde TI2-165 el envío no lleva `idempotencyKey`, porque SOLICITUDES del MER no la tiene: Convex rechaza la llamada que la envía y cada envío válido crea una solicitud. Un reintento después de perder la respuesta puede dejar una segunda solicitud del mismo Estudiante.
 
-**Forma anterior (Sprint 1).** Solo `accessNeeds: string`, de 1 a 2000 caracteres, sin ningún otro campo. Se conserva mientras Web y Mobile migran, no es idempotente y no guarda los campos nuevos. Si el texto llega con cualquier campo de la forma completa, incluido `otherAccessNeed`, el envío sigue la forma completa: autoriza antes de validar y rechaza con `request_fields_invalid` y «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.», aunque falten otros campos.
+**Forma anterior (Sprint 1).** Solo `accessNeeds: string`, de 1 a 2000 caracteres, sin ningún otro campo. Se conserva mientras Web y Mobile migran y no guarda los campos nuevos. Si el texto llega con cualquier campo de la forma completa, incluido `otherAccessNeed`, el envío sigue la forma completa: autoriza antes de validar y rechaza con `request_fields_invalid` y «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.», aunque falten otros campos.
 
 ## Respuesta, cancelación y cierre
 
@@ -110,12 +109,12 @@ Operaciones de TI2-143 para el personal autorizado, que es el Profesional con cu
 
 | Campo | Tipo | Regla |
 | --- | --- | --- |
-| Forma completa | Los campos de «Envío», incluida `idempotencyKey` | Las mismas reglas y los mismos mensajes |
+| Forma completa | Los campos de «Envío» | Las mismas reglas y los mismos mensajes |
 | `studentEmail` | `string` | Correo institucional de una cuenta de Estudiante vigente. Se compara sin mayúsculas ni espacios sobrantes |
 | `receivedAt` | `number`, opcional | Cuándo la recibió CERETI, en milisegundos de época. No puede ser futura. Si falta, es el momento del registro |
 | `originUnit` | `string`, opcional | Unidad de la Universidad que derivó al estudiante, de 1 a 200 caracteres tras recortar. Con ella la solicitud es una derivación de entrada |
 
-La solicitud queda `received` y sin toma: aparece en la bandeja y quien la revise debe tomarla. Guarda su procedencia: el canal oficial, quién la registró y cuándo se recibió. Autoriza antes de validar. Repetir el registro con la misma `idempotencyKey` devuelve la misma solicitud a quien la registró; si esa clave es de una solicitud del mismo estudiante que registró otra persona, responde `conflict` sin entregarla. Si `studentEmail` no es de una cuenta de Estudiante vigente, responde `request_fields_invalid`.
+La solicitud queda `received` y sin toma: aparece en la bandeja y quien la revise debe tomarla. Guarda su procedencia: el canal oficial, quién la registró y cuándo se recibió. Autoriza antes de validar. Cada registro válido crea una solicitud, igual que el envío del Estudiante. Si `studentEmail` no es de una cuenta de Estudiante vigente, responde `request_fields_invalid`.
 
 **Derivación de entrada.** Es el aviso de otra unidad sobre una posible necesidad de un estudiante. No es un estado: la solicitud recorre los mismos estados que cualquier otra. Lo que cambia es que **no abre acompañamiento hasta que conste el contacto de CERETI con el estudiante y su aceptación**, en ese orden:
 
@@ -199,8 +198,6 @@ import { useMutation } from "convex/react";
 import { api } from "./_generated/api";
 
 const createRequest = useMutation(api.presentation.requests.createRequest);
-// Una clave por envío, creada al abrir el formulario: se reutiliza solo al reintentar.
-const idempotencyKey = crypto.randomUUID();
 
 try {
   const request = await createRequest({
@@ -210,7 +207,6 @@ try {
     modalityPreference: "online",
     generalAvailability: { preferredWeekdays: [1, 3] },
     preferredAccessibleInformationChannel: "Correo con letra grande",
-    idempotencyKey,
   });
 } catch (error) {
   muestraMensaje(mensajeDeError(error));
