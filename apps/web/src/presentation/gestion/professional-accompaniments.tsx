@@ -390,9 +390,11 @@ function ClosureConfirmation({
       ) : null}
       {preview.status === "ok" && !blocked ? (
         <p>
-          {preview.appointmentsToCancel === 1
-            ? "Se cancelará 1 atención futura y se liberará su cupo."
-            : `Se cancelarán ${preview.appointmentsToCancel} atenciones futuras y se liberarán sus cupos.`}{" "}
+          {preview.appointmentsToCancel === 0
+            ? "No hay atenciones futuras que cancelar."
+            : preview.appointmentsToCancel === 1
+              ? "Se cancelará 1 atención futura y se liberará su cupo."
+              : `Se cancelarán ${preview.appointmentsToCancel} atenciones futuras y se liberarán sus cupos.`}{" "}
           El cierre es definitivo: el acompañamiento no se reabre.
         </p>
       ) : null}

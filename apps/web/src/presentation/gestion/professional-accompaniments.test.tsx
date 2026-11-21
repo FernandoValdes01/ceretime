@@ -421,6 +421,7 @@ describe("cierre del acompañamiento (TI2-165)", () => {
 
     await screen.findByText(OBJETIVO_1);
     fireEvent.click(screen.getByRole("button", { name: "Cerrar el acompañamiento" }));
+    expect(screen.getByText(/No hay atenciones futuras que cancelar/)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Confirmar el cierre" }));
     await waitFor(() => expect(mutations.close).toHaveBeenCalledWith({ accompanimentId: "acc-1" }));
   });
