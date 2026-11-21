@@ -11,6 +11,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { AssignedAccompanimentsPage } from "./practitioner-accompaniments-data.ts";
+import type { FollowUpHistoryPage, FollowUpRecordView } from "./follow-up-data.ts";
 import type { ClosurePreviewState } from "./professional-accompaniments-data.ts";
 import { accompanimentActions } from "./professional-accompaniments-data.ts";
 
@@ -34,6 +35,8 @@ const store = vi.hoisted(() => {
     pages: new Map<string, unknown>(),
     details: new Map<string, unknown>(),
     preview: { status: "loading" } as unknown,
+    history: new Map<string, unknown>(),
+    historyCalls: [] as Array<string | null>,
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => {
@@ -49,6 +52,8 @@ const store = vi.hoisted(() => {
       this.pages.clear();
       this.details.clear();
       this.preview = { status: "loading" };
+      this.history.clear();
+      this.historyCalls.length = 0;
       listeners.clear();
     },
   };
@@ -110,6 +115,19 @@ vi.mock("./professional-accompaniments-data.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("./follow-up-data.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./follow-up-data.ts")>();
+  const { useSyncExternalStore } = await import("react");
+  return {
+    ...original,
+    useFollowUpHistory: (_accompanimentId: string, cursor: string | null) => {
+      useSyncExternalStore(store.subscribe, store.getVersion);
+      store.historyCalls.push(cursor);
+      return store.history.get(cursor ?? "first") ?? (cursor === null ? EMPTY_HISTORY : undefined);
+    },
+  };
+});
+
 vi.mock("../../infrastructure/auth/auth-client", () => ({
   authClient: { useSession: () => ({ isPending: false }) },
 }));
@@ -133,6 +151,13 @@ const PAR_PROFESIONAL = {
   role: { status: "authenticated", role: "professional", email: "profesional@uct.cl" },
 } as const;
 
+const EMPTY_HISTORY = vi.hoisted(() => ({
+  items: [],
+  hasMore: false,
+  nextCursor: null,
+  version: "v1",
+}));
+
 const OBJETIVO_1 = "Objetivo ficticio uno";
 const OBJETIVO_2 = "Objetivo ficticio dos";
 const NECESIDAD = "Necesidad de acceso ficticia";
@@ -151,6 +176,28 @@ function completo(
     referenceCode: "CER-7KQ2-M9XD",
     view: "full",
   };
+}
+
+function seguimiento(appointmentId: string, internalNote?: string): FollowUpRecordView {
+  return {
+    appointmentId,
+    accompanimentId: "acc-1",
+    appointmentStatus: "completed",
+    agreements: [{ description: "Acuerdo ficticio" }],
+    tasks: [{ description: "Tarea ficticia", responsible: "student", status: "pending" }],
+    nextSteps: "Próximos pasos ficticios",
+    suggestedNextAppointmentDate: "2026-11-23",
+    ...(internalNote === undefined ? {} : { internalNote }),
+    version: "v1",
+    view: "professional",
+  };
+}
+
+function historial(
+  items: FollowUpRecordView[],
+  nextCursor: string | null = null,
+): FollowUpHistoryPage {
+  return { items, hasMore: nextCursor !== null, nextCursor, version: "v1" };
 }
 
 function pagina(items: AccompanimentView[]): AssignedAccompanimentsPage {
@@ -331,7 +378,7 @@ describe("cierre del acompañamiento (TI2-165)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Confirmar el cierre" }));
 
-    expect((await screen.findByRole("status")).textContent).toBe(
+    expect((await within(statusSection()).findByRole("status")).textContent).toBe(
       "Acompañamiento cerrado. Se cancelaron 2 atenciones futuras.",
     );
     expect(mutations.close).toHaveBeenCalledWith({
@@ -370,5 +417,58 @@ describe("cierre del acompañamiento (TI2-165)", () => {
     fireEvent.click(screen.getByRole("button", { name: "No cerrar" }));
     expect(screen.queryByRole("button", { name: "Confirmar el cierre" })).toBeNull();
     expect(mutations.close).not.toHaveBeenCalled();
+  });
+});
+
+describe("historial de seguimiento (TI2-165)", () => {
+  test("separa lo compartido de la nota interna con texto, sin depender del color", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1, "closed"));
+    store.history.set("first", historial([seguimiento("apt-1", "Nota interna ficticia")]));
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    const history = await screen.findByRole("region", { name: "Historial de seguimiento" });
+    const shared = within(history).getByRole("region", { name: "Se comparte con el estudiante" });
+    const internal = within(history).getByRole("region", { name: "Nota interna: no se comparte" });
+    expect(shared.textContent).toContain("Acuerdo ficticio");
+    expect(shared.textContent).toContain("Responsable: Estudiante. Estado: Pendiente.");
+    expect(shared.textContent).not.toContain("Nota interna ficticia");
+    expect(internal.textContent).toContain("Nota interna ficticia");
+    expect(history.textContent).toContain("no se puede editar");
+    expect(within(history).queryAllByRole("button")).toHaveLength(0);
+    expect(
+      within(history).getByRole("link", { name: "Ver la atención" }).getAttribute("href"),
+    ).toBe("/profesional/agenda/apt-1");
+  });
+
+  test("sin nota interna no muestra el bloque interno", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1));
+    store.history.set("first", historial([seguimiento("apt-1")]));
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    await screen.findByText("Acuerdo ficticio");
+    expect(screen.queryByRole("region", { name: "Nota interna: no se comparte" })).toBeNull();
+  });
+
+  test("sin seguimientos muestra el vacío", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1));
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    expect(
+      await screen.findByText("Este acompañamiento todavía no tiene seguimientos."),
+    ).toBeDefined();
+  });
+
+  test("Cargar más pide la página siguiente con el cursor recibido", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1));
+    store.history.set("first", historial([seguimiento("apt-1")], "cursor-1"));
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cargar más" }));
+    expect(store.historyCalls).toContain("cursor-1");
+    update(() => store.history.set("cursor-1", historial([seguimiento("apt-2")])));
+    await waitFor(() =>
+      expect(screen.getAllByRole("link", { name: "Ver la atención" })).toHaveLength(2),
+    );
+    expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
   });
 });
