@@ -536,6 +536,7 @@ describe("navegación del portal con agenda (TI2-115)", () => {
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Inicio",
       "Solicitudes",
+      "Acompañamientos",
       "Agenda",
       "Disponibilidad",
     ]);

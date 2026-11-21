@@ -694,6 +694,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Inicio",
       "Solicitudes",
+      "Acompañamientos",
       "Agenda",
       "Disponibilidad",
     ]);

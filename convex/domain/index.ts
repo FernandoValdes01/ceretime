@@ -55,7 +55,9 @@ export { isOpenRequestState } from "./requests/transitions";
 
 // Acompañamiento y sus vistas de lectura.
 export {
+  ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
   ACCOMPANIMENT_STATUS_VALUES,
+  ACCOMPANIMENT_TRANSITIONS,
   ACCOMPANIMENT_VIEW_VALUES,
   toAccompanimentProjection,
 } from "./accompaniments/accompaniment";

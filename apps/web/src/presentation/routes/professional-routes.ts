@@ -1,5 +1,7 @@
 import { createRoute } from "@tanstack/react-router";
 import {
+  ProfessionalAccompanimentDetailRouteComponent,
+  ProfessionalAccompanimentsRouteComponent,
   ProfessionalAgendaDetailRouteComponent,
   ProfessionalAgendaRouteComponent,
   ProfessionalAvailabilityRouteComponent,
@@ -42,6 +44,18 @@ const professionalRequestDetailRoute = createRoute({
   component: ProfessionalRequestDetailRouteComponent,
 });
 
+const professionalAccompanimentsRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "acompanamientos",
+  component: ProfessionalAccompanimentsRouteComponent,
+});
+
+const professionalAccompanimentDetailRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "acompanamientos/$accompanimentId",
+  component: ProfessionalAccompanimentDetailRouteComponent,
+});
+
 const professionalAvailabilityRoute = createRoute({
   getParentRoute: () => professionalLayoutRoute,
   path: "disponibilidad",
@@ -65,6 +79,8 @@ export const professionalRoutes = [
     professionalIndexRoute,
     professionalRequestsRoute,
     professionalRequestDetailRoute,
+    professionalAccompanimentsRoute,
+    professionalAccompanimentDetailRoute,
     professionalAvailabilityRoute,
     professionalAgendaRoute,
     professionalAgendaDetailRoute,
