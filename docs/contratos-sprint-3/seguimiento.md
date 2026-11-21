@@ -200,7 +200,7 @@ El cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` 
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
-| `presentation.accompaniments.listAccompanimentProfessionals` (query) | `accompanimentId` | `{assigned, assignable, assignableComplete}` | Profesional de personal, habilitado y vigente, con asignación profesional activa sobre ese acompañamiento | `unauthorized` en cualquier otro caso, sin revelar si el acompañamiento existe; `conflict` si el acompañamiento supera las 200 asignaciones leídas |
+| `presentation.accompaniments.listAccompanimentProfessionals` (query) | `accompanimentId` | `{assigned, assignable, assignableComplete}` | Profesional de personal, habilitado y vigente, con asignación profesional activa sobre ese acompañamiento | `unauthorized` sin ese permiso, sin revelar si el acompañamiento existe; `conflict` si el acompañamiento supera las 200 asignaciones leídas |
 
 - `assigned`: los profesionales con asignación activa y vigente (ASIGNACIONES_PROFESIONALES del MER), cada uno con `userId`, `fullName`, `assignedAt?` (`asignadoEn`, falta en filas anteriores a TI2-140) e `isCaller`, que marca la asignación de quien consulta. Ordenados por nombre.
 - `assignable`: los profesionales de personal habilitados y vigentes que todavía no están asignados, con `userId` y `fullName`, ordenados por nombre. No incluye cuentas de prueba, practicantes ni cuentas inhabilitadas.

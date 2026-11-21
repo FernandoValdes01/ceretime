@@ -547,3 +547,37 @@ export function accompanimentStatusWriter(ctx: MutationCtx) {
     },
   };
 }
+
+/**
+ * Lecturas de los profesionales de un acompañamiento (puerto
+ * `AccompanimentProfessionalsReader`, TI2-165). Un identificador de otra
+ * tabla responde igual que uno inexistente.
+ */
+export function accompanimentProfessionalsReader(ctx: DbReader) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getProfile: (userId: Id<"users">) => getUserById(ctx, userId),
+    accompanimentExists: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      return id !== null && (await getAccompanimentById(ctx, id)) !== null;
+    },
+    hasActiveProfessionalAssignment: async (accompanimentId: string, userId: Id<"users">) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return false;
+      const rows = await findActiveAssignmentsForUser(ctx, id, userId);
+      return rows.some((row) => row.assignedRole === "professional");
+    },
+    listActiveProfessionalAssignments: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return [];
+      const rows = await listActiveProfessionalAssignments(ctx, id);
+      if (rows === null) return null;
+      return rows.map((row) => ({
+        userId: row.userId,
+        ...(row.grantedAt === undefined ? {} : { assignedAt: row.grantedAt }),
+      }));
+    },
+    takeProfessionalProfiles: (limit: number) => takeProfessionalProfiles(ctx, limit),
+  };
+}

@@ -9,10 +9,10 @@ import {
 import {
   getAccompanimentDetail,
   getInternalNotesUseCase,
-  listAccompanimentProfessionalsUseCase,
   listAssignedAccompanimentsUseCase,
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
+import { listAccompanimentProfessionals as listAccompanimentProfessionalsUseCase } from "../application/accompaniments/professionals";
 import {
   closeAccompaniment as closeAccompanimentUseCase,
   pauseAccompaniment as pauseAccompanimentUseCase,
@@ -22,6 +22,7 @@ import {
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
+  accompanimentProfessionalsReader,
   accompanimentStatusWriter,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
@@ -176,7 +177,10 @@ export const listAccompanimentProfessionals = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     const result = unwrapApiResult(
-      await listAccompanimentProfessionalsUseCase(ctx, identity, args),
+      await listAccompanimentProfessionalsUseCase(accompanimentProfessionalsReader(ctx), {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        accompanimentId: args.accompanimentId,
+      }),
     );
     return {
       ...result,

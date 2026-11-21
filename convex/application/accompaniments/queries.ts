@@ -2,21 +2,10 @@ import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
-import { isPersonalProfessionalActive } from "../../domain/accounts/enablement";
-import {
-  CONFLICT_ERROR_CODE,
-  errResult,
-  okResult,
-  unauthorizedError,
-  type ApiResult,
-} from "../../domain/errors/api_error";
 import {
   findActiveAssignmentsForUser,
   findProfileByTokenIdentifier,
   getAccompanimentById,
-  getUserById,
-  listActiveProfessionalAssignments,
-  takeProfessionalProfiles,
   paginateInternalNotes,
   paginateOwnedAccompaniments,
   queryAssignedRowsAfter,
@@ -274,90 +263,4 @@ export async function getInternalNotesUseCase(
     body: note.body,
   }));
   return { ...result, page };
-}
-
-/** Tope de profesionales que se ofrecen para asignar; `assignableComplete` avisa si hay más. */
-export const MAX_ASSIGNABLE_PROFESSIONALS = 100;
-
-export type AccompanimentProfessional = {
-  readonly userId: Id<"users">;
-  readonly fullName: string;
-};
-
-export type AssignedProfessional = AccompanimentProfessional & {
-  /** `asignadoEn` de ASIGNACIONES_PROFESIONALES; falta en filas anteriores a TI2-140. */
-  readonly assignedAt?: number;
-  /** La asignación es de quien consulta. */
-  readonly isCaller: boolean;
-};
-
-export type AccompanimentProfessionals = {
-  readonly assigned: readonly AssignedProfessional[];
-  readonly assignable: readonly AccompanimentProfessional[];
-  readonly assignableComplete: boolean;
-};
-
-const byName = (a: AccompanimentProfessional, b: AccompanimentProfessional) =>
-  a.fullName.localeCompare(b.fullName, "es");
-
-/**
- * Profesionales del acompañamiento para cambiarlos (TI2-165).
- *
- * Solo un profesional de personal, habilitado y vigente, con asignación
- * profesional activa sobre ese acompañamiento: la misma regla que exige
- * `assignAccompanimentAccess` para conceder. Entrega los asignados
- * (ASIGNACIONES_PROFESIONALES del MER) y los profesionales de personal
- * habilitados que todavía no lo están, con su nombre (`nombre` de USUARIOS),
- * sin correo ni otros datos. Cualquier otro caso responde `unauthorized`
- * genérico; un acompañamiento con más asignaciones que el tope responde
- * `conflict` en vez de una lista incompleta.
- */
-export async function listAccompanimentProfessionalsUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-  args: { readonly accompanimentId: Id<"accompaniments"> },
-): Promise<ApiResult<AccompanimentProfessionals>> {
-  if (identity === null) return errResult(unauthorizedError());
-  const caller = await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier);
-  if (caller === null || !isPersonalProfessionalActive(caller)) {
-    return errResult(unauthorizedError());
-  }
-  const accompaniment = await getAccompanimentById(ctx, args.accompanimentId);
-  if (accompaniment === null) return errResult(unauthorizedError());
-  const own = await findActiveAssignmentsForUser(ctx, args.accompanimentId, caller._id);
-  if (!own.some((row) => row.assignedRole === "professional")) {
-    return errResult(unauthorizedError());
-  }
-
-  const rows = await listActiveProfessionalAssignments(ctx, args.accompanimentId);
-  if (rows === null) {
-    return errResult({
-      code: CONFLICT_ERROR_CODE,
-      message: "El acompañamiento tiene demasiadas asignaciones para mostrarlas completas.",
-    });
-  }
-  const assigned: AssignedProfessional[] = [];
-  for (const row of rows) {
-    const user = await getUserById(ctx, row.userId);
-    if (user === null) continue;
-    assigned.push({
-      userId: user._id,
-      fullName: user.fullName,
-      ...(row.grantedAt === undefined ? {} : { assignedAt: row.grantedAt }),
-      isCaller: user._id === caller._id,
-    });
-  }
-
-  const assignedIds = new Set<string>(assigned.map((item) => item.userId));
-  const profiles = await takeProfessionalProfiles(ctx, MAX_ASSIGNABLE_PROFESSIONALS);
-  const assignable = profiles
-    .slice(0, MAX_ASSIGNABLE_PROFESSIONALS)
-    .filter((user) => isPersonalProfessionalActive(user) && !assignedIds.has(user._id))
-    .map((user) => ({ userId: user._id, fullName: user.fullName }));
-
-  return okResult({
-    assigned: assigned.sort(byName),
-    assignable: assignable.sort(byName),
-    assignableComplete: profiles.length <= MAX_ASSIGNABLE_PROFESSIONALS,
-  });
 }
