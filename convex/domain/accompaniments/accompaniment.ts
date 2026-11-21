@@ -14,6 +14,8 @@
  * adaptador entre la fila persistida y la vista devuelta.
  */
 
+import { deriveCoordinationReferenceCode } from "../availability/official_channel";
+
 /** Estados del acompañamiento (activo, pausado, cerrado). */
 export const ACCOMPANIMENT_STATUS_VALUES = ["active", "paused", "closed"] as const;
 
@@ -40,38 +42,46 @@ export type AccompanimentView = (typeof ACCOMPANIMENT_VIEW_VALUES)[number];
 /**
  * Fila mínima de la tabla `accompaniments` que necesita la proyección.
  * Espejo de la forma persistida; la decisión de qué vista devolver vive en
- * la capa de autorización, no acá.
+ * la capa de autorización, no acá. `requestId` es la solicitud aceptada que
+ * lo abrió; falta en los acompañamientos que no nacieron de una solicitud.
  */
 export interface AccompanimentRow<
   AccompanimentId extends string = string,
   UserId extends string = string,
+  RequestId extends string = string,
 > {
   readonly _id: AccompanimentId;
   readonly studentId: UserId;
   readonly status: AccompanimentStatus;
   readonly objective: string;
   readonly accessNeeds: string;
+  readonly requestId?: RequestId;
 }
 
 /**
  * Vista completa de un acompañamiento, para el Estudiante acompañado y el
- * Profesional asignado. Incluye `studentId` y `accessNeeds`.
+ * Profesional asignado. Incluye `studentId`, `accessNeeds`, el `referenceCode`
+ * que el Estudiante recibe al no encontrar horario compatible (TI2-144) y, si
+ * lo abrió una solicitud aceptada, su `requestId` (TI2-183) para enlazar ambos.
  */
 export interface Accompaniment<
   AccompanimentId extends string = string,
   UserId extends string = string,
+  RequestId extends string = string,
 > {
   _id: AccompanimentId;
   studentId: UserId;
   status: AccompanimentStatus;
   objective: string;
   accessNeeds: string;
+  referenceCode: string;
+  requestId?: RequestId;
   view: "full";
 }
 
 /**
  * Vista minimizada de un acompañamiento, para el Practicante asignado:
- * sin `studentId` ni `accessNeeds`.
+ * sin `studentId`, `accessNeeds`, `referenceCode` ni `requestId`.
  */
 export interface MinimizedAccompaniment<AccompanimentId extends string = string> {
   _id: AccompanimentId;
@@ -84,18 +94,47 @@ export interface MinimizedAccompaniment<AccompanimentId extends string = string>
 export type AccompanimentProjection<
   AccompanimentId extends string = string,
   UserId extends string = string,
-> = Accompaniment<AccompanimentId, UserId> | MinimizedAccompaniment<AccompanimentId>;
+  RequestId extends string = string,
+> = Accompaniment<AccompanimentId, UserId, RequestId> | MinimizedAccompaniment<AccompanimentId>;
+
+/**
+ * Vista completa de una fila. El `referenceCode` se deriva del `_id` con la
+ * misma función que usa `searchSlots`, así el Profesional reconoce el código
+ * que el Estudiante entrega por un canal oficial; no se persiste.
+ */
+export function toFullAccompaniment<
+  AccompanimentId extends string,
+  UserId extends string,
+  RequestId extends string,
+>(
+  row: AccompanimentRow<AccompanimentId, UserId, RequestId>,
+): Accompaniment<AccompanimentId, UserId, RequestId> {
+  return {
+    _id: row._id,
+    studentId: row.studentId,
+    status: row.status,
+    objective: row.objective,
+    accessNeeds: row.accessNeeds,
+    referenceCode: deriveCoordinationReferenceCode(row._id),
+    ...(row.requestId === undefined ? {} : { requestId: row.requestId }),
+    view: "full",
+  };
+}
 
 /**
  * Adaptador explícito de fila persistida a vista de lectura. La vista ya
  * viene decidida por la capa de autorización; acá solo se recorta la forma.
- * La vista minimizada nunca expone `studentId` ni `accessNeeds`, aunque la
- * fila los traiga.
+ * La vista minimizada nunca expone `studentId`, `accessNeeds`,
+ * `referenceCode` ni `requestId`, aunque la fila los traiga.
  */
-export function toAccompanimentProjection<AccompanimentId extends string, UserId extends string>(
-  row: AccompanimentRow<AccompanimentId, UserId>,
+export function toAccompanimentProjection<
+  AccompanimentId extends string,
+  UserId extends string,
+  RequestId extends string,
+>(
+  row: AccompanimentRow<AccompanimentId, UserId, RequestId>,
   view: AccompanimentView,
-): AccompanimentProjection<AccompanimentId, UserId> {
+): AccompanimentProjection<AccompanimentId, UserId, RequestId> {
   if (view === "minimized") {
     return {
       _id: row._id,
@@ -104,12 +143,103 @@ export function toAccompanimentProjection<AccompanimentId extends string, UserId
       view: "minimized",
     };
   }
+  return toFullAccompaniment(row);
+}
+
+/**
+ * Cambios de estado del acompañamiento (TI2-152): pausar, reactivar y cerrar.
+ *
+ * `closed` no puede ser origen: un acompañamiento cerrado no se reabre ni
+ * vuelve a pausarse, y una necesidad posterior comienza con otra solicitud.
+ * El tipo de `from` lo excluye, así que agregar una salida desde `closed` no
+ * compila. Un par ausente de esta tabla es una transición inválida.
+ */
+export type AccompanimentStateTransition = {
+  readonly from: Exclude<AccompanimentStatus, "closed">;
+  readonly to: AccompanimentStatus;
+};
+
+export const ACCOMPANIMENT_TRANSITIONS = [
+  { from: "active", to: "paused" },
+  { from: "paused", to: "active" },
+  { from: "active", to: "closed" },
+  { from: "paused", to: "closed" },
+] as const satisfies readonly AccompanimentStateTransition[];
+
+/** Tope del motivo opcional de un cambio de estado. */
+export const ACCOMPANIMENT_REASON_MAX_LENGTH = 500;
+
+/**
+ * Motivo con que el cierre cancela las atenciones futuras. La cancelación de
+ * CERETI exige motivo; el cierre no pide uno, así que usa este texto fijo y
+ * nunca copia el motivo opcional del cierre a las atenciones.
+ */
+export const ACCOMPANIMENT_CLOSURE_CANCEL_REASON = "Cierre del acompañamiento";
+
+export type AccompanimentTransitionAttempt = {
+  readonly from: AccompanimentStatus;
+  readonly to: AccompanimentStatus;
+  readonly actorId: string;
+  readonly occurredAt: number;
+  readonly reason?: string;
+};
+
+/**
+ * Entrada del historial de estados: el intento ya aceptado, con el origen de
+ * una transición válida y el motivo solo si se entregó.
+ */
+export type AccompanimentStateChange = AccompanimentTransitionAttempt &
+  AccompanimentStateTransition;
+
+export const ACCOMPANIMENT_TRANSITION_REJECTION_CAUSES = [
+  "transition_not_allowed",
+  "actor_required",
+  "occurred_at_invalid",
+  "reason_too_long",
+] as const;
+
+export type AccompanimentTransitionRejectionCause =
+  (typeof ACCOMPANIMENT_TRANSITION_REJECTION_CAUSES)[number];
+
+export type AccompanimentTransitionResult =
+  | { readonly status: "applied"; readonly change: AccompanimentStateChange }
+  | { readonly status: "rejected"; readonly cause: AccompanimentTransitionRejectionCause };
+
+/**
+ * Decide si un cambio de estado procede, sin persistir nada.
+ *
+ * El motivo es opcional en todos los cambios: en blanco equivale a no
+ * entregarlo. Los rechazos se devuelven como valor y ninguno construye
+ * `change`, así un intento inválido no deja entrada en el historial.
+ */
+export function transitionAccompaniment(
+  attempt: AccompanimentTransitionAttempt,
+): AccompanimentTransitionResult {
+  const transition = ACCOMPANIMENT_TRANSITIONS.find(
+    (candidate) => candidate.from === attempt.from && candidate.to === attempt.to,
+  );
+  if (transition === undefined) return { status: "rejected", cause: "transition_not_allowed" };
+
+  const actorId = attempt.actorId.trim();
+  if (actorId === "") return { status: "rejected", cause: "actor_required" };
+
+  if (!Number.isFinite(attempt.occurredAt) || attempt.occurredAt <= 0) {
+    return { status: "rejected", cause: "occurred_at_invalid" };
+  }
+
+  const reason = attempt.reason?.trim();
+  if (reason !== undefined && reason.length > ACCOMPANIMENT_REASON_MAX_LENGTH) {
+    return { status: "rejected", cause: "reason_too_long" };
+  }
+
   return {
-    _id: row._id,
-    studentId: row.studentId,
-    status: row.status,
-    objective: row.objective,
-    accessNeeds: row.accessNeeds,
-    view: "full",
+    status: "applied",
+    change: {
+      from: transition.from,
+      to: transition.to,
+      actorId,
+      occurredAt: attempt.occurredAt,
+      ...(reason ? { reason } : {}),
+    },
   };
 }

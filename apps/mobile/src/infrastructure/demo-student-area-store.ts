@@ -32,7 +32,9 @@ export function createDemoStudentAreaStore(lastExampleRequestNumber = 5): DemoSt
       return requests;
     },
     updateRequest(request) {
-      requests = requests.map((current) => (current.id === request.id ? request : current));
+      requests = requests.some((current) => current.id === request.id)
+        ? requests.map((current) => (current.id === request.id ? request : current))
+        : [request, ...requests];
       listeners.forEach((listener) => listener());
     },
     addAccompaniment(accompaniment) {

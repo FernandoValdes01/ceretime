@@ -1,7 +1,10 @@
+import { toRequestSubmission } from "../../../../convex/domain/requests/request";
+import { UserFacingError } from "@/application/user-facing-error";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
 import type { BackendCreatedRequest } from "@/infrastructure/backend-contracts";
+import { createDemoStudentRequestActions } from "./demo-student-request-actions";
 import type { DemoStudentAreaStore } from "./demo-student-area-store";
 import {
   mapCreatedRequestToReceipt,
@@ -26,6 +29,9 @@ export function createDemoStudentRequestSubmitter({
   let shouldFail = failureMode === "once";
 
   return {
+    requestActions: store
+      ? createDemoStudentRequestActions({ store, delayMs, failureMode, now })
+      : undefined,
     async submitStudentRequest(command) {
       if (delayMs > 0) {
         await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
@@ -37,6 +43,9 @@ export function createDemoStudentRequestSubmitter({
       }
 
       const mapped = mapStudentSubmissionToCreateRequest(command);
+      const validated = toRequestSubmission({ ...command, idempotencyKey: "demo" });
+      if (validated.status === "error") throw new UserFacingError(validated.error.message);
+      const content = validated.data;
       const requestId =
         store?.nextRequestId() ?? `SOL-DEMO-${(++sequence).toString().padStart(3, "0")}`;
       const createdAt = now().getTime();
@@ -52,12 +61,12 @@ export function createDemoStudentRequestSubmitter({
         id: backendResult._id,
         status: "received",
         createdAt: new Date(createdAt).toISOString(),
-        needSummary: command.needSummary,
-        expectedOutcome: command.expectedOutcome,
+        needSummary: content.needSummary,
+        expectedOutcome: content.expectedOutcome,
         accessNeeds: mapped.args.accessNeeds,
-        generalAvailability: command.generalAvailability,
-        modalityPreference: command.modalityPreference,
-        preferredAccessibleInformationChannel: command.preferredAccessibleInformationChannel,
+        generalAvailability: content.generalAvailability,
+        modalityPreference: content.modalityPreference,
+        preferredAccessibleInformationChannel: content.preferredAccessibleInformationChannel,
       });
 
       return mapCreatedRequestToReceipt(backendResult);

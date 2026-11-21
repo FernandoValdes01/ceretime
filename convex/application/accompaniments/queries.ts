@@ -67,7 +67,11 @@ function toAuthorizableAssignments(
  * (`convex/domain`) instanciada con los identificadores tipados. La forma
  * vive una sola vez en el dominio; acá solo se fija el tipo de id.
  */
-export type AccompanimentViewResult = AccompanimentProjection<Id<"accompaniments">, Id<"users">>;
+export type AccompanimentViewResult = AccompanimentProjection<
+  Id<"accompaniments">,
+  Id<"users">,
+  Id<"requests">
+>;
 
 function projectView(
   accompaniment: Doc<"accompaniments">,

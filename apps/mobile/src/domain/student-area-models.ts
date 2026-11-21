@@ -19,11 +19,12 @@ export interface StudentIdentity {
 export interface StudentRequest {
   // createRequest, listOwnRequests y getRequest: _id -> id, createdAt -> ISO.
   readonly id: string;
-  // Públicos: received, underReview, awaitingInformationOrAcceptance y accepted.
-  // referred, closedWithoutAccompaniment y cancelled siguen pendientes de TI2-141.
+  // Estados canónicos; la conexión de Mobile con el backend corresponde a TI4-80.
   readonly status: RequestStatus;
-  // Provisional: TI2-141 aún no publica el cierre ni su motivo.
+  // Detalles opcionales del intercambio; el listado público puede omitirlos.
   readonly closureReason?: string;
+  readonly informationRequest?: string;
+  readonly informationResponse?: string;
   readonly createdAt: IsoDateTime;
   // Campos locales del formulario/demo. No llegan en listOwnRequests ni getRequest;
   // TI2-141 publicará el contenido completo y sus reglas de envío.

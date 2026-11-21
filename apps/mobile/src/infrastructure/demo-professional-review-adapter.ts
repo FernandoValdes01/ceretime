@@ -96,6 +96,7 @@ function updateRequest(
       status: "active",
       objective: operation.args.objective,
       accessNeeds: source?.accessNeeds ?? request.accessNeeds ?? "",
+      referenceCode: "CER-7KQ2-M9XD",
       view: "full",
     };
     const accompaniment = {

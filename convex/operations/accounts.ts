@@ -3,7 +3,9 @@ import {
   enableInternAccount,
   ensureBootstrapAdmin as ensureBootstrapAdminUseCase,
 } from "../application/accounts/enablement";
+import { reclassifyStudentUseCase } from "../application/accounts/reclassify_student";
 import { internalMutation } from "../_generated/server";
+import { studentReclassificationStore } from "../infrastructure/accounts/repository";
 
 /**
  * Escritura guardada de cuentas (TI2-11).
@@ -47,5 +49,26 @@ export const ensureBootstrapAdmin = internalMutation({
   },
   handler: async (ctx, args) => {
     return await ensureBootstrapAdminUseCase(ctx, args);
+  },
+});
+
+/**
+ * Corrige a Practicante o a cuenta de prueba pendiente un perfil creado como
+ * Estudiante en el primer ingreso (TI2-182).
+ *
+ * Para quien inició sesión antes de que el operador lo registrara con su rol:
+ * `ensureMyProfile` le creó un perfil de Estudiante y `createTestUser` ya no
+ * admite esa identidad. `role: "professional"` deja una cuenta de prueba,
+ * porque el correo es `@alu.uct.cl`. Falla sin escribir si el perfil no es
+ * Estudiante, no tiene correo `@alu.uct.cl` o ya tiene solicitudes o
+ * acompañamientos. No habilita: después la habilita el profesional o el
+ * Administrador con `enableIntern` o `enableTestProfessional`.
+ */
+export const reclassifyFirstLoginStudent = internalMutation({
+  args: { userId: v.id("users"), role: v.union(v.literal("intern"), v.literal("professional")) },
+  handler: async (ctx, args) => {
+    return await reclassifyStudentUseCase(args, {
+      accounts: studentReclassificationStore(ctx),
+    });
   },
 });

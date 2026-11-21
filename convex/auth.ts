@@ -1,3 +1,4 @@
+import { expo } from "@better-auth/expo";
 import { createClient, type GenericCtx } from "@convex-dev/better-auth";
 import { convex, crossDomain } from "@convex-dev/better-auth/plugins";
 import { betterAuth } from "better-auth/minimal";
@@ -26,8 +27,16 @@ import { googleWorkspaceProvider, guardGoogleOAuth } from "./infrastructure/auth
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 
-function resolveTrustedOrigins(siteUrl: string): string[] {
-  const origins = new Set<string>([siteUrl, env.CONVEX_SITE_URL]);
+/**
+ * Esquema de la app móvil (`scheme` en `apps/mobile/app.json`). Better Auth
+ * debe confiar en él para redirigir a la app tras el inicio con Google; va
+ * en código y no en `BETTER_AUTH_TRUSTED_ORIGINS` para que todos los
+ * deployments lo acepten sin configuración extra.
+ */
+const MOBILE_APP_ORIGIN = "ceretime://";
+
+export function resolveTrustedOrigins(siteUrl: string): string[] {
+  const origins = new Set<string>([siteUrl, env.CONVEX_SITE_URL, MOBILE_APP_ORIGIN]);
   const extra = env.BETTER_AUTH_TRUSTED_ORIGINS;
   if (typeof extra === "string" && extra.length > 0) {
     for (const origin of extra.split(",")) {
@@ -124,6 +133,9 @@ export const createAuth = (ctx: GenericCtx<DataModel>) => {
       // Requerido para SPA (Vite): permite cookies entre el origen web y el
       // Site URL de Convex.
       crossDomain({ siteUrl: env.SITE_URL }),
+      // Inicio de sesión desde la app Expo: acepta el origen `ceretime://`
+      // que envía el cliente móvil y lo devuelve a la app tras el callback.
+      expo(),
       // Compatibilidad Convex: emite el JWT que verifica `ctx.auth`.
       convex({ authConfig }),
     ],

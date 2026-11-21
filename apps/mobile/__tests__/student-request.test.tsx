@@ -456,6 +456,68 @@ describe("Formulario de solicitud del estudiante", () => {
     expect(announce).toHaveBeenLastCalledWith("Solicitud ficticia enviada.");
   });
 
+  test("asocia el exceso de texto al campo sin recortarlo ni enviar", () => {
+    const submitStudentRequest = jest.fn();
+    render(<RequestForm submitter={{ submitStudentRequest }} onRevealGroup={() => undefined} />);
+    const longNeed = "a".repeat(2001);
+    fireEvent.changeText(screen.getByLabelText("¿Qué necesidad quieres abordar? *"), longNeed);
+    fireEvent.changeText(
+      screen.getByLabelText("¿Qué esperas de CERETI? *"),
+      "Acceder al material.",
+    );
+    fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
+    expect(screen.getByText("Usa como máximo 2000 caracteres.")).toBeOnTheScreen();
+    expect(screen.getByDisplayValue(longNeed)).toBeOnTheScreen();
+    expect(submitStudentRequest).not.toHaveBeenCalled();
+  });
+
+  test("valida el límite combinado de apoyos y el canal sin perder texto", () => {
+    render(<RequestForm submitter={successfulSubmitter} onRevealGroup={() => undefined} />);
+    fillStudentRequestNeed();
+    fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
+    chooseStudentRequestAccess();
+    const longAccess = "a".repeat(2000);
+    fireEvent.changeText(
+      screen.getByLabelText("Otra necesidad de acceso", { exact: false }),
+      longAccess,
+    );
+    fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
+    expect(
+      screen.getByText(
+        "Las necesidades seleccionadas y el texto adicional deben sumar como máximo 2000 caracteres.",
+      ),
+    ).toBeOnTheScreen();
+    expect(screen.getByDisplayValue(longAccess)).toBeOnTheScreen();
+    fireEvent.changeText(screen.getByLabelText("Otra necesidad de acceso", { exact: false }), "");
+    fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
+    chooseStudentRequestAvailability();
+    fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
+    const longChannel = "a".repeat(201);
+    fireEvent.changeText(
+      screen.getByLabelText("¿Cómo prefieres recibir información? *", { exact: false }),
+      longChannel,
+    );
+    fireEvent.press(screen.getByRole("button", { name: "Continuar" }));
+    expect(screen.getByText("Usa como máximo 200 caracteres.")).toBeOnTheScreen();
+    expect(screen.getByDisplayValue(longChannel)).toBeOnTheScreen();
+  });
+
+  test("distingue acceso denegado sin perder el borrador ni ofrecer reintento", async () => {
+    const submitStudentRequest = jest.fn().mockRejectedValue({ data: { code: "unauthorized" } });
+    render(<RequestForm submitter={{ submitStudentRequest }} onRevealGroup={() => undefined} />);
+    fillRequiredStudentRequestFields();
+    fireEvent.press(screen.getByRole("button", { name: "Confirmar y enviar solicitud" }));
+    expect(
+      await screen.findByText("No tienes permiso para enviar esta solicitud."),
+    ).toBeOnTheScreen();
+    expect(screen.queryByRole("button", { name: "Reintentar envío" })).toBeNull();
+    expect(screen.queryByText("Solicitud enviada")).toBeNull();
+    for (let index = 0; index < 4; index += 1) {
+      fireEvent.press(screen.getByRole("button", { name: "Volver al paso anterior" }));
+    }
+    expect(screen.getByDisplayValue("Me cuesta leer los materiales del curso.")).toBeOnTheScreen();
+  });
+
   test("el formulario no conserva el borrador después de cerrar sesión", async () => {
     await openForm();
     fillRequiredStudentRequestFields();

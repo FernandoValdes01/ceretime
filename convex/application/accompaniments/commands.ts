@@ -27,6 +27,7 @@ import {
   getAssignmentById,
   getUserById,
   hasActiveProfessionalAssignment,
+  hasAnotherActiveProfessional,
   insertActiveAssignment,
   patchAssignmentValidity,
   revokeAssignmentRow,
@@ -58,6 +59,10 @@ import {
  * `status === "active"` y ventana vigente (TI2-140): al vencer, una función
  * programada revoca la fila para que las consultas suscritas se actualicen.
  * Toda operación registra actor y fecha. Opera con datos ficticios.
+ *
+ * Cambio de profesionales (TI2-152): se hace con estas mismas operaciones,
+ * sin una paralela. Conceder y modificar se rechazan en un acompañamiento
+ * cerrado, y retirar a un profesional exige que quede otro asignado.
  */
 
 /**
@@ -103,6 +108,13 @@ function unauthorized<T>(): ApiResult<T> {
 function conflict<T>(message: string): ApiResult<T> {
   return errResult({ code: CONFLICT_ERROR_CODE, message });
 }
+
+/**
+ * Un acompañamiento cerrado es de solo lectura (TI2-152): no admite conceder
+ * ni modificar accesos. Retirar sigue permitido, porque cortar un acceso a
+ * datos sensibles nunca se bloquea.
+ */
+const CLOSED_ACCOMPANIMENT_MESSAGE = "El acompañamiento está cerrado y no admite cambios";
 
 function invalidValidity<T>(message: string): ApiResult<T> {
   return errResult({ code: ASSIGNMENT_FIELDS_INVALID_ERROR_CODE, message });
@@ -228,6 +240,8 @@ export async function assignAccompaniment(
     // La vía interna en arranque (`bootstrapStaff`) no exige alcance.
   }
 
+  if (accompaniment.status === "closed") return conflict(CLOSED_ACCOMPANIMENT_MESSAGE);
+
   const invalid =
     validity === undefined ? null : validityError<Id<"accompanimentAssignments">>(validity);
   if (invalid !== null) return invalid;
@@ -286,6 +300,7 @@ export async function updateAccompanimentAssignment(
 
   const existing = await findExistingActiveAssignment(ctx, triple);
   if (existing === null) return unauthorized();
+  if (accompaniment.status === "closed") return conflict(CLOSED_ACCOMPANIMENT_MESSAGE);
 
   const next = {
     validFrom: validity.validFrom === undefined ? (existing.validFrom ?? null) : validity.validFrom,
@@ -366,6 +381,16 @@ export async function revokeAccompaniment(
       if (!callerAssigned) return unauthorized();
     }
     // La vía interna en arranque (`bootstrapStaff`) no exige alcance.
+  }
+
+  // Un acompañamiento no queda sin profesional (TI2-152): quien se retira
+  // necesita que otro profesional siga asignado. La vía interna en arranque
+  // conserva la revocación libre para migraciones y datos de prueba.
+  if (triple.assignedRole === "professional" && options?.bootstrapStaff !== true) {
+    const holdsAssignment = (await takeActiveTripleRows(ctx, triple, 1)).length > 0;
+    if (holdsAssignment && !(await hasAnotherActiveProfessional(ctx, triple))) {
+      return conflict("El acompañamiento no puede quedar sin profesional asignado");
+    }
   }
 
   let revoked = 0;

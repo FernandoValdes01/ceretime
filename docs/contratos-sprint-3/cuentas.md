@@ -39,6 +39,8 @@ Una cuenta pendiente aún no trae auditoría; una revocada conserva la habilitac
 
 Solo el Administrador con cuenta habilitada y vigente lista, lee, habilita y revoca cuentas de personal. Estudiante, Profesional y Practicante solo ven su perfil propio mediante `presentation/session.getMyProfile` y reciben `unauthorized` en esta superficie. Tener correo institucional no concede acceso: sin perfil vinculado y vigente la respuesta es denegación. Habilitar exige correo de personal en ambos roles; revocar no revisa el dominio: cortar el acceso siempre está permitido. Administrar no concede acompañamientos ni notas: el Administrador sigue denegado en `accompaniment:read` e `internalNote:read`. La gestión de Practicantes corresponde al Profesional y se resuelve en TI2-140.
 
+Desde TI2-152, retirar al único profesional de un acompañamiento responde `conflict`, y un acompañamiento cerrado no admite conceder ni modificar accesos; el detalle está en `docs/contratos-sprint-3/seguimiento.md`.
+
 Revocar a un Profesional no reasigna sus acompañamientos ni atenciones: las filas se conservan y dejan de autorizar en la petición siguiente porque cada lectura vuelve a exigir el perfil vigente. La reasignación queda fuera de alcance de TI2-137 y pendiente de coordinar con la administración web (TI2-169).
 
 ## Errores
@@ -79,6 +81,23 @@ try {
   }
 }
 ```
+
+## Perfil propio en el primer ingreso — TI2-182
+
+| Operación | Argumentos | Devuelve | Quién | Denegación |
+| --- | --- | --- | --- | --- |
+| `presentation/session.ensureMyProfile` | — | `{ fullName, email, role, institutionalStatus, accountStatus }`, igual que `getMyProfile` | Titular con sesión institucional | `No autorizado` sin identidad, con correo no institucional o con un correo que ya figura en otro perfil |
+
+Iniciar sesión con Google solo crea el usuario de Better Auth; sin una fila en `users` vinculada por `tokenIdentifier`, cada consulta guardada deniega. Web y Mobile llaman `ensureMyProfile` tras iniciar sesión cuando `getSessionWithRole` no trae rol. Siguiendo el ADR 0002, una cuenta `@alu.uct.cl` nace como Estudiante habilitado y vigente (`enabledAt` sin `enabledBy`) y una cuenta `@uct.cl` nace como Profesional pendiente, que el Administrador habilita con `enableAccount`. Si el perfil ya existe se devuelve sin cambios: repetir la llamada nunca habilita, rehabilita ni cambia el rol, y una cuenta revocada sigue revocada. Un correo que ya figura en otro perfil no se vincula ni se duplica, porque el correo no prueba que sea la misma persona que registró el operador. Practicantes y cuentas de prueba siguen naciendo por la vía del operador, porque su rol no se deduce del dominio del correo: si su titular ingresa antes, su perfil nace como Estudiante. El operador lo corrige con `internal.operations.accounts.reclassifyFirstLoginStudent({ userId, role })`, donde `role` es `intern` o `professional` (cuenta de prueba, porque el correo es `@alu.uct.cl`). Lo deja pendiente con ese rol y sin `enabledAt`, para que luego lo habilite el profesional o el Administrador con `enableIntern` o `enableTestProfessional`. La corrección falla sin escribir si el perfil no es Estudiante, no tiene correo `@alu.uct.cl` o ya tiene solicitudes o acompañamientos.
+
+```ts
+const ensureMyProfile = useMutation(api.presentation.session.ensureMyProfile);
+const profile = await ensureMyProfile();
+```
+
+## Inicio de sesión desde la app móvil — TI2-182
+
+Better Auth confía en el esquema `ceretime://` (`scheme` de `apps/mobile/app.json`) en todos los deployments, y el plugin `expo()` devuelve la sesión a la app. Tras el callback de Google, si la redirección apunta a un esquema que no es `http(s)`, el backend agrega la cookie de sesión al enlace: la app recibe `ceretime://…?cookie=…` y la guarda. Android no verifica qué app es dueña de un esquema propio, así que otra app instalada que declare `ceretime://` podría recibir ese enlace con la sesión. El ingreso por la Web no cambia: el plugin solo actúa cuando se redirige a esquemas que no son `http(s)` o con el encabezado `expo-origin` sin `Origin`.
 
 ## Habilitación por el profesional — TI2-140
 
