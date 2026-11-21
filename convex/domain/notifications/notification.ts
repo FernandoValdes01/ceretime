@@ -25,7 +25,12 @@ export const NOTIFICATION_CONTRACT_VERSION = "v1" as const;
 
 export type NotificationContractVersion = typeof NOTIFICATION_CONTRACT_VERSION;
 
-/** Clases de evento sobre el ciclo de la atención. */
+/**
+ * Clases de evento conocidas. Desde TI2-145 la forma persistida admite una
+ * solicitud como recurso; `request_received` es la primera clase de ese
+ * recurso. TI2-150 amplía el resto de las clases de solicitud, reserva,
+ * cambio y justificación y decide cuándo se emiten.
+ */
 export const NOTIFICATION_EVENT_KIND_VALUES = [
   "appointment_scheduled",
   "appointment_rescheduled",
@@ -33,6 +38,7 @@ export const NOTIFICATION_EVENT_KIND_VALUES = [
   "appointment_no_show",
   "appointment_reminder",
   "appointment_online_access_ready",
+  "request_received",
 ] as const;
 
 export type NotificationEventKind = (typeof NOTIFICATION_EVENT_KIND_VALUES)[number];
@@ -45,14 +51,16 @@ export function isNotificationEventKind(value: string): value is NotificationEve
 /**
  * Evento interno de notificación: datos mínimos autenticados, sin textos.
  *
- * `appointmentId` y `recipientId` son referencias opacas: la notificación
- * autenticada las usa para componer el aviso, pero nunca viajan al texto
- * externo. `recipientId` es la referencia mínima al destinatario; no trae
- * nombre, correo, rol ni vínculo con el acompañamiento. `occurredAt` es el
- * instante persistido del cambio, no el del reintento, y sostiene la clave
- * de idempotencia.
+ * El evento referencia exactamente un recurso: una atención (`appointmentId`)
+ * o una solicitud (`requestId`). Una justificación no tiene fila propia:
+ * referencia su atención, donde vive la explicación. Las referencias y
+ * `recipientId` son opacas: la notificación autenticada las usa para componer
+ * el aviso, pero nunca viajan al texto externo. `recipientId` no trae nombre,
+ * correo, rol ni vínculo con el acompañamiento. `occurredAt` es el instante
+ * persistido del cambio, no el del reintento, y sostiene la clave de
+ * idempotencia.
  */
-export interface NotificationEvent {
+export interface AppointmentNotificationEvent {
   readonly kind: NotificationEventKind;
   readonly appointmentId: string;
   readonly recipientId: string;
@@ -60,17 +68,38 @@ export interface NotificationEvent {
   readonly version: NotificationContractVersion;
 }
 
+export interface RequestNotificationEvent {
+  readonly kind: NotificationEventKind;
+  readonly requestId: string;
+  readonly recipientId: string;
+  readonly occurredAt: number;
+  readonly version: NotificationContractVersion;
+}
+
+export type NotificationEvent = AppointmentNotificationEvent | RequestNotificationEvent;
+
 /** Referencia mínima a la atención y a su destinatario, ambos opacos. */
 export interface NotificationReference {
   readonly appointmentId: string;
   readonly recipientId: string;
 }
 
-/** Entrada del constructor: la clase se valida también en tiempo de ejecución. */
-export interface NotificationEventInput extends NotificationReference {
-  readonly kind: NotificationEventKind;
-  readonly occurredAt: number;
+/** Referencia mínima a la solicitud y a su destinatario, ambos opacos. */
+export interface RequestNotificationReference {
+  readonly requestId: string;
+  readonly recipientId: string;
 }
+
+/** Entrada del constructor: la clase y el recurso se validan en tiempo de ejecución. */
+export type NotificationEventInput =
+  | (NotificationReference & {
+      readonly kind: NotificationEventKind;
+      readonly occurredAt: number;
+    })
+  | (RequestNotificationReference & {
+      readonly kind: NotificationEventKind;
+      readonly occurredAt: number;
+    });
 
 /**
  * Participantes de la atención que la política puede avisar.
@@ -93,17 +122,14 @@ function isValidInstant(value: number): boolean {
 }
 
 /**
- * Construye el evento autenticado con exactamente cinco campos.
+ * Construye el evento autenticado con exactamente cinco campos y un recurso.
  *
- * Un adaptador que reciba datos de otra capa no puede colar campos extra:
- * el retorno se arma campo por campo. Las referencias vacías y el instante
- * inválido son error, no evento vacío.
+ * Un adaptador que reciba datos de otra capa no puede colar campos extra: el
+ * retorno se arma campo por campo. Debe venir una atención o una solicitud,
+ * nunca ambas ni ninguna; las referencias vacías y el instante inválido son
+ * error, no evento vacío.
  */
 export function toNotificationEvent(input: NotificationEventInput): NotificationEvent {
-  const appointmentId = input.appointmentId.trim();
-  if (appointmentId === "") {
-    throw new Error("El evento de notificación requiere una atención.");
-  }
   const recipientId = input.recipientId.trim();
   if (recipientId === "") {
     throw new Error("El evento de notificación requiere un destinatario.");
@@ -114,9 +140,32 @@ export function toNotificationEvent(input: NotificationEventInput): Notification
   if (!isNotificationEventKind(input.kind)) {
     throw new Error("La clase del evento de notificación es desconocida.");
   }
+
+  const hasAppointment = "appointmentId" in input;
+  const hasRequest = "requestId" in input;
+  if (hasAppointment === hasRequest) {
+    throw new Error("El evento de notificación requiere exactamente un recurso.");
+  }
+  if (hasAppointment) {
+    const appointmentId = (input as NotificationReference).appointmentId.trim();
+    if (appointmentId === "") {
+      throw new Error("El evento de notificación requiere una atención.");
+    }
+    return {
+      kind: input.kind,
+      appointmentId,
+      recipientId,
+      occurredAt: input.occurredAt,
+      version: NOTIFICATION_CONTRACT_VERSION,
+    };
+  }
+  const requestId = (input as RequestNotificationReference).requestId.trim();
+  if (requestId === "") {
+    throw new Error("El evento de notificación requiere una solicitud.");
+  }
   return {
     kind: input.kind,
-    appointmentId,
+    requestId,
     recipientId,
     occurredAt: input.occurredAt,
     version: NOTIFICATION_CONTRACT_VERSION,
@@ -247,18 +296,31 @@ export function notificationEventsForTransition(
 /**
  * Clave de idempotencia estable para reintentos de la misma emisión.
  *
- * Se compone de versión, clase, atención, destinatario e instante persistido.
+ * Se compone de versión, clase, recurso, destinatario e instante persistido.
  * Dos reintentos del mismo cambio reutilizan la clave; un cambio distinto
- * (otra clase, otra atención, otro destinatario u otro instante) produce otra.
+ * (otra clase, otro recurso, otro destinatario u otro instante) produce otra.
  * La tupla se representa como lista para que ningún identificador pueda
- * colisionar con un separador. La comparación para evitar duplicados y el
- * registro los hace el repositorio de notificaciones (TI2-118).
+ * colisionar con un separador. Las claves de atención conservan la forma
+ * anterior a TI2-145 para que un reintento de un aviso ya guardado siga
+ * encontrando su fila; las de solicitud llevan la marca `request`. La
+ * comparación para evitar duplicados y el registro los hace el repositorio
+ * de notificaciones (TI2-118).
  */
 export function notificationIdempotencyKey(event: NotificationEvent): string {
+  if ("appointmentId" in event) {
+    return JSON.stringify([
+      event.version,
+      event.kind,
+      event.appointmentId,
+      event.recipientId,
+      event.occurredAt,
+    ]);
+  }
   return JSON.stringify([
     event.version,
     event.kind,
-    event.appointmentId,
+    "request",
+    event.requestId,
     event.recipientId,
     event.occurredAt,
   ]);
@@ -303,6 +365,10 @@ const EXTERNAL_NOTIFICATION_TEXTS: Record<NotificationEventKind, ExternalNotific
   appointment_online_access_ready: {
     title: "Tu atención tiene su acceso disponible",
     body: "Revisa cómo ingresar en la aplicación.",
+  },
+  request_received: {
+    title: "Tienes una actualización pendiente",
+    body: "Revisa las novedades en la aplicación.",
   },
 };
 
