@@ -50,7 +50,6 @@ const FULL_FORM_FIELDS = [
   "modalityPreference",
   "generalAvailability",
   "preferredAccessibleInformationChannel",
-  "idempotencyKey",
 ] as const;
 
 /** Forma anterior: `accessNeeds` como texto y ningún campo de la forma completa. */
@@ -79,11 +78,9 @@ export interface RegisterRequestDeps<RequestId extends string, UserId extends st
  *
  * La forma anterior (solo `accessNeeds` como texto) valida el texto con
  * `toLegacyAccessNeeds` de Dominio, con los códigos `access_needs_*`
- * (TI2-181), y no es idempotente porque no trae clave. Cualquier otra entrada
- * sigue la forma completa de TI2-141: exige sus campos con
- * `toCompleteSubmission`, los valida con `toRequestSubmission` y se guarda una
- * sola vez por clave: un reintento con la misma clave devuelve la solicitud
- * ya creada sin escribir otra.
+ * (TI2-181). Cualquier otra entrada sigue la forma completa de TI2-141: exige
+ * sus campos con `toCompleteSubmission` y los valida con `toRequestSubmission`.
+ * Ninguna de las dos es idempotente: cada envío válido crea una solicitud.
  */
 export async function registerRequest<RequestId extends string, UserId extends string>(
   deps: RegisterRequestDeps<RequestId, UserId>,
@@ -102,7 +99,7 @@ export async function registerRequest<RequestId extends string, UserId extends s
   if (complete.status === "error") return complete;
   const submission = toRequestSubmission(complete.data);
   if (submission.status === "error") return submission;
-  const requestId = await deps.requests.registerOnce(student._id, submission.data, deps.now());
+  const requestId = await deps.requests.registerComplete(student._id, submission.data, deps.now());
   return okResult(await readRegistered(deps.requests, requestId));
 }
 

@@ -30,8 +30,8 @@ function memoryDeps() {
         writes.push(`legacy ${studentId}`);
         return insert(studentId, accessNeeds);
       },
-      registerOnce: async (studentId, submission, receivedAt) => {
-        writes.push(`once ${studentId} ${submission.idempotencyKey} ${receivedAt}`);
+      registerComplete: async (studentId, submission, receivedAt) => {
+        writes.push(`complete ${studentId} ${receivedAt}`);
         return insert(studentId, submission.accessNeeds.map((need) => need.label).join("\n"));
       },
     },

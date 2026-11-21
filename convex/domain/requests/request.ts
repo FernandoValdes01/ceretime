@@ -202,15 +202,21 @@ export const ACCESS_NEED_SELECTIONS_MAX = 20;
 export const ACCESS_NEED_LABEL_MAX_LENGTH = 200;
 /** El identificador se guarda tal cual en `accessNeedSelections`: lleva el mismo tope que el nombre. */
 export const ACCESS_NEED_ID_MAX_LENGTH = ACCESS_NEED_LABEL_MAX_LENGTH;
-export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
 
 /**
- * Envío completo (TI2-141): el contenido canónico `AccompanimentRequestContent`
- * más la clave de idempotencia que genera el cliente. La lista `accessNeeds`
- * se persiste como `accessNeedSelections`; esa conversión es del caso de uso.
+ * Envío completo (TI2-141): el contenido canónico `AccompanimentRequestContent`.
+ * La lista `accessNeeds` se persiste como `accessNeedSelections`; esa
+ * conversión es del caso de uso. No lleva clave de idempotencia: SOLICITUDES
+ * del MER no la tiene (TI2-165).
  */
 export type RequestSubmission = Readonly<AccompanimentRequestContent> & {
-  readonly idempotencyKey: string;
+  /**
+   * Solo para que compile el envío de demostración de Mobile, que todavía la
+   * pasa; TI4 pidió no tocar `apps/mobile` en esta PR. Ninguna función la
+   * valida ni la devuelve, el repositorio no la guarda y el validador de
+   * Convex la rechaza. Se quita cuando TI4 ajuste ese envío.
+   */
+  readonly idempotencyKey?: string;
 };
 
 const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -227,7 +233,6 @@ const ACCESS_NEEDS_LIST_REQUIRED =
 const MODALITY_PREFERENCE_REQUIRED = "Indica si prefieres la modalidad presencial o en línea.";
 const PREFERRED_WEEKDAYS_REQUIRED = "Selecciona al menos un día disponible.";
 const INFORMATION_CHANNEL_REQUIRED = "Indica cómo prefieres recibir información.";
-const IDEMPOTENCY_KEY_INVALID = `La clave del envío debe tener entre 1 y ${IDEMPOTENCY_KEY_MAX_LENGTH} caracteres.`;
 
 /**
  * Un campo de la solicitud falta o no cumple su regla: el mensaje dice en
@@ -264,7 +269,6 @@ export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<R
     modalityPreference,
     generalAvailability,
     preferredAccessibleInformationChannel,
-    idempotencyKey,
   } = draft;
   if (typeof accessNeeds === "string") return invalidRequestFields(ACCESS_NEEDS_LIST_REQUIRED);
   if (needSummary === undefined) return invalidRequestFields(NEED_SUMMARY_REQUIRED);
@@ -275,7 +279,6 @@ export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<R
   if (preferredAccessibleInformationChannel === undefined) {
     return invalidRequestFields(INFORMATION_CHANNEL_REQUIRED);
   }
-  if (idempotencyKey === undefined) return invalidRequestFields(IDEMPOTENCY_KEY_INVALID);
   return {
     status: "ok",
     data: {
@@ -286,7 +289,6 @@ export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<R
       modalityPreference,
       generalAvailability,
       preferredAccessibleInformationChannel,
-      idempotencyKey,
     },
   };
 }
@@ -399,11 +401,6 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
   );
   if ("error" in channel) return fail(channel.error);
 
-  const idempotencyKey = input.idempotencyKey;
-  if (idempotencyKey.trim() === "" || idempotencyKey.length > IDEMPOTENCY_KEY_MAX_LENGTH) {
-    return fail(IDEMPOTENCY_KEY_INVALID);
-  }
-
   return {
     status: "ok",
     data: {
@@ -419,7 +416,6 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
           : { preferredTimeRange: { ...preferredTimeRange } }),
       },
       preferredAccessibleInformationChannel: channel.text,
-      idempotencyKey,
     },
   };
 }

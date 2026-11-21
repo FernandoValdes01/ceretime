@@ -109,13 +109,12 @@ export interface AccompanimentOpener<
 }
 
 /**
- * Guarda una solicitud recibida del Estudiante. `registerOnce` guarda el envío
- * completo ya validado una sola vez por clave de idempotencia y, con una clave
- * repetida, devuelve la solicitud existente sin escribir. `registerLegacy`
- * guarda la forma anterior, solo con el texto de necesidades de acceso.
+ * Guarda una solicitud recibida del Estudiante. `registerComplete` guarda el
+ * envío completo ya validado y `registerLegacy` la forma anterior, solo con el
+ * texto de necesidades de acceso.
  */
 export interface RequestRegistrar<RequestId extends string, UserId extends string> {
-  registerOnce(
+  registerComplete(
     studentId: UserId,
     submission: RequestSubmission,
     receivedAt: number,
@@ -129,13 +128,12 @@ export interface ActiveStudentByEmailReader<UserId extends string> {
 }
 
 /**
- * Guarda una solicitud recibida por canal oficial (TI2-143), una sola vez por
- * clave de idempotencia como `registerOnce`. La procedencia lleva quién la
- * registró y cuándo la recibió CERETI; con `originUnit` queda además como
- * derivación de entrada, avisada en esa misma fecha.
+ * Guarda una solicitud recibida por canal oficial (TI2-143). La procedencia
+ * lleva quién la registró y cuándo la recibió CERETI; con `originUnit` queda
+ * además como derivación de entrada, avisada en esa misma fecha.
  */
 export interface OfficialRequestRegistrar<RequestId extends string, UserId extends string> {
-  registerOfficialOnce(input: {
+  registerOfficial(input: {
     readonly studentId: UserId;
     readonly submission: RequestSubmission;
     readonly registeredBy: UserId;

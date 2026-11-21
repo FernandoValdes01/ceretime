@@ -144,9 +144,9 @@ export default defineSchema({
   // `createdAt` es la fecha de creación como número. Solo persistencia: las
   // transiciones las aplica TI2-21 y las reglas de cancelación y cierre son
   // de TI2-85. TI2-135 suma el contenido completo de la solicitud, su
-  // procedencia, las derivaciones, la razón de cierre y la clave de
-  // idempotencia como campos opcionales: las filas anteriores no los tienen
-  // y se leen igual (ver `domain/database/integrity.md`).
+  // procedencia y las derivaciones como campos opcionales: las filas
+  // anteriores no los tienen y se leen igual (ver
+  // `domain/database/integrity.md`).
   requests: defineTable({
     studentId: v.id("users"),
     status: requestStatusUnion,
@@ -176,9 +176,6 @@ export default defineSchema({
     // se escribe junto con el estado `referred`.
     incomingReferral: v.optional(incomingReferralValidator),
     outgoingReferral: v.optional(outgoingReferralValidator),
-    // Clave de idempotencia del envío (TI2-135), única por estudiante: un
-    // reintento con la misma clave no crea otra solicitud.
-    idempotencyKey: v.optional(v.string()),
   })
     // Solicitudes propias del estudiante.
     .index("by_student", ["studentId"])
@@ -189,10 +186,7 @@ export default defineSchema({
     .index("by_student_and_status", ["studentId", "status"])
     // Solicitudes tomadas por cada profesional: base del listado
     // autorizado, una fila por solicitud.
-    .index("by_takenBy", ["takenBy"])
-    // Reintento de un envío (TI2-135): la solicitud del estudiante con esa
-    // clave de idempotencia, en una sola lectura.
-    .index("by_student_and_idempotencyKey", ["studentId", "idempotencyKey"]),
+    .index("by_takenBy", ["takenBy"]),
 
   // Tabla 'requestTransitions': bitácora append-only de cambios de estado.
   // Cada transición guarda motivo, actor y fecha junto al estado resultante,

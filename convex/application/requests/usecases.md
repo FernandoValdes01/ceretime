@@ -39,7 +39,7 @@ Ninguno abre acompañamiento. Persisten el estado y el registro del cambio en la
 
 ## Envío completo (TI2-141)
 
-`presentation/requests.createRequest` acepta la forma completa (necesidad, resultado esperado, necesidades de acceso como lista y texto libre, modalidad, disponibilidad general, medio accesible e `idempotencyKey`) o la forma anterior, solo con `accessNeeds`. La forma completa autoriza antes de validar, exige sus campos con `toCompleteSubmission`, los valida en Dominio con `toRequestSubmission` y se guarda una sola vez por `idempotencyKey`: un reintento con la misma clave devuelve la solicitud ya creada. Sus rechazos usan `request_fields_invalid` (y `access_needs_*` para las necesidades de acceso) y su denegación `unauthorized`. Desde TI2-181 la forma anterior deniega con `unauthorized` y rechaza con `access_needs_empty` o `access_needs_too_long`. Topes, reglas y ejemplos en [`docs/contratos-sprint-3/solicitudes.md`](../../../docs/contratos-sprint-3/solicitudes.md).
+`presentation/requests.createRequest` acepta la forma completa (necesidad, resultado esperado, necesidades de acceso como lista y texto libre, modalidad, disponibilidad general y medio accesible) o la forma anterior, solo con `accessNeeds`. La forma completa autoriza antes de validar, exige sus campos con `toCompleteSubmission`, los valida en Dominio con `toRequestSubmission` y cada envío válido crea una solicitud: desde TI2-165 no hay clave de idempotencia, porque SOLICITUDES del MER no la tiene. Sus rechazos usan `request_fields_invalid` (y `access_needs_*` para las necesidades de acceso) y su denegación `unauthorized`. Desde TI2-181 la forma anterior deniega con `unauthorized` y rechaza con `access_needs_empty` o `access_needs_too_long`. Topes, reglas y ejemplos en [`docs/contratos-sprint-3/solicitudes.md`](../../../docs/contratos-sprint-3/solicitudes.md).
 
 ## Canal oficial y derivaciones (TI2-143)
 
@@ -52,7 +52,7 @@ Cuatro casos de uso de `referrals.ts`, con las reglas en Dominio ([`referral.ts`
 | `presentation/requests.recordReferralAcceptance` | Profesional vigente con toma activa | Guarda cuándo aceptó el estudiante; exige el contacto previo                                                                            |
 | `presentation/requests.referRequest`             | Profesional vigente con toma activa | Mueve `under_review` o `awaiting_information_or_acceptance` a `referred` con la unidad de destino y la razón, sin abrir acompañamiento  |
 
-El registro reutiliza `toCompleteSubmission`, `toRequestSubmission` y la clave de idempotencia de `createRequest`: no hay otra forma de solicitud. El Estudiante se identifica por su correo, que el puerto `ActiveStudentByEmailReader` resuelve solo si es de una cuenta de Estudiante vigente.
+El registro reutiliza `toCompleteSubmission` y `toRequestSubmission` de `createRequest`: no hay otra forma de solicitud. El Estudiante se identifica por su correo, que el puerto `ActiveStudentByEmailReader` resuelve solo si es de una cuenta de Estudiante vigente.
 
 `acceptRequest` consulta `referralAllowsAccompaniment` antes de escribir: una derivación de entrada sin contacto o sin aceptación responde `conflict` y no abre acompañamiento.
 

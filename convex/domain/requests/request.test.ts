@@ -338,7 +338,6 @@ describe("toRequestSubmission (TI2-141)", () => {
     modalityPreference: "inPerson",
     generalAvailability: { preferredWeekdays: [0, 6] },
     preferredAccessibleInformationChannel: " Correo ",
-    idempotencyKey: "clave",
   } as const;
 
   test("recorta los textos y omite el texto libre vacío", () => {
@@ -351,7 +350,6 @@ describe("toRequestSubmission (TI2-141)", () => {
         modalityPreference: "inPerson",
         generalAvailability: { preferredWeekdays: [0, 6] },
         preferredAccessibleInformationChannel: "Correo",
-        idempotencyKey: "clave",
       },
     });
   });
@@ -434,7 +432,6 @@ describe("toCompleteSubmission (TI2-141)", () => {
     modalityPreference: "online",
     generalAvailability: { preferredWeekdays: [1] },
     preferredAccessibleInformationChannel: "Correo",
-    idempotencyKey: "clave",
   } as const;
 
   test("con todos los campos entrega el envío sin validar su contenido", () => {
@@ -456,7 +453,6 @@ describe("toCompleteSubmission (TI2-141)", () => {
     ["modalityPreference", "Indica si prefieres la modalidad presencial o en línea."],
     ["generalAvailability", "Selecciona al menos un día disponible."],
     ["preferredAccessibleInformationChannel", "Indica cómo prefieres recibir información."],
-    ["idempotencyKey", "La clave del envío debe tener entre 1 y 128 caracteres."],
   ] as const)("sin %s, el mensaje nombra ese campo", (field, message) => {
     const { [field]: _missing, ...draft } = complete;
     expect(toCompleteSubmission(draft)).toEqual({
@@ -472,7 +468,6 @@ describe("toCompleteSubmission (TI2-141)", () => {
     ["con todos los demás campos", complete],
     ["con todos menos la necesidad", withoutNeedSummary],
     ["solo con la necesidad", { needSummary: "Necesidad ficticia" }],
-    ["solo con la clave", { idempotencyKey: "clave" }],
     ["solo con el texto adicional", { otherAccessNeed: "Apoyo" }],
   ] as const)("las necesidades como texto %s piden la lista", (_label, fields) => {
     expect(toCompleteSubmission({ ...fields, accessNeeds: "Texto suelto" })).toEqual({
@@ -542,6 +537,27 @@ describe("toInformationResponse (TI2-141)", () => {
   });
 });
 
+describe("clave de idempotencia (TI2-165)", () => {
+  test("toRequestSubmission y toCompleteSubmission la ignoran y no la devuelven", () => {
+    const content = {
+      needSummary: "Necesidad ficticia",
+      expectedOutcome: "Resultado ficticio",
+      accessNeeds: [{ id: "written", label: "Comunicación escrita" }],
+      modalityPreference: "online",
+      generalAvailability: { preferredWeekdays: [1] },
+      preferredAccessibleInformationChannel: "Correo",
+    } as const;
+    for (const key of ["clave-ficticia", "", "a".repeat(200)]) {
+      const submission = toRequestSubmission({ ...content, idempotencyKey: key });
+      expect(submission).toEqual({ status: "ok", data: content });
+      expect(toCompleteSubmission({ ...content, idempotencyKey: key })).toEqual({
+        status: "ok",
+        data: content,
+      });
+    }
+  });
+});
+
 describe("ACCESS_NEED_OPTIONS (TI2-149)", () => {
   test("el envío completo acepta todas las opciones sin cambiarlas", () => {
     const result = toRequestSubmission({
@@ -551,7 +567,6 @@ describe("ACCESS_NEED_OPTIONS (TI2-149)", () => {
       modalityPreference: "online",
       generalAvailability: { preferredWeekdays: [1] },
       preferredAccessibleInformationChannel: "Correo ficticio",
-      idempotencyKey: "clave-ficticia",
     });
     expect(result).toMatchObject({ status: "ok", data: { accessNeeds: ACCESS_NEED_OPTIONS } });
   });

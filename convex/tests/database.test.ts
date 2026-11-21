@@ -64,10 +64,8 @@ import {
   recordAppointmentAuditEvent,
 } from "../infrastructure/audit/repository";
 import {
-  findRequestByIdempotencyKey,
   getRequestById,
   insertReceivedRequest,
-  insertReceivedRequestOnce,
   type ReceivedRequestExtras,
 } from "../infrastructure/requests/repository";
 import type { AppointmentAuditEvent } from "../domain/appointments/audit";
@@ -3216,9 +3214,8 @@ test("TI2-128: texto extra, literales desconocidos y referencias inválidas no s
  * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
  * que las filas anteriores se leen igual, que la solicitud completa conserva
  * todos sus campos sin cambiar lo que entrega la API vigente, que el esquema
- * rechaza RUT, diagnóstico, certificados y área interna, que la clave de
- * idempotencia evita el duplicado y que la migración solo escribe lo que la
- * fila ya sabe. Casos de uso, API y pantallas no se tocan.
+ * rechaza RUT, diagnóstico, certificados y área interna y que la migración
+ * solo escribe lo que la fila ya sabe. Casos de uso, API y pantallas no se tocan.
  */
 
 /** Texto unido de las necesidades, tal como lo entrega la API vigente. */
@@ -3291,7 +3288,7 @@ test("TI2-135: una solicitud anterior sin campos nuevos se lee sin error", async
   });
   expect(listed.page).toEqual([legacyEntity]);
 
-  // El índice de solicitudes propias la sigue encontrando; el de idempotencia no.
+  // El índice de solicitudes propias la sigue encontrando.
   const own = await t.run(async (ctx) => {
     return await ctx.db
       .query("requests")
@@ -3299,9 +3296,6 @@ test("TI2-135: una solicitud anterior sin campos nuevos se lee sin error", async
       .take(10);
   });
   expect(own.map((request) => request._id)).toEqual([legacyId]);
-  expect(
-    await t.run(async (ctx) => await findRequestByIdempotencyKey(ctx, student, "ti135-clave")),
-  ).toBeNull();
 });
 
 test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente no los entrega", async () => {
@@ -3339,13 +3333,12 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
     referredBy: staff,
     reason: "Tu necesidad corresponde a otra unidad",
   };
-  const { requestId } = await t.run(async (ctx) => {
-    return await insertReceivedRequestOnce(ctx, {
+  const requestId = await t.run(async (ctx) => {
+    return await insertReceivedRequest(ctx, {
       ...content,
       studentId: student,
       provenance,
       incomingReferral,
-      idempotencyKey: "ti135-clave-completa",
     });
   });
   // La derivación de salida se escribe al derivar. La razón de cierre queda
@@ -3363,7 +3356,6 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
     provenance,
     incomingReferral,
     outgoingReferral,
-    idempotencyKey: "ti135-clave-completa",
   });
   expect(row).not.toHaveProperty("closureReason");
   expect(row.expectedOutcome).toHaveLength(2000);
@@ -3442,101 +3434,16 @@ test("TI2-135: el esquema rechaza RUT, diagnóstico, certificados y área intern
   expect(await t.run(async (ctx) => await ctx.db.query("requests").take(10))).toHaveLength(0);
 });
 
-test("TI2-135: la clave de idempotencia evita duplicar el envío del mismo estudiante", async () => {
-  const t = convexTest(schema, modules);
-  const studentA = await seedUser(t, {
-    subject: "ti135-idem-a",
-    email: "ti135idema@alu.uct.cl",
-    role: "student",
-  });
-  const studentB = await seedUser(t, {
-    subject: "ti135-idem-b",
-    email: "ti135idemb@alu.uct.cl",
-    role: "student",
-  });
-  const send = async (studentId: Id<"users">, idempotencyKey: string) => {
-    return await t.run(async (ctx) => {
-      return await insertReceivedRequestOnce(ctx, {
-        studentId,
-        accessNeeds: "Necesidad ficticia",
-        idempotencyKey,
-      });
-    });
-  };
-
-  const first = await send(studentA, "ti135-clave-1");
-  expect(first.created).toBe(true);
-  // El reintento con la misma clave devuelve la misma solicitud sin escribir.
-  expect(await send(studentA, "ti135-clave-1")).toEqual({
-    requestId: first.requestId,
-    created: false,
-  });
-
-  // Otro estudiante con la misma clave, o el mismo con otra clave, crea la suya.
-  const otherStudent = await send(studentB, "ti135-clave-1");
-  const otherKey = await send(studentA, "ti135-clave-2");
-  expect(otherStudent.created).toBe(true);
-  expect(otherKey.created).toBe(true);
-  expect(new Set([first.requestId, otherStudent.requestId, otherKey.requestId]).size).toBe(3);
-
-  // Dos envíos simultáneos con la misma clave dejan una sola fila.
-  const raced = await Promise.all([
-    send(studentA, "ti135-clave-3"),
-    send(studentA, "ti135-clave-3"),
-  ]);
-  expect(raced.filter((result) => result.created)).toHaveLength(1);
-  expect(raced[0]?.requestId).toBe(raced[1]?.requestId);
-
-  // El índice encuentra la solicitud por estudiante y clave; sin envío no hay nada.
-  const withKey = async (studentId: Id<"users">, key: string) => {
-    return await t.run(async (ctx) => await findRequestByIdempotencyKey(ctx, studentId, key));
-  };
-  expect((await withKey(studentA, "ti135-clave-3"))?._id).toBe(raced[0]?.requestId);
-  expect((await withKey(studentB, "ti135-clave-1"))?._id).toBe(otherStudent.requestId);
-  expect(await withKey(studentA, "ti135-sin-envío")).toBeNull();
-  const ownA = await t.run(async (ctx) => {
-    return await ctx.db
-      .query("requests")
-      .withIndex("by_student", (q) => q.eq("studentId", studentA))
-      .take(10);
-  });
-  expect(ownA).toHaveLength(3);
-
-  // Sin clave el comportamiento no cambia: cada envío crea su solicitud.
-  const plain = async () => {
-    return await t.run(async (ctx) => {
-      return await insertReceivedRequest(ctx, {
-        studentId: studentB,
-        accessNeeds: "Necesidad ficticia",
-      });
-    });
-  };
-  expect(await plain()).not.toBe(await plain());
-});
-
-test("TI2-135: insertReceivedRequest no acepta la clave de idempotencia", () => {
-  const receive = (input: Parameters<typeof insertReceivedRequest>[1]) => input;
-  expect(
-    receive({ studentId: "student-id" as Id<"users">, accessNeeds: "Necesidad ficticia" }),
-  ).toEqual({ studentId: "student-id", accessNeeds: "Necesidad ficticia" });
-  // La clave solo se escribe por insertReceivedRequestOnce, que busca el duplicado.
-  receive({
-    studentId: "student-id" as Id<"users">,
-    accessNeeds: "Necesidad ficticia",
-    // @ts-expect-error: `idempotencyKey` no forma parte de ReceivedRequestInput
-    idempotencyKey: "ti135-clave-directa",
-  });
-});
-
-test("TI2-135: un spread no cuela la clave por la inserción directa", async () => {
+test("TI2-165: sin clave de idempotencia, repetir el envío crea otra solicitud y la clave no se guarda", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti135-spread-est",
     email: "ti135spread@alu.uct.cl",
     role: "student",
   });
-  // `args` llega como el payload de una mutation: el spread evita la revisión
-  // de propiedades extra de TypeScript, pero la fila no debe guardar la clave.
+  // `args` llega como el payload de un cliente anterior: el spread evita la
+  // revisión de propiedades extra de TypeScript y la fila no debe guardar la
+  // clave, que SOLICITUDES del MER no tiene.
   const args = { accessNeeds: "Necesidad ficticia", idempotencyKey: "ti135-clave-spread" };
   for (let attempt = 0; attempt < 2; attempt++) {
     await t.run(async (ctx) => await insertReceivedRequest(ctx, { ...args, studentId: student }));
@@ -3545,13 +3452,8 @@ test("TI2-135: un spread no cuela la clave por la inserción directa", async () 
   const rows = await t.run(async (ctx) => await ctx.db.query("requests").take(10));
   expect(rows).toHaveLength(2);
   for (const row of rows) {
-    expect(row.idempotencyKey).toBeUndefined();
+    expect(row).not.toHaveProperty("idempotencyKey");
   }
-  expect(
-    await t.run(
-      async (ctx) => await findRequestByIdempotencyKey(ctx, student, args.idempotencyKey),
-    ),
-  ).toBeNull();
 });
 
 test("TI2-135: la auditoría y la migración escriben la procedencia sin inventar contenido", async () => {
