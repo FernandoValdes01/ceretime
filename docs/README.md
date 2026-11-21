@@ -9,6 +9,8 @@ Este índice distingue el diseño acordado, las guías para trabajar y la eviden
 - [Diagramas](diagramas/integra4.drawio): arquitectura, componentes, casos de uso y modelo de datos objetivo; no acreditan que todas las funciones estén implementadas.
 - [Aplicación de la Ley 21.719](producto/ley-21719.md): análisis para el prototipo y sus límites.
 - [Procedimiento de prueba para solicitudes de privacidad](privacidad-procedimiento.md): derechos, estados, responsable y plazos acordados para el prototipo.
+- [Inventario de datos y bases propuestas](privacidad-inventario.md): tablas, finalidades, accesos por rol, proveedores y decisiones pendientes.
+- [Aviso de privacidad (borrador)](privacidad-aviso.md): texto con fecha y versión para revisión institucional, todavía no publicado.
 - [Contratos compartidos](contratos-sprint-1.md): operaciones y acuerdos de integración entre Backend, Web y Mobile.
 
 ## Desarrollo y operación
