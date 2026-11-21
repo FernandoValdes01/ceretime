@@ -118,6 +118,23 @@ describe("bandeja del Profesional", () => {
     });
   });
 
+  test("si la relectura falla tras aceptar, informa la aceptación ya guardada", async () => {
+    const { query, mutation, review } = setup();
+    mutation.mockResolvedValue(fullAccompaniment);
+    query.mockRejectedValue(new Error("Network request failed"));
+
+    const receipt = await review.performProfessionalRequestAction("requests:2", "accept", {
+      objective: "Apoyo en evaluaciones",
+    });
+
+    expect(receipt.request).toMatchObject({
+      id: "requests:2",
+      status: "accepted",
+      availableActions: [],
+      accompaniment: { id: "accompaniments:1" },
+    });
+  });
+
   test("sin motivo u objetivo no llama al servidor", async () => {
     const { mutation, review } = setup();
 

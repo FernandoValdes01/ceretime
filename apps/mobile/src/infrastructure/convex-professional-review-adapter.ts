@@ -1,4 +1,5 @@
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import type { ProfessionalReviewPort } from "../application/professional-review-port";
 import { UserFacingError } from "../application/user-facing-error";
 import type { ProfessionalRequest } from "../domain/professional-review-models";
@@ -15,6 +16,21 @@ const missingDetailMessages = {
   reason_required: "Se requiere el motivo para pedir información adicional",
   objective_required: "Se requiere el objetivo para abrir el acompañamiento",
 } as const;
+
+// La aceptación ya quedó guardada: si la relectura falla se informa el éxito con lo que se sabe,
+// en vez de un error que invitaría a repetir una aceptación que el servidor rechazaría.
+async function readAcceptedRequest(
+  client: Pick<MobileConvexClient, "query">,
+  requestId: Id<"requests">,
+): Promise<Pick<ProfessionalRequest, "id" | "createdAt"> & Partial<ProfessionalRequest>> {
+  try {
+    return mapBackendProfessionalRequest(
+      await client.query(api.presentation.requests.getRequest, { requestId }),
+    );
+  } catch {
+    return { id: requestId, createdAt: new Date().toISOString() };
+  }
+}
 
 /** Bandeja y acciones del Profesional sobre las operaciones públicas de Convex (TI2-141, TI2-181). */
 export function createConvexProfessionalReviewAdapter(
@@ -65,13 +81,12 @@ export function createConvexProfessionalReviewAdapter(
             api.presentation.requests.acceptRequest,
             operation.args,
           );
-          // La aceptación responde el acompañamiento; la solicitud se relee para no suponer su estado.
-          const request = await client.query(api.presentation.requests.getRequest, {
-            requestId: operation.args.requestId,
-          });
+          const accompaniment = { ...mapBackendStudentAccompaniment(opened), requestId };
           const accepted: ProfessionalRequest = {
-            ...mapBackendProfessionalRequest(request),
-            accompaniment: { ...mapBackendStudentAccompaniment(opened), requestId },
+            ...(await readAcceptedRequest(client, operation.args.requestId)),
+            status: "accepted",
+            availableActions: [],
+            accompaniment,
           };
           return {
             action,

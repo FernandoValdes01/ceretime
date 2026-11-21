@@ -1,8 +1,9 @@
 import type { PaginationOptions, PaginationResult } from "convex/server";
 
-const PAGE_SIZE = 50;
+export const PAGE_SIZE = 50;
 // Tope de seguridad: una bandeja más grande que esto indica un problema de datos, no un caso de uso.
-const MAX_PAGES = 20;
+export const MAX_PAGES = 20;
+export const tooManyPagesMessage = "La consulta devolvió más páginas de las esperadas.";
 
 /** Recorre una consulta paginada de Convex hasta el final para pantallas que muestran el conjunto completo. */
 export async function readAllPages<Item>(
@@ -16,5 +17,5 @@ export async function readAllPages<Item>(
     if (result.isDone) return items;
     cursor = result.continueCursor;
   }
-  throw new Error("La consulta devolvió más páginas de las esperadas.");
+  throw new Error(tooManyPagesMessage);
 }

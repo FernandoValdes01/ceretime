@@ -5,13 +5,11 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import type { ProfessionalAccompanimentReader } from "../application/professional-accompaniment-port";
 import type { ProfessionalAccompaniment } from "../domain/professional-accompaniment-models";
 import type { MobileConvexClient } from "./convex-client";
+import { MAX_PAGES, PAGE_SIZE, tooManyPagesMessage } from "./read-all-pages";
 
 type BackendAccompanimentView = FunctionReturnType<
   typeof api.presentation.accompaniments.getAccompaniment
 >;
-
-const PAGE_SIZE = 50;
-const MAX_PAGES = 20;
 
 // El backend no publica el nombre del estudiante en esta vista; se muestra el código de referencia,
 // que es el identificador que el personal usa al coordinar por canal oficial.
@@ -41,7 +39,7 @@ export function createConvexProfessionalAccompanimentReader(
         if (!hasMore || !lastId) return accompaniments;
         after = lastId;
       }
-      throw new Error("La consulta devolvió más páginas de las esperadas.");
+      throw new Error(tooManyPagesMessage);
     },
     async readAccompaniment(accompanimentId) {
       // La app solo reenvía IDs recibidos de Convex; el servidor valida el formato y el permiso.
