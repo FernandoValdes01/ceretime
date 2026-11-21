@@ -1,11 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 // Fuente canónica del contrato de errores (TI2-23, TI2-88): el Backend
 // responde toda denegación con este código genérico, sin motivo ni
 // existencia del recurso. Se importa del barrel, no se duplica el literal.
 import { isOpenRequestState, UNAUTHORIZED_ERROR_CODE } from "../../../../../convex/domain/index.ts";
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
-import { formatPanelDate, requestStatusLabel } from "../routes/student-panel-labels.ts";
+import {
+  formatPanelDate,
+  requestStatusDescription,
+  requestStatusLabel,
+} from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import {
   PAGE_SIZE,
@@ -15,9 +19,12 @@ import {
   type OwnRequestItem,
 } from "./student-requests-data.ts";
 import { REQUEST_PROCESS_STEPS } from "./request-process.ts";
+import { StudentRequestActions } from "./student-request-actions-panel.tsx";
 import {
   FOCUS_CLASS,
+  LINK_CLASS,
   PAGE_CLASS,
+  PRIMARY_BUTTON_CLASS,
   PAGE_TITLE_CLASS,
   PRIMARY_LINK_CLASS,
   SECTION_TITLE_CLASS,
@@ -32,8 +39,8 @@ import {
  * filas propias y `getRequest` detalla la solicitud del titular. Otra cuenta,
  * otro rol o una cuenta pendiente de habilitación reciben la denegación
  * genérica del Backend sin filtrar existencia ni titularidad. El envío vive
- * en `student-request-form.tsx` (TI2-149); operar una solicitud es de otras
- * entregas.
+ * en `student-request-form.tsx` (TI2-149). Responder y cancelar viven en
+ * `student-request-actions-panel.tsx` (TI2-153).
  */
 export function StudentRequestsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -70,7 +77,7 @@ export function StudentRequestsPage() {
 }
 
 /**
- * Lista propia con la paginación reactiva de Convex (TI2-89).
+ * Lista propia que Convex entrega por páginas, de forma reactiva (TI2-89).
  *
  * Sin caché local: lo mostrado es siempre lo último recibido, así los
  * cambios de estado se reflejan aunque lleguen después de avanzar de
@@ -340,7 +347,7 @@ function LoadMoreButton({ pending, onLoadMore }: { pending: boolean; onLoadMore:
     <>
       <button
         type="button"
-        className="inline-flex min-h-12 min-w-11 items-center justify-center gap-3 rounded-[0.5rem] bg-primary px-6 py-2.5 text-base font-semibold text-on-primary disabled:cursor-not-allowed disabled:opacity-60 not-disabled:hover:bg-on-primary-fixed-variant focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
+        className={PRIMARY_BUTTON_CLASS}
         disabled={pending}
         onClick={onLoadMore}
         aria-busy={pending}
@@ -388,20 +395,19 @@ export function StudentRequestDetailPage({ requestId }: { requestId: string }) {
   }, []);
 
   return (
-    <section aria-labelledby="student-request-detail-title" className="flex flex-col gap-6">
+    // Mismo contenedor y título que el listado: alinean a la izquierda frente al
+    // centrado heredado de `#root` (ver `student-page-classes.ts`).
+    <section aria-labelledby="student-request-detail-title" className={PAGE_CLASS}>
       <h1
         id="student-request-detail-title"
         ref={headingRef}
         tabIndex={-1}
-        className="text-[1.75rem] leading-snug font-semibold text-primary"
+        className={PAGE_TITLE_CLASS}
       >
         Detalle de la solicitud
       </h1>
-      <p>
-        <Link
-          to="/estudiante/solicitudes"
-          className="inline-flex min-h-[44px] items-center rounded-[0.5rem] px-3 py-2 no-underline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring"
-        >
+      <p className="m-0">
+        <Link to="/estudiante/solicitudes" className={LINK_CLASS}>
           Volver a solicitudes
         </Link>
       </p>
@@ -426,7 +432,7 @@ function OwnRequestDetailBody({ requestId }: { requestId: string }) {
           <p role="alert" className="mb-2 font-semibold text-on-surface">
             No tienes acceso a esta solicitud.
           </p>
-          <p>Si crees que deberías verla, contáctanos por los canales oficiales.</p>
+          <p>Si crees que deberías verla, comunícate con CERETI por los canales oficiales.</p>
         </div>
       );
     }
@@ -444,20 +450,98 @@ function OwnRequestDetailBody({ requestId }: { requestId: string }) {
     );
   }
 
+  return <OwnRequestDetailContent requestId={requestId} request={request} />;
+}
+
+/**
+ * Contenido del detalle (TI2-153): el estado con su explicación, lo que CERETI
+ * pidió, las acciones del Estudiante y lo que explica el desenlace. Cada dato
+ * sale del contrato de `getRequest`; la Web no deduce estados ni razones.
+ */
+function OwnRequestDetailContent({
+  requestId,
+  request,
+}: {
+  requestId: string;
+  request: OwnRequestDetail;
+}) {
+  const statusRef = useRef<HTMLParagraphElement>(null);
+  const toneName = requestStatusTone(request.status);
+  const tone = REQUEST_STATUS_TONES[toneName];
+  const description = requestStatusDescription(request.status);
+  const pendingInformation =
+    request.status === "awaiting_information_or_acceptance"
+      ? request.informationRequest
+      : undefined;
+
   return (
-    <dl className="rounded-lg border border-border-low bg-surface-container-lowest p-8">
-      <div className="py-2">
-        <dt className="font-semibold text-on-surface">Estado</dt>
-        <dd className="m-0 text-on-surface">{requestStatusLabel(request.status)}</dd>
+    <div className="flex flex-col gap-6">
+      <div
+        className={`flex flex-col gap-3 rounded-lg border border-border-low border-t-4 bg-surface-container-lowest p-6 ${tone.border}`}
+      >
+        <h2 className={SECTION_TITLE_CLASS}>Estado</h2>
+        <p ref={statusRef} tabIndex={-1} className={`m-0 w-fit rounded-full ${FOCUS_CLASS}`}>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-base font-bold ${tone.chip}`}
+          >
+            <StatusIcon tone={toneName} />
+            {requestStatusLabel(request.status)}
+          </span>
+        </p>
+        {description === null ? null : (
+          <p className="m-0 text-base text-on-surface-variant">{description}</p>
+        )}
+        {pendingInformation === undefined ? null : (
+          <div className="flex flex-col gap-1 rounded-lg bg-tertiary-fixed/40 p-4">
+            <h3 className="m-0 text-base font-semibold text-on-surface">
+              Lo que CERETI necesita saber
+            </h3>
+            <p className="m-0 text-base whitespace-pre-line text-on-surface">
+              {pendingInformation}
+            </p>
+          </div>
+        )}
+        {request.status === "accepted" && request.accompanimentId !== undefined ? (
+          <Link
+            to="/estudiante/acompanamientos/$accompanimentId"
+            params={{ accompanimentId: request.accompanimentId }}
+            className={PRIMARY_LINK_CLASS}
+          >
+            Ver mi acompañamiento
+          </Link>
+        ) : null}
+        <StudentRequestActions
+          requestId={requestId}
+          status={request.status}
+          statusRef={statusRef}
+        />
       </div>
-      <div className="py-2">
-        <dt className="font-semibold text-on-surface">Registrada</dt>
-        <dd className="m-0 text-on-surface">{formatPanelDate(request.createdAt)}</dd>
-      </div>
-      <div className="py-2">
-        <dt className="font-semibold text-on-surface">Necesidades de acceso</dt>
-        <dd className="m-0 text-on-surface">{request.accessNeeds}</dd>
-      </div>
-    </dl>
+      <dl className="m-0 flex flex-col gap-4 rounded-lg border border-border-low bg-surface-container-lowest p-6">
+        <DetailRow term="Enviada">{formatPanelDate(request.createdAt)}</DetailRow>
+        <DetailRow term="Necesidades de acceso">{request.accessNeeds}</DetailRow>
+        {request.informationResponse === undefined ? null : (
+          <DetailRow term="Tu última respuesta">{request.informationResponse}</DetailRow>
+        )}
+        {request.status === "closed_without_accompaniment" &&
+        request.closureReason !== undefined ? (
+          <DetailRow term="Razón del cierre">{request.closureReason}</DetailRow>
+        ) : null}
+        {request.outgoingReferral === undefined ? null : (
+          <>
+            <DetailRow term="Derivada a">{request.outgoingReferral.destinationUnit}</DetailRow>
+            <DetailRow term="Motivo de la derivación">{request.outgoingReferral.reason}</DetailRow>
+          </>
+        )}
+      </dl>
+    </div>
+  );
+}
+
+function DetailRow({ term, children }: { term: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <dt className="font-semibold text-on-surface">{term}</dt>
+      <dd className="m-0 text-base whitespace-pre-line text-on-surface">{children}</dd>
+    </div>
   );
 }
