@@ -196,7 +196,18 @@ El cierre guarda en el propio acompañamiento quién cerró (`closedById`), cuá
 
 ### Cambio de profesionales
 
-No hay una operación nueva: el cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` de TI2-140 (`docs/contratos-sprint-3/cuentas.md`), que ya registran quién concede o retira y cuándo. TI2-152 agrega estas reglas:
+El cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` de TI2-140 (`docs/contratos-sprint-3/cuentas.md`), que ya registran quién concede o retira y cuándo. Para elegir a quién, TI2-165 agrega una lectura:
+
+| Operación | Argumentos | Devuelve | Quién | Denegación |
+| --- | --- | --- | --- | --- |
+| `presentation.accompaniments.listAccompanimentProfessionals` (query) | `accompanimentId` | `{assigned, assignable, assignableComplete}` | Profesional de personal, habilitado y vigente, con asignación profesional activa sobre ese acompañamiento | `unauthorized` en cualquier otro caso, sin revelar si el acompañamiento existe; `conflict` si el acompañamiento supera las 200 asignaciones leídas |
+
+- `assigned`: los profesionales con asignación activa y vigente (ASIGNACIONES_PROFESIONALES del MER), cada uno con `userId`, `fullName`, `assignedAt?` (`asignadoEn`, falta en filas anteriores a TI2-140) e `isCaller`, que marca la asignación de quien consulta. Ordenados por nombre.
+- `assignable`: los profesionales de personal habilitados y vigentes que todavía no están asignados, con `userId` y `fullName`, ordenados por nombre. No incluye cuentas de prueba, practicantes ni cuentas inhabilitadas.
+- `assignableComplete`: `false` si había más de 100 perfiles profesionales y la lista de asignables no los revisó todos.
+- No entrega correo ni estado de las cuentas.
+
+TI2-152 agrega estas reglas al cambio:
 
 - Quien se retira pierde el acceso en la consulta siguiente, porque cada lectura vuelve a exigir la asignación activa.
 - Retirar al último profesional asignado también procede, porque el MER admite un acompañamiento sin asignaciones (ASIGNA 1 : 0..*, TI2-165). Mientras nadie quede asignado, ningún Profesional opera sobre ese acompañamiento.

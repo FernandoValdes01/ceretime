@@ -599,3 +599,122 @@ test("TI2-152 API: un acompañamiento cerrado no admite conceder ni modificar ac
     }),
   ).toBe(1);
 });
+
+async function seedNamedUser(
+  t: TestConvex,
+  input: {
+    readonly subject: string;
+    readonly fullName: string;
+    readonly role?: Doc<"users">["role"];
+    readonly domain?: string;
+    readonly institutionalStatus?: Doc<"users">["institutionalStatus"];
+  },
+) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: `${input.subject}@${input.domain ?? "uct.cl"}`,
+      fullName: input.fullName,
+      role: input.role ?? "professional",
+      institutionalStatus: input.institutionalStatus ?? "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|${input.subject}`,
+    });
+  });
+}
+
+test("TI2-165 API: el profesional asignado ve a los asignados y a quién puede asignar, con nombre y sin correo", async () => {
+  const t = convexTest(schema, modules);
+  const s = await seedAccompaniment(t, "equipo-ver");
+  const free = await seedNamedUser(t, { subject: "ti165-libre", fullName: "Ana Ficticia" });
+  await seedNamedUser(t, {
+    subject: "ti165-inhabilitado",
+    fullName: "Inhabilitado Ficticio",
+    institutionalStatus: "disabled",
+  });
+  await seedNamedUser(t, {
+    subject: "ti165-prueba",
+    fullName: "Prueba Ficticia",
+    domain: "alu.uct.cl",
+  });
+  await seedNamedUser(t, {
+    subject: "ti165-practicante",
+    fullName: "Practicante Ficticio",
+    role: "intern",
+  });
+
+  const result = await t
+    .withIdentity(s.proIdentity)
+    .query(api.presentation.accompaniments.listAccompanimentProfessionals, {
+      accompanimentId: s.accompanimentId,
+    });
+
+  expect(result.assigned.map((item) => item.userId).sort()).toEqual([s.otherPro, s.pro].sort());
+  expect(result.assigned.find((item) => item.userId === s.pro)?.isCaller).toBe(true);
+  expect(result.assigned.find((item) => item.userId === s.otherPro)?.isCaller).toBe(false);
+  expect(result.assignable).toEqual([{ userId: free, fullName: "Ana Ficticia" }]);
+  expect(result.assignableComplete).toBe(true);
+  expect(JSON.stringify(result)).not.toContain("@");
+});
+
+test("TI2-165 API: la lista sigue al cambio de profesionales", async () => {
+  const t = convexTest(schema, modules);
+  const s = await seedAccompaniment(t, "equipo-cambio");
+  const free = await seedNamedUser(t, { subject: "ti165-nuevo", fullName: "Nuevo Ficticio" });
+  const asPro = t.withIdentity(s.proIdentity);
+  const read = async () =>
+    await asPro.query(api.presentation.accompaniments.listAccompanimentProfessionals, {
+      accompanimentId: s.accompanimentId,
+    });
+
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId: s.accompanimentId,
+    userId: free,
+    assignedRole: "professional",
+  });
+  const afterAssign = await read();
+  const added = afterAssign.assigned.find((item) => item.userId === free);
+  expect(added?.fullName).toBe("Nuevo Ficticio");
+  expect(typeof added?.assignedAt).toBe("number");
+  expect(afterAssign.assignable).toEqual([]);
+
+  await asPro.mutation(api.presentation.accompaniments.revokeAccompanimentAccess, {
+    accompanimentId: s.accompanimentId,
+    userId: s.otherPro,
+    assignedRole: "professional",
+  });
+  const afterRevoke = await read();
+  expect(afterRevoke.assigned.map((item) => item.userId).sort()).toEqual([free, s.pro].sort());
+  expect(afterRevoke.assignable.map((item) => item.userId)).toEqual([s.otherPro]);
+});
+
+test("TI2-165 API: sin asignación profesional vigente la lista responde unauthorized", async () => {
+  // Una comprobación por cada identidad y otra sin sesión.
+  expect.assertions(4);
+  const t = convexTest(schema, modules);
+  const s = await seedAccompaniment(t, "equipo-denegar");
+  await seedNamedUser(t, { subject: "ti165-ajeno", fullName: "Ajeno Ficticio" });
+  const intern = await seedNamedUser(t, {
+    subject: "ti165-practicante-asignado",
+    fullName: "Practicante Ficticio",
+    role: "intern",
+  });
+  await seedAssignment(t, s.accompanimentId, intern, "intern");
+  const args = { accompanimentId: s.accompanimentId };
+
+  for (const identity of [
+    s.studentIdentity,
+    identityFor("ti165-ajeno"),
+    identityFor("ti165-practicante-asignado"),
+  ]) {
+    await expectPublicError(
+      t
+        .withIdentity(identity)
+        .query(api.presentation.accompaniments.listAccompanimentProfessionals, args),
+      "unauthorized",
+    );
+  }
+  await expectPublicError(
+    t.query(api.presentation.accompaniments.listAccompanimentProfessionals, args),
+    "unauthorized",
+  );
+});

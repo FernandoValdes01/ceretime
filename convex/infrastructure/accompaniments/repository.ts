@@ -372,6 +372,45 @@ export function authorizationReader(ctx: DbReader) {
 const MAX_ASSIGNMENTS_PER_ACCOMPANIMENT = 200;
 
 /**
+ * Asignaciones profesionales activas y vigentes de un acompañamiento
+ * (ASIGNACIONES_PROFESIONALES del MER, TI2-165), o `null` si el acompañamiento
+ * supera el tope de filas leídas: así la lista nunca se recorta en silencio.
+ */
+export async function listActiveProfessionalAssignments(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+  now: number = Date.now(),
+): Promise<Doc<"accompanimentAssignments">[] | null> {
+  const rows = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q.eq("accompanimentId", accompanimentId),
+    )
+    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT + 1);
+  if (rows.length > MAX_ASSIGNMENTS_PER_ACCOMPANIMENT) return null;
+  return rows.filter(
+    (row) =>
+      row.status === "active" &&
+      row.assignedRole === "professional" &&
+      isAssignmentWithinValidity(row, now),
+  );
+}
+
+/**
+ * Perfiles con rol profesional, hasta `limit` más uno para saber si quedan
+ * más. Quien llama decide cuáles se pueden asignar.
+ */
+export async function takeProfessionalProfiles(
+  ctx: DbReader,
+  limit: number,
+): Promise<Doc<"users">[]> {
+  return await ctx.db
+    .query("users")
+    .withIndex("by_role", (q) => q.eq("role", "professional"))
+    .take(limit + 1);
+}
+
+/**
  * Usuarios con asignación activa como profesional (puerto
  * `BookableProfessionalSource`, TI2-123). Un identificador de otra tabla
  * responde igual que un acompañamiento sin asignaciones.

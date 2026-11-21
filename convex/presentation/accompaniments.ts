@@ -9,6 +9,7 @@ import {
 import {
   getAccompanimentDetail,
   getInternalNotesUseCase,
+  listAccompanimentProfessionalsUseCase,
   listAssignedAccompanimentsUseCase,
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
@@ -150,6 +151,38 @@ export const listAssignedAccompaniments = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return await listAssignedAccompanimentsUseCase(ctx, identity, args);
+  },
+});
+
+/**
+ * Profesionales asignados al acompañamiento y los que se le pueden asignar,
+ * con su nombre (TI2-165). Solo el profesional de personal asignado; el
+ * cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess`.
+ */
+export const listAccompanimentProfessionals = query({
+  args: { accompanimentId: v.id("accompaniments") },
+  returns: v.object({
+    assigned: v.array(
+      v.object({
+        userId: v.id("users"),
+        fullName: v.string(),
+        assignedAt: v.optional(v.number()),
+        isCaller: v.boolean(),
+      }),
+    ),
+    assignable: v.array(v.object({ userId: v.id("users"), fullName: v.string() })),
+    assignableComplete: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrapApiResult(
+      await listAccompanimentProfessionalsUseCase(ctx, identity, args),
+    );
+    return {
+      ...result,
+      assigned: [...result.assigned],
+      assignable: [...result.assignable],
+    };
   },
 });
 
