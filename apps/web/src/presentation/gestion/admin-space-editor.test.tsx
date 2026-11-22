@@ -177,6 +177,12 @@ function completarEspacioValido() {
   });
 }
 
+/** Abre el menú de tres puntos de la fila y devuelve la opción pedida. */
+async function openSpaceMenuItem(room: string, itemName: string) {
+  fireEvent.click(screen.getByRole("button", { name: `Acciones para ${room}` }));
+  return await screen.findByRole("menuitem", { name: itemName });
+}
+
 beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_URL", "https://test.convex.cloud");
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
@@ -210,10 +216,8 @@ describe("editor de espacios (TI2-04)", () => {
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
     expect(screen.getByText("Campus Norte · Edificio B · Piso 2 · Sala 205")).toBeDefined();
     expect(screen.getAllByText("Presencial").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/Condiciones de acceso: Acceso sin escaleras por rampa lateral\./),
-    ).toBeDefined();
-    expect(screen.getByText(/Instrucciones de llegada: Subir al segundo piso/)).toBeDefined();
+    expect(screen.getByText(/Acceso sin escaleras por rampa lateral\./)).toBeDefined();
+    expect(screen.getByText(/Subir al segundo piso/)).toBeDefined();
   });
 
   test("fallo de lectura muestra error y reintenta", async () => {
@@ -349,7 +353,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    fireEvent.click(await openSpaceMenuItem("Sala 101", "Editar"));
 
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     expect(
@@ -400,7 +404,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     // Con la creación aún pendiente se entra a editar otro espacio y se
     // escribe un borrador distinto.
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-2" }));
+    fireEvent.click(await openSpaceMenuItem("Sala 205", "Editar"));
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     const borrador = "Ascensor amplio y pasillo despejado en el hall del piso 2.";
     fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
@@ -446,7 +450,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    fireEvent.click(await openSpaceMenuItem("Sala 101", "Editar"));
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
 
@@ -456,7 +460,7 @@ describe("editor de espacios (TI2-04)", () => {
     // abre una sesión nueva con un borrador distinto.
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
     expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    fireEvent.click(await openSpaceMenuItem("Sala 101", "Editar"));
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     const borrador = "Ventana amplia y hall reservado para sillas de ruedas.";
     fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
@@ -479,9 +483,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     // La respuesta anterior se refleja en el catálogo, pero la sesión
     // vigente sigue en edición: el borrador sobrevive y no hay confirmación.
-    expect(
-      await screen.findByText(/Condiciones de acceso: Rampa lateral con aviso sonoro/),
-    ).toBeDefined();
+    expect(await screen.findByText(/Rampa lateral con aviso sonoro/)).toBeDefined();
     const acceso = screen.getByLabelText("Condiciones de acceso") as HTMLTextAreaElement;
     expect(acceso.value).toBe(borrador);
     expect(screen.getByRole("heading", { name: "Editar espacio" })).toBeDefined();
@@ -510,7 +512,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     // Con la creación pendiente, entrar a editar y cancelar retoma el modo
     // nuevo, donde se escribe un borrador distinto.
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-2" }));
+    fireEvent.click(await openSpaceMenuItem("Sala 205", "Editar"));
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
     expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
@@ -551,7 +553,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    fireEvent.click(await openSpaceMenuItem("Sala 101", "Editar"));
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
@@ -643,8 +645,8 @@ describe("editor de espacios (TI2-04)", () => {
       expect(document.activeElement).toBe(field);
     }
 
-    for (const id of ["esp-1", "esp-2"]) {
-      const button = screen.getByRole("button", { name: `Editar espacio ${id}` });
+    for (const room of ["Sala 101", "Sala 205"]) {
+      const button = screen.getByRole("button", { name: `Acciones para ${room}` });
       button.focus();
       expect(document.activeElement).toBe(button);
     }
@@ -692,7 +694,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio esp-1" }));
+    fireEvent.click(await openSpaceMenuItem("Sala 101", "Deshabilitar"));
 
     expect(await screen.findByText("Espacio deshabilitado")).toBeDefined();
     expect(screen.getByText(/Ya no aparece en el catálogo ni en la disponibilidad/)).toBeDefined();
@@ -715,7 +717,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio esp-1" }));
+    fireEvent.click(await openSpaceMenuItem("Sala 101", "Deshabilitar"));
 
     expect(
       await screen.findByText("No autorizado. Pide acceso por el canal oficial si corresponde."),

@@ -3,6 +3,7 @@ import { ConvexError } from "convex/values";
 import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import "../routes/student-portal.css";
+import "./admin-lists.css";
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import {
   canEnableStaffAccount,
@@ -17,6 +18,7 @@ import {
   type StaffAccountsPage,
   type StaffAccountsRole,
 } from "./admin-accounts-data.ts";
+import { RowMenu } from "./row-menu.tsx";
 import {
   ACCESS_DENIED_MESSAGE,
   DeniedState,
@@ -37,10 +39,6 @@ import {
  * distinto de las tarjetas con avatar de Mobile: misma información, otro
  * lenguaje visual.
  */
-
-const GESTION_ROW = "flex flex-wrap items-center gap-2 min-h-[44px] min-w-0 px-3 py-2 text-inherit";
-const GESTION_FOCUS_VISIBLE =
-  "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
 
 /**
  * El valor canónico viaja en `error.data`: el SDK decora `error.message` con
@@ -100,11 +98,12 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
 
   // Al terminar "Cargar más" el foco pasa a la primera fila nueva. Si la carga
   // no trajo filas y el botón desaparece, queda en la última para no perderlo.
+  // El encabezado de columnas no cuenta como fila.
   useLayoutEffect(() => {
     if (tail.pending || rowsBeforeLoad.current === null) {
       return;
     }
-    const items = listRef.current?.querySelectorAll("li");
+    const items = listRef.current?.querySelectorAll("li:not(.admin-list__head)");
     const target =
       items?.[rowsBeforeLoad.current] ?? (tail.hasMore ? undefined : items?.[items.length - 1]);
     rowsBeforeLoad.current = null;
@@ -123,7 +122,7 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
   } catch (error) {
     if (isAuthorizationDenial(error)) {
       return (
-        <section aria-labelledby={headingId} className="student-portal__section">
+        <section aria-labelledby={headingId} className="student-portal__section admin-section">
           <div className="student-portal__section-head">
             <h2 id={headingId}>{title}</h2>
           </div>
@@ -136,7 +135,7 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
 
   if (firstPage === undefined) {
     return (
-      <section aria-labelledby={headingId} className="student-portal__section">
+      <section aria-labelledby={headingId} className="student-portal__section admin-section">
         <div className="student-portal__section-head">
           <h2 id={headingId}>{title}</h2>
         </div>
@@ -149,7 +148,7 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
 
   if (firstPage.page.length === 0 && firstPage.isDone) {
     return (
-      <section aria-labelledby={headingId} className="student-portal__section">
+      <section aria-labelledby={headingId} className="student-portal__section admin-section">
         <div className="student-portal__section-head">
           <h2 id={headingId}>{title}</h2>
         </div>
@@ -168,12 +167,18 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
   }
 
   return (
-    <section aria-labelledby={headingId} className="student-portal__section">
+    <section aria-labelledby={headingId} className="student-portal__section admin-section">
       <div className="student-portal__section-head">
         <h2 id={headingId}>{title}</h2>
       </div>
       <p>{description}</p>
-      <ul ref={listRef} className="student-portal__list">
+      <ul ref={listRef} className="admin-list">
+        <li className="admin-list__head admin-list__head--accounts" aria-hidden="true">
+          <span>Cuenta</span>
+          <span>Rol</span>
+          <span>Estado</span>
+          <span />
+        </li>
         <StaffAccountsPageLevel
           role={role}
           page={firstPage}
@@ -193,7 +198,8 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
               if (tail.pending) {
                 return;
               }
-              rowsBeforeLoad.current = listRef.current?.querySelectorAll("li").length ?? 0;
+              rowsBeforeLoad.current =
+                listRef.current?.querySelectorAll("li:not(.admin-list__head)").length ?? 0;
               setPageCount((count) => count + 1);
             }}
           >
@@ -296,7 +302,29 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
   const [pendingAction, setPendingAction] = useState<"enable" | "revoke" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const pendingRef = useRef(false);
+  const toastTimer = useRef<number | null>(null);
+
+  // El aviso flotante desaparece solo; se limpia al desmontar la fila.
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current !== null) {
+        clearTimeout(toastTimer.current);
+      }
+    };
+  }, []);
+
+  function showToast(message: string) {
+    if (toastTimer.current !== null) {
+      clearTimeout(toastTimer.current);
+    }
+    setToast(message);
+    toastTimer.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimer.current = null;
+    }, 5000);
+  }
 
   const institutionalLabel = staffInstitutionalStatusLabel(account.institutionalStatus);
   const vigenteLabel = staffAccountStatusLabel(account.accountStatus);
@@ -321,7 +349,11 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
       // La query reactiva actualiza el estado sola.
     } catch (error) {
       const publicError = publicErrorOf(error);
-      if (publicError?.code === "unauthorized" || isAuthorizationDenial(error)) {
+      if (publicError?.code === "conflict" && publicError.message.includes("propia cuenta")) {
+        // Intentar revocar la cuenta en uso no pinta un error en la fila:
+        // avisa abajo a la izquierda y desaparece solo.
+        showToast("No puedes revocar tu propia cuenta.");
+      } else if (publicError?.code === "unauthorized" || isAuthorizationDenial(error)) {
         setActionError(ACCESS_DENIED_MESSAGE);
       } else if (publicError !== null) {
         setActionError(publicError.message);
@@ -341,49 +373,57 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
   const busy = pendingAction !== null;
 
   return (
-    <li className="student-portal__item" tabIndex={-1}>
-      <span className={GESTION_ROW}>
-        <span className="min-w-0">
-          <strong>{account.fullName}</strong> · {account.email}
-        </span>
-      </span>
-      <p className="student-portal__item-meta">
-        Rol: {roleLabel} · Estado: {institutionalLabel} · Cuenta: {vigenteLabel}
-      </p>
-      {confirmation !== null ? (
-        <p role="status" className="student-portal__item-meta">
-          {confirmation}
+    <li tabIndex={-1}>
+      <div className="admin-list__row admin-list__row--accounts">
+        <div className="admin-list__cell--main">
+          <p className="admin-list__name">{account.fullName}</p>
+          <p className="admin-list__sub">{account.email}</p>
+        </div>
+        <p className="admin-list__text">
+          <span className="sr-only">Rol: </span>
+          {roleLabel}
         </p>
-      ) : null}
-      {actionError !== null ? (
-        <p role="alert" className="student-portal__error">
-          {actionError}
+        <p className="admin-list__text">
+          Estado: {institutionalLabel} · Cuenta: {vigenteLabel}
         </p>
-      ) : null}
-      <div className="student-portal__cta">
-        {canEnableStaffAccount(account.institutionalStatus) ? (
-          <button
-            type="button"
-            className={`student-portal__btn student-portal__btn--primary ${GESTION_FOCUS_VISIBLE}`}
+        <div className="admin-list__actions">
+          <RowMenu
+            label={`Acciones para ${account.fullName}`}
             disabled={busy}
-            aria-busy={busy && pendingAction === "enable"}
-            onClick={() => void runAction("enable")}
-          >
-            {pendingAction === "enable"
-              ? "Habilitando…"
-              : `Habilitar cuenta de ${account.fullName}`}
-          </button>
+            items={[
+              ...(canEnableStaffAccount(account.institutionalStatus)
+                ? [
+                    {
+                      label: pendingAction === "enable" ? "Habilitando…" : "Habilitar cuenta",
+                      onSelect: () => void runAction("enable"),
+                    },
+                  ]
+                : []),
+              ...(canRevokeStaffAccount(account.institutionalStatus)
+                ? [
+                    {
+                      label: pendingAction === "revoke" ? "Revocando…" : "Revocar cuenta",
+                      onSelect: () => void runAction("revoke"),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </div>
+        {confirmation !== null ? (
+          <p role="status" className="admin-list__feedback sr-only">
+            {confirmation}
+          </p>
         ) : null}
-        {canRevokeStaffAccount(account.institutionalStatus) ? (
-          <button
-            type="button"
-            className={`student-portal__btn student-portal__btn--ghost ${GESTION_FOCUS_VISIBLE}`}
-            disabled={busy}
-            aria-busy={busy && pendingAction === "revoke"}
-            onClick={() => void runAction("revoke")}
-          >
-            {pendingAction === "revoke" ? "Revocando…" : `Revocar cuenta de ${account.fullName}`}
-          </button>
+        {actionError !== null ? (
+          <p role="alert" className="admin-list__feedback student-portal__error">
+            {actionError}
+          </p>
+        ) : null}
+        {toast !== null ? (
+          <p role="status" className="toast">
+            {toast}
+          </p>
         ) : null}
       </div>
     </li>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import "../routes/student-portal.css";
+import "./admin-lists.css";
 import { availabilityModalityLabel } from "./professional-availability-labels.ts";
 import { getAgendaPort } from "./professional-availability-data.ts";
 import {
@@ -13,6 +14,7 @@ import {
   type SpaceFormState,
 } from "./admin-space-editor-data.ts";
 import { toSpaceLabel, type Space } from "../../../../../convex/domain/index.ts";
+import { RowMenu } from "./row-menu.tsx";
 import {
   ACCESS_DENIED_MESSAGE,
   DeniedState,
@@ -210,48 +212,60 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
           <p>Cuando registres un espacio, aparecerá aquí.</p>
         </EmptyState>
       ) : null}
-      <section aria-labelledby="spaces-catalog-title" className="student-portal__section">
+      <section
+        aria-labelledby="spaces-catalog-title"
+        className="student-portal__section admin-section"
+      >
         <div className="student-portal__section-head">
           <h2 id="spaces-catalog-title">Espacios registrados</h2>
         </div>
         {catalog.length === 0 ? (
           <p>No hay espacios registrados.</p>
         ) : (
-          <ul className="student-portal__list">
+          <ul className="admin-list">
+            <li className="admin-list__head admin-list__head--spaces" aria-hidden="true">
+              <span>Espacio</span>
+              <span>Condiciones de acceso</span>
+              <span>Instrucciones de llegada</span>
+              <span />
+            </li>
             {catalog.map((space) => (
-              <li key={space.id} className="student-portal__item">
-                <span className={GESTION_ROW}>
-                  <span>{toSpaceLabel(space)}</span>
-                  <span>{availabilityModalityLabel("inPerson")}</span>
-                </span>
-                <p className="student-portal__item-meta">
-                  Condiciones de acceso: {space.accessConditions}
-                </p>
-                <p className="student-portal__item-meta">
-                  Instrucciones de llegada: {space.arrivalInstructions}
-                </p>
-                <div className="student-portal__cta">
-                  <button
-                    type="button"
-                    className="student-portal__btn student-portal__btn--ghost"
-                    onClick={() => {
-                      setEditing(space);
-                      setFormSession((value) => value + 1);
-                    }}
-                  >
-                    Editar espacio {space.id}
-                  </button>
-                  <button
-                    type="button"
-                    className="student-portal__btn student-portal__btn--ghost"
-                    disabled={disablePendingId !== null}
-                    aria-busy={disablePendingId === space.id}
-                    onClick={() => void handleDisable(space)}
-                  >
-                    {disablePendingId === space.id
-                      ? "Deshabilitando…"
-                      : `Deshabilitar espacio ${space.id}`}
-                  </button>
+              <li key={space.id}>
+                <div className="admin-list__row admin-list__row--spaces">
+                  <div className="admin-list__cell--main">
+                    <p className="admin-list__name">{toSpaceLabel(space)}</p>
+                    <p className="admin-list__sub">
+                      <span className="sr-only">Modalidad: </span>
+                      {availabilityModalityLabel("inPerson")}
+                    </p>
+                  </div>
+                  <p className="admin-list__text">
+                    <span className="sr-only">Condiciones de acceso: </span>
+                    {space.accessConditions}
+                  </p>
+                  <p className="admin-list__text">
+                    <span className="sr-only">Instrucciones de llegada: </span>
+                    {space.arrivalInstructions}
+                  </p>
+                  <div className="admin-list__actions">
+                    <RowMenu
+                      label={`Acciones para ${space.room}`}
+                      disabled={disablePendingId !== null}
+                      items={[
+                        {
+                          label: "Editar",
+                          onSelect: () => {
+                            setEditing(space);
+                            setFormSession((value) => value + 1);
+                          },
+                        },
+                        {
+                          label: disablePendingId === space.id ? "Deshabilitando…" : "Deshabilitar",
+                          onSelect: () => void handleDisable(space),
+                        },
+                      ]}
+                    />
+                  </div>
                 </div>
               </li>
             ))}

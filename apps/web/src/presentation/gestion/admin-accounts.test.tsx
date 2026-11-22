@@ -126,6 +126,13 @@ function renderAt(path: string) {
   return { router, unmount: view.unmount };
 }
 
+/** Abre el menú de tres puntos de la fila y devuelve la opción pedida. */
+async function openRowMenu(accountName: string, itemName: string) {
+  const menu = await screen.findByRole("button", { name: `Acciones para ${accountName}` });
+  fireEvent.click(menu);
+  return await screen.findByRole("menuitem", { name: itemName });
+}
+
 beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_URL", "https://test.convex.cloud");
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
@@ -169,12 +176,14 @@ describe("cuentas de personal (TI2-169)", () => {
     renderAt("/administrador/cuentas");
 
     expect(
-      await screen.findByRole("button", { name: "Habilitar cuenta de Profesional Uno" }),
+      await screen.findByRole("button", { name: "Acciones para Profesional Uno" }),
     ).toBeDefined();
+    const habilitar = await openRowMenu("Profesional Uno", "Habilitar cuenta");
+    expect(habilitar).toBeDefined();
     expect(screen.getAllByText(/Profesional Uno/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Rol: Profesional/)).toBeDefined();
+    expect(screen.getByText("Profesional")).toBeDefined();
     expect(screen.getByText(/Estado: Pendiente/)).toBeDefined();
-    expect(screen.getByText(/Rol: Administrador/)).toBeDefined();
+    expect(screen.getByText("Administrador")).toBeDefined();
     expect(screen.getByText(/Estado: Habilitada/)).toBeDefined();
     expect(
       screen.getByText(/No concede acceso a acompañamientos ni a notas internas/),
@@ -209,9 +218,7 @@ describe("cuentas de personal (TI2-169)", () => {
     adminPage = pagina([]);
     renderAt("/administrador/cuentas");
 
-    const habilitar = await screen.findByRole("button", {
-      name: "Habilitar cuenta de Profesional Uno",
-    });
+    const habilitar = await openRowMenu("Profesional Uno", "Habilitar cuenta");
     fireEvent.click(habilitar);
 
     expect(await screen.findByText("Cuenta de Profesional Uno habilitada.")).toBeDefined();
@@ -224,9 +231,7 @@ describe("cuentas de personal (TI2-169)", () => {
     adminPage = pagina([]);
     renderAt("/administrador/cuentas");
 
-    const revocar = await screen.findByRole("button", {
-      name: "Revocar cuenta de Profesional Uno",
-    });
+    const revocar = await openRowMenu("Profesional Uno", "Revocar cuenta");
     fireEvent.click(revocar);
 
     expect(await screen.findByText("Cuenta de Profesional Uno revocada.")).toBeDefined();
@@ -240,9 +245,7 @@ describe("cuentas de personal (TI2-169)", () => {
     enableMock.mockRejectedValueOnce(new ConvexError(UNAUTHORIZED_ERROR_MESSAGE));
     renderAt("/administrador/cuentas");
 
-    const habilitar = await screen.findByRole("button", {
-      name: "Habilitar cuenta de Profesional Uno",
-    });
+    const habilitar = await openRowMenu("Profesional Uno", "Habilitar cuenta");
     fireEvent.click(habilitar);
 
     expect(
@@ -260,11 +263,44 @@ describe("cuentas de personal (TI2-169)", () => {
     );
     renderAt("/administrador/cuentas");
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Habilitar cuenta de Profesional Uno" }),
-    );
+    fireEvent.click(await openRowMenu("Profesional Uno", "Habilitar cuenta"));
 
     expect(await screen.findByText("La cuenta ya está habilitada.")).toBeDefined();
+  });
+
+  test("revocar la propia cuenta avisa abajo sin pintar error en la fila", async () => {
+    comoAdministrador();
+    professionalPage = pagina([cuenta({ _id: "user-1", institutionalStatus: "enabled" })]);
+    adminPage = pagina([]);
+    revokeMock.mockRejectedValueOnce(
+      new ConvexError({ code: "conflict", message: "No puedes revocar tu propia cuenta." }),
+    );
+    renderAt("/administrador/cuentas");
+
+    fireEvent.click(await openRowMenu("Profesional Uno", "Revocar cuenta"));
+
+    expect(await screen.findByText("No puedes revocar tu propia cuenta.")).toBeDefined();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  test("el menú se cierra con Escape y devuelve el foco al botón", async () => {
+    comoAdministrador();
+    professionalPage = pagina([cuenta({ _id: "user-1", institutionalStatus: "pending" })]);
+    adminPage = pagina([]);
+    renderAt("/administrador/cuentas");
+
+    const menu = await screen.findByRole("button", { name: "Acciones para Profesional Uno" });
+    fireEvent.click(menu);
+    const item = await screen.findByRole("menuitem", {
+      name: "Habilitar cuenta",
+    });
+    expect(item).toBeDefined();
+
+    fireEvent.keyDown(item, { key: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("menuitem")).toBeNull());
+    expect(document.activeElement).toBe(menu);
+    expect(enableMock).not.toHaveBeenCalled();
   });
 });
 
