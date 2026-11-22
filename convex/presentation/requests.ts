@@ -70,8 +70,11 @@ import { unwrapApiResult } from "./session";
  * (`requestStatusUnion`).
  *
  * TI2-143: suma el registro por canal oficial, el contacto y la aceptación
- * de una derivación de entrada y la derivación de salida. Ninguna envía
- * avisos ni se comunica con otra unidad: eso ocurre fuera de la aplicación.
+ * de una derivación de entrada y la derivación de salida. Ninguna se comunica
+ * con otra unidad: eso ocurre fuera de la aplicación.
+ *
+ * TI2-150: cada registro y cada cambio de estado deja su aviso en el sistema
+ * por `notificationEventRecorder`, en la misma mutation.
  */
 
 const requestBaseFields = {
