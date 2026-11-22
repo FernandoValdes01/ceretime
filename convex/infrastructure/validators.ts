@@ -13,7 +13,6 @@ import {
 } from "../domain/availability/availability";
 import { NO_COMPATIBLE_SLOT_REASON_VALUES } from "../domain/availability/official_channel";
 import {
-  CALENDAR_LINK_STATUS_VALUES,
   CALENDAR_SYNC_ERROR_CODE_VALUES,
   CALENDAR_SYNC_STATUS_VALUES,
 } from "../domain/calendar/calendar_link";
@@ -275,14 +274,11 @@ export const notificationDeliveryErrorUnion = v.union(
 );
 
 /**
- * Estados del vínculo con Google Calendar y de la sincronización por atención
- * (TI2-145), derivados del dominio. El código de error reutiliza los motivos
- * genéricos del respaldo `.ics`, sin detalles del proveedor.
+ * Estados de la sincronización por atención (TI2-145), derivados del dominio.
+ * El código de error reutiliza los motivos genéricos del respaldo `.ics`, sin
+ * detalles del proveedor. El vínculo de Calendar no tiene un estado propio:
+ * los alcances de Better Auth son su única fuente de verdad.
  */
-export const calendarLinkStatusUnion = v.union(
-  ...CALENDAR_LINK_STATUS_VALUES.map((value) => v.literal(value)),
-);
-
 export const calendarSyncStatusUnion = v.union(
   ...CALENDAR_SYNC_STATUS_VALUES.map((value) => v.literal(value)),
 );

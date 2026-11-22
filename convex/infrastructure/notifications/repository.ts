@@ -232,10 +232,13 @@ export async function paginateNotificationEventsForRecipient(
 /**
  * Página de avisos propios filtrada por estado de lectura.
  *
- * Las filas anteriores a TI2-145 no tienen `readAt` y cuentan como pendientes,
- * igual que las nuevas todavía no leídas: no hace falta una migración para
- * distinguirlas. El filtro se aplica sobre el índice del destinatario, no sobre
- * toda la tabla.
+ * Los pendientes usan `by_recipientId_and_readAt_and_occurredAt`: `readAt`
+ * ausente se consulta como rango nulo y la página no recorre los avisos ya
+ * leídos. Los leídos conservan el índice del destinatario y filtran la
+ * desigualdad, que el constructor de rangos del índice no expresa: solo admite
+ * igualdades y cotas inferior y superior. Las filas anteriores a TI2-145 no
+ * tienen `readAt` y cuentan como pendientes, igual que las nuevas todavía no
+ * leídas: no hace falta una migración para distinguirlas.
  */
 export async function paginateNotificationEventsForRecipientByReadStatus(
   ctx: DbReader,
@@ -243,16 +246,21 @@ export async function paginateNotificationEventsForRecipientByReadStatus(
   readStatus: NotificationReadStatus,
   paginationOpts: PaginationOptions,
 ) {
-  const result = await ctx.db
-    .query("notificationEvents")
-    .withIndex("by_recipientId_and_occurredAt", (q) => q.eq("recipientId", recipientId))
-    .filter((q) =>
-      readStatus === "pending"
-        ? q.eq(q.field("readAt"), undefined)
-        : q.neq(q.field("readAt"), undefined),
-    )
-    .order("desc")
-    .paginate(paginationOpts);
+  const result =
+    readStatus === "pending"
+      ? await ctx.db
+          .query("notificationEvents")
+          .withIndex("by_recipientId_and_readAt_and_occurredAt", (q) =>
+            q.eq("recipientId", recipientId).eq("readAt", undefined),
+          )
+          .order("desc")
+          .paginate(paginationOpts)
+      : await ctx.db
+          .query("notificationEvents")
+          .withIndex("by_recipientId_and_occurredAt", (q) => q.eq("recipientId", recipientId))
+          .filter((q) => q.neq(q.field("readAt"), undefined))
+          .order("desc")
+          .paginate(paginationOpts);
   return { ...result, page: result.page.map(toStoredNotificationEvent) };
 }
 

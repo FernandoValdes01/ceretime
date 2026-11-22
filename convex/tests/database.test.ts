@@ -73,7 +73,7 @@ import {
   connectCalendar,
   disconnectCalendar,
   markCalendarSyncPending,
-  readCalendarConnection,
+  readCalendarConnectionMetadata,
   readCalendarSyncState,
   recordCalendarSyncAttempt,
 } from "../infrastructure/calendar/repository";
@@ -3071,15 +3071,27 @@ test("TI2-145: cada destinatario marca leído y los pendientes no se mezclan", a
     actorId: professional,
     occurredAt: TI83_MONDAY + 1,
   });
+  const [cancelled] = notificationEventsForTransition(subjectForRead, {
+    from: "scheduled",
+    to: "cancelled_by_cereti",
+    actorId: professional,
+    occurredAt: TI83_MONDAY + 2,
+  });
 
   const recorded = await t.run(async (ctx) => ({
     created: await recordNotificationEvent(ctx, created),
     noShow: await recordNotificationEvent(ctx, noShow),
+    cancelled: await recordNotificationEvent(ctx, cancelled),
   }));
   const createdResult = recorded.created;
   const noShowResult = recorded.noShow;
-  if (createdResult.status !== "recorded" || noShowResult.status !== "recorded") {
-    throw new Error("Los dos avisos ficticios deben registrarse.");
+  const cancelledResult = recorded.cancelled;
+  if (
+    createdResult.status !== "recorded" ||
+    noShowResult.status !== "recorded" ||
+    cancelledResult.status !== "recorded"
+  ) {
+    throw new Error("Los tres avisos ficticios deben registrarse.");
   }
 
   const read = await t.run(
@@ -3107,11 +3119,18 @@ test("TI2-145: cada destinatario marca leído y los pendientes no se mezclan", a
   );
   expect(foreign).toEqual({ status: "not_found" });
 
-  const pendingPage = await t.run(
+  const pendingFirst = await t.run(
     async (ctx) =>
       await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "pending", {
-        numItems: 10,
+        numItems: 1,
         cursor: null,
+      }),
+  );
+  const pendingSecond = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "pending", {
+        numItems: 1,
+        cursor: pendingFirst.continueCursor,
       }),
   );
   const readPage = await t.run(
@@ -3121,8 +3140,13 @@ test("TI2-145: cada destinatario marca leído y los pendientes no se mezclan", a
         cursor: null,
       }),
   );
-  expect(pendingPage.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 1]);
-  expect(pendingPage.page[0]).toMatchObject({ readStatus: "pending" });
+  // El índice de pendientes recorre solo las filas sin `readAt`, incluso al
+  // paginar: el aviso leído queda fuera de las dos páginas.
+  expect(pendingFirst.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 2]);
+  expect(pendingFirst.isDone).toBe(false);
+  expect(pendingSecond.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 1]);
+  expect(pendingSecond.isDone).toBe(true);
+  expect(pendingFirst.page[0]).toMatchObject({ readStatus: "pending" });
   expect(readPage.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY]);
   expect(readPage.page[0]).toMatchObject({
     readStatus: "read",
@@ -3286,7 +3310,7 @@ test("TI2-145: la suscripción push es propia y el endpoint no se duplica", asyn
   expect(remaining.map((row) => row.endpoint)).toEqual([endpointB]);
 });
 
-test("TI2-145: el vínculo de Calendar no copia credenciales y la desconexión lo conserva", async () => {
+test("TI2-145: el vínculo de Calendar guarda solo metadatos y no copia credenciales", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti145-cal-est",
@@ -3300,29 +3324,31 @@ test("TI2-145: el vínculo de Calendar no copia credenciales y la desconexión l
   });
 
   const linked = await t.run(async (ctx) => ({
-    before: await readCalendarConnection(ctx, student),
+    before: await readCalendarConnectionMetadata(ctx, student),
     first: await connectCalendar(ctx, student, "cuenta-cifrada-a", TI83_MONDAY),
     retry: await connectCalendar(ctx, student, "cuenta-cifrada-a", TI83_MONDAY + 1),
-    other: await readCalendarConnection(ctx, other),
+    other: await readCalendarConnectionMetadata(ctx, other),
   }));
   expect(linked.before).toBeNull();
-  expect(linked.first.status).toBe("connected");
-  expect(linked.retry.status).toBe("already_connected");
+  expect(linked.first.status).toBe("linked");
+  expect(linked.retry.status).toBe("already_linked");
   expect(linked.other).toBeNull();
 
-  const visible = await t.run(async (ctx) => await readCalendarConnection(ctx, student));
-  expect(visible).toEqual({ status: "connected", linkedAt: TI83_MONDAY });
+  const visible = await t.run(async (ctx) => await readCalendarConnectionMetadata(ctx, student));
+  expect(visible).toEqual({ linkedAt: TI83_MONDAY });
   expect(visible).not.toHaveProperty("accountReference");
+  expect(visible).not.toHaveProperty("status");
 
   const rows = await t.run(async (ctx) => await ctx.db.query("calendarConnections").take(10));
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({
     userId: student,
-    status: "connected",
     accountReference: "cuenta-cifrada-a",
     linkedAt: TI83_MONDAY,
     updatedAt: TI83_MONDAY + 1,
   });
+  // La fila no declara «conectado»: esa lectura sale solo de Better Auth.
+  expect(rows[0]).not.toHaveProperty("status");
   expect(JSON.stringify(rows)).not.toMatch(/token|secret|refresh/i);
 
   const disconnected = await t.run(async (ctx) => ({
@@ -3330,11 +3356,10 @@ test("TI2-145: el vínculo de Calendar no copia credenciales y la desconexión l
     retry: await disconnectCalendar(ctx, student, TI83_MONDAY + 20),
     other: await disconnectCalendar(ctx, other, TI83_MONDAY + 30),
   }));
-  expect(disconnected.revoked.status).toBe("revoked");
-  expect(disconnected.retry.status).toBe("already_revoked");
+  expect(disconnected.revoked.status).toBe("unlinked");
+  expect(disconnected.retry.status).toBe("already_unlinked");
   expect(disconnected.other.status).toBe("not_found");
-  expect(await t.run(async (ctx) => await readCalendarConnection(ctx, student))).toEqual({
-    status: "revoked",
+  expect(await t.run(async (ctx) => await readCalendarConnectionMetadata(ctx, student))).toEqual({
     linkedAt: TI83_MONDAY,
     revokedAt: TI83_MONDAY + 10,
   });

@@ -2,11 +2,11 @@
  * Vínculo con Google Calendar y estado de sincronización por atención
  * (TI2-145).
  *
- * Dominio puro: no importa Convex ni el SDK de Google. Separa dos cosas que
- * suelen confundirse: el vínculo de la persona con su cuenta de Calendar
- * (`connected` o `revoked`) y el estado del evento de una atención concreta
- * (`pending`, `synced` o `error`). El primero vive una sola vez por usuario;
- * el segundo, una sola vez por atención.
+ * Dominio puro: no importa Convex ni el SDK de Google. «Conectado» tiene una
+ * sola fuente: los alcances OAuth que Better Auth conserva para la cuenta de
+ * Google. Este contrato no modela un estado de vínculo paralelo; solo los
+ * metadatos locales que Better Auth no tiene (`linkedAt` y `revokedAt`) y el
+ * estado del evento de una atención concreta (`pending`, `synced` o `error`).
  *
  * Las credenciales OAuth no se modelan acá. Viven cifradas en el componente de
  * autenticación de Better Auth y la persistencia solo guarda una referencia
@@ -19,16 +19,6 @@ import {
   CALENDAR_EVENT_FALLBACK_REASON_VALUES,
   type CalendarEventFallbackReason,
 } from "./calendar_event";
-
-/** Estado del vínculo de una persona con su cuenta de Google Calendar. */
-export const CALENDAR_LINK_STATUS_VALUES = ["connected", "revoked"] as const;
-
-export type CalendarLinkStatus = (typeof CALENDAR_LINK_STATUS_VALUES)[number];
-
-/** Verdadero cuando el valor es un estado de vínculo conocido. */
-export function isCalendarLinkStatus(value: string): value is CalendarLinkStatus {
-  return (CALENDAR_LINK_STATUS_VALUES as readonly string[]).includes(value);
-}
 
 /**
  * Estado del evento de una atención en Calendar.
@@ -61,9 +51,14 @@ export function isCalendarSyncErrorCode(value: string): value is CalendarSyncErr
   return (CALENDAR_EVENT_FALLBACK_REASON_VALUES as readonly string[]).includes(value);
 }
 
-/** Vínculo visible de una persona: sin referencia de cuenta ni credenciales. */
-export interface CalendarConnectionState {
-  readonly status: CalendarLinkStatus;
+/**
+ * Metadatos locales del vínculo, sin estado ni credenciales.
+ *
+ * No expresan si la cuenta sigue conectada: eso lo deciden los alcances de
+ * Better Auth. `revokedAt` conserva el instante en que se desconectó
+ * localmente para la sincronización de TI2-161.
+ */
+export interface CalendarConnectionMetadata {
   readonly linkedAt: number;
   readonly revokedAt?: number;
 }

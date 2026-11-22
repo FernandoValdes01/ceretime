@@ -9,7 +9,6 @@ import {
   assignmentRoleUnion,
   assignmentStatusUnion,
   availabilityExceptionKindUnion,
-  calendarLinkStatusUnion,
   calendarSyncErrorCodeUnion,
   calendarSyncStatusUnion,
   followUpContractVersionLiteral,
@@ -469,6 +468,9 @@ export default defineSchema({
     .index("by_idempotencyKey", ["idempotencyKey"])
     // Eventos del destinatario, del más reciente al más antiguo.
     .index("by_recipientId_and_occurredAt", ["recipientId", "occurredAt"])
+    // Pendientes del destinatario: `readAt` ausente se consulta como rango
+    // nulo, sin recorrer los avisos ya leídos.
+    .index("by_recipientId_and_readAt_and_occurredAt", ["recipientId", "readAt", "occurredAt"])
     // Eventos de la atención en orden de ocurrencia.
     .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"])
     // Eventos de la solicitud en orden de ocurrencia.
@@ -515,22 +517,25 @@ export default defineSchema({
     // Endpoint único por navegador: la vía de escritura lo reutiliza.
     .index("by_endpoint", ["endpoint"]),
 
-  // Tabla 'calendarConnections': vínculo de una persona con su cuenta de
-  // Google Calendar (TI2-145). `accountReference` apunta de forma opaca a la
-  // cuenta cifrada de Better Auth; los tokens OAuth no se copian acá ni se
-  // devuelven al cliente. Como máximo una fila por usuario, garantizada por la
-  // vía de escritura. Desconectar deja `status` en `revoked` y conserva la
-  // referencia y la fecha para trazabilidad; los eventos ya creados pueden
-  // quedar sin actualizar, como avisa TI2-161.
+  // Tabla 'calendarConnections': metadatos locales del vínculo de una persona
+  // con su cuenta de Google Calendar (TI2-145). No guarda un estado de
+  // conexión: «conectado» se deriva solo de los alcances OAuth que Better Auth
+  // conserva para la cuenta de Google (`getCalendarConnection`), así que no
+  // hay dos fuentes para el mismo concepto. Acá vive únicamente lo que Better
+  // Auth no tiene: `accountReference`, una referencia opaca a la cuenta
+  // cifrada, y las fechas de vínculo y desconexión. Los tokens OAuth no se
+  // copian ni se devuelven al cliente. Una fila no afirma que la cuenta siga
+  // conectada. Desconectar conserva la referencia y las fechas como
+  // trazabilidad para TI2-161; los eventos ya creados pueden quedar sin
+  // actualizar, como avisa esa misma tarea.
   calendarConnections: defineTable({
     userId: v.id("users"),
-    status: calendarLinkStatusUnion,
     accountReference: v.string(),
     linkedAt: v.number(),
     revokedAt: v.optional(v.number()),
     updatedAt: v.number(),
   })
-    // Vínculo vigente o último vínculo de la persona: una fila basta.
+    // Metadatos del vínculo de la persona: una fila basta.
     .index("by_userId", ["userId"]),
 
   // Tabla 'appointmentAuditEvents': bitácora append-only de cambios de agenda

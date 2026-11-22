@@ -345,8 +345,10 @@ export async function addAppointmentToGoogleCalendar(
 /**
  * Estado de la conexión de Google Calendar de la sesión.
  *
- * Solo confirma si el alcance mínimo de creación de eventos está concedido.
- * No devuelve tokens, identificadores de cuenta ni el correo de Google.
+ * Los alcances OAuth de Better Auth son la única fuente de verdad: los
+ * metadatos de `calendarConnections` no participan de esta lectura. Solo
+ * confirma si el alcance mínimo de creación de eventos está concedido. No
+ * devuelve tokens, identificadores de cuenta ni el correo de Google.
  */
 export async function getCalendarConnection(
   deps: {

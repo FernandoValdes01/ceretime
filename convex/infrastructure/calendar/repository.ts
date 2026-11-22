@@ -3,7 +3,7 @@ import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import {
   calendarSyncStateOf,
   isCalendarSyncErrorCode,
-  type CalendarConnectionState,
+  type CalendarConnectionMetadata,
   type CalendarSyncErrorCode,
   type CalendarSyncState,
 } from "../../domain/calendar/calendar_link";
@@ -18,10 +18,17 @@ import {
  * componente de Better Auth y acá solo se guarda una referencia opaca a esa
  * cuenta. Ninguna lectura de este repositorio devuelve tokens.
  *
- * El vínculo es uno por usuario (`connected` o `revoked`). El estado de
- * sincronización es uno por atención (`pending`, `synced` o `error`) con sus
- * intentos; no se crea una tabla paralela de estado. La sincronización real es
- * TI2-162 y la pantalla, TI2-172.
+ * El vínculo no tiene un estado propio: «conectado» se deriva únicamente de
+ * los alcances OAuth que Better Auth conserva para la cuenta de Google
+ * (`getCalendarConnection`). Esta tabla guarda solo los metadatos que Better
+ * Auth no tiene (`accountReference`, `linkedAt` y `revokedAt`) para la
+ * sincronización de TI2-161. Una fila no afirma que la cuenta siga conectada:
+ * si los alcances se revocan, la lectura pública responde desconectado aunque
+ * la fila conserve sus metadatos.
+ *
+ * El estado de sincronización es uno por atención (`pending`, `synced` o
+ * `error`) con sus intentos; no se crea una tabla paralela de estado. La
+ * sincronización real es TI2-162 y la pantalla, TI2-172.
  *
  * Opera con datos ficticios.
  */
@@ -45,37 +52,38 @@ export async function findCalendarConnection(
 }
 
 /**
- * Estado visible del vínculo, sin la referencia de cuenta ni credenciales.
- * Devuelve `null` cuando la persona nunca vinculó Calendar.
+ * Metadatos locales del vínculo, sin la referencia de cuenta ni credenciales.
+ * Devuelve `null` cuando la persona nunca vinculó Calendar. No expresa si la
+ * cuenta sigue conectada: eso lo deciden los alcances de Better Auth.
  */
-export async function readCalendarConnection(
+export async function readCalendarConnectionMetadata(
   ctx: DbReader,
   userId: Id<"users">,
-): Promise<CalendarConnectionState | null> {
+): Promise<CalendarConnectionMetadata | null> {
   const row = await findCalendarConnection(ctx, userId);
   if (row === null) return null;
   return {
-    status: row.status,
     linkedAt: row.linkedAt,
     ...(row.revokedAt === undefined ? {} : { revokedAt: row.revokedAt }),
   };
 }
 
-/** Resultado de vincular o reconectar la cuenta. */
+/** Resultado de registrar los metadatos del vínculo. */
 export type CalendarConnectResult =
   | {
-      readonly status: "connected" | "already_connected";
+      readonly status: "linked" | "already_linked";
       readonly connectionId: Id<"calendarConnections">;
     }
   | { readonly status: "invalid_reference" };
 
 /**
- * Vincula la cuenta de Calendar del usuario o reactiva su vínculo revocado.
+ * Registra o actualiza los metadatos locales del vínculo.
  *
- * `accountReference` es la referencia opaca a la cuenta cifrada de Better
- * Auth; el token nunca se copia acá. Una cuenta ya vinculada conserva su
- * `linkedAt` original y solo actualiza `updatedAt`; una reconexión estrena
- * fecha de vínculo y limpia la revocación.
+ * No concede el acceso OAuth: los alcances los administra Better Auth y son la
+ * única fuente de «conectado». `accountReference` es la referencia opaca a la
+ * cuenta cifrada; el token nunca se copia acá. Una fila vigente conserva su
+ * `linkedAt` original y solo actualiza `updatedAt`; una reconexión tras una
+ * desconexión estrena fecha de vínculo y limpia `revokedAt`.
  */
 export async function connectCalendar(
   ctx: MutationCtx,
@@ -94,42 +102,42 @@ export async function connectCalendar(
 
   const existing = await findCalendarConnection(ctx, userId);
   if (existing !== null) {
-    const alreadyConnected = existing.status === "connected";
+    const alreadyLinked = existing.revokedAt === undefined;
     await ctx.db.patch(existing._id, {
-      status: "connected",
       accountReference: reference,
-      linkedAt: alreadyConnected ? existing.linkedAt : linkedAt,
+      linkedAt: alreadyLinked ? existing.linkedAt : linkedAt,
       revokedAt: undefined,
       updatedAt: linkedAt,
     });
     return {
-      status: alreadyConnected ? "already_connected" : "connected",
+      status: alreadyLinked ? "already_linked" : "linked",
       connectionId: existing._id,
     };
   }
 
   const connectionId = await ctx.db.insert("calendarConnections", {
     userId,
-    status: "connected",
     accountReference: reference,
     linkedAt,
     updatedAt: linkedAt,
   });
-  return { status: "connected", connectionId };
+  return { status: "linked", connectionId };
 }
 
-/** Resultado de desconectar el vínculo. */
+/** Resultado de desconectar los metadatos locales del vínculo. */
 export type CalendarDisconnectResult =
   | {
-      readonly status: "revoked" | "already_revoked";
+      readonly status: "unlinked" | "already_unlinked";
       readonly connectionId: Id<"calendarConnections">;
     }
   | { readonly status: "not_found" };
 
 /**
- * Desconecta Calendar conservando la referencia y la fecha como trazabilidad.
- * No borra eventos ya creados: TI2-161 avisa que pueden quedar sin
- * actualizar. Un vínculo ya revocado no cambia su instante original.
+ * Desconecta los metadatos locales conservando la referencia y las fechas como
+ * trazabilidad. No revoca los alcances OAuth: esa es responsabilidad de Better
+ * Auth, única fuente de «conectado». No borra eventos ya creados: TI2-161 avisa
+ * que pueden quedar sin actualizar. Un vínculo ya desconectado no cambia su
+ * instante original.
  */
 export async function disconnectCalendar(
   ctx: MutationCtx,
@@ -139,15 +147,11 @@ export async function disconnectCalendar(
   assertInstant(revokedAt, "La desconexión de Calendar requiere un instante epoch válido.");
   const existing = await findCalendarConnection(ctx, userId);
   if (existing === null) return { status: "not_found" };
-  if (existing.status === "revoked") {
-    return { status: "already_revoked", connectionId: existing._id };
+  if (existing.revokedAt !== undefined) {
+    return { status: "already_unlinked", connectionId: existing._id };
   }
-  await ctx.db.patch(existing._id, {
-    status: "revoked",
-    revokedAt,
-    updatedAt: revokedAt,
-  });
-  return { status: "revoked", connectionId: existing._id };
+  await ctx.db.patch(existing._id, { revokedAt, updatedAt: revokedAt });
+  return { status: "unlinked", connectionId: existing._id };
 }
 
 /** Resultado de marcar el estado de sincronización de una atención. */
