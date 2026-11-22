@@ -28,6 +28,7 @@ import {
   appointmentTransitionRepository,
   pendingAppointmentsReader,
 } from "../infrastructure/appointments/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
@@ -371,6 +372,7 @@ export const closeAccompaniment = mutation({
           appointments: pendingAppointmentsReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,

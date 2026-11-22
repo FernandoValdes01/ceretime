@@ -41,6 +41,7 @@ import {
   requestReader,
   requestStore,
 } from "../infrastructure/requests/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 import { unwrapApiResult } from "./session";
 
@@ -162,7 +163,12 @@ export const createRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await registerRequest(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, submission: args },
       ),
     );
@@ -264,6 +270,7 @@ export const takeRequest = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -287,6 +294,7 @@ export const requestAdditionalInformation = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -311,6 +319,7 @@ export const acceptRequest = mutation({
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
           accompaniments: accompanimentOpener(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -331,7 +340,12 @@ export const cancelRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await cancelRequestUseCase(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
       ),
     );
@@ -353,6 +367,7 @@ export const closeRequestWithoutAccompaniment = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -374,7 +389,12 @@ export const respondToInformationRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await respondToInformationRequestUseCase(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
       ),
     );
@@ -406,6 +426,7 @@ export const registerOfficialRequest = mutation({
           professionals: activeProfessionalReader(ctx),
           students: activeStudentByEmailReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         {
@@ -482,6 +503,7 @@ export const referRequest = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { AppointmentAuditEvent } from "../../domain/appointments/audit";
 import { AVAILABILITY_CONTRACT_VERSION } from "../../domain/availability/availability";
 import type { ApiResult } from "../../domain/errors/api_error";
+import type { NotificationEvent } from "../../domain/notifications/notification";
 import type { AccessNeed } from "../../domain/requests/request";
 import type { CompatibilitySpace } from "../../domain/spaces/compatibility";
 import type { Space } from "../../domain/spaces/space";
@@ -18,6 +19,7 @@ import type {
   StoredAvailabilityBlock,
   StoredAvailabilityException,
 } from "../availability/ports";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import type { AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotInput, OccupySlotResult } from "./occupancy";
 import { bookAppointment, type BookAppointmentDeps, type BookAppointmentInput } from "./booking";
@@ -237,6 +239,7 @@ function bookingDeps(
     compatibility: fakeCompatibility(),
     occupier: fakeOccupier(),
     audit: fakeAudit(),
+    notifications: fakeNotifications(),
     now: () => BOOKED_AT,
     ...overrides,
   };
@@ -252,6 +255,18 @@ function fakeAudit(): AppointmentAuditRecorder & { readonly events: AppointmentA
     events,
     recordAppointmentAudit: async (event) => {
       events.push(event);
+    },
+  };
+}
+
+function fakeNotifications(): NotificationEventRecorder & {
+  readonly events: NotificationEvent[];
+} {
+  const events: NotificationEvent[] = [];
+  return {
+    events,
+    record: async (emitted) => {
+      events.push(...emitted);
     },
   };
 }

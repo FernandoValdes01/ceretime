@@ -1,4 +1,4 @@
-# Contrato de agenda de Sprint 3 — varios profesionales, acceso en línea privado y coordinación por canal oficial (TI2-142, TI2-144)
+# Contrato de agenda de Sprint 3 — varios profesionales, acceso en línea privado y coordinación por canal oficial (TI2-142, TI2-144, TI2-150)
 
 Superficie que TI2-142 agrega a la agenda: una atención coordinada con varios profesionales, los apoyos de la atención en línea y su enlace privado. Todo es aditivo sobre el contrato v1 de `appointments` (TI2-87, TI2-111, TI2-121): ninguna operación existente cambia su forma, no se crea otra operación de reserva ni otra comprobación de ocupación, y la persistencia es la de TI2-138 (`appointmentProfessionals`, `onlineSupports` y `privateAccessReference`).
 
@@ -68,6 +68,21 @@ Se usan solo los códigos de TI2-88 (`ConvexError({code, message})` con esas dos
 
 Agregar o reemplazar el enlace emite `appointment_online_access_ready` solo al Estudiante, con `notificationEventsForOnlineAccess`, y lo registra en `notificationEvents` en la misma mutation (repositorio de TI2-118). El texto externo es genérico («Tu atención tiene su acceso disponible») y no lleva el enlace: el Estudiante lo lee en su sesión con `getOnlineAccess`. La clave de idempotencia usa el instante del cambio, así un reemplazo posterior produce otra. `unchanged` no emite aviso. El envío del aviso sigue siendo de TI2-122/TI2-145.
 
+## Avisos de la agenda (TI2-150)
+
+Cada reserva, cambio de horario, cancelación, inasistencia y justificación deja sus avisos en `notificationEvents`, en la misma mutation que el cambio y con el mismo instante. La política vive en `convex/domain/notifications/notification.ts` y los casos de uso de `booking.ts` y `changes.ts` solo entregan sus eventos al puerto `NotificationEventRecorder` (`convex/application/notifications/ports.ts`). «Profesionales» son el responsable y los adicionales de la atención; quien hace el cambio nunca se avisa a sí mismo.
+
+| Cambio | Clase | Destinatarios |
+| --- | --- | --- |
+| Reserva (`bookAppointment`) | `appointment_scheduled` | El Estudiante, como confirmación aunque haya reservado él, y los profesionales salvo quien reservó |
+| Reagendamiento | `appointment_rescheduled` | Los participantes salvo quien cambió el horario |
+| Cancelación del Estudiante o de CERETI, también por cierre del acompañamiento | `appointment_cancelled` | Los participantes salvo quien canceló |
+| Inasistencia registrada | `appointment_no_show` | El Estudiante |
+| Justificación entregada | `appointment_justification_submitted` | Los profesionales |
+| Justificación aceptada, rechazada o vencida | `appointment_justification_reviewed` | El Estudiante |
+
+La justificación no tiene fila propia: su aviso referencia la atención. Ningún aviso copia el motivo de cancelación ni la explicación; el texto externo de la inasistencia y de la justificación es el genérico «Tienes una actualización pendiente». El reagendamiento avisa a los participantes que quedan después del cambio: un adicional que sale porque perdió su asignación o la vigencia de su cuenta, o el responsable anterior cuando el Estudiante elige a otro profesional, ya no participa de la atención y no recibe aviso, porque el repositorio solo acepta destinatarios que participan del recurso. La realización (`completed`) no avisa. Un reintento de una reserva o de un cambio ya aplicado se rechaza por la política de estados o por la ocupación, y un cambio rechazado no deja aviso porque la mutation se descarta completa. Si dos intentos llegaran con el mismo instante, la clave de idempotencia deja una sola fila.
+
 ## Compatibilidad
 
 El cambio es aditivo. `bookAppointment` suma argumentos opcionales; `Appointment` y sus vistas no cambian, porque ninguna lectura de agenda entrega todavía los adicionales ni los apoyos. `StoredAppointmentForChange` suma `additionalProfessionalIds` y `onlineSupports` opcionales. `NOTIFICATION_EVENT_KIND_VALUES` suma una clase, que el validador de `notificationEvents` toma de la misma lista. `appointments` suma el índice `by_privateAccessReference` sobre un campo que ya existía. Mobile no consume todavía la agenda en línea ni estas operaciones y no necesita cambios; Web las consume en TI2-164 (pantalla del profesional para coordinar y agregar el enlace) y TI2-163 (estudiante).
@@ -114,7 +129,6 @@ Comprobación: `convex/domain/availability/official_channel.test.ts` prueba moti
 Siguen en otras issues, que se apoyan en lo que entrega esta:
 
 - Mostrar la explicación, el código de referencia y los canales oficiales al Estudiante: TI2-163.
-- Avisar a los profesionales adicionales cuando el Estudiante cancela o cuando uno sale al reagendar: TI2-150. `NotificationSubject` tiene un solo `professionalId` y hoy solo se avisa al responsable.
 - Mostrar en la agenda los profesionales adicionales, los apoyos y qué atenciones en línea no tienen enlace: TI2-164. `getAppointment` todavía no los entrega y `Appointment` no los declara para no anunciar campos que nunca llegan.
 - Registrar en la bitácora que se agregó o reemplazó el enlace: TI2-176, porque la lista de acciones de TI2-128 no lo contempla.
 - Sacar de las atenciones futuras a un profesional que se retira del acompañamiento: TI2-152. Hoy solo sale al reagendar la atención.

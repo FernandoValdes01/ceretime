@@ -17,6 +17,7 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import { notificationEventsForCreation } from "../../domain/notifications/notification";
 import type { AccessNeed, ModalityPreference } from "../../domain/requests/request";
 import { assessCompatibility } from "../../domain/spaces/compatibility";
 import {
@@ -30,6 +31,7 @@ import type {
   AvailabilityReader,
   CompatibilitySpaceSource,
 } from "../availability/ports";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import { auditAppointmentChange, type AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotSuccess } from "./occupancy";
 
@@ -112,7 +114,8 @@ export interface SlotSelectionDeps {
 export interface BookAppointmentDeps extends SlotSelectionDeps {
   readonly occupier: AppointmentOccupier;
   readonly audit: AppointmentAuditRecorder;
-  /** Reloj del servidor para el evento de auditoría; las pruebas lo fijan. */
+  readonly notifications: NotificationEventRecorder;
+  /** Reloj del servidor para la auditoría y el aviso; las pruebas lo fijan. */
   readonly now?: () => number;
 }
 
@@ -343,7 +346,9 @@ export async function availabilityCoversSlot(
  * dueño del acompañamiento leído en el servidor (el de la sesión, si reserva
  * él), nunca un identificador enviado por el cliente, y conserva
  * como fecha efectiva el inicio del cupo revalidado. Una reserva exitosa
- * deja su evento mínimo de auditoría (TI2-128) en la misma mutation.
+ * deja su evento mínimo de auditoría (TI2-128) y sus avisos (TI2-150) en la
+ * misma mutation, con el mismo instante. Un reintento de la misma reserva
+ * choca con la atención ya creada y responde `conflict`, sin otro aviso.
  */
 export async function bookAppointment(
   deps: BookAppointmentDeps,
@@ -416,12 +421,25 @@ export async function bookAppointment(
   });
   if (occupied.status === "error") return occupied;
 
+  const occurredAt = deps.now === undefined ? Date.now() : deps.now();
   await auditAppointmentChange(deps.audit, {
     action: "booked",
     actorId: grant.data.callerId,
     appointmentId: occupied.data.appointmentId,
     result: INITIAL_APPOINTMENT_STATUS,
-    occurredAt: deps.now === undefined ? Date.now() : deps.now(),
+    occurredAt,
   });
+  await deps.notifications.record(
+    notificationEventsForCreation(
+      {
+        appointmentId: occupied.data.appointmentId,
+        studentId: grant.data.studentId,
+        professionalId: slot.data.professionalId,
+        additionalProfessionalIds: professionals.additionalProfessionalIds,
+      },
+      occurredAt,
+      grant.data.callerId,
+    ),
+  );
   return occupied;
 }

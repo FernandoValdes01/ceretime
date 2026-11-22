@@ -299,7 +299,7 @@ export type {
   CalendarSyncStatus,
 } from "./calendar/calendar_link";
 
-// Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105).
+// Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105, TI2-150).
 export {
   APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
   NOTIFICATION_CONTRACT_VERSION,
@@ -311,8 +311,10 @@ export {
   isNotificationReadStatus,
   isRequestNotificationEventKind,
   notificationEventsForCreation,
+  notificationEventsForJustificationSubmitted,
   notificationEventsForOnlineAccess,
   notificationEventsForRequestReceived,
+  notificationEventsForRequestTransition,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   toExternalNotification,
@@ -330,9 +332,11 @@ export type {
   NotificationReadStatus,
   NotificationReference,
   NotificationSubject,
+  RequestNotificationAudience,
   RequestNotificationEvent,
   RequestNotificationEventKind,
   RequestNotificationReference,
+  RequestNotificationSubject,
 } from "./notifications/notification";
 
 // Entrega de avisos por canal: estados, errores e intentos (TI2-145).
