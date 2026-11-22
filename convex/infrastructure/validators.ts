@@ -22,8 +22,11 @@ import {
   FOLLOW_UP_TASK_STATUS_VALUES,
 } from "../domain/follow_up/follow_up";
 import {
+  APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
   NOTIFICATION_CONTRACT_VERSION,
   NOTIFICATION_EVENT_KIND_VALUES,
+  NOTIFICATION_READ_STATUS_VALUES,
+  REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
 } from "../domain/notifications/notification";
 import {
   NOTIFICATION_DELIVERY_CHANNEL_VALUES,
@@ -256,6 +259,23 @@ export const notificationEventKindUnion = v.union(
 );
 
 export const notificationContractVersionLiteral = v.literal(NOTIFICATION_CONTRACT_VERSION);
+
+/**
+ * Clases por recurso y estado de lectura de la bandeja (TI2-154), derivados
+ * de las mismas listas del dominio: la API pública declara que una clase de
+ * atención solo viaja con una atención y una de solicitud con una solicitud.
+ */
+export const appointmentNotificationEventKindUnion = v.union(
+  ...APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES.map((value) => v.literal(value)),
+);
+
+export const requestNotificationEventKindUnion = v.union(
+  ...REQUEST_NOTIFICATION_EVENT_KIND_VALUES.map((value) => v.literal(value)),
+);
+
+export const notificationReadStatusUnion = v.union(
+  ...NOTIFICATION_READ_STATUS_VALUES.map((value) => v.literal(value)),
+);
 
 /**
  * Canales, estados y errores de entrega de avisos (TI2-145), derivados del
