@@ -35,21 +35,25 @@ const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
 
 /**
- * Campos de gestión (TI2-04): alto táctil mínimo de 44px, ancho fluido y
- * `min-w-0` para que la cuadrícula estrecha los contraiga, con el mismo
- * foco visible de las filas. Los formularios apilan los campos en columna.
+ * Campos de gestión (TI2-04, línea visible TI2-169): alto táctil mínimo de
+ * 44px, ancho fluido y `min-w-0` para que la cuadrícula estrecha los contraiga.
+ * La línea inferior marca dónde escribir; al enfocar se engrosa en primario y
+ * con error va en peligro, además del aviso de texto (nunca solo color). Sin
+ * anillo exterior: el foco se ve en la propia línea.
  */
-const GESTION_FIELD = "min-h-[44px] w-full min-w-0 box-border px-3 py-2 text-base text-inherit";
-const GESTION_FIELD_CLASS = `${GESTION_FIELD} ${GESTION_FOCUS_VISIBLE}`;
+const GESTION_FIELD =
+  "min-h-[44px] w-full min-w-0 box-border border-b-2 border-b-(--ct-line) bg-transparent px-3 py-2 text-base text-inherit focus:border-b-[3px] focus:border-b-(--ct-primary) focus:outline-none aria-invalid:border-b-(--ct-danger)";
+const GESTION_FIELD_CLASS = GESTION_FIELD;
 
 /**
- * Cuadros de texto de condiciones e instrucciones (TI2-04): de varias líneas
- * porque el texto accesible de llegada suele necesitar más espacio, con el
- * mismo ancho fluido y foco visible que los campos simples.
+ * Cuadros de texto de condiciones e instrucciones (TI2-04, línea visible
+ * TI2-169): mismo alto que los campos simples para una lista pareja; el texto
+ * baja de línea dentro del cuadro y sigue abajo al llegar al borde, con la
+ * misma línea inferior de foco que los campos simples.
  */
 const GESTION_TEXTAREA =
-  "min-h-32 w-full min-w-0 box-border resize-y px-3 py-2 text-base text-inherit";
-const GESTION_TEXTAREA_CLASS = `${GESTION_TEXTAREA} ${GESTION_FOCUS_VISIBLE}`;
+  "min-h-[44px] w-full min-w-0 box-border resize-y border-b-2 border-b-(--ct-line) bg-transparent px-3 py-2 text-base text-inherit focus:border-b-[3px] focus:border-b-(--ct-primary) focus:outline-none aria-invalid:border-b-(--ct-danger)";
+const GESTION_TEXTAREA_CLASS = GESTION_TEXTAREA;
 
 /**
  * Editor de espacios del Administrador (TI2-04, escritura real TI2-169).
@@ -425,7 +429,7 @@ function SpaceFormSection({
   }
 
   return (
-    <section aria-labelledby="space-form-title" className="student-portal__section">
+    <section aria-labelledby="space-form-title" className="student-portal__section admin-section">
       <div className="student-portal__section-head">
         <h2 id="space-form-title" ref={formHeadingRef} tabIndex={-1}>
           {editing === null ? "Nuevo espacio" : "Editar espacio"}
@@ -446,7 +450,7 @@ function SpaceFormSection({
         Modalidad: {availabilityModalityLabel("inPerson")}. Los espacios de atención son el lugar de
         las atenciones presenciales; la modalidad en línea no usa espacio.
       </p>
-      <form onSubmit={handleSubmit} noValidate>
+      <form onSubmit={handleSubmit} noValidate className="grid gap-6">
         <div>
           <label htmlFor="space-campus">Campus</label>
           <input
@@ -526,7 +530,7 @@ function SpaceFormSection({
           <textarea
             className={GESTION_TEXTAREA_CLASS}
             id="space-access"
-            rows={3}
+            rows={1}
             value={form.accessConditions}
             onChange={(event) => setField("accessConditions", event.target.value)}
             aria-invalid={fieldErrors.accessConditions !== undefined}
@@ -546,7 +550,7 @@ function SpaceFormSection({
           <textarea
             className={GESTION_TEXTAREA_CLASS}
             id="space-arrival"
-            rows={3}
+            rows={1}
             value={form.arrivalInstructions}
             onChange={(event) => setField("arrivalInstructions", event.target.value)}
             aria-invalid={fieldErrors.arrivalInstructions !== undefined}

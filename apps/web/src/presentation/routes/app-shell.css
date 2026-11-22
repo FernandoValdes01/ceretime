@@ -248,18 +248,20 @@ html {
 .app-shell__nav--sidebar a {
   justify-content: flex-start;
   color: inherit;
+  font-weight: 400;
 }
 
 .app-shell__nav--sidebar a:hover {
   background: rgb(255 255 255 / 0.14);
 }
 
-/* La sección actual se distingue por fondo claro y subrayado, no solo color. */
+/* La sección actual se distingue por fondo más oscuro y negrita, como la
+   referencia: peso y fondo, no solo color. */
 .app-shell__nav--sidebar a[aria-current="page"] {
-  background: var(--ct-primary-ink);
-  color: var(--ct-primary);
-  text-decoration: underline;
-  text-underline-offset: 0.25rem;
+  background: var(--ct-primary-hover);
+  color: var(--ct-primary-ink);
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .app-shell__sidebar .app-shell__nav a:focus-visible,

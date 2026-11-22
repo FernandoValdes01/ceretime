@@ -11,7 +11,8 @@
   padding: 0;
   display: grid;
   background: var(--ct-card);
-  border: none;
+  border: 1px solid var(--ct-line);
+  border-radius: 0;
 }
 
 .admin-list > li {
@@ -185,7 +186,7 @@
   padding: 0.75rem 1.25rem;
   background: var(--ct-card);
   color: var(--ct-ink);
-  border: 1px solid var(--ct-line);
+  border: 2px solid var(--ct-line);
   border-radius: 0;
   font-size: 1rem;
   line-height: 1.4;
