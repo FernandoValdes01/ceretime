@@ -131,7 +131,7 @@ function ProfessionalsEditor({
   const chosen = professionals.assignable.find((item) => item.userId === selected);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 wrap-anywhere">
       {notice !== null ? <p role="status">{notice}</p> : null}
       {error !== null ? (
         <p role="alert" className="student-portal__error">
@@ -147,7 +147,7 @@ function ProfessionalsEditor({
               key={professional.userId}
               className="flex flex-col gap-2 rounded-lg border border-border-low p-4"
             >
-              <p className="m-0 text-base font-semibold">
+              <p className="m-0 text-base font-semibold wrap-anywhere">
                 {professional.fullName}
                 {professional.isCaller ? " (tú)" : ""}
               </p>
@@ -196,7 +196,7 @@ function ProfessionalsEditor({
               ) : (
                 <button
                   type="button"
-                  className="student-portal__btn student-portal__btn--ghost w-fit"
+                  className="student-portal__btn student-portal__btn--ghost w-fit max-w-full wrap-anywhere"
                   disabled={pending}
                   onClick={() => {
                     setNotice(null);

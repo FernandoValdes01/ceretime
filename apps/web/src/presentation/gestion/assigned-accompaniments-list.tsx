@@ -248,7 +248,9 @@ function AssignedAccompanimentRow({
   const content = (
     <>
       <span className="flex flex-wrap items-center justify-between gap-2">
-        <span className="min-w-0 text-lg font-semibold">{accompaniment.objective}</span>
+        <span className="min-w-0 text-lg font-semibold wrap-anywhere">
+          {accompaniment.objective}
+        </span>
         <span className="inline-flex w-fit items-center rounded-full bg-surface-container-low px-3 py-1 text-sm font-bold">
           {accompanimentStatusLabel(accompaniment.status)}
         </span>
