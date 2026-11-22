@@ -205,11 +205,14 @@
 
   .admin-list__head--accounts,
   .admin-list__row--accounts {
-    grid-template-columns: 2fr 1fr 1.2fr auto;
+    /* La columna de acciones mide lo mismo que el botón de tres puntos en
+       todas las filas: con `auto` cada fila calculaba su propio ancho (0 en
+       el encabezado, 44px en las filas) y las columnas no alineaban. */
+    grid-template-columns: 2fr 1fr 1.2fr 2.75rem;
   }
 
   .admin-list__head--spaces,
   .admin-list__row--spaces {
-    grid-template-columns: 1.4fr 1fr 1fr auto;
+    grid-template-columns: 1.4fr 1fr 1fr 2.75rem;
   }
 }

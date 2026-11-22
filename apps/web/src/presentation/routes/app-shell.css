@@ -230,6 +230,13 @@ html {
   color: var(--ct-primary);
 }
 
+/* Logo institucional en el lateral: recorte circular del emblema. */
+.app-shell__sidebar .app-shell__mark--logo {
+  background: none;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 .app-shell__sidebar .app-shell__name {
   display: flex;
 }
@@ -297,11 +304,13 @@ html {
   color: inherit;
 }
 
-/* El contenido de Administración ocupa todo el ancho disponible. */
+/* El contenido de Administración ocupa todo el ancho disponible, con
+   respiro a los lados para que no se pegue a los bordes. */
 .app-shell--sidebar .app-shell__main {
   max-width: none;
   flex: 1;
   min-width: 0;
+  padding: 2rem 3rem;
 }
 
 /* Administración a ancho completo (TI2-169): levanta el tope heredado de la
@@ -320,6 +329,10 @@ html {
 @media (max-width: 40rem) {
   .app-shell--sidebar {
     flex-direction: column;
+  }
+
+  .app-shell--sidebar .app-shell__main {
+    padding: 2rem 1rem;
   }
 
   .app-shell__sidebar {

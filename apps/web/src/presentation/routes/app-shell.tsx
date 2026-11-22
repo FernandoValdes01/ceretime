@@ -89,9 +89,12 @@ export function AppShell({ area, children }: { area: PortalArea; children?: Reac
             className="app-shell__brand"
             aria-label={`CERETI, ir al inicio del ${navigation.title}`}
           >
-            <span className="app-shell__mark" aria-hidden="true">
-              CE
-            </span>
+            <img
+              className="app-shell__mark app-shell__mark--logo"
+              src="/cereti.jpg"
+              alt=""
+              aria-hidden="true"
+            />
             <span className="app-shell__name">
               <strong>CERETI</strong>
               <span>{navigation.title}</span>
