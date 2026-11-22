@@ -215,7 +215,14 @@ function AccompanimentStatusSection({
   const [closing, setClosing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
   const actions = accompanimentActions(status);
+
+  // El botón usado desaparece al cambiar el estado: el foco pasa al aviso para
+  // que el teclado y el lector de pantalla no queden en el inicio de la página.
+  useEffect(() => {
+    if (notice !== null) noticeRef.current?.focus();
+  }, [notice]);
 
   async function run(action: () => Promise<unknown>, done: string) {
     if (pending) return;
@@ -237,7 +244,11 @@ function AccompanimentStatusSection({
       <div className="student-portal__section-head">
         <h2 id="accompaniment-status-title">Estado del acompañamiento</h2>
       </div>
-      {notice !== null ? <p role="status">{notice}</p> : null}
+      {notice !== null ? (
+        <p ref={noticeRef} tabIndex={-1} role="status">
+          {notice}
+        </p>
+      ) : null}
       {error !== null ? (
         <p role="alert" className="student-portal__error">
           {error}
@@ -306,9 +317,11 @@ function AccompanimentStatusSection({
             setClosing(false);
             setError(null);
             setNotice(
-              cancelled === 1
-                ? "Acompañamiento cerrado. Se canceló 1 atención futura."
-                : `Acompañamiento cerrado. Se cancelaron ${cancelled} atenciones futuras.`,
+              cancelled === 0
+                ? "Acompañamiento cerrado. No había atenciones futuras que cancelar."
+                : cancelled === 1
+                  ? "Acompañamiento cerrado. Se canceló 1 atención futura."
+                  : `Acompañamiento cerrado. Se cancelaron ${cancelled} atenciones futuras.`,
             );
           }}
         />

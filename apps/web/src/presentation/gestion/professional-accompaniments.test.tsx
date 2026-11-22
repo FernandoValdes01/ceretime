@@ -319,10 +319,10 @@ describe("detalle del Profesional (TI2-165)", () => {
     expect(within(section).queryByRole("button", { name: /Reactivar/ })).toBeNull();
     fireEvent.click(within(section).getByRole("button", { name: "Pausar el acompañamiento" }));
 
-    expect(await within(section).findByRole("status")).toHaveProperty(
-      "textContent",
-      "Acompañamiento pausado.",
-    );
+    const notice = await within(section).findByRole("status");
+    expect(notice).toHaveProperty("textContent", "Acompañamiento pausado.");
+    // El botón usado desaparece: el foco queda en el aviso, no en el inicio.
+    await waitFor(() => expect(document.activeElement).toBe(notice));
     expect(mutations.pause).toHaveBeenCalledWith({ accompanimentId: "acc-1" });
   });
 
@@ -424,6 +424,11 @@ describe("cierre del acompañamiento (TI2-165)", () => {
     expect(screen.getByText(/No hay atenciones futuras que cancelar/)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Confirmar el cierre" }));
     await waitFor(() => expect(mutations.close).toHaveBeenCalledWith({ accompanimentId: "acc-1" }));
+    const notice = await within(statusSection()).findByRole("status");
+    expect(notice.textContent).toBe(
+      "Acompañamiento cerrado. No había atenciones futuras que cancelar.",
+    );
+    await waitFor(() => expect(document.activeElement).toBe(notice));
   });
 
   test("con una atención pasada sin registrar no deja confirmar y explica qué hacer", async () => {
