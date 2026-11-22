@@ -5236,3 +5236,213 @@ test("TI2-151: el esquema rechaza contenido sensible en campos de control y no a
   const auditTables = Object.keys(schema.tables).filter((name) => /audit/i.test(name));
   expect(auditTables).toEqual(["appointmentAuditEvents"]);
 });
+
+test("TI2-151: un bloqueo vinculado no se crea sobre solicitud de bloqueo abierta ni denegada, y un bloqueo futuro no figura como vigente", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-blk-edge-est",
+    email: "ti151.blk.edge.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-blk-edge-admin",
+    email: "ti151.blk.edge.admin@uct.cl",
+    role: "admin",
+  });
+
+  const openBlocking = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (openBlocking.status !== "created") throw new Error("expected created");
+
+  await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: openBlocking.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+
+  // Escenario 1: no se puede vincular un bloqueo mientras la solicitud está en revisión.
+  const beforeResolution = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: openBlocking.requestId,
+        scope: "all_personal_data",
+        startsAt: TI151_RECEIVED_AT + 1000,
+        endsAt: TI151_RECEIVED_AT + 5 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 1000,
+        reason: "Intento previo a resolver",
+      }),
+  );
+  expect(beforeResolution).toEqual({ status: "request_not_granted" });
+
+  // Escenario 2: una solicitud de bloqueo denegada tampoco admite un bloqueo vinculado.
+  const denied = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: openBlocking.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 2000,
+        response: {
+          outcome: "denied",
+          reasons: "No corresponde bloqueo temporal en el caso ficticio.",
+          responsibleId: admin,
+        },
+      }),
+  );
+  expect(denied.status).toBe("applied");
+
+  const onDenied = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: openBlocking.requestId,
+        scope: "all_personal_data",
+        startsAt: TI151_RECEIVED_AT + 2000,
+        endsAt: TI151_RECEIVED_AT + 10 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2000,
+        reason: "Intento sobre solicitud denegada",
+      }),
+  );
+  expect(onDenied).toEqual({ status: "request_not_granted" });
+  expect(
+    await t.run(async (ctx) => await listPrivacyBlocksByRequest(ctx, openBlocking.requestId)),
+  ).toEqual([]);
+
+  // Escenario 3: un bloqueo con inicio futuro no aparece como vigente antes de startsAt.
+  const futureStartsAt = TI151_RECEIVED_AT + 7 * TI151_DAY_MS;
+  const futureEndsAt = TI151_RECEIVED_AT + 14 * TI151_DAY_MS;
+  const scheduled = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        scope: "follow_up",
+        startsAt: futureStartsAt,
+        endsAt: futureEndsAt,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 3000,
+        reason: "Bloqueo programado para fecha futura",
+      }),
+  );
+  expect(scheduled.status).toBe("created");
+  if (scheduled.status !== "created") throw new Error("expected created");
+
+  const day1 = TI151_RECEIVED_AT + TI151_DAY_MS;
+  expect(
+    await t.run(async (ctx) => await listActivePrivacyBlocksForSubject(ctx, student, day1)),
+  ).toEqual([]);
+  expect(
+    (
+      await t.run(
+        async (ctx) => await paginateActivePrivacyBlocks(ctx, day1, { numItems: 10, cursor: null }),
+      )
+    ).page,
+  ).toEqual([]);
+
+  expect(
+    (
+      await t.run(
+        async (ctx) => await listActivePrivacyBlocksForSubject(ctx, student, futureStartsAt),
+      )
+    ).map((b) => b.id),
+  ).toEqual([scheduled.blockId]);
+  expect(
+    (
+      await t.run(
+        async (ctx) =>
+          await paginateActivePrivacyBlocks(ctx, futureStartsAt, { numItems: 10, cursor: null }),
+      )
+    ).page.map((b) => b.id),
+  ).toEqual([scheduled.blockId]);
+});
+
+test("TI2-151: 50 excepciones vencidas sin levantar no ocultan una obligación legal vigente por categoría ni por titular", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-exp-est",
+    email: "ti151.exp.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-exp-admin",
+    email: "ti151.exp.admin@uct.cl",
+    role: "admin",
+  });
+
+  // 50 excepciones vencidas sin levantar en la misma categoría y para el mismo titular.
+  await t.run(async (ctx) => {
+    for (let i = 0; i < 50; i += 1) {
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        reference: `EXP-VENCIDA-${i + 1}`,
+        startsAt: TI151_RECEIVED_AT,
+        expiresAt: TI151_RECEIVED_AT + TI151_DAY_MS + i,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + i,
+      });
+    }
+  });
+
+  // Una obligación legal vigente (sin vencimiento) creada después de las 50 vencidas.
+  const activeLegal = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "legal_obligation",
+        category: "accompaniments",
+        subjectId: student,
+        reference: "OBL-LEGAL-VIGENTE",
+        startsAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(activeLegal.status).toBe("created");
+  if (activeLegal.status !== "created") throw new Error("expected created");
+
+  // Una excepción con vencimiento futuro también debe aparecer.
+  const activeFutureExpiry = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        reference: "PROC-VIGENTE-FUTURO",
+        startsAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        expiresAt: TI151_RECEIVED_AT + 20 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(activeFutureExpiry.status).toBe("created");
+  if (activeFutureExpiry.status !== "created") throw new Error("expected created");
+
+  const now = TI151_RECEIVED_AT + 5 * TI151_DAY_MS;
+  const byCategory = await t.run(
+    async (ctx) => await listActiveRetentionExceptionsForCategory(ctx, "accompaniments", now),
+  );
+  expect(byCategory.map((e) => e.id).sort()).toEqual(
+    [activeLegal.exceptionId, activeFutureExpiry.exceptionId].sort(),
+  );
+
+  const bySubject = await t.run(
+    async (ctx) => await listActiveRetentionExceptionsForSubject(ctx, student, now),
+  );
+  expect(bySubject.map((e) => e.id).sort()).toEqual(
+    [activeLegal.exceptionId, activeFutureExpiry.exceptionId].sort(),
+  );
+});

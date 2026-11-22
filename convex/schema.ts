@@ -646,11 +646,13 @@ export default defineSchema({
     .index("by_dueAt", ["dueAt"]),
 
   // Tabla 'privacyBlocks': bloqueos temporales de tratamiento y su alcance
-  // (TI2-151). No guarda una columna `status` paralela: vigente, vencido o
-  // levantado se derivan de `endsAt` y `liftedAt` (`privacyBlockStateAt`).
-  // Cuando se vincula a una solicitud de bloqueo resuelta (`requestId`),
-  // `endsAt` coincide con `response.temporaryBlockUntil`. Sin contenido
-  // sensible en `reason` ni en `liftReason`.
+  // (TI2-151). No guarda una columna `status` paralela: programado, vigente,
+  // vencido o levantado se derivan de `startsAt`, `endsAt` y `liftedAt`
+  // (`privacyBlockStateAt`). Cuando se vincula a una solicitud de bloqueo
+  // (`requestId`), solo se acepta si esa solicitud ya está resuelta como
+  // concedida total o parcialmente y `endsAt` coincide con
+  // `response.temporaryBlockUntil`. Sin contenido sensible en `reason` ni en
+  // `liftReason`.
   privacyBlocks: defineTable({
     subjectId: v.id("users"),
     requestId: v.optional(v.id("privacyRequests")),
@@ -707,10 +709,13 @@ export default defineSchema({
     createdBy: v.id("users"),
     createdAt: v.number(),
   })
-    // Excepciones vigentes por categoría (`liftedAt` ausente).
-    .index("by_category_and_liftedAt", ["category", "liftedAt"])
-    // Excepciones vigentes de un titular (`liftedAt` ausente).
-    .index("by_subjectId_and_liftedAt", ["subjectId", "liftedAt"])
+    // Excepciones vigentes por categoría (`liftedAt` ausente; `expiresAt`
+    // ausente o mayor a `now` en dos rangos para que las vencidas no oculten
+    // las activas).
+    .index("by_category_and_liftedAt_and_expiresAt", ["category", "liftedAt", "expiresAt"])
+    // Excepciones vigentes de un titular (`liftedAt` ausente; `expiresAt`
+    // ausente o mayor a `now` en dos rangos).
+    .index("by_subjectId_and_liftedAt_and_expiresAt", ["subjectId", "liftedAt", "expiresAt"])
     // Excepciones originadas por una solicitud de privacidad.
     .index("by_privacyRequestId", ["privacyRequestId"]),
 });

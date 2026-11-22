@@ -75,11 +75,15 @@ describe("Controles de privacidad: envío, bloqueos y conservación (TI2-151)", 
     expect(doesPrivacyBlockCoverCategory("appointments", "follow_up")).toBe(false);
   });
 
-  test("deriva el estado del bloqueo temporal desde endsAt y liftedAt sin estado paralelo", () => {
-    expect([...PRIVACY_BLOCK_STATE_VALUES]).toEqual(["active", "expired", "lifted"]);
+  test("deriva el estado del bloqueo temporal desde startsAt, endsAt y liftedAt sin estado paralelo", () => {
+    expect([...PRIVACY_BLOCK_STATE_VALUES]).toEqual(["scheduled", "active", "expired", "lifted"]);
+    // Antes de startsAt todavía no rige.
+    expect(privacyBlockStateAt({ startsAt: T1, endsAt: T2 }, T0)).toBe("scheduled");
+    expect(privacyBlockStateAt({ startsAt: T1, endsAt: T2 }, T1)).toBe("active");
     expect(privacyBlockStateAt({ startsAt: T0, endsAt: T2 }, T1)).toBe("active");
     // El vencimiento es exclusivo: en el instante exacto de endsAt ya está vencido.
     expect(privacyBlockStateAt({ startsAt: T0, endsAt: T2 }, T2)).toBe("expired");
+    expect(privacyBlockStateAt({ startsAt: T0, endsAt: T2, liftedAt: T1 }, T0 - 1)).toBe("lifted");
     expect(privacyBlockStateAt({ startsAt: T0, endsAt: T2, liftedAt: T1 }, T1)).toBe("lifted");
     expect(privacyBlockStateAt({ startsAt: T0, endsAt: T2, liftedAt: T1 }, T2 + 1000)).toBe(
       "lifted",

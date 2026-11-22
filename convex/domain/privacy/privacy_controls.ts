@@ -109,11 +109,11 @@ export function doesPrivacyBlockCoverCategory(
 /**
  * Estado derivado de un bloqueo temporal en un instante dado.
  *
- * No se persiste como columna aparte para evitar que un bloqueo vencido por el
- * paso del tiempo contradiga su propia marca: se calcula a partir de `endsAt`
- * y `liftedAt`.
+ * No se persiste como columna aparte para evitar que un bloqueo pendiente de
+ * iniciar o vencido por el paso del tiempo contradiga su propia marca: se
+ * calcula a partir de `startsAt`, `endsAt` y `liftedAt`.
  */
-export const PRIVACY_BLOCK_STATE_VALUES = ["active", "expired", "lifted"] as const;
+export const PRIVACY_BLOCK_STATE_VALUES = ["scheduled", "active", "expired", "lifted"] as const;
 
 export type PrivacyBlockState = (typeof PRIVACY_BLOCK_STATE_VALUES)[number];
 
@@ -125,16 +125,20 @@ export interface PrivacyBlockWindow {
 }
 
 /**
- * Deriva si un bloqueo temporal está vigente, vencido o levantado en `now`.
+ * Deriva si un bloqueo temporal aún no comienza, está vigente, vencido o
+ * levantado en `now`.
  *
- * El vencimiento es exclusivo (`now >= endsAt` significa vencido), igual que
- * `isWithinPrivacyDeadline`. Un levantamiento explícito prevalece siempre.
+ * El inicio es inclusivo (`now < startsAt` significa `scheduled`) y el
+ * vencimiento es exclusivo (`now >= endsAt` significa `expired`), en línea con
+ * `isPrivacyRetentionExceptionActive` e `isWithinPrivacyDeadline`. Un
+ * levantamiento explícito prevalece siempre.
  */
 export function privacyBlockStateAt(block: PrivacyBlockWindow, now: number): PrivacyBlockState {
   if (!isUsableInstant(now)) {
     throw new Error("El instante de evaluación del bloqueo debe ser un epoch válido.");
   }
   if (block.liftedAt !== undefined) return "lifted";
+  if (now < block.startsAt) return "scheduled";
   return now < block.endsAt ? "active" : "expired";
 }
 

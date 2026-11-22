@@ -175,19 +175,12 @@ function toStoredPrivacyRequest(row: Doc<"privacyRequests">): StoredPrivacyReque
 function toDomainDeadline(
   row: Doc<"privacyRequests">,
 ): PrivacyResponseDeadline | ExtendedPrivacyResponseDeadline {
-  const isBlocking = row.kind === "blocking";
-  const base: PrivacyResponseDeadline = {
+  const base = calculatePrivacyResponseDeadline({
     kind: row.kind,
-    rule: row.responseRule,
-    receivedDate: row.receivedDate,
-    responseDate: row.initialDueDate,
-    responseAt: row.initialDueAt,
-    responseDays: isBlocking ? 2 : 30,
-    extensionAllowed: !isBlocking,
-    extensionCalendarDays: isBlocking ? 0 : 30,
+    receivedAt: row.receivedAt,
     timeZone: row.deadlineTimeZone,
     holidays: row.deadlineHolidays,
-  };
+  });
   if (row.extension === undefined) return base;
   return {
     ...base,
@@ -599,14 +592,17 @@ export type CreatePrivacyBlockResult =
       readonly block: StoredPrivacyBlock;
     }
   | { readonly status: "invalid_reference" }
+  | { readonly status: "request_not_granted" }
   | { readonly status: "deadline_mismatch" };
 
 /**
  * Registra un bloqueo temporal de tratamiento sobre un alcance explícito.
  *
- * Si se vincula a una solicitud de bloqueo ya resuelta con
- * `temporaryBlockUntil`, exige que `endsAt` coincida con esa fecha para que
- * la respuesta y el bloqueo operativo no diverjan.
+ * Si se vincula a una solicitud de bloqueo (`kind === "blocking"`), solo se
+ * acepta cuando la solicitud ya está resuelta como concedida (`granted` o
+ * `partially_granted`) y `endsAt` coincide con `response.temporaryBlockUntil`,
+ * impidiendo vencimientos contradictorios o bloqueos sobre solicitudes
+ * denegadas o aún abiertas.
  */
 export async function createPrivacyBlock(
   ctx: MutationCtx,
@@ -639,12 +635,19 @@ export async function createPrivacyBlock(
     if (request === null || request.requesterId !== input.subjectId) {
       return { status: "invalid_reference" };
     }
-    if (
-      request.kind === "blocking" &&
-      request.response?.temporaryBlockUntil !== undefined &&
-      input.endsAt !== request.response.temporaryBlockUntil
-    ) {
-      return { status: "deadline_mismatch" };
+    if (request.kind === "blocking") {
+      const response = request.response;
+      if (
+        request.status !== "resolved" ||
+        response === undefined ||
+        response.outcome === "denied" ||
+        response.temporaryBlockUntil === undefined
+      ) {
+        return { status: "request_not_granted" };
+      }
+      if (input.endsAt !== response.temporaryBlockUntil) {
+        return { status: "deadline_mismatch" };
+      }
     }
   }
 
@@ -705,8 +708,13 @@ export async function liftPrivacyBlock(
 }
 
 /**
- * Bloqueos activos de un titular en `now`, resueltos por rango de índice sin
- * `.filter()`.
+ * Bloqueos vigentes de un titular en `now`.
+ *
+ * El índice `by_subjectId_and_liftedAt_and_endsAt` descarta los levantados y
+ * los vencidos (`endsAt <= now`). La segunda desigualdad (`startsAt <= now`)
+ * se filtra sobre ese rango porque un índice de Convex admite rango solo en su
+ * último campo; así un bloqueo programado para el futuro no se informa como
+ * vigente, en coherencia con `privacyBlockStateAt`.
  */
 export async function listActivePrivacyBlocksForSubject(
   ctx: DbReader,
@@ -720,6 +728,7 @@ export async function listActivePrivacyBlocksForSubject(
     .withIndex("by_subjectId_and_liftedAt_and_endsAt", (q) =>
       q.eq("subjectId", subjectId).eq("liftedAt", undefined).gt("endsAt", now),
     )
+    .filter((q) => q.lte(q.field("startsAt"), now))
     .order("asc")
     .take(limit);
   return rows.map(toStoredPrivacyBlock);
@@ -738,7 +747,12 @@ export async function listPrivacyBlocksByRequest(
   return rows.map(toStoredPrivacyBlock);
 }
 
-/** Página global de bloqueos activos en `now`, ordenados por vencimiento. */
+/**
+ * Página global de bloqueos vigentes en `now`, ordenados por vencimiento.
+ *
+ * Excluye los bloqueos cuyo inicio aún es futuro (`startsAt > now`) sobre el
+ * rango ya acotado por `by_liftedAt_and_endsAt`.
+ */
 export async function paginateActivePrivacyBlocks(
   ctx: DbReader,
   now: number,
@@ -748,6 +762,7 @@ export async function paginateActivePrivacyBlocks(
   const result = await ctx.db
     .query("privacyBlocks")
     .withIndex("by_liftedAt_and_endsAt", (q) => q.eq("liftedAt", undefined).gt("endsAt", now))
+    .filter((q) => q.lte(q.field("startsAt"), now))
     .order("asc")
     .paginate(paginationOpts);
   return { ...result, page: result.page.map(toStoredPrivacyBlock) };
@@ -1046,7 +1061,14 @@ export async function liftPrivacyRetentionException(
   return { status: "lifted", exceptionId: exception._id };
 }
 
-/** Excepciones vigentes en `now` para una categoría de datos. */
+/**
+ * Excepciones vigentes en `now` para una categoría de datos.
+ *
+ * Consulta dos rangos sobre `by_category_and_liftedAt_and_expiresAt`: las que
+ * no tienen fecha de término (`expiresAt` ausente) y las que vencen después de
+ * `now` (`expiresAt > now`). Así las excepciones vencidas sin levantar nunca
+ * consumen el límite ni ocultan una obligación legal vigente.
+ */
 export async function listActiveRetentionExceptionsForCategory(
   ctx: DbReader,
   category: PrivacyDataCategory,
@@ -1054,18 +1076,33 @@ export async function listActiveRetentionExceptionsForCategory(
   limit = 50,
 ): Promise<StoredPrivacyRetentionException[]> {
   assertInstant(now, "La consulta de excepciones requiere un instante epoch válido.");
-  const rows = await ctx.db
-    .query("privacyRetentionExceptions")
-    .withIndex("by_category_and_liftedAt", (q) =>
-      q.eq("category", category).eq("liftedAt", undefined),
-    )
-    .take(limit);
-  return rows
+  const [withoutExpiry, unexpired] = await Promise.all([
+    ctx.db
+      .query("privacyRetentionExceptions")
+      .withIndex("by_category_and_liftedAt_and_expiresAt", (q) =>
+        q.eq("category", category).eq("liftedAt", undefined).eq("expiresAt", undefined),
+      )
+      .filter((q) => q.lte(q.field("startsAt"), now))
+      .take(limit),
+    ctx.db
+      .query("privacyRetentionExceptions")
+      .withIndex("by_category_and_liftedAt_and_expiresAt", (q) =>
+        q.eq("category", category).eq("liftedAt", undefined).gt("expiresAt", now),
+      )
+      .filter((q) => q.lte(q.field("startsAt"), now))
+      .take(limit),
+  ]);
+  return [...withoutExpiry, ...unexpired]
     .filter((row) => isPrivacyRetentionExceptionActive(row, now))
     .map(toStoredPrivacyRetentionException);
 }
 
-/** Excepciones vigentes en `now` acotadas a un titular concreto. */
+/**
+ * Excepciones vigentes en `now` acotadas a un titular concreto.
+ *
+ * Usa dos rangos sobre `by_subjectId_and_liftedAt_and_expiresAt` para que las
+ * excepciones vencidas sin levantar no oculten una excepción vigente.
+ */
 export async function listActiveRetentionExceptionsForSubject(
   ctx: DbReader,
   subjectId: Id<"users">,
@@ -1073,13 +1110,23 @@ export async function listActiveRetentionExceptionsForSubject(
   limit = 50,
 ): Promise<StoredPrivacyRetentionException[]> {
   assertInstant(now, "La consulta de excepciones por titular requiere un instante epoch válido.");
-  const rows = await ctx.db
-    .query("privacyRetentionExceptions")
-    .withIndex("by_subjectId_and_liftedAt", (q) =>
-      q.eq("subjectId", subjectId).eq("liftedAt", undefined),
-    )
-    .take(limit);
-  return rows
+  const [withoutExpiry, unexpired] = await Promise.all([
+    ctx.db
+      .query("privacyRetentionExceptions")
+      .withIndex("by_subjectId_and_liftedAt_and_expiresAt", (q) =>
+        q.eq("subjectId", subjectId).eq("liftedAt", undefined).eq("expiresAt", undefined),
+      )
+      .filter((q) => q.lte(q.field("startsAt"), now))
+      .take(limit),
+    ctx.db
+      .query("privacyRetentionExceptions")
+      .withIndex("by_subjectId_and_liftedAt_and_expiresAt", (q) =>
+        q.eq("subjectId", subjectId).eq("liftedAt", undefined).gt("expiresAt", now),
+      )
+      .filter((q) => q.lte(q.field("startsAt"), now))
+      .take(limit),
+  ]);
+  return [...withoutExpiry, ...unexpired]
     .filter((row) => isPrivacyRetentionExceptionActive(row, now))
     .map(toStoredPrivacyRetentionException);
 }
