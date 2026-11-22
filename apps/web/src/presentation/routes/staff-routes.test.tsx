@@ -402,6 +402,36 @@ describe("límites de navegación por rol (TI2-20)", () => {
     expect(hrefs).toContain("/administrador/cuentas");
   });
 
+  test("la Administración usa menú lateral con la navegación y el cierre de sesión abajo", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("admin@uct.cl"),
+      role: rolDe("admin", "admin@uct.cl"),
+    });
+    renderAt("/administrador");
+
+    await screen.findByRole("heading", { name: "Portal de Administración" });
+    const sidebar = document.querySelector("aside.app-shell__sidebar");
+    expect(sidebar).not.toBeNull();
+    const nav = within(sidebar as HTMLElement).getByRole("navigation", {
+      name: "Portal de Administración",
+    });
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((link) => link.textContent?.trim()),
+    ).toEqual(["Inicio", "Cuentas", "Espacios"]);
+    expect(
+      within(sidebar as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+    ).toBeDefined();
+    // El cierre de sesión vive abajo, después de la navegación.
+    const foot = (sidebar as HTMLElement).querySelector(".app-shell__sidebar-foot");
+    expect(foot).not.toBeNull();
+    expect(foot?.contains(nav)).toBe(false);
+    expect(
+      within(foot as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+    ).toBeDefined();
+  });
+
   test("el Profesional no entra al portal del Estudiante", async () => {
     sessionMocks.setPair({
       session: sesionPersonal("pro@uct.cl"),

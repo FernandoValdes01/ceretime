@@ -8,13 +8,19 @@ import { PORTAL_NAVIGATION, type PortalArea } from "./navigation.ts";
 import "./app-shell.css";
 
 /**
- * Estructura común de la Web (TI2-133).
+ * Estructura común de la Web (TI2-133, menú lateral de Administración TI2-169).
  *
  * Encabezado del mockup con marca, navegación del rol, menú de accesibilidad y
  * cierre de sesión real; contenido debajo del mismo encabezado y un único
  * destino de salto al contenido. La navegación solo enlaza pantallas
  * existentes, marca la sección actual con `aria-current` (no solo color) y el
  * cierre de sesión es un botón operable con teclado.
+ *
+ * El portal de Administración usa menú lateral en lugar de encabezado
+ * superior: la misma marca, la misma navegación por rol, el mismo menú de
+ * accesibilidad y el mismo cierre de sesión, con el botón abajo a la
+ * izquierda y el contenido a ancho completo. Los demás portales conservan el
+ * encabezado superior del mockup.
  *
  * El enlace de salto y el `<main id="contenido">` viven en este módulo para
  * que las páginas públicas y los portales usen el mismo destino sin duplicar
@@ -72,6 +78,59 @@ export function AppShell({ area, children }: { area: PortalArea; children?: Reac
     } finally {
       setSigningOut(false);
     }
+  }
+
+  if (area === "admin") {
+    return (
+      <div className="app-shell app-shell--sidebar">
+        <aside className="app-shell__sidebar">
+          <Link
+            to={navigation.brandHome}
+            className="app-shell__brand"
+            aria-label={`CERETI, ir al inicio del ${navigation.title}`}
+          >
+            <span className="app-shell__mark" aria-hidden="true">
+              CE
+            </span>
+            <span className="app-shell__name">
+              <strong>CERETI</strong>
+              <span>{navigation.title}</span>
+            </span>
+          </Link>
+          <nav aria-label={navigation.title} className="app-shell__nav app-shell__nav--sidebar">
+            {navigation.items.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                activeOptions={{ exact: item.exact, includeSearch: false }}
+                activeProps={{ "aria-current": "page" }}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+          <div className="app-shell__sidebar-foot">
+            <button
+              type="button"
+              className="app-shell__logout"
+              disabled={signingOut}
+              aria-busy={signingOut}
+              onClick={() => void handleSignOut()}
+            >
+              {signingOut ? GENERIC_AUTH_MESSAGES.loading : "Cerrar sesión"}
+            </button>
+            {signOutError ? (
+              <p role="alert" className="app-shell__error">
+                {signOutError}
+              </p>
+            ) : null}
+          </div>
+        </aside>
+        <main id="contenido" className="app-shell__main" tabIndex={-1}>
+          {children ?? <Outlet />}
+        </main>
+      </div>
+    );
   }
 
   return (

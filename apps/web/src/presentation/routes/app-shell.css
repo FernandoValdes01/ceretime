@@ -198,6 +198,150 @@ html {
   padding: 1rem;
 }
 
+/* Menú lateral del portal de Administración (TI2-169): navegación vertical
+   a la izquierda con el cierre de sesión abajo, y contenido a ancho completo.
+   Conserva marca, navegación por rol con `aria-current`, menú de
+   accesibilidad y cierre de sesión con sus mismos comportamientos. */
+.app-shell--sidebar {
+  flex-direction: row;
+}
+
+.app-shell__sidebar {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  width: 17rem;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.25rem 1rem;
+  background: var(--ct-primary);
+  color: var(--ct-primary-ink);
+}
+
+.app-shell__sidebar .app-shell__brand {
+  color: inherit;
+}
+
+.app-shell__sidebar .app-shell__mark {
+  background: var(--ct-primary-ink);
+  color: var(--ct-primary);
+}
+
+.app-shell__sidebar .app-shell__name {
+  display: flex;
+}
+
+.app-shell__sidebar .app-shell__name span {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.app-shell__nav--sidebar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.app-shell__nav--sidebar a {
+  justify-content: flex-start;
+  color: inherit;
+}
+
+.app-shell__nav--sidebar a:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+
+/* La sección actual se distingue por fondo claro y subrayado, no solo color. */
+.app-shell__nav--sidebar a[aria-current="page"] {
+  background: var(--ct-primary-ink);
+  color: var(--ct-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.25rem;
+}
+
+.app-shell__sidebar .app-shell__nav a:focus-visible,
+.app-shell__sidebar .app-shell__brand:focus-visible,
+.app-shell__sidebar .app-shell__logout:focus-visible {
+  outline: 3px solid var(--ct-primary-ink);
+  outline-offset: 2px;
+}
+
+.app-shell__sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.75rem;
+}
+
+.app-shell__sidebar-foot .app-shell__logout {
+  width: 100%;
+  background: transparent;
+  border-color: var(--ct-primary-ink);
+  color: inherit;
+}
+
+.app-shell__sidebar-foot .app-shell__logout:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.app-shell__sidebar .app-shell__error {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+}
+
+/* El contenido de Administración ocupa todo el ancho disponible. */
+.app-shell--sidebar .app-shell__main {
+  max-width: none;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Administración a ancho completo (TI2-169): levanta el tope heredado de la
+   plantilla (`#root` a 1126px) solo cuando el menú lateral está presente; el
+   resto de los portales conserva su ancho. El texto vuelve a alineación
+   inicial porque el centrado heredado pierde legibilidad a ancho completo. */
+#root:has(.app-shell--sidebar) {
+  width: 100%;
+  max-width: none;
+  border-inline: none;
+  text-align: initial;
+}
+
+/* En pantallas estrechas el lateral pasa arriba en una sola columna, sin
+   desplazamiento horizontal. */
+@media (max-width: 40rem) {
+  .app-shell--sidebar {
+    flex-direction: column;
+  }
+
+  .app-shell__sidebar {
+    position: static;
+    height: auto;
+    width: 100%;
+  }
+
+  .app-shell__nav--sidebar {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .app-shell__sidebar-foot {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .app-shell__sidebar-foot .app-shell__logout {
+    width: auto;
+  }
+}
+
 /* El destino del salto recibe el foco sin dibujar un anillo de control. */
 #contenido:focus {
   outline: none;
