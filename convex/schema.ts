@@ -9,6 +9,8 @@ import {
   assignmentRoleUnion,
   assignmentStatusUnion,
   availabilityExceptionKindUnion,
+  calendarSyncErrorCodeUnion,
+  calendarSyncStatusUnion,
   followUpContractVersionLiteral,
   followUpResponsibleUnion,
   followUpTaskStatusUnion,
@@ -18,6 +20,9 @@ import {
   justificationReviewUnion,
   modalityUnion,
   notificationContractVersionLiteral,
+  notificationDeliveryChannelUnion,
+  notificationDeliveryErrorUnion,
+  notificationDeliveryStatusUnion,
   notificationEventKindUnion,
   outgoingReferralValidator,
   requestStatusUnion,
@@ -341,8 +346,11 @@ export default defineSchema({
   // hasta la primera creación exitosa, así un reintento no duplica el evento.
   // `calendarEventStartsAt` y `calendarEventEndsAt` guardan el horario con el
   // que se sincronizó ese evento: si difieren de `startsAt`/`endsAt`, la
-  // referencia quedó obsoleta y hay que actualizarla. Solo persistencia: la
-  // ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
+  // referencia quedó obsoleta y hay que actualizarla. Desde TI2-145 la misma
+  // fila guarda el estado de sincronización automática (`pending`, `synced` o
+  // `error`), sus intentos, el último intento y el código genérico del fallo;
+  // no se crea una tabla paralela de estado por atención. Solo persistencia:
+  // la ocupación atómica de cupo es TI2-84 y los repositorios son TI2-95.
   appointments: defineTable({
     accompanimentId: v.id("accompaniments"),
     studentId: v.id("users"),
@@ -358,6 +366,15 @@ export default defineSchema({
     calendarEventAddedAt: v.optional(v.number()),
     calendarEventStartsAt: v.optional(v.number()),
     calendarEventEndsAt: v.optional(v.number()),
+    // Estado de la sincronización automática (TI2-145): las filas anteriores
+    // no lo tienen y se leen sin error; `calendarSyncStateOf` las devuelve como
+    // ausentes, no como pendientes inventadas. `calendarSyncErrorCode` reutiliza
+    // los motivos genéricos del respaldo `.ics` y nunca copia respuestas del
+    // proveedor.
+    calendarSyncStatus: v.optional(calendarSyncStatusUnion),
+    calendarSyncAttempts: v.optional(v.number()),
+    calendarSyncLastAttemptAt: v.optional(v.number()),
+    calendarSyncErrorCode: v.optional(calendarSyncErrorCodeUnion),
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
@@ -424,28 +441,102 @@ export default defineSchema({
     // sus participantes, sin recorrer las atenciones.
     .index("by_professionalId_and_startsAt", ["professionalId", "startsAt"]),
 
-  // Tabla 'notificationEvents': eventos de notificación de la atención
-  // (forma de TI2-105, persistida por TI2-118). Cada fila guarda solo las
-  // referencias mínimas del evento (atención y destinatario), la clase, el
-  // instante persistido del cambio y la versión del contrato: no hay títulos,
-  // motivos, notas ni datos del acompañamiento. `idempotencyKey` es la clave
-  // de `notificationIdempotencyKey`; un reintento del mismo cambio la repite y
-  // el repositorio devuelve la fila existente en vez de crear otra. Sin envío
-  // ni estado de entrega: el envío es TI2-122.
+  // Tabla 'notificationEvents': eventos de aviso con un único recurso
+  // (atención o solicitud) y su destinatario (TI2-118, ampliada por TI2-145).
+  // Cada fila guarda solo las referencias mínimas, la clase, el instante
+  // persistido del cambio y la versión del contrato: no hay títulos, motivos,
+  // notas ni datos del acompañamiento. `appointmentId` y `requestId` son
+  // opcionales para que las filas anteriores sigan leyéndose; la vía de
+  // escritura exige exactamente uno. Una justificación no tiene tabla propia:
+  // referencia su atención, donde vive la explicación. `readAt` marca la
+  // lectura de ese destinatario; ausente significa pendiente. Las entregas por
+  // canal viven en `notificationDeliveries`, no en esta fila ni en otra tabla
+  // de eventos. `idempotencyKey` es la clave de `notificationIdempotencyKey`;
+  // un reintento del mismo cambio la repite y el repositorio devuelve la fila
+  // existente en vez de crear otra.
   notificationEvents: defineTable({
     kind: notificationEventKindUnion,
-    appointmentId: v.id("appointments"),
+    appointmentId: v.optional(v.id("appointments")),
+    requestId: v.optional(v.id("requests")),
     recipientId: v.id("users"),
     occurredAt: v.number(),
     version: notificationContractVersionLiteral,
     idempotencyKey: v.string(),
+    readAt: v.optional(v.number()),
   })
     // Reintento del mismo cambio: una fila basta para decidir.
     .index("by_idempotencyKey", ["idempotencyKey"])
     // Eventos del destinatario, del más reciente al más antiguo.
     .index("by_recipientId_and_occurredAt", ["recipientId", "occurredAt"])
+    // Pendientes del destinatario: `readAt` ausente se consulta como rango
+    // nulo, sin recorrer los avisos ya leídos.
+    .index("by_recipientId_and_readAt_and_occurredAt", ["recipientId", "readAt", "occurredAt"])
     // Eventos de la atención en orden de ocurrencia.
-    .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"]),
+    .index("by_appointmentId_and_occurredAt", ["appointmentId", "occurredAt"])
+    // Eventos de la solicitud en orden de ocurrencia.
+    .index("by_requestId_and_occurredAt", ["requestId", "occurredAt"]),
+
+  // Tabla 'notificationDeliveries': resultado del envío de un aviso por canal
+  // (TI2-145). Una fila por evento y canal; los reintentos actualizan
+  // `attempts`, `lastAttemptAt` y el resultado, sin crear otro aviso ni otra
+  // fila. `errorCode` es un código estable y genérico: no guarda respuestas,
+  // encabezados ni credenciales del proveedor. El envío real es TI2-159
+  // (correo) y TI2-160 (push).
+  notificationDeliveries: defineTable({
+    eventId: v.id("notificationEvents"),
+    channel: notificationDeliveryChannelUnion,
+    status: notificationDeliveryStatusUnion,
+    attempts: v.number(),
+    lastAttemptAt: v.optional(v.number()),
+    sentAt: v.optional(v.number()),
+    errorCode: v.optional(notificationDeliveryErrorUnion),
+  })
+    // Entrega del evento por canal: una fila basta para decidir y actualizar.
+    .index("by_eventId_and_channel", ["eventId", "channel"])
+    // Despacho pendiente por canal, sin barrer todas las entregas.
+    .index("by_channel_and_status", ["channel", "status"]),
+
+  // Tabla 'pushSubscriptions': suscripciones Web Push opcionales de cada
+  // persona (TI2-145). Guarda el endpoint y las claves públicas del navegador
+  // necesarias para que el servidor firme el envío; no hay tokens de sesión ni
+  // datos del acompañamiento. Una suscripción pertenece a una sola persona: la
+  // vía de escritura reasigna el endpoint al usuario vigente en vez de
+  // duplicarlo. Solo la lee el adaptador de envío (TI2-160); ninguna función
+  // pública la devuelve.
+  pushSubscriptions: defineTable({
+    userId: v.id("users"),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    expirationTime: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    // Suscripciones propias: activar, listar para enviar y desactivar.
+    .index("by_userId", ["userId"])
+    // Endpoint único por navegador: la vía de escritura lo reutiliza.
+    .index("by_endpoint", ["endpoint"]),
+
+  // Tabla 'calendarConnections': metadatos locales del vínculo de una persona
+  // con su cuenta de Google Calendar (TI2-145). No guarda un estado de
+  // conexión: «conectado» se deriva solo de los alcances OAuth que Better Auth
+  // conserva para la cuenta de Google (`getCalendarConnection`), así que no
+  // hay dos fuentes para el mismo concepto. Acá vive únicamente lo que Better
+  // Auth no tiene: `accountReference`, una referencia opaca a la cuenta
+  // cifrada, y las fechas de vínculo y desconexión. Los tokens OAuth no se
+  // copian ni se devuelven al cliente. Una fila no afirma que la cuenta siga
+  // conectada. Desconectar conserva la referencia y las fechas como
+  // trazabilidad para TI2-161; los eventos ya creados pueden quedar sin
+  // actualizar, como avisa esa misma tarea.
+  calendarConnections: defineTable({
+    userId: v.id("users"),
+    accountReference: v.string(),
+    linkedAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    updatedAt: v.number(),
+  })
+    // Metadatos del vínculo de la persona: una fila basta.
+    .index("by_userId", ["userId"]),
 
   // Tabla 'appointmentAuditEvents': bitácora append-only de cambios de agenda
   // (TI2-128). Cada fila guarda solo la acción, el actor resuelto desde la
