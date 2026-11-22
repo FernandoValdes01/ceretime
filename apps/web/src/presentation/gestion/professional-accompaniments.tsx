@@ -157,8 +157,10 @@ function AccompanimentDetailBody({ accompanimentId }: { accompanimentId: string 
     return <LoadingState label="Cargando el detalle…" />;
   }
 
+  // `#root` centra el texto de toda la Web: el detalle se alinea a la
+  // izquierda para que los textos largos se lean como párrafos.
   return (
-    <>
+    <div className="text-left">
       <dl className="m-0 divide-y divide-(--ct-line)">
         <DetailRow label="Estado">{accompanimentStatusLabel(view.status)}</DetailRow>
         <DetailRow label="Objetivo">{view.objective}</DetailRow>
@@ -175,7 +177,7 @@ function AccompanimentDetailBody({ accompanimentId }: { accompanimentId: string 
       <StudentPanelErrorBoundary subject="el historial de seguimiento" level="section">
         <FollowUpHistory accompanimentId={view._id} />
       </StudentPanelErrorBoundary>
-    </>
+    </div>
   );
 }
 
@@ -183,7 +185,10 @@ function DetailRow({ label, children }: { label: string; children: ReactNode }) 
   return (
     <div className="py-3">
       <dt className="text-sm font-semibold text-on-surface">{label}</dt>
-      <dd className="m-0 text-base text-on-surface">{children}</dd>
+      {/* Las necesidades de acceso llegan unidas por saltos de línea. */}
+      <dd className="m-0 text-base whitespace-pre-line text-on-surface wrap-anywhere">
+        {children}
+      </dd>
     </div>
   );
 }

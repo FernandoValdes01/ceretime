@@ -197,7 +197,7 @@ function FollowUpForm({ appointmentId }: { appointmentId: string }) {
 
   if (reviewing) {
     return (
-      <div className="mt-4 flex flex-col gap-4">
+      <div className="mt-4 flex flex-col gap-4 text-left">
         <h3 ref={reviewRef} tabIndex={-1}>
           Confirmar el seguimiento
         </h3>
@@ -234,7 +234,7 @@ function FollowUpForm({ appointmentId }: { appointmentId: string }) {
   }
 
   return (
-    <form onSubmit={handleReview} noValidate className="mt-4 flex flex-col gap-6">
+    <form onSubmit={handleReview} noValidate className="mt-4 flex flex-col gap-6 text-left">
       <fieldset className={SHARED_GROUP}>
         <legend className={LEGEND}>Se comparte con el estudiante</legend>
         <AgreementsEditor

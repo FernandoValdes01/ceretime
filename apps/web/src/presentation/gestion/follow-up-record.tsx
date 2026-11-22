@@ -50,7 +50,7 @@ export function FollowUpRecordContent({
   pending?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 text-left wrap-anywhere">
       <p className="m-0 text-sm text-on-surface-variant">
         {pending
           ? "Revisa el seguimiento: al confirmarlo queda guardado y ya no se puede editar."
@@ -62,7 +62,7 @@ export function FollowUpRecordContent({
           {record.agreements.length === 0 ? (
             <p className="m-0">Sin acuerdos.</p>
           ) : (
-            <ul className="m-0 pl-5">
+            <ul className="m-0 list-disc pl-5">
               {record.agreements.map((agreement, index) => (
                 // Los acuerdos no tienen identificador: los distingue su posición.
                 <li key={index}>{agreement.description}</li>
@@ -74,7 +74,7 @@ export function FollowUpRecordContent({
           {record.tasks.length === 0 ? (
             <p className="m-0">Sin tareas.</p>
           ) : (
-            <ul className="m-0 pl-5">
+            <ul className="m-0 list-disc pl-5">
               {record.tasks.map((task, index) => (
                 <li key={index}>
                   {task.description}
@@ -88,7 +88,7 @@ export function FollowUpRecordContent({
           )}
         </FollowUpField>
         <FollowUpField label="Próximos pasos">
-          <p className="m-0">{record.nextSteps}</p>
+          <p className="m-0 whitespace-pre-line">{record.nextSteps}</p>
         </FollowUpField>
         {record.suggestedNextAppointmentDate === undefined ? null : (
           <FollowUpField label="Fecha sugerida para la próxima atención">
@@ -102,7 +102,7 @@ export function FollowUpRecordContent({
           <p className="m-0 mt-2 text-sm text-on-surface-variant">
             Solo la ven los profesionales asignados a este acompañamiento.
           </p>
-          <p className="m-0 mt-2">{record.internalNote}</p>
+          <p className="m-0 mt-2 whitespace-pre-line">{record.internalNote}</p>
         </section>
       ) : null}
     </div>
