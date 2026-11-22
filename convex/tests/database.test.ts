@@ -83,6 +83,29 @@ import {
   recordAppointmentAuditEvent,
 } from "../infrastructure/audit/repository";
 import {
+  applyPrivacyRequestTransition,
+  createPrivacyBlock,
+  createPrivacyRequest,
+  createPrivacyRetentionException,
+  extendPrivacyRequestDeadline,
+  getPrivacyRequest,
+  liftPrivacyBlock,
+  liftPrivacyRetentionException,
+  listActivePrivacyBlocksForSubject,
+  listActiveRetentionExceptionsForCategory,
+  listActiveRetentionExceptionsForSubject,
+  listPrivacyBlocksByRequest,
+  listPrivacyRetentionRules,
+  listRetentionExceptionsByPrivacyRequest,
+  paginateActivePrivacyBlocks,
+  paginatePrivacyRequestsByDeadline,
+  paginatePrivacyRequestsByRequester,
+  paginatePrivacyRequestsByStatus,
+  readPrivacyRetentionRule,
+  recordPrivacyResponseDelivery,
+  upsertPrivacyRetentionRule,
+} from "../infrastructure/privacy/repository";
+import {
   findRequestByIdempotencyKey,
   getRequestById,
   insertReceivedRequest,
@@ -4601,4 +4624,615 @@ test("TI2-152: el historial de estados guarda cada cambio y su índice responde 
   expect(Object.keys(accompaniment ?? {}).sort()).toEqual(
     ["_creationTime", "_id", "accessNeeds", "objective", "status", "studentId"].sort(),
   );
+});
+
+const TI151_TIME_ZONE = "America/Santiago";
+const TI151_RECEIVED_AT = Date.UTC(2026, 10, 4, 15, 0, 0); // 2026-11-04 12:00 America/Santiago
+const TI151_DAY_MS = 24 * 60 * 60 * 1000;
+
+test("TI2-151: solicitudes de derechos persisten índices por titular, estado y plazo, prórroga, respuesta y constancia de envío", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-est",
+    email: "ti151.est@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti151-prof",
+    email: "ti151.prof@uct.cl",
+    role: "professional",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-admin",
+    email: "ti151.admin@uct.cl",
+    role: "admin",
+  });
+
+  const accessCreated = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "access",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  expect(accessCreated.status).toBe("created");
+  if (accessCreated.status !== "created") throw new Error("expected created");
+  expect(accessCreated.request).toMatchObject({
+    kind: "access",
+    status: "received",
+    requesterId: student,
+    requesterRole: "student",
+    channel: "student_app",
+    responseRule: "calendar_30",
+    receivedDate: "2026-11-04",
+    initialDueDate: "2026-12-04",
+  });
+
+  const blockingCreated = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: professional,
+        receivedAt: TI151_RECEIVED_AT + 1000,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  expect(blockingCreated.status).toBe("created");
+  if (blockingCreated.status !== "created") throw new Error("expected created");
+  expect(blockingCreated.request).toMatchObject({
+    kind: "blocking",
+    channel: "institutional_channel",
+    responseRule: "business_2",
+    initialDueDate: "2026-11-06",
+  });
+
+  // Índices por titular, estado y plazo ordenan correctamente.
+  const byStudent = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByRequester(ctx, student, { numItems: 10, cursor: null }),
+  );
+  expect(byStudent.page.map((item) => item.id)).toEqual([accessCreated.requestId]);
+
+  const byReceived = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByStatus(ctx, "received", { numItems: 10, cursor: null }),
+  );
+  // Bloqueo (2 días hábiles) vence antes que acceso (30 días corridos).
+  expect(byReceived.page.map((item) => item.id)).toEqual([
+    blockingCreated.requestId,
+    accessCreated.requestId,
+  ]);
+
+  const dueSoon = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByDeadline(
+        ctx,
+        { numItems: 10, cursor: null },
+        { dueBefore: accessCreated.request.dueAt },
+      ),
+  );
+  expect(dueSoon.page.map((item) => item.id)).toEqual([blockingCreated.requestId]);
+
+  // Prórroga única: funciona en acceso, actualiza dueAt, y se rechaza en bloqueo o repetición.
+  const extended = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: accessCreated.requestId,
+        days: 15,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        reason: "Verificación de antecedentes en curso",
+      }),
+  );
+  expect(extended.status).toBe("applied");
+  if (extended.status !== "applied") throw new Error("expected applied");
+  expect(extended.request.extension).toMatchObject({
+    days: 15,
+    extendedUntilDate: "2026-12-19",
+    extendedBy: admin,
+  });
+  expect(extended.request.dueAt).toBe(extended.request.extension?.extendedUntilAt);
+  expect(extended.request.dueAt).toBeGreaterThan(extended.request.initialDueAt);
+
+  const duplicateExtension = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: accessCreated.requestId,
+        days: 5,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        reason: "Segunda prórroga no permitida",
+      }),
+  );
+  expect(duplicateExtension).toEqual({ status: "rejected", cause: "extension_already_applied" });
+
+  const blockingExtension = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: blockingCreated.requestId,
+        days: 5,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        reason: "Bloqueo no admite prórroga",
+      }),
+  );
+  expect(blockingExtension).toEqual({ status: "rejected", cause: "extension_not_allowed" });
+
+  // Transiciones, respuesta fundada y constancia de envío inmutable.
+  const beforeResolvedDelivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "student_app",
+        sentAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        recordedBy: admin,
+        reference: "FOLIO-0001",
+      }),
+  );
+  expect(beforeResolvedDelivery).toEqual({ status: "not_resolved" });
+
+  const inReview = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(inReview.status).toBe("applied");
+  if (inReview.status !== "applied") throw new Error("expected applied");
+  expect(inReview.request.responsibleId).toBe(admin);
+
+  const respondedAt = TI151_RECEIVED_AT + 3 * TI151_DAY_MS;
+  const resolved = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: respondedAt,
+        response: {
+          outcome: "granted",
+          reasons: "Se entrega copia resumida de los datos propios registrados en el prototipo.",
+          responsibleId: admin,
+        },
+      }),
+  );
+  expect(resolved.status).toBe("applied");
+
+  // Una solicitud resuelta no se reabre ni sobrescribe su respuesta.
+  const reopenAttempt = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: respondedAt + 1000,
+      }),
+  );
+  expect(reopenAttempt).toEqual({ status: "rejected", cause: "transition_not_allowed" });
+
+  const sentAt = Date.UTC(2026, 10, 10, 13, 0, 0); // 2026-11-10 10:00 America/Santiago
+  const delivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "student_app",
+        sentAt,
+        recordedBy: admin,
+        reference: "FOLIO-2026-0001",
+      }),
+  );
+  expect(delivery.status).toBe("recorded");
+  if (delivery.status !== "recorded") throw new Error("expected recorded");
+  expect(delivery.receipt).toMatchObject({
+    channel: "student_app",
+    sentAt,
+    recordedBy: admin,
+    reference: "FOLIO-2026-0001",
+    agencyClaimDueDate: "2026-12-22",
+  });
+
+  // La constancia de envío no se sobrescribe.
+  const duplicateDelivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "email",
+        sentAt: sentAt + 1000,
+        recordedBy: admin,
+        reference: "FOLIO-2026-0002",
+      }),
+  );
+  expect(duplicateDelivery).toEqual({ status: "already_recorded" });
+
+  const stored = await t.run(async (ctx) => await getPrivacyRequest(ctx, accessCreated.requestId));
+  expect(stored?.response).toMatchObject({
+    outcome: "granted",
+    responsibleId: admin,
+    respondedAt,
+  });
+  expect(stored?.deliveryReceipt).toMatchObject({
+    channel: "student_app",
+    reference: "FOLIO-2026-0001",
+  });
+});
+
+test("TI2-151: bloqueos temporales conservan alcance, coherencia con temporaryBlockUntil y consulta activa por índice", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-blk-est",
+    email: "ti151.blk.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-blk-admin",
+    email: "ti151.blk.admin@uct.cl",
+    role: "admin",
+  });
+
+  const created = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (created.status !== "created") throw new Error("expected created");
+
+  await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: created.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+
+  const blockStartsAt = TI151_RECEIVED_AT + 2000;
+  const blockEndsAt = blockStartsAt + 10 * TI151_DAY_MS;
+  const resolved = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: created.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: blockStartsAt,
+        response: {
+          outcome: "granted",
+          reasons: "Se concede bloqueo temporal mientras se revisa la rectificación.",
+          responsibleId: admin,
+          temporaryBlockUntil: blockEndsAt,
+        },
+      }),
+  );
+  expect(resolved.status).toBe("applied");
+
+  // Un bloqueo vinculado a la solicitud rechaza un vencimiento distinto al de la respuesta.
+  const mismatch = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: created.requestId,
+        scope: "all_personal_data",
+        startsAt: blockStartsAt,
+        endsAt: blockEndsAt + TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Bloqueo temporal concedido en resolución",
+      }),
+  );
+  expect(mismatch).toEqual({ status: "deadline_mismatch" });
+
+  const fullBlock = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: created.requestId,
+        scope: "all_personal_data",
+        startsAt: blockStartsAt,
+        endsAt: blockEndsAt,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Bloqueo temporal concedido en resolución",
+      }),
+  );
+  expect(fullBlock.status).toBe("created");
+  if (fullBlock.status !== "created") throw new Error("expected created");
+
+  const scopedBlock = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        scope: "appointments",
+        startsAt: blockStartsAt,
+        endsAt: blockStartsAt + 3 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Suspensión acotada a agenda durante revisión",
+      }),
+  );
+  expect(scopedBlock.status).toBe("created");
+  if (scopedBlock.status !== "created") throw new Error("expected created");
+
+  // Consulta por índice activo: antes de los 3 días aparecen ambos; a los 4 días solo el más largo.
+  const activeEarly = await t.run(
+    async (ctx) =>
+      await listActivePrivacyBlocksForSubject(ctx, student, blockStartsAt + TI151_DAY_MS),
+  );
+  expect(activeEarly.map((b) => b.scope)).toEqual(["appointments", "all_personal_data"]);
+
+  const activeLater = await t.run(
+    async (ctx) =>
+      await listActivePrivacyBlocksForSubject(ctx, student, blockStartsAt + 4 * TI151_DAY_MS),
+  );
+  expect(activeLater.map((b) => b.scope)).toEqual(["all_personal_data"]);
+
+  const byRequest = await t.run(
+    async (ctx) => await listPrivacyBlocksByRequest(ctx, created.requestId),
+  );
+  expect(byRequest.map((b) => b.id)).toEqual([fullBlock.blockId]);
+
+  // Levantar el bloqueo lo saca de los activos y es idempotente.
+  const lifted = await t.run(
+    async (ctx) =>
+      await liftPrivacyBlock(ctx, {
+        blockId: fullBlock.blockId,
+        liftedBy: admin,
+        liftedAt: blockStartsAt + 5 * TI151_DAY_MS,
+        liftReason: "Rectificación completada antes del vencimiento",
+      }),
+  );
+  expect(lifted).toEqual({ status: "lifted", blockId: fullBlock.blockId });
+
+  const liftedAgain = await t.run(
+    async (ctx) =>
+      await liftPrivacyBlock(ctx, {
+        blockId: fullBlock.blockId,
+        liftedBy: admin,
+        liftedAt: blockStartsAt + 6 * TI151_DAY_MS,
+        liftReason: "Reintento",
+      }),
+  );
+  expect(liftedAgain).toEqual({ status: "already_lifted", blockId: fullBlock.blockId });
+
+  const globalActive = await t.run(
+    async (ctx) =>
+      await paginateActivePrivacyBlocks(ctx, blockStartsAt + 5 * TI151_DAY_MS, {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  expect(globalActive.page).toEqual([]);
+});
+
+test("TI2-151: reglas de conservación sin plazos inventados y excepciones por obligación o procedimiento abierto", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-ret-est",
+    email: "ti151.ret.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-ret-admin",
+    email: "ti151.ret.admin@uct.cl",
+    role: "admin",
+  });
+
+  // Regla inicial sin plazo inventado (`retentionDays` ausente = pendiente de UCT).
+  const initialRule = await t.run(
+    async (ctx) =>
+      await upsertPrivacyRetentionRule(ctx, {
+        category: "accompaniments",
+        disposition: "anonymize",
+        legalBasisNote: "Pendiente de definición institucional (ADR-0003)",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(initialRule.status).toBe("saved");
+  if (initialRule.status !== "saved") throw new Error("expected saved");
+  expect(initialRule.rule.retentionDays).toBeUndefined();
+
+  // Actualizar la misma categoría no duplica filas.
+  const configuredRule = await t.run(
+    async (ctx) =>
+      await upsertPrivacyRetentionRule(ctx, {
+        category: "accompaniments",
+        retentionDays: 365,
+        disposition: "anonymize",
+        legalBasisNote: "Acuerdo ficticio de prueba UCT",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+  expect(configuredRule.status).toBe("saved");
+  if (configuredRule.status !== "saved") throw new Error("expected saved");
+  expect(configuredRule.ruleId).toBe(initialRule.ruleId);
+
+  const readRule = await t.run(
+    async (ctx) => await readPrivacyRetentionRule(ctx, "accompaniments"),
+  );
+  expect(readRule).toMatchObject({
+    category: "accompaniments",
+    retentionDays: 365,
+    disposition: "anonymize",
+  });
+  const allRules = await t.run(async (ctx) => await listPrivacyRetentionRules(ctx));
+  expect(allRules).toHaveLength(1);
+
+  // Excepción por obligación legal (toda la categoría) y por procedimiento abierto (titular + solicitud).
+  const privacyReq = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "erasure",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (privacyReq.status !== "created") throw new Error("expected created");
+
+  const legalHold = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "legal_obligation",
+        category: "accompaniments",
+        reference: "RES-UCT-FICTICIA-01",
+        startsAt: TI151_RECEIVED_AT,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(legalHold.status).toBe("created");
+
+  const procedureHold = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        privacyRequestId: privacyReq.requestId,
+        reference: "SOL-DERECHOS-FICTICIA-01",
+        startsAt: TI151_RECEIVED_AT,
+        expiresAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(procedureHold.status).toBe("created");
+  if (procedureHold.status !== "created") throw new Error("expected created");
+
+  const activeByCategory = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForCategory(
+        ctx,
+        "accompaniments",
+        TI151_RECEIVED_AT + TI151_DAY_MS,
+      ),
+  );
+  expect(activeByCategory).toHaveLength(2);
+
+  const activeBySubject = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForSubject(ctx, student, TI151_RECEIVED_AT + TI151_DAY_MS),
+  );
+  expect(activeBySubject.map((item) => item.id)).toEqual([procedureHold.exceptionId]);
+
+  const byPrivacyReq = await t.run(
+    async (ctx) => await listRetentionExceptionsByPrivacyRequest(ctx, privacyReq.requestId),
+  );
+  expect(byPrivacyReq.map((item) => item.id)).toEqual([procedureHold.exceptionId]);
+
+  const liftedException = await t.run(
+    async (ctx) =>
+      await liftPrivacyRetentionException(ctx, {
+        exceptionId: procedureHold.exceptionId,
+        liftedBy: admin,
+        liftedAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        liftReason: "Solicitud resuelta y cerrada",
+      }),
+  );
+  expect(liftedException).toEqual({
+    status: "lifted",
+    exceptionId: procedureHold.exceptionId,
+  });
+
+  const remainingBySubject = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForSubject(
+        ctx,
+        student,
+        TI151_RECEIVED_AT + 3 * TI151_DAY_MS,
+      ),
+  );
+  expect(remainingBySubject).toEqual([]);
+});
+
+test("TI2-151: el esquema rechaza contenido sensible en campos de control y no agrega otra bitácora", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-sens-est",
+    email: "ti151.sens.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-sens-admin",
+    email: "ti151.sens.admin@uct.cl",
+    role: "admin",
+  });
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRequests", {
+        kind: "access",
+        status: "received",
+        requesterId: student,
+        requesterRole: "student",
+        channel: "student_app",
+        receivedAt: TI151_RECEIVED_AT,
+        version: "v1",
+        responseRule: "calendar_30",
+        receivedDate: "2026-11-04",
+        initialDueDate: "2026-12-04",
+        initialDueAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        dueAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        deadlineTimeZone: TI151_TIME_ZONE,
+        deadlineHolidays: [],
+        updatedAt: TI151_RECEIVED_AT,
+        accessNeeds: "No permitido en campos de control",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyBlocks", {
+        subjectId: student,
+        scope: "appointments",
+        startsAt: TI151_RECEIVED_AT,
+        endsAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+        reason: "Control",
+        clinicalNotes: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRetentionRules", {
+        category: "follow_up",
+        disposition: "delete",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT,
+        diagnosis: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRetentionExceptions", {
+        kind: "legal_obligation",
+        category: "follow_up",
+        reference: "RES-01",
+        startsAt: TI151_RECEIVED_AT,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+        rut: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  // No se crea otra tabla de bitácora: solo existe la auditoría de TI2-128.
+  const auditTables = Object.keys(schema.tables).filter((name) => /audit/i.test(name));
+  expect(auditTables).toEqual(["appointmentAuditEvents"]);
 });
