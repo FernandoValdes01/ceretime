@@ -234,9 +234,10 @@ export async function paginateNotificationEventsForRecipient(
  *
  * Los pendientes usan `by_recipientId_and_readAt_and_occurredAt`: `readAt`
  * ausente se consulta como rango nulo y la página no recorre los avisos ya
- * leídos. Los leídos conservan el índice del destinatario y filtran la
- * desigualdad, que el constructor de rangos del índice no expresa: solo admite
- * igualdades y cotas inferior y superior. Las filas anteriores a TI2-145 no
+ * leídos. Los leídos conservan el índice del destinatario y filtran `readAt`
+ * presente: una cota sobre `readAt` en el índice nuevo los ordenaría por
+ * instante de lectura y no por ocurrencia, que es el orden de la bandeja. Las
+ * filas anteriores a TI2-145 no
  * tienen `readAt` y cuentan como pendientes, igual que las nuevas todavía no
  * leídas: no hace falta una migración para distinguirlas.
  */
