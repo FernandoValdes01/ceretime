@@ -5,26 +5,41 @@ import {
   type AppointmentStatus,
 } from "../appointments/appointment";
 import {
+  APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
   NOTIFICATION_CONTRACT_VERSION,
   NOTIFICATION_EVENT_KIND_VALUES,
+  NOTIFICATION_READ_STATUS_VALUES,
+  REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
+  isAppointmentNotificationEventKind,
   isNotificationEventKind,
+  isNotificationReadStatus,
+  isRequestNotificationEventKind,
   notificationEventsForCreation,
   notificationEventsForOnlineAccess,
+  notificationEventsForRequestReceived,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   toExternalNotification,
   toNotificationEvent,
+  type AppointmentNotificationEventKind,
   type ExternalNotification,
   type NotificationAudience,
   type NotificationEvent,
   type NotificationEventInput,
   type NotificationSubject,
+  type RequestNotificationEvent,
 } from "./notification";
 import {
+  APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES as BARREL_APPOINTMENT_KINDS,
   NOTIFICATION_CONTRACT_VERSION as BARREL_VERSION,
+  NOTIFICATION_READ_STATUS_VALUES as BARREL_READ_STATUS,
+  REQUEST_NOTIFICATION_EVENT_KIND_VALUES as BARREL_REQUEST_KINDS,
+  isAppointmentNotificationEventKind as barrelIsAppointmentKind,
   isNotificationEventKind as barrelIsKind,
+  isRequestNotificationEventKind as barrelIsRequestKind,
   notificationEventsForCreation as barrelEventsForCreation,
   notificationEventsForOnlineAccess as barrelEventsForOnlineAccess,
+  notificationEventsForRequestReceived as barrelEventsForRequestReceived,
   notificationEventsForTransition as barrelEventsForTransition,
   notificationIdempotencyKey as barrelKey,
   toExternalNotification as barrelToExternal,
@@ -41,7 +56,7 @@ const subject: NotificationSubject = {
   professionalId: "profesional-ficticio-1",
 };
 
-function event(kind: NotificationEvent["kind"]): NotificationEvent {
+function event(kind: AppointmentNotificationEventKind): NotificationEvent {
   return toNotificationEvent({
     kind,
     appointmentId: subject.appointmentId,
@@ -108,8 +123,18 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
     expect(barrelToEvent).toBe(toNotificationEvent);
     expect(barrelEventsForCreation).toBe(notificationEventsForCreation);
     expect(barrelEventsForOnlineAccess).toBe(notificationEventsForOnlineAccess);
+    expect(barrelEventsForRequestReceived).toBe(notificationEventsForRequestReceived);
     expect(barrelEventsForTransition).toBe(notificationEventsForTransition);
     expect(barrelKey).toBe(notificationIdempotencyKey);
+    expect(BARREL_APPOINTMENT_KINDS).toBe(APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES);
+    expect(BARREL_REQUEST_KINDS).toBe(REQUEST_NOTIFICATION_EVENT_KIND_VALUES);
+    expect(barrelIsAppointmentKind).toBe(isAppointmentNotificationEventKind);
+    expect(barrelIsRequestKind).toBe(isRequestNotificationEventKind);
+    expect(BARREL_READ_STATUS).toBe(NOTIFICATION_READ_STATUS_VALUES);
+    expect(isNotificationReadStatus("pending")).toBe(true);
+    expect(isNotificationReadStatus("read")).toBe(true);
+    expect(isNotificationReadStatus("unread")).toBe(false);
+    expect([...NOTIFICATION_READ_STATUS_VALUES]).toEqual(["pending", "read"]);
     expectTypeOf<BarrelEvent>().toEqualTypeOf<NotificationEvent>();
     expectTypeOf<BarrelExternal>().toEqualTypeOf<ExternalNotification>();
     expectTypeOf<BarrelSubject>().toEqualTypeOf<NotificationSubject>();
@@ -124,9 +149,17 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
       "appointment_no_show",
       "appointment_reminder",
       "appointment_online_access_ready",
+      "request_received",
     ]);
     expect(isNotificationEventKind("appointment_reminder")).toBe(true);
+    expect(isNotificationEventKind("request_received")).toBe(true);
     expect(isNotificationEventKind("appointment_deleted")).toBe(false);
+    expect([...APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES]).not.toContain("request_received");
+    expect([...REQUEST_NOTIFICATION_EVENT_KIND_VALUES]).toEqual(["request_received"]);
+    expect(isAppointmentNotificationEventKind("appointment_reminder")).toBe(true);
+    expect(isAppointmentNotificationEventKind("request_received")).toBe(false);
+    expect(isRequestNotificationEventKind("request_received")).toBe(true);
+    expect(isRequestNotificationEventKind("appointment_reminder")).toBe(false);
   });
 
   test("la variante externa es genérica y no filtra datos", () => {
@@ -155,14 +188,28 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
         title: "Tu atención tiene su acceso disponible",
         body: "Revisa cómo ingresar en la aplicación.",
       },
+      request_received: {
+        title: "Tienes una actualización pendiente",
+        body: "Revisa las novedades en la aplicación.",
+      },
     };
-    for (const kind of NOTIFICATION_EVENT_KIND_VALUES) {
+    for (const kind of APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES) {
       const external = toExternalNotification(event(kind));
       expect(external).toEqual(texts[kind]);
       expect(`${external.title} ${external.body}`).not.toContain("atencion-ficticia-1");
       expect(`${external.title} ${external.body}`).not.toContain("inasistencia");
-      expect(`${external.title} ${external.body}`).not.toContain("justific");
+      expect(`${external.title} ${external.body}`).not.toContain("justificación");
     }
+    const [requestEvent] = notificationEventsForRequestReceived(
+      "solicitud-ficticia-1",
+      "estudiante-ficticio-1",
+      6000,
+    );
+    const requestExternal = toExternalNotification(requestEvent);
+    expect(requestExternal).toEqual(texts.request_received);
+    expect(`${requestExternal.title} ${requestExternal.body}`).not.toContain(
+      "solicitud-ficticia-1",
+    );
   });
 
   test("la inasistencia no se revela fuera de sesión", () => {
@@ -170,7 +217,7 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
     expect(external.title).toBe("Tienes una actualización pendiente");
     expect(external.body).toBe("Revisa las novedades en la aplicación.");
     expect(`${external.title} ${external.body}`).not.toContain("inasistencia");
-    expect(`${external.title} ${external.body}`).not.toContain("justific");
+    expect(`${external.title} ${external.body}`).not.toContain("justificación");
   });
 
   test("una clase desconocida es error, no texto libre", () => {
@@ -396,5 +443,88 @@ describe("Aviso del acceso en línea (TI2-142)", () => {
     const [replacement] = notificationEventsForOnlineAccess(subject, 4000);
     expect(notificationIdempotencyKey(retry)).toBe(notificationIdempotencyKey(first));
     expect(notificationIdempotencyKey(replacement)).not.toBe(notificationIdempotencyKey(first));
+  });
+
+  test("la solicitud es un recurso propio y no se confunde con una atención", () => {
+    const [emitted] = notificationEventsForRequestReceived(
+      "solicitud-ficticia-1",
+      "estudiante-ficticio-1",
+      5000,
+    );
+    const requestEvent = emitted as RequestNotificationEvent;
+    expect(requestEvent).toEqual({
+      kind: "request_received",
+      requestId: "solicitud-ficticia-1",
+      recipientId: "estudiante-ficticio-1",
+      occurredAt: 5000,
+      version: "v1",
+    });
+    expectTypeOf(requestEvent).toMatchTypeOf<RequestNotificationEvent>();
+    expect("appointmentId" in requestEvent).toBe(false);
+    expect(notificationIdempotencyKey(requestEvent)).toBe(
+      JSON.stringify([
+        "v1",
+        "request_received",
+        "request",
+        "solicitud-ficticia-1",
+        "estudiante-ficticio-1",
+        5000,
+      ]),
+    );
+    expect(notificationIdempotencyKey(requestEvent)).not.toBe(
+      JSON.stringify([
+        "v1",
+        "request_received",
+        "solicitud-ficticia-1",
+        "estudiante-ficticio-1",
+        5000,
+      ]),
+    );
+  });
+
+  test("la clase debe corresponder al recurso", () => {
+    expect(() =>
+      toNotificationEvent({
+        kind: "appointment_scheduled",
+        requestId: "solicitud-ficticia-1",
+        recipientId: "estudiante-ficticio-1",
+        occurredAt: 1000,
+      } as never),
+    ).toThrow("no corresponde a una solicitud");
+    expect(() =>
+      toNotificationEvent({
+        kind: "request_received",
+        appointmentId: "atencion-ficticia-1",
+        recipientId: "estudiante-ficticio-1",
+        occurredAt: 1000,
+      } as never),
+    ).toThrow("no corresponde a una atención");
+  });
+
+  test("el evento exige exactamente un recurso", () => {
+    expect(() =>
+      toNotificationEvent({
+        kind: "request_received",
+        requestId: "  ",
+        recipientId: "estudiante-ficticio-1",
+        occurredAt: 1000,
+      }),
+    ).toThrow("solicitud");
+    expect(() =>
+      toNotificationEvent({
+        kind: "request_received",
+        appointmentId: "atencion-ficticia-1",
+        requestId: "solicitud-ficticia-1",
+        recipientId: "estudiante-ficticio-1",
+        occurredAt: 1000,
+      } as never),
+    ).toThrow("exactamente un recurso");
+    expect(() =>
+      toNotificationEvent({
+        kind: "request_received",
+        recipientId: "estudiante-ficticio-1",
+        occurredAt: 1000,
+      } as never),
+    ).toThrow("exactamente un recurso");
   });
 });

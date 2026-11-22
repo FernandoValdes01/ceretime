@@ -752,7 +752,10 @@ describe("getCalendarConnection", () => {
     return { listGoogleScopes: async () => scopes };
   }
 
-  test("confirma la conexión solo con el alcance de Calendar", async () => {
+  // Las dependencias no incluyen `calendarConnections`: una fila de metadatos
+  // no puede cambiar esta respuesta. El alcance de Better Auth basta, haya o
+  // no fila local.
+  test("el alcance de Calendar conecta sin fila de metadatos", async () => {
     const result = await getCalendarConnection(
       { auth: fakeAuth(), connection: connection(["openid", CALENDAR_EVENTS_SCOPE]) },
       { tokenIdentifier: "token-student" },
