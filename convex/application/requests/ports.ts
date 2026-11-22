@@ -200,3 +200,20 @@ export interface RequestListReader<RequestId extends string, UserId extends stri
   ): Promise<PaginationResult<{ readonly requestId: RequestId }>>;
   listRecentTransitions(requestId: RequestId): Promise<readonly RecentRequestTransition[]>;
 }
+
+/**
+ * Liberación de la toma (revisión TI4-84). `releaseTake` revoca la toma activa
+ * del Profesional con quien la libera y cuándo (`liberadaEn` del MER), y quita
+ * la marca de tomada de la solicitud, así vuelve a la bandeja.
+ * `listActiveTakeRequestIds` entrega todas las solicitudes con toma activa del
+ * Profesional, para liberarlas al revocar su cuenta en la misma mutation.
+ */
+export interface RequestTakeReleaser<RequestId extends string, UserId extends string> {
+  releaseTake(input: {
+    readonly requestId: RequestId;
+    readonly professionalId: UserId;
+    readonly releasedBy: UserId;
+    readonly releasedAt: number;
+  }): Promise<void>;
+  listActiveTakeRequestIds(professionalId: UserId): Promise<readonly RequestId[]>;
+}

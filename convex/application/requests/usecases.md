@@ -60,6 +60,10 @@ El registro reutiliza `toCompleteSubmission`, `toRequestSubmission` y la clave d
 
 Se prueban por `api.presentation.requests.*` en `convex/tests/requests.test.ts` (permisos, transiciones inválidas y rechazos sin escritura) y en `convex/domain/requests/referral.test.ts`.
 
+## Liberación de la toma (revisión TI4-84)
+
+`presentation/requests.releaseRequest` recibe `requestId`. Solo el Profesional vigente con toma activa, y solo desde `under_review` o `awaiting_information_or_acceptance`: la solicitud vuelve a `received` y a la bandeja, la toma queda revocada con quién la liberó y cuándo, y el cambio queda en `requestTransitions` sin motivo. Sin toma, la solicitud ajena o inexistente recibe `unauthorized`; otro estado responde `conflict` con "La solicitud no admite liberar la toma en su estado actual.". Revocar la cuenta de un Profesional (`presentation/accounts.revokeAccount`) usa `releaseTakesOfProfessional` en la misma mutation para liberar todas sus tomas de solicitudes abiertas, con el Administrador como actor. Las dos viven en `release.ts` y usan el puerto `RequestTakeReleaser`. Se prueban por la API pública en `convex/tests/requestTakeRelease.test.ts`.
+
 ## Puertos y contrato común (TI2-181)
 
 Ningún caso de uso de `convex/application/requests/` importa el contexto de Convex ni repositorios concretos. Cada operación de `commands.ts` y `queries.ts` declara sus `deps` con los puertos de `ports.ts` y devuelve `ApiResult`; `presentation/requests.ts` compone los adaptadores de Infraestructura (`requestStore`, `requestReader`, `activeStudentReader`, `activeStudentByEmailReader`, `activeProfessionalReader`, `activeRequestViewerReader` y `accompanimentOpener`) con el mismo `ctx`, así cada mutation sigue siendo una sola transacción, y traduce el resultado con `unwrapApiResult`. La paginación usa solo los tipos `PaginationOptions` y `PaginationResult` de Convex, para que las opciones del cliente lleguen al índice sin rearmarlas. Se prueba con dobles en memoria en `take.test.ts`, `review.test.ts` y `register.test.ts`, y por la API pública en `convex/tests/requests.test.ts`.

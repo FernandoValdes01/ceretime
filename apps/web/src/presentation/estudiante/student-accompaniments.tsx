@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
-import { ConvexError } from "convex/values";
 // Fuente canónica del contrato de errores (TI2-23, TI2-88): el Backend
-// responde toda denegación con este mensaje genérico, sin motivo ni
-// existencia del recurso. Se importa del barrel, no se duplica el literal.
-import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
+// responde toda denegación con este código, sin motivo ni existencia del
+// recurso. Se importa del barrel, no se duplica el literal.
+import { UNAUTHORIZED_ERROR_CODE } from "../../../../../convex/domain/index.ts";
+import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import { toCalendarCallbackStatus } from "../../application/calendar/calendar-link.ts";
 import { accompanimentStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
@@ -69,16 +69,19 @@ export function StudentAccompanimentDetailPage({
 }
 
 /**
- * La denegación del Backend es el mensaje genérico documentado: no revela
+ * La denegación del Backend es el código genérico documentado: no revela
  * si el acompañamiento existe ni de quién es. También cubre la sesión
  * expirada, que se recupera desde el acceso (el layout enlaza la sesión).
  *
  * El valor canónico viaja en `error.data`: el SDK del cliente decora
  * `error.message` con su contexto (query y request ID), así que comparar el
- * mensaje falla contra el Backend real.
+ * mensaje falla contra el Backend real. Desde la revisión TI4-84 las lecturas
+ * de acompañamientos responden `{ code: "unauthorized" }`; `publicErrorOf`
+ * sigue aceptando el texto anterior mientras Web y Convex se despliegan por
+ * separado.
  */
 function isAuthorizationDenial(error: unknown): boolean {
-  return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
+  return publicErrorOf(error)?.code === UNAUTHORIZED_ERROR_CODE;
 }
 
 function OwnAccompanimentDetailBody({

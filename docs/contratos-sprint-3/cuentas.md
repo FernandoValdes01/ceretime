@@ -8,13 +8,14 @@ Fuente: `CONTEXT.md` (Administrador sin acceso irrestricto, Practicante con asig
 | --- | --- | --- | --- | --- |
 | `presentation/accounts.listAccounts` | `role` (`professional` o `admin`), `paginationOpts` (`numItems` entero entre 1 y 100) | Página de cuentas del `role` pedido con detalle mínimo | Administrador vigente | `unauthorized`, sin revelar existencia; `numItems` fuera de rango falla con error de regla |
 | `presentation/accounts.getAccount` | `userId` | Detalle mínimo de la cuenta | Administrador vigente, solo personal | `unauthorized`; el `_id` de estudiante o practicante se deniega igual que uno inexistente |
+| `presentation/accounts.listAccountEnablements` | `userId`, `paginationOpts` (`numItems` entero entre 1 y 100) | Página del historial de habilitaciones de la cuenta, del evento más reciente al más antiguo | Administrador vigente, solo personal | `unauthorized` igual que `getAccount`; `numItems` fuera de rango falla con error de regla |
 
 ## Mutations públicas
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
 | `presentation/accounts.enableAccount` | `userId` | `{ userId }` habilitado | Administrador vigente, objetivo profesional o administrador de personal, pendiente o revocado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido |
-| `presentation/accounts.revokeAccount` | `userId` | `{ userId }` revocado | Administrador vigente, objetivo profesional o administrador habilitado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido o auto-revocación |
+| `presentation/accounts.revokeAccount` | `userId`, `reason?` (hasta 500 caracteres tras recortar) | `{ userId }` revocado | Administrador vigente, objetivo profesional o administrador habilitado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido o auto-revocación; `account_fields_invalid` con un motivo de más de 500 caracteres |
 
 ## Detalle mínimo y resultados
 
@@ -33,7 +34,35 @@ El listado y el detalle entregan `_id`, `email`, `fullName`, `role`, `institutio
 }
 ```
 
-Una cuenta pendiente aún no trae auditoría; una revocada conserva la habilitación y suma la revocación (`revokedBy`, `revokedAt`); una rehabilitada vuelve a `enabled` y conserva ambas auditorías. El estado vigente lo decide `institutionalStatus`, nunca la comparación de fechas.
+Una cuenta pendiente aún no trae auditoría; una revocada conserva la habilitación y suma la revocación (`revokedBy`, `revokedAt`); una rehabilitada vuelve a `enabled` y conserva ambas auditorías. El estado vigente lo decide `institutionalStatus`, nunca la comparación de fechas. Estos campos son solo el último evento: el historial completo está en `listAccountEnablements`.
+
+## Historial de habilitaciones — revisión TI4-84
+
+Antes, una segunda habilitación o revocación sobrescribía `enabledBy`, `enabledAt`, `revokedBy` y `revokedAt`, y las acciones del primer Administrador dejaban de ser consultables. Ahora cada habilitación agrega un evento a `accountEnablements` (HABILITACIONES_CUENTA del MER) y la revocación siguiente lo cierra. Ningún evento se borra ni se reabre.
+
+| Campo | Tipo | Significado |
+| --- | --- | --- |
+| `_id` | `Id<"accountEnablements">` | Identificador del evento |
+| `enabledRole` | rol | Rol con el que se habilitó la cuenta |
+| `enabledBy` | `Id<"users">`, opcional | Quién habilitó. Falta en el arranque administrativo y en el Estudiante habilitado en su primer ingreso, que no tienen actor |
+| `enabledAt` | `number` | Cuándo se habilitó |
+| `revokedBy` | `Id<"users">`, opcional | Quién revocó. Falta mientras la habilitación sigue abierta y cuando el cierre lo hizo el sistema (corrección del primer ingreso) |
+| `revokedAt` | `number`, opcional | Cuándo terminó la habilitación |
+| `revocationReason` | `string`, opcional | Motivo que escribió el Administrador al revocar, recortado. No debe incluir datos sensibles y no se copia a la auditoría |
+
+El historial se escribe en todas las vías: `enableAccount`, `revokeAccount`, `enableIntern` (pública e interna), `enableTestProfessional`, el arranque administrativo, el primer ingreso del Estudiante y la corrección del primer ingreso. Una cuenta habilitada antes de esta revisión no tiene evento abierto: al revocarla se agrega uno con la habilitación que conservaba `users`. Si `users` no guarda la fecha de habilitación, no se inventa: la revocación queda solo en `users`.
+
+```json
+{
+  "_id": "k57abc...",
+  "enabledRole": "professional",
+  "enabledBy": "j97def...",
+  "enabledAt": 1762700000000,
+  "revokedBy": "j97ghi...",
+  "revokedAt": 1763300000000,
+  "revocationReason": "Término de contrato"
+}
+```
 
 ## Permisos y datos por rol
 
@@ -41,11 +70,11 @@ Solo el Administrador con cuenta habilitada y vigente lista, lee, habilita y rev
 
 Desde TI2-152, retirar al único profesional de un acompañamiento responde `conflict`, y un acompañamiento cerrado no admite conceder ni modificar accesos; el detalle está en `docs/contratos-sprint-3/seguimiento.md`.
 
-Revocar a un Profesional no reasigna sus acompañamientos ni atenciones: las filas se conservan y dejan de autorizar en la petición siguiente porque cada lectura vuelve a exigir el perfil vigente. La reasignación queda fuera de alcance de TI2-137 y pendiente de coordinar con la administración web (TI2-169).
+Revocar a un Profesional no reasigna sus acompañamientos ni atenciones: las filas se conservan y dejan de autorizar en la petición siguiente porque cada lectura vuelve a exigir el perfil vigente. La reasignación queda fuera de alcance de TI2-137 y pendiente de coordinar con la administración web (TI2-169). Sí libera sus tomas de solicitudes en revisión o en espera de información (revisión TI4-84): esas solicitudes vuelven a la bandeja en la misma transacción, con el Administrador como actor, para que otro Profesional las tome. El detalle está en `docs/contratos-sprint-3/solicitudes.md`.
 
 ## Errores
 
-Los errores usan el contrato común de TI2-88 (`ConvexError({ code, message })`): los clientes distinguen por `error.data.code`, nunca por el texto. `unauthorized` (`No autorizado`) responde ante falta de identidad, perfil o vigencia, rol ajeno u objetivo inexistente o fuera de esta vía. `conflict` explica un tránsito inválido a un llamante autorizado: cuenta ya habilitada, cuenta no habilitada, objetivo sin correo de personal, cuenta no vigente, auto-revocación, rol distinto o fila duplicada. `assignment_fields_invalid` (TI2-140) explica una vigencia incoherente con el detalle en español. El `numItems` fuera de 1–100 no es un problema de permiso: falla con error de regla en español antes de leer. Las validaciones de tipo de argumentos fallan con error de validador de Convex, sin detalles sensibles.
+Los errores usan el contrato común de TI2-88 (`ConvexError({ code, message })`): los clientes distinguen por `error.data.code`, nunca por el texto. `unauthorized` (`No autorizado`) responde ante falta de identidad, perfil o vigencia, rol ajeno u objetivo inexistente o fuera de esta vía. `conflict` explica un tránsito inválido a un llamante autorizado: cuenta ya habilitada, cuenta no habilitada, objetivo sin correo de personal, cuenta no vigente, auto-revocación, rol distinto o fila duplicada. `assignment_fields_invalid` (TI2-140) explica una vigencia incoherente con el detalle en español. `account_fields_invalid` (revisión TI4-84) rechaza un motivo de revocación de más de 500 caracteres con «El motivo de la revocación supera los 500 caracteres.», sin revocar. El `numItems` fuera de 1–100 no es un problema de permiso: falla con error de regla en español antes de leer. Las validaciones de tipo de argumentos fallan con error de validador de Convex, sin detalles sensibles.
 
 ```json
 { "code": "unauthorized", "message": "No autorizado" }
@@ -67,7 +96,13 @@ const enableAccount = useMutation(api.presentation.accounts.enableAccount);
 const { userId } = await enableAccount({ userId: targetId });
 
 const revokeAccount = useMutation(api.presentation.accounts.revokeAccount);
-await revokeAccount({ userId: targetId });
+await revokeAccount({ userId: targetId, reason: "Término de contrato" });
+
+const history = usePaginatedQuery(
+  api.presentation.accounts.listAccountEnablements,
+  { userId: targetId },
+  { initialNumItems: 20 },
+);
 ```
 
 ```ts

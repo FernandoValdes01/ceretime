@@ -266,3 +266,16 @@ export function compatibilitySpaceSource(ctx: DbReader) {
     listOnlineSupports: async (): Promise<readonly AccessNeed[]> => [],
   };
 }
+
+/**
+ * Adaptador del puerto `SpaceCatalogReader` (revisión TI4-84): el catálogo
+ * vigente ya convertido al contrato `Space`.
+ */
+export function spaceCatalogReader(ctx: QueryCtx) {
+  return {
+    listActiveSpaces: async (input: { readonly limit: number; readonly cursor: string | null }) => {
+      const page = await listActiveSpaceRows(ctx, input);
+      return { ...page, items: page.items.map(toSpace) };
+    },
+  };
+}

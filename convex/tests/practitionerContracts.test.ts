@@ -29,6 +29,8 @@ const ISSUER = "https://accounts.google.com";
 
 // Exacto y no por inclusión: un mensaje que agregue el motivo debe fallar.
 const DENIED = /^No autorizado$/;
+/** Denegación del contrato común (TI2-88) de las lecturas de acompañamientos desde TI4-84. */
+const DENIED_PUBLIC = JSON.stringify({ code: "unauthorized", message: "No autorizado" });
 
 function identityFor(subject: string, email: string) {
   return {
@@ -234,7 +236,7 @@ test("acompañamiento no asignado se rechaza sin filtrar información", async ()
       accompanimentId: otherId,
     }),
   );
-  expect(detailMessage).toMatch(DENIED);
+  expect(detailMessage).toMatch(DENIED_PUBLIC);
   expect(detailMessage).not.toContain(String(otherId));
   expect(detailMessage).not.toContain("Objetivo ficticio no asignado");
   expect(detailMessage).not.toContain("Necesidad de acceso ficticia no asignada");
@@ -245,7 +247,7 @@ test("acompañamiento no asignado se rechaza sin filtrar información", async ()
       paginationOpts: pageOpts(10),
     }),
   );
-  expect(notesMessage).toMatch(DENIED);
+  expect(notesMessage).toMatch(DENIED_PUBLIC);
   expect(notesMessage).not.toContain(String(otherId));
 });
 
@@ -273,7 +275,7 @@ test("acceso directo por ID inexistente responde idéntico sin revelar existenci
       accompanimentId: missingId,
     }),
   );
-  expect(missingMessage).toMatch(DENIED);
+  expect(missingMessage).toMatch(DENIED_PUBLIC);
   expect(missingMessage).not.toContain(String(missingId));
   expect(missingMessage).not.toContain("Temporal ficticio");
 
@@ -322,13 +324,13 @@ test("modificación y autoasignación del practicante se rechazan", async () => 
     asIntern.query(api.presentation.accompaniments.listOwnedAccompaniments, {
       paginationOpts: pageOpts(10),
     }),
-  ).rejects.toThrow(DENIED);
+  ).rejects.toThrow(DENIED_PUBLIC);
   await expect(
     asIntern.query(api.presentation.accompaniments.getInternalNotes, {
       accompanimentId,
       paginationOpts: pageOpts(10),
     }),
-  ).rejects.toThrow(DENIED);
+  ).rejects.toThrow(DENIED_PUBLIC);
 });
 
 test("revocación inmediata cierra lectura y listado sin filtrar", async () => {
@@ -354,7 +356,7 @@ test("revocación inmediata cierra lectura y listado sin filtrar", async () => {
   const detailMessage = await denyMessage(
     asIntern.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
   );
-  expect(detailMessage).toMatch(DENIED);
+  expect(detailMessage).toMatch(DENIED_PUBLIC);
   expect(detailMessage).not.toContain(String(accompanimentId));
   expect(detailMessage).not.toContain("Objetivo ficticio de la ruta crítica");
   expect(detailMessage).not.toContain("Necesidad de acceso ficticia");
@@ -371,7 +373,7 @@ test("revocación inmediata cierra lectura y listado sin filtrar", async () => {
       paginationOpts: pageOpts(10),
     }),
   );
-  expect(notesMessage).toMatch(DENIED);
+  expect(notesMessage).toMatch(DENIED_PUBLIC);
   expect(notesMessage).not.toContain(String(accompanimentId));
 
   const row = await t.run(async (ctx) => {

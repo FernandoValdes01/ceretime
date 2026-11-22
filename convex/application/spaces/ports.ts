@@ -49,3 +49,22 @@ export interface SpaceWriter {
   /** Retira o reactiva una sala sin borrarla ni su historial. */
   setSpaceActive(spaceId: string, isActive: boolean): Promise<ApiResult<null>>;
 }
+
+/** Página del catálogo publicado (TI2-99): solo salas vigentes, con su id. */
+export type SpaceCatalogPage<SpaceId extends string> = {
+  readonly items: (Space & { readonly id: SpaceId })[];
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
+};
+
+/**
+ * Lectura del catálogo vigente para `listSpaces` (revisión TI4-84).
+ * Infraestructura lo cumple con `spaceCatalogReader(ctx)`; el identificador es
+ * genérico para que Presentación lo fije con el `Id` de Convex.
+ */
+export interface SpaceCatalogReader<SpaceId extends string> {
+  listActiveSpaces(input: {
+    readonly limit: number;
+    readonly cursor: string | null;
+  }): Promise<SpaceCatalogPage<SpaceId>>;
+}

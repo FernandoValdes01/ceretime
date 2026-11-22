@@ -25,7 +25,8 @@ vi.stubEnv("TEST_SEEDS_ENABLED", "true");
 const ISSUER = "https://accounts.google.com";
 
 // Exacto y no por inclusión: un mensaje que agregue el motivo debe fallar.
-const DENIED = /^No autorizado$/;
+// Desde la revisión TI4-84 las lecturas de acompañamientos niegan con el contrato común (TI2-88).
+const DENIED_PUBLIC = /^{"code":"unauthorized","message":"No autorizado"}$/;
 
 /**
  * Denegación exacta de solicitudes: desde TI2-181 todo el módulo responde
@@ -298,7 +299,7 @@ describe("acompañamientos por rol (TI2-12)", () => {
       asRole(t, "professional").query(api.presentation.accompaniments.listOwnedAccompaniments, {
         paginationOpts: PAGE,
       }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toThrow(DENIED_PUBLIC);
   });
 
   test("el Estudiante no lista acompañamientos como asignados", async () => {
@@ -309,7 +310,7 @@ describe("acompañamientos por rol (TI2-12)", () => {
       asRole(t, "student").query(api.presentation.accompaniments.listAssignedAccompaniments, {
         limit: 10,
       }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toThrow(DENIED_PUBLIC);
   });
 
   test("sin identidad no se listan acompañamientos propios ni asignados", async () => {
@@ -318,10 +319,10 @@ describe("acompañamientos por rol (TI2-12)", () => {
 
     await expect(
       t.query(api.presentation.accompaniments.listOwnedAccompaniments, { paginationOpts: PAGE }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toThrow(DENIED_PUBLIC);
     await expect(
       t.query(api.presentation.accompaniments.listAssignedAccompaniments, { limit: 10 }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toThrow(DENIED_PUBLIC);
   });
 
   test("sin identidad no se leen notas internas", async () => {
@@ -333,6 +334,6 @@ describe("acompañamientos por rol (TI2-12)", () => {
         accompanimentId,
         paginationOpts: PAGE,
       }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toThrow(DENIED_PUBLIC);
   });
 });

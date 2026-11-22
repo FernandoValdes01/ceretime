@@ -1,7 +1,7 @@
 /**
  * Transiciones de solicitud: las de Sprint 1 (TI2-7), los cierres sin
- * acompañamiento (TI2-85), la respuesta del Estudiante (TI2-141) y la
- * derivación de salida (TI2-143).
+ * acompañamiento (TI2-85), la respuesta del Estudiante (TI2-141), la
+ * derivación de salida (TI2-143) y la liberación de la toma (revisión TI4-84).
  *
  * Declara qué transiciones existen. No las aplica ni las valida: el rechazo de
  * saltos y la exigencia de motivo son alcance de TI2-21.
@@ -83,8 +83,9 @@ export const CLOSURE_REQUEST_TRANSITIONS = [
 /**
  * Respuesta del Estudiante a la información pedida (TI2-141): la solicitud
  * vuelve a revisión para que el Profesional la retome. Exige motivo porque el
- * motivo es la respuesta misma. Es el único retroceso del modelo; quién lo
- * intenta (el Estudiante dueño) lo exige Aplicación.
+ * motivo es la respuesta misma. Junto con la liberación de la toma es uno de
+ * los dos retrocesos del modelo; quién lo intenta (el Estudiante dueño) lo
+ * exige Aplicación.
  */
 export const RESPONSE_REQUEST_TRANSITIONS = [
   { from: "awaiting_information_or_acceptance", to: "under_review", requiresReason: true },
@@ -113,10 +114,29 @@ export const REFERRAL_REQUEST_TRANSITIONS = [
   readonly to: ReferralRequestState;
 })[];
 
+/**
+ * Liberación de la toma (revisión TI4-84): la solicitud vuelve a `received`
+ * para que otro Profesional la tome desde la bandeja. Sale solo de los
+ * estados que ya tienen toma; un estado terminal no se libera. La libera el
+ * propio Profesional con toma activa o, al revocar su cuenta, la revocación
+ * misma, y eso lo exige Aplicación. No exige motivo: el registro del cambio
+ * deja actor y fecha, y la toma liberada (`TOMAS_SOLICITUD.liberadaEn` del MER)
+ * queda revocada. Volver a `received` desde la espera de información deja sin
+ * efecto la pregunta pendiente; quien la tome puede volver a pedirla.
+ */
+export const RELEASE_REQUEST_TRANSITIONS = [
+  { from: "under_review", to: "received", requiresReason: false },
+  { from: "awaiting_information_or_acceptance", to: "received", requiresReason: false },
+] as const satisfies readonly (RequestStateTransition & {
+  readonly from: Sprint1RequestState;
+  readonly to: Sprint1RequestState;
+})[];
+
 /** Toda transición válida de la solicitud; la política busca solo acá. */
 export const REQUEST_TRANSITIONS = [
   ...SPRINT_1_REQUEST_TRANSITIONS,
   ...RESPONSE_REQUEST_TRANSITIONS,
+  ...RELEASE_REQUEST_TRANSITIONS,
   ...REFERRAL_REQUEST_TRANSITIONS,
   ...CLOSURE_REQUEST_TRANSITIONS,
 ] as const;
@@ -138,7 +158,8 @@ export function isOpenRequestState(state: string): boolean {
  *
  * `actorId` sale de la sesión autenticada en la capa de aplicación, nunca de un
  * parámetro del cliente: es el Profesional o, al cancelar, el propio
- * Estudiante. `reason` lo escribe ese actor: el Profesional para el
+ * Estudiante, o el Administrador que revoca la cuenta del Profesional que la
+ * tenía tomada (revisión TI4-84). `reason` lo escribe ese actor: el Profesional para el
  * estudiante o, al cancelar o responder, el Estudiante para CERETI. Quien lo escribe no
  * debe incluir diagnósticos ni etiquetas clínicas, pero el tipo no puede
  * impedirlo. `occurredAt` es epoch en milisegundos, como maneja las fechas

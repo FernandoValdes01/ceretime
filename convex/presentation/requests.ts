@@ -14,6 +14,7 @@ import {
   referRequest as referRequestUseCase,
   registerOfficialRequest as registerOfficialRequestUseCase,
 } from "../application/requests/referrals";
+import { releaseRequest as releaseRequestUseCase } from "../application/requests/release";
 import { respondToInformationRequest as respondToInformationRequestUseCase } from "../application/requests/respond";
 import {
   listAuthorizedRequestsUseCase,
@@ -71,6 +72,10 @@ import { unwrapApiResult } from "./session";
  * TI2-143: suma el registro por canal oficial, el contacto y la aceptación
  * de una derivación de entrada y la derivación de salida. Ninguna envía
  * avisos ni se comunica con otra unidad: eso ocurre fuera de la aplicación.
+ *
+ * Revisión TI4-84: suma `releaseRequest`, con la que el Profesional devuelve a
+ * la bandeja una solicitud que tomó. Revocar su cuenta hace lo mismo con todas
+ * sus tomas (`presentation/accounts.revokeAccount`).
  */
 
 const requestBaseFields = {
@@ -261,6 +266,30 @@ export const takeRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await takeRequestUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
+  },
+});
+
+/**
+ * Libera la toma propia y devuelve la solicitud a `received`, para que otro
+ * Profesional la tome desde la bandeja (revisión TI4-84). Solo el Profesional
+ * con toma activa y cuenta vigente; sin toma responde `unauthorized` y una
+ * solicitud ya terminada o sin toma vigente, `conflict`.
+ */
+export const releaseRequest = mutation({
+  args: { requestId: v.id("requests") },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await releaseRequestUseCase(
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),

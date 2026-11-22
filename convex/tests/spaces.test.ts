@@ -120,25 +120,25 @@ test("sin identidad, sin perfil o sin vigencia responde denegación sin filtrar"
   await seedCatalog(t);
   await seedUser(t, "ti99-inhabilitado", "professional", false);
 
-  const denied = /^No autorizado$/;
+  const denied = JSON.stringify({ code: "unauthorized", message: "No autorizado" });
   const anonymous = await denyMessage(
     t.query(api.presentation.spaces.listSpaces, { limit: 10, version: "v1" }),
   );
-  expect(anonymous).toMatch(denied);
+  expect(anonymous).toBe(denied);
   const missing = await denyMessage(
     asReader(t, "ti99-fantasma").query(api.presentation.spaces.listSpaces, {
       limit: 10,
       version: "v1",
     }),
   );
-  expect(missing).toMatch(denied);
+  expect(missing).toBe(denied);
   const disabled = await denyMessage(
     asReader(t, "ti99-inhabilitado").query(api.presentation.spaces.listSpaces, {
       limit: 10,
       version: "v1",
     }),
   );
-  expect(disabled).toMatch(denied);
+  expect(disabled).toBe(denied);
   for (const message of [anonymous, missing, disabled]) {
     expect(message).not.toContain("Sala Ficticia");
   }

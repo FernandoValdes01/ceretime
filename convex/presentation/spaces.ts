@@ -9,7 +9,7 @@ import { listSpaceCatalogUseCase } from "../application/spaces/queries";
 import { mutation, query } from "../_generated/server";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
-import { spaceReader, spaceWriter } from "../infrastructure/spaces/repository";
+import { spaceCatalogReader, spaceReader, spaceWriter } from "../infrastructure/spaces/repository";
 import { spaceFieldsShape } from "../infrastructure/validators";
 import { unwrapApiResult as unwrap } from "./session";
 
@@ -23,7 +23,8 @@ import { unwrapApiResult as unwrap } from "./session";
  * prueba ni toca `ctx.db` directamente.
  *
  * Toda denegación (sin identidad, sin perfil o cuenta inhabilitada)
- * responde con el mismo error genérico, sin exponer el motivo. El listado se
+ * responde con el mismo `unauthorized` del contrato común, sin exponer el
+ * motivo. El listado se
  * pagina: nunca se trunca en silencio.
  */
 
@@ -68,7 +69,10 @@ export const listSpaces = query({
   returns: spaceCatalogPageValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listSpaceCatalogUseCase(ctx, identity, args);
+    return await listSpaceCatalogUseCase(authorizationReader(ctx), spaceCatalogReader(ctx), {
+      tokenIdentifier: identity?.tokenIdentifier ?? null,
+      ...args,
+    });
   },
 });
 

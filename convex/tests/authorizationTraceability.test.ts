@@ -23,6 +23,8 @@ const modules = import.meta.glob("../**/*.ts");
 
 const ISSUER = "https://accounts.google.com";
 const DENIED = "No autorizado";
+/** Denegación del contrato común (TI2-88) de las lecturas de acompañamientos desde TI4-84. */
+const DENIED_PUBLIC = JSON.stringify({ code: "unauthorized", message: "No autorizado" });
 
 function identityFor(subject: string, email: string) {
   return {
@@ -277,8 +279,8 @@ test("denegación normalizada no filtra existencia del recurso", async () => {
   const detailDenied = await denyMessage(
     asIntern.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
   );
-  expect(detailMissing).toBe(DENIED);
-  expect(detailDenied).toBe(DENIED);
+  expect(detailMissing).toBe(DENIED_PUBLIC);
+  expect(detailDenied).toBe(DENIED_PUBLIC);
   expect(detailMissing).not.toContain(String(missingAccompaniment));
   expect(detailDenied).not.toContain("Necesidad de acceso ficticia");
 
@@ -288,7 +290,7 @@ test("denegación normalizada no filtra existencia del recurso", async () => {
       paginationOpts: pageOpts(10),
     }),
   );
-  expect(notesMissing).toBe(DENIED);
+  expect(notesMissing).toBe(DENIED_PUBLIC);
   expect(notesMissing).not.toContain(String(missingAccompaniment));
 
   const assignMissing = await denyMessage(
@@ -319,7 +321,7 @@ test("denegación normalizada no filtra existencia del recurso", async () => {
   const anonymous = await denyMessage(
     t.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
   );
-  expect(anonymous).toBe(DENIED);
+  expect(anonymous).toBe(DENIED_PUBLIC);
 });
 
 test("administrador no obtiene acceso irrestricto a acompañamientos", async () => {
@@ -349,19 +351,19 @@ test("administrador no obtiene acceso irrestricto a acompañamientos", async () 
     await denyMessage(
       asAdmin.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
     ),
-  ).toBe(DENIED);
+  ).toBe(DENIED_PUBLIC);
   expect(
     await denyMessage(
       asAdmin.query(api.presentation.accompaniments.listOwnedAccompaniments, {
         paginationOpts: pageOpts(10),
       }),
     ),
-  ).toBe(DENIED);
+  ).toBe(DENIED_PUBLIC);
   expect(
     await denyMessage(
       asAdmin.query(api.presentation.accompaniments.listAssignedAccompaniments, { limit: 10 }),
     ),
-  ).toBe(DENIED);
+  ).toBe(DENIED_PUBLIC);
   expect(
     await denyMessage(
       asAdmin.query(api.presentation.accompaniments.getInternalNotes, {
@@ -369,7 +371,7 @@ test("administrador no obtiene acceso irrestricto a acompañamientos", async () 
         paginationOpts: pageOpts(10),
       }),
     ),
-  ).toBe(DENIED);
+  ).toBe(DENIED_PUBLIC);
   expect(
     await denyMessage(
       asAdmin.mutation(internal.operations.assignments.assign, {
@@ -518,7 +520,7 @@ test("acceso posterior a revocación queda rechazado", async () => {
     await denyMessage(
       asIntern.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
     ),
-  ).toBe(DENIED);
+  ).toBe(DENIED_PUBLIC);
   const listedAfter = await asIntern.query(
     api.presentation.accompaniments.listAssignedAccompaniments,
     { limit: 10 },
@@ -532,7 +534,7 @@ test("acceso posterior a revocación queda rechazado", async () => {
         paginationOpts: pageOpts(10),
       }),
     ),
-  ).toBe(DENIED);
+  ).toBe(DENIED_PUBLIC);
 });
 
 test("trazabilidad mínima no expone datos innecesarios", async () => {

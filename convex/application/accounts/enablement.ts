@@ -1,13 +1,13 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import {
   checkEnablement,
   checkInternEnablement,
   checkTestProfessionalEnablement,
   validateBootstrapCandidate,
   validateStaffEnablementTarget,
+  toRevocationReason,
   validateStaffRevocationTarget,
   type AccountEnabler,
   type EnablementCheck,
@@ -22,22 +22,19 @@ import {
 } from "../../domain/authorization/permissions";
 import { normalizeEmail } from "../../domain/auth/institutional_domain";
 import {
+  ACCOUNT_FIELDS_INVALID_ERROR_CODE,
   CONFLICT_ERROR_CODE,
   errResult,
   okResult,
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { AUTHORIZATION_DENIED_MESSAGE, deniedPublicError } from "../authorization/authorize";
-import {
-  findExistingAdmin,
-  findProfileByTokenIdentifier,
-  findUserByEmail,
-  getUserById,
-  insertBootstrapAdmin,
-  paginateStaffAccounts,
-  patchEnablement,
-  patchRevocation,
-} from "../../infrastructure/accounts/repository";
+import type {
+  AccountEnablementEvent,
+  AccountEnablementReader,
+  AccountEnablementStore,
+  RevokedProfessionalTakeReleaser,
+} from "./ports";
 
 /**
  * Casos de uso de habilitación institucional y arranque administrativo
@@ -48,7 +45,10 @@ import {
  * habilitada y vigente (regla única de `canManageAccounts`, sin duplicarla),
  * valida el objetivo en Dominio y persiste con Infraestructura. Devuelve el
  * `ApiResult` común de TI2-88 para que Presentación traduzca con
- * `unwrapApiResult`. La habilitación de la cuenta y la asignación de un
+ * `unwrapApiResult`. Lee y escribe con los puertos `AccountEnablementReader` y
+ * `AccountEnablementStore` (revisión TI4-84): cada habilitación y revocación
+ * queda en el historial de la cuenta, además del último evento en `users`.
+ * La habilitación de la cuenta y la asignación de un
  * acompañamiento son decisiones distintas: habilitar solo deja la cuenta en
  * condiciones de operar y jamás concede acceso a acompañamientos. Opera con
  * datos ficticios.
@@ -77,11 +77,11 @@ type DbProfile = Doc<"users">;
  * matriz, el dominio y el código hablen igual.
  */
 async function findCallerProfile(
-  ctx: QueryCtx | MutationCtx,
+  accounts: AccountEnablementReader,
   identity: UserIdentity | null,
 ): Promise<DbProfile | null> {
   if (identity === null) return null;
-  return await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier ?? "");
+  return await accounts.findProfileByTokenIdentifier(identity.tokenIdentifier ?? "");
 }
 
 /** Verdadero cuando la cuenta es de personal: profesional o administrador. */
@@ -128,11 +128,11 @@ function toAccountSummary(profile: DbProfile): AccountSummary {
  * sin `tokenIdentifier`, acompañamientos ni notas.
  */
 export async function listAccountsUseCase(
-  ctx: QueryCtx,
+  accounts: AccountEnablementReader,
   identity: UserIdentity | null,
   args: { readonly role: "professional" | "admin"; readonly paginationOpts: PaginationOptions },
 ): Promise<ApiResult<{ page: AccountSummary[]; isDone: boolean; continueCursor: string }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (
     caller === null ||
     !canListAccounts({
@@ -150,7 +150,7 @@ export async function listAccountsUseCase(
   ) {
     throw new Error("El límite del listado debe ser un entero entre 1 y 100.");
   }
-  const result = await paginateStaffAccounts(ctx, args.role, args.paginationOpts);
+  const result = await accounts.paginateStaffAccounts(args.role, args.paginationOpts);
   return okResult({ ...result, page: result.page.map(toAccountSummary) });
 }
 
@@ -162,11 +162,11 @@ export async function listAccountsUseCase(
  * revelar existencia.
  */
 export async function getAccountDetailUseCase(
-  ctx: QueryCtx,
+  accounts: AccountEnablementReader,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<AccountSummary>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (
     caller === null ||
     !canReadAccount({
@@ -177,17 +177,56 @@ export async function getAccountDetailUseCase(
   ) {
     return unauthorized();
   }
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUser(args.userId);
   if (target === null || !isStaffAccount(target)) return unauthorized();
   return okResult(toAccountSummary(target));
+}
+
+/**
+ * Historial de habilitaciones y revocaciones de una cuenta de personal
+ * (HABILITACIONES_CUENTA del MER, revisión TI4-84), del evento más reciente
+ * al más antiguo.
+ *
+ * Solo el Administrador vigente lee, con la misma regla y el mismo alcance
+ * que `getAccountDetailUseCase`: la cuenta inexistente, de Estudiante o de
+ * Practicante responde `unauthorized` sin revelar existencia. El `numItems`
+ * debe ser un entero entre 1 y 100, igual que el listado de cuentas.
+ */
+export async function listAccountEnablementsUseCase(
+  accounts: AccountEnablementReader,
+  identity: UserIdentity | null,
+  args: { readonly userId: Id<"users">; readonly paginationOpts: PaginationOptions },
+): Promise<ApiResult<{ page: AccountEnablementEvent[]; isDone: boolean; continueCursor: string }>> {
+  const caller = await findCallerProfile(accounts, identity);
+  if (
+    caller === null ||
+    !canReadAccount({
+      role: caller.role,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    })
+  ) {
+    return unauthorized();
+  }
+  if (
+    !Number.isInteger(args.paginationOpts.numItems) ||
+    args.paginationOpts.numItems < 1 ||
+    args.paginationOpts.numItems > 100
+  ) {
+    throw new Error("El límite del historial debe ser un entero entre 1 y 100.");
+  }
+  const target = await accounts.getUser(args.userId);
+  if (target === null || !isStaffAccount(target)) return unauthorized();
+  return okResult(await accounts.paginateEnablementHistory(target._id, args.paginationOpts));
 }
 
 /**
  * Habilita la cuenta profesional o administrativa pendiente o revocada
  * (TI2-137).
  *
- * Registra actor (`enabledBy`) y fecha (`enabledAt`); la rehabilitación
- * registra el nuevo evento, sin conservar la auditoría anterior. La falta
+ * Registra actor (`enabledBy`) y fecha (`enabledAt`) en la cuenta y agrega la
+ * habilitación al historial: la rehabilitación conserva los ciclos
+ * anteriores (revisión TI4-84). La falta
  * de permiso responde `unauthorized`; un objetivo inexistente o fuera de
  * esta vía también, sin revelar existencia; un tránsito
  * inválido (cuenta ya habilitada, correo sin personal o cuenta no vigente)
@@ -196,11 +235,11 @@ export async function getAccountDetailUseCase(
  * practicante no entra por esta vía (TI2-140).
  */
 export async function enableStaffAccount(
-  ctx: MutationCtx,
+  accounts: AccountEnablementStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (
     caller === null ||
     !canEnableAccount({
@@ -211,7 +250,7 @@ export async function enableStaffAccount(
   ) {
     return unauthorized();
   }
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUser(args.userId);
   if (target === null) return unauthorized();
   const check = validateStaffEnablementTarget({
     role: target.role,
@@ -233,12 +272,19 @@ export async function enableStaffAccount(
         return conflict("La cuenta no admite la habilitación en su estado actual.");
     }
   }
-  await patchEnablement(ctx, {
+  await accounts.recordEnablement({
     userId: target._id,
+    role: target.role,
     enabledBy: caller._id,
     enabledAt: Date.now(),
   });
   return okResult({ userId: target._id });
+}
+
+/** Capacidades que necesita la revocación; la composición entrega los adaptadores. */
+export interface RevokeStaffAccountDeps {
+  readonly accounts: AccountEnablementStore;
+  readonly takes: RevokedProfessionalTakeReleaser;
 }
 
 /**
@@ -246,7 +292,11 @@ export async function enableStaffAccount(
  *
  * Fija `institutionalStatus` en `disabled` y registra actor (`revokedBy`)
  * y fecha (`revokedAt`); la cuenta revocada deja de operar en la petición
- * siguiente. Revocar no revisa el dominio del correo: cortar el acceso
+ * siguiente. El motivo es opcional y solo va al historial, que cierra la
+ * habilitación abierta; uno de más de 500 caracteres responde
+ * `account_fields_invalid` sin escribir. Al revocar a un Profesional, sus
+ * solicitudes en revisión vuelven a la bandeja en la misma transacción, para
+ * que otro Profesional pueda tomarlas (revisión TI4-84). Revocar no revisa el dominio del correo: cortar el acceso
  * siempre está permitido, aunque rehabilitar exija personal. La falta de
  * permiso responde `unauthorized`; un objetivo inexistente o fuera de esta
  * vía también, sin revelar existencia; un tránsito inválido (cuenta no
@@ -255,11 +305,12 @@ export async function enableStaffAccount(
  * ya es un administrador autorizado que puede leer el estado.
  */
 export async function revokeStaffAccount(
-  ctx: MutationCtx,
+  deps: RevokeStaffAccountDeps,
   identity: UserIdentity | null,
-  args: { readonly userId: Id<"users"> },
+  args: { readonly userId: Id<"users">; readonly reason?: string },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const { accounts } = deps;
+  const caller = await findCallerProfile(accounts, identity);
   if (
     caller === null ||
     !canRevokeAccount({
@@ -270,7 +321,7 @@ export async function revokeStaffAccount(
   ) {
     return unauthorized();
   }
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUser(args.userId);
   if (target === null) return unauthorized();
   if (target._id === caller._id) return conflict("No puedes revocar tu propia cuenta.");
   const check = validateStaffRevocationTarget({
@@ -291,11 +342,19 @@ export async function revokeStaffAccount(
         return conflict("La cuenta no admite la revocación en su estado actual.");
     }
   }
-  await patchRevocation(ctx, {
+  const reason = toRevocationReason(args.reason);
+  if (!reason.ok) {
+    return errResult({ code: ACCOUNT_FIELDS_INVALID_ERROR_CODE, message: reason.message });
+  }
+  await accounts.recordRevocation({
     userId: target._id,
     revokedBy: caller._id,
     revokedAt: Date.now(),
+    ...(reason.reason === undefined ? {} : { reason: reason.reason }),
   });
+  if (target.role === "professional") {
+    await deps.takes.releaseTakesOf({ professionalId: target._id, releasedBy: caller._id });
+  }
   return okResult({ userId: target._id });
 }
 
@@ -303,21 +362,21 @@ export async function revokeStaffAccount(
  * Habilita la cuenta de un Practicante pendiente.
  *
  * Registra el actor administrador y la fecha de la operación en el propio
- * documento (`enabledBy`, `enabledAt`). Toda denegación (sin identidad, sin
+ * documento (`enabledBy`, `enabledAt`) y en el historial. Toda denegación (sin identidad, sin
  * perfil, actor no administrador o no vigente, objetivo inexistente, rol
  * no practicante, correo no institucional, cuenta no vigente o estado no
  * pendiente) responde el mismo error genérico, sin exponer el motivo ni la
  * existencia del recurso.
  */
 export async function enableInternAccount(
-  ctx: MutationCtx,
+  accounts: AccountEnablementStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<Id<"users">> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (caller === null) deny();
 
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUser(args.userId);
   if (target === null) deny();
 
   const check = checkEnablement({
@@ -335,8 +394,9 @@ export async function enableInternAccount(
   });
   if (!check.ok) deny();
 
-  await patchEnablement(ctx, {
+  await accounts.recordEnablement({
     userId: target._id,
+    role: target.role,
     enabledBy: caller._id,
     enabledAt: Date.now(),
   });
@@ -383,7 +443,7 @@ function enablementRejection<T>(reason: EnablementRejectionReason): ApiResult<T>
  * `enablementRejection`.
  */
 async function enableWithDecision(
-  ctx: MutationCtx,
+  accounts: AccountEnablementStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
   check: (input: {
@@ -391,9 +451,9 @@ async function enableWithDecision(
     readonly target: EnablementTarget;
   }) => EnablementCheck,
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (caller === null) return unauthorized();
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUser(args.userId);
   if (target === null) return unauthorized();
   const decision = check({
     caller: {
@@ -410,8 +470,9 @@ async function enableWithDecision(
     },
   });
   if (!decision.ok) return enablementRejection(decision.reason);
-  await patchEnablement(ctx, {
+  await accounts.recordEnablement({
     userId: target._id,
+    role: target.role,
     enabledBy: caller._id,
     enabledAt: Date.now(),
   });
@@ -428,11 +489,11 @@ async function enableWithDecision(
  * realiza el profesional autorizado sobre cada acompañamiento.
  */
 export async function enableInternByProfessional(
-  ctx: MutationCtx,
+  accounts: AccountEnablementStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  return await enableWithDecision(ctx, identity, args, checkInternEnablement);
+  return await enableWithDecision(accounts, identity, args, checkInternEnablement);
 }
 
 /**
@@ -446,11 +507,11 @@ export async function enableInternByProfessional(
  * (cuenta habilitada y asignación activa).
  */
 export async function enableTestProfessionalAccount(
-  ctx: MutationCtx,
+  accounts: AccountEnablementStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  return await enableWithDecision(ctx, identity, args, checkTestProfessionalEnablement);
+  return await enableWithDecision(accounts, identity, args, checkTestProfessionalEnablement);
 }
 
 export type BootstrapAdminInput = {
@@ -470,7 +531,7 @@ export type BootstrapAdminInput = {
  * vigente, con fecha de arranque y sin actor previo.
  */
 export async function ensureBootstrapAdmin(
-  ctx: MutationCtx,
+  accounts: AccountEnablementStore,
   input: BootstrapAdminInput,
 ): Promise<Id<"users">> {
   const email = normalizeEmail(input.email);
@@ -485,24 +546,24 @@ export async function ensureBootstrapAdmin(
     throw new Error("El arranque exige un correo institucional de personal");
   }
 
-  const existing = await findExistingAdmin(ctx);
+  const existing = await accounts.findExistingAdmin();
   if (existing !== null) {
     throw new Error("Ya existe una cuenta administrativa");
   }
 
-  const duplicate = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+  const duplicate = await accounts.findProfileByTokenIdentifier(tokenIdentifier);
   if (duplicate !== null) {
     throw new Error("Ya existe un perfil para esta identidad");
   }
 
   // Unicidad de correo (TI2-17): el arranque tampoco puede duplicar el
   // correo de un perfil existente.
-  const emailTaken = await findUserByEmail(ctx, email);
+  const emailTaken = await accounts.findUserByEmail(email);
   if (emailTaken !== null) {
     throw new Error("Ya existe un perfil con este correo");
   }
 
-  return await insertBootstrapAdmin(ctx, {
+  return await accounts.insertBootstrapAdmin({
     email,
     fullName,
     tokenIdentifier,

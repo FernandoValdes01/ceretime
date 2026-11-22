@@ -1,6 +1,6 @@
 # Modelo de estados — Solicitud de acompañamiento
 
-Fuente: TI2-7, TI2-21 y TI2-22 (Sprint 1), TI2-85 (Sprint 2), TI2-141 y TI2-143 (Sprint 3) y el documento de requerimientos, sección "Estados y ciclos de vida". Este archivo es la evidencia de cierre de esos issues; el modelo ejecutable vive en [`state.ts`](./state.ts), [`transitions.ts`](./transitions.ts) y [`transition_policy.ts`](./transition_policy.ts).
+Fuente: TI2-7, TI2-21 y TI2-22 (Sprint 1), TI2-85 (Sprint 2), TI2-141, TI2-143 y la revisión TI4-84 (Sprint 3) y el documento de requerimientos, sección "Estados y ciclos de vida". Este archivo es la evidencia de cierre de esos issues; el modelo ejecutable vive en [`state.ts`](./state.ts), [`transitions.ts`](./transitions.ts) y [`transition_policy.ts`](./transition_policy.ts).
 
 ## Diagrama
 
@@ -15,6 +15,8 @@ stateDiagram-v2
     under_review --> accepted
     awaiting_information_or_acceptance --> accepted
     awaiting_information_or_acceptance --> under_review : exige motivo
+    under_review --> received
+    awaiting_information_or_acceptance --> received
 
     received --> cancelled : exige motivo
     under_review --> cancelled : exige motivo
@@ -38,7 +40,7 @@ stateDiagram-v2
     class referred referral
 ```
 
-Las transiciones del diagrama son exactamente las de `SPRINT_1_REQUEST_TRANSITIONS`, `RESPONSE_REQUEST_TRANSITIONS`, `REFERRAL_REQUEST_TRANSITIONS` y `CLOSURE_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido, incluidos los saltos hacia adelante, los demás retrocesos y cualquier salida de un estado terminal.
+Las transiciones del diagrama son exactamente las de `SPRINT_1_REQUEST_TRANSITIONS`, `RESPONSE_REQUEST_TRANSITIONS`, `RELEASE_REQUEST_TRANSITIONS`, `REFERRAL_REQUEST_TRANSITIONS` y `CLOSURE_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido, incluidos los saltos hacia adelante, los demás retrocesos y cualquier salida de un estado terminal.
 
 [`state_model.test.ts`](./state_model.test.ts) lee este archivo y falla si el diagrama o las tablas dejan de coincidir con `state.ts` y `transitions.ts`; si editas cualquiera de ellos, corre `bunx vitest run convex/domain/requests`.
 
@@ -94,11 +96,22 @@ La columna "Quién lo intenta" la exige la capa de aplicación (`cancelRequest` 
 | ------------------------------------ | -------------- | -------------------------------- | ------------ |
 | `awaiting_information_or_acceptance` | `under_review` | Estudiante dueño, cuenta vigente | Sí           |
 
-Cuando el Profesional pide información, la solicitud queda en espera. El Estudiante responde y la solicitud vuelve a revisión, para que quien la tomó la retome: aceptarla, pedir más información o cerrarla. Es el único retroceso del modelo. El motivo es la respuesta misma, por eso es obligatorio; queda en el historial de cambios con el Estudiante como actor, sin un campo nuevo en la solicitud. La respuesta tiene un tope de `REQUEST_RESPONSE_MAX_LENGTH` caracteres, que aplica la capa de aplicación.
+Cuando el Profesional pide información, la solicitud queda en espera. El Estudiante responde y la solicitud vuelve a revisión, para que quien la tomó la retome: aceptarla, pedir más información o cerrarla. Junto con la liberación de la toma es uno de los dos retrocesos del modelo. El motivo es la respuesta misma, por eso es obligatorio; queda en el historial de cambios con el Estudiante como actor, sin un campo nuevo en la solicitud. La respuesta tiene un tope de `REQUEST_RESPONSE_MAX_LENGTH` caracteres, que aplica la capa de aplicación.
 
 El par `received -> under_review` también existe en las tablas, pero es la toma del Profesional. Que el Estudiante solo pueda responder desde la espera lo exige `respondToInformationRequest` en [`respond.ts`](../../application/requests/respond.ts), igual que la columna "Quién lo intenta".
 
 El detalle de la solicitud (`getRequest`) entrega al Estudiante dueño y al Profesional con toma lo pedido mientras la solicitud espera respuesta (`informationRequest`), la respuesta al último pedido (`informationResponse`) y la razón de cierre (`closureReason`). Son textos libres: no viajan en los listados ni en la bandeja.
+
+## Liberación de la toma (revisión TI4-84)
+
+| Origen                               | Destino    | Quién lo intenta                                           | Exige motivo |
+| ------------------------------------ | ---------- | ---------------------------------------------------------- | ------------ |
+| `under_review`                       | `received` | Profesional vigente con toma, o la revocación de su cuenta | No           |
+| `awaiting_information_or_acceptance` | `received` | Profesional vigente con toma, o la revocación de su cuenta | No           |
+
+Sin esta salida, una solicitud tomada quedaba bloqueada si el Profesional que la tomó dejaba de operar: otro Profesional recibía `conflict` al tomarla y `unauthorized` al leerla, y la bandeja no la mostraba. Liberar devuelve la solicitud a `received` y a la bandeja, revoca la toma con quién la liberó y cuándo (`liberadaEn` de TOMAS_SOLICITUD en el MER) y deja el cambio en el historial con ese actor. El Profesional libera la suya con `releaseRequest`; al revocar la cuenta de un Profesional, la revocación libera en la misma transacción todas sus tomas de solicitudes abiertas, con el Administrador como actor. No exige motivo: el actor y la fecha ya explican el cambio. Liberar desde la espera de información deja sin efecto la pregunta pendiente; quien la tome puede volver a pedirla.
+
+Es el otro retroceso del modelo y el único que vuelve al estado inicial. Las tomas de solicitudes ya terminadas no se liberan: quedan como rastro de quién revisó, igual que al aceptar o cerrar.
 
 ## Derivación de salida (TI2-143)
 
@@ -171,9 +184,9 @@ Las pruebas del dominio de la solicitud viven en [`state.test.ts`](./state.test.
 bunx vitest run convex/domain/requests
 ```
 
-Positivos: las transiciones declaradas se aplican y devuelven actor, origen, destino, instante y el motivo cuando llega; el paso a espera, los cinco cierres y la derivación de salida conservan el motivo recortado; llegar a la aceptación marca que corresponde abrir el acompañamiento y ningún cierre ni derivación lo marca; el estado inicial es `received` y queda reconocido como estado con operación; los siete estados tienen etiqueta visible y una sola definición; el diagrama dibuja exactamente las transiciones de las tablas, marca "exige motivo" donde la tabla lo exige, entra por el estado inicial y sale por los cuatro estados terminales; la derivación de entrada registra el contacto y, después, la aceptación; las tablas no repiten filas, no dejan la solicitud donde ya estaba, alcanzan todos los estados desde el inicial, y desde todo estado abierto se puede cancelar; la proyección adapta una fila cerrada o cancelada.
+Positivos: la liberación de la toma vuelve a `received` sin exigir motivo; las transiciones declaradas se aplican y devuelven actor, origen, destino, instante y el motivo cuando llega; el paso a espera, los cinco cierres y la derivación de salida conservan el motivo recortado; llegar a la aceptación marca que corresponde abrir el acompañamiento y ningún cierre ni derivación lo marca; el estado inicial es `received` y queda reconocido como estado con operación; los siete estados tienen etiqueta visible y una sola definición; el diagrama dibuja exactamente las transiciones de las tablas, marca "exige motivo" donde la tabla lo exige, entra por el estado inicial y sale por los cuatro estados terminales; la derivación de entrada registra el contacto y, después, la aceptación; las tablas no repiten filas, no dejan la solicitud donde ya estaba, solo la liberación la devuelve al inicial, alcanzan todos los estados desde el inicial, y desde todo estado abierto se puede cancelar; la proyección adapta una fila cerrada o cancelada.
 
-Negativos: todo par ausente de las tablas se rechaza sin tocar el estado, incluidos los saltos, los retrocesos, quedarse en el mismo estado, aceptar dos veces, cancelar o cerrar una aceptada y repetir un cierre, tanto con el par escrito a mano como partiendo del estado que dejó el primer intento; el paso a espera y los cierres sin motivo, o con un motivo en blanco, se rechazan; el actor vacío o solo con espacios se rechaza; un instante que no es un número finito y positivo se rechaza; un rechazo no trae entrada de historial y deja el intento intacto, y cada causa declarada tiene un intento que la provoca; una recibida o una aceptada no se derivan y de `referred` no sale ningún intento; la aceptación de una derivación de entrada sin contacto se rechaza y una derivación sin aceptación no permite abrir acompañamiento; el Profesional no cierra una recibida.
+Negativos: todo par ausente de las tablas se rechaza sin tocar el estado, incluidos los saltos, los retrocesos, quedarse en el mismo estado, aceptar dos veces, cancelar o cerrar una aceptada y repetir un cierre, tanto con el par escrito a mano como partiendo del estado que dejó el primer intento; el paso a espera y los cierres sin motivo, o con un motivo en blanco, se rechazan; el actor vacío o solo con espacios se rechaza; un instante que no es un número finito y positivo se rechaza; un rechazo no trae entrada de historial y deja el intento intacto, y cada causa declarada tiene un intento que la provoca; una recibida o una aceptada no se derivan y de `referred` no sale ningún intento; una recibida o una terminada no se liberan; la aceptación de una derivación de entrada sin contacto se rechaza y una derivación sin aceptación no permite abrir acompañamiento; el Profesional no cierra una recibida.
 
 Lo que estas pruebas no cubren, porque vive fuera del dominio: quién está autorizado a intentar una transición, la persistencia del estado y de su historial, el evento de auditoría y la unicidad del acompañamiento. Las pruebas de integración de los dos cierres viven en [`requests.test.ts`](../../tests/requests.test.ts) y [`acceptance.test.ts`](../../tests/acceptance.test.ts).
 

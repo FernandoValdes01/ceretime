@@ -54,6 +54,14 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 - **Acceso por rol.** El titular lee su propio perfil con `presentation/session.getMyProfile`. El Administrador lista y lee cuentas de personal con `presentation/accounts.listAccounts` y `getAccount`; no lee cuentas de estudiantes. Ningún otro rol lee perfiles ajenos.
 - **Proveedor.** Convex almacena la fila. Google Workspace entrega la identidad durante el inicio de sesión.
 
+### `accountEnablements`
+
+- **Datos personales.** `userId`, `enabledRole`, `enabledBy`, `enabledAt`, `revokedBy`, `revokedAt` y `revocationReason`. Cada fila es una habilitación de la cuenta y, si terminó, su revocación (revisión TI4-84). `revocationReason` es texto libre del Administrador y puede contener datos de la persona.
+- **Finalidad.** Conservar quién habilitó y quién revocó cada cuenta en cada ciclo, que `users` sobrescribía.
+- **Base propuesta.** Seguridad para la auditoría. Pendiente de aprobación.
+- **Acceso por rol.** El Administrador vigente lee el historial de cuentas de personal con `presentation/accounts.listAccountEnablements`. Ningún otro rol lo lee y nadie lo edita ni lo borra desde la aplicación.
+- **Proveedor.** Convex.
+
 ### `accompaniments`
 
 - **Datos personales.** `studentId`, `status`, `objective`, `accessNeeds` y `requestId`. `objective` y `accessNeeds` son texto libre y pueden revelar una discapacidad o una condición de salud.
@@ -105,7 +113,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `requestAssignments`
 
-- **Datos personales.** `requestId`, `userId`, `grantedBy`, `grantedAt`, `status`, `revokedBy` y `revokedAt`. Registra qué Profesional tomó una solicitud y cuándo.
+- **Datos personales.** `requestId`, `userId`, `grantedBy`, `grantedAt`, `status`, `revokedBy` y `revokedAt`. Registra qué Profesional tomó una solicitud y cuándo y, desde la revisión TI4-84, quién la liberó y cuándo: el propio Profesional o el Administrador que revocó su cuenta.
 - **Finalidad.** Controlar qué Profesional puede operar cada solicitud. La toma es personal: nadie asigna una solicitud a otra persona.
 - **Base propuesta.** Seguridad y control de acceso. Pendiente de aprobación.
 - **Acceso por rol.** No hay un listado público de tomas. La autorización lee la toma activa del Profesional. El Profesional toma su propia solicitud. El Practicante y el Administrador están denegados.

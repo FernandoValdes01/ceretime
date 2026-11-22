@@ -12,6 +12,7 @@ import {
   CLOSURE_REQUEST_TRANSITIONS,
   isOpenRequestState,
   REFERRAL_REQUEST_TRANSITIONS,
+  RELEASE_REQUEST_TRANSITIONS,
   REQUEST_TRANSITIONS,
   RESPONSE_REQUEST_TRANSITIONS,
   SPRINT_1_REQUEST_TRANSITIONS,
@@ -135,10 +136,36 @@ describe("RESPONSE_REQUEST_TRANSITIONS (TI2-141)", () => {
     ]);
   });
 
-  test("es el único retroceso: ninguna otra fila vuelve a un estado anterior del flujo", () => {
+  test("con la liberación son los únicos retrocesos: ninguna otra fila vuelve atrás", () => {
     const order = (state: RequestState) => REQUEST_STATES.indexOf(state);
     const backwards = REQUEST_TRANSITIONS.filter((row) => order(row.to) < order(row.from));
-    expect(backwards.map(pair)).toEqual(RESPONSE_REQUEST_TRANSITIONS.map(pair));
+    expect(backwards.map(pair).sort()).toEqual(
+      [...RESPONSE_REQUEST_TRANSITIONS, ...RELEASE_REQUEST_TRANSITIONS].map(pair).sort(),
+    );
+  });
+});
+
+describe("RELEASE_REQUEST_TRANSITIONS (revisión TI4-84)", () => {
+  test("devuelve a la bandeja exactamente desde los estados con toma", () => {
+    expect(RELEASE_REQUEST_TRANSITIONS.map(pair)).toEqual([
+      "under_review -> received",
+      "awaiting_information_or_acceptance -> received",
+    ]);
+  });
+
+  test("no exige motivo: el actor y la fecha explican el cambio", () => {
+    expect(RELEASE_REQUEST_TRANSITIONS.filter((row) => row.requiresReason).map(pair)).toEqual([]);
+  });
+
+  test("no libera una recibida, que nadie tomó, ni una terminada", () => {
+    const origins: readonly string[] = RELEASE_REQUEST_TRANSITIONS.map((row) => row.from);
+    const notReleasable: readonly string[] = [
+      INITIAL_REQUEST_STATE,
+      ACCEPTANCE_STATE,
+      ...REFERRAL_REQUEST_STATES,
+      ...CLOSURE_REQUEST_STATES,
+    ];
+    expect(origins.filter((origin) => notReleasable.includes(origin))).toEqual([]);
   });
 });
 
@@ -173,11 +200,12 @@ const allSuccessors = (state: RequestState) =>
   REQUEST_TRANSITIONS.filter((row) => row.from === state).map((row) => row.to);
 
 describe("REQUEST_TRANSITIONS como grafo", () => {
-  test("es la suma exacta de las cuatro tablas, sin repetir pares", () => {
+  test("es la suma exacta de las cinco tablas, sin repetir pares", () => {
     const pairs = REQUEST_TRANSITIONS.map(pair);
     expect(pairs).toEqual([
       ...SPRINT_1_REQUEST_TRANSITIONS.map(pair),
       ...RESPONSE_REQUEST_TRANSITIONS.map(pair),
+      ...RELEASE_REQUEST_TRANSITIONS.map(pair),
       ...REFERRAL_REQUEST_TRANSITIONS.map(pair),
       ...CLOSURE_REQUEST_TRANSITIONS.map(pair),
     ]);
@@ -196,11 +224,11 @@ describe("REQUEST_TRANSITIONS como grafo", () => {
     },
   );
 
-  test("ninguna fila deja la solicitud donde estaba ni la devuelve al inicio", () => {
-    const loops = REQUEST_TRANSITIONS.filter(
-      (row) => row.from === row.to || row.to === INITIAL_REQUEST_STATE,
-    );
+  test("ninguna fila deja la solicitud donde estaba y solo la liberación la devuelve al inicio", () => {
+    const loops = REQUEST_TRANSITIONS.filter((row) => row.from === row.to);
     expect(loops.map(pair)).toEqual([]);
+    const returns = REQUEST_TRANSITIONS.filter((row) => row.to === INITIAL_REQUEST_STATE);
+    expect(returns.map(pair)).toEqual(RELEASE_REQUEST_TRANSITIONS.map(pair));
   });
 });
 

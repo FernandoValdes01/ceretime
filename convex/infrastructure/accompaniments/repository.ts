@@ -531,3 +531,31 @@ export function accompanimentStatusWriter(ctx: MutationCtx) {
     },
   };
 }
+
+/**
+ * Adaptador del puerto `AccompanimentReadStore` (revisión TI4-84). Presentación
+ * lo crea con el `ctx` de la query, así el perfil, el acompañamiento y sus
+ * asignaciones se leen en la misma transacción.
+ */
+export function accompanimentReadStore(ctx: DbReader) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getAccompaniment: (accompanimentId: Id<"accompaniments">) =>
+      getAccompanimentById(ctx, accompanimentId),
+    findActiveAssignmentsForUser: (accompanimentId: Id<"accompaniments">, userId: Id<"users">) =>
+      findActiveAssignmentsForUser(ctx, accompanimentId, userId),
+    paginateOwnedAccompaniments: (studentId: Id<"users">, paginationOpts: PaginationOptions) =>
+      paginateOwnedAccompaniments(ctx, studentId, paginationOpts),
+    queryAssignedRowsAfter: (input: {
+      readonly userId: Id<"users">;
+      readonly assignedRole: "professional" | "intern";
+      readonly cursor: Id<"accompaniments"> | undefined;
+      readonly take: number;
+    }) => queryAssignedRowsAfter(ctx, input),
+    paginateInternalNotes: (
+      accompanimentId: Id<"accompaniments">,
+      paginationOpts: PaginationOptions,
+    ) => paginateInternalNotes(ctx, accompanimentId, paginationOpts),
+  };
+}

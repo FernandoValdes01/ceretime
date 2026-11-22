@@ -164,7 +164,10 @@ test("TI2-183: una cuenta ajena sigue sin acceso a la solicitud ni al acompañam
         (error: unknown) => error,
       );
     expect(accompanimentError).toBeInstanceOf(ConvexError);
-    expect((accompanimentError as ConvexError<string>).data).toBe("No autorizado");
+    expect((accompanimentError as ConvexError<{ code: string }>).data).toEqual({
+      code: "unauthorized",
+      message: "No autorizado",
+    });
   }
 });
 

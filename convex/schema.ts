@@ -69,6 +69,27 @@ export default defineSchema({
     // Índice para vincular el perfil con la identidad autenticada
     .index("by_token_identifier", ["tokenIdentifier"]),
 
+  // Tabla 'accountEnablements': historial de habilitaciones y revocaciones
+  // (HABILITACIONES_CUENTA del MER, revisión TI4-84). Cada habilitación agrega
+  // una fila y la revocación posterior la cierra con su actor, fecha y motivo
+  // opcional; ninguna fila se borra ni se reabre, así un segundo ciclo no
+  // pierde el primero. `users.enabledBy`/`enabledAt`/`revokedBy`/`revokedAt`
+  // siguen siendo el último evento, que leen `getAccount` y `listAccounts`.
+  // `enabledBy` falta en las habilitaciones sin actor: el arranque
+  // administrativo y el Estudiante habilitado en su primer ingreso; `revokedBy`
+  // falta cuando el cierre lo hace el sistema (corrección del rol del primer
+  // ingreso). `revocationReason` es texto libre del Administrador y no se copia
+  // a la auditoría.
+  accountEnablements: defineTable({
+    userId: v.id("users"),
+    enabledRole: roleUnion,
+    enabledBy: v.optional(v.id("users")),
+    enabledAt: v.number(),
+    revokedBy: v.optional(v.id("users")),
+    revokedAt: v.optional(v.number()),
+    revocationReason: v.optional(v.string()),
+  }).index("by_user", ["userId"]),
+
   // Tabla 'accompaniments': acompañamiento mínimo para probar la matriz.
   // `accessNeeds` es sensible (Ley 21.719) y se minimiza para Practicante.
   // `requestId` traza la solicitud aceptada que lo originó, si se conoce.

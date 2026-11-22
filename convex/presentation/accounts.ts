@@ -5,10 +5,18 @@ import {
   enableStaffAccount,
   enableTestProfessionalAccount,
   getAccountDetailUseCase,
+  listAccountEnablementsUseCase,
   listAccountsUseCase,
   revokeStaffAccount,
 } from "../application/accounts/enablement";
-import { mutation, query } from "../_generated/server";
+import type { RevokedProfessionalTakeReleaser } from "../application/accounts/ports";
+import { releaseTakesOfProfessional } from "../application/requests/release";
+import { mutation, query, type MutationCtx } from "../_generated/server";
+import {
+  accountEnablementReader,
+  accountEnablementStore,
+} from "../infrastructure/accounts/repository";
+import { requestStore } from "../infrastructure/requests/repository";
 import {
   accountStatusUnion,
   institutionalStatusUnion,
@@ -40,7 +48,24 @@ import { unwrapApiResult } from "./session";
  * explicar. Administrar no concede acompañamientos ni notas: esa lectura
  * sigue denegada. El detalle es mínimo, sin `tokenIdentifier`,
  * acompañamientos ni notas. Opera con datos ficticios.
+ *
+ * Revisión TI4-84: cada habilitación y revocación queda en el historial de la
+ * cuenta (`listAccountEnablements`), la revocación acepta un motivo opcional
+ * y, si la cuenta es profesional, devuelve a la bandeja sus solicitudes en
+ * revisión en la misma transacción.
  */
+
+/**
+ * Liberación de tomas para la revocación: compone el caso de uso de
+ * solicitudes con el mismo `ctx`, así revocar y liberar son una sola
+ * transacción.
+ */
+function takeReleaserFor(ctx: MutationCtx): RevokedProfessionalTakeReleaser {
+  return {
+    releaseTakesOf: (input) =>
+      releaseTakesOfProfessional({ requests: requestStore(ctx), now: Date.now }, input),
+  };
+}
 
 const accountSummaryValidator = v.object({
   _id: v.id("users"),
@@ -57,6 +82,16 @@ const accountSummaryValidator = v.object({
 
 const accountIdValidator = v.object({ userId: v.id("users") });
 
+const accountEnablementValidator = v.object({
+  _id: v.id("accountEnablements"),
+  enabledRole: roleUnion,
+  enabledBy: v.optional(v.id("users")),
+  enabledAt: v.number(),
+  revokedBy: v.optional(v.id("users")),
+  revokedAt: v.optional(v.number()),
+  revocationReason: v.optional(v.string()),
+});
+
 /** Lista paginada de cuentas de personal, filtrada por rol. Solo Administrador. */
 export const listAccounts = query({
   args: {
@@ -66,7 +101,7 @@ export const listAccounts = query({
   returns: paginationResultValidator(accountSummaryValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await listAccountsUseCase(ctx, identity, args));
+    return unwrapApiResult(await listAccountsUseCase(accountEnablementReader(ctx), identity, args));
   },
 });
 
@@ -76,7 +111,24 @@ export const getAccount = query({
   returns: accountSummaryValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await getAccountDetailUseCase(ctx, identity, args));
+    return unwrapApiResult(
+      await getAccountDetailUseCase(accountEnablementReader(ctx), identity, args),
+    );
+  },
+});
+
+/**
+ * Historial de habilitaciones y revocaciones de una cuenta de personal, del
+ * evento más reciente al más antiguo (revisión TI4-84). Solo Administrador.
+ */
+export const listAccountEnablements = query({
+  args: { userId: v.id("users"), paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(accountEnablementValidator),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await listAccountEnablementsUseCase(accountEnablementReader(ctx), identity, args),
+    );
   },
 });
 
@@ -89,20 +141,28 @@ export const enableAccount = mutation({
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await enableStaffAccount(ctx, identity, args));
+    return unwrapApiResult(await enableStaffAccount(accountEnablementStore(ctx), identity, args));
   },
 });
 
 /**
  * Revoca una cuenta profesional o administrativa habilitada.
- * Registra actor y fecha; la cuenta deja de operar en la petición siguiente.
+ * Registra actor, fecha y el motivo opcional en el historial; la cuenta deja
+ * de operar en la petición siguiente y, si es profesional, sus solicitudes en
+ * revisión vuelven a la bandeja.
  */
 export const revokeAccount = mutation({
-  args: { userId: v.id("users") },
+  args: { userId: v.id("users"), reason: v.optional(v.string()) },
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await revokeStaffAccount(ctx, identity, args));
+    return unwrapApiResult(
+      await revokeStaffAccount(
+        { accounts: accountEnablementStore(ctx), takes: takeReleaserFor(ctx) },
+        identity,
+        args,
+      ),
+    );
   },
 });
 
@@ -119,7 +179,9 @@ export const enableIntern = mutation({
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await enableInternByProfessional(ctx, identity, args));
+    return unwrapApiResult(
+      await enableInternByProfessional(accountEnablementStore(ctx), identity, args),
+    );
   },
 });
 
@@ -137,6 +199,8 @@ export const enableTestProfessional = mutation({
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await enableTestProfessionalAccount(ctx, identity, args));
+    return unwrapApiResult(
+      await enableTestProfessionalAccount(accountEnablementStore(ctx), identity, args),
+    );
   },
 });

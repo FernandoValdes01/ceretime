@@ -1,9 +1,8 @@
 import type { UserIdentity } from "convex/server";
-import type { QueryCtx } from "../../_generated/server";
 import type { InstitutionalPopulation } from "../../domain/auth/institutional_domain";
 import type { Role } from "../../domain/identity/roles";
-import { findProfileByTokenIdentifier } from "../../infrastructure/accounts/repository";
 import { toMinimalIdentity } from "./minimal_identity";
+import type { OwnProfileReader } from "./ports";
 
 /**
  * Caso de uso: rol propio para navegación Web (TI2-20).
@@ -16,18 +15,19 @@ import { toMinimalIdentity } from "./minimal_identity";
  * ambas consultas se actualizan en momentos distintos y el rol anterior no
  * debe abrir su portal. Solo lectura del propio perfil: no decide permisos
  * ni expone datos de terceros. La autorización efectiva sigue en cada
- * función guardada del Backend.
+ * función guardada del Backend. El perfil se lee con el puerto
+ * `OwnProfileReader`, que Presentación compone con `ownProfileReader(ctx)`.
  */
 export type SessionRole =
   | { readonly status: "authenticated"; readonly role: Role; readonly email: string }
   | { readonly status: "unauthenticated" };
 
 export async function resolveSessionRole(
-  ctx: QueryCtx,
+  profiles: OwnProfileReader,
   identity: UserIdentity | null,
 ): Promise<SessionRole> {
   if (identity === null) return { status: "unauthenticated" };
-  const profile = await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier ?? "");
+  const profile = await profiles.findByTokenIdentifier(identity.tokenIdentifier ?? "");
   if (
     profile === null ||
     profile.institutionalStatus !== "enabled" ||
@@ -63,10 +63,10 @@ export type SessionAndRole = {
 };
 
 export async function resolveSessionAndRole(
-  ctx: QueryCtx,
+  profiles: OwnProfileReader,
   identity: UserIdentity | null,
 ): Promise<SessionAndRole> {
-  const role = await resolveSessionRole(ctx, identity);
+  const role = await resolveSessionRole(profiles, identity);
   if (identity === null) {
     return { session: { status: "unauthenticated" }, role };
   }

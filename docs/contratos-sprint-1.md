@@ -40,7 +40,7 @@ No forman superficie pública y ningún cliente las llama directo. Se documentan
 
 ## Respuestas y errores
 
-Toda denegación de autorización responde `ConvexError("No autorizado")`: mismo mensaje sin motivo y sin revelar si el recurso existe. Aplica a identidad ausente, perfil ausente o no vigente, rol ajeno, fila inexistente o ajena, y toma ausente. Las validaciones de tipo de argumentos fallan con error de validador de Convex, también sin detalles sensibles.
+Toda denegación de autorización responde `ConvexError("No autorizado")`: mismo mensaje sin motivo y sin revelar si el recurso existe. Desde la revisión TI4-84, las lecturas de acompañamientos y `listSpaces` responden en su lugar el contrato común `{ code: "unauthorized", message: "No autorizado" }`, en las mismas situaciones. Aplica a identidad ausente, perfil ausente o no vigente, rol ajeno, fila inexistente o ajena, y toma ausente. Las validaciones de tipo de argumentos fallan con error de validador de Convex, también sin detalles sensibles.
 
 Los rechazos de regla y validación responden `Error` con mensaje específico en español (sin códigos, sin motivo interno):
 

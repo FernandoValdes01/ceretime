@@ -9,6 +9,7 @@
  */
 
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
+import type * as application_accompaniments_ports from "../application/accompaniments/ports.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accompaniments_status from "../application/accompaniments/status.js";
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
@@ -32,6 +33,7 @@ import type * as application_requests_commands from "../application/requests/com
 import type * as application_requests_ports from "../application/requests/ports.js";
 import type * as application_requests_queries from "../application/requests/queries.js";
 import type * as application_requests_referrals from "../application/requests/referrals.js";
+import type * as application_requests_release from "../application/requests/release.js";
 import type * as application_requests_respond from "../application/requests/respond.js";
 import type * as application_requests_results from "../application/requests/results.js";
 import type * as application_requests_status_change from "../application/requests/status_change.js";
@@ -111,6 +113,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "application/accompaniments/commands": typeof application_accompaniments_commands;
+  "application/accompaniments/ports": typeof application_accompaniments_ports;
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accompaniments/status": typeof application_accompaniments_status;
   "application/accounts/enablement": typeof application_accounts_enablement;
@@ -134,6 +137,7 @@ declare const fullApi: ApiFromModules<{
   "application/requests/ports": typeof application_requests_ports;
   "application/requests/queries": typeof application_requests_queries;
   "application/requests/referrals": typeof application_requests_referrals;
+  "application/requests/release": typeof application_requests_release;
   "application/requests/respond": typeof application_requests_respond;
   "application/requests/results": typeof application_requests_results;
   "application/requests/status_change": typeof application_requests_status_change;

@@ -1,30 +1,25 @@
-import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import type { QueryCtx } from "../../_generated/server";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../../domain/spaces/space";
 import {
-  AUTHORIZATION_DENIED_MESSAGE,
   authorizeSpaceCatalogRead,
+  deniedPublicError,
+  type AuthorizationReader,
 } from "../authorization/authorize";
-import { authorizationReader } from "../../infrastructure/accompaniments/repository";
-import { listActiveSpaceRows, toSpace } from "../../infrastructure/spaces/repository";
+import type { SpaceCatalogReader } from "./ports";
 
 /**
  * Casos de uso de lectura del catálogo de espacios (TI2-99).
  *
- * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
+ * Capa de Aplicación: recibe el `tokenIdentifier` ya resuelto en el borde con
  * `ctx.auth.getUserIdentity()`, exige cuenta vigente de cualquier rol con
- * `authorizeSpaceCatalogRead` y lee el catálogo vigente con Infraestructura.
- * El dominio institucional no autoriza por sí solo: sin perfil vinculado la
- * respuesta es denegación genérica. Opera con datos ficticios.
+ * `authorizeSpaceCatalogRead` y lee el catálogo vigente con el puerto
+ * `SpaceCatalogReader`. El dominio institucional no autoriza por sí solo: sin
+ * perfil vinculado la respuesta es la denegación del contrato común
+ * (`unauthorized`, TI2-88). Opera con datos ficticios.
  */
 
 /** Tope de elementos por página: se rechaza el exceso, nunca se trunca en silencio. */
 export const SPACE_CATALOG_PAGE_LIMIT_MAX = 100;
-
-function deny(): never {
-  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
-}
 
 /**
  * Lista el catálogo de espacios que puede ver el solicitante, paginado.
@@ -34,10 +29,15 @@ function deny(): never {
  * vigente y el límite un entero entre 1 y el máximo; lo demás se rechaza con
  * error de regla en español.
  */
-export async function listSpaceCatalogUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-  args: { readonly limit: number; readonly cursor?: string; readonly version: string },
+export async function listSpaceCatalogUseCase<SpaceId extends string>(
+  auth: AuthorizationReader,
+  catalog: SpaceCatalogReader<SpaceId>,
+  args: {
+    readonly tokenIdentifier: string | null;
+    readonly limit: number;
+    readonly cursor?: string;
+    readonly version: string;
+  },
 ) {
   if (args.version !== SPACE_CATALOG_CONTRACT_VERSION) {
     throw new Error("La versión del contrato de espacios debe ser la vigente.");
@@ -50,15 +50,14 @@ export async function listSpaceCatalogUseCase(
       `El límite del catálogo supera el máximo de ${SPACE_CATALOG_PAGE_LIMIT_MAX} por página.`,
     );
   }
-  const grant = await authorizeSpaceCatalogRead(authorizationReader(ctx), {
-    tokenIdentifier: identity?.tokenIdentifier ?? null,
-  });
+  const grant = await authorizeSpaceCatalogRead(auth, { tokenIdentifier: args.tokenIdentifier });
   if (grant.status === "error") {
-    deny();
+    const { code, message } = deniedPublicError();
+    throw new ConvexError({ code, message });
   }
-  const page = await listActiveSpaceRows(ctx, { limit: args.limit, cursor: args.cursor ?? null });
+  const page = await catalog.listActiveSpaces({ limit: args.limit, cursor: args.cursor ?? null });
   return {
-    items: page.items.map(toSpace),
+    items: page.items,
     hasMore: page.hasMore,
     nextCursor: page.nextCursor,
     version: SPACE_CATALOG_CONTRACT_VERSION,

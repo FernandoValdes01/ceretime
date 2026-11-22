@@ -300,6 +300,32 @@ export function validateStaffRevocationTarget(target: StaffEnablementTarget): En
   return { ok: true };
 }
 
+/** Largo máximo del motivo de revocación: se rechaza el exceso, nunca se trunca. */
+export const REVOCATION_REASON_MAX_LENGTH = 500;
+
+/**
+ * Motivo opcional de la revocación (HABILITACIONES_CUENTA en el MER, revisión
+ * TI4-84). Sin texto o con solo espacios no hay motivo; el
+ * motivo se guarda recortado y uno más largo que el máximo se rechaza. Lo
+ * escribe el Administrador para el historial de la cuenta: no debe incluir
+ * datos sensibles de la persona, pero el tipo no puede impedirlo.
+ */
+export function toRevocationReason(
+  raw: string | undefined,
+):
+  | { readonly ok: true; readonly reason?: string }
+  | { readonly ok: false; readonly message: string } {
+  const reason = raw?.trim() ?? "";
+  if (reason.length === 0) return { ok: true };
+  if (reason.length > REVOCATION_REASON_MAX_LENGTH) {
+    return {
+      ok: false,
+      message: `El motivo de la revocación supera los ${REVOCATION_REASON_MAX_LENGTH} caracteres.`,
+    };
+  }
+  return { ok: true, reason };
+}
+
 export type BootstrapCandidate = {
   readonly email: string;
   readonly role: EnablementRole;

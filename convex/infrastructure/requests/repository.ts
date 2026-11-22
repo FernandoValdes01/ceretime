@@ -264,6 +264,14 @@ export function requestStore(ctx: MutationCtx) {
       await insertActiveTake(ctx, { requestId, userId: professionalId, grantedBy: professionalId });
       await markRequestTaken(ctx, requestId, professionalId);
     },
+    releaseTake: (input: {
+      readonly requestId: Id<"requests">;
+      readonly professionalId: Id<"users">;
+      readonly releasedBy: Id<"users">;
+      readonly releasedAt: number;
+    }) => releaseActiveTake(ctx, input),
+    listActiveTakeRequestIds: (professionalId: Id<"users">) =>
+      listActiveTakeRequestIds(ctx, professionalId),
     registerOnce: async (
       studentId: Id<"users">,
       submission: RequestSubmission,
@@ -492,4 +500,49 @@ export async function markRequestTaken(
   userId: Id<"users">,
 ): Promise<void> {
   await ctx.db.patch(requestId, { takenBy: userId });
+}
+
+/**
+ * Libera la toma activa del Profesional (revisión TI4-84): la revoca con quien
+ * la libera y cuándo, que es `liberadaEn` de TOMAS_SOLICITUD en el MER, y
+ * quita `takenBy` de la solicitud para que vuelva a la bandeja.
+ */
+export async function releaseActiveTake(
+  ctx: MutationCtx,
+  input: {
+    readonly requestId: Id<"requests">;
+    readonly professionalId: Id<"users">;
+    readonly releasedBy: Id<"users">;
+    readonly releasedAt: number;
+  },
+): Promise<void> {
+  const take = await findActiveTake(ctx, input.requestId, input.professionalId);
+  if (take !== null) {
+    await ctx.db.patch(take._id, {
+      status: "revoked",
+      revokedBy: input.releasedBy,
+      revokedAt: input.releasedAt,
+    });
+  }
+  await ctx.db.patch(input.requestId, { takenBy: undefined });
+}
+
+/**
+ * Solicitudes con toma activa del Profesional, sin repetir (revisión TI4-84).
+ * Recorre el índice completo: lo usa la revocación de su cuenta, que debe
+ * liberar todas sus tomas en la misma mutation.
+ */
+export async function listActiveTakeRequestIds(
+  ctx: DbReader,
+  professionalId: Id<"users">,
+): Promise<Id<"requests">[]> {
+  const requestIds = new Set<Id<"requests">>();
+  for await (const take of ctx.db
+    .query("requestAssignments")
+    .withIndex("by_user_and_status_and_request", (q) =>
+      q.eq("userId", professionalId).eq("status", "active"),
+    )) {
+    requestIds.add(take.requestId);
+  }
+  return [...requestIds];
 }

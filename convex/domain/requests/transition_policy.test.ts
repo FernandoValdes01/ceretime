@@ -11,6 +11,7 @@ import {
   ACCEPTANCE_STATE,
   CLOSURE_REQUEST_TRANSITIONS,
   REFERRAL_REQUEST_TRANSITIONS,
+  RELEASE_REQUEST_TRANSITIONS,
   REQUEST_TRANSITIONS,
   SPRINT_1_REQUEST_TRANSITIONS,
 } from "./transitions";
@@ -135,9 +136,9 @@ describe("transitionRequest", () => {
     const pairs = [
       ["received", "accepted"],
       ["received", "awaiting_information_or_acceptance"],
-      ["under_review", "received"],
       ["accepted", "under_review"],
-      ["awaiting_information_or_acceptance", "received"],
+      ["accepted", "received"],
+      ["closed_without_accompaniment", "received"],
       ["received", "received"],
       ["accepted", "accepted"],
     ] as const;
@@ -163,6 +164,21 @@ describe("transitionRequest", () => {
 
       const second = transitionRequest({ ...actor, from: first.change.to, to: ACCEPTANCE_STATE });
       expect(second).toStrictEqual({ status: "rejected", cause: "transition_not_allowed" });
+    },
+  );
+
+  test.each(RELEASE_REQUEST_TRANSITIONS)(
+    "liberar la toma desde $from vuelve a la bandeja sin exigir motivo (revisión TI4-84)",
+    (row) => {
+      const result = transitionRequest({ ...actor, from: row.from, to: row.to });
+      assert(result.status === "applied");
+      expect(result.change).toStrictEqual({
+        from: row.from,
+        to: "received",
+        actorId: actor.actorId,
+        occurredAt: actor.occurredAt,
+      });
+      expect(result.opensAccompaniment).toBe(false);
     },
   );
 

@@ -21,6 +21,7 @@ import {
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
+  accompanimentReadStore,
   accompanimentStatusWriter,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
@@ -62,9 +63,9 @@ function schedulingFor(ctx: MutationCtx): AssignmentScheduler {
  *
  * Toda denegación (sin identidad, sin perfil, cuenta inhabilitada, fuera de
  * alcance, acompañamiento inexistente o acceso general de Administrador)
- * responde con el mismo error genérico, sin exponer el motivo ni la
- * existencia del recurso. Los listados se paginan: nunca se truncan en
- * silencio. La gestión (asignar, modificar vigencia, revocar) la realiza el
+ * responde con el mismo `unauthorized` del contrato común (TI2-88), sin exponer
+ * el motivo ni la existencia del recurso. Los listados se paginan: nunca se
+ * truncan en silencio. La gestión (asignar, modificar vigencia, revocar) la realiza el
  * profesional de personal autorizado sobre el mismo acompañamiento y registra
  * actor y fecha; la lectura exige cuenta habilitada y asignación activa y
  * vigente, y el practicante nunca escribe ni ve notas internas.
@@ -119,7 +120,7 @@ export const getAccompaniment = query({
   returns: accompanimentViewValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await getAccompanimentDetail(ctx, identity, args);
+    return await getAccompanimentDetail(accompanimentReadStore(ctx), identity, args);
   },
 });
 
@@ -132,7 +133,7 @@ export const listOwnedAccompaniments = query({
   returns: paginationResultValidator(accompanimentViewValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listOwnedAccompanimentsUseCase(ctx, identity, args);
+    return await listOwnedAccompanimentsUseCase(accompanimentReadStore(ctx), identity, args);
   },
 });
 
@@ -149,7 +150,7 @@ export const listAssignedAccompaniments = query({
   returns: assignedListValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listAssignedAccompanimentsUseCase(ctx, identity, args);
+    return await listAssignedAccompanimentsUseCase(accompanimentReadStore(ctx), identity, args);
   },
 });
 
@@ -163,7 +164,7 @@ export const getInternalNotes = query({
   returns: paginationResultValidator(internalNoteValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await getInternalNotesUseCase(ctx, identity, args);
+    return await getInternalNotesUseCase(accompanimentReadStore(ctx), identity, args);
   },
 });
 
