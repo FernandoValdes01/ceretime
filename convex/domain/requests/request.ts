@@ -211,10 +211,9 @@ export const ACCESS_NEED_ID_MAX_LENGTH = ACCESS_NEED_LABEL_MAX_LENGTH;
  */
 export type RequestSubmission = Readonly<AccompanimentRequestContent> & {
   /**
-   * Solo para que compile el envío de demostración de Mobile, que todavía la
-   * pasa; TI4 pidió no tocar `apps/mobile` en esta PR. Ninguna función la
-   * valida ni la devuelve, el repositorio no la guarda y el validador de
-   * Convex la rechaza. Se quita cuando TI4 ajuste ese envío.
+   * Se conserva porque el envío de demostración de Mobile la pasa al dominio:
+   * lo que usa Mobile se mantiene. No se valida, no se devuelve ni se guarda,
+   * y el validador de Convex la rechaza.
    */
   readonly idempotencyKey?: string;
 };
