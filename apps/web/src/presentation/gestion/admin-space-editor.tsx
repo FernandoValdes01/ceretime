@@ -50,17 +50,16 @@ const GESTION_TEXTAREA =
 const GESTION_TEXTAREA_CLASS = `${GESTION_TEXTAREA} ${GESTION_FOCUS_VISIBLE}`;
 
 /**
- * Editor de espacios del Administrador (TI2-04).
+ * Editor de espacios del Administrador (TI2-04, escritura real TI2-169).
  *
  * Interfaz tipada sobre los campos del contrato del catálogo v1, sin otra
  * entidad rooms/locations: ubicación física (campus, edificio, piso y sala)
  * y condiciones e instrucciones de acceso legibles por lector de pantalla.
- * Lee y guarda por el puerto común de agenda con el adaptador ficticio de
- * TI2-103; la escritura real del catálogo no está entregada (TI2-99 entrega
- * lectura, no escritura), así que todo guardado se identifica como simulado
- * con datos ficticios y no anuncia persistencia real. La modalidad se
- * muestra con los valores canónicos del dominio: los espacios aplican a la
- * atención presencial y no existe representación híbrida.
+ * Lee y escribe por el puerto común de agenda con el adaptador Convex contra
+ * `api.presentation.spaces` (TI2-148): crear, editar y deshabilitar persisten
+ * en el catálogo real y se reflejan al recargar. La modalidad se muestra con
+ * los valores canónicos del dominio: los espacios aplican a la atención
+ * presencial y no existe representación híbrida.
  */
 export function AdminSpaceEditorPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -79,10 +78,7 @@ export function AdminSpaceEditorPage() {
         Edita la ubicación física, las condiciones de acceso y las instrucciones de llegada de cada
         espacio con el contrato vigente.
       </p>
-      <p>
-        Los datos son ficticios y el guardado es simulado: la escritura real del catálogo no está
-        entregada.
-      </p>
+      <p>Los cambios se guardan en el catálogo y persisten al recargar.</p>
       <p>
         <Link
           to="/administrador"
@@ -101,8 +97,13 @@ export function AdminSpaceEditorPage() {
 function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () => void }) {
   const result = useSpaceCatalog(attempt);
   const [savedSpaces, setSavedSpaces] = useState<ReadonlyArray<Space>>([]);
+  const [removedIds, setRemovedIds] = useState<ReadonlyArray<string>>([]);
   const [editing, setEditing] = useState<Space | null>(null);
   const [savedSpace, setSavedSpace] = useState<Space | null>(null);
+  const [disabledSpace, setDisabledSpace] = useState<Space | null>(null);
+  const [disablePendingId, setDisablePendingId] = useState<string | null>(null);
+  const [disableError, setDisableError] = useState<string | null>(null);
+  const [disableDenied, setDisableDenied] = useState(false);
   // Sesión del formulario: cada apertura de edición, cancelación o creación
   // confirmada avanza el contador y remonta el formulario. La respuesta de
   // un guardado solo confirma si corresponde a la sesión vigente, así una
@@ -114,6 +115,7 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
   const formSessionRef = useRef(0);
   const formHeadingRef = useRef<HTMLHeadingElement>(null);
   const confirmationRef = useRef<HTMLHeadingElement>(null);
+  const disabledConfirmationRef = useRef<HTMLHeadingElement>(null);
   const mounted = useRef(false);
 
   useEffect(() => {
@@ -137,6 +139,12 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
     }
   }, [savedSpace]);
 
+  useEffect(() => {
+    if (disabledSpace !== null) {
+      disabledConfirmationRef.current?.focus();
+    }
+  }, [disabledSpace]);
+
   if (result === undefined) {
     return <LoadingState label="Cargando los espacios…" />;
   }
@@ -151,13 +159,49 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
     return <DeniedState />;
   }
 
-  // Catálogo vigente: la lectura fija la base y cada guardado simulado
-  // reemplaza el espacio editado o agrega el nuevo, sin persistencia real.
+  // Catálogo vigente: la lectura fija la base, cada guardado real reemplaza
+  // el espacio editado o agrega el nuevo, y al deshabilitar se retira;
+  // todo persiste en el Backend y se refleja al recargar.
   let catalog: ReadonlyArray<Space> = result.status === "ok" ? [...result.spaces] : [];
   for (const saved of savedSpaces) {
     catalog = applySavedSpace(catalog, saved);
   }
+  if (removedIds.length > 0) {
+    const removed = new Set(removedIds);
+    catalog = catalog.filter((space) => !removed.has(space.id));
+  }
   const isEmpty = result.status === "empty" && catalog.length === 0;
+
+  async function handleDisable(space: Space) {
+    if (disablePendingId !== null) {
+      return;
+    }
+    setDisablePendingId(space.id);
+    setDisableError(null);
+    setDisableDenied(false);
+    setDisabledSpace(null);
+    setSavedSpace(null);
+    try {
+      const outcome = await getAgendaPort().setSpaceActive({ spaceId: space.id, isActive: false });
+      if (outcome.status === "saved") {
+        setRemovedIds((prev) => (prev.includes(space.id) ? prev : [...prev, space.id]));
+        setSavedSpaces((prev) => prev.filter((item) => item.id !== space.id));
+        if (editing?.id === space.id) {
+          setEditing(null);
+          setFormSession((value) => value + 1);
+        }
+        setDisabledSpace(space);
+      } else if (outcome.status === "denied") {
+        setDisableDenied(true);
+      } else {
+        setDisableError(outcome.error.message);
+      }
+    } catch {
+      setDisableError("No pudimos deshabilitar el espacio. Inténtalo de nuevo.");
+    } finally {
+      setDisablePendingId(null);
+    }
+  }
 
   return (
     <>
@@ -197,21 +241,51 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
                   >
                     Editar espacio {space.id}
                   </button>
+                  <button
+                    type="button"
+                    className="student-portal__btn student-portal__btn--ghost"
+                    disabled={disablePendingId !== null}
+                    aria-busy={disablePendingId === space.id}
+                    onClick={() => void handleDisable(space)}
+                  >
+                    {disablePendingId === space.id
+                      ? "Deshabilitando…"
+                      : `Deshabilitar espacio ${space.id}`}
+                  </button>
                 </div>
               </li>
             ))}
           </ul>
         )}
       </section>
+      {disableDenied ? (
+        <p role="alert" className="student-portal__error">
+          {ACCESS_DENIED_MESSAGE}
+        </p>
+      ) : null}
+      {disableError !== null ? (
+        <p role="alert" className="student-portal__error">
+          {disableError}
+        </p>
+      ) : null}
+      {disabledSpace !== null ? (
+        <div>
+          <h3 ref={disabledConfirmationRef} tabIndex={-1}>
+            Espacio deshabilitado
+          </h3>
+          <p>
+            Código {disabledSpace.id}. Ya no aparece en el catálogo ni en la disponibilidad, pero se
+            conserva sin borrar su historial.
+          </p>
+          <p className="student-portal__item-meta">{toSpaceLabel(disabledSpace)}</p>
+        </div>
+      ) : null}
       {savedSpace !== null ? (
         <div>
           <h3 ref={confirmationRef} tabIndex={-1}>
             Espacio guardado
           </h3>
-          <p>
-            Código {savedSpace.id}. Guardado simulado con datos ficticios; la escritura real del
-            catálogo no está entregada.
-          </p>
+          <p>Código {savedSpace.id}. Cambios guardados en el catálogo.</p>
           <p className="student-portal__item-meta">{toSpaceLabel(savedSpace)}</p>
           <p className="student-portal__item-meta">
             Condiciones de acceso: {savedSpace.accessConditions}
@@ -230,15 +304,20 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
         editing={editing}
         formHeadingRef={formHeadingRef}
         formSession={formSession}
-        onSaveStart={() => setSavedSpace(null)}
+        onSaveStart={() => {
+          setSavedSpace(null);
+          setDisabledSpace(null);
+        }}
         onSaved={(space, session) => {
           setSavedSpaces((prev) => applySavedSpace(prev, space));
+          setRemovedIds((prev) => prev.filter((id) => id !== space.id));
           // La confirmación y la salida del modo edición solo aplican cuando
           // la respuesta corresponde a la sesión vigente: cancelar, editar
           // otro espacio o reanudar el modo nuevo abre una sesión distinta
           // y deja sin efecto la respuesta de un guardado anterior.
           if (session === formSessionRef.current) {
             setSavedSpace(space);
+            setDisabledSpace(null);
             setEditing(null);
             setFormSession((value) => value + 1);
           }
@@ -253,8 +332,9 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
 }
 
 /**
- * Aplica un guardado simulado al catálogo visible: reemplaza el espacio con
- * la misma identidad o agrega el nuevo al final.
+ * Aplica un guardado real al catálogo visible: reemplaza el espacio con la
+ * misma identidad o agrega el nuevo al final. Persiste en el Backend y se
+ * refleja al recargar.
  */
 function applySavedSpace(current: ReadonlyArray<Space>, saved: Space): ReadonlyArray<Space> {
   const index = current.findIndex((item) => item.id === saved.id);
@@ -347,7 +427,7 @@ function SpaceFormSection({
         ) : null}
       </div>
       {editing !== null ? <p>Estás editando {toSpaceLabel(editing)}.</p> : null}
-      <p>Guardado simulado con datos ficticios.</p>
+      <p>Los cambios se guardan en el catálogo y la disponibilidad usa el mismo catálogo.</p>
       <p id="space-modality-note" className="student-portal__hint">
         Modalidad: {availabilityModalityLabel("inPerson")}. Los espacios de atención son el lugar de
         las atenciones presenciales; la modalidad en línea no usa espacio.

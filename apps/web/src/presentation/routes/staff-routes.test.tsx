@@ -390,10 +390,16 @@ describe("límites de navegación por rol (TI2-20)", () => {
     const hrefs = portalHrefs();
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
-      expect(href === "/administrador" || href === "/administrador/espacios").toBe(true);
+      expect(
+        href === "/administrador" ||
+          href === "/administrador/cuentas" ||
+          href === "/administrador/espacios",
+      ).toBe(true);
     }
-    // El editor de espacios (TI2-04) es la vista propia del Administrador.
+    // El editor de espacios (TI2-04) y las cuentas (TI2-169) son las vistas
+    // propias del Administrador.
     expect(hrefs).toContain("/administrador/espacios");
+    expect(hrefs).toContain("/administrador/cuentas");
   });
 
   test("el Profesional no entra al portal del Estudiante", async () => {

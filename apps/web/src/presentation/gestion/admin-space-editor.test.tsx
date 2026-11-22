@@ -9,14 +9,14 @@ import type { AgendaPort } from "../../application/agenda/agenda-port.ts";
 import { setAgendaPortForTests } from "./professional-availability-data.ts";
 
 /**
- * Pruebas del editor de espacios del Administrador (TI2-04).
+ * Pruebas del editor de espacios del Administrador (TI2-04, escritura real TI2-169).
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Administrador, salvo los casos de denegación. El puerto de agenda se
- * inyecta por pruebas porque el adaptador ficticio no distingue referencias;
- * el cableado real puerto→adaptador lo cubren `tsc`, el build y la
- * verificación manual contra el entorno ficticio de TI2-30. Todos los datos
- * son ficticios y el guardado no anuncia persistencia real.
+ * inyecta por pruebas con la API real simulada (crear, editar y deshabilitar
+ * persisten en el doble); el cableado real puerto→adaptador lo cubren `tsc`,
+ * el build y la verificación manual contra el entorno de TI2-30. Todos los
+ * datos son ficticios y el guardado confirma persistencia en el catálogo.
  */
 
 let mockedSession: WebSessionState;
@@ -133,6 +133,13 @@ function puertoOk(): AgendaPort {
           version: "v1",
         },
       }),
+    setSpaceActive: (input) => {
+      const found = ESPACIOS_FICTICIOS.find((space) => space.id === input.spaceId);
+      if (found === undefined) {
+        return Promise.resolve({ status: "denied" as const });
+      }
+      return Promise.resolve({ status: "saved" as const, space: found, isActive: false });
+    },
     listAppointments: () => Promise.resolve({ status: "empty" }),
     getAppointment: () => Promise.resolve({ status: "denied" }),
     changeAppointmentStatus: () =>
@@ -267,7 +274,7 @@ describe("editor de espacios (TI2-04)", () => {
     expect(screen.getByText("Describe las instrucciones de llegada al espacio.")).toBeDefined();
   });
 
-  test("guardado válido de un espacio nuevo confirma con nota ficticia y lo agrega", async () => {
+  test("guardado válido de un espacio nuevo confirma persistencia y lo agrega", async () => {
     comoAdministrador();
     renderAt("/administrador/espacios");
 
@@ -281,13 +288,11 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Espacio guardado")).toBeDefined();
     expect(
-      await screen.findByText(/Código esp-ficticio-9\. Guardado simulado con datos ficticios/, {
+      await screen.findByText(/Código esp-ficticio-9\. Cambios guardados en el catálogo/, {
         exact: false,
       }),
     ).toBeDefined();
-    expect(
-      screen.getAllByText(/la escritura real del catálogo no está entregada/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Guardado simulado/)).toBeNull();
     const catalogo = screen
       .getByRole("heading", { name: "Espacios registrados" })
       .closest("section");
@@ -651,7 +656,11 @@ describe("editor de espacios (TI2-04)", () => {
 
     const nav = await screen.findByRole("navigation", { name: "Portal de Administración" });
     const links = within(nav).getAllByRole("link");
-    expect(links.map((link) => link.textContent?.trim())).toEqual(["Inicio", "Espacios"]);
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      "Inicio",
+      "Cuentas",
+      "Espacios",
+    ]);
     for (const link of links) {
       link.focus();
       expect(document.activeElement).toBe(link);
@@ -659,14 +668,59 @@ describe("editor de espacios (TI2-04)", () => {
     expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 
-  test("la portada del Administrador enlaza el editor de espacios", async () => {
+  test("la portada del Administrador enlaza cuentas y editor de espacios", async () => {
     comoAdministrador();
     renderAt("/administrador");
 
     const heading = await screen.findByRole("heading", { name: "Portal de Administración" });
     expect(heading).toBeDefined();
-    const espacios = await screen.findByRole("link", { name: "Espacios" });
-    expect(espacios.getAttribute("href")).toBe("/administrador/espacios");
+    const cuentas = screen.getAllByRole("link", { name: "Cuentas" });
+    expect(cuentas.length).toBeGreaterThan(0);
+    for (const enlace of cuentas) {
+      expect(enlace.getAttribute("href")).toBe("/administrador/cuentas");
+    }
+    const espacios = screen.getAllByRole("link", { name: "Espacios" });
+    expect(espacios.length).toBeGreaterThan(0);
+    for (const enlace of espacios) {
+      expect(enlace.getAttribute("href")).toBe("/administrador/espacios");
+    }
+  });
+
+  test("deshabilitar un espacio lo retira del catálogo y confirma sin borrar historial", async () => {
+    comoAdministrador();
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio esp-1" }));
+
+    expect(await screen.findByText("Espacio deshabilitado")).toBeDefined();
+    expect(screen.getByText(/Ya no aparece en el catálogo ni en la disponibilidad/)).toBeDefined();
+    const catalogo = screen
+      .getByRole("heading", { name: "Espacios registrados" })
+      .closest("section");
+    if (catalogo === null) {
+      throw new Error("Se esperaba la sección del catálogo");
+    }
+    const { queryByText } = within(catalogo);
+    expect(queryByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeNull();
+    expect(screen.getByText("Campus Norte · Edificio B · Piso 2 · Sala 205")).toBeDefined();
+  });
+
+  test("deshabilitar denegado muestra acceso denegado", async () => {
+    const port = puertoOk();
+    port.setSpaceActive = () => Promise.resolve({ status: "denied" });
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio esp-1" }));
+
+    expect(
+      await screen.findByText("No autorizado. Pide acceso por el canal oficial si corresponde."),
+    ).toBeDefined();
+    expect(screen.queryByText("Espacio deshabilitado")).toBeNull();
   });
 });
 
