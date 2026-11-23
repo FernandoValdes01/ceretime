@@ -145,7 +145,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `notificationEvents`
 
-- **Datos personales.** `kind`, `appointmentId`, `recipientId` y `occurredAt`. Vincula un aviso con una persona y una atención, aunque no guarda texto, motivos ni detalles del acompañamiento.
+- **Datos personales.** `kind`, `appointmentId`, `recipientId`, `occurredAt`, `version` e `idempotencyKey`. Vincula un aviso con una persona y una atención, aunque no guarda texto, motivos ni detalles del acompañamiento.
 - **Finalidad.** Registrar los eventos de notificación de una atención para que un envío posterior no duplique avisos. Hoy solo se persiste `appointment_online_access_ready`, cuando se publica el enlace privado; el resto de los eventos está definido en el dominio pero no se registra. El envío por correo o push todavía no está implementado.
 - **Base propuesta.** Relación de acompañamiento para los avisos necesarios del servicio. Consentimiento para los canales opcionales, si la UCT los define así. Pendiente de aprobación.
 - **Acceso por rol.** No hay lectura pública en esta entrega. El sistema escribe el evento en la misma transacción del cambio. El destinatario podrá leer sus avisos cuando exista esa pantalla.
