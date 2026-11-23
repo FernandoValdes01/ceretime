@@ -816,7 +816,11 @@ describe("cancelación de una atención (TI2-109)", () => {
     }
   });
 
-  test("el acompañamiento cerrado o una cuenta no vigente no cancelan", async () => {
+  test("el acompañamiento pausado o cerrado, o una cuenta no vigente, no cancelan", async () => {
+    const paused = fakeAuth({
+      profiles: [student],
+      accompaniments: [{ ...activeAccompaniment, status: "paused" }],
+    });
     const closed = fakeAuth({
       profiles: [student],
       accompaniments: [{ ...activeAccompaniment, status: "closed" }],
@@ -826,7 +830,7 @@ describe("cancelación de una atención (TI2-109)", () => {
       accompaniments: [activeAccompaniment],
     });
 
-    for (const auth of [closed, inactive]) {
+    for (const auth of [paused, closed, inactive]) {
       const world = changeWorld();
       expect(
         await cancelAppointment(cancelDeps(auth, world), {
@@ -1202,6 +1206,15 @@ describe("registro de atención e inasistencia (TI2-110)", () => {
         auth: fakeAuth({
           profiles: [{ ...professional, accountStatus: "inactive" }],
           accompaniments: [activeAccompaniment],
+          assignments: [assignment({})],
+        }),
+        tokenIdentifier: "token-pro",
+      },
+      {
+        label: "acompañamiento pausado",
+        auth: fakeAuth({
+          profiles: [professional],
+          accompaniments: [{ ...activeAccompaniment, status: "paused" }],
           assignments: [assignment({})],
         }),
         tokenIdentifier: "token-pro",

@@ -149,15 +149,12 @@ const createRequestArgs = {
   modalityPreference: v.optional(modalityUnion),
   generalAvailability: v.optional(generalAvailabilityValidator),
   preferredAccessibleInformationChannel: v.optional(v.string()),
-  idempotencyKey: v.optional(v.string()),
 };
 
 /**
  * Registra la solicitud del Estudiante en estado `received`. Solo una
  * cuenta de Estudiante habilitada y vigente puede registrar; otro rol o una
- * cuenta sin vigencia recibe denegación. Con la forma completa, repetir el
- * envío con la misma `idempotencyKey` devuelve la misma solicitud sin crear
- * otra.
+ * cuenta sin vigencia recibe denegación.
  */
 export const createRequest = mutation({
   args: createRequestArgs,
@@ -407,8 +404,8 @@ export const respondToInformationRequest = mutation({
 /**
  * Registra una solicitud recibida por canal oficial (TI2-143), a nombre del
  * Estudiante indicado por su correo institucional. Solo un Profesional con
- * cuenta vigente. El contenido sigue la forma completa de `createRequest`,
- * con su clave de idempotencia. `receivedAt` es cuándo la recibió CERETI y,
+ * cuenta vigente. El contenido sigue la forma completa de `createRequest`.
+ * `receivedAt` es cuándo la recibió CERETI y,
  * si falta, es el momento del registro. Con `originUnit` queda además como
  * derivación de entrada.
  */

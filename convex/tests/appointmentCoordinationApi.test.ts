@@ -18,8 +18,9 @@ const modules = import.meta.glob("../**/*.ts");
  * rechaza mover una atención al pasado, y con el reloj real estas pruebas
  * dejarían de pasar en cuanto llegue esa fecha. El Profesional responsable atiende en línea de 12:00 a 14:00
  * en cupos de una hora; el adicional, de 12:00 a 14:00 en cupos de media hora.
- * El acompañamiento del Estudiante necesita subtítulos, así que una atención
- * en línea solo es compatible si la coordinación declara ese apoyo.
+ * El acompañamiento del Estudiante no tiene necesidades de acceso: la atención
+ * no guarda apoyos en línea que puedan cubrirlas (TI2-165), y la plataforma no
+ * declara ninguno.
  */
 
 const ISSUER = "https://accounts.google.com";
@@ -89,7 +90,7 @@ async function seed(t: TestConvex<typeof schema>) {
       studentId: student,
       status: "active",
       objective: "Objetivo ficticio",
-      accessNeeds: CAPTIONS.label,
+      accessNeeds: "",
     });
     const otherAccompanimentId = await ctx.db.insert("accompaniments", {
       studentId: otherStudent,
@@ -161,8 +162,14 @@ async function participantsOf(t: TestConvex<typeof schema>, appointmentId: strin
           q.eq("appointmentId", appointmentId as Id<"appointments">),
         )
         .take(10)
-    ).map(({ professionalId, startsAt, endsAt }) => ({ professionalId, startsAt, endsAt })),
+    ).map(({ professionalId }) => professionalId),
   );
+}
+
+/** Inicio vigente de la atención: los participantes no copian su horario (TI2-165). */
+async function startsAtOf(t: TestConvex<typeof schema>, appointmentId: string) {
+  const row = await t.run(async (ctx) => await ctx.db.get(appointmentId as Id<"appointments">));
+  return row?.startsAt;
 }
 
 test(
@@ -177,16 +184,13 @@ test(
     const coordinated = {
       ...slot(seeded, 12),
       additionalProfessionalIds: [seeded.additional as string],
-      onlineSupports: [CAPTIONS],
     };
 
-    // El Estudiante no elige profesionales ni apoyos; sin el apoyo que cubre la
-    // necesidad, la atención en línea no es compatible.
+    // El Estudiante no elige profesionales adicionales.
     expect(await publicError(asStudent.mutation(book, coordinated))).toStrictEqual(DENIED);
-    const { onlineSupports: _supports, ...withoutSupports } = coordinated;
-    expect(await publicError(asResponsible.mutation(book, withoutSupports))).toStrictEqual(
-      NO_AVAILABILITY,
-    );
+    // La atención no recibe apoyos en línea: el MER no los guarda (TI2-165).
+    const withSupports = { ...coordinated, onlineSupports: [CAPTIONS] };
+    await expect(asResponsible.mutation(book, withSupports)).rejects.toThrow(/onlineSupports/);
     // Un profesional que no está asignado no puede ser adicional.
     expect(
       await publicError(
@@ -202,13 +206,10 @@ test(
     expect(row).toMatchObject({
       studentId: seeded.student,
       professionalId: seeded.responsible,
-      onlineSupports: [CAPTIONS],
     });
+    expect(row).not.toHaveProperty("onlineSupports");
     expect(await participantsOf(t, appointmentId)).toEqual(
-      expect.arrayContaining([
-        { professionalId: seeded.responsible, startsAt: at(12), endsAt: at(13) },
-        { professionalId: seeded.additional, startsAt: at(12), endsAt: at(13) },
-      ]),
+      expect.arrayContaining([seeded.responsible, seeded.additional]),
     );
 
     // Un segundo intento por el mismo cupo no se confirma.
@@ -262,7 +263,6 @@ test(
     const coordinated = (hour: number) => ({
       ...slot(seeded, hour),
       additionalProfessionalIds: [seeded.additional as string],
-      onlineSupports: [CAPTIONS],
     });
 
     // El adicional ya atiende a otro Estudiante a las 12:00 como responsable.
@@ -282,11 +282,9 @@ test(
       ),
     ).toStrictEqual(CONFLICT);
     expect(await participantsOf(t, appointmentId)).toEqual(
-      expect.arrayContaining([
-        { professionalId: seeded.responsible, startsAt: at(13), endsAt: at(14) },
-        { professionalId: seeded.additional, startsAt: at(13), endsAt: at(14) },
-      ]),
+      expect.arrayContaining([seeded.responsible, seeded.additional]),
     );
+    expect(await startsAtOf(t, appointmentId)).toBe(at(13));
   },
   API_TEST_TIMEOUT_MS,
 );
@@ -303,7 +301,6 @@ test(
       {
         ...slot(seeded, 12),
         additionalProfessionalIds: [seeded.additional as string],
-        onlineSupports: [CAPTIONS],
       },
     );
     const reschedule = (hour: number) => ({ ...slot(seeded, hour), appointmentId });
@@ -317,14 +314,12 @@ test(
       ),
     ).toStrictEqual(NO_AVAILABILITY);
 
-    // A las 13:00 ambos pueden; los apoyos guardados siguen cubriendo la necesidad.
+    // A las 13:00 ambos pueden.
     await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, toThirteen);
     expect(await participantsOf(t, appointmentId)).toEqual(
-      expect.arrayContaining([
-        { professionalId: seeded.responsible, startsAt: at(13), endsAt: at(14) },
-        { professionalId: seeded.additional, startsAt: at(13), endsAt: at(14) },
-      ]),
+      expect.arrayContaining([seeded.responsible, seeded.additional]),
     );
+    expect(await startsAtOf(t, appointmentId)).toBe(at(13));
 
     // Revocada su asignación, el adicional ya no es reservable: no impide
     // reagendar a las 15:00 y sale de la atención en el mismo cambio.
@@ -340,9 +335,8 @@ test(
       }
     });
     await asStudent.mutation(api.presentation.appointments.rescheduleAppointment, toFifteen);
-    expect(await participantsOf(t, appointmentId)).toEqual([
-      { professionalId: seeded.responsible, startsAt: at(15), endsAt: at(16) },
-    ]);
+    expect(await participantsOf(t, appointmentId)).toEqual([seeded.responsible]);
+    expect(await startsAtOf(t, appointmentId)).toBe(at(15));
   },
   API_TEST_TIMEOUT_MS,
 );
@@ -368,7 +362,6 @@ test(
       {
         ...slot(seeded, 12),
         additionalProfessionalIds: [seeded.additional as string],
-        onlineSupports: [CAPTIONS],
       },
     );
     const read = { appointmentId, version: "v1" as const };

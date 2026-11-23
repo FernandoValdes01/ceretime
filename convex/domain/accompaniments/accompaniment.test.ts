@@ -1,7 +1,10 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import {
-  ACCOMPANIMENT_REASON_MAX_LENGTH,
+  ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
   ACCOMPANIMENT_STATUS_VALUES,
+  keepsAManagerWithout,
+  mustKeepAProfessional,
+  setsAgreedValidity,
   toAccompanimentProjection,
   transitionAccompaniment,
 } from "./accompaniment";
@@ -125,42 +128,63 @@ describe("Cambios de estado del acompañamiento (TI2-152)", () => {
     }
   });
 
-  test("el motivo es opcional: sin texto o en blanco no queda en el cambio", () => {
+  test("pausar y reactivar solo cambian el estado", () => {
     expect(transitionAccompaniment({ ...attempt, from: "active", to: "paused" })).toEqual({
       status: "applied",
-      change: { from: "active", to: "paused", ...attempt },
+      change: { to: "paused" },
     });
-    const blank = transitionAccompaniment({
-      ...attempt,
-      from: "active",
-      to: "closed",
-      reason: "   ",
-    });
-    expect(blank).toEqual({
+    expect(transitionAccompaniment({ ...attempt, from: "paused", to: "active" })).toEqual({
       status: "applied",
-      change: { from: "active", to: "closed", ...attempt },
+      change: { to: "active" },
     });
   });
 
-  test("el motivo entregado se guarda recortado y respeta el tope", () => {
-    const result = transitionAccompaniment({
-      ...attempt,
-      from: "paused",
-      to: "active",
-      reason: "  Retoma el semestre  ",
-    });
-    expect(result).toEqual({
+  test("pausar o reactivar con motivo se rechaza: el MER solo guarda el del cierre", () => {
+    for (const [from, to] of [
+      ["active", "paused"],
+      ["paused", "active"],
+    ] as const) {
+      expect(transitionAccompaniment({ ...attempt, from, to, closureReason: "Receso" })).toEqual({
+        status: "rejected",
+        cause: "closure_reason_not_allowed",
+      });
+    }
+    expect(
+      transitionAccompaniment({ ...attempt, from: "active", to: "paused", closureReason: "  " }),
+    ).toEqual({ status: "applied", change: { to: "paused" } });
+  });
+
+  test("el cierre guarda quién cerró, cuándo y el motivo recortado si se entregó", () => {
+    const closure = { closedById: "professional-1", closedAt: 1_000 };
+    for (const closureReason of [undefined, "   "]) {
+      expect(
+        transitionAccompaniment({
+          ...attempt,
+          from: "active",
+          to: "closed",
+          ...(closureReason === undefined ? {} : { closureReason }),
+        }),
+      ).toEqual({ status: "applied", change: { to: "closed", closure } });
+    }
+    expect(
+      transitionAccompaniment({
+        ...attempt,
+        from: "paused",
+        to: "closed",
+        closureReason: "  Objetivo cumplido  ",
+      }),
+    ).toEqual({
       status: "applied",
-      change: { from: "paused", to: "active", ...attempt, reason: "Retoma el semestre" },
+      change: { to: "closed", closure: { ...closure, closureReason: "Objetivo cumplido" } },
     });
     expect(
       transitionAccompaniment({
         ...attempt,
         from: "active",
-        to: "paused",
-        reason: "a".repeat(ACCOMPANIMENT_REASON_MAX_LENGTH + 1),
+        to: "closed",
+        closureReason: "a".repeat(ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH + 1),
       }),
-    ).toEqual({ status: "rejected", cause: "reason_too_long" });
+    ).toEqual({ status: "rejected", cause: "closure_reason_too_long" });
   });
 
   test("sin actor o sin instante válido no hay cambio", () => {
@@ -172,5 +196,45 @@ describe("Cambios de estado del acompañamiento (TI2-152)", () => {
         transitionAccompaniment({ from: "active", to: "paused", actorId: "p", occurredAt }),
       ).toEqual({ status: "rejected", cause: "occurred_at_invalid" });
     }
+  });
+});
+
+describe("mustKeepAProfessional (TI2-165)", () => {
+  test("solo un acompañamiento cerrado puede quedar sin profesional", () => {
+    expect(mustKeepAProfessional("active")).toBe(true);
+    expect(mustKeepAProfessional("paused")).toBe(true);
+    expect(mustKeepAProfessional("closed")).toBe(false);
+  });
+});
+
+describe("keepsAManagerWithout (TI2-165)", () => {
+  const staff = { userId: "pro-1", isStaffProfessional: true };
+  const otherStaff = { userId: "pro-2", isStaffProfessional: true };
+
+  test("activo o en pausa exige que quede otro profesional de personal sin fin acordado", () => {
+    expect(keepsAManagerWithout("active", [staff, otherStaff], "pro-1")).toBe(true);
+    expect(keepsAManagerWithout("paused", [staff], "pro-1")).toBe(false);
+    expect(keepsAManagerWithout("active", [], "pro-1")).toBe(false);
+  });
+
+  test("una cuenta de prueba o una asignación que vence no cuentan como quien gestiona", () => {
+    const testAccount = { userId: "prueba-1", isStaffProfessional: false };
+    const expiring = { ...otherStaff, validUntil: 1 };
+    expect(keepsAManagerWithout("active", [staff, testAccount], "pro-1")).toBe(false);
+    expect(keepsAManagerWithout("active", [staff, expiring], "pro-1")).toBe(false);
+    expect(keepsAManagerWithout("active", [staff, testAccount], "prueba-1")).toBe(true);
+  });
+
+  test("un cerrado puede quedar sin profesionales", () => {
+    expect(keepsAManagerWithout("closed", [staff], "pro-1")).toBe(true);
+  });
+});
+
+describe("setsAgreedValidity (TI2-165)", () => {
+  test("solo fijar un extremo cuenta como vigencia acordada", () => {
+    expect(setsAgreedValidity({})).toBe(false);
+    expect(setsAgreedValidity({ validFrom: null, validUntil: null })).toBe(false);
+    expect(setsAgreedValidity({ validFrom: 1 })).toBe(true);
+    expect(setsAgreedValidity({ validUntil: 1 })).toBe(true);
   });
 });

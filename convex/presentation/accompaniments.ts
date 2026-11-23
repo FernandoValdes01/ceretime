@@ -12,6 +12,7 @@ import {
   listAssignedAccompanimentsUseCase,
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
+import { listAccompanimentProfessionals as listAccompanimentProfessionalsUseCase } from "../application/accompaniments/professionals";
 import {
   closeAccompaniment as closeAccompanimentUseCase,
   pauseAccompaniment as pauseAccompanimentUseCase,
@@ -21,6 +22,7 @@ import {
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
+  accompanimentProfessionalsReader,
   accompanimentStatusWriter,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
@@ -155,6 +157,42 @@ export const listAssignedAccompaniments = query({
 });
 
 /**
+ * Profesionales asignados al acompañamiento y los que se le pueden asignar,
+ * con su nombre (TI2-165). Solo el profesional de personal asignado; el
+ * cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess`.
+ */
+export const listAccompanimentProfessionals = query({
+  args: { accompanimentId: v.id("accompaniments") },
+  returns: v.object({
+    assigned: v.array(
+      v.object({
+        userId: v.id("users"),
+        fullName: v.string(),
+        assignedAt: v.optional(v.number()),
+        isCaller: v.boolean(),
+        removable: v.boolean(),
+      }),
+    ),
+    assignable: v.array(v.object({ userId: v.id("users"), fullName: v.string() })),
+    assignableComplete: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrapApiResult(
+      await listAccompanimentProfessionalsUseCase(accompanimentProfessionalsReader(ctx), {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        accompanimentId: args.accompanimentId,
+      }),
+    );
+    return {
+      ...result,
+      assigned: [...result.assigned],
+      assignable: [...result.assignable],
+    };
+  },
+});
+
+/**
  * Lee notas internas breves, paginadas. Solo Profesional con asignación
  * activa. Estudiante, Practicante y Administrador siempre reciben
  * denegación.
@@ -261,7 +299,6 @@ export const revokeAccompanimentAccess = mutation({
 
 const statusChangeArgs = {
   accompanimentId: v.id("accompaniments"),
-  reason: v.optional(v.string()),
 };
 
 const statusChangeResultValidator = v.object({
@@ -273,26 +310,20 @@ const statusChangeResultValidator = v.object({
  * Pausa un acompañamiento activo (TI2-152).
  *
  * Solo el Profesional vigente con asignación activa. Las atenciones
- * existentes se mantienen: mientras dure la pausa se rechazan reservas y
- * cambios de horario, pero el Estudiante dueño y el Profesional a cargo
- * todavía cancelan, y el Profesional registra el resultado. El motivo es
- * opcional. `unauthorized` genérico sin permiso o ante un
- * acompañamiento ajeno o inexistente; `conflict` si no está activo o el motivo
- * supera el tope.
+ * existentes se mantienen, pero mientras dure la pausa no se reservan,
+ * cancelan ni cambian, ni se registra su resultado. No recibe motivo: el MER
+ * no lo guarda. `unauthorized` genérico sin permiso o ante un acompañamiento
+ * ajeno o inexistente; `conflict` si no está activo.
  */
 export const pauseAccompaniment = mutation({
   args: statusChangeArgs,
   returns: statusChangeResultValidator,
-  handler: async (ctx, { accompanimentId, reason }) => {
+  handler: async (ctx, { accompanimentId }) => {
     const identity = await ctx.auth.getUserIdentity();
     const result = unwrapApiResult(
       await pauseAccompanimentUseCase(
         { auth: authorizationReader(ctx), accompaniments: accompanimentStatusWriter(ctx) },
-        {
-          tokenIdentifier: identity?.tokenIdentifier ?? null,
-          accompanimentId,
-          ...(reason === undefined ? {} : { reason }),
-        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, accompanimentId },
       ),
     );
     return { accompanimentId, status: result.status };
@@ -301,22 +332,18 @@ export const pauseAccompaniment = mutation({
 
 /**
  * Reactiva un acompañamiento en pausa (TI2-152), con las mismas reglas de
- * permiso y errores que la pausa. `conflict` si no está en pausa: un
- * acompañamiento cerrado no se reabre.
+ * permiso y errores que la pausa, y tampoco recibe motivo. `conflict` si no
+ * está en pausa: un acompañamiento cerrado no se reabre.
  */
 export const reactivateAccompaniment = mutation({
   args: statusChangeArgs,
   returns: statusChangeResultValidator,
-  handler: async (ctx, { accompanimentId, reason }) => {
+  handler: async (ctx, { accompanimentId }) => {
     const identity = await ctx.auth.getUserIdentity();
     const result = unwrapApiResult(
       await reactivateAccompanimentUseCase(
         { auth: authorizationReader(ctx), accompaniments: accompanimentStatusWriter(ctx) },
-        {
-          tokenIdentifier: identity?.tokenIdentifier ?? null,
-          accompanimentId,
-          ...(reason === undefined ? {} : { reason }),
-        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, accompanimentId },
       ),
     );
     return { accompanimentId, status: result.status };
@@ -352,11 +379,13 @@ export const getAccompanimentClosurePreview = query({
  *
  * Cancela sus atenciones futuras como `cancelled_by_cereti`, libera cada cupo
  * y devuelve cuántas canceló. Después el acompañamiento es de solo lectura y
- * no se reabre. `conflict` si ya está cerrado o si queda una atención vigente
- * cuya hora ya pasó, y entonces no se guarda nada.
+ * no se reabre. El motivo es opcional y queda en el acompañamiento junto a
+ * quién cerró y cuándo, como `motivoCierre?` del MER. `conflict` si ya está
+ * cerrado, si queda una atención vigente cuya hora ya pasó o si el motivo
+ * supera el tope, y entonces no se guarda nada.
  */
 export const closeAccompaniment = mutation({
-  args: statusChangeArgs,
+  args: { ...statusChangeArgs, reason: v.optional(v.string()) },
   returns: v.object({
     accompanimentId: v.id("accompaniments"),
     status: accompanimentStatusUnion,

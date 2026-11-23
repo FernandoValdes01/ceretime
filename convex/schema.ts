@@ -11,7 +11,6 @@ import {
   availabilityExceptionKindUnion,
   calendarSyncErrorCodeUnion,
   calendarSyncStatusUnion,
-  followUpContractVersionLiteral,
   followUpResponsibleUnion,
   followUpTaskStatusUnion,
   generalAvailabilityValidator,
@@ -84,22 +83,28 @@ export default defineSchema({
   // Tabla 'accompaniments': acompañamiento mínimo para probar la matriz.
   // `accessNeeds` es sensible (Ley 21.719) y se minimiza para Practicante.
   // `requestId` traza la solicitud aceptada que lo originó, si se conoce.
+  // `closedById`, `closedAt` y `closureReason` son `cerradoPorId?`,
+  // `cerradoEn?` y `motivoCierre?` del MER: los escribe una sola vez
+  // `accompanimentStatusWriter` al cerrar (TI2-152), y ninguna lectura pública
+  // los entrega. Pausar y reactivar solo cambian `status`.
   accompaniments: defineTable({
     studentId: v.id("users"),
     status: accompanimentStatusUnion,
     objective: v.string(),
     accessNeeds: v.string(),
     requestId: v.optional(v.id("requests")),
+    closedById: v.optional(v.id("users")),
+    closedAt: v.optional(v.number()),
+    closureReason: v.optional(v.string()),
   })
     .index("by_student", ["studentId"])
     .index("by_request", ["requestId"]),
 
-  // Tabla 'accompanimentTransitions': historial append-only de pausas,
-  // reactivaciones y cierres (TI2-152). Cada cambio guarda actor, instante del
-  // servidor y motivo opcional junto al estado resultante, en la misma
-  // transacción. El motivo vive solo acá: no se copia al acompañamiento, a las
-  // atenciones ni a la bitácora de auditoría, y ninguna lectura pública lo
-  // entrega. Solo la escribe `accompanimentStatusWriter`.
+  // Tabla 'accompanimentTransitions', retirada (TI2-165): el historial de
+  // TI2-152 no está en el MER. Se conserva solo para que sus filas sigan
+  // siendo válidas hasta que `migrateRetiredFields` copie cada cierre a su
+  // acompañamiento y las borre; nada nuevo la escribe ni la lee. Se quita del
+  // esquema cuando `auditRetiredFields` dé cero en cada deployment.
   accompanimentTransitions: defineTable({
     accompanimentId: v.id("accompaniments"),
     from: accompanimentStatusUnion,
@@ -171,9 +176,9 @@ export default defineSchema({
   // `createdAt` es la fecha de creación como número. Solo persistencia: las
   // transiciones las aplica TI2-21 y las reglas de cancelación y cierre son
   // de TI2-85. TI2-135 suma el contenido completo de la solicitud, su
-  // procedencia, las derivaciones, la razón de cierre y la clave de
-  // idempotencia como campos opcionales: las filas anteriores no los tienen
-  // y se leen igual (ver `domain/database/integrity.md`).
+  // procedencia y las derivaciones como campos opcionales: las filas
+  // anteriores no los tienen y se leen igual (ver
+  // `domain/database/integrity.md`).
   requests: defineTable({
     studentId: v.id("users"),
     status: requestStatusUnion,
@@ -203,13 +208,10 @@ export default defineSchema({
     // se escribe junto con el estado `referred`.
     incomingReferral: v.optional(incomingReferralValidator),
     outgoingReferral: v.optional(outgoingReferralValidator),
-    // Razón comprensible de cierre (TI2-135): la vigente y legible para el
-    // estudiante. `requestTransitions.reason` conserva el rastro histórico de
-    // cada transición; desde TI2-141 el cierre sin acompañamiento escribe
-    // ambas en la misma transacción.
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
     closureReason: v.optional(v.string()),
-    // Clave de idempotencia del envío (TI2-135), única por estudiante: un
-    // reintento con la misma clave no crea otra solicitud.
     idempotencyKey: v.optional(v.string()),
   })
     // Solicitudes propias del estudiante.
@@ -221,10 +223,7 @@ export default defineSchema({
     .index("by_student_and_status", ["studentId", "status"])
     // Solicitudes tomadas por cada profesional: base del listado
     // autorizado, una fila por solicitud.
-    .index("by_takenBy", ["takenBy"])
-    // Reintento de un envío (TI2-135): la solicitud del estudiante con esa
-    // clave de idempotencia, en una sola lectura.
-    .index("by_student_and_idempotencyKey", ["studentId", "idempotencyKey"]),
+    .index("by_takenBy", ["takenBy"]),
 
   // Tabla 'requestTransitions': bitácora append-only de cambios de estado.
   // Cada transición guarda motivo, actor y fecha junto al estado resultante,
@@ -318,9 +317,10 @@ export default defineSchema({
   // al bloque recurrente afectado, que aporta ventana, duración, modalidad
   // y lugar) o la agrega (`added`, con su propia ventana completa:
   // `startMinute`/`endMinute`, `slotMinutes`, `modality` y `spaceId` cuando
-  // es presencial, ausente en línea). `reason` deja constancia opcional del
-  // motivo. Solo persistencia, sin reglas de autorización; las reglas de
-  // ventanas y compatibilidad son de TI2-81/TI2-82.
+  // es presencial, ausente en línea). No guarda motivo, porque
+  // EXCEPCIONES_DISPONIBILIDAD del MER no lo tiene (TI2-165). Solo
+  // persistencia, sin reglas de autorización; las reglas de ventanas y
+  // compatibilidad son de TI2-81/TI2-82.
   availabilityExceptions: defineTable({
     professionalId: v.id("users"),
     date: v.number(),
@@ -331,6 +331,9 @@ export default defineSchema({
     slotMinutes: v.optional(v.number()),
     modality: v.optional(modalityUnion),
     spaceId: v.optional(v.id("spaces")),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
     reason: v.optional(v.string()),
   })
     // Excepciones del profesional en un día: lo que la vista diaria descuenta
@@ -391,20 +394,17 @@ export default defineSchema({
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
     supportingDocumentReceived: v.optional(v.boolean()),
-    // Copia de las necesidades de acceso aplicada al reservar (TI2-138): la
-    // lista `{ id, label }` que tenía el acompañamiento en ese momento. Queda
-    // congelada en la atención para que cambiar las necesidades actuales no
-    // reescriba lo ya registrado; las filas anteriores no la tienen y se leen
-    // igual. La migración la completa con la necesidad vigente cuando la fila
-    // no puede reconstruir otra.
-    appliedAccessNeeds: v.optional(v.array(accessNeedSelectionValidator)),
-    // Apoyos de la atención en línea y referencia de su acceso privado
-    // (TI2-138). Opcionales porque las atenciones presenciales no los usan y
-    // las filas anteriores no los tienen; solo persistencia, sin exponerlos en
-    // la API todavía.
-    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
+    // Referencia del acceso privado de la atención en línea (TI2-138),
+    // `urlPrivada?` de ATENCIONES. Opcional porque las atenciones presenciales
+    // no la usan y las filas anteriores no la tienen. La atención no guarda
+    // apoyos en línea: el MER no los tiene (TI2-165).
     privateAccessReference: v.optional(v.string()),
     createdAt: v.number(),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    appliedAccessNeeds: v.optional(v.array(accessNeedSelectionValidator)),
+    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
   })
     // Atenciones propias del estudiante.
     .index("by_studentId", ["studentId"])
@@ -428,30 +428,34 @@ export default defineSchema({
     .index("by_accompanimentId_and_startsAt", ["accompanimentId", "startsAt"])
     // Atención que ya guarda un enlace privado (TI2-142): un enlace por
     // atención, así el mismo enlace no se reutiliza como sala fija.
-    .index("by_privateAccessReference", ["privateAccessReference"]),
+    .index("by_privateAccessReference", ["privateAccessReference"])
+    // Atenciones del centro por estado desde un instante: confirma los cruces
+    // de un profesional adicional, porque su fila de participante no guarda
+    // horario (TI2-165), sin leer las canceladas.
+    .index("by_status_and_startsAt", ["status", "startsAt"]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
-  // atención (TI2-138). `appointments.professionalId` sigue siendo el
-  // profesional responsable principal para conservar la compatibilidad; esta
-  // tabla registra el conjunto completo sin crear otra atención ni otra
-  // asignación. Cada fila copia la ventana `startsAt`/`endsAt` de la atención
-  // para detectar cruces con una sola consulta de rango, igual que
-  // `appointments`. Como máximo una fila por atención y profesional; la
-  // garantía la da la vía de escritura, porque Convex no impone unicidad. El
-  // repositorio la mantiene sincronizada al crear o mover la atención y la
-  // migración la completa para las filas anteriores.
+  // atención (TI2-138), ATENCION_PROFESIONALES del MER.
+  // `appointments.professionalId` sigue siendo el profesional responsable
+  // principal para conservar la compatibilidad; esta tabla registra el
+  // conjunto completo sin crear otra atención ni otra asignación. No copia el
+  // horario de la atención, porque el MER no lo tiene (TI2-165): los cruces se
+  // leen de `appointments`. Como máximo una fila por atención y profesional;
+  // la garantía la da la vía de escritura, porque Convex no impone unicidad.
+  // El repositorio la mantiene al crear o mover la atención y la migración la
+  // completa para las filas anteriores.
   appointmentProfessionals: defineTable({
     appointmentId: v.id("appointments"),
     professionalId: v.id("users"),
-    startsAt: v.number(),
-    endsAt: v.number(),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    startsAt: v.optional(v.number()),
+    endsAt: v.optional(v.number()),
   })
     // Participantes de la atención: una fila basta para decidir y el conjunto
     // se lee sin filtrar en memoria.
-    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"])
-    // Cruces del profesional desde un instante: ventana de la agenda de todos
-    // sus participantes, sin recorrer las atenciones.
-    .index("by_professionalId_and_startsAt", ["professionalId", "startsAt"]),
+    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"]),
 
   // Tabla 'notificationEvents': eventos de aviso con un único recurso
   // (atención o solicitud) y su destinatario (TI2-118, ampliada por TI2-145).
@@ -584,18 +588,25 @@ export default defineSchema({
     nextSteps: v.string(),
     suggestedNextAppointmentDate: v.optional(v.string()),
     internalNoteId: v.optional(v.id("followUpNotes")),
-    version: followUpContractVersionLiteral,
     updatedAt: v.number(),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    version: v.optional(v.string()),
   })
     // El registro de la atención: una fila basta para decidir.
     .index("by_appointmentId", ["appointmentId"]),
 
-  // Tabla 'followUpAgreements': acuerdos de un registro de seguimiento.
-  // `entryId` es el identificador estable del acuerdo dentro del registro.
+  // Tabla 'followUpAgreements': acuerdos de un registro de seguimiento. Ni
+  // los acuerdos ni las tareas guardan un identificador del cliente, porque
+  // el MER no lo tiene (TI2-165): se leen en el orden en que se guardaron.
   followUpAgreements: defineTable({
     recordId: v.id("followUpRecords"),
-    entryId: v.string(),
     description: v.string(),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    entryId: v.optional(v.string()),
   }).index("by_recordId", ["recordId"]),
 
   // Tabla 'followUpTasks': tareas de un registro de seguimiento, con
@@ -603,10 +614,13 @@ export default defineSchema({
   // y estado operativo.
   followUpTasks: defineTable({
     recordId: v.id("followUpRecords"),
-    entryId: v.string(),
     description: v.string(),
     responsible: followUpResponsibleUnion,
     status: followUpTaskStatusUnion,
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    entryId: v.optional(v.string()),
   }).index("by_recordId", ["recordId"]),
 
   // Tabla 'privacyRequests': solicitudes de derechos de privacidad (modelo de

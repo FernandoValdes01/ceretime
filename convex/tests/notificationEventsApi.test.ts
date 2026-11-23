@@ -19,13 +19,12 @@ const modules = import.meta.glob("../**/*.ts");
  * necesidades. La agenda es el lunes 2027-01-04 en `America/Santiago`
  * (UTC−3), con el reloj fijado antes; el responsable atiende en línea de
  * 12:00 a 14:00 y el adicional de 12:00 a 14:00, y solo el responsable de
- * 15:00 a 17:00. El acompañamiento necesita subtítulos, que declara la
- * coordinación.
+ * 15:00 a 17:00. La atención no declara apoyos en línea, porque el MER no los
+ * guarda (TI2-165).
  */
 
 const ISSUER = "https://accounts.google.com";
 const at = (hour: number) => Date.UTC(2027, 0, 4, hour + 3);
-const CAPTIONS = { id: "Subtítulos en la atención", label: "Subtítulos en la atención" };
 
 /** Varias mutations por prueba con la suite en paralelo, como TI2-142. */
 const API_TEST_TIMEOUT_MS = 20_000;
@@ -93,7 +92,6 @@ async function expectOnlyMinimalReferences(t: TestConvex<typeof schema>) {
     for (const field of Object.keys(row)) expect(NOTIFICATION_FIELDS).toContain(field);
   }
   expect(JSON.stringify(rows)).not.toContain(SENSITIVE);
-  expect(JSON.stringify(rows)).not.toContain(CAPTIONS.label);
 }
 
 async function user(
@@ -123,7 +121,7 @@ async function seedAgenda(t: TestConvex<typeof schema>) {
       studentId: student,
       status: "active",
       objective: "Objetivo ficticio",
-      accessNeeds: CAPTIONS.label,
+      accessNeeds: "",
     });
     for (const userId of [responsible, additional]) {
       await ctx.db.insert("accompanimentAssignments", {
@@ -165,7 +163,6 @@ test(
       startAt: at(12),
       endAt: at(13),
       additionalProfessionalIds: [seeded.additional as string],
-      onlineSupports: [CAPTIONS],
       version: "v1" as const,
     };
 
@@ -257,7 +254,6 @@ test(
         startAt: at(12),
         endAt: at(13),
         additionalProfessionalIds: [seeded.additional as string],
-        onlineSupports: [CAPTIONS],
         version: "v1",
       },
     );
@@ -323,7 +319,6 @@ test(
         startAt: at(12),
         endAt: at(13),
         additionalProfessionalIds: [seeded.additional as string],
-        onlineSupports: [CAPTIONS],
         version: "v1",
       },
     );
@@ -371,19 +366,13 @@ async function seedRequestActors(t: TestConvex<typeof schema>) {
 }
 
 test(
-  "TI2-150 API: cada paso de la solicitud avisa a su destinatario y el reintento no duplica",
+  "TI2-150 API: cada paso de la solicitud avisa a su destinatario una sola vez",
   async () => {
     const t = convexTest(schema, modules);
     const { student, professional, asStudent, asProfessional } = await seedRequestActors(t);
     const requests = api.presentation.requests;
 
-    const submission = { ...SUBMISSION, idempotencyKey: "ti150-clave-1" };
-    const created = await asStudent.mutation(requests.createRequest, submission);
-    // El reintento llega después, como en producción: la clave del aviso usa
-    // el instante guardado en la solicitud, no el del reintento.
-    vi.setSystemTime(NOW + 60_000);
-    const retried = await asStudent.mutation(requests.createRequest, submission);
-    expect(retried._id).toBe(created._id);
+    const created = await asStudent.mutation(requests.createRequest, SUBMISSION);
     expect(await notices(t)).toEqual([["request_received", student]]);
 
     const requestId = created._id;
@@ -429,18 +418,16 @@ test(
     const t = convexTest(schema, modules);
     const { student, professional, asStudent, asProfessional } = await seedRequestActors(t);
     const requests = api.presentation.requests;
-    const create = async (key: string) =>
-      (await asStudent.mutation(requests.createRequest, { ...SUBMISSION, idempotencyKey: key }))
-        ._id;
+    const create = async () => (await asStudent.mutation(requests.createRequest, SUBMISSION))._id;
 
-    const toAccept = await create("ti150-aceptar");
+    const toAccept = await create();
     await asProfessional.mutation(requests.takeRequest, { requestId: toAccept });
     await asProfessional.mutation(requests.acceptRequest, {
       requestId: toAccept,
       objective: "Objetivo ficticio",
     });
 
-    const toRefer = await create("ti150-derivar");
+    const toRefer = await create();
     await asProfessional.mutation(requests.takeRequest, { requestId: toRefer });
     await asProfessional.mutation(requests.referRequest, {
       requestId: toRefer,
@@ -449,13 +436,13 @@ test(
     });
 
     // Sin toma no hay quién revise: cancelar no avisa a nadie.
-    const withoutReviewer = await create("ti150-sin-toma");
+    const withoutReviewer = await create();
     await asStudent.mutation(requests.cancelRequest, {
       requestId: withoutReviewer,
       reason: SENSITIVE,
     });
 
-    const taken = await create("ti150-con-toma");
+    const taken = await create();
     await asProfessional.mutation(requests.takeRequest, { requestId: taken });
     await asStudent.mutation(requests.cancelRequest, { requestId: taken, reason: SENSITIVE });
 
@@ -485,31 +472,29 @@ test(
 );
 
 test(
-  "TI2-150 API: el registro por canal oficial confirma al Estudiante una sola vez",
+  "TI2-150 API: el registro por canal oficial confirma al Estudiante una vez por solicitud",
   async () => {
     const t = convexTest(schema, modules);
     const { student, asProfessional } = await seedRequestActors(t);
-    const official = {
-      ...SUBMISSION,
-      idempotencyKey: "ti150-oficial",
-      studentEmail: "ti150-sol-est@uct.cl",
-    };
+    const official = { ...SUBMISSION, studentEmail: "ti150-sol-est@uct.cl" };
 
     const first = await asProfessional.mutation(
       api.presentation.requests.registerOfficialRequest,
       official,
     );
-    // El reintento llega después: el aviso sigue usando el instante de la fila.
+    // Sin clave de envío (TI2-165), otro registro es otra solicitud, con su
+    // propio aviso, y no repite el de la primera.
     vi.setSystemTime(NOW + 60_000);
-    const retry = await asProfessional.mutation(
+    const second = await asProfessional.mutation(
       api.presentation.requests.registerOfficialRequest,
       official,
     );
-    expect(retry._id).toBe(first._id);
+    expect(second._id).not.toBe(first._id);
 
     const rows = await notificationRows(t);
     expect(rows.map((row) => [row.kind, row.requestId, row.recipientId])).toEqual([
       ["request_received", first._id, student],
+      ["request_received", second._id, student],
     ]);
     await expectOnlyMinimalReferences(t);
   },

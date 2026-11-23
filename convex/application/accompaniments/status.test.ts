@@ -88,15 +88,13 @@ function fakeDeps(
 }
 
 describe("estado del acompañamiento (TI2-152)", () => {
-  test("pausar guarda el cambio con el actor de la sesión y el reloj del servidor", async () => {
+  test("pausar guarda solo el estado nuevo", async () => {
     const { deps, changes } = fakeDeps();
-    expect(await pauseAccompaniment(deps, { ...INPUT, reason: " Receso " })).toEqual({
+    expect(await pauseAccompaniment(deps, INPUT)).toEqual({
       status: "ok",
       data: { accompanimentId: "acc-1", status: "paused" },
     });
-    expect(changes).toEqual([
-      { from: "active", to: "paused", actorId: "user-pro", occurredAt: NOW, reason: "Receso" },
-    ]);
+    expect(changes).toEqual([{ to: "paused" }]);
   });
 
   test("sin identidad o sin permiso se deniega igual y no se escribe", async () => {
@@ -112,7 +110,7 @@ describe("estado del acompañamiento (TI2-152)", () => {
     expect(changes).toHaveLength(0);
   });
 
-  test("cerrar cancela solo las atenciones futuras y devuelve cuántas", async () => {
+  test("cerrar cancela solo las atenciones futuras, devuelve cuántas y guarda quién, cuándo y por qué", async () => {
     const { deps, changes, persisted, audited, notices } = fakeDeps({
       appointments: [
         { ...PARTICIPANTS, id: "apt-1", status: "scheduled", startAt: NOW + 1 },
@@ -125,7 +123,7 @@ describe("estado del acompañamiento (TI2-152)", () => {
         },
       ],
     });
-    expect(await closeAccompaniment(deps, INPUT)).toEqual({
+    expect(await closeAccompaniment(deps, { ...INPUT, reason: " Objetivo cumplido " })).toEqual({
       status: "ok",
       data: { accompanimentId: "acc-1", status: "closed", cancelledAppointments: 2 },
     });
@@ -134,7 +132,12 @@ describe("estado del acompañamiento (TI2-152)", () => {
       ["apt-2", "cancelled_by_cereti", "Cierre del acompañamiento"],
     ]);
     expect(audited.map((event) => event.actorId)).toEqual(["user-pro", "user-pro"]);
-    expect(changes).toHaveLength(1);
+    expect(changes).toEqual([
+      {
+        to: "closed",
+        closure: { closedById: "user-pro", closedAt: NOW, closureReason: "Objetivo cumplido" },
+      },
+    ]);
     // Quien cierra no se avisa a sí mismo: cada cancelación avisa al Estudiante.
     expect(notices.map((event) => [event.kind, event.recipientId])).toEqual([
       ["appointment_cancelled", "user-student"],

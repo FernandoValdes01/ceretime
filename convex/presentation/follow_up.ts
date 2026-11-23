@@ -42,10 +42,10 @@ import { unwrapApiResult } from "./session";
 
 const version = followUpContractVersionLiteral;
 
-const agreementValidator = v.object({ id: v.string(), description: v.string() });
+// Acuerdos y tareas sin identificador del cliente: el MER no lo tiene (TI2-165).
+const agreementValidator = v.object({ description: v.string() });
 
 const taskValidator = v.object({
-  id: v.string(),
   description: v.string(),
   responsible: followUpResponsibleUnion,
   status: followUpTaskStatusUnion,

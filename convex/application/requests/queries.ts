@@ -243,7 +243,6 @@ async function toRequestDetail<
   return {
     ...entity,
     ...toRequestExchange(entity.status, changes),
-    ...(request.closureReason === undefined ? {} : { closureReason: request.closureReason }),
     provenanceChannel: requestProvenanceChannelOf(request),
     ...(incomingReferral === undefined
       ? {}

@@ -6,7 +6,7 @@ import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import {
   ACCOMPANIMENT_CLOSURE_CANCEL_REASON,
-  ACCOMPANIMENT_REASON_MAX_LENGTH,
+  ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
 } from "../domain/accompaniments/accompaniment";
 import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
 import schema from "../schema";
@@ -128,17 +128,21 @@ async function seedAppointment(
   });
 }
 
+/** Estado y datos del cierre tal como quedan en la fila del acompañamiento. */
 async function readState(t: TestConvex, accompanimentId: Id<"accompaniments">) {
-  return await t.run(async (ctx) => {
-    const accompaniment = await ctx.db.get(accompanimentId);
-    // Base aislada por prueba: el historial completo cabe en una lectura.
-    const rows = await ctx.db.query("accompanimentTransitions").take(20);
-    const transitions = rows.filter((row) => row.accompanimentId === accompanimentId);
-    return { status: accompaniment?.status, transitions };
-  });
+  const row = await t.run(async (ctx) => await ctx.db.get(accompanimentId));
+  return {
+    status: row?.status,
+    closedById: row?.closedById,
+    closedAt: row?.closedAt,
+    closureReason: row?.closureReason,
+  };
 }
 
-async function expectPublicError(promise: Promise<unknown>, code: "unauthorized" | "conflict") {
+async function expectPublicError(
+  promise: Promise<unknown>,
+  code: "unauthorized" | "conflict" | "assignment_fields_invalid",
+) {
   const data = await promise.then(
     () => {
       throw new Error("Se esperaba un error público");
@@ -153,35 +157,22 @@ async function expectPublicError(promise: Promise<unknown>, code: "unauthorized"
   );
 }
 
-test("TI2-152 API: pausar y reactivar dejan actor, instante y motivo opcional en el historial", async () => {
+test("TI2-152 API: pausar y reactivar solo cambian el estado y no reciben motivo", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "pausa");
   const pro = t.withIdentity(seed.proIdentity);
+  const { pauseAccompaniment, reactivateAccompaniment } = api.presentation.accompaniments;
+  const args = { accompanimentId: seed.accompanimentId };
 
-  expect(
-    await pro.mutation(api.presentation.accompaniments.pauseAccompaniment, {
-      accompanimentId: seed.accompanimentId,
-      reason: "  Receso de invierno  ",
-    }),
-  ).toEqual({ accompanimentId: seed.accompanimentId, status: "paused" });
-  expect(
-    await pro.mutation(api.presentation.accompaniments.reactivateAccompaniment, {
-      accompanimentId: seed.accompanimentId,
-    }),
-  ).toEqual({ accompanimentId: seed.accompanimentId, status: "active" });
+  expect(await pro.mutation(pauseAccompaniment, args)).toEqual({ ...args, status: "paused" });
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "paused" });
+  expect(await pro.mutation(reactivateAccompaniment, args)).toEqual({ ...args, status: "active" });
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active" });
 
-  const state = await readState(t, seed.accompanimentId);
-  expect(state.status).toBe("active");
-  expect(state.transitions).toHaveLength(2);
-  expect(state.transitions[0]).toMatchObject({
-    from: "active",
-    to: "paused",
-    actorId: seed.pro,
-    reason: "Receso de invierno",
-  });
-  expect(state.transitions[1]).toMatchObject({ from: "paused", to: "active", actorId: seed.pro });
-  expect(state.transitions[1]).not.toHaveProperty("reason");
-  expect(state.transitions[0]?.occurredAt).toBeGreaterThan(0);
+  // El motivo no es un argumento de estas operaciones: Convex lo rechaza.
+  const withReason = { ...args, reason: "Receso ficticio" };
+  await expect(pro.mutation(pauseAccompaniment, withReason)).rejects.toThrow(/reason/);
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active" });
 });
 
 test("TI2-152 API: las transiciones inválidas y el motivo sobre el tope responden conflict sin escribir", async () => {
@@ -197,9 +188,9 @@ test("TI2-152 API: las transiciones inválidas y el motivo sobre el tope respond
     "conflict",
   );
   await expectPublicError(
-    onActive.mutation(pauseAccompaniment, {
+    onActive.mutation(closeAccompaniment, {
       accompanimentId: active.accompanimentId,
-      reason: "a".repeat(ACCOMPANIMENT_REASON_MAX_LENGTH + 1),
+      reason: "a".repeat(ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH + 1),
     }),
     "conflict",
   );
@@ -208,7 +199,7 @@ test("TI2-152 API: las transiciones inválidas y el motivo sobre el tope respond
     onActive.mutation(pauseAccompaniment, { accompanimentId: active.accompanimentId }),
     "conflict",
   );
-  expect((await readState(t, active.accompanimentId)).transitions).toHaveLength(1);
+  expect(await readState(t, active.accompanimentId)).toEqual({ status: "paused" });
 
   // Un acompañamiento cerrado no se reabre, no se pausa ni se vuelve a cerrar.
   const onClosed = t.withIdentity(closed.proIdentity);
@@ -224,7 +215,7 @@ test("TI2-152 API: las transiciones inválidas y el motivo sobre el tope respond
     }),
     "conflict",
   );
-  expect(await readState(t, closed.accompanimentId)).toEqual({ status: "closed", transitions: [] });
+  expect(await readState(t, closed.accompanimentId)).toEqual({ status: "closed" });
 });
 
 test("TI2-152 API: solo el Profesional vigente y asignado cambia el estado", async () => {
@@ -268,10 +259,10 @@ test("TI2-152 API: solo el Profesional vigente y asignado cambia el estado", asy
     t.withIdentity(seed.proIdentity).mutation(pauseAccompaniment, { accompanimentId: removed }),
     "unauthorized",
   );
-  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active", transitions: [] });
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "active" });
 });
 
-test("TI2-152 API: en pausa las atenciones se mantienen y las cancelan el Estudiante dueño y el Profesional a cargo", async () => {
+test("TI2-152 API: en pausa las atenciones se mantienen, pero no se cancelan ni se registra su resultado", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "pausa-agenda");
   const base = {
@@ -279,55 +270,44 @@ test("TI2-152 API: en pausa las atenciones se mantienen y las cancelan el Estudi
     studentId: seed.student,
     professionalId: seed.pro,
   };
-  const appointmentId = await seedAppointment(t, { ...base, startsAt: Date.now() + DAY });
-  const studentAppointmentId = await seedAppointment(t, {
-    ...base,
-    startsAt: Date.now() + 2 * DAY,
-  });
+  const future = await seedAppointment(t, { ...base, startsAt: Date.now() + DAY });
+  const past = await seedAppointment(t, { ...base, startsAt: Date.now() - DAY });
+  const student = t.withIdentity(seed.studentIdentity);
+  const pro = t.withIdentity(seed.proIdentity);
+  const { cancelAppointment, recordAppointmentAttendance } = api.presentation.appointments;
   const cancelArgs = {
-    appointmentId,
+    appointmentId: future,
     reason: "Motivo ficticio",
     version: APPOINTMENT_CONTRACT_VERSION,
   };
+  const recordArgs = {
+    appointmentId: past,
+    outcome: "completed" as const,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  };
+  const args = { accompanimentId: seed.accompanimentId };
 
-  await t
-    .withIdentity(seed.proIdentity)
-    .mutation(api.presentation.accompaniments.pauseAccompaniment, {
-      accompanimentId: seed.accompanimentId,
-    });
-  expect((await t.run((ctx) => ctx.db.get(appointmentId)))?.status).toBe("scheduled");
+  await pro.mutation(api.presentation.accompaniments.pauseAccompaniment, args);
+  for (const caller of [student, pro]) {
+    await expectPublicError(caller.mutation(cancelAppointment, cancelArgs), "unauthorized");
+  }
+  await expectPublicError(pro.mutation(recordAppointmentAttendance, recordArgs), "unauthorized");
+  const paused = await t.run(async (ctx) => [await ctx.db.get(future), await ctx.db.get(past)]);
+  expect(paused.map((row) => row?.status)).toEqual(["scheduled", "scheduled"]);
 
-  expect(
-    await t
-      .withIdentity(seed.studentIdentity)
-      .mutation(api.presentation.appointments.cancelAppointment, {
-        appointmentId: studentAppointmentId,
-        version: APPOINTMENT_CONTRACT_VERSION,
-      }),
-  ).toEqual({ appointmentId: studentAppointmentId });
-  expect((await t.run((ctx) => ctx.db.get(studentAppointmentId)))?.status).toBe(
-    "cancelled_by_student",
-  );
-
-  await expectPublicError(
-    t
-      .withIdentity(seed.otherProIdentity)
-      .mutation(api.presentation.appointments.cancelAppointment, cancelArgs),
-    "unauthorized",
-  );
-
-  expect(
-    await t
-      .withIdentity(seed.proIdentity)
-      .mutation(api.presentation.appointments.cancelAppointment, cancelArgs),
-  ).toEqual({ appointmentId });
-  expect(await t.run((ctx) => ctx.db.get(appointmentId))).toMatchObject({
+  // Al reactivar, las mismas operaciones vuelven a proceder.
+  await pro.mutation(api.presentation.accompaniments.reactivateAccompaniment, args);
+  expect(await pro.mutation(recordAppointmentAttendance, recordArgs)).toEqual({
+    appointmentId: past,
+  });
+  expect(await pro.mutation(cancelAppointment, cancelArgs)).toEqual({ appointmentId: future });
+  expect(await t.run((ctx) => ctx.db.get(future))).toMatchObject({
     status: "cancelled_by_cereti",
     cancelReason: "Motivo ficticio",
   });
 });
 
-test("TI2-152 API: en pausa los participantes leen y reemplazan el enlace en línea, y cerrado se rechaza", async () => {
+test("TI2-152 API: en pausa el enlace en línea no se lee ni se cambia, y vuelve al reactivar", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "pausa-enlace");
   const appointmentId = await seedAppointment(t, {
@@ -344,28 +324,20 @@ test("TI2-152 API: en pausa los participantes leen y reemplazan el enlace en lí
 
   await pro.mutation(setOnlineAccessLink, { ...read, link: MEET_LINK });
   await pro.mutation(api.presentation.accompaniments.pauseAccompaniment, args);
-
-  for (const caller of [student, pro]) {
-    expect(await caller.query(getOnlineAccess, read)).toEqual({
-      status: "available",
-      link: MEET_LINK,
-      version: APPOINTMENT_CONTRACT_VERSION,
-    });
-  }
-  expect(await pro.mutation(setOnlineAccessLink, { ...read, link: OTHER_MEET_LINK })).toEqual({
-    appointmentId,
-  });
-  expect(await student.query(getOnlineAccess, read)).toMatchObject({ link: OTHER_MEET_LINK });
-
-  // El cierre cancela la atención futura y el enlace deja de entregarse.
-  await pro.mutation(api.presentation.accompaniments.closeAccompaniment, args);
   for (const caller of [student, pro]) {
     await expectPublicError(caller.query(getOnlineAccess, read), "unauthorized");
   }
   await expectPublicError(
-    pro.mutation(setOnlineAccessLink, { ...read, link: MEET_LINK }),
+    pro.mutation(setOnlineAccessLink, { ...read, link: OTHER_MEET_LINK }),
     "unauthorized",
   );
+
+  await pro.mutation(api.presentation.accompaniments.reactivateAccompaniment, args);
+  expect(await student.query(getOnlineAccess, read)).toEqual({
+    status: "available",
+    link: MEET_LINK,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
 });
 
 test("TI2-152 API: fuera de un acompañamiento activo no se reserva ni se cambia el horario", async () => {
@@ -409,7 +381,7 @@ test("TI2-152 API: fuera de un acompañamiento activo no se reserva ni se cambia
   }
 });
 
-test("TI2-152 API: cerrar cancela las atenciones futuras de todos los profesionales y conserva el historial", async () => {
+test("TI2-152 API: cerrar cancela las atenciones futuras de todos los profesionales y guarda el cierre en el acompañamiento", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "cierre");
   const base = {
@@ -477,21 +449,22 @@ test("TI2-152 API: cerrar cancela las atenciones futuras de todos los profesiona
   }
 
   const state = await readState(t, seed.accompanimentId);
-  expect(state.status).toBe("closed");
-  expect(state.transitions).toHaveLength(1);
-  expect(state.transitions[0]).toMatchObject({
-    from: "active",
-    to: "closed",
-    actorId: seed.pro,
-    reason: "Motivo ficticio del cierre",
+  expect(state).toMatchObject({
+    status: "closed",
+    closedById: seed.pro,
+    closureReason: "Motivo ficticio del cierre",
   });
+  expect(state.closedAt).toBeGreaterThan(0);
 
-  // El historial se sigue leyendo, con el estado cerrado, para ambos lados.
-  expect(
-    await pro.query(api.presentation.accompaniments.getAccompaniment, {
-      accompanimentId: seed.accompanimentId,
-    }),
-  ).toMatchObject({ status: "closed", view: "full" });
+  // El historial se sigue leyendo, con el estado cerrado, para ambos lados, y
+  // ninguna lectura entrega los datos del cierre.
+  const read = await pro.query(api.presentation.accompaniments.getAccompaniment, {
+    accompanimentId: seed.accompanimentId,
+  });
+  expect(read).toMatchObject({ status: "closed", view: "full" });
+  for (const field of ["closedById", "closedAt", "closureReason"]) {
+    expect(read).not.toHaveProperty(field);
+  }
   const owned = await t
     .withIdentity(seed.studentIdentity)
     .query(api.presentation.accompaniments.listOwnedAccompaniments, {
@@ -500,7 +473,7 @@ test("TI2-152 API: cerrar cancela las atenciones futuras de todos los profesiona
   expect(owned.page.map((item) => item.status)).toEqual(["closed"]);
 });
 
-test("TI2-152 API: una atención vigente cuya hora ya pasó impide el cierre y no se guarda nada", async () => {
+test("TI2-152 API: una atención vigente cuya hora ya pasó impide el cierre, y desde la pausa se reactiva para registrarla", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "cierre-pendiente", "paused");
   const base = {
@@ -522,27 +495,32 @@ test("TI2-152 API: una atención vigente cuya hora ya pasó impide el cierre y n
     "conflict",
   );
   expect((await t.run((ctx) => ctx.db.get(future)))?.status).toBe("scheduled");
-  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "paused", transitions: [] });
+  expect(await readState(t, seed.accompanimentId)).toEqual({ status: "paused" });
 
-  // En pausa el Profesional a cargo registra el resultado pendiente por la
-  // API, y con eso el cierre desde la pausa procede.
+  // En pausa no se registra el resultado: se reactiva, se registra y se cierra.
+  const record = {
+    appointmentId: unrecorded,
+    outcome: "completed" as const,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  };
+  await expectPublicError(
+    pro.mutation(api.presentation.appointments.recordAppointmentAttendance, record),
+    "unauthorized",
+  );
+  await pro.mutation(api.presentation.accompaniments.reactivateAccompaniment, args);
   expect(
-    await pro.mutation(api.presentation.appointments.recordAppointmentAttendance, {
-      appointmentId: unrecorded,
-      outcome: "completed",
-      version: APPOINTMENT_CONTRACT_VERSION,
-    }),
+    await pro.mutation(api.presentation.appointments.recordAppointmentAttendance, record),
   ).toEqual({ appointmentId: unrecorded });
   expect(
     await pro.mutation(api.presentation.accompaniments.closeAccompaniment, args),
   ).toMatchObject({ status: "closed", cancelledAppointments: 1 });
-  expect((await readState(t, seed.accompanimentId)).transitions[0]).toMatchObject({
-    from: "paused",
-    to: "closed",
+  expect(await readState(t, seed.accompanimentId)).toMatchObject({
+    status: "closed",
+    closedById: seed.pro,
   });
 });
 
-test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta y el último profesional no se retira", async () => {
+test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta y el último profesional no se retira mientras no esté cerrado", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "retiro");
   const { getAccompaniment, revokeAccompanimentAccess, pauseAccompaniment } =
@@ -576,16 +554,18 @@ test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta y el �
   expect(revoked[0]).toMatchObject({ status: "revoked", revokedBy: seed.pro });
   expect(revoked[0]?.revokedAt).toBeGreaterThan(0);
 
-  // Queda un solo profesional: retirarse dejaría el acompañamiento sin nadie.
+  // Sin profesional nadie podría volver a asignar ni cerrar: activo o en
+  // pausa, el último no se retira (TI2-165).
   const last = t.withIdentity(seed.proIdentity);
-  await expectPublicError(
+  const retireLast = () =>
     last.mutation(revokeAccompanimentAccess, {
       ...args,
       userId: seed.pro,
       assignedRole: "professional",
-    }),
-    "conflict",
-  );
+    });
+  await expectPublicError(retireLast(), "conflict");
+  expect(await last.mutation(pauseAccompaniment, args)).toMatchObject({ status: "paused" });
+  await expectPublicError(retireLast(), "conflict");
   expect(await last.query(getAccompaniment, args)).toMatchObject({ view: "full" });
 });
 
@@ -621,4 +601,240 @@ test("TI2-152 API: un acompañamiento cerrado no admite conceder ni modificar ac
       assignedRole: "professional",
     }),
   ).toBe(1);
+  // Cerrado puede quedar sin asignaciones: el 0..* de ASIGNA en el MER.
+  expect(
+    await pro.mutation(revokeAccompanimentAccess, {
+      accompanimentId: seed.accompanimentId,
+      userId: seed.pro,
+      assignedRole: "professional",
+    }),
+  ).toBe(1);
+});
+
+async function seedNamedUser(
+  t: TestConvex,
+  input: {
+    readonly subject: string;
+    readonly fullName: string;
+    readonly role?: Doc<"users">["role"];
+    readonly domain?: string;
+    readonly institutionalStatus?: Doc<"users">["institutionalStatus"];
+  },
+) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("users", {
+      email: `${input.subject}@${input.domain ?? "uct.cl"}`,
+      fullName: input.fullName,
+      role: input.role ?? "professional",
+      institutionalStatus: input.institutionalStatus ?? "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|${input.subject}`,
+    });
+  });
+}
+
+/** Ventana guardada de la asignación profesional del usuario. */
+async function readWindow(
+  t: TestConvex,
+  accompanimentId: Id<"accompaniments">,
+  userId: Id<"users">,
+) {
+  const rows = (await t.run(
+    async (ctx) => await ctx.db.query("accompanimentAssignments").take(50),
+  )) as Doc<"accompanimentAssignments">[];
+  return rows
+    .filter((row) => row.accompanimentId === accompanimentId && row.userId === userId)
+    .map((row) => ({ validFrom: row.validFrom, validUntil: row.validUntil }));
+}
+
+test("TI2-165 API: el último profesional no sale cambiando su vigencia, porque la de un profesional de personal no se acuerda", async () => {
+  const t = convexTest(schema, modules);
+  const seed = await seedAccompaniment(t, "vigencia-ultimo");
+  const { assignAccompanimentAccess, getAccompaniment, revokeAccompanimentAccess } =
+    api.presentation.accompaniments;
+  const updateAccess = api.presentation.accompaniments.updateAccompanimentAccess;
+  const args = { accompanimentId: seed.accompanimentId };
+  const asPro = t.withIdentity(seed.proIdentity);
+
+  expect(
+    await asPro.mutation(revokeAccompanimentAccess, {
+      ...args,
+      userId: seed.otherPro,
+      assignedRole: "professional",
+    }),
+  ).toBe(1);
+
+  // Empezar mañana o vencer dejaría el acompañamiento sin quien lo gestione.
+  const self = { ...args, userId: seed.pro, assignedRole: "professional" as const };
+  await expectPublicError(
+    asPro.mutation(updateAccess, { ...self, validFrom: Date.now() + DAY }),
+    "assignment_fields_invalid",
+  );
+  await expectPublicError(
+    asPro.mutation(updateAccess, { ...self, validUntil: Date.now() + DAY }),
+    "assignment_fields_invalid",
+  );
+  expect(await readWindow(t, seed.accompanimentId, seed.pro)).toEqual([
+    { validFrom: undefined, validUntil: undefined },
+  ]);
+  expect(await asPro.query(getAccompaniment, args)).toMatchObject({ view: "full" });
+
+  // Tampoco se concede con ventana, y quitar una ventana sí procede.
+  const newcomer = await seedNamedUser(t, { subject: "ti165-ventana", fullName: "Nuevo Ficticio" });
+  await expectPublicError(
+    asPro.mutation(assignAccompanimentAccess, {
+      ...args,
+      userId: newcomer,
+      assignedRole: "professional",
+      validUntil: Date.now() + DAY,
+    }),
+    "assignment_fields_invalid",
+  );
+  expect(await readWindow(t, seed.accompanimentId, newcomer)).toEqual([]);
+  expect(
+    await asPro.mutation(updateAccess, { ...self, validFrom: null, validUntil: null }),
+  ).toBeDefined();
+});
+
+test("TI2-165 API: una cuenta de prueba o una asignación que vence no cuentan como quien gestiona", async () => {
+  const t = convexTest(schema, modules);
+  const seed = await seedAccompaniment(t, "gestor");
+  const testAccount = await seedNamedUser(t, {
+    subject: "ti165-gestor-prueba",
+    fullName: "Prueba Ficticia",
+    domain: "alu.uct.cl",
+  });
+  await seedAssignment(t, seed.accompanimentId, testAccount);
+  // Ventana guardada antes de TI2-165: deja de autorizar al vencer.
+  await t.run(async (ctx) => {
+    const row = await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q.eq("accompanimentId", seed.accompanimentId).eq("userId", seed.otherPro),
+      )
+      .unique();
+    if (row !== null) await ctx.db.patch(row._id, { validUntil: Date.now() + DAY });
+  });
+  const { listAccompanimentProfessionals, revokeAccompanimentAccess } =
+    api.presentation.accompaniments;
+  const args = { accompanimentId: seed.accompanimentId };
+  const asPro = t.withIdentity(seed.proIdentity);
+
+  const team = await asPro.query(listAccompanimentProfessionals, args);
+  const removable = Object.fromEntries(team.assigned.map((item) => [item.userId, item.removable]));
+  expect(removable).toEqual({ [seed.pro]: false, [seed.otherPro]: true, [testAccount]: true });
+
+  await expectPublicError(
+    asPro.mutation(revokeAccompanimentAccess, {
+      ...args,
+      userId: seed.pro,
+      assignedRole: "professional",
+    }),
+    "conflict",
+  );
+  expect(await readWindow(t, seed.accompanimentId, seed.pro)).toHaveLength(1);
+  expect(
+    await asPro.mutation(revokeAccompanimentAccess, {
+      ...args,
+      userId: testAccount,
+      assignedRole: "professional",
+    }),
+  ).toBe(1);
+});
+
+test("TI2-165 API: el profesional asignado ve a los asignados y a quién puede asignar, con nombre y sin correo", async () => {
+  const t = convexTest(schema, modules);
+  const s = await seedAccompaniment(t, "equipo-ver");
+  const free = await seedNamedUser(t, { subject: "ti165-libre", fullName: "Ana Ficticia" });
+  await seedNamedUser(t, {
+    subject: "ti165-inhabilitado",
+    fullName: "Inhabilitado Ficticio",
+    institutionalStatus: "disabled",
+  });
+  await seedNamedUser(t, {
+    subject: "ti165-prueba",
+    fullName: "Prueba Ficticia",
+    domain: "alu.uct.cl",
+  });
+  await seedNamedUser(t, {
+    subject: "ti165-practicante",
+    fullName: "Practicante Ficticio",
+    role: "intern",
+  });
+
+  const result = await t
+    .withIdentity(s.proIdentity)
+    .query(api.presentation.accompaniments.listAccompanimentProfessionals, {
+      accompanimentId: s.accompanimentId,
+    });
+
+  expect(result.assigned.map((item) => item.userId).sort()).toEqual([s.otherPro, s.pro].sort());
+  expect(result.assigned.find((item) => item.userId === s.pro)?.isCaller).toBe(true);
+  expect(result.assigned.find((item) => item.userId === s.otherPro)?.isCaller).toBe(false);
+  expect(result.assignable).toEqual([{ userId: free, fullName: "Ana Ficticia" }]);
+  expect(result.assignableComplete).toBe(true);
+  expect(JSON.stringify(result)).not.toContain("@");
+});
+
+test("TI2-165 API: la lista sigue al cambio de profesionales", async () => {
+  const t = convexTest(schema, modules);
+  const s = await seedAccompaniment(t, "equipo-cambio");
+  const free = await seedNamedUser(t, { subject: "ti165-nuevo", fullName: "Nuevo Ficticio" });
+  const asPro = t.withIdentity(s.proIdentity);
+  const read = async () =>
+    await asPro.query(api.presentation.accompaniments.listAccompanimentProfessionals, {
+      accompanimentId: s.accompanimentId,
+    });
+
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId: s.accompanimentId,
+    userId: free,
+    assignedRole: "professional",
+  });
+  const afterAssign = await read();
+  const added = afterAssign.assigned.find((item) => item.userId === free);
+  expect(added?.fullName).toBe("Nuevo Ficticio");
+  expect(typeof added?.assignedAt).toBe("number");
+  expect(afterAssign.assignable).toEqual([]);
+
+  await asPro.mutation(api.presentation.accompaniments.revokeAccompanimentAccess, {
+    accompanimentId: s.accompanimentId,
+    userId: s.otherPro,
+    assignedRole: "professional",
+  });
+  const afterRevoke = await read();
+  expect(afterRevoke.assigned.map((item) => item.userId).sort()).toEqual([free, s.pro].sort());
+  expect(afterRevoke.assignable.map((item) => item.userId)).toEqual([s.otherPro]);
+});
+
+test("TI2-165 API: sin asignación profesional vigente la lista responde unauthorized", async () => {
+  // Una comprobación por cada identidad y otra sin sesión.
+  expect.assertions(4);
+  const t = convexTest(schema, modules);
+  const s = await seedAccompaniment(t, "equipo-denegar");
+  await seedNamedUser(t, { subject: "ti165-ajeno", fullName: "Ajeno Ficticio" });
+  const intern = await seedNamedUser(t, {
+    subject: "ti165-practicante-asignado",
+    fullName: "Practicante Ficticio",
+    role: "intern",
+  });
+  await seedAssignment(t, s.accompanimentId, intern, "intern");
+  const args = { accompanimentId: s.accompanimentId };
+
+  for (const identity of [
+    s.studentIdentity,
+    identityFor("ti165-ajeno"),
+    identityFor("ti165-practicante-asignado"),
+  ]) {
+    await expectPublicError(
+      t
+        .withIdentity(identity)
+        .query(api.presentation.accompaniments.listAccompanimentProfessionals, args),
+      "unauthorized",
+    );
+  }
+  await expectPublicError(
+    t.query(api.presentation.accompaniments.listAccompanimentProfessionals, args),
+    "unauthorized",
+  );
 });

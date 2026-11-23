@@ -404,7 +404,7 @@ describe("authorizeAppointmentCancel y authorizeAppointmentReschedule", () => {
     });
   });
 
-  test("una asignación revocada, la atención de otro profesional o un acompañamiento cerrado se deniegan, y en pausa no se cambia el horario", async () => {
+  test("una asignación revocada, la atención de otro profesional o un acompañamiento pausado o cerrado se deniegan", async () => {
     const revoked = fakeReader({
       profiles: [professional],
       accompaniments: [activeAccompaniment],
@@ -431,8 +431,10 @@ describe("authorizeAppointmentCancel y authorizeAppointmentReschedule", () => {
       accompaniments: [{ ...activeAccompaniment, status: "paused" }],
       assignments: [assignment({})],
     });
-    expect(await authorizeAppointmentReschedule(paused, request("token-student"))).toEqual(DENIED);
-    expect(await authorizeAppointmentReschedule(paused, request("token-pro"))).toEqual(DENIED);
+    for (const token of ["token-student", "token-pro"]) {
+      expect(await authorizeAppointmentCancel(paused, request(token))).toEqual(DENIED);
+      expect(await authorizeAppointmentReschedule(paused, request(token))).toEqual(DENIED);
+    }
 
     const closed = fakeReader({
       profiles: [student, professional],

@@ -1,5 +1,5 @@
 import type { ApiResult } from "../../domain/errors/api_error";
-import type { AccessNeed, ModalityPreference } from "../../domain/requests/request";
+import type { ModalityPreference } from "../../domain/requests/request";
 
 /**
  * Puerto mínimo de ocupación de cupo (TI2-84).
@@ -54,8 +54,6 @@ export interface OccupySlotInput {
    * participante se retira en la misma transacción. Al crear se ignora.
    */
   readonly removedProfessionalIds?: readonly string[];
-  /** Apoyos de la atención en línea (TI2-142); solo se guardan al crear. */
-  readonly onlineSupports?: readonly AccessNeed[];
   /**
    * Atención que se cambia de horario o de recursos (TI2-96). Tiene que seguir
    * ocupando su cupo y ser del mismo estudiante y acompañamiento; si no, la
