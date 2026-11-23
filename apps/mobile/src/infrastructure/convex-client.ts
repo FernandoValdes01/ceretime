@@ -1,17 +1,31 @@
 import { ConvexHttpClient } from "convex/browser";
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from "convex/server";
 
-const REQUEST_TIMEOUT_MS = 15_000;
+/** Tope de espera de cada petición a Convex, también al pedir el token de la sesión. */
+export const REQUEST_TIMEOUT_MS = 15_000;
 
-class MobileNetworkError extends Error {
+export class MobileNetworkError extends Error {
   readonly code = "network_error";
 }
 
-/** Transporte puntual sin sesión; los adaptadores de cada rol implementan los puertos de aplicación. */
+/** Entrega el token de la sesión vigente, o `null` si no hay una. */
+export type GetAuthToken = () => Promise<string | null>;
+
+/**
+ * Transporte puntual; los adaptadores de cada rol implementan los puertos de aplicación.
+ * Con `getAuthToken` cada llamada viaja con la identidad de la sesión actual; sin él, es anónima.
+ */
 export function createMobileConvexClient(
   deploymentUrl: string | undefined,
-  fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
-  timeoutMs = REQUEST_TIMEOUT_MS,
+  {
+    fetch: fetchImplementation = globalThis.fetch,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+    getAuthToken,
+  }: {
+    readonly fetch?: typeof globalThis.fetch;
+    readonly timeoutMs?: number;
+    readonly getAuthToken?: GetAuthToken;
+  } = {},
 ) {
   if (!deploymentUrl?.trim()) {
     throw new Error("Configura EXPO_PUBLIC_CONVEX_URL con la URL del deployment de prueba.");
@@ -40,23 +54,34 @@ export function createMobileConvexClient(
     },
   });
 
+  // El token se pide en cada llamada: caduca y cambia al cerrar sesión o cambiar de cuenta.
+  async function authenticate() {
+    if (!getAuthToken) return;
+    const token = await getAuthToken();
+    if (token) client.setAuth(token);
+    else client.clearAuth();
+  }
+
   return {
-    query<Query extends FunctionReference<"query", "public">>(
+    async query<Query extends FunctionReference<"query", "public">>(
       query: Query,
       args: FunctionArgs<Query>,
     ): Promise<FunctionReturnType<Query>> {
+      await authenticate();
       return client.query(query, args);
     },
-    mutation<Mutation extends FunctionReference<"mutation", "public">>(
+    async mutation<Mutation extends FunctionReference<"mutation", "public">>(
       mutation: Mutation,
       args: FunctionArgs<Mutation>,
     ): Promise<FunctionReturnType<Mutation>> {
+      await authenticate();
       return client.mutation(mutation, args);
     },
-    action<Action extends FunctionReference<"action", "public">>(
+    async action<Action extends FunctionReference<"action", "public">>(
       action: Action,
       args: FunctionArgs<Action>,
     ): Promise<FunctionReturnType<Action>> {
+      await authenticate();
       return client.action(action, args);
     },
   };
