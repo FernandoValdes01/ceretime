@@ -5,7 +5,8 @@ import { isAccompanimentAccessDeniedError } from "@/domain/accompaniment-access-
 import type { ProfessionalAccompanimentReader } from "@/application/professional-accompaniment-port";
 
 import { useAsyncResource } from "./use-async-resource";
-import { isMobileAccessDenied, toMobileOperationError } from "../to-mobile-operation-error";
+import { isMobileAccessDenied } from "../../application/access-denied";
+import { toMobileOperationError } from "../to-mobile-operation-error";
 
 export type ProfessionalAccompanimentLoadStatus = "loading" | "success" | "error" | "access-denied";
 

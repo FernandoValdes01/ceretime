@@ -38,13 +38,3 @@ export function toMobileOperationError(error: unknown, fallback: string): Error 
   }
   return new UserFacingError(fallback);
 }
-
-/** Transición compatible para denegaciones antiguas y el código público actual. */
-export function isMobileAccessDenied(error: unknown): boolean {
-  if (!isRecord(error)) return false;
-  return (
-    error.data === "No autorizado" ||
-    (isRecord(error.data) && error.data.code === "unauthorized") ||
-    error.code === "unauthorized"
-  );
-}
