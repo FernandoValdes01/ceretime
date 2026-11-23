@@ -2,7 +2,9 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import {
   ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
   ACCOMPANIMENT_STATUS_VALUES,
+  keepsAManagerWithout,
   mustKeepAProfessional,
+  setsAgreedValidity,
   toAccompanimentProjection,
   transitionAccompaniment,
 } from "./accompaniment";
@@ -202,5 +204,37 @@ describe("mustKeepAProfessional (TI2-165)", () => {
     expect(mustKeepAProfessional("active")).toBe(true);
     expect(mustKeepAProfessional("paused")).toBe(true);
     expect(mustKeepAProfessional("closed")).toBe(false);
+  });
+});
+
+describe("keepsAManagerWithout (TI2-165)", () => {
+  const staff = { userId: "pro-1", isStaffProfessional: true };
+  const otherStaff = { userId: "pro-2", isStaffProfessional: true };
+
+  test("activo o en pausa exige que quede otro profesional de personal sin fin acordado", () => {
+    expect(keepsAManagerWithout("active", [staff, otherStaff], "pro-1")).toBe(true);
+    expect(keepsAManagerWithout("paused", [staff], "pro-1")).toBe(false);
+    expect(keepsAManagerWithout("active", [], "pro-1")).toBe(false);
+  });
+
+  test("una cuenta de prueba o una asignación que vence no cuentan como quien gestiona", () => {
+    const testAccount = { userId: "prueba-1", isStaffProfessional: false };
+    const expiring = { ...otherStaff, validUntil: 1 };
+    expect(keepsAManagerWithout("active", [staff, testAccount], "pro-1")).toBe(false);
+    expect(keepsAManagerWithout("active", [staff, expiring], "pro-1")).toBe(false);
+    expect(keepsAManagerWithout("active", [staff, testAccount], "prueba-1")).toBe(true);
+  });
+
+  test("un cerrado puede quedar sin profesionales", () => {
+    expect(keepsAManagerWithout("closed", [staff], "pro-1")).toBe(true);
+  });
+});
+
+describe("setsAgreedValidity (TI2-165)", () => {
+  test("solo fijar un extremo cuenta como vigencia acordada", () => {
+    expect(setsAgreedValidity({})).toBe(false);
+    expect(setsAgreedValidity({ validFrom: null, validUntil: null })).toBe(false);
+    expect(setsAgreedValidity({ validFrom: 1 })).toBe(true);
+    expect(setsAgreedValidity({ validUntil: 1 })).toBe(true);
   });
 });

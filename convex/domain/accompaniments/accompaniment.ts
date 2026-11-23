@@ -14,6 +14,7 @@
  * adaptador entre la fila persistida y la vista devuelta.
  */
 
+import { isPersonalProfessionalActive, type AccountEnabler } from "../accounts/enablement";
 import { deriveCoordinationReferenceCode } from "../availability/official_channel";
 
 /** Estados del acompañamiento (activo, pausado, cerrado). */
@@ -188,6 +189,61 @@ export const ACCOMPANIMENT_CLOSURE_CANCEL_REASON = "Cierre del acompañamiento";
  */
 export function mustKeepAProfessional(status: AccompanimentStatus): boolean {
   return status !== "closed";
+}
+
+/** Asignación profesional activa y vigente, con lo que decide si su titular gestiona. */
+export type ProfessionalAssignmentHolder = {
+  readonly userId: string;
+  /** Profesional de personal habilitado y vigente; una cuenta de prueba no gestiona. */
+  readonly isStaffProfessional: boolean;
+  /** Fin acordado de la vigencia, que solo puede venir de filas anteriores a TI2-165. */
+  readonly validUntil?: number;
+};
+
+export function toProfessionalAssignmentHolder(
+  row: { readonly userId: string; readonly validUntil?: number },
+  profile: AccountEnabler | null,
+): ProfessionalAssignmentHolder {
+  return {
+    userId: row.userId,
+    isStaffProfessional: profile !== null && isPersonalProfessionalActive(profile),
+    ...(row.validUntil === undefined ? {} : { validUntil: row.validUntil }),
+  };
+}
+
+/**
+ * Verdadero cuando `userId` puede dejar su asignación sin que el
+ * acompañamiento quede sin quien lo gestione (TI2-165).
+ *
+ * Gestiona quien puede asignar y cerrar: un profesional de personal
+ * habilitado y vigente, con asignación vigente y sin fin acordado. Una cuenta
+ * de prueba no concede ni retira, y una asignación con fin deja de autorizar
+ * al vencer, así que ninguna de las dos cuenta. `holders` son las
+ * asignaciones activas y vigentes ahora; un cerrado siempre lo admite.
+ */
+export function keepsAManagerWithout(
+  status: AccompanimentStatus,
+  holders: readonly ProfessionalAssignmentHolder[],
+  userId: string,
+): boolean {
+  if (!mustKeepAProfessional(status)) return true;
+  return holders.some(
+    (holder) =>
+      holder.userId !== userId && holder.isStaffProfessional && holder.validUntil === undefined,
+  );
+}
+
+/**
+ * La asignación de un profesional de personal no lleva vigencia acordada:
+ * ASIGNACIONES_PROFESIONALES del MER no la tiene, y con ella el último que
+ * gestiona dejaría el acompañamiento sin nadie al empezar tarde o al vencer
+ * (TI2-165). Quitar una ventana anterior (`null` u omitida) sí procede.
+ */
+export function setsAgreedValidity(validity: {
+  readonly validFrom?: number | null;
+  readonly validUntil?: number | null;
+}): boolean {
+  return (validity.validFrom ?? null) !== null || (validity.validUntil ?? null) !== null;
 }
 
 export type AccompanimentTransitionAttempt = {
