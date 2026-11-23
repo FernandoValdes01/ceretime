@@ -41,7 +41,9 @@
           "speechRecognitionPermission": "CERETI reconoce comandos de voz en el dispositivo cuando lo solicitas.",
           "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
     ]
   }
 }

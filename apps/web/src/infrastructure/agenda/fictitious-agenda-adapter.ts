@@ -30,6 +30,8 @@ import {
   type SaveExceptionResult,
   type SaveSpaceInput,
   type SaveSpaceResult,
+  type SetSpaceActiveInput,
+  type SetSpaceActiveResult,
   type SlotModalityFilter,
   type SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
@@ -61,11 +63,13 @@ import {
  * TI2-121): lo pendiente es conectar esta interfaz Web al endpoint
  * (TI2-123/TI2-125), trabajo fuera del alcance de TI2-113.
  *
- * El catálogo de espacios (TI2-04) es ficticio y en memoria: la lectura
- * devuelve los espacios con su contrato v1 y el guardado actualiza un
- * espacio conocido o crea uno nuevo con identidad ficticia, sin validar
- * propiedad ni persistir nada. La escritura real del catálogo no está
- * entregada: TI2-99 entrega lectura, no escritura.
+ * El catálogo de espacios (TI2-04) fue ficticio y en memoria hasta TI2-169:
+ * la lectura devolvía los espacios con su contrato v1 y el guardado actualizaba
+ * un espacio conocido o creaba uno nuevo con identidad ficticia, sin validar
+ * propiedad ni persistir nada. Desde TI2-169 el adaptador Convex ya no delega
+ * acá: `createSpace`, `updateSpace` y `setSpaceActive` escriben contra
+ * `api.presentation.spaces` (TI2-148); este doble solo sirve a pruebas
+ * aisladas que lo usan directamente.
  *
  * Agenda del Profesional (TI2-115): nueve atenciones ficticias del mismo
  * profesional con estados variados del contrato. El cambio de estado no
@@ -461,12 +465,16 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
     },
     async listSpaces(): Promise<ListSpacesResult> {
       const spaces = Object.values(fictionalSpaces).sort((a, b) => (a.id < b.id ? -1 : 1));
+      if (spaces.length === 0) {
+        return { status: "empty" };
+      }
       return { status: "ok", spaces };
     },
-    // Guardado simulado del catálogo (TI2-04): con id conocido actualiza el
-    // espacio ficticio conservando su identidad; con id desconocido o sin id
-    // crea uno con identidad ficticia. Sin validación de propiedad ni
-    // persistencia real: la escritura del catálogo no está entregada.
+    // Guardado del catálogo para pruebas aisladas (TI2-04, TI2-169): con id
+    // conocido actualiza el espacio ficticio conservando su identidad; con id
+    // desconocido o sin id crea uno con identidad ficticia. Sin validación de
+    // propiedad ni persistencia real: el adaptador Convex ya escribe contra la
+    // API (TI2-148).
     async saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult> {
       const id =
         input.id !== undefined && fictionalSpaces[input.id] !== undefined
@@ -484,6 +492,18 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
       };
       fictionalSpaces[id] = space;
       return { status: "saved", space };
+    },
+    // Vigencia simulada para pruebas aisladas (TI2-169): retirar quita la sala
+    // del listado ficticio, como el Backend que solo lista vigentes.
+    async setSpaceActive(input: SetSpaceActiveInput): Promise<SetSpaceActiveResult> {
+      const space = fictionalSpaces[input.spaceId];
+      if (space === undefined) {
+        return { status: "denied" };
+      }
+      if (!input.isActive) {
+        delete fictionalSpaces[input.spaceId];
+      }
+      return { status: "saved", space, isActive: input.isActive };
     },
   };
 }

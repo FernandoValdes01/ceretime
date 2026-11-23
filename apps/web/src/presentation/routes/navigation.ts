@@ -50,6 +50,7 @@ export const PORTAL_NAVIGATION = {
     brandHome: "/administrador",
     items: [
       { to: "/administrador", label: "Inicio", exact: true },
+      { to: "/administrador/cuentas", label: "Cuentas", exact: false },
       { to: "/administrador/espacios", label: "Espacios", exact: false },
     ],
   },

@@ -6,7 +6,8 @@ import {
   StudentRequestActionError,
   type StudentRequestActions,
 } from "@/application/student-area-port";
-import { isMobileAccessDenied, toMobileOperationError } from "../to-mobile-operation-error";
+import { isMobileAccessDenied } from "../../application/access-denied";
+import { toMobileOperationError } from "../to-mobile-operation-error";
 import { StudentAction } from "./student-screen";
 import { StudentText, useStudentFont } from "./student-text";
 

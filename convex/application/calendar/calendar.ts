@@ -11,13 +11,11 @@
 
 import {
   buildCalendarEvent,
-  CALENDAR_EVENTS_SCOPE,
   toCalendarFile,
   type CalendarFile,
 } from "../../domain/calendar/calendar_event";
 import { isCalendarActionableStatus } from "../../domain/appointments/appointment";
 import type { AppointmentStatus } from "../../domain/appointments/appointment";
-import { isProfileActive } from "../../domain/authorization/permissions";
 import {
   conflictError,
   errResult,
@@ -30,6 +28,7 @@ import {
   type AuthorizableAppointment,
   type AuthorizationReader,
 } from "../authorization/authorize";
+import { getCalendarLinkStatus, type CalendarLinkMetadataReader } from "./calendar_link";
 
 /** Fila de atención que necesita el calendario, ya autorizada por pertenencia. */
 export type CalendarAppointmentRow = AuthorizableAppointment & {
@@ -343,23 +342,26 @@ export async function addAppointmentToGoogleCalendar(
 }
 
 /**
- * Estado de la conexión de Google Calendar de la sesión.
+ * Estado de la conexión de Google Calendar de la sesión (TI2-122).
  *
- * Los alcances OAuth de Better Auth son la única fuente de verdad: los
- * metadatos de `calendarConnections` no participan de esta lectura. Solo
- * confirma si el alcance mínimo de creación de eventos está concedido. No
- * devuelve tokens, identificadores de cuenta ni el correo de Google.
+ * Delega en `getCalendarLinkStatus` (TI2-161) y devuelve solo `connected`:
+ * la forma pública de TI2-122 no cambia y la regla vive en un solo lugar. Los
+ * alcances OAuth de Better Auth son la única fuente de verdad: los metadatos
+ * de `calendarConnections` no participan de esta lectura. No devuelve tokens,
+ * identificadores de cuenta ni el correo de Google.
  */
 export async function getCalendarConnection(
   deps: {
     readonly auth: AuthorizationReader;
     readonly connection: CalendarConnectionReader;
+    readonly store: CalendarLinkMetadataReader;
   },
   input: { readonly tokenIdentifier: string | null },
 ): Promise<ApiResult<{ readonly connected: boolean }>> {
-  if (input.tokenIdentifier === null) return errResult(unauthorizedError());
-  const profile = await deps.auth.findProfileByTokenIdentifier(input.tokenIdentifier);
-  if (profile === null || !isProfileActive(profile)) return errResult(unauthorizedError());
-  const scopes = await deps.connection.listGoogleScopes();
-  return okResult({ connected: scopes !== null && scopes.includes(CALENDAR_EVENTS_SCOPE) });
+  const status = await getCalendarLinkStatus(
+    { auth: deps.auth, oauth: deps.connection, store: deps.store },
+    input,
+  );
+  if (status.status === "error") return status;
+  return okResult({ connected: status.data.connected });
 }
