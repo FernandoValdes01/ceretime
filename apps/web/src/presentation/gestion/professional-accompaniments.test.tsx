@@ -63,8 +63,14 @@ const store = vi.hoisted(() => {
 
 const EQUIPO = vi.hoisted(() => ({
   assigned: [
-    { userId: "pro-1", fullName: "Profesional Uno Ficticio", assignedAt: 1, isCaller: true },
-    { userId: "pro-2", fullName: "Profesional Dos Ficticio", isCaller: false },
+    {
+      userId: "pro-1",
+      fullName: "Profesional Uno Ficticio",
+      assignedAt: 1,
+      isCaller: true,
+      removable: true,
+    },
+    { userId: "pro-2", fullName: "Profesional Dos Ficticio", isCaller: false, removable: true },
   ],
   assignable: [{ userId: "pro-3", fullName: "Profesional Tres Ficticio" }],
   assignableComplete: true,
@@ -567,17 +573,22 @@ describe("cambio de profesionales (TI2-165)", () => {
     expect(within(team).getByRole("button", { name: "Retirarme" })).toBeDefined();
   });
 
-  test("al único asignado no le ofrece retirarse y le explica qué hacer", async () => {
+  test("a quien el Backend no deja retirar no le ofrece retirarse y le explica qué hacer", async () => {
     store.details.set("acc-1", completo("acc-1", OBJETIVO_1));
-    store.team = { ...EQUIPO, assigned: [EQUIPO.assigned[0]] };
+    // Dos asignados, pero el otro no gestiona (por ejemplo, una cuenta de prueba).
+    const [caller, other] = EQUIPO.assigned;
+    store.team = { ...EQUIPO, assigned: [{ ...caller, removable: false }, other] };
     renderAt("/profesional/acompanamientos/acc-1");
 
     await screen.findByText(OBJETIVO_1);
     const team = teamSection();
     expect(within(team).queryByRole("button", { name: "Retirarme" })).toBeNull();
     expect(team.textContent).toContain(
-      "Eres el único profesional asignado. Para retirarte, primero asigna a otro profesional.",
+      "Nadie más puede gestionar este acompañamiento. Para retirarte, primero asigna a otro profesional.",
     );
+    expect(
+      within(team).getByRole("button", { name: "Retirar a Profesional Dos Ficticio" }),
+    ).toBeDefined();
     expect(within(team).getByRole("button", { name: "Asignar" })).toBeDefined();
   });
 

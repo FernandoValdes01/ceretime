@@ -23,11 +23,12 @@ import {
  * Muestra quién está asignado (ASIGNACIONES_PROFESIONALES del MER) y permite
  * asignar a otro profesional de personal o retirar a uno, con las operaciones
  * de TI2-140. Retirar pide confirmación, porque quien se retira pierde el
- * acceso en la consulta siguiente. Al único asignado no se le ofrece retirar:
- * el Backend lo rechaza mientras el acompañamiento no esté cerrado, porque
- * nadie podría volver a gestionarlo. Un acompañamiento cerrado solo muestra la
- * lista: el criterio de TI2-165 pide que no ofrezca acciones de cambio, aunque
- * el Backend todavía admita retirar. La autorización la decide el Backend.
+ * acceso en la consulta siguiente. A quien no se puede retirar (`removable`)
+ * no se le ofrece: el Backend lo rechaza mientras el acompañamiento no esté
+ * cerrado, porque nadie más podría gestionarlo, y la Web no repite la regla.
+ * Un acompañamiento cerrado solo muestra la lista: el criterio de TI2-165
+ * pide que no ofrezca acciones de cambio, aunque el Backend todavía admita
+ * retirar. La autorización la decide el Backend.
  */
 
 const FIELD = `min-h-[44px] w-full min-w-0 box-border rounded-[0.5rem] border border-outline bg-surface-container-lowest px-3 py-2 text-base text-on-surface ${GESTION_FOCUS_VISIBLE}`;
@@ -157,11 +158,11 @@ function ProfessionalsEditor({
                   Fecha de asignación: {formatPanelDate(professional.assignedAt)}
                 </p>
               )}
-              {status === "closed" ? null : professionals.assigned.length === 1 ? (
+              {status === "closed" ? null : !professional.removable ? (
                 <p className="m-0 text-sm text-on-surface-variant">
                   {professional.isCaller
-                    ? "Eres el único profesional asignado. Para retirarte, primero asigna a otro profesional."
-                    : "Es el único profesional asignado. Para retirarlo, primero asigna a otro profesional."}
+                    ? "Nadie más puede gestionar este acompañamiento. Para retirarte, primero asigna a otro profesional."
+                    : `Nadie más puede gestionar este acompañamiento. Para retirar a ${professional.fullName}, primero asigna a otro profesional.`}
                 </p>
               ) : confirmingId === professional.userId ? (
                 <div className="flex flex-col gap-2">
