@@ -13,6 +13,10 @@ import {
 } from "../domain/availability/availability";
 import { NO_COMPATIBLE_SLOT_REASON_VALUES } from "../domain/availability/official_channel";
 import {
+  CALENDAR_SYNC_ERROR_CODE_VALUES,
+  CALENDAR_SYNC_STATUS_VALUES,
+} from "../domain/calendar/calendar_link";
+import {
   FOLLOW_UP_CONTRACT_VERSION,
   FOLLOW_UP_RESPONSIBLE_VALUES,
   FOLLOW_UP_TASK_STATUS_VALUES,
@@ -21,6 +25,11 @@ import {
   NOTIFICATION_CONTRACT_VERSION,
   NOTIFICATION_EVENT_KIND_VALUES,
 } from "../domain/notifications/notification";
+import {
+  NOTIFICATION_DELIVERY_CHANNEL_VALUES,
+  NOTIFICATION_DELIVERY_ERROR_VALUES,
+  NOTIFICATION_DELIVERY_STATUS_VALUES,
+} from "../domain/notifications/delivery";
 import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
@@ -247,6 +256,36 @@ export const notificationEventKindUnion = v.union(
 );
 
 export const notificationContractVersionLiteral = v.literal(NOTIFICATION_CONTRACT_VERSION);
+
+/**
+ * Canales, estados y errores de entrega de avisos (TI2-145), derivados del
+ * dominio. La entrega vive por evento y canal en `notificationDeliveries`.
+ */
+export const notificationDeliveryChannelUnion = v.union(
+  ...NOTIFICATION_DELIVERY_CHANNEL_VALUES.map((value) => v.literal(value)),
+);
+
+export const notificationDeliveryStatusUnion = v.union(
+  ...NOTIFICATION_DELIVERY_STATUS_VALUES.map((value) => v.literal(value)),
+);
+
+export const notificationDeliveryErrorUnion = v.union(
+  ...NOTIFICATION_DELIVERY_ERROR_VALUES.map((value) => v.literal(value)),
+);
+
+/**
+ * Estados de la sincronización por atención (TI2-145), derivados del dominio.
+ * El código de error reutiliza los motivos genéricos del respaldo `.ics`, sin
+ * detalles del proveedor. El vínculo de Calendar no tiene un estado propio:
+ * los alcances de Better Auth son su única fuente de verdad.
+ */
+export const calendarSyncStatusUnion = v.union(
+  ...CALENDAR_SYNC_STATUS_VALUES.map((value) => v.literal(value)),
+);
+
+export const calendarSyncErrorCodeUnion = v.union(
+  ...CALENDAR_SYNC_ERROR_CODE_VALUES.map((value) => v.literal(value)),
+);
 
 /**
  * Estados y responsables de las tareas de seguimiento (TI2-106, persistidos

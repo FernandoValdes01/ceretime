@@ -22,6 +22,7 @@ import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
 import { toSharedFollowUpProjection } from "../domain/follow_up/follow_up";
 import {
   notificationEventsForCreation,
+  notificationEventsForRequestReceived,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   type NotificationEvent,
@@ -54,11 +55,28 @@ import {
   saveFollowUpRecord,
 } from "../infrastructure/follow_up/repository";
 import {
+  deletePushSubscription,
+  ensureNotificationDelivery,
+  findNotificationDelivery,
+  findPushSubscriptionsForUser,
+  markNotificationEventRead,
   paginateNotificationEventsForAppointment,
   paginateNotificationEventsForRecipient,
+  paginateNotificationEventsForRecipientByReadStatus,
+  paginateNotificationEventsForRequest,
+  recordNotificationDeliveryAttempt,
   recordNotificationEvent,
   recordNotificationEvents,
+  savePushSubscription,
 } from "../infrastructure/notifications/repository";
+import {
+  connectCalendar,
+  disconnectCalendar,
+  markCalendarSyncPending,
+  readCalendarConnectionMetadata,
+  readCalendarSyncState,
+  recordCalendarSyncAttempt,
+} from "../infrastructure/calendar/repository";
 import {
   paginateAppointmentAuditEvents,
   paginateAppointmentAuditEventsByActor,
@@ -2942,6 +2960,473 @@ test("TI2-118: referencias inválidas del evento no escriben", async () => {
   expect(results).toEqual(Array(4).fill({ status: "invalid_reference" }));
   const rows = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
   expect(rows).toHaveLength(0);
+});
+
+// ── Avisos, entregas, push y Calendar (TI2-145) ─────────────────────────────
+
+test("TI2-145: el aviso de solicitud guarda su recurso y el reintento no lo duplica", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-sol-est",
+    email: "ti145sol@alu.uct.cl",
+    role: "student",
+  });
+  const requestId = await seedRequest(t, student, "received");
+  const [event] = notificationEventsForRequestReceived(requestId, student, TI83_MONDAY);
+
+  const first = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  const retry = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  expect(first.status).toBe("recorded");
+  expect(retry).toEqual({
+    status: "duplicate",
+    eventId: first.status === "recorded" ? first.eventId : null,
+  });
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    kind: "request_received",
+    requestId,
+    recipientId: student,
+    occurredAt: TI83_MONDAY,
+    version: "v1",
+  });
+  expect(rows[0]).not.toHaveProperty("appointmentId");
+  expect(rows[0]).not.toHaveProperty("readAt");
+
+  const page = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRequest(ctx, requestId, {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  expect(page.page).toHaveLength(1);
+  expect(page.page[0]).toMatchObject({
+    kind: "request_received",
+    requestId,
+    recipientId: student,
+    readStatus: "pending",
+  });
+  expect(page.page[0]).not.toHaveProperty("idempotencyKey");
+});
+
+test("TI2-145: el aviso de solicitud solo acepta destinatarios vinculados a ella", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-ref-est",
+    email: "ti145refest@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti145-ref-pro",
+    email: "ti145refpro@uct.cl",
+    role: "professional",
+  });
+  const outsider = await seedUser(t, {
+    subject: "ti145-ref-ajeno",
+    email: "ti145refajeno@alu.uct.cl",
+    role: "student",
+  });
+  const requestId = await seedRequest(t, student, "received");
+  await t.run(async (ctx) => {
+    await ctx.db.patch(requestId, { takenBy: professional });
+  });
+
+  const [toStudent] = notificationEventsForRequestReceived(requestId, student, TI83_MONDAY);
+  const [toProfessional] = notificationEventsForRequestReceived(
+    requestId,
+    professional,
+    TI83_MONDAY + 1,
+  );
+  const [toOutsider] = notificationEventsForRequestReceived(requestId, outsider, TI83_MONDAY + 2);
+  const results = await t.run(async (ctx) => [
+    await recordNotificationEvent(ctx, toStudent),
+    await recordNotificationEvent(ctx, toProfessional),
+    await recordNotificationEvent(ctx, toOutsider),
+    // El identificador de una solicitud no se acepta como atención.
+    await recordNotificationEvent(ctx, {
+      kind: "appointment_scheduled",
+      appointmentId: requestId,
+      recipientId: student,
+      occurredAt: TI83_MONDAY,
+    } as never),
+  ]);
+  expect(results.map((result) => result.status)).toEqual([
+    "recorded",
+    "recorded",
+    "invalid_reference",
+    "invalid_reference",
+  ]);
+});
+
+test("TI2-145: cada destinatario marca leído y los pendientes no se mezclan", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "lectura");
+  const subjectForRead = { appointmentId, studentId: student, professionalId: professional };
+  const [created] = notificationEventsForCreation(subjectForRead, TI83_MONDAY);
+  const [noShow] = notificationEventsForTransition(subjectForRead, {
+    from: "scheduled",
+    to: "no_show",
+    actorId: professional,
+    occurredAt: TI83_MONDAY + 1,
+  });
+  const [cancelled] = notificationEventsForTransition(subjectForRead, {
+    from: "scheduled",
+    to: "cancelled_by_cereti",
+    actorId: professional,
+    occurredAt: TI83_MONDAY + 2,
+  });
+
+  const recorded = await t.run(async (ctx) => ({
+    created: await recordNotificationEvent(ctx, created),
+    noShow: await recordNotificationEvent(ctx, noShow),
+    cancelled: await recordNotificationEvent(ctx, cancelled),
+  }));
+  const createdResult = recorded.created;
+  const noShowResult = recorded.noShow;
+  const cancelledResult = recorded.cancelled;
+  if (
+    createdResult.status !== "recorded" ||
+    noShowResult.status !== "recorded" ||
+    cancelledResult.status !== "recorded"
+  ) {
+    throw new Error("Los tres avisos ficticios deben registrarse.");
+  }
+
+  const read = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, student, createdResult.eventId, TI83_MONDAY + 10),
+  );
+  expect(read).toEqual({
+    status: "marked",
+    eventId: createdResult.eventId,
+    readAt: TI83_MONDAY + 10,
+  });
+  const repeated = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, student, createdResult.eventId, TI83_MONDAY + 20),
+  );
+  expect(repeated).toEqual({
+    status: "already_read",
+    eventId: createdResult.eventId,
+    readAt: TI83_MONDAY + 10,
+  });
+  // Otro destinatario no puede marcar el aviso ajeno ni cambia su instante.
+  const foreign = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, professional, createdResult.eventId, TI83_MONDAY + 30),
+  );
+  expect(foreign).toEqual({ status: "not_found" });
+
+  const pendingFirst = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "pending", {
+        numItems: 1,
+        cursor: null,
+      }),
+  );
+  const pendingSecond = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "pending", {
+        numItems: 1,
+        cursor: pendingFirst.continueCursor,
+      }),
+  );
+  const readPage = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "read", {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  // El índice de pendientes recorre solo las filas sin `readAt`, incluso al
+  // paginar: el aviso leído queda fuera de las dos páginas.
+  expect(pendingFirst.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 2]);
+  expect(pendingFirst.isDone).toBe(false);
+  expect(pendingSecond.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 1]);
+  expect(pendingSecond.isDone).toBe(true);
+  expect(pendingFirst.page[0]).toMatchObject({ readStatus: "pending" });
+  expect(readPage.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY]);
+  expect(readPage.page[0]).toMatchObject({
+    readStatus: "read",
+    readAt: TI83_MONDAY + 10,
+  });
+});
+
+test("TI2-145: la entrega se registra por canal y los reintentos no duplican el aviso", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "entrega");
+  const [event] = notificationEventsForCreation(
+    { appointmentId, studentId: student, professionalId: professional },
+    TI83_MONDAY,
+  );
+  const recorded = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  if (recorded.status !== "recorded") throw new Error("El aviso ficticio debe registrarse.");
+  const eventId = recorded.eventId;
+
+  const queue = await t.run(async (ctx) => ({
+    first: await ensureNotificationDelivery(ctx, eventId, "email"),
+    retry: await ensureNotificationDelivery(ctx, eventId, "email"),
+  }));
+  expect(queue.first).toMatchObject({ status: "queued", attempts: 0 });
+  expect(queue.retry).toMatchObject({ status: "exists", attempts: 0, deliveryStatus: "pending" });
+
+  const attempts = await t.run(async (ctx) => ({
+    sent: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "email",
+      status: "sent",
+      attemptedAt: TI83_MONDAY + 10,
+    }),
+    failed: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "email",
+      status: "failed",
+      attemptedAt: TI83_MONDAY + 20,
+      errorCode: "provider_unavailable",
+    }),
+    push: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "push",
+      status: "sent",
+      attemptedAt: TI83_MONDAY + 30,
+    }),
+  }));
+  expect(attempts.sent).toMatchObject({ status: "recorded", attempts: 1 });
+  expect(attempts.failed).toMatchObject({ status: "recorded", attempts: 2 });
+  expect(attempts.push).toMatchObject({ status: "recorded", attempts: 1 });
+
+  const stored = await t.run(async (ctx) => ({
+    email: await findNotificationDelivery(ctx, eventId, "email"),
+    push: await findNotificationDelivery(ctx, eventId, "push"),
+    deliveries: await ctx.db.query("notificationDeliveries").take(10),
+    events: await ctx.db.query("notificationEvents").take(10),
+  }));
+  expect(stored.deliveries).toHaveLength(2);
+  expect(stored.events).toHaveLength(1);
+  expect(stored.email).toEqual({
+    id: stored.deliveries.find((row) => row.channel === "email")?._id,
+    eventId,
+    channel: "email",
+    status: "failed",
+    attempts: 2,
+    lastAttemptAt: TI83_MONDAY + 20,
+    sentAt: TI83_MONDAY + 10,
+    errorCode: "provider_unavailable",
+  });
+  expect(stored.push).toMatchObject({ status: "sent", attempts: 1, sentAt: TI83_MONDAY + 30 });
+
+  await expect(
+    t.run(async (ctx) =>
+      recordNotificationDeliveryAttempt(ctx, student as never, {
+        channel: "email",
+        status: "sent",
+        attemptedAt: TI83_MONDAY,
+      }),
+    ),
+  ).resolves.toEqual({ status: "invalid_reference" });
+  await expect(
+    t.run(async (ctx) =>
+      recordNotificationDeliveryAttempt(ctx, eventId, {
+        channel: "email",
+        status: "sent",
+        attemptedAt: TI83_MONDAY,
+        errorCode: "provider_unavailable",
+      }),
+    ),
+  ).rejects.toThrow("no lleva código de error");
+});
+
+test("TI2-145: la suscripción push es propia y el endpoint no se duplica", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-push-est",
+    email: "ti145push@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti145-push-pro",
+    email: "ti145pushpro@uct.cl",
+    role: "professional",
+  });
+  const endpointA = "https://push.example.test/subscription-a";
+  const endpointB = "https://push.example.test/subscription-b";
+
+  const saved = await t.run(async (ctx) => ({
+    first: await savePushSubscription(
+      ctx,
+      student,
+      { endpoint: endpointA, p256dh: "clave-publica-a", auth: "secreto-a" },
+      TI83_MONDAY,
+    ),
+    moved: await savePushSubscription(
+      ctx,
+      professional,
+      {
+        endpoint: endpointA,
+        p256dh: "clave-publica-b",
+        auth: "secreto-b",
+        expirationTime: TI83_MONDAY + 1000,
+      },
+      TI83_MONDAY + 1,
+    ),
+    second: await savePushSubscription(
+      ctx,
+      professional,
+      { endpoint: endpointB, p256dh: "clave-publica-c", auth: "secreto-c" },
+      TI83_MONDAY + 2,
+    ),
+    invalid: await savePushSubscription(
+      ctx,
+      student,
+      { endpoint: "  ", p256dh: "", auth: "" },
+      TI83_MONDAY + 3,
+    ),
+  }));
+  expect(saved.first).toMatchObject({ status: "saved", created: true });
+  expect(saved.moved).toMatchObject({ status: "saved", created: false });
+  expect(saved.second).toMatchObject({ status: "saved", created: true });
+  expect(saved.invalid).toEqual({ status: "invalid_subscription" });
+
+  const beforeDelete = await t.run(async (ctx) => ({
+    student: await findPushSubscriptionsForUser(ctx, student),
+    professional: await findPushSubscriptionsForUser(ctx, professional),
+  }));
+  expect(beforeDelete.student).toHaveLength(0);
+  expect(beforeDelete.professional).toHaveLength(2);
+  expect(beforeDelete.professional.find((row) => row.endpoint === endpointA)).toMatchObject({
+    userId: professional,
+    p256dh: "clave-publica-b",
+    auth: "secreto-b",
+    expirationTime: TI83_MONDAY + 1000,
+  });
+
+  const deleted = await t.run(async (ctx) => ({
+    foreign: await deletePushSubscription(ctx, student, endpointA),
+    own: await deletePushSubscription(ctx, professional, endpointA),
+  }));
+  expect(deleted).toEqual({ foreign: false, own: true });
+  const remaining = await t.run(
+    async (ctx) => await findPushSubscriptionsForUser(ctx, professional),
+  );
+  expect(remaining.map((row) => row.endpoint)).toEqual([endpointB]);
+});
+
+test("TI2-145: el vínculo de Calendar guarda solo metadatos y no copia credenciales", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-cal-est",
+    email: "ti145cal@alu.uct.cl",
+    role: "student",
+  });
+  const other = await seedUser(t, {
+    subject: "ti145-cal-otro",
+    email: "ti145calotro@alu.uct.cl",
+    role: "student",
+  });
+
+  const linked = await t.run(async (ctx) => ({
+    before: await readCalendarConnectionMetadata(ctx, student),
+    first: await connectCalendar(ctx, student, "cuenta-cifrada-a", TI83_MONDAY),
+    retry: await connectCalendar(ctx, student, "cuenta-cifrada-a", TI83_MONDAY + 1),
+    other: await readCalendarConnectionMetadata(ctx, other),
+  }));
+  expect(linked.before).toBeNull();
+  expect(linked.first.status).toBe("linked");
+  expect(linked.retry.status).toBe("already_linked");
+  expect(linked.other).toBeNull();
+
+  const visible = await t.run(async (ctx) => await readCalendarConnectionMetadata(ctx, student));
+  expect(visible).toEqual({ linkedAt: TI83_MONDAY });
+  expect(visible).not.toHaveProperty("accountReference");
+  expect(visible).not.toHaveProperty("status");
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("calendarConnections").take(10));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    userId: student,
+    accountReference: "cuenta-cifrada-a",
+    linkedAt: TI83_MONDAY,
+    updatedAt: TI83_MONDAY + 1,
+  });
+  // La fila no declara «conectado»: esa lectura sale solo de Better Auth.
+  expect(rows[0]).not.toHaveProperty("status");
+  expect(JSON.stringify(rows)).not.toMatch(/token|secret|refresh/i);
+
+  const disconnected = await t.run(async (ctx) => ({
+    revoked: await disconnectCalendar(ctx, student, TI83_MONDAY + 10),
+    retry: await disconnectCalendar(ctx, student, TI83_MONDAY + 20),
+    other: await disconnectCalendar(ctx, other, TI83_MONDAY + 30),
+  }));
+  expect(disconnected.revoked.status).toBe("unlinked");
+  expect(disconnected.retry.status).toBe("already_unlinked");
+  expect(disconnected.other.status).toBe("not_found");
+  expect(await t.run(async (ctx) => await readCalendarConnectionMetadata(ctx, student))).toEqual({
+    linkedAt: TI83_MONDAY,
+    revokedAt: TI83_MONDAY + 10,
+  });
+});
+
+test("TI2-145: la atención guarda pendiente, sincronizado o error con sus intentos", async () => {
+  const t = convexTest(schema, modules);
+  const { student, appointmentId } = await seedTi118Appointment(t, "sync", "scheduled");
+
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toBeNull();
+
+  const pending = await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  expect(pending).toEqual({ status: "recorded", attempts: 0 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "pending",
+    attempts: 0,
+  });
+
+  const error = await t.run(
+    async (ctx) =>
+      await recordCalendarSyncAttempt(ctx, appointmentId, {
+        status: "error",
+        attemptedAt: TI83_MONDAY + 10,
+        errorCode: "not_connected",
+      }),
+  );
+  expect(error).toEqual({ status: "recorded", attempts: 1 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "error",
+    attempts: 1,
+    lastAttemptAt: TI83_MONDAY + 10,
+    errorCode: "not_connected",
+  });
+
+  // Volver a encolar no cuenta un intento y limpia el error anterior.
+  await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "pending",
+    attempts: 1,
+    lastAttemptAt: TI83_MONDAY + 10,
+  });
+
+  const synced = await t.run(
+    async (ctx) =>
+      await recordCalendarSyncAttempt(ctx, appointmentId, {
+        status: "synced",
+        attemptedAt: TI83_MONDAY + 20,
+      }),
+  );
+  expect(synced).toEqual({ status: "recorded", attempts: 2 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "synced",
+    attempts: 2,
+    lastAttemptAt: TI83_MONDAY + 20,
+  });
+
+  // La sincronización no cambia el estado de la atención.
+  const appointment = await t.run(async (ctx) => await ctx.db.get(appointmentId));
+  expect(appointment?.status).toBe("scheduled");
+  await expect(
+    t.run(async (ctx) =>
+      recordCalendarSyncAttempt(ctx, student as never, {
+        status: "synced",
+        attemptedAt: TI83_MONDAY + 30,
+      }),
+    ),
+  ).resolves.toEqual({ status: "invalid_reference" });
 });
 
 /** Registro ficticio válido de TI2-106 para una atención. */

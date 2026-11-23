@@ -283,28 +283,73 @@ export type {
   CalendarFile,
 } from "./calendar/calendar_event";
 
+// Vínculo con Calendar y estado de sincronización por atención (TI2-145).
+export {
+  CALENDAR_SYNC_ERROR_CODE_VALUES,
+  CALENDAR_SYNC_STATUS_VALUES,
+  calendarSyncStateOf,
+  initialCalendarSyncState,
+  isCalendarSyncErrorCode,
+  isCalendarSyncStatus,
+} from "./calendar/calendar_link";
+export type {
+  CalendarConnectionMetadata,
+  CalendarSyncErrorCode,
+  CalendarSyncState,
+  CalendarSyncStatus,
+} from "./calendar/calendar_link";
+
 // Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105).
 export {
+  APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
   NOTIFICATION_CONTRACT_VERSION,
   NOTIFICATION_EVENT_KIND_VALUES,
+  NOTIFICATION_READ_STATUS_VALUES,
+  REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
+  isAppointmentNotificationEventKind,
   isNotificationEventKind,
+  isNotificationReadStatus,
+  isRequestNotificationEventKind,
   notificationEventsForCreation,
   notificationEventsForOnlineAccess,
+  notificationEventsForRequestReceived,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   toExternalNotification,
   toNotificationEvent,
 } from "./notifications/notification";
 export type {
+  AppointmentNotificationEvent,
+  AppointmentNotificationEventKind,
   ExternalNotification,
   NotificationAudience,
   NotificationContractVersion,
   NotificationEvent,
   NotificationEventInput,
   NotificationEventKind,
+  NotificationReadStatus,
   NotificationReference,
   NotificationSubject,
+  RequestNotificationEvent,
+  RequestNotificationEventKind,
+  RequestNotificationReference,
 } from "./notifications/notification";
+
+// Entrega de avisos por canal: estados, errores e intentos (TI2-145).
+export {
+  NOTIFICATION_DELIVERY_CHANNEL_VALUES,
+  NOTIFICATION_DELIVERY_ERROR_VALUES,
+  NOTIFICATION_DELIVERY_STATUS_VALUES,
+  isNotificationDeliveryChannel,
+  isNotificationDeliveryError,
+  isNotificationDeliveryStatus,
+} from "./notifications/delivery";
+export type {
+  NotificationDeliveryChannel,
+  NotificationDeliveryError,
+  NotificationDeliveryState,
+  NotificationDeliveryStatus,
+} from "./notifications/delivery";
 
 // Registro de seguimiento: acuerdos, tareas y proyección compartida (TI2-106).
 export {
