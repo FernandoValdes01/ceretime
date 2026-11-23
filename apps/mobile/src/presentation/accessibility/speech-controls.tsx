@@ -18,14 +18,16 @@ import {
 
 function submissionSpeechText(
   submission: Pick<StudentRequestSubmissionState, "status" | "receipt">,
+  simulated: boolean,
 ): string {
+  const messages = studentRequestSubmissionMessages(simulated);
   switch (submission.status) {
     case "submitting":
     case "error":
-      return studentRequestSubmissionMessages[submission.status];
+      return messages[submission.status];
     case "success":
       return submission.receipt
-        ? `${studentRequestSubmissionMessages.success} Referencia: ${submission.receipt.requestId}.`
+        ? `${messages.success} Referencia: ${submission.receipt.requestId}.`
         : "";
     default:
       return "";
@@ -36,11 +38,16 @@ function submissionSpeechText(
 export function StudentRequestSpeechControls({
   speechPort,
   submission,
+  simulated = true,
 }: {
   readonly speechPort: SpeechPort;
   readonly submission: Pick<StudentRequestSubmissionState, "status" | "receipt">;
+  /** Falso cuando el envío llegó al servidor real. */
+  readonly simulated?: boolean;
 }) {
-  return <SpeechControls speechPort={speechPort} text={submissionSpeechText(submission)} />;
+  return (
+    <SpeechControls speechPort={speechPort} text={submissionSpeechText(submission, simulated)} />
+  );
 }
 
 // Consulta el estado del lector y coordina cada solicitud de voz; las versiones descartan respuestas obsoletas.

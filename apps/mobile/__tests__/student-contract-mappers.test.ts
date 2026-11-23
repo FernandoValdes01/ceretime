@@ -297,7 +297,7 @@ describe("contratos locales del módulo estudiantil TI4-76", () => {
     expect(await queries.getAccompaniment(accompaniments.page[0].id)).toEqual(
       accompaniments.page[0],
     );
-    expect(PROVISIONAL_STUDENT_REQUEST_OPERATIONS.cancelRequest.status).toBe("provisional");
+    expect(PROVISIONAL_STUDENT_REQUEST_OPERATIONS.cancelRequest.status).toBe("published");
     expect(PROVISIONAL_STUDENT_REQUEST_OPERATIONS.cancelRequest.reference).toContain(
       "commands.ts#cancelRequest",
     );

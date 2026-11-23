@@ -8,7 +8,7 @@ import { demoStudentAreaResponses } from "./demo-student-area-data";
 import type { DemoStudentAreaStore } from "./demo-student-area-store";
 
 // Simula las dos acciones publicadas por TI2-141 sobre el estado local de la demo.
-// No demuestra autorización ni persistencia del backend; TI4-80 conecta esas operaciones.
+// No demuestra autorización ni persistencia del backend; con ingreso institucional se usa el adaptador de Convex.
 export function createDemoStudentRequestActions({
   store,
   delayMs = 600,

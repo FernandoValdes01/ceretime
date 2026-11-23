@@ -75,12 +75,21 @@ function toSubmissionCommand(values: RequestFormValues): SubmitStudentRequestCom
   };
 }
 
-function submissionAnnouncement(status: StudentRequestSubmissionStatus): string | null {
+function submissionAnnouncement(
+  status: StudentRequestSubmissionStatus,
+  simulated: boolean,
+): string | null {
   if (status === "idle") return null;
-  return studentRequestSubmissionMessages[status];
+  return studentRequestSubmissionMessages(simulated)[status];
 }
 
-function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubmissionReceipt }) {
+function RequestConfirmation({
+  receipt,
+  simulated,
+}: {
+  readonly receipt: StudentRequestSubmissionReceipt;
+  readonly simulated: boolean;
+}) {
   return (
     <Animated.View
       testID="request-confirmation"
@@ -102,12 +111,14 @@ function RequestConfirmation({ receipt }: { readonly receipt: StudentRequestSubm
           Solicitud enviada
         </Text>
         <Text className="text-student-text text-lg leading-[29px]">
-          Recibimos tu solicitud ficticia. Este envío solo existe en el simulador de la aplicación.
+          {simulated
+            ? "Recibimos tu solicitud ficticia. Este envío solo existe en el simulador de la aplicación."
+            : "Recibimos tu solicitud. Un profesional la revisará y verás su estado en Mis solicitudes."}
         </Text>
       </View>
       <View className="gap-2 p-4 rounded-xl bg-student-muted" style={{ borderCurve: "continuous" }}>
         <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
-          Comprobante de prueba
+          {simulated ? "Comprobante de prueba" : "Comprobante de envío"}
         </Text>
         <Text selectable className="text-student-text text-base leading-[26px]">
           Referencia: {receipt.requestId}
@@ -136,6 +147,7 @@ export function RequestForm({
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [validatedSteps, setValidatedSteps] = useState<RequestFormStepId[]>([]);
   const submission = useSubmitStudentRequest(submitter);
+  const simulated = submitter.persistsToServer !== true;
   useEffect(() => {
     if (submission.status === "success") onSubmitted?.();
   }, [submission.status, onSubmitted]);
@@ -255,17 +267,19 @@ export function RequestForm({
   const accessDenied = submission.status === "error" && isMobileAccessDenied(submission.error);
   const failureMessage = accessDenied
     ? "No tienes permiso para enviar esta solicitud."
-    : "No pudimos enviar la solicitud ficticia.";
+    : simulated
+      ? "No pudimos enviar la solicitud ficticia."
+      : "No pudimos enviar la solicitud.";
   const failureHelp = accessDenied
     ? "Tus datos siguen en el formulario. Vuelve al inicio para comprobar tu cuenta."
     : "Tus datos siguen en el formulario. Puedes intentar nuevamente.";
-  const announcement = submissionAnnouncement(submission.status);
+  const announcement = submissionAnnouncement(submission.status, simulated);
 
   if (submission.status === "success") {
     return (
       <View className="gap-6">
         <OperationAnnouncement message={announcement} />
-        <RequestConfirmation receipt={submission.receipt} />
+        <RequestConfirmation receipt={submission.receipt} simulated={simulated} />
       </View>
     );
   }
@@ -312,15 +326,20 @@ export function RequestForm({
             : undefined
         }
       />
-      <View className="p-4 gap-2 bg-student-muted rounded-xl" style={{ borderCurve: "continuous" }}>
-        <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
-          Formulario de prueba
-        </Text>
-        <Text className="text-student-secondary text-base leading-[26px]">
-          Usa datos ficticios. El envío se realizará solamente contra un simulador local y los
-          cambios se perderán al salir.
-        </Text>
-      </View>
+      {simulated ? (
+        <View
+          className="p-4 gap-2 bg-student-muted rounded-xl"
+          style={{ borderCurve: "continuous" }}
+        >
+          <Text weight="semibold" className="text-student-primary text-lg leading-[26px]">
+            Formulario de prueba
+          </Text>
+          <Text className="text-student-secondary text-base leading-[26px]">
+            Usa datos ficticios. El envío se realizará solamente contra un simulador local y los
+            cambios se perderán al salir.
+          </Text>
+        </View>
+      ) : null}
       <View className="gap-2">
         <View
           ref={stepHeading}
@@ -397,7 +416,7 @@ export function RequestForm({
             accessibilityLabel={
               accessDenied
                 ? `${failureMessage} ${failureHelp}`
-                : "No pudimos enviar la solicitud ficticia. Tus datos siguen en el formulario. Puedes reintentar."
+                : `${failureMessage} Tus datos siguen en el formulario. Puedes reintentar.`
             }
             className="gap-3"
           >
