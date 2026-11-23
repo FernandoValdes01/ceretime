@@ -34,6 +34,21 @@ import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
 } from "../domain/accompaniments/practitioner_assignment";
+import {
+  PRIVACY_BLOCK_SCOPE_VALUES,
+  PRIVACY_DATA_CATEGORY_VALUES,
+  PRIVACY_RESPONSE_DELIVERY_CHANNEL_VALUES,
+  PRIVACY_RETENTION_DISPOSITION_VALUES,
+  PRIVACY_RETENTION_EXCEPTION_KIND_VALUES,
+} from "../domain/privacy/privacy_controls";
+import { PRIVACY_RESPONSE_RULE_VALUES } from "../domain/privacy/privacy_deadlines";
+import {
+  PRIVACY_REQUEST_CHANNEL_VALUES,
+  PRIVACY_REQUEST_CONTRACT_VERSION,
+  PRIVACY_REQUEST_KIND_VALUES,
+  PRIVACY_REQUEST_STATUS_VALUES,
+  PRIVACY_RESPONSE_OUTCOME_VALUES,
+} from "../domain/privacy/privacy_request";
 import { REQUEST_PROVENANCE_CHANNEL_VALUES } from "../domain/requests/request";
 import { REQUEST_STATES } from "../domain/requests/state";
 import {
@@ -300,3 +315,75 @@ export const followUpResponsibleUnion = v.union(
 );
 
 export const followUpContractVersionLiteral = v.literal(FOLLOW_UP_CONTRACT_VERSION);
+
+/**
+ * Validadores del procedimiento de privacidad, bloqueos temporales y reglas
+ * de conservación (TI2-136, persistidos por TI2-151), derivados del dominio.
+ */
+export const privacyRequestKindUnion = v.union(
+  ...PRIVACY_REQUEST_KIND_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyRequestStatusUnion = v.union(
+  ...PRIVACY_REQUEST_STATUS_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyRequestChannelUnion = v.union(
+  ...PRIVACY_REQUEST_CHANNEL_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyResponseOutcomeUnion = v.union(
+  ...PRIVACY_RESPONSE_OUTCOME_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyResponseRuleUnion = v.union(
+  ...PRIVACY_RESPONSE_RULE_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyRequestContractVersionLiteral = v.literal(PRIVACY_REQUEST_CONTRACT_VERSION);
+
+export const privacyResponseDeliveryChannelUnion = v.union(
+  ...PRIVACY_RESPONSE_DELIVERY_CHANNEL_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyDataCategoryUnion = v.union(
+  ...PRIVACY_DATA_CATEGORY_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyBlockScopeUnion = v.union(
+  ...PRIVACY_BLOCK_SCOPE_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyRetentionDispositionUnion = v.union(
+  ...PRIVACY_RETENTION_DISPOSITION_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyRetentionExceptionKindUnion = v.union(
+  ...PRIVACY_RETENTION_EXCEPTION_KIND_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyResponseExtensionValidator = v.object({
+  days: v.number(),
+  extendedUntilDate: v.string(),
+  extendedUntilAt: v.number(),
+  extendedAt: v.number(),
+  extendedBy: v.id("users"),
+  reason: v.string(),
+});
+
+export const privacyRequestResponseValidator = v.object({
+  outcome: privacyResponseOutcomeUnion,
+  reasons: v.string(),
+  responsibleId: v.id("users"),
+  respondedAt: v.number(),
+  temporaryBlockUntil: v.optional(v.number()),
+});
+
+export const privacyResponseDeliveryReceiptValidator = v.object({
+  channel: privacyResponseDeliveryChannelUnion,
+  sentAt: v.number(),
+  recordedBy: v.id("users"),
+  reference: v.string(),
+  agencyClaimDueDate: v.string(),
+  agencyClaimDueAt: v.number(),
+});
