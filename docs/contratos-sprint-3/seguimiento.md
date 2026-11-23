@@ -14,12 +14,13 @@ No hay operaciones de edición, reemplazo ni eliminación: el primer guardado co
 
 ## Entrada del guardado
 
-- `agreements`: hasta 20 objetos `{id, description}`.
-- `tasks`: hasta 20 objetos `{id, description, responsible, status}`. `responsible` es `"student"`, `"professional"` o `"cereti"`; `status` es `"pending"`, `"in_progress"`, `"done"` o `"cancelled"`.
+- `agreements`: hasta 20 objetos `{description}`.
+- `tasks`: hasta 20 objetos `{description, responsible, status}`. `responsible` es `"student"`, `"professional"` o `"cereti"`; `status` es `"pending"`, `"in_progress"`, `"done"` o `"cancelled"`.
 - `nextSteps`: obligatorio.
 - `suggestedNextAppointmentDate`: opcional, fecha civil `AAAA-MM-DD` válida.
 - `internalNote`: opcional. Para no guardar nota se omite la clave; una nota vacía se rechaza.
-- Cada texto, incluida la nota, se recorta y admite de 1 a 500 caracteres. Los `id` se recortan, son obligatorios y no se repiten dentro de los acuerdos ni dentro de las tareas.
+- Cada texto, incluida la nota, se recorta y admite de 1 a 500 caracteres.
+- Acuerdos y tareas no llevan identificador, porque ACUERDOS_SEGUIMIENTO y TAREAS_SEGUIMIENTO del MER no tienen uno del cliente (TI2-165). Los distingue su posición: se guardan y se leen en el orden en que se enviaron.
 - El cliente no envía el acompañamiento, el autor ni el estado de la atención: el servidor los toma de la atención y de la sesión. Un campo de más, otra versión o un valor fuera de las listas anteriores falla con el error de validador de Convex antes de llegar al caso de uso.
 
 ## Reglas
@@ -50,10 +51,9 @@ Los validadores de salida fijan estas claves: si una proyección trajera otra cl
   "appointmentId": "k57abc...",
   "accompanimentId": "j97def...",
   "appointmentStatus": "completed",
-  "agreements": [{ "id": "a1", "description": "Recibir los apuntes en formato digital" }],
+  "agreements": [{ "description": "Recibir los apuntes en formato digital" }],
   "tasks": [
     {
-      "id": "t1",
       "description": "Enviar los apuntes de la semana",
       "responsible": "professional",
       "status": "pending"
@@ -80,8 +80,6 @@ Los errores usan el contrato común de TI2-88 (`ConvexError({ code, message })`)
 
 | Causa                                        | Mensaje                                                                                                          |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `id` vacío                                   | `"Cada acuerdo y cada tarea necesitan un identificador."`                                                        |
-| `id` repetido                                | `"Hay acuerdos o tareas con el identificador repetido."`                                                         |
 | Texto vacío, incluida una nota enviada vacía | `"Hay textos vacíos: completa los acuerdos, las tareas, los próximos pasos y, si la incluyes, la nota interna."` |
 | Texto largo                                  | `"Cada texto admite hasta 500 caracteres."`                                                                      |
 | Demasiadas entradas                          | `"Se admiten hasta 20 acuerdos y 20 tareas."`                                                                    |
@@ -103,10 +101,9 @@ const saveFollowUp = useMutation(api.presentation.follow_up.saveFollowUpRecord);
 try {
   await saveFollowUp({
     appointmentId,
-    agreements: [{ id: "a1", description: "Recibir los apuntes en formato digital" }],
+    agreements: [{ description: "Recibir los apuntes en formato digital" }],
     tasks: [
       {
-        id: "t1",
         description: "Enviar los apuntes",
         responsible: "professional",
         status: "pending",
@@ -162,47 +159,63 @@ Superficie pública para que el Profesional pause, reactive y cierre un acompañ
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
-| `presentation.accompaniments.pauseAccompaniment` (mutation) | `accompanimentId`, `reason?` | `{accompanimentId, status: "paused"}` | Profesional con asignación activa y cuenta vigente | `unauthorized` sin permiso o con un acompañamiento ajeno o inexistente; `conflict` si no está `active` o el motivo supera 500 caracteres |
-| `presentation.accompaniments.reactivateAccompaniment` (mutation) | `accompanimentId`, `reason?` | `{accompanimentId, status: "active"}` | El mismo | `unauthorized` igual; `conflict` si no está `paused` o el motivo supera 500 caracteres |
+| `presentation.accompaniments.pauseAccompaniment` (mutation) | `accompanimentId` | `{accompanimentId, status: "paused"}` | Profesional con asignación activa y cuenta vigente | `unauthorized` sin permiso o con un acompañamiento ajeno o inexistente; `conflict` si no está `active` |
+| `presentation.accompaniments.reactivateAccompaniment` (mutation) | `accompanimentId` | `{accompanimentId, status: "active"}` | El mismo | `unauthorized` igual; `conflict` si no está `paused` |
 | `presentation.accompaniments.getAccompanimentClosurePreview` (query) | `accompanimentId` | `{appointmentsToCancel, unrecordedAppointments}` | El mismo | `unauthorized` igual; `conflict` si ya está `closed` |
 | `presentation.accompaniments.closeAccompaniment` (mutation) | `accompanimentId`, `reason?` | `{accompanimentId, status: "closed", cancelledAppointments}` | El mismo | `unauthorized` igual; `conflict` si ya está `closed`, si `unrecordedAppointments` no es cero o si el motivo supera 500 caracteres |
 
-Estudiante, Practicante y Administrador reciben `unauthorized` en las cuatro. El motivo es opcional en todos los cambios: se recorta, y uno en blanco equivale a no enviarlo. Los `conflict` de estas operaciones traen el mensaje genérico.
+Estudiante, Practicante y Administrador reciben `unauthorized` en las cuatro. Solo el cierre recibe motivo, y es opcional: se recorta, y uno en blanco equivale a no enviarlo. Pausar y reactivar no lo reciben, porque el MER no lo guarda. Los `conflict` de estas operaciones traen el mensaje genérico.
 
 ### Estados que llegan a las lecturas
 
 `getAccompaniment`, `listOwnedAccompaniments` y `listAssignedAccompaniments` entregan `status` con uno de estos tres valores, sin otros:
 
-| `status` | Significado | Reservar y cambiar horario | Cancelar una atención | Registrar realización o inasistencia | Leer y agregar el enlace en línea | Justificar y guardar seguimiento | Leer |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `active` | En curso | Sí | Estudiante dueño y Profesional a cargo | Profesional a cargo | Participantes de la atención | Sí | Sí |
-| `paused` | En pausa; vuelve a `active` al reactivarse | No: `unauthorized` | Estudiante dueño y Profesional a cargo | Profesional a cargo | Participantes de la atención | No: `unauthorized` | Sí |
-| `closed` | Cerrado; es definitivo | No: `unauthorized` | No: `unauthorized` | No: `unauthorized` | No: `unauthorized` | No: `unauthorized` | Sí, de solo lectura |
+| `status` | Significado | Operar sobre sus atenciones | Leer |
+| --- | --- | --- | --- |
+| `active` | En curso | Sí | Sí |
+| `paused` | En pausa; vuelve a `active` al reactivarse | No: `unauthorized` | Sí |
+| `closed` | Cerrado; es definitivo | No: `unauthorized` | Sí, de solo lectura |
+
+Operar sobre las atenciones es reservar, cancelar, cambiar el horario, registrar la realización o inasistencia, leer o cambiar el enlace en línea, justificar una inasistencia y guardar el seguimiento. Todo eso exige un acompañamiento activo, como el caso de uso «Reservar cupo individual (acompañamiento activo)» del diagrama.
 
 Los cambios válidos son `active → paused`, `paused → active`, `active → closed` y `paused → closed`. Un acompañamiento cerrado no se reabre: una necesidad posterior comienza con una solicitud nueva. Los clientes deben tratar `status` como un conjunto cerrado de estos tres valores.
 
-### Decisión sobre las reservas futuras (08/11/2026)
+### Decisión sobre las reservas futuras (08/11/2026, pausa actualizada el 19/11/2026)
 
-- **Pausar** mantiene las atenciones existentes y solo rechaza las reservas nuevas y los cambios de horario. Mientras dure la pausa, el Estudiante dueño y el Profesional a cargo pueden cancelar una atención de forma individual con `presentation.appointments.cancelAppointment`, con las mismas reglas de motivo que fuera de la pausa, y el Profesional a cargo registra su realización o inasistencia con `presentation.appointments.recordAppointmentAttendance`. Una atención en línea conserva su enlace: el Estudiante dueño y los profesionales de la atención lo leen con `presentation.appointments.getOnlineAccess`, y esos profesionales lo agregan o reemplazan con `presentation.appointments.setOnlineAccessLink`, con las reglas de `docs/contratos-sprint-3/agenda.md`. Justificar una inasistencia y guardar el seguimiento siguen exigiendo `active`.
+La regla de la pausa es la del 19/11/2026 (TI2-165) y reemplaza a la del 08/11/2026, que permitía cancelar una atención, registrar su resultado y usar el enlace en línea durante la pausa. La del cierre sigue siendo la del 08/11/2026.
+
+- **Pausar** mantiene las atenciones existentes sin cancelarlas, pero mientras dure la pausa ninguna operación sobre ellas procede y todas responden `unauthorized`. Al reactivarse, vuelven a estar disponibles.
 - **Cerrar** cancela todas las atenciones futuras del acompañamiento como `cancelled_by_cereti`, también las que están a cargo de otro profesional, y libera cada cupo. Quien cierra queda como actor de cada cancelación. El acompañamiento cerrado no conserva atenciones vigentes.
 - Antes de confirmar, la pantalla consulta `getAccompanimentClosurePreview` y muestra `appointmentsToCancel`. La cifra es informativa y no se actualiza sola con el paso del tiempo; `closeAccompaniment` vuelve a leer y devuelve la cifra real en `cancelledAppointments`.
-- Una atención agendada cuya hora ya pasó no se cancela, porque diría que no ocurrió. Mientras exista alguna, `unrecordedAppointments` es mayor que cero y el cierre responde `conflict` sin guardar nada: primero se registra su realización o inasistencia, lo que también se puede hacer en pausa, así que `paused → closed` no exige reactivar.
+- Una atención agendada cuya hora ya pasó no se cancela, porque diría que no ocurrió. Mientras exista alguna, `unrecordedAppointments` es mayor que cero y el cierre responde `conflict` sin guardar nada: primero se registra su realización o inasistencia, lo que exige un acompañamiento activo: desde la pausa se reactiva, se registra y después se cierra.
 - Cada cancelación del cierre usa el mismo camino que la cancelación individual (`cancelAuthorizedAppointment` en `convex/application/appointments/changes.ts`): la misma política de estados, la misma escritura y el mismo evento de auditoría. Las atenciones canceladas por el cierre reciben el motivo fijo «Cierre del acompañamiento»; el motivo opcional del cierre no se copia a ellas.
 - Desde TI2-150, cada cancelación del cierre deja el aviso `appointment_cancelled` a los participantes salvo quien cierra, por el mismo camino que la cancelación individual. Límite actual: la cancelación todavía no modifica el evento de Google Calendar, ni en la individual ni en el cierre.
 - El cierre revisa hasta 500 atenciones del acompañamiento. Si hay más, responde `conflict` en vez de cerrar con atenciones sin revisar.
 
-### Historial de cambios de estado
+### Datos del cierre
 
-Cada pausa, reactivación y cierre guarda una fila en `accompanimentTransitions` con el estado anterior, el nuevo, el actor de la sesión, el instante del servidor y el motivo si se entregó. La tabla solo se escribe, en la misma transacción del cambio. El motivo queda únicamente ahí: ninguna lectura pública lo entrega y no se copia a la bitácora de auditoría.
+El cierre guarda en el propio acompañamiento quién cerró (`closedById`), cuándo (`closedAt`, con el reloj del servidor) y el motivo si se entregó (`closureReason`), como `cerradoPorId?`, `cerradoEn?` y `motivoCierre?` de ACOMPAÑAMIENTOS en el MER. Pausar y reactivar solo cambian `status`: no queda registro de quién ni cuándo, porque el MER no lo modela. Ninguna lectura pública entrega estos tres campos y el motivo no se copia a la bitácora de auditoría.
 
 ### Cambio de profesionales
 
-No hay una operación nueva: el cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` de TI2-140 (`docs/contratos-sprint-3/cuentas.md`), que ya registran quién concede o retira y cuándo. TI2-152 agrega estas reglas:
+El cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` de TI2-140 (`docs/contratos-sprint-3/cuentas.md`), que ya registran quién concede o retira y cuándo. Para elegir a quién, TI2-165 agrega una lectura:
+
+| Operación | Argumentos | Devuelve | Quién | Denegación |
+| --- | --- | --- | --- | --- |
+| `presentation.accompaniments.listAccompanimentProfessionals` (query) | `accompanimentId` | `{assigned, assignable, assignableComplete}` | Profesional de personal, habilitado y vigente, con asignación profesional activa sobre ese acompañamiento | `unauthorized` sin ese permiso, sin revelar si el acompañamiento existe; `conflict` si el acompañamiento supera las 200 asignaciones leídas |
+
+- `assigned`: los profesionales con asignación activa y vigente (ASIGNACIONES_PROFESIONALES del MER), cada uno con `userId`, `fullName`, `assignedAt?` (`asignadoEn`, falta en filas anteriores a TI2-140), `isCaller`, que marca la asignación de quien consulta, y `removable`, que dice si `revokeAccompanimentAccess` lo retiraría con la regla de abajo. Ordenados por nombre. La Web lo usa para no ofrecer un retiro que el Backend rechaza.
+- `assignable`: los profesionales de personal habilitados y vigentes que todavía no están asignados, con `userId` y `fullName`, ordenados por nombre. No incluye cuentas de prueba, practicantes ni cuentas inhabilitadas.
+- `assignableComplete`: `false` si había más de 100 perfiles profesionales y la lista de asignables no los revisó todos.
+- No entrega correo ni estado de las cuentas.
+
+TI2-152 agrega estas reglas al cambio:
 
 - Quien se retira pierde el acceso en la consulta siguiente, porque cada lectura vuelve a exigir la asignación activa.
-- Un acompañamiento no queda sin profesional: retirar al único profesional asignado responde `conflict`. Para reemplazarlo, primero se asigna al nuevo y después se retira al anterior.
+- Mientras el acompañamiento esté activo o en pausa, tiene que quedar alguien que lo gestione: un profesional de personal habilitado y vigente, con asignación vigente y sin fin acordado. Retirar a quien deja el acompañamiento sin nadie así responde `conflict`, porque asignar a otro y cerrar exigen una asignación profesional activa de personal. Una cuenta de prueba no cuenta, porque no concede ni retira, y una asignación con fin tampoco, porque deja de autorizar al vencer. Para reemplazar al último, primero se asigna al nuevo y después se retira al anterior. Un acompañamiento cerrado sí puede quedar sin asignaciones, que es el 0..* de ASIGNA en el MER (TI2-165).
+- La asignación de un profesional de personal no lleva vigencia acordada, porque ASIGNACIONES_PROFESIONALES del MER no la tiene: `assignAccompanimentAccess` y `updateAccompanimentAccess` con `validFrom` o `validUntil` para uno responden `assignment_fields_invalid` sin escribir. Así el último tampoco sale empezando tarde o venciendo. Quitar una ventana guardada antes (`null`) sí procede. La cuenta de prueba y el Practicante la conservan (TI2-140).
 - Un acompañamiento cerrado no admite conceder ni modificar accesos (`conflict`). Retirar un acceso sigue permitido.
-- Retirar a un profesional no cancela ni reasigna sus atenciones futuras: siguen a su nombre y solo el Estudiante puede cancelarlas (activo o en pausa) o cambiarles el horario (activo). El cierre sí las cancela.
+- Retirar a un profesional no cancela ni reasigna sus atenciones futuras: siguen a su nombre y solo el Estudiante puede cancelarlas o cambiarles el horario, con el acompañamiento activo. El cierre sí las cancela.
 
 ```ts
 const preview = useQuery(api.presentation.accompaniments.getAccompanimentClosurePreview, {

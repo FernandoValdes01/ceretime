@@ -27,6 +27,7 @@ import {
   type StatusChangeOption,
 } from "./professional-agenda-data.ts";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
+import { AppointmentFollowUpSection } from "./follow-up-form.tsx";
 
 /** Foco visible de 3px según DESIGN.md, compartido por enlaces y campos. */
 const GESTION_FOCUS_VISIBLE =
@@ -205,6 +206,8 @@ function AppointmentRowContent({
  * estado contra la API sobre el puerto común. Un identificador ajeno o
  * desconocido llega como denegación genérica del Backend, sin filtrar
  * existencia. Los cambios visibles quedan anotados con foco al confirmar.
+ * Debajo va el seguimiento de la atención (TI2-165): el formulario si aún no
+ * tiene, o el registro confirmado en solo lectura.
  */
 export function ProfessionalAgendaDetailPage({ appointmentId }: { appointmentId: string }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -297,6 +300,9 @@ function AppointmentDetailBody({
         )}
       </dl>
       <StatusChangeSection appointment={shown} onChanged={setCurrent} />
+      <StudentPanelErrorBoundary subject="el seguimiento de la atención" level="section">
+        <AppointmentFollowUpSection appointmentId={shown.id} appointmentStatus={shown.status} />
+      </StudentPanelErrorBoundary>
     </>
   );
 }

@@ -1,6 +1,10 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import {
+  toProfessionalAssignmentHolder,
+  type ProfessionalAssignmentHolder,
+} from "../../domain/accompaniments/accompaniment";
 import { isAssignmentWithinValidity } from "../../domain/accompaniments/practitioner_assignment";
 import { accessNeedsFromLines } from "../spaces/repository";
 
@@ -240,37 +244,6 @@ export async function hasActiveProfessionalAssignment(
 }
 
 /**
- * Verdadero cuando otro usuario conserva una asignación profesional activa y
- * vigente sobre el acompañamiento (TI2-152). El índice ordena por usuario
- * antes que por estado y rol, así que lee las asignaciones del acompañamiento
- * hasta el tope y compara en memoria. Sobre el tope puede responder `false`
- * aunque exista otro profesional: el retiro se rechaza, nunca se permite de
- * más.
- */
-export async function hasAnotherActiveProfessional(
-  ctx: MutationCtx,
-  input: {
-    readonly accompanimentId: Id<"accompaniments">;
-    readonly userId: Id<"users">;
-  },
-  now: number = Date.now(),
-): Promise<boolean> {
-  const rows = await ctx.db
-    .query("accompanimentAssignments")
-    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
-      q.eq("accompanimentId", input.accompanimentId),
-    )
-    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT);
-  return rows.some(
-    (row) =>
-      row.userId !== input.userId &&
-      row.status === "active" &&
-      row.assignedRole === "professional" &&
-      isAssignmentWithinValidity(row, now),
-  );
-}
-
-/**
  * Crea la fila activa de la combinación, registrando quién concede y cuándo.
  * La vigencia es opcional (TI2-138): `validFrom`/`validUntil` solo se escriben
  * si quien llama los entrega. La lectura exige `status === "active"` y ventana
@@ -403,6 +376,64 @@ export function authorizationReader(ctx: DbReader) {
 const MAX_ASSIGNMENTS_PER_ACCOMPANIMENT = 200;
 
 /**
+ * Asignaciones profesionales activas y vigentes de un acompañamiento
+ * (ASIGNACIONES_PROFESIONALES del MER, TI2-165), o `null` si el acompañamiento
+ * supera el tope de filas leídas: así la lista nunca se recorta en silencio.
+ */
+export async function listActiveProfessionalAssignments(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+  now: number = Date.now(),
+): Promise<Doc<"accompanimentAssignments">[] | null> {
+  const rows = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q.eq("accompanimentId", accompanimentId),
+    )
+    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT + 1);
+  if (rows.length > MAX_ASSIGNMENTS_PER_ACCOMPANIMENT) return null;
+  return rows.filter(
+    (row) =>
+      row.status === "active" &&
+      row.assignedRole === "professional" &&
+      isAssignmentWithinValidity(row, now),
+  );
+}
+
+/**
+ * Titulares de las asignaciones profesionales vigentes, para decidir si queda
+ * quien gestione (`keepsAManagerWithout`, TI2-165). Usa la misma lista que ve
+ * la Web, así las dos cuentan igual; `null` sobre el tope de filas leídas.
+ */
+export async function listProfessionalAssignmentHolders(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+  now: number = Date.now(),
+): Promise<ProfessionalAssignmentHolder[] | null> {
+  const rows = await listActiveProfessionalAssignments(ctx, accompanimentId, now);
+  if (rows === null) return null;
+  const holders: ProfessionalAssignmentHolder[] = [];
+  for (const row of rows) {
+    holders.push(toProfessionalAssignmentHolder(row, await getUserById(ctx, row.userId)));
+  }
+  return holders;
+}
+
+/**
+ * Perfiles con rol profesional, hasta `limit` más uno para saber si quedan
+ * más. Quien llama decide cuáles se pueden asignar.
+ */
+export async function takeProfessionalProfiles(
+  ctx: DbReader,
+  limit: number,
+): Promise<Doc<"users">[]> {
+  return await ctx.db
+    .query("users")
+    .withIndex("by_role", (q) => q.eq("role", "professional"))
+    .take(limit + 1);
+}
+
+/**
  * Usuarios con asignación activa como profesional (puerto
  * `BookableProfessionalSource`, TI2-123). Un identificador de otra tabla
  * responde igual que un acompañamiento sin asignaciones.
@@ -497,37 +528,81 @@ export function accompanimentOpener(ctx: MutationCtx) {
 /**
  * Escritura del cambio de estado del acompañamiento (TI2-152). Cumple por
  * forma el puerto `AccompanimentStatusWriter` de Aplicación sin importarla.
- * Guarda el estado nuevo y su entrada en `accompanimentTransitions` en la
- * misma transacción. Los identificadores ya fueron leídos y autorizados en el
- * servidor: uno que no pertenezca a su tabla es un fallo interno, no un
+ * Guarda el estado nuevo y, en un cierre, `closedById`, `closedAt` y
+ * `closureReason` en la misma fila, como `cerradoPorId?`, `cerradoEn?` y
+ * `motivoCierre?` del MER. Los identificadores ya fueron leídos y autorizados
+ * en el servidor: uno que no pertenezca a su tabla es un fallo interno, no un
  * rechazo al cliente.
  */
 export function accompanimentStatusWriter(ctx: MutationCtx) {
   return {
     persistStatusChange: async (
       accompanimentId: string,
-      change: {
-        readonly from: Doc<"accompaniments">["status"];
-        readonly to: Doc<"accompaniments">["status"];
-        readonly actorId: string;
-        readonly occurredAt: number;
-        readonly reason?: string;
-      },
+      change:
+        | { readonly to: "active" | "paused" }
+        | {
+            readonly to: "closed";
+            readonly closure: {
+              readonly closedById: string;
+              readonly closedAt: number;
+              readonly closureReason?: string;
+            };
+          },
     ) => {
       const id = ctx.db.normalizeId("accompaniments", accompanimentId);
-      const actorId = ctx.db.normalizeId("users", change.actorId);
-      if (id === null || actorId === null) {
-        throw new Error("El cambio de estado referencia un acompañamiento o actor inexistente.");
+      if (id === null) {
+        throw new Error("El cambio de estado referencia un acompañamiento inexistente.");
       }
-      await ctx.db.patch(id, { status: change.to });
-      await ctx.db.insert("accompanimentTransitions", {
-        accompanimentId: id,
-        from: change.from,
-        to: change.to,
-        actorId,
-        occurredAt: change.occurredAt,
-        ...(change.reason === undefined ? {} : { reason: change.reason }),
+      if (change.to !== "closed") {
+        await ctx.db.patch(id, { status: change.to });
+        return;
+      }
+      const closedById = ctx.db.normalizeId("users", change.closure.closedById);
+      if (closedById === null) throw new Error("El cierre referencia un actor inexistente.");
+      await ctx.db.patch(id, {
+        status: "closed",
+        closedById,
+        closedAt: change.closure.closedAt,
+        ...(change.closure.closureReason === undefined
+          ? {}
+          : { closureReason: change.closure.closureReason }),
       });
     },
+  };
+}
+
+/**
+ * Lecturas de los profesionales de un acompañamiento (puerto
+ * `AccompanimentProfessionalsReader`, TI2-165). Un identificador de otra
+ * tabla responde igual que uno inexistente.
+ */
+export function accompanimentProfessionalsReader(ctx: DbReader) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getProfile: (userId: Id<"users">) => getUserById(ctx, userId),
+    getAccompanimentStatus: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return null;
+      return (await getAccompanimentById(ctx, id))?.status ?? null;
+    },
+    hasActiveProfessionalAssignment: async (accompanimentId: string, userId: Id<"users">) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return false;
+      const rows = await findActiveAssignmentsForUser(ctx, id, userId);
+      return rows.some((row) => row.assignedRole === "professional");
+    },
+    listActiveProfessionalAssignments: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return [];
+      const rows = await listActiveProfessionalAssignments(ctx, id);
+      if (rows === null) return null;
+      return rows.map((row) => ({
+        userId: row.userId,
+        ...(row.grantedAt === undefined ? {} : { assignedAt: row.grantedAt }),
+        ...(row.validUntil === undefined ? {} : { validUntil: row.validUntil }),
+      }));
+    },
+    takeProfessionalProfiles: (limit: number) => takeProfessionalProfiles(ctx, limit),
   };
 }
