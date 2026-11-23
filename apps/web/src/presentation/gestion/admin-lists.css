@@ -1,0 +1,251 @@
+/* Listas de administración en forma de tabla (TI2-169).
+   Inspiradas en la referencia de lista de usuarios: encabezado con columnas,
+   filas separadas por línea, píldora de rol y acciones a la derecha. Usa los
+   tokens de DESIGN.md, texto en español y controles de 44px; en pantallas
+   estrechas cada fila se apila en una sola columna. */
+
+/* Contenedor de la tabla: una sola tarjeta con filas separadas por línea. */
+.admin-list {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  background: var(--ct-card);
+  border: 1px solid var(--ct-line);
+  border-radius: 0;
+}
+
+.admin-list > li {
+  padding: 1rem 1.25rem;
+  min-width: 0;
+}
+
+.admin-list > li + li {
+  border-top: 1px solid var(--ct-line);
+}
+
+/* Encabezado con los nombres de columna. Es solo visual: cada fila ya trae
+   sus datos etiquetados en texto para lector de pantalla. */
+.admin-list__head {
+  display: none;
+  gap: 0.75rem;
+  align-items: center;
+  background: var(--ct-tonal);
+  color: var(--ct-muted);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.admin-list__row {
+  display: grid;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* Columnas de cuentas: cuenta, rol, estado y acción. */
+.admin-list__row--accounts {
+  grid-template-columns: 1fr;
+}
+
+.admin-list__cell--main {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.admin-list__name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ct-ink);
+  text-align: center;
+}
+
+.admin-list__sub {
+  margin: 0.125rem 0 0;
+  font-size: 0.875rem;
+  color: var(--ct-muted);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.admin-list__text {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--ct-ink);
+  min-width: 0;
+  overflow-wrap: break-word;
+  text-align: center;
+}
+
+.admin-list__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Menú de tres puntos de la fila: el panel flota sobre las filas vecinas. */
+.row-menu {
+  position: relative;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.row-menu__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ct-ink);
+  cursor: pointer;
+}
+
+.row-menu__button:hover:not(:disabled) {
+  background: var(--ct-tonal);
+}
+
+.row-menu__button:focus-visible {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+}
+
+.row-menu__button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.row-menu__panel {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  padding: 0.25rem;
+  background: var(--ct-card);
+  border: 1px solid var(--ct-line);
+  border-radius: 0;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.12);
+}
+
+.row-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  background: none;
+  border: none;
+  border-radius: 0;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--ct-ink);
+  text-align: center;
+  cursor: pointer;
+}
+
+.row-menu__item:hover:not(:disabled) {
+  background: var(--ct-tonal);
+}
+
+.row-menu__item:focus-visible {
+  outline: 3px solid var(--ct-ring);
+  outline-offset: 2px;
+}
+
+.row-menu__item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Secciones de administración sin tarjeta exterior (TI2-169): quedan el
+   título, la descripción y la tabla con sus líneas, sin borde alrededor. */
+.admin-section {
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+/* Confirmaciones de administración (TI2-169): caja blanca de bordes rectos,
+   letras negras y sin sombra, como un aviso nativo. */
+.admin-confirm {
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ct-ink);
+}
+
+.admin-confirm .text-on-surface-variant {
+  color: var(--ct-ink);
+}
+
+/* Botones del diálogo: bordes rectos y el secundario con fondo tenue y
+   borde para que se vea su forma. */
+.admin-confirm .student-portal__btn {
+  border-radius: 0;
+}
+
+.admin-confirm .student-portal__btn--ghost {
+  background: var(--ct-tonal);
+  border: 1px solid var(--ct-line);
+}
+
+/* Acciones del diálogo lado a lado, como un aviso nativo. */
+.admin-confirm__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+/* Aviso flotante abajo a la derecha (TI2-169): caja blanca de bordes rectos
+   y sin sombra, se anuncia con `role="status"` y desaparece solo a los 5 s. */
+.toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 60;
+  max-width: 24rem;
+  margin: 0;
+  padding: 0.75rem 1.25rem;
+  background: var(--ct-card);
+  color: var(--ct-ink);
+  border: 2px solid var(--ct-line);
+  border-radius: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+/* Avisos de la fila (confirmación o error): ocupan todo el ancho. */
+.admin-list__feedback {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+@media (min-width: 40rem) {
+  .admin-list__head {
+    display: grid;
+  }
+
+  .admin-list__head--accounts,
+  .admin-list__row--accounts {
+    /* La columna de acciones mide lo mismo que el botón de tres puntos en
+       todas las filas: con `auto` cada fila calculaba su propio ancho (0 en
+       el encabezado, 44px en las filas) y las columnas no alineaban. */
+    grid-template-columns: 2fr 1fr 1.2fr 2.75rem;
+  }
+
+  .admin-list__head--spaces,
+  .admin-list__row--spaces {
+    grid-template-columns: 1.4fr 1fr 1fr 2.75rem;
+  }
+}

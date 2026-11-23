@@ -162,9 +162,11 @@ export function googleCalendarGateway(ctx: ActionCtx) {
 /**
  * Lectura de alcances OAuth para el estado de conexión.
  *
- * Consulta el documento de cuenta del componente sin abrir sesión ni renovar
- * tokens: un query público no debe escribir. Devuelve solo el arreglo de
- * alcances; el identificador de cuenta y los tokens quedan en el servidor.
+ * Es la única fuente de «conectado»: la tabla `calendarConnections` solo
+ * guarda metadatos locales y no participa de esta lectura. Consulta el
+ * documento de cuenta del componente sin abrir sesión ni renovar tokens: un
+ * query público no debe escribir. Devuelve solo el arreglo de alcances; el
+ * identificador de cuenta y los tokens quedan en el servidor.
  */
 export function googleCalendarConnectionReader(ctx: QueryCtx) {
   return {

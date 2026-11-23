@@ -243,6 +243,32 @@ describe("catálogo ficticio de espacios (TI2-04)", () => {
     expect(resultado.space.id).not.toBe("esp-ajeno");
     expect(resultado.space.id).toMatch(/^esp-ficticio-\d+$/);
   });
+
+  test("vigencia simulada retira la sala creada sin afectar el catálogo base", async () => {
+    const adapter = createFictitiousAgendaAdapter();
+
+    const creado = await adapter.saveSpace({
+      campus: "Campus Ficticio",
+      building: "Edificio Ficticio",
+      floor: "Piso Ficticio",
+      room: "Sala Ficticia Temporal",
+      accessConditions: "Condiciones ficticias de acceso.",
+      arrivalInstructions: "Instrucciones ficticias de llegada.",
+    });
+    if (creado.status !== "saved") {
+      throw new Error("Se esperaba guardado ficticio del espacio");
+    }
+
+    const retirado = await adapter.setSpaceActive({ spaceId: creado.space.id, isActive: false });
+    expect(retirado).toEqual({ status: "saved", space: creado.space, isActive: false });
+
+    const catalogo = await adapter.listSpaces();
+    if (catalogo.status !== "ok") {
+      throw new Error("Se esperaba lectura ficticia del catálogo");
+    }
+    expect(catalogo.spaces.find((space) => space.id === creado.space.id)).toBeUndefined();
+    expect(catalogo.spaces.length).toBeGreaterThan(0);
+  });
 });
 
 describe("agenda ficticia del profesional (TI2-115)", () => {

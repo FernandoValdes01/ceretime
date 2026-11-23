@@ -22,6 +22,7 @@ import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
 import { toSharedFollowUpProjection } from "../domain/follow_up/follow_up";
 import {
   notificationEventsForCreation,
+  notificationEventsForRequestReceived,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   type NotificationEvent,
@@ -54,16 +55,56 @@ import {
   saveFollowUpRecord,
 } from "../infrastructure/follow_up/repository";
 import {
+  deletePushSubscription,
+  ensureNotificationDelivery,
+  findNotificationDelivery,
+  findPushSubscriptionsForUser,
+  markNotificationEventRead,
   paginateNotificationEventsForAppointment,
   paginateNotificationEventsForRecipient,
+  paginateNotificationEventsForRecipientByReadStatus,
+  paginateNotificationEventsForRequest,
+  recordNotificationDeliveryAttempt,
   recordNotificationEvent,
   recordNotificationEvents,
+  savePushSubscription,
 } from "../infrastructure/notifications/repository";
+import {
+  connectCalendar,
+  disconnectCalendar,
+  markCalendarSyncPending,
+  readCalendarConnectionMetadata,
+  readCalendarSyncState,
+  recordCalendarSyncAttempt,
+} from "../infrastructure/calendar/repository";
 import {
   paginateAppointmentAuditEvents,
   paginateAppointmentAuditEventsByActor,
   recordAppointmentAuditEvent,
 } from "../infrastructure/audit/repository";
+import {
+  applyPrivacyRequestTransition,
+  createPrivacyBlock,
+  createPrivacyRequest,
+  createPrivacyRetentionException,
+  extendPrivacyRequestDeadline,
+  getPrivacyRequest,
+  liftPrivacyBlock,
+  liftPrivacyRetentionException,
+  listActivePrivacyBlocksForSubject,
+  listActiveRetentionExceptionsForCategory,
+  listActiveRetentionExceptionsForSubject,
+  listPrivacyBlocksByRequest,
+  listPrivacyRetentionRules,
+  listRetentionExceptionsByPrivacyRequest,
+  paginateActivePrivacyBlocks,
+  paginatePrivacyRequestsByDeadline,
+  paginatePrivacyRequestsByRequester,
+  paginatePrivacyRequestsByStatus,
+  readPrivacyRetentionRule,
+  recordPrivacyResponseDelivery,
+  upsertPrivacyRetentionRule,
+} from "../infrastructure/privacy/repository";
 import {
   findRequestByIdempotencyKey,
   getRequestById,
@@ -2944,6 +2985,473 @@ test("TI2-118: referencias inválidas del evento no escriben", async () => {
   expect(rows).toHaveLength(0);
 });
 
+// ── Avisos, entregas, push y Calendar (TI2-145) ─────────────────────────────
+
+test("TI2-145: el aviso de solicitud guarda su recurso y el reintento no lo duplica", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-sol-est",
+    email: "ti145sol@alu.uct.cl",
+    role: "student",
+  });
+  const requestId = await seedRequest(t, student, "received");
+  const [event] = notificationEventsForRequestReceived(requestId, student, TI83_MONDAY);
+
+  const first = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  const retry = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  expect(first.status).toBe("recorded");
+  expect(retry).toEqual({
+    status: "duplicate",
+    eventId: first.status === "recorded" ? first.eventId : null,
+  });
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    kind: "request_received",
+    requestId,
+    recipientId: student,
+    occurredAt: TI83_MONDAY,
+    version: "v1",
+  });
+  expect(rows[0]).not.toHaveProperty("appointmentId");
+  expect(rows[0]).not.toHaveProperty("readAt");
+
+  const page = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRequest(ctx, requestId, {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  expect(page.page).toHaveLength(1);
+  expect(page.page[0]).toMatchObject({
+    kind: "request_received",
+    requestId,
+    recipientId: student,
+    readStatus: "pending",
+  });
+  expect(page.page[0]).not.toHaveProperty("idempotencyKey");
+});
+
+test("TI2-145: el aviso de solicitud solo acepta destinatarios vinculados a ella", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-ref-est",
+    email: "ti145refest@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti145-ref-pro",
+    email: "ti145refpro@uct.cl",
+    role: "professional",
+  });
+  const outsider = await seedUser(t, {
+    subject: "ti145-ref-ajeno",
+    email: "ti145refajeno@alu.uct.cl",
+    role: "student",
+  });
+  const requestId = await seedRequest(t, student, "received");
+  await t.run(async (ctx) => {
+    await ctx.db.patch(requestId, { takenBy: professional });
+  });
+
+  const [toStudent] = notificationEventsForRequestReceived(requestId, student, TI83_MONDAY);
+  const [toProfessional] = notificationEventsForRequestReceived(
+    requestId,
+    professional,
+    TI83_MONDAY + 1,
+  );
+  const [toOutsider] = notificationEventsForRequestReceived(requestId, outsider, TI83_MONDAY + 2);
+  const results = await t.run(async (ctx) => [
+    await recordNotificationEvent(ctx, toStudent),
+    await recordNotificationEvent(ctx, toProfessional),
+    await recordNotificationEvent(ctx, toOutsider),
+    // El identificador de una solicitud no se acepta como atención.
+    await recordNotificationEvent(ctx, {
+      kind: "appointment_scheduled",
+      appointmentId: requestId,
+      recipientId: student,
+      occurredAt: TI83_MONDAY,
+    } as never),
+  ]);
+  expect(results.map((result) => result.status)).toEqual([
+    "recorded",
+    "recorded",
+    "invalid_reference",
+    "invalid_reference",
+  ]);
+});
+
+test("TI2-145: cada destinatario marca leído y los pendientes no se mezclan", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "lectura");
+  const subjectForRead = { appointmentId, studentId: student, professionalId: professional };
+  const [created] = notificationEventsForCreation(subjectForRead, TI83_MONDAY);
+  const [noShow] = notificationEventsForTransition(subjectForRead, {
+    from: "scheduled",
+    to: "no_show",
+    actorId: professional,
+    occurredAt: TI83_MONDAY + 1,
+  });
+  const [cancelled] = notificationEventsForTransition(subjectForRead, {
+    from: "scheduled",
+    to: "cancelled_by_cereti",
+    actorId: professional,
+    occurredAt: TI83_MONDAY + 2,
+  });
+
+  const recorded = await t.run(async (ctx) => ({
+    created: await recordNotificationEvent(ctx, created),
+    noShow: await recordNotificationEvent(ctx, noShow),
+    cancelled: await recordNotificationEvent(ctx, cancelled),
+  }));
+  const createdResult = recorded.created;
+  const noShowResult = recorded.noShow;
+  const cancelledResult = recorded.cancelled;
+  if (
+    createdResult.status !== "recorded" ||
+    noShowResult.status !== "recorded" ||
+    cancelledResult.status !== "recorded"
+  ) {
+    throw new Error("Los tres avisos ficticios deben registrarse.");
+  }
+
+  const read = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, student, createdResult.eventId, TI83_MONDAY + 10),
+  );
+  expect(read).toEqual({
+    status: "marked",
+    eventId: createdResult.eventId,
+    readAt: TI83_MONDAY + 10,
+  });
+  const repeated = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, student, createdResult.eventId, TI83_MONDAY + 20),
+  );
+  expect(repeated).toEqual({
+    status: "already_read",
+    eventId: createdResult.eventId,
+    readAt: TI83_MONDAY + 10,
+  });
+  // Otro destinatario no puede marcar el aviso ajeno ni cambia su instante.
+  const foreign = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, professional, createdResult.eventId, TI83_MONDAY + 30),
+  );
+  expect(foreign).toEqual({ status: "not_found" });
+
+  const pendingFirst = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "pending", {
+        numItems: 1,
+        cursor: null,
+      }),
+  );
+  const pendingSecond = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "pending", {
+        numItems: 1,
+        cursor: pendingFirst.continueCursor,
+      }),
+  );
+  const readPage = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "read", {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  // El índice de pendientes recorre solo las filas sin `readAt`, incluso al
+  // paginar: el aviso leído queda fuera de las dos páginas.
+  expect(pendingFirst.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 2]);
+  expect(pendingFirst.isDone).toBe(false);
+  expect(pendingSecond.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 1]);
+  expect(pendingSecond.isDone).toBe(true);
+  expect(pendingFirst.page[0]).toMatchObject({ readStatus: "pending" });
+  expect(readPage.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY]);
+  expect(readPage.page[0]).toMatchObject({
+    readStatus: "read",
+    readAt: TI83_MONDAY + 10,
+  });
+});
+
+test("TI2-145: la entrega se registra por canal y los reintentos no duplican el aviso", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "entrega");
+  const [event] = notificationEventsForCreation(
+    { appointmentId, studentId: student, professionalId: professional },
+    TI83_MONDAY,
+  );
+  const recorded = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  if (recorded.status !== "recorded") throw new Error("El aviso ficticio debe registrarse.");
+  const eventId = recorded.eventId;
+
+  const queue = await t.run(async (ctx) => ({
+    first: await ensureNotificationDelivery(ctx, eventId, "email"),
+    retry: await ensureNotificationDelivery(ctx, eventId, "email"),
+  }));
+  expect(queue.first).toMatchObject({ status: "queued", attempts: 0 });
+  expect(queue.retry).toMatchObject({ status: "exists", attempts: 0, deliveryStatus: "pending" });
+
+  const attempts = await t.run(async (ctx) => ({
+    sent: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "email",
+      status: "sent",
+      attemptedAt: TI83_MONDAY + 10,
+    }),
+    failed: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "email",
+      status: "failed",
+      attemptedAt: TI83_MONDAY + 20,
+      errorCode: "provider_unavailable",
+    }),
+    push: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "push",
+      status: "sent",
+      attemptedAt: TI83_MONDAY + 30,
+    }),
+  }));
+  expect(attempts.sent).toMatchObject({ status: "recorded", attempts: 1 });
+  expect(attempts.failed).toMatchObject({ status: "recorded", attempts: 2 });
+  expect(attempts.push).toMatchObject({ status: "recorded", attempts: 1 });
+
+  const stored = await t.run(async (ctx) => ({
+    email: await findNotificationDelivery(ctx, eventId, "email"),
+    push: await findNotificationDelivery(ctx, eventId, "push"),
+    deliveries: await ctx.db.query("notificationDeliveries").take(10),
+    events: await ctx.db.query("notificationEvents").take(10),
+  }));
+  expect(stored.deliveries).toHaveLength(2);
+  expect(stored.events).toHaveLength(1);
+  expect(stored.email).toEqual({
+    id: stored.deliveries.find((row) => row.channel === "email")?._id,
+    eventId,
+    channel: "email",
+    status: "failed",
+    attempts: 2,
+    lastAttemptAt: TI83_MONDAY + 20,
+    sentAt: TI83_MONDAY + 10,
+    errorCode: "provider_unavailable",
+  });
+  expect(stored.push).toMatchObject({ status: "sent", attempts: 1, sentAt: TI83_MONDAY + 30 });
+
+  await expect(
+    t.run(async (ctx) =>
+      recordNotificationDeliveryAttempt(ctx, student as never, {
+        channel: "email",
+        status: "sent",
+        attemptedAt: TI83_MONDAY,
+      }),
+    ),
+  ).resolves.toEqual({ status: "invalid_reference" });
+  await expect(
+    t.run(async (ctx) =>
+      recordNotificationDeliveryAttempt(ctx, eventId, {
+        channel: "email",
+        status: "sent",
+        attemptedAt: TI83_MONDAY,
+        errorCode: "provider_unavailable",
+      }),
+    ),
+  ).rejects.toThrow("no lleva código de error");
+});
+
+test("TI2-145: la suscripción push es propia y el endpoint no se duplica", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-push-est",
+    email: "ti145push@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti145-push-pro",
+    email: "ti145pushpro@uct.cl",
+    role: "professional",
+  });
+  const endpointA = "https://push.example.test/subscription-a";
+  const endpointB = "https://push.example.test/subscription-b";
+
+  const saved = await t.run(async (ctx) => ({
+    first: await savePushSubscription(
+      ctx,
+      student,
+      { endpoint: endpointA, p256dh: "clave-publica-a", auth: "secreto-a" },
+      TI83_MONDAY,
+    ),
+    moved: await savePushSubscription(
+      ctx,
+      professional,
+      {
+        endpoint: endpointA,
+        p256dh: "clave-publica-b",
+        auth: "secreto-b",
+        expirationTime: TI83_MONDAY + 1000,
+      },
+      TI83_MONDAY + 1,
+    ),
+    second: await savePushSubscription(
+      ctx,
+      professional,
+      { endpoint: endpointB, p256dh: "clave-publica-c", auth: "secreto-c" },
+      TI83_MONDAY + 2,
+    ),
+    invalid: await savePushSubscription(
+      ctx,
+      student,
+      { endpoint: "  ", p256dh: "", auth: "" },
+      TI83_MONDAY + 3,
+    ),
+  }));
+  expect(saved.first).toMatchObject({ status: "saved", created: true });
+  expect(saved.moved).toMatchObject({ status: "saved", created: false });
+  expect(saved.second).toMatchObject({ status: "saved", created: true });
+  expect(saved.invalid).toEqual({ status: "invalid_subscription" });
+
+  const beforeDelete = await t.run(async (ctx) => ({
+    student: await findPushSubscriptionsForUser(ctx, student),
+    professional: await findPushSubscriptionsForUser(ctx, professional),
+  }));
+  expect(beforeDelete.student).toHaveLength(0);
+  expect(beforeDelete.professional).toHaveLength(2);
+  expect(beforeDelete.professional.find((row) => row.endpoint === endpointA)).toMatchObject({
+    userId: professional,
+    p256dh: "clave-publica-b",
+    auth: "secreto-b",
+    expirationTime: TI83_MONDAY + 1000,
+  });
+
+  const deleted = await t.run(async (ctx) => ({
+    foreign: await deletePushSubscription(ctx, student, endpointA),
+    own: await deletePushSubscription(ctx, professional, endpointA),
+  }));
+  expect(deleted).toEqual({ foreign: false, own: true });
+  const remaining = await t.run(
+    async (ctx) => await findPushSubscriptionsForUser(ctx, professional),
+  );
+  expect(remaining.map((row) => row.endpoint)).toEqual([endpointB]);
+});
+
+test("TI2-145: el vínculo de Calendar guarda solo metadatos y no copia credenciales", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-cal-est",
+    email: "ti145cal@alu.uct.cl",
+    role: "student",
+  });
+  const other = await seedUser(t, {
+    subject: "ti145-cal-otro",
+    email: "ti145calotro@alu.uct.cl",
+    role: "student",
+  });
+
+  const linked = await t.run(async (ctx) => ({
+    before: await readCalendarConnectionMetadata(ctx, student),
+    first: await connectCalendar(ctx, student, "cuenta-cifrada-a", TI83_MONDAY),
+    retry: await connectCalendar(ctx, student, "cuenta-cifrada-a", TI83_MONDAY + 1),
+    other: await readCalendarConnectionMetadata(ctx, other),
+  }));
+  expect(linked.before).toBeNull();
+  expect(linked.first.status).toBe("linked");
+  expect(linked.retry.status).toBe("already_linked");
+  expect(linked.other).toBeNull();
+
+  const visible = await t.run(async (ctx) => await readCalendarConnectionMetadata(ctx, student));
+  expect(visible).toEqual({ linkedAt: TI83_MONDAY });
+  expect(visible).not.toHaveProperty("accountReference");
+  expect(visible).not.toHaveProperty("status");
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("calendarConnections").take(10));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    userId: student,
+    accountReference: "cuenta-cifrada-a",
+    linkedAt: TI83_MONDAY,
+    updatedAt: TI83_MONDAY + 1,
+  });
+  // La fila no declara «conectado»: esa lectura sale solo de Better Auth.
+  expect(rows[0]).not.toHaveProperty("status");
+  expect(JSON.stringify(rows)).not.toMatch(/token|secret|refresh/i);
+
+  const disconnected = await t.run(async (ctx) => ({
+    revoked: await disconnectCalendar(ctx, student, TI83_MONDAY + 10),
+    retry: await disconnectCalendar(ctx, student, TI83_MONDAY + 20),
+    other: await disconnectCalendar(ctx, other, TI83_MONDAY + 30),
+  }));
+  expect(disconnected.revoked.status).toBe("unlinked");
+  expect(disconnected.retry.status).toBe("already_unlinked");
+  expect(disconnected.other.status).toBe("not_found");
+  expect(await t.run(async (ctx) => await readCalendarConnectionMetadata(ctx, student))).toEqual({
+    linkedAt: TI83_MONDAY,
+    revokedAt: TI83_MONDAY + 10,
+  });
+});
+
+test("TI2-145: la atención guarda pendiente, sincronizado o error con sus intentos", async () => {
+  const t = convexTest(schema, modules);
+  const { student, appointmentId } = await seedTi118Appointment(t, "sync", "scheduled");
+
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toBeNull();
+
+  const pending = await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  expect(pending).toEqual({ status: "recorded", attempts: 0 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "pending",
+    attempts: 0,
+  });
+
+  const error = await t.run(
+    async (ctx) =>
+      await recordCalendarSyncAttempt(ctx, appointmentId, {
+        status: "error",
+        attemptedAt: TI83_MONDAY + 10,
+        errorCode: "not_connected",
+      }),
+  );
+  expect(error).toEqual({ status: "recorded", attempts: 1 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "error",
+    attempts: 1,
+    lastAttemptAt: TI83_MONDAY + 10,
+    errorCode: "not_connected",
+  });
+
+  // Volver a encolar no cuenta un intento y limpia el error anterior.
+  await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "pending",
+    attempts: 1,
+    lastAttemptAt: TI83_MONDAY + 10,
+  });
+
+  const synced = await t.run(
+    async (ctx) =>
+      await recordCalendarSyncAttempt(ctx, appointmentId, {
+        status: "synced",
+        attemptedAt: TI83_MONDAY + 20,
+      }),
+  );
+  expect(synced).toEqual({ status: "recorded", attempts: 2 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "synced",
+    attempts: 2,
+    lastAttemptAt: TI83_MONDAY + 20,
+  });
+
+  // La sincronización no cambia el estado de la atención.
+  const appointment = await t.run(async (ctx) => await ctx.db.get(appointmentId));
+  expect(appointment?.status).toBe("scheduled");
+  await expect(
+    t.run(async (ctx) =>
+      recordCalendarSyncAttempt(ctx, student as never, {
+        status: "synced",
+        attemptedAt: TI83_MONDAY + 30,
+      }),
+    ),
+  ).resolves.toEqual({ status: "invalid_reference" });
+});
+
 /** Registro ficticio válido de TI2-106 para una atención. */
 function ti118RecordInput(
   appointmentId: Id<"appointments">,
@@ -4115,5 +4623,826 @@ test("TI2-152: el historial de estados guarda cada cambio y su índice responde 
   expect(accompaniment?.status).toBe("closed");
   expect(Object.keys(accompaniment ?? {}).sort()).toEqual(
     ["_creationTime", "_id", "accessNeeds", "objective", "status", "studentId"].sort(),
+  );
+});
+
+const TI151_TIME_ZONE = "America/Santiago";
+const TI151_RECEIVED_AT = Date.UTC(2026, 10, 4, 15, 0, 0); // 2026-11-04 12:00 America/Santiago
+const TI151_DAY_MS = 24 * 60 * 60 * 1000;
+
+test("TI2-151: solicitudes de derechos persisten índices por titular, estado y plazo, prórroga, respuesta y constancia de envío", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-est",
+    email: "ti151.est@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti151-prof",
+    email: "ti151.prof@uct.cl",
+    role: "professional",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-admin",
+    email: "ti151.admin@uct.cl",
+    role: "admin",
+  });
+
+  const accessCreated = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "access",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  expect(accessCreated.status).toBe("created");
+  if (accessCreated.status !== "created") throw new Error("expected created");
+  expect(accessCreated.request).toMatchObject({
+    kind: "access",
+    status: "received",
+    requesterId: student,
+    requesterRole: "student",
+    channel: "student_app",
+    responseRule: "calendar_30",
+    receivedDate: "2026-11-04",
+    initialDueDate: "2026-12-04",
+  });
+
+  const blockingCreated = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: professional,
+        receivedAt: TI151_RECEIVED_AT + 1000,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  expect(blockingCreated.status).toBe("created");
+  if (blockingCreated.status !== "created") throw new Error("expected created");
+  expect(blockingCreated.request).toMatchObject({
+    kind: "blocking",
+    channel: "institutional_channel",
+    responseRule: "business_2",
+    initialDueDate: "2026-11-06",
+  });
+
+  // Índices por titular, estado y plazo ordenan correctamente.
+  const byStudent = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByRequester(ctx, student, { numItems: 10, cursor: null }),
+  );
+  expect(byStudent.page.map((item) => item.id)).toEqual([accessCreated.requestId]);
+
+  const byReceived = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByStatus(ctx, "received", { numItems: 10, cursor: null }),
+  );
+  // Bloqueo (2 días hábiles) vence antes que acceso (30 días corridos).
+  expect(byReceived.page.map((item) => item.id)).toEqual([
+    blockingCreated.requestId,
+    accessCreated.requestId,
+  ]);
+
+  const dueSoon = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByDeadline(
+        ctx,
+        { numItems: 10, cursor: null },
+        { dueBefore: accessCreated.request.dueAt },
+      ),
+  );
+  expect(dueSoon.page.map((item) => item.id)).toEqual([blockingCreated.requestId]);
+
+  // Prórroga única: funciona en acceso, actualiza dueAt, y se rechaza en bloqueo o repetición.
+  const extended = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: accessCreated.requestId,
+        days: 15,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        reason: "Verificación de antecedentes en curso",
+      }),
+  );
+  expect(extended.status).toBe("applied");
+  if (extended.status !== "applied") throw new Error("expected applied");
+  expect(extended.request.extension).toMatchObject({
+    days: 15,
+    extendedUntilDate: "2026-12-19",
+    extendedBy: admin,
+  });
+  expect(extended.request.dueAt).toBe(extended.request.extension?.extendedUntilAt);
+  expect(extended.request.dueAt).toBeGreaterThan(extended.request.initialDueAt);
+
+  const duplicateExtension = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: accessCreated.requestId,
+        days: 5,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        reason: "Segunda prórroga no permitida",
+      }),
+  );
+  expect(duplicateExtension).toEqual({ status: "rejected", cause: "extension_already_applied" });
+
+  const blockingExtension = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: blockingCreated.requestId,
+        days: 5,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        reason: "Bloqueo no admite prórroga",
+      }),
+  );
+  expect(blockingExtension).toEqual({ status: "rejected", cause: "extension_not_allowed" });
+
+  // Transiciones, respuesta fundada y constancia de envío inmutable.
+  const beforeResolvedDelivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "student_app",
+        sentAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        recordedBy: admin,
+        reference: "FOLIO-0001",
+      }),
+  );
+  expect(beforeResolvedDelivery).toEqual({ status: "not_resolved" });
+
+  const inReview = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(inReview.status).toBe("applied");
+  if (inReview.status !== "applied") throw new Error("expected applied");
+  expect(inReview.request.responsibleId).toBe(admin);
+
+  const respondedAt = TI151_RECEIVED_AT + 3 * TI151_DAY_MS;
+  const resolved = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: respondedAt,
+        response: {
+          outcome: "granted",
+          reasons: "Se entrega copia resumida de los datos propios registrados en el prototipo.",
+          responsibleId: admin,
+        },
+      }),
+  );
+  expect(resolved.status).toBe("applied");
+
+  // Una solicitud resuelta no se reabre ni sobrescribe su respuesta.
+  const reopenAttempt = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: respondedAt + 1000,
+      }),
+  );
+  expect(reopenAttempt).toEqual({ status: "rejected", cause: "transition_not_allowed" });
+
+  const sentAt = Date.UTC(2026, 10, 10, 13, 0, 0); // 2026-11-10 10:00 America/Santiago
+  const delivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "student_app",
+        sentAt,
+        recordedBy: admin,
+        reference: "FOLIO-2026-0001",
+      }),
+  );
+  expect(delivery.status).toBe("recorded");
+  if (delivery.status !== "recorded") throw new Error("expected recorded");
+  expect(delivery.receipt).toMatchObject({
+    channel: "student_app",
+    sentAt,
+    recordedBy: admin,
+    reference: "FOLIO-2026-0001",
+    agencyClaimDueDate: "2026-12-22",
+  });
+
+  // La constancia de envío no se sobrescribe.
+  const duplicateDelivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "email",
+        sentAt: sentAt + 1000,
+        recordedBy: admin,
+        reference: "FOLIO-2026-0002",
+      }),
+  );
+  expect(duplicateDelivery).toEqual({ status: "already_recorded" });
+
+  const stored = await t.run(async (ctx) => await getPrivacyRequest(ctx, accessCreated.requestId));
+  expect(stored?.response).toMatchObject({
+    outcome: "granted",
+    responsibleId: admin,
+    respondedAt,
+  });
+  expect(stored?.deliveryReceipt).toMatchObject({
+    channel: "student_app",
+    reference: "FOLIO-2026-0001",
+  });
+});
+
+test("TI2-151: bloqueos temporales conservan alcance, coherencia con temporaryBlockUntil y consulta activa por índice", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-blk-est",
+    email: "ti151.blk.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-blk-admin",
+    email: "ti151.blk.admin@uct.cl",
+    role: "admin",
+  });
+
+  const created = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (created.status !== "created") throw new Error("expected created");
+
+  await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: created.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+
+  const blockStartsAt = TI151_RECEIVED_AT + 2000;
+  const blockEndsAt = blockStartsAt + 10 * TI151_DAY_MS;
+  const resolved = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: created.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: blockStartsAt,
+        response: {
+          outcome: "granted",
+          reasons: "Se concede bloqueo temporal mientras se revisa la rectificación.",
+          responsibleId: admin,
+          temporaryBlockUntil: blockEndsAt,
+        },
+      }),
+  );
+  expect(resolved.status).toBe("applied");
+
+  // Un bloqueo vinculado a la solicitud rechaza un vencimiento distinto al de la respuesta.
+  const mismatch = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: created.requestId,
+        scope: "all_personal_data",
+        startsAt: blockStartsAt,
+        endsAt: blockEndsAt + TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Bloqueo temporal concedido en resolución",
+      }),
+  );
+  expect(mismatch).toEqual({ status: "deadline_mismatch" });
+
+  const fullBlock = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: created.requestId,
+        scope: "all_personal_data",
+        startsAt: blockStartsAt,
+        endsAt: blockEndsAt,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Bloqueo temporal concedido en resolución",
+      }),
+  );
+  expect(fullBlock.status).toBe("created");
+  if (fullBlock.status !== "created") throw new Error("expected created");
+
+  const scopedBlock = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        scope: "appointments",
+        startsAt: blockStartsAt,
+        endsAt: blockStartsAt + 3 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Suspensión acotada a agenda durante revisión",
+      }),
+  );
+  expect(scopedBlock.status).toBe("created");
+  if (scopedBlock.status !== "created") throw new Error("expected created");
+
+  // Consulta por índice activo: antes de los 3 días aparecen ambos; a los 4 días solo el más largo.
+  const activeEarly = await t.run(
+    async (ctx) =>
+      await listActivePrivacyBlocksForSubject(ctx, student, blockStartsAt + TI151_DAY_MS),
+  );
+  expect(activeEarly.map((b) => b.scope)).toEqual(["appointments", "all_personal_data"]);
+
+  const activeLater = await t.run(
+    async (ctx) =>
+      await listActivePrivacyBlocksForSubject(ctx, student, blockStartsAt + 4 * TI151_DAY_MS),
+  );
+  expect(activeLater.map((b) => b.scope)).toEqual(["all_personal_data"]);
+
+  const byRequest = await t.run(
+    async (ctx) => await listPrivacyBlocksByRequest(ctx, created.requestId),
+  );
+  expect(byRequest.map((b) => b.id)).toEqual([fullBlock.blockId]);
+
+  // Levantar el bloqueo lo saca de los activos y es idempotente.
+  const lifted = await t.run(
+    async (ctx) =>
+      await liftPrivacyBlock(ctx, {
+        blockId: fullBlock.blockId,
+        liftedBy: admin,
+        liftedAt: blockStartsAt + 5 * TI151_DAY_MS,
+        liftReason: "Rectificación completada antes del vencimiento",
+      }),
+  );
+  expect(lifted).toEqual({ status: "lifted", blockId: fullBlock.blockId });
+
+  const liftedAgain = await t.run(
+    async (ctx) =>
+      await liftPrivacyBlock(ctx, {
+        blockId: fullBlock.blockId,
+        liftedBy: admin,
+        liftedAt: blockStartsAt + 6 * TI151_DAY_MS,
+        liftReason: "Reintento",
+      }),
+  );
+  expect(liftedAgain).toEqual({ status: "already_lifted", blockId: fullBlock.blockId });
+
+  const globalActive = await t.run(
+    async (ctx) =>
+      await paginateActivePrivacyBlocks(ctx, blockStartsAt + 5 * TI151_DAY_MS, {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  expect(globalActive.page).toEqual([]);
+});
+
+test("TI2-151: reglas de conservación sin plazos inventados y excepciones por obligación o procedimiento abierto", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-ret-est",
+    email: "ti151.ret.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-ret-admin",
+    email: "ti151.ret.admin@uct.cl",
+    role: "admin",
+  });
+
+  // Regla inicial sin plazo inventado (`retentionDays` ausente = pendiente de UCT).
+  const initialRule = await t.run(
+    async (ctx) =>
+      await upsertPrivacyRetentionRule(ctx, {
+        category: "accompaniments",
+        disposition: "anonymize",
+        legalBasisNote: "Pendiente de definición institucional (ADR-0003)",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(initialRule.status).toBe("saved");
+  if (initialRule.status !== "saved") throw new Error("expected saved");
+  expect(initialRule.rule.retentionDays).toBeUndefined();
+
+  // Actualizar la misma categoría no duplica filas.
+  const configuredRule = await t.run(
+    async (ctx) =>
+      await upsertPrivacyRetentionRule(ctx, {
+        category: "accompaniments",
+        retentionDays: 365,
+        disposition: "anonymize",
+        legalBasisNote: "Acuerdo ficticio de prueba UCT",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+  expect(configuredRule.status).toBe("saved");
+  if (configuredRule.status !== "saved") throw new Error("expected saved");
+  expect(configuredRule.ruleId).toBe(initialRule.ruleId);
+
+  const readRule = await t.run(
+    async (ctx) => await readPrivacyRetentionRule(ctx, "accompaniments"),
+  );
+  expect(readRule).toMatchObject({
+    category: "accompaniments",
+    retentionDays: 365,
+    disposition: "anonymize",
+  });
+  const allRules = await t.run(async (ctx) => await listPrivacyRetentionRules(ctx));
+  expect(allRules).toHaveLength(1);
+
+  // Excepción por obligación legal (toda la categoría) y por procedimiento abierto (titular + solicitud).
+  const privacyReq = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "erasure",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (privacyReq.status !== "created") throw new Error("expected created");
+
+  const legalHold = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "legal_obligation",
+        category: "accompaniments",
+        reference: "RES-UCT-FICTICIA-01",
+        startsAt: TI151_RECEIVED_AT,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(legalHold.status).toBe("created");
+
+  const procedureHold = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        privacyRequestId: privacyReq.requestId,
+        reference: "SOL-DERECHOS-FICTICIA-01",
+        startsAt: TI151_RECEIVED_AT,
+        expiresAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(procedureHold.status).toBe("created");
+  if (procedureHold.status !== "created") throw new Error("expected created");
+
+  const activeByCategory = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForCategory(
+        ctx,
+        "accompaniments",
+        TI151_RECEIVED_AT + TI151_DAY_MS,
+      ),
+  );
+  expect(activeByCategory).toHaveLength(2);
+
+  const activeBySubject = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForSubject(ctx, student, TI151_RECEIVED_AT + TI151_DAY_MS),
+  );
+  expect(activeBySubject.map((item) => item.id)).toEqual([procedureHold.exceptionId]);
+
+  const byPrivacyReq = await t.run(
+    async (ctx) => await listRetentionExceptionsByPrivacyRequest(ctx, privacyReq.requestId),
+  );
+  expect(byPrivacyReq.map((item) => item.id)).toEqual([procedureHold.exceptionId]);
+
+  const liftedException = await t.run(
+    async (ctx) =>
+      await liftPrivacyRetentionException(ctx, {
+        exceptionId: procedureHold.exceptionId,
+        liftedBy: admin,
+        liftedAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        liftReason: "Solicitud resuelta y cerrada",
+      }),
+  );
+  expect(liftedException).toEqual({
+    status: "lifted",
+    exceptionId: procedureHold.exceptionId,
+  });
+
+  const remainingBySubject = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForSubject(
+        ctx,
+        student,
+        TI151_RECEIVED_AT + 3 * TI151_DAY_MS,
+      ),
+  );
+  expect(remainingBySubject).toEqual([]);
+});
+
+test("TI2-151: el esquema rechaza contenido sensible en campos de control y no agrega otra bitácora", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-sens-est",
+    email: "ti151.sens.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-sens-admin",
+    email: "ti151.sens.admin@uct.cl",
+    role: "admin",
+  });
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRequests", {
+        kind: "access",
+        status: "received",
+        requesterId: student,
+        requesterRole: "student",
+        channel: "student_app",
+        receivedAt: TI151_RECEIVED_AT,
+        version: "v1",
+        responseRule: "calendar_30",
+        receivedDate: "2026-11-04",
+        initialDueDate: "2026-12-04",
+        initialDueAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        dueAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        deadlineTimeZone: TI151_TIME_ZONE,
+        deadlineHolidays: [],
+        updatedAt: TI151_RECEIVED_AT,
+        accessNeeds: "No permitido en campos de control",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyBlocks", {
+        subjectId: student,
+        scope: "appointments",
+        startsAt: TI151_RECEIVED_AT,
+        endsAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+        reason: "Control",
+        clinicalNotes: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRetentionRules", {
+        category: "follow_up",
+        disposition: "delete",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT,
+        diagnosis: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRetentionExceptions", {
+        kind: "legal_obligation",
+        category: "follow_up",
+        reference: "RES-01",
+        startsAt: TI151_RECEIVED_AT,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+        rut: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  // No se crea otra tabla de bitácora: solo existe la auditoría de TI2-128.
+  const auditTables = Object.keys(schema.tables).filter((name) => /audit/i.test(name));
+  expect(auditTables).toEqual(["appointmentAuditEvents"]);
+});
+
+test("TI2-151: un bloqueo vinculado no se crea sobre solicitud de bloqueo abierta ni denegada, y un bloqueo futuro no figura como vigente", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-blk-edge-est",
+    email: "ti151.blk.edge.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-blk-edge-admin",
+    email: "ti151.blk.edge.admin@uct.cl",
+    role: "admin",
+  });
+
+  const openBlocking = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (openBlocking.status !== "created") throw new Error("expected created");
+
+  await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: openBlocking.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+
+  // Escenario 1: no se puede vincular un bloqueo mientras la solicitud está en revisión.
+  const beforeResolution = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: openBlocking.requestId,
+        scope: "all_personal_data",
+        startsAt: TI151_RECEIVED_AT + 1000,
+        endsAt: TI151_RECEIVED_AT + 5 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 1000,
+        reason: "Intento previo a resolver",
+      }),
+  );
+  expect(beforeResolution).toEqual({ status: "request_not_granted" });
+
+  // Escenario 2: una solicitud de bloqueo denegada tampoco admite un bloqueo vinculado.
+  const denied = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: openBlocking.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 2000,
+        response: {
+          outcome: "denied",
+          reasons: "No corresponde bloqueo temporal en el caso ficticio.",
+          responsibleId: admin,
+        },
+      }),
+  );
+  expect(denied.status).toBe("applied");
+
+  const onDenied = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: openBlocking.requestId,
+        scope: "all_personal_data",
+        startsAt: TI151_RECEIVED_AT + 2000,
+        endsAt: TI151_RECEIVED_AT + 10 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2000,
+        reason: "Intento sobre solicitud denegada",
+      }),
+  );
+  expect(onDenied).toEqual({ status: "request_not_granted" });
+  expect(
+    await t.run(async (ctx) => await listPrivacyBlocksByRequest(ctx, openBlocking.requestId)),
+  ).toEqual([]);
+
+  // Escenario 3: un bloqueo con inicio futuro no aparece como vigente antes de startsAt.
+  const futureStartsAt = TI151_RECEIVED_AT + 7 * TI151_DAY_MS;
+  const futureEndsAt = TI151_RECEIVED_AT + 14 * TI151_DAY_MS;
+  const scheduled = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        scope: "follow_up",
+        startsAt: futureStartsAt,
+        endsAt: futureEndsAt,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 3000,
+        reason: "Bloqueo programado para fecha futura",
+      }),
+  );
+  expect(scheduled.status).toBe("created");
+  if (scheduled.status !== "created") throw new Error("expected created");
+
+  const day1 = TI151_RECEIVED_AT + TI151_DAY_MS;
+  expect(
+    await t.run(async (ctx) => await listActivePrivacyBlocksForSubject(ctx, student, day1)),
+  ).toEqual([]);
+  expect(
+    (
+      await t.run(
+        async (ctx) => await paginateActivePrivacyBlocks(ctx, day1, { numItems: 10, cursor: null }),
+      )
+    ).page,
+  ).toEqual([]);
+
+  expect(
+    (
+      await t.run(
+        async (ctx) => await listActivePrivacyBlocksForSubject(ctx, student, futureStartsAt),
+      )
+    ).map((b) => b.id),
+  ).toEqual([scheduled.blockId]);
+  expect(
+    (
+      await t.run(
+        async (ctx) =>
+          await paginateActivePrivacyBlocks(ctx, futureStartsAt, { numItems: 10, cursor: null }),
+      )
+    ).page.map((b) => b.id),
+  ).toEqual([scheduled.blockId]);
+});
+
+test("TI2-151: 50 excepciones vencidas sin levantar no ocultan una obligación legal vigente por categoría ni por titular", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-exp-est",
+    email: "ti151.exp.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-exp-admin",
+    email: "ti151.exp.admin@uct.cl",
+    role: "admin",
+  });
+
+  // 50 excepciones vencidas sin levantar en la misma categoría y para el mismo titular.
+  await t.run(async (ctx) => {
+    for (let i = 0; i < 50; i += 1) {
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        reference: `EXP-VENCIDA-${i + 1}`,
+        startsAt: TI151_RECEIVED_AT,
+        expiresAt: TI151_RECEIVED_AT + TI151_DAY_MS + i,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + i,
+      });
+    }
+  });
+
+  // Una obligación legal vigente (sin vencimiento) creada después de las 50 vencidas.
+  const activeLegal = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "legal_obligation",
+        category: "accompaniments",
+        subjectId: student,
+        reference: "OBL-LEGAL-VIGENTE",
+        startsAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(activeLegal.status).toBe("created");
+  if (activeLegal.status !== "created") throw new Error("expected created");
+
+  // Una excepción con vencimiento futuro también debe aparecer.
+  const activeFutureExpiry = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        reference: "PROC-VIGENTE-FUTURO",
+        startsAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        expiresAt: TI151_RECEIVED_AT + 20 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(activeFutureExpiry.status).toBe("created");
+  if (activeFutureExpiry.status !== "created") throw new Error("expected created");
+
+  const now = TI151_RECEIVED_AT + 5 * TI151_DAY_MS;
+  const byCategory = await t.run(
+    async (ctx) => await listActiveRetentionExceptionsForCategory(ctx, "accompaniments", now),
+  );
+  expect(byCategory.map((e) => e.id).sort()).toEqual(
+    [activeLegal.exceptionId, activeFutureExpiry.exceptionId].sort(),
+  );
+
+  const bySubject = await t.run(
+    async (ctx) => await listActiveRetentionExceptionsForSubject(ctx, student, now),
+  );
+  expect(bySubject.map((e) => e.id).sort()).toEqual(
+    [activeLegal.exceptionId, activeFutureExpiry.exceptionId].sort(),
   );
 });

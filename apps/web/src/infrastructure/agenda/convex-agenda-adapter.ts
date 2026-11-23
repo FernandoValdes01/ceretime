@@ -39,22 +39,22 @@ import type {
   SaveExceptionResult,
   SaveSpaceInput,
   SaveSpaceResult,
+  SetSpaceActiveInput,
+  SetSpaceActiveResult,
   SlotSearchFilter,
   SlotSearchResult,
 } from "../../application/agenda/agenda-port.ts";
 import { publicErrorOf } from "../convex/public-error.ts";
-import { createFictitiousAgendaAdapter } from "./fictitious-agenda-adapter.ts";
 
 /**
- * Adaptador Convex del puerto de agenda (TI2-125, extendido TI2-123).
+ * Adaptador Convex del puerto de agenda (TI2-125, extendido TI2-123, TI2-169).
  *
  * Un solo adaptador vigente para las operaciones ya publicadas: el editor de
- * disponibilidad (TI2-111), la agenda/detalle del Profesional (TI2-112) y la
- * lectura del catálogo de espacios (TI2-99) y la búsqueda, reserva y cancelación
- * del Estudiante (TI2-111, TI2-121) leen contra `api.presentation.*`; los
- * guardados y la agenda escriben donde hay mutation publicada. La escritura del
- * catálogo de espacios (TI2-104) sigue delegada al adaptador ficticio mientras
- * no tenga productor real; sus fixtures se identifican como tales en la interfaz.
+ * disponibilidad (TI2-111), la agenda/detalle del Profesional (TI2-112), la
+ * lectura del catálogo de espacios (TI2-99), su escritura real (TI2-148,
+ * TI2-169: `createSpace`, `updateSpace` y `setSpaceActive`) y la búsqueda,
+ * reserva y cancelación del Estudiante (TI2-111, TI2-121) leen y escriben
+ * contra `api.presentation.*`.
  *
  * Sin contexto, la búsqueda y la reserva responden error y no fixtures, para no
  * inventar un éxito.
@@ -121,6 +121,8 @@ const LOAD_APPOINTMENT_FALLBACK = "No pudimos cargar la atención. Inténtalo de
 const LOAD_SPACES_FALLBACK = "No pudimos cargar el catálogo de espacios. Inténtalo de nuevo.";
 const SAVE_BLOCK_FALLBACK = "No pudimos guardar el bloque. Inténtalo de nuevo.";
 const SAVE_EXCEPTION_FALLBACK = "No pudimos guardar la excepción. Inténtalo de nuevo.";
+const SAVE_SPACE_FALLBACK = "No pudimos guardar el espacio. Inténtalo de nuevo.";
+const SET_SPACE_ACTIVE_FALLBACK = "No pudimos cambiar la vigencia del espacio. Inténtalo de nuevo.";
 const CHANGE_STATUS_FALLBACK = "No pudimos registrar el cambio. Inténtalo de nuevo.";
 
 /**
@@ -320,10 +322,6 @@ export function createConvexAgendaAdapter(
   client: ConvexAgendaClient,
   now: () => number = Date.now,
 ): AgendaPort {
-  // Operación aún sin API real de escritura: el catálogo de espacios (TI2-104)
-  // sigue con fixtures.
-  const simulated = createFictitiousAgendaAdapter();
-
   /**
    * Etiquetas de los espacios vigentes. Son solo presentación: si la lectura
    * falla, el cupo se muestra sin etiqueta y no se pierde la búsqueda.
@@ -619,11 +617,11 @@ export function createConvexAgendaAdapter(
   }
 
   /**
-   * Catálogo de espacios del Backend, completo por cursor.
+   * Catálogo de espacios del Backend, completo por cursor (TI2-99).
    *
    * La agenda ya recibe identificadores reales de sala, así que las etiquetas
    * solo resuelven si el catálogo es el mismo que publica TI2-99. La escritura
-   * sigue simulada porque no hay mutation publicada (TI2-104).
+   * real vive en `saveSpace` y `setSpaceActive` (TI2-148, TI2-169).
    */
   async function readSpaces(): Promise<ListSpacesResult> {
     try {
@@ -889,17 +887,68 @@ export function createConvexAgendaAdapter(
     };
   }
 
+  /**
+   * Escritura real del catálogo (TI2-148, TI2-169): crear sin `id` o actualizar
+   * con `id` contra `api.presentation.spaces`. La autorización vive en el
+   * Backend; la denegación llega sin motivo y el error público conserva el
+   * mensaje en español del campo inválido o del conflicto.
+   */
+  async function saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult> {
+    try {
+      const fields = {
+        campus: input.campus,
+        building: input.building,
+        floor: input.floor,
+        room: input.room,
+        accessConditions: input.accessConditions,
+        arrivalInstructions: input.arrivalInstructions,
+        version: SPACE_CATALOG_CONTRACT_VERSION,
+      };
+      const managed =
+        input.id === undefined
+          ? await client.mutation(api.presentation.spaces.createSpace, fields)
+          : await client.mutation(api.presentation.spaces.updateSpace, {
+              spaceId: input.id,
+              ...fields,
+            });
+      return { status: "saved", space: managed.space };
+    } catch (error) {
+      const classified = classifyError(error, SAVE_SPACE_FALLBACK);
+      return "denied" in classified
+        ? { status: "denied" }
+        : { status: "error", error: classified.error };
+    }
+  }
+
+  /**
+   * Vigencia real del catálogo (TI2-148, TI2-169): retira o reactiva sin
+   * borrar. La sala retirada deja de listar; la confirmación usa su resumen
+   * legible para no perder el rastro en la vista.
+   */
+  async function setSpaceActive(input: SetSpaceActiveInput): Promise<SetSpaceActiveResult> {
+    try {
+      const managed = await client.mutation(api.presentation.spaces.setSpaceActive, {
+        spaceId: input.spaceId,
+        isActive: input.isActive,
+        version: SPACE_CATALOG_CONTRACT_VERSION,
+      });
+      return { status: "saved", space: managed.space, isActive: managed.isActive };
+    } catch (error) {
+      const classified = classifyError(error, SET_SPACE_ACTIVE_FALLBACK);
+      return "denied" in classified
+        ? { status: "denied" }
+        : { status: "error", error: classified.error };
+    }
+  }
+
   return {
     searchSlots,
     reserveSlot,
     cancelReservation,
     findBookingProfessionals,
     listSpaces: readSpaces,
-    // Sin API real todavía: la escritura del catálogo (TI2-104) conserva los
-    // fixtures declarados.
-    saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult> {
-      return simulated.saveSpace(input);
-    },
+    saveSpace,
+    setSpaceActive,
     listAvailability: readAvailability,
     saveBlock,
     saveException,
