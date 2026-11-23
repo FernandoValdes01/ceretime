@@ -25,6 +25,7 @@ export function ModalDialog({
   initialFocusRef,
   returnFocusRef,
   fallbackFocusRef,
+  className,
   children,
 }: {
   title: string;
@@ -34,6 +35,8 @@ export function ModalDialog({
   initialFocusRef?: RefObject<HTMLElement | null>;
   returnFocusRef?: RefObject<HTMLElement | null>;
   fallbackFocusRef?: RefObject<HTMLElement | null>;
+  /** Clase extra del panel, p. ej. para una variante visual sin cambiar el comportamiento. */
+  className?: string;
   children: ReactNode;
 }) {
   const titleId = useId();
@@ -110,7 +113,7 @@ export function ModalDialog({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description === undefined ? undefined : descriptionId}
-        className="flex max-h-full w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-lg border border-border-low bg-surface-container-lowest p-6 text-left text-on-surface shadow-[0_4px_12px_rgb(0_0_0/0.05)]"
+        className={`flex max-h-full w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-lg border border-border-low bg-surface-container-lowest p-6 text-left text-on-surface shadow-[0_4px_12px_rgb(0_0_0/0.05)]${className === undefined ? "" : ` ${className}`}`}
       >
         <h2 id={titleId} className="m-0! font-sans! text-xl! leading-snug! font-semibold!">
           {title}
