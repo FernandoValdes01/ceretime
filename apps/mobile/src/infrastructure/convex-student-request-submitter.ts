@@ -82,6 +82,7 @@ export function createConvexStudentRequestSubmitter({
   }
 
   const requestActions: StudentRequestActions = {
+    persistsToServer: true,
     async execute(command: StudentRequestActionCommand) {
       // La app no construye IDs de Convex: reenvía el recibido y el servidor valida que sea suyo.
       const requestId = command.requestId as Id<"requests">;

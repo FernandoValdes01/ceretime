@@ -54,6 +54,7 @@ export function StudentRequestActionsPanel({
     setFieldError(null);
   }
   if (!request || !actions) return null;
+  const simulated = actions.persistsToServer !== true;
   const canRespond = request.status === "awaitingInformationOrAcceptance";
   const canCancel = ["received", "underReview", "awaitingInformationOrAcceptance"].includes(
     request.status,
@@ -97,8 +98,12 @@ export function StudentRequestActionsPanel({
         status: "success",
         message:
           kind === "cancelRequest"
-            ? "Solicitud cancelada en la demostración."
-            : "Respuesta enviada en la demostración. La solicitud vuelve a revisión.",
+            ? simulated
+              ? "Solicitud cancelada en la demostración."
+              : "Solicitud cancelada."
+            : simulated
+              ? "Respuesta enviada en la demostración. La solicitud vuelve a revisión."
+              : "Respuesta enviada. La solicitud vuelve a revisión.",
       });
       setKind(null);
       setResponse("");
@@ -131,7 +136,7 @@ export function StudentRequestActionsPanel({
 
   return (
     <View className="gap-4">
-      {(canRespond || canCancel) && (
+      {simulated && (canRespond || canCancel) && (
         <StudentText className="text-student-secondary text-base leading-[26px]">
           Acciones de prueba. Usa datos ficticios: los cambios solo se guardan en esta sesión de
           demostración.
@@ -161,7 +166,7 @@ export function StudentRequestActionsPanel({
           accessibilityRole="alert"
           className="text-student-secondary text-base leading-[26px]"
         >
-          Procesando acción de prueba…
+          {simulated ? "Procesando acción de prueba…" : "Procesando acción…"}
         </StudentText>
       )}
       {kind && selectedAllowed ? (
@@ -172,7 +177,11 @@ export function StudentRequestActionsPanel({
           <TextInput
             ref={input}
             accessibilityLabel={fieldError ? `${label}. Error: ${fieldError}` : label}
-            accessibilityHint="Usa datos ficticios. El texto se conserva si la acción falla."
+            accessibilityHint={
+              simulated
+                ? "Usa datos ficticios. El texto se conserva si la acción falla."
+                : "El texto se conserva si la acción falla."
+            }
             aria-invalid={Boolean(fieldError)}
             aria-describedby={fieldError ? "request-action-error" : undefined}
             value={value}
@@ -212,8 +221,12 @@ export function StudentRequestActionsPanel({
                   : result.status === "error"
                     ? "Reintentar acción"
                     : kind === "cancelRequest"
-                      ? "Confirmar cancelación de prueba"
-                      : "Enviar respuesta de prueba"
+                      ? simulated
+                        ? "Confirmar cancelación de prueba"
+                        : "Confirmar cancelación"
+                      : simulated
+                        ? "Enviar respuesta de prueba"
+                        : "Enviar respuesta"
               }
               disabled={pending}
               onPress={() => {

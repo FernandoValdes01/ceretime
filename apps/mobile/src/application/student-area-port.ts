@@ -99,6 +99,8 @@ export interface StudentRequestSubmitter {
 
 /** Acciones inyectadas; una respuesta confirma solamente la escritura del adaptador elegido. */
 export interface StudentRequestActions {
+  /** Verdadero solo si las acciones llegan al servidor; sin indicarlo, la interfaz avisa que son de prueba. */
+  readonly persistsToServer?: boolean;
   execute(command: StudentRequestActionCommand): Promise<StudentRequest>;
 }
 
