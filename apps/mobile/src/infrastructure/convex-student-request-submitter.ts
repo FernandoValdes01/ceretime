@@ -92,16 +92,16 @@ export function createConvexStudentRequestSubmitter({
             requestId,
             reason: command.reason,
           });
+          // Solo lo que el servidor confirmó; el motivo y el intercambio llegan con la recarga del detalle.
           notifyStudentAreaChanged();
-          return { ...mapBackendStudentRequest(cancelled), closureReason: command.reason };
+          return mapBackendStudentRequest(cancelled);
         }
         const responded = await client.mutation(
           api.presentation.requests.respondToInformationRequest,
           { requestId, response: command.response },
         );
         notifyStudentAreaChanged();
-        // La respuesta cierra la pregunta pendiente; el estado y la fecha son los que fijó el servidor.
-        return { ...mapBackendStudentRequest(responded), informationResponse: command.response };
+        return mapBackendStudentRequest(responded);
       } catch (error) {
         throw toActionError(error);
       }

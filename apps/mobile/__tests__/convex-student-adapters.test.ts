@@ -203,12 +203,59 @@ describe("envío y acciones estudiantiles sobre Convex", () => {
       response: "Martes por la tarde",
     });
 
-    expect(cancelled).toMatchObject({ status: "cancelled", closureReason: "Ya no la necesito" });
-    expect(responded).toMatchObject({
-      status: "underReview",
-      informationResponse: "Martes por la tarde",
-    });
+    // Solo se informa lo que el servidor devolvió; el texto enviado no se presenta como persistido.
+    expect(cancelled).toMatchObject({ status: "cancelled" });
+    expect(cancelled.closureReason).toBeUndefined();
+    expect(responded).toMatchObject({ status: "underReview" });
+    expect(responded.informationResponse).toBeUndefined();
     expect(calls[0]?.args).toEqual({ requestId: "requests:1", reason: "Ya no la necesito" });
+  });
+
+  it("si la respuesta se pierde, el reintento recibe la solicitud ya creada y no se duplica", async () => {
+    // Simula al servidor: una clave de idempotencia crea una sola solicitud y la devuelve de nuevo.
+    const createdByKey = new Map<string, ReturnType<typeof requestRow>>();
+    let responsesLost = 1;
+    const { client } = fakeClient({
+      "presentation/requests:createRequest": ({ idempotencyKey }) => {
+        const key = String(idempotencyKey);
+        const existing = createdByKey.get(key);
+        const request = existing ?? requestRow(`requests:${createdByKey.size + 1}`);
+        createdByKey.set(key, request);
+        if (responsesLost > 0) {
+          responsesLost -= 1;
+          throw Object.assign(new Error("Network request failed"), { code: "network_error" });
+        }
+        return request;
+      },
+    });
+    let counter = 0;
+    const submitter = createConvexStudentRequestSubmitter({
+      client,
+      createIdempotencyKey: () => `clave-${++counter}`,
+    });
+
+    await expect(submitter.submitStudentRequest(command)).rejects.toBeDefined();
+    const receipt = await submitter.submitStudentRequest(command);
+
+    expect(createdByKey.size).toBe(1);
+    expect(receipt.requestId).toBe("requests:1");
+  });
+
+  it("responder una información que ya no se espera llega como conflicto", async () => {
+    const { client } = fakeClient({
+      "presentation/requests:respondToInformationRequest": () => {
+        throw new ConvexError({ code: "conflict", message: "conflicto" });
+      },
+    });
+    const actions = createConvexStudentRequestSubmitter({ client }).requestActions;
+
+    await expect(
+      actions.execute({
+        kind: "respondToInformationRequest",
+        requestId: "requests:2",
+        response: "Martes",
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
   });
 
   it.each([

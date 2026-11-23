@@ -1,7 +1,7 @@
 import { ConvexError } from "convex/values";
 import { BaseConvexClient } from "convex/browser";
 import {
-  PROVISIONAL_STUDENT_REQUEST_OPERATIONS,
+  STUDENT_REQUEST_ACTION_OPERATIONS,
   StudentOperationError,
   type StudentPublicOperation,
   type StudentQueries,
@@ -297,11 +297,11 @@ describe("contratos locales del módulo estudiantil TI4-76", () => {
     expect(await queries.getAccompaniment(accompaniments.page[0].id)).toEqual(
       accompaniments.page[0],
     );
-    expect(PROVISIONAL_STUDENT_REQUEST_OPERATIONS.cancelRequest.status).toBe("published");
-    expect(PROVISIONAL_STUDENT_REQUEST_OPERATIONS.cancelRequest.reference).toContain(
+    expect(STUDENT_REQUEST_ACTION_OPERATIONS.cancelRequest.status).toBe("published");
+    expect(STUDENT_REQUEST_ACTION_OPERATIONS.cancelRequest.reference).toContain(
       "commands.ts#cancelRequest",
     );
-    expect(PROVISIONAL_STUDENT_REQUEST_OPERATIONS.respondToInformationRequest.reference).toContain(
+    expect(STUDENT_REQUEST_ACTION_OPERATIONS.respondToInformationRequest.reference).toContain(
       "TI2-141",
     );
     expect(queries).not.toHaveProperty("cancelRequest");

@@ -68,7 +68,7 @@ export type StudentRequestActionCommand =
     };
 
 /** Operaciones de escritura publicadas por TI2-141 que usa el adaptador de Convex. */
-export const PROVISIONAL_STUDENT_REQUEST_OPERATIONS = {
+export const STUDENT_REQUEST_ACTION_OPERATIONS = {
   cancelRequest: {
     status: "published",
     reference: "convex/application/requests/commands.ts#cancelRequest",
