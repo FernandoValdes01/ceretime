@@ -1,9 +1,10 @@
 import { ConvexHttpClient } from "convex/browser";
 import type { FunctionArgs, FunctionReference, FunctionReturnType } from "convex/server";
 
-const REQUEST_TIMEOUT_MS = 15_000;
+/** Tope de espera de cada petición a Convex, también al pedir el token de la sesión. */
+export const REQUEST_TIMEOUT_MS = 15_000;
 
-class MobileNetworkError extends Error {
+export class MobileNetworkError extends Error {
   readonly code = "network_error";
 }
 
