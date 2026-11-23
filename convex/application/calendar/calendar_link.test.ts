@@ -83,7 +83,10 @@ function fakeOAuth(
 }
 
 function fakeAccess(
-  tokens: { readonly accessToken: string | null; readonly refreshToken: string | null } | null = {
+  tokens:
+    | { readonly accessToken: string | null; readonly refreshToken: string | null }
+    | "missing"
+    | "unavailable" = {
     accessToken: "access-ficticio",
     refreshToken: "refresh-ficticio",
   },
@@ -94,9 +97,9 @@ function fakeAccess(
     calls,
     readTokens: async () => {
       calls.push("read");
-      return tokens === null
-        ? { status: "missing" as const }
-        : { status: "found" as const, tokens };
+      if (tokens === "missing") return { status: "missing" as const };
+      if (tokens === "unavailable") return { status: "unavailable" as const };
+      return { status: "found" as const, tokens };
     },
     revokeToken: async (token) => {
       calls.push(`revoke:${token}`);
@@ -330,9 +333,19 @@ describe("revokeCalendarOAuthAccess", () => {
   });
 
   test("sin cuenta vinculada responde not_found sin llamar a Google", async () => {
-    const access = fakeAccess(null);
+    const access = fakeAccess("missing");
     const result = await revokeCalendarOAuthAccess({ access });
     expect(result).toEqual({ status: "ok", data: { status: "not_found" } });
+    expect(access.calls).toEqual(["read"]);
+  });
+
+  test("sin lectura de tokens responde conflict sin borrar ni revocar", async () => {
+    const access = fakeAccess("unavailable");
+    const result = await revokeCalendarOAuthAccess({ access });
+    expect(result).toEqual({
+      status: "error",
+      error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
+    });
     expect(access.calls).toEqual(["read"]);
   });
 

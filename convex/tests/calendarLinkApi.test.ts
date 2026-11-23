@@ -195,15 +195,18 @@ async function seedGoogleAccount(t: ReturnType<typeof convexTest>, input: SeedAc
 }
 
 /** Revocación simulada de Google: registra llamadas y responde lo indicado. */
-function stubGoogleRevoke(handler: (body: string) => Response) {
+function stubGoogleRevoke(handler: (body: string, init: RequestInit | undefined) => Response) {
   const calls: string[] = [];
+  const inits: Array<RequestInit | undefined> = [];
   const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
     calls.push(String(url));
+    inits.push(init as RequestInit | undefined);
     const body = (init as { readonly body?: unknown } | undefined)?.body;
-    return handler(typeof body === "string" ? body : "");
+    return handler(typeof body === "string" ? body : "", init as RequestInit | undefined);
   });
   return {
     calls,
+    inits,
     restore: () => spy.mockRestore(),
   };
 }
@@ -328,7 +331,7 @@ describe("TI2-161 API", () => {
     const subject = "ti161-link-cycle";
     await seedUser(t, { subject, role: "student" });
     await seedGoogleAccount(t, { subject, scopes: ["openid", CALENDAR_EVENTS_SCOPE] });
-    const { calls, restore } = stubGoogleRevoke(revokeOk);
+    const { calls, inits, restore } = stubGoogleRevoke(revokeOk);
     try {
       const asStudent = t.withIdentity(identityFor(subject, `${subject}@uct.cl`));
 
@@ -343,6 +346,7 @@ describe("TI2-161 API", () => {
       expect(typeof unlinked.revokedAt).toBe("number");
 
       expect(calls).toEqual(["https://oauth2.googleapis.com/revoke"]);
+      expect(inits[0]?.signal).toBeInstanceOf(AbortSignal);
       const status = await asStudent.query(api.presentation.calendar.getCalendarLinkStatus, {});
       expect(status.connected).toBe(false);
       expect(status.staleEventsMayRemain).toBe(true);
@@ -369,6 +373,41 @@ describe("TI2-161 API", () => {
         .withIdentity(identityFor(subject, `${subject}@uct.cl`))
         .action(api.presentation.calendar.disconnectCalendarLink, {});
       expect(result.status).toBe("unlinked");
+    } finally {
+      restore();
+    }
+  });
+
+  test("un token cifrado que no abre responde conflict sin borrar ni marcar", async () => {
+    const t = convexTest(schema, modules);
+    registerBetterAuthStub(t);
+    const subject = "ti161-link-corrupt";
+    await seedUser(t, { subject, role: "student" });
+    await seedGoogleAccount(t, {
+      subject,
+      scopes: [CALENDAR_EVENTS_SCOPE],
+      refreshToken: "abcdef12",
+    });
+    const asStudent = t.withIdentity(identityFor(subject, `${subject}@uct.cl`));
+    const confirmed = await asStudent.mutation(api.presentation.calendar.confirmCalendarLink, {});
+    expect(confirmed.status).toBe("linked");
+    const { calls, restore } = stubGoogleRevoke(revokeOk);
+    try {
+      expect(
+        await publicErrorData(
+          asStudent.action(api.presentation.calendar.disconnectCalendarLink, {}),
+        ),
+      ).toEqual({
+        code: "conflict",
+        message: "La solicitud entra en conflicto con el estado actual.",
+      });
+      expect(calls).toHaveLength(0);
+      const status = await asStudent.query(api.presentation.calendar.getCalendarLinkStatus, {});
+      expect(status).toEqual({
+        connected: true,
+        linkedAt: expect.any(Number),
+        staleEventsMayRemain: false,
+      });
     } finally {
       restore();
     }

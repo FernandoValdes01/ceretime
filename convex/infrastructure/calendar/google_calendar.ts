@@ -209,21 +209,34 @@ export function googleCalendarOAuthAccess(ctx: ActionCtx) {
       // salva la varianza de los genéricos del adaptador en los tipos de
       // Better Auth, no cambia el objeto que recibe el descifrado.
       const context = (await auth.$context) as unknown as DecryptContext;
-      const decipher = async (value: unknown): Promise<string | null> => {
-        if (typeof value !== "string" || value.length === 0) return null;
+      type DecodedToken =
+        | { readonly status: "ok"; readonly value: string | null }
+        | { readonly status: "unreadable" };
+      const decode = async (value: unknown): Promise<DecodedToken> => {
+        // Ausente no es lo mismo que ilegible: un campo vacío significa que no
+        // hay nada que revocar; un cifrado que no abre significa que no se
+        // puede confirmar la revocación.
+        if (typeof value !== "string" || value.length === 0) {
+          return { status: "ok", value: null };
+        }
         try {
           const plain = await decryptOAuthToken(value, context);
-          return typeof plain === "string" && plain.length > 0 ? plain : null;
+          return {
+            status: "ok",
+            value: typeof plain === "string" && plain.length > 0 ? plain : null,
+          };
         } catch {
-          return null;
+          return { status: "unreadable" };
         }
       };
+      const accessToken = await decode(account.accessToken);
+      const refreshToken = await decode(account.refreshToken);
+      if (accessToken.status === "unreadable" || refreshToken.status === "unreadable") {
+        return { status: "unavailable" };
+      }
       return {
         status: "found",
-        tokens: {
-          accessToken: await decipher(account.accessToken),
-          refreshToken: await decipher(account.refreshToken),
-        },
+        tokens: { accessToken: accessToken.value, refreshToken: refreshToken.value },
       };
     } catch {
       return { status: "unavailable" };
@@ -238,6 +251,9 @@ export function googleCalendarOAuthAccess(ctx: ActionCtx) {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: `token=${encodeURIComponent(token)}`,
+          // Sin tope, una Google colgada deja la acción esperando hasta el
+          // límite de Convex con el botón solo en "ocupado".
+          signal: AbortSignal.timeout(10_000),
         });
       } catch {
         return "unavailable";

@@ -190,7 +190,6 @@ export async function confirmCalendarLink(
   },
   input: { readonly tokenIdentifier: string | null },
 ): Promise<ApiResult<CalendarLinkConfirmResult>> {
-  if (input.tokenIdentifier === null) return errResult(unauthorizedError());
   const profile = await linkerProfile(deps, input.tokenIdentifier);
   if (profile === null) {
     return errResult(unauthorizedError());
@@ -258,7 +257,6 @@ export async function markCalendarDisconnected(
   },
   input: { readonly tokenIdentifier: string | null; readonly revoked: "revoked" | "not_found" },
 ): Promise<ApiResult<CalendarLinkDisconnectResult>> {
-  if (input.tokenIdentifier === null) return errResult(unauthorizedError());
   const profile = await linkerProfile(deps, input.tokenIdentifier);
   if (profile === null) {
     return errResult(unauthorizedError());
