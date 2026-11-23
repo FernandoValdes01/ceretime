@@ -17,6 +17,7 @@ import {
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
 import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import {
   appointmentChangeReader,
   appointmentOccupier,
@@ -2910,6 +2911,7 @@ test("TI2-128 API: un evento escrito en una transacción que aborta se descarta 
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          notifications: notificationEventRecorder(ctx),
           audit: {
             recordAppointmentAudit: async (event) => {
               await recorder.recordAppointmentAudit(event);

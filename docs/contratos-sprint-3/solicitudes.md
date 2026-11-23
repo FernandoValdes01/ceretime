@@ -1,4 +1,4 @@
-# Solicitudes de acompañamiento — TI2-141, TI2-181, TI2-143, TI2-183
+# Solicitudes de acompañamiento — TI2-141, TI2-181, TI2-143, TI2-183, TI2-150
 
 Fuente: `CONTEXT.md` (solicitud de acompañamiento y sus estados), sección «Solicitudes» de `docs/especificacion-prototipo.md`, modelo de estados de `convex/domain/requests/state-model.md` y esquema de TI2-135 en `convex/domain/database/integrity.md`. Superficie pública bajo `api.presentation.requests.*`; todo opera con datos ficticios. Las operaciones de Sprint 1 (`listOpenRequests`, `takeRequest`, `requestAdditionalInformation` y `acceptRequest`) conservan los argumentos y respuestas de `docs/contratos-sprint-1.md`; desde TI2-181 rechazan con el contrato común de «Errores».
 
@@ -104,7 +104,7 @@ Debe haber al menos una necesidad seleccionada o un `otherAccessNeed` con texto.
 
 ## Canal oficial y derivaciones
 
-Operaciones de TI2-143 para el personal autorizado, que es el Profesional con cuenta vigente. Ninguna envía avisos ni se comunica con otra unidad: eso ocurre fuera de la aplicación.
+Operaciones de TI2-143 para el personal autorizado, que es el Profesional con cuenta vigente. Ninguna se comunica con otra unidad: eso ocurre fuera de la aplicación. El registro y la derivación de salida dejan su aviso en el sistema, como indica «Avisos».
 
 **Registrar por canal oficial.** `registerOfficialRequest` registra una solicitud que CERETI recibió por un canal oficial, a nombre de un Estudiante:
 
@@ -133,7 +133,7 @@ Los dos pasos exigen la toma activa y no cambian `status`. Se pueden registrar m
 | `destinationUnit` | `string` | Nombre de la unidad de destino, de 1 a 200 caracteres tras recortar |
 | `reason` | `string` | Razón que lee el Estudiante, de 1 a 2000 caracteres tras recortar |
 
-No pide destinatarios ni antecedentes, y el validador rechaza cualquier otro campo. El aviso al Estudiante queda registrado como el cambio de estado en el historial de la solicitud, con actor y fecha, y el Estudiante lee la unidad y la razón en `outgoingReferral` del detalle. El envío del aviso por correo o notificación no es parte de esta operación.
+No pide destinatarios ni antecedentes, y el validador rechaza cualquier otro campo. El cambio de estado queda en el historial de la solicitud, con actor y fecha, y el Estudiante recibe el aviso `request_referred` (ver «Avisos»); lee la unidad y la razón en `outgoingReferral` del detalle. El envío del aviso por correo o notificación no es parte de esta operación.
 
 ```ts
 const refer = useMutation(api.presentation.requests.referRequest);
@@ -145,6 +145,23 @@ await refer({
 ```
 
 Los nombres de unidad y las razones son texto libre: no deben incluir diagnósticos ni etiquetas clínicas, y no se copian a la bitácora de auditoría.
+
+## Avisos
+
+Desde TI2-150, registrar una solicitud y cada cambio de estado dejan un aviso en `notificationEvents`, en la misma mutation y después de persistir. La política vive en `convex/domain/notifications/notification.ts`; los casos de uso lo entregan con `convex/application/requests/notifications.ts`. «Quien revisa» es el Profesional que tomó la solicitud (`takenBy`). Quien hace un cambio de estado nunca se avisa a sí mismo; la recepción es la excepción: confirma al Estudiante aunque la haya enviado él.
+
+| Operación | Clase | Destinatario |
+| --- | --- | --- |
+| `createRequest` y `registerOfficialRequest` | `request_received` | El Estudiante |
+| `takeRequest` | `request_under_review` | El Estudiante |
+| `requestAdditionalInformation` | `request_information_requested` | El Estudiante |
+| `respondToInformationRequest` | `request_information_provided` | Quien revisa |
+| `acceptRequest` | `request_accepted` | El Estudiante |
+| `referRequest` | `request_referred` | El Estudiante |
+| `closeRequestWithoutAccompaniment` | `request_closed` | El Estudiante |
+| `cancelRequest` | `request_cancelled` | Quien revisa; si nadie la tomó, no hay aviso |
+
+El aviso lleva solo la solicitud y el destinatario: nunca el motivo, la respuesta, la razón ni las necesidades. Su texto externo es el genérico «Tienes una actualización pendiente». La recepción usa el instante persistido de la fila, así repetir el envío con la misma `idempotencyKey` devuelve la misma solicitud y no deja un segundo aviso. Un paso rechazado no deja aviso. El contacto y la aceptación de una derivación de entrada no cambian el estado y no avisan.
 
 ## Vínculo con el acompañamiento
 

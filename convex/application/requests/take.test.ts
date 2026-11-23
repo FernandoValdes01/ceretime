@@ -41,6 +41,11 @@ function memoryDeps(
         writes.push(`log ${entry.from}->${entry.to} ${entry.actorId} ${entry.occurredAt}`);
       },
     },
+    notifications: {
+      record: async (events) => {
+        for (const event of events) writes.push(`notice ${event.kind} ${event.recipientId}`);
+      },
+    },
     now: () => NOW,
   };
   return { deps, writes };
@@ -89,6 +94,7 @@ describe("takeRequest con puertos (TI2-181)", () => {
       `take sol-1 ${PROFESSIONAL}`,
       "status sol-1 under_review",
       `log received->under_review ${PROFESSIONAL} ${NOW}`,
+      "notice request_under_review est-1",
     ]);
   });
 

@@ -41,6 +41,8 @@ export type StoredRequestRow<RequestId extends string, UserId extends string> = 
   readonly status: RequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
+  /** Profesional que la tomó para revisión; recibe los avisos del Estudiante (TI2-150). */
+  readonly takenBy?: UserId;
   /** Razón vigente del cierre sin acompañamiento; solo la entrega el detalle. */
   readonly closureReason?: string;
   /**

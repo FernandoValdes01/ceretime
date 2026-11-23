@@ -18,6 +18,7 @@ import {
   type CancellableAppointment,
 } from "../appointments/changes";
 import type { AppointmentAuditRecorder } from "../appointments/audit";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import {
   authorizeAccompanimentStatusChange,
   type AuthorizationReader,
@@ -36,7 +37,7 @@ import {
  * autorización de agenda, que deja de admitir reservas y cambios de horario.
  * Cerrar cancela las atenciones futuras por el mismo camino que la
  * cancelación individual (`cancelAuthorizedAppointment`), así el cupo se
- * libera y la auditoría queda igual. Una atención vigente cuya hora ya pasó
+ * libera y la auditoría y los avisos quedan igual. Una atención vigente cuya hora ya pasó
  * impide el cierre: cancelarla diría que no ocurrió, así que antes debe
  * registrarse su resultado.
  *
@@ -75,6 +76,7 @@ export interface CloseAccompanimentDeps extends ChangeAccompanimentStatusDeps {
   readonly appointments: PendingAppointmentsReader;
   readonly persister: AppointmentTransitionPersister;
   readonly audit: AppointmentAuditRecorder;
+  readonly notifications: NotificationEventRecorder;
 }
 
 /** Entrada común: identidad de sesión, acompañamiento y motivo opcional. */

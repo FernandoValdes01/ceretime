@@ -132,6 +132,7 @@ export const bookAppointment = mutation({
           compatibility: compatibilitySpaceSource(ctx),
           occupier: appointmentOccupier(ctx),
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
         },
         { ...slot, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
@@ -160,6 +161,7 @@ export const cancelAppointment = mutation({
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -197,6 +199,7 @@ export const rescheduleAppointment = mutation({
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
           occupier: appointmentOccupier(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
@@ -234,6 +237,7 @@ export const recordAppointmentAttendance = mutation({
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -269,6 +273,7 @@ export const submitAppointmentJustification = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -301,6 +306,7 @@ export const reviewAppointmentJustification = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,

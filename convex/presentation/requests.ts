@@ -41,6 +41,7 @@ import {
   requestReader,
   requestStore,
 } from "../infrastructure/requests/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 import { unwrapApiResult } from "./session";
 
@@ -69,8 +70,11 @@ import { unwrapApiResult } from "./session";
  * (`requestStatusUnion`).
  *
  * TI2-143: suma el registro por canal oficial, el contacto y la aceptación
- * de una derivación de entrada y la derivación de salida. Ninguna envía
- * avisos ni se comunica con otra unidad: eso ocurre fuera de la aplicación.
+ * de una derivación de entrada y la derivación de salida. Ninguna se comunica
+ * con otra unidad: eso ocurre fuera de la aplicación.
+ *
+ * TI2-150: cada registro y cada cambio de estado deja su aviso en el sistema
+ * por `notificationEventRecorder`, en la misma mutation.
  */
 
 const requestBaseFields = {
@@ -162,7 +166,12 @@ export const createRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await registerRequest(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, submission: args },
       ),
     );
@@ -264,6 +273,7 @@ export const takeRequest = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -287,6 +297,7 @@ export const requestAdditionalInformation = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -311,6 +322,7 @@ export const acceptRequest = mutation({
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
           accompaniments: accompanimentOpener(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -331,7 +343,12 @@ export const cancelRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await cancelRequestUseCase(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
       ),
     );
@@ -353,6 +370,7 @@ export const closeRequestWithoutAccompaniment = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -374,7 +392,12 @@ export const respondToInformationRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await respondToInformationRequestUseCase(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
       ),
     );
@@ -406,6 +429,7 @@ export const registerOfficialRequest = mutation({
           professionals: activeProfessionalReader(ctx),
           students: activeStudentByEmailReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         {
@@ -482,6 +506,7 @@ export const referRequest = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
