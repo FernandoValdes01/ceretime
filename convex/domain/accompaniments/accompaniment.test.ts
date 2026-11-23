@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import {
   ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
   ACCOMPANIMENT_STATUS_VALUES,
+  mustKeepAProfessional,
   toAccompanimentProjection,
   transitionAccompaniment,
 } from "./accompaniment";
@@ -193,5 +194,13 @@ describe("Cambios de estado del acompañamiento (TI2-152)", () => {
         transitionAccompaniment({ from: "active", to: "paused", actorId: "p", occurredAt }),
       ).toEqual({ status: "rejected", cause: "occurred_at_invalid" });
     }
+  });
+});
+
+describe("mustKeepAProfessional (TI2-165)", () => {
+  test("solo un acompañamiento cerrado puede quedar sin profesional", () => {
+    expect(mustKeepAProfessional("active")).toBe(true);
+    expect(mustKeepAProfessional("paused")).toBe(true);
+    expect(mustKeepAProfessional("closed")).toBe(false);
   });
 });

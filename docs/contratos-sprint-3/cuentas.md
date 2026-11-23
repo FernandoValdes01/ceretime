@@ -39,7 +39,7 @@ Una cuenta pendiente aún no trae auditoría; una revocada conserva la habilitac
 
 Solo el Administrador con cuenta habilitada y vigente lista, lee, habilita y revoca cuentas de personal. Estudiante, Profesional y Practicante solo ven su perfil propio mediante `presentation/session.getMyProfile` y reciben `unauthorized` en esta superficie. Tener correo institucional no concede acceso: sin perfil vinculado y vigente la respuesta es denegación. Habilitar exige correo de personal en ambos roles; revocar no revisa el dominio: cortar el acceso siempre está permitido. Administrar no concede acompañamientos ni notas: el Administrador sigue denegado en `accompaniment:read` e `internalNote:read`. La gestión de Practicantes corresponde al Profesional y se resuelve en TI2-140.
 
-Desde TI2-152, un acompañamiento cerrado no admite conceder ni modificar accesos, y desde TI2-165 retirar al último profesional también procede; el detalle está en `docs/contratos-sprint-3/seguimiento.md`.
+Desde TI2-152, retirar al único profesional de un acompañamiento activo o en pausa responde `conflict`, y un acompañamiento cerrado no admite conceder ni modificar accesos; el detalle está en `docs/contratos-sprint-3/seguimiento.md`.
 
 Revocar a un Profesional no reasigna sus acompañamientos ni atenciones: las filas se conservan y dejan de autorizar en la petición siguiente porque cada lectura vuelve a exigir el perfil vigente. La reasignación queda fuera de alcance de TI2-137 y pendiente de coordinar con la administración web (TI2-169).
 

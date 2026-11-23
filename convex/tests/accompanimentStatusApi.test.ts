@@ -517,7 +517,7 @@ test("TI2-152 API: una atención vigente cuya hora ya pasó impide el cierre, y 
   });
 });
 
-test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta, también el último profesional", async () => {
+test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta y el último profesional no se retira mientras no esté cerrado", async () => {
   const t = convexTest(schema, modules);
   const seed = await seedAccompaniment(t, "retiro");
   const { getAccompaniment, revokeAccompanimentAccess, pauseAccompaniment } =
@@ -551,19 +551,19 @@ test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta, tambi
   expect(revoked[0]).toMatchObject({ status: "revoked", revokedBy: seed.pro });
   expect(revoked[0]?.revokedAt).toBeGreaterThan(0);
 
-  // El MER admite un acompañamiento sin asignaciones (ASIGNA 1 : 0..*): el
-  // último profesional también se retira y pierde el acceso (TI2-165).
+  // Sin profesional nadie podría volver a asignar ni cerrar: activo o en
+  // pausa, el último no se retira (TI2-165).
   const last = t.withIdentity(seed.proIdentity);
-  expect(
-    await last.mutation(revokeAccompanimentAccess, {
+  const retireLast = () =>
+    last.mutation(revokeAccompanimentAccess, {
       ...args,
       userId: seed.pro,
       assignedRole: "professional",
-    }),
-  ).toBe(1);
-  await expect(last.query(getAccompaniment, args)).rejects.toMatchObject({
-    data: "No autorizado",
-  });
+    });
+  await expectPublicError(retireLast(), "conflict");
+  expect(await last.mutation(pauseAccompaniment, args)).toMatchObject({ status: "paused" });
+  await expectPublicError(retireLast(), "conflict");
+  expect(await last.query(getAccompaniment, args)).toMatchObject({ view: "full" });
 });
 
 test("TI2-152 API: un acompañamiento cerrado no admite conceder ni modificar accesos, pero sí retirarlos", async () => {
@@ -595,6 +595,14 @@ test("TI2-152 API: un acompañamiento cerrado no admite conceder ni modificar ac
     await pro.mutation(revokeAccompanimentAccess, {
       accompanimentId: seed.accompanimentId,
       userId: seed.otherPro,
+      assignedRole: "professional",
+    }),
+  ).toBe(1);
+  // Cerrado puede quedar sin asignaciones: el 0..* de ASIGNA en el MER.
+  expect(
+    await pro.mutation(revokeAccompanimentAccess, {
+      accompanimentId: seed.accompanimentId,
+      userId: seed.pro,
       assignedRole: "professional",
     }),
   ).toBe(1);

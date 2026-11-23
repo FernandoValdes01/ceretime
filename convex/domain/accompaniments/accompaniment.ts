@@ -180,6 +180,16 @@ export const ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH = 500;
  */
 export const ACCOMPANIMENT_CLOSURE_CANCEL_REASON = "Cierre del acompañamiento";
 
+/**
+ * Un acompañamiento activo o en pausa conserva al menos un profesional
+ * asignado: asignar a otro y cerrar exigen una asignación profesional activa,
+ * así que sin ninguna nadie podría volver a gestionarlo. Uno cerrado sí puede
+ * quedar sin asignaciones, que es el 0..* de ASIGNA en el MER (TI2-165).
+ */
+export function mustKeepAProfessional(status: AccompanimentStatus): boolean {
+  return status !== "closed";
+}
+
 export type AccompanimentTransitionAttempt = {
   readonly from: AccompanimentStatus;
   readonly to: AccompanimentStatus;

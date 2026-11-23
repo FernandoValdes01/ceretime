@@ -210,7 +210,7 @@ El cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` 
 TI2-152 agrega estas reglas al cambio:
 
 - Quien se retira pierde el acceso en la consulta siguiente, porque cada lectura vuelve a exigir la asignación activa.
-- Retirar al último profesional asignado también procede, porque el MER admite un acompañamiento sin asignaciones (ASIGNA 1 : 0..*, TI2-165). Mientras nadie quede asignado, ningún Profesional opera sobre ese acompañamiento.
+- Mientras el acompañamiento esté activo o en pausa, retirar al único profesional asignado responde `conflict`: asignar a otro y cerrar exigen una asignación profesional activa, así que sin ninguna nadie podría volver a gestionarlo. Para reemplazarlo, primero se asigna al nuevo y después se retira al anterior. Un acompañamiento cerrado sí puede quedar sin asignaciones, que es el 0..* de ASIGNA en el MER (TI2-165).
 - Un acompañamiento cerrado no admite conceder ni modificar accesos (`conflict`). Retirar un acceso sigue permitido.
 - Retirar a un profesional no cancela ni reasigna sus atenciones futuras: siguen a su nombre y solo el Estudiante puede cancelarlas o cambiarles el horario, con el acompañamiento activo. El cierre sí las cancela.
 

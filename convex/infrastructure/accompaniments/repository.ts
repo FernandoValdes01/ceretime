@@ -581,3 +581,34 @@ export function accompanimentProfessionalsReader(ctx: DbReader) {
     takeProfessionalProfiles: (limit: number) => takeProfessionalProfiles(ctx, limit),
   };
 }
+
+/**
+ * Verdadero cuando otro usuario conserva una asignación profesional activa y
+ * vigente sobre el acompañamiento (TI2-152, TI2-165). El índice ordena por
+ * usuario antes que por estado y rol, así que lee las asignaciones del
+ * acompañamiento hasta el tope y compara en memoria. Sobre el tope puede
+ * responder `false` aunque exista otro profesional: el retiro se rechaza,
+ * nunca se permite de más.
+ */
+export async function hasAnotherActiveProfessional(
+  ctx: MutationCtx,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly userId: Id<"users">;
+  },
+  now: number = Date.now(),
+): Promise<boolean> {
+  const rows = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q.eq("accompanimentId", input.accompanimentId),
+    )
+    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT);
+  return rows.some(
+    (row) =>
+      row.userId !== input.userId &&
+      row.status === "active" &&
+      row.assignedRole === "professional" &&
+      isAssignmentWithinValidity(row, now),
+  );
+}
