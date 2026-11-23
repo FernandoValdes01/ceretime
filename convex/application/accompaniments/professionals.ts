@@ -3,6 +3,11 @@ import {
   type AccountEnabler,
 } from "../../domain/accounts/enablement";
 import {
+  keepsAManagerWithout,
+  toProfessionalAssignmentHolder,
+  type AccompanimentStatus,
+} from "../../domain/accompaniments/accompaniment";
+import {
   CONFLICT_ERROR_CODE,
   errResult,
   okResult,
@@ -34,6 +39,8 @@ export type ProfessionalAssignmentRow<UserId extends string = string> = {
   readonly userId: UserId;
   /** `asignadoEn`; falta en filas anteriores a TI2-140. */
   readonly assignedAt?: number;
+  /** Fin acordado, solo en filas anteriores a TI2-165; no se entrega a la Web. */
+  readonly validUntil?: number;
 };
 
 export interface AccompanimentProfessionalsReader<UserId extends string = string> {
@@ -41,7 +48,8 @@ export interface AccompanimentProfessionalsReader<UserId extends string = string
     tokenIdentifier: string,
   ): Promise<ProfessionalProfile<UserId> | null>;
   getProfile(userId: UserId): Promise<ProfessionalProfile<UserId> | null>;
-  accompanimentExists(accompanimentId: string): Promise<boolean>;
+  /** Estado del acompañamiento, o `null` si no existe. */
+  getAccompanimentStatus(accompanimentId: string): Promise<AccompanimentStatus | null>;
   hasActiveProfessionalAssignment(accompanimentId: string, userId: UserId): Promise<boolean>;
   /** Asignaciones vigentes, o `null` si el acompañamiento supera el tope de filas leídas. */
   listActiveProfessionalAssignments(
@@ -61,6 +69,8 @@ export type AssignedProfessional<UserId extends string = string> =
     readonly assignedAt?: number;
     /** La asignación es de quien consulta. */
     readonly isCaller: boolean;
+    /** Se puede retirar sin dejar el acompañamiento sin quien lo gestione. */
+    readonly removable: boolean;
   };
 
 export type AccompanimentProfessionals<UserId extends string = string> = {
@@ -94,9 +104,8 @@ export async function listAccompanimentProfessionals<UserId extends string>(
   if (caller === null || !isPersonalProfessionalActive(caller)) {
     return errResult(unauthorizedError());
   }
-  if (!(await reader.accompanimentExists(input.accompanimentId))) {
-    return errResult(unauthorizedError());
-  }
+  const status = await reader.getAccompanimentStatus(input.accompanimentId);
+  if (status === null) return errResult(unauthorizedError());
   if (!(await reader.hasActiveProfessionalAssignment(input.accompanimentId, caller._id))) {
     return errResult(unauthorizedError());
   }
@@ -108,21 +117,28 @@ export async function listAccompanimentProfessionals<UserId extends string>(
       message: "El acompañamiento tiene demasiadas asignaciones para mostrarlas completas.",
     });
   }
+  const profiles = new Map<UserId, ProfessionalProfile<UserId> | null>();
+  for (const row of rows) profiles.set(row.userId, await reader.getProfile(row.userId));
+  // La misma regla que aplica `revokeAccompanimentAccess` al retirar.
+  const holders = rows.map((row) =>
+    toProfessionalAssignmentHolder(row, profiles.get(row.userId) ?? null),
+  );
   const assigned: AssignedProfessional<UserId>[] = [];
   for (const row of rows) {
-    const profile = await reader.getProfile(row.userId);
+    const profile = profiles.get(row.userId) ?? null;
     if (profile === null) continue;
     assigned.push({
       userId: profile._id,
       fullName: profile.fullName,
       ...(row.assignedAt === undefined ? {} : { assignedAt: row.assignedAt }),
       isCaller: profile._id === caller._id,
+      removable: keepsAManagerWithout(status, holders, profile._id),
     });
   }
 
   const assignedIds = new Set<string>(assigned.map((item) => item.userId));
-  const profiles = await reader.takeProfessionalProfiles(MAX_ASSIGNABLE_PROFESSIONALS);
-  const assignable = profiles
+  const candidates = await reader.takeProfessionalProfiles(MAX_ASSIGNABLE_PROFESSIONALS);
+  const assignable = candidates
     .slice(0, MAX_ASSIGNABLE_PROFESSIONALS)
     .filter((profile) => isPersonalProfessionalActive(profile) && !assignedIds.has(profile._id))
     .map((profile) => ({ userId: profile._id, fullName: profile.fullName }));
@@ -130,6 +146,6 @@ export async function listAccompanimentProfessionals<UserId extends string>(
   return okResult({
     assigned: assigned.sort(byName),
     assignable: assignable.sort(byName),
-    assignableComplete: profiles.length <= MAX_ASSIGNABLE_PROFESSIONALS,
+    assignableComplete: candidates.length <= MAX_ASSIGNABLE_PROFESSIONALS,
   });
 }

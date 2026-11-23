@@ -139,7 +139,10 @@ async function readState(t: TestConvex, accompanimentId: Id<"accompaniments">) {
   };
 }
 
-async function expectPublicError(promise: Promise<unknown>, code: "unauthorized" | "conflict") {
+async function expectPublicError(
+  promise: Promise<unknown>,
+  code: "unauthorized" | "conflict" | "assignment_fields_invalid",
+) {
   const data = await promise.then(
     () => {
       throw new Error("Se esperaba un error público");
@@ -629,6 +632,115 @@ async function seedNamedUser(
     });
   });
 }
+
+/** Ventana guardada de la asignación profesional del usuario. */
+async function readWindow(
+  t: TestConvex,
+  accompanimentId: Id<"accompaniments">,
+  userId: Id<"users">,
+) {
+  const rows = (await t.run(
+    async (ctx) => await ctx.db.query("accompanimentAssignments").take(50),
+  )) as Doc<"accompanimentAssignments">[];
+  return rows
+    .filter((row) => row.accompanimentId === accompanimentId && row.userId === userId)
+    .map((row) => ({ validFrom: row.validFrom, validUntil: row.validUntil }));
+}
+
+test("TI2-165 API: el último profesional no sale cambiando su vigencia, porque la de un profesional de personal no se acuerda", async () => {
+  const t = convexTest(schema, modules);
+  const seed = await seedAccompaniment(t, "vigencia-ultimo");
+  const { assignAccompanimentAccess, getAccompaniment, revokeAccompanimentAccess } =
+    api.presentation.accompaniments;
+  const updateAccess = api.presentation.accompaniments.updateAccompanimentAccess;
+  const args = { accompanimentId: seed.accompanimentId };
+  const asPro = t.withIdentity(seed.proIdentity);
+
+  expect(
+    await asPro.mutation(revokeAccompanimentAccess, {
+      ...args,
+      userId: seed.otherPro,
+      assignedRole: "professional",
+    }),
+  ).toBe(1);
+
+  // Empezar mañana o vencer dejaría el acompañamiento sin quien lo gestione.
+  const self = { ...args, userId: seed.pro, assignedRole: "professional" as const };
+  await expectPublicError(
+    asPro.mutation(updateAccess, { ...self, validFrom: Date.now() + DAY }),
+    "assignment_fields_invalid",
+  );
+  await expectPublicError(
+    asPro.mutation(updateAccess, { ...self, validUntil: Date.now() + DAY }),
+    "assignment_fields_invalid",
+  );
+  expect(await readWindow(t, seed.accompanimentId, seed.pro)).toEqual([
+    { validFrom: undefined, validUntil: undefined },
+  ]);
+  expect(await asPro.query(getAccompaniment, args)).toMatchObject({ view: "full" });
+
+  // Tampoco se concede con ventana, y quitar una ventana sí procede.
+  const newcomer = await seedNamedUser(t, { subject: "ti165-ventana", fullName: "Nuevo Ficticio" });
+  await expectPublicError(
+    asPro.mutation(assignAccompanimentAccess, {
+      ...args,
+      userId: newcomer,
+      assignedRole: "professional",
+      validUntil: Date.now() + DAY,
+    }),
+    "assignment_fields_invalid",
+  );
+  expect(await readWindow(t, seed.accompanimentId, newcomer)).toEqual([]);
+  expect(
+    await asPro.mutation(updateAccess, { ...self, validFrom: null, validUntil: null }),
+  ).toBeDefined();
+});
+
+test("TI2-165 API: una cuenta de prueba o una asignación que vence no cuentan como quien gestiona", async () => {
+  const t = convexTest(schema, modules);
+  const seed = await seedAccompaniment(t, "gestor");
+  const testAccount = await seedNamedUser(t, {
+    subject: "ti165-gestor-prueba",
+    fullName: "Prueba Ficticia",
+    domain: "alu.uct.cl",
+  });
+  await seedAssignment(t, seed.accompanimentId, testAccount);
+  // Ventana guardada antes de TI2-165: deja de autorizar al vencer.
+  await t.run(async (ctx) => {
+    const row = await ctx.db
+      .query("accompanimentAssignments")
+      .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+        q.eq("accompanimentId", seed.accompanimentId).eq("userId", seed.otherPro),
+      )
+      .unique();
+    if (row !== null) await ctx.db.patch(row._id, { validUntil: Date.now() + DAY });
+  });
+  const { listAccompanimentProfessionals, revokeAccompanimentAccess } =
+    api.presentation.accompaniments;
+  const args = { accompanimentId: seed.accompanimentId };
+  const asPro = t.withIdentity(seed.proIdentity);
+
+  const team = await asPro.query(listAccompanimentProfessionals, args);
+  const removable = Object.fromEntries(team.assigned.map((item) => [item.userId, item.removable]));
+  expect(removable).toEqual({ [seed.pro]: false, [seed.otherPro]: true, [testAccount]: true });
+
+  await expectPublicError(
+    asPro.mutation(revokeAccompanimentAccess, {
+      ...args,
+      userId: seed.pro,
+      assignedRole: "professional",
+    }),
+    "conflict",
+  );
+  expect(await readWindow(t, seed.accompanimentId, seed.pro)).toHaveLength(1);
+  expect(
+    await asPro.mutation(revokeAccompanimentAccess, {
+      ...args,
+      userId: testAccount,
+      assignedRole: "professional",
+    }),
+  ).toBe(1);
+});
 
 test("TI2-165 API: el profesional asignado ve a los asignados y a quién puede asignar, con nombre y sin correo", async () => {
   const t = convexTest(schema, modules);

@@ -1,6 +1,10 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import {
+  toProfessionalAssignmentHolder,
+  type ProfessionalAssignmentHolder,
+} from "../../domain/accompaniments/accompaniment";
 import { isAssignmentWithinValidity } from "../../domain/accompaniments/practitioner_assignment";
 import { accessNeedsFromLines } from "../spaces/repository";
 
@@ -397,6 +401,25 @@ export async function listActiveProfessionalAssignments(
 }
 
 /**
+ * Titulares de las asignaciones profesionales vigentes, para decidir si queda
+ * quien gestione (`keepsAManagerWithout`, TI2-165). Usa la misma lista que ve
+ * la Web, así las dos cuentan igual; `null` sobre el tope de filas leídas.
+ */
+export async function listProfessionalAssignmentHolders(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+  now: number = Date.now(),
+): Promise<ProfessionalAssignmentHolder[] | null> {
+  const rows = await listActiveProfessionalAssignments(ctx, accompanimentId, now);
+  if (rows === null) return null;
+  const holders: ProfessionalAssignmentHolder[] = [];
+  for (const row of rows) {
+    holders.push(toProfessionalAssignmentHolder(row, await getUserById(ctx, row.userId)));
+  }
+  return holders;
+}
+
+/**
  * Perfiles con rol profesional, hasta `limit` más uno para saber si quedan
  * más. Quien llama decide cuáles se pueden asignar.
  */
@@ -558,9 +581,10 @@ export function accompanimentProfessionalsReader(ctx: DbReader) {
     findProfileByTokenIdentifier: (tokenIdentifier: string) =>
       findProfileByTokenIdentifier(ctx, tokenIdentifier),
     getProfile: (userId: Id<"users">) => getUserById(ctx, userId),
-    accompanimentExists: async (accompanimentId: string) => {
+    getAccompanimentStatus: async (accompanimentId: string) => {
       const id = ctx.db.normalizeId("accompaniments", accompanimentId);
-      return id !== null && (await getAccompanimentById(ctx, id)) !== null;
+      if (id === null) return null;
+      return (await getAccompanimentById(ctx, id))?.status ?? null;
     },
     hasActiveProfessionalAssignment: async (accompanimentId: string, userId: Id<"users">) => {
       const id = ctx.db.normalizeId("accompaniments", accompanimentId);
@@ -576,39 +600,9 @@ export function accompanimentProfessionalsReader(ctx: DbReader) {
       return rows.map((row) => ({
         userId: row.userId,
         ...(row.grantedAt === undefined ? {} : { assignedAt: row.grantedAt }),
+        ...(row.validUntil === undefined ? {} : { validUntil: row.validUntil }),
       }));
     },
     takeProfessionalProfiles: (limit: number) => takeProfessionalProfiles(ctx, limit),
   };
-}
-
-/**
- * Verdadero cuando otro usuario conserva una asignación profesional activa y
- * vigente sobre el acompañamiento (TI2-152, TI2-165). El índice ordena por
- * usuario antes que por estado y rol, así que lee las asignaciones del
- * acompañamiento hasta el tope y compara en memoria. Sobre el tope puede
- * responder `false` aunque exista otro profesional: el retiro se rechaza,
- * nunca se permite de más.
- */
-export async function hasAnotherActiveProfessional(
-  ctx: MutationCtx,
-  input: {
-    readonly accompanimentId: Id<"accompaniments">;
-    readonly userId: Id<"users">;
-  },
-  now: number = Date.now(),
-): Promise<boolean> {
-  const rows = await ctx.db
-    .query("accompanimentAssignments")
-    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
-      q.eq("accompanimentId", input.accompanimentId),
-    )
-    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT);
-  return rows.some(
-    (row) =>
-      row.userId !== input.userId &&
-      row.status === "active" &&
-      row.assignedRole === "professional" &&
-      isAssignmentWithinValidity(row, now),
-  );
 }

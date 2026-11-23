@@ -10,7 +10,11 @@ import {
   checkGrantInternAccess,
   checkRevokeInternAccess,
 } from "../../domain/accompaniments/intern_access";
-import { mustKeepAProfessional } from "../../domain/accompaniments/accompaniment";
+import {
+  keepsAManagerWithout,
+  mustKeepAProfessional,
+  setsAgreedValidity,
+} from "../../domain/accompaniments/accompaniment";
 import { isProfileActive } from "../../domain/authorization/permissions";
 import {
   ASSIGNMENT_FIELDS_INVALID_ERROR_CODE,
@@ -28,8 +32,8 @@ import {
   getAssignmentById,
   getUserById,
   hasActiveProfessionalAssignment,
-  hasAnotherActiveProfessional,
   insertActiveAssignment,
+  listProfessionalAssignmentHolders,
   patchAssignmentValidity,
   revokeAssignmentRow,
   takeActiveTripleRows,
@@ -64,7 +68,9 @@ import {
  * Cambio de profesionales (TI2-152): se hace con estas mismas operaciones,
  * sin una paralela. Conceder y modificar se rechazan en un acompañamiento
  * cerrado. Mientras no esté cerrado, retirar exige que quede otro profesional
- * asignado (`mustKeepAProfessional`); cerrado, también se retira al último.
+ * que gestione (`keepsAManagerWithout`); cerrado, también se retira al último.
+ * La asignación de un profesional de personal no lleva vigencia acordada
+ * (`setsAgreedValidity`), así que tampoco sale cambiando su ventana (TI2-165).
  */
 
 /**
@@ -120,6 +126,20 @@ const CLOSED_ACCOMPANIMENT_MESSAGE = "El acompañamiento está cerrado y no admi
 
 function invalidValidity<T>(message: string): ApiResult<T> {
   return errResult({ code: ASSIGNMENT_FIELDS_INVALID_ERROR_CODE, message });
+}
+
+/**
+ * Rechazo de una vigencia acordada para un profesional de personal, o `null`
+ * (TI2-165). La cuenta de prueba y el Practicante la conservan (TI2-140).
+ */
+function staffValidityError<T>(
+  triple: AssignmentTriple,
+  target: Doc<"users">,
+  validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
+): ApiResult<T> | null {
+  if (triple.assignedRole !== "professional" || isTestProfessional(target)) return null;
+  if (!setsAgreedValidity(validity)) return null;
+  return invalidValidity("La asignación de un profesional de personal no lleva vigencia acordada.");
 }
 
 /** Profesional de personal con cuenta habilitada y vigente, o `null` sin permiso. */
@@ -245,7 +265,10 @@ export async function assignAccompaniment(
   if (accompaniment.status === "closed") return conflict(CLOSED_ACCOMPANIMENT_MESSAGE);
 
   const invalid =
-    validity === undefined ? null : validityError<Id<"accompanimentAssignments">>(validity);
+    validity === undefined
+      ? null
+      : (staffValidityError<Id<"accompanimentAssignments">>(triple, target, validity) ??
+        validityError<Id<"accompanimentAssignments">>(validity));
   if (invalid !== null) return invalid;
 
   const existing = await findExistingActiveAssignment(ctx, triple);
@@ -309,7 +332,9 @@ export async function updateAccompanimentAssignment(
     validUntil:
       validity.validUntil === undefined ? (existing.validUntil ?? null) : validity.validUntil,
   };
-  const invalid = validityError<Id<"accompanimentAssignments">>(next);
+  const invalid =
+    staffValidityError<Id<"accompanimentAssignments">>(triple, target, validity) ??
+    validityError<Id<"accompanimentAssignments">>(next);
   if (invalid !== null) return invalid;
 
   await patchAssignmentValidity(ctx, existing._id, validity);
@@ -393,7 +418,14 @@ export async function revokeAccompaniment(
     options?.bootstrapStaff !== true
   ) {
     const holdsAssignment = (await takeActiveTripleRows(ctx, triple, 1)).length > 0;
-    if (holdsAssignment && !(await hasAnotherActiveProfessional(ctx, triple))) {
+    // Sobre el tope de filas leídas el retiro se rechaza, nunca se permite de más.
+    const holders = holdsAssignment
+      ? await listProfessionalAssignmentHolders(ctx, triple.accompanimentId)
+      : [];
+    if (
+      holders === null ||
+      (holdsAssignment && !keepsAManagerWithout(accompaniment.status, holders, triple.userId))
+    ) {
       return conflict("El acompañamiento no puede quedar sin profesional asignado");
     }
   }

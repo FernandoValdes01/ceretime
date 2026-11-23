@@ -169,6 +169,7 @@ export const listAccompanimentProfessionals = query({
         fullName: v.string(),
         assignedAt: v.optional(v.number()),
         isCaller: v.boolean(),
+        removable: v.boolean(),
       }),
     ),
     assignable: v.array(v.object({ userId: v.id("users"), fullName: v.string() })),
