@@ -4397,6 +4397,273 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   expect(clean).toMatchObject({ missingParticipants: 0 });
 });
 
+test("TI2-165: la migración vacía los campos retirados sin perder el cierre ni su motivo", async () => {
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
+    email: "ti165admin@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti165-mig-adm`,
+  });
+  const student = await seedUser(t, {
+    subject: "ti165-mig-est",
+    email: "ti165mig@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti165-mig-pro",
+    email: "ti165migpro@uct.cl",
+    role: "professional",
+  });
+  const need = { id: "written", label: "Comunicación escrita" };
+
+  // Filas como las dejaron las versiones anteriores a TI2-165, con datos ficticios.
+  const seeded = await t.run(async (ctx) => {
+    const closed = await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "closed",
+      objective: "Objetivo ficticio cerrado",
+      accessNeeds: "Necesidad ficticia",
+    });
+    const open = await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio abierto",
+      accessNeeds: "Necesidad ficticia",
+    });
+    await ctx.db.insert("accompanimentTransitions", {
+      accompanimentId: closed,
+      from: "active",
+      to: "paused",
+      actorId: professional,
+      occurredAt: TI83_MONDAY,
+    });
+    await ctx.db.insert("accompanimentTransitions", {
+      accompanimentId: closed,
+      from: "paused",
+      to: "closed",
+      actorId: professional,
+      reason: "Motivo ficticio del cierre",
+      occurredAt: TI83_MONDAY + 1,
+    });
+    await ctx.db.insert("accompanimentTransitions", {
+      accompanimentId: open,
+      from: "active",
+      to: "paused",
+      actorId: professional,
+      occurredAt: TI83_MONDAY,
+    });
+    const closedRequest = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "closed_without_accompaniment",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: TI83_MONDAY,
+      closureReason: "Motivo ficticio de la solicitud",
+      idempotencyKey: "clave-ficticia-1",
+    });
+    const closingTransition = await ctx.db.insert("requestTransitions", {
+      requestId: closedRequest,
+      from: "under_review",
+      to: "closed_without_accompaniment",
+      actorId: professional,
+      occurredAt: TI83_MONDAY + 1,
+    });
+    const orphanRequest = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "closed_without_accompaniment",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: TI83_MONDAY,
+      closureReason: "Motivo ficticio sin transición",
+    });
+    const sentRequest = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "received",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: TI83_MONDAY,
+      idempotencyKey: "clave-ficticia-2",
+    });
+    const exception = await ctx.db.insert("availabilityExceptions", {
+      professionalId: professional,
+      date: TI83_MONDAY,
+      kind: "cancelled",
+      reason: "Motivo ficticio de la excepción",
+    });
+    return {
+      closed,
+      open,
+      closedRequest,
+      closingTransition,
+      orphanRequest,
+      sentRequest,
+      exception,
+    };
+  });
+  const appointmentId = await seedTi83Appointment(t, {
+    accompanimentId: seeded.open,
+    studentId: student,
+    professionalId: professional,
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+    status: "completed",
+  });
+  const followUp = await t.run(async (ctx) => {
+    await ctx.db.patch(appointmentId, { appliedAccessNeeds: [need], onlineSupports: [need] });
+    const participant = await ctx.db.insert("appointmentProfessionals", {
+      appointmentId,
+      professionalId: professional,
+      startsAt: TI83_MONDAY_9H,
+      endsAt: TI83_MONDAY_10H,
+    });
+    const record = await ctx.db.insert("followUpRecords", {
+      appointmentId,
+      authorId: professional,
+      nextSteps: "Próximos pasos ficticios",
+      updatedAt: TI83_MONDAY_10H,
+      version: "v1",
+    });
+    const agreement = await ctx.db.insert("followUpAgreements", {
+      recordId: record,
+      description: "Acuerdo ficticio",
+      entryId: "acuerdo-1",
+    });
+    const task = await ctx.db.insert("followUpTasks", {
+      recordId: record,
+      description: "Tarea ficticia",
+      responsible: "student",
+      status: "pending",
+      entryId: "tarea-1",
+    });
+    return { participant, record, agreement, task };
+  });
+
+  const page = { numItems: 10, cursor: null };
+  async function audit(
+    table:
+      | "accompaniments"
+      | "accompanimentTransitions"
+      | "requests"
+      | "appointments"
+      | "appointmentProfessionals"
+      | "followUpRecords"
+      | "followUpAgreements"
+      | "followUpTasks"
+      | "availabilityExceptions",
+  ) {
+    return await t.query(internal.operations.migrations.auditRetiredFields, {
+      table,
+      paginationOpts: page,
+    });
+  }
+  expect(await audit("accompaniments")).toMatchObject({
+    pending: 1,
+    samplePendingIds: [seeded.closed],
+  });
+  expect(await audit("accompanimentTransitions")).toMatchObject({ pending: 3 });
+  expect(await audit("requests")).toMatchObject({ pending: 3 });
+  for (const table of [
+    "appointments",
+    "appointmentProfessionals",
+    "followUpRecords",
+    "followUpAgreements",
+    "followUpTasks",
+    "availabilityExceptions",
+  ] as const) {
+    expect(await audit(table)).toMatchObject({ pending: 1 });
+  }
+
+  // Solo un Administrador vigente migra, y un intento rechazado no escribe.
+  const asStudent = t.withIdentity(identityFor("ti165-mig-est", "ti165mig@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(internal.operations.migrations.migrateRetiredFields, {
+      table: "requests",
+      paginationOpts: page,
+    }),
+  ).rejects.toThrow("No autorizado");
+  expect(await audit("requests")).toMatchObject({ pending: 3 });
+
+  const asAdmin = t.withIdentity(identityFor("ti165-mig-adm", "ti165admin@uct.cl"));
+  const migrate = async (table: Parameters<typeof audit>[0]) =>
+    await asAdmin.mutation(internal.operations.migrations.migrateRetiredFields, {
+      table,
+      paginationOpts: page,
+    });
+
+  // Antes de copiar el cierre, sus transiciones no se borran.
+  expect(await migrate("accompanimentTransitions")).toMatchObject({ migrated: 1, kept: 2 });
+  expect(await migrate("accompaniments")).toMatchObject({ migrated: 1, kept: 0 });
+  expect(await migrate("accompanimentTransitions")).toMatchObject({ migrated: 2, kept: 0 });
+  expect(await migrate("requests")).toMatchObject({ migrated: 2, kept: 1 });
+  for (const table of [
+    "appointments",
+    "appointmentProfessionals",
+    "followUpRecords",
+    "followUpAgreements",
+    "followUpTasks",
+    "availabilityExceptions",
+  ] as const) {
+    expect(await migrate(table)).toMatchObject({ migrated: 1, kept: 0 });
+  }
+
+  const rows = await t.run(async (ctx) => ({
+    closed: await ctx.db.get(seeded.closed),
+    open: await ctx.db.get(seeded.open),
+    transitions: await ctx.db.query("accompanimentTransitions").take(10),
+    closedRequest: await ctx.db.get(seeded.closedRequest),
+    closingTransition: await ctx.db.get(seeded.closingTransition),
+    orphanRequest: await ctx.db.get(seeded.orphanRequest),
+    sentRequest: await ctx.db.get(seeded.sentRequest),
+    appointment: await ctx.db.get(appointmentId),
+    participant: await ctx.db.get(followUp.participant),
+    record: await ctx.db.get(followUp.record),
+    agreement: await ctx.db.get(followUp.agreement),
+    task: await ctx.db.get(followUp.task),
+    exception: await ctx.db.get(seeded.exception),
+  }));
+  // El cierre de TI2-152 queda en el acompañamiento, como pide el MER.
+  expect(rows.closed).toMatchObject({
+    closedById: professional,
+    closedAt: TI83_MONDAY + 1,
+    closureReason: "Motivo ficticio del cierre",
+  });
+  expect(rows.open).not.toHaveProperty("closedAt");
+  expect(rows.transitions).toHaveLength(0);
+  // El motivo de la solicitud pasa a la transición del cierre, de donde lo lee el detalle.
+  expect(rows.closingTransition?.reason).toBe("Motivo ficticio de la solicitud");
+  expect(rows.closedRequest).not.toHaveProperty("closureReason");
+  expect(rows.closedRequest).not.toHaveProperty("idempotencyKey");
+  expect(rows.sentRequest).not.toHaveProperty("idempotencyKey");
+  // Sin transición donde copiarlo, el motivo se conserva y la auditoría lo sigue contando.
+  expect(rows.orphanRequest?.closureReason).toBe("Motivo ficticio sin transición");
+  expect(rows.appointment).not.toHaveProperty("appliedAccessNeeds");
+  expect(rows.appointment).not.toHaveProperty("onlineSupports");
+  expect(rows.participant).not.toHaveProperty("startsAt");
+  expect(rows.participant).not.toHaveProperty("endsAt");
+  expect(rows.record).not.toHaveProperty("version");
+  expect(rows.agreement).not.toHaveProperty("entryId");
+  expect(rows.task).not.toHaveProperty("entryId");
+  expect(rows.exception).not.toHaveProperty("reason");
+
+  expect(await audit("requests")).toMatchObject({
+    pending: 1,
+    samplePendingIds: [seeded.orphanRequest],
+  });
+  for (const table of [
+    "accompaniments",
+    "accompanimentTransitions",
+    "appointments",
+    "appointmentProfessionals",
+    "followUpRecords",
+    "followUpAgreements",
+    "followUpTasks",
+    "availabilityExceptions",
+  ] as const) {
+    expect(await audit(table)).toMatchObject({ pending: 0 });
+  }
+
+  // Repetirla no escribe de nuevo.
+  expect(await migrate("accompaniments")).toMatchObject({ migrated: 0, kept: 0 });
+  expect(await migrate("requests")).toMatchObject({ migrated: 0, kept: 1 });
+});
+
 test("TI2-152: el cierre queda en el propio acompañamiento y pausar solo cambia el estado", async () => {
   const t = convexTest(schema, modules);
   const { professional, accompanimentId } = await seedTi118Appointment(t, "estado-a");

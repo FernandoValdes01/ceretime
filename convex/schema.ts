@@ -100,6 +100,20 @@ export default defineSchema({
     .index("by_student", ["studentId"])
     .index("by_request", ["requestId"]),
 
+  // Tabla 'accompanimentTransitions', retirada (TI2-165): el historial de
+  // TI2-152 no está en el MER. Se conserva solo para que sus filas sigan
+  // siendo válidas hasta que `migrateRetiredFields` copie cada cierre a su
+  // acompañamiento y las borre; nada nuevo la escribe ni la lee. Se quita del
+  // esquema cuando `auditRetiredFields` dé cero en cada deployment.
+  accompanimentTransitions: defineTable({
+    accompanimentId: v.id("accompaniments"),
+    from: accompanimentStatusUnion,
+    to: accompanimentStatusUnion,
+    actorId: v.id("users"),
+    reason: v.optional(v.string()),
+    occurredAt: v.number(),
+  }).index("by_accompanimentId_and_occurredAt", ["accompanimentId", "occurredAt"]),
+
   // Tabla 'accompanimentAssignments': asignaciones revocables por
   // acompañamiento. Separa habilitación de cuenta y asignación explícita.
   // Invariante: como máximo una fila activa por cada combinación de
@@ -194,6 +208,11 @@ export default defineSchema({
     // se escribe junto con el estado `referred`.
     incomingReferral: v.optional(incomingReferralValidator),
     outgoingReferral: v.optional(outgoingReferralValidator),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    closureReason: v.optional(v.string()),
+    idempotencyKey: v.optional(v.string()),
   })
     // Solicitudes propias del estudiante.
     .index("by_student", ["studentId"])
@@ -312,6 +331,10 @@ export default defineSchema({
     slotMinutes: v.optional(v.number()),
     modality: v.optional(modalityUnion),
     spaceId: v.optional(v.id("spaces")),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    reason: v.optional(v.string()),
   })
     // Excepciones del profesional en un día: lo que la vista diaria descuenta
     // o agrega sobre los bloques recurrentes.
@@ -377,6 +400,11 @@ export default defineSchema({
     // apoyos en línea: el MER no los tiene (TI2-165).
     privateAccessReference: v.optional(v.string()),
     createdAt: v.number(),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    appliedAccessNeeds: v.optional(v.array(accessNeedSelectionValidator)),
+    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
   })
     // Atenciones propias del estudiante.
     .index("by_studentId", ["studentId"])
@@ -419,6 +447,11 @@ export default defineSchema({
   appointmentProfessionals: defineTable({
     appointmentId: v.id("appointments"),
     professionalId: v.id("users"),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    startsAt: v.optional(v.number()),
+    endsAt: v.optional(v.number()),
   })
     // Participantes de la atención: una fila basta para decidir y el conjunto
     // se lee sin filtrar en memoria.
@@ -556,6 +589,10 @@ export default defineSchema({
     suggestedNextAppointmentDate: v.optional(v.string()),
     internalNoteId: v.optional(v.id("followUpNotes")),
     updatedAt: v.number(),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    version: v.optional(v.string()),
   })
     // El registro de la atención: una fila basta para decidir.
     .index("by_appointmentId", ["appointmentId"]),
@@ -566,6 +603,10 @@ export default defineSchema({
   followUpAgreements: defineTable({
     recordId: v.id("followUpRecords"),
     description: v.string(),
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    entryId: v.optional(v.string()),
   }).index("by_recordId", ["recordId"]),
 
   // Tabla 'followUpTasks': tareas de un registro de seguimiento, con
@@ -576,6 +617,10 @@ export default defineSchema({
     description: v.string(),
     responsible: followUpResponsibleUnion,
     status: followUpTaskStatusUnion,
+    // Retirado (TI2-165): solo para que las filas anteriores sigan siendo válidas;
+    // nada lo escribe ni lo lee. Lo vacía `operations/migrations:migrateRetiredFields`
+    // y se quita del esquema cuando `auditRetiredFields` dé cero en cada deployment.
+    entryId: v.optional(v.string()),
   }).index("by_recordId", ["recordId"]),
 
   // Tabla 'privacyRequests': solicitudes de derechos de privacidad (modelo de
