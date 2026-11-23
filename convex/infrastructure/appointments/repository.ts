@@ -853,19 +853,23 @@ export function pendingAppointmentsReader(ctx: DbReader) {
         .query("appointments")
         .withIndex("by_accompanimentId_and_startsAt", (q) => q.eq("accompanimentId", id))
         .take(MAX_ACCOMPANIMENT_APPOINTMENTS + 1);
-      return {
-        complete: rows.length <= MAX_ACCOMPANIMENT_APPOINTMENTS,
-        appointments: rows
-          .filter((row) => isCalendarActionableStatus(row.status))
-          .map((row) => ({
-            id: row._id as string,
-            status: row.status,
-            startAt: row.startsAt,
-            ...(row.originalStartsAt === undefined
-              ? {}
-              : { originalStartAt: row.originalStartsAt }),
-          })),
-      };
+      const appointments = [];
+      for (const row of rows) {
+        if (!isCalendarActionableStatus(row.status)) continue;
+        // Los participantes van con la atención: la cancelación por cierre
+        // avisa también a los profesionales adicionales (TI2-150).
+        const additionalProfessionalIds = await additionalProfessionalIdsOf(ctx, row);
+        appointments.push({
+          id: row._id as string,
+          studentId: row.studentId as string,
+          professionalId: row.professionalId as string,
+          status: row.status,
+          startAt: row.startsAt,
+          ...(row.originalStartsAt === undefined ? {} : { originalStartAt: row.originalStartsAt }),
+          ...(additionalProfessionalIds.length === 0 ? {} : { additionalProfessionalIds }),
+        });
+      }
+      return { complete: rows.length <= MAX_ACCOMPANIMENT_APPOINTMENTS, appointments };
     },
   };
 }

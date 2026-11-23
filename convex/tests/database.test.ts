@@ -25,6 +25,7 @@ import {
   notificationEventsForRequestReceived,
   notificationEventsForTransition,
   notificationIdempotencyKey,
+  toNotificationEvent,
   type NotificationEvent,
 } from "../domain/notifications/notification";
 import {
@@ -2834,6 +2835,7 @@ test("TI2-118: el evento guarda solo sus referencias mínimas y el reintento no 
   const [event] = notificationEventsForCreation(
     { appointmentId, studentId: student, professionalId: professional },
     TI83_MONDAY,
+    student,
   );
 
   const first = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
@@ -2990,7 +2992,10 @@ test("TI2-145: el aviso de solicitud guarda su recurso y el reintento no lo dupl
     role: "student",
   });
   const requestId = await seedRequest(t, student, "received");
-  const [event] = notificationEventsForRequestReceived(requestId, student, TI83_MONDAY);
+  const [event] = notificationEventsForRequestReceived(
+    { requestId, studentId: student },
+    TI83_MONDAY,
+  );
 
   const first = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
   const retry = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
@@ -3051,13 +3056,13 @@ test("TI2-145: el aviso de solicitud solo acepta destinatarios vinculados a ella
     await ctx.db.patch(requestId, { takenBy: professional });
   });
 
-  const [toStudent] = notificationEventsForRequestReceived(requestId, student, TI83_MONDAY);
-  const [toProfessional] = notificationEventsForRequestReceived(
-    requestId,
-    professional,
-    TI83_MONDAY + 1,
-  );
-  const [toOutsider] = notificationEventsForRequestReceived(requestId, outsider, TI83_MONDAY + 2);
+  // El constructor admite cualquier destinatario: el repositorio es quien
+  // rechaza al que no está vinculado a la solicitud.
+  const toRecipient = (recipientId: Id<"users">, occurredAt: number) =>
+    toNotificationEvent({ kind: "request_received", requestId, recipientId, occurredAt });
+  const toStudent = toRecipient(student, TI83_MONDAY);
+  const toProfessional = toRecipient(professional, TI83_MONDAY + 1);
+  const toOutsider = toRecipient(outsider, TI83_MONDAY + 2);
   const results = await t.run(async (ctx) => [
     await recordNotificationEvent(ctx, toStudent),
     await recordNotificationEvent(ctx, toProfessional),
@@ -3082,7 +3087,7 @@ test("TI2-145: cada destinatario marca leído y los pendientes no se mezclan", a
   const t = convexTest(schema, modules);
   const { student, professional, appointmentId } = await seedTi118Appointment(t, "lectura");
   const subjectForRead = { appointmentId, studentId: student, professionalId: professional };
-  const [created] = notificationEventsForCreation(subjectForRead, TI83_MONDAY);
+  const [created] = notificationEventsForCreation(subjectForRead, TI83_MONDAY, student);
   const [noShow] = notificationEventsForTransition(subjectForRead, {
     from: "scheduled",
     to: "no_show",
@@ -3178,6 +3183,7 @@ test("TI2-145: la entrega se registra por canal y los reintentos no duplican el 
   const [event] = notificationEventsForCreation(
     { appointmentId, studentId: student, professionalId: professional },
     TI83_MONDAY,
+    student,
   );
   const recorded = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
   if (recorded.status !== "recorded") throw new Error("El aviso ficticio debe registrarse.");

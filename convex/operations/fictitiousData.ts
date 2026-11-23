@@ -21,6 +21,7 @@ import {
   requestStore,
 } from "../infrastructure/requests/repository";
 import { syncAppointmentProfessional } from "../infrastructure/appointments/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 
 /**
  * Dataset ficticio mínimo del Sprint 1 (TI2-30).
@@ -193,6 +194,7 @@ export const load = internalMutation({
       professionals: activeProfessionalReader(ctx),
       requests: requestStore(ctx),
       accompaniments: accompanimentOpener(ctx),
+      notifications: notificationEventRecorder(ctx),
       now: Date.now,
     };
     const tokenIdentifier = professional.tokenIdentifier;
@@ -201,7 +203,12 @@ export const load = internalMutation({
     const register = async (student: AccountKey, accessNeeds: string) =>
       registered(
         await registerRequest(
-          { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+          {
+            students: activeStudentReader(ctx),
+            requests: requestStore(ctx),
+            notifications: notificationEventRecorder(ctx),
+            now: Date.now,
+          },
           { tokenIdentifier: identityOf(student).tokenIdentifier, submission: { accessNeeds } },
         ),
       );

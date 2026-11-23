@@ -35,6 +35,11 @@ function memoryDeps() {
         return insert(studentId, submission.accessNeeds.map((need) => need.label).join("\n"));
       },
     },
+    notifications: {
+      record: async (events) => {
+        for (const event of events) writes.push(`notice ${event.kind} ${event.recipientId}`);
+      },
+    },
     now: () => NOW,
   };
   return { deps, writes };
@@ -66,7 +71,7 @@ describe("registerRequest con puertos (TI2-181)", () => {
         createdAt: 1,
       },
     });
-    expect(writes).toEqual([`legacy ${STUDENT}`]);
+    expect(writes).toEqual([`legacy ${STUDENT}`, `notice request_received ${STUDENT}`]);
   });
 
   test.each([

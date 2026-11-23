@@ -365,8 +365,11 @@ test(
       },
     );
     const read = { appointmentId, version: "v1" as const };
+    // Solo los avisos del enlace: la reserva deja los suyos (TI2-150).
     const notifications = async () =>
-      await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
+      (await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(20))).filter(
+        (row) => row.kind === "appointment_online_access_ready",
+      );
 
     // Mientras no hay enlace, los participantes ven la atención pendiente.
     for (const caller of [asStudent, asResponsible, asAdditional]) {

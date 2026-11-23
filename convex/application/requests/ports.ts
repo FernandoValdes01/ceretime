@@ -41,6 +41,8 @@ export type StoredRequestRow<RequestId extends string, UserId extends string> = 
   readonly status: RequestState;
   readonly accessNeeds: string;
   readonly createdAt: number;
+  /** Profesional que la tomó para revisión; recibe los avisos del Estudiante (TI2-150). */
+  readonly takenBy?: UserId;
   /**
    * Canal por el que llegó y, en el canal oficial, quién la registró; ausente
    * en las filas anteriores a TI2-135.

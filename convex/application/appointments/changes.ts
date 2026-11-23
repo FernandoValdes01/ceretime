@@ -18,6 +18,11 @@ import {
 import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
 import type { AppointmentCancellationTarget } from "../../domain/authorization/permissions";
 import {
+  notificationEventsForJustificationSubmitted,
+  notificationEventsForTransition,
+  type NotificationSubject,
+} from "../../domain/notifications/notification";
+import {
   authorizeAppointmentAttendance,
   authorizeAppointmentCancel,
   authorizeAppointmentReschedule,
@@ -35,6 +40,7 @@ import {
   type SlotSelectionDeps,
   type SlotSelectionShape,
 } from "./booking";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import type { AppointmentOccupier } from "./occupancy";
 
 /**
@@ -63,6 +69,12 @@ import type { AppointmentOccupier } from "./occupancy";
  * puerto `audit`, después de persistir y en la misma mutation: actor de la
  * sesión, instante del servidor, acción, atención y estado resultante, sin el
  * motivo. Los rechazos no se auditan porque abortan la mutation.
+ *
+ * Cada cambio exitoso deja también sus avisos (TI2-150) por el puerto
+ * `notifications`, con la política de Dominio y el mismo instante del cambio.
+ * La entrega de una justificación no cambia el estado, pero avisa a los
+ * profesionales que la revisan. Los avisos solo llevan la atención y el
+ * destinatario: nunca el motivo ni la explicación.
  *
  * Opera con datos ficticios.
  */
@@ -136,6 +148,7 @@ export interface CancelAppointmentDeps {
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
   readonly audit: AppointmentAuditRecorder;
+  readonly notifications: NotificationEventRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -153,6 +166,7 @@ export interface RescheduleAppointmentDeps extends SlotSelectionDeps {
   readonly persister: AppointmentTransitionPersister;
   readonly occupier: AppointmentOccupier;
   readonly audit: AppointmentAuditRecorder;
+  readonly notifications: NotificationEventRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -176,6 +190,7 @@ export interface RecordAppointmentAttendanceDeps {
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
   readonly audit: AppointmentAuditRecorder;
+  readonly notifications: NotificationEventRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -213,14 +228,29 @@ function toAuthorizableAppointment(row: StoredAppointmentForChange): Authorizabl
   };
 }
 
-/** Lo que la cancelación necesita de la atención ya leída. */
-export type CancellableAppointment = Pick<
+/** Participantes de la atención que la política de avisos considera. */
+type NotifiableAppointment = Pick<
   StoredAppointmentForChange,
-  "id" | "status" | "startAt" | "originalStartAt"
+  "id" | "studentId" | "professionalId" | "additionalProfessionalIds"
 >;
 
+function toNotificationSubject(row: NotifiableAppointment): NotificationSubject {
+  return {
+    appointmentId: row.id,
+    studentId: row.studentId,
+    professionalId: row.professionalId,
+    ...(row.additionalProfessionalIds === undefined
+      ? {}
+      : { additionalProfessionalIds: row.additionalProfessionalIds }),
+  };
+}
+
+/** Lo que la cancelación necesita de la atención ya leída, con sus participantes. */
+export type CancellableAppointment = NotifiableAppointment &
+  Pick<StoredAppointmentForChange, "status" | "startAt" | "originalStartAt">;
+
 /**
- * Cancelación ya autorizada: transición, guardado y auditoría.
+ * Cancelación ya autorizada: transición, guardado, auditoría y avisos.
  *
  * Único camino por el que una atención pasa a cancelada. Lo usan la
  * cancelación individual y el cierre del acompañamiento (TI2-152), que
@@ -228,7 +258,7 @@ export type CancellableAppointment = Pick<
  * cuando la política rechaza el cambio, y entonces no escribe nada.
  */
 export async function cancelAuthorizedAppointment(
-  deps: Pick<CancelAppointmentDeps, "persister" | "audit">,
+  deps: Pick<CancelAppointmentDeps, "persister" | "audit" | "notifications">,
   stored: CancellableAppointment,
   cancellation: {
     readonly target: AppointmentCancellationTarget;
@@ -262,6 +292,9 @@ export async function cancelAuthorizedAppointment(
     result: outcome.change.to,
     occurredAt: cancellation.occurredAt,
   });
+  await deps.notifications.record(
+    notificationEventsForTransition(toNotificationSubject(stored), outcome.change),
+  );
   return true;
 }
 
@@ -412,6 +445,24 @@ export async function rescheduleAppointment(
     result: outcome.change.to,
     occurredAt,
   });
+  // Avisa a los participantes que quedan después del cambio. Un adicional que
+  // salió perdió su asignación o la vigencia de su cuenta, y un responsable
+  // reemplazado ya no participa: el repositorio solo acepta destinatarios que
+  // participan de la atención, la misma regla con la que se lee el aviso.
+  const remainingProfessionalIds = additionalProfessionalIds.filter(
+    (professionalId) => !removedProfessionalIds.includes(professionalId),
+  );
+  await deps.notifications.record(
+    notificationEventsForTransition(
+      toNotificationSubject({
+        id: occupied.data.appointmentId,
+        studentId: stored.studentId,
+        professionalId: slot.data.professionalId,
+        additionalProfessionalIds: remainingProfessionalIds,
+      }),
+      outcome.change,
+    ),
+  );
   return okResult({ appointmentId: occupied.data.appointmentId });
 }
 
@@ -474,6 +525,9 @@ export async function recordAppointmentAttendance(
     result: outcome.change.to,
     occurredAt,
   });
+  await deps.notifications.record(
+    notificationEventsForTransition(toNotificationSubject(stored), outcome.change),
+  );
   return okResult({ appointmentId: stored.id });
 }
 
@@ -481,6 +535,7 @@ export interface SubmitAppointmentJustificationDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
+  readonly notifications: NotificationEventRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -539,6 +594,9 @@ export async function submitAppointmentJustification(
     justificationReview: "pending",
     supportingDocumentReceived: input.supportingDocumentReceived,
   });
+  await deps.notifications.record(
+    notificationEventsForJustificationSubmitted(toNotificationSubject(stored), submittedAt),
+  );
   return okResult({ appointmentId: stored.id });
 }
 
@@ -546,6 +604,7 @@ export interface ReviewAppointmentJustificationDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: AppointmentChangeReader;
   readonly persister: AppointmentTransitionPersister;
+  readonly notifications: NotificationEventRecorder;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -615,5 +674,8 @@ export async function reviewAppointmentJustification(
     ...(hasSubmission ? { justificationReview: input.review } : {}),
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
   });
+  await deps.notifications.record(
+    notificationEventsForTransition(toNotificationSubject(stored), outcome.change),
+  );
   return okResult({ appointmentId: stored.id });
 }

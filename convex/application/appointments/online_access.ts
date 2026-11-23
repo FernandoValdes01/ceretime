@@ -11,15 +11,13 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
-import {
-  notificationEventsForOnlineAccess,
-  type NotificationEvent,
-} from "../../domain/notifications/notification";
+import { notificationEventsForOnlineAccess } from "../../domain/notifications/notification";
 import type { ModalityPreference } from "../../domain/requests/request";
 import {
   authorizeAppointmentOnlineAccess,
   type AuthorizationReader,
 } from "../authorization/authorize";
+import type { NotificationEventRecorder } from "../notifications/ports";
 
 /**
  * Acceso privado de la atención en línea (TI2-142).
@@ -59,11 +57,6 @@ export interface OnlineAccessStore extends OnlineAccessReader {
   /** Verdadero cuando otra atención ya guarda el mismo enlace canónico. */
   isReferenceInUse(reference: string, exceptAppointmentId: string): Promise<boolean>;
   saveReference(appointmentId: string, reference: string): Promise<void>;
-}
-
-/** Registro de los eventos de aviso que produjo la política (TI2-105/TI2-118). */
-export interface NotificationEventRecorder {
-  record(events: readonly NotificationEvent[]): Promise<void>;
 }
 
 export interface OnlineAccessReadDeps {

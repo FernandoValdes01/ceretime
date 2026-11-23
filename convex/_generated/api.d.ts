@@ -30,7 +30,9 @@ import type * as application_calendar_calendar_link from "../application/calenda
 import type * as application_follow_up_commands from "../application/follow_up/commands.js";
 import type * as application_follow_up_ports from "../application/follow_up/ports.js";
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
+import type * as application_notifications_ports from "../application/notifications/ports.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
+import type * as application_requests_notifications from "../application/requests/notifications.js";
 import type * as application_requests_ports from "../application/requests/ports.js";
 import type * as application_requests_queries from "../application/requests/queries.js";
 import type * as application_requests_referrals from "../application/requests/referrals.js";
@@ -140,7 +142,9 @@ declare const fullApi: ApiFromModules<{
   "application/follow_up/commands": typeof application_follow_up_commands;
   "application/follow_up/ports": typeof application_follow_up_ports;
   "application/follow_up/queries": typeof application_follow_up_queries;
+  "application/notifications/ports": typeof application_notifications_ports;
   "application/requests/commands": typeof application_requests_commands;
+  "application/requests/notifications": typeof application_requests_notifications;
   "application/requests/ports": typeof application_requests_ports;
   "application/requests/queries": typeof application_requests_queries;
   "application/requests/referrals": typeof application_requests_referrals;

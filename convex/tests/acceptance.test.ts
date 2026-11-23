@@ -50,6 +50,7 @@ import {
 } from "../application/appointments/changes";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { availabilityReader } from "../infrastructure/availability/repository";
 import { applyAppointmentTransition } from "../application/appointments/commands";
 import schema from "../schema";
@@ -1963,6 +1964,7 @@ async function bookTi98(
     const deps: BookAppointmentDeps = {
       auth: authorizationReader(ctx),
       audit: appointmentAuditRecorder(ctx),
+      notifications: notificationEventRecorder(ctx),
       availability: availabilityReader(ctx),
       needs: {
         findAccompanimentNeeds: async (accompanimentId) =>
@@ -2389,6 +2391,7 @@ async function cancelTi109(
     const deps: CancelAppointmentDeps = {
       auth: authorizationReader(ctx),
       audit: appointmentAuditRecorder(ctx),
+      notifications: notificationEventRecorder(ctx),
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       now: () => TI109_NOW,
@@ -2417,6 +2420,7 @@ async function rescheduleTi109(
     const deps: RescheduleAppointmentDeps = {
       auth: authorizationReader(ctx),
       audit: appointmentAuditRecorder(ctx),
+      notifications: notificationEventRecorder(ctx),
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       occupier: {
@@ -2710,6 +2714,7 @@ async function recordTi110(
     const deps: RecordAppointmentAttendanceDeps = {
       auth: authorizationReader(ctx),
       audit: appointmentAuditRecorder(ctx),
+      notifications: notificationEventRecorder(ctx),
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       now: () => TI110_NOW,
