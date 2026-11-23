@@ -160,7 +160,7 @@ Desde TI2-150, registrar una solicitud y cada cambio de estado dejan un aviso en
 | `closeRequestWithoutAccompaniment` | `request_closed` | El Estudiante |
 | `cancelRequest` | `request_cancelled` | Quien revisa; si nadie la tomó, no hay aviso |
 
-El aviso lleva solo la solicitud y el destinatario: nunca el motivo, la respuesta, la razón ni las necesidades. Su texto externo es el genérico «Tienes una actualización pendiente». La recepción usa el instante persistido de la fila, así repetir el envío con la misma `idempotencyKey` devuelve la misma solicitud y no deja un segundo aviso. Un paso rechazado no deja aviso. El contacto y la aceptación de una derivación de entrada no cambian el estado y no avisan.
+El aviso lleva solo la solicitud y el destinatario: nunca el motivo, la respuesta, la razón ni las necesidades. Su texto externo es el genérico «Tienes una actualización pendiente». Cada solicitud recibida deja un solo aviso de recepción. Desde TI2-165 el envío no lleva clave de idempotencia, así que repetirlo crea otra solicitud con su propio aviso. Un paso rechazado no deja aviso. El contacto y la aceptación de una derivación de entrada no cambian el estado y no avisan.
 
 ## Vínculo con el acompañamiento
 
