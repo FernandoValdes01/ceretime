@@ -567,6 +567,20 @@ describe("cambio de profesionales (TI2-165)", () => {
     expect(within(team).getByRole("button", { name: "Retirarme" })).toBeDefined();
   });
 
+  test("al único asignado no le ofrece retirarse y le explica qué hacer", async () => {
+    store.details.set("acc-1", completo("acc-1", OBJETIVO_1));
+    store.team = { ...EQUIPO, assigned: [EQUIPO.assigned[0]] };
+    renderAt("/profesional/acompanamientos/acc-1");
+
+    await screen.findByText(OBJETIVO_1);
+    const team = teamSection();
+    expect(within(team).queryByRole("button", { name: "Retirarme" })).toBeNull();
+    expect(team.textContent).toContain(
+      "Eres el único profesional asignado. Para retirarte, primero asigna a otro profesional.",
+    );
+    expect(within(team).getByRole("button", { name: "Asignar" })).toBeDefined();
+  });
+
   test("un acompañamiento cerrado muestra el equipo sin acciones", async () => {
     store.details.set("acc-1", completo("acc-1", OBJETIVO_1, "closed"));
     renderAt("/profesional/acompanamientos/acc-1");
