@@ -48,6 +48,7 @@ import {
   googleCalendarConnectionReader,
   googleCalendarGateway,
 } from "../infrastructure/calendar/google_calendar";
+import { calendarLinkReader } from "../infrastructure/calendar/repository";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
@@ -523,7 +524,9 @@ export const getAppointmentCalendarFile = query({
 
 /**
  * Indica si la sesión ya concedió el alcance mínimo de Calendar. Solo devuelve
- * un booleano: ni tokens ni la cuenta de Google.
+ * un booleano: ni tokens ni la cuenta de Google. Delega en el estado del
+ * vínculo (TI2-161) para que la regla viva en un solo lugar; la forma pública
+ * de TI2-122 no cambia.
  */
 export const getCalendarConnection = query({
   args: {},
@@ -535,6 +538,7 @@ export const getCalendarConnection = query({
         {
           auth: authorizationReader(ctx),
           connection: googleCalendarConnectionReader(ctx),
+          store: calendarLinkReader(ctx),
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),

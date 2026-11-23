@@ -263,15 +263,13 @@ export function calendarLinkReader(ctx: QueryCtx | MutationCtx) {
  *
  * Solo lo usan mutaciones: registra la confirmación del retorno OAuth y la
  * desconexión con el `userId` de la sesión. Nunca acepta la referencia desde
- * el cliente: la resuelve el lector OAuth.
+ * el cliente: la resuelve el lector OAuth. Reutiliza el lector para
+ * `readMetadata` en vez de duplicar la normalización.
  */
 export function calendarLinkStore(ctx: MutationCtx) {
+  const reader = calendarLinkReader(ctx);
   return {
-    readMetadata: async (userId: string): Promise<CalendarConnectionMetadata | null> => {
-      const normalized = ctx.db.normalizeId("users", userId);
-      if (normalized === null) return null;
-      return await readCalendarConnectionMetadata(ctx, normalized);
-    },
+    readMetadata: reader.readMetadata,
     connect: async (userId: string, accountReference: string, now: number) => {
       const normalized = ctx.db.normalizeId("users", userId);
       if (normalized === null) return { status: "invalid_reference" as const };

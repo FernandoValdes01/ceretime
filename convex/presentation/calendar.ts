@@ -1,17 +1,20 @@
 import { v } from "convex/values";
 import {
   confirmCalendarLink as confirmCalendarLinkUseCase,
-  disconnectCalendarLink as disconnectCalendarLinkUseCase,
   getCalendarLinkStatus as getCalendarLinkStatusUseCase,
+  revokeCalendarOAuthAccess as revokeCalendarOAuthAccessUseCase,
 } from "../application/calendar/calendar_link";
-import { mutation, query } from "../_generated/server";
+import type { CalendarLinkDisconnectResult } from "../application/calendar/calendar_link";
+import { unauthorizedError } from "../domain/errors/api_error";
+import { action, mutation, query } from "../_generated/server";
+import { internal } from "../_generated/api";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import {
   googleCalendarConnectionReader,
-  googleCalendarRevoker,
+  googleCalendarOAuthAccess,
 } from "../infrastructure/calendar/google_calendar";
 import { calendarLinkReader, calendarLinkStore } from "../infrastructure/calendar/repository";
-import { unwrapApiResult } from "./session";
+import { throwPublicApiError, unwrapApiResult } from "./session";
 
 /**
  * Borde de Presentación: vínculo propio con Google Calendar (TI2-161).
@@ -23,10 +26,11 @@ import { unwrapApiResult } from "./session";
  * locales aportan fechas y el aviso de eventos previos.
  *
  * Los errores usan el contrato común (`ConvexError({code, message})`):
- * `unauthorized` sin sesión, sin perfil o sin vigencia; `conflict` ante un
- * instante inválido. Rechazar la autorización responde `connected: false`,
- * nunca bloquea la reserva. Desconectar avisa que los eventos anteriores
- * pueden quedar sin actualizar.
+ * `unauthorized` sin sesión, sin perfil, sin vigencia o sin rol de vínculo;
+ * `conflict` ante un instante inválido o si la revocación externa no se puede
+ * completar. Rechazar la autorización responde `connected: false`, nunca
+ * bloquea la reserva. Desconectar revoca primero en Google y solo después
+ * marca lo local; si Google no responde, no se marca nada.
  */
 
 const calendarLinkStatusValidator = v.object({
@@ -78,9 +82,9 @@ export const getCalendarLinkStatus = query({
 /**
  * Confirma el retorno OAuth y registra el vínculo propio.
  *
- * Valida que el alcance mínimo esté concedido; si se rechazó, responde
- * `connected: false` sin error. La referencia de cuenta se resuelve en el
- * servidor.
+ * Solo Estudiante y Profesional (RF-27, `calendar:link`). Valida que el
+ * alcance mínimo esté concedido; si se rechazó, responde `connected: false`
+ * sin error. La referencia de cuenta se resuelve en el servidor.
  */
 export const confirmCalendarLink = mutation({
   args: {},
@@ -104,24 +108,32 @@ export const confirmCalendarLink = mutation({
 /**
  * Desconecta el vínculo propio con aviso de eventos previos.
  *
- * Revoca el acceso OAuth de la sesión y marca la trazabilidad local. No borra
- * eventos ya creados: la respuesta indica que pueden quedar sin actualizar.
+ * Es una acción porque revocar exige red (`fetch` a Google) y la acción no
+ * tiene base de datos: primero verifica el rol (Estudiante o Profesional),
+ * revoca el permiso en Google y borra la cuenta OAuth, y solo después marca
+ * la trazabilidad local con la mutación interna. Si Google no responde,
+ * responde `conflict` sin marcar nada. No borra eventos ya creados: la
+ * respuesta indica que pueden quedar sin actualizar.
  */
-export const disconnectCalendarLink = mutation({
+export const disconnectCalendarLink = action({
   args: {},
   returns: calendarLinkDisconnectValidator,
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<CalendarLinkDisconnectResult> => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(
-      await disconnectCalendarLinkUseCase(
-        {
-          auth: authorizationReader(ctx),
-          oauth: googleCalendarRevoker(ctx),
-          store: calendarLinkStore(ctx),
-          now: () => Date.now(),
-        },
-        { tokenIdentifier: identity?.tokenIdentifier ?? null },
-      ),
-    );
+    const tokenIdentifier = identity?.tokenIdentifier ?? null;
+    if (tokenIdentifier === null) throwPublicApiError(unauthorizedError());
+    const allowed = await ctx.runQuery(internal.operations.calendar.checkCalendarLinkAccess, {
+      tokenIdentifier,
+    });
+    if (!allowed) throwPublicApiError(unauthorizedError());
+    const revocation = await revokeCalendarOAuthAccessUseCase({
+      access: googleCalendarOAuthAccess(ctx),
+    });
+    if (revocation.status === "error") throwPublicApiError(revocation.error);
+    const marked = await ctx.runMutation(internal.operations.calendar.markCalendarDisconnected, {
+      tokenIdentifier,
+      revoked: revocation.data.status,
+    });
+    return unwrapApiResult(marked);
   },
 });

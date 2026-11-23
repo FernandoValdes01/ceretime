@@ -3,12 +3,14 @@ import { CALENDAR_EVENTS_SCOPE } from "../../domain/calendar/calendar_event";
 import type { CalendarConnectionMetadata } from "../../domain/calendar/calendar_link";
 import type { AuthorizationReader } from "../authorization/authorize";
 import {
+  checkCalendarLinkAccess,
   confirmCalendarLink,
-  disconnectCalendarLink,
   getCalendarLinkStatus,
+  markCalendarDisconnected,
+  revokeCalendarOAuthAccess,
   type CalendarLinkMetadataStore,
+  type CalendarOAuthAccess,
   type CalendarOAuthLinkReader,
-  type CalendarOAuthRevoker,
 } from "./calendar_link";
 
 type FakeProfile = {
@@ -35,6 +37,22 @@ const professional: FakeProfile = {
   tokenIdentifier: "token-pro",
 };
 
+const intern: FakeProfile = {
+  _id: "user-intern",
+  role: "intern",
+  institutionalStatus: "enabled",
+  accountStatus: "active",
+  tokenIdentifier: "token-intern",
+};
+
+const admin: FakeProfile = {
+  _id: "user-admin",
+  role: "admin",
+  institutionalStatus: "enabled",
+  accountStatus: "active",
+  tokenIdentifier: "token-admin",
+};
+
 const inactive: FakeProfile = {
   _id: "user-inactive",
   role: "student",
@@ -44,7 +62,7 @@ const inactive: FakeProfile = {
 };
 
 function fakeAuth(): AuthorizationReader {
-  const profiles = [student, professional, inactive];
+  const profiles = [student, professional, intern, admin, inactive];
   return {
     findProfileByTokenIdentifier: async (tokenIdentifier) =>
       profiles.find((row) => row.tokenIdentifier === tokenIdentifier) ?? null,
@@ -64,17 +82,29 @@ function fakeOAuth(
   };
 }
 
-function fakeRevoker(
-  result: "revoked" | "not_found" | "unavailable" = "revoked",
-): CalendarOAuthRevoker & { readonly calls: number } {
-  const state = { calls: 0 };
+function fakeAccess(
+  tokens: { readonly accessToken: string | null; readonly refreshToken: string | null } | null = {
+    accessToken: "access-ficticio",
+    refreshToken: "refresh-ficticio",
+  },
+  revoke: "revoked" | "already_invalid" | "unavailable" = "revoked",
+): CalendarOAuthAccess & { readonly calls: string[] } {
+  const calls: string[] = [];
   return {
-    get calls() {
-      return state.calls;
+    calls,
+    readTokens: async () => {
+      calls.push("read");
+      return tokens === null
+        ? { status: "missing" as const }
+        : { status: "found" as const, tokens };
     },
-    revokeAccess: async () => {
-      state.calls += 1;
-      return result;
+    revokeToken: async (token) => {
+      calls.push(`revoke:${token}`);
+      return revoke;
+    },
+    deleteAccount: async () => {
+      calls.push("delete");
+      return "deleted" as const;
     },
   };
 }
@@ -216,6 +246,21 @@ describe("confirmCalendarLink", () => {
     expect(store.writes).toEqual([{ userId: "user-pro", kind: "connect" }]);
   });
 
+  test("practicante y administrador reciben unauthorized", async () => {
+    for (const tokenIdentifier of ["token-intern", "token-admin"]) {
+      const store = fakeStore();
+      const result = await confirmCalendarLink(
+        { auth: fakeAuth(), oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]), store, now: () => 3000 },
+        { tokenIdentifier },
+      );
+      expect(result).toEqual({
+        status: "error",
+        error: { code: "unauthorized", message: "No autorizado" },
+      });
+      expect(store.writes).toHaveLength(0);
+    }
+  });
+
   test("sin sesión o sin vigencia responde unauthorized con código", async () => {
     for (const tokenIdentifier of [null, "token-missing", "token-inactive"]) {
       const result = await confirmCalendarLink(
@@ -251,28 +296,84 @@ describe("confirmCalendarLink", () => {
   });
 });
 
-describe("disconnectCalendarLink", () => {
+describe("checkCalendarLinkAccess", () => {
+  test("estudiante y profesional acceden; otros roles, nadie", async () => {
+    for (const [tokenIdentifier, expected] of [
+      ["token-student", true],
+      ["token-pro", true],
+      ["token-intern", false],
+      ["token-admin", false],
+      ["token-inactive", false],
+      ["token-missing", false],
+      [null, false],
+    ] as const) {
+      expect(await checkCalendarLinkAccess({ auth: fakeAuth() }, { tokenIdentifier })).toBe(
+        expected,
+      );
+    }
+  });
+});
+
+describe("revokeCalendarOAuthAccess", () => {
+  test("revoca antes de borrar, con el refresh token", async () => {
+    const access = fakeAccess();
+    const result = await revokeCalendarOAuthAccess({ access });
+    expect(result).toEqual({ status: "ok", data: { status: "revoked" } });
+    expect(access.calls).toEqual(["read", "revoke:refresh-ficticio", "delete"]);
+  });
+
+  test("un token ya inválido cuenta como revocado y borra igual", async () => {
+    const access = fakeAccess(undefined, "already_invalid");
+    const result = await revokeCalendarOAuthAccess({ access });
+    expect(result).toEqual({ status: "ok", data: { status: "revoked" } });
+    expect(access.calls).toEqual(["read", "revoke:refresh-ficticio", "delete"]);
+  });
+
+  test("sin cuenta vinculada responde not_found sin llamar a Google", async () => {
+    const access = fakeAccess(null);
+    const result = await revokeCalendarOAuthAccess({ access });
+    expect(result).toEqual({ status: "ok", data: { status: "not_found" } });
+    expect(access.calls).toEqual(["read"]);
+  });
+
+  test("si Google no responde no borra nada y responde conflict", async () => {
+    const access = fakeAccess(undefined, "unavailable");
+    const result = await revokeCalendarOAuthAccess({ access });
+    expect(result).toEqual({
+      status: "error",
+      error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
+    });
+    expect(access.calls).toEqual(["read", "revoke:refresh-ficticio"]);
+  });
+
+  test("sin refresh token revoca con el access token", async () => {
+    const access = fakeAccess({ accessToken: "access-ficticio", refreshToken: null });
+    const result = await revokeCalendarOAuthAccess({ access });
+    expect(result).toEqual({ status: "ok", data: { status: "revoked" } });
+    expect(access.calls).toEqual(["read", "revoke:access-ficticio", "delete"]);
+  });
+});
+
+describe("markCalendarDisconnected", () => {
   test("desconecta lo propio con aviso de eventos previos", async () => {
     const store = fakeStore({ "user-student": { linkedAt: 1000 } });
-    const revoker = fakeRevoker("revoked");
-    const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), oauth: revoker, store, now: () => 2000 },
-      { tokenIdentifier: "token-student" },
+    const result = await markCalendarDisconnected(
+      { auth: fakeAuth(), store, now: () => 2000 },
+      { tokenIdentifier: "token-student", revoked: "revoked" },
     );
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     expect(result.data.disconnected).toBe(true);
     expect(result.data.staleEventsMayRemain).toBe(true);
     expect(result.data.revokedAt).toBe(2000);
-    expect(revoker.calls).toBe(1);
     expect(store.writes).toEqual([{ userId: "user-student", kind: "disconnect" }]);
   });
 
-  test("revoca el acceso aunque no haya fila local del flujo anterior", async () => {
+  test("si se revocó en Google informa desconectado aunque no haya fila local", async () => {
     const store = fakeStore();
-    const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), oauth: fakeRevoker("revoked"), store, now: () => 2000 },
-      { tokenIdentifier: "token-student" },
+    const result = await markCalendarDisconnected(
+      { auth: fakeAuth(), store, now: () => 2000 },
+      { tokenIdentifier: "token-student", revoked: "revoked" },
     );
     expect(result).toEqual({
       status: "ok",
@@ -280,24 +381,20 @@ describe("disconnectCalendarLink", () => {
     });
   });
 
-  test("si la revocación falla no marca nada local y responde conflict", async () => {
-    const store = fakeStore({ "user-student": { linkedAt: 1000 } });
-    const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), oauth: fakeRevoker("unavailable"), store, now: () => 2000 },
-      { tokenIdentifier: "token-student" },
+  test("el profesional también desconecta lo propio", async () => {
+    const store = fakeStore({ "user-pro": { linkedAt: 1000 } });
+    const result = await markCalendarDisconnected(
+      { auth: fakeAuth(), store, now: () => 2000 },
+      { tokenIdentifier: "token-pro", revoked: "revoked" },
     );
-    expect(result).toEqual({
-      status: "error",
-      error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
-    });
-    expect(store.writes).toHaveLength(0);
+    expect(result.status).toBe("ok");
   });
 
   test("una persona no desconecta la cuenta de otra", async () => {
     const store = fakeStore({ "user-student": { linkedAt: 1000 } });
-    const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), oauth: fakeRevoker("not_found"), store, now: () => 2000 },
-      { tokenIdentifier: "token-pro" },
+    const result = await markCalendarDisconnected(
+      { auth: fakeAuth(), store, now: () => 2000 },
+      { tokenIdentifier: "token-pro", revoked: "not_found" },
     );
     expect(result).toEqual({
       status: "ok",
@@ -306,19 +403,32 @@ describe("disconnectCalendarLink", () => {
     expect(store.writes).toEqual([{ userId: "user-pro", kind: "disconnect" }]);
   });
 
+  test("practicante y administrador reciben unauthorized", async () => {
+    for (const tokenIdentifier of ["token-intern", "token-admin"]) {
+      const result = await markCalendarDisconnected(
+        { auth: fakeAuth(), store: fakeStore(), now: () => 2000 },
+        { tokenIdentifier, revoked: "not_found" },
+      );
+      expect(result).toEqual({
+        status: "error",
+        error: { code: "unauthorized", message: "No autorizado" },
+      });
+    }
+  });
+
   test("es idempotente y no bloquea la reserva", async () => {
     const store = fakeStore({ "user-student": { linkedAt: 1000, revokedAt: 2000 } });
-    const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), oauth: fakeRevoker("not_found"), store, now: () => 3000 },
-      { tokenIdentifier: "token-student" },
+    const result = await markCalendarDisconnected(
+      { auth: fakeAuth(), store, now: () => 3000 },
+      { tokenIdentifier: "token-student", revoked: "not_found" },
     );
     expect(result.status).toBe("ok");
   });
 
   test("sin sesión responde unauthorized con código", async () => {
-    const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), oauth: fakeRevoker(), store: fakeStore(), now: () => 2000 },
-      { tokenIdentifier: null },
+    const result = await markCalendarDisconnected(
+      { auth: fakeAuth(), store: fakeStore(), now: () => 2000 },
+      { tokenIdentifier: null, revoked: "not_found" },
     );
     expect(result).toEqual({
       status: "error",

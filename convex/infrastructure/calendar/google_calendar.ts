@@ -16,6 +16,10 @@ import type { ActionCtx, MutationCtx, QueryCtx } from "../../_generated/server";
 import { components } from "../../_generated/api";
 import { authComponent, createAuth } from "../../auth";
 import { CALENDAR_EVENTS_SCOPE } from "../../domain/calendar/calendar_event";
+import { decryptOAuthToken } from "better-auth/oauth2";
+
+/** Contexto de descifrado que espera Better Auth (mismo objeto de `$context`). */
+type DecryptContext = Parameters<typeof decryptOAuthToken>[1];
 
 /** Resultado del adaptador, estructuralmente igual al puerto de Aplicación. */
 export type GoogleCalendarCreateResult =
@@ -160,22 +164,102 @@ export function googleCalendarGateway(ctx: ActionCtx) {
 }
 
 /**
- * Revocación del acceso OAuth de Calendar (TI2-161).
+ * Acceso OAuth de Calendar para la revocación (TI2-161).
  *
- * Elimina la fila de la cuenta `google` del componente de autenticación: sin
- * esa fila los alcances desaparecen y `connected` pasa a `false` en todas
- * las lecturas, y el adaptador responde `not_connected` sin crear eventos.
+ * Todo ocurre en el servidor y nada sale al cliente: lee la fila de la cuenta
+ * `google` de la sesión, descifra los tokens con Better Auth (en reposo viajan
+ * cifrados), revoca el permiso en Google y recién después elimina la fila.
  * Solo toca la cuenta de la sesión y únicamente el proveedor `google`: el
  * inicio institucional (`google-alu`/`google-uct`) y la sesión quedan
- * intactos. Nunca devuelve tokens ni identificadores.
+ * intactos, y `google` nunca sirve para iniciar sesión (el guard lo bloquea),
+ * así que borrar su fila no puede dejar a nadie sin acceso.
  *
  * Si la revocación no se puede completar, responde `unavailable` y el
- * llamante no debe marcar nada local: afirmar desconexión con los tokens aún
- * guardados dejaría crear eventos tras "desconectar".
+ * llamante no debe marcar nada local: afirmar desconexión con el permiso aún
+ * vigente en Google dejaría crear eventos tras "desconectar".
  */
-export function googleCalendarRevoker(ctx: MutationCtx) {
+export function googleCalendarOAuthAccess(ctx: ActionCtx) {
+  async function readTokens(): Promise<
+    | {
+        readonly status: "found";
+        readonly tokens: {
+          readonly accessToken: string | null;
+          readonly refreshToken: string | null;
+        };
+      }
+    | { readonly status: "missing" }
+    | { readonly status: "unavailable" }
+  > {
+    try {
+      const identity = await ctx.auth.getUserIdentity();
+      if (identity === null) return { status: "missing" };
+      const account = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+        model: "account",
+        where: [
+          { field: "userId", value: identity.subject },
+          { field: "providerId", value: "google" },
+        ],
+      })) as {
+        readonly accessToken?: unknown;
+        readonly refreshToken?: unknown;
+      } | null;
+      if (account === null) return { status: "missing" };
+      const { auth } = await authComponent.getAuth(createAuth, ctx);
+      // `$context` ya es el AuthContext real en ejecución; la conversión solo
+      // salva la varianza de los genéricos del adaptador en los tipos de
+      // Better Auth, no cambia el objeto que recibe el descifrado.
+      const context = (await auth.$context) as unknown as DecryptContext;
+      const decipher = async (value: unknown): Promise<string | null> => {
+        if (typeof value !== "string" || value.length === 0) return null;
+        try {
+          const plain = await decryptOAuthToken(value, context);
+          return typeof plain === "string" && plain.length > 0 ? plain : null;
+        } catch {
+          return null;
+        }
+      };
+      return {
+        status: "found",
+        tokens: {
+          accessToken: await decipher(account.accessToken),
+          refreshToken: await decipher(account.refreshToken),
+        },
+      };
+    } catch {
+      return { status: "unavailable" };
+    }
+  }
   return {
-    revokeAccess: async (): Promise<"revoked" | "not_found" | "unavailable"> => {
+    readTokens,
+    revokeToken: async (token: string): Promise<"revoked" | "already_invalid" | "unavailable"> => {
+      let response: Response;
+      try {
+        response = await fetch("https://oauth2.googleapis.com/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: `token=${encodeURIComponent(token)}`,
+        });
+      } catch {
+        return "unavailable";
+      }
+      if (response.ok) return "revoked";
+      if (response.status === 400) {
+        try {
+          const body: unknown = await response.json();
+          if (
+            typeof body === "object" &&
+            body !== null &&
+            (body as { readonly error?: unknown }).error === "invalid_token"
+          ) {
+            return "already_invalid";
+          }
+        } catch {
+          // Sin cuerpo legible no se puede confirmar la revocación.
+        }
+      }
+      return "unavailable";
+    },
+    deleteAccount: async (): Promise<"deleted" | "not_found" | "unavailable"> => {
       const identity = await ctx.auth.getUserIdentity();
       if (identity === null) return "not_found";
       try {
@@ -188,7 +272,7 @@ export function googleCalendarRevoker(ctx: MutationCtx) {
             ],
           },
         });
-        return deleted === undefined || deleted === null ? "not_found" : "revoked";
+        return deleted === undefined || deleted === null ? "not_found" : "deleted";
       } catch {
         return "unavailable";
       }
@@ -210,21 +294,15 @@ export function googleCalendarConnectionReader(ctx: QueryCtx | MutationCtx) {
     readonly scope?: string | null;
     readonly accountId?: unknown;
   } | null> {
-    try {
-      const identity = await ctx.auth.getUserIdentity();
-      if (identity === null) return null;
-      return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
-        model: "account",
-        where: [
-          { field: "userId", value: identity.subject },
-          { field: "providerId", value: "google" },
-        ],
-      })) as { readonly scope?: string | null; readonly accountId?: unknown } | null;
-    } catch {
-      // Sin cuenta vinculada o componente no disponible (pruebas): la sesión
-      // responde desconectada sin filtrar el motivo ni las credenciales.
-      return null;
-    }
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity === null) return null;
+    return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      model: "account",
+      where: [
+        { field: "userId", value: identity.subject },
+        { field: "providerId", value: "google" },
+      ],
+    })) as { readonly scope?: string | null; readonly accountId?: unknown } | null;
   }
   return {
     listGoogleScopes: async (): Promise<readonly string[] | null> => {

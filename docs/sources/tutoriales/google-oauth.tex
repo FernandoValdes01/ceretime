@@ -229,9 +229,10 @@ nuevas ni secretos en el repositorio:
 
 Los tokens se cifran en reposo en el componente de autenticación y solo se
 usan en el servidor; el frontend nunca recibe tokens, referencias de cuenta ni
-correos. Desconectar conserva trazabilidad local y avisa que los eventos
-anteriores pueden quedar sin actualizar; la sincronización automática de
-reservas, cambios y cancelaciones es TI2-162.
+correos. Desconectar revoca el permiso en Google y elimina la cuenta OAuth de
+la sesión, conserva trazabilidad local y avisa que los eventos anteriores
+pueden quedar sin actualizar; la sincronización automática de reservas,
+cambios y cancelaciones es TI2-162.
 
 % =================================================
 \section{Dominios institucionales}
