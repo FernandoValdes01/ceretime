@@ -7,7 +7,6 @@ import {
   type StudentRequestActions,
   type StudentRequestSubmitter,
 } from "../application/student-area-port";
-import type { SubmitStudentRequestCommand } from "../domain/student-area-models";
 import { mapBackendStudentRequest, mapCreatedRequestToReceipt } from "./backend-contract-mappers";
 import type { MobileConvexClient } from "./convex-client";
 import { notifyStudentAreaChanged } from "./convex-student-area-reader";
@@ -21,12 +20,6 @@ export interface ConvexStudentRequestSubmitter extends StudentRequestSubmitter {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function defaultIdempotencyKey(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
-  // Sin crypto el valor solo debe distinguir intentos distintos de esta instalación.
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 /** Traduce el rechazo público de una acción; un error desconocido no deja pasar el mensaje del SDK. */
@@ -61,26 +54,13 @@ function toActionError(error: unknown): StudentRequestActionError {
 
 /**
  * Envía solicitudes y ejecuta sus acciones contra Convex. El servidor decide autorización, estado
- * vigente y duplicados; este adaptador solo traduce y nunca confirma una escritura que no ocurrió.
+ * vigente y estado vigente; este adaptador solo traduce y nunca confirma una escritura que no ocurrió.
  */
 export function createConvexStudentRequestSubmitter({
   client,
-  createIdempotencyKey = defaultIdempotencyKey,
 }: {
   readonly client: WriteClient;
-  readonly createIdempotencyKey?: () => string;
 }): ConvexStudentRequestSubmitter {
-  // Un reintento del mismo contenido reutiliza la clave: si el primer intento sí llegó al servidor
-  // (la red falló al responder), el servidor devuelve esa solicitud en vez de duplicarla.
-  let pending: { readonly fingerprint: string; readonly key: string } | null = null;
-
-  function keyFor(command: SubmitStudentRequestCommand): string {
-    const fingerprint = JSON.stringify(command);
-    if (pending?.fingerprint !== fingerprint)
-      pending = { fingerprint, key: createIdempotencyKey() };
-    return pending.key;
-  }
-
   const requestActions: StudentRequestActions = {
     persistsToServer: true,
     async execute(command: StudentRequestActionCommand) {
@@ -124,9 +104,7 @@ export function createConvexStudentRequestSubmitter({
               ? { preferredTimeRange: { ...generalAvailability.preferredTimeRange } }
               : {}),
           },
-          idempotencyKey: keyFor(command),
         });
-        pending = null;
         notifyStudentAreaChanged();
         return mapCreatedRequestToReceipt(created);
       } catch (error) {

@@ -139,35 +139,34 @@ describe("lector estudiantil sobre Convex", () => {
 });
 
 describe("envío y acciones estudiantiles sobre Convex", () => {
-  it("envía la forma completa con una clave que se conserva al reintentar y se renueva tras el éxito", async () => {
-    let attempt = 0;
+  it("envía la forma completa sin clave de idempotencia, que el servidor ya no acepta", async () => {
     const { client, calls } = fakeClient({
-      "presentation/requests:createRequest": () => {
-        attempt += 1;
-        if (attempt === 1)
-          throw Object.assign(new Error("Network request failed"), { code: "network_error" });
-        return requestRow("requests:7");
-      },
+      "presentation/requests:createRequest": () => requestRow("requests:7"),
     });
-    let counter = 0;
-    const submitter = createConvexStudentRequestSubmitter({
-      client,
-      createIdempotencyKey: () => `clave-${++counter}`,
-    });
+    const submitter = createConvexStudentRequestSubmitter({ client });
 
-    await expect(submitter.submitStudentRequest(command)).rejects.toBeDefined();
     const receipt = await submitter.submitStudentRequest(command);
-    await submitter.submitStudentRequest({ ...command, needSummary: "Otra necesidad" });
 
     expect(receipt).toEqual({ requestId: "requests:7", receivedAt: "2026-11-20T15:00:00.000Z" });
     expect(calls[0]?.args).toMatchObject({
       needSummary: "Participar en clases",
       accessNeeds: [{ id: "written-communication", label: "Comunicación escrita" }],
       modalityPreference: "online",
-      idempotencyKey: "clave-1",
     });
-    expect(calls[1]?.args.idempotencyKey).toBe("clave-1");
-    expect(calls[2]?.args.idempotencyKey).toBe("clave-2");
+    // TI2-165 retiró `idempotencyKey` de createRequest: el validador rechaza cualquier campo extra.
+    expect(calls[0]?.args).not.toHaveProperty("idempotencyKey");
+  });
+
+  it("un fallo de red al enviar no se presenta como éxito", async () => {
+    const { client } = fakeClient({
+      "presentation/requests:createRequest": () => {
+        throw Object.assign(new Error("Network request failed"), { code: "network_error" });
+      },
+    });
+
+    await expect(
+      createConvexStudentRequestSubmitter({ client }).submitStudentRequest(command),
+    ).rejects.toMatchObject({ operation: "createRequest", code: "unavailable" });
   });
 
   it("traduce el rechazo del servidor sin confirmar un éxito", async () => {
@@ -209,36 +208,6 @@ describe("envío y acciones estudiantiles sobre Convex", () => {
     expect(responded).toMatchObject({ status: "underReview" });
     expect(responded.informationResponse).toBeUndefined();
     expect(calls[0]?.args).toEqual({ requestId: "requests:1", reason: "Ya no la necesito" });
-  });
-
-  it("si la respuesta se pierde, el reintento recibe la solicitud ya creada y no se duplica", async () => {
-    // Simula al servidor: una clave de idempotencia crea una sola solicitud y la devuelve de nuevo.
-    const createdByKey = new Map<string, ReturnType<typeof requestRow>>();
-    let responsesLost = 1;
-    const { client } = fakeClient({
-      "presentation/requests:createRequest": ({ idempotencyKey }) => {
-        const key = String(idempotencyKey);
-        const existing = createdByKey.get(key);
-        const request = existing ?? requestRow(`requests:${createdByKey.size + 1}`);
-        createdByKey.set(key, request);
-        if (responsesLost > 0) {
-          responsesLost -= 1;
-          throw Object.assign(new Error("Network request failed"), { code: "network_error" });
-        }
-        return request;
-      },
-    });
-    let counter = 0;
-    const submitter = createConvexStudentRequestSubmitter({
-      client,
-      createIdempotencyKey: () => `clave-${++counter}`,
-    });
-
-    await expect(submitter.submitStudentRequest(command)).rejects.toBeDefined();
-    const receipt = await submitter.submitStudentRequest(command);
-
-    expect(createdByKey.size).toBe(1);
-    expect(receipt.requestId).toBe("requests:1");
   });
 
   it("responder una información que ya no se espera llega como conflicto", async () => {
