@@ -30,6 +30,16 @@ La habilitación de una cuenta Practicante y su asignación a un acompañamiento
 | `appointment:onlineAccess` (enlace privado de la atención en línea) | Lee el enlace solo de su propia atención, con acompañamiento activo                 | Lee y agrega o reemplaza el enlace solo si participa en la atención (responsable o adicional), con asignación y acompañamiento activos (TI2-142) | Denegado aunque tenga asignación   | Denegado                     |
 | `space:read` (catálogo de espacios)                                 | Cuenta vigente                                                                      | Cuenta vigente                                                                                                                                   | Cuenta vigente                     | Cuenta vigente               |
 
+## Matriz de Calendar (TI2-161)
+
+Solo Estudiante y Profesional vinculan y desconectan su propia cuenta (RF-27): Practicante y Administrador reciben `unauthorized`. La lectura del estado sigue abierta a cualquier perfil vigente y nunca devuelve tokens, referencias de cuenta, correos ni alcances. Cada operación deriva la identidad en el servidor y nunca acepta un `userId` del cliente.
+
+| Caso de uso                                         | Estudiante                                                                    | Profesional                                                                   | Practicante                                      | Administrador                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------ |
+| `calendar:readLinkStatus` (`getCalendarLinkStatus`) | Permitido con cuenta vigente, solo estado propio                              | Permitido con cuenta vigente, solo estado propio                              | Permitido con cuenta vigente, solo estado propio | Permitido con cuenta vigente, solo estado propio |
+| `calendar:link` (`confirmCalendarLink`)             | Permitido con cuenta vigente, registra su propio vínculo                      | Permitido con cuenta vigente, registra su propio vínculo                      | Denegado                                         | Denegado                                         |
+| `calendar:disconnect` (`disconnectCalendarLink`)    | Permitido con cuenta vigente, revoca su propio acceso y avisa eventos previos | Permitido con cuenta vigente, revoca su propio acceso y avisa eventos previos | Denegado                                         | Denegado                                         |
+
 ## Matriz de seguimiento (TI2-127)
 
 | Caso de uso                               | Estudiante                              | Profesional                                             | Practicante                                                                                                                              | Administrador                |

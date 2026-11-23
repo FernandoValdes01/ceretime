@@ -1,5 +1,6 @@
 import { getRouteApi, Navigate, Outlet } from "@tanstack/react-router";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
+import { AdminAccountsPage } from "../gestion/admin-accounts.tsx";
 import { AdminSpaceEditorPage } from "../gestion/admin-space-editor.tsx";
 import {
   ProfessionalAgendaDetailPage,
@@ -259,6 +260,10 @@ export function AdminLayoutRouteComponent() {
 
 export function AdminIndexRouteComponent() {
   return <AdminHome />;
+}
+
+export function AdminAccountsRouteComponent() {
+  return <AdminAccountsPage />;
 }
 
 export function AdminSpacesRouteComponent() {

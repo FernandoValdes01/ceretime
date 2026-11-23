@@ -4,20 +4,20 @@ import type { Space } from "../../../../../convex/domain/index.ts";
 import { getAgendaPort } from "./professional-availability-data.ts";
 
 /**
- * Lectura y validación de formato del editor de espacios del Administrador (TI2-04).
+ * Lectura y validación de formato del editor de espacios del Administrador
+ * (TI2-04, escritura real TI2-169).
  *
- * Un solo puerto vigente: reutiliza el singleton de gestión (TI2-103) con el
- * adaptador ficticio hasta TI2-123/TI2-125, que lo sustituye por la API real
- * sin tocar presentación. La lectura responde `undefined` mientras carga; los
- * fallos técnicos se traducen al estado `error` tipado y la denegación al
- * estado `denied` genérico sin detalles sensibles.
+ * Un solo puerto vigente: el singleton de gestión (TI2-103) con el adaptador
+ * Convex (TI2-125, escritura TI2-148/TI2-169) contra `api.presentation.spaces`.
+ * La lectura responde `undefined` mientras carga; los fallos técnicos se
+ * traducen al estado `error` tipado y la denegación al estado `denied`
+ * genérico sin detalles sensibles.
  *
  * Los validadores de formato solo revisan presencia y texto legible de los
  * campos del contrato para dar errores accesibles. No sustituyen los
  * invariantes de Dominio: la forma del espacio vive en el barrel
- * (`convex/domain/index.ts`) y la escritura real del catálogo no está
- * entregada (TI2-99 entrega lectura, no escritura); todo guardado es
- * simulado con datos ficticios y no anuncia persistencia real.
+ * (`convex/domain/index.ts`) y la escritura persiste en el catálogo real
+ * (TI2-148); todo guardado confirma persistencia y se refleja al recargar.
  */
 
 export type SpaceFormState = {

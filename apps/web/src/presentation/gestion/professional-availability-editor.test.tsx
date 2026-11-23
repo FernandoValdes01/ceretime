@@ -177,6 +177,21 @@ function puertoOk(): AgendaPort {
           version: "v1",
         },
       }),
+    setSpaceActive: (input) =>
+      Promise.resolve({
+        status: "saved",
+        space: {
+          id: input.spaceId,
+          campus: "Campus Norte",
+          building: "Edificio A",
+          floor: "Piso 1",
+          room: "Sala 101",
+          accessConditions: "Rampa lateral.",
+          arrivalInstructions: "Entrar por el acceso norte.",
+          version: "v1",
+        },
+        isActive: input.isActive,
+      }),
   };
 }
 

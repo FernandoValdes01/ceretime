@@ -166,6 +166,7 @@ function puertoAgendaBase(): AgendaPort {
       Promise.resolve({
         status: "denied",
       }),
+    setSpaceActive: () => Promise.resolve({ status: "denied" }),
   };
 }
 

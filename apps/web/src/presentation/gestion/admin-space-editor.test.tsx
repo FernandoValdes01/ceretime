@@ -9,14 +9,14 @@ import type { AgendaPort } from "../../application/agenda/agenda-port.ts";
 import { setAgendaPortForTests } from "./professional-availability-data.ts";
 
 /**
- * Pruebas del editor de espacios del Administrador (TI2-04).
+ * Pruebas del editor de espacios del Administrador (TI2-04, escritura real TI2-169).
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Administrador, salvo los casos de denegación. El puerto de agenda se
- * inyecta por pruebas porque el adaptador ficticio no distingue referencias;
- * el cableado real puerto→adaptador lo cubren `tsc`, el build y la
- * verificación manual contra el entorno ficticio de TI2-30. Todos los datos
- * son ficticios y el guardado no anuncia persistencia real.
+ * inyecta por pruebas con la API real simulada (crear, editar y deshabilitar
+ * persisten en el doble); el cableado real puerto→adaptador lo cubren `tsc`,
+ * el build y la verificación manual contra el entorno de TI2-30. Todos los
+ * datos son ficticios y el guardado confirma persistencia en el catálogo.
  */
 
 let mockedSession: WebSessionState;
@@ -47,6 +47,21 @@ vi.mock("../../infrastructure/convex/convex-client", () => ({
   },
   convexClient: {},
 }));
+
+let catalogThrows: Error | null = null;
+
+vi.mock("./admin-space-editor-data.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./admin-space-editor-data.ts")>();
+  return {
+    ...actual,
+    useSpaceCatalog: (...args: Parameters<typeof actual.useSpaceCatalog>) => {
+      if (catalogThrows !== null) {
+        throw catalogThrows;
+      }
+      return actual.useSpaceCatalog(...args);
+    },
+  };
+});
 
 const SESION_ADMIN: WebSessionState = {
   status: "authenticated",
@@ -133,6 +148,13 @@ function puertoOk(): AgendaPort {
           version: "v1",
         },
       }),
+    setSpaceActive: (input) => {
+      const found = ESPACIOS_FICTICIOS.find((space) => space.id === input.spaceId);
+      if (found === undefined) {
+        return Promise.resolve({ status: "denied" as const });
+      }
+      return Promise.resolve({ status: "saved" as const, space: found, isActive: false });
+    },
     listAppointments: () => Promise.resolve({ status: "empty" }),
     getAppointment: () => Promise.resolve({ status: "denied" }),
     changeAppointmentStatus: () =>
@@ -170,6 +192,12 @@ function completarEspacioValido() {
   });
 }
 
+/** Abre el menú de tres puntos de la fila y devuelve la opción pedida. */
+async function openSpaceMenuItem(spaceLabel: string, itemName: string) {
+  fireEvent.click(screen.getByRole("button", { name: `Acciones para ${spaceLabel}` }));
+  return await screen.findByRole("menuitem", { name: itemName });
+}
+
 beforeEach(() => {
   vi.stubEnv("VITE_CONVEX_URL", "https://test.convex.cloud");
   vi.stubEnv("VITE_CONVEX_SITE_URL", "https://test.convex.site");
@@ -177,6 +205,7 @@ beforeEach(() => {
   mockedSession = undefined;
   mockedPair = undefined;
   mockedBackendConfigured = true;
+  catalogThrows = null;
   setAgendaPortForTests(null);
 });
 
@@ -203,10 +232,8 @@ describe("editor de espacios (TI2-04)", () => {
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
     expect(screen.getByText("Campus Norte · Edificio B · Piso 2 · Sala 205")).toBeDefined();
     expect(screen.getAllByText("Presencial").length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/Condiciones de acceso: Acceso sin escaleras por rampa lateral\./),
-    ).toBeDefined();
-    expect(screen.getByText(/Instrucciones de llegada: Subir al segundo piso/)).toBeDefined();
+    expect(screen.getByText(/Acceso sin escaleras por rampa lateral\./)).toBeDefined();
+    expect(screen.getByText(/Subir al segundo piso/)).toBeDefined();
   });
 
   test("fallo de lectura muestra error y reintenta", async () => {
@@ -227,6 +254,21 @@ describe("editor de espacios (TI2-04)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
 
     expect(await screen.findByText("Sin espacios registrados.")).toBeDefined();
+  });
+
+  test("una caída inesperada muestra el aviso blanco con reintento", async () => {
+    catalogThrows = new Error("caída ficticia");
+    comoAdministrador();
+    renderAt("/administrador/espacios");
+
+    expect(
+      await screen.findByText("No pudimos cargar el editor de espacios. Inténtalo de nuevo."),
+    ).toBeDefined();
+
+    catalogThrows = null;
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
   });
 
   test("denegación de lectura muestra aviso genérico sin datos", async () => {
@@ -251,7 +293,7 @@ describe("editor de espacios (TI2-04)", () => {
     expect(screen.queryByText("Sala 101")).toBeNull();
   });
 
-  test("formulario vacío muestra errores de campo legibles", async () => {
+  test("formulario vacío muestra errores visibles por campo y avisa con el flotante", async () => {
     comoAdministrador();
     renderAt("/administrador/espacios");
 
@@ -259,15 +301,25 @@ describe("editor de espacios (TI2-04)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
 
-    expect(await screen.findByText("Indica el campus del espacio.")).toBeDefined();
-    expect(screen.getByText("Indica el edificio del espacio.")).toBeDefined();
-    expect(screen.getByText("Indica el piso del espacio.")).toBeDefined();
-    expect(screen.getByText("Indica la sala del espacio.")).toBeDefined();
-    expect(screen.getByText("Describe las condiciones de acceso del espacio.")).toBeDefined();
-    expect(screen.getByText("Describe las instrucciones de llegada al espacio.")).toBeDefined();
+    // El aviso flotante es un extra: cada error queda fijo y visible junto a su campo.
+    expect(
+      await screen.findByText("Revisa los campos marcados e inténtalo de nuevo."),
+    ).toBeDefined();
+    for (const mensaje of [
+      "Indica el campus del espacio.",
+      "Indica el edificio del espacio.",
+      "Indica el piso del espacio.",
+      "Indica la sala del espacio.",
+      "Describe las condiciones de acceso del espacio.",
+      "Describe las instrucciones de llegada al espacio.",
+    ]) {
+      const aviso = screen.getByText(mensaje);
+      expect(aviso).toBeDefined();
+      expect(aviso.className).not.toContain("sr-only");
+    }
   });
 
-  test("guardado válido de un espacio nuevo confirma con nota ficticia y lo agrega", async () => {
+  test("guardado válido de un espacio nuevo confirma persistencia y lo agrega", async () => {
     comoAdministrador();
     renderAt("/administrador/espacios");
 
@@ -281,13 +333,11 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Espacio guardado")).toBeDefined();
     expect(
-      await screen.findByText(/Código esp-ficticio-9\. Guardado simulado con datos ficticios/, {
+      await screen.findByText(/Código esp-ficticio-9\. Cambios guardados en el catálogo/, {
         exact: false,
       }),
     ).toBeDefined();
-    expect(
-      screen.getAllByText(/la escritura real del catálogo no está entregada/).length,
-    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Guardado simulado/)).toBeNull();
     const catalogo = screen
       .getByRole("heading", { name: "Espacios registrados" })
       .closest("section");
@@ -344,7 +394,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Editar"),
+    );
 
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     expect(
@@ -395,7 +447,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     // Con la creación aún pendiente se entra a editar otro espacio y se
     // escribe un borrador distinto.
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-2" }));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio B · Piso 2 · Sala 205", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     const borrador = "Ascensor amplio y pasillo despejado en el hall del piso 2.";
     fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
@@ -441,7 +495,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
 
@@ -451,7 +507,9 @@ describe("editor de espacios (TI2-04)", () => {
     // abre una sesión nueva con un borrador distinto.
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
     expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     const borrador = "Ventana amplia y hall reservado para sillas de ruedas.";
     fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
@@ -474,9 +532,7 @@ describe("editor de espacios (TI2-04)", () => {
 
     // La respuesta anterior se refleja en el catálogo, pero la sesión
     // vigente sigue en edición: el borrador sobrevive y no hay confirmación.
-    expect(
-      await screen.findByText(/Condiciones de acceso: Rampa lateral con aviso sonoro/),
-    ).toBeDefined();
+    expect(await screen.findByText(/Rampa lateral con aviso sonoro/)).toBeDefined();
     const acceso = screen.getByLabelText("Condiciones de acceso") as HTMLTextAreaElement;
     expect(acceso.value).toBe(borrador);
     expect(screen.getByRole("heading", { name: "Editar espacio" })).toBeDefined();
@@ -505,7 +561,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     // Con la creación pendiente, entrar a editar y cancelar retoma el modo
     // nuevo, donde se escribe un borrador distinto.
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-2" }));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio B · Piso 2 · Sala 205", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
     expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
@@ -546,7 +604,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Editar espacio esp-1" }));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
@@ -638,8 +698,11 @@ describe("editor de espacios (TI2-04)", () => {
       expect(document.activeElement).toBe(field);
     }
 
-    for (const id of ["esp-1", "esp-2"]) {
-      const button = screen.getByRole("button", { name: `Editar espacio ${id}` });
+    for (const label of [
+      "Campus Norte · Edificio A · Piso 1 · Sala 101",
+      "Campus Norte · Edificio B · Piso 2 · Sala 205",
+    ]) {
+      const button = screen.getByRole("button", { name: `Acciones para ${label}` });
       button.focus();
       expect(document.activeElement).toBe(button);
     }
@@ -651,7 +714,11 @@ describe("editor de espacios (TI2-04)", () => {
 
     const nav = await screen.findByRole("navigation", { name: "Portal de Administración" });
     const links = within(nav).getAllByRole("link");
-    expect(links.map((link) => link.textContent?.trim())).toEqual(["Inicio", "Espacios"]);
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      "Inicio",
+      "Cuentas",
+      "Espacios",
+    ]);
     for (const link of links) {
       link.focus();
       expect(document.activeElement).toBe(link);
@@ -659,14 +726,130 @@ describe("editor de espacios (TI2-04)", () => {
     expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 
-  test("la portada del Administrador enlaza el editor de espacios", async () => {
+  test("la portada del Administrador enlaza cuentas y editor de espacios", async () => {
     comoAdministrador();
     renderAt("/administrador");
 
     const heading = await screen.findByRole("heading", { name: "Portal de Administración" });
     expect(heading).toBeDefined();
-    const espacios = await screen.findByRole("link", { name: "Espacios" });
-    expect(espacios.getAttribute("href")).toBe("/administrador/espacios");
+    const cuentas = screen.getAllByRole("link", { name: "Cuentas" });
+    expect(cuentas.length).toBeGreaterThan(0);
+    for (const enlace of cuentas) {
+      expect(enlace.getAttribute("href")).toBe("/administrador/cuentas");
+    }
+    const espacios = screen.getAllByRole("link", { name: "Espacios" });
+    expect(espacios.length).toBeGreaterThan(0);
+    for (const enlace of espacios) {
+      expect(enlace.getAttribute("href")).toBe("/administrador/espacios");
+    }
+  });
+
+  test("deshabilitar un espacio lo retira del catálogo y avisa sin borrar historial", async () => {
+    comoAdministrador();
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Deshabilitar"),
+    );
+
+    expect(
+      await screen.findByText(
+        "La sala dejará de ofrecerse en la disponibilidad y por ahora no se podrá volver a habilitar.",
+      ),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio" }));
+
+    expect(await screen.findByText("Espacio deshabilitado.")).toBeDefined();
+    const catalogo = screen
+      .getByRole("heading", { name: "Espacios registrados" })
+      .closest("section");
+    if (catalogo === null) {
+      throw new Error("Se esperaba la sección del catálogo");
+    }
+    const { queryByText } = within(catalogo);
+    expect(queryByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeNull();
+    expect(screen.getByText("Campus Norte · Edificio B · Piso 2 · Sala 205")).toBeDefined();
+  });
+
+  test("deshabilitar denegado muestra acceso denegado junto a la sala", async () => {
+    const port = puertoOk();
+    port.setSpaceActive = () => Promise.resolve({ status: "denied" });
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Deshabilitar"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain("Campus Norte · Edificio A · Piso 1 · Sala 101");
+    expect(alerta.textContent).toContain(
+      "No autorizado. Pide acceso por el canal oficial si corresponde.",
+    );
+    expect(screen.queryByText("Espacio deshabilitado")).toBeNull();
+  });
+
+  test("el error de deshabilitar sigue visible tras el tiempo del aviso flotante", async () => {
+    const port = puertoOk();
+    port.setSpaceActive = () =>
+      Promise.resolve({
+        status: "error",
+        error: { code: "conflict", message: "La sala está reservada." },
+      });
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Deshabilitar"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain("Campus Norte · Edificio A · Piso 1 · Sala 101");
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(5000);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const persistente = screen.getByRole("alert");
+    expect(persistente.textContent).toContain("Campus Norte · Edificio A · Piso 1 · Sala 101");
+    expect(persistente.textContent).toContain("La sala está reservada.");
+  });
+
+  test("cancelar la baja cierra el diálogo sin escribir", async () => {
+    const port = puertoOk();
+    const setActive = vi.fn(port.setSpaceActive);
+    port.setSpaceActive = setActive;
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Deshabilitar"),
+    );
+
+    expect(
+      await screen.findByText(
+        "La sala dejará de ofrecerse en la disponibilidad y por ahora no se podrá volver a habilitar.",
+      ),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(setActive).not.toHaveBeenCalled();
+    expect(screen.getByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
   });
 });
 

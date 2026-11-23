@@ -26,6 +26,7 @@ import type * as application_authorization_authorize from "../application/author
 import type * as application_availability_availability from "../application/availability/availability.js";
 import type * as application_availability_ports from "../application/availability/ports.js";
 import type * as application_calendar_calendar from "../application/calendar/calendar.js";
+import type * as application_calendar_calendar_link from "../application/calendar/calendar_link.js";
 import type * as application_follow_up_commands from "../application/follow_up/commands.js";
 import type * as application_follow_up_ports from "../application/follow_up/ports.js";
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
@@ -59,13 +60,16 @@ import type * as domain_authorization_permissions from "../domain/authorization/
 import type * as domain_availability_availability from "../domain/availability/availability.js";
 import type * as domain_availability_official_channel from "../domain/availability/official_channel.js";
 import type * as domain_calendar_calendar_event from "../domain/calendar/calendar_event.js";
+import type * as domain_calendar_calendar_link from "../domain/calendar/calendar_link.js";
 import type * as domain_calendar_civil_days from "../domain/calendar/civil_days.js";
 import type * as domain_errors_api_error from "../domain/errors/api_error.js";
 import type * as domain_follow_up_follow_up from "../domain/follow_up/follow_up.js";
 import type * as domain_hashing_fnv1a from "../domain/hashing/fnv1a.js";
 import type * as domain_identity_roles from "../domain/identity/roles.js";
 import type * as domain_index from "../domain/index.js";
+import type * as domain_notifications_delivery from "../domain/notifications/delivery.js";
 import type * as domain_notifications_notification from "../domain/notifications/notification.js";
+import type * as domain_privacy_privacy_controls from "../domain/privacy/privacy_controls.js";
 import type * as domain_privacy_privacy_deadlines from "../domain/privacy/privacy_deadlines.js";
 import type * as domain_privacy_privacy_request from "../domain/privacy/privacy_request.js";
 import type * as domain_requests_referral from "../domain/requests/referral.js";
@@ -83,8 +87,10 @@ import type * as infrastructure_audit_repository from "../infrastructure/audit/r
 import type * as infrastructure_auth_google_providers from "../infrastructure/auth/google_providers.js";
 import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
 import type * as infrastructure_calendar_google_calendar from "../infrastructure/calendar/google_calendar.js";
+import type * as infrastructure_calendar_repository from "../infrastructure/calendar/repository.js";
 import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
 import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
+import type * as infrastructure_privacy_repository from "../infrastructure/privacy/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
@@ -99,6 +105,7 @@ import type * as presentation_accompaniments from "../presentation/accompaniment
 import type * as presentation_accounts from "../presentation/accounts.js";
 import type * as presentation_appointments from "../presentation/appointments.js";
 import type * as presentation_availability from "../presentation/availability.js";
+import type * as presentation_calendar from "../presentation/calendar.js";
 import type * as presentation_follow_up from "../presentation/follow_up.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
@@ -129,6 +136,7 @@ declare const fullApi: ApiFromModules<{
   "application/availability/availability": typeof application_availability_availability;
   "application/availability/ports": typeof application_availability_ports;
   "application/calendar/calendar": typeof application_calendar_calendar;
+  "application/calendar/calendar_link": typeof application_calendar_calendar_link;
   "application/follow_up/commands": typeof application_follow_up_commands;
   "application/follow_up/ports": typeof application_follow_up_ports;
   "application/follow_up/queries": typeof application_follow_up_queries;
@@ -162,13 +170,16 @@ declare const fullApi: ApiFromModules<{
   "domain/availability/availability": typeof domain_availability_availability;
   "domain/availability/official_channel": typeof domain_availability_official_channel;
   "domain/calendar/calendar_event": typeof domain_calendar_calendar_event;
+  "domain/calendar/calendar_link": typeof domain_calendar_calendar_link;
   "domain/calendar/civil_days": typeof domain_calendar_civil_days;
   "domain/errors/api_error": typeof domain_errors_api_error;
   "domain/follow_up/follow_up": typeof domain_follow_up_follow_up;
   "domain/hashing/fnv1a": typeof domain_hashing_fnv1a;
   "domain/identity/roles": typeof domain_identity_roles;
   "domain/index": typeof domain_index;
+  "domain/notifications/delivery": typeof domain_notifications_delivery;
   "domain/notifications/notification": typeof domain_notifications_notification;
+  "domain/privacy/privacy_controls": typeof domain_privacy_privacy_controls;
   "domain/privacy/privacy_deadlines": typeof domain_privacy_privacy_deadlines;
   "domain/privacy/privacy_request": typeof domain_privacy_privacy_request;
   "domain/requests/referral": typeof domain_requests_referral;
@@ -186,8 +197,10 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/auth/google_providers": typeof infrastructure_auth_google_providers;
   "infrastructure/availability/repository": typeof infrastructure_availability_repository;
   "infrastructure/calendar/google_calendar": typeof infrastructure_calendar_google_calendar;
+  "infrastructure/calendar/repository": typeof infrastructure_calendar_repository;
   "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;
   "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
+  "infrastructure/privacy/repository": typeof infrastructure_privacy_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
@@ -202,6 +215,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/accounts": typeof presentation_accounts;
   "presentation/appointments": typeof presentation_appointments;
   "presentation/availability": typeof presentation_availability;
+  "presentation/calendar": typeof presentation_calendar;
   "presentation/follow_up": typeof presentation_follow_up;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;

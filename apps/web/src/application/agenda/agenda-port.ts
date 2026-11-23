@@ -206,8 +206,10 @@ export type SaveSpaceInput = Pick<
 };
 
 /**
- * Lectura simulada del catálogo de espacios: la edita el Administrador y la
- * lee cualquier cuenta vigente (`space:read`), como la agenda del Profesional.
+ * Lectura del catálogo de espacios: la edita el Administrador y la lee
+ * cualquier cuenta vigente (`space:read`), como la agenda del Profesional.
+ * La lectura trae solo salas vigentes; la escritura real del catálogo vive
+ * en `saveSpace` y `setSpaceActive` contra `api.presentation.spaces`.
  */
 export type ListSpacesResult =
   | { readonly status: "ok"; readonly spaces: ReadonlyArray<Space> }
@@ -215,9 +217,29 @@ export type ListSpacesResult =
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly message: string };
 
-/** Guardado simulado de un espacio: éxito tipado o error público compartido. */
+/**
+ * Guardado real de un espacio (TI2-148, TI2-169): crear sin `id` o actualizar
+ * con `id` contra `api.presentation.spaces`. El éxito trae el espacio
+ * persistido; el error público conserva código y mensaje, y la denegación
+ * llega sin motivo.
+ */
 export type SaveSpaceResult =
   | { readonly status: "saved"; readonly space: Space }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly error: PublicApiError };
+
+/**
+ * Entrada de la vigencia de un espacio (TI2-169): retira o reactiva sin
+ * borrar historial. Solo administración vigente.
+ */
+export type SetSpaceActiveInput = {
+  readonly spaceId: string;
+  readonly isActive: boolean;
+};
+
+/** Resultado de cambiar la vigencia: éxito tipado o error público compartido. */
+export type SetSpaceActiveResult =
+  | { readonly status: "saved"; readonly space: Space; readonly isActive: boolean }
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
 
@@ -308,6 +330,7 @@ export interface AgendaPort {
   ): Promise<ChangeAppointmentStatusResult>;
   listSpaces(): Promise<ListSpacesResult>;
   saveSpace(input: SaveSpaceInput): Promise<SaveSpaceResult>;
+  setSpaceActive(input: SetSpaceActiveInput): Promise<SetSpaceActiveResult>;
   /**
    * Suscripción opcional a la agenda. La implementa la API real para reflejar
    * cambios sin recargar la vista; el adaptador ficticio puede omitirla y las

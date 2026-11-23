@@ -281,15 +281,18 @@ export type {
 
 // Vínculo con Calendar y estado de sincronización por atención (TI2-145).
 export {
+  CALENDAR_LINK_ROLE_VALUES,
   CALENDAR_SYNC_ERROR_CODE_VALUES,
   CALENDAR_SYNC_STATUS_VALUES,
   calendarSyncStateOf,
+  canManageCalendarLink,
   initialCalendarSyncState,
   isCalendarSyncErrorCode,
   isCalendarSyncStatus,
 } from "./calendar/calendar_link";
 export type {
   CalendarConnectionMetadata,
+  CalendarLinkRole,
   CalendarSyncErrorCode,
   CalendarSyncState,
   CalendarSyncStatus,
