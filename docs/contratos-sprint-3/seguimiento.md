@@ -180,7 +180,9 @@ Operar sobre las atenciones es reservar, cancelar, cambiar el horario, registrar
 
 Los cambios válidos son `active → paused`, `paused → active`, `active → closed` y `paused → closed`. Un acompañamiento cerrado no se reabre: una necesidad posterior comienza con una solicitud nueva. Los clientes deben tratar `status` como un conjunto cerrado de estos tres valores.
 
-### Decisión sobre las reservas futuras (08/11/2026)
+### Decisión sobre las reservas futuras (08/11/2026, pausa actualizada el 19/11/2026)
+
+La regla de la pausa es la del 19/11/2026 (TI2-165) y reemplaza a la del 08/11/2026, que permitía cancelar una atención, registrar su resultado y usar el enlace en línea durante la pausa. La del cierre sigue siendo la del 08/11/2026.
 
 - **Pausar** mantiene las atenciones existentes sin cancelarlas, pero mientras dure la pausa ninguna operación sobre ellas procede y todas responden `unauthorized`. Al reactivarse, vuelven a estar disponibles.
 - **Cerrar** cancela todas las atenciones futuras del acompañamiento como `cancelled_by_cereti`, también las que están a cargo de otro profesional, y libera cada cupo. Quien cierra queda como actor de cada cancelación. El acompañamiento cerrado no conserva atenciones vigentes.
