@@ -285,15 +285,18 @@ export type {
 
 // Vínculo con Calendar y estado de sincronización por atención (TI2-145).
 export {
+  CALENDAR_LINK_ROLE_VALUES,
   CALENDAR_SYNC_ERROR_CODE_VALUES,
   CALENDAR_SYNC_STATUS_VALUES,
   calendarSyncStateOf,
+  canManageCalendarLink,
   initialCalendarSyncState,
   isCalendarSyncErrorCode,
   isCalendarSyncStatus,
 } from "./calendar/calendar_link";
 export type {
   CalendarConnectionMetadata,
+  CalendarLinkRole,
   CalendarSyncErrorCode,
   CalendarSyncState,
   CalendarSyncStatus,
@@ -461,3 +464,34 @@ export type {
   PrivacyResponseExtension,
   PrivacyResponseRule,
 } from "./privacy/privacy_deadlines";
+
+// Controles de privacidad: constancia de envío, bloqueos temporales y conservación (TI2-151).
+export {
+  PRIVACY_BLOCK_SCOPE_VALUES,
+  PRIVACY_BLOCK_STATE_VALUES,
+  PRIVACY_CONTROL_REFERENCE_MAX_LENGTH,
+  PRIVACY_DATA_CATEGORY_VALUES,
+  PRIVACY_RESPONSE_DELIVERY_CHANNEL_VALUES,
+  PRIVACY_RETENTION_DISPOSITION_VALUES,
+  PRIVACY_RETENTION_EXCEPTION_KIND_VALUES,
+  doesPrivacyBlockCoverCategory,
+  isPrivacyBlockScope,
+  isPrivacyDataCategory,
+  isPrivacyResponseDeliveryChannel,
+  isPrivacyRetentionDisposition,
+  isPrivacyRetentionExceptionActive,
+  isPrivacyRetentionExceptionKind,
+  isValidPrivacyRetentionDays,
+  privacyBlockStateAt,
+} from "./privacy/privacy_controls";
+export type {
+  PrivacyBlockScope,
+  PrivacyBlockState,
+  PrivacyBlockWindow,
+  PrivacyDataCategory,
+  PrivacyResponseDeliveryChannel,
+  PrivacyResponseDeliveryReceipt,
+  PrivacyRetentionDisposition,
+  PrivacyRetentionExceptionKind,
+  PrivacyRetentionExceptionWindow,
+} from "./privacy/privacy_controls";

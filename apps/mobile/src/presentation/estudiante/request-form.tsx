@@ -10,7 +10,7 @@ import {
   useSubmitStudentRequest,
   type StudentRequestSubmissionStatus,
 } from "@/presentation/hooks/use-submit-student-request";
-import { isMobileAccessDenied } from "../to-mobile-operation-error";
+import { isMobileAccessDenied } from "../../application/access-denied";
 import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { StudentAction } from "./student-screen";
 import { StudentText as Text } from "./student-text";

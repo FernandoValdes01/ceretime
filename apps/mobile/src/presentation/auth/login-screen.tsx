@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, StyleSheet, View } from "react-native";
 
-import type { AuthCredentials } from "../../domain/auth-models";
+import { institutionalLogins, type AuthCredentials } from "../../domain/auth-models";
 import { useAccessibilityColors } from "../accessibility/accessibility-preferences-provider";
 import { Action, Screen } from "../components/screen";
 import { StudentText } from "../estudiante/student-text";
@@ -11,11 +11,15 @@ import { useNavigationSession } from "../navigation/session";
 export function LoginScreen({
   unassignedInternCredentials,
   onResetDemo,
+  mode = "demo",
 }: {
   readonly unassignedInternCredentials: AuthCredentials;
   readonly onResetDemo?: () => void;
+  readonly mode?: "institutional" | "demo";
 }) {
-  const { signIn, selectRole, status, error } = useNavigationSession();
+  const { signIn, signInInstitutional, selectRole, status, error } = useNavigationSession();
+  const isInstitutional = mode === "institutional";
+  const loadingMessage = isInstitutional ? "Verificando tu cuenta…" : "Preparando la experiencia…";
   const isLoading = status === "loading";
   const colors = useAccessibilityColors();
   const errorRef = useRef<View>(null);
@@ -23,60 +27,77 @@ export function LoginScreen({
 
   useEffect(() => {
     if (isLoading) {
-      AccessibilityInfo.announceForAccessibility("Preparando la experiencia…");
+      AccessibilityInfo.announceForAccessibility(loadingMessage);
     } else if (status === "error" && error && errorRef.current) {
       AccessibilityInfo.sendAccessibilityEvent(errorRef.current, "focus");
     }
-  }, [error, isLoading, status]);
+  }, [error, isLoading, loadingMessage, status]);
 
   return (
     <Screen
-      title="Explora la aplicación"
-      description="Demostración local con datos ficticios. Selecciona un rol para continuar; los cambios se comparten en este dispositivo y no se envían a CERETI."
+      title={isInstitutional ? "Ingresa a CERETI" : "Explora la aplicación"}
+      description={
+        isInstitutional
+          ? "Usa tu cuenta institucional de Google. Tu rol lo define CERETI al validar tu cuenta."
+          : "Demostración local con datos ficticios. Selecciona un rol para continuar; los cambios se comparten en este dispositivo y no se envían a CERETI."
+      }
     >
       <View style={styles.selector}>
-        <StudentText
-          accessibilityRole="header"
-          style={[styles.selectorTitle, { color: colors.text }]}
-        >
-          Elige un rol
-        </StudentText>
-        {roles.map(({ id, label }) => (
-          <Action
-            key={id}
-            disabled={isLoading}
-            label={`Entrar como ${label}`}
-            onPress={() => void selectRole(id)}
-          />
-        ))}
-        <Action
-          disabled={isLoading}
-          label="Entrar como Practicante sin asignación"
-          onPress={() => void signIn(unassignedInternCredentials)}
-        />
-        {onResetDemo ? (
-          <>
+        {isInstitutional ? (
+          institutionalLogins.map(({ population, emailSuffix }) => (
             <Action
-              label="Reiniciar demostración"
+              key={population}
               disabled={isLoading}
-              onPress={() => {
-                onResetDemo();
-                setReset(true);
-              }}
+              label={`Continuar con cuenta ${emailSuffix}`}
+              onPress={() => void signInInstitutional(population)}
             />
-            {reset ? (
-              <StudentText accessibilityLiveRegion="polite" style={{ color: colors.text }}>
-                Demostración reiniciada. Puedes comenzar de nuevo.
-              </StudentText>
+          ))
+        ) : (
+          <>
+            <StudentText
+              accessibilityRole="header"
+              style={[styles.selectorTitle, { color: colors.text }]}
+            >
+              Elige un rol
+            </StudentText>
+            {roles.map(({ id, label }) => (
+              <Action
+                key={id}
+                disabled={isLoading}
+                label={`Entrar como ${label}`}
+                onPress={() => void selectRole(id)}
+              />
+            ))}
+            <Action
+              disabled={isLoading}
+              label="Entrar como Practicante sin asignación"
+              onPress={() => void signIn(unassignedInternCredentials)}
+            />
+            {onResetDemo ? (
+              <>
+                <Action
+                  label="Reiniciar demostración"
+                  disabled={isLoading}
+                  onPress={() => {
+                    onResetDemo();
+                    setReset(true);
+                  }}
+                />
+                {reset ? (
+                  <StudentText accessibilityLiveRegion="polite" style={{ color: colors.text }}>
+                    Demostración reiniciada. Puedes comenzar de nuevo.
+                  </StudentText>
+                ) : null}
+              </>
             ) : null}
           </>
-        ) : null}
+        )}
         {isLoading ? (
           <StudentText
             accessibilityRole="progressbar"
             style={[styles.status, { color: colors.primary }]}
           >
-            Preparando la experiencia…
+            {loadingMessage}
           </StudentText>
         ) : null}
         {error ? (

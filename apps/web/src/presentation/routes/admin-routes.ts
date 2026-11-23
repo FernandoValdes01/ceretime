@@ -1,5 +1,6 @@
 import { createRoute } from "@tanstack/react-router";
 import {
+  AdminAccountsRouteComponent,
   AdminIndexRouteComponent,
   AdminLayoutRouteComponent,
   AdminSpacesRouteComponent,
@@ -7,7 +8,7 @@ import {
 import { rootRoute } from "./root-route.ts";
 
 /**
- * Área de Administración (TI2-133).
+ * Área de Administración (TI2-133, extendido TI2-169).
  *
  * Conserva las URL y la guardia por rol. Para agregar una pantalla de
  * Administración, define la ruta acá y agrega su enlace en la lista `admin`
@@ -26,6 +27,12 @@ const adminIndexRoute = createRoute({
   component: AdminIndexRouteComponent,
 });
 
+const adminAccountsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: "cuentas",
+  component: AdminAccountsRouteComponent,
+});
+
 const adminSpacesRoute = createRoute({
   getParentRoute: () => adminLayoutRoute,
   path: "espacios",
@@ -33,5 +40,5 @@ const adminSpacesRoute = createRoute({
 });
 
 export const adminRoutes = [
-  adminLayoutRoute.addChildren([adminIndexRoute, adminSpacesRoute]),
+  adminLayoutRoute.addChildren([adminIndexRoute, adminAccountsRoute, adminSpacesRoute]),
 ] as const;

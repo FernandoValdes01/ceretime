@@ -1,0 +1,40 @@
+# Contrato de Calendar de Sprint 3 — vínculo y desconexión (TI2-161)
+
+Superficie que TI2-161 agrega al vínculo propio con Google Calendar: autorización con permiso mínimo, validación del retorno, estado publicado y desconexión con aviso. No implementa sincronización de eventos (TI2-162) ni pantalla (TI2-172): la reserva y el `.ics` por atención de TI2-122 siguen funcionando igual, con o sin vínculo.
+
+Recorrido por capas: las reglas viven en `convex/domain/calendar/calendar_event.ts` (alcance mínimo) y `convex/domain/calendar/calendar_link.ts` (metadatos y estado por atención); los casos de uso, en `convex/application/calendar/calendar.ts` (por atención) y `convex/application/calendar/calendar_link.ts` (vínculo propio); la persistencia y el proveedor, en `convex/infrastructure/calendar/repository.ts` (`calendarConnections` y `calendarSync*`) y `convex/infrastructure/calendar/google_calendar.ts` (crear, actualizar y leer alcances); la API pública, en `convex/presentation/calendar.ts` (vínculo) y `convex/presentation/appointments.ts` (por atención, TI2-122).
+
+## Vínculo propio
+
+El inicio institucional y el consentimiento de Calendar son dos pasos distintos sobre la misma cuenta de Google: el inicio pide solo identidad (`openid`, `email`, `profile`) y el vínculo pide únicamente `https://www.googleapis.com/auth/calendar.events` mediante `linkSocial` con `calendar.events`. El guard `guardGoogleOAuth` bloquea el inicio por `google` y cualquier alcance del cliente fuera de ese contrato; el retorno se valida en el servidor comprobando que el alcance mínimo esté concedido antes de registrar metadatos. Rechazar la autorización responde `connected: false` sin error y nunca impide reservar, reagendar ni descargar el `.ics`.
+
+Los tokens OAuth se guardan cifrados en reposo (`account.encryptOAuthTokens: true`) en el componente de autenticación y solo se usan en el servidor: Better Auth los renueva con el refresh token cuando están por expirar; un token ausente, revocado o sin refresh se traduce a `not_connected`, nunca a un error del proveedor. Desconectar revoca primero el permiso en Google llamando a `https://oauth2.googleapis.com/revoke` con el refresh token descifrado en el servidor (con tope de 10 segundos; un token ya inválido cuenta como revocado) y recién después elimina la fila de la cuenta `google` de la sesión en Better Auth; el inicio institucional y la sesión quedan intactos, y `google` nunca sirve para iniciar sesión (el guard lo bloquea), así que borrar su fila no puede dejar a nadie sin acceso. Un token guardado que no se puede descifrar no se revoca a ciegas: responde `conflict` sin borrar la cuenta ni marcar nada. Ninguna respuesta pública devuelve tokens, referencias de cuenta, correos ni alcances. La referencia opaca a la cuenta se resuelve en el servidor desde el documento de cuenta de Better Auth y nunca llega del cliente.
+
+## Operaciones públicas
+
+Todas derivan la identidad con `ctx.auth.getUserIdentity()` y nunca aceptan `userId` ni actor como argumento: cada persona solo vincula o desconecta su propia cuenta. Solo Estudiante y Profesional con perfil vigente vinculan y desconectan (RF-27, matriz de Calendar); cualquier sesión con perfil vigente puede consultar el estado. Practicante y Administrador reciben `unauthorized` al vincular o desconectar.
+
+| Operación | Tipo | Argumentos | Devuelve | Quién |
+| --- | --- | --- | --- | --- |
+| `presentation/calendar.getCalendarLinkStatus` | query | — | `{connected, linkedAt?, revokedAt?, staleEventsMayRemain}` | Cualquier sesión con perfil vigente |
+| `presentation/calendar.confirmCalendarLink` | mutation | — | `{connected: true, linkedAt, status: "linked" \| "already_linked"}` o `{connected: false, status: "not_connected"}` | Estudiante o Profesional con perfil vigente y alcance mínimo concedido |
+| `presentation/calendar.disconnectCalendarLink` | action | — | `{disconnected, status: "unlinked" \| "already_unlinked" \| "not_found", revokedAt?, staleEventsMayRemain}` (revoca en Google, elimina la cuenta OAuth y avisa que los eventos anteriores pueden quedar sin actualizar) | Estudiante o Profesional con perfil vigente |
+| `presentation/appointments.getCalendarConnection` | query | — | `{connected}` | Cualquier sesión con perfil vigente (TI2-122, se conserva por compatibilidad) |
+
+`connected` tiene una sola fuente: los alcances OAuth que Better Auth conserva para la cuenta `google`. Desconectar revoca ese permiso en Google y elimina la cuenta OAuth —sin ella los alcances desaparecen y `connected` pasa a `false` en todas las lecturas, incluida `presentation/appointments.getCalendarConnection`, que delega en este estado sin cambiar su forma— y conserva la trazabilidad local (`linkedAt`, `revokedAt`); es idempotente (`already_unlinked`, `not_found`). `staleEventsMayRemain` es verdadero tras desconectar y la interfaz debe avisar que los eventos anteriores pueden quedar sin actualizar. Si la revocación externa no se puede completar, responde `conflict` sin marcar nada local para no afirmar un estado falso.
+
+## Respuestas y errores
+
+Se usan solo los códigos del contrato común (`ConvexError({code, message})`) y los clientes distinguen por `code`, nunca por el texto. `unauthorized` (`No autorizado`) responde sin sesión, sin perfil, sin vigencia o sin rol de vínculo (Practicante y Administrador no vinculan ni desconectan); una referencia local inválida también se traduce a `unauthorized` sin revelar existencia. `conflict` responde ante un instante inválido del servidor, cuando la revocación externa no se puede completar —incluidos un token ilegible o el tope de 10 segundos sin respuesta de Google— y en esos casos no se borra la cuenta ni se marca nada local. Confirmar sin alcance mínimo no es un error: responde `connected: false` con `not_connected` para que la Web ofrezca volver a conectar o descargar el `.ics`. Ningún rechazo del vínculo cambia la reserva: un fallo de Google se respalda con el `.ics` vigente (`fallback` con `not_connected` o `unavailable`) sin detalles del proveedor.
+
+## Compatibilidad
+
+El cambio es aditivo: `presentation/appointments.*` no cambia de forma y la Web de TI2-122 sigue funcionando (`getCalendarConnection` delega en el estado del vínculo). La sincronización automática de reservas, cambios y cancelaciones es TI2-162 y la bandeja con vinculación es TI2-172; esta entrega no lee el calendario completo ni trae cambios desde Google hacia CERETI. RF-27 y RN-17 de `docs/sources/requerimientos/requerimientos.tex` quedan alineados con esa sincronización automática en lugar de la acción explícita por atención.
+
+## Comprobación
+
+`convex/application/calendar/calendar_link.test.ts` cubre el vínculo con dobles: estado, confirmación con rol de vínculo (Practicante y Administrador denegados), orden revocar → borrar con el refresh token, token ya inválido contado como revocado, `conflict` sin borrar ni marcar ante lectura ilegible o Google sin respuesta, idempotencia, aviso de eventos previos y ausencia de credenciales. `convex/tests/calendarLinkApi.test.ts` recorre el borde con datos ficticios, un doble del componente y Google simulado: denegación sin sesión, sin vigencia o sin rol, alcance mínimo y delegación de la lectura histórica a través del adaptador real, ciclo revocar en Google (con `AbortSignal`) → borrar cuenta → `connected: false` con aviso, token inválido y token ilegible contados como corresponde sin filtrar nada, `conflict` con fila y metadatos intactos cuando Google no responde, y cuenta institucional y de otra persona intactas. Verificación real en dev (`agreeable-coyote-938`): confirmar → `linked`; desconectar → permiso revocado en Google, cuenta eliminada, `unlinked` con `staleEventsMayRemain`; estado posterior `connected: false`.
+
+## Pendientes
+
+Sincronizar reservas, cambios y cancelaciones sin duplicar eventos (TI2-162) y construir la bandeja Web con preferencia push y vinculación (TI2-172). La recuperación de un evento borrado directamente en Google y la sincronización de cancelaciones siguen fuera de alcance.

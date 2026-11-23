@@ -25,6 +25,18 @@ import {
   notificationDeliveryStatusUnion,
   notificationEventKindUnion,
   outgoingReferralValidator,
+  privacyBlockScopeUnion,
+  privacyDataCategoryUnion,
+  privacyRequestChannelUnion,
+  privacyRequestContractVersionLiteral,
+  privacyRequestKindUnion,
+  privacyRequestResponseValidator,
+  privacyRequestStatusUnion,
+  privacyResponseDeliveryReceiptValidator,
+  privacyResponseExtensionValidator,
+  privacyResponseRuleUnion,
+  privacyRetentionDispositionUnion,
+  privacyRetentionExceptionKindUnion,
   requestStatusUnion,
   requestProvenanceValidator,
   roleUnion,
@@ -596,4 +608,114 @@ export default defineSchema({
     responsible: followUpResponsibleUnion,
     status: followUpTaskStatusUnion,
   }).index("by_recordId", ["recordId"]),
+
+  // Tabla 'privacyRequests': solicitudes de derechos de privacidad (modelo de
+  // TI2-136, persistido por TI2-151). Guarda identificador (`_id`), tipo,
+  // fechas, plazo inicial y efectivo (`dueAt`), responsable, estado, prórroga
+  // única, respuesta fundada y constancia inmutable de envío. No crea una
+  // bitácora paralela a TI2-128 ni copia contenido sensible (necesidades de
+  // acceso, notas clínicas ni datos de acompañamiento) a campos de control.
+  privacyRequests: defineTable({
+    kind: privacyRequestKindUnion,
+    status: privacyRequestStatusUnion,
+    requesterId: v.id("users"),
+    requesterRole: roleUnion,
+    channel: privacyRequestChannelUnion,
+    receivedAt: v.number(),
+    version: privacyRequestContractVersionLiteral,
+    responseRule: privacyResponseRuleUnion,
+    receivedDate: v.string(),
+    initialDueDate: v.string(),
+    initialDueAt: v.number(),
+    dueAt: v.number(),
+    deadlineTimeZone: v.string(),
+    deadlineHolidays: v.array(v.string()),
+    responsibleId: v.optional(v.id("users")),
+    extension: v.optional(privacyResponseExtensionValidator),
+    statusReason: v.optional(v.string()),
+    withdrawnAt: v.optional(v.number()),
+    response: v.optional(privacyRequestResponseValidator),
+    deliveryReceipt: v.optional(privacyResponseDeliveryReceiptValidator),
+    updatedAt: v.number(),
+  })
+    // Solicitudes propias del titular en orden de recepción.
+    .index("by_requesterId_and_receivedAt", ["requesterId", "receivedAt"])
+    // Cola operativa por estado ordenada por vencimiento efectivo.
+    .index("by_status_and_dueAt", ["status", "dueAt"])
+    // Seguimiento global de vencimientos sin barrer la tabla.
+    .index("by_dueAt", ["dueAt"]),
+
+  // Tabla 'privacyBlocks': bloqueos temporales de tratamiento y su alcance
+  // (TI2-151). No guarda una columna `status` paralela: programado, vigente,
+  // vencido o levantado se derivan de `startsAt`, `endsAt` y `liftedAt`
+  // (`privacyBlockStateAt`). Cuando se vincula a una solicitud de bloqueo
+  // (`requestId`), solo se acepta si esa solicitud ya está resuelta como
+  // concedida total o parcialmente y `endsAt` coincide con
+  // `response.temporaryBlockUntil`. Sin contenido sensible en `reason` ni en
+  // `liftReason`.
+  privacyBlocks: defineTable({
+    subjectId: v.id("users"),
+    requestId: v.optional(v.id("privacyRequests")),
+    scope: privacyBlockScopeUnion,
+    startsAt: v.number(),
+    endsAt: v.number(),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    reason: v.string(),
+    liftedAt: v.optional(v.number()),
+    liftedBy: v.optional(v.id("users")),
+    liftReason: v.optional(v.string()),
+  })
+    // Bloqueos no levantados del titular ordenados por vencimiento.
+    .index("by_subjectId_and_liftedAt_and_endsAt", ["subjectId", "liftedAt", "endsAt"])
+    // Bloqueos asociados a una solicitud de privacidad concreta.
+    .index("by_requestId", ["requestId"])
+    // Bloqueos activos o próximos a vencer en todo el sistema.
+    .index("by_liftedAt_and_endsAt", ["liftedAt", "endsAt"]),
+
+  // Tabla 'privacyRetentionRules': reglas de conservación configurable por
+  // categoría de datos (ADR-0003 y TI2-151). Una fila por categoría,
+  // garantizada por la vía de escritura. `retentionDays` es opcional porque el
+  // código no inventa plazos: ausente significa pendiente de definición por la
+  // UCT. `legalBasisNote` guarda solo una referencia institucional acotada.
+  privacyRetentionRules: defineTable({
+    category: privacyDataCategoryUnion,
+    retentionDays: v.optional(v.number()),
+    disposition: privacyRetentionDispositionUnion,
+    legalBasisNote: v.optional(v.string()),
+    updatedBy: v.id("users"),
+    updatedAt: v.number(),
+  })
+    // Regla única por categoría de datos.
+    .index("by_category", ["category"]),
+
+  // Tabla 'privacyRetentionExceptions': excepciones que suspenden la
+  // eliminación o anonimización por obligación legal o procedimiento abierto
+  // (ADR-0003 y TI2-151). Pueden acotarse a una categoría completa o a un
+  // titular concreto (`subjectId`) y vincularse a una solicitud de privacidad
+  // abierta (`privacyRequestId`). `reference` guarda solo el código o folio de
+  // control, nunca contenido sensible.
+  privacyRetentionExceptions: defineTable({
+    kind: privacyRetentionExceptionKindUnion,
+    category: privacyDataCategoryUnion,
+    subjectId: v.optional(v.id("users")),
+    privacyRequestId: v.optional(v.id("privacyRequests")),
+    reference: v.string(),
+    startsAt: v.number(),
+    expiresAt: v.optional(v.number()),
+    liftedAt: v.optional(v.number()),
+    liftedBy: v.optional(v.id("users")),
+    liftReason: v.optional(v.string()),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+  })
+    // Excepciones vigentes por categoría (`liftedAt` ausente; `expiresAt`
+    // ausente o mayor a `now` en dos rangos para que las vencidas no oculten
+    // las activas).
+    .index("by_category_and_liftedAt_and_expiresAt", ["category", "liftedAt", "expiresAt"])
+    // Excepciones vigentes de un titular (`liftedAt` ausente; `expiresAt`
+    // ausente o mayor a `now` en dos rangos).
+    .index("by_subjectId_and_liftedAt_and_expiresAt", ["subjectId", "liftedAt", "expiresAt"])
+    // Excepciones originadas por una solicitud de privacidad.
+    .index("by_privacyRequestId", ["privacyRequestId"]),
 });

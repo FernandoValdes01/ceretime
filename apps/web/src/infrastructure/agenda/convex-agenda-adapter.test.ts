@@ -8,13 +8,13 @@ import {
 import { createConvexAgendaAdapter, type ConvexAgendaClient } from "./convex-agenda-adapter.ts";
 
 /**
- * Pruebas del adaptador Convex de agenda (TI2-125).
+ * Pruebas del adaptador Convex de agenda (TI2-125, escritura de espacios TI2-169).
  *
  * El cliente se sustituye por un doble que despacha por el nombre público de
  * la función y registra los argumentos reales. Así se verifica la ventana de
- * 92 días, el tope de 50 por página, el mapeo de errores públicos y que las
- * operaciones aún sin API sigan delegadas a fixtures. No hay llamadas a un
- * deployment: los datos son ficticios.
+ * 92 días, el tope de 50 por página, el mapeo de errores públicos y que la
+ * escritura del catálogo va contra `api.presentation.spaces`. No hay llamadas
+ * a un deployment: los datos son ficticios.
  */
 
 const LIST_AVAILABILITY = "presentation/availability:listOwnAvailability";
@@ -996,20 +996,77 @@ describe("profesionales con quienes reservar (TI2-123)", () => {
   });
 });
 
-describe("operaciones aún simuladas (TI2-125)", () => {
-  test("la escritura del catálogo sigue delegada a fixtures", async () => {
-    const fake = createFakeClient();
+describe("escritura real del catálogo (TI2-169)", () => {
+  const CREATE_SPACE = "presentation/spaces:createSpace";
+  const UPDATE_SPACE = "presentation/spaces:updateSpace";
+  const SET_SPACE_ACTIVE = "presentation/spaces:setSpaceActive";
+  const SPACE_FIELDS = {
+    campus: "Campus San Juan Pablo II",
+    building: "Edificio A",
+    floor: "Piso 9",
+    room: "Sala 901",
+    accessConditions: "Rampa lateral.",
+    arrivalInstructions: "Entrar por el acceso norte.",
+  };
+  const MANAGED = {
+    space: { id: "esp-backend-9", ...SPACE_FIELDS, version: "v1" },
+    label: "Campus San Juan Pablo II · Edificio A · Piso 9 · Sala 901",
+    isActive: true,
+  };
 
-    const result = await fake.adapter().saveSpace({
-      campus: "Campus San Juan Pablo II",
-      building: "Edificio A",
-      floor: "Piso 9",
-      room: "Sala 901",
-      accessConditions: "",
-      arrivalInstructions: "",
+  test("crear sin id llama a createSpace y devuelve el espacio persistido", async () => {
+    const fake = createFakeClient({
+      mutation: { [CREATE_SPACE]: () => MANAGED },
     });
 
-    expect(result.status).not.toBe("error");
-    expect(fake.calls).toHaveLength(0);
+    const result = await fake.adapter().saveSpace(SPACE_FIELDS);
+
+    expect(result).toEqual({ status: "saved", space: MANAGED.space });
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]).toMatchObject({
+      kind: "mutation",
+      args: { ...SPACE_FIELDS, version: "v1" },
+    });
+  });
+
+  test("actualizar con id llama a updateSpace con el identificador", async () => {
+    const fake = createFakeClient({
+      mutation: { [UPDATE_SPACE]: () => MANAGED },
+    });
+
+    const result = await fake.adapter().saveSpace({ id: "esp-backend-9", ...SPACE_FIELDS });
+
+    expect(result).toEqual({ status: "saved", space: MANAGED.space });
+    expect(fake.calls[0].args).toMatchObject({ spaceId: "esp-backend-9", version: "v1" });
+  });
+
+  test("deshabilitar llama a setSpaceActive y devuelve vigencia", async () => {
+    const fake = createFakeClient({
+      mutation: { [SET_SPACE_ACTIVE]: () => ({ ...MANAGED, isActive: false }) },
+    });
+
+    const result = await fake.adapter().setSpaceActive({ spaceId: "esp-1", isActive: false });
+
+    expect(result).toEqual({ status: "saved", space: MANAGED.space, isActive: false });
+    expect(fake.calls[0].args).toEqual({
+      spaceId: "esp-1",
+      isActive: false,
+      version: "v1",
+    });
+  });
+
+  test("denegación de escritura se traduce a denied sin detalles", async () => {
+    const denied = () => {
+      throw new ConvexError({ code: "unauthorized", message: "No autorizado" });
+    };
+    const fakeSave = createFakeClient({ mutation: { [CREATE_SPACE]: denied } });
+    const fakeActive = createFakeClient({ mutation: { [SET_SPACE_ACTIVE]: denied } });
+
+    await expect(fakeSave.adapter().saveSpace(SPACE_FIELDS)).resolves.toEqual({
+      status: "denied",
+    });
+    await expect(
+      fakeActive.adapter().setSpaceActive({ spaceId: "esp-1", isActive: false }),
+    ).resolves.toEqual({ status: "denied" });
   });
 });

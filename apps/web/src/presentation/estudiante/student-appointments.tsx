@@ -75,7 +75,7 @@ function ConnectionCard({
         onClick={onConnect}
         disabled={connecting}
         aria-busy={connecting}
-        className="min-h-[44px] rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
+        className="min-h-[44px] cursor-pointer rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
       >
         {connecting ? "Conectando…" : actionLabel}
       </button>
@@ -346,7 +346,7 @@ function AppointmentItem({
             disabled={downloading}
             aria-busy={downloading}
             aria-label={`Descargar el archivo .ics de la atención del ${dateLabel}`}
-            className="min-h-[44px] rounded-[0.5rem] border border-primary px-4 py-2 font-semibold text-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
+            className="min-h-[44px] cursor-pointer rounded-[0.5rem] border border-primary px-4 py-2 font-semibold text-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
           >
             {downloading ? "Descargando…" : "Descargar .ics"}
           </button>
@@ -358,7 +358,7 @@ function AppointmentItem({
               disabled={pending}
               aria-busy={pending}
               aria-label={`Actualizar en Google Calendar la atención del ${dateLabel}`}
-              className="min-h-[44px] rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
+              className="min-h-[44px] cursor-pointer rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
             >
               {pending ? "Actualizando…" : "Actualizar en Google Calendar"}
             </button>
@@ -369,7 +369,7 @@ function AppointmentItem({
               disabled={pending}
               aria-busy={pending}
               aria-label={`Agregar a Google Calendar la atención del ${dateLabel}`}
-              className="min-h-[44px] rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
+              className="min-h-[44px] cursor-pointer rounded-[0.5rem] bg-primary px-4 py-2 font-semibold text-on-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
             >
               {pending ? "Agregando…" : "Agregar a Google Calendar"}
             </button>
@@ -381,7 +381,7 @@ function AppointmentItem({
               onClick={onDownload}
               disabled={downloading}
               aria-busy={downloading}
-              className="min-h-[44px] rounded-[0.5rem] border border-primary px-4 py-2 font-semibold text-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:opacity-60"
+              className="min-h-[44px] cursor-pointer rounded-[0.5rem] border border-primary px-4 py-2 font-semibold text-primary focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-focus-ring disabled:cursor-not-allowed disabled:opacity-60"
             >
               {downloading ? "Descargando…" : "Descargar .ics de respaldo"}
             </button>
