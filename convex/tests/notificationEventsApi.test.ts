@@ -308,6 +308,44 @@ test(
   API_TEST_TIMEOUT_MS,
 );
 
+test(
+  "TI2-150 API: cerrar el acompañamiento avisa la cancelación al Estudiante y a los adicionales",
+  async () => {
+    const t = convexTest(schema, modules);
+    const seeded = await seedAgenda(t);
+    const asResponsible = t.withIdentity(identityFor("ti150-pro-1"));
+    const { appointmentId } = await asResponsible.mutation(
+      api.presentation.appointments.bookAppointment,
+      {
+        accompanimentId: seeded.accompanimentId as string,
+        professionalId: seeded.responsible as string,
+        modality: "online",
+        startAt: at(12),
+        endAt: at(13),
+        additionalProfessionalIds: [seeded.additional as string],
+        onlineSupports: [CAPTIONS],
+        version: "v1",
+      },
+    );
+    const booked = (await notices(t)).length;
+
+    // Quien cierra no se avisa a sí mismo; el adicional pierde la atención y se entera.
+    await asResponsible.mutation(api.presentation.accompaniments.closeAccompaniment, {
+      accompanimentId: seeded.accompanimentId,
+      reason: SENSITIVE,
+    });
+    expect((await notices(t)).slice(booked)).toEqual([
+      ["appointment_cancelled", seeded.student],
+      ["appointment_cancelled", seeded.additional],
+    ]);
+    expect((await notificationRows(t)).every((row) => row.appointmentId === appointmentId)).toBe(
+      true,
+    );
+    await expectOnlyMinimalReferences(t);
+  },
+  API_TEST_TIMEOUT_MS,
+);
+
 const SUBMISSION = {
   needSummary: SENSITIVE,
   expectedOutcome: "Acordar ajustes de comunicación con mis docentes",
@@ -341,6 +379,9 @@ test(
 
     const submission = { ...SUBMISSION, idempotencyKey: "ti150-clave-1" };
     const created = await asStudent.mutation(requests.createRequest, submission);
+    // El reintento llega después, como en producción: la clave del aviso usa
+    // el instante guardado en la solicitud, no el del reintento.
+    vi.setSystemTime(NOW + 60_000);
     const retried = await asStudent.mutation(requests.createRequest, submission);
     expect(retried._id).toBe(created._id);
     expect(await notices(t)).toEqual([["request_received", student]]);
@@ -458,6 +499,8 @@ test(
       api.presentation.requests.registerOfficialRequest,
       official,
     );
+    // El reintento llega después: el aviso sigue usando el instante de la fila.
+    vi.setSystemTime(NOW + 60_000);
     const retry = await asProfessional.mutation(
       api.presentation.requests.registerOfficialRequest,
       official,
