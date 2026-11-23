@@ -63,10 +63,8 @@ const notificationValidator = v.union(
 
 const notificationPageValidator = paginationResultValidator(notificationValidator);
 
-// Aplicación entrega los identificadores como texto, porque no conoce Convex;
-// salen de filas de `notificationEvents`, `users`, `appointments` y `requests`,
-// y `returns` vuelve a validar cada uno antes de responder. Por eso el handler
-// declara el tipo del validador.
+// Aplicación lleva los identificadores de Convex con genéricos desde el
+// repositorio, así que el handler declara el tipo del validador sin convertir.
 type PublicNotification = Infer<typeof notificationValidator>;
 type PublicNotificationPage = Infer<typeof notificationPageValidator>;
 
@@ -91,7 +89,7 @@ export const listOwnNotifications = query({
           ...(args.readStatus === undefined ? {} : { readStatus: args.readStatus }),
         },
       ),
-    ) as PublicNotificationPage;
+    );
   },
 });
 
@@ -115,7 +113,7 @@ export const openNotification = query({
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, notificationId: args.notificationId },
       ),
-    ) as PublicNotification;
+    );
   },
 });
 

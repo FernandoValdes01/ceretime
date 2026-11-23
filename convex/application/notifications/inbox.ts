@@ -31,9 +31,13 @@ import type { NotificationInboxReader, NotificationReadMarker, StoredNotificatio
 export const NOTIFICATION_PAGE_LIMIT_MAX = 50;
 
 /** Dependencias del listado. */
-export interface ListOwnNotificationsDeps {
+export interface ListOwnNotificationsDeps<
+  NotificationId extends string,
+  UserId extends string,
+  RequestId extends string,
+> {
   readonly auth: AuthorizationReader;
-  readonly notifications: NotificationInboxReader;
+  readonly notifications: NotificationInboxReader<NotificationId, UserId, RequestId>;
 }
 
 /** Dependencias de la marca de lectura. */
@@ -45,9 +49,13 @@ export interface MarkNotificationReadDeps {
 }
 
 /** Dependencias de abrir un aviso: su lectura y las reglas de cada recurso. */
-export interface OpenNotificationDeps {
+export interface OpenNotificationDeps<
+  NotificationId extends string,
+  UserId extends string,
+  RequestId extends string,
+> {
   readonly auth: AuthorizationReader;
-  readonly notifications: NotificationInboxReader;
+  readonly notifications: NotificationInboxReader<NotificationId, UserId, RequestId>;
   readonly appointments: AppointmentReadDeps["appointments"];
   readonly requests: RequestReadDeps<string, string>;
 }
@@ -78,14 +86,18 @@ async function findRecipientId(
  * tamaño de página no finito, `conflict`. El tamaño se acota a
  * `NOTIFICATION_PAGE_LIMIT_MAX`.
  */
-export async function listOwnNotifications(
-  deps: ListOwnNotificationsDeps,
+export async function listOwnNotifications<
+  NotificationId extends string,
+  UserId extends string,
+  RequestId extends string,
+>(
+  deps: ListOwnNotificationsDeps<NotificationId, UserId, RequestId>,
   input: {
     readonly tokenIdentifier: string | null;
     readonly readStatus?: NotificationReadStatus;
     readonly paginationOpts: PaginationOptions;
   },
-): Promise<ApiResult<PaginationResult<StoredNotification>>> {
+): Promise<ApiResult<PaginationResult<StoredNotification<NotificationId, UserId, RequestId>>>> {
   const recipientId = await findRecipientId(deps.auth, input.tokenIdentifier);
   if (recipientId === null) return denied();
   if (!Number.isFinite(input.paginationOpts.numItems)) return errResult(conflictError());
@@ -126,10 +138,14 @@ export async function markNotificationRead(
  * responde el mismo `unauthorized`. No marca el aviso como leído: eso es
  * `markNotificationRead`, porque una consulta no escribe.
  */
-export async function openNotification(
-  deps: OpenNotificationDeps,
+export async function openNotification<
+  NotificationId extends string,
+  UserId extends string,
+  RequestId extends string,
+>(
+  deps: OpenNotificationDeps<NotificationId, UserId, RequestId>,
   input: NotificationRequest,
-): Promise<ApiResult<StoredNotification>> {
+): Promise<ApiResult<StoredNotification<NotificationId, UserId, RequestId>>> {
   const recipientId = await findRecipientId(deps.auth, input.tokenIdentifier);
   if (recipientId === null) return denied();
   const notification = await deps.notifications.getOwn(recipientId, input.notificationId);
@@ -140,7 +156,7 @@ export async function openNotification(
 
 /** La misma regla que el detalle de cada recurso, evaluada en este momento. */
 async function canReadResource(
-  deps: OpenNotificationDeps,
+  deps: OpenNotificationDeps<string, string, string>,
   tokenIdentifier: string | null,
   notification: StoredNotification,
 ): Promise<boolean> {

@@ -1,7 +1,9 @@
 import type { PaginationOptions, PaginationResult } from "convex/server";
 import type {
+  AppointmentNotificationEvent,
   NotificationEvent,
   NotificationReadStatus,
+  RequestNotificationEvent,
 } from "../../domain/notifications/notification";
 
 /**
@@ -22,8 +24,24 @@ export interface NotificationEventRecorder {
  * Aviso guardado con su identificador y su estado de lectura (TI2-145). Es la
  * forma que entrega el repositorio, sin la clave de idempotencia.
  */
-export type StoredNotification = NotificationEvent & {
-  readonly id: string;
+export type StoredNotification<
+  NotificationId extends string = string,
+  UserId extends string = string,
+  RequestId extends string = string,
+> =
+  | (Omit<AppointmentNotificationEvent, "recipientId"> &
+      StoredNotificationFields<NotificationId, UserId>)
+  | (Omit<RequestNotificationEvent, "recipientId" | "requestId"> &
+      StoredNotificationFields<NotificationId, UserId> & { readonly requestId: RequestId });
+
+/**
+ * Lo que suma el aviso guardado. Los identificadores son genéricos (TI2-154):
+ * Infraestructura entrega los de Convex y Presentación los publica sin
+ * convertirlos, como en las solicitudes.
+ */
+type StoredNotificationFields<NotificationId extends string, UserId extends string> = {
+  readonly id: NotificationId;
+  readonly recipientId: UserId;
   readonly readStatus: NotificationReadStatus;
   readonly readAt?: number;
 };
@@ -34,13 +52,20 @@ export type StoredNotification = NotificationEvent & {
  * igual que uno inexistente (`null`). Sin filtro de lectura, la página trae
  * leídos y pendientes, del más reciente al más antiguo.
  */
-export interface NotificationInboxReader {
+export interface NotificationInboxReader<
+  NotificationId extends string = string,
+  UserId extends string = string,
+  RequestId extends string = string,
+> {
   listOwn(
     recipientId: string,
     readStatus: NotificationReadStatus | undefined,
     paginationOpts: PaginationOptions,
-  ): Promise<PaginationResult<StoredNotification>>;
-  getOwn(recipientId: string, notificationId: string): Promise<StoredNotification | null>;
+  ): Promise<PaginationResult<StoredNotification<NotificationId, UserId, RequestId>>>;
+  getOwn(
+    recipientId: string,
+    notificationId: string,
+  ): Promise<StoredNotification<NotificationId, UserId, RequestId> | null>;
 }
 
 /**

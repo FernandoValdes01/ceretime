@@ -4,6 +4,8 @@ import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { NOTIFICATION_CONTRACT_VERSION } from "../domain/notifications/notification";
+import { recordNotificationEvent } from "../infrastructure/notifications/repository";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -13,9 +15,10 @@ const modules = import.meta.glob("../**/*.ts");
  *
  * Los avisos nacen del flujo real (TI2-150): una reserva del Estudiante y los
  * pasos de una solicitud. Las pruebas comprueban que cada persona lista y
- * marca solo los suyos, que el filtro distingue leídos de pendientes y que
- * abrir un aviso exige el permiso vigente sobre su recurso. La agenda es el
- * lunes 2027-01-04 en `America/Santiago` (UTC−3), con el reloj fijado antes.
+ * marca solo los suyos, que el filtro distingue leídos de pendientes, que
+ * abrir un aviso exige el permiso vigente sobre su recurso y que la página
+ * respeta el tope del contrato. La agenda es el lunes 2027-01-04 en
+ * `America/Santiago` (UTC−3), con el reloj fijado antes.
  */
 
 const ISSUER = "https://accounts.google.com";
@@ -245,7 +248,6 @@ test(
         preferredTimeRange: { from: "09:00", to: "12:00" },
       },
       preferredAccessibleInformationChannel: "Correo",
-      idempotencyKey: "ti154-clave",
     });
     await asProfessional.mutation(requests.takeRequest, { requestId });
     await asProfessional.mutation(requests.requestAdditionalInformation, {
@@ -303,6 +305,53 @@ test(
     expect(
       await publicError(asProfessional.query(requests.getRequest, { requestId })),
     ).toStrictEqual(DENIED);
+  },
+  API_TEST_TIMEOUT_MS,
+);
+
+test(
+  "TI2-154 API: la página se acota a 50 avisos y un tamaño no finito responde conflict",
+  async () => {
+    const t = convexTest(schema, modules);
+    await user(t, "ti154-tope-est", "student");
+    const asStudent = t.withIdentity(identityFor("ti154-tope-est"));
+    const inbox = api.presentation.notifications;
+
+    const { _id: requestId } = await asStudent.mutation(api.presentation.requests.createRequest, {
+      needSummary: "Necesidad ficticia",
+      expectedOutcome: "Resultado ficticio",
+      accessNeeds: [{ id: "written-communication", label: "Comunicación escrita" }],
+      modalityPreference: "online",
+      generalAvailability: { preferredWeekdays: [1] },
+      preferredAccessibleInformationChannel: "Correo",
+    });
+    // Más avisos propios que el tope: el registro de la solicitud ya dejó uno.
+    await t.run(async (ctx) => {
+      const recipientId = (await ctx.db.get(requestId))!.studentId;
+      for (let index = 0; index < 55; index += 1) {
+        await recordNotificationEvent(ctx, {
+          kind: "request_under_review",
+          requestId,
+          recipientId,
+          occurredAt: NOW + index + 1,
+          version: NOTIFICATION_CONTRACT_VERSION,
+        });
+      }
+    });
+
+    const page = await asStudent.query(inbox.listOwnNotifications, {
+      paginationOpts: { numItems: 500, cursor: null },
+    });
+    expect(page.page).toHaveLength(50);
+    expect(page.isDone).toBe(false);
+
+    expect(
+      await publicError(
+        asStudent.query(inbox.listOwnNotifications, {
+          paginationOpts: { numItems: Number.POSITIVE_INFINITY, cursor: null },
+        }),
+      ),
+    ).toMatchObject({ code: "conflict" });
   },
   API_TEST_TIMEOUT_MS,
 );

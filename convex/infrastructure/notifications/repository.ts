@@ -1,6 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import type { StoredNotification } from "../../application/notifications/ports";
 import {
   isNotificationDeliveryChannel,
   isNotificationDeliveryError,
@@ -183,12 +184,15 @@ export function notificationEventRecorder(ctx: MutationCtx) {
   };
 }
 
-/** Evento guardado con su identificador, su recurso y su estado de lectura. */
-export type StoredNotificationEvent = NotificationEvent & {
-  readonly id: Id<"notificationEvents">;
-  readonly readStatus: NotificationReadStatus;
-  readonly readAt?: number;
-};
+/**
+ * Evento guardado con su identificador, su recurso y su estado de lectura,
+ * con los identificadores de Convex (TI2-154): cumple `StoredNotification`.
+ */
+export type StoredNotificationEvent = StoredNotification<
+  Id<"notificationEvents">,
+  Id<"users">,
+  Id<"requests">
+>;
 
 /** Traduce la fila al contrato; la clave de idempotencia no sale del repositorio. */
 function toStoredNotificationEvent(row: Doc<"notificationEvents">): StoredNotificationEvent {
