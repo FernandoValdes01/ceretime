@@ -6,7 +6,10 @@ import {
 } from "../application/calendar/calendar_link";
 import { mutation, query } from "../_generated/server";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
-import { googleCalendarConnectionReader } from "../infrastructure/calendar/google_calendar";
+import {
+  googleCalendarConnectionReader,
+  googleCalendarRevoker,
+} from "../infrastructure/calendar/google_calendar";
 import { calendarLinkReader, calendarLinkStore } from "../infrastructure/calendar/repository";
 import { unwrapApiResult } from "./session";
 
@@ -101,8 +104,8 @@ export const confirmCalendarLink = mutation({
 /**
  * Desconecta el vínculo propio con aviso de eventos previos.
  *
- * Solo toca la fila de la sesión. No borra eventos ya creados: la respuesta
- * indica que pueden quedar sin actualizar.
+ * Revoca el acceso OAuth de la sesión y marca la trazabilidad local. No borra
+ * eventos ya creados: la respuesta indica que pueden quedar sin actualizar.
  */
 export const disconnectCalendarLink = mutation({
   args: {},
@@ -113,6 +116,7 @@ export const disconnectCalendarLink = mutation({
       await disconnectCalendarLinkUseCase(
         {
           auth: authorizationReader(ctx),
+          oauth: googleCalendarRevoker(ctx),
           store: calendarLinkStore(ctx),
           now: () => Date.now(),
         },

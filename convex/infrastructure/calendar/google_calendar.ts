@@ -160,6 +160,42 @@ export function googleCalendarGateway(ctx: ActionCtx) {
 }
 
 /**
+ * Revocación del acceso OAuth de Calendar (TI2-161).
+ *
+ * Elimina la fila de la cuenta `google` del componente de autenticación: sin
+ * esa fila los alcances desaparecen y `connected` pasa a `false` en todas
+ * las lecturas, y el adaptador responde `not_connected` sin crear eventos.
+ * Solo toca la cuenta de la sesión y únicamente el proveedor `google`: el
+ * inicio institucional (`google-alu`/`google-uct`) y la sesión quedan
+ * intactos. Nunca devuelve tokens ni identificadores.
+ *
+ * Si la revocación no se puede completar, responde `unavailable` y el
+ * llamante no debe marcar nada local: afirmar desconexión con los tokens aún
+ * guardados dejaría crear eventos tras "desconectar".
+ */
+export function googleCalendarRevoker(ctx: MutationCtx) {
+  return {
+    revokeAccess: async (): Promise<"revoked" | "not_found" | "unavailable"> => {
+      const identity = await ctx.auth.getUserIdentity();
+      if (identity === null) return "not_found";
+      try {
+        const deleted = await ctx.runMutation(components.betterAuth.adapter.deleteOne, {
+          input: {
+            model: "account",
+            where: [
+              { field: "userId", value: identity.subject },
+              { field: "providerId", value: "google" },
+            ],
+          },
+        });
+        return deleted === undefined || deleted === null ? "not_found" : "revoked";
+      } catch {
+        return "unavailable";
+      }
+    },
+  };
+}
+/**
  * Lectura de alcances OAuth para el estado de conexión.
  *
  * Es la única fuente de «conectado»: la tabla `calendarConnections` solo

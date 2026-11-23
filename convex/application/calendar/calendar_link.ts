@@ -28,6 +28,11 @@ export interface CalendarOAuthLinkReader {
   getAccountReference(): Promise<string | null>;
 }
 
+/** Revocación del acceso OAuth de la sesión, sin credenciales. */
+export interface CalendarOAuthRevoker {
+  revokeAccess(): Promise<"revoked" | "not_found" | "unavailable">;
+}
+
 /** Metadatos locales del vínculo, sin credenciales ni estado paralelo. */
 export interface CalendarLinkMetadataStore {
   readMetadata(userId: string): Promise<CalendarConnectionMetadata | null>;
@@ -141,16 +146,24 @@ export async function confirmCalendarLink(
 }
 
 /**
- * Desconecta el vínculo propio conservando trazabilidad.
+ * Desconecta el vínculo propio y revoca el acceso OAuth.
  *
- * Solo toca la fila de la sesión; nunca acepta un `userId` del cliente. No
- * borra eventos ya creados: la respuesta avisa que pueden quedar sin
- * actualizar. Idempotente: repetirla responde `already_unlinked` o `not_found`
- * sin error, así rechazar o repetir no bloquea la reserva.
+ * Primero elimina la cuenta `google` de la sesión en Better Auth: sin esa
+ * fila los alcances desaparecen y ningún intento posterior crea eventos. Solo
+ * después marca los metadatos locales con trazabilidad. Solo toca lo propio:
+ * nunca acepta un `userId` del cliente. No borra eventos ya creados: la
+ * respuesta avisa que pueden quedar sin actualizar. Idempotente: repetirla
+ * responde `already_unlinked` o `not_found` sin error, así rechazar o repetir
+ * no bloquea la reserva.
+ *
+ * Si la revocación externa no se puede completar, responde `conflict` sin
+ * marcar nada local: afirmar desconexión con los tokens aún guardados dejaría
+ * crear eventos tras "desconectar".
  */
 export async function disconnectCalendarLink(
   deps: {
     readonly auth: AuthorizationReader;
+    readonly oauth: Pick<CalendarOAuthRevoker, "revokeAccess">;
     readonly store: CalendarLinkMetadataStore;
     readonly now: () => number;
   },
@@ -161,14 +174,16 @@ export async function disconnectCalendarLink(
   if (profile === null || !isProfileActive(profile)) return errResult(unauthorizedError());
   const now = deps.now();
   if (!validNow(now)) return errResult(conflictError());
+  const revoked = await deps.oauth.revokeAccess();
+  if (revoked === "unavailable") return errResult(conflictError());
   const stored = await deps.store.disconnect(profile._id, now);
-  if (stored.status === "not_found") {
+  if (revoked === "not_found" && stored.status === "not_found") {
     return okResult({ disconnected: false, status: "not_found", staleEventsMayRemain: false });
   }
   const metadata = await deps.store.readMetadata(profile._id);
   return okResult({
     disconnected: true,
-    status: stored.status,
+    status: stored.status === "not_found" ? "unlinked" : stored.status,
     ...(metadata?.revokedAt === undefined ? {} : { revokedAt: metadata.revokedAt }),
     staleEventsMayRemain: true,
   });

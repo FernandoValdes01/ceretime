@@ -8,6 +8,7 @@ import {
   getCalendarLinkStatus,
   type CalendarLinkMetadataStore,
   type CalendarOAuthLinkReader,
+  type CalendarOAuthRevoker,
 } from "./calendar_link";
 
 type FakeProfile = {
@@ -60,6 +61,21 @@ function fakeOAuth(
   return {
     listGoogleScopes: async () => scopes,
     getAccountReference: async () => reference,
+  };
+}
+
+function fakeRevoker(
+  result: "revoked" | "not_found" | "unavailable" = "revoked",
+): CalendarOAuthRevoker & { readonly calls: number } {
+  const state = { calls: 0 };
+  return {
+    get calls() {
+      return state.calls;
+    },
+    revokeAccess: async () => {
+      state.calls += 1;
+      return result;
+    },
   };
 }
 
@@ -238,8 +254,9 @@ describe("confirmCalendarLink", () => {
 describe("disconnectCalendarLink", () => {
   test("desconecta lo propio con aviso de eventos previos", async () => {
     const store = fakeStore({ "user-student": { linkedAt: 1000 } });
+    const revoker = fakeRevoker("revoked");
     const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), store, now: () => 2000 },
+      { auth: fakeAuth(), oauth: revoker, store, now: () => 2000 },
       { tokenIdentifier: "token-student" },
     );
     expect(result.status).toBe("ok");
@@ -247,13 +264,39 @@ describe("disconnectCalendarLink", () => {
     expect(result.data.disconnected).toBe(true);
     expect(result.data.staleEventsMayRemain).toBe(true);
     expect(result.data.revokedAt).toBe(2000);
+    expect(revoker.calls).toBe(1);
     expect(store.writes).toEqual([{ userId: "user-student", kind: "disconnect" }]);
+  });
+
+  test("revoca el acceso aunque no haya fila local del flujo anterior", async () => {
+    const store = fakeStore();
+    const result = await disconnectCalendarLink(
+      { auth: fakeAuth(), oauth: fakeRevoker("revoked"), store, now: () => 2000 },
+      { tokenIdentifier: "token-student" },
+    );
+    expect(result).toEqual({
+      status: "ok",
+      data: { disconnected: true, status: "unlinked", staleEventsMayRemain: true },
+    });
+  });
+
+  test("si la revocación falla no marca nada local y responde conflict", async () => {
+    const store = fakeStore({ "user-student": { linkedAt: 1000 } });
+    const result = await disconnectCalendarLink(
+      { auth: fakeAuth(), oauth: fakeRevoker("unavailable"), store, now: () => 2000 },
+      { tokenIdentifier: "token-student" },
+    );
+    expect(result).toEqual({
+      status: "error",
+      error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
+    });
+    expect(store.writes).toHaveLength(0);
   });
 
   test("una persona no desconecta la cuenta de otra", async () => {
     const store = fakeStore({ "user-student": { linkedAt: 1000 } });
     const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), store, now: () => 2000 },
+      { auth: fakeAuth(), oauth: fakeRevoker("not_found"), store, now: () => 2000 },
       { tokenIdentifier: "token-pro" },
     );
     expect(result).toEqual({
@@ -266,7 +309,7 @@ describe("disconnectCalendarLink", () => {
   test("es idempotente y no bloquea la reserva", async () => {
     const store = fakeStore({ "user-student": { linkedAt: 1000, revokedAt: 2000 } });
     const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), store, now: () => 3000 },
+      { auth: fakeAuth(), oauth: fakeRevoker("not_found"), store, now: () => 3000 },
       { tokenIdentifier: "token-student" },
     );
     expect(result.status).toBe("ok");
@@ -274,7 +317,7 @@ describe("disconnectCalendarLink", () => {
 
   test("sin sesión responde unauthorized con código", async () => {
     const result = await disconnectCalendarLink(
-      { auth: fakeAuth(), store: fakeStore(), now: () => 2000 },
+      { auth: fakeAuth(), oauth: fakeRevoker(), store: fakeStore(), now: () => 2000 },
       { tokenIdentifier: null },
     );
     expect(result).toEqual({
