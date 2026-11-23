@@ -204,7 +204,7 @@ El cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` 
 | --- | --- | --- | --- | --- |
 | `presentation.accompaniments.listAccompanimentProfessionals` (query) | `accompanimentId` | `{assigned, assignable, assignableComplete}` | Profesional de personal, habilitado y vigente, con asignación profesional activa sobre ese acompañamiento | `unauthorized` sin ese permiso, sin revelar si el acompañamiento existe; `conflict` si el acompañamiento supera las 200 asignaciones leídas |
 
-- `assigned`: los profesionales con asignación activa y vigente (ASIGNACIONES_PROFESIONALES del MER), cada uno con `userId`, `fullName`, `assignedAt?` (`asignadoEn`, falta en filas anteriores a TI2-140) e `isCaller`, que marca la asignación de quien consulta. Ordenados por nombre.
+- `assigned`: los profesionales con asignación activa y vigente (ASIGNACIONES_PROFESIONALES del MER), cada uno con `userId`, `fullName`, `assignedAt?` (`asignadoEn`, falta en filas anteriores a TI2-140), `isCaller`, que marca la asignación de quien consulta, y `removable`, que dice si `revokeAccompanimentAccess` lo retiraría con la regla de abajo. Ordenados por nombre. La Web lo usa para no ofrecer un retiro que el Backend rechaza.
 - `assignable`: los profesionales de personal habilitados y vigentes que todavía no están asignados, con `userId` y `fullName`, ordenados por nombre. No incluye cuentas de prueba, practicantes ni cuentas inhabilitadas.
 - `assignableComplete`: `false` si había más de 100 perfiles profesionales y la lista de asignables no los revisó todos.
 - No entrega correo ni estado de las cuentas.
@@ -212,7 +212,8 @@ El cambio se hace con `assignAccompanimentAccess` y `revokeAccompanimentAccess` 
 TI2-152 agrega estas reglas al cambio:
 
 - Quien se retira pierde el acceso en la consulta siguiente, porque cada lectura vuelve a exigir la asignación activa.
-- Mientras el acompañamiento esté activo o en pausa, retirar al único profesional asignado responde `conflict`: asignar a otro y cerrar exigen una asignación profesional activa, así que sin ninguna nadie podría volver a gestionarlo. Para reemplazarlo, primero se asigna al nuevo y después se retira al anterior. Un acompañamiento cerrado sí puede quedar sin asignaciones, que es el 0..* de ASIGNA en el MER (TI2-165).
+- Mientras el acompañamiento esté activo o en pausa, tiene que quedar alguien que lo gestione: un profesional de personal habilitado y vigente, con asignación vigente y sin fin acordado. Retirar a quien deja el acompañamiento sin nadie así responde `conflict`, porque asignar a otro y cerrar exigen una asignación profesional activa de personal. Una cuenta de prueba no cuenta, porque no concede ni retira, y una asignación con fin tampoco, porque deja de autorizar al vencer. Para reemplazar al último, primero se asigna al nuevo y después se retira al anterior. Un acompañamiento cerrado sí puede quedar sin asignaciones, que es el 0..* de ASIGNA en el MER (TI2-165).
+- La asignación de un profesional de personal no lleva vigencia acordada, porque ASIGNACIONES_PROFESIONALES del MER no la tiene: `assignAccompanimentAccess` y `updateAccompanimentAccess` con `validFrom` o `validUntil` para uno responden `assignment_fields_invalid` sin escribir. Así el último tampoco sale empezando tarde o venciendo. Quitar una ventana guardada antes (`null`) sí procede. La cuenta de prueba y el Practicante la conservan (TI2-140).
 - Un acompañamiento cerrado no admite conceder ni modificar accesos (`conflict`). Retirar un acceso sigue permitido.
 - Retirar a un profesional no cancela ni reasigna sus atenciones futuras: siguen a su nombre y solo el Estudiante puede cancelarlas o cambiarles el horario, con el acompañamiento activo. El cierre sí las cancela.
 
