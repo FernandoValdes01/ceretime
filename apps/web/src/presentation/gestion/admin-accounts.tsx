@@ -47,6 +47,7 @@ const ACCOUNTS_DENIED_HINT =
 
 export function AdminAccountsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const { toast, showToast } = useToast();
 
   useEffect(() => {
     headingRef.current?.focus();
@@ -70,15 +71,20 @@ export function AdminAccountsPage() {
         level="section"
         fallback={adminLoadFallback}
       >
-        <StaffAccountsSection role="professional" />
+        <StaffAccountsSection role="professional" notify={showToast} />
       </StudentPanelErrorBoundary>
       <StudentPanelErrorBoundary
         subject="las cuentas de administración"
         level="section"
         fallback={adminLoadFallback}
       >
-        <StaffAccountsSection role="admin" />
+        <StaffAccountsSection role="admin" notify={showToast} />
       </StudentPanelErrorBoundary>
+      {toast !== null ? (
+        <p role="status" className="toast">
+          {toast}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -86,10 +92,15 @@ export function AdminAccountsPage() {
 /** Estado de la última página encadenada: decide el botón "Cargar más". */
 type TailState = { readonly pending: boolean; readonly hasMore: boolean };
 
-function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
+function StaffAccountsSection({
+  role,
+  notify,
+}: {
+  role: StaffAccountsRole;
+  notify: (message: string) => void;
+}) {
   const [pageCount, setPageCount] = useState(1);
   const [tail, setTail] = useState<TailState>({ pending: false, hasMore: false });
-  const { toast, showToast } = useToast();
   const listRef = useRef<HTMLUListElement>(null);
   const rowsBeforeLoad = useRef<number | null>(null);
   const title = role === "professional" ? "Cuentas profesionales" : "Cuentas administrativas";
@@ -191,14 +202,9 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
           index={0}
           pageCount={pageCount}
           onTail={setTail}
-          notify={showToast}
+          notify={notify}
         />
       </ul>
-      {toast !== null ? (
-        <p role="status" className="toast">
-          {toast}
-        </p>
-      ) : null}
       {tail.hasMore ? (
         <div className="student-portal__cta">
           <button

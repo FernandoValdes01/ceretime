@@ -773,7 +773,7 @@ describe("editor de espacios (TI2-04)", () => {
     expect(screen.getByText("Campus Norte · Edificio B · Piso 2 · Sala 205")).toBeDefined();
   });
 
-  test("deshabilitar denegado muestra acceso denegado", async () => {
+  test("deshabilitar denegado muestra acceso denegado junto a la sala", async () => {
     const port = puertoOk();
     port.setSpaceActive = () => Promise.resolve({ status: "denied" });
     comoAdministrador(port);
@@ -787,10 +787,44 @@ describe("editor de espacios (TI2-04)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio" }));
 
-    expect(
-      await screen.findByText("No autorizado. Pide acceso por el canal oficial si corresponde."),
-    ).toBeDefined();
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain("Campus Norte · Edificio A · Piso 1 · Sala 101");
+    expect(alerta.textContent).toContain(
+      "No autorizado. Pide acceso por el canal oficial si corresponde.",
+    );
     expect(screen.queryByText("Espacio deshabilitado")).toBeNull();
+  });
+
+  test("el error de deshabilitar sigue visible tras el tiempo del aviso flotante", async () => {
+    const port = puertoOk();
+    port.setSpaceActive = () =>
+      Promise.resolve({
+        status: "error",
+        error: { code: "conflict", message: "La sala está reservada." },
+      });
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Deshabilitar"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain("Campus Norte · Edificio A · Piso 1 · Sala 101");
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(5000);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const persistente = screen.getByRole("alert");
+    expect(persistente.textContent).toContain("Campus Norte · Edificio A · Piso 1 · Sala 101");
+    expect(persistente.textContent).toContain("La sala está reservada.");
   });
 
   test("cancelar la baja cierra el diálogo sin escribir", async () => {

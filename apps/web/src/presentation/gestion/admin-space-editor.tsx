@@ -112,8 +112,10 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
   const [editing, setEditing] = useState<Space | null>(null);
   const [savedSpace, setSavedSpace] = useState<Space | null>(null);
   const [disablePendingId, setDisablePendingId] = useState<string | null>(null);
-  const [disableError, setDisableError] = useState<string | null>(null);
-  const [disableDenied, setDisableDenied] = useState(false);
+  const [disableError, setDisableError] = useState<{
+    readonly spaceId: string;
+    readonly message: string;
+  } | null>(null);
   const [confirmDisable, setConfirmDisable] = useState<Space | null>(null);
   const { toast, showToast } = useToast();
   // Sesión del formulario: cada apertura de edición, cancelación o creación
@@ -187,7 +189,6 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
     }
     setDisablePendingId(space.id);
     setDisableError(null);
-    setDisableDenied(false);
     setSavedSpace(null);
     try {
       const outcome = await getAgendaPort().setSpaceActive({ spaceId: space.id, isActive: false });
@@ -200,12 +201,21 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
         }
         showToast("Espacio deshabilitado.");
       } else if (outcome.status === "denied") {
-        setDisableDenied(true);
+        setDisableError({
+          spaceId: space.id,
+          message: `No pudimos deshabilitar ${toSpaceLabel(space)}. ${ACCESS_DENIED_MESSAGE}`,
+        });
       } else {
-        setDisableError(outcome.error.message);
+        setDisableError({
+          spaceId: space.id,
+          message: `No pudimos deshabilitar ${toSpaceLabel(space)}: ${outcome.error.message}`,
+        });
       }
     } catch {
-      setDisableError("No pudimos deshabilitar el espacio. Inténtalo de nuevo.");
+      setDisableError({
+        spaceId: space.id,
+        message: `No pudimos deshabilitar ${toSpaceLabel(space)}. Inténtalo de nuevo.`,
+      });
     } finally {
       setDisablePendingId(null);
     }
@@ -261,6 +271,7 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
                         {
                           label: "Editar",
                           onSelect: () => {
+                            setDisableError(null);
                             setEditing(space);
                             setFormSession((value) => value + 1);
                           },
@@ -273,22 +284,17 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
                       ]}
                     />
                   </div>
+                  {disableError?.spaceId === space.id ? (
+                    <p role="alert" className="student-portal__error">
+                      {disableError.message}
+                    </p>
+                  ) : null}
                 </div>
               </li>
             ))}
           </ul>
         )}
       </section>
-      {disableDenied ? (
-        <p role="alert" className="student-portal__error">
-          {ACCESS_DENIED_MESSAGE}
-        </p>
-      ) : null}
-      {disableError !== null ? (
-        <p role="alert" className="student-portal__error">
-          {disableError}
-        </p>
-      ) : null}
       {toast !== null ? (
         <p role="status" className="toast">
           {toast}
@@ -351,6 +357,7 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
         formSession={formSession}
         onSaveStart={() => {
           setSavedSpace(null);
+          setDisableError(null);
         }}
         onSaved={(space, session) => {
           setSavedSpaces((prev) => applySavedSpace(prev, space));
@@ -414,7 +421,6 @@ function SpaceFormSection({
   // del mismo tick, así que el reenvío simultáneo se corta por referencia.
   const pendingRef = useRef(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [denied, setDenied] = useState(false);
 
   function setField<Key extends keyof SpaceFormState>(key: Key, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -431,7 +437,6 @@ function SpaceFormSection({
     const errors = validateSpaceForm(form);
     setFieldErrors(errors);
     setSaveError(null);
-    setDenied(false);
     if (Object.keys(errors).length > 0) {
       // El error se describe en texto junto a cada campo y, como extra, avisa
       // el flotante; el mensaje nunca depende solo del color.
@@ -447,7 +452,7 @@ function SpaceFormSection({
       if (result.status === "saved") {
         onSaved(result.space, formSession);
       } else if (result.status === "denied") {
-        setDenied(true);
+        setSaveError(ACCESS_DENIED_MESSAGE);
       } else {
         setSaveError(result.error.message);
       }
@@ -596,11 +601,6 @@ function SpaceFormSection({
             </p>
           ) : null}
         </div>
-        {denied ? (
-          <p role="alert" className="student-portal__error">
-            {ACCESS_DENIED_MESSAGE}
-          </p>
-        ) : null}
         {saveError !== null ? (
           <p role="alert" className="student-portal__error">
             {saveError}

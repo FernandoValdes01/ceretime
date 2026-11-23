@@ -306,6 +306,31 @@ describe("cuentas de personal (TI2-169)", () => {
     expect(propia.textContent).toBe("No puedes revocar tu propia cuenta.");
   });
 
+  test("el error de acción sigue visible tras el tiempo del aviso flotante", async () => {
+    comoAdministrador();
+    professionalPage = pagina([cuenta({ _id: "user-1", institutionalStatus: "pending" })]);
+    adminPage = pagina([]);
+    enableMock.mockRejectedValueOnce(
+      new ConvexError({ code: "conflict", message: "La cuenta ya está habilitada." }),
+    );
+    renderAt("/administrador/cuentas");
+
+    fireEvent.click(await openRowMenu("Profesional Uno", "Habilitar cuenta"));
+
+    const conflicto = await screen.findByRole("alert");
+    expect(conflicto.textContent).toBe("La cuenta ya está habilitada.");
+
+    vi.useFakeTimers();
+    try {
+      vi.advanceTimersByTime(5000);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const persistente = screen.getByRole("alert");
+    expect(persistente.textContent).toBe("La cuenta ya está habilitada.");
+  });
+
   test("el menú se cierra con Escape y devuelve el foco al botón", async () => {
     comoAdministrador();
     professionalPage = pagina([cuenta({ _id: "user-1", institutionalStatus: "pending" })]);
