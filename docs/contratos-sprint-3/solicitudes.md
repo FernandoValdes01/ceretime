@@ -148,7 +148,7 @@ Los nombres de unidad y las razones son texto libre: no deben incluir diagnósti
 
 ## Avisos
 
-Desde TI2-150, registrar una solicitud y cada cambio de estado dejan un aviso en `notificationEvents`, en la misma mutation y después de persistir. La política vive en `convex/domain/notifications/notification.ts`; los casos de uso lo entregan con `convex/application/requests/notifications.ts`. «Quien revisa» es el Profesional que tomó la solicitud (`takenBy`). Quien hace el cambio nunca se avisa a sí mismo.
+Desde TI2-150, registrar una solicitud y cada cambio de estado dejan un aviso en `notificationEvents`, en la misma mutation y después de persistir. La política vive en `convex/domain/notifications/notification.ts`; los casos de uso lo entregan con `convex/application/requests/notifications.ts`. «Quien revisa» es el Profesional que tomó la solicitud (`takenBy`). Quien hace un cambio de estado nunca se avisa a sí mismo; la recepción es la excepción: confirma al Estudiante aunque la haya enviado él.
 
 | Operación | Clase | Destinatario |
 | --- | --- | --- |
