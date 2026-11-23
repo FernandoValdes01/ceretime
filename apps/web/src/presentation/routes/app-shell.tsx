@@ -113,6 +113,7 @@ export function AppShell({ area, children }: { area: PortalArea; children?: Reac
             ))}
           </nav>
           <div className="app-shell__sidebar-foot">
+            <AccessibilityMenu />
             <button
               type="button"
               className="app-shell__logout"

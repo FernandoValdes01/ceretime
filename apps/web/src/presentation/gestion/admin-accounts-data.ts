@@ -4,6 +4,11 @@ import type { FunctionReturnType } from "convex/server";
 // el monorepo defina el alias o paquete interno compartido.
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import type {
+  AccountStatus,
+  InstitutionalStatus,
+  Role,
+} from "../../../../../convex/domain/index.ts";
 
 /**
  * Lecturas y escrituras de cuentas de personal para Administración (TI2-169).
@@ -60,40 +65,58 @@ export type StaffAccountId = Id<"users">;
 /** Roles del listado de personal: solo profesional y administración. */
 export type StaffAccountsRole = "professional" | "admin";
 
-/** Etiqueta legible del rol de una cuenta de personal. */
-export function staffRoleLabel(role: string): string {
-  if (role === "professional") {
-    return "Profesional";
+/**
+ * Etiqueta legible del rol de una cuenta de personal.
+ *
+ * `switch` exhaustivo sobre el contrato: si el Backend agrega un rol, el
+ * compilador avisa acá en vez de pintar el código en la pantalla. En
+ * ejecución, un valor desconocido se muestra tal cual como último recurso.
+ */
+export function staffRoleLabel(role: Role): string {
+  switch (role) {
+    case "professional":
+      return "Profesional";
+    case "admin":
+      return "Administrador";
+    case "student":
+      return "Estudiante";
+    case "intern":
+      return "Practicante";
+    default: {
+      const _exhaustive: never = role;
+      return _exhaustive;
+    }
   }
-  if (role === "admin") {
-    return "Administrador";
-  }
-  return role;
 }
 
 /** Etiqueta legible de la habilitación institucional de la cuenta. */
-export function staffInstitutionalStatusLabel(status: string): string {
-  if (status === "enabled") {
-    return "Habilitada";
+export function staffInstitutionalStatusLabel(status: InstitutionalStatus): string {
+  switch (status) {
+    case "enabled":
+      return "Habilitada";
+    case "pending":
+      return "Pendiente";
+    case "disabled":
+      return "Revocada";
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
   }
-  if (status === "pending") {
-    return "Pendiente";
-  }
-  if (status === "disabled") {
-    return "Revocada";
-  }
-  return status;
 }
 
 /** Etiqueta legible de la vigencia de la cuenta en la plataforma. */
-export function staffAccountStatusLabel(status: string): string {
-  if (status === "active") {
-    return "Vigente";
+export function staffAccountStatusLabel(status: AccountStatus): string {
+  switch (status) {
+    case "active":
+      return "Vigente";
+    case "inactive":
+      return "No vigente";
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
   }
-  if (status === "inactive") {
-    return "No vigente";
-  }
-  return status;
 }
 
 /** Verdadero cuando la cuenta admite habilitación (no está habilitada). */

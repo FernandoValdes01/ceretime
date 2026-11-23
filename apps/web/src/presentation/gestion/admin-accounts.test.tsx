@@ -205,9 +205,7 @@ describe("cuentas de personal (TI2-169)", () => {
     listThrows = new ConvexError(UNAUTHORIZED_ERROR_MESSAGE);
     renderAt("/administrador/cuentas");
 
-    const avisos = await screen.findAllByText(
-      "No autorizado. Pide acceso por el canal oficial si corresponde.",
-    );
+    const avisos = await screen.findAllByText(/No autorizado/);
     expect(avisos.length).toBe(2);
     expect(screen.queryByText(/Profesional Uno/)).toBeNull();
   });
@@ -234,8 +232,29 @@ describe("cuentas de personal (TI2-169)", () => {
     const revocar = await openRowMenu("Profesional Uno", "Revocar cuenta");
     fireEvent.click(revocar);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Revocar cuenta" }));
+
     expect(await screen.findByText("Cuenta de Profesional Uno revocada.")).toBeDefined();
     expect(revokeMock).toHaveBeenCalledWith({ userId: "user-1" });
+  });
+
+  test("cancelar la revocación cierra el diálogo sin escribir", async () => {
+    comoAdministrador();
+    professionalPage = pagina([cuenta({ _id: "user-1", institutionalStatus: "enabled" })]);
+    adminPage = pagina([]);
+    renderAt("/administrador/cuentas");
+
+    const revocar = await openRowMenu("Profesional Uno", "Revocar cuenta");
+    fireEvent.click(revocar);
+
+    expect(
+      await screen.findByText("Esta cuenta perderá acceso a CERETI en su próximo ingreso."),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(revokeMock).not.toHaveBeenCalled();
+    expect(screen.queryByText(/revocada\./)).toBeNull();
   });
 
   test("acción denegada muestra acceso denegado", async () => {
@@ -266,6 +285,7 @@ describe("cuentas de personal (TI2-169)", () => {
     fireEvent.click(await openRowMenu("Profesional Uno", "Habilitar cuenta"));
 
     expect(await screen.findByText("La cuenta ya está habilitada.")).toBeDefined();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   test("revocar la propia cuenta avisa abajo sin pintar error en la fila", async () => {
@@ -278,6 +298,7 @@ describe("cuentas de personal (TI2-169)", () => {
     renderAt("/administrador/cuentas");
 
     fireEvent.click(await openRowMenu("Profesional Uno", "Revocar cuenta"));
+    fireEvent.click(await screen.findByRole("button", { name: "Revocar cuenta" }));
 
     expect(await screen.findByText("No puedes revocar tu propia cuenta.")).toBeDefined();
     expect(screen.queryByRole("alert")).toBeNull();

@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ConvexError } from "convex/values";
-import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
+import { UNAUTHORIZED_ERROR_CODE } from "../../../../../convex/domain/index.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import "../routes/student-portal.css";
 import "./admin-lists.css";
@@ -19,12 +18,10 @@ import {
   type StaffAccountsRole,
 } from "./admin-accounts-data.ts";
 import { RowMenu } from "./row-menu.tsx";
-import {
-  ACCESS_DENIED_MESSAGE,
-  DeniedState,
-  EmptyState,
-  LoadingState,
-} from "../shared/view-states.tsx";
+import { useToast } from "./use-toast.ts";
+import { ModalDialog } from "../shared/modal-dialog.tsx";
+import { ACCESS_DENIED_MESSAGE, EmptyState, LoadingState } from "../shared/view-states.tsx";
+import { AdminNotice } from "./admin-notice.tsx";
 
 /**
  * Cuentas de personal para Administración (TI2-169).
@@ -39,14 +36,6 @@ import {
  * distinto de las tarjetas con avatar de Mobile: misma información, otro
  * lenguaje visual.
  */
-
-/**
- * El valor canónico viaja en `error.data`: el SDK decora `error.message` con
- * su contexto, así que comparar el mensaje falla contra el Backend real.
- */
-function isAuthorizationDenial(error: unknown): boolean {
-  return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
-}
 
 const ACCOUNTS_DENIED_HINT =
   "Si crees que deberías verlas, pide acceso por el canal oficial si corresponde.";
@@ -71,10 +60,30 @@ export function AdminAccountsPage() {
         Habilitar una cuenta permite operar según su rol. No concede acceso a acompañamientos ni a
         notas internas.
       </p>
-      <StudentPanelErrorBoundary subject="las cuentas de personal" level="section">
+      <StudentPanelErrorBoundary
+        subject="las cuentas de personal"
+        level="section"
+        fallback={({ subject, retry }) => (
+          <AdminNotice
+            message={`No pudimos cargar ${subject}. Inténtalo de nuevo.`}
+            actionLabel="Reintentar"
+            onAction={retry}
+          />
+        )}
+      >
         <StaffAccountsSection role="professional" />
       </StudentPanelErrorBoundary>
-      <StudentPanelErrorBoundary subject="las cuentas de administración" level="section">
+      <StudentPanelErrorBoundary
+        subject="las cuentas de administración"
+        level="section"
+        fallback={({ subject, retry }) => (
+          <AdminNotice
+            message={`No pudimos cargar ${subject}. Inténtalo de nuevo.`}
+            actionLabel="Reintentar"
+            onAction={retry}
+          />
+        )}
+      >
         <StaffAccountsSection role="admin" />
       </StudentPanelErrorBoundary>
     </section>
@@ -120,13 +129,16 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     firstPage = useStaffAccounts(role, null);
   } catch (error) {
-    if (isAuthorizationDenial(error)) {
+    // La denegación llega como error público con código: `publicErrorOf`
+    // reconoce también la forma anterior (`ConvexError("No autorizado")`), así
+    // que no se compara el texto en ningún caso.
+    if (publicErrorOf(error)?.code === UNAUTHORIZED_ERROR_CODE) {
       return (
         <section aria-labelledby={headingId} className="student-portal__section admin-section">
           <div className="student-portal__section-head">
             <h2 id={headingId}>{title}</h2>
           </div>
-          <DeniedState description={ACCOUNTS_DENIED_HINT} />
+          <AdminNotice message={`${ACCESS_DENIED_MESSAGE} ${ACCOUNTS_DENIED_HINT}`} />
         </section>
       );
     }
@@ -302,29 +314,9 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
   const [pendingAction, setPendingAction] = useState<"enable" | "revoke" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [confirmRevoke, setConfirmRevoke] = useState(false);
+  const { toast, showToast } = useToast();
   const pendingRef = useRef(false);
-  const toastTimer = useRef<number | null>(null);
-
-  // El aviso flotante desaparece solo; se limpia al desmontar la fila.
-  useEffect(() => {
-    return () => {
-      if (toastTimer.current !== null) {
-        clearTimeout(toastTimer.current);
-      }
-    };
-  }, []);
-
-  function showToast(message: string) {
-    if (toastTimer.current !== null) {
-      clearTimeout(toastTimer.current);
-    }
-    setToast(message);
-    toastTimer.current = window.setTimeout(() => {
-      setToast(null);
-      toastTimer.current = null;
-    }, 5000);
-  }
 
   const institutionalLabel = staffInstitutionalStatusLabel(account.institutionalStatus);
   const vigenteLabel = staffAccountStatusLabel(account.accountStatus);
@@ -349,14 +341,16 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
       // La query reactiva actualiza el estado sola.
     } catch (error) {
       const publicError = publicErrorOf(error);
-      if (publicError?.code === "conflict" && publicError.message.includes("propia cuenta")) {
-        // Intentar revocar la cuenta en uso no pinta un error en la fila:
-        // avisa abajo a la izquierda y desaparece solo.
-        showToast("No puedes revocar tu propia cuenta.");
-      } else if (publicError?.code === "unauthorized" || isAuthorizationDenial(error)) {
-        setActionError(ACCESS_DENIED_MESSAGE);
-      } else if (publicError !== null) {
-        setActionError(publicError.message);
+      if (publicError !== null) {
+        // Todo error de la acción avisa abajo a la derecha y desaparece
+        // solo. La denegación conserva el aviso habitual de la Web (con el
+        // canal oficial); el resto muestra el mensaje público del Backend sin
+        // ramificar por su texto: el contrato distingue por código.
+        showToast(
+          publicError.code === UNAUTHORIZED_ERROR_CODE
+            ? ACCESS_DENIED_MESSAGE
+            : publicError.message,
+        );
       } else {
         setActionError(
           action === "enable"
@@ -403,7 +397,8 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
                 ? [
                     {
                       label: pendingAction === "revoke" ? "Revocando…" : "Revocar cuenta",
-                      onSelect: () => void runAction("revoke"),
+                      onSelect: () => setConfirmRevoke(true),
+                      hasPopup: true,
                     },
                   ]
                 : []),
@@ -424,6 +419,34 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
           <p role="status" className="toast">
             {toast}
           </p>
+        ) : null}
+        {confirmRevoke ? (
+          <ModalDialog
+            title="Revocar cuenta"
+            description="Esta cuenta perderá acceso a CERETI en su próximo ingreso."
+            onClose={() => setConfirmRevoke(false)}
+            className="admin-confirm"
+          >
+            <div className="admin-confirm__actions">
+              <button
+                type="button"
+                className="student-portal__btn student-portal__btn--ghost"
+                onClick={() => setConfirmRevoke(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="student-portal__btn student-portal__btn--primary"
+                onClick={() => {
+                  setConfirmRevoke(false);
+                  void runAction("revoke");
+                }}
+              >
+                Revocar cuenta
+              </button>
+            </div>
+          </ModalDialog>
         ) : null}
       </div>
     </li>

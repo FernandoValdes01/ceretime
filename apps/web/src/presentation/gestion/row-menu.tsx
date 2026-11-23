@@ -4,6 +4,8 @@ export type RowMenuItem = {
   readonly label: string;
   readonly onSelect: () => void;
   readonly disabled?: boolean;
+  /** La opción abre un diálogo: se anuncia para que no sorprenda. */
+  readonly hasPopup?: boolean;
 };
 
 /**
@@ -107,6 +109,7 @@ export function RowMenu({
               role="menuitem"
               className="row-menu__item"
               disabled={item.disabled}
+              aria-haspopup={item.hasPopup === true ? "dialog" : undefined}
               onClick={() => {
                 closeAndRefocus();
                 item.onSelect();

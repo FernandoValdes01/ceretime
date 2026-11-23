@@ -178,8 +178,8 @@ function completarEspacioValido() {
 }
 
 /** Abre el menú de tres puntos de la fila y devuelve la opción pedida. */
-async function openSpaceMenuItem(room: string, itemName: string) {
-  fireEvent.click(screen.getByRole("button", { name: `Acciones para ${room}` }));
+async function openSpaceMenuItem(spaceLabel: string, itemName: string) {
+  fireEvent.click(screen.getByRole("button", { name: `Acciones para ${spaceLabel}` }));
   return await screen.findByRole("menuitem", { name: itemName });
 }
 
@@ -262,7 +262,7 @@ describe("editor de espacios (TI2-04)", () => {
     expect(screen.queryByText("Sala 101")).toBeNull();
   });
 
-  test("formulario vacío muestra errores de campo legibles", async () => {
+  test("formulario vacío avisa con el flotante y conserva errores legibles", async () => {
     comoAdministrador();
     renderAt("/administrador/espacios");
 
@@ -270,7 +270,12 @@ describe("editor de espacios (TI2-04)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
 
-    expect(await screen.findByText("Indica el campus del espacio.")).toBeDefined();
+    // El aviso visible es el flotante; los mensajes por campo siguen en el
+    // documento para lector de pantalla, enlazados con `aria-describedby`.
+    expect(
+      await screen.findByText("Revisa los campos marcados e inténtalo de nuevo."),
+    ).toBeDefined();
+    expect(screen.getByText("Indica el campus del espacio.")).toBeDefined();
     expect(screen.getByText("Indica el edificio del espacio.")).toBeDefined();
     expect(screen.getByText("Indica el piso del espacio.")).toBeDefined();
     expect(screen.getByText("Indica la sala del espacio.")).toBeDefined();
@@ -353,7 +358,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(await openSpaceMenuItem("Sala 101", "Editar"));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Editar"),
+    );
 
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     expect(
@@ -404,7 +411,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     // Con la creación aún pendiente se entra a editar otro espacio y se
     // escribe un borrador distinto.
-    fireEvent.click(await openSpaceMenuItem("Sala 205", "Editar"));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio B · Piso 2 · Sala 205", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     const borrador = "Ascensor amplio y pasillo despejado en el hall del piso 2.";
     fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
@@ -450,7 +459,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(await openSpaceMenuItem("Sala 101", "Editar"));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
 
@@ -460,7 +471,9 @@ describe("editor de espacios (TI2-04)", () => {
     // abre una sesión nueva con un borrador distinto.
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
     expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
-    fireEvent.click(await openSpaceMenuItem("Sala 101", "Editar"));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     const borrador = "Ventana amplia y hall reservado para sillas de ruedas.";
     fireEvent.change(screen.getByLabelText("Condiciones de acceso"), {
@@ -512,7 +525,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     // Con la creación pendiente, entrar a editar y cancelar retoma el modo
     // nuevo, donde se escribe un borrador distinto.
-    fireEvent.click(await openSpaceMenuItem("Sala 205", "Editar"));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio B · Piso 2 · Sala 205", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
     expect(await screen.findByRole("heading", { name: "Nuevo espacio" })).toBeDefined();
@@ -553,7 +568,9 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(await openSpaceMenuItem("Sala 101", "Editar"));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Editar"),
+    );
     expect(await screen.findByRole("heading", { name: "Editar espacio" })).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancelar edición" }));
@@ -645,8 +662,11 @@ describe("editor de espacios (TI2-04)", () => {
       expect(document.activeElement).toBe(field);
     }
 
-    for (const room of ["Sala 101", "Sala 205"]) {
-      const button = screen.getByRole("button", { name: `Acciones para ${room}` });
+    for (const label of [
+      "Campus Norte · Edificio A · Piso 1 · Sala 101",
+      "Campus Norte · Edificio B · Piso 2 · Sala 205",
+    ]) {
+      const button = screen.getByRole("button", { name: `Acciones para ${label}` });
       button.focus();
       expect(document.activeElement).toBe(button);
     }
@@ -688,16 +708,22 @@ describe("editor de espacios (TI2-04)", () => {
     }
   });
 
-  test("deshabilitar un espacio lo retira del catálogo y confirma sin borrar historial", async () => {
+  test("deshabilitar un espacio lo retira del catálogo y avisa sin borrar historial", async () => {
     comoAdministrador();
     renderAt("/administrador/espacios");
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(await openSpaceMenuItem("Sala 101", "Deshabilitar"));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Deshabilitar"),
+    );
 
-    expect(await screen.findByText("Espacio deshabilitado")).toBeDefined();
-    expect(screen.getByText(/Ya no aparece en el catálogo ni en la disponibilidad/)).toBeDefined();
+    expect(
+      await screen.findByText("La sala dejará de ofrecerse en la disponibilidad."),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio" }));
+
+    expect(await screen.findByText("Espacio deshabilitado.")).toBeDefined();
     const catalogo = screen
       .getByRole("heading", { name: "Espacios registrados" })
       .closest("section");
@@ -717,12 +743,39 @@ describe("editor de espacios (TI2-04)", () => {
 
     expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
 
-    fireEvent.click(await openSpaceMenuItem("Sala 101", "Deshabilitar"));
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Deshabilitar"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio" }));
 
     expect(
       await screen.findByText("No autorizado. Pide acceso por el canal oficial si corresponde."),
     ).toBeDefined();
     expect(screen.queryByText("Espacio deshabilitado")).toBeNull();
+  });
+
+  test("cancelar la baja cierra el diálogo sin escribir", async () => {
+    const port = puertoOk();
+    const setActive = vi.fn(port.setSpaceActive);
+    port.setSpaceActive = setActive;
+    comoAdministrador(port);
+    renderAt("/administrador/espacios");
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+
+    fireEvent.click(
+      await openSpaceMenuItem("Campus Norte · Edificio A · Piso 1 · Sala 101", "Deshabilitar"),
+    );
+
+    expect(
+      await screen.findByText("La sala dejará de ofrecerse en la disponibilidad."),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(setActive).not.toHaveBeenCalled();
+    expect(screen.getByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
   });
 });
 

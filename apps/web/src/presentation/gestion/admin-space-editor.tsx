@@ -15,13 +15,10 @@ import {
 } from "./admin-space-editor-data.ts";
 import { toSpaceLabel, type Space } from "../../../../../convex/domain/index.ts";
 import { RowMenu } from "./row-menu.tsx";
-import {
-  ACCESS_DENIED_MESSAGE,
-  DeniedState,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-} from "../shared/view-states.tsx";
+import { useToast } from "./use-toast.ts";
+import { ModalDialog } from "../shared/modal-dialog.tsx";
+import { ACCESS_DENIED_MESSAGE, EmptyState, LoadingState } from "../shared/view-states.tsx";
+import { AdminNotice } from "./admin-notice.tsx";
 
 /**
  * Clases Tailwind de las filas y campos de gestión (TI2-103): 44px de alto
@@ -43,7 +40,6 @@ const GESTION_FOCUS_VISIBLE =
  */
 const GESTION_FIELD =
   "min-h-[44px] w-full min-w-0 box-border border-b-2 border-b-(--ct-line) bg-transparent px-3 py-2 text-base text-inherit focus:border-b-[3px] focus:border-b-(--ct-primary) focus:outline-none aria-invalid:border-b-(--ct-danger)";
-const GESTION_FIELD_CLASS = GESTION_FIELD;
 
 /**
  * Cuadros de texto de condiciones e instrucciones (TI2-04, línea visible
@@ -53,7 +49,6 @@ const GESTION_FIELD_CLASS = GESTION_FIELD;
  */
 const GESTION_TEXTAREA =
   "min-h-[44px] w-full min-w-0 box-border resize-y border-b-2 border-b-(--ct-line) bg-transparent px-3 py-2 text-base text-inherit focus:border-b-[3px] focus:border-b-(--ct-primary) focus:outline-none aria-invalid:border-b-(--ct-danger)";
-const GESTION_TEXTAREA_CLASS = GESTION_TEXTAREA;
 
 /**
  * Editor de espacios del Administrador (TI2-04, escritura real TI2-169).
@@ -93,7 +88,17 @@ export function AdminSpaceEditorPage() {
           Volver al inicio
         </Link>
       </p>
-      <StudentPanelErrorBoundary subject="el editor de espacios" level="section">
+      <StudentPanelErrorBoundary
+        subject="el editor de espacios"
+        level="section"
+        fallback={({ subject, retry }) => (
+          <AdminNotice
+            message={`No pudimos cargar ${subject}. Inténtalo de nuevo.`}
+            actionLabel="Reintentar"
+            onAction={retry}
+          />
+        )}
+      >
         <SpaceEditorBody attempt={attempt} onRetry={() => setAttempt((value) => value + 1)} />
       </StudentPanelErrorBoundary>
     </section>
@@ -106,10 +111,9 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
   const [removedIds, setRemovedIds] = useState<ReadonlyArray<string>>([]);
   const [editing, setEditing] = useState<Space | null>(null);
   const [savedSpace, setSavedSpace] = useState<Space | null>(null);
-  const [disabledSpace, setDisabledSpace] = useState<Space | null>(null);
   const [disablePendingId, setDisablePendingId] = useState<string | null>(null);
-  const [disableError, setDisableError] = useState<string | null>(null);
-  const [disableDenied, setDisableDenied] = useState(false);
+  const [confirmDisable, setConfirmDisable] = useState<Space | null>(null);
+  const { toast, showToast } = useToast();
   // Sesión del formulario: cada apertura de edición, cancelación o creación
   // confirmada avanza el contador y remonta el formulario. La respuesta de
   // un guardado solo confirma si corresponde a la sesión vigente, así una
@@ -121,7 +125,6 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
   const formSessionRef = useRef(0);
   const formHeadingRef = useRef<HTMLHeadingElement>(null);
   const confirmationRef = useRef<HTMLHeadingElement>(null);
-  const disabledConfirmationRef = useRef<HTMLHeadingElement>(null);
   const mounted = useRef(false);
 
   useEffect(() => {
@@ -145,24 +148,22 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
     }
   }, [savedSpace]);
 
-  useEffect(() => {
-    if (disabledSpace !== null) {
-      disabledConfirmationRef.current?.focus();
-    }
-  }, [disabledSpace]);
-
   if (result === undefined) {
     return <LoadingState label="Cargando los espacios…" />;
   }
 
   if (result.status === "error") {
     return (
-      <ErrorState message="No pudimos cargar los espacios. Inténtalo de nuevo." onRetry={onRetry} />
+      <AdminNotice
+        message="No pudimos cargar los espacios. Inténtalo de nuevo."
+        actionLabel="Reintentar"
+        onAction={onRetry}
+      />
     );
   }
 
   if (result.status === "denied") {
-    return <DeniedState />;
+    return <AdminNotice message={ACCESS_DENIED_MESSAGE} />;
   }
 
   // Catálogo vigente: la lectura fija la base, cada guardado real reemplaza
@@ -183,9 +184,6 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
       return;
     }
     setDisablePendingId(space.id);
-    setDisableError(null);
-    setDisableDenied(false);
-    setDisabledSpace(null);
     setSavedSpace(null);
     try {
       const outcome = await getAgendaPort().setSpaceActive({ spaceId: space.id, isActive: false });
@@ -196,14 +194,14 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
           setEditing(null);
           setFormSession((value) => value + 1);
         }
-        setDisabledSpace(space);
+        showToast("Espacio deshabilitado.");
       } else if (outcome.status === "denied") {
-        setDisableDenied(true);
+        showToast(ACCESS_DENIED_MESSAGE);
       } else {
-        setDisableError(outcome.error.message);
+        showToast(outcome.error.message);
       }
     } catch {
-      setDisableError("No pudimos deshabilitar el espacio. Inténtalo de nuevo.");
+      showToast("No pudimos deshabilitar el espacio. Inténtalo de nuevo.");
     } finally {
       setDisablePendingId(null);
     }
@@ -253,7 +251,7 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
                   </p>
                   <div className="admin-list__actions">
                     <RowMenu
-                      label={`Acciones para ${space.room}`}
+                      label={`Acciones para ${toSpaceLabel(space)}`}
                       disabled={disablePendingId !== null}
                       items={[
                         {
@@ -265,7 +263,8 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
                         },
                         {
                           label: disablePendingId === space.id ? "Deshabilitando…" : "Deshabilitar",
-                          onSelect: () => void handleDisable(space),
+                          onSelect: () => setConfirmDisable(space),
+                          hasPopup: true,
                         },
                       ]}
                     />
@@ -276,27 +275,10 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
           </ul>
         )}
       </section>
-      {disableDenied ? (
-        <p role="alert" className="student-portal__error">
-          {ACCESS_DENIED_MESSAGE}
+      {toast !== null ? (
+        <p role="status" className="toast">
+          {toast}
         </p>
-      ) : null}
-      {disableError !== null ? (
-        <p role="alert" className="student-portal__error">
-          {disableError}
-        </p>
-      ) : null}
-      {disabledSpace !== null ? (
-        <div>
-          <h3 ref={disabledConfirmationRef} tabIndex={-1}>
-            Espacio deshabilitado
-          </h3>
-          <p>
-            Código {disabledSpace.id}. Ya no aparece en el catálogo ni en la disponibilidad, pero se
-            conserva sin borrar su historial.
-          </p>
-          <p className="student-portal__item-meta">{toSpaceLabel(disabledSpace)}</p>
-        </div>
       ) : null}
       {savedSpace !== null ? (
         <div>
@@ -313,6 +295,35 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
           </p>
         </div>
       ) : null}
+      {confirmDisable !== null ? (
+        <ModalDialog
+          title="Deshabilitar espacio"
+          description="La sala dejará de ofrecerse en la disponibilidad."
+          onClose={() => setConfirmDisable(null)}
+          className="admin-confirm"
+        >
+          <div className="admin-confirm__actions">
+            <button
+              type="button"
+              className="student-portal__btn student-portal__btn--ghost"
+              onClick={() => setConfirmDisable(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="student-portal__btn student-portal__btn--primary"
+              onClick={() => {
+                const space = confirmDisable;
+                setConfirmDisable(null);
+                void handleDisable(space);
+              }}
+            >
+              Deshabilitar espacio
+            </button>
+          </div>
+        </ModalDialog>
+      ) : null}
       <SpaceFormSection
         // El cambio de modo o de sesión remonta el formulario: nuevo parte
         // vacío y la edición parte de los campos del contrato del espacio
@@ -324,7 +335,6 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
         formSession={formSession}
         onSaveStart={() => {
           setSavedSpace(null);
-          setDisabledSpace(null);
         }}
         onSaved={(space, session) => {
           setSavedSpaces((prev) => applySavedSpace(prev, space));
@@ -335,7 +345,6 @@ function SpaceEditorBody({ attempt, onRetry }: { attempt: number; onRetry: () =>
           // y deja sin efecto la respuesta de un guardado anterior.
           if (session === formSessionRef.current) {
             setSavedSpace(space);
-            setDisabledSpace(null);
             setEditing(null);
             setFormSession((value) => value + 1);
           }
@@ -385,8 +394,7 @@ function SpaceFormSection({
   // Bloqueo síncrono de envíos: el estado de espera aún no se aplica dentro
   // del mismo tick, así que el reenvío simultáneo se corta por referencia.
   const pendingRef = useRef(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [denied, setDenied] = useState(false);
+  const { toast, showToast } = useToast();
 
   function setField<Key extends keyof SpaceFormState>(key: Key, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -402,9 +410,10 @@ function SpaceFormSection({
     onSaveStart();
     const errors = validateSpaceForm(form);
     setFieldErrors(errors);
-    setSaveError(null);
-    setDenied(false);
     if (Object.keys(errors).length > 0) {
+      // El aviso visible es el flotante; los mensajes por campo quedan solo
+      // para lector de pantalla, enlazados con `aria-describedby`.
+      showToast("Revisa los campos marcados e inténtalo de nuevo.");
       return;
     }
     // El envío declara la sesión del formulario que lo inició: el cuerpo
@@ -416,12 +425,12 @@ function SpaceFormSection({
       if (result.status === "saved") {
         onSaved(result.space, formSession);
       } else if (result.status === "denied") {
-        setDenied(true);
+        showToast(ACCESS_DENIED_MESSAGE);
       } else {
-        setSaveError(result.error.message);
+        showToast(result.error.message);
       }
     } catch {
-      setSaveError("No pudimos guardar el espacio. Inténtalo de nuevo.");
+      showToast("No pudimos guardar el espacio. Inténtalo de nuevo.");
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -454,7 +463,7 @@ function SpaceFormSection({
         <div>
           <label htmlFor="space-campus">Campus</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={GESTION_FIELD}
             id="space-campus"
             type="text"
             value={form.campus}
@@ -464,7 +473,7 @@ function SpaceFormSection({
             disabled={pending}
           />
           {fieldErrors.campus !== undefined ? (
-            <p id="space-campus-error" role="alert" className="student-portal__error">
+            <p id="space-campus-error" role="alert" className="sr-only">
               {fieldErrors.campus}
             </p>
           ) : null}
@@ -472,7 +481,7 @@ function SpaceFormSection({
         <div>
           <label htmlFor="space-building">Edificio</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={GESTION_FIELD}
             id="space-building"
             type="text"
             value={form.building}
@@ -484,7 +493,7 @@ function SpaceFormSection({
             disabled={pending}
           />
           {fieldErrors.building !== undefined ? (
-            <p id="space-building-error" role="alert" className="student-portal__error">
+            <p id="space-building-error" role="alert" className="sr-only">
               {fieldErrors.building}
             </p>
           ) : null}
@@ -492,7 +501,7 @@ function SpaceFormSection({
         <div>
           <label htmlFor="space-floor">Piso</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={GESTION_FIELD}
             id="space-floor"
             type="text"
             value={form.floor}
@@ -502,7 +511,7 @@ function SpaceFormSection({
             disabled={pending}
           />
           {fieldErrors.floor !== undefined ? (
-            <p id="space-floor-error" role="alert" className="student-portal__error">
+            <p id="space-floor-error" role="alert" className="sr-only">
               {fieldErrors.floor}
             </p>
           ) : null}
@@ -510,7 +519,7 @@ function SpaceFormSection({
         <div>
           <label htmlFor="space-room">Sala</label>
           <input
-            className={GESTION_FIELD_CLASS}
+            className={GESTION_FIELD}
             id="space-room"
             type="text"
             value={form.room}
@@ -520,7 +529,7 @@ function SpaceFormSection({
             disabled={pending}
           />
           {fieldErrors.room !== undefined ? (
-            <p id="space-room-error" role="alert" className="student-portal__error">
+            <p id="space-room-error" role="alert" className="sr-only">
               {fieldErrors.room}
             </p>
           ) : null}
@@ -528,7 +537,7 @@ function SpaceFormSection({
         <div>
           <label htmlFor="space-access">Condiciones de acceso</label>
           <textarea
-            className={GESTION_TEXTAREA_CLASS}
+            className={GESTION_TEXTAREA}
             id="space-access"
             rows={1}
             value={form.accessConditions}
@@ -540,7 +549,7 @@ function SpaceFormSection({
             disabled={pending}
           />
           {fieldErrors.accessConditions !== undefined ? (
-            <p id="space-access-error" role="alert" className="student-portal__error">
+            <p id="space-access-error" role="alert" className="sr-only">
               {fieldErrors.accessConditions}
             </p>
           ) : null}
@@ -548,7 +557,7 @@ function SpaceFormSection({
         <div>
           <label htmlFor="space-arrival">Instrucciones de llegada</label>
           <textarea
-            className={GESTION_TEXTAREA_CLASS}
+            className={GESTION_TEXTAREA}
             id="space-arrival"
             rows={1}
             value={form.arrivalInstructions}
@@ -560,21 +569,11 @@ function SpaceFormSection({
             disabled={pending}
           />
           {fieldErrors.arrivalInstructions !== undefined ? (
-            <p id="space-arrival-error" role="alert" className="student-portal__error">
+            <p id="space-arrival-error" role="alert" className="sr-only">
               {fieldErrors.arrivalInstructions}
             </p>
           ) : null}
         </div>
-        {denied ? (
-          <p role="alert" className="student-portal__error">
-            {ACCESS_DENIED_MESSAGE}
-          </p>
-        ) : null}
-        {saveError !== null ? (
-          <p role="alert" className="student-portal__error">
-            {saveError}
-          </p>
-        ) : null}
         <div className="student-portal__cta">
           <button
             type="submit"
@@ -586,6 +585,11 @@ function SpaceFormSection({
           </button>
         </div>
       </form>
+      {toast !== null ? (
+        <p role="status" className="toast">
+          {toast}
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -324,6 +324,16 @@ html {
   text-align: initial;
 }
 
+/* El panel de accesibilidad abre hacia arriba dentro del lateral: el botón
+   está al fondo y hacia abajo ya no hay ventana. Se alinea a la izquierda
+   para no salirse del viewport. */
+.app-shell__sidebar .a11y-panel {
+  top: auto;
+  bottom: calc(100% + 0.75rem);
+  left: 0;
+  right: auto;
+}
+
 /* En pantallas estrechas el lateral pasa arriba en una sola columna, sin
    desplazamiento horizontal. */
 @media (max-width: 40rem) {

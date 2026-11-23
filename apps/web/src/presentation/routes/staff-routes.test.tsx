@@ -423,6 +423,16 @@ describe("límites de navegación por rol (TI2-20)", () => {
     expect(
       within(sidebar as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
     ).toBeDefined();
+    // El menú de accesibilidad vive arriba del cierre de sesión, como en el resto de portales.
+    const accessibility = within(sidebar as HTMLElement).getByRole("button", {
+      name: "Opciones de accesibilidad",
+    });
+    expect(accessibility).toBeDefined();
+    expect(
+      accessibility.compareDocumentPosition(
+        within(sidebar as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     // El cierre de sesión vive abajo, después de la navegación.
     const foot = (sidebar as HTMLElement).querySelector(".app-shell__sidebar-foot");
     expect(foot).not.toBeNull();

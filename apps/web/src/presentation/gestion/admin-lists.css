@@ -174,6 +174,58 @@
   border-radius: 0;
 }
 
+/* Confirmaciones de administración (TI2-169): caja blanca de bordes rectos,
+   letras negras y sin sombra, como un aviso nativo. */
+.admin-confirm {
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--ct-ink);
+}
+
+.admin-confirm .text-on-surface-variant {
+  color: var(--ct-ink);
+}
+
+/* Botones del diálogo: bordes rectos y el secundario con fondo tenue y
+   borde para que se vea su forma. */
+.admin-confirm .student-portal__btn {
+  border-radius: 0;
+}
+
+.admin-confirm .student-portal__btn--ghost {
+  background: var(--ct-tonal);
+  border: 1px solid var(--ct-line);
+}
+
+/* Acciones del diálogo lado a lado, como un aviso nativo. */
+.admin-confirm__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
+/* Aviso persistente de administración (TI2-169): misma caja blanca del aviso
+   flotante, pero fija porque la operación lo necesita (reintentar una carga o
+   conservar una denegación). Se anuncia con `role="alert"`. */
+.admin-notice {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  background: var(--ct-card);
+  color: var(--ct-ink);
+  border: none;
+  font-size: 1rem;
+}
+
+.admin-notice__actions {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 /* Aviso flotante abajo a la derecha (TI2-169): caja blanca de bordes rectos
    y sin sombra, se anuncia con `role="status"` y desaparece solo a los 5 s. */
 .toast {
