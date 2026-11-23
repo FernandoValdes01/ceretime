@@ -1,11 +1,16 @@
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError } from "convex/values";
-import { internalMutation, internalQuery, type MutationCtx } from "../_generated/server";
+import { ConvexError, v } from "convex/values";
+import type { Doc, Id } from "../_generated/dataModel";
+import {
+  internalMutation,
+  internalQuery,
+  type MutationCtx,
+  type QueryCtx,
+} from "../_generated/server";
 import { AUTHORIZATION_DENIED_MESSAGE } from "../application/authorization/authorize";
 import { LEGACY_REQUEST_PROVENANCE_CHANNEL } from "../domain/requests/request";
 import { findProfileByTokenIdentifier } from "../infrastructure/accounts/repository";
 import {
-  appliedAccessNeedsFor,
   findAppointmentProfessional,
   syncAppointmentProfessional,
 } from "../infrastructure/appointments/repository";
@@ -205,22 +210,18 @@ export const migrateLegacyRequests = internalMutation({
 });
 
 /**
- * Migración de atenciones (TI2-138): participantes y necesidades aplicadas.
+ * Migración de atenciones (TI2-138): participantes.
  *
- * Las filas de `appointments` anteriores a TI2-138 no tienen
- * `appliedAccessNeeds` ni una fila en `appointmentProfessionals`. La migración
- * copia a cada atención la necesidad vigente del acompañamiento con
- * `accessNeedsFromLines`, el único dato disponible: desde ese momento la copia
- * queda congelada y cambiar las necesidades actuales ya no la altera. También
- * crea la fila del profesional responsable para que el índice de cruces cubra
- * el historial. No inventa apoyos en línea ni referencia privada: esos campos
- * siguen ausentes hasta que el caso de uso que los obtiene los escriba.
+ * Las filas de `appointments` anteriores a TI2-138 no tienen una fila en
+ * `appointmentProfessionals`. La migración crea la del profesional responsable
+ * para que el índice de cruces cubra el historial. No inventa la referencia
+ * privada: sigue ausente hasta que `setOnlineAccessLink` la escriba.
  *
  * Es idempotente: solo escribe lo que falta y no toca las filas ya migradas.
  * La ejecuta un Administrador vigente y el barrido es paginado, repitiendo
  * cada llamada con el `continueCursor` devuelto hasta que `isDone` sea
  * verdadero. El entorno queda apto cuando un barrido completo de auditoría
- * informa `missingAppliedAccessNeeds` y `missingParticipants` en cero. Opera
+ * informa `missingParticipants` en cero. Opera
  * con datos ficticios fuera de producción.
  */
 export const auditAppointmentParticipants = internalQuery({
@@ -228,24 +229,16 @@ export const auditAppointmentParticipants = internalQuery({
   handler: async (ctx, args) => {
     const result = await ctx.db.query("appointments").paginate(args.paginationOpts);
 
-    let missingAppliedAccessNeeds = 0;
     let missingParticipants = 0;
     const sampleLegacyIds = [];
     for (const row of result.page) {
-      const needsMissing = row.appliedAccessNeeds === undefined;
       const participant = await findAppointmentProfessional(ctx, row._id, row.professionalId);
-      if (needsMissing) missingAppliedAccessNeeds += 1;
-      if (participant === null) missingParticipants += 1;
-      if (
-        (needsMissing || participant === null) &&
-        sampleLegacyIds.length < MIGRATION_SAMPLE_SIZE
-      ) {
-        sampleLegacyIds.push(row._id);
-      }
+      if (participant !== null) continue;
+      missingParticipants += 1;
+      if (sampleLegacyIds.length < MIGRATION_SAMPLE_SIZE) sampleLegacyIds.push(row._id);
     }
     return {
       scanned: result.page.length,
-      missingAppliedAccessNeeds,
       missingParticipants,
       isDone: result.isDone,
       continueCursor: result.continueCursor,
@@ -255,10 +248,8 @@ export const auditAppointmentParticipants = internalQuery({
 });
 
 /**
- * Completa las atenciones de la página: copia la necesidad vigente del
- * acompañamiento cuando falta y crea la fila del profesional responsable. Un
- * acompañamiento inexistente no se rellena con una lista vacía inventada: la
- * fila queda sin `appliedAccessNeeds` y se informa en `unresolvedNeeds`.
+ * Completa las atenciones de la página: crea la fila del profesional
+ * responsable cuando falta.
  */
 export const migrateLegacyAppointments = internalMutation({
   args: { paginationOpts: paginationOptsValidator },
@@ -266,42 +257,306 @@ export const migrateLegacyAppointments = internalMutation({
     await requireAdminOperator(ctx);
 
     const result = await ctx.db.query("appointments").paginate(args.paginationOpts);
-    let migratedNeeds = 0;
     let createdParticipants = 0;
-    let unresolvedNeeds = 0;
     const migratedIds = [];
     for (const row of result.page) {
-      let touched = false;
-      if (row.appliedAccessNeeds === undefined) {
-        const needs = await appliedAccessNeedsFor(ctx, row.accompanimentId);
-        if (needs === undefined) {
-          unresolvedNeeds += 1;
-        } else {
-          await ctx.db.patch(row._id, { appliedAccessNeeds: needs });
-          migratedNeeds += 1;
-          touched = true;
-        }
-      }
       const inserted = await syncAppointmentProfessional(ctx, {
         appointmentId: row._id,
         professionalId: row.professionalId,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
       });
-      if (inserted) {
-        createdParticipants += 1;
-        touched = true;
-      }
-      if (touched && migratedIds.length < MIGRATION_SAMPLE_SIZE) migratedIds.push(row._id);
+      if (!inserted) continue;
+      createdParticipants += 1;
+      if (migratedIds.length < MIGRATION_SAMPLE_SIZE) migratedIds.push(row._id);
     }
     return {
       scanned: result.page.length,
-      migratedNeeds,
       createdParticipants,
-      unresolvedNeeds,
       isDone: result.isDone,
       continueCursor: result.continueCursor,
       migratedIds,
+    };
+  },
+});
+
+/**
+ * Migración de campos retirados (TI2-165).
+ *
+ * TI2-165 quitó del esquema lo que no está en el MER, pero las filas que
+ * escribieron las versiones anteriores todavía pueden tenerlos, y Convex
+ * rechaza un esquema que no las admite. Por eso esos campos y la tabla
+ * `accompanimentTransitions` siguen declarados como opcionales retirados: nada
+ * los escribe ni los lee. Esta migración los vacía tabla por tabla sin perder
+ * lo que el MER pide guardar:
+ *
+ * - `accompaniments`: un acompañamiento cerrado por TI2-152 guardó su cierre
+ *   solo en `accompanimentTransitions`. Se copia la última transición a
+ *   `closed` a `closedById`, `closedAt` y `closureReason` (`cerradoPorId?`,
+ *   `cerradoEn?` y `motivoCierre?` del MER).
+ * - `accompanimentTransitions`: se borra cada fila cuando su acompañamiento ya
+ *   no tiene un cierre por copiar. Por eso va después de `accompaniments`.
+ * - `requests`: si `closureReason` no está en la transición del cierre, se
+ *   copia ahí antes de quitarlo, porque el detalle lo lee de esa transición. Si
+ *   no hay transición donde copiarlo, el campo se conserva y la auditoría lo
+ *   sigue contando: el operador decide antes de quitarlo del esquema.
+ * - El resto solo se quita: `requests.idempotencyKey`,
+ *   `appointments.appliedAccessNeeds` y `onlineSupports`,
+ *   `appointmentProfessionals.startsAt` y `endsAt`, `followUpRecords.version`,
+ *   `entryId` de acuerdos y tareas y `availabilityExceptions.reason`.
+ *
+ * Mismo procedimiento que las anteriores: la ejecuta un Administrador vigente,
+ * el barrido es paginado y se repite con el `continueCursor` devuelto hasta
+ * que `isDone` sea verdadero. Es idempotente. El deployment queda apto para
+ * quitar esos campos del esquema cuando un barrido completo de
+ * `auditRetiredFields` informa `pending` en cero en cada tabla. No copia el
+ * motivo a la bitácora de auditoría. Opera con datos ficticios fuera de
+ * producción.
+ */
+const RETIRED_FIELD_TABLES = [
+  "accompaniments",
+  "accompanimentTransitions",
+  "requests",
+  "appointments",
+  "appointmentProfessionals",
+  "followUpRecords",
+  "followUpAgreements",
+  "followUpTasks",
+  "availabilityExceptions",
+] as const;
+
+type RetiredFieldTable = (typeof RETIRED_FIELD_TABLES)[number];
+
+const retiredFieldTableValidator = v.union(
+  ...RETIRED_FIELD_TABLES.map((table) => v.literal(table)),
+);
+
+/** Transiciones leídas por acompañamiento o solicitud para encontrar su cierre. */
+const MAX_TRANSITIONS_PER_RESOURCE = 200;
+
+/** La transición a `closed` más reciente del acompañamiento, si existe. */
+async function findLegacyClosure(
+  ctx: QueryCtx,
+  accompanimentId: Id<"accompaniments">,
+): Promise<Doc<"accompanimentTransitions"> | null> {
+  const rows = await ctx.db
+    .query("accompanimentTransitions")
+    .withIndex("by_accompanimentId_and_occurredAt", (q) => q.eq("accompanimentId", accompanimentId))
+    .order("desc")
+    .take(MAX_TRANSITIONS_PER_RESOURCE);
+  return rows.find((row) => row.to === "closed") ?? null;
+}
+
+/** Un cierre guardado solo en las transiciones, todavía sin copiar. */
+async function hasClosureToCopy(ctx: QueryCtx, row: Doc<"accompaniments">): Promise<boolean> {
+  if (row.status !== "closed" || row.closedAt !== undefined) return false;
+  return (await findLegacyClosure(ctx, row._id)) !== null;
+}
+
+/** La transición del cierre sin acompañamiento más reciente de la solicitud. */
+async function findRequestClosingTransition(
+  ctx: QueryCtx,
+  requestId: Id<"requests">,
+): Promise<Doc<"requestTransitions"> | null> {
+  const rows = await ctx.db
+    .query("requestTransitions")
+    .withIndex("by_request", (q) => q.eq("requestId", requestId))
+    .take(MAX_TRANSITIONS_PER_RESOURCE);
+  let latest: Doc<"requestTransitions"> | null = null;
+  for (const row of rows) {
+    if (row.to !== "closed_without_accompaniment") continue;
+    if (latest === null || row.occurredAt > latest.occurredAt) latest = row;
+  }
+  return latest;
+}
+
+/** Verdadero cuando la fila todavía tiene algo que la migración resuelve. */
+async function isRetiredPending(
+  ctx: QueryCtx,
+  table: RetiredFieldTable,
+  row: Doc<RetiredFieldTable>,
+): Promise<boolean> {
+  switch (table) {
+    case "accompaniments":
+      return await hasClosureToCopy(ctx, row as Doc<"accompaniments">);
+    case "accompanimentTransitions":
+      return true;
+    case "requests": {
+      const request = row as Doc<"requests">;
+      return request.closureReason !== undefined || request.idempotencyKey !== undefined;
+    }
+    case "appointments": {
+      const appointment = row as Doc<"appointments">;
+      return (
+        appointment.appliedAccessNeeds !== undefined || appointment.onlineSupports !== undefined
+      );
+    }
+    case "appointmentProfessionals": {
+      const participant = row as Doc<"appointmentProfessionals">;
+      return participant.startsAt !== undefined || participant.endsAt !== undefined;
+    }
+    case "followUpRecords":
+      return (row as Doc<"followUpRecords">).version !== undefined;
+    case "followUpAgreements":
+      return (row as Doc<"followUpAgreements">).entryId !== undefined;
+    case "followUpTasks":
+      return (row as Doc<"followUpTasks">).entryId !== undefined;
+    case "availabilityExceptions":
+      return (row as Doc<"availabilityExceptions">).reason !== undefined;
+  }
+}
+
+/**
+ * Resuelve una fila. Devuelve `migrated` si escribió, `unchanged` si no había
+ * nada que hacer y `kept` si conservó algo que no se puede quitar sin perderlo.
+ */
+async function migrateRetiredRow(
+  ctx: MutationCtx,
+  table: RetiredFieldTable,
+  row: Doc<RetiredFieldTable>,
+): Promise<"migrated" | "unchanged" | "kept"> {
+  switch (table) {
+    case "accompaniments": {
+      const accompaniment = row as Doc<"accompaniments">;
+      if (accompaniment.status !== "closed" || accompaniment.closedAt !== undefined) {
+        return "unchanged";
+      }
+      const closure = await findLegacyClosure(ctx, accompaniment._id);
+      if (closure === null) return "unchanged";
+      await ctx.db.patch(accompaniment._id, {
+        closedById: closure.actorId,
+        closedAt: closure.occurredAt,
+        ...(closure.reason === undefined ? {} : { closureReason: closure.reason }),
+      });
+      return "migrated";
+    }
+    case "accompanimentTransitions": {
+      const transition = row as Doc<"accompanimentTransitions">;
+      const accompaniment = await ctx.db.get(transition.accompanimentId);
+      if (accompaniment !== null && (await hasClosureToCopy(ctx, accompaniment))) return "kept";
+      await ctx.db.delete(transition._id);
+      return "migrated";
+    }
+    case "requests": {
+      const request = row as Doc<"requests">;
+      if (request.closureReason === undefined && request.idempotencyKey === undefined) {
+        return "unchanged";
+      }
+      let keepClosureReason = false;
+      if (request.closureReason !== undefined) {
+        const closing = await findRequestClosingTransition(ctx, request._id);
+        if (closing === null) {
+          keepClosureReason = true;
+        } else if (closing.reason === undefined) {
+          await ctx.db.patch(closing._id, { reason: request.closureReason });
+        }
+      }
+      await ctx.db.patch(request._id, {
+        idempotencyKey: undefined,
+        ...(keepClosureReason ? {} : { closureReason: undefined }),
+      });
+      return keepClosureReason ? "kept" : "migrated";
+    }
+    case "appointments": {
+      const appointment = row as Doc<"appointments">;
+      if (
+        appointment.appliedAccessNeeds === undefined &&
+        appointment.onlineSupports === undefined
+      ) {
+        return "unchanged";
+      }
+      await ctx.db.patch(appointment._id, {
+        appliedAccessNeeds: undefined,
+        onlineSupports: undefined,
+      });
+      return "migrated";
+    }
+    case "appointmentProfessionals": {
+      const participant = row as Doc<"appointmentProfessionals">;
+      if (participant.startsAt === undefined && participant.endsAt === undefined) {
+        return "unchanged";
+      }
+      await ctx.db.patch(participant._id, { startsAt: undefined, endsAt: undefined });
+      return "migrated";
+    }
+    case "followUpRecords": {
+      const record = row as Doc<"followUpRecords">;
+      if (record.version === undefined) return "unchanged";
+      await ctx.db.patch(record._id, { version: undefined });
+      return "migrated";
+    }
+    case "followUpAgreements": {
+      const agreement = row as Doc<"followUpAgreements">;
+      if (agreement.entryId === undefined) return "unchanged";
+      await ctx.db.patch(agreement._id, { entryId: undefined });
+      return "migrated";
+    }
+    case "followUpTasks": {
+      const task = row as Doc<"followUpTasks">;
+      if (task.entryId === undefined) return "unchanged";
+      await ctx.db.patch(task._id, { entryId: undefined });
+      return "migrated";
+    }
+    case "availabilityExceptions": {
+      const exception = row as Doc<"availabilityExceptions">;
+      if (exception.reason === undefined) return "unchanged";
+      await ctx.db.patch(exception._id, { reason: undefined });
+      return "migrated";
+    }
+  }
+}
+
+/** Cuenta, en una página de la tabla, las filas que la migración todavía resuelve. */
+export const auditRetiredFields = internalQuery({
+  args: { table: retiredFieldTableValidator, paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const result = await ctx.db.query(args.table).paginate(args.paginationOpts);
+    let pending = 0;
+    const samplePendingIds: string[] = [];
+    for (const row of result.page) {
+      if (!(await isRetiredPending(ctx, args.table, row))) continue;
+      pending += 1;
+      if (samplePendingIds.length < MIGRATION_SAMPLE_SIZE) samplePendingIds.push(row._id);
+    }
+    return {
+      table: args.table,
+      scanned: result.page.length,
+      pending,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      samplePendingIds,
+    };
+  },
+});
+
+/** Vacía los campos retirados de una página de la tabla. */
+export const migrateRetiredFields = internalMutation({
+  args: { table: retiredFieldTableValidator, paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    await requireAdminOperator(ctx);
+
+    const result = await ctx.db.query(args.table).paginate(args.paginationOpts);
+    let migrated = 0;
+    let kept = 0;
+    const migratedIds: string[] = [];
+    const keptIds: string[] = [];
+    for (const row of result.page) {
+      const outcome = await migrateRetiredRow(ctx, args.table, row);
+      if (outcome === "migrated") {
+        migrated += 1;
+        if (migratedIds.length < MIGRATION_SAMPLE_SIZE) migratedIds.push(row._id);
+      } else if (outcome === "kept") {
+        kept += 1;
+        if (keptIds.length < MIGRATION_SAMPLE_SIZE) keptIds.push(row._id);
+      }
+    }
+    return {
+      table: args.table,
+      scanned: result.page.length,
+      migrated,
+      kept,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      migratedIds,
+      keptIds,
     };
   },
 });

@@ -80,8 +80,6 @@ const FOLLOW_UP_REJECTION_MESSAGES: Readonly<
   appointment_status_unknown: "La atención tiene un estado desconocido.",
   follow_up_not_admissible:
     "La atención todavía no admite seguimiento: debe estar realizada o con la inasistencia registrada.",
-  entry_id_required: "Cada acuerdo y cada tarea necesitan un identificador.",
-  duplicate_entry_id: "Hay acuerdos o tareas con el identificador repetido.",
   text_required:
     "Hay textos vacíos: completa los acuerdos, las tareas, los próximos pasos y, si la incluyes, la nota interna.",
   text_too_long: `Cada texto admite hasta ${FOLLOW_UP_TEXT_MAX_LENGTH} caracteres.`,

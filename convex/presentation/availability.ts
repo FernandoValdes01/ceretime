@@ -109,7 +109,7 @@ export const setBlockActive = mutation({
 
 /**
  * Publica una excepción propia: cancela el día o un bloque, o agrega una
- * ventana. El motivo es opcional y solo lo guarda el repositorio.
+ * ventana. No recibe motivo, porque el MER no lo guarda.
  */
 export const publishException = mutation({
   args: {
@@ -117,7 +117,6 @@ export const publishException = mutation({
     kind: availabilityExceptionKindUnion,
     blockId: v.optional(v.string()),
     windows: v.optional(v.array(v.object(windowFields))),
-    reason: v.optional(v.string()),
     version,
   },
   returns: v.object({ exceptionId: v.string() }),
@@ -262,7 +261,6 @@ const ownExceptionValidator = v.object({
   kind: availabilityExceptionKindUnion,
   blockId: v.optional(v.string()),
   windows: v.optional(v.array(v.object(windowFields))),
-  reason: v.optional(v.string()),
   version,
 });
 

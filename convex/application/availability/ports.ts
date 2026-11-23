@@ -22,7 +22,7 @@ import type { CompatibilitySpace } from "../../domain/spaces/compatibility";
  *
  * Los tipos son los contratos de TI2-81/TI2-87 más lo que la persistencia
  * guarda y el contrato no trae: si el bloque sigue vigente y, en la
- * excepción, su identificador, su profesional y el motivo. Ese
+ * excepción, su identificador y su profesional. Ese
  * `professionalId` guardado es el que recibe `authorizeAvailabilityEdit`
  * (TI2-86) al editar; nunca sale del cliente.
  */
@@ -32,7 +32,6 @@ export type StoredAvailabilityBlock = AvailabilityBlock & { readonly isActive: b
 export type StoredAvailabilityException = AvailabilityException & {
   readonly id: string;
   readonly professionalId: string;
-  readonly reason?: string;
 };
 
 /** Rango civil inclusivo, con fechas `YYYY-MM-DD` y a lo más `MAX_EXPANSION_DAYS` días. */

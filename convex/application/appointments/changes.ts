@@ -22,7 +22,6 @@ import {
   notificationEventsForTransition,
   type NotificationSubject,
 } from "../../domain/notifications/notification";
-import type { AccessNeed } from "../../domain/requests/request";
 import {
   authorizeAppointmentAttendance,
   authorizeAppointmentCancel,
@@ -100,8 +99,6 @@ export interface StoredAppointmentForChange {
   readonly supportingDocumentReceived?: boolean;
   /** Profesionales que acompañan al responsable (TI2-142); ausente si no hay. */
   readonly additionalProfessionalIds?: readonly string[];
-  /** Apoyos guardados de la atención en línea (TI2-142). */
-  readonly onlineSupports?: readonly AccessNeed[];
 }
 
 /**
@@ -344,8 +341,8 @@ export async function cancelAppointment(
  * solo escribe si el estudiante, el profesional y la sala están libres. Si la
  * ocupación falla, el persister no se llama y el origen sigue intacto.
  *
- * Una atención coordinada (TI2-142) conserva sus apoyos para la compatibilidad
- * y sus profesionales adicionales: cada uno que siga siendo reservable debe
+ * Una atención coordinada (TI2-142) conserva sus profesionales adicionales:
+ * cada uno que siga siendo reservable debe
  * tener disponibilidad que cubra el destino (`availabilityCoversSlot`) y la
  * ocupación comprueba sus cruces. Un adicional que ya no es reservable
  * (asignación revocada o cuenta no vigente) sale de la atención en el mismo
@@ -401,7 +398,6 @@ export async function rescheduleAppointment(
     startAt: input.startAt,
     endAt: input.endAt,
     timeZone: input.timeZone,
-    ...(stored.onlineSupports === undefined ? {} : { onlineSupports: stored.onlineSupports }),
   });
   if (slot.status === "error") return slot;
 

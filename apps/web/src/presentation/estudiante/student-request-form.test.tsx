@@ -168,7 +168,7 @@ describe("TI2-149: formulario de solicitud", () => {
     );
   });
 
-  test("un fallo recuperable conserva lo escrito y el reintento usa la misma clave", async () => {
+  test("un fallo recuperable conserva lo escrito y el reintento envía lo mismo", async () => {
     submitMock.mockResolvedValueOnce({ status: "failed" });
     submitMock.mockResolvedValueOnce({ status: "sent", requestId: "req-1" });
     renderForm();
@@ -184,8 +184,8 @@ describe("TI2-149: formulario de solicitud", () => {
 
     submit();
     await screen.findByRole("heading", { name: "Solicitud enviada" });
-    const [first, second] = submitMock.mock.calls.map(([submission]) => submission.idempotencyKey);
-    expect(second).toBe(first);
+    const [first, second] = submitMock.mock.calls.map(([submission]) => submission);
+    expect(second).toEqual(first);
   });
 
   test("el rechazo del Backend muestra su mensaje público y conserva el formulario", async () => {
