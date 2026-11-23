@@ -124,12 +124,10 @@ let convexClient: MobileConvexClient | undefined;
 
 // Se crea al usarlo: la demostración local no requiere configurar un backend.
 export function getMobileConvexClient(): MobileConvexClient {
-  convexClient ??= createMobileConvexClient(
-    process.env.EXPO_PUBLIC_CONVEX_URL,
-    undefined,
-    undefined,
-    authMode === "institutional" ? getInstitutionalAuth().tokens.getAuthToken : undefined,
-  );
+  convexClient ??= createMobileConvexClient(process.env.EXPO_PUBLIC_CONVEX_URL, {
+    getAuthToken:
+      authMode === "institutional" ? getInstitutionalAuth().tokens.getAuthToken : undefined,
+  });
   return convexClient;
 }
 

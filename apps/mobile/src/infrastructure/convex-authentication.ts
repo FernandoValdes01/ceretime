@@ -1,6 +1,7 @@
 import { api } from "../../../../convex/_generated/api";
 import { GOOGLE_PROVIDER_ID_BY_POPULATION } from "../../../../convex/domain/auth/institutional_domain";
 import type { Role } from "../../../../convex/domain/identity/roles";
+import { isMobileAccessDenied } from "../application/access-denied";
 import type { InstitutionalAuthPort } from "../application/auth-port";
 import { UserFacingError } from "../application/user-facing-error";
 import type { AuthRole, AuthSession } from "../domain/auth-models";
@@ -27,17 +28,6 @@ export const sessionCheckFailedMessage =
   "No pudimos verificar tu sesión. Revisa tu conexión e inténtalo de nuevo.";
 export const accountNotEnabledMessage =
   "Tu cuenta todavía no está habilitada en CERETI. Pide al equipo de CERETI que la habilite.";
-
-// `ensureMyProfile` deniega con ConvexError("No autorizado"); el transporte, con `code: "unauthorized"`.
-function isAuthorizationDenied(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null) return false;
-  const { data, code } = cause as { data?: unknown; code?: unknown };
-  return (
-    data === "No autorizado" ||
-    code === "unauthorized" ||
-    (typeof data === "object" && data !== null && "code" in data && data.code === "unauthorized")
-  );
-}
 
 /** Mitad de Better Auth que usa la app; el cliente real la cumple y las pruebas la sustituyen. */
 export interface InstitutionalAuthClient {
@@ -127,7 +117,7 @@ export function createConvexAuthAdapter({
     try {
       await backend.mutation(api.presentation.session.ensureMyProfile, {});
     } catch (cause) {
-      if (!isAuthorizationDenied(cause)) throw cause;
+      if (!isMobileAccessDenied(cause)) throw cause;
     }
   }
 
@@ -150,10 +140,12 @@ export function createConvexAuthAdapter({
       status: "authenticated",
       session: {
         user: {
+          // El correo identifica a la persona en la app; `getSessionWithRole` no entrega el id del backend.
           id: role.email,
           displayName: session.name,
           email: role.email,
           role: roleByBackendRole[role.role],
+          // Las asignaciones de practicantes llegan con la conexión de su área; hasta entonces no hay ninguna.
           assignedAccompaniments: [],
         },
       },

@@ -17,9 +17,15 @@ export type GetAuthToken = () => Promise<string | null>;
  */
 export function createMobileConvexClient(
   deploymentUrl: string | undefined,
-  fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
-  timeoutMs = REQUEST_TIMEOUT_MS,
-  getAuthToken?: GetAuthToken,
+  {
+    fetch: fetchImplementation = globalThis.fetch,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+    getAuthToken,
+  }: {
+    readonly fetch?: typeof globalThis.fetch;
+    readonly timeoutMs?: number;
+    readonly getAuthToken?: GetAuthToken;
+  } = {},
 ) {
   if (!deploymentUrl?.trim()) {
     throw new Error("Configura EXPO_PUBLIC_CONVEX_URL con la URL del deployment de prueba.");

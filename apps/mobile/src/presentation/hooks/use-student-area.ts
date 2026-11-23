@@ -7,7 +7,8 @@ import type {
 } from "../../domain/student-area-models";
 import type { Accompaniment } from "../../domain/request-models";
 import type { StudentAreaReader } from "../../application/student-area-port";
-import { isMobileAccessDenied, toMobileOperationError } from "../to-mobile-operation-error";
+import { isMobileAccessDenied } from "../../application/access-denied";
+import { toMobileOperationError } from "../to-mobile-operation-error";
 
 export type StudentAreaLoadStatus = "loading" | "success" | "error" | "access-denied";
 export type StudentAreaCollectionStatus = StudentAreaLoadStatus | "empty";
