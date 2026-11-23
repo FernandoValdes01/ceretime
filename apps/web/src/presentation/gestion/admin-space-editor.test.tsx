@@ -48,6 +48,21 @@ vi.mock("../../infrastructure/convex/convex-client", () => ({
   convexClient: {},
 }));
 
+let catalogThrows: Error | null = null;
+
+vi.mock("./admin-space-editor-data.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./admin-space-editor-data.ts")>();
+  return {
+    ...actual,
+    useSpaceCatalog: (...args: Parameters<typeof actual.useSpaceCatalog>) => {
+      if (catalogThrows !== null) {
+        throw catalogThrows;
+      }
+      return actual.useSpaceCatalog(...args);
+    },
+  };
+});
+
 const SESION_ADMIN: WebSessionState = {
   status: "authenticated",
   email: "admin@uct.cl",
@@ -190,6 +205,7 @@ beforeEach(() => {
   mockedSession = undefined;
   mockedPair = undefined;
   mockedBackendConfigured = true;
+  catalogThrows = null;
   setAgendaPortForTests(null);
 });
 
@@ -240,6 +256,21 @@ describe("editor de espacios (TI2-04)", () => {
     expect(await screen.findByText("Sin espacios registrados.")).toBeDefined();
   });
 
+  test("una caída inesperada muestra el aviso blanco con reintento", async () => {
+    catalogThrows = new Error("caída ficticia");
+    comoAdministrador();
+    renderAt("/administrador/espacios");
+
+    expect(
+      await screen.findByText("No pudimos cargar el editor de espacios. Inténtalo de nuevo."),
+    ).toBeDefined();
+
+    catalogThrows = null;
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+
+    expect(await screen.findByText("Campus Norte · Edificio A · Piso 1 · Sala 101")).toBeDefined();
+  });
+
   test("denegación de lectura muestra aviso genérico sin datos", async () => {
     const port = puertoOk();
     port.listSpaces = () => Promise.resolve({ status: "denied" });
@@ -262,7 +293,7 @@ describe("editor de espacios (TI2-04)", () => {
     expect(screen.queryByText("Sala 101")).toBeNull();
   });
 
-  test("formulario vacío avisa con el flotante y conserva errores legibles", async () => {
+  test("formulario vacío muestra errores visibles por campo y avisa con el flotante", async () => {
     comoAdministrador();
     renderAt("/administrador/espacios");
 
@@ -270,17 +301,22 @@ describe("editor de espacios (TI2-04)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Guardar espacio" }));
 
-    // El aviso visible es el flotante; los mensajes por campo siguen en el
-    // documento para lector de pantalla, enlazados con `aria-describedby`.
+    // El aviso flotante es un extra: cada error queda fijo y visible junto a su campo.
     expect(
       await screen.findByText("Revisa los campos marcados e inténtalo de nuevo."),
     ).toBeDefined();
-    expect(screen.getByText("Indica el campus del espacio.")).toBeDefined();
-    expect(screen.getByText("Indica el edificio del espacio.")).toBeDefined();
-    expect(screen.getByText("Indica el piso del espacio.")).toBeDefined();
-    expect(screen.getByText("Indica la sala del espacio.")).toBeDefined();
-    expect(screen.getByText("Describe las condiciones de acceso del espacio.")).toBeDefined();
-    expect(screen.getByText("Describe las instrucciones de llegada al espacio.")).toBeDefined();
+    for (const mensaje of [
+      "Indica el campus del espacio.",
+      "Indica el edificio del espacio.",
+      "Indica el piso del espacio.",
+      "Indica la sala del espacio.",
+      "Describe las condiciones de acceso del espacio.",
+      "Describe las instrucciones de llegada al espacio.",
+    ]) {
+      const aviso = screen.getByText(mensaje);
+      expect(aviso).toBeDefined();
+      expect(aviso.className).not.toContain("sr-only");
+    }
   });
 
   test("guardado válido de un espacio nuevo confirma persistencia y lo agrega", async () => {
@@ -719,7 +755,9 @@ describe("editor de espacios (TI2-04)", () => {
     );
 
     expect(
-      await screen.findByText("La sala dejará de ofrecerse en la disponibilidad."),
+      await screen.findByText(
+        "La sala dejará de ofrecerse en la disponibilidad y por ahora no se podrá volver a habilitar.",
+      ),
     ).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Deshabilitar espacio" }));
 
@@ -769,7 +807,9 @@ describe("editor de espacios (TI2-04)", () => {
     );
 
     expect(
-      await screen.findByText("La sala dejará de ofrecerse en la disponibilidad."),
+      await screen.findByText(
+        "La sala dejará de ofrecerse en la disponibilidad y por ahora no se podrá volver a habilitar.",
+      ),
     ).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
 

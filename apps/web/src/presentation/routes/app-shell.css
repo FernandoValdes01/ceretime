@@ -175,6 +175,11 @@ html {
   text-align: left;
 }
 
+/* El aviso de cierre fallido ocupa su propia línea dentro de la barra. */
+.app-shell__bar .app-shell__error {
+  flex-basis: 100%;
+}
+
 .app-shell__main,
 .app-shell__public {
   width: 100%;
@@ -364,6 +369,13 @@ html {
 
   .app-shell__sidebar-foot .app-shell__logout {
     width: auto;
+  }
+
+  /* En pantallas estrechas el lateral queda arriba: el panel vuelve a abrir
+     hacia abajo para no salir del viewport por arriba. */
+  .app-shell__sidebar .a11y-panel {
+    top: calc(100% + 0.75rem);
+    bottom: auto;
   }
 }
 

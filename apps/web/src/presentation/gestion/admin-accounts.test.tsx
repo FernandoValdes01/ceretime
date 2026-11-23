@@ -267,9 +267,10 @@ describe("cuentas de personal (TI2-169)", () => {
     const habilitar = await openRowMenu("Profesional Uno", "Habilitar cuenta");
     fireEvent.click(habilitar);
 
-    expect(
-      await screen.findByText("No autorizado. Pide acceso por el canal oficial si corresponde."),
-    ).toBeDefined();
+    const denegada = await screen.findByRole("alert");
+    expect(denegada.textContent).toBe(
+      "No autorizado. Pide acceso por el canal oficial si corresponde.",
+    );
     expect(screen.queryByText(/habilitada\./)).toBeNull();
   });
 
@@ -285,10 +286,11 @@ describe("cuentas de personal (TI2-169)", () => {
     fireEvent.click(await openRowMenu("Profesional Uno", "Habilitar cuenta"));
 
     expect(await screen.findByText("La cuenta ya está habilitada.")).toBeDefined();
-    expect(screen.queryByRole("alert")).toBeNull();
+    const conflicto = screen.getByRole("alert");
+    expect(conflicto.textContent).toBe("La cuenta ya está habilitada.");
   });
 
-  test("revocar la propia cuenta avisa abajo sin pintar error en la fila", async () => {
+  test("revocar la propia cuenta muestra el error fijo junto a la fila", async () => {
     comoAdministrador();
     professionalPage = pagina([cuenta({ _id: "user-1", institutionalStatus: "enabled" })]);
     adminPage = pagina([]);
@@ -300,8 +302,8 @@ describe("cuentas de personal (TI2-169)", () => {
     fireEvent.click(await openRowMenu("Profesional Uno", "Revocar cuenta"));
     fireEvent.click(await screen.findByRole("button", { name: "Revocar cuenta" }));
 
-    expect(await screen.findByText("No puedes revocar tu propia cuenta.")).toBeDefined();
-    expect(screen.queryByRole("alert")).toBeNull();
+    const propia = await screen.findByRole("alert");
+    expect(propia.textContent).toBe("No puedes revocar tu propia cuenta.");
   });
 
   test("el menú se cierra con Escape y devuelve el foco al botón", async () => {

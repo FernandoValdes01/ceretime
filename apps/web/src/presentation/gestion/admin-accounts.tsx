@@ -20,8 +20,13 @@ import {
 import { RowMenu } from "./row-menu.tsx";
 import { useToast } from "./use-toast.ts";
 import { ModalDialog } from "../shared/modal-dialog.tsx";
-import { ACCESS_DENIED_MESSAGE, EmptyState, LoadingState } from "../shared/view-states.tsx";
-import { AdminNotice } from "./admin-notice.tsx";
+import {
+  ACCESS_DENIED_MESSAGE,
+  DeniedState,
+  EmptyState,
+  LoadingState,
+} from "../shared/view-states.tsx";
+import { adminLoadFallback } from "./admin-load-fallback.tsx";
 
 /**
  * Cuentas de personal para Administración (TI2-169).
@@ -63,26 +68,14 @@ export function AdminAccountsPage() {
       <StudentPanelErrorBoundary
         subject="las cuentas de personal"
         level="section"
-        fallback={({ subject, retry }) => (
-          <AdminNotice
-            message={`No pudimos cargar ${subject}. Inténtalo de nuevo.`}
-            actionLabel="Reintentar"
-            onAction={retry}
-          />
-        )}
+        fallback={adminLoadFallback}
       >
         <StaffAccountsSection role="professional" />
       </StudentPanelErrorBoundary>
       <StudentPanelErrorBoundary
         subject="las cuentas de administración"
         level="section"
-        fallback={({ subject, retry }) => (
-          <AdminNotice
-            message={`No pudimos cargar ${subject}. Inténtalo de nuevo.`}
-            actionLabel="Reintentar"
-            onAction={retry}
-          />
-        )}
+        fallback={adminLoadFallback}
       >
         <StaffAccountsSection role="admin" />
       </StudentPanelErrorBoundary>
@@ -96,6 +89,7 @@ type TailState = { readonly pending: boolean; readonly hasMore: boolean };
 function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
   const [pageCount, setPageCount] = useState(1);
   const [tail, setTail] = useState<TailState>({ pending: false, hasMore: false });
+  const { toast, showToast } = useToast();
   const listRef = useRef<HTMLUListElement>(null);
   const rowsBeforeLoad = useRef<number | null>(null);
   const title = role === "professional" ? "Cuentas profesionales" : "Cuentas administrativas";
@@ -138,7 +132,7 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
           <div className="student-portal__section-head">
             <h2 id={headingId}>{title}</h2>
           </div>
-          <AdminNotice message={`${ACCESS_DENIED_MESSAGE} ${ACCOUNTS_DENIED_HINT}`} />
+          <DeniedState tone="admin" description={ACCOUNTS_DENIED_HINT} />
         </section>
       );
     }
@@ -197,8 +191,14 @@ function StaffAccountsSection({ role }: { role: StaffAccountsRole }) {
           index={0}
           pageCount={pageCount}
           onTail={setTail}
+          notify={showToast}
         />
       </ul>
+      {toast !== null ? (
+        <p role="status" className="toast">
+          {toast}
+        </p>
+      ) : null}
       {tail.hasMore ? (
         <div className="student-portal__cta">
           <button
@@ -239,12 +239,14 @@ function StaffAccountsPageLevel({
   index,
   pageCount,
   onTail,
+  notify,
 }: {
   role: StaffAccountsRole;
   page: StaffAccountsPage;
   index: number;
   pageCount: number;
   onTail: (tail: TailState) => void;
+  notify: (message: string) => void;
 }) {
   const canContinue = !page.isDone;
   const expanded = canContinue && index + 1 < pageCount;
@@ -258,7 +260,7 @@ function StaffAccountsPageLevel({
   return (
     <>
       {page.page.map((account) => (
-        <StaffAccountRow key={account._id} account={account} />
+        <StaffAccountRow key={account._id} account={account} notify={notify} />
       ))}
       {expanded ? (
         <StaffAccountsPageFetcher
@@ -267,6 +269,7 @@ function StaffAccountsPageLevel({
           index={index + 1}
           pageCount={pageCount}
           onTail={onTail}
+          notify={notify}
         />
       ) : null}
     </>
@@ -279,12 +282,14 @@ function StaffAccountsPageFetcher({
   index,
   pageCount,
   onTail,
+  notify,
 }: {
   role: StaffAccountsRole;
   cursor: string;
   index: number;
   pageCount: number;
   onTail: (tail: TailState) => void;
+  notify: (message: string) => void;
 }) {
   const page = useStaffAccounts(role, cursor);
 
@@ -304,18 +309,23 @@ function StaffAccountsPageFetcher({
       index={index}
       pageCount={pageCount}
       onTail={onTail}
+      notify={notify}
     />
   );
 }
 
-function StaffAccountRow({ account }: { account: StaffAccountItem }) {
+function StaffAccountRow({
+  account,
+  notify,
+}: {
+  account: StaffAccountItem;
+  notify: (message: string) => void;
+}) {
   const enableAccount = useEnableStaffAccount();
   const revokeAccount = useRevokeStaffAccount();
   const [pendingAction, setPendingAction] = useState<"enable" | "revoke" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [confirmation, setConfirmation] = useState<string | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState(false);
-  const { toast, showToast } = useToast();
   const pendingRef = useRef(false);
 
   const institutionalLabel = staffInstitutionalStatusLabel(account.institutionalStatus);
@@ -329,24 +339,22 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
     pendingRef.current = true;
     setPendingAction(action);
     setActionError(null);
-    setConfirmation(null);
     try {
       if (action === "enable") {
         await enableAccount({ userId: account._id });
-        setConfirmation(`Cuenta de ${account.fullName} habilitada.`);
+        notify(`Cuenta de ${account.fullName} habilitada.`);
       } else {
         await revokeAccount({ userId: account._id });
-        setConfirmation(`Cuenta de ${account.fullName} revocada.`);
+        notify(`Cuenta de ${account.fullName} revocada.`);
       }
       // La query reactiva actualiza el estado sola.
     } catch (error) {
       const publicError = publicErrorOf(error);
       if (publicError !== null) {
-        // Todo error de la acción avisa abajo a la derecha y desaparece
-        // solo. La denegación conserva el aviso habitual de la Web (con el
-        // canal oficial); el resto muestra el mensaje público del Backend sin
-        // ramificar por su texto: el contrato distingue por código.
-        showToast(
+        // Los errores quedan fijos junto a la acción con `role="alert"`;
+        // el aviso flotante es solo para confirmar éxitos. La denegación
+        // conserva el aviso habitual de la Web (con el canal oficial).
+        setActionError(
           publicError.code === UNAUTHORIZED_ERROR_CODE
             ? ACCESS_DENIED_MESSAGE
             : publicError.message,
@@ -405,19 +413,9 @@ function StaffAccountRow({ account }: { account: StaffAccountItem }) {
             ]}
           />
         </div>
-        {confirmation !== null ? (
-          <p role="status" className="admin-list__feedback sr-only">
-            {confirmation}
-          </p>
-        ) : null}
         {actionError !== null ? (
           <p role="alert" className="admin-list__feedback student-portal__error">
             {actionError}
-          </p>
-        ) : null}
-        {toast !== null ? (
-          <p role="status" className="toast">
-            {toast}
           </p>
         ) : null}
         {confirmRevoke ? (

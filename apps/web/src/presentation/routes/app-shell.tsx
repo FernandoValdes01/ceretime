@@ -45,6 +45,98 @@ export function PublicMain({ children }: { children: ReactNode }) {
   );
 }
 
+/** Marca CERETI con retorno al inicio del portal; el lateral usa el emblema. */
+function ShellBrand({
+  navigation,
+  withLogo = false,
+}: {
+  navigation: (typeof PORTAL_NAVIGATION)[PortalArea];
+  withLogo?: boolean;
+}) {
+  return (
+    <Link
+      to={navigation.brandHome}
+      className="app-shell__brand"
+      aria-label={`CERETI, ir al inicio del ${navigation.title}`}
+    >
+      {withLogo ? (
+        <img
+          className="app-shell__mark app-shell__mark--logo"
+          src="/cereti.jpg"
+          alt=""
+          aria-hidden="true"
+        />
+      ) : (
+        <span className="app-shell__mark" aria-hidden="true">
+          CE
+        </span>
+      )}
+      <span className="app-shell__name">
+        <strong>CERETI</strong>
+        <span>{navigation.title}</span>
+      </span>
+    </Link>
+  );
+}
+
+/** Navegación del rol con la sección actual marcada; vertical en el lateral. */
+function ShellNav({
+  navigation,
+  sidebar = false,
+}: {
+  navigation: (typeof PORTAL_NAVIGATION)[PortalArea];
+  sidebar?: boolean;
+}) {
+  return (
+    <nav
+      aria-label={navigation.title}
+      className={sidebar ? "app-shell__nav app-shell__nav--sidebar" : "app-shell__nav"}
+    >
+      {navigation.items.map((item) => (
+        <Link
+          key={item.to}
+          to={item.to}
+          activeOptions={{ exact: item.exact, includeSearch: false }}
+          activeProps={{ "aria-current": "page" }}
+        >
+          {item.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+/** Accesibilidad y cierre de sesión con su error; el contenedor lo pone cada disposición. */
+function ShellActions({
+  signingOut,
+  signOutError,
+  onSignOut,
+}: {
+  signingOut: boolean;
+  signOutError: string | null;
+  onSignOut: () => void;
+}) {
+  return (
+    <>
+      <AccessibilityMenu />
+      <button
+        type="button"
+        className="app-shell__logout"
+        disabled={signingOut}
+        aria-busy={signingOut}
+        onClick={onSignOut}
+      >
+        {signingOut ? GENERIC_AUTH_MESSAGES.loading : "Cerrar sesión"}
+      </button>
+      {signOutError ? (
+        <p role="alert" className="app-shell__error">
+          {signOutError}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * Portal con encabezado y navegación común para un área con sesión. Con
  * `children` muestra ese contenido en lugar de la vista de la ruta, para que
@@ -84,50 +176,14 @@ export function AppShell({ area, children }: { area: PortalArea; children?: Reac
     return (
       <div className="app-shell app-shell--sidebar">
         <aside className="app-shell__sidebar">
-          <Link
-            to={navigation.brandHome}
-            className="app-shell__brand"
-            aria-label={`CERETI, ir al inicio del ${navigation.title}`}
-          >
-            <img
-              className="app-shell__mark app-shell__mark--logo"
-              src="/cereti.jpg"
-              alt=""
-              aria-hidden="true"
-            />
-            <span className="app-shell__name">
-              <strong>CERETI</strong>
-              <span>{navigation.title}</span>
-            </span>
-          </Link>
-          <nav aria-label={navigation.title} className="app-shell__nav app-shell__nav--sidebar">
-            {navigation.items.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                activeOptions={{ exact: item.exact, includeSearch: false }}
-                activeProps={{ "aria-current": "page" }}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <ShellBrand navigation={navigation} withLogo />
+          <ShellNav navigation={navigation} sidebar />
           <div className="app-shell__sidebar-foot">
-            <AccessibilityMenu />
-            <button
-              type="button"
-              className="app-shell__logout"
-              disabled={signingOut}
-              aria-busy={signingOut}
-              onClick={() => void handleSignOut()}
-            >
-              {signingOut ? GENERIC_AUTH_MESSAGES.loading : "Cerrar sesión"}
-            </button>
-            {signOutError ? (
-              <p role="alert" className="app-shell__error">
-                {signOutError}
-              </p>
-            ) : null}
+            <ShellActions
+              signingOut={signingOut}
+              signOutError={signOutError}
+              onSignOut={() => void handleSignOut()}
+            />
           </div>
         </aside>
         <main id="contenido" className="app-shell__main" tabIndex={-1}>
@@ -141,49 +197,16 @@ export function AppShell({ area, children }: { area: PortalArea; children?: Reac
     <div className="app-shell">
       <header className="app-shell__header">
         <div className="app-shell__bar">
-          <Link
-            to={navigation.brandHome}
-            className="app-shell__brand"
-            aria-label={`CERETI, ir al inicio del ${navigation.title}`}
-          >
-            <span className="app-shell__mark" aria-hidden="true">
-              CE
-            </span>
-            <span className="app-shell__name">
-              <strong>CERETI</strong>
-              <span>{navigation.title}</span>
-            </span>
-          </Link>
+          <ShellBrand navigation={navigation} />
           <div className="app-shell__actions">
-            <nav aria-label={navigation.title} className="app-shell__nav">
-              {navigation.items.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  activeOptions={{ exact: item.exact, includeSearch: false }}
-                  activeProps={{ "aria-current": "page" }}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-            <AccessibilityMenu />
-            <button
-              type="button"
-              className="app-shell__logout"
-              disabled={signingOut}
-              aria-busy={signingOut}
-              onClick={() => void handleSignOut()}
-            >
-              {signingOut ? GENERIC_AUTH_MESSAGES.loading : "Cerrar sesión"}
-            </button>
+            <ShellNav navigation={navigation} />
+            <ShellActions
+              signingOut={signingOut}
+              signOutError={signOutError}
+              onSignOut={() => void handleSignOut()}
+            />
           </div>
         </div>
-        {signOutError ? (
-          <p role="alert" className="app-shell__error">
-            {signOutError}
-          </p>
-        ) : null}
       </header>
       <main
         id="contenido"

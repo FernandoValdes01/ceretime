@@ -207,25 +207,6 @@
   margin-top: 0.5rem;
 }
 
-/* Aviso persistente de administración (TI2-169): misma caja blanca del aviso
-   flotante, pero fija porque la operación lo necesita (reintentar una carga o
-   conservar una denegación). Se anuncia con `role="alert"`. */
-.admin-notice {
-  margin: 1rem 0 0;
-  padding: 0.75rem 1rem;
-  background: var(--ct-card);
-  color: var(--ct-ink);
-  border: none;
-  font-size: 1rem;
-}
-
-.admin-notice__actions {
-  margin-top: 0.75rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
 /* Aviso flotante abajo a la derecha (TI2-169): caja blanca de bordes rectos
    y sin sombra, se anuncia con `role="status"` y desaparece solo a los 5 s. */
 .toast {
