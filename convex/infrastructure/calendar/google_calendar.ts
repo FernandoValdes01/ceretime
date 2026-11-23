@@ -21,6 +21,43 @@ import { decryptOAuthToken } from "better-auth/oauth2";
 /** Contexto de descifrado que espera Better Auth (mismo objeto de `$context`). */
 type DecryptContext = Parameters<typeof decryptOAuthToken>[1];
 
+/** Tope de la revocación en Google: sin él, una Google colgada deja la acción esperando hasta el límite de Convex. */
+const REVOKE_TIMEOUT_MS = 10_000;
+
+/**
+ * Señal de tope para la revocación, o ausente si el runtime no la soporta.
+ *
+ * El runtime de Convex no garantiza `AbortSignal` (su documentación no lo
+ * lista): si no existe ni `AbortController`, se revoca sin tope y la acción
+ * sigue acotada por el límite de Convex.
+ */
+function revokeTimeoutSignal(): {
+  readonly signal: AbortSignal | undefined;
+  readonly done: () => void;
+} {
+  try {
+    if (typeof AbortSignal !== "undefined") {
+      const withTimeout = AbortSignal as unknown as {
+        readonly timeout?: (ms: number) => AbortSignal;
+      };
+      if (typeof withTimeout.timeout === "function") {
+        return { signal: withTimeout.timeout(REVOKE_TIMEOUT_MS), done: () => undefined };
+      }
+    }
+    if (typeof AbortController !== "undefined" && typeof setTimeout === "function") {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REVOKE_TIMEOUT_MS);
+      const done = () => {
+        if (typeof clearTimeout === "function") clearTimeout(timer);
+      };
+      return { signal: controller.signal, done };
+    }
+  } catch {
+    // Sin temporizador: el fetch decide.
+  }
+  return { signal: undefined, done: () => undefined };
+}
+
 /** Resultado del adaptador, estructuralmente igual al puerto de Aplicación. */
 export type GoogleCalendarCreateResult =
   | { readonly status: "created"; readonly eventId: string }
@@ -204,11 +241,16 @@ export function googleCalendarOAuthAccess(ctx: ActionCtx) {
         readonly refreshToken?: unknown;
       } | null;
       if (account === null) return { status: "missing" };
-      const { auth } = await authComponent.getAuth(createAuth, ctx);
-      // `$context` ya es el AuthContext real en ejecución; la conversión solo
-      // salva la varianza de los genéricos del adaptador en los tipos de
-      // Better Auth, no cambia el objeto que recibe el descifrado.
-      const context = (await auth.$context) as unknown as DecryptContext;
+      // Solo se necesita el contexto para descifrar: se pide directo a la app
+      // en vez de `getAuth`, que resuelve la sesión por `_id` y exige una
+      // sesión con cookie (ausente al invocar por CLI). El descifrado no
+      // depende de ella.
+      let context: DecryptContext;
+      try {
+        context = (await createAuth(ctx).$context) as unknown as DecryptContext;
+      } catch {
+        return { status: "unavailable" };
+      }
       type DecodedToken =
         | { readonly status: "ok"; readonly value: string | null }
         | { readonly status: "unreadable" };
@@ -246,17 +288,18 @@ export function googleCalendarOAuthAccess(ctx: ActionCtx) {
     readTokens,
     revokeToken: async (token: string): Promise<"revoked" | "already_invalid" | "unavailable"> => {
       let response: Response;
+      const timeout = revokeTimeoutSignal();
       try {
         response = await fetch("https://oauth2.googleapis.com/revoke", {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: `token=${encodeURIComponent(token)}`,
-          // Sin tope, una Google colgada deja la acción esperando hasta el
-          // límite de Convex con el botón solo en "ocupado".
-          signal: AbortSignal.timeout(10_000),
+          ...(timeout.signal === undefined ? {} : { signal: timeout.signal }),
         });
       } catch {
         return "unavailable";
+      } finally {
+        timeout.done();
       }
       if (response.ok) return "revoked";
       if (response.status === 400) {
