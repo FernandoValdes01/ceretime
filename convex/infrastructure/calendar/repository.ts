@@ -239,3 +239,48 @@ export async function readCalendarSyncState(
   if (appointment === null) return null;
   return calendarSyncStateOf(appointment);
 }
+
+/**
+ * Lector de metadatos del vínculo propio con Google Calendar (TI2-161).
+ *
+ * Capa de Infraestructura: adapta la lectura de metadatos al puerto de
+ * Aplicación con identificadores de texto. Normaliza el `userId` de la sesión
+ * y solo devuelve fechas; la referencia opaca y las credenciales quedan en el
+ * servidor.
+ */
+export function calendarLinkReader(ctx: QueryCtx | MutationCtx) {
+  return {
+    readMetadata: async (userId: string): Promise<CalendarConnectionMetadata | null> => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return null;
+      return await readCalendarConnectionMetadata(ctx, normalized);
+    },
+  };
+}
+
+/**
+ * Almacén del vínculo propio con Google Calendar (TI2-161).
+ *
+ * Solo lo usan mutaciones: registra la confirmación del retorno OAuth y la
+ * desconexión con el `userId` de la sesión. Nunca acepta la referencia desde
+ * el cliente: la resuelve el lector OAuth.
+ */
+export function calendarLinkStore(ctx: MutationCtx) {
+  return {
+    readMetadata: async (userId: string): Promise<CalendarConnectionMetadata | null> => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return null;
+      return await readCalendarConnectionMetadata(ctx, normalized);
+    },
+    connect: async (userId: string, accountReference: string, now: number) => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return { status: "invalid_reference" as const };
+      return await connectCalendar(ctx, normalized, accountReference, now);
+    },
+    disconnect: async (userId: string, now: number) => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return { status: "not_found" as const };
+      return await disconnectCalendar(ctx, normalized, now);
+    },
+  };
+}

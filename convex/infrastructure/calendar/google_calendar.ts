@@ -12,7 +12,7 @@
  * no se incluyen en el `.ics`.
  */
 
-import type { ActionCtx, QueryCtx } from "../../_generated/server";
+import type { ActionCtx, MutationCtx, QueryCtx } from "../../_generated/server";
 import { components } from "../../_generated/api";
 import { authComponent, createAuth } from "../../auth";
 import { CALENDAR_EVENTS_SCOPE } from "../../domain/calendar/calendar_event";
@@ -165,24 +165,43 @@ export function googleCalendarGateway(ctx: ActionCtx) {
  * Es la única fuente de «conectado»: la tabla `calendarConnections` solo
  * guarda metadatos locales y no participa de esta lectura. Consulta el
  * documento de cuenta del componente sin abrir sesión ni renovar tokens: un
- * query público no debe escribir. Devuelve solo el arreglo de alcances; el
- * identificador de cuenta y los tokens quedan en el servidor.
+ * query público no debe escribir. Devuelve solo el arreglo de alcances y la
+ * referencia opaca de la cuenta; el identificador de cuenta y los tokens
+ * quedan en el servidor y nunca se devuelven al cliente.
  */
-export function googleCalendarConnectionReader(ctx: QueryCtx) {
-  return {
-    listGoogleScopes: async (): Promise<readonly string[] | null> => {
+export function googleCalendarConnectionReader(ctx: QueryCtx | MutationCtx) {
+  async function readAccount(): Promise<{
+    readonly scope?: string | null;
+    readonly accountId?: unknown;
+  } | null> {
+    try {
       const identity = await ctx.auth.getUserIdentity();
       if (identity === null) return null;
-      const account = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
         model: "account",
         where: [
           { field: "userId", value: identity.subject },
           { field: "providerId", value: "google" },
         ],
-      })) as { readonly scope?: string | null } | null;
+      })) as { readonly scope?: string | null; readonly accountId?: unknown } | null;
+    } catch {
+      // Sin cuenta vinculada o componente no disponible (pruebas): la sesión
+      // responde desconectada sin filtrar el motivo ni las credenciales.
+      return null;
+    }
+  }
+  return {
+    listGoogleScopes: async (): Promise<readonly string[] | null> => {
+      const account = await readAccount();
       if (account === null) return null;
       const scope = account.scope;
       return scope === undefined || scope === null || scope.length === 0 ? [] : scope.split(",");
+    },
+    getAccountReference: async (): Promise<string | null> => {
+      const account = await readAccount();
+      if (account === null) return null;
+      const reference = account.accountId;
+      return typeof reference === "string" && reference.length > 0 ? reference : null;
     },
   };
 }

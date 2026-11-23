@@ -196,6 +196,44 @@ OAuth. Tipo: \textbf{Aplicación web}.
 \end{description}
 
 % =================================================
+\section{Vinculación con Google Calendar (Sprint 3, TI2-161)}
+% =================================================
+
+El inicio institucional pide solo identidad (\texttt{openid}, \texttt{email} y
+\texttt{profile}). La vinculación con Google Calendar es un consentimiento
+aparte que pide únicamente
+\texttt{https://www.googleapis.com/auth/calendar.events} mediante
+\texttt{linkSocial} con el proveedor \texttt{google}. El backend bloquea el
+inicio por \texttt{google} y cualquier alcance del cliente fuera de ese
+contrato; después valida el retorno comprobando el alcance mínimo antes de
+registrar el vínculo. Rechazar la autorización no impide reservar.
+
+Configuración en el mismo proyecto de Google Cloud del inicio, sin variables
+nuevas ni secretos en el repositorio:
+
+\begin{itemize}
+  \item Habilita \textbf{Google Calendar API} en APIs y servicios, Biblioteca.
+  \item En la pantalla de consentimiento agrega el alcance sensible
+    \texttt{https://www.googleapis.com/auth/calendar.events}; en modo de
+    prueba no requiere verificación, pero la pantalla debe declararlo.
+  \item En Credenciales confirma la URI exacta
+    \texttt{https://<deployment>.convex.site/api/auth/callback/google}:
+    esquema, mayúsculas y slash final deben coincidir o vuelve
+    \texttt{redirect\_uri\_mismatch}.
+  \item Agrega la cuenta de prueba como test user; fuera de la lista responde
+    \texttt{access\_denied}. Si el Workspace bloquea aplicaciones de terceros,
+    el síntoma es \texttt{admin\_policy\_enforced}.
+  \item Un alcance no declarado responde \texttt{invalid\_scope} y una API sin
+    habilitar responde \texttt{403 accessNotConfigured}.
+\end{itemize}
+
+Los tokens se cifran en reposo en el componente de autenticación y solo se
+usan en el servidor; el frontend nunca recibe tokens, referencias de cuenta ni
+correos. Desconectar conserva trazabilidad local y avisa que los eventos
+anteriores pueden quedar sin actualizar; la sincronización automática de
+reservas, cambios y cancelaciones es TI2-162.
+
+% =================================================
 \section{Dominios institucionales}
 % =================================================
 
