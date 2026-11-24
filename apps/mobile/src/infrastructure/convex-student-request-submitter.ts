@@ -53,8 +53,8 @@ function toActionError(error: unknown): StudentRequestActionError {
 }
 
 /**
- * Envía solicitudes y ejecuta sus acciones contra Convex. El servidor decide autorización, estado
- * vigente y estado vigente; este adaptador solo traduce y nunca confirma una escritura que no ocurrió.
+ * Envía solicitudes y ejecuta sus acciones contra Convex. El servidor decide autorización y estado
+ * vigente; este adaptador solo traduce y nunca confirma una escritura que no ocurrió.
  */
 export function createConvexStudentRequestSubmitter({
   client,

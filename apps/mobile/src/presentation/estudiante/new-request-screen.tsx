@@ -18,7 +18,7 @@ export interface NewRequestScreenProps {
   readonly submitter?: StudentRequestSubmitter;
 }
 
-// El envío real se crea una vez por cuenta: conserva la clave de idempotencia entre reintentos.
+// El envío real se crea una vez por cuenta: el cliente se reutiliza mientras no cambie la sesión.
 function useDefaultSubmitter(): StudentRequestSubmitter {
   const userId = useOptionalNavigationSession()?.session?.user.id;
   return useMemo(
