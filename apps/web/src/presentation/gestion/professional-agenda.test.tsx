@@ -33,6 +33,13 @@ let mockedBackendConfigured = true;
 
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
+// El seguimiento tiene sus propias pruebas (`follow-up-form.test.tsx`): acá
+// la atención todavía no lo tiene.
+vi.mock("./follow-up-data.ts", () => ({
+  useFollowUpRecord: () => null,
+  useSaveFollowUpRecord: () => vi.fn(),
+}));
+
 vi.mock("../session/session-state", () => ({
   useSessionState: () => mockedSession,
   useSessionAndRole: () => mockedPair,
@@ -159,6 +166,7 @@ function puertoAgendaBase(): AgendaPort {
       Promise.resolve({
         status: "denied",
       }),
+    setSpaceActive: () => Promise.resolve({ status: "denied" }),
   };
 }
 
@@ -536,6 +544,7 @@ describe("navegación del portal con agenda (TI2-115)", () => {
     expect(links.map((link) => link.textContent?.trim())).toEqual([
       "Inicio",
       "Solicitudes",
+      "Acompañamientos",
       "Agenda",
       "Disponibilidad",
     ]);

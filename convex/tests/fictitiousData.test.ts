@@ -184,7 +184,6 @@ test("las atenciones sembradas quedan completas para la auditoría (TI2-138)", a
   });
   expect(audit).toMatchObject({
     scanned: 4,
-    missingAppliedAccessNeeds: 0,
     missingParticipants: 0,
     isDone: true,
     sampleLegacyIds: [],
@@ -195,27 +194,18 @@ test("las atenciones sembradas quedan completas para la auditoría (TI2-138)", a
     participants: await ctx.db.query("appointmentProfessionals").collect(),
     professionals: await ctx.db.query("users").collect(),
   }));
-  const expectedNeeds = [
-    {
-      id: "Sala con acceso sin escaleras para las clases prácticas.",
-      label: "Sala con acceso sin escaleras para las clases prácticas.",
-    },
-  ];
   const professionalId = data.professionals.find((user) => user.role === "professional")?._id;
   expect(professionalId).toBeDefined();
   expect(data.appointments).toHaveLength(4);
   expect(data.participants).toHaveLength(4);
   for (const appointment of data.appointments) {
-    expect(appointment.appliedAccessNeeds).toEqual(expectedNeeds);
+    expect(appointment).not.toHaveProperty("appliedAccessNeeds");
     const participants = data.participants.filter(
       (participant) => participant.appointmentId === appointment._id,
     );
     expect(participants).toHaveLength(1);
-    expect(participants[0]).toMatchObject({
-      professionalId,
-      startsAt: appointment.startsAt,
-      endsAt: appointment.endsAt,
-    });
+    expect(participants[0]).toMatchObject({ professionalId });
+    expect(participants[0]).not.toHaveProperty("startsAt");
   }
 });
 

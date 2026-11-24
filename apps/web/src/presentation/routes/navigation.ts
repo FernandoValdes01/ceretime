@@ -33,6 +33,7 @@ export const PORTAL_NAVIGATION = {
     items: [
       { to: "/profesional", label: "Inicio", exact: true },
       { to: "/profesional/solicitudes", label: "Solicitudes", exact: false },
+      { to: "/profesional/acompanamientos", label: "Acompañamientos", exact: false },
       { to: "/profesional/agenda", label: "Agenda", exact: false },
       { to: "/profesional/disponibilidad", label: "Disponibilidad", exact: false },
     ],
@@ -50,6 +51,7 @@ export const PORTAL_NAVIGATION = {
     brandHome: "/administrador",
     items: [
       { to: "/administrador", label: "Inicio", exact: true },
+      { to: "/administrador/cuentas", label: "Cuentas", exact: false },
       { to: "/administrador/espacios", label: "Espacios", exact: false },
     ],
   },

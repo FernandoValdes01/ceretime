@@ -27,8 +27,7 @@ type DbReader = QueryCtx | MutationCtx;
  * Campos de la solicitud completa que se pueden fijar al recibirla (TI2-135).
  * Todos son opcionales: sin ellos la fila queda como las anteriores. La razón
  * de cierre y la derivación de salida no están porque se escriben al cerrar o
- * derivar (TI2-143), no al recibir. La clave de idempotencia tampoco está: solo la
- * escribe `insertReceivedRequestOnce`, que comprueba el duplicado.
+ * derivar (TI2-143), no al recibir.
  */
 export type ReceivedRequestExtras = Pick<
   Doc<"requests">,
@@ -69,22 +68,12 @@ export type ReceivedRequestInput = Omit<
   };
 
 /**
- * Inserta una solicitud recibida del estudiante. No acepta la clave de
- * idempotencia: para guardarla hay que usar `insertReceivedRequestOnce`.
+ * Inserta una solicitud recibida del estudiante, con el texto unido de las
+ * necesidades de acceso resuelto desde una sola fuente.
  */
 export async function insertReceivedRequest(ctx: MutationCtx, input: ReceivedRequestInput) {
-  return await insertRequestRow(ctx, input);
-}
-
-/** Fila de `requests` con el texto unido ya resuelto desde una sola fuente. */
-async function insertRequestRow(
-  ctx: MutationCtx,
-  input: ReceivedRequestInput,
-  idempotencyKey?: string,
-) {
   // La fila se arma campo por campo, sin `...input`: un spread puede traer
-  // `idempotencyKey` sin que TypeScript lo revise y la clave se colaría por la
-  // vía que no comprueba duplicados. Solo se guarda el parámetro explícito.
+  // campos que el esquema no declara sin que TypeScript lo revise.
   const {
     studentId,
     needSummary,
@@ -117,7 +106,6 @@ async function insertRequestRow(
       : { preferredAccessibleInformationChannel }),
     ...(provenance === undefined ? {} : { provenance }),
     ...(incomingReferral === undefined ? {} : { incomingReferral }),
-    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
   });
 }
 
@@ -133,38 +121,6 @@ function storedAccessNeeds(
   return result.data.accessNeeds;
 }
 
-/** Solicitud del estudiante con esa clave de idempotencia, si existe. */
-export async function findRequestByIdempotencyKey(
-  ctx: DbReader,
-  studentId: Id<"users">,
-  idempotencyKey: string,
-): Promise<Doc<"requests"> | null> {
-  const rows = await ctx.db
-    .query("requests")
-    .withIndex("by_student_and_idempotencyKey", (q) =>
-      q.eq("studentId", studentId).eq("idempotencyKey", idempotencyKey),
-    )
-    .take(1);
-  return rows[0] ?? null;
-}
-
-/**
- * Inserta la solicitud recibida salvo que el estudiante ya tenga una con la
- * misma clave de idempotencia (TI2-135): en ese caso devuelve la existente sin
- * escribir. La búsqueda y la inserción ocurren en la misma mutation, así que
- * dos envíos concurrentes con la misma clave no dejan dos filas: Convex
- * reintenta al que pierde el conflicto y este ya encuentra la primera.
- */
-export async function insertReceivedRequestOnce(
-  ctx: MutationCtx,
-  input: ReceivedRequestInput & { readonly idempotencyKey: string },
-): Promise<{ readonly requestId: Id<"requests">; readonly created: boolean }> {
-  const { idempotencyKey, ...received } = input;
-  const existing = await findRequestByIdempotencyKey(ctx, input.studentId, idempotencyKey);
-  if (existing !== null) return { requestId: existing._id, created: false };
-  return { requestId: await insertRequestRow(ctx, received, idempotencyKey), created: true };
-}
-
 /** Solicitud por id, o `null` si no existe. */
 export async function getRequestById(
   ctx: DbReader,
@@ -175,18 +131,16 @@ export async function getRequestById(
 
 /**
  * Actualiza el estado de una solicitud con el destino que decidió la política.
- * Al cerrar sin acompañamiento (TI2-141), la razón comprensible va en la misma
- * escritura, y al derivar (TI2-143), la derivación de salida; el rastro
- * histórico va aparte, en `logRequestTransition`, dentro de la misma mutation.
+ * Al derivar (TI2-143), la derivación de salida va en la misma escritura. La
+ * razón del cierre sin acompañamiento queda solo en `logRequestTransition`,
+ * dentro de la misma mutation, como en el MER (TI2-165).
  */
 export async function setRequestStatus(
   ctx: MutationCtx,
   requestId: Id<"requests">,
   change: RequestStatusChange<Id<"users">>,
 ): Promise<void> {
-  if (change.status === "closed_without_accompaniment") {
-    await ctx.db.patch(requestId, { status: change.status, closureReason: change.closureReason });
-  } else if (change.status === "referred") {
+  if (change.status === "referred") {
     await ctx.db.patch(requestId, {
       status: change.status,
       outgoingReferral: { ...change.outgoingReferral },
@@ -264,26 +218,20 @@ export function requestStore(ctx: MutationCtx) {
       await insertActiveTake(ctx, { requestId, userId: professionalId, grantedBy: professionalId });
       await markRequestTaken(ctx, requestId, professionalId);
     },
-    registerOnce: async (
-      studentId: Id<"users">,
-      submission: RequestSubmission,
-      receivedAt: number,
-    ) => {
-      const { requestId } = await insertReceivedRequestOnce(ctx, {
+    registerComplete: (studentId: Id<"users">, submission: RequestSubmission, receivedAt: number) =>
+      insertReceivedRequest(ctx, {
         ...toReceivedContent(submission),
         studentId,
         provenance: { channel: "student", receivedAt },
-      });
-      return requestId;
-    },
-    registerOfficialOnce: async (input: {
+      }),
+    registerOfficial: (input: {
       readonly studentId: Id<"users">;
       readonly submission: RequestSubmission;
       readonly registeredBy: Id<"users">;
       readonly receivedAt: number;
       readonly originUnit?: string;
-    }) => {
-      const { requestId } = await insertReceivedRequestOnce(ctx, {
+    }) =>
+      insertReceivedRequest(ctx, {
         ...toReceivedContent(input.submission),
         studentId: input.studentId,
         provenance: {
@@ -294,9 +242,7 @@ export function requestStore(ctx: MutationCtx) {
         ...(input.originUnit === undefined
           ? {}
           : { incomingReferral: { originUnit: input.originUnit, referredAt: input.receivedAt } }),
-      });
-      return requestId;
-    },
+      }),
     setIncomingReferral: (requestId: Id<"requests">, referral: IncomingReferral<Id<"users">>) =>
       setIncomingReferral(ctx, requestId, referral),
     registerLegacy: (studentId: Id<"users">, accessNeeds: string) =>

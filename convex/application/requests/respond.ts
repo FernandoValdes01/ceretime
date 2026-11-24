@@ -11,6 +11,8 @@ import type {
   RequestStatusWriter,
   RequestTransitionRecorder,
 } from "./ports";
+import type { NotificationEventRecorder } from "../notifications/ports";
+import { notifyRequestChange } from "./notifications";
 import { denied, stateConflict } from "./results";
 import { toStatusChange } from "./status_change";
 
@@ -20,6 +22,7 @@ export interface RespondToInformationRequestDeps<RequestId extends string, UserI
   readonly requests: RequestReader<RequestId, UserId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -37,7 +40,8 @@ const NOT_AWAITING = "La solicitud no admite una respuesta en su estado actual."
  *
  * Recibe sus dependencias como puertos: no conoce Convex ni repositorios
  * concretos. Los adaptadores comparten el `ctx` de la mutation, así la lectura,
- * la validación y las dos escrituras siguen siendo atómicas.
+ * la validación, las dos escrituras y el aviso a quien la revisa (TI2-150)
+ * siguen siendo atómicos.
  */
 export async function respondToInformationRequest<RequestId extends string, UserId extends string>(
   deps: RespondToInformationRequestDeps<RequestId, UserId>,
@@ -75,6 +79,7 @@ export async function respondToInformationRequest<RequestId extends string, User
     reason: response.data,
     occurredAt: result.change.occurredAt,
   });
+  await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(
     toAccompanimentRequest({
       _id: row._id,

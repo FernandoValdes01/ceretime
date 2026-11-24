@@ -535,10 +535,19 @@ test("TI2-111: el profesional publica y retira sus excepciones", async () => {
   const dayOff = await asPro.mutation(api.presentation.availability.publishException, {
     date: "2026-11-02",
     kind: "cancelled",
-    reason: "Motivo ficticio",
     version: "v1",
   });
   expect(Object.keys(dayOff)).toEqual(["exceptionId"]);
+  // El MER no guarda motivo de la excepción: Convex rechaza el argumento (TI2-165).
+  const withReason = {
+    date: "2026-11-03",
+    kind: "cancelled" as const,
+    reason: "x",
+    version: "v1" as const,
+  };
+  await expect(
+    asPro.mutation(api.presentation.availability.publishException, withReason),
+  ).rejects.toThrow(/reason/);
   const blockOff = await asPro.mutation(api.presentation.availability.publishException, {
     date: "2026-11-09",
     kind: "cancelled",
@@ -562,8 +571,8 @@ test("TI2-111: el profesional publica y retira sus excepciones", async () => {
     professionalId: proId,
     date: Date.UTC(2026, 10, 2),
     kind: "cancelled",
-    reason: "Motivo ficticio",
   });
+  expect(exceptions[0]).not.toHaveProperty("reason");
   expect(exceptions[1]).toMatchObject({ kind: "cancelled", blockId });
   expect(exceptions[2]).toMatchObject({ kind: "added", startMinute: 600, endMinute: 660 });
 
@@ -863,7 +872,6 @@ test("TI2-111: el profesional lee solo sus bloques vigentes y sus excepciones de
     {
       date: "2026-11-02",
       kind: "cancelled",
-      reason: "Motivo ficticio",
       version: "v1",
     },
   );
@@ -904,7 +912,6 @@ test("TI2-111: el profesional lee solo sus bloques vigentes y sus excepciones de
         professionalId: proA,
         date: "2026-11-02",
         kind: "cancelled",
-        reason: "Motivo ficticio",
         version: "v1",
       },
       {

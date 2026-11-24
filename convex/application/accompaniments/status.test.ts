@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { AccompanimentStateChange } from "../../domain/accompaniments/accompaniment";
 import type { AppointmentAuditEvent } from "../../domain/appointments/audit";
 import { conflictError, errResult, unauthorizedError } from "../../domain/errors/api_error";
+import type { NotificationEvent } from "../../domain/notifications/notification";
 import type { CancellableAppointment } from "../appointments/changes";
 import type { AuthorizationReader } from "../authorization/authorize";
 import {
@@ -18,6 +19,8 @@ import {
  */
 
 const NOW = 1_000_000;
+/** Participantes de cada atención: la cancelación por cierre les avisa (TI2-150). */
+const PARTICIPANTS = { studentId: "user-student", professionalId: "user-pro" };
 const INPUT = { tokenIdentifier: "token-pro", accompanimentId: "acc-1" };
 
 function fakeAuth(status: "active" | "paused" | "closed" = "active"): AuthorizationReader {
@@ -50,6 +53,7 @@ function fakeDeps(
   const changes: AccompanimentStateChange[] = [];
   const persisted: { id: string; status: string; cancelReason?: string }[] = [];
   const audited: AppointmentAuditEvent[] = [];
+  const notices: NotificationEvent[] = [];
   const deps: CloseAccompanimentDeps = {
     auth: options.auth ?? fakeAuth(),
     accompaniments: {
@@ -73,21 +77,24 @@ function fakeDeps(
         audited.push(event);
       },
     },
+    notifications: {
+      record: async (events) => {
+        notices.push(...events);
+      },
+    },
     now: () => NOW,
   };
-  return { deps, changes, persisted, audited };
+  return { deps, changes, persisted, audited, notices };
 }
 
 describe("estado del acompañamiento (TI2-152)", () => {
-  test("pausar guarda el cambio con el actor de la sesión y el reloj del servidor", async () => {
+  test("pausar guarda solo el estado nuevo", async () => {
     const { deps, changes } = fakeDeps();
-    expect(await pauseAccompaniment(deps, { ...INPUT, reason: " Receso " })).toEqual({
+    expect(await pauseAccompaniment(deps, INPUT)).toEqual({
       status: "ok",
       data: { accompanimentId: "acc-1", status: "paused" },
     });
-    expect(changes).toEqual([
-      { from: "active", to: "paused", actorId: "user-pro", occurredAt: NOW, reason: "Receso" },
-    ]);
+    expect(changes).toEqual([{ to: "paused" }]);
   });
 
   test("sin identidad o sin permiso se deniega igual y no se escribe", async () => {
@@ -103,14 +110,20 @@ describe("estado del acompañamiento (TI2-152)", () => {
     expect(changes).toHaveLength(0);
   });
 
-  test("cerrar cancela solo las atenciones futuras y devuelve cuántas", async () => {
-    const { deps, changes, persisted, audited } = fakeDeps({
+  test("cerrar cancela solo las atenciones futuras, devuelve cuántas y guarda quién, cuándo y por qué", async () => {
+    const { deps, changes, persisted, audited, notices } = fakeDeps({
       appointments: [
-        { id: "apt-1", status: "scheduled", startAt: NOW + 1 },
-        { id: "apt-2", status: "rescheduled", startAt: NOW + 2, originalStartAt: NOW - 5 },
+        { ...PARTICIPANTS, id: "apt-1", status: "scheduled", startAt: NOW + 1 },
+        {
+          ...PARTICIPANTS,
+          id: "apt-2",
+          status: "rescheduled",
+          startAt: NOW + 2,
+          originalStartAt: NOW - 5,
+        },
       ],
     });
-    expect(await closeAccompaniment(deps, INPUT)).toEqual({
+    expect(await closeAccompaniment(deps, { ...INPUT, reason: " Objetivo cumplido " })).toEqual({
       status: "ok",
       data: { accompanimentId: "acc-1", status: "closed", cancelledAppointments: 2 },
     });
@@ -119,11 +132,23 @@ describe("estado del acompañamiento (TI2-152)", () => {
       ["apt-2", "cancelled_by_cereti", "Cierre del acompañamiento"],
     ]);
     expect(audited.map((event) => event.actorId)).toEqual(["user-pro", "user-pro"]);
-    expect(changes).toHaveLength(1);
+    expect(changes).toEqual([
+      {
+        to: "closed",
+        closure: { closedById: "user-pro", closedAt: NOW, closureReason: "Objetivo cumplido" },
+      },
+    ]);
+    // Quien cierra no se avisa a sí mismo: cada cancelación avisa al Estudiante.
+    expect(notices.map((event) => [event.kind, event.recipientId])).toEqual([
+      ["appointment_cancelled", "user-student"],
+      ["appointment_cancelled", "user-student"],
+    ]);
   });
 
   test("una atención que empieza justo ahora cuenta como pasada e impide cerrar", async () => {
-    const appointments = [{ id: "apt-1", status: "scheduled" as const, startAt: NOW }];
+    const appointments = [
+      { ...PARTICIPANTS, id: "apt-1", status: "scheduled" as const, startAt: NOW },
+    ];
     const { deps, changes, persisted } = fakeDeps({ appointments });
     expect(await previewAccompanimentClosure(deps, INPUT)).toEqual({
       status: "ok",
@@ -143,7 +168,7 @@ describe("estado del acompañamiento (TI2-152)", () => {
 
   test("una cancelación rechazada por la política detiene el cierre sin cambiar el estado", async () => {
     const { deps, changes } = fakeDeps({
-      appointments: [{ id: "apt-1", status: "completed", startAt: NOW + 1 }],
+      appointments: [{ ...PARTICIPANTS, id: "apt-1", status: "completed", startAt: NOW + 1 }],
     });
     expect(await closeAccompaniment(deps, INPUT)).toEqual(errResult(conflictError()));
     expect(changes).toHaveLength(0);

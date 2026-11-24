@@ -14,7 +14,6 @@
  * motivos genéricos del respaldo `.ics` para no inventar un segundo
  * vocabulario ni filtrar respuestas del proveedor.
  */
-
 import {
   CALENDAR_EVENT_FALLBACK_REASON_VALUES,
   type CalendarEventFallbackReason,
@@ -61,6 +60,22 @@ export function isCalendarSyncErrorCode(value: string): value is CalendarSyncErr
 export interface CalendarConnectionMetadata {
   readonly linkedAt: number;
   readonly revokedAt?: number;
+}
+
+/**
+ * Roles que pueden vincular y desconectar su cuenta (TI2-161, RF-27).
+ *
+ * Solo Estudiante acompañado y Profesional de CERETI: Practicante y
+ * Administrador reciben `unauthorized`. La lectura del estado sigue abierta a
+ * cualquier perfil vigente.
+ */
+export const CALENDAR_LINK_ROLE_VALUES = ["student", "professional"] as const;
+
+export type CalendarLinkRole = (typeof CALENDAR_LINK_ROLE_VALUES)[number];
+
+/** Verdadero cuando el rol puede vincular y desconectar su cuenta. */
+export function canManageCalendarLink(role: string): role is CalendarLinkRole {
+  return (CALENDAR_LINK_ROLE_VALUES as readonly string[]).includes(role);
 }
 
 /**

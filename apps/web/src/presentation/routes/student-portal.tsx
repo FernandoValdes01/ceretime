@@ -111,7 +111,17 @@ export function StudentHome() {
  * titula con h1; el nivel `section` no repite encabezados.
  */
 export class StudentPanelErrorBoundary extends Component<
-  { children: ReactNode; subject: string; level: "page" | "section" },
+  {
+    children: ReactNode;
+    subject: string;
+    level: "page" | "section";
+    /**
+     * Vista propia ante un error. Recibe el motivo (`subject`) y cómo
+     * reintentar; si no se indica, conserva el aviso rojo común. Permite que
+     * un área use otro lenguaje visual sin duplicar el límite.
+     */
+    fallback?: (args: { subject: string; retry: () => void }) => ReactNode;
+  },
   { hasError: boolean }
 > {
   state = { hasError: false };
@@ -122,6 +132,10 @@ export class StudentPanelErrorBoundary extends Component<
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback !== undefined) {
+        const retry = () => this.setState({ hasError: false });
+        return <>{this.props.fallback({ subject: this.props.subject, retry })}</>;
+      }
       if (this.props.level === "section") {
         return (
           <div>

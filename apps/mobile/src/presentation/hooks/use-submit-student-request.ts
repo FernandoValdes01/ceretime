@@ -8,10 +8,8 @@ import {
   StudentOperationError,
   type StudentRequestSubmitter,
 } from "@/application/student-area-port";
-import {
-  isMobileAccessDenied,
-  toMobileOperationError,
-} from "@/presentation/to-mobile-operation-error";
+import { isMobileAccessDenied } from "@/application/access-denied";
+import { toMobileOperationError } from "@/presentation/to-mobile-operation-error";
 
 export type StudentRequestSubmissionStatus = "idle" | "submitting" | "error" | "success";
 

@@ -1,6 +1,7 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import type { StoredNotification } from "../../application/notifications/ports";
 import {
   isNotificationDeliveryChannel,
   isNotificationDeliveryError,
@@ -183,12 +184,15 @@ export function notificationEventRecorder(ctx: MutationCtx) {
   };
 }
 
-/** Evento guardado con su identificador, su recurso y su estado de lectura. */
-export type StoredNotificationEvent = NotificationEvent & {
-  readonly id: Id<"notificationEvents">;
-  readonly readStatus: NotificationReadStatus;
-  readonly readAt?: number;
-};
+/**
+ * Evento guardado con su identificador, su recurso y su estado de lectura,
+ * con los identificadores de Convex (TI2-154): cumple `StoredNotification`.
+ */
+export type StoredNotificationEvent = StoredNotification<
+  Id<"notificationEvents">,
+  Id<"users">,
+  Id<"requests">
+>;
 
 /** Traduce la fila al contrato; la clave de idempotencia no sale del repositorio. */
 function toStoredNotificationEvent(row: Doc<"notificationEvents">): StoredNotificationEvent {
@@ -293,6 +297,62 @@ export async function paginateNotificationEventsForRequest(
   return { ...result, page: result.page.map(toStoredNotificationEvent) };
 }
 
+/** Aviso del destinatario por su identificador; uno ajeno o inexistente es `null`. */
+export async function findNotificationEventForRecipient(
+  ctx: DbReader,
+  recipientId: Id<"users">,
+  eventId: string,
+): Promise<StoredNotificationEvent | null> {
+  const normalized = ctx.db.normalizeId("notificationEvents", eventId);
+  if (normalized === null) return null;
+  const row = await ctx.db.get(normalized);
+  return row === null || row.recipientId !== recipientId ? null : toStoredNotificationEvent(row);
+}
+
+/**
+ * Lectura de la bandeja (TI2-154): cumple por forma `NotificationInboxReader`
+ * de Aplicación sin importarla. El destinatario lo resuelve el caso de uso
+ * desde la sesión; un identificador que no es de `users` no tiene avisos.
+ */
+export function notificationInboxReader(ctx: DbReader) {
+  return {
+    listOwn: async (
+      recipientId: string,
+      readStatus: NotificationReadStatus | undefined,
+      paginationOpts: PaginationOptions,
+    ) => {
+      const recipient = ctx.db.normalizeId("users", recipientId);
+      if (recipient === null) return { page: [], isDone: true, continueCursor: "" };
+      return readStatus === undefined
+        ? await paginateNotificationEventsForRecipient(ctx, recipient, paginationOpts)
+        : await paginateNotificationEventsForRecipientByReadStatus(
+            ctx,
+            recipient,
+            readStatus,
+            paginationOpts,
+          );
+    },
+    getOwn: async (recipientId: string, notificationId: string) => {
+      const recipient = ctx.db.normalizeId("users", recipientId);
+      return recipient === null
+        ? null
+        : await findNotificationEventForRecipient(ctx, recipient, notificationId);
+    },
+  };
+}
+
+/** Marca de lectura (TI2-154): cumple por forma `NotificationReadMarker`. */
+export function notificationReadMarker(ctx: MutationCtx) {
+  return {
+    markRead: async (recipientId: string, notificationId: string, readAt: number) => {
+      const recipient = ctx.db.normalizeId("users", recipientId);
+      if (recipient === null) return null;
+      const result = await markNotificationEventRead(ctx, recipient, notificationId, readAt);
+      return result.status === "not_found" ? null : { readAt: result.readAt };
+    },
+  };
+}
+
 /**
  * Resultado de marcar un aviso como leído. Solo el destinatario de la fila
  * puede marcarla: un evento ajeno responde `not_found` sin escribir.
@@ -314,7 +374,7 @@ export type MarkNotificationReadResult =
 export async function markNotificationEventRead(
   ctx: MutationCtx,
   recipientId: Id<"users">,
-  eventId: Id<"notificationEvents">,
+  eventId: string,
   readAt: number,
 ): Promise<MarkNotificationReadResult> {
   if (!Number.isFinite(readAt) || readAt <= 0) {

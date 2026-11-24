@@ -38,6 +38,22 @@
   color: var(--ct-muted);
 }
 
+/* Variante de administración (TI2-169): caja blanca de bordes rectos que
+   conserva el anuncio (`role="alert"`) sin depender del color. */
+.view-state--admin {
+  margin: 1rem 0 0;
+  padding: 0.75rem 1rem;
+  background: var(--ct-card);
+  border: 2px solid var(--ct-line);
+  border-radius: 0;
+  font-size: 1rem;
+  color: var(--ct-ink);
+}
+
+.view-state--admin .view-state__title {
+  color: inherit;
+}
+
 .view-state--denied {
   margin-top: 1rem;
   border-radius: 1rem;

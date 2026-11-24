@@ -217,7 +217,7 @@ Solicitud y derivación & Creación por estudiante o canal autorizado; necesidad
 Acompañamiento & Apertura sólo tras aceptación; responsables; estados activo, pausado y cerrado; historial y cierre no reabrible.\\
 Agenda y atención & Disponibilidad recurrente y excepciones; espacios; modalidades presencial/en línea; reserva, cambio, cancelación, reagendamiento, conflictos y coordinación multiprofesional.\\
 Seguimiento & Atenciones realizadas/canceladas/reagendadas; inasistencias; justificaciones en cinco días hábiles; seguimiento operativo, acuerdos, tareas y notas internas restringidas.\\
-Comunicaciones & Centro de notificaciones, correo institucional, push opcional, mensajes externos genéricos, Calendar por atención mediante acción explícita y descarga \texttt{.ics}.\\
+Comunicaciones & Centro de notificaciones, correo institucional, push opcional, mensajes externos genéricos, Calendar por atención vinculada con sincronización automática y descarga \texttt{.ics}.\\
 Privacidad y control & Aviso de privacidad; solicitudes de acceso, corrección, bloqueo, exportación y supresión; auditoría; exportación de datos propios; reportes agregados.\\
 Accesibilidad & Web y Mobile con criterios WCAG pertinentes, foco, teclado, lectores de pantalla, contraste, reflujo, controles táctiles, alternativas textuales y lenguaje comprensible.\\
 \bottomrule
@@ -282,7 +282,7 @@ Los requisitos funcionales describen comportamientos observables y verificables.
 \id{RF-24} & Mostrar acuerdos y tareas al estudiante y a profesionales autorizados, según alcance. & Estudiante / profesional & Debe\\
 \id{RF-25} & Mantener notificaciones y enviar avisos por correo institucional; push será opcional y controlado. & Sistema & Debería\\
 \id{RF-26} & Usar mensajes genéricos fuera de sesión, sin revelar CERETI, profesional, tipo de acompañamiento ni datos sensibles. & Sistema & Debe\\
-\id{RF-27} & Crear un evento de Google Calendar sólo por acción explícita y por atención, sin leer el calendario completo. & Estudiante / profesional & Debería\\
+\id{RF-27} & Sincronizar automáticamente reservas, cambios y cancelaciones con Google Calendar por atención vinculada, sin duplicar eventos ni leer el calendario completo. & Estudiante / profesional & Debería\\
 \id{RF-28} & Permitir descargar una atención como \texttt{.ics} sin información sensible innecesaria. & Estudiante / profesional & Podría\\
 \id{RF-29} & Presentar un aviso de privacidad accesible, permanente y comprensible. & Sistema & Debe\\
 \id{RF-30} & Permitir solicitudes de acceso, corrección, bloqueo, exportación y supresión, con estado y respuesta fundada. & Estudiante & Debe\\
@@ -328,7 +328,7 @@ Las reglas son condiciones del dominio que deben cumplirse desde Web, Mobile o c
 \id{RN-14} & La justificación se presenta dentro de cinco días hábiles; vencido o rechazado el plazo, queda sin justificar y no existe sanción automática.\\
 \id{RN-15} & El respaldo sensible no se almacena; sólo se registra su recepción y revisión por canal autorizado.\\
 \id{RN-16} & Un mensaje fuera de sesión debe ser genérico y no revelar datos sensibles del acompañamiento.\\
-\id{RN-17} & Calendar se integra por atención mediante acción explícita; no se lee el calendario completo.\\
+\id{RN-17} & Calendar se sincroniza automáticamente por atención vinculada; no se lee el calendario completo.\\
 \id{RN-18} & Los reportes evitan grupos pequeños identificables y no exportan masivamente notas, necesidades ni descripciones personales.\\
 \id{RN-19} & Toda exportación queda auditada y la bitácora no copia contenido sensible.\\
 \id{RN-20} & La conservación será configurable por UCT; obligación legal o procedimiento abierto puede suspender su operación.\\

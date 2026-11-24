@@ -22,10 +22,8 @@ import {
   toStudentOperationError,
   type StudentContractResponse,
 } from "../src/infrastructure/student-contract-mappers";
-import {
-  isMobileAccessDenied,
-  toMobileOperationError,
-} from "../src/presentation/to-mobile-operation-error";
+import { isMobileAccessDenied } from "../src/application/access-denied";
+import { toMobileOperationError } from "../src/presentation/to-mobile-operation-error";
 
 const command: SubmitStudentRequestCommand = {
   needSummary: "Participar en clases",

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { AppointmentAuditEvent } from "../../domain/appointments/audit";
 import { AVAILABILITY_CONTRACT_VERSION } from "../../domain/availability/availability";
 import type { ApiResult } from "../../domain/errors/api_error";
+import type { NotificationEvent } from "../../domain/notifications/notification";
 import type { AccessNeed } from "../../domain/requests/request";
 import type { CompatibilitySpace } from "../../domain/spaces/compatibility";
 import type { Space } from "../../domain/spaces/space";
@@ -18,6 +19,7 @@ import type {
   StoredAvailabilityBlock,
   StoredAvailabilityException,
 } from "../availability/ports";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import type { AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotInput, OccupySlotResult } from "./occupancy";
 import { bookAppointment, type BookAppointmentDeps, type BookAppointmentInput } from "./booking";
@@ -237,6 +239,7 @@ function bookingDeps(
     compatibility: fakeCompatibility(),
     occupier: fakeOccupier(),
     audit: fakeAudit(),
+    notifications: fakeNotifications(),
     now: () => BOOKED_AT,
     ...overrides,
   };
@@ -252,6 +255,18 @@ function fakeAudit(): AppointmentAuditRecorder & { readonly events: AppointmentA
     events,
     recordAppointmentAudit: async (event) => {
       events.push(event);
+    },
+  };
+}
+
+function fakeNotifications(): NotificationEventRecorder & {
+  readonly events: NotificationEvent[];
+} {
+  const events: NotificationEvent[] = [];
+  return {
+    events,
+    record: async (emitted) => {
+      events.push(...emitted);
     },
   };
 }
@@ -667,7 +682,6 @@ describe("coordinación con varios profesionales (TI2-142)", () => {
       bookingInput({
         tokenIdentifier: "token-pro",
         additionalProfessionalIds: [" user-pro-2 ", "user-pro"],
-        onlineSupports: [captions],
       }),
     );
 
@@ -681,7 +695,6 @@ describe("coordinación con varios profesionales (TI2-142)", () => {
         startAt: SLOT_START,
         endAt: SLOT_END,
         additionalProfessionalIds: ["user-pro-2"],
-        onlineSupports: [captions],
       },
     ]);
   });
@@ -696,14 +709,14 @@ describe("coordinación con varios profesionales (TI2-142)", () => {
     expect(occupier.calls[0]?.studentId).toBe("user-student");
   });
 
-  test("el estudiante no elige profesionales adicionales ni declara apoyos", async () => {
+  test("el estudiante no elige profesionales adicionales", async () => {
     const occupier = fakeOccupier();
-    for (const input of [
-      bookingInput({ additionalProfessionalIds: ["user-pro-2"] }),
-      bookingInput({ onlineSupports: [captions] }),
-    ]) {
-      expect(await bookAppointment(coordinationDeps({ occupier }), input)).toEqual(DENIED);
-    }
+    expect(
+      await bookAppointment(
+        coordinationDeps({ occupier }),
+        bookingInput({ additionalProfessionalIds: ["user-pro-2"] }),
+      ),
+    ).toEqual(DENIED);
     expect(occupier.calls).toHaveLength(0);
   });
 
@@ -772,37 +785,14 @@ describe("coordinación con varios profesionales (TI2-142)", () => {
     expect(occupier.calls).toHaveLength(0);
   });
 
-  test("los apoyos declarados cubren las necesidades de la atención en línea", async () => {
-    const occupier = fakeOccupier();
-    const withNeed = { needs: fakeNeeds([captions]), occupier };
-
-    expect(
-      await bookAppointment(
-        coordinationDeps(withNeed),
-        bookingInput({ tokenIdentifier: "token-pro" }),
-      ),
-    ).toEqual(NO_AVAILABILITY);
-    expect(
-      await bookAppointment(
-        coordinationDeps(withNeed),
-        bookingInput({ tokenIdentifier: "token-pro", onlineSupports: [captions] }),
-      ),
-    ).toEqual({ status: "ok", data: { appointmentId: "appointment-1" } });
-    expect(occupier.calls).toHaveLength(1);
-  });
-
-  test("los apoyos no se declaran en una atención presencial", async () => {
+  test("quien coordina no cubre una necesidad que la plataforma no cubre en línea", async () => {
+    // La atención no guarda apoyos (TI2-165): solo cuentan los de la plataforma.
     const occupier = fakeOccupier();
     const result = await bookAppointment(
-      coordinationDeps({ occupier }),
-      bookingInput({
-        tokenIdentifier: "token-pro",
-        modality: "inPerson",
-        spaceId: "space-1",
-        onlineSupports: [captions],
-      }),
+      coordinationDeps({ needs: fakeNeeds([captions]), occupier }),
+      bookingInput({ tokenIdentifier: "token-pro" }),
     );
-    expect(result).toEqual(CONFLICT);
+    expect(result).toEqual(NO_AVAILABILITY);
     expect(occupier.calls).toHaveLength(0);
   });
 });

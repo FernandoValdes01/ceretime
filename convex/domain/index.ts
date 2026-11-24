@@ -55,7 +55,9 @@ export { isOpenRequestState } from "./requests/transitions";
 
 // Acompañamiento y sus vistas de lectura.
 export {
+  ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
   ACCOMPANIMENT_STATUS_VALUES,
+  ACCOMPANIMENT_TRANSITIONS,
   ACCOMPANIMENT_VIEW_VALUES,
   toAccompanimentProjection,
 } from "./accompaniments/accompaniment";
@@ -232,19 +234,15 @@ export type {
   AppointmentProfessionalsResult,
 } from "./appointments/participants";
 
-// Acceso privado y apoyos de la atención en línea (TI2-142).
+// Acceso privado de la atención en línea (TI2-142).
 export {
   ONLINE_ACCESS_ALLOWED_HOSTS,
   ONLINE_ACCESS_LINK_MAX_LENGTH,
   ONLINE_ACCESS_LINK_REJECTION_CAUSES,
   ONLINE_ACCESS_STATUS_VALUES,
   ONLINE_ACCESS_UPDATE_REJECTION_CAUSES,
-  ONLINE_SUPPORTS_REJECTION_CAUSES,
-  MAX_ONLINE_SUPPORTS,
-  ONLINE_SUPPORT_TEXT_MAX_LENGTH,
   decideOnlineAccessUpdate,
   normalizeOnlineAccessLink,
-  normalizeOnlineSupports,
   toOnlineAccessView,
 } from "./appointments/online_access";
 export type {
@@ -256,8 +254,6 @@ export type {
   OnlineAccessUpdateRejectionCause,
   OnlineAccessUpdateResult,
   OnlineAccessView,
-  OnlineSupportsRejectionCause,
-  OnlineSupportsResult,
 } from "./appointments/online_access";
 
 // Evento de calendario por atención y alternativa .ics (TI2-122).
@@ -285,21 +281,24 @@ export type {
 
 // Vínculo con Calendar y estado de sincronización por atención (TI2-145).
 export {
+  CALENDAR_LINK_ROLE_VALUES,
   CALENDAR_SYNC_ERROR_CODE_VALUES,
   CALENDAR_SYNC_STATUS_VALUES,
   calendarSyncStateOf,
+  canManageCalendarLink,
   initialCalendarSyncState,
   isCalendarSyncErrorCode,
   isCalendarSyncStatus,
 } from "./calendar/calendar_link";
 export type {
   CalendarConnectionMetadata,
+  CalendarLinkRole,
   CalendarSyncErrorCode,
   CalendarSyncState,
   CalendarSyncStatus,
 } from "./calendar/calendar_link";
 
-// Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105).
+// Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105, TI2-150).
 export {
   APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
   NOTIFICATION_CONTRACT_VERSION,
@@ -311,8 +310,10 @@ export {
   isNotificationReadStatus,
   isRequestNotificationEventKind,
   notificationEventsForCreation,
+  notificationEventsForJustificationSubmitted,
   notificationEventsForOnlineAccess,
   notificationEventsForRequestReceived,
+  notificationEventsForRequestTransition,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   toExternalNotification,
@@ -330,9 +331,11 @@ export type {
   NotificationReadStatus,
   NotificationReference,
   NotificationSubject,
+  RequestNotificationAudience,
   RequestNotificationEvent,
   RequestNotificationEventKind,
   RequestNotificationReference,
+  RequestNotificationSubject,
 } from "./notifications/notification";
 
 // Entrega de avisos por canal: estados, errores e intentos (TI2-145).
@@ -360,6 +363,7 @@ export {
   FOLLOW_UP_TASK_STATUS_VALUES,
   FOLLOW_UP_TEXT_MAX_LENGTH,
   FOLLOW_UP_VIEW_VALUES,
+  admitsFollowUp,
   isFollowUpResponsible,
   isFollowUpRetry,
   isFollowUpTaskStatus,

@@ -26,7 +26,7 @@ La navegación funciona sin backend ni inicio de sesión institucional. El enví
 | URL                           | Acceso        | Resultado                                                                            |
 | ----------------------------- | ------------- | ------------------------------------------------------------------------------------ |
 | `/`                           | Público       | Redirige a `/login` o al inicio del rol activo.                                      |
-| `/login`                      | Sin sesión    | Selector temporal de roles y prueba sin asignación.                                  |
+| `/login`                      | Sin sesión    | Ingreso institucional (Google) o, sin Site URL, selector de roles ficticios.         |
 | `/estudiante`                 | Estudiante    | Inicio con acceso a Nueva solicitud y Mis solicitudes.                               |
 | `/estudiante/nueva-solicitud` | Estudiante    | Formulario, envío simulado y confirmación de TI4-8 y TI4-30.                         |
 | `/estudiante/solicitudes`     | Estudiante    | Listado ficticio de solicitudes propias y estados de carga.                          |
@@ -40,6 +40,12 @@ La navegación funciona sin backend ni inicio de sesión institucional. El enví
 
 Para comprobar los estados del listado del Practicante, selecciona un escenario ficticio antes de iniciar Expo. Usa `EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_MODE=empty` para la lista vacía, `error` para el error controlado y `EXPO_PUBLIC_PRACTITIONER_ACCOMPANIMENT_DELAY_MS=1200` para observar la carga. Las variables sólo cambian datos de prueba y no contienen secretos.
 
+## Ingreso institucional
+
+Con `EXPO_PUBLIC_CONVEX_URL` y `EXPO_PUBLIC_CONVEX_SITE_URL` en `.env.local`, `/login` ofrece las cuentas `@alu.uct.cl` y `@uct.cl` de Google Workspace en lugar de los roles ficticios. El navegador del sistema autentica y vuelve a la app por el esquema `ceretime`; el rol sale de `getSessionWithRole` y la cookie de sesión queda en el almacén seguro del dispositivo (`expo-secure-store`). Al abrir la app se vuelve a consultar al servidor: una sesión que ya no reconoce se descarta. Cerrar sesión borra la cookie y el token del dispositivo aunque el servidor no responda. Sin `EXPO_PUBLIC_CONVEX_SITE_URL` queda la demostración local. El resto de los módulos sigue con datos ficticios hasta sus propias issues.
+
+El backend debe publicar el plugin `expo()` de Better Auth y aceptar `ceretime://` como origen de confianza; sin eso el navegador no puede devolver la sesión a la app. Los módulos nativos nuevos (`expo-secure-store`, `expo-web-browser`) exigen reconstruir la app con `bun run mobile:android`.
+
 ```text
 app/
 ├── _layout.tsx                 Proveedor de sesión y protección por sesión
@@ -47,7 +53,7 @@ app/
 ├── +not-found.tsx              Recuperación de direcciones inexistentes
 ├── (public)/
 │   ├── _layout.tsx
-│   └── login.tsx               Selector de rol
+│   └── login.tsx               Ingreso institucional o selector de rol
 └── (protected)/
     ├── _layout.tsx             Protección por rol
     ├── estudiante/             _layout.tsx + index.tsx

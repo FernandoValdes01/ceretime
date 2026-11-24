@@ -20,10 +20,8 @@ import {
   activeStudentReader,
   requestStore,
 } from "../infrastructure/requests/repository";
-import {
-  appliedAccessNeedsFor,
-  syncAppointmentProfessional,
-} from "../infrastructure/appointments/repository";
+import { syncAppointmentProfessional } from "../infrastructure/appointments/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 
 /**
  * Dataset ficticio mínimo del Sprint 1 (TI2-30).
@@ -177,7 +175,6 @@ export const load = internalMutation({
       date: Date.UTC(2026, 9, 12),
       kind: "cancelled",
       blockId: inPersonBlockId,
-      reason: "Bloque presencial cancelado para la demostración de excepciones.",
     });
     await ctx.db.insert("availabilityExceptions", {
       professionalId,
@@ -188,7 +185,6 @@ export const load = internalMutation({
       slotMinutes: 60,
       modality: "inPerson",
       spaceId,
-      reason: "Ventana adicional para la demostración de excepciones.",
     });
 
     // Las solicitudes pasan por los casos de uso reales, con las identidades
@@ -198,6 +194,7 @@ export const load = internalMutation({
       professionals: activeProfessionalReader(ctx),
       requests: requestStore(ctx),
       accompaniments: accompanimentOpener(ctx),
+      notifications: notificationEventRecorder(ctx),
       now: Date.now,
     };
     const tokenIdentifier = professional.tokenIdentifier;
@@ -206,7 +203,12 @@ export const load = internalMutation({
     const register = async (student: AccountKey, accessNeeds: string) =>
       registered(
         await registerRequest(
-          { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+          {
+            students: activeStudentReader(ctx),
+            requests: requestStore(ctx),
+            notifications: notificationEventRecorder(ctx),
+            now: Date.now,
+          },
           { tokenIdentifier: identityOf(student).tokenIdentifier, submission: { accessNeeds } },
         ),
       );
@@ -258,8 +260,7 @@ export const load = internalMutation({
     // cancelado por la excepción; las demás, con el bloque recurrente. No
     // pasan por `occupySlotAtomically` porque la semilla incluye un cupo
     // cancelado a propósito, así que se insertan con la misma forma que esa
-    // vía de escritura: copia congelada de necesidades y fila del profesional
-    // responsable.
+    // vía de escritura, con la fila del profesional responsable.
     const seededAt = agendaInstant("2026-09-21", 8 * 60);
     const attendance = (day: string) => ({
       accompanimentId: accompaniment._id,
@@ -271,7 +272,6 @@ export const load = internalMutation({
       endsAt: agendaInstant(day, 660),
       createdAt: seededAt,
     });
-    const appliedAccessNeeds = await appliedAccessNeedsFor(ctx, accompaniment._id);
     const seedAppointment = async (
       day: string,
       status: Doc<"appointments">["status"],
@@ -282,13 +282,10 @@ export const load = internalMutation({
         ...row,
         status,
         ...(cancelReason === undefined ? {} : { cancelReason }),
-        ...(appliedAccessNeeds === undefined ? {} : { appliedAccessNeeds }),
       });
       await syncAppointmentProfessional(ctx, {
         appointmentId,
         professionalId: row.professionalId,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
       });
       return appointmentId;
     };

@@ -63,4 +63,18 @@ describe("estados de vista compartidos", () => {
     expect(screen.getByRole("alert").textContent).toBe(ACCESS_DENIED_MESSAGE);
     expect(screen.getByText("Consulta con el Profesional a cargo.")).toBeDefined();
   });
+
+  test("la variante de administración conserva el anuncio en caja blanca", () => {
+    const { rerender } = render(
+      <ErrorState tone="admin" message="No pudimos cargar." onRetry={() => {}} />,
+    );
+    const error = screen.getByRole("alert");
+    expect(error.textContent).toBe("No pudimos cargar.");
+    expect(error.className).toContain("view-state--admin");
+
+    rerender(<DeniedState tone="admin" />);
+    const denied = screen.getByRole("alert");
+    expect(denied.textContent).toBe(ACCESS_DENIED_MESSAGE);
+    expect(denied.parentElement?.className).toContain("view-state--admin");
+  });
 });

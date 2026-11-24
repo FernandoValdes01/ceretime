@@ -56,6 +56,11 @@ function memoryDeps(
         };
       },
     },
+    notifications: {
+      record: async (events) => {
+        for (const event of events) writes.push(`notice ${event.kind} ${event.recipientId}`);
+      },
+    },
     now: () => NOW,
   };
   return { deps, writes };
@@ -98,6 +103,7 @@ describe("requestAdditionalInformation con puertos (TI2-181)", () => {
     expect(writes).toEqual([
       "status sol-1 awaiting_information_or_acceptance",
       `log under_review->awaiting_information_or_acceptance Falta el horario ${NOW}`,
+      "notice request_information_requested est-1",
     ]);
   });
 
@@ -148,6 +154,7 @@ describe("acceptRequest con puertos (TI2-181)", () => {
     expect(writes).toEqual([
       "status sol-1 accepted",
       `log under_review->accepted - ${NOW}`,
+      "notice request_accepted est-1",
       `open sol-1 Objetivo ficticio ${PROFESSIONAL}`,
     ]);
   });

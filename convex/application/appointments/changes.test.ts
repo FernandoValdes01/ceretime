@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { AppointmentAuditEvent } from "../../domain/appointments/audit";
 import { AVAILABILITY_CONTRACT_VERSION } from "../../domain/availability/availability";
 import type { ApiResult } from "../../domain/errors/api_error";
+import type { NotificationEvent } from "../../domain/notifications/notification";
 import type {
   AuthorizableAgendaAccompaniment,
   AuthorizableAssignment,
@@ -27,6 +28,7 @@ import {
   type RescheduleAppointmentDeps,
   type StoredAppointmentForChange,
 } from "./changes";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import type { AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotInput, OccupySlotResult } from "./occupancy";
 
@@ -197,6 +199,8 @@ interface ChangeWorld {
   readonly persister: AppointmentTransitionPersister;
   readonly audit: AppointmentAuditRecorder;
   readonly audits: AppointmentAuditEvent[];
+  readonly notifications: NotificationEventRecorder;
+  readonly notices: NotificationEvent[];
   readonly transitions: Array<{
     readonly appointmentId: string;
     readonly fields: Parameters<AppointmentTransitionPersister["persistAppointmentTransition"]>[1];
@@ -243,7 +247,13 @@ function changeWorld(overrides: Partial<WorldRow> = {}): ChangeWorld {
       audits.push(event);
     },
   };
-  return { row, reader, persister, audit, audits, transitions };
+  const notices: NotificationEvent[] = [];
+  const notifications: NotificationEventRecorder = {
+    record: async (events) => {
+      notices.push(...events);
+    },
+  };
+  return { row, reader, persister, audit, audits, notifications, notices, transitions };
 }
 
 const OK_OCCUPATION: OccupySlotResult = {
@@ -291,6 +301,7 @@ function cancelDeps(auth: AuthorizationReader, world: ChangeWorld): CancelAppoin
     appointments: world.reader,
     persister: world.persister,
     audit: world.audit,
+    notifications: world.notifications,
     now: () => NOW,
   };
 }
@@ -305,6 +316,7 @@ function recordDeps(
     appointments: world.reader,
     persister: world.persister,
     audit: world.audit,
+    notifications: world.notifications,
     now: () => now,
   };
 }
@@ -319,6 +331,7 @@ function rescheduleDeps(
     appointments: world.reader,
     persister: world.persister,
     audit: world.audit,
+    notifications: world.notifications,
     occupier: fakeOccupier(world),
     availability: fakeAvailability([
       ...dailyOnlineBlocks("user-pro"),
@@ -455,6 +468,7 @@ describe("cancelación de una atención (TI2-109)", () => {
         auth: authorizedAuth(),
         appointments: world.reader,
         persister: world.persister,
+        notifications: world.notifications,
         now: () => now,
       };
     }
@@ -802,7 +816,11 @@ describe("cancelación de una atención (TI2-109)", () => {
     }
   });
 
-  test("el acompañamiento cerrado o una cuenta no vigente no cancelan", async () => {
+  test("el acompañamiento pausado o cerrado, o una cuenta no vigente, no cancelan", async () => {
+    const paused = fakeAuth({
+      profiles: [student],
+      accompaniments: [{ ...activeAccompaniment, status: "paused" }],
+    });
     const closed = fakeAuth({
       profiles: [student],
       accompaniments: [{ ...activeAccompaniment, status: "closed" }],
@@ -812,7 +830,7 @@ describe("cancelación de una atención (TI2-109)", () => {
       accompaniments: [activeAccompaniment],
     });
 
-    for (const auth of [closed, inactive]) {
+    for (const auth of [paused, closed, inactive]) {
       const world = changeWorld();
       expect(
         await cancelAppointment(cancelDeps(auth, world), {
@@ -1188,6 +1206,15 @@ describe("registro de atención e inasistencia (TI2-110)", () => {
         auth: fakeAuth({
           profiles: [{ ...professional, accountStatus: "inactive" }],
           accompaniments: [activeAccompaniment],
+          assignments: [assignment({})],
+        }),
+        tokenIdentifier: "token-pro",
+      },
+      {
+        label: "acompañamiento pausado",
+        auth: fakeAuth({
+          profiles: [professional],
+          accompaniments: [{ ...activeAccompaniment, status: "paused" }],
           assignments: [assignment({})],
         }),
         tokenIdentifier: "token-pro",
