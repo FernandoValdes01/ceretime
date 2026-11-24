@@ -41,9 +41,10 @@ import { requestActionFailureOf } from "./request-review-errors.ts";
  *
  * Lo escrito vive solo en la página y no en el almacenamiento del navegador:
  * son datos personales de otra persona, en equipos que el personal comparte.
- * La clave de idempotencia nace con el formulario y se conserva en cada
- * reintento, así un envío cuya respuesta se perdió no registra dos veces. El
- * Backend valida cada dato; acá solo se revisa que esté lo obligatorio.
+ * Desde TI2-165 el envío no lleva clave de idempotencia: cada registro válido
+ * crea una solicitud, así que el botón queda bloqueado mientras se envía y
+ * un segundo clic no repite la llamada. El Backend valida cada dato; acá solo
+ * se revisa que esté lo obligatorio.
  */
 export function OfficialRequestFormPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);

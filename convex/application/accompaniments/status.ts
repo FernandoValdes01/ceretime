@@ -18,6 +18,7 @@ import {
   type CancellableAppointment,
 } from "../appointments/changes";
 import type { AppointmentAuditRecorder } from "../appointments/audit";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import {
   authorizeAccompanimentStatusChange,
   type AuthorizationReader,
@@ -36,7 +37,7 @@ import {
  * autorización de agenda, que deja de admitir reservas y cambios de horario.
  * Cerrar cancela las atenciones futuras por el mismo camino que la
  * cancelación individual (`cancelAuthorizedAppointment`), así el cupo se
- * libera y la auditoría queda igual. Una atención vigente cuya hora ya pasó
+ * libera y la auditoría y los avisos quedan igual. Una atención vigente cuya hora ya pasó
  * impide el cierre: cancelarla diría que no ocurrió, así que antes debe
  * registrarse su resultado.
  *
@@ -51,7 +52,10 @@ export interface PendingAppointmentsReader {
   }>;
 }
 
-/** Guarda el estado nuevo y su entrada en el historial, juntos. */
+/**
+ * Guarda el cambio en el propio acompañamiento: el estado nuevo y, en un
+ * cierre, quién cerró, cuándo y el motivo si se entregó.
+ */
 export interface AccompanimentStatusWriter {
   persistStatusChange(accompanimentId: string, change: AccompanimentStateChange): Promise<void>;
 }
@@ -75,12 +79,17 @@ export interface CloseAccompanimentDeps extends ChangeAccompanimentStatusDeps {
   readonly appointments: PendingAppointmentsReader;
   readonly persister: AppointmentTransitionPersister;
   readonly audit: AppointmentAuditRecorder;
+  readonly notifications: NotificationEventRecorder;
 }
 
-/** Entrada común: identidad de sesión, acompañamiento y motivo opcional. */
+/** Entrada de pausar, reactivar y la vista previa: identidad y acompañamiento. */
 export interface ChangeAccompanimentStatusInput {
   readonly tokenIdentifier: string | null;
   readonly accompanimentId: string;
+}
+
+/** Entrada del cierre: además, su motivo opcional (`motivoCierre?` del MER). */
+export interface CloseAccompanimentInput extends ChangeAccompanimentStatusInput {
   readonly reason?: string;
 }
 
@@ -114,15 +123,16 @@ function occurredNow(deps: { readonly now?: AppointmentChangeClock }): number {
 }
 
 /**
- * Autoriza y aplica la política. Devuelve el cambio listo para guardar, sin
- * escribir: el cierre necesita cancelar atenciones antes de guardarlo.
+ * Autoriza y aplica la política. Devuelve el cambio listo para guardar y
+ * quién lo pidió, sin escribir: el cierre necesita cancelar atenciones antes
+ * de guardarlo.
  */
 async function decideStatusChange(
   deps: { readonly auth: AuthorizationReader },
-  input: ChangeAccompanimentStatusInput,
+  input: CloseAccompanimentInput,
   to: AccompanimentStatus,
   occurredAt: number,
-): Promise<ApiResult<AccompanimentStateChange>> {
+): Promise<ApiResult<{ readonly actorId: string; readonly change: AccompanimentStateChange }>> {
   const grant = await authorizeAccompanimentStatusChange(deps.auth, input);
   if (grant.status === "error") return denied();
   const outcome = transitionAccompaniment({
@@ -130,9 +140,10 @@ async function decideStatusChange(
     to,
     actorId: grant.data.callerId,
     occurredAt,
-    ...(input.reason === undefined ? {} : { reason: input.reason }),
+    ...(input.reason === undefined ? {} : { closureReason: input.reason }),
   });
-  return outcome.status === "rejected" ? conflict() : okResult(outcome.change);
+  if (outcome.status === "rejected") return conflict();
+  return okResult({ actorId: grant.data.callerId, change: outcome.change });
 }
 
 async function changeStatus(
@@ -142,13 +153,14 @@ async function changeStatus(
 ): Promise<ApiResult<AccompanimentStatusResult>> {
   const decided = await decideStatusChange(deps, input, to, occurredNow(deps));
   if (decided.status === "error") return errResult(decided.error);
-  await deps.accompaniments.persistStatusChange(input.accompanimentId, decided.data);
+  await deps.accompaniments.persistStatusChange(input.accompanimentId, decided.data.change);
   return okResult({ accompanimentId: input.accompanimentId, status: to });
 }
 
 /**
- * Pausa un acompañamiento activo. Las atenciones existentes se mantienen;
- * `conflict` si ya está en pausa o cerrado.
+ * Pausa un acompañamiento activo. Las atenciones existentes se mantienen, pero
+ * mientras dure la pausa no se opera sobre ellas; `conflict` si ya está en
+ * pausa o cerrado.
  */
 export async function pauseAccompaniment(
   deps: ChangeAccompanimentStatusDeps,
@@ -188,7 +200,7 @@ async function planClosure(
  */
 export async function previewAccompanimentClosure(
   deps: PreviewAccompanimentClosureDeps,
-  input: Omit<ChangeAccompanimentStatusInput, "reason">,
+  input: ChangeAccompanimentStatusInput,
 ): Promise<ApiResult<AccompanimentClosurePreview>> {
   const now = occurredNow(deps);
   const decided = await decideStatusChange(deps, input, "closed", now);
@@ -207,12 +219,12 @@ export async function previewAccompanimentClosure(
  *
  * `conflict` si ya está cerrado, si queda una atención vigente cuya hora ya
  * pasó o si alguna cancelación se rechaza. El motivo opcional del cierre
- * queda solo en el historial del acompañamiento; las atenciones reciben el
- * motivo fijo `ACCOMPANIMENT_CLOSURE_CANCEL_REASON`.
+ * queda solo en el acompañamiento, junto a quién cerró y cuándo; las
+ * atenciones reciben el motivo fijo `ACCOMPANIMENT_CLOSURE_CANCEL_REASON`.
  */
 export async function closeAccompaniment(
   deps: CloseAccompanimentDeps,
-  input: ChangeAccompanimentStatusInput,
+  input: CloseAccompanimentInput,
 ): Promise<ApiResult<AccompanimentClosureResult>> {
   const occurredAt = occurredNow(deps);
   const decided = await decideStatusChange(deps, input, "closed", occurredAt);
@@ -231,7 +243,7 @@ export async function closeAccompaniment(
     if (!cancelled) return conflict();
   }
 
-  await deps.accompaniments.persistStatusChange(input.accompanimentId, decided.data);
+  await deps.accompaniments.persistStatusChange(input.accompanimentId, decided.data.change);
   return okResult({
     accompanimentId: input.accompanimentId,
     status: "closed",

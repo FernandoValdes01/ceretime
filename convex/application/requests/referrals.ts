@@ -29,6 +29,8 @@ import type {
   RequestTakeReader,
   RequestTransitionRecorder,
 } from "./ports";
+import type { NotificationEventRecorder } from "../notifications/ports";
+import { notifyRequestChange, notifyRequestReceived } from "./notifications";
 import { toStatusChange } from "./status_change";
 import { denied, stateConflict, toEntity, type RequestEntity } from "./results";
 
@@ -44,7 +46,9 @@ import { denied, stateConflict, toEntity, type RequestEntity } from "./results";
  * Las reglas viven en Dominio (`referral.ts` y la política de transición);
  * acá se autoriza, se ordena y se persiste por puertos. No hay envío del
  * aviso ni comunicación con otras unidades: eso ocurre fuera de la
- * aplicación. Opera con datos ficticios.
+ * aplicación. El registro y la derivación de salida dejan su aviso en el
+ * sistema (TI2-150); el contacto y la aceptación de la derivación de entrada
+ * no cambian el estado y no avisan. Opera con datos ficticios.
  */
 
 /** Capacidades del registro por canal oficial. */
@@ -52,6 +56,7 @@ export interface RegisterOfficialRequestDeps<RequestId extends string, UserId ex
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly students: ActiveStudentByEmailReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> & OfficialRequestRegistrar<RequestId, UserId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -64,10 +69,7 @@ export interface RegisterOfficialRequestDeps<RequestId extends string, UserId ex
  * conste el contacto y la aceptación del estudiante.
  *
  * El contenido sigue la forma completa de `createRequest`, con las mismas
- * reglas y la misma clave de idempotencia: repetir el registro con la misma
- * clave devuelve la solicitud ya creada, solo a quien la registró. Si la
- * clave es de una solicitud que registró otra persona, responde `conflict`
- * sin entregarla. Autoriza antes de validar. El correo
+ * reglas. Autoriza antes de validar. El correo
  * debe ser de una cuenta de Estudiante vigente; si no, responde
  * `request_fields_invalid`, lo que le dice al personal de CERETI que ese
  * correo no tiene una cuenta vigente y nada más.
@@ -98,7 +100,7 @@ export async function registerOfficialRequest<RequestId extends string, UserId e
   if (student === null) {
     return invalidRequestFields("No hay una cuenta de Estudiante vigente con ese correo.");
   }
-  const requestId = await deps.requests.registerOfficialOnce({
+  const requestId = await deps.requests.registerOfficial({
     studentId: student._id,
     submission: submission.data,
     registeredBy: professional._id,
@@ -107,14 +109,7 @@ export async function registerOfficialRequest<RequestId extends string, UserId e
   });
   const row = await deps.requests.getRequest(requestId);
   if (row === null) throw new Error("La solicitud registrada no quedó guardada.");
-  // La clave ya era de otra solicitud del estudiante: no se entrega una
-  // solicitud que este Profesional no registró, porque trae sus necesidades
-  // de acceso y registrar no exige toma.
-  if (row.provenance?.registeredBy !== professional._id) {
-    return stateConflict(
-      "Ya existe otra solicitud de este estudiante con esa clave de envío. Genera una clave nueva.",
-    );
-  }
+  await notifyRequestReceived(deps.notifications, row);
   return okResult(toEntity(row));
 }
 
@@ -197,6 +192,7 @@ export interface ReferRequestDeps<RequestId extends string, UserId extends strin
     RequestTakeReader<RequestId, UserId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -210,8 +206,8 @@ export interface ReferRequestDeps<RequestId extends string, UserId extends strin
  * `conflict` y un campo que falta `request_fields_invalid`, sin escribir.
  *
  * Persiste el estado, la derivación y el registro del cambio (razón, actor y
- * fecha) en la misma transacción. Ese registro es el aviso al estudiante que
- * queda en el sistema; nunca abre acompañamiento.
+ * fecha) en la misma transacción, junto con el aviso al Estudiante (TI2-150),
+ * que lleva solo la solicitud; nunca abre acompañamiento.
  */
 export async function referRequest<RequestId extends string, UserId extends string>(
   deps: ReferRequestDeps<RequestId, UserId>,
@@ -262,5 +258,6 @@ export async function referRequest<RequestId extends string, UserId extends stri
     reason: reason.data,
     occurredAt: result.change.occurredAt,
   });
+  await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(toEntity(row, result.change.to));
 }

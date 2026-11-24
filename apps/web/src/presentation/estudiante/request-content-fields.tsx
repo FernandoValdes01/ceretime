@@ -14,7 +14,7 @@ import {
   requestFieldGroupId,
   SECTION_CLASS,
 } from "./request-content-form.ts";
-import { FOCUS_CLASS, SECTION_TITLE_CLASS } from "./student-page-classes.ts";
+import { fieldClass, SECTION_TITLE_CLASS } from "./student-page-classes.ts";
 
 /**
  * Campos del contenido de una solicitud de acompañamiento (TI2-149, extraído
@@ -229,12 +229,6 @@ export function RequestContentFields({
 
 const LEGEND_CLASS = "mb-1 p-0 text-base font-semibold text-on-surface";
 const HINT_CLASS = "m-0 text-base text-on-surface-variant";
-
-function fieldClass(invalid: boolean): string {
-  return `min-h-[44px] w-full min-w-0 box-border rounded-[0.5rem] border bg-surface-container-lowest px-3 py-2 text-base text-on-surface ${
-    invalid ? "border-2 border-error" : "border-outline"
-  } ${FOCUS_CLASS}`;
-}
 
 function describedBy(hintId: string | undefined, field: string, error?: string) {
   const ids = [hintId, error === undefined ? undefined : fieldErrorId(field)].filter(

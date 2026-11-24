@@ -1014,7 +1014,6 @@ describe("lectura de la disponibilidad propia (TI2-111)", () => {
     professionalId: "user-pro",
     date: "2026-11-02",
     kind: "cancelled",
-    reason: "Motivo ficticio",
     version: AVAILABILITY_CONTRACT_VERSION,
   };
 

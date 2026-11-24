@@ -1,5 +1,4 @@
 import { INITIAL_APPOINTMENT_STATUS } from "../../domain/appointments/appointment";
-import { normalizeOnlineSupports } from "../../domain/appointments/online_access";
 import {
   isAppointmentProfessional,
   normalizeAppointmentProfessionals,
@@ -17,7 +16,8 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
-import type { AccessNeed, ModalityPreference } from "../../domain/requests/request";
+import { notificationEventsForCreation } from "../../domain/notifications/notification";
+import type { ModalityPreference } from "../../domain/requests/request";
 import { assessCompatibility } from "../../domain/spaces/compatibility";
 import {
   authorizeAppointmentBook,
@@ -30,6 +30,7 @@ import type {
   AvailabilityReader,
   CompatibilitySpaceSource,
 } from "../availability/ports";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import { auditAppointmentChange, type AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotSuccess } from "./occupancy";
 
@@ -60,11 +61,13 @@ import type { AppointmentOccupier, OccupySlotSuccess } from "./occupancy";
  *
  * Coordinación con varios profesionales (TI2-142): el Profesional asignado
  * también reserva, en nombre del Estudiante dueño, y puede sumar profesionales
- * adicionales y apoyos de la atención en línea. Cada adicional debe ser
- * reservable y tener disponibilidad vigente de la misma modalidad durante toda
- * la atención (`confirmAdditionalProfessionals`); la ocupación atómica
- * comprueba los cruces de todos. El Estudiante reserva como antes: no elige
- * profesionales adicionales ni declara apoyos.
+ * adicionales. Cada adicional debe ser reservable y tener disponibilidad
+ * vigente de la misma modalidad durante toda la atención
+ * (`confirmAdditionalProfessionals`); la ocupación atómica comprueba los
+ * cruces de todos. El Estudiante reserva como antes: no elige profesionales
+ * adicionales. Ninguno declara apoyos de la atención en línea, porque el MER
+ * no los guarda en la atención (TI2-165): la compatibilidad en línea usa solo
+ * los apoyos de la plataforma.
  *
  * Opera con datos ficticios.
  */
@@ -86,11 +89,6 @@ export interface SlotSelectionShape {
 /** Cupo elegido más el acompañamiento que lo admite. */
 export interface SlotSelectionInput extends SlotSelectionShape {
   readonly accompanimentId: string;
-  /**
-   * Apoyos ya normalizados que la atención en línea declara (TI2-142). Se
-   * suman a los de la plataforma para cubrir las necesidades vigentes.
-   */
-  readonly onlineSupports?: readonly AccessNeed[];
 }
 
 /** Entrada de reserva: el cupo elegido más la identidad de la sesión. */
@@ -112,7 +110,8 @@ export interface SlotSelectionDeps {
 export interface BookAppointmentDeps extends SlotSelectionDeps {
   readonly occupier: AppointmentOccupier;
   readonly audit: AppointmentAuditRecorder;
-  /** Reloj del servidor para el evento de auditoría; las pruebas lo fijan. */
+  readonly notifications: NotificationEventRecorder;
+  /** Reloj del servidor para la auditoría y el aviso; las pruebas lo fijan. */
   readonly now?: () => number;
 }
 
@@ -273,9 +272,7 @@ export async function resolveBookableSlot(
   if (needs === null) return conflict();
 
   const onlineSupports =
-    current.data.modality === "online"
-      ? [...(await deps.compatibility.listOnlineSupports()), ...(input.onlineSupports ?? [])]
-      : [];
+    current.data.modality === "online" ? await deps.compatibility.listOnlineSupports() : [];
   const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, current.data);
   if (option === null) return noAvailability();
   if (!assessCompatibility(needs.needs, option).compatible) return noAvailability();
@@ -343,7 +340,9 @@ export async function availabilityCoversSlot(
  * dueño del acompañamiento leído en el servidor (el de la sesión, si reserva
  * él), nunca un identificador enviado por el cliente, y conserva
  * como fecha efectiva el inicio del cupo revalidado. Una reserva exitosa
- * deja su evento mínimo de auditoría (TI2-128) en la misma mutation.
+ * deja su evento mínimo de auditoría (TI2-128) y sus avisos (TI2-150) en la
+ * misma mutation, con el mismo instante. Un reintento de la misma reserva
+ * choca con la atención ya creada y responde `conflict`, sin otro aviso.
  */
 export async function bookAppointment(
   deps: BookAppointmentDeps,
@@ -360,13 +359,9 @@ export async function bookAppointment(
   if (grant.status === "error") return denied();
 
   // El Estudiante reserva su atención como antes: elegir otros profesionales
-  // o declarar apoyos es coordinación del personal autorizado.
+  // es coordinación del personal autorizado.
   const requestedAdditional = input.additionalProfessionalIds ?? [];
-  const requestedSupports = input.onlineSupports ?? [];
-  if (
-    grant.data.actor === "student" &&
-    (requestedAdditional.length > 0 || requestedSupports.length > 0)
-  ) {
+  if (grant.data.actor === "student" && requestedAdditional.length > 0) {
     return denied();
   }
 
@@ -383,13 +378,9 @@ export async function bookAppointment(
     return denied();
   }
 
-  const supports = normalizeOnlineSupports(input.modality, requestedSupports);
-  if (supports.status === "rejected") return conflict();
-
   const slot = await resolveBookableSlot(deps, {
     ...input,
     professionalId: professionals.professionalId,
-    onlineSupports: supports.supports,
   });
   if (slot.status === "error") return slot;
 
@@ -412,16 +403,28 @@ export async function bookAppointment(
     ...(professionals.additionalProfessionalIds.length === 0
       ? {}
       : { additionalProfessionalIds: professionals.additionalProfessionalIds }),
-    ...(supports.supports.length === 0 ? {} : { onlineSupports: supports.supports }),
   });
   if (occupied.status === "error") return occupied;
 
+  const occurredAt = deps.now === undefined ? Date.now() : deps.now();
   await auditAppointmentChange(deps.audit, {
     action: "booked",
     actorId: grant.data.callerId,
     appointmentId: occupied.data.appointmentId,
     result: INITIAL_APPOINTMENT_STATUS,
-    occurredAt: deps.now === undefined ? Date.now() : deps.now(),
+    occurredAt,
   });
+  await deps.notifications.record(
+    notificationEventsForCreation(
+      {
+        appointmentId: occupied.data.appointmentId,
+        studentId: grant.data.studentId,
+        professionalId: slot.data.professionalId,
+        additionalProfessionalIds: professionals.additionalProfessionalIds,
+      },
+      occurredAt,
+      grant.data.callerId,
+    ),
+  );
   return occupied;
 }

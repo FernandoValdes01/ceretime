@@ -1,3 +1,9 @@
+import type { AuthPort } from "../application/auth-port";
+import {
+  createAuthTokenSupplier,
+  createConvexAuthAdapter,
+} from "../infrastructure/convex-authentication";
+import { createInstitutionalAuthClient } from "../infrastructure/institutional-auth-client";
 import { createMobileConvexClient, type MobileConvexClient } from "../infrastructure/convex-client";
 import {
   createDemoAuthAdapter,
@@ -16,6 +22,8 @@ import { createNativeSpeechRecognitionAdapter } from "../infrastructure/native-s
 import { createDemoStudentAreaReader } from "../infrastructure/demo-student-area-reader";
 import { createDemoStudentRequestSubmitter } from "../infrastructure/demo-student-request-submitter";
 import { createDemoStudentAreaStore } from "../infrastructure/demo-student-area-store";
+import { createConvexProfessionalReviewAdapter } from "../infrastructure/convex-professional-review-adapter";
+import { createConvexProfessionalAccompanimentReader } from "../infrastructure/convex-professional-accompaniment-reader";
 
 type DemoReadMode = "success" | "empty" | "error";
 
@@ -66,18 +74,68 @@ export function createDemoDataDependencies() {
   };
 }
 
-// Punto único donde la app elige las implementaciones de cada puerto. Hoy todo es demostración local,
-// salvo preferencias (AsyncStorage) y voz (módulos nativos); conectar Convex se hace aquí.
+// Con el Site URL de Convex configurado el ingreso es el institucional real; sin él, la demostración local.
+const convexSiteUrl = process.env.EXPO_PUBLIC_CONVEX_SITE_URL?.trim();
+export const authMode: "institutional" | "demo" = convexSiteUrl ? "institutional" : "demo";
+
+let institutionalAuth:
+  | {
+      readonly authClient: ReturnType<typeof createInstitutionalAuthClient>;
+      readonly tokens: ReturnType<typeof createAuthTokenSupplier>;
+    }
+  | undefined;
+
+// El cliente de Better Auth y su proveedor de tokens se comparten con el transporte de Convex.
+function getInstitutionalAuth() {
+  if (!convexSiteUrl) throw new Error("Configura EXPO_PUBLIC_CONVEX_SITE_URL.");
+  if (!institutionalAuth) {
+    const authClient = createInstitutionalAuthClient(convexSiteUrl);
+    institutionalAuth = { authClient, tokens: createAuthTokenSupplier(authClient) };
+  }
+  return institutionalAuth;
+}
+
+// Con ingreso institucional, los módulos ya conectados leen y escriben en Convex con la sesión real;
+// el resto conserva la demostración local hasta que su issue lo conecte.
+function createDataDependencies() {
+  const demo = createDemoDataDependencies();
+  if (authMode === "demo") return demo;
+  const client = lazyConvexClient();
+  return {
+    ...demo,
+    professionalReviewPort: createConvexProfessionalReviewAdapter(client),
+    professionalAccompanimentReader: createConvexProfessionalAccompanimentReader(client),
+  };
+}
+
+// El transporte se crea en la primera llamada: una URL ausente falla al consultar, no al abrir la app.
+function lazyConvexClient(): Pick<MobileConvexClient, "query" | "mutation"> {
+  return {
+    query: (query, args) => getMobileConvexClient().query(query, args),
+    mutation: (mutation, args) => getMobileConvexClient().mutation(mutation, args),
+  };
+}
+
+function createAuthPort(): AuthPort {
+  if (authMode === "demo") return createDemoAuthAdapter();
+  const { authClient, tokens } = getInstitutionalAuth();
+  return createConvexAuthAdapter({ authClient, convexClient: lazyConvexClient(), tokens });
+}
+
+// Punto único donde la app elige las implementaciones de cada puerto. Los datos siguen siendo
+// demostración local salvo la sesión (ingreso institucional, si hay Site URL), la bandeja y los
+// acompañamientos del profesional (Convex con ingreso institucional), preferencias (AsyncStorage)
+// y voz (módulos nativos); conectar el resto de Convex se hace aquí.
 export const mobileDependencies = {
-  ...createDemoDataDependencies(),
+  ...createDataDependencies(),
   accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
   speechPort: createNativeSpeechAdapter(),
   speechRecognitionPort: createNativeSpeechRecognitionAdapter(),
-  authPort: createDemoAuthAdapter(),
+  authPort: createAuthPort(),
   demoCredentials: demoAuthCredentials,
   unassignedInternCredentials,
   resetDemo(): void {
-    Object.assign(mobileDependencies, createDemoDataDependencies());
+    Object.assign(mobileDependencies, createDataDependencies());
   },
 };
 
@@ -85,7 +143,10 @@ let convexClient: MobileConvexClient | undefined;
 
 // Se crea al usarlo: la demostración local no requiere configurar un backend.
 export function getMobileConvexClient(): MobileConvexClient {
-  convexClient ??= createMobileConvexClient(process.env.EXPO_PUBLIC_CONVEX_URL);
+  convexClient ??= createMobileConvexClient(process.env.EXPO_PUBLIC_CONVEX_URL, {
+    getAuthToken:
+      authMode === "institutional" ? getInstitutionalAuth().tokens.getAuthToken : undefined,
+  });
   return convexClient;
 }
 

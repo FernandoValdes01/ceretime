@@ -10,11 +10,7 @@ import type { OwnRequestSubmission } from "./student-request-form-data.ts";
  * en el navegador.
  *
  * Guarda lo que el Estudiante escribe mientras arma su solicitud: sobrevive a
- * recargar la página, a salir y volver al formulario y a un envío fallido. La
- * clave de idempotencia nace con el borrador y se conserva en cada reintento,
- * así un envío cuya respuesta se perdió no crea una segunda solicitud. Al
- * enviar con éxito el borrador se borra y la próxima solicitud lleva otra
- * clave.
+ * recargar la página, a salir y volver al formulario y a un envío fallido.
  *
  * Vive en `sessionStorage`, separado por cuenta: las necesidades de acceso
  * son datos personales y en un equipo compartido no deben quedar guardadas.
@@ -51,7 +47,6 @@ export interface RequestDraft {
   readonly availableFrom: string;
   readonly availableTo: string;
   readonly preferredAccessibleInformationChannel: string;
-  readonly idempotencyKey: string;
 }
 
 export type RequestDraftField =
@@ -94,7 +89,6 @@ export function emptyRequestDraft(): RequestDraft {
     availableFrom: "",
     availableTo: "",
     preferredAccessibleInformationChannel: "",
-    idempotencyKey: crypto.randomUUID(),
   };
 }
 
@@ -163,7 +157,6 @@ export function toRequestContentSubmission(draft: RequestDraft): OwnRequestSubmi
         : {}),
     },
     preferredAccessibleInformationChannel: draft.preferredAccessibleInformationChannel,
-    idempotencyKey: draft.idempotencyKey,
   };
 }
 
@@ -244,7 +237,6 @@ function parseRequestDraft(value: unknown): RequestDraft | null {
     availableFrom,
     availableTo,
     preferredAccessibleInformationChannel,
-    idempotencyKey,
   } = record;
   if (
     !isString(needSummary) ||
@@ -259,9 +251,7 @@ function parseRequestDraft(value: unknown): RequestDraft | null {
     !preferredWeekdays.every((day) => typeof day === "number") ||
     !isString(availableFrom) ||
     !isString(availableTo) ||
-    !isString(preferredAccessibleInformationChannel) ||
-    !isString(idempotencyKey) ||
-    idempotencyKey === ""
+    !isString(preferredAccessibleInformationChannel)
   ) {
     return null;
   }
@@ -275,6 +265,5 @@ function parseRequestDraft(value: unknown): RequestDraft | null {
     availableFrom,
     availableTo,
     preferredAccessibleInformationChannel,
-    idempotencyKey,
   };
 }

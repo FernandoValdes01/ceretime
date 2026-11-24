@@ -5,7 +5,8 @@ import { isAccompanimentAccessDeniedError } from "../../domain/accompaniment-acc
 import type { InternAccompanimentReader } from "../../application/intern-accompaniment-port";
 
 import { useAsyncResource } from "./use-async-resource";
-import { isMobileAccessDenied, toMobileOperationError } from "../to-mobile-operation-error";
+import { isMobileAccessDenied } from "../../application/access-denied";
+import { toMobileOperationError } from "../to-mobile-operation-error";
 
 export type InternAccompanimentLoadStatus = "loading" | "success" | "error" | "access-denied";
 

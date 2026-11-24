@@ -160,10 +160,9 @@ function followUpContent(
   }> = {},
 ) {
   return {
-    agreements: [{ id: "a1", description: "Recibir los apuntes en formato digital" }],
+    agreements: [{ description: "Recibir los apuntes en formato digital" }],
     tasks: [
       {
-        id: "t1",
         description: "Enviar los apuntes de la semana",
         responsible: "professional" as const,
         status: "pending" as const,
@@ -292,11 +291,16 @@ describe("TI2-146 API: guardar y confirmar", () => {
       appointmentId,
       authorId: scenario.professional,
       nextSteps: "Revisar el avance en la próxima atención",
-      version: FOLLOW_UP_CONTRACT_VERSION,
     });
+    // El MER no guarda versión ni identificadores de las entradas (TI2-165).
+    expect(tables.records[0]).not.toHaveProperty("version");
     expect(tables.records[0]).not.toHaveProperty("internalNote");
-    expect(tables.agreements.map((row) => row.entryId)).toEqual(["a1"]);
-    expect(tables.tasks.map((row) => row.entryId)).toEqual(["t1"]);
+    expect(tables.agreements.map((row) => row.description)).toEqual([
+      "Recibir los apuntes en formato digital",
+    ]);
+    expect(tables.tasks).toHaveLength(1);
+    expect(tables.agreements[0]).not.toHaveProperty("entryId");
+    expect(tables.tasks[0]).not.toHaveProperty("entryId");
     expect(tables.notes).toHaveLength(1);
     expect(tables.notes[0]).toMatchObject({
       _id: tables.records[0]!.internalNoteId,
@@ -342,13 +346,12 @@ describe("TI2-146 API: guardar y confirmar", () => {
   });
 
   test.each([
-    ["otros acuerdos", { agreements: [{ id: "a1", description: "Otro acuerdo" }] }],
+    ["otros acuerdos", { agreements: [{ description: "Otro acuerdo" }] }],
     [
       "otro estado de tarea",
       {
         tasks: [
           {
-            id: "t1",
             description: "Enviar los apuntes de la semana",
             responsible: "professional" as const,
             status: "done" as const,
@@ -684,10 +687,9 @@ describe("TI2-146 API: lectura por atención", () => {
     expect(intern).toEqual({
       appointmentId,
       appointmentStatus: "completed",
-      agreements: [{ id: "a1", description: "Recibir los apuntes en formato digital" }],
+      agreements: [{ description: "Recibir los apuntes en formato digital" }],
       tasks: [
         {
-          id: "t1",
           description: "Enviar los apuntes de la semana",
           responsible: "professional",
           status: "pending",

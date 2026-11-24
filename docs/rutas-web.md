@@ -31,7 +31,7 @@ Cada área define su árbol en un archivo propio. `router.tsx` solo compone la r
 | `student-routes.ts` | Estudiante | `/estudiante`, `/estudiante/solicitudes`, `/estudiante/solicitudes/$requestId`, `/estudiante/horarios`, `/estudiante/reservar`, `/estudiante/atenciones`, `/estudiante/atenciones/$appointmentId` y `/estudiante/acompanamientos/$accompanimentId` |
 | `professional-routes.ts` | Profesional | `/profesional`, `/profesional/solicitudes`, `/profesional/solicitudes/$requestId`, `/profesional/solicitudes/registrar`, `/profesional/disponibilidad`, `/profesional/agenda` y `/profesional/agenda/$appointmentId` |
 | `practitioner-routes.ts` | Practicante | `/practicante`, `/practicante/acompanamientos` y `/practicante/acompanamientos/$accompanimentId` |
-| `admin-routes.ts` | Administrador | `/administrador` y `/administrador/espacios` |
+| `admin-routes.ts` | Administrador | `/administrador`, `/administrador/cuentas` y `/administrador/espacios` |
 
 Las URL y las guardias vigentes no cambian: cada layout conserva su `RequireStudent` o `RequireStaffRole`, y las páginas siguen resolviendo sus parámetros con `getRouteApi` sobre la misma ruta.
 
@@ -44,9 +44,9 @@ Las URL y las guardias vigentes no cambian: cada layout conserva su `RequireStud
 | Estudiante | Inicio, Solicitudes, Horarios y Atenciones |
 | Profesional | Inicio, Solicitudes, Agenda y Disponibilidad |
 | Practicante | Inicio y Acompañamientos |
-| Administrador | Inicio y Espacios |
+| Administrador | Inicio, Cuentas y Espacios |
 
-El encabezado común vive en `app-shell.tsx` y `app-shell.css`. Marca la sección actual con `aria-current="page"`, distingue el elemento activo con fondo y subrayado (no solo color) y mantiene objetivos táctiles de 44 × 44 px. El botón «Cerrar sesión» llama a `authClient.signOut()`, espera la invalidación de la sesión y vuelve al índice. Se retiró el enlace «Sesión» que apuntaba a `/login` porque no cerraba la sesión.
+El encabezado común vive en `app-shell.tsx` y `app-shell.css`. Marca la sección actual con `aria-current="page"`, distingue el elemento activo con fondo y subrayado (no solo color) y mantiene objetivos táctiles de 44 × 44 px. El portal de Administración usa el mismo encabezado convertido en menú lateral: misma marca, navegación, accesibilidad y cierre de sesión, con el botón abajo a la izquierda y el contenido a ancho completo. El botón «Cerrar sesión» llama a `authClient.signOut()`, espera la invalidación de la sesión y vuelve al índice. Se retiró el enlace «Sesión» que apuntaba a `/login` porque no cerraba la sesión.
 
 La confirmación de reserva (`/estudiante/reservar`) no aparece en la navegación porque necesita el `slotId` que devuelve la búsqueda de horarios; sin ese parámetro la vista muestra «Cupo no disponible». Se llega desde Horarios al elegir un cupo.
 
@@ -55,7 +55,7 @@ La confirmación de reserva (`/estudiante/reservar`) no aparece en la navegació
 1. Crea la página en la carpeta de Presentación que corresponda (`estudiante/`, `gestion/`, etc.).
 2. Agrega el puente de ruta en `route-components.tsx` si la página necesita parámetros o búsqueda.
 3. Define el `createRoute` en el archivo del área y agrégalo al `addChildren` de ese layout.
-4. Si la pantalla debe aparecer en el encabezado, agrega su enlace a la lista del portal en `navigation.ts`.
+4. Si la pantalla debe aparecer en la navegación, agrega su enlace a la lista del portal en `navigation.ts`.
 5. No edites el archivo de rutas de otra área ni `router.tsx`: la composición ya incluye los cinco archivos.
 
 ## Diferencias con la referencia visual

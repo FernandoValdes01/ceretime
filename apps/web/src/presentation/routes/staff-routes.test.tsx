@@ -7,6 +7,7 @@ import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.t
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { GENERIC_AUTH_MESSAGES } from "../../application/session/institutional-login.ts";
 import type { AssignedAccompanimentsPage } from "../gestion/practitioner-accompaniments-data.ts";
+import { requestOwnProfile } from "../session/own-profile-provisioning.ts";
 import { createAppRouter } from "./router.tsx";
 import type {
   WebSessionAndRole,
@@ -274,12 +275,16 @@ describe.each(PORTALES)("portal $nombre (TI2-20)", (portal) => {
     expect(screen.queryByRole("heading", { name: portal.titulo })).toBeNull();
   });
 
-  test("la sesión sin perfil ve denegado aunque esté autenticada", async () => {
-    sessionMocks.setPair({ session: sesionPersonal("fantasma@uct.cl"), role: ROL_DESCONOCIDO });
+  test("la cuenta de personal sin habilitar ve en denegado que CERETI debe habilitarla", async () => {
+    sessionMocks.setPair({ session: sesionPersonal("pendiente@uct.cl"), role: ROL_DESCONOCIDO });
     const { router } = renderAt(portal.ruta);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/denegado"));
     expect(screen.queryByRole("heading", { name: portal.titulo })).toBeNull();
+    // TI2-182: el personal pendiente llega acá; ve por qué, no un error de carga.
+    expect(
+      await screen.findByText(/CERETI debe habilitar tu cuenta antes de que puedas usar el área/),
+    ).toBeDefined();
   });
 
   test("el rol permitido ve su portal sin redirigir", async () => {
@@ -385,10 +390,56 @@ describe("límites de navegación por rol (TI2-20)", () => {
     const hrefs = portalHrefs();
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
-      expect(href === "/administrador" || href === "/administrador/espacios").toBe(true);
+      expect(
+        href === "/administrador" ||
+          href === "/administrador/cuentas" ||
+          href === "/administrador/espacios",
+      ).toBe(true);
     }
-    // El editor de espacios (TI2-04) es la vista propia del Administrador.
+    // El editor de espacios (TI2-04) y las cuentas (TI2-169) son las vistas
+    // propias del Administrador.
     expect(hrefs).toContain("/administrador/espacios");
+    expect(hrefs).toContain("/administrador/cuentas");
+  });
+
+  test("la Administración usa menú lateral con la navegación y el cierre de sesión abajo", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("admin@uct.cl"),
+      role: rolDe("admin", "admin@uct.cl"),
+    });
+    renderAt("/administrador");
+
+    await screen.findByRole("heading", { name: "Portal de Administración" });
+    const sidebar = document.querySelector("aside.app-shell__sidebar");
+    expect(sidebar).not.toBeNull();
+    const nav = within(sidebar as HTMLElement).getByRole("navigation", {
+      name: "Portal de Administración",
+    });
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((link) => link.textContent?.trim()),
+    ).toEqual(["Inicio", "Cuentas", "Espacios"]);
+    expect(
+      within(sidebar as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+    ).toBeDefined();
+    // El menú de accesibilidad vive arriba del cierre de sesión, como en el resto de portales.
+    const accessibility = within(sidebar as HTMLElement).getByRole("button", {
+      name: "Opciones de accesibilidad",
+    });
+    expect(accessibility).toBeDefined();
+    expect(
+      accessibility.compareDocumentPosition(
+        within(sidebar as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // El cierre de sesión vive abajo, después de la navegación.
+    const foot = (sidebar as HTMLElement).querySelector(".app-shell__sidebar-foot");
+    expect(foot).not.toBeNull();
+    expect(foot?.contains(nav)).toBe(false);
+    expect(
+      within(foot as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+    ).toBeDefined();
   });
 
   test("el Profesional no entra al portal del Estudiante", async () => {
@@ -1063,17 +1114,46 @@ describe("portal del Estudiante con sesión y rol independientes (TI2-12)", () =
     expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
   });
 
-  // Fija la decisión de TI2-6 y no la amplía: la portada no lee datos, y el
-  // Backend deniega el perfil propio a una cuenta sin fila en `sprint1Queries`.
-  test("la cuenta de estudiante sin perfil entra por población", async () => {
+  test("un fallo pasajero al crear el perfil ofrece reintentar, no la cuenta no habilitada", async () => {
+    const ensure = vi
+      .fn<() => Promise<unknown>>()
+      .mockRejectedValueOnce(new Error("red caída"))
+      .mockResolvedValue({});
+    requestOwnProfile("pasajero@alu.uct.cl", ensure);
     sessionMocks.setPair({
-      session: sesionEstudiante("nueva@alu.uct.cl"),
+      session: sesionEstudiante("pasajero@alu.uct.cl"),
       role: ROL_DESCONOCIDO,
     });
-    const { router } = renderAt("/estudiante");
+    renderAt("/estudiante/horarios");
 
-    const portalHeading = await screen.findByRole("heading", { name: "Portal del Estudiante" });
-    expect(portalHeading).toBeDefined();
-    expect(router.state.location.pathname).toBe("/estudiante");
+    const retry = await screen.findByRole("button", { name: "Reintentar" });
+    expect(screen.getByText("No pudimos preparar tu cuenta. Inténtalo de nuevo.")).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Tu cuenta no está habilitada" })).toBeNull();
+
+    fireEvent.click(retry);
+    await waitFor(() => expect(ensure).toHaveBeenCalledTimes(2));
+    act(() => {
+      sessionMocks.setPair({
+        session: sesionEstudiante("pasajero@alu.uct.cl"),
+        role: rolDe("student", "pasajero@alu.uct.cl"),
+      });
+    });
+    expect(await screen.findByRole("heading", { name: "Buscar horarios" })).toBeDefined();
+  });
+
+  // TI2-6 deja entrar por población; desde TI2-182 una cuenta sin perfil
+  // habilitado ve su estado en vez de pantallas que el Backend denegaría.
+  test("la cuenta de estudiante sin perfil habilitado ve su estado y puede salir", async () => {
+    sessionMocks.setPair({
+      session: sesionEstudiante("revocada@alu.uct.cl"),
+      role: ROL_DESCONOCIDO,
+    });
+    const { router } = renderAt("/estudiante/horarios");
+
+    const heading = await screen.findByRole("heading", { name: "Tu cuenta no está habilitada" });
+    expect(heading).toBeDefined();
+    expect(router.state.location.pathname).toBe("/estudiante/horarios");
+    expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 });

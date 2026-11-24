@@ -40,8 +40,7 @@ import {
  * campos de RUT, diagnóstico, certificados, archivos ni área interna.
  *
  * Lo escrito vive en un borrador (`student-request-draft.ts`): se conserva al
- * recargar, al volver al formulario y ante cualquier fallo del envío, y su
- * clave de idempotencia evita una segunda solicitud al reintentar.
+ * recargar, al volver al formulario y ante cualquier fallo del envío.
  *
  * Accesibilidad (WCAG 2.2 AA): cada campo dice si es obligatorio u opcional
  * en el texto de su etiqueta, los grupos usan `fieldset` y `legend`, y los

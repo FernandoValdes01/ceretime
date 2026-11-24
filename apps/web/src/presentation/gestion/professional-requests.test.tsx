@@ -1665,7 +1665,8 @@ describe("registro por canal oficial (TI2-158)", () => {
       generalAvailability: { preferredWeekdays: [2] },
       preferredAccessibleInformationChannel: "Correo con letra grande",
     });
-    expect(typeof datos.idempotencyKey).toBe("string");
+    // Desde TI2-165 el contrato no admite clave de idempotencia.
+    expect(datos).not.toHaveProperty("idempotencyKey");
     expect(datos).not.toHaveProperty("receivedAt");
 
     const registrada = await screen.findByRole("heading", { name: "Solicitud registrada" });
@@ -1693,7 +1694,7 @@ describe("registro por canal oficial (TI2-158)", () => {
     expect(screen.queryByText(/derivación de entrada/)).toBeNull();
   });
 
-  test("un rechazo muestra el mensaje público y el reintento conserva la clave", async () => {
+  test("cada rechazo muestra un mensaje comprensible y se puede reintentar", async () => {
     comoProfesional();
     registerOfficialMock.mockRejectedValueOnce(
       new ConvexError({
@@ -1723,10 +1724,23 @@ describe("registro por canal oficial (TI2-158)", () => {
 
     fireEvent.click(registrar);
     expect(await screen.findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();
+    expect(registerOfficialMock).toHaveBeenCalledTimes(3);
+  });
 
-    const claves = registerOfficialMock.mock.calls.map(
-      ([datos]) => (datos as { idempotencyKey: string }).idempotencyKey,
+  test("un doble clic mientras se registra llama una sola vez", async () => {
+    comoProfesional();
+    registerOfficialMock.mockImplementation(() => new Promise(() => {}));
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    const registrar = screen.getByRole("button", { name: "Registrar solicitud" });
+    fireEvent.click(registrar);
+    fireEvent.click(registrar);
+
+    expect(registerOfficialMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Registrando…" }).hasAttribute("disabled")).toBe(
+      true,
     );
-    expect(new Set(claves).size).toBe(1);
   });
 });

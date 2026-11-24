@@ -48,10 +48,10 @@ import {
   googleCalendarConnectionReader,
   googleCalendarGateway,
 } from "../infrastructure/calendar/google_calendar";
+import { calendarLinkReader } from "../infrastructure/calendar/repository";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
-  accessNeedSelectionValidator,
   appointmentAttendanceOutcomeUnion,
   appointmentStatusUnion,
   justificationDecisionUnion,
@@ -104,8 +104,9 @@ const appointmentResultValidator = v.object({ appointmentId: v.string() });
 /**
  * Reserva el cupo elegido para un acompañamiento activo. El Estudiante dueño
  * reserva lo suyo; el Profesional asignado coordina en su nombre y puede sumar
- * profesionales adicionales y apoyos de la atención en línea (TI2-142). Un
- * Estudiante que envía adicionales o apoyos recibe `unauthorized`.
+ * profesionales adicionales (TI2-142). Un Estudiante que envía adicionales
+ * recibe `unauthorized`. No recibe apoyos en línea, porque el MER no los
+ * guarda en la atención (TI2-165).
  */
 export const bookAppointment = mutation({
   args: {
@@ -116,7 +117,6 @@ export const bookAppointment = mutation({
     startAt: v.number(),
     endAt: v.number(),
     additionalProfessionalIds: v.optional(v.array(v.string())),
-    onlineSupports: v.optional(v.array(accessNeedSelectionValidator)),
     version: v.literal(APPOINTMENT_CONTRACT_VERSION),
   },
   returns: appointmentResultValidator,
@@ -131,6 +131,7 @@ export const bookAppointment = mutation({
           compatibility: compatibilitySpaceSource(ctx),
           occupier: appointmentOccupier(ctx),
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
         },
         { ...slot, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
@@ -159,6 +160,7 @@ export const cancelAppointment = mutation({
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -196,6 +198,7 @@ export const rescheduleAppointment = mutation({
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
           occupier: appointmentOccupier(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
@@ -233,6 +236,7 @@ export const recordAppointmentAttendance = mutation({
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -268,6 +272,7 @@ export const submitAppointmentJustification = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -300,6 +305,7 @@ export const reviewAppointmentJustification = mutation({
           auth: authorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -523,7 +529,9 @@ export const getAppointmentCalendarFile = query({
 
 /**
  * Indica si la sesión ya concedió el alcance mínimo de Calendar. Solo devuelve
- * un booleano: ni tokens ni la cuenta de Google.
+ * un booleano: ni tokens ni la cuenta de Google. Delega en el estado del
+ * vínculo (TI2-161) para que la regla viva en un solo lugar; la forma pública
+ * de TI2-122 no cambia.
  */
 export const getCalendarConnection = query({
   args: {},
@@ -535,6 +543,7 @@ export const getCalendarConnection = query({
         {
           auth: authorizationReader(ctx),
           connection: googleCalendarConnectionReader(ctx),
+          store: calendarLinkReader(ctx),
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
