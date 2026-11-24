@@ -184,7 +184,7 @@ export function useProfessionalReview(port: ProfessionalReviewPort): Professiona
           setLoad((current) => ({
             ...current,
             requests: current.requests.map((request) =>
-              request.id === requestIdToUpdate ? receipt.request : request,
+              request.id === requestIdToUpdate ? { ...request, ...receipt.request } : request,
             ),
           }));
           publishFeedback({ status: "success", message: receipt.message, error: null });
