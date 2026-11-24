@@ -202,15 +202,20 @@ export const ACCESS_NEED_SELECTIONS_MAX = 20;
 export const ACCESS_NEED_LABEL_MAX_LENGTH = 200;
 /** El identificador se guarda tal cual en `accessNeedSelections`: lleva el mismo tope que el nombre. */
 export const ACCESS_NEED_ID_MAX_LENGTH = ACCESS_NEED_LABEL_MAX_LENGTH;
-export const IDEMPOTENCY_KEY_MAX_LENGTH = 128;
 
 /**
- * Envío completo (TI2-141): el contenido canónico `AccompanimentRequestContent`
- * más la clave de idempotencia que genera el cliente. La lista `accessNeeds`
- * se persiste como `accessNeedSelections`; esa conversión es del caso de uso.
+ * Envío completo (TI2-141): el contenido canónico `AccompanimentRequestContent`.
+ * La lista `accessNeeds` se persiste como `accessNeedSelections`; esa
+ * conversión es del caso de uso. No lleva clave de idempotencia: SOLICITUDES
+ * del MER no la tiene (TI2-165).
  */
 export type RequestSubmission = Readonly<AccompanimentRequestContent> & {
-  readonly idempotencyKey: string;
+  /**
+   * Se conserva porque el envío de demostración de Mobile la pasa al dominio:
+   * lo que usa Mobile se mantiene. No se valida, no se devuelve ni se guarda,
+   * y el validador de Convex la rechaza.
+   */
+  readonly idempotencyKey?: string;
 };
 
 const TIME_OF_DAY = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -227,7 +232,6 @@ const ACCESS_NEEDS_LIST_REQUIRED =
 const MODALITY_PREFERENCE_REQUIRED = "Indica si prefieres la modalidad presencial o en línea.";
 const PREFERRED_WEEKDAYS_REQUIRED = "Selecciona al menos un día disponible.";
 const INFORMATION_CHANNEL_REQUIRED = "Indica cómo prefieres recibir información.";
-const IDEMPOTENCY_KEY_INVALID = `La clave del envío debe tener entre 1 y ${IDEMPOTENCY_KEY_MAX_LENGTH} caracteres.`;
 
 /**
  * Un campo de la solicitud falta o no cumple su regla: el mensaje dice en
@@ -264,7 +268,6 @@ export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<R
     modalityPreference,
     generalAvailability,
     preferredAccessibleInformationChannel,
-    idempotencyKey,
   } = draft;
   if (typeof accessNeeds === "string") return invalidRequestFields(ACCESS_NEEDS_LIST_REQUIRED);
   if (needSummary === undefined) return invalidRequestFields(NEED_SUMMARY_REQUIRED);
@@ -275,7 +278,6 @@ export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<R
   if (preferredAccessibleInformationChannel === undefined) {
     return invalidRequestFields(INFORMATION_CHANNEL_REQUIRED);
   }
-  if (idempotencyKey === undefined) return invalidRequestFields(IDEMPOTENCY_KEY_INVALID);
   return {
     status: "ok",
     data: {
@@ -286,7 +288,6 @@ export function toCompleteSubmission(draft: RequestSubmissionDraft): ApiResult<R
       modalityPreference,
       generalAvailability,
       preferredAccessibleInformationChannel,
-      idempotencyKey,
     },
   };
 }
@@ -399,11 +400,6 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
   );
   if ("error" in channel) return fail(channel.error);
 
-  const idempotencyKey = input.idempotencyKey;
-  if (idempotencyKey.trim() === "" || idempotencyKey.length > IDEMPOTENCY_KEY_MAX_LENGTH) {
-    return fail(IDEMPOTENCY_KEY_INVALID);
-  }
-
   return {
     status: "ok",
     data: {
@@ -419,7 +415,6 @@ export function toRequestSubmission(input: RequestSubmission): ApiResult<Request
           : { preferredTimeRange: { ...preferredTimeRange } }),
       },
       preferredAccessibleInformationChannel: channel.text,
-      idempotencyKey,
     },
   };
 }
@@ -451,8 +446,11 @@ export function toInformationResponse(raw: string): ApiResult<string> {
  * la solicitud espera respuesta: después deja de ser lo pendiente.
  * `informationResponse` es la respuesta al último pedido: si el Profesional
  * vuelve a pedir, la respuesta anterior deja de entregarse hasta que llegue la
- * nueva, así una pregunta pendiente no parece respondida. Son texto libre:
- * solo se entregan en el detalle, a quien ya puede leer la solicitud.
+ * nueva, así una pregunta pendiente no parece respondida.
+ * `closureReason` es la razón del cierre sin acompañamiento, que el MER guarda
+ * en TRANSICIONES_SOLICITUD (`motivo?`) y no en la solicitud (TI2-165): sale
+ * del último cambio, porque el cierre es terminal. Son texto libre: solo se
+ * entregan en el detalle, a quien ya puede leer la solicitud.
  */
 export function toRequestExchange(
   status: RequestState,
@@ -461,7 +459,11 @@ export function toRequestExchange(
     readonly to: RequestState;
     readonly reason?: string;
   }[],
-): { readonly informationRequest?: string; readonly informationResponse?: string } {
+): {
+  readonly informationRequest?: string;
+  readonly informationResponse?: string;
+  readonly closureReason?: string;
+} {
   const requestAt = recentChanges.findIndex(
     (change) => change.to === "awaiting_information_or_acceptance",
   );
@@ -476,11 +478,17 @@ export function toRequestExchange(
     responseAt !== -1 && (requestAt === -1 || responseAt < requestAt)
       ? recentChanges[responseAt]
       : undefined;
+  const closure = recentChanges[0];
   return {
     ...(status === "awaiting_information_or_acceptance" && lastRequest?.reason !== undefined
       ? { informationRequest: lastRequest.reason }
       : {}),
     ...(lastResponse?.reason === undefined ? {} : { informationResponse: lastResponse.reason }),
+    ...(status === "closed_without_accompaniment" &&
+    closure?.to === "closed_without_accompaniment" &&
+    closure.reason !== undefined
+      ? { closureReason: closure.reason }
+      : {}),
   };
 }
 

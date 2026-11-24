@@ -111,10 +111,10 @@ test("TI2-159: registrar una solicitud encola y despacha un correo genérico sin
   await seedStudent(t, "ti159-est-ok", "destino-prueba@alu.uct.cl");
   const student = t.withIdentity(identityFor("ti159-est-ok"));
 
-  const created = await student.mutation(api.presentation.requests.createRequest, {
-    ...REQUEST_SUBMISSION,
-    idempotencyKey: "ti159-req-ok",
-  });
+  const created = await student.mutation(
+    api.presentation.requests.createRequest,
+    REQUEST_SUBMISSION,
+  );
   expect(created._id).toBeTruthy();
 
   await t.finishAllScheduledFunctions(() => {
@@ -169,10 +169,10 @@ test("TI2-159: una falla del proveedor no deshace el cambio que originó el avis
   await seedStudent(t, "ti159-est-retry", "reintento@alu.uct.cl");
   const student = t.withIdentity(identityFor("ti159-est-retry"));
 
-  const created = await student.mutation(api.presentation.requests.createRequest, {
-    ...REQUEST_SUBMISSION,
-    idempotencyKey: "ti159-req-retry",
-  });
+  const created = await student.mutation(
+    api.presentation.requests.createRequest,
+    REQUEST_SUBMISSION,
+  );
   expect(created._id).toBeTruthy();
 
   // Primer intento: falla por token vencido (not_authorized).
@@ -235,10 +235,10 @@ test("TI2-159: la reserva impide que dos despachos concurrentes envíen la misma
   const t = convexTest(schema, modules);
   const studentId = await seedStudent(t, "ti159-est-claim", "claim@alu.uct.cl");
   const student = t.withIdentity(identityFor("ti159-est-claim"));
-  const created = await student.mutation(api.presentation.requests.createRequest, {
-    ...REQUEST_SUBMISSION,
-    idempotencyKey: "ti159-claim-req",
-  });
+  const created = await student.mutation(
+    api.presentation.requests.createRequest,
+    REQUEST_SUBMISSION,
+  );
   const rows = await deliveries(t);
   expect(rows).toHaveLength(1);
   const deliveryId = rows[0]!._id;

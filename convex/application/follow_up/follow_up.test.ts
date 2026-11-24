@@ -90,10 +90,9 @@ const appointmentReader = {
 };
 
 const content = {
-  agreements: [{ id: "acuerdo-1", description: "Continuar con el material accesible." }],
+  agreements: [{ description: "Continuar con el material accesible." }],
   tasks: [
     {
-      id: "tarea-1",
       description: "Enviar el material en formato accesible.",
       responsible: "professional",
       status: "pending",

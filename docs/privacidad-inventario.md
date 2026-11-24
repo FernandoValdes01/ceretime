@@ -11,7 +11,7 @@ La Ley 21.719 entra en vigencia el 1 de diciembre de 2026. El análisis general 
 
 ## Cómo leer el inventario
 
-- **Alcance.** Cubre las 18 tablas de `convex/schema.ts`, las tablas del componente de autenticación Better Auth y los datos que quedan en el navegador o en el dispositivo. Las tablas sin datos personales se listan igual para que el inventario no tenga huecos.
+- **Alcance.** Cubre las 17 tablas de `convex/schema.ts`, las tablas del componente de autenticación Better Auth y los datos que quedan en el navegador o en el dispositivo. Las tablas sin datos personales se listan igual para que el inventario no tenga huecos.
 - **Datos personales.** Cualquier dato que identifique o pueda identificar a una persona, sola o combinada con otros datos. Los identificadores internos (`_id`, `studentId`, `professionalId`, `actorId`) cuentan porque vinculan filas con una persona.
 - **Datos sensibles.** El prototipo trata como sensibles las necesidades de acceso, los antecedentes de discapacidad o salud, las justificaciones de inasistencia y cualquier texto libre que pueda revelarlos. La calificación jurídica definitiva está pendiente.
 - **Base propuesta.** Es una propuesta de TI2 para que la UCT la apruebe o la reemplace. Las etiquetas «relación de acompañamiento», «relación institucional», «seguridad» y «rendición de cuentas» son categorías de trabajo, no bases legales definitivas; la traducción a las bases de la Ley 21.719 y el análisis de interés legítimo quedan pendientes. Ninguna base está aprobada.
@@ -25,7 +25,6 @@ La Ley 21.719 entra en vigencia el 1 de diciembre de 2026. El análisis general 
 | -------------------------- | ---------------------------------------------- | ---------------- | --------------- | --------------------------------------------------- | ------------------------------------------------------ |
 | `users`                    | Identificar, autenticar y habilitar cuentas    | Sí               | No              | Relación institucional y seguridad                  | Convex; Google Workspace como origen                   |
 | `accompaniments`           | Coordinar el acompañamiento                    | Sí               | Sí              | Consentimiento expreso y relación de acompañamiento | Convex                                                 |
-| `accompanimentTransitions` | Auditar pausas, reactivaciones y cierres       | Sí               | Posible         | Rendición de cuentas y cumplimiento                 | Convex                                                 |
 | `accompanimentAssignments` | Controlar quién accede al acompañamiento       | Sí               | No              | Seguridad y control de acceso                       | Convex                                                 |
 | `followUpNotes`            | Registrar notas internas                       | Sí               | Posible         | Relación de acompañamiento                          | Convex                                                 |
 | `requests`                 | Recibir y revisar solicitudes                  | Sí               | Sí              | Consentimiento expreso y relación de acompañamiento | Convex                                                 |
@@ -33,7 +32,7 @@ La Ley 21.719 entra en vigencia el 1 de diciembre de 2026. El análisis general 
 | `requestAssignments`       | Controlar la toma de solicitudes               | Sí               | No              | Seguridad y control de acceso                       | Convex                                                 |
 | `spaces`                   | Publicar espacios accesibles                   | No               | No              | No aplica                                           | Convex                                                 |
 | `availabilityBlocks`       | Publicar disponibilidad profesional            | Sí               | No              | Relación de acompañamiento                          | Convex                                                 |
-| `availabilityExceptions`   | Ajustar la disponibilidad                      | Sí               | Posible         | Relación de acompañamiento                          | Convex                                                 |
+| `availabilityExceptions`   | Ajustar la disponibilidad                      | Sí               | No              | Relación de acompañamiento                          | Convex                                                 |
 | `appointments`             | Agendar y registrar atenciones                 | Sí               | Sí              | Consentimiento expreso y relación de acompañamiento | Convex; Google Calendar si se conecta                  |
 | `appointmentProfessionals` | Coordinar varios profesionales en una atención | Sí               | No              | Relación de acompañamiento                          | Convex                                                 |
 | `notificationEvents`       | Registrar avisos de atenciones y solicitudes   | Sí               | No              | Relación de acompañamiento                          | Convex; Gmail (Google LLC) para correo; push pendiente |
@@ -48,27 +47,19 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `users`
 
-- **Datos personales.** `email`, `fullName`, `role`, `institutionalStatus`, `accountStatus`, `tokenIdentifier`, `enabledBy`, `enabledAt`, `revokedBy` y `revokedAt`. `tokenIdentifier` es la clave estable que Better Auth asigna a la identidad; el identificador de Google vive en `account.accountId`. `enabledBy` identifica al Administrador o al Profesional de personal que habilitó o rehabilitó la cuenta; `revokedBy`, al Administrador que la revocó.
+- **Datos personales.** `email`, `fullName`, `role`, `institutionalStatus`, `accountStatus`, `tokenIdentifier`, `enabledBy`, `enabledAt`, `revokedBy` y `revokedAt`. `tokenIdentifier` es la clave estable que Better Auth asigna a la identidad; el identificador de Google vive en `account.accountId`. `enabledBy` identifica al Administrador o al Profesional de personal que habilitó o rehabilitó la cuenta; `revokedBy`, al Administrador que la revocó. Un Estudiante habilitado en su primer ingreso no tiene `enabledBy`, porque nadie lo habilitó: solo queda `enabledAt`.
 - **Finalidad.** Identificar a la persona, verificar su identidad con Google Workspace, decidir su rol, habilitar o revocar cuentas de personal y conservar el rastro de esas decisiones.
 - **Base propuesta.** Ejecución de la relación institucional para la cuenta y el acceso, y seguridad para la auditoría. Pendiente de aprobación.
-- **Acceso por rol.** El titular lee su propio perfil con `presentation/session.getMyProfile`. El Administrador lista y lee cuentas de personal con `presentation/accounts.listAccounts` y `getAccount`; no lee cuentas de estudiantes. Ningún otro rol lee perfiles ajenos.
+- **Acceso por rol.** El titular crea su perfil en el primer ingreso con `presentation/session.ensureMyProfile` (TI2-182): una cuenta `@alu.uct.cl` nace como Estudiante habilitado, con `enabledAt` y sin `enabledBy`, y una cuenta `@uct.cl` nace como Profesional pendiente de habilitación. El titular lee su propio perfil con `presentation/session.getMyProfile`. El Administrador lista y lee cuentas de personal con `presentation/accounts.listAccounts` y `getAccount`; no lee cuentas de estudiantes. El Profesional de personal asignado a un acompañamiento lee, con `presentation/accompaniments.listAccompanimentProfessionals` (TI2-165), solo el `_id` y el `fullName` de los profesionales asignados a ese acompañamiento y de los profesionales de personal habilitados que puede asignarle, sin correo ni estado. Ningún otro rol lee perfiles ajenos.
 - **Proveedor.** Convex almacena la fila. Google Workspace entrega la identidad durante el inicio de sesión.
 
 ### `accompaniments`
 
-- **Datos personales.** `studentId`, `status`, `objective`, `accessNeeds` y `requestId`. `objective` y `accessNeeds` son texto libre y pueden revelar una discapacidad o una condición de salud.
-- **Finalidad.** Mantener el objetivo del acompañamiento, su estado y las necesidades de acceso vigentes, y vincularlo con la solicitud que lo originó.
-- **Código de referencia.** El «código de referencia» que muestra el aviso se deriva del `_id` del acompañamiento con `deriveCoordinationReferenceCode` (FNV-1a de 40 bits) y no se guarda en esta tabla; el MER objetivo lo ubica en `COORDINACION_CANAL_OFICIAL`. No contiene nombre, correo, RUT, necesidades ni fechas y no permite revertir al identificador.
+- **Datos personales.** `studentId`, `status`, `objective`, `accessNeeds`, `requestId`, `closedById`, `closedAt` y `closureReason`. `objective`, `accessNeeds` y `closureReason` son texto libre y pueden revelar una discapacidad o una condición de salud. `closedById` identifica al Profesional que cerró el acompañamiento.
+- **Finalidad.** Mantener el objetivo del acompañamiento, su estado y las necesidades de acceso vigentes, vincularlo con la solicitud que lo originó y registrar su cierre: quién, cuándo y el motivo opcional (`cerradoPorId?`, `cerradoEn?` y `motivoCierre?` del MER, TI2-165). Pausar y reactivar solo cambian el estado.
+- **Código de referencia.** El «código de referencia» que muestra el aviso se deriva del `_id` del acompañamiento con `deriveCoordinationReferenceCode` (FNV-1a de 40 bits) y no se guarda en esta tabla; el MER detalle de `docs/diagramas/integra4.drawio` lo ubica en `COORDINACIONES_CANAL` (`codigoReferencia`). No contiene nombre, correo, RUT, necesidades ni fechas y no permite revertir al identificador.
 - **Base propuesta.** Consentimiento expreso para `accessNeeds` y relación de acompañamiento para el resto. Pendiente de aprobación.
-- **Acceso por rol.** El Estudiante dueño lee la vista completa. El Profesional asignado lee la vista completa. El Practicante asignado lee la vista minimizada, sin `studentId` ni `accessNeeds`. El Administrador está denegado siempre.
-- **Proveedor.** Convex.
-
-### `accompanimentTransitions`
-
-- **Datos personales.** `accompanimentId`, `from`, `to`, `actorId`, `reason` y `occurredAt`. `reason` es texto libre y puede contener datos personales o sensibles.
-- **Finalidad.** Conservar un historial append-only de pausas, reactivaciones y cierres del acompañamiento, con actor, fecha y motivo opcional (TI2-152). El motivo vive solo en esta tabla: no se copia al acompañamiento, a las atenciones ni a la auditoría de agenda.
-- **Base propuesta.** Rendición de cuentas y cumplimiento. Pendiente de aprobación.
-- **Acceso por rol.** No hay lectura pública, ni siquiera para el Administrador. Solo `accompanimentStatusWriter` escribe una fila por cambio, en la misma transacción. Las lecturas del acompañamiento muestran el estado resultante, no el historial ni el motivo.
+- **Acceso por rol.** El Estudiante dueño lee la vista completa. El Profesional asignado lee la vista completa. El Practicante asignado lee la vista minimizada, sin `studentId` ni `accessNeeds`. El Administrador está denegado siempre. Ninguna lectura pública entrega `closedById`, `closedAt` ni `closureReason`; los escribe `accompanimentStatusWriter` al cerrar.
 - **Proveedor.** Convex.
 
 ### `accompanimentAssignments`
@@ -89,7 +80,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `requests`
 
-- **Datos personales.** `studentId`, `status`, `accessNeeds`, `createdAt`, `takenBy`, `needSummary`, `expectedOutcome`, `accessNeedSelections`, `otherAccessNeed`, `modalityPreference`, `generalAvailability`, `preferredAccessibleInformationChannel`, `provenance`, `incomingReferral`, `outgoingReferral`, `closureReason` e `idempotencyKey`. Varios campos son texto libre y pueden revelar una discapacidad, una condición de salud o una situación académica.
+- **Datos personales.** `studentId`, `status`, `accessNeeds`, `createdAt`, `takenBy`, `needSummary`, `expectedOutcome`, `accessNeedSelections`, `otherAccessNeed`, `modalityPreference`, `generalAvailability`, `preferredAccessibleInformationChannel`, `provenance`, `incomingReferral` y `outgoingReferral`. Varios campos son texto libre y pueden revelar una discapacidad, una condición de salud o una situación académica.
 - **Finalidad.** Recibir la solicitud, revisarla, pedir información, aceptarla, derivarla o cerrarla sin acompañamiento. La solicitud aceptada origina un acompañamiento.
 - **Base propuesta.** Relación de acompañamiento para los datos de contacto y gestión. Consentimiento expreso para las necesidades de acceso y los datos sensibles. Las derivaciones requieren revisar la base aplicable con la unidad de origen. Pendiente de aprobación.
 - **Acceso por rol.** El Estudiante dueño lista y lee sus propias solicitudes. Cualquier Profesional de personal vigente ve la bandeja de solicitudes `received` con `_id`, `studentId`, estado y fecha, sin necesidades de acceso (`listOpenRequests`), y puede tomar cualquiera; al tomarla lee la solicitud completa. El Profesional con toma activa lista y lee las solicitudes que tomó. El Profesional vigente puede registrar una solicitud por canal oficial a nombre de un Estudiante activo. El Practicante y el Administrador están denegados.
@@ -98,7 +89,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 ### `requestTransitions`
 
 - **Datos personales.** `requestId`, `from`, `to`, `actorId`, `reason` y `occurredAt`. `reason` es texto libre y puede contener datos personales o sensibles.
-- **Finalidad.** Conservar una bitácora append-only de los cambios de estado de la solicitud, con actor, motivo y fecha.
+- **Finalidad.** Conservar una bitácora append-only de los cambios de estado de la solicitud, con actor, motivo y fecha. Es la única fuente de la razón de cierre que el detalle de la solicitud entrega como `closureReason` (TI2-165).
 - **Base propuesta.** Rendición de cuentas y cumplimiento. Pendiente de aprobación.
 - **Acceso por rol.** No hay lectura pública del historial completo. Los casos de uso escriben la transición. El Estudiante ve el pedido de información, su respuesta y la razón de cierre en el detalle, no la bitácora completa.
 - **Proveedor.** Convex.
@@ -129,24 +120,24 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `availabilityExceptions`
 
-- **Datos personales.** `professionalId`, `date`, `kind`, `blockId`, `startMinute`, `endMinute`, `slotMinutes`, `modality`, `spaceId` y `reason`. `reason` es opcional y puede contener datos personales o de salud.
+- **Datos personales.** `professionalId`, `date`, `kind`, `blockId`, `startMinute`, `endMinute`, `slotMinutes`, `modality` y `spaceId`. No guarda motivo (TI2-165).
 - **Finalidad.** Cancelar o agregar una ventana puntual sobre la disponibilidad recurrente.
-- **Base propuesta.** Relación de acompañamiento y organización del trabajo. El motivo se minimiza y no se publica. Pendiente de aprobación.
-- **Acceso por rol.** El Profesional lee y edita sus propias excepciones. Los demás roles autorizados solo ven el efecto en los cupos, nunca el motivo. El Practicante y el Administrador están denegados.
+- **Base propuesta.** Relación de acompañamiento y organización del trabajo. Pendiente de aprobación.
+- **Acceso por rol.** El Profesional lee y edita sus propias excepciones. Los demás roles autorizados solo ven el efecto en los cupos. El Practicante y el Administrador están denegados.
 - **Proveedor.** Convex.
 
 ### `appointments`
 
-- **Datos personales.** `accompanimentId`, `studentId`, `professionalId`, `spaceId`, `modality`, `status`, `startsAt`, `endsAt`, `originalStartsAt`, `cancelReason`, `calendarEventId`, `calendarEventAddedAt`, `calendarEventStartsAt`, `calendarEventEndsAt`, `justificationExplanation`, `justificationSubmittedAt`, `justificationReview`, `supportingDocumentReceived`, `appliedAccessNeeds`, `onlineSupports`, `privateAccessReference` y `createdAt`. `cancelReason` es texto libre y puede revelar datos personales o sensibles. Las necesidades aplicadas, los apoyos en línea, la justificación y su revisión también pueden ser datos sensibles. `privateAccessReference` es un enlace privado de la atención en línea.
+- **Datos personales.** `accompanimentId`, `studentId`, `professionalId`, `spaceId`, `modality`, `status`, `startsAt`, `endsAt`, `originalStartsAt`, `cancelReason`, `calendarEventId`, `calendarEventAddedAt`, `calendarEventStartsAt`, `calendarEventEndsAt`, `justificationExplanation`, `justificationSubmittedAt`, `justificationReview`, `supportingDocumentReceived`, `privateAccessReference` y `createdAt`. `cancelReason` es texto libre y puede revelar datos personales o sensibles. La justificación y su revisión también pueden ser datos sensibles. `privateAccessReference` es un enlace privado de la atención en línea.
 - **Finalidad.** Agendar, mover, cancelar y registrar una atención, incluida la inasistencia y su justificación. También conserva el enlace privado de la atención en línea y la referencia del evento de Google Calendar cuando la persona lo agrega.
-- **Base propuesta.** Relación de acompañamiento para la agenda y la atención. Consentimiento expreso para las necesidades de acceso, los apoyos y los datos de salud de la justificación. La conexión con Google Calendar usa un consentimiento separado. Pendiente de aprobación.
+- **Base propuesta.** Relación de acompañamiento para la agenda y la atención. Consentimiento expreso para los datos de salud de la justificación. La conexión con Google Calendar usa un consentimiento separado. Pendiente de aprobación.
 - **Acceso por rol.** El Estudiante dueño lee la vista compartida, sin el motivo de cancelación. El Profesional asignado lee la vista completa. El Practicante asignado lee la vista minimizada, sin necesidades de acceso, textos libres ni enlace privado. El Administrador está denegado. El enlace privado lo leen el Estudiante dueño y el Profesional que participa en la atención. Las referencias de Calendar son persistencia interna, pero el listado de atenciones entrega al Estudiante, al Profesional y al Practicante si la atención está agregada a Google Calendar (`calendarAdded`) o si la referencia quedó desactualizada (`calendarNeedsUpdate`).
 - **Descarga.** La Web permite descargar un archivo `.ics` con la fecha, la hora, la zona horaria, un título genérico y un identificador estable de la atención (TI2-122). El archivo queda en el dispositivo de la persona y CERETI no controla esa copia.
 - **Proveedor.** Convex. Google Calendar recibe únicamente un evento genérico con fecha y hora si la persona conecta su cuenta.
 
 ### `appointmentProfessionals`
 
-- **Datos personales.** `appointmentId`, `professionalId`, `startsAt` y `endsAt`. Vincula a los profesionales que participan en una atención y copia su ventana horaria.
+- **Datos personales.** `appointmentId` y `professionalId`. Vincula a los profesionales que participan en una atención; el horario vive solo en `appointments` (TI2-165).
 - **Finalidad.** Coordinar una atención entre varios profesionales y detectar cruces de agenda sin duplicar la atención.
 - **Base propuesta.** Relación de acompañamiento y organización del trabajo. Pendiente de aprobación.
 - **Acceso por rol.** No tiene lectura pública propia. La autorización y la agenda la usan para decidir quién participa y para detectar cruces. Los participantes ven la atención a través de `appointments`.
@@ -170,7 +161,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `followUpRecords`
 
-- **Datos personales.** `appointmentId`, `authorId`, `nextSteps`, `suggestedNextAppointmentDate`, `internalNoteId`, `version` y `updatedAt`. `nextSteps` es texto libre y puede mencionar necesidades de acceso.
+- **Datos personales.** `appointmentId`, `authorId`, `nextSteps`, `suggestedNextAppointmentDate`, `internalNoteId` y `updatedAt`. `nextSteps` es texto libre y puede mencionar necesidades de acceso.
 - **Finalidad.** Registrar el seguimiento posterior a una atención con los próximos pasos y la fecha sugerida. Los acuerdos y las tareas viven en sus propias tablas.
 - **Base propuesta.** Relación de acompañamiento. Si el texto libre contiene datos sensibles, consentimiento expreso o la excepción legal que corresponda. Pendiente de aprobación.
 - **Acceso por rol.** El Estudiante dueño lee la vista compartida, sin nota interna. El Profesional asignado lee la vista completa con nota interna. El Practicante asignado lee la vista minimizada con los acuerdos, las tareas, los próximos pasos y la fecha sugerida (TI2-186), sin la nota interna ni el vínculo con el acompañamiento; esos textos son libres y pueden mencionar necesidades de acceso. El Administrador está denegado.
@@ -178,7 +169,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `followUpAgreements`
 
-- **Datos personales.** `recordId`, `entryId` y `description`. `description` es texto libre y puede contener datos personales o sensibles.
+- **Datos personales.** `recordId` y `description`. `description` es texto libre y puede contener datos personales o sensibles.
 - **Finalidad.** Guardar los acuerdos de un registro de seguimiento como filas propias.
 - **Base propuesta.** Relación de acompañamiento, con la misma salvedad sobre datos sensibles que `followUpRecords`. Pendiente de aprobación.
 - **Acceso por rol.** Se leen a través de `followUpRecords`: el Estudiante dueño y el Profesional asignado ven los acuerdos; el Practicante también los recibe en su vista minimizada; el Administrador está denegado.
@@ -186,7 +177,7 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `followUpTasks`
 
-- **Datos personales.** `recordId`, `entryId`, `description`, `responsible` y `status`. `description` es texto libre. `responsible` distingue estudiante, profesional o CERETI, sin guardar una identidad adicional.
+- **Datos personales.** `recordId`, `description`, `responsible` y `status`. `description` es texto libre. `responsible` distingue estudiante, profesional o CERETI, sin guardar una identidad adicional.
 - **Finalidad.** Guardar las tareas de un registro de seguimiento con su responsable y estado operativo.
 - **Base propuesta.** Relación de acompañamiento, con la misma salvedad sobre datos sensibles que `followUpRecords`. Pendiente de aprobación.
 - **Acceso por rol.** Se leen a través de `followUpRecords`: el Estudiante dueño y el Profesional asignado ven las tareas; el Practicante también las recibe en su vista minimizada; el Administrador está denegado.
@@ -209,11 +200,11 @@ La base propuesta para estas tablas es la autenticación y la seguridad de la cu
 
 Además de la base de datos, el prototipo deja datos personales en los dispositivos:
 
-| Almacenamiento             | Datos                                                                                                                                                       | Vigencia                                                               | Origen      |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ----------- |
-| `localStorage` de la Web   | Token de sesión y una copia de la sesión: nombre, correo, foto, IP y agente de usuario                                                                      | Hasta cerrar sesión                                                    | Better Auth |
-| `sessionStorage` de la Web | Borrador de la solicitud separado por correo: necesidad, resultado esperado, necesidades de acceso, disponibilidad, canal preferido y clave de idempotencia | Hasta enviar la solicitud, cerrar sesión o cerrar la pestaña (TI2-149) | La Web      |
-| Archivo `.ics` descargado  | Fecha, hora, zona horaria, título genérico «Atención programada» y un identificador estable                                                                 | Queda en el dispositivo y CERETI no controla su borrado                | TI2-122     |
+| Almacenamiento             | Datos                                                                                                                                | Vigencia                                                               | Origen      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ----------- |
+| `localStorage` de la Web   | Token de sesión y una copia de la sesión: nombre, correo, foto, IP y agente de usuario                                               | Hasta cerrar sesión                                                    | Better Auth |
+| `sessionStorage` de la Web | Borrador de la solicitud separado por correo: necesidad, resultado esperado, necesidades de acceso, disponibilidad y canal preferido | Hasta enviar la solicitud, cerrar sesión o cerrar la pestaña (TI2-149) | La Web      |
+| Archivo `.ics` descargado  | Fecha, hora, zona horaria, título genérico «Atención programada» y un identificador estable                                          | Queda en el dispositivo y CERETI no controla su borrado                | TI2-122     |
 
 El borrador del formulario es el dato más sensible que queda en el navegador: incluye las necesidades de acceso antes del envío. Se guarda en `sessionStorage`, no en `localStorage`, y se borra al enviar, al cerrar sesión o al cerrar la pestaña.
 
@@ -234,9 +225,9 @@ El nombre y el correo de una cuenta de prueba son datos personales aunque la cue
 
 ## Flujo de datos
 
-1. Google Workspace entrega nombre, correo y un identificador estable al iniciar sesión. Better Auth guarda la cuenta y la sesión; `users` guarda el perfil y el rol.
+1. Google Workspace entrega nombre, correo y un identificador estable al iniciar sesión. Better Auth guarda la cuenta y la sesión; en el primer ingreso, `ensureMyProfile` crea en `users` el perfil y el rol.
 2. La persona envía una solicitud. `requests` guarda el contenido y `requestTransitions` registra cada cambio de estado. Un Profesional la toma y `requestAssignments` deja la toma activa.
-3. La aceptación abre `accompaniments`; `accompanimentTransitions` registra sus pausas, reactivaciones y cierres, y `accompanimentAssignments` decide qué profesionales y practicantes acceden.
+3. La aceptación abre `accompaniments`, que guarda su estado y, al cerrarse, quién lo cerró, cuándo y por qué; `accompanimentAssignments` decide qué profesionales y practicantes acceden.
 4. La agenda usa `availabilityBlocks`, `availabilityExceptions`, `spaces` y `appointments`. `appointmentProfessionals` registra a los participantes y `notificationEvents` el aviso del enlace en línea.
 5. Después de la atención, `followUpRecords`, `followUpAgreements`, `followUpTasks` y `followUpNotes` guardan el seguimiento.
 6. `appointmentAuditEvents` y `requestTransitions` conservan la trazabilidad. La futura consulta de derechos deberá usar el mismo conjunto de datos para responder al titular; su persistencia y su pantalla siguen pendientes.

@@ -9,6 +9,7 @@
  */
 
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
+import type * as application_accompaniments_professionals from "../application/accompaniments/professionals.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accompaniments_status from "../application/accompaniments/status.js";
 import type * as application_accounts_enablement from "../application/accounts/enablement.js";
@@ -30,6 +31,7 @@ import type * as application_follow_up_commands from "../application/follow_up/c
 import type * as application_follow_up_ports from "../application/follow_up/ports.js";
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
 import type * as application_notifications_dispatch from "../application/notifications/dispatch.js";
+import type * as application_notifications_inbox from "../application/notifications/inbox.js";
 import type * as application_notifications_ports from "../application/notifications/ports.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_notifications from "../application/requests/notifications.js";
@@ -112,6 +114,7 @@ import type * as presentation_appointments from "../presentation/appointments.js
 import type * as presentation_availability from "../presentation/availability.js";
 import type * as presentation_calendar from "../presentation/calendar.js";
 import type * as presentation_follow_up from "../presentation/follow_up.js";
+import type * as presentation_notifications from "../presentation/notifications.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as presentation_spaces from "../presentation/spaces.js";
@@ -124,6 +127,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "application/accompaniments/commands": typeof application_accompaniments_commands;
+  "application/accompaniments/professionals": typeof application_accompaniments_professionals;
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accompaniments/status": typeof application_accompaniments_status;
   "application/accounts/enablement": typeof application_accounts_enablement;
@@ -145,6 +149,7 @@ declare const fullApi: ApiFromModules<{
   "application/follow_up/ports": typeof application_follow_up_ports;
   "application/follow_up/queries": typeof application_follow_up_queries;
   "application/notifications/dispatch": typeof application_notifications_dispatch;
+  "application/notifications/inbox": typeof application_notifications_inbox;
   "application/notifications/ports": typeof application_notifications_ports;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/notifications": typeof application_requests_notifications;
@@ -227,6 +232,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/availability": typeof presentation_availability;
   "presentation/calendar": typeof presentation_calendar;
   "presentation/follow_up": typeof presentation_follow_up;
+  "presentation/notifications": typeof presentation_notifications;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   "presentation/spaces": typeof presentation_spaces;

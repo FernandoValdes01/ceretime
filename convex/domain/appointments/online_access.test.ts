@@ -2,11 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   ONLINE_ACCESS_ALLOWED_HOSTS,
   ONLINE_ACCESS_LINK_MAX_LENGTH,
-  MAX_ONLINE_SUPPORTS,
-  ONLINE_SUPPORT_TEXT_MAX_LENGTH,
   decideOnlineAccessUpdate,
   normalizeOnlineAccessLink,
-  normalizeOnlineSupports,
   toOnlineAccessView,
   type OnlineAccessSubject,
 } from "./online_access";
@@ -203,64 +200,5 @@ describe("Entrega del enlace a los participantes (TI2-142)", () => {
         STUDENT,
       ),
     ).toEqual({ status: "not_applicable" });
-  });
-});
-
-describe("Apoyos de la atención en línea (TI2-142)", () => {
-  const captions = { id: "subtítulos-ficticios", label: "Subtítulos (ficticio)" };
-  const interpreter = { id: "interprete-ficticio", label: "Intérprete (ficticio)" };
-
-  test("recorta, conserva el primero de cada identificador y admite lista vacía", () => {
-    expect(
-      normalizeOnlineSupports("online", [
-        { id: ` ${captions.id} `, label: ` ${captions.label}` },
-        interpreter,
-        { id: captions.id, label: "Otra etiqueta" },
-      ]),
-    ).toEqual({ status: "valid", supports: [captions, interpreter] });
-    expect(normalizeOnlineSupports("online", [])).toEqual({ status: "valid", supports: [] });
-  });
-
-  test("rechaza apoyos sin identificador o etiqueta", () => {
-    expect(normalizeOnlineSupports("online", [{ id: " ", label: "Sin id" }])).toEqual({
-      status: "rejected",
-      cause: "support_invalid",
-    });
-    expect(normalizeOnlineSupports("online", [{ id: "x", label: "" }])).toEqual({
-      status: "rejected",
-      cause: "support_invalid",
-    });
-  });
-
-  test("acota la cantidad de apoyos distintos y el largo de cada texto", () => {
-    const support = (index: number) => ({ id: `apoyo-${index}`, label: `Apoyo ${index}` });
-    const atLimit = Array.from({ length: MAX_ONLINE_SUPPORTS }, (_, index) => support(index));
-    expect(normalizeOnlineSupports("online", [...atLimit, support(0)]).status).toBe("valid");
-    expect(normalizeOnlineSupports("online", [...atLimit, support(MAX_ONLINE_SUPPORTS)])).toEqual({
-      status: "rejected",
-      cause: "too_many_supports",
-    });
-
-    const longest = "a".repeat(ONLINE_SUPPORT_TEXT_MAX_LENGTH);
-    expect(normalizeOnlineSupports("online", [{ id: ` ${longest} `, label: longest }]).status).toBe(
-      "valid",
-    );
-    for (const tooLong of [
-      { id: `${longest}a`, label: "Apoyo" },
-      { id: "apoyo", label: `${longest}a` },
-    ]) {
-      expect(normalizeOnlineSupports("online", [tooLong])).toEqual({
-        status: "rejected",
-        cause: "support_too_long",
-      });
-    }
-  });
-
-  test("en presencial los apoyos van en el espacio, no en la atención", () => {
-    expect(normalizeOnlineSupports("inPerson", [captions])).toEqual({
-      status: "rejected",
-      cause: "not_online",
-    });
-    expect(normalizeOnlineSupports("inPerson", [])).toEqual({ status: "valid", supports: [] });
   });
 });

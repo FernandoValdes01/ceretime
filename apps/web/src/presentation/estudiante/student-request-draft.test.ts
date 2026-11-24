@@ -24,7 +24,6 @@ function borradorCompleto(overrides: Partial<RequestDraft> = {}): RequestDraft {
     modalityPreference: "online",
     preferredWeekdays: [0, 3, 1],
     preferredAccessibleInformationChannel: "Correo con letra grande",
-    idempotencyKey: "clave-ficticia",
     ...overrides,
   };
 }
@@ -81,7 +80,6 @@ describe("TI2-149: envío desde el borrador", () => {
       modalityPreference: "online",
       generalAvailability: { preferredWeekdays: [1, 3, 0] },
       preferredAccessibleInformationChannel: "Correo con letra grande",
-      idempotencyKey: "clave-ficticia",
     });
   });
 
@@ -102,23 +100,17 @@ describe("TI2-149: envío desde el borrador", () => {
 });
 
 describe("TI2-149: conservación del borrador", () => {
-  test("cada borrador nuevo trae su propia clave de idempotencia", () => {
-    expect(emptyRequestDraft().idempotencyKey).not.toBe(emptyRequestDraft().idempotencyKey);
-  });
-
-  test("lo guardado se recupera con la misma clave y solo para la misma cuenta", () => {
+  test("lo guardado se recupera solo para la misma cuenta", () => {
     const draft = borradorCompleto();
     saveRequestDraft(TITULAR, draft);
     expect(loadRequestDraft(TITULAR)).toEqual(draft);
     expect(loadRequestDraft("otra@alu.uct.cl").needSummary).toBe("");
   });
 
-  test("al borrarlo, la próxima solicitud empieza vacía con otra clave", () => {
+  test("al borrarlo, la próxima solicitud empieza vacía", () => {
     saveRequestDraft(TITULAR, borradorCompleto());
     clearRequestDraft(TITULAR);
-    const next = loadRequestDraft(TITULAR);
-    expect(next.needSummary).toBe("");
-    expect(next.idempotencyKey).not.toBe("clave-ficticia");
+    expect(loadRequestDraft(TITULAR)).toEqual(emptyRequestDraft());
   });
 
   test("un contenido dañado se descarta sin romper el formulario", () => {
@@ -131,14 +123,16 @@ describe("TI2-149: conservación del borrador", () => {
     expect(loadRequestDraft(TITULAR).needSummary).toBe("");
   });
 
-  test("un borrador sin clave de idempotencia se descarta y el nuevo trae una", () => {
+  test("un borrador guardado con la clave de idempotencia anterior se recupera sin ella", () => {
+    // La clave salió del envío (TI2-165): un borrador de esa versión no se
+    // pierde y la clave no vuelve a viajar al Backend.
     window.sessionStorage.setItem(
       `cereti:solicitud-borrador:${TITULAR}`,
-      JSON.stringify({ ...borradorCompleto(), idempotencyKey: "" }),
+      JSON.stringify({ ...borradorCompleto(), idempotencyKey: "clave-ficticia" }),
     );
     const draft = loadRequestDraft(TITULAR);
-    expect(draft.needSummary).toBe("");
-    expect(draft.idempotencyKey).not.toBe("");
+    expect(draft).toEqual(borradorCompleto());
+    expect(toOwnRequestSubmission(draft)).not.toHaveProperty("idempotencyKey");
   });
 
   test("al cerrar sesión se borran los borradores de todas las cuentas y nada más", () => {

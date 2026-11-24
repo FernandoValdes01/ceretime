@@ -48,7 +48,7 @@ El detalle suma campos que no viajan en los listados ni en la bandeja. Tres son 
 
 - `informationRequest`: lo que pidió el Profesional. Solo está mientras la solicitud espera respuesta.
 - `informationResponse`: la respuesta del Estudiante al último pedido. Si el Profesional vuelve a pedir información, la respuesta anterior deja de venir hasta que llegue la nueva, así una pregunta pendiente nunca aparece junto a una respuesta vieja.
-- `closureReason`: la razón de cierre, legible para el Estudiante.
+- `closureReason`: la razón de cierre, legible para el Estudiante. Solo aparece en una solicitud `closed_without_accompaniment` y sale del registro del cierre en `requestTransitions`, como `motivo?` de TRANSICIONES_SOLICITUD en el MER (TI2-165).
 
 Desde TI2-143 suma además la procedencia y las derivaciones, sin identificadores de personal:
 
@@ -86,19 +86,18 @@ Las fechas son milisegundos de época. Los tres campos son opcionales en el tipo
 | `modalityPreference` | `"inPerson"` o `"online"` | Obligatorio |
 | `generalAvailability` | `{ preferredWeekdays: number[], preferredTimeRange?: { from: string, to: string } }` | Al menos un día, de 0 (domingo) a 6 (sábado), sin repetir; horario `HH:mm` con inicio antes del fin |
 | `preferredAccessibleInformationChannel` | `string` | Obligatorio, de 1 a 200 caracteres tras recortar |
-| `idempotencyKey` | `string` | Obligatorio, de 1 a 128 caracteres; la genera el cliente una vez por envío |
 
 Debe haber al menos una necesidad seleccionada o un `otherAccessNeed` con texto. `accessNeeds` de la respuesta es el texto unido que arma el Backend con las etiquetas y el texto libre, separados por salto de línea, hasta 2000 caracteres. La solicitud guarda su procedencia como canal del Estudiante. Los textos se guardan recortados y el exceso se rechaza, nunca se trunca. El validador rechaza cualquier campo fuera de esta lista, incluidos RUT, diagnóstico, certificados y área interna.
 
-**Idempotencia.** Repetir el envío con la misma `idempotencyKey` devuelve la misma solicitud sin crear otra, aunque el contenido cambie. La clave es del Estudiante: la misma clave en otra cuenta es otro envío. El cliente debe generar una clave nueva para cada solicitud distinta y reutilizarla solo al reintentar.
+**Sin clave de idempotencia.** Desde TI2-165 el envío no lleva `idempotencyKey`, porque SOLICITUDES del MER no la tiene: Convex rechaza la llamada que la envía y cada envío válido crea una solicitud. Un reintento después de perder la respuesta puede dejar una segunda solicitud del mismo Estudiante.
 
-**Forma anterior (Sprint 1).** Solo `accessNeeds: string`, de 1 a 2000 caracteres, sin ningún otro campo. Se conserva mientras Web y Mobile migran, no es idempotente y no guarda los campos nuevos. Si el texto llega con cualquier campo de la forma completa, incluido `otherAccessNeed`, el envío sigue la forma completa: autoriza antes de validar y rechaza con `request_fields_invalid` y «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.», aunque falten otros campos.
+**Forma anterior (Sprint 1).** Solo `accessNeeds: string`, de 1 a 2000 caracteres, sin ningún otro campo. Se conserva mientras Web y Mobile migran y no guarda los campos nuevos. Si el texto llega con cualquier campo de la forma completa, incluido `otherAccessNeed`, el envío sigue la forma completa: autoriza antes de validar y rechaza con `request_fields_invalid` y «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.», aunque falten otros campos.
 
 ## Respuesta, cancelación y cierre
 
 - **Responder** solo es posible desde `awaiting_information_or_acceptance`. La solicitud vuelve a `under_review` para que quien la tomó la retome. La respuesta es obligatoria, de hasta 2000 caracteres, y queda en el historial de la solicitud.
 - **Cancelar** es posible desde `received`, `under_review` o `awaiting_information_or_acceptance`. El motivo es obligatorio.
-- **Cerrar sin acompañamiento** es posible desde `under_review` o `awaiting_information_or_acceptance`. La razón es obligatoria y queda como `closureReason`.
+- **Cerrar sin acompañamiento** es posible desde `under_review` o `awaiting_information_or_acceptance`. La razón es obligatoria, queda en el registro del cambio y el detalle la entrega como `closureReason`.
 - Cancelar o cerrar nunca abre un acompañamiento. Una solicitud cancelada, cerrada o aceptada no admite ningún paso más. Una necesidad posterior empieza con una solicitud nueva.
 - Cada cambio queda en el historial de la solicitud con actor y fecha. Los motivos y respuestas son texto libre: no deben incluir diagnósticos ni etiquetas clínicas, y no se copian a la bitácora de auditoría.
 
@@ -110,12 +109,12 @@ Operaciones de TI2-143 para el personal autorizado, que es el Profesional con cu
 
 | Campo | Tipo | Regla |
 | --- | --- | --- |
-| Forma completa | Los campos de «Envío», incluida `idempotencyKey` | Las mismas reglas y los mismos mensajes |
+| Forma completa | Los campos de «Envío» | Las mismas reglas y los mismos mensajes |
 | `studentEmail` | `string` | Correo institucional de una cuenta de Estudiante vigente. Se compara sin mayúsculas ni espacios sobrantes |
 | `receivedAt` | `number`, opcional | Cuándo la recibió CERETI, en milisegundos de época. No puede ser futura. Si falta, es el momento del registro |
 | `originUnit` | `string`, opcional | Unidad de la Universidad que derivó al estudiante, de 1 a 200 caracteres tras recortar. Con ella la solicitud es una derivación de entrada |
 
-La solicitud queda `received` y sin toma: aparece en la bandeja y quien la revise debe tomarla. Guarda su procedencia: el canal oficial, quién la registró y cuándo se recibió. Autoriza antes de validar. Repetir el registro con la misma `idempotencyKey` devuelve la misma solicitud a quien la registró; si esa clave es de una solicitud del mismo estudiante que registró otra persona, responde `conflict` sin entregarla. Si `studentEmail` no es de una cuenta de Estudiante vigente, responde `request_fields_invalid`.
+La solicitud queda `received` y sin toma: aparece en la bandeja y quien la revise debe tomarla. Guarda su procedencia: el canal oficial, quién la registró y cuándo se recibió. Autoriza antes de validar. Cada registro válido crea una solicitud, igual que el envío del Estudiante. Si `studentEmail` no es de una cuenta de Estudiante vigente, responde `request_fields_invalid`.
 
 **Derivación de entrada.** Es el aviso de otra unidad sobre una posible necesidad de un estudiante. No es un estado: la solicitud recorre los mismos estados que cualquier otra. Lo que cambia es que **no abre acompañamiento hasta que conste el contacto de CERETI con el estudiante y su aceptación**, en ese orden:
 
@@ -161,7 +160,7 @@ Desde TI2-150, registrar una solicitud y cada cambio de estado dejan un aviso en
 | `closeRequestWithoutAccompaniment` | `request_closed` | El Estudiante |
 | `cancelRequest` | `request_cancelled` | Quien revisa; si nadie la tomó, no hay aviso |
 
-El aviso lleva solo la solicitud y el destinatario: nunca el motivo, la respuesta, la razón ni las necesidades. Su texto externo es el genérico «Tienes una actualización pendiente». La recepción usa el instante persistido de la fila, así repetir el envío con la misma `idempotencyKey` devuelve la misma solicitud y no deja un segundo aviso. Un paso rechazado no deja aviso. El contacto y la aceptación de una derivación de entrada no cambian el estado y no avisan.
+El aviso lleva solo la solicitud y el destinatario: nunca el motivo, la respuesta, la razón ni las necesidades. Su texto externo es el genérico «Tienes una actualización pendiente». Cada solicitud recibida deja un solo aviso de recepción. Desde TI2-165 el envío no lleva clave de idempotencia, así que repetirlo crea otra solicitud con su propio aviso. Un paso rechazado no deja aviso. El contacto y la aceptación de una derivación de entrada no cambian el estado y no avisan.
 
 ## Vínculo con el acompañamiento
 
@@ -196,7 +195,7 @@ Todas las operaciones de `api.presentation.requests.*`, mutations y consultas, r
 | `request_fields_invalid` | Falta un dato o no cumple su regla. Un campo que no llega se nombra con el mismo texto que cuando llega vacío | Por ejemplo: «Describe la barrera o necesidad.», «Indica si prefieres la modalidad presencial o en línea.», «Selecciona al menos un día disponible.», «Se requiere el motivo para cancelar la solicitud.», «Se requiere la respuesta a la información pedida.», «Envía las necesidades de acceso como lista junto con los demás datos de la solicitud.», «Se requiere el motivo para pedir información adicional», «Se requiere el objetivo para abrir el acompañamiento», «El tamaño de página debe ser un número finito.» (`listAuthorizedRequests`), «No hay una cuenta de Estudiante vigente con ese correo.», «La fecha de recepción no puede ser futura.», «Indica la unidad a la que se deriva al estudiante.», «Se requiere la razón de la derivación.» |
 | `access_needs_empty` | No hay ninguna necesidad seleccionada ni `otherAccessNeed` con texto; en la forma anterior, `accessNeeds` llega vacío | «Se requiere describir la necesidad de acceso.»; en la forma anterior, «Se requiere describir la necesidad de acceso» |
 | `access_needs_too_long` | Los nombres seleccionados y `otherAccessNeed`, unidos, superan 2000 caracteres; en la forma anterior, `accessNeeds` los supera | «Las necesidades de acceso y el texto adicional superan juntos el máximo permitido (2000 caracteres).»; en la forma anterior, «La necesidad de acceso supera el máximo permitido (2000 caracteres)» |
-| `conflict` | El estado actual no admite el paso, o quien llama ya tomó la solicitud | «La solicitud no admite la cancelación en su estado actual.», «La solicitud no admite el cierre sin acompañamiento en su estado actual.», «La solicitud no admite una respuesta en su estado actual.», «Solo se pueden tomar solicitudes recibidas», «Ya tomaste esta solicitud», «La solicitud no admite pedir información adicional en su estado actual», «La solicitud ya fue aceptada», «La solicitud no admite la aceptación en su estado actual», «La derivación necesita el contacto con el estudiante y su aceptación antes de abrir el acompañamiento», «Registra primero el contacto con el estudiante.», «El contacto con el estudiante ya está registrado.», «La aceptación del estudiante ya está registrada.», «La solicitud no viene de una derivación.», «La solicitud ya no admite este registro en su estado actual.», «La solicitud no admite la derivación en su estado actual.», «Ya existe otra solicitud de este estudiante con esa clave de envío. Genera una clave nueva.» |
+| `conflict` | El estado actual no admite el paso, o quien llama ya tomó la solicitud | «La solicitud no admite la cancelación en su estado actual.», «La solicitud no admite el cierre sin acompañamiento en su estado actual.», «La solicitud no admite una respuesta en su estado actual.», «Solo se pueden tomar solicitudes recibidas», «Ya tomaste esta solicitud», «La solicitud no admite pedir información adicional en su estado actual», «La solicitud ya fue aceptada», «La solicitud no admite la aceptación en su estado actual», «La derivación necesita el contacto con el estudiante y su aceptación antes de abrir el acompañamiento», «Registra primero el contacto con el estudiante.», «El contacto con el estudiante ya está registrado.», «La aceptación del estudiante ya está registrada.», «La solicitud no viene de una derivación.», «La solicitud ya no admite este registro en su estado actual.», «La solicitud no admite la derivación en su estado actual.» |
 
 ```json
 { "code": "request_fields_invalid", "message": "Selecciona al menos un día disponible." }
@@ -216,8 +215,6 @@ import { useMutation } from "convex/react";
 import { api } from "./_generated/api";
 
 const createRequest = useMutation(api.presentation.requests.createRequest);
-// Una clave por envío, creada al abrir el formulario: se reutiliza solo al reintentar.
-const idempotencyKey = crypto.randomUUID();
 
 try {
   const request = await createRequest({
@@ -227,7 +224,6 @@ try {
     modalityPreference: "online",
     generalAvailability: { preferredWeekdays: [1, 3] },
     preferredAccessibleInformationChannel: "Correo con letra grande",
-    idempotencyKey,
   });
 } catch (error) {
   muestraMensaje(mensajeDeError(error));

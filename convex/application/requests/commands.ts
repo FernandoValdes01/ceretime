@@ -57,7 +57,6 @@ const FULL_FORM_FIELDS = [
   "modalityPreference",
   "generalAvailability",
   "preferredAccessibleInformationChannel",
-  "idempotencyKey",
 ] as const;
 
 /** Forma anterior: `accessNeeds` como texto y ningún campo de la forma completa. */
@@ -87,11 +86,9 @@ export interface RegisterRequestDeps<RequestId extends string, UserId extends st
  *
  * La forma anterior (solo `accessNeeds` como texto) valida el texto con
  * `toLegacyAccessNeeds` de Dominio, con los códigos `access_needs_*`
- * (TI2-181), y no es idempotente porque no trae clave. Cualquier otra entrada
- * sigue la forma completa de TI2-141: exige sus campos con
- * `toCompleteSubmission`, los valida con `toRequestSubmission` y se guarda una
- * sola vez por clave: un reintento con la misma clave devuelve la solicitud
- * ya creada sin escribir otra.
+ * (TI2-181). Cualquier otra entrada sigue la forma completa de TI2-141: exige
+ * sus campos con `toCompleteSubmission` y los valida con `toRequestSubmission`.
+ * Ninguna de las dos es idempotente: cada envío válido crea una solicitud.
  */
 export async function registerRequest<RequestId extends string, UserId extends string>(
   deps: RegisterRequestDeps<RequestId, UserId>,
@@ -110,14 +107,13 @@ export async function registerRequest<RequestId extends string, UserId extends s
   if (complete.status === "error") return complete;
   const submission = toRequestSubmission(complete.data);
   if (submission.status === "error") return submission;
-  const requestId = await deps.requests.registerOnce(student._id, submission.data, deps.now());
+  const requestId = await deps.requests.registerComplete(student._id, submission.data, deps.now());
   return okResult(await readRegistered(deps, requestId));
 }
 
 /**
  * Solicitud recién registrada, leída de vuelta en la misma mutation, con su
- * aviso de recepción. Un reintento con la misma clave lee la misma fila y su
- * aviso ya registrado no se duplica.
+ * aviso de recepción.
  */
 async function readRegistered<RequestId extends string, UserId extends string>(
   deps: RegisterRequestDeps<RequestId, UserId>,
@@ -428,9 +424,9 @@ export interface CloseRequestDeps<RequestId extends string, UserId extends strin
  * otra persona recibe denegación genérica. El motivo es la razón comprensible
  * que pide la especificación y es obligatorio. Si el estado no admite el
  * paso, incluida una solicitud aceptada o ya cerrada, se rechaza sin
- * modificar nada. Persiste el estado, la razón vigente (`closureReason`) y
- * el registro del cambio en la misma transacción; la toma queda tal cual,
- * como rastro de quién revisó.
+ * modificar nada. Persiste el estado y el registro del cambio, que guarda la
+ * razón, en la misma transacción; la toma queda tal cual, como rastro de
+ * quién revisó.
  */
 export async function closeRequestWithoutAccompaniment<
   RequestId extends string,

@@ -3,6 +3,7 @@ import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import type { AppointmentStatus } from "../../domain/appointments/appointment";
 import {
+  FOLLOW_UP_CONTRACT_VERSION,
   FOLLOW_UP_ENTRIES_MAX,
   isFollowUpRetry,
   validateFollowUpRecord,
@@ -101,14 +102,12 @@ async function insertEntries(
   for (const agreement of record.agreements) {
     await ctx.db.insert("followUpAgreements", {
       recordId,
-      entryId: agreement.id,
       description: agreement.description,
     });
   }
   for (const task of record.tasks) {
     await ctx.db.insert("followUpTasks", {
       recordId,
-      entryId: task.id,
       description: task.description,
       responsible: task.responsible,
       status: task.status,
@@ -127,12 +126,8 @@ async function toRecordWithoutNote(
   return {
     appointmentId: row.appointmentId,
     accompanimentId,
-    agreements: agreements.map((agreement) => ({
-      id: agreement.entryId,
-      description: agreement.description,
-    })),
+    agreements: agreements.map((agreement) => ({ description: agreement.description })),
     tasks: tasks.map((task) => ({
-      id: task.entryId,
       description: task.description,
       responsible: task.responsible,
       status: task.status,
@@ -141,7 +136,9 @@ async function toRecordWithoutNote(
     ...(row.suggestedNextAppointmentDate === undefined
       ? {}
       : { suggestedNextAppointmentDate: row.suggestedNextAppointmentDate }),
-    version: row.version,
+    // La versión es la del contrato público, no un dato del registro: el MER
+    // no la guarda (TI2-165).
+    version: FOLLOW_UP_CONTRACT_VERSION,
   };
 }
 
@@ -223,7 +220,6 @@ export async function saveFollowUpRecord(
       ? {}
       : { suggestedNextAppointmentDate: record.suggestedNextAppointmentDate }),
     ...(internalNoteId === undefined ? {} : { internalNoteId }),
-    version: record.version,
     // El registro no se vuelve a escribir: `updatedAt` queda como su confirmación.
     updatedAt: Date.now(),
   });
