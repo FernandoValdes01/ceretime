@@ -58,3 +58,20 @@ bunx convex data notificationDeliveries --limit 5 --format json
 ```
 
 4. Comprueba en el buzón de prueba que el correo llegó desde `GMAIL_SENDER_ADDRESS` con asunto y cuerpo genéricos (por ejemplo, «Tienes una actualización pendiente» y «Revisa las novedades en la aplicación.»), sin mencionar CERETI, profesional, necesidades ni tipo de acompañamiento.
+
+## Resolver entregas con resultado incierto (`delivery_uncertain`)
+
+Una entrega queda en `status: "failed"` con `errorCode: "delivery_uncertain"` y sin `nextAttemptAt` cuando se pierde la respuesta después de llamar a Gmail o cuando la acción se interrumpe entre la confirmación de Gmail y el registro de `sent`. Ese estado retira la entrega del barrido automático para impedir un segundo correo duplicado.
+
+- **Quién revisa estos casos:** el responsable de mantenimiento del remitente institucional (responsable de TI2-159, `wpeneipil2025@alu.uct.cl`) o quien opere el correo en producción.
+- **Cómo detectarlos:** en el dashboard de Convex abre la tabla `notificationDeliveries` y filtra por `status = "failed"` y `errorCode = "delivery_uncertain"`, o consulta por CLI (agregando `--prod` en producción):
+
+```powershell
+bunx convex data notificationDeliveries --limit 50 --format json
+```
+
+- **Cómo verificar en el buzón remitente antes de decidir si se reenvía:**
+  1. Toma el `eventId` de la fila en `notificationDeliveries`, busca el evento en `notificationEvents` para obtener `recipientId`, `kind` y `readAt`, y consulta el correo del destinatario en `users`.
+  2. Abre la carpeta **Enviados** de la cuenta remitente (`GMAIL_SENDER_ADDRESS`) y busca correos enviados a ese destinatario alrededor de `lastAttemptAt` con el asunto genérico correspondiente.
+  3. **Si el correo figura en Enviados:** no reenviar; el destinatario ya recibió el aviso.
+  4. **Si el correo no figura en Enviados:** verifica si el aviso sigue pendiente (`readAt` ausente en `notificationEvents`) y coordina un reenvío manual o aviso por canal oficial sin crear otra fila en `notificationEvents`.

@@ -413,3 +413,57 @@ test("TI2-159: seis intentos sin credenciales no agotan el presupuesto cuando Gm
   expect(afterRecovery[0]?.errorCode).toBeUndefined();
   expect(afterRecovery[0]?.nextAttemptAt).toBeUndefined();
 });
+
+test("TI2-159: un corte entre la confirmación de Gmail y el registro de sent no habilita un segundo envío automático", async () => {
+  stubGmailEnv();
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti159-est-corte", "corte@alu.uct.cl");
+  const student = t.withIdentity(identityFor("ti159-est-corte"));
+
+  // Crea la solicitud y toma la fila de entrega antes de correr la acción.
+  await student.mutation(api.presentation.requests.createRequest, REQUEST_SUBMISSION);
+  const queued = await deliveries(t);
+  expect(queued).toHaveLength(1);
+  const deliveryId = queued[0]!._id;
+
+  // Simula el inicio del despacho: la acción reserva la entrega, Gmail confirma
+  // el envío (200 OK) y la acción se interrumpe antes de llamar a recordEmailDeliveryAttempt.
+  const claim = await t.mutation(internal.operations.notifications.claimEmailDelivery, {
+    deliveryId,
+    now: NOW,
+  });
+  expect(claim.status).toBe("claimed");
+
+  let gmailSendCount = 0;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+    const target = String(url);
+    if (target.includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "access-ok" });
+    }
+    if (target.includes("gmail.googleapis.com")) {
+      gmailSendCount += 1;
+      return jsonResponse({ id: "gmail-confirmado-antes-del-corte" });
+    }
+    throw new Error(`URL inesperada: ${target}`);
+  });
+
+  // La entrega ya quedó fuera del barrido automático y marcada como delivery_uncertain.
+  const afterCrash = await deliveries(t);
+  expect(afterCrash[0]).toMatchObject({
+    status: "failed",
+    attempts: 1,
+    errorCode: "delivery_uncertain",
+  });
+  expect(afterCrash[0]?.nextAttemptAt).toBeUndefined();
+
+  // Ni el vencimiento de la reserva ni el cron posterior vuelven a despachar a Gmail.
+  vi.setSystemTime(NOW + 24 * 60 * 60_000);
+  const due = await t.mutation(internal.operations.notifications.scheduleDueEmailDeliveries, {});
+  expect(due).toBe(0);
+
+  const secondDispatch = await t.action(internal.operations.notifications.dispatchEmailDelivery, {
+    deliveryId,
+  });
+  expect(secondDispatch).toBe("skipped");
+  expect(gmailSendCount).toBe(0);
+});

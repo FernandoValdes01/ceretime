@@ -545,6 +545,11 @@ export interface NotificationDeliveryAttemptInput {
   readonly status: "sent" | "failed";
   readonly attemptedAt: number;
   readonly errorCode?: NotificationDeliveryError;
+  /**
+   * Falso cuando el intento ya se contabilizó al reservar la entrega
+   * (`claimEmailDelivery`), para no contarlo dos veces al guardar el resultado.
+   */
+  readonly countAttempt?: boolean;
 }
 
 /** Resultado de registrar un intento: el aviso y su entrega nunca se duplican. */
@@ -591,7 +596,9 @@ export async function recordNotificationDeliveryAttempt(
   }
 
   const existing = await findDeliveryRow(ctx, normalizedEventId, input.channel);
-  const attempts = (existing?.attempts ?? 0) + 1;
+  const countAttempt = input.countAttempt ?? true;
+  const attempts =
+    existing === null ? 1 : countAttempt ? existing.attempts + 1 : Math.max(existing.attempts, 1);
   const errorCode = input.status === "failed" ? input.errorCode : undefined;
   const providerFailureAttempts =
     input.status === "sent"
@@ -635,9 +642,6 @@ export async function recordNotificationDeliveryAttempt(
   return { status: "recorded", deliveryId, attempts };
 }
 
-/** Reserva del despacho: cubre el límite de ejecución de una acción de Convex. */
-const EMAIL_DELIVERY_CLAIM_MS = 10 * 60_000;
-
 /** Resultado de reservar una entrega, estructuralmente igual al puerto de Aplicación. */
 export type EmailDeliveryClaimResult =
   | {
@@ -652,10 +656,13 @@ export type EmailDeliveryClaimResult =
 /**
  * Reserva una entrega por correo para un intento (TI2-159).
  *
- * Solo la toma si sigue sin enviarse y su próximo intento ya venció; en la
- * misma transacción adelanta `nextAttemptAt` por la duración de la reserva,
- * así un segundo despacho concurrente recibe `skipped`. Si el despacho muere
- * sin registrar el resultado, la reserva vence y el barrido la retoma.
+ * Solo la toma si sigue sin enviarse y su próximo intento ya venció. En la
+ * misma transacción retira `nextAttemptAt`, incrementa `attempts` y deja la
+ * fila en `delivery_uncertain`: así un segundo despacho concurrente recibe
+ * `skipped` y, si la acción se interrumpe después de llamar a Gmail y antes
+ * de registrar `sent`, el barrido automático nunca vuelve a enviarla. Cuando
+ * el despacho termina normalmente, `recordEmailDeliveryAttempt` reemplaza ese
+ * estado provisional por el resultado real sin duplicar el contador.
  * Devuelve el aviso reconstruido con su forma mínima y el correo del
  * destinatario, que no sale del servidor.
  */
@@ -676,10 +683,19 @@ export async function claimEmailDelivery(
   const eventRow = await ctx.db.get(delivery.eventId);
   if (eventRow === null) return { status: "skipped" };
 
-  await ctx.db.patch(normalized, { nextAttemptAt: now + EMAIL_DELIVERY_CLAIM_MS });
   const recipient = await ctx.db.get(eventRow.recipientId);
   const recipientEmail = recipient?.email.trim() ?? "";
-  if (recipientEmail === "") return { status: "no_destination", eventId: eventRow._id };
+  if (recipientEmail === "") {
+    await ctx.db.patch(normalized, { nextAttemptAt: undefined });
+    return { status: "no_destination", eventId: eventRow._id };
+  }
+  await ctx.db.patch(normalized, {
+    status: "failed",
+    errorCode: "delivery_uncertain",
+    attempts: delivery.attempts + 1,
+    lastAttemptAt: now,
+    nextAttemptAt: undefined,
+  });
   return {
     status: "claimed",
     eventId: eventRow._id,
@@ -729,6 +745,7 @@ export async function recordEmailDeliveryAttempt(
     | { readonly status: "sent" }
     | { readonly status: "failed"; readonly errorCode: NotificationDeliveryError },
   attemptedAt: number,
+  countAttempt = false,
 ): Promise<NotificationDeliveryAttemptResult> {
   const normalized = ctx.db.normalizeId("notificationEvents", eventId);
   if (normalized === null) return { status: "invalid_reference" };
@@ -736,6 +753,7 @@ export async function recordEmailDeliveryAttempt(
     channel: "email",
     status: result.status,
     attemptedAt,
+    countAttempt,
     ...(result.status === "failed" ? { errorCode: result.errorCode } : {}),
   });
 }
