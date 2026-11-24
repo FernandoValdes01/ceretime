@@ -1,5 +1,5 @@
 import { api } from "../../../../convex/_generated/api";
-import type { StudentAreaReader, StudentPageOptions } from "../application/student-area-port";
+import type { StudentAreaReader } from "../application/student-area-port";
 import type { Accompaniment } from "../domain/request-models";
 import type {
   StudentAreaSnapshot,
@@ -12,10 +12,7 @@ import {
   mapStudentRequestDetail,
   toStudentOperationError,
 } from "./student-contract-mappers";
-
-const PAGE_SIZE = 50;
-// Tope de seguridad: un cursor que nunca termina no debe dejar la pantalla cargando para siempre.
-const MAX_PAGES = 50;
+import { readAllPages } from "./read-all-pages";
 
 type ReadClient = Pick<MobileConvexClient, "query">;
 
@@ -32,27 +29,6 @@ export interface ConvexStudentAreaReader extends StudentAreaReader {
   subscribe(onChange: () => void): () => void;
   /** Provoca la recarga de quienes escuchan; lo usan los adaptadores que escriben. */
   notifyChanged(): void;
-}
-
-interface ServerPage<T> {
-  readonly page: readonly T[];
-  readonly isDone: boolean;
-  readonly continueCursor: string;
-}
-
-/** Recorre todas las páginas: una página vacía puede tener continuación, solo `isDone` es el final. */
-async function readAllPages<T>(
-  readPage: (options: StudentPageOptions) => Promise<ServerPage<T>>,
-): Promise<T[]> {
-  const items: T[] = [];
-  let cursor: string | null = null;
-  for (let pageNumber = 0; pageNumber < MAX_PAGES; pageNumber += 1) {
-    const page: ServerPage<T> = await readPage({ numItems: PAGE_SIZE, cursor });
-    items.push(...page.page);
-    if (page.isDone) return items;
-    cursor = page.continueCursor;
-  }
-  throw new Error("El recorrido de páginas no terminó.");
 }
 
 /**
