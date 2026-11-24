@@ -50,8 +50,7 @@ function toSubject(appointment: ImpactedAppointmentInput) {
  *
  * Revalida cada atención con su propio cupo actual. Un `ok` conserva la
  * compatibilidad y no se avisa; un error (`no_availability` o `conflict`)
- * marca la atención como afectada. Nunca lanza: un fallo de lectura cuenta
- * como afectada para no dejarla en silencio.
+ * marca la atención como afectada.
  */
 export async function findAffectedAppointments(
   deps: SlotSelectionDeps,
@@ -59,20 +58,16 @@ export async function findAffectedAppointments(
 ): Promise<ImpactedAppointmentInput[]> {
   const affected: ImpactedAppointmentInput[] = [];
   for (const appointment of appointments) {
-    try {
-      const slot = await resolveBookableSlot(deps, {
-        accompanimentId: appointment.accompanimentId,
-        professionalId: appointment.professionalId,
-        modality: appointment.modality,
-        ...(appointment.spaceId === undefined ? {} : { spaceId: appointment.spaceId }),
-        startAt: appointment.startAt,
-        endAt: appointment.endAt,
-        timeZone: AGENDA_TIME_ZONE,
-      });
-      if (slot.status === "error") {
-        affected.push(appointment);
-      }
-    } catch {
+    const slot = await resolveBookableSlot(deps, {
+      accompanimentId: appointment.accompanimentId,
+      professionalId: appointment.professionalId,
+      modality: appointment.modality,
+      ...(appointment.spaceId === undefined ? {} : { spaceId: appointment.spaceId }),
+      startAt: appointment.startAt,
+      endAt: appointment.endAt,
+      timeZone: AGENDA_TIME_ZONE,
+    });
+    if (slot.status === "error") {
       affected.push(appointment);
     }
   }

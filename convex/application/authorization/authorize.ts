@@ -17,6 +17,7 @@ import {
   canRescheduleAppointment,
   canReviewAppointmentJustification,
   canSubmitAppointmentJustification,
+  canUpdateAccompanimentNeeds,
   canUseAppointmentOnlineAccess,
   canWriteFollowUp,
   getAccompanimentView,
@@ -318,6 +319,19 @@ export async function authorizeAccompanimentStatusChange(
   const loaded = await loadAgendaContext(reader, request);
   if (loaded === null || !canChangeAccompanimentStatus(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId, status: loaded.context.accompanimentStatus });
+}
+
+/**
+ * Actualizar necesidades de acceso (TI2-156): solo el Estudiante dueño con
+ * cuenta vigente, sobre un acompañamiento activo o en pausa.
+ */
+export async function authorizeAccompanimentNeedsUpdate(
+  reader: AuthorizationReader,
+  request: AgendaRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAgendaContext(reader, request);
+  if (loaded === null || !canUpdateAccompanimentNeeds(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
 }
 
 /**

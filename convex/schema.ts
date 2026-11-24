@@ -455,7 +455,26 @@ export default defineSchema({
   })
     // Participantes de la atención: una fila basta para decidir y el conjunto
     // se lee sin filtrar en memoria.
-    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"]),
+    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"])
+    // Futuras donde el profesional participa (TI2-156, TI2-142): responsable o
+    // adicional, para avisarle cuando su disponibilidad deja de cubrirlas.
+    .index("by_professionalId", ["professionalId"]),
+
+  // Tabla 'accompanimentNeeds': versiones de necesidades de acceso (TI2-156).
+  // NECESIDADES_ACCESO del MER (`vigenteDesde`, `vigenteHasta?`): cada fila es
+  // la versión vigente desde `validFrom` hasta `validUntil` (exclusivo;
+  // ausente en la vigente). Actualizar cierra la vigente y crea una nueva con
+  // `validFrom` en el instante del cambio, sin tocar `accompaniments`, que
+  // conserva solo la copia vigente como caché. Las atenciones se evalúan con
+  // la versión vigente a su `startsAt`, así las anteriores no cambian.
+  accompanimentNeeds: defineTable({
+    accompanimentId: v.id("accompaniments"),
+    accessNeeds: v.string(),
+    validFrom: v.number(),
+    validUntil: v.optional(v.number()),
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+  }).index("by_accompanimentId_and_validFrom", ["accompanimentId", "validFrom"]),
 
   // Tabla 'notificationEvents': eventos de aviso con un único recurso
   // (atención o solicitud) y su destinatario (TI2-118, ampliada por TI2-145).

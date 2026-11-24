@@ -5,6 +5,8 @@ import {
   APPOINTMENT_STATUS_VALUES,
   isCalendarActionableStatus,
 } from "../../domain/appointments/appointment";
+import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import { addCivilDays, midnightToEpochMs } from "../../domain/calendar/civil_days";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
 
 /**
@@ -1182,9 +1184,9 @@ async function collectFutureActionable(
 }
 
 /**
- * Atenciones futuras por profesional, espacio o acompañamiento (TI2-156).
- * Cumple por forma los puertos de impacto sin importar Aplicación. Un
- * identificador de otra tabla responde como vacío con `complete: true`.
+ * Atenciones futuras por profesional, espacio, acompañamiento o participante
+ * (TI2-156). Cumple por forma los puertos de impacto sin importar Aplicación.
+ * Un identificador de otra tabla responde como vacío con `complete: true`.
  */
 export function futureAppointmentsReader(ctx: DbReader) {
   return {
@@ -1197,6 +1199,57 @@ export function futureAppointmentsReader(ctx: DbReader) {
           q.eq("professionalId", id).gt("startsAt", now),
         )
         .take(MAX_APPOINTMENTS_IN_RANGE + 1);
+      return await collectFutureActionable(ctx, rows, now);
+    },
+    listResponsibleByDate: async (professionalId: string, date: string, now: number) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const dayStart = midnightToEpochMs(date, AGENDA_TIME_ZONE);
+      const dayEnd = midnightToEpochMs(addCivilDays(date, 1), AGENDA_TIME_ZONE);
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_professionalId_and_startsAt", (q) =>
+          q.eq("professionalId", id).gte("startsAt", dayStart).lt("startsAt", dayEnd),
+        )
+        .take(50);
+      return await collectFutureActionable(ctx, rows, now);
+    },
+    listFutureByParticipant: async (professionalId: string, now: number) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const responsible = await ctx.db
+        .query("appointments")
+        .withIndex("by_professionalId_and_startsAt", (q) =>
+          q.eq("professionalId", id).gt("startsAt", now),
+        )
+        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
+      const participations = await ctx.db
+        .query("appointmentProfessionals")
+        .withIndex("by_professionalId", (q) => q.eq("professionalId", id))
+        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
+      if (
+        responsible.length > MAX_APPOINTMENTS_IN_RANGE ||
+        participations.length > MAX_APPOINTMENTS_IN_RANGE
+      ) {
+        return { complete: false, appointments: [] } as const;
+      }
+      const seen = new Set<string>();
+      const rows: Doc<"appointments">[] = [];
+      for (const row of responsible) {
+        seen.add(row._id as string);
+        rows.push(row);
+      }
+      for (const participation of participations) {
+        if (seen.has(participation.appointmentId as string)) continue;
+        const appointment = await ctx.db.get(participation.appointmentId);
+        if (appointment === null) continue;
+        if (appointment.startsAt <= now) continue;
+        seen.add(appointment._id as string);
+        rows.push(appointment);
+      }
+      if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+        return { complete: false, appointments: [] } as const;
+      }
       return await collectFutureActionable(ctx, rows, now);
     },
     listFutureBySpace: async (spaceId: string, now: number) => {

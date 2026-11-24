@@ -591,11 +591,104 @@ export async function patchAccompanimentAccessNeeds(
 
 /**
  * Escritor de necesidades para Aplicación (TI2-156).
+ *
+ * Guarda la copia vigente en `accompaniments` y versiona en
+ * `accompanimentNeeds` (NECESIDADES_ACCESO del MER): cierra la vigente con
+ * `validUntil` y crea la nueva con `validFrom` en el instante del cambio.
  */
 export function accompanimentNeedsWriter(ctx: MutationCtx) {
   return {
     saveAccessNeeds: async (accompanimentId: string, accessNeeds: string) =>
       await patchAccompanimentAccessNeeds(ctx, accompanimentId, accessNeeds),
+    saveVersionedAccessNeeds: async (
+      accompanimentId: string,
+      accessNeeds: string,
+      actorId: string,
+      now: number,
+    ) => await saveVersionedAccessNeeds(ctx, accompanimentId, accessNeeds, actorId, now),
+  };
+}
+
+/** Tope de versiones leídas por acompañamiento para decidir la vigente. */
+export const MAX_NEED_VERSIONS = 100;
+
+/** Versiones de un acompañamiento ordenadas por vigencia. */
+export async function listNeedVersions(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+): Promise<Doc<"accompanimentNeeds">[]> {
+  return await ctx.db
+    .query("accompanimentNeeds")
+    .withIndex("by_accompanimentId_and_validFrom", (q) => q.eq("accompanimentId", accompanimentId))
+    .order("asc")
+    .take(MAX_NEED_VERSIONS + 1);
+}
+
+/** Versión vigente a un instante (exclusivo en `validUntil`). */
+export function needVersionAt(
+  versions: readonly Doc<"accompanimentNeeds">[],
+  at: number,
+): Doc<"accompanimentNeeds"> | null {
+  let current: Doc<"accompanimentNeeds"> | null = null;
+  for (const version of versions) {
+    if (version.validFrom <= at && (version.validUntil === undefined || at < version.validUntil)) {
+      if (current === null || version.validFrom > current.validFrom) current = version;
+    }
+  }
+  return current;
+}
+
+/**
+ * Cierra la vigente y crea la nueva versión, además de la copia en
+ * `accompaniments`. Si no hay vigente (fila anterior a la migración), solo
+ * crea la nueva desde el inicio.
+ */
+export async function saveVersionedAccessNeeds(
+  ctx: MutationCtx,
+  accompanimentId: string,
+  accessNeeds: string,
+  actorId: string,
+  now: number,
+): Promise<void> {
+  const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+  const actor = ctx.db.normalizeId("users", actorId);
+  if (id === null || actor === null) {
+    throw new Error("La actualización versionada referencia un acompañamiento inexistente.");
+  }
+  const versions = await listNeedVersions(ctx, id);
+  const current = needVersionAt(versions, now);
+  if (current !== null && current.validUntil === undefined) {
+    await ctx.db.patch(current._id, { validUntil: now });
+  }
+  await ctx.db.insert("accompanimentNeeds", {
+    accompanimentId: id,
+    accessNeeds,
+    validFrom: now,
+    createdBy: actor,
+    createdAt: now,
+  });
+  await ctx.db.patch(id, { accessNeeds });
+}
+
+/**
+ * Necesidades vigentes a una fecha para evaluar una atención (TI2-156).
+ * Cumple por forma el puerto versionado sin importarlo.
+ */
+export function accompanimentNeedsAtDateReader(ctx: DbReader) {
+  return {
+    findNeedsAt: async (accompanimentId: string, at: number) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return null;
+      const versions = await listNeedVersions(ctx, id);
+      if (versions.length > MAX_NEED_VERSIONS) return null;
+      const version = needVersionAt(versions, at);
+      if (version !== null)
+        return { _id: id as string, needs: accessNeedsFromLines(version.accessNeeds) };
+      const row = await getAccompanimentById(ctx, id);
+      return row === null
+        ? null
+        : { _id: row._id as string, needs: accessNeedsFromLines(row.accessNeeds) };
+    },
   };
 }
 
