@@ -1,7 +1,8 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
+import type { Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
-import { SPACE_CATALOG_CONTRACT_VERSION } from "../../domain/spaces/space";
+import { SPACE_CATALOG_CONTRACT_VERSION, type Space } from "../../domain/spaces/space";
 import {
   AUTHORIZATION_DENIED_MESSAGE,
   authorizeSpaceCatalogManage,
@@ -103,7 +104,7 @@ export async function listInactiveSpaceCatalogUseCase(
   },
 ): Promise<
   ApiResult<{
-    readonly items: ReturnType<typeof toSpace>[];
+    readonly items: (Space & { readonly id: Id<"spaces"> })[];
     readonly hasMore: boolean;
     readonly nextCursor: string | null;
     readonly version: typeof SPACE_CATALOG_CONTRACT_VERSION;
