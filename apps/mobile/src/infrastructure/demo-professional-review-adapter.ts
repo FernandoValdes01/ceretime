@@ -193,7 +193,7 @@ export function createDemoProfessionalReviewAdapter({
           studentStore.addAccompaniment(receipt.request.accompaniment);
       }
       requests = requests.map((candidate) =>
-        candidate.id === requestId ? receipt.request : candidate,
+        candidate.id === requestId ? { ...candidate, ...receipt.request } : candidate,
       );
       return receipt;
     },
