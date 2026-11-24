@@ -11,7 +11,7 @@ import {
   type MinimizedAccompaniment,
 } from "./practitioner-accompaniments-data.ts";
 import { DeniedState, EmptyState, LoadingState } from "../shared/view-states.tsx";
-import { isAuthorizationDenial } from "./authorization-denial.ts";
+import { isAuthorizationDenial } from "../shared/authorization-denial.ts";
 
 /**
  * Listado paginado de los acompañamientos asignados (TI2-116, TI2-165).

@@ -11,7 +11,10 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { AssignedAccompanimentsPage } from "./practitioner-accompaniments-data.ts";
-import type { FollowUpHistoryPage, FollowUpRecordView } from "./follow-up-data.ts";
+import type {
+  FollowUpHistoryPage,
+  FollowUpRecordView,
+} from "../shared/follow-up/follow-up-data.ts";
 import type { ClosurePreviewState } from "./professional-accompaniments-data.ts";
 import { accompanimentActions } from "./professional-accompaniments-data.ts";
 
@@ -141,8 +144,8 @@ vi.mock("./professional-accompaniments-data.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("./follow-up-data.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./follow-up-data.ts")>();
+vi.mock("../shared/follow-up/follow-up-data.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../shared/follow-up/follow-up-data.ts")>();
   const { useSyncExternalStore } = await import("react");
   return {
     ...original,
