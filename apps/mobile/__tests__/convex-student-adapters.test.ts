@@ -102,6 +102,25 @@ describe("lector estudiantil sobre Convex", () => {
     ).rejects.toMatchObject({ operation: "listOwnRequests", code: "unauthorized" });
   });
 
+  it("informa acceso denegado, no un fallo genérico, si un acompañamiento llega minimizado", async () => {
+    const { client } = fakeClient({
+      "presentation/requests:listOwnRequests": () => ({
+        page: [],
+        isDone: true,
+        continueCursor: "",
+      }),
+      "presentation/accompaniments:listOwnedAccompaniments": () => ({
+        page: [{ _id: "accompaniments:1", status: "active", view: "minimized" }],
+        isDone: true,
+        continueCursor: "",
+      }),
+    });
+
+    await expect(
+      createConvexStudentAreaReader({ client, student }).readStudentArea(),
+    ).rejects.toMatchObject({ operation: "listOwnedAccompaniments", code: "unauthorized" });
+  });
+
   it("no muestra el mensaje interno del SDK ante un fallo inesperado", async () => {
     const { client } = fakeClient({
       "presentation/requests:listOwnRequests": () => {

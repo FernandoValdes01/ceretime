@@ -8,7 +8,7 @@ import type {
 } from "../domain/student-area-models";
 import type { MobileConvexClient } from "./convex-client";
 import {
-  mapStudentAccompanimentDetail,
+  mapListedStudentAccompaniment,
   mapStudentRequestDetail,
   toStudentOperationError,
 } from "./student-contract-mappers";
@@ -75,7 +75,7 @@ export function createConvexStudentAreaReader({
       const listed = await readAllPages((paginationOpts) =>
         client.query(api.presentation.accompaniments.listOwnedAccompaniments, { paginationOpts }),
       );
-      return listed.map(mapStudentAccompanimentDetail);
+      return listed.map(mapListedStudentAccompaniment);
     } catch (error) {
       throw toStudentOperationError(error, "listOwnedAccompaniments");
     }

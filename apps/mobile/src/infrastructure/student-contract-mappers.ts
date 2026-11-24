@@ -60,6 +60,13 @@ export function mapStudentAccompanimentsPage(
   };
 }
 
+/** Mapea una fila ya recorrida del listado; un rechazo conserva el nombre de la operación listada. */
+export function mapListedStudentAccompaniment(
+  item: StudentContractResponse<"getAccompaniment">,
+): Accompaniment {
+  return mapStudentAccompaniment(item, "listOwnedAccompaniments");
+}
+
 export function mapStudentAccompanimentDetail(
   response: StudentContractResponse<"getAccompaniment">,
 ): Accompaniment {
