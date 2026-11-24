@@ -30,8 +30,15 @@ export interface ProfessionalRequest {
   readonly accompaniment?: Accompaniment;
 }
 
+// Lo que el servidor confirmó de la solicitud: el resto se conserva de la que ya mostraba la pantalla.
+export type ProfessionalRequestUpdate = Pick<
+  ProfessionalRequest,
+  "id" | "status" | "availableActions"
+> &
+  Partial<ProfessionalRequest>;
+
 export interface ProfessionalRequestActionReceipt {
-  readonly request: ProfessionalRequest;
+  readonly request: ProfessionalRequestUpdate;
   readonly action: ProfessionalRequestAction;
   readonly message: string;
 }

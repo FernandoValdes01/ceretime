@@ -2,7 +2,7 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import type { ProfessionalReviewPort } from "../application/professional-review-port";
 import { UserFacingError } from "../application/user-facing-error";
-import type { ProfessionalRequest } from "../domain/professional-review-models";
+import type { ProfessionalRequestUpdate } from "../domain/professional-review-models";
 import {
   mapBackendProfessionalRequest,
   mapBackendProfessionalRequests,
@@ -18,17 +18,18 @@ const missingDetailMessages = {
 } as const;
 
 // La aceptación ya quedó guardada: si la relectura falla se informa el éxito con lo que se sabe,
-// en vez de un error que invitaría a repetir una aceptación que el servidor rechazaría.
+// en vez de un error que invitaría a repetir una aceptación que el servidor rechazaría. Sin datos
+// inventados: la pantalla conserva de la solicitud previa todo lo que el servidor no confirmó.
 async function readAcceptedRequest(
   client: Pick<MobileConvexClient, "query">,
   requestId: Id<"requests">,
-): Promise<Pick<ProfessionalRequest, "id" | "createdAt"> & Partial<ProfessionalRequest>> {
+): Promise<Partial<ProfessionalRequestUpdate>> {
   try {
     return mapBackendProfessionalRequest(
       await client.query(api.presentation.requests.getRequest, { requestId }),
     );
   } catch {
-    return { id: requestId, createdAt: new Date().toISOString() };
+    return {};
   }
 }
 
@@ -82,8 +83,9 @@ export function createConvexProfessionalReviewAdapter(
             operation.args,
           );
           const accompaniment = { ...mapBackendStudentAccompaniment(opened), requestId };
-          const accepted: ProfessionalRequest = {
+          const accepted: ProfessionalRequestUpdate = {
             ...(await readAcceptedRequest(client, operation.args.requestId)),
+            id: requestId,
             status: "accepted",
             availableActions: [],
             accompaniment,

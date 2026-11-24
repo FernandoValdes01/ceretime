@@ -148,6 +148,38 @@ describe("hook y vista de revisión profesional", () => {
     act(() => emptyMounted.unmount());
   });
 
+  test("un recibo parcial conserva los datos que la solicitud ya mostraba", async () => {
+    const previous: ProfessionalRequest = {
+      id: "SOL-PRO-010",
+      studentId: "students:1",
+      status: "awaitingInformationOrAcceptance",
+      createdAt: "2026-11-02T10:00:00.000Z",
+      accessNeeds: "Intérprete de lengua de señas",
+      availableActions: ["accept"],
+    };
+    const port: ProfessionalReviewPort = {
+      readProfessionalRequests: async () => [previous],
+      performProfessionalRequestAction: async (_requestId, action) => ({
+        action,
+        message: "La solicitud fue aceptada y abrió un acompañamiento.",
+        request: { id: previous.id, status: "accepted", availableActions: [] },
+      }),
+    };
+    const mounted = mountReview(port);
+    await settle();
+
+    await act(async () => {
+      await mounted.getState().performAction(previous.id, "accept", { objective: "Apoyo" });
+    });
+
+    expect(mounted.getState().requests[0]).toEqual({
+      ...previous,
+      status: "accepted",
+      availableActions: [],
+    });
+    act(() => mounted.unmount());
+  });
+
   test("muestra error de lectura y permite reintentar", async () => {
     let attempts = 0;
     const failure = new Error("Falla de lectura");

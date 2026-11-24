@@ -1,7 +1,9 @@
+import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { getFunctionName } from "convex/server";
 
 import { api } from "../../../convex/_generated/api";
 import { UserFacingError } from "../src/application/user-facing-error";
+import { useProfessionalReview } from "../src/presentation/hooks/use-professional-review";
 import { createConvexProfessionalAccompanimentReader } from "../src/infrastructure/convex-professional-accompaniment-reader";
 import { createConvexProfessionalReviewAdapter } from "../src/infrastructure/convex-professional-review-adapter";
 
@@ -133,6 +135,43 @@ describe("bandeja del Profesional", () => {
       availableActions: [],
       accompaniment: { id: "accompaniments:1" },
     });
+    // Sin relectura no se inventan datos: la pantalla conserva los de la solicitud previa.
+    expect(receipt.request).not.toHaveProperty("createdAt");
+    expect(receipt.request).not.toHaveProperty("studentId");
+    expect(receipt.request).not.toHaveProperty("accessNeeds");
+  });
+
+  test("la bandeja conserva la fecha y los datos previos si la relectura falla tras aceptar", async () => {
+    const { query, mutation, review } = setup();
+    const waiting = request("requests:2", "awaiting_information_or_acceptance", {
+      accessNeeds: "Intérprete",
+    });
+    query.mockImplementation(async (fn) => {
+      const name = getFunctionName(fn);
+      if (name === getFunctionName(api.presentation.requests.listAuthorizedRequests)) {
+        return page([waiting]);
+      }
+      if (name === getFunctionName(api.presentation.requests.listOpenRequests)) return page([]);
+      throw new Error("Network request failed");
+    });
+    mutation.mockResolvedValue(fullAccompaniment);
+    const { result } = renderHook(() => useProfessionalReview(review));
+    await waitFor(() => expect(result.current.status).toBe("success"));
+    const before = result.current.requests[0];
+
+    await act(async () => {
+      await result.current.performAction("requests:2", "accept", { objective: "Apoyo" });
+    });
+
+    expect(result.current.requests[0]).toMatchObject({
+      status: "accepted",
+      availableActions: [],
+      createdAt: before?.createdAt,
+      studentId: before?.studentId,
+      accessNeeds: "Intérprete",
+      accompaniment: { id: "accompaniments:1" },
+    });
+    expect(before?.createdAt).toBeDefined();
   });
 
   test("sin motivo u objetivo no llama al servidor", async () => {
