@@ -290,14 +290,33 @@ export async function getRequestDetailUseCase<
   deps: GetRequestDetailDeps<RequestId, UserId, AccompanimentId>,
   input: { readonly tokenIdentifier: string | null; readonly requestId: RequestId },
 ): Promise<ApiResult<RequestDetail<RequestId, UserId, AccompanimentId>>> {
-  const viewer = await deps.viewers.findActiveViewer(input.tokenIdentifier);
-  if (viewer === null) return denied();
-  const request = await deps.requests.getRequest(input.requestId);
+  const request = await findReadableRequest(deps, input);
   if (request === null) return denied();
+  return okResult(await toRequestDetail(deps, request));
+}
+
+/** Capacidades de la regla de lectura del detalle. */
+export interface RequestReadDeps<RequestId extends string, UserId extends string> {
+  readonly viewers: ActiveRequestViewerReader<UserId>;
+  readonly requests: RequestReader<RequestId, UserId> & RequestTakeReader<RequestId, UserId>;
+}
+
+/**
+ * Solicitud que quien llama puede leer en detalle, o `null`. Es la única
+ * regla de lectura de una solicitud: la usan el detalle y la bandeja de
+ * avisos (TI2-154), que vuelve a comprobarla al abrir un aviso.
+ */
+export async function findReadableRequest<RequestId extends string, UserId extends string>(
+  deps: RequestReadDeps<RequestId, UserId>,
+  input: { readonly tokenIdentifier: string | null; readonly requestId: RequestId },
+): Promise<StoredRequestRow<RequestId, UserId> | null> {
+  const viewer = await deps.viewers.findActiveViewer(input.tokenIdentifier);
+  if (viewer === null) return null;
+  const request = await deps.requests.getRequest(input.requestId);
+  if (request === null) return null;
   const allowed =
     viewer.role === "student"
       ? request.studentId === viewer._id
       : await deps.requests.hasActiveTake(request._id, viewer._id);
-  if (!allowed) return denied();
-  return okResult(await toRequestDetail(deps, request));
+  return allowed ? request : null;
 }

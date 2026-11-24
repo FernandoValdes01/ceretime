@@ -245,14 +245,33 @@ export async function getAppointment(
   input: GetAppointmentQuery,
 ): Promise<ApiResult<AppointmentProjection>> {
   if (input.version !== APPOINTMENT_CONTRACT_VERSION) return conflict();
-  const row = await deps.appointments.getAppointment(input.appointmentId);
-  if (row === null) return denied();
+  const readable = await findReadableAppointment(deps, input);
+  if (readable === null) return denied();
+  return okResult(toAppointmentProjection(readable.appointment, readable.view));
+}
+
+/** Capacidades de la regla de lectura del detalle de una atención. */
+export interface AppointmentReadDeps {
+  readonly auth: AuthorizationReader;
+  readonly appointments: Pick<AppointmentAgendaReader, "getAppointment">;
+}
+
+/**
+ * Atención que quien llama puede leer, con su vista, o `null`. Es la única
+ * regla de lectura de una atención: la usan el detalle y la bandeja de avisos
+ * (TI2-154), que vuelve a comprobarla al abrir un aviso.
+ */
+export async function findReadableAppointment(
+  deps: AppointmentReadDeps,
+  input: { readonly tokenIdentifier: string | null; readonly appointmentId: string },
+): Promise<{ readonly appointment: Appointment; readonly view: AppointmentView } | null> {
+  const appointment = await deps.appointments.getAppointment(input.appointmentId);
+  if (appointment === null) return null;
   const grant = await authorizeAppointmentRead(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
-    accompanimentId: row.accompanimentId,
+    accompanimentId: appointment.accompanimentId,
   });
-  if (grant.status === "error") return denied();
-  return okResult(toAppointmentProjection(row, grant.data.view));
+  return grant.status === "ok" ? { appointment, view: grant.data.view } : null;
 }
 
 // ── TI2-122: listado acotado para las acciones de calendario ────────────────
