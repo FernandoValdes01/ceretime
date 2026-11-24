@@ -499,9 +499,11 @@ export default defineSchema({
   // encabezados ni credenciales del proveedor. El envío real es TI2-159
   // (correo) y TI2-160 (push). `nextAttemptAt` es el instante desde el que
   // un despacho puede intentar la entrega (TI2-159): lo fija la política de
-  // reintento al registrar cada resultado y se adelanta como reserva mientras
-  // un despacho la intenta, así el envío programado y el barrido no envían dos
-  // veces. Ausente significa que no queda intento pendiente.
+  // reintento al registrar cada resultado y se elimina al reservar la entrega
+  // antes de invocar al proveedor, dejando la fila provisionalmente en
+  // `delivery_uncertain` para que el cron no la vuelva a recoger si la acción
+  // se interrumpe antes de confirmar el resultado. Ausente significa que no
+  // queda intento automático pendiente.
   notificationDeliveries: defineTable({
     eventId: v.id("notificationEvents"),
     channel: notificationDeliveryChannelUnion,

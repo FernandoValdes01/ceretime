@@ -42,7 +42,8 @@ En producción ejecuta los dos primeros comandos agregando `--prod` y deja `EMAI
 
 ## Mantenimiento y renovación del remitente
 
-- **Responsable:** el responsable de TI2-159 (`wpeneipil2025@alu.uct.cl`) mantiene la autorización de la cuenta remitente y la renueva antes de cada demostración mientras la aplicación de Google Cloud permanezca en modo de prueba.
+- **Cuenta remitente en desarrollo y producción (decisión vigente de TI2-159):** mientras la UCT/CERETI no habilite un buzón institucional dedicado, tanto desarrollo como producción envían desde la cuenta institucional `wpeneipil2025@alu.uct.cl` autorizada con `gmail.send` en el proyecto de Google Cloud de CERETIME. Cuando exista un buzón institucional de CERETI, el cambio de remitente solo requiere autorizar esa cuenta y actualizar `GMAIL_SENDER_ADDRESS` y `GMAIL_SENDER_REFRESH_TOKEN`, sin modificar código.
+- **Responsable:** Wladimir Peñeipil (`wpeneipil2025@alu.uct.cl`), responsable de TI2-159, mantiene la autorización del remitente y renueva el `refresh_token` antes de cada demostración o cada vez que venza mientras la aplicación de Google Cloud permanezca en modo de prueba.
 - **Vencimiento cada 7 días:** en modo de prueba Google revoca el `refresh_token` a los 7 días. Cuando vence, los envíos fallan con `errorCode: "not_authorized"` y quedan programados para reintento cada 15 minutos sin agotar el límite de reintentos del proveedor ni perder el aviso.
 - **Cómo renovar:** repite los pasos 5 a 7 en OAuth 2.0 Playground con la cuenta remitente y actualiza `GMAIL_SENDER_REFRESH_TOKEN` con `bunx convex env set` (o `--prod`). El siguiente barrido del cron despachará automáticamente los avisos pendientes.
 
@@ -73,5 +74,5 @@ bunx convex data notificationDeliveries --limit 50 --format json
 - **Cómo verificar en el buzón remitente antes de decidir si se reenvía:**
   1. Toma el `eventId` de la fila en `notificationDeliveries`, busca el evento en `notificationEvents` para obtener `recipientId`, `kind` y `readAt`, y consulta el correo del destinatario en `users`.
   2. Abre la carpeta **Enviados** de la cuenta remitente (`GMAIL_SENDER_ADDRESS`) y busca correos enviados a ese destinatario alrededor de `lastAttemptAt` con el asunto genérico correspondiente.
-  3. **Si el correo figura en Enviados:** no reenviar; el destinatario ya recibió el aviso.
+  3. **Si el correo figura en Enviados:** no reenviar; que aparezca allí indica que el mensaje salió del buzón remitente (sin confirmar la recepción en el buzón destino), criterio suficiente para evitar un envío duplicado.
   4. **Si el correo no figura en Enviados:** verifica si el aviso sigue pendiente (`readAt` ausente en `notificationEvents`) y coordina un reenvío manual o aviso por canal oficial sin crear otra fila en `notificationEvents`.
