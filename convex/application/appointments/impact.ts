@@ -1,25 +1,31 @@
-import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import { AGENDA_TIME_ZONE, expandAvailabilitySlots } from "../../domain/availability/availability";
+import { slotsCoverInterval } from "../../domain/availability/availability";
+import { civilDateOfInstant } from "../../domain/calendar/civil_days";
 import {
   notificationEventsForAvailabilityChange,
   notificationEventsForNeedsUpdated,
   notificationEventsForSpaceChange,
   type NotificationEvent,
 } from "../../domain/notifications/notification";
-import { resolveBookableSlot, type SlotSelectionDeps } from "./booking";
+import { assessCompatibility } from "../../domain/spaces/compatibility";
+import { isBookableProfessional } from "../authorization/authorize";
+import type {
+  AccompanimentNeedsReader,
+  AvailabilityReader,
+  CompatibilitySpaceSource,
+} from "../availability/ports";
+import type { AuthorizationReader } from "../authorization/authorize";
 import type { NotificationEventRecorder } from "../notifications/ports";
+import type { ApiResult } from "../../domain/errors/api_error";
+import { conflictError, noAvailabilityError } from "../../domain/errors/api_error";
 
 /**
  * Impacto de un cambio de configuración sobre atenciones futuras (TI2-156).
  *
- * Capa de Aplicación: detecta atenciones confirmadas que dejan de ser
- * reservables tras cambiar disponibilidad, sala o necesidades, sin borrarlas
- * ni cancelarlas en silencio. Reutiliza `resolveBookableSlot` (la misma
- * revalidación de reserva y reagendamiento), así lo que cuenta como afectado
- * es exactamente lo que la reserva rechazaría con `no_availability`.
- *
- * Solo futuras vigentes: quien llama ya filtró por `startsAt` posterior al
- * instante del cambio y estado que admite calendario (`scheduled`/`rescheduled`).
- * Las anteriores no cambian y nunca se escriben.
+ * Compara antes y después en la misma mutación y avisa solo lo que pasa de
+ * reservable a no reservable. Usa cobertura de ventana (`slotsCoverInterval`,
+ * que admite varias duraciones) y revisa a cada adicional (TI2-142). No
+ * importa casos de uso para no ciclar con `availability`/`booking`.
  */
 
 export interface ImpactedAppointmentInput {
@@ -34,6 +40,13 @@ export interface ImpactedAppointmentInput {
   readonly additionalProfessionalIds?: readonly string[];
 }
 
+export interface BookabilityDeps {
+  readonly auth: AuthorizationReader;
+  readonly availability: AvailabilityReader;
+  readonly needs: AccompanimentNeedsReader;
+  readonly compatibility: CompatibilitySpaceSource;
+}
+
 function toSubject(appointment: ImpactedAppointmentInput) {
   return {
     appointmentId: appointment.id,
@@ -45,33 +58,114 @@ function toSubject(appointment: ImpactedAppointmentInput) {
   };
 }
 
-/**
- * Filtra las futuras que ya no son reservables con la configuración vigente.
- *
- * Revalida cada atención con su propio cupo actual. Un `ok` conserva la
- * compatibilidad y no se avisa; un error (`no_availability` o `conflict`)
- * marca la atención como afectada.
- */
-export async function findAffectedAppointments(
-  deps: SlotSelectionDeps,
-  appointments: readonly ImpactedAppointmentInput[],
-): Promise<ImpactedAppointmentInput[]> {
-  const affected: ImpactedAppointmentInput[] = [];
-  for (const appointment of appointments) {
-    const slot = await resolveBookableSlot(deps, {
-      accompanimentId: appointment.accompanimentId,
-      professionalId: appointment.professionalId,
-      modality: appointment.modality,
-      ...(appointment.spaceId === undefined ? {} : { spaceId: appointment.spaceId }),
-      startAt: appointment.startAt,
-      endAt: appointment.endAt,
+async function coversProfessional(
+  deps: BookabilityDeps,
+  professionalId: string,
+  appointment: ImpactedAppointmentInput,
+): Promise<ApiResult<boolean>> {
+  const date = civilDateOfInstant(appointment.startAt, AGENDA_TIME_ZONE);
+  const [blocksResult, exceptionsResult] = await Promise.all([
+    deps.availability.listActiveBlocks(professionalId),
+    deps.availability.listExceptions({ professionalId, from: date, to: date }),
+  ]);
+  if (blocksResult.status === "error" || exceptionsResult.status === "error") {
+    return { status: "error", error: conflictError() };
+  }
+  let expanded;
+  try {
+    expanded = expandAvailabilitySlots({
+      professionalId,
+      blocks: [...blocksResult.data],
+      exceptions: [...exceptionsResult.data],
+      from: date,
+      to: date,
       timeZone: AGENDA_TIME_ZONE,
     });
-    if (slot.status === "error") {
-      affected.push(appointment);
+  } catch {
+    return { status: "error", error: conflictError() };
+  }
+  const sameModality = expanded.filter((slot) => slot.modality === appointment.modality);
+  const covered = slotsCoverInterval(sameModality, {
+    startAt: appointment.startAt,
+    endAt: appointment.endAt,
+  });
+  return covered
+    ? ({ status: "ok", data: true } as const)
+    : ({ status: "error", error: noAvailabilityError() } as const);
+}
+
+async function checkCompatibility(
+  deps: BookabilityDeps,
+  appointment: ImpactedAppointmentInput,
+): Promise<ApiResult<boolean>> {
+  const needsEntry = await deps.needs.findAccompanimentNeeds(appointment.accompanimentId);
+  if (needsEntry === null) return { status: "error", error: conflictError() };
+  if (appointment.modality === "online") {
+    const supports = await deps.compatibility.listOnlineSupports();
+    const decision = assessCompatibility(needsEntry.needs, {
+      modality: "online",
+      onlineSupports: supports,
+    });
+    return decision.compatible
+      ? ({ status: "ok", data: true } as const)
+      : ({ status: "error", error: noAvailabilityError() } as const);
+  }
+  if (appointment.spaceId === undefined) {
+    return { status: "error", error: noAvailabilityError() };
+  }
+  const space = await deps.compatibility.findCompatibilitySpace(appointment.spaceId);
+  if (space === null) return { status: "error", error: noAvailabilityError() };
+  const decision = assessCompatibility(needsEntry.needs, { modality: "inPerson", space });
+  return decision.compatible
+    ? ({ status: "ok", data: true } as const)
+    : ({ status: "error", error: noAvailabilityError() } as const);
+}
+
+/**
+ * Verdadero cuando la atención sigue reservable: responsable reservable y
+ * cubierto, compatible y cada adicional reservable y cubierto. `conflict`
+ * cuando una lectura se trunca; `no_availability` cuando no cubre o no es
+ * compatible (se traduce a `false` para decidir el aviso).
+ */
+export async function isAppointmentStillBookable(
+  deps: BookabilityDeps,
+  appointment: ImpactedAppointmentInput,
+): Promise<ApiResult<boolean>> {
+  if (
+    !(await isBookableProfessional(deps.auth, {
+      accompanimentId: appointment.accompanimentId,
+      professionalId: appointment.professionalId,
+    }))
+  ) {
+    return { status: "ok", data: false } as const;
+  }
+  const covered = await coversProfessional(deps, appointment.professionalId, appointment);
+  if (covered.status === "error") {
+    return covered.error.code === "conflict" ? covered : ({ status: "ok", data: false } as const);
+  }
+  const compatible = await checkCompatibility(deps, appointment);
+  if (compatible.status === "error") {
+    return compatible.error.code === "conflict"
+      ? compatible
+      : ({ status: "ok", data: false } as const);
+  }
+  for (const additionalId of appointment.additionalProfessionalIds ?? []) {
+    if (
+      !(await isBookableProfessional(deps.auth, {
+        accompanimentId: appointment.accompanimentId,
+        professionalId: additionalId,
+      }))
+    ) {
+      return { status: "ok", data: false } as const;
+    }
+    const additionalCovered = await coversProfessional(deps, additionalId, appointment);
+    if (additionalCovered.status === "error") {
+      return additionalCovered.error.code === "conflict"
+        ? additionalCovered
+        : ({ status: "ok", data: false } as const);
     }
   }
-  return affected;
+  return { status: "ok", data: true } as const;
 }
 
 /** Registra un aviso de cambio de disponibilidad por cada afectada. */

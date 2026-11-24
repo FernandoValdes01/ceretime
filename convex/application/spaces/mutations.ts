@@ -16,7 +16,7 @@ import {
 } from "../../domain/errors/api_error";
 import { authorizeSpaceCatalogManage, type AuthorizationReader } from "../authorization/authorize";
 import {
-  findAffectedAppointments,
+  isAppointmentStillBookable,
   notifySpaceImpact,
   type ImpactedAppointmentInput,
 } from "../appointments/impact";
@@ -83,26 +83,42 @@ export interface SpaceChangeImpactDeps {
   readonly now?: () => number;
 }
 
-async function notifySpaceChangeImpact(
-  deps: SpaceChangeImpactDeps,
-  spaceId: string,
-  actorId: string,
-): Promise<ApiResult<null>> {
-  const now = deps.now === undefined ? Date.now() : deps.now();
-  const future = await deps.future.listFutureBySpace(spaceId, now);
-  if (!future.complete) return errResult(conflictError());
-  if (future.appointments.length === 0) return okResult(null);
-  const affected = await findAffectedAppointments(
-    {
-      auth: deps.auth,
-      availability: deps.availability,
-      needs: deps.needs,
-      compatibility: deps.compatibility,
-    },
-    future.appointments,
+async function evaluateAllSpaceBookable(
+  deps: {
+    readonly auth: AuthorizationReader;
+    readonly availability: AvailabilityReader;
+    readonly needs: AccompanimentNeedsReader;
+    readonly compatibility: CompatibilitySpaceSource;
+  },
+  appointments: readonly ImpactedAppointmentInput[],
+): Promise<{ readonly ok: true; readonly byId: Map<string, boolean> } | { readonly ok: false }> {
+  const byId = new Map<string, boolean>();
+  for (const appointment of appointments) {
+    const result = await isAppointmentStillBookable(
+      {
+        auth: deps.auth,
+        availability: deps.availability,
+        needs: deps.needs,
+        compatibility: deps.compatibility,
+      },
+      appointment,
+    );
+    if (result.status === "error") return { ok: false };
+    byId.set(appointment.id, result.data);
+  }
+  return { ok: true, byId };
+}
+
+function isLocationChanged(
+  oldSpace: { campus: string; building: string; floor: string; room: string },
+  next: { campus: string; building: string; floor: string; room: string },
+): boolean {
+  return (
+    oldSpace.campus.trim() !== next.campus.trim() ||
+    oldSpace.building.trim() !== next.building.trim() ||
+    oldSpace.floor.trim() !== next.floor.trim() ||
+    oldSpace.room.trim() !== next.room.trim()
   );
-  await notifySpaceImpact(deps.notifications, affected, { actorId, occurredAt: now });
-  return okResult(null);
 }
 
 function denied<T>(): ApiResult<T> {
@@ -171,9 +187,9 @@ export async function createSpaceCatalogEntry(
  * inexistente o de otra tabla se deniega igual, y la ubicación de otra
  * sala responde `conflict`.
  *
- * Con `impact` (TI2-156), tras escribir revalida las futuras que usan la sala
- * y avisa a las que dejan de ser compatibles, sin borrarlas. El cambio de
- * condiciones queda conservado en el catálogo e informado por avisos.
+ * Si cambia la ubicación, avisa a todas las futuras de esa sala; si solo
+ * cambian condiciones, avisa solo a las que pasan de compatibles a
+ * incompatibles (antes/después en la misma transacción).
  */
 export async function updateSpaceCatalogEntry(
   auth: AuthorizationReader,
@@ -183,7 +199,7 @@ export async function updateSpaceCatalogEntry(
     readonly version: string;
     readonly spaceId: string;
   } & SpaceFields,
-  impact?: SpaceChangeImpactDeps,
+  impact: SpaceChangeImpactDeps,
 ): Promise<ApiResult<ManagedSpace>> {
   const denial = await authorizeOrDeny(auth, input.tokenIdentifier);
   if (denial !== null) return denial;
@@ -192,15 +208,51 @@ export async function updateSpaceCatalogEntry(
   if ("message" in fields) return invalidFields(fields.message);
   const existing = await store.getSpace(input.spaceId);
   if (existing === null) return denied();
+  const grant = await authorizeSpaceCatalogManage(auth, {
+    tokenIdentifier: input.tokenIdentifier,
+  });
+  if (grant.status === "error") return denied();
+  const now = impact.now === undefined ? Date.now() : impact.now();
+  const future = await impact.future.listFutureBySpace(input.spaceId, now);
+  if (!future.complete) return errResult(conflictError());
+  const locationChanged = isLocationChanged(existing, fields);
+  const slotDeps = {
+    auth: impact.auth,
+    availability: impact.availability,
+    needs: impact.needs,
+    compatibility: impact.compatibility,
+  };
+  const before =
+    locationChanged || future.appointments.length === 0
+      ? null
+      : await evaluateAllSpaceBookable(slotDeps, future.appointments);
+  if (before !== null && !before.ok) return errResult(conflictError());
   const updated = await store.updateSpace(input.spaceId, fields);
   if (updated.status === "error") return errResult(updated.error);
-  if (impact !== undefined) {
-    const grant = await authorizeSpaceCatalogManage(auth, {
-      tokenIdentifier: input.tokenIdentifier,
+  if (future.appointments.length === 0) {
+    const managedEmpty = await readManaged(store, input.spaceId);
+    if (managedEmpty === null) return denied();
+    return okResult(managedEmpty);
+  }
+  if (locationChanged) {
+    await notifySpaceImpact(impact.notifications, future.appointments, {
+      actorId: grant.data.callerId,
+      occurredAt: now,
     });
-    if (grant.status === "error") return denied();
-    const notified = await notifySpaceChangeImpact(impact, input.spaceId, grant.data.callerId);
-    if (notified.status === "error") return errResult(notified.error);
+  } else {
+    const after = await evaluateAllSpaceBookable(slotDeps, future.appointments);
+    if (!after.ok) return errResult(conflictError());
+    const newly = future.appointments.filter(
+      (appointment) =>
+        before !== null &&
+        before.ok &&
+        before.byId.get(appointment.id) === true &&
+        after.byId.get(appointment.id) === false,
+    );
+    await notifySpaceImpact(impact.notifications, newly, {
+      actorId: grant.data.callerId,
+      occurredAt: now,
+    });
   }
   const managed = await readManaged(store, input.spaceId);
   if (managed === null) return denied();
@@ -208,12 +260,8 @@ export async function updateSpaceCatalogEntry(
 }
 
 /**
- * Retira o reactiva una sala sin borrarla ni su historial. La sala
- * inexistente o de otra tabla se deniega igual.
- *
- * Con `impact` (TI2-156) avisa a las futuras afectadas, sin cancelación
- * automática silenciosa: la atención confirmada nunca desaparece por un
- * cambio de configuración.
+ * Retira o reactiva una sala sin borrarla ni su historial. Solo avisa lo que
+ * pasa de reservable a no reservable; reactivar no avisa.
  */
 export async function setSpaceCatalogActive(
   auth: AuthorizationReader,
@@ -224,23 +272,40 @@ export async function setSpaceCatalogActive(
     readonly spaceId: string;
     readonly isActive: boolean;
   },
-  impact?: SpaceChangeImpactDeps,
+  impact: SpaceChangeImpactDeps,
 ): Promise<ApiResult<ManagedSpace>> {
   const denial = await authorizeOrDeny(auth, input.tokenIdentifier);
   if (denial !== null) return denial;
   checkVersion(input.version);
   const existing = await store.getSpace(input.spaceId);
   if (existing === null) return denied();
+  const grant = await authorizeSpaceCatalogManage(auth, {
+    tokenIdentifier: input.tokenIdentifier,
+  });
+  if (grant.status === "error") return denied();
+  const now = impact.now === undefined ? Date.now() : impact.now();
+  const future = await impact.future.listFutureBySpace(input.spaceId, now);
+  if (!future.complete) return errResult(conflictError());
+  const slotDeps = {
+    auth: impact.auth,
+    availability: impact.availability,
+    needs: impact.needs,
+    compatibility: impact.compatibility,
+  };
+  const before = await evaluateAllSpaceBookable(slotDeps, future.appointments);
+  if (!before.ok) return errResult(conflictError());
   const patched = await store.setSpaceActive(input.spaceId, input.isActive);
   if (patched.status === "error") return errResult(patched.error);
-  if (impact !== undefined) {
-    const grant = await authorizeSpaceCatalogManage(auth, {
-      tokenIdentifier: input.tokenIdentifier,
-    });
-    if (grant.status === "error") return denied();
-    const notified = await notifySpaceChangeImpact(impact, input.spaceId, grant.data.callerId);
-    if (notified.status === "error") return errResult(notified.error);
-  }
+  const after = await evaluateAllSpaceBookable(slotDeps, future.appointments);
+  if (!after.ok) return errResult(conflictError());
+  const newly = future.appointments.filter(
+    (appointment) =>
+      before.byId.get(appointment.id) === true && after.byId.get(appointment.id) === false,
+  );
+  await notifySpaceImpact(impact.notifications, newly, {
+    actorId: grant.data.callerId,
+    occurredAt: now,
+  });
   const managed = await readManaged(store, input.spaceId);
   if (managed === null) return denied();
   return okResult(managed);

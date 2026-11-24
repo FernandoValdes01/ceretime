@@ -118,6 +118,29 @@ function memoryStore(initial: ReadonlyArray<StoredSpace> = []) {
 
 const auth = fakeAuth([admin, student]);
 
+function emptySpaceImpact() {
+  return {
+    future: {
+      listFutureBySpace: async () => ({ complete: true as const, appointments: [] as const }),
+    },
+    auth,
+    availability: {
+      listActiveBlocks: async () => ({ status: "ok" as const, data: [] as const }),
+      listExceptions: async () => ({ status: "ok" as const, data: [] as const }),
+      getBlock: async () => null,
+      getException: async () => null,
+    },
+    needs: {
+      findAccompanimentNeeds: async () => null,
+    },
+    compatibility: {
+      findCompatibilitySpace: async () => null,
+      listOnlineSupports: async () => [],
+    },
+    notifications: { record: async () => {} },
+  };
+}
+
 describe("createSpaceCatalogEntry", () => {
   test("administración crea con nombre legible y vigencia", async () => {
     const result = await createSpaceCatalogEntry(auth, memoryStore(), {
@@ -184,13 +207,18 @@ describe("createSpaceCatalogEntry", () => {
 
 describe("updateSpaceCatalogEntry", () => {
   test("editar sin cambiar la ubicación conserva la vigencia", async () => {
-    const result = await updateSpaceCatalogEntry(auth, memoryStore([stored("sala-ficticia-1")]), {
-      tokenIdentifier: "token-admin",
-      version: "v1",
-      spaceId: "sala-ficticia-1",
-      ...FIELDS,
-      accessConditions: "Otra condición",
-    });
+    const result = await updateSpaceCatalogEntry(
+      auth,
+      memoryStore([stored("sala-ficticia-1")]),
+      {
+        tokenIdentifier: "token-admin",
+        version: "v1",
+        spaceId: "sala-ficticia-1",
+        ...FIELDS,
+        accessConditions: "Otra condición",
+      },
+      emptySpaceImpact(),
+    );
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("Se esperaba éxito");
     expect(result.data.isActive).toBe(true);
@@ -203,22 +231,32 @@ describe("updateSpaceCatalogEntry", () => {
       stored("sala-ficticia-1"),
       { ...stored("sala-ficticia-2"), ...other },
     ]);
-    const clash = await updateSpaceCatalogEntry(auth, store, {
-      tokenIdentifier: "token-admin",
-      version: "v1",
-      spaceId: "sala-ficticia-1",
-      ...other,
-    });
+    const clash = await updateSpaceCatalogEntry(
+      auth,
+      store,
+      {
+        tokenIdentifier: "token-admin",
+        version: "v1",
+        spaceId: "sala-ficticia-1",
+        ...other,
+      },
+      emptySpaceImpact(),
+    );
     expect(clash.status).toBe("error");
     if (clash.status !== "error") throw new Error("Se esperaba conflicto");
     expect(clash.error.code).toBe("conflict");
 
-    const missing = await updateSpaceCatalogEntry(auth, store, {
-      tokenIdentifier: "token-admin",
-      version: "v1",
-      spaceId: "sala-ficticia-inexistente",
-      ...FIELDS,
-    });
+    const missing = await updateSpaceCatalogEntry(
+      auth,
+      store,
+      {
+        tokenIdentifier: "token-admin",
+        version: "v1",
+        spaceId: "sala-ficticia-inexistente",
+        ...FIELDS,
+      },
+      emptySpaceImpact(),
+    );
     expect(missing.status).toBe("error");
     if (missing.status !== "error") throw new Error("Se esperaba denegación");
     expect(missing.error.code).toBe("unauthorized");
@@ -228,12 +266,17 @@ describe("updateSpaceCatalogEntry", () => {
 describe("setSpaceCatalogActive y getSpaceCatalogEntry", () => {
   test("retirar y reactivar conservan el resumen legible", async () => {
     const store = memoryStore([stored("sala-ficticia-1")]);
-    const retired = await setSpaceCatalogActive(auth, store, {
-      tokenIdentifier: "token-admin",
-      version: "v1",
-      spaceId: "sala-ficticia-1",
-      isActive: false,
-    });
+    const retired = await setSpaceCatalogActive(
+      auth,
+      store,
+      {
+        tokenIdentifier: "token-admin",
+        version: "v1",
+        spaceId: "sala-ficticia-1",
+        isActive: false,
+      },
+      emptySpaceImpact(),
+    );
     expect(retired.status).toBe("ok");
     if (retired.status !== "ok") throw new Error("Se esperaba éxito");
     expect(retired.data.isActive).toBe(false);
@@ -248,12 +291,17 @@ describe("setSpaceCatalogActive y getSpaceCatalogEntry", () => {
     expect(fetched.data.isActive).toBe(false);
     expect(fetched.data.label).toContain("Sala Ficticia 1");
 
-    const reactivated = await setSpaceCatalogActive(auth, store, {
-      tokenIdentifier: "token-admin",
-      version: "v1",
-      spaceId: "sala-ficticia-1",
-      isActive: true,
-    });
+    const reactivated = await setSpaceCatalogActive(
+      auth,
+      store,
+      {
+        tokenIdentifier: "token-admin",
+        version: "v1",
+        spaceId: "sala-ficticia-1",
+        isActive: true,
+      },
+      emptySpaceImpact(),
+    );
     expect(reactivated.status).toBe("ok");
     if (reactivated.status !== "ok") throw new Error("Se esperaba éxito");
     expect(reactivated.data.isActive).toBe(true);
@@ -271,12 +319,17 @@ describe("setSpaceCatalogActive y getSpaceCatalogEntry", () => {
       if (denied.status !== "error") throw new Error("Se esperaba denegación");
       expect(denied.error.code).toBe("unauthorized");
 
-      const retired = await setSpaceCatalogActive(auth, store, {
-        tokenIdentifier,
-        version: "v1",
-        spaceId: "sala-ficticia-1",
-        isActive: false,
-      });
+      const retired = await setSpaceCatalogActive(
+        auth,
+        store,
+        {
+          tokenIdentifier,
+          version: "v1",
+          spaceId: "sala-ficticia-1",
+          isActive: false,
+        },
+        emptySpaceImpact(),
+      );
       expect(retired.status).toBe("error");
     }
     const missing = await getSpaceCatalogEntry(auth, store, {

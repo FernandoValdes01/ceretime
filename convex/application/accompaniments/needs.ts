@@ -1,14 +1,11 @@
 import { toLegacyAccessNeeds } from "../../domain/requests/request";
+import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
 import {
-  conflictError,
-  errResult,
-  okResult,
-  unauthorizedError,
-  type ApiResult,
-} from "../../domain/errors/api_error";
-import type { AuthorizationReader } from "../authorization/authorize";
+  authorizeAccompanimentNeedsUpdate,
+  type AuthorizationReader,
+} from "../authorization/authorize";
 import {
-  findAffectedAppointments,
+  isAppointmentStillBookable,
   notifyNeedsImpact,
   type ImpactedAppointmentInput,
 } from "../appointments/impact";
@@ -20,22 +17,22 @@ import type {
 import type { NotificationEventRecorder } from "../notifications/ports";
 
 /**
- * Actualización de necesidades de acceso del estudiante (TI2-156).
+ * Actualización versionada de necesidades de acceso (TI2-156).
  *
- * Capa de Aplicación: el estudiante dueño actualiza el texto de necesidades
- * de su acompañamiento para atenciones futuras, sin alterar lo registrado
- * antes. Las atenciones anteriores conservan su fila y no se tocan; las
- * futuras que dejan de ser compatibles se avisan a sus profesionales para
- * coordinar una solución, sin cancelarlas en silencio.
- *
- * Solo el estudiante dueño con cuenta vigente, sobre un acompañamiento
- * activo o en pausa. Un acompañamiento cerrado es de solo lectura (TI2-152).
- * Valida con la misma regla de solicitudes (`toLegacyAccessNeeds`): texto
- * recortado, no vacío y dentro del tope, sin truncar.
+ * Versiona en `accompanimentNeeds` (NECESIDADES_ACCESO del MER): cierra la
+ * vigente con `validUntil` y crea la nueva con `validFrom`. Las atenciones
+ * anteriores se evalúan con la versión vigente a su fecha, así no se pierde
+ * lo registrado antes. Compara antes/después y avisa solo lo que pasa de
+ * compatible a incompatible.
  */
 
 export interface AccompanimentNeedsWriter {
-  saveAccessNeeds(accompanimentId: string, accessNeeds: string): Promise<void>;
+  saveVersionedAccessNeeds(
+    accompanimentId: string,
+    accessNeeds: string,
+    actorId: string,
+    now: number,
+  ): Promise<void>;
 }
 
 export interface NeedsUpdateImpactDeps {
@@ -55,10 +52,6 @@ export interface NeedsUpdateImpactDeps {
   readonly now?: () => number;
 }
 
-function denied<T>(): ApiResult<T> {
-  return errResult(unauthorizedError());
-}
-
 function conflict<T>(): ApiResult<T> {
   return errResult(conflictError());
 }
@@ -71,48 +64,59 @@ export async function updateAccompanimentNeeds(
     readonly accompanimentId: string;
     readonly accessNeeds: string;
   },
-  impact?: NeedsUpdateImpactDeps,
+  impact: NeedsUpdateImpactDeps,
 ): Promise<ApiResult<null>> {
-  if (input.accompanimentId.trim() === "") return denied();
-  const profile =
-    input.tokenIdentifier === null
-      ? null
-      : await auth.findProfileByTokenIdentifier(input.tokenIdentifier);
-  if (
-    profile === null ||
-    profile.role !== "student" ||
-    profile.institutionalStatus !== "enabled" ||
-    profile.accountStatus !== "active"
-  ) {
-    return denied();
+  if (input.accompanimentId.trim() === "") {
+    const denied = await authorizeAccompanimentNeedsUpdate(auth, {
+      tokenIdentifier: input.tokenIdentifier,
+      accompanimentId: "invalid",
+    });
+    return denied.status === "error" ? denied : conflict();
   }
-  const accompaniment = await auth.getAccompaniment(input.accompanimentId);
-  if (accompaniment === null || accompaniment.studentId !== profile._id) {
-    return denied();
-  }
-  if (accompaniment.status === "closed") {
-    return conflict();
+  const grant = await authorizeAccompanimentNeedsUpdate(auth, {
+    tokenIdentifier: input.tokenIdentifier,
+    accompanimentId: input.accompanimentId,
+  });
+  if (grant.status === "error") {
+    const closedCheck = await auth.getAccompaniment(input.accompanimentId);
+    if (closedCheck !== null && closedCheck.status === "closed") return conflict();
+    return grant;
   }
   const validated = toLegacyAccessNeeds(input.accessNeeds);
   if (validated.status === "error") {
     return errResult(validated.error);
   }
-  await store.saveAccessNeeds(input.accompanimentId, validated.data);
-
-  if (impact === undefined) return okResult(null);
   const now = impact.now === undefined ? Date.now() : impact.now();
   const future = await impact.future.listFutureByAccompaniment(input.accompanimentId, now);
   if (!future.complete) return conflict();
-  if (future.appointments.length === 0) return okResult(null);
-  const affected = await findAffectedAppointments(
-    {
-      auth,
-      availability: impact.availability,
-      needs: impact.needs,
-      compatibility: impact.compatibility,
-    },
-    future.appointments,
+  const slotDeps = {
+    auth,
+    availability: impact.availability,
+    needs: impact.needs,
+    compatibility: impact.compatibility,
+  };
+  const beforeById = new Map<string, boolean>();
+  for (const appointment of future.appointments) {
+    const before = await isAppointmentStillBookable(slotDeps, appointment);
+    if (before.status === "error") return errResult(before.error);
+    beforeById.set(appointment.id, before.data);
+  }
+  await store.saveVersionedAccessNeeds(
+    input.accompanimentId,
+    validated.data,
+    grant.data.callerId,
+    now,
   );
-  await notifyNeedsImpact(impact.notifications, affected, { occurredAt: now });
+  const afterById = new Map<string, boolean>();
+  for (const appointment of future.appointments) {
+    const after = await isAppointmentStillBookable(slotDeps, appointment);
+    if (after.status === "error") return errResult(after.error);
+    afterById.set(appointment.id, after.data);
+  }
+  const newly = future.appointments.filter(
+    (appointment) =>
+      beforeById.get(appointment.id) === true && afterById.get(appointment.id) === false,
+  );
+  await notifyNeedsImpact(impact.notifications, newly, { occurredAt: now });
   return okResult(null);
 }

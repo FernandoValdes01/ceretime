@@ -139,10 +139,20 @@ export const publishException = mutation({
   handler: async (ctx, { version: _version, ...exception }) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
-      await publishAvailabilityException(authorizationReader(ctx), availabilityWriter(ctx), {
-        tokenIdentifier: identity?.tokenIdentifier ?? null,
-        exception,
-      }),
+      await publishAvailabilityException(
+        authorizationReader(ctx),
+        { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          exception,
+        },
+        {
+          future: futureAppointmentsReader(ctx),
+          needs: accompanimentNeedsReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
+      ),
     );
   },
 });

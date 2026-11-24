@@ -65,6 +65,9 @@ function memoryStore() {
     saveAccessNeeds: async (accompanimentId: string, accessNeeds: string) => {
       saved = { accompanimentId, accessNeeds };
     },
+    saveVersionedAccessNeeds: async (accompanimentId: string, accessNeeds: string) => {
+      saved = { accompanimentId, accessNeeds };
+    },
   };
 }
 
@@ -116,20 +119,30 @@ describe("Actualización de necesidades de acceso (TI2-156)", () => {
     const store = memoryStore();
     expect(
       (
-        await updateAccompanimentNeeds(fakeAuth([otherStudent], activeAccompaniment), store, {
-          tokenIdentifier: "token-other",
-          accompanimentId: "acc-1",
-          accessNeeds: "Necesidad ficticia",
-        })
+        await updateAccompanimentNeeds(
+          fakeAuth([otherStudent], activeAccompaniment),
+          store,
+          {
+            tokenIdentifier: "token-other",
+            accompanimentId: "acc-1",
+            accessNeeds: "Necesidad ficticia",
+          },
+          noImpact(),
+        )
       ).status,
     ).toBe("error");
     expect(
       (
-        await updateAccompanimentNeeds(fakeAuth([professional], activeAccompaniment), store, {
-          tokenIdentifier: "token-pro",
-          accompanimentId: "acc-1",
-          accessNeeds: "Necesidad ficticia",
-        })
+        await updateAccompanimentNeeds(
+          fakeAuth([professional], activeAccompaniment),
+          store,
+          {
+            tokenIdentifier: "token-pro",
+            accompanimentId: "acc-1",
+            accessNeeds: "Necesidad ficticia",
+          },
+          noImpact(),
+        )
       ).status,
     ).toBe("error");
     expect(store.saved()).toBeNull();
@@ -137,22 +150,32 @@ describe("Actualización de necesidades de acceso (TI2-156)", () => {
 
   test("un acompañamiento cerrado responde conflicto sin escribir", async () => {
     const store = memoryStore();
-    const result = await updateAccompanimentNeeds(fakeAuth([student], closedAccompaniment), store, {
-      tokenIdentifier: "token-student",
-      accompanimentId: "acc-1",
-      accessNeeds: "Necesidad ficticia",
-    });
+    const result = await updateAccompanimentNeeds(
+      fakeAuth([student], closedAccompaniment),
+      store,
+      {
+        tokenIdentifier: "token-student",
+        accompanimentId: "acc-1",
+        accessNeeds: "Necesidad ficticia",
+      },
+      noImpact(),
+    );
     expect(result.status).toBe("error");
     expect(store.saved()).toBeNull();
   });
 
   test("texto vacío o demasiado largo se rechaza sin escribir", async () => {
     const store = memoryStore();
-    const empty = await updateAccompanimentNeeds(fakeAuth([student], activeAccompaniment), store, {
-      tokenIdentifier: "token-student",
-      accompanimentId: "acc-1",
-      accessNeeds: "   ",
-    });
+    const empty = await updateAccompanimentNeeds(
+      fakeAuth([student], activeAccompaniment),
+      store,
+      {
+        tokenIdentifier: "token-student",
+        accompanimentId: "acc-1",
+        accessNeeds: "   ",
+      },
+      noImpact(),
+    );
     expect(empty.status).toBe("error");
     expect(empty.status === "error" ? empty.error.code : "").toBe("access_needs_empty");
     const tooLong = await updateAccompanimentNeeds(
@@ -163,12 +186,13 @@ describe("Actualización de necesidades de acceso (TI2-156)", () => {
         accompanimentId: "acc-1",
         accessNeeds: "a".repeat(2001),
       },
+      noImpact(),
     );
     expect(tooLong.status).toBe("error");
     expect(store.saved()).toBeNull();
   });
 
-  test("una lectura truncada de futuras responde conflicto", async () => {
+  test("una lectura truncada de futuras responde conflicto sin escribir", async () => {
     const store = memoryStore();
     const impact = {
       ...noImpact(),
@@ -190,7 +214,6 @@ describe("Actualización de necesidades de acceso (TI2-156)", () => {
       impact,
     );
     expect(result.status).toBe("error");
-    // El cambio ya se guardó en la misma transacción: Presentación lo descarta al lanzar.
-    expect(store.saved()).not.toBeNull();
+    expect(store.saved()).toBeNull();
   });
 });
