@@ -59,16 +59,20 @@ export async function findAffectedAppointments(
 ): Promise<ImpactedAppointmentInput[]> {
   const affected: ImpactedAppointmentInput[] = [];
   for (const appointment of appointments) {
-    const slot = await resolveBookableSlot(deps, {
-      accompanimentId: appointment.accompanimentId,
-      professionalId: appointment.professionalId,
-      modality: appointment.modality,
-      ...(appointment.spaceId === undefined ? {} : { spaceId: appointment.spaceId }),
-      startAt: appointment.startAt,
-      endAt: appointment.endAt,
-      timeZone: AGENDA_TIME_ZONE,
-    });
-    if (slot.status === "error") {
+    try {
+      const slot = await resolveBookableSlot(deps, {
+        accompanimentId: appointment.accompanimentId,
+        professionalId: appointment.professionalId,
+        modality: appointment.modality,
+        ...(appointment.spaceId === undefined ? {} : { spaceId: appointment.spaceId }),
+        startAt: appointment.startAt,
+        endAt: appointment.endAt,
+        timeZone: AGENDA_TIME_ZONE,
+      });
+      if (slot.status === "error") {
+        affected.push(appointment);
+      }
+    } catch {
       affected.push(appointment);
     }
   }
