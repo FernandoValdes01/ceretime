@@ -163,8 +163,13 @@ Superficie pública para que el Profesional pause, reactive y cierre un acompañ
 | `presentation.accompaniments.reactivateAccompaniment` (mutation) | `accompanimentId` | `{accompanimentId, status: "active"}` | El mismo | `unauthorized` igual; `conflict` si no está `paused` |
 | `presentation.accompaniments.getAccompanimentClosurePreview` (query) | `accompanimentId` | `{appointmentsToCancel, unrecordedAppointments}` | El mismo | `unauthorized` igual; `conflict` si ya está `closed` |
 | `presentation.accompaniments.closeAccompaniment` (mutation) | `accompanimentId`, `reason?` | `{accompanimentId, status: "closed", cancelledAppointments}` | El mismo | `unauthorized` igual; `conflict` si ya está `closed`, si `unrecordedAppointments` no es cero o si el motivo supera 500 caracteres |
+| `presentation.accompaniments.updateAccompanimentNeeds` (mutation, TI2-156) | `accompanimentId`, `accessNeeds` (texto no vacío, máx 2000) | `null` | Solo Estudiante dueño con cuenta vigente, acompañamiento `active` o `paused` | `unauthorized` sin permiso o con acompañamiento ajeno/inexistente; `conflict` si está `closed`, si el texto está vacío o supera el tope, o si la lectura de futuras se trunca (sin escribir) |
 
 Estudiante, Practicante y Administrador reciben `unauthorized` en las cuatro. Solo el cierre recibe motivo, y es opcional: se recorta, y uno en blanco equivale a no enviarlo. Pausar y reactivar no lo reciben, porque el MER no lo guarda. Los `conflict` de estas operaciones traen el mensaje genérico.
+
+### Necesidades de acceso versionadas (TI2-156)
+
+`updateAccompanimentNeeds` versiona en `accompanimentNeeds` (NECESIDADES_ACCESO del MER, `validFrom`/`validUntil?`): cierra la vigente con `validUntil` y crea la nueva con `validFrom` en el instante del cambio, además de la copia en `accompaniments.accessNeeds`. Las atenciones se evalúan con la versión vigente a su `startsAt`, así las anteriores conservan lo que regía y no se reescriben. Compara antes/después en la misma mutación y avisa `appointment_needs_updated` solo a los profesionales de las futuras que pasan de compatibles a incompatibles, sin cancelar. Si la lectura de futuras se trunca, responde `conflict` sin escribir. La migración `auditAccompanimentNeeds`/`migrateAccompanimentNeeds` crea la primera versión (`validFrom: 1`) de los acompañamientos sin versiones.
 
 ### Estados que llegan a las lecturas
 

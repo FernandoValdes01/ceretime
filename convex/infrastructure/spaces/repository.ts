@@ -245,6 +245,14 @@ export function spaceReader(ctx: DbReader) {
   };
 }
 
+/** Lectura paginada de salas retiradas para Administración (TI2-156). */
+export function inactiveSpaceReader(ctx: QueryCtx) {
+  return {
+    listInactiveSpaces: (input: { readonly limit: number; readonly cursor: string | null }) =>
+      listInactiveSpaceRows(ctx, input),
+  };
+}
+
 // ── TI2-111/TI2-121: necesidades y condiciones de compatibilidad ──────────
 //
 // Decisión provisional compartida: el esquema guarda las necesidades del acompañamiento

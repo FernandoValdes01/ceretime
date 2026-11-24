@@ -6,13 +6,21 @@ import {
   AUTHORIZATION_DENIED_MESSAGE,
   authorizeSpaceCatalogManage,
   authorizeSpaceCatalogRead,
+  type AuthorizationReader,
 } from "../authorization/authorize";
 import { authorizationReader } from "../../infrastructure/accompaniments/repository";
 import {
   listActiveSpaceRows,
-  listInactiveSpaceRows,
   toSpace,
+  type SpaceCatalogRowPage,
 } from "../../infrastructure/spaces/repository";
+import {
+  conflictError,
+  errResult,
+  okResult,
+  unauthorizedError,
+  type ApiResult,
+} from "../../domain/errors/api_error";
 
 /**
  * Casos de uso de lectura del catálogo de espacios (TI2-99).
@@ -74,37 +82,45 @@ export async function listSpaceCatalogUseCase(
  * Lista las salas retiradas para Administración (TI2-156, nota TI2-169).
  *
  * Solo administración con cuenta vigente, con el mismo permiso que gestiona
- * el catálogo. Permite reactivar con `setSpaceActive(isActive: true)` desde
- * la Web en el siguiente módulo; este backend ya la soporta. Paginado igual
- * que el catálogo vigente, nunca trunca en silencio.
+ * el catálogo. Sigue puertos (sin importar Infraestructura) y devuelve
+ * `ApiResult` para que Presentación lo traduzca con `unwrapApiResult`.
  */
+export interface InactiveSpaceReader {
+  listInactiveSpaces(input: {
+    readonly limit: number;
+    readonly cursor: string | null;
+  }): Promise<SpaceCatalogRowPage>;
+}
+
 export async function listInactiveSpaceCatalogUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-  args: { readonly limit: number; readonly cursor?: string; readonly version: string },
-) {
-  if (args.version !== SPACE_CATALOG_CONTRACT_VERSION) {
-    throw new Error("La versión del contrato de espacios debe ser la vigente.");
-  }
-  if (!Number.isInteger(args.limit) || args.limit < 1) {
-    throw new Error("El límite del catálogo debe ser un entero positivo.");
-  }
-  if (args.limit > SPACE_CATALOG_PAGE_LIMIT_MAX) {
-    throw new Error(
-      `El límite del catálogo supera el máximo de ${SPACE_CATALOG_PAGE_LIMIT_MAX} por página.`,
-    );
-  }
-  const grant = await authorizeSpaceCatalogManage(authorizationReader(ctx), {
-    tokenIdentifier: identity?.tokenIdentifier ?? null,
+  auth: AuthorizationReader,
+  store: InactiveSpaceReader,
+  input: {
+    readonly tokenIdentifier: string | null;
+    readonly limit: number;
+    readonly cursor?: string;
+    readonly version: string;
+  },
+): Promise<
+  ApiResult<{
+    readonly items: ReturnType<typeof toSpace>[];
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly version: typeof SPACE_CATALOG_CONTRACT_VERSION;
+  }>
+> {
+  if (input.version !== SPACE_CATALOG_CONTRACT_VERSION) return errResult(conflictError());
+  if (!Number.isInteger(input.limit) || input.limit < 1) return errResult(conflictError());
+  if (input.limit > SPACE_CATALOG_PAGE_LIMIT_MAX) return errResult(conflictError());
+  const grant = await authorizeSpaceCatalogManage(auth, {
+    tokenIdentifier: input.tokenIdentifier,
   });
-  if (grant.status === "error") {
-    deny();
-  }
-  const page = await listInactiveSpaceRows(ctx, { limit: args.limit, cursor: args.cursor ?? null });
-  return {
+  if (grant.status === "error") return errResult(unauthorizedError());
+  const page = await store.listInactiveSpaces({ limit: input.limit, cursor: input.cursor ?? null });
+  return okResult({
     items: page.items.map(toSpace),
     hasMore: page.hasMore,
     nextCursor: page.nextCursor,
     version: SPACE_CATALOG_CONTRACT_VERSION,
-  };
+  });
 }

@@ -132,9 +132,9 @@ function invalidFields<T>(message: string): ApiResult<T> {
 async function authorizeOrDeny(
   auth: AuthorizationReader,
   tokenIdentifier: string | null,
-): Promise<ApiResult<ManagedSpace> | null> {
+): Promise<{ readonly callerId: string } | ApiResult<ManagedSpace>> {
   const grant = await authorizeSpaceCatalogManage(auth, { tokenIdentifier });
-  return grant.status === "error" ? denied() : null;
+  return grant.status === "error" ? denied() : { callerId: grant.data.callerId };
 }
 
 function checkVersion(version: string): void {
@@ -170,8 +170,8 @@ export async function createSpaceCatalogEntry(
   store: ManageStore,
   input: { readonly tokenIdentifier: string | null; readonly version: string } & SpaceFields,
 ): Promise<ApiResult<ManagedSpace>> {
-  const denial = await authorizeOrDeny(auth, input.tokenIdentifier);
-  if (denial !== null) return denial;
+  const authz = await authorizeOrDeny(auth, input.tokenIdentifier);
+  if (!("callerId" in authz)) return authz;
   checkVersion(input.version);
   const fields = checkFields(input);
   if ("message" in fields) return invalidFields(fields.message);
@@ -201,17 +201,13 @@ export async function updateSpaceCatalogEntry(
   } & SpaceFields,
   impact: SpaceChangeImpactDeps,
 ): Promise<ApiResult<ManagedSpace>> {
-  const denial = await authorizeOrDeny(auth, input.tokenIdentifier);
-  if (denial !== null) return denial;
+  const authz = await authorizeOrDeny(auth, input.tokenIdentifier);
+  if (!("callerId" in authz)) return authz;
   checkVersion(input.version);
   const fields = checkFields(input);
   if ("message" in fields) return invalidFields(fields.message);
   const existing = await store.getSpace(input.spaceId);
   if (existing === null) return denied();
-  const grant = await authorizeSpaceCatalogManage(auth, {
-    tokenIdentifier: input.tokenIdentifier,
-  });
-  if (grant.status === "error") return denied();
   const now = impact.now === undefined ? Date.now() : impact.now();
   const future = await impact.future.listFutureBySpace(input.spaceId, now);
   if (!future.complete) return errResult(conflictError());
@@ -236,7 +232,7 @@ export async function updateSpaceCatalogEntry(
   }
   if (locationChanged) {
     await notifySpaceImpact(impact.notifications, future.appointments, {
-      actorId: grant.data.callerId,
+      actorId: authz.callerId,
       occurredAt: now,
     });
   } else {
@@ -250,7 +246,7 @@ export async function updateSpaceCatalogEntry(
         after.byId.get(appointment.id) === false,
     );
     await notifySpaceImpact(impact.notifications, newly, {
-      actorId: grant.data.callerId,
+      actorId: authz.callerId,
       occurredAt: now,
     });
   }
@@ -274,15 +270,11 @@ export async function setSpaceCatalogActive(
   },
   impact: SpaceChangeImpactDeps,
 ): Promise<ApiResult<ManagedSpace>> {
-  const denial = await authorizeOrDeny(auth, input.tokenIdentifier);
-  if (denial !== null) return denial;
+  const authz = await authorizeOrDeny(auth, input.tokenIdentifier);
+  if (!("callerId" in authz)) return authz;
   checkVersion(input.version);
   const existing = await store.getSpace(input.spaceId);
   if (existing === null) return denied();
-  const grant = await authorizeSpaceCatalogManage(auth, {
-    tokenIdentifier: input.tokenIdentifier,
-  });
-  if (grant.status === "error") return denied();
   const now = impact.now === undefined ? Date.now() : impact.now();
   const future = await impact.future.listFutureBySpace(input.spaceId, now);
   if (!future.complete) return errResult(conflictError());
@@ -303,7 +295,7 @@ export async function setSpaceCatalogActive(
       before.byId.get(appointment.id) === true && after.byId.get(appointment.id) === false,
   );
   await notifySpaceImpact(impact.notifications, newly, {
-    actorId: grant.data.callerId,
+    actorId: authz.callerId,
     occurredAt: now,
   });
   const managed = await readManaged(store, input.spaceId);
@@ -324,8 +316,8 @@ export async function getSpaceCatalogEntry(
     readonly spaceId: string;
   },
 ): Promise<ApiResult<ManagedSpace>> {
-  const denial = await authorizeOrDeny(auth, input.tokenIdentifier);
-  if (denial !== null) return denial;
+  const authz = await authorizeOrDeny(auth, input.tokenIdentifier);
+  if (!("callerId" in authz)) return authz;
   checkVersion(input.version);
   const managed = await readManaged(store, input.spaceId);
   if (managed === null) return denied();
