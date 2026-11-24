@@ -198,6 +198,18 @@ export function notificationEventRecorder(ctx: MutationCtx) {
   };
 }
 
+/**
+ * Registro interno sin despacho externo: conserva `notificationEvents` al
+ * cargar el dataset ficticio sin encolar ni enviar correos reales (TI2-159).
+ */
+export function internalNotificationEventRecorder(ctx: MutationCtx) {
+  return {
+    record: async (events: readonly NotificationEvent[]): Promise<void> => {
+      await recordNotificationEvents(ctx, events);
+    },
+  };
+}
+
 /** Encola la entrega por correo del aviso y programa su despacho inmediato. */
 async function queueEmailDelivery(
   ctx: MutationCtx,
@@ -581,11 +593,18 @@ export async function recordNotificationDeliveryAttempt(
   const existing = await findDeliveryRow(ctx, normalizedEventId, input.channel);
   const attempts = (existing?.attempts ?? 0) + 1;
   const errorCode = input.status === "failed" ? input.errorCode : undefined;
+  const providerFailureAttempts =
+    input.status === "sent"
+      ? undefined
+      : errorCode === "provider_unavailable"
+        ? (existing?.providerFailureAttempts ?? 0) + 1
+        : (existing?.providerFailureAttempts ?? 0);
   const nextAttemptAt =
     deliveryRetryAt({
       channel: input.channel,
       status: input.status,
       attempts,
+      ...(providerFailureAttempts === undefined ? {} : { providerFailureAttempts }),
       lastAttemptAt: input.attemptedAt,
       ...(errorCode === undefined ? {} : { errorCode }),
     }) ?? undefined;
@@ -593,6 +612,7 @@ export async function recordNotificationDeliveryAttempt(
     await ctx.db.patch(existing._id, {
       status: input.status,
       attempts,
+      providerFailureAttempts,
       lastAttemptAt: input.attemptedAt,
       nextAttemptAt,
       ...(input.status === "sent"
@@ -607,6 +627,7 @@ export async function recordNotificationDeliveryAttempt(
     channel: input.channel,
     status: input.status,
     attempts,
+    ...(providerFailureAttempts === undefined ? {} : { providerFailureAttempts }),
     lastAttemptAt: input.attemptedAt,
     ...(nextAttemptAt === undefined ? {} : { nextAttemptAt }),
     ...(input.status === "sent" ? { sentAt: input.attemptedAt } : { errorCode: input.errorCode }),

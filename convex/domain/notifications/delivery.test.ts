@@ -9,8 +9,9 @@ import {
 const BASE_TIME = Date.UTC(2027, 0, 4, 12, 0, 0);
 
 describe("política de reintentos de entrega (TI2-159)", () => {
-  test("reconoce not_authorized como código estable de entrega", () => {
+  test("reconoce not_authorized y delivery_uncertain como códigos estables de entrega", () => {
     expect(isNotificationDeliveryError("not_authorized")).toBe(true);
+    expect(isNotificationDeliveryError("delivery_uncertain")).toBe(true);
     expect(isNotificationDeliveryError("raw_oauth_error")).toBe(false);
   });
 
@@ -44,16 +45,18 @@ describe("política de reintentos de entrega (TI2-159)", () => {
     ).toBe(BASE_TIME);
   });
 
-  test("un destino inválido no se reintenta", () => {
-    expect(
-      deliveryRetryAt({
-        channel: "email",
-        status: "failed",
-        attempts: 1,
-        lastAttemptAt: BASE_TIME,
-        errorCode: "invalid_destination",
-      }),
-    ).toBeNull();
+  test("un destino inválido o un resultado incierto no se reintentan automáticamente", () => {
+    for (const errorCode of ["invalid_destination", "delivery_uncertain"] as const) {
+      expect(
+        deliveryRetryAt({
+          channel: "email",
+          status: "failed",
+          attempts: 1,
+          lastAttemptAt: BASE_TIME,
+          errorCode,
+        }),
+      ).toBeNull();
+    }
   });
 
   test("falta de configuración o autorización sigue reintentando sin agotar intentos", () => {
@@ -88,9 +91,23 @@ describe("política de reintentos de entrega (TI2-159)", () => {
         channel: "email",
         status: "failed",
         attempts: MAX_PROVIDER_UNAVAILABLE_ATTEMPTS,
+        providerFailureAttempts: MAX_PROVIDER_UNAVAILABLE_ATTEMPTS,
         lastAttemptAt: BASE_TIME,
         errorCode: "provider_unavailable",
       }),
     ).toBeNull();
+  });
+
+  test("los intentos previos sin credenciales no consumen el presupuesto de fallos del proveedor", () => {
+    expect(
+      deliveryRetryAt({
+        channel: "email",
+        status: "failed",
+        attempts: MAX_PROVIDER_UNAVAILABLE_ATTEMPTS + 1,
+        providerFailureAttempts: 1,
+        lastAttemptAt: BASE_TIME,
+        errorCode: "provider_unavailable",
+      }),
+    ).toBe(BASE_TIME + 60_000);
   });
 });

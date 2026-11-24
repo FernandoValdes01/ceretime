@@ -40,12 +40,14 @@ export interface GmailSenderEnv {
   readonly GMAIL_SENDER_ADDRESS?: string;
   readonly GMAIL_SENDER_REFRESH_TOKEN?: string;
   readonly EMAIL_ALLOWED_RECIPIENTS?: string;
+  readonly TEST_SEEDS_ENABLED?: string;
 }
 
 /**
  * Configuración del remitente, o `null` si falta alguna credencial. Sin
  * remitente configurado el despacho registra `not_configured` y reintenta
- * después, sin perder el aviso.
+ * después, sin perder el aviso. Con `TEST_SEEDS_ENABLED === "true"`, exige
+ * `EMAIL_ALLOWED_RECIPIENTS` explícito para evitar envíos a cuentas ficticias.
  */
 export function gmailSenderConfigFromEnv(env: GmailSenderEnv): GmailSenderConfig | null {
   const clientId = env.GOOGLE_CLIENT_ID?.trim() ?? "";
@@ -56,19 +58,21 @@ export function gmailSenderConfigFromEnv(env: GmailSenderEnv): GmailSenderConfig
     return null;
   }
   const allowed = env.EMAIL_ALLOWED_RECIPIENTS?.trim() ?? "";
+  const allowedRecipients =
+    allowed !== ""
+      ? allowed
+          .split(",")
+          .map((address) => address.trim().toLowerCase())
+          .filter((address) => address !== "")
+      : env.TEST_SEEDS_ENABLED === "true"
+        ? []
+        : undefined;
   return {
     clientId,
     clientSecret,
     refreshToken,
     senderAddress,
-    ...(allowed === ""
-      ? {}
-      : {
-          allowedRecipients: allowed
-            .split(",")
-            .map((address) => address.trim().toLowerCase())
-            .filter((address) => address !== ""),
-        }),
+    ...(allowedRecipients === undefined ? {} : { allowedRecipients }),
   };
 }
 
@@ -200,7 +204,9 @@ export function gmailEmailSender(
           }),
         });
       } catch {
-        return { status: "failed", errorCode: "provider_unavailable" };
+        // La petición ya se envió a Gmail y se perdió la respuesta: el mensaje
+        // pudo haberse aceptado, así que no se reintenta automáticamente.
+        return { status: "failed", errorCode: "delivery_uncertain" };
       }
       if (response.ok) return { status: "sent" };
       if (response.status === 401 || response.status === 403) {

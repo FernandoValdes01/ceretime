@@ -39,13 +39,16 @@ export function isNotificationDeliveryStatus(value: string): value is Notificati
  * distinguen por qué no se envió; `deliveryRetryAt` decide con ellos si el
  * despacho vuelve a intentar. `not_authorized` es la autorización vencida o
  * revocada del remitente (TI2-159): el aviso espera a que se vuelva a
- * autorizar, sin perderse.
+ * autorizar, sin perderse. `delivery_uncertain` marca una respuesta perdida
+ * tras invocar al proveedor: no se reintenta automáticamente para no enviar
+ * un segundo correo.
  */
 export const NOTIFICATION_DELIVERY_ERROR_VALUES = [
   "not_configured",
   "not_authorized",
   "provider_unavailable",
   "invalid_destination",
+  "delivery_uncertain",
 ] as const;
 
 export type NotificationDeliveryError = (typeof NOTIFICATION_DELIVERY_ERROR_VALUES)[number];
@@ -57,12 +60,15 @@ export function isNotificationDeliveryError(value: string): value is Notificatio
 
 /**
  * Resultado persistido de un canal: un solo registro por aviso y canal.
- * `attempts` cuenta los intentos acumulados; no es un historial de textos.
+ * `attempts` cuenta los intentos acumulados; `providerFailureAttempts` cuenta
+ * solo los fallos temporales del proveedor para que los intentos previos sin
+ * credenciales ni autorización no agoten ese presupuesto.
  */
 export interface NotificationDeliveryState {
   readonly channel: NotificationDeliveryChannel;
   readonly status: NotificationDeliveryStatus;
   readonly attempts: number;
+  readonly providerFailureAttempts?: number;
   readonly lastAttemptAt?: number;
   readonly sentAt?: number;
   readonly errorCode?: NotificationDeliveryError;
@@ -104,14 +110,16 @@ export function deliveryRetryAt(state: NotificationDeliveryState): number | null
   if (state.status === "pending") return lastAttemptAt;
   switch (state.errorCode) {
     case "invalid_destination":
+    case "delivery_uncertain":
       return null;
     case "not_configured":
     case "not_authorized":
       return lastAttemptAt + SENDER_SETUP_RETRY_DELAY_MS;
     case "provider_unavailable":
     case undefined: {
-      if (state.attempts >= MAX_PROVIDER_UNAVAILABLE_ATTEMPTS) return null;
-      const exponent = Math.max(state.attempts - 1, 0);
+      const providerAttempts = state.providerFailureAttempts ?? state.attempts;
+      if (providerAttempts >= MAX_PROVIDER_UNAVAILABLE_ATTEMPTS) return null;
+      const exponent = Math.max(providerAttempts - 1, 0);
       const delay = Math.min(
         PROVIDER_RETRY_BASE_DELAY_MS * 2 ** exponent,
         PROVIDER_RETRY_MAX_DELAY_MS,

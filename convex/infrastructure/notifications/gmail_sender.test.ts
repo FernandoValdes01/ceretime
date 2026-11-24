@@ -179,5 +179,38 @@ describe("adaptador de correo Gmail (TI2-159)", () => {
         text: "Cuerpo",
       }),
     ).resolves.toEqual({ status: "failed", errorCode: "provider_unavailable" });
+
+    // Si la conexión cae después de invocar el envío de Gmail, el resultado es incierto.
+    const droppedSendResponseFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ access_token: "access-ficticio" }))
+      .mockRejectedValueOnce(new Error("socket hang up"));
+    await expect(
+      gmailEmailSender(CONFIG, droppedSendResponseFetch).send({
+        to: "destino@alu.uct.cl",
+        subject: "Aviso",
+        text: "Cuerpo",
+      }),
+    ).resolves.toEqual({ status: "failed", errorCode: "delivery_uncertain" });
+  });
+
+  test("con semillas habilitadas y sin lista explícita de destinos bloquea cualquier envío", async () => {
+    const config = gmailSenderConfigFromEnv({
+      GOOGLE_CLIENT_ID: "id",
+      GOOGLE_CLIENT_SECRET: "secret",
+      GMAIL_SENDER_ADDRESS: "remitente@alu.uct.cl",
+      GMAIL_SENDER_REFRESH_TOKEN: "token",
+      TEST_SEEDS_ENABLED: "true",
+    });
+    expect(config?.allowedRecipients).toEqual([]);
+    const fetchMock = vi.fn<typeof fetch>();
+    await expect(
+      gmailEmailSender(config, fetchMock).send({
+        to: "ficticio@alu.uct.cl",
+        subject: "Aviso",
+        text: "Cuerpo",
+      }),
+    ).resolves.toEqual({ status: "failed", errorCode: "invalid_destination" });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

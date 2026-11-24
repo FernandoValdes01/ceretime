@@ -145,10 +145,10 @@ La columna «Base propuesta» resume la propuesta principal de cada tabla. El de
 
 ### `notificationEvents`
 
-- **Datos personales.** `kind`, `appointmentId`, `recipientId`, `occurredAt`, `version` e `idempotencyKey`. Vincula un aviso con una persona y una atención, aunque no guarda texto, motivos ni detalles del acompañamiento.
-- **Finalidad.** Registrar los eventos de notificación de una atención para que un envío posterior no duplique avisos. Hoy solo se persiste `appointment_online_access_ready`, cuando se publica el enlace privado; el resto de los eventos está definido en el dominio pero no se registra. El envío por correo o push todavía no está implementado.
+- **Datos personales.** `kind`, `appointmentId` o `requestId`, `recipientId`, `occurredAt`, `version`, `idempotencyKey` y `readAt`. Vincula un aviso con una persona y exactamente un recurso (una atención o una solicitud), sin guardar texto, motivos, respuestas ni detalles del acompañamiento. Por canal, `notificationDeliveries` guarda `eventId`, `channel`, `status`, `attempts`, `providerFailureAttempts`, `lastAttemptAt`, `sentAt`, `errorCode` (código genérico) y `nextAttemptAt`, sin cuerpos, encabezados ni credenciales del proveedor.
+- **Finalidad.** Registrar los avisos de solicitudes, reservas, cambios, cancelaciones, inasistencias, justificaciones y enlaces en línea, conservar el estado de lectura del destinatario y registrar el resultado e intentos del envío por correo institucional sin duplicar avisos.
 - **Base propuesta.** Relación de acompañamiento para los avisos necesarios del servicio. Consentimiento para los canales opcionales, si la UCT los define así. Pendiente de aprobación.
-- **Acceso por rol.** No hay lectura pública en esta entrega. El sistema escribe el evento en la misma transacción del cambio. El destinatario podrá leer sus avisos cuando exista esa pantalla.
+- **Acceso por rol.** El destinatario consulta y marca como leídos únicamente sus propios avisos (TI2-154); al abrir el recurso vinculado se vuelve a verificar su permiso vigente. `notificationDeliveries` es de uso interno del despacho y no tiene lectura pública.
 - **Proveedor.** Convex almacena los eventos y el resultado de cada intento (`notificationDeliveries`). Google LLC (API de Gmail) envía los avisos por correo con asunto y cuerpo genéricos desde una cuenta institucional autorizada solo con `gmail.send` (TI2-159, 2026-11-23). El proveedor de push sigue pendiente.
 
 ### `appointmentAuditEvents`

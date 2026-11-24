@@ -259,3 +259,157 @@ test("TI2-159: la reserva impide que dos despachos concurrentes envíen la misma
   });
   expect(second).toEqual({ status: "skipped" });
 });
+
+test("TI2-159: una respuesta perdida tras invocar a Gmail marca delivery_uncertain y no reenvía un segundo correo", async () => {
+  stubGmailEnv();
+  let sendCalls = 0;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+    const target = String(url);
+    if (target.includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "access-ok" });
+    }
+    if (target.includes("gmail.googleapis.com")) {
+      sendCalls += 1;
+      throw new Error("respuesta perdida tras aceptar el correo");
+    }
+    throw new Error(`URL inesperada: ${target}`);
+  });
+
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti159-est-incierto", "incierto@alu.uct.cl");
+  const student = t.withIdentity(identityFor("ti159-est-incierto"));
+
+  await student.mutation(api.presentation.requests.createRequest, REQUEST_SUBMISSION);
+  await t.finishAllScheduledFunctions(() => {
+    vi.setSystemTime(NOW + 1_000);
+  });
+
+  expect(sendCalls).toBe(1);
+  const rows = await deliveries(t);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    channel: "email",
+    status: "failed",
+    attempts: 1,
+    errorCode: "delivery_uncertain",
+  });
+  expect(rows[0]?.nextAttemptAt).toBeUndefined();
+
+  // Al avanzar el reloj, el barrido no vuelve a programar ni producir un segundo envío.
+  vi.setSystemTime(NOW + 60 * 60_000);
+  const dueCount = await t.mutation(
+    internal.operations.notifications.scheduleDueEmailDeliveries,
+    {},
+  );
+  expect(dueCount).toBe(0);
+  expect(sendCalls).toBe(1);
+});
+
+test("TI2-159: cargar el dataset ficticio con remitente configurado conserva avisos internos sin enviar correos", async () => {
+  stubGmailEnv();
+  vi.stubEnv("TEST_SEEDS_ENABLED", "true");
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse({ id: "no-debe" }));
+
+  const t = convexTest(schema, modules);
+  await t.mutation(internal.operations.fictitiousData.load, {});
+  await t.finishAllScheduledFunctions(() => {
+    vi.setSystemTime(NOW + 1_000);
+  });
+
+  const events = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(50));
+  expect(events.length).toBeGreaterThan(0);
+  expect(await deliveries(t)).toHaveLength(0);
+  expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+test("TI2-159: seis intentos sin credenciales no agotan el presupuesto cuando Gmail devuelve 503", async () => {
+  vi.stubEnv("GOOGLE_CLIENT_ID", "");
+  vi.stubEnv("GOOGLE_CLIENT_SECRET", "");
+  vi.stubEnv("GMAIL_SENDER_ADDRESS", "");
+  vi.stubEnv("GMAIL_SENDER_REFRESH_TOKEN", "");
+  vi.stubEnv("EMAIL_ALLOWED_RECIPIENTS", "");
+
+  let currentTime = NOW;
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti159-est-budget", "budget@alu.uct.cl");
+  const student = t.withIdentity(identityFor("ti159-est-budget"));
+
+  await student.mutation(api.presentation.requests.createRequest, REQUEST_SUBMISSION);
+  await t.finishAllScheduledFunctions(() => {
+    currentTime += 1_000;
+    vi.setSystemTime(currentTime);
+  });
+
+  // 5 reintentos adicionales sin credenciales (total: 6 intentos `not_configured`).
+  for (let i = 0; i < 5; i += 1) {
+    currentTime += SENDER_SETUP_RETRY_DELAY_MS + 1_000;
+    vi.setSystemTime(currentTime);
+    const due = await t.mutation(internal.operations.notifications.scheduleDueEmailDeliveries, {});
+    expect(due).toBe(1);
+    await t.finishAllScheduledFunctions(() => {
+      currentTime += 1_000;
+      vi.setSystemTime(currentTime);
+    });
+  }
+
+  const afterUnconfigured = await deliveries(t);
+  expect(afterUnconfigured[0]).toMatchObject({
+    status: "failed",
+    attempts: 6,
+    providerFailureAttempts: 0,
+    errorCode: "not_configured",
+  });
+
+  // Se configura el remitente y la primera llamada real a Gmail responde 503.
+  stubGmailEnv();
+  let return503 = true;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+    const target = String(url);
+    if (target.includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "access-ok" });
+    }
+    if (target.includes("gmail.googleapis.com")) {
+      return return503 ? jsonResponse({}, 503) : jsonResponse({ id: "gmail-recuperado" });
+    }
+    throw new Error(`URL inesperada: ${target}`);
+  });
+
+  currentTime += SENDER_SETUP_RETRY_DELAY_MS + 1_000;
+  vi.setSystemTime(currentTime);
+  expect(await t.mutation(internal.operations.notifications.scheduleDueEmailDeliveries, {})).toBe(
+    1,
+  );
+  await t.finishAllScheduledFunctions(() => {
+    currentTime += 1_000;
+    vi.setSystemTime(currentTime);
+  });
+
+  const after503 = await deliveries(t);
+  expect(after503[0]).toMatchObject({
+    status: "failed",
+    attempts: 7,
+    providerFailureAttempts: 1,
+    errorCode: "provider_unavailable",
+  });
+  expect(after503[0]?.nextAttemptAt).toBe((after503[0]?.lastAttemptAt ?? 0) + 60_000);
+
+  // Al recuperarse Gmail, el siguiente reintento envía correctamente.
+  return503 = false;
+  currentTime += 61_000;
+  vi.setSystemTime(currentTime);
+  expect(await t.mutation(internal.operations.notifications.scheduleDueEmailDeliveries, {})).toBe(
+    1,
+  );
+  await t.finishAllScheduledFunctions(() => {
+    currentTime += 1_000;
+    vi.setSystemTime(currentTime);
+  });
+
+  const afterRecovery = await deliveries(t);
+  expect(afterRecovery[0]).toMatchObject({
+    status: "sent",
+    attempts: 8,
+  });
+  expect(afterRecovery[0]?.errorCode).toBeUndefined();
+  expect(afterRecovery[0]?.nextAttemptAt).toBeUndefined();
+});

@@ -507,6 +507,7 @@ export default defineSchema({
     channel: notificationDeliveryChannelUnion,
     status: notificationDeliveryStatusUnion,
     attempts: v.number(),
+    providerFailureAttempts: v.optional(v.number()),
     lastAttemptAt: v.optional(v.number()),
     sentAt: v.optional(v.number()),
     errorCode: v.optional(notificationDeliveryErrorUnion),
