@@ -30,6 +30,7 @@ import type * as application_calendar_calendar_link from "../application/calenda
 import type * as application_follow_up_commands from "../application/follow_up/commands.js";
 import type * as application_follow_up_ports from "../application/follow_up/ports.js";
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
+import type * as application_notifications_inbox from "../application/notifications/inbox.js";
 import type * as application_notifications_ports from "../application/notifications/ports.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_notifications from "../application/requests/notifications.js";
@@ -109,6 +110,7 @@ import type * as presentation_appointments from "../presentation/appointments.js
 import type * as presentation_availability from "../presentation/availability.js";
 import type * as presentation_calendar from "../presentation/calendar.js";
 import type * as presentation_follow_up from "../presentation/follow_up.js";
+import type * as presentation_notifications from "../presentation/notifications.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as presentation_spaces from "../presentation/spaces.js";
@@ -142,6 +144,7 @@ declare const fullApi: ApiFromModules<{
   "application/follow_up/commands": typeof application_follow_up_commands;
   "application/follow_up/ports": typeof application_follow_up_ports;
   "application/follow_up/queries": typeof application_follow_up_queries;
+  "application/notifications/inbox": typeof application_notifications_inbox;
   "application/notifications/ports": typeof application_notifications_ports;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/notifications": typeof application_requests_notifications;
@@ -221,6 +224,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/availability": typeof presentation_availability;
   "presentation/calendar": typeof presentation_calendar;
   "presentation/follow_up": typeof presentation_follow_up;
+  "presentation/notifications": typeof presentation_notifications;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   "presentation/spaces": typeof presentation_spaces;
