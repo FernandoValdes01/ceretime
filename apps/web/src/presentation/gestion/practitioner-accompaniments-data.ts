@@ -6,7 +6,8 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
- * Lecturas de acompañamientos asignados al Practicante (TI2-116).
+ * Lecturas de acompañamientos asignados al Practicante (TI2-116). El
+ * Profesional usa las mismas para su listado y su detalle (TI2-165).
  *
  * Cableado delgado sobre las queries públicas ya existentes
  * (`listAssignedAccompaniments` y `getAccompaniment`): responden `undefined`

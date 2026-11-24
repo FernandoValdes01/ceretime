@@ -14,6 +14,7 @@
  * adaptador entre la fila persistida y la vista devuelta.
  */
 
+import { isPersonalProfessionalActive, type AccountEnabler } from "../accounts/enablement";
 import { deriveCoordinationReferenceCode } from "../availability/official_channel";
 
 /** Estados del acompañamiento (activo, pausado, cerrado). */
@@ -166,8 +167,12 @@ export const ACCOMPANIMENT_TRANSITIONS = [
   { from: "paused", to: "closed" },
 ] as const satisfies readonly AccompanimentStateTransition[];
 
-/** Tope del motivo opcional de un cambio de estado. */
-export const ACCOMPANIMENT_REASON_MAX_LENGTH = 500;
+/**
+ * Tope del motivo opcional del cierre. Es el único cambio de estado con
+ * motivo: el MER guarda `motivoCierre?` y no tiene dónde guardar uno de pausa
+ * o de reactivación.
+ */
+export const ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH = 500;
 
 /**
  * Motivo con que el cierre cancela las atenciones futuras. La cancelación de
@@ -176,26 +181,105 @@ export const ACCOMPANIMENT_REASON_MAX_LENGTH = 500;
  */
 export const ACCOMPANIMENT_CLOSURE_CANCEL_REASON = "Cierre del acompañamiento";
 
+/**
+ * Un acompañamiento activo o en pausa conserva al menos un profesional
+ * asignado: asignar a otro y cerrar exigen una asignación profesional activa,
+ * así que sin ninguna nadie podría volver a gestionarlo. Uno cerrado sí puede
+ * quedar sin asignaciones, que es el 0..* de ASIGNA en el MER (TI2-165).
+ */
+export function mustKeepAProfessional(status: AccompanimentStatus): boolean {
+  return status !== "closed";
+}
+
+/** Asignación profesional activa y vigente, con lo que decide si su titular gestiona. */
+export type ProfessionalAssignmentHolder = {
+  readonly userId: string;
+  /** Profesional de personal habilitado y vigente; una cuenta de prueba no gestiona. */
+  readonly isStaffProfessional: boolean;
+  /** Fin acordado de la vigencia, que solo puede venir de filas anteriores a TI2-165. */
+  readonly validUntil?: number;
+};
+
+export function toProfessionalAssignmentHolder(
+  row: { readonly userId: string; readonly validUntil?: number },
+  profile: AccountEnabler | null,
+): ProfessionalAssignmentHolder {
+  return {
+    userId: row.userId,
+    isStaffProfessional: profile !== null && isPersonalProfessionalActive(profile),
+    ...(row.validUntil === undefined ? {} : { validUntil: row.validUntil }),
+  };
+}
+
+/**
+ * Verdadero cuando `userId` puede dejar su asignación sin que el
+ * acompañamiento quede sin quien lo gestione (TI2-165).
+ *
+ * Gestiona quien puede asignar y cerrar: un profesional de personal
+ * habilitado y vigente, con asignación vigente y sin fin acordado. Una cuenta
+ * de prueba no concede ni retira, y una asignación con fin deja de autorizar
+ * al vencer, así que ninguna de las dos cuenta. `holders` son las
+ * asignaciones activas y vigentes ahora; un cerrado siempre lo admite.
+ */
+export function keepsAManagerWithout(
+  status: AccompanimentStatus,
+  holders: readonly ProfessionalAssignmentHolder[],
+  userId: string,
+): boolean {
+  if (!mustKeepAProfessional(status)) return true;
+  return holders.some(
+    (holder) =>
+      holder.userId !== userId && holder.isStaffProfessional && holder.validUntil === undefined,
+  );
+}
+
+/**
+ * La asignación de un profesional de personal no lleva vigencia acordada:
+ * ASIGNACIONES_PROFESIONALES del MER no la tiene, y con ella el último que
+ * gestiona dejaría el acompañamiento sin nadie al empezar tarde o al vencer
+ * (TI2-165). Quitar una ventana anterior (`null` u omitida) sí procede.
+ */
+export function setsAgreedValidity(validity: {
+  readonly validFrom?: number | null;
+  readonly validUntil?: number | null;
+}): boolean {
+  return (validity.validFrom ?? null) !== null || (validity.validUntil ?? null) !== null;
+}
+
 export type AccompanimentTransitionAttempt = {
   readonly from: AccompanimentStatus;
   readonly to: AccompanimentStatus;
   readonly actorId: string;
   readonly occurredAt: number;
-  readonly reason?: string;
+  /** Solo el cierre lo admite. */
+  readonly closureReason?: string;
 };
 
 /**
- * Entrada del historial de estados: el intento ya aceptado, con el origen de
- * una transición válida y el motivo solo si se entregó.
+ * Datos del cierre que el MER guarda en ACOMPAÑAMIENTOS: `cerradoPorId?`,
+ * `cerradoEn?` y `motivoCierre?`, este último solo si se entregó.
  */
-export type AccompanimentStateChange = AccompanimentTransitionAttempt &
-  AccompanimentStateTransition;
+export type AccompanimentClosure = {
+  readonly closedById: string;
+  readonly closedAt: number;
+  readonly closureReason?: string;
+};
+
+/**
+ * Cambio aceptado, listo para guardar en el propio acompañamiento. Pausar y
+ * reactivar solo cambian el estado, porque el MER no registra quién ni cuándo
+ * lo hizo.
+ */
+export type AccompanimentStateChange =
+  | { readonly to: "active" | "paused" }
+  | { readonly to: "closed"; readonly closure: AccompanimentClosure };
 
 export const ACCOMPANIMENT_TRANSITION_REJECTION_CAUSES = [
   "transition_not_allowed",
   "actor_required",
   "occurred_at_invalid",
-  "reason_too_long",
+  "closure_reason_not_allowed",
+  "closure_reason_too_long",
 ] as const;
 
 export type AccompanimentTransitionRejectionCause =
@@ -208,9 +292,9 @@ export type AccompanimentTransitionResult =
 /**
  * Decide si un cambio de estado procede, sin persistir nada.
  *
- * El motivo es opcional en todos los cambios: en blanco equivale a no
- * entregarlo. Los rechazos se devuelven como valor y ninguno construye
- * `change`, así un intento inválido no deja entrada en el historial.
+ * El motivo del cierre es opcional: en blanco equivale a no entregarlo. Un
+ * motivo en una pausa o una reactivación se rechaza en vez de descartarse.
+ * Los rechazos se devuelven como valor y ninguno construye `change`.
  */
 export function transitionAccompaniment(
   attempt: AccompanimentTransitionAttempt,
@@ -227,19 +311,27 @@ export function transitionAccompaniment(
     return { status: "rejected", cause: "occurred_at_invalid" };
   }
 
-  const reason = attempt.reason?.trim();
-  if (reason !== undefined && reason.length > ACCOMPANIMENT_REASON_MAX_LENGTH) {
-    return { status: "rejected", cause: "reason_too_long" };
+  const closureReason = attempt.closureReason?.trim();
+  if (transition.to !== "closed") {
+    if (closureReason) return { status: "rejected", cause: "closure_reason_not_allowed" };
+    return { status: "applied", change: { to: transition.to } };
+  }
+  if (
+    closureReason !== undefined &&
+    closureReason.length > ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH
+  ) {
+    return { status: "rejected", cause: "closure_reason_too_long" };
   }
 
   return {
     status: "applied",
     change: {
-      from: transition.from,
-      to: transition.to,
-      actorId,
-      occurredAt: attempt.occurredAt,
-      ...(reason ? { reason } : {}),
+      to: "closed",
+      closure: {
+        closedById: actorId,
+        closedAt: attempt.occurredAt,
+        ...(closureReason ? { closureReason } : {}),
+      },
     },
   };
 }

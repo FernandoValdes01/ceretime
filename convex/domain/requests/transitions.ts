@@ -164,30 +164,22 @@ export type RequestStateChange = {
 };
 
 /**
- * Escritura del estado vigente de la solicitud (TI2-141). El cierre sin
- * acompañamiento lleva su razón, que lee el Estudiante, y ningún otro estado
- * la lleva: así no compila una razón de cierre en una solicitud aceptada ni un
- * cierre sin razón.
+ * Escritura del estado vigente de la solicitud (TI2-141). La razón del cierre
+ * sin acompañamiento no viaja aquí: el MER la guarda solo en
+ * TRANSICIONES_SOLICITUD (TI2-165), así que queda en el registro del cambio.
  *
- * `referred` lleva su derivación de salida de la misma forma (TI2-143): no
+ * `referred` lleva su derivación de salida (TI2-143): no
  * compila una solicitud derivada que no diga a dónde, ni una derivación en
  * otro estado. El identificador es genérico para no importar
  * `convex/_generated`.
  */
 export type RequestStatusChange<UserId extends string = string> =
   | {
-      readonly status: "closed_without_accompaniment";
-      readonly closureReason: string;
-      readonly outgoingReferral?: never;
-    }
-  | {
       readonly status: ReferralRequestState;
       readonly outgoingReferral: OutgoingReferral<UserId>;
-      readonly closureReason?: never;
     }
   | {
-      readonly status: Exclude<RequestState, "closed_without_accompaniment" | ReferralRequestState>;
-      readonly closureReason?: never;
+      readonly status: Exclude<RequestState, ReferralRequestState>;
       readonly outgoingReferral?: never;
     };
 

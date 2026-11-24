@@ -10,6 +10,12 @@ jest.mock("@react-native-async-storage/async-storage", () =>
   require("@react-native-async-storage/async-storage/jest/async-storage-mock"),
 );
 
+// Better Auth publica módulos ESM `.mjs` que Jest no transforma, y el almacén seguro es nativo. Las pruebas
+// sustituyen el cliente por uno doble; el cableado real se comprueba en Android.
+jest.mock("./src/infrastructure/institutional-auth-client", () => ({
+  createInstitutionalAuthClient: jest.fn(),
+}));
+
 // El transporte de desarrollo de Expo intenta abrir un WebSocket hacia Metro.
 // Las pruebas del router no necesitan un servidor de desarrollo.
 jest.mock("expo/src/async-require/messageSocket.native", () => ({}));

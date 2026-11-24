@@ -3,6 +3,7 @@ import {
   canEnableAsAdmin,
   checkEnablement,
   checkInternEnablement,
+  checkStudentReclassification,
   checkTestProfessionalEnablement,
   isPersonalProfessionalActive,
   validateBootstrapCandidate,
@@ -378,5 +379,34 @@ describe("habilitación por el profesional de personal y cuenta de prueba (TI2-1
         target: targetArg,
       }),
     ).toEqual({ ok: false, reason: "caller-not-active" });
+  });
+});
+
+describe("checkStudentReclassification (TI2-182)", () => {
+  const student = {
+    role: "student" as const,
+    email: "futura.cuenta@alu.uct.cl",
+    hasStudentActivity: false,
+  };
+
+  test("acepta un Estudiante `@alu.uct.cl` sin actividad propia", () => {
+    expect(checkStudentReclassification(student)).toEqual({ ok: true });
+  });
+
+  test("rechaza otro rol, un correo que no es `@alu.uct.cl` o un Estudiante con actividad", () => {
+    expect(checkStudentReclassification({ ...student, role: "professional" })).toEqual({
+      ok: false,
+      reason: "target-not-student",
+    });
+    for (const email of ["persona@gmail.com", "personal@uct.cl"]) {
+      expect(checkStudentReclassification({ ...student, email })).toEqual({
+        ok: false,
+        reason: "target-email-not-student",
+      });
+    }
+    expect(checkStudentReclassification({ ...student, hasStudentActivity: true })).toEqual({
+      ok: false,
+      reason: "target-has-student-activity",
+    });
   });
 });

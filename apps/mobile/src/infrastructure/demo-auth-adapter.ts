@@ -4,7 +4,7 @@ import type {
   AuthSession,
   AuthenticatedUser,
 } from "../domain/auth-models";
-import type { AuthPort } from "../application/auth-port";
+import type { DemoAuthPort } from "../application/auth-port";
 import { UserFacingError } from "../application/user-facing-error";
 import { demoInternAccompanimentsByIntern } from "./demo-intern-accompaniment-data";
 
@@ -85,7 +85,7 @@ export class DemoAuthenticationError extends UserFacingError {
   }
 }
 
-export function createDemoAuthAdapter(): AuthPort {
+export function createDemoAuthAdapter(): DemoAuthPort {
   return {
     async login(credentials) {
       const account = demoUsers.find(

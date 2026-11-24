@@ -1,6 +1,9 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
+import type { StudentReclassificationStore } from "../../application/accounts/ports";
+import type { OwnProfileReader, OwnProfileStore } from "../../application/session/ports";
+import type { AuthenticatedProfile } from "../../domain/identity/roles";
 
 /**
  * Repositorio de cuentas (TI2-11).
@@ -108,6 +111,57 @@ export async function paginateStaffAccounts(
     .paginate(paginationOpts);
 }
 
+/** Perfil propio mínimo que ven la interfaz y los casos de uso de sesión. */
+function toAuthenticatedProfile(profile: Doc<"users">): AuthenticatedProfile {
+  return {
+    fullName: profile.fullName,
+    email: profile.email,
+    role: profile.role,
+    institutionalStatus: profile.institutionalStatus,
+    accountStatus: profile.accountStatus,
+  };
+}
+
+/** Adaptador del puerto `OwnProfileReader` (TI2-10, TI2-182). */
+export function ownProfileReader(ctx: DbReader): OwnProfileReader {
+  return {
+    findByTokenIdentifier: async (tokenIdentifier) => {
+      const profile = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+      return profile === null ? null : toAuthenticatedProfile(profile);
+    },
+  };
+}
+
+/**
+ * Adaptador del puerto `OwnProfileStore` (TI2-182). La habilitación
+ * automática del Estudiante deja `enabledAt` sin `enabledBy`, igual que el
+ * arranque: no hubo un administrador que actuara.
+ */
+export function ownProfileStore(ctx: MutationCtx): OwnProfileStore {
+  return {
+    ...ownProfileReader(ctx),
+    isEmailRegistered: async (email) => (await findUserByEmail(ctx, email)) !== null,
+    create: async (profile) => {
+      await ctx.db.insert("users", {
+        email: profile.email,
+        fullName: profile.fullName,
+        role: profile.role,
+        institutionalStatus: profile.institutionalStatus,
+        accountStatus: profile.accountStatus,
+        tokenIdentifier: profile.tokenIdentifier,
+        ...(profile.enabledAt === undefined ? {} : { enabledAt: profile.enabledAt }),
+      });
+      return {
+        fullName: profile.fullName,
+        email: profile.email,
+        role: profile.role,
+        institutionalStatus: profile.institutionalStatus,
+        accountStatus: profile.accountStatus,
+      };
+    },
+  };
+}
+
 /** Crea la cuenta administrativa inicial del entorno, ya habilitada. */
 export async function insertBootstrapAdmin(
   ctx: MutationCtx,
@@ -127,4 +181,37 @@ export async function insertBootstrapAdmin(
     tokenIdentifier: input.tokenIdentifier,
     enabledAt: input.enabledAt,
   });
+}
+
+/**
+ * Adaptador del puerto `StudentReclassificationStore` (TI2-182). Quita
+ * `enabledAt` porque la habilitación automática del Estudiante no vale para
+ * el rol nuevo, que espera la suya con actor y fecha.
+ */
+export function studentReclassificationStore(ctx: MutationCtx): StudentReclassificationStore {
+  return {
+    findAccount: async (userId) => {
+      const profile = await ctx.db.get(userId);
+      return profile === null ? null : { role: profile.role, email: profile.email };
+    },
+    hasStudentActivity: async (userId) => {
+      const request = await ctx.db
+        .query("requests")
+        .withIndex("by_student", (q) => q.eq("studentId", userId))
+        .first();
+      if (request !== null) return true;
+      const accompaniment = await ctx.db
+        .query("accompaniments")
+        .withIndex("by_student", (q) => q.eq("studentId", userId))
+        .first();
+      return accompaniment !== null;
+    },
+    markPending: async (userId, role) => {
+      await ctx.db.patch(userId, {
+        role,
+        institutionalStatus: "pending",
+        enabledAt: undefined,
+      });
+    },
+  };
 }

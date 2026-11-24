@@ -16,7 +16,12 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { loadCalendarAppointment } from "../application/calendar/calendar";
+import {
+  checkCalendarLinkAccess as checkCalendarLinkAccessUseCase,
+  markCalendarDisconnected as markCalendarDisconnectedUseCase,
+} from "../application/calendar/calendar_link";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
+import { calendarLinkStore } from "../infrastructure/calendar/repository";
 import {
   appointmentCalendarReader,
   normalizeAppointmentId,
@@ -87,5 +92,66 @@ export const recordCalendarEventReference = internalMutation({
       endsAt: args.endsAt,
     });
     return null;
+  },
+});
+
+/**
+ * Acceso al vínculo propio para la desconexión (TI2-161).
+ *
+ * La acción lo consulta antes de revocar en Google, para no tocar un acceso
+ * ajeno al rol aunque exista una fila heredada.
+ */
+export const checkCalendarLinkAccess = internalQuery({
+  args: { tokenIdentifier: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    return await checkCalendarLinkAccessUseCase(
+      { auth: authorizationReader(ctx) },
+      { tokenIdentifier: args.tokenIdentifier },
+    );
+  },
+});
+
+/**
+ * Marca la desconexión local del vínculo propio (TI2-161).
+ *
+ * La invoca la acción pública tras revocar el permiso en Google: la acción no
+ * tiene base de datos y esta mutación resuelve el perfil de la sesión,
+ * registra `revokedAt` y devuelve el aviso de eventos previos. Solo toca la
+ * fila propia. Solo Estudiante y Profesional (RF-27, `calendar:disconnect`).
+ */
+export const markCalendarDisconnected = internalMutation({
+  args: {
+    tokenIdentifier: v.string(),
+    revoked: v.union(v.literal("revoked"), v.literal("not_found")),
+  },
+  returns: v.union(
+    v.object({
+      status: v.literal("ok"),
+      data: v.object({
+        disconnected: v.boolean(),
+        status: v.union(
+          v.literal("unlinked"),
+          v.literal("already_unlinked"),
+          v.literal("not_found"),
+        ),
+        revokedAt: v.optional(v.number()),
+        staleEventsMayRemain: v.boolean(),
+      }),
+    }),
+    v.object({
+      status: v.literal("error"),
+      error: v.object({ code: v.string(), message: v.string() }),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    return await markCalendarDisconnectedUseCase(
+      {
+        auth: authorizationReader(ctx),
+        store: calendarLinkStore(ctx),
+        now: () => Date.now(),
+      },
+      { tokenIdentifier: args.tokenIdentifier, revoked: args.revoked },
+    );
   },
 });

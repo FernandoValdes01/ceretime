@@ -42,14 +42,22 @@ export function ErrorState({
   message,
   onRetry,
   retryLabel = "Reintentar",
+  tone,
 }: {
   message: string;
   onRetry?: () => void;
   retryLabel?: string;
+  /** Variante visual de administración: caja blanca de bordes rectos. */
+  tone?: "admin";
 }) {
   return (
     <div>
-      <p role="alert" className="view-state view-state--error">
+      <p
+        role="alert"
+        className={
+          tone === "admin" ? "view-state view-state--admin" : "view-state view-state--error"
+        }
+      >
         {message}
       </p>
       {onRetry === undefined ? null : (
@@ -67,12 +75,19 @@ export function ErrorState({
 export function DeniedState({
   title = ACCESS_DENIED_MESSAGE,
   description,
+  tone,
 }: {
   title?: string;
   description?: string;
+  /** Variante visual de administración: caja blanca de bordes rectos. */
+  tone?: "admin";
 }) {
   return (
-    <div className="view-state view-state--denied">
+    <div
+      className={
+        tone === "admin" ? "view-state view-state--admin" : "view-state view-state--denied"
+      }
+    >
       <p role="alert" className="view-state__title">
         {title}
       </p>
