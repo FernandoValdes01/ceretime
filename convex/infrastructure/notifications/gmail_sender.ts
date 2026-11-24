@@ -14,6 +14,11 @@
  * `not_authorized` y el aviso espera a que se vuelva a autorizar.
  */
 
+import type {
+  EmailMessage,
+  EmailSender,
+  EmailSendResult,
+} from "../../application/notifications/ports";
 import type { NotificationDeliveryError } from "../../domain/notifications/delivery";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -76,17 +81,6 @@ export function gmailSenderConfigFromEnv(env: GmailSenderEnv): GmailSenderConfig
   };
 }
 
-/** Mensaje y resultado, estructuralmente iguales al puerto de Aplicación. */
-interface GmailMessage {
-  readonly to: string;
-  readonly subject: string;
-  readonly text: string;
-}
-
-type GmailSendResult =
-  | { readonly status: "sent" }
-  | { readonly status: "failed"; readonly errorCode: NotificationDeliveryError };
-
 /** Dirección simple y sin saltos de línea: impide inyectar encabezados. */
 const EMAIL_ADDRESS_PATTERN = /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;"]+$/;
 
@@ -109,7 +103,7 @@ function base64Url(value: string): string {
  * conservar tildes; el cuerpo, en base64. Sin nombre visible del remitente:
  * el encabezado `From` no menciona CERETI.
  */
-export function composeGmailRawMessage(senderAddress: string, message: GmailMessage): string {
+export function composeGmailRawMessage(senderAddress: string, message: EmailMessage): string {
   const lines = [
     `From: ${senderAddress}`,
     `To: ${message.to}`,
@@ -175,9 +169,9 @@ async function fetchAccessToken(
 export function gmailEmailSender(
   config: GmailSenderConfig | null,
   fetchImpl: typeof fetch = fetch,
-) {
+): EmailSender {
   return {
-    send: async (message: GmailMessage): Promise<GmailSendResult> => {
+    send: async (message: EmailMessage): Promise<EmailSendResult> => {
       if (config === null) return { status: "failed", errorCode: "not_configured" };
       const to = message.to.trim();
       if (!isValidAddress(to)) return { status: "failed", errorCode: "invalid_destination" };

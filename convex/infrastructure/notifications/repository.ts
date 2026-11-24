@@ -2,7 +2,11 @@ import type { PaginationOptions } from "convex/server";
 import { internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
-import type { StoredNotification } from "../../application/notifications/ports";
+import type {
+  EmailDeliveryClaim,
+  EmailSendResult,
+  StoredNotification,
+} from "../../application/notifications/ports";
 import {
   deliveryRetryAt,
   isNotificationDeliveryChannel,
@@ -642,17 +646,6 @@ export async function recordNotificationDeliveryAttempt(
   return { status: "recorded", deliveryId, attempts };
 }
 
-/** Resultado de reservar una entrega, estructuralmente igual al puerto de Aplicación. */
-export type EmailDeliveryClaimResult =
-  | {
-      readonly status: "claimed";
-      readonly eventId: Id<"notificationEvents">;
-      readonly event: NotificationEvent;
-      readonly recipientEmail: string;
-    }
-  | { readonly status: "no_destination"; readonly eventId: Id<"notificationEvents"> }
-  | { readonly status: "skipped" };
-
 /**
  * Reserva una entrega por correo para un intento (TI2-159).
  *
@@ -670,7 +663,7 @@ export async function claimEmailDelivery(
   ctx: MutationCtx,
   deliveryId: string,
   now: number,
-): Promise<EmailDeliveryClaimResult> {
+): Promise<EmailDeliveryClaim> {
   const normalized = ctx.db.normalizeId("notificationDeliveries", deliveryId);
   if (normalized === null) return { status: "skipped" };
   const delivery = await ctx.db.get(normalized);
@@ -741,9 +734,7 @@ export async function listDueEmailDeliveries(
 export async function recordEmailDeliveryAttempt(
   ctx: MutationCtx,
   eventId: string,
-  result:
-    | { readonly status: "sent" }
-    | { readonly status: "failed"; readonly errorCode: NotificationDeliveryError },
+  result: EmailSendResult,
   attemptedAt: number,
   countAttempt = false,
 ): Promise<NotificationDeliveryAttemptResult> {
