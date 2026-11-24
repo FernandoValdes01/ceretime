@@ -8,10 +8,8 @@ import { API_ERROR_MESSAGES, type ApiErrorCode } from "../../../../convex/domain
 import { makeFunctionReference } from "convex/server";
 import { api } from "../../../../convex/_generated/api";
 import { UserFacingError } from "../application/user-facing-error";
-import {
-  isMobileAccessDenied,
-  toMobileOperationError,
-} from "../presentation/to-mobile-operation-error";
+import { isMobileAccessDenied } from "../application/access-denied";
+import { toMobileOperationError } from "../presentation/to-mobile-operation-error";
 import { createMobileConvexClient } from "./convex-client";
 
 const deploymentUrl = "https://mobile-test.convex.cloud";
@@ -28,7 +26,7 @@ function httpResponse(body: unknown, status = 200): Response {
 
 function setup() {
   const fetchMock = jest.fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>();
-  return { fetchMock, client: createMobileConvexClient(deploymentUrl, fetchMock) };
+  return { fetchMock, client: createMobileConvexClient(deploymentUrl, { fetch: fetchMock }) };
 }
 
 test("consulta la API pública con el SDK real y conserva la respuesta sin inventar una sesión", async () => {
@@ -57,7 +55,7 @@ test("envía el token de la sesión vigente en cada llamada y vuelve a anónimo 
     .fn<Promise<string | null>, []>()
     .mockResolvedValueOnce("token-de-la-sesion")
     .mockResolvedValueOnce(null);
-  const client = createMobileConvexClient(deploymentUrl, fetchMock, undefined, getAuthToken);
+  const client = createMobileConvexClient(deploymentUrl, { fetch: fetchMock, getAuthToken });
 
   await client.query(api.presentation.session.getSessionState, {});
   await client.query(api.presentation.session.getSessionState, {});
@@ -102,7 +100,10 @@ test("una red que no responde vence y se clasifica como fallo de red", async () 
           init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
         }),
     );
-    const client = createMobileConvexClient(deploymentUrl, fetchMock as typeof fetch, 1000);
+    const client = createMobileConvexClient(deploymentUrl, {
+      fetch: fetchMock as typeof fetch,
+      timeoutMs: 1000,
+    });
     const pending = client
       .query(api.presentation.session.getSessionState, {})
       .catch((error: unknown) => error);
@@ -165,7 +166,7 @@ test.each([undefined, "", "   ", "not-a-url", "https://mobile-test.convex.site"]
   "rechaza configuración ausente o inválida: %s",
   (url) => {
     const fetchMock = jest.fn();
-    expect(() => createMobileConvexClient(url, fetchMock)).toThrow(/.+/);
+    expect(() => createMobileConvexClient(url, { fetch: fetchMock })).toThrow(/.+/);
     expect(fetchMock).not.toHaveBeenCalled();
   },
 );

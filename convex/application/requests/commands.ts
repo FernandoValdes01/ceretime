@@ -24,6 +24,8 @@ import type {
   RequestTakeRecorder,
   RequestTransitionRecorder,
 } from "./ports";
+import type { NotificationEventRecorder } from "../notifications/ports";
+import { notifyRequestChange, notifyRequestReceived } from "./notifications";
 import { denied, stateConflict, toEntity, type RequestEntity } from "./results";
 import { toStatusChange } from "./status_change";
 
@@ -39,7 +41,12 @@ import { toStatusChange } from "./status_change";
  * Todas devuelven `ApiResult` y Presentación lo traduce con
  * `unwrapApiResult`: la denegación es `unauthorized`, un campo inválido
  * `request_fields_invalid` (o `access_needs_*` en las necesidades de acceso)
- * y un estado que no admite el paso `conflict`. Opera con datos ficticios.
+ * y un estado que no admite el paso `conflict`.
+ *
+ * Cada registro y cada cambio de estado deja sus avisos (TI2-150) por el
+ * puerto `notifications`, en la misma transacción y después de persistir. El
+ * aviso lleva solo la solicitud y el destinatario: nunca el motivo, la
+ * respuesta ni las necesidades. Opera con datos ficticios.
  */
 
 /** Campos que solo existen en la forma completa. */
@@ -50,7 +57,6 @@ const FULL_FORM_FIELDS = [
   "modalityPreference",
   "generalAvailability",
   "preferredAccessibleInformationChannel",
-  "idempotencyKey",
 ] as const;
 
 /** Forma anterior: `accessNeeds` como texto y ningún campo de la forma completa. */
@@ -67,6 +73,7 @@ function isLegacySubmission(
 export interface RegisterRequestDeps<RequestId extends string, UserId extends string> {
   readonly students: ActiveStudentReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> & RequestRegistrar<RequestId, UserId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor para la procedencia del envío; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -79,11 +86,9 @@ export interface RegisterRequestDeps<RequestId extends string, UserId extends st
  *
  * La forma anterior (solo `accessNeeds` como texto) valida el texto con
  * `toLegacyAccessNeeds` de Dominio, con los códigos `access_needs_*`
- * (TI2-181), y no es idempotente porque no trae clave. Cualquier otra entrada
- * sigue la forma completa de TI2-141: exige sus campos con
- * `toCompleteSubmission`, los valida con `toRequestSubmission` y se guarda una
- * sola vez por clave: un reintento con la misma clave devuelve la solicitud
- * ya creada sin escribir otra.
+ * (TI2-181). Cualquier otra entrada sigue la forma completa de TI2-141: exige
+ * sus campos con `toCompleteSubmission` y los valida con `toRequestSubmission`.
+ * Ninguna de las dos es idempotente: cada envío válido crea una solicitud.
  */
 export async function registerRequest<RequestId extends string, UserId extends string>(
   deps: RegisterRequestDeps<RequestId, UserId>,
@@ -96,23 +101,27 @@ export async function registerRequest<RequestId extends string, UserId extends s
     const accessNeeds = toLegacyAccessNeeds(draft.accessNeeds);
     if (accessNeeds.status === "error") return accessNeeds;
     const requestId = await deps.requests.registerLegacy(student._id, accessNeeds.data);
-    return okResult(await readRegistered(deps.requests, requestId));
+    return okResult(await readRegistered(deps, requestId));
   }
   const complete = toCompleteSubmission(draft);
   if (complete.status === "error") return complete;
   const submission = toRequestSubmission(complete.data);
   if (submission.status === "error") return submission;
-  const requestId = await deps.requests.registerOnce(student._id, submission.data, deps.now());
-  return okResult(await readRegistered(deps.requests, requestId));
+  const requestId = await deps.requests.registerComplete(student._id, submission.data, deps.now());
+  return okResult(await readRegistered(deps, requestId));
 }
 
-/** Solicitud recién registrada, leída de vuelta en la misma mutation. */
+/**
+ * Solicitud recién registrada, leída de vuelta en la misma mutation, con su
+ * aviso de recepción.
+ */
 async function readRegistered<RequestId extends string, UserId extends string>(
-  requests: RequestReader<RequestId, UserId>,
+  deps: RegisterRequestDeps<RequestId, UserId>,
   requestId: RequestId,
 ): Promise<RequestEntity<RequestId, UserId>> {
-  const row = await requests.getRequest(requestId);
+  const row = await deps.requests.getRequest(requestId);
   if (row === null) throw new Error("La solicitud registrada no quedó guardada.");
+  await notifyRequestReceived(deps.notifications, row);
   return toEntity(row);
 }
 
@@ -123,6 +132,7 @@ export interface RequestAdditionalInformationDeps<RequestId extends string, User
     RequestTakeReader<RequestId, UserId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -171,6 +181,7 @@ export async function requestAdditionalInformation<RequestId extends string, Use
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
+  await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(toEntity(row, result.change.to));
 }
 
@@ -182,6 +193,7 @@ export interface TakeRequestDeps<RequestId extends string, UserId extends string
     RequestTakeRecorder<RequestId, UserId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -233,6 +245,7 @@ export async function takeRequest<RequestId extends string, UserId extends strin
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
+  await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(toEntity(row, result.change.to));
 }
 
@@ -248,6 +261,7 @@ export interface AcceptRequestDeps<
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   readonly accompaniments: AccompanimentOpener<RequestId, UserId, AccompanimentId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -320,6 +334,7 @@ export async function acceptRequest<
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
+  await notifyRequestChange(deps.notifications, row, result.change);
   const opened = await deps.accompaniments.openAccompaniment({
     requestId: row._id,
     studentId: row.studentId,
@@ -337,6 +352,7 @@ export interface CancelRequestDeps<RequestId extends string, UserId extends stri
   readonly requests: RequestReader<RequestId, UserId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -384,6 +400,7 @@ export async function cancelRequest<RequestId extends string, UserId extends str
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
+  await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(toEntity(row, result.change.to));
 }
 
@@ -394,6 +411,7 @@ export interface CloseRequestDeps<RequestId extends string, UserId extends strin
     RequestTakeReader<RequestId, UserId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
+  readonly notifications: NotificationEventRecorder;
   /** Reloj del servidor para el registro del cambio; las pruebas lo fijan. */
   readonly now: () => number;
 }
@@ -406,9 +424,9 @@ export interface CloseRequestDeps<RequestId extends string, UserId extends strin
  * otra persona recibe denegación genérica. El motivo es la razón comprensible
  * que pide la especificación y es obligatorio. Si el estado no admite el
  * paso, incluida una solicitud aceptada o ya cerrada, se rechaza sin
- * modificar nada. Persiste el estado, la razón vigente (`closureReason`) y
- * el registro del cambio en la misma transacción; la toma queda tal cual,
- * como rastro de quién revisó.
+ * modificar nada. Persiste el estado y el registro del cambio, que guarda la
+ * razón, en la misma transacción; la toma queda tal cual, como rastro de
+ * quién revisó.
  */
 export async function closeRequestWithoutAccompaniment<
   RequestId extends string,
@@ -447,5 +465,6 @@ export async function closeRequestWithoutAccompaniment<
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
+  await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(toEntity(row, result.change.to));
 }

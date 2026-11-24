@@ -7,6 +7,7 @@ import {
   sessionCheckFailedMessage,
   type InstitutionalAuthClient,
 } from "../src/infrastructure/convex-authentication";
+import { REQUEST_TIMEOUT_MS } from "../src/infrastructure/convex-client";
 
 type SessionAndRole = {
   session: { status: "authenticated"; email: string; name: string; population: string };
@@ -150,6 +151,34 @@ describe("restaurar la sesión", () => {
     expect(error).toBeInstanceOf(UserFacingError);
     expect((error as Error).message).toBe(sessionCheckFailedMessage);
     expect(authClient.signOut).not.toHaveBeenCalled();
+  });
+});
+
+describe("espera al pedir el token", () => {
+  afterEach(() => jest.useRealTimers());
+
+  test("si el servidor no responde, la comprobación falla con el mensaje para reintentar", async () => {
+    jest.useFakeTimers();
+    const { adapter, authClient, query } = setup();
+    authClient.convex.token.mockReturnValue(new Promise(() => undefined));
+
+    const outcome = adapter.restoreSession().catch((cause: unknown) => cause);
+    await jest.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+    const error = await outcome;
+    expect(error).toBeInstanceOf(UserFacingError);
+    expect((error as Error).message).toBe(sessionCheckFailedMessage);
+    expect(query).not.toHaveBeenCalled();
+    expect(authClient.signOut).not.toHaveBeenCalled();
+  });
+
+  test("una respuesta a tiempo no deja un temporizador pendiente", async () => {
+    jest.useFakeTimers();
+    const authClient = { convex: { token: jest.fn() } };
+    authClient.convex.token.mockResolvedValue({ data: { token: "jwt" }, error: null });
+
+    await expect(createAuthTokenSupplier(authClient).getAuthToken()).resolves.toBe("jwt");
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
 

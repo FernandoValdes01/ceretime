@@ -390,10 +390,56 @@ describe("límites de navegación por rol (TI2-20)", () => {
     const hrefs = portalHrefs();
     expect(hrefs.length).toBeGreaterThan(0);
     for (const href of hrefs) {
-      expect(href === "/administrador" || href === "/administrador/espacios").toBe(true);
+      expect(
+        href === "/administrador" ||
+          href === "/administrador/cuentas" ||
+          href === "/administrador/espacios",
+      ).toBe(true);
     }
-    // El editor de espacios (TI2-04) es la vista propia del Administrador.
+    // El editor de espacios (TI2-04) y las cuentas (TI2-169) son las vistas
+    // propias del Administrador.
     expect(hrefs).toContain("/administrador/espacios");
+    expect(hrefs).toContain("/administrador/cuentas");
+  });
+
+  test("la Administración usa menú lateral con la navegación y el cierre de sesión abajo", async () => {
+    sessionMocks.setPair({
+      session: sesionPersonal("admin@uct.cl"),
+      role: rolDe("admin", "admin@uct.cl"),
+    });
+    renderAt("/administrador");
+
+    await screen.findByRole("heading", { name: "Portal de Administración" });
+    const sidebar = document.querySelector("aside.app-shell__sidebar");
+    expect(sidebar).not.toBeNull();
+    const nav = within(sidebar as HTMLElement).getByRole("navigation", {
+      name: "Portal de Administración",
+    });
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((link) => link.textContent?.trim()),
+    ).toEqual(["Inicio", "Cuentas", "Espacios"]);
+    expect(
+      within(sidebar as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+    ).toBeDefined();
+    // El menú de accesibilidad vive arriba del cierre de sesión, como en el resto de portales.
+    const accessibility = within(sidebar as HTMLElement).getByRole("button", {
+      name: "Opciones de accesibilidad",
+    });
+    expect(accessibility).toBeDefined();
+    expect(
+      accessibility.compareDocumentPosition(
+        within(sidebar as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // El cierre de sesión vive abajo, después de la navegación.
+    const foot = (sidebar as HTMLElement).querySelector(".app-shell__sidebar-foot");
+    expect(foot).not.toBeNull();
+    expect(foot?.contains(nav)).toBe(false);
+    expect(
+      within(foot as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
+    ).toBeDefined();
   });
 
   test("el Profesional no entra al portal del Estudiante", async () => {

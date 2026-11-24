@@ -55,7 +55,9 @@ export { isOpenRequestState } from "./requests/transitions";
 
 // Acompañamiento y sus vistas de lectura.
 export {
+  ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
   ACCOMPANIMENT_STATUS_VALUES,
+  ACCOMPANIMENT_TRANSITIONS,
   ACCOMPANIMENT_VIEW_VALUES,
   toAccompanimentProjection,
 } from "./accompaniments/accompaniment";
@@ -232,19 +234,15 @@ export type {
   AppointmentProfessionalsResult,
 } from "./appointments/participants";
 
-// Acceso privado y apoyos de la atención en línea (TI2-142).
+// Acceso privado de la atención en línea (TI2-142).
 export {
   ONLINE_ACCESS_ALLOWED_HOSTS,
   ONLINE_ACCESS_LINK_MAX_LENGTH,
   ONLINE_ACCESS_LINK_REJECTION_CAUSES,
   ONLINE_ACCESS_STATUS_VALUES,
   ONLINE_ACCESS_UPDATE_REJECTION_CAUSES,
-  ONLINE_SUPPORTS_REJECTION_CAUSES,
-  MAX_ONLINE_SUPPORTS,
-  ONLINE_SUPPORT_TEXT_MAX_LENGTH,
   decideOnlineAccessUpdate,
   normalizeOnlineAccessLink,
-  normalizeOnlineSupports,
   toOnlineAccessView,
 } from "./appointments/online_access";
 export type {
@@ -256,8 +254,6 @@ export type {
   OnlineAccessUpdateRejectionCause,
   OnlineAccessUpdateResult,
   OnlineAccessView,
-  OnlineSupportsRejectionCause,
-  OnlineSupportsResult,
 } from "./appointments/online_access";
 
 // Evento de calendario por atención y alternativa .ics (TI2-122).
@@ -283,28 +279,80 @@ export type {
   CalendarFile,
 } from "./calendar/calendar_event";
 
-// Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105).
+// Vínculo con Calendar y estado de sincronización por atención (TI2-145).
 export {
+  CALENDAR_LINK_ROLE_VALUES,
+  CALENDAR_SYNC_ERROR_CODE_VALUES,
+  CALENDAR_SYNC_STATUS_VALUES,
+  calendarSyncStateOf,
+  canManageCalendarLink,
+  initialCalendarSyncState,
+  isCalendarSyncErrorCode,
+  isCalendarSyncStatus,
+} from "./calendar/calendar_link";
+export type {
+  CalendarConnectionMetadata,
+  CalendarLinkRole,
+  CalendarSyncErrorCode,
+  CalendarSyncState,
+  CalendarSyncStatus,
+} from "./calendar/calendar_link";
+
+// Evento de notificación: forma mínima, emisión y clave de reintento (TI2-100, TI2-105, TI2-150).
+export {
+  APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
   NOTIFICATION_CONTRACT_VERSION,
   NOTIFICATION_EVENT_KIND_VALUES,
+  NOTIFICATION_READ_STATUS_VALUES,
+  REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
+  isAppointmentNotificationEventKind,
   isNotificationEventKind,
+  isNotificationReadStatus,
+  isRequestNotificationEventKind,
   notificationEventsForCreation,
+  notificationEventsForJustificationSubmitted,
   notificationEventsForOnlineAccess,
+  notificationEventsForRequestReceived,
+  notificationEventsForRequestTransition,
   notificationEventsForTransition,
   notificationIdempotencyKey,
   toExternalNotification,
   toNotificationEvent,
 } from "./notifications/notification";
 export type {
+  AppointmentNotificationEvent,
+  AppointmentNotificationEventKind,
   ExternalNotification,
   NotificationAudience,
   NotificationContractVersion,
   NotificationEvent,
   NotificationEventInput,
   NotificationEventKind,
+  NotificationReadStatus,
   NotificationReference,
   NotificationSubject,
+  RequestNotificationAudience,
+  RequestNotificationEvent,
+  RequestNotificationEventKind,
+  RequestNotificationReference,
+  RequestNotificationSubject,
 } from "./notifications/notification";
+
+// Entrega de avisos por canal: estados, errores e intentos (TI2-145).
+export {
+  NOTIFICATION_DELIVERY_CHANNEL_VALUES,
+  NOTIFICATION_DELIVERY_ERROR_VALUES,
+  NOTIFICATION_DELIVERY_STATUS_VALUES,
+  isNotificationDeliveryChannel,
+  isNotificationDeliveryError,
+  isNotificationDeliveryStatus,
+} from "./notifications/delivery";
+export type {
+  NotificationDeliveryChannel,
+  NotificationDeliveryError,
+  NotificationDeliveryState,
+  NotificationDeliveryStatus,
+} from "./notifications/delivery";
 
 // Registro de seguimiento: acuerdos, tareas y proyección compartida (TI2-106).
 export {
@@ -315,6 +363,7 @@ export {
   FOLLOW_UP_TASK_STATUS_VALUES,
   FOLLOW_UP_TEXT_MAX_LENGTH,
   FOLLOW_UP_VIEW_VALUES,
+  admitsFollowUp,
   isFollowUpResponsible,
   isFollowUpRetry,
   isFollowUpTaskStatus,
@@ -412,3 +461,34 @@ export type {
   PrivacyResponseExtension,
   PrivacyResponseRule,
 } from "./privacy/privacy_deadlines";
+
+// Controles de privacidad: constancia de envío, bloqueos temporales y conservación (TI2-151).
+export {
+  PRIVACY_BLOCK_SCOPE_VALUES,
+  PRIVACY_BLOCK_STATE_VALUES,
+  PRIVACY_CONTROL_REFERENCE_MAX_LENGTH,
+  PRIVACY_DATA_CATEGORY_VALUES,
+  PRIVACY_RESPONSE_DELIVERY_CHANNEL_VALUES,
+  PRIVACY_RETENTION_DISPOSITION_VALUES,
+  PRIVACY_RETENTION_EXCEPTION_KIND_VALUES,
+  doesPrivacyBlockCoverCategory,
+  isPrivacyBlockScope,
+  isPrivacyDataCategory,
+  isPrivacyResponseDeliveryChannel,
+  isPrivacyRetentionDisposition,
+  isPrivacyRetentionExceptionActive,
+  isPrivacyRetentionExceptionKind,
+  isValidPrivacyRetentionDays,
+  privacyBlockStateAt,
+} from "./privacy/privacy_controls";
+export type {
+  PrivacyBlockScope,
+  PrivacyBlockState,
+  PrivacyBlockWindow,
+  PrivacyDataCategory,
+  PrivacyResponseDeliveryChannel,
+  PrivacyResponseDeliveryReceipt,
+  PrivacyRetentionDisposition,
+  PrivacyRetentionExceptionKind,
+  PrivacyRetentionExceptionWindow,
+} from "./privacy/privacy_controls";

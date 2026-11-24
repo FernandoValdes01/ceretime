@@ -19,6 +19,7 @@ import {
 import { useSubmitOwnRequest } from "./student-request-form-data.ts";
 import {
   FOCUS_CLASS,
+  fieldClass,
   HEADING_RESET_CLASS,
   LINK_CLASS,
   PAGE_CLASS,
@@ -37,8 +38,7 @@ import {
  * campos de RUT, diagnóstico, certificados, archivos ni área interna.
  *
  * Lo escrito vive en un borrador (`student-request-draft.ts`): se conserva al
- * recargar, al volver al formulario y ante cualquier fallo del envío, y su
- * clave de idempotencia evita una segunda solicitud al reintentar.
+ * recargar, al volver al formulario y ante cualquier fallo del envío.
  *
  * Accesibilidad (WCAG 2.2 AA): cada campo dice si es obligatorio u opcional
  * en el texto de su etiqueta, los grupos usan `fieldset` y `legend`, y los
@@ -535,12 +535,6 @@ const SECTION_CLASS =
   "flex flex-col gap-5 rounded-lg border border-border-low bg-surface-container-lowest p-6";
 const LEGEND_CLASS = "mb-1 p-0 text-base font-semibold text-on-surface";
 const HINT_CLASS = "m-0 text-base text-on-surface-variant";
-
-function fieldClass(invalid: boolean): string {
-  return `min-h-[44px] w-full min-w-0 box-border rounded-[0.5rem] border bg-surface-container-lowest px-3 py-2 text-base text-on-surface ${
-    invalid ? "border-2 border-error" : "border-outline"
-  } ${FOCUS_CLASS}`;
-}
 
 function describedBy(hintId: string | undefined, field: RequestDraftField, error?: string) {
   const ids = [hintId, error === undefined ? undefined : errorId(field)].filter(

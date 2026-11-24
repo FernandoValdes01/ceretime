@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RequestState } from "../../domain/requests/state";
+import type { NotificationEvent } from "../../domain/notifications/notification";
 import type { RequestStatusChange } from "../../domain/requests/transitions";
 import type { StoredRequestRow } from "./ports";
 import { respondToInformationRequest, type RespondToInformationRequestDeps } from "./respond";
@@ -18,6 +19,7 @@ type Row = StoredRequestRow<string, string>;
 function memoryDeps(rows: readonly Row[], activeStudents: readonly string[] = [OWNER]) {
   const statuses: { requestId: string; change: RequestStatusChange }[] = [];
   const transitions: unknown[] = [];
+  const notices: NotificationEvent[] = [];
   const deps: RespondToInformationRequestDeps<string, string> = {
     students: {
       findActiveStudent: async (tokenIdentifier) =>
@@ -34,9 +36,14 @@ function memoryDeps(rows: readonly Row[], activeStudents: readonly string[] = [O
         transitions.push(entry);
       },
     },
+    notifications: {
+      record: async (events) => {
+        notices.push(...events);
+      },
+    },
     now: () => NOW,
   };
-  return { deps, statuses, transitions };
+  return { deps, statuses, transitions, notices };
 }
 
 function rowIn(status: RequestState, studentId = OWNER): Row {
@@ -58,8 +65,8 @@ const UNAUTHORIZED = {
 
 describe("respondToInformationRequest con puertos (TI2-141)", () => {
   test("el dueño responde: vuelve a revisión y registra la respuesta recortada", async () => {
-    const { deps, statuses, transitions } = memoryDeps([
-      rowIn("awaiting_information_or_acceptance"),
+    const { deps, statuses, transitions, notices } = memoryDeps([
+      { ...rowIn("awaiting_information_or_acceptance"), takenBy: "pro-ficticio" },
     ]);
 
     expect(await respond(deps, "  Puedo los martes  ")).toEqual({
@@ -81,6 +88,16 @@ describe("respondToInformationRequest con puertos (TI2-141)", () => {
         actorId: OWNER,
         reason: "Puedo los martes",
         occurredAt: NOW,
+      },
+    ]);
+    // Quien la tomó recibe el aviso (TI2-150), que no lleva la respuesta.
+    expect(notices).toEqual([
+      {
+        kind: "request_information_provided",
+        requestId: "sol-1",
+        recipientId: "pro-ficticio",
+        occurredAt: NOW,
+        version: "v1",
       },
     ]);
   });

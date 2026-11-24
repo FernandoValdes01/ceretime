@@ -8,11 +8,12 @@ import {
   type PropsWithChildren,
 } from "react";
 
-import type {
-  AuthCredentials,
-  AuthRole,
-  AuthSession,
-  InstitutionalPopulation,
+import {
+  institutionalLogins,
+  type AuthCredentials,
+  type AuthRole,
+  type AuthSession,
+  type InstitutionalPopulation,
 } from "../../domain/auth-models";
 import { isInstitutionalAuthPort, type AuthPort } from "../../application/auth-port";
 import { toMobileOperationError } from "../to-mobile-operation-error";
@@ -20,8 +21,9 @@ import { toMobileOperationError } from "../to-mobile-operation-error";
 export type SessionStatus = "unauthenticated" | "loading" | "authenticated" | "error";
 
 // El navegador vuelve igual si la persona cancela o Google rechaza la cuenta; no hay un motivo que mostrar.
-const institutionalSignInIncompleteMessage =
-  "No se completó el ingreso. Puedes intentarlo de nuevo con tu cuenta @alu.uct.cl o @uct.cl.";
+const institutionalSignInIncompleteMessage = `No se completó el ingreso. Puedes intentarlo de nuevo con tu cuenta ${institutionalLogins
+  .map(({ emailSuffix }) => emailSuffix)
+  .join(" o ")}.`;
 
 type NavigationSession = {
   readonly session: AuthSession | null;
@@ -48,7 +50,6 @@ type SessionState = Pick<
   readonly port: AuthPort;
 };
 
-// Solo el ingreso institucional guarda sesión en el dispositivo y necesita recuperarla al abrir.
 function initialSession(port: AuthPort): SessionState {
   return {
     port,
@@ -56,8 +57,13 @@ function initialSession(port: AuthPort): SessionState {
     status: "unauthenticated",
     error: null,
     accessDeniedRole: null,
-    isRestoring: isInstitutionalAuthPort(port),
+    isRestoring: false,
   };
+}
+
+// Solo el ingreso institucional guarda sesión en el dispositivo y necesita recuperarla al abrir.
+function startingSession(port: AuthPort): SessionState {
+  return { ...initialSession(port), isRestoring: isInstitutionalAuthPort(port) };
 }
 
 const SessionContext = createContext<NavigationSession | null>(null);
@@ -72,8 +78,8 @@ export function NavigationSessionProvider({
   readonly authPort: AuthPort;
   readonly demoCredentials: Readonly<Record<AuthRole, AuthCredentials>>;
 }>) {
-  const [state, setState] = useState(() => initialSession(authPort));
-  const current = state.port === authPort ? state : initialSession(authPort);
+  const [state, setState] = useState(() => startingSession(authPort));
+  const current = state.port === authPort ? state : startingSession(authPort);
   // Registrar la nueva fuente impide recuperar una sesión descartada al volver a la anterior.
   if (state.port !== authPort) setState(current);
   const operation = useRef(0);
@@ -92,7 +98,6 @@ export function NavigationSessionProvider({
           pendingOperation.current = null;
           setState({
             ...initialSession(authPort),
-            isRestoring: false,
             session: restored,
             status: restored ? "authenticated" : "unauthenticated",
           });
@@ -102,7 +107,6 @@ export function NavigationSessionProvider({
           pendingOperation.current = null;
           setState({
             ...initialSession(authPort),
-            isRestoring: false,
             status: "error",
             error: toMobileOperationError(cause, "No fue posible recuperar tu sesión.").message,
           });
@@ -129,7 +133,6 @@ export function NavigationSessionProvider({
         if (!nextSession) {
           setState({
             ...initialSession(authPort),
-            isRestoring: false,
             status: "error",
             error: institutionalSignInIncompleteMessage,
           });
@@ -137,7 +140,6 @@ export function NavigationSessionProvider({
         }
         setState({
           ...initialSession(authPort),
-          isRestoring: false,
           session: nextSession,
           status: "authenticated",
         });
@@ -146,7 +148,6 @@ export function NavigationSessionProvider({
         if (operation.current !== operationId) return false;
         setState({
           ...initialSession(authPort),
-          isRestoring: false,
           status: "error",
           error: toMobileOperationError(cause, "No fue posible iniciar sesión.").message,
         });
@@ -180,7 +181,7 @@ export function NavigationSessionProvider({
     try {
       await authPort.logout(current.session);
       if (operation.current !== operationId) return false;
-      setState({ ...initialSession(authPort), isRestoring: false });
+      setState(initialSession(authPort));
       return true;
     } catch (cause) {
       if (operation.current !== operationId) return false;

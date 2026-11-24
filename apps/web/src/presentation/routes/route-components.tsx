@@ -1,5 +1,6 @@
 import { getRouteApi, Navigate, Outlet } from "@tanstack/react-router";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
+import { AdminAccountsPage } from "../gestion/admin-accounts.tsx";
 import { AdminSpaceEditorPage } from "../gestion/admin-space-editor.tsx";
 import {
   ProfessionalAgendaDetailPage,
@@ -9,6 +10,10 @@ import {
   PractitionerAccompanimentDetailPage,
   PractitionerAccompanimentsPage,
 } from "../gestion/practitioner-accompaniments.tsx";
+import {
+  ProfessionalAccompanimentDetailPage,
+  ProfessionalAccompanimentsPage,
+} from "../gestion/professional-accompaniments.tsx";
 import { ProfessionalAvailabilityPage } from "../gestion/professional-availability-editor.tsx";
 import { StudentAccompanimentDetailPage } from "../estudiante/student-accompaniments.tsx";
 import {
@@ -44,7 +49,7 @@ import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 
 /**
  * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04,
- * TI2-114, TI2-115, TI2-116, TI2-133): puentes delgados entre las definiciones
+ * TI2-114, TI2-115, TI2-116, TI2-133, TI2-165): puentes delgados entre las definiciones
  * de los archivos de área y las páginas. Viven acá para que las definiciones
  * de ruta no mezclen componentes (regla de fast refresh).
  */
@@ -184,6 +189,19 @@ export function ProfessionalRequestDetailRouteComponent() {
   return <ProfessionalRequestDetailPage requestId={requestId} />;
 }
 
+const professionalAccompanimentDetailApi = getRouteApi(
+  "/profesional/acompanamientos/$accompanimentId",
+);
+
+export function ProfessionalAccompanimentsRouteComponent() {
+  return <ProfessionalAccompanimentsPage />;
+}
+
+export function ProfessionalAccompanimentDetailRouteComponent() {
+  const { accompanimentId } = professionalAccompanimentDetailApi.useParams();
+  return <ProfessionalAccompanimentDetailPage accompanimentId={accompanimentId} />;
+}
+
 export function ProfessionalAvailabilityRouteComponent() {
   return <ProfessionalAvailabilityPage />;
 }
@@ -242,6 +260,10 @@ export function AdminLayoutRouteComponent() {
 
 export function AdminIndexRouteComponent() {
   return <AdminHome />;
+}
+
+export function AdminAccountsRouteComponent() {
+  return <AdminAccountsPage />;
 }
 
 export function AdminSpacesRouteComponent() {

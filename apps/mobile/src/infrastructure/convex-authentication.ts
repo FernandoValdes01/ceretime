@@ -1,10 +1,16 @@
 import { api } from "../../../../convex/_generated/api";
 import { GOOGLE_PROVIDER_ID_BY_POPULATION } from "../../../../convex/domain/auth/institutional_domain";
 import type { Role } from "../../../../convex/domain/identity/roles";
+import { isMobileAccessDenied } from "../application/access-denied";
 import type { InstitutionalAuthPort } from "../application/auth-port";
 import { UserFacingError } from "../application/user-facing-error";
 import type { AuthRole, AuthSession } from "../domain/auth-models";
-import type { GetAuthToken, MobileConvexClient } from "./convex-client";
+import {
+  MobileNetworkError,
+  REQUEST_TIMEOUT_MS,
+  type GetAuthToken,
+  type MobileConvexClient,
+} from "./convex-client";
 
 // El token de Convex dura 15 minutos; se reutiliza solo una parte para no pedir uno nuevo en cada llamada.
 const TOKEN_REUSE_MS = 5 * 60_000;
@@ -22,17 +28,6 @@ export const sessionCheckFailedMessage =
   "No pudimos verificar tu sesión. Revisa tu conexión e inténtalo de nuevo.";
 export const accountNotEnabledMessage =
   "Tu cuenta todavía no está habilitada en CERETI. Pide al equipo de CERETI que la habilite.";
-
-// `ensureMyProfile` deniega con ConvexError("No autorizado"); el transporte, con `code: "unauthorized"`.
-function isAuthorizationDenied(cause: unknown): boolean {
-  if (typeof cause !== "object" || cause === null) return false;
-  const { data, code } = cause as { data?: unknown; code?: unknown };
-  return (
-    data === "No autorizado" ||
-    code === "unauthorized" ||
-    (typeof data === "object" && data !== null && "code" in data && data.code === "unauthorized")
-  );
-}
 
 /** Mitad de Better Auth que usa la app; el cliente real la cumple y las pruebas la sustituyen. */
 export interface InstitutionalAuthClient {
@@ -52,17 +47,30 @@ export interface InstitutionalAuthClient {
   };
 }
 
+// Sin tope, una red colgada dejaría la app en «Cargando CERETI…» sin opción de reintentar.
+function withTimeout<T>(request: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new MobileNetworkError("El servidor tardó demasiado en responder.")),
+      timeoutMs,
+    );
+  });
+  return Promise.race([request, expired]).finally(() => clearTimeout(timer));
+}
+
 /** Token que identifica a la sesión ante Convex; `null` cuando el servidor no reconoce la sesión. */
 export function createAuthTokenSupplier(
   authClient: Pick<InstitutionalAuthClient, "convex">,
   now: () => number = Date.now,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ) {
   let cached: { readonly token: string; readonly reusableUntil: number } | null = null;
 
   const getAuthToken: GetAuthToken = async () => {
     if (cached && now() < cached.reusableUntil) return cached.token;
     cached = null;
-    const { data, error } = await authClient.convex.token();
+    const { data, error } = await withTimeout(authClient.convex.token(), timeoutMs);
     if (error) {
       // 401: la sesión no existe o venció. Cualquier otro fallo es del servidor o de la red.
       if (error.status === 401) return null;
@@ -109,7 +117,7 @@ export function createConvexAuthAdapter({
     try {
       await backend.mutation(api.presentation.session.ensureMyProfile, {});
     } catch (cause) {
-      if (!isAuthorizationDenied(cause)) throw cause;
+      if (!isMobileAccessDenied(cause)) throw cause;
     }
   }
 
@@ -132,10 +140,12 @@ export function createConvexAuthAdapter({
       status: "authenticated",
       session: {
         user: {
+          // El correo identifica a la persona en la app; `getSessionWithRole` no entrega el id del backend.
           id: role.email,
           displayName: session.name,
           email: role.email,
           role: roleByBackendRole[role.role],
+          // Las asignaciones de practicantes llegan con la conexión de su área; hasta entonces no hay ninguna.
           assignedAccompaniments: [],
         },
       },

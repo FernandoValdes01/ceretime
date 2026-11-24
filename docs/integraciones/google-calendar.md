@@ -1,6 +1,6 @@
-# Google Calendar por atención y alternativa `.ics` (TI2-122)
+# Google Calendar por atención y alternativa `.ics` (TI2-122, vínculo TI2-161)
 
-Integración real con Google Calendar para que el Estudiante dueño de una atención la agregue a su calendario personal con una acción explícita, más una alternativa `.ics` que funciona sin conexión con Google.
+Integración real con Google Calendar para que el Estudiante dueño de una atención la agregue a su calendario personal con una acción explícita, más una alternativa `.ics` que funciona sin conexión con Google. Desde TI2-161, estudiante y profesional vinculan su propia cuenta con una autorización específica de permiso mínimo y pueden desconectarla; la sincronización automática de reservas, cambios y cancelaciones es TI2-162.
 
 El alcance es deliberadamente mínimo: se crea un evento por atención y se distingue si la referencia sigue vigente tras un reagendamiento; nunca se leen ni se listan calendarios. La reserva vive en Convex y el proveedor externo es solo un destino opcional; un fallo de Google no cancela, no mueve ni oculta la atención.
 
@@ -27,8 +27,11 @@ La superficie es la misma para ambas aplicaciones, sale de `api.presentation.app
 | ---------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | `presentation/appointments.listAccompanimentAppointments`  | `accompanimentId` | Lista acotada (máximo 50, más reciente primero) de `{appointmentId, status, startAt, endAt, modality, calendarAdded, calendarNeedsUpdate}` | Estudiante dueño, Profesional o Practicante asignado                      |
 | `presentation/appointments.getAppointmentCalendarFile`     | `appointmentId`   | `{fileName, content, alreadyAdded}`                                                                                                        | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
-| `presentation/appointments.getCalendarConnection`          | —                 | `{connected: boolean}`                                                                                                                     | Cualquier sesión con perfil vigente                                       |
-| `presentation/appointments.addAppointmentToGoogleCalendar` | `appointmentId`   | `{status: "created" \| "updated" \| "already_created", eventId, ics}` o `{status: "fallback", reason, ics}`                                | Solo el Estudiante dueño de una atención vigente en acompañamiento activo |
+| `presentation/appointments.getCalendarConnection`          | —                 | `{connected: boolean}`                                                                                                                     | Cualquier sesión con perfil vigente (TI2-122, se conserva por compatibilidad) |
+| `presentation/appointments.addAppointmentToGoogleCalendar` | `appointmentId`   | `{status: "created" \| "updated" \| "already_created", eventId, ics}` o `{status: "fallback", reason, ics}`                                | Solo el Estudiante dueño de una atención vigente en acompañamiento activo     |
+| `presentation/calendar.getCalendarLinkStatus`              | —                 | `{connected, linkedAt?, revokedAt?, staleEventsMayRemain}`                                                                                 | Cualquier sesión con perfil vigente (TI2-161)                                 |
+| `presentation/calendar.confirmCalendarLink`                | —                 | `{connected: true, linkedAt, status}` o `{connected: false, status: "not_connected"}`                                                       | Titular con perfil vigente (TI2-161)                                          |
+| `presentation/calendar.disconnectCalendarLink`             | —                 | `{disconnected, status, revokedAt?, staleEventsMayRemain}` (los eventos anteriores pueden quedar sin actualizar)                           | Titular con perfil vigente (TI2-161)                                          |
 
 Reglas del contrato:
 
@@ -52,12 +55,16 @@ Para Mobile, la integración consiste en consumir esas cuatro operaciones con el
 
 Mobile no necesita leer tokens, correo de Google ni el documento de cuenta: el backend resuelve la conexión, la creación y la actualización del evento. Si Mobile agrega su propia pantalla, debe conservar los estados de carga, vacío, error, éxito y solo lectura, distinguir `calendarNeedsUpdate` para ofrecer la actualización y no debe mostrar detalles del proveedor.
 
-## Reagendamiento sin sincronización automática
+## Vínculo y desconexión (TI2-161)
 
-- La mutación `rescheduleAppointment` no llama a Google y no programa sincronización en esta entrega.
+La Web inicia el vínculo con `linkSocial` pidiendo solo `calendar.events` y vuelve con `?calendar=connected` o `?calendar=error`; después confirma en el servidor con `presentation/calendar.confirmCalendarLink` (solo Estudiante y Profesional), que valida el alcance mínimo y registra los metadatos sin recibir identificadores del cliente. El estado se publica con `presentation/calendar.getCalendarLinkStatus` (`connected` desde los alcances OAuth más `linkedAt`, `revokedAt` y `staleEventsMayRemain`) y se cierra con la acción `presentation/calendar.disconnectCalendarLink`, que revoca el permiso en Google, elimina la cuenta OAuth `google` de la sesión, conserva la trazabilidad local, es idempotente y avisa que los eventos anteriores pueden quedar sin actualizar. Rechazar la autorización responde `connected: false` sin error y nunca impide reservar, reagendar ni descargar el `.ics`. El contrato detallado vive en `docs/contratos-sprint-3/calendar.md`.
+
+## Reagendamiento y sincronización automática (TI2-162)
+
+- La mutación `rescheduleAppointment` no llama a Google en esta entrega; TI2-162 sincroniza reservas, cambios y cancelaciones automáticamente sin duplicar eventos.
 - Al reagendar, la referencia guarda el horario anterior y queda obsoleta: `calendarAdded` pasa a `false` y `calendarNeedsUpdate` a `true`; el `.ics` refleja la fecha nueva y `alreadyAdded` pasa a `false`.
-- Un fallo de Google no revierte el reagendamiento ni se propaga. La persona puede reintentar la actualización explícita o descargar el `.ics` vigente.
-- La recuperación de un evento borrado directamente en Google y la sincronización de cancelaciones siguen fuera de alcance.
+- Un fallo de Google no revierte el reagendamiento ni se propaga. La persona puede reintentar la actualización explícita o descargar el `.ics` vigente hasta que TI2-162 la sincronice.
+- La recuperación de un evento borrado directamente en Google y la sincronización de cancelaciones son TI2-162.
 
 ## Consentimiento OAuth separado
 
@@ -146,9 +153,13 @@ La verificación real requiere una cuenta de Google de prueba autorizada y el pr
 ## Archivos de referencia
 
 - `convex/domain/calendar/calendar_event.ts`: título, UID determinista, escape, plegado y conversión `.ics`.
-- `convex/application/calendar/calendar.ts`: casos de uso, autorización, actualización explícita y respaldo.
-- `convex/infrastructure/calendar/google_calendar.ts`: adaptador de Google (crear y actualizar) y lectura de alcances.
+- `convex/domain/calendar/calendar_link.ts`: vínculo local y estado de sincronización por atención.
+- `convex/application/calendar/calendar.ts`: casos de uso por atención, autorización, actualización explícita y respaldo.
+- `convex/application/calendar/calendar_link.ts`: vínculo propio, confirmación del retorno y desconexión con aviso (TI2-161).
+- `convex/infrastructure/calendar/google_calendar.ts`: adaptador de Google (crear y actualizar) y lectura de alcances con referencia opaca.
+- `convex/infrastructure/calendar/repository.ts`: metadatos del vínculo y estado de sincronización por atención.
 - `convex/operations/calendar.ts`: puente interno entre la acción y la base.
-- `convex/presentation/appointments.ts`: API pública consumida por Web y Mobile.
+- `convex/presentation/calendar.ts`: estado del vínculo, confirmación y desconexión (TI2-161).
+- `convex/presentation/appointments.ts`: API pública por atención consumida por Web y Mobile.
 - `apps/web/src/presentation/estudiante/student-appointments.tsx`: interfaz Web de conexión, descarga y acción.
 - `apps/web/src/application/calendar/calendar-link.ts`: consentimiento separado de Calendar.

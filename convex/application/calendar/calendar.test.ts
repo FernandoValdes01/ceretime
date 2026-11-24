@@ -19,6 +19,7 @@ import {
   type GoogleCalendarGateway,
   type GoogleCalendarUpdateOutcome,
 } from "./calendar";
+import type { CalendarLinkMetadataStore } from "./calendar_link";
 
 /**
  * Pruebas de los casos de uso del calendario (TI2-122).
@@ -752,9 +753,19 @@ describe("getCalendarConnection", () => {
     return { listGoogleScopes: async () => scopes };
   }
 
-  test("confirma la conexión solo con el alcance de Calendar", async () => {
+  function emptyStore(): Pick<CalendarLinkMetadataStore, "readMetadata"> {
+    return { readMetadata: async () => null };
+  }
+
+  // La fila de metadatos no cambia esta respuesta. El alcance de Better Auth
+  // basta, haya o no fila local.
+  test("el alcance de Calendar conecta sin fila de metadatos", async () => {
     const result = await getCalendarConnection(
-      { auth: fakeAuth(), connection: connection(["openid", CALENDAR_EVENTS_SCOPE]) },
+      {
+        auth: fakeAuth(),
+        connection: connection(["openid", CALENDAR_EVENTS_SCOPE]),
+        store: emptyStore(),
+      },
       { tokenIdentifier: "token-student" },
     );
     expect(result).toEqual({ status: "ok", data: { connected: true } });
@@ -762,7 +773,11 @@ describe("getCalendarConnection", () => {
 
   test("no confunde el inicio institucional con Calendar", async () => {
     const result = await getCalendarConnection(
-      { auth: fakeAuth(), connection: connection(["openid", "email", "profile"]) },
+      {
+        auth: fakeAuth(),
+        connection: connection(["openid", "email", "profile"]),
+        store: emptyStore(),
+      },
       { tokenIdentifier: "token-student" },
     );
     expect(result).toEqual({ status: "ok", data: { connected: false } });
@@ -770,7 +785,7 @@ describe("getCalendarConnection", () => {
 
   test("sin cuenta vinculada responde desconectado", async () => {
     const result = await getCalendarConnection(
-      { auth: fakeAuth(), connection: connection(null) },
+      { auth: fakeAuth(), connection: connection(null), store: emptyStore() },
       { tokenIdentifier: "token-student" },
     );
     expect(result).toEqual({ status: "ok", data: { connected: false } });
@@ -779,7 +794,11 @@ describe("getCalendarConnection", () => {
   test("exige una sesión con perfil vigente", async () => {
     for (const tokenIdentifier of [null, "token-inactive", "token-missing"]) {
       const result = await getCalendarConnection(
-        { auth: fakeAuth(), connection: connection([CALENDAR_EVENTS_SCOPE]) },
+        {
+          auth: fakeAuth(),
+          connection: connection([CALENDAR_EVENTS_SCOPE]),
+          store: emptyStore(),
+        },
         { tokenIdentifier },
       );
       expect(result.status).toBe("error");

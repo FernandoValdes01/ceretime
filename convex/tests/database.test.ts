@@ -22,8 +22,10 @@ import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
 import { toSharedFollowUpProjection } from "../domain/follow_up/follow_up";
 import {
   notificationEventsForCreation,
+  notificationEventsForRequestReceived,
   notificationEventsForTransition,
   notificationIdempotencyKey,
+  toNotificationEvent,
   type NotificationEvent,
 } from "../domain/notifications/notification";
 import {
@@ -54,21 +56,59 @@ import {
   saveFollowUpRecord,
 } from "../infrastructure/follow_up/repository";
 import {
+  deletePushSubscription,
+  ensureNotificationDelivery,
+  findNotificationDelivery,
+  findPushSubscriptionsForUser,
+  markNotificationEventRead,
   paginateNotificationEventsForAppointment,
   paginateNotificationEventsForRecipient,
+  paginateNotificationEventsForRecipientByReadStatus,
+  paginateNotificationEventsForRequest,
+  recordNotificationDeliveryAttempt,
   recordNotificationEvent,
   recordNotificationEvents,
+  savePushSubscription,
 } from "../infrastructure/notifications/repository";
+import {
+  connectCalendar,
+  disconnectCalendar,
+  markCalendarSyncPending,
+  readCalendarConnectionMetadata,
+  readCalendarSyncState,
+  recordCalendarSyncAttempt,
+} from "../infrastructure/calendar/repository";
 import {
   paginateAppointmentAuditEvents,
   paginateAppointmentAuditEventsByActor,
   recordAppointmentAuditEvent,
 } from "../infrastructure/audit/repository";
 import {
-  findRequestByIdempotencyKey,
+  applyPrivacyRequestTransition,
+  createPrivacyBlock,
+  createPrivacyRequest,
+  createPrivacyRetentionException,
+  extendPrivacyRequestDeadline,
+  getPrivacyRequest,
+  liftPrivacyBlock,
+  liftPrivacyRetentionException,
+  listActivePrivacyBlocksForSubject,
+  listActiveRetentionExceptionsForCategory,
+  listActiveRetentionExceptionsForSubject,
+  listPrivacyBlocksByRequest,
+  listPrivacyRetentionRules,
+  listRetentionExceptionsByPrivacyRequest,
+  paginateActivePrivacyBlocks,
+  paginatePrivacyRequestsByDeadline,
+  paginatePrivacyRequestsByRequester,
+  paginatePrivacyRequestsByStatus,
+  readPrivacyRetentionRule,
+  recordPrivacyResponseDelivery,
+  upsertPrivacyRetentionRule,
+} from "../infrastructure/privacy/repository";
+import {
   getRequestById,
   insertReceivedRequest,
-  insertReceivedRequestOnce,
   type ReceivedRequestExtras,
 } from "../infrastructure/requests/repository";
 import type { AppointmentAuditEvent } from "../domain/appointments/audit";
@@ -1057,7 +1097,6 @@ async function seedTi83Exception(
       ...(input.slotMinutes === undefined ? {} : { slotMinutes: input.slotMinutes }),
       ...(input.modality === undefined ? {} : { modality: input.modality }),
       ...(input.spaceId === undefined ? {} : { spaceId: input.spaceId }),
-      reason: "Motivo ficticio",
     });
   });
 }
@@ -1955,7 +1994,6 @@ test("repositorio de disponibilidad TI2-95: excepciones por rango civil inclusiv
       professionalId: proA,
       date: "2026-10-13",
       kind: "added",
-      reason: "Motivo ficticio",
       windows: [
         { startMinute: 600, endMinute: 660, slotMinutes: 30, modality: "inPerson", spaceId: room },
       ],
@@ -1972,7 +2010,6 @@ test("repositorio de disponibilidad TI2-95: excepciones por rango civil inclusiv
           date: "2026-10-12",
           kind: "cancelled",
           blockId: block,
-          reason: "Motivo ficticio",
           version: "v1",
         },
         addedException,
@@ -2360,7 +2397,6 @@ test("repositorio de disponibilidad TI2-95: guarda excepciones válidas y rechaz
       professionalId: proA,
       date: "2026-10-12",
       kind: "cancelled",
-      reason: "Motivo ficticio",
     });
     if (own.status !== "ok" || foreign.status !== "ok" || dayCancel.status !== "ok") {
       throw new Error("Escritura válida rechazada.");
@@ -2423,7 +2459,8 @@ test("repositorio de disponibilidad TI2-95: guarda excepciones válidas y rechaz
       ["2026-10-13", "added"],
       ["2026-10-19", "cancelled"],
     ]);
-    expect(exceptions.data[0]).toMatchObject({ reason: "Motivo ficticio" });
+    // EXCEPCIONES_DISPONIBILIDAD del MER no tiene motivo (TI2-165).
+    expect(exceptions.data[0]).not.toHaveProperty("reason");
     // Lo escrito siempre se puede expandir.
     const slots = expandAvailabilitySlots({
       professionalId: proA,
@@ -2798,6 +2835,7 @@ test("TI2-118: el evento guarda solo sus referencias mínimas y el reintento no 
   const [event] = notificationEventsForCreation(
     { appointmentId, studentId: student, professionalId: professional },
     TI83_MONDAY,
+    student,
   );
 
   const first = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
@@ -2944,6 +2982,477 @@ test("TI2-118: referencias inválidas del evento no escriben", async () => {
   expect(rows).toHaveLength(0);
 });
 
+// ── Avisos, entregas, push y Calendar (TI2-145) ─────────────────────────────
+
+test("TI2-145: el aviso de solicitud guarda su recurso y el reintento no lo duplica", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-sol-est",
+    email: "ti145sol@alu.uct.cl",
+    role: "student",
+  });
+  const requestId = await seedRequest(t, student, "received");
+  const [event] = notificationEventsForRequestReceived(
+    { requestId, studentId: student },
+    TI83_MONDAY,
+  );
+
+  const first = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  const retry = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  expect(first.status).toBe("recorded");
+  expect(retry).toEqual({
+    status: "duplicate",
+    eventId: first.status === "recorded" ? first.eventId : null,
+  });
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(10));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    kind: "request_received",
+    requestId,
+    recipientId: student,
+    occurredAt: TI83_MONDAY,
+    version: "v1",
+  });
+  expect(rows[0]).not.toHaveProperty("appointmentId");
+  expect(rows[0]).not.toHaveProperty("readAt");
+
+  const page = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRequest(ctx, requestId, {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  expect(page.page).toHaveLength(1);
+  expect(page.page[0]).toMatchObject({
+    kind: "request_received",
+    requestId,
+    recipientId: student,
+    readStatus: "pending",
+  });
+  expect(page.page[0]).not.toHaveProperty("idempotencyKey");
+});
+
+test("TI2-145: el aviso de solicitud solo acepta destinatarios vinculados a ella", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-ref-est",
+    email: "ti145refest@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti145-ref-pro",
+    email: "ti145refpro@uct.cl",
+    role: "professional",
+  });
+  const outsider = await seedUser(t, {
+    subject: "ti145-ref-ajeno",
+    email: "ti145refajeno@alu.uct.cl",
+    role: "student",
+  });
+  const requestId = await seedRequest(t, student, "received");
+  await t.run(async (ctx) => {
+    await ctx.db.patch(requestId, { takenBy: professional });
+  });
+
+  // El constructor admite cualquier destinatario: el repositorio es quien
+  // rechaza al que no está vinculado a la solicitud.
+  const toRecipient = (recipientId: Id<"users">, occurredAt: number) =>
+    toNotificationEvent({ kind: "request_received", requestId, recipientId, occurredAt });
+  const toStudent = toRecipient(student, TI83_MONDAY);
+  const toProfessional = toRecipient(professional, TI83_MONDAY + 1);
+  const toOutsider = toRecipient(outsider, TI83_MONDAY + 2);
+  const results = await t.run(async (ctx) => [
+    await recordNotificationEvent(ctx, toStudent),
+    await recordNotificationEvent(ctx, toProfessional),
+    await recordNotificationEvent(ctx, toOutsider),
+    // El identificador de una solicitud no se acepta como atención.
+    await recordNotificationEvent(ctx, {
+      kind: "appointment_scheduled",
+      appointmentId: requestId,
+      recipientId: student,
+      occurredAt: TI83_MONDAY,
+    } as never),
+  ]);
+  expect(results.map((result) => result.status)).toEqual([
+    "recorded",
+    "recorded",
+    "invalid_reference",
+    "invalid_reference",
+  ]);
+});
+
+test("TI2-145: cada destinatario marca leído y los pendientes no se mezclan", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "lectura");
+  const subjectForRead = { appointmentId, studentId: student, professionalId: professional };
+  const [created] = notificationEventsForCreation(subjectForRead, TI83_MONDAY, student);
+  const [noShow] = notificationEventsForTransition(subjectForRead, {
+    from: "scheduled",
+    to: "no_show",
+    actorId: professional,
+    occurredAt: TI83_MONDAY + 1,
+  });
+  const [cancelled] = notificationEventsForTransition(subjectForRead, {
+    from: "scheduled",
+    to: "cancelled_by_cereti",
+    actorId: professional,
+    occurredAt: TI83_MONDAY + 2,
+  });
+
+  const recorded = await t.run(async (ctx) => ({
+    created: await recordNotificationEvent(ctx, created),
+    noShow: await recordNotificationEvent(ctx, noShow),
+    cancelled: await recordNotificationEvent(ctx, cancelled),
+  }));
+  const createdResult = recorded.created;
+  const noShowResult = recorded.noShow;
+  const cancelledResult = recorded.cancelled;
+  if (
+    createdResult.status !== "recorded" ||
+    noShowResult.status !== "recorded" ||
+    cancelledResult.status !== "recorded"
+  ) {
+    throw new Error("Los tres avisos ficticios deben registrarse.");
+  }
+
+  const read = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, student, createdResult.eventId, TI83_MONDAY + 10),
+  );
+  expect(read).toEqual({
+    status: "marked",
+    eventId: createdResult.eventId,
+    readAt: TI83_MONDAY + 10,
+  });
+  const repeated = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, student, createdResult.eventId, TI83_MONDAY + 20),
+  );
+  expect(repeated).toEqual({
+    status: "already_read",
+    eventId: createdResult.eventId,
+    readAt: TI83_MONDAY + 10,
+  });
+  // Otro destinatario no puede marcar el aviso ajeno ni cambia su instante.
+  const foreign = await t.run(
+    async (ctx) =>
+      await markNotificationEventRead(ctx, professional, createdResult.eventId, TI83_MONDAY + 30),
+  );
+  expect(foreign).toEqual({ status: "not_found" });
+
+  const pendingFirst = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "pending", {
+        numItems: 1,
+        cursor: null,
+      }),
+  );
+  const pendingSecond = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "pending", {
+        numItems: 1,
+        cursor: pendingFirst.continueCursor,
+      }),
+  );
+  const readPage = await t.run(
+    async (ctx) =>
+      await paginateNotificationEventsForRecipientByReadStatus(ctx, student, "read", {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  // El índice de pendientes recorre solo las filas sin `readAt`, incluso al
+  // paginar: el aviso leído queda fuera de las dos páginas.
+  expect(pendingFirst.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 2]);
+  expect(pendingFirst.isDone).toBe(false);
+  expect(pendingSecond.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY + 1]);
+  expect(pendingSecond.isDone).toBe(true);
+  expect(pendingFirst.page[0]).toMatchObject({ readStatus: "pending" });
+  expect(readPage.page.map((event) => event.occurredAt)).toEqual([TI83_MONDAY]);
+  expect(readPage.page[0]).toMatchObject({
+    readStatus: "read",
+    readAt: TI83_MONDAY + 10,
+  });
+});
+
+test("TI2-145: la entrega se registra por canal y los reintentos no duplican el aviso", async () => {
+  const t = convexTest(schema, modules);
+  const { student, professional, appointmentId } = await seedTi118Appointment(t, "entrega");
+  const [event] = notificationEventsForCreation(
+    { appointmentId, studentId: student, professionalId: professional },
+    TI83_MONDAY,
+    student,
+  );
+  const recorded = await t.run(async (ctx) => await recordNotificationEvent(ctx, event));
+  if (recorded.status !== "recorded") throw new Error("El aviso ficticio debe registrarse.");
+  const eventId = recorded.eventId;
+
+  const queue = await t.run(async (ctx) => ({
+    first: await ensureNotificationDelivery(ctx, eventId, "email"),
+    retry: await ensureNotificationDelivery(ctx, eventId, "email"),
+  }));
+  expect(queue.first).toMatchObject({ status: "queued", attempts: 0 });
+  expect(queue.retry).toMatchObject({ status: "exists", attempts: 0, deliveryStatus: "pending" });
+
+  const attempts = await t.run(async (ctx) => ({
+    sent: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "email",
+      status: "sent",
+      attemptedAt: TI83_MONDAY + 10,
+    }),
+    failed: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "email",
+      status: "failed",
+      attemptedAt: TI83_MONDAY + 20,
+      errorCode: "provider_unavailable",
+    }),
+    push: await recordNotificationDeliveryAttempt(ctx, eventId, {
+      channel: "push",
+      status: "sent",
+      attemptedAt: TI83_MONDAY + 30,
+    }),
+  }));
+  expect(attempts.sent).toMatchObject({ status: "recorded", attempts: 1 });
+  expect(attempts.failed).toMatchObject({ status: "recorded", attempts: 2 });
+  expect(attempts.push).toMatchObject({ status: "recorded", attempts: 1 });
+
+  const stored = await t.run(async (ctx) => ({
+    email: await findNotificationDelivery(ctx, eventId, "email"),
+    push: await findNotificationDelivery(ctx, eventId, "push"),
+    deliveries: await ctx.db.query("notificationDeliveries").take(10),
+    events: await ctx.db.query("notificationEvents").take(10),
+  }));
+  expect(stored.deliveries).toHaveLength(2);
+  expect(stored.events).toHaveLength(1);
+  expect(stored.email).toEqual({
+    id: stored.deliveries.find((row) => row.channel === "email")?._id,
+    eventId,
+    channel: "email",
+    status: "failed",
+    attempts: 2,
+    lastAttemptAt: TI83_MONDAY + 20,
+    sentAt: TI83_MONDAY + 10,
+    errorCode: "provider_unavailable",
+  });
+  expect(stored.push).toMatchObject({ status: "sent", attempts: 1, sentAt: TI83_MONDAY + 30 });
+
+  await expect(
+    t.run(async (ctx) =>
+      recordNotificationDeliveryAttempt(ctx, student as never, {
+        channel: "email",
+        status: "sent",
+        attemptedAt: TI83_MONDAY,
+      }),
+    ),
+  ).resolves.toEqual({ status: "invalid_reference" });
+  await expect(
+    t.run(async (ctx) =>
+      recordNotificationDeliveryAttempt(ctx, eventId, {
+        channel: "email",
+        status: "sent",
+        attemptedAt: TI83_MONDAY,
+        errorCode: "provider_unavailable",
+      }),
+    ),
+  ).rejects.toThrow("no lleva código de error");
+});
+
+test("TI2-145: la suscripción push es propia y el endpoint no se duplica", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-push-est",
+    email: "ti145push@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti145-push-pro",
+    email: "ti145pushpro@uct.cl",
+    role: "professional",
+  });
+  const endpointA = "https://push.example.test/subscription-a";
+  const endpointB = "https://push.example.test/subscription-b";
+
+  const saved = await t.run(async (ctx) => ({
+    first: await savePushSubscription(
+      ctx,
+      student,
+      { endpoint: endpointA, p256dh: "clave-publica-a", auth: "secreto-a" },
+      TI83_MONDAY,
+    ),
+    moved: await savePushSubscription(
+      ctx,
+      professional,
+      {
+        endpoint: endpointA,
+        p256dh: "clave-publica-b",
+        auth: "secreto-b",
+        expirationTime: TI83_MONDAY + 1000,
+      },
+      TI83_MONDAY + 1,
+    ),
+    second: await savePushSubscription(
+      ctx,
+      professional,
+      { endpoint: endpointB, p256dh: "clave-publica-c", auth: "secreto-c" },
+      TI83_MONDAY + 2,
+    ),
+    invalid: await savePushSubscription(
+      ctx,
+      student,
+      { endpoint: "  ", p256dh: "", auth: "" },
+      TI83_MONDAY + 3,
+    ),
+  }));
+  expect(saved.first).toMatchObject({ status: "saved", created: true });
+  expect(saved.moved).toMatchObject({ status: "saved", created: false });
+  expect(saved.second).toMatchObject({ status: "saved", created: true });
+  expect(saved.invalid).toEqual({ status: "invalid_subscription" });
+
+  const beforeDelete = await t.run(async (ctx) => ({
+    student: await findPushSubscriptionsForUser(ctx, student),
+    professional: await findPushSubscriptionsForUser(ctx, professional),
+  }));
+  expect(beforeDelete.student).toHaveLength(0);
+  expect(beforeDelete.professional).toHaveLength(2);
+  expect(beforeDelete.professional.find((row) => row.endpoint === endpointA)).toMatchObject({
+    userId: professional,
+    p256dh: "clave-publica-b",
+    auth: "secreto-b",
+    expirationTime: TI83_MONDAY + 1000,
+  });
+
+  const deleted = await t.run(async (ctx) => ({
+    foreign: await deletePushSubscription(ctx, student, endpointA),
+    own: await deletePushSubscription(ctx, professional, endpointA),
+  }));
+  expect(deleted).toEqual({ foreign: false, own: true });
+  const remaining = await t.run(
+    async (ctx) => await findPushSubscriptionsForUser(ctx, professional),
+  );
+  expect(remaining.map((row) => row.endpoint)).toEqual([endpointB]);
+});
+
+test("TI2-145: el vínculo de Calendar guarda solo metadatos y no copia credenciales", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti145-cal-est",
+    email: "ti145cal@alu.uct.cl",
+    role: "student",
+  });
+  const other = await seedUser(t, {
+    subject: "ti145-cal-otro",
+    email: "ti145calotro@alu.uct.cl",
+    role: "student",
+  });
+
+  const linked = await t.run(async (ctx) => ({
+    before: await readCalendarConnectionMetadata(ctx, student),
+    first: await connectCalendar(ctx, student, "cuenta-cifrada-a", TI83_MONDAY),
+    retry: await connectCalendar(ctx, student, "cuenta-cifrada-a", TI83_MONDAY + 1),
+    other: await readCalendarConnectionMetadata(ctx, other),
+  }));
+  expect(linked.before).toBeNull();
+  expect(linked.first.status).toBe("linked");
+  expect(linked.retry.status).toBe("already_linked");
+  expect(linked.other).toBeNull();
+
+  const visible = await t.run(async (ctx) => await readCalendarConnectionMetadata(ctx, student));
+  expect(visible).toEqual({ linkedAt: TI83_MONDAY });
+  expect(visible).not.toHaveProperty("accountReference");
+  expect(visible).not.toHaveProperty("status");
+
+  const rows = await t.run(async (ctx) => await ctx.db.query("calendarConnections").take(10));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    userId: student,
+    accountReference: "cuenta-cifrada-a",
+    linkedAt: TI83_MONDAY,
+    updatedAt: TI83_MONDAY + 1,
+  });
+  // La fila no declara «conectado»: esa lectura sale solo de Better Auth.
+  expect(rows[0]).not.toHaveProperty("status");
+  expect(JSON.stringify(rows)).not.toMatch(/token|secret|refresh/i);
+
+  const disconnected = await t.run(async (ctx) => ({
+    revoked: await disconnectCalendar(ctx, student, TI83_MONDAY + 10),
+    retry: await disconnectCalendar(ctx, student, TI83_MONDAY + 20),
+    other: await disconnectCalendar(ctx, other, TI83_MONDAY + 30),
+  }));
+  expect(disconnected.revoked.status).toBe("unlinked");
+  expect(disconnected.retry.status).toBe("already_unlinked");
+  expect(disconnected.other.status).toBe("not_found");
+  expect(await t.run(async (ctx) => await readCalendarConnectionMetadata(ctx, student))).toEqual({
+    linkedAt: TI83_MONDAY,
+    revokedAt: TI83_MONDAY + 10,
+  });
+});
+
+test("TI2-145: la atención guarda pendiente, sincronizado o error con sus intentos", async () => {
+  const t = convexTest(schema, modules);
+  const { student, appointmentId } = await seedTi118Appointment(t, "sync", "scheduled");
+
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toBeNull();
+
+  const pending = await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  expect(pending).toEqual({ status: "recorded", attempts: 0 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "pending",
+    attempts: 0,
+  });
+
+  const error = await t.run(
+    async (ctx) =>
+      await recordCalendarSyncAttempt(ctx, appointmentId, {
+        status: "error",
+        attemptedAt: TI83_MONDAY + 10,
+        errorCode: "not_connected",
+      }),
+  );
+  expect(error).toEqual({ status: "recorded", attempts: 1 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "error",
+    attempts: 1,
+    lastAttemptAt: TI83_MONDAY + 10,
+    errorCode: "not_connected",
+  });
+
+  // Volver a encolar no cuenta un intento y limpia el error anterior.
+  await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "pending",
+    attempts: 1,
+    lastAttemptAt: TI83_MONDAY + 10,
+  });
+
+  const synced = await t.run(
+    async (ctx) =>
+      await recordCalendarSyncAttempt(ctx, appointmentId, {
+        status: "synced",
+        attemptedAt: TI83_MONDAY + 20,
+      }),
+  );
+  expect(synced).toEqual({ status: "recorded", attempts: 2 });
+  expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
+    status: "synced",
+    attempts: 2,
+    lastAttemptAt: TI83_MONDAY + 20,
+  });
+
+  // La sincronización no cambia el estado de la atención.
+  const appointment = await t.run(async (ctx) => await ctx.db.get(appointmentId));
+  expect(appointment?.status).toBe("scheduled");
+  await expect(
+    t.run(async (ctx) =>
+      recordCalendarSyncAttempt(ctx, student as never, {
+        status: "synced",
+        attemptedAt: TI83_MONDAY + 30,
+      }),
+    ),
+  ).resolves.toEqual({ status: "invalid_reference" });
+});
+
 /** Registro ficticio válido de TI2-106 para una atención. */
 function ti118RecordInput(
   appointmentId: Id<"appointments">,
@@ -2954,16 +3463,14 @@ function ti118RecordInput(
     appointmentId,
     accompanimentId,
     authorId,
-    agreements: [{ id: "a1", description: "Usar lector de pantalla en la próxima sesión" }],
+    agreements: [{ description: "Usar lector de pantalla en la próxima sesión" }],
     tasks: [
       {
-        id: "t1",
         description: "Enviar el material en formato accesible",
         responsible: "professional",
         status: "pending",
       },
       {
-        id: "t2",
         description: "Probar el material antes de la sesión",
         responsible: "student",
         status: "in_progress",
@@ -3232,9 +3739,8 @@ test("TI2-128: texto extra, literales desconocidos y referencias inválidas no s
  * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
  * que las filas anteriores se leen igual, que la solicitud completa conserva
  * todos sus campos sin cambiar lo que entrega la API vigente, que el esquema
- * rechaza RUT, diagnóstico, certificados y área interna, que la clave de
- * idempotencia evita el duplicado y que la migración solo escribe lo que la
- * fila ya sabe. Casos de uso, API y pantallas no se tocan.
+ * rechaza RUT, diagnóstico, certificados y área interna y que la migración
+ * solo escribe lo que la fila ya sabe. Casos de uso, API y pantallas no se tocan.
  */
 
 /** Texto unido de las necesidades, tal como lo entrega la API vigente. */
@@ -3307,7 +3813,7 @@ test("TI2-135: una solicitud anterior sin campos nuevos se lee sin error", async
   });
   expect(listed.page).toEqual([legacyEntity]);
 
-  // El índice de solicitudes propias la sigue encontrando; el de idempotencia no.
+  // El índice de solicitudes propias la sigue encontrando.
   const own = await t.run(async (ctx) => {
     return await ctx.db
       .query("requests")
@@ -3315,9 +3821,6 @@ test("TI2-135: una solicitud anterior sin campos nuevos se lee sin error", async
       .take(10);
   });
   expect(own.map((request) => request._id)).toEqual([legacyId]);
-  expect(
-    await t.run(async (ctx) => await findRequestByIdempotencyKey(ctx, student, "ti135-clave")),
-  ).toBeNull();
 });
 
 test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente no los entrega", async () => {
@@ -3355,21 +3858,18 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
     referredBy: staff,
     reason: "Tu necesidad corresponde a otra unidad",
   };
-  const { requestId } = await t.run(async (ctx) => {
-    return await insertReceivedRequestOnce(ctx, {
+  const requestId = await t.run(async (ctx) => {
+    return await insertReceivedRequest(ctx, {
       ...content,
       studentId: student,
       provenance,
       incomingReferral,
-      idempotencyKey: "ti135-clave-completa",
     });
   });
-  // La derivación de salida y la razón de cierre se escriben al derivar o cerrar.
+  // La derivación de salida se escribe al derivar. La razón de cierre queda
+  // solo en `requestTransitions`, como en el MER (TI2-165).
   await t.run(async (ctx) => {
-    await ctx.db.patch(requestId, {
-      outgoingReferral,
-      closureReason: "Tu necesidad corresponde a otra unidad",
-    });
+    await ctx.db.patch(requestId, { outgoingReferral });
   });
 
   const row = await ti135Row(t, requestId);
@@ -3381,20 +3881,19 @@ test("TI2-135: una solicitud completa conserva todos sus campos y la API vigente
     provenance,
     incomingReferral,
     outgoingReferral,
-    closureReason: "Tu necesidad corresponde a otra unidad",
-    idempotencyKey: "ti135-clave-completa",
   });
+  expect(row).not.toHaveProperty("closureReason");
   expect(row.expectedOutcome).toHaveLength(2000);
   expect(requestProvenanceChannelOf(row)).toBe("official_channel");
 
-  // El detalle suma la razón de cierre (TI2-141) y, desde TI2-143, el canal y
-  // las derivaciones sin identificadores de personal. El contenido no viaja.
+  // El detalle suma, desde TI2-143, el canal y las derivaciones sin
+  // identificadores de personal; la razón de cierre solo aparece en una
+  // solicitud cerrada (TI2-141, TI2-165). El contenido no viaja.
   const asStudent = t.withIdentity(identityFor("ti135-full-est", "ti135full@alu.uct.cl"));
   const detail = await asStudent.query(api.presentation.requests.getRequest, { requestId });
   expect(Object.keys(detail).sort()).toEqual([
     "_id",
     "accessNeeds",
-    "closureReason",
     "createdAt",
     "incomingReferral",
     "outgoingReferral",
@@ -3460,101 +3959,16 @@ test("TI2-135: el esquema rechaza RUT, diagnóstico, certificados y área intern
   expect(await t.run(async (ctx) => await ctx.db.query("requests").take(10))).toHaveLength(0);
 });
 
-test("TI2-135: la clave de idempotencia evita duplicar el envío del mismo estudiante", async () => {
-  const t = convexTest(schema, modules);
-  const studentA = await seedUser(t, {
-    subject: "ti135-idem-a",
-    email: "ti135idema@alu.uct.cl",
-    role: "student",
-  });
-  const studentB = await seedUser(t, {
-    subject: "ti135-idem-b",
-    email: "ti135idemb@alu.uct.cl",
-    role: "student",
-  });
-  const send = async (studentId: Id<"users">, idempotencyKey: string) => {
-    return await t.run(async (ctx) => {
-      return await insertReceivedRequestOnce(ctx, {
-        studentId,
-        accessNeeds: "Necesidad ficticia",
-        idempotencyKey,
-      });
-    });
-  };
-
-  const first = await send(studentA, "ti135-clave-1");
-  expect(first.created).toBe(true);
-  // El reintento con la misma clave devuelve la misma solicitud sin escribir.
-  expect(await send(studentA, "ti135-clave-1")).toEqual({
-    requestId: first.requestId,
-    created: false,
-  });
-
-  // Otro estudiante con la misma clave, o el mismo con otra clave, crea la suya.
-  const otherStudent = await send(studentB, "ti135-clave-1");
-  const otherKey = await send(studentA, "ti135-clave-2");
-  expect(otherStudent.created).toBe(true);
-  expect(otherKey.created).toBe(true);
-  expect(new Set([first.requestId, otherStudent.requestId, otherKey.requestId]).size).toBe(3);
-
-  // Dos envíos simultáneos con la misma clave dejan una sola fila.
-  const raced = await Promise.all([
-    send(studentA, "ti135-clave-3"),
-    send(studentA, "ti135-clave-3"),
-  ]);
-  expect(raced.filter((result) => result.created)).toHaveLength(1);
-  expect(raced[0]?.requestId).toBe(raced[1]?.requestId);
-
-  // El índice encuentra la solicitud por estudiante y clave; sin envío no hay nada.
-  const withKey = async (studentId: Id<"users">, key: string) => {
-    return await t.run(async (ctx) => await findRequestByIdempotencyKey(ctx, studentId, key));
-  };
-  expect((await withKey(studentA, "ti135-clave-3"))?._id).toBe(raced[0]?.requestId);
-  expect((await withKey(studentB, "ti135-clave-1"))?._id).toBe(otherStudent.requestId);
-  expect(await withKey(studentA, "ti135-sin-envío")).toBeNull();
-  const ownA = await t.run(async (ctx) => {
-    return await ctx.db
-      .query("requests")
-      .withIndex("by_student", (q) => q.eq("studentId", studentA))
-      .take(10);
-  });
-  expect(ownA).toHaveLength(3);
-
-  // Sin clave el comportamiento no cambia: cada envío crea su solicitud.
-  const plain = async () => {
-    return await t.run(async (ctx) => {
-      return await insertReceivedRequest(ctx, {
-        studentId: studentB,
-        accessNeeds: "Necesidad ficticia",
-      });
-    });
-  };
-  expect(await plain()).not.toBe(await plain());
-});
-
-test("TI2-135: insertReceivedRequest no acepta la clave de idempotencia", () => {
-  const receive = (input: Parameters<typeof insertReceivedRequest>[1]) => input;
-  expect(
-    receive({ studentId: "student-id" as Id<"users">, accessNeeds: "Necesidad ficticia" }),
-  ).toEqual({ studentId: "student-id", accessNeeds: "Necesidad ficticia" });
-  // La clave solo se escribe por insertReceivedRequestOnce, que busca el duplicado.
-  receive({
-    studentId: "student-id" as Id<"users">,
-    accessNeeds: "Necesidad ficticia",
-    // @ts-expect-error: `idempotencyKey` no forma parte de ReceivedRequestInput
-    idempotencyKey: "ti135-clave-directa",
-  });
-});
-
-test("TI2-135: un spread no cuela la clave por la inserción directa", async () => {
+test("TI2-165: sin clave de idempotencia, repetir el envío crea otra solicitud y la clave no se guarda", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti135-spread-est",
     email: "ti135spread@alu.uct.cl",
     role: "student",
   });
-  // `args` llega como el payload de una mutation: el spread evita la revisión
-  // de propiedades extra de TypeScript, pero la fila no debe guardar la clave.
+  // `args` llega como el payload de un cliente anterior: el spread evita la
+  // revisión de propiedades extra de TypeScript y la fila no debe guardar la
+  // clave, que SOLICITUDES del MER no tiene.
   const args = { accessNeeds: "Necesidad ficticia", idempotencyKey: "ti135-clave-spread" };
   for (let attempt = 0; attempt < 2; attempt++) {
     await t.run(async (ctx) => await insertReceivedRequest(ctx, { ...args, studentId: student }));
@@ -3563,13 +3977,8 @@ test("TI2-135: un spread no cuela la clave por la inserción directa", async () 
   const rows = await t.run(async (ctx) => await ctx.db.query("requests").take(10));
   expect(rows).toHaveLength(2);
   for (const row of rows) {
-    expect(row.idempotencyKey).toBeUndefined();
+    expect(row).not.toHaveProperty("idempotencyKey");
   }
-  expect(
-    await t.run(
-      async (ctx) => await findRequestByIdempotencyKey(ctx, student, args.idempotencyKey),
-    ),
-  ).toBeNull();
 });
 
 test("TI2-135: la auditoría y la migración escriben la procedencia sin inventar contenido", async () => {
@@ -3703,19 +4112,19 @@ test("TI2-135: la migración de solicitudes avanza por páginas hasta agotar las
 });
 
 /**
- * Ciclo completo de la atención (TI2-138): participantes, apoyos en línea,
- * copia de necesidades y migración de las filas anteriores.
+ * Ciclo completo de la atención (TI2-138): participantes, referencia privada y
+ * migración de las filas anteriores.
  *
  * Cada prueba parte de una base vacía y usa solo datos ficticios. Demuestran
- * que reservar congela las necesidades del acompañamiento, que cambiarlas
- * después no altera la atención, que mover la atención con otro responsable
- * reemplaza al anterior en la ventana de participantes y que la migración
- * completa las filas anteriores sin inventar apoyos ni referencia privada.
+ * que reservar registra a los participantes sin copiar las necesidades (el MER
+ * las versiona en NECESIDADES_ACCESO, TI2-165), que mover la atención con otro
+ * responsable reemplaza al anterior entre los participantes y que la
+ * migración completa las filas anteriores sin inventar la referencia privada.
  */
 
 const TI138_NEEDS = ["Necesidad ficticia A", "Necesidad ficticia B"] as const;
 
-test("TI2-138: reservar copia las necesidades vigentes y registra a los participantes", async () => {
+test("TI2-138: reservar registra a los participantes y no copia las necesidades", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti138-book-est",
@@ -3744,7 +4153,6 @@ test("TI2-138: reservar copia las necesidades vigentes y registra a los particip
       modality: "online",
       startsAt: TI83_MONDAY_9H,
       endsAt: TI83_MONDAY_10H,
-      onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
       privateAccessReference: "https://acceso.example/ficticio",
     });
   });
@@ -3753,40 +4161,25 @@ test("TI2-138: reservar copia las necesidades vigentes y registra a los particip
   const appointmentId = occupied.data.appointmentId;
 
   const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
-  const expectedNeeds = TI138_NEEDS.map((label) => ({ id: label, label }));
-  expect(row).toMatchObject({
-    appliedAccessNeeds: expectedNeeds,
-    onlineSupports: [{ id: "apoyo-ficticio", label: "Apoyo ficticio" }],
-    privateAccessReference: "https://acceso.example/ficticio",
-  });
+  expect(row).toMatchObject({ privateAccessReference: "https://acceso.example/ficticio" });
+  expect(row).not.toHaveProperty("appliedAccessNeeds");
+  expect(row).not.toHaveProperty("onlineSupports");
 
-  // Índice de cruces: la fila del profesional copia la ventana de la atención.
-  const windows = await t.run(async (ctx) => {
+  // La fila del profesional no copia el horario: ATENCION_PROFESIONALES del
+  // MER no lo tiene y los cruces se leen de la atención (TI2-165).
+  const participants = await t.run(async (ctx) => {
     return await ctx.db
       .query("appointmentProfessionals")
-      .withIndex("by_professionalId_and_startsAt", (q) =>
-        q.eq("professionalId", professional).gte("startsAt", TI83_MONDAY_9H),
-      )
+      .withIndex("by_appointmentId_and_professionalId", (q) => q.eq("appointmentId", appointmentId))
       .take(10);
   });
-  expect(windows).toHaveLength(1);
-  expect(windows[0]).toMatchObject({
-    appointmentId,
-    professionalId: professional,
-    startsAt: TI83_MONDAY_9H,
-    endsAt: TI83_MONDAY_10H,
-  });
-
-  // Cambiar las necesidades actuales no reescribe la copia ya registrada.
-  await t.run(async (ctx) => {
-    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
-  });
-  expect((await t.run(async (ctx) => await ctx.db.get(appointmentId)))?.appliedAccessNeeds).toEqual(
-    expectedNeeds,
-  );
+  expect(participants).toHaveLength(1);
+  expect(participants[0]).toMatchObject({ appointmentId, professionalId: professional });
+  expect(participants[0]).not.toHaveProperty("startsAt");
+  expect(participants[0]).not.toHaveProperty("endsAt");
 });
 
-test("TI2-138: mover la atención cambia al responsable sin reescribir necesidades", async () => {
+test("TI2-138: mover la atención cambia al responsable entre los participantes", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, {
     subject: "ti138-move-est",
@@ -3853,10 +4246,6 @@ test("TI2-138: mover la atención cambia al responsable sin reescribir necesidad
   expect(otherAttention.status).toBe("ok");
   if (otherAttention.status !== "ok") return;
 
-  await t.run(async (ctx) => {
-    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
-  });
-
   const moved = await t.run(async (ctx) => {
     return await occupySlotAtomically(ctx, {
       accompanimentId: accompaniment,
@@ -3881,27 +4270,15 @@ test("TI2-138: mover la atención cambia al responsable sin reescribir necesidad
   // El responsable anterior deja de participar: la fila pasa a ser la del
   // nuevo y la atención sigue teniendo una sola fila por responsable.
   expect(participants.map((row) => row.professionalId)).toEqual([secondProfessional]);
-  expect(participants[0]).toMatchObject({
-    startsAt: TI83_MONDAY_10H,
-    endsAt: TI83_MONDAY_10H + 3_600_000,
-  });
 
-  // El índice de cruces del anterior solo devuelve su otra atención a las
-  // 10:00, no la que ya no le pertenece.
-  const previousWindows = await t.run(async (ctx) => {
-    return await ctx.db
-      .query("appointmentProfessionals")
-      .withIndex("by_professionalId_and_startsAt", (q) =>
-        q.eq("professionalId", firstProfessional).gte("startsAt", TI83_MONDAY_10H),
-      )
-      .take(10);
+  // El anterior solo participa en su otra atención de las 10:00, no en la que
+  // ya no le pertenece.
+  const previousRows = await t.run(async (ctx) => {
+    return (await ctx.db.query("appointmentProfessionals").take(10)).filter(
+      (row) => row.professionalId === firstProfessional,
+    );
   });
-  expect(previousWindows.map((row) => row.appointmentId)).toEqual([
-    otherAttention.data.appointmentId,
-  ]);
-
-  const row = await t.run(async (ctx) => await ctx.db.get(created.data.appointmentId));
-  expect(row?.appliedAccessNeeds).toEqual(TI138_NEEDS.map((label) => ({ id: label, label })));
+  expect(previousRows.map((row) => row.appointmentId)).toEqual([otherAttention.data.appointmentId]);
 });
 
 test("TI2-138: la migración completa las atenciones anteriores sin inventar contenido", async () => {
@@ -3961,7 +4338,6 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   });
   expect(audit).toMatchObject({
     scanned: 2,
-    missingAppliedAccessNeeds: 2,
     missingParticipants: 2,
     isDone: true,
   });
@@ -3974,7 +4350,9 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
       paginationOpts: { numItems: 10, cursor: null },
     }),
   ).rejects.toThrow("No autorizado");
-  expect((await t.run(async (ctx) => await ctx.db.get(first)))?.appliedAccessNeeds).toBeUndefined();
+  expect(
+    await t.run(async (ctx) => await ctx.db.query("appointmentProfessionals").take(10)),
+  ).toHaveLength(0);
 
   const asAdmin = t.withIdentity(identityFor("ti138-mig-adm", "ti138admin@uct.cl"));
   const firstPage = await asAdmin.mutation(
@@ -3983,9 +4361,7 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   );
   expect(firstPage).toMatchObject({
     scanned: 1,
-    migratedNeeds: 1,
     createdParticipants: 1,
-    unresolvedNeeds: 0,
     isDone: false,
   });
   const secondPage = await asAdmin.mutation(
@@ -3994,19 +4370,15 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   );
   expect(secondPage).toMatchObject({
     scanned: 1,
-    migratedNeeds: 1,
     createdParticipants: 1,
-    unresolvedNeeds: 0,
     isDone: true,
   });
 
-  // La copia usa la necesidad que el acompañamiento tenía al migrar y no
-  // inventa apoyos en línea ni referencia privada.
-  const expectedNeeds = TI138_NEEDS.map((label) => ({ id: label, label }));
+  // No copia necesidades, no guarda apoyos y no inventa la referencia privada.
   for (const appointmentId of [first, second]) {
     const row = await t.run(async (ctx) => await ctx.db.get(appointmentId));
-    expect(row?.appliedAccessNeeds).toEqual(expectedNeeds);
-    expect(row?.onlineSupports).toBeUndefined();
+    expect(row).not.toHaveProperty("appliedAccessNeeds");
+    expect(row).not.toHaveProperty("onlineSupports");
     expect(row?.privateAccessReference).toBeUndefined();
   }
   const participantRows = await t.run(async (ctx) => {
@@ -4015,105 +4387,1154 @@ test("TI2-138: la migración completa las atenciones anteriores sin inventar con
   expect(participantRows).toHaveLength(2);
   expect(participantRows.map((row) => row.appointmentId).sort()).toEqual([first, second].sort());
 
-  // Cambiar las necesidades actuales no toca lo ya migrado y repetirla no
-  // escribe de nuevo.
-  await t.run(async (ctx) => {
-    await ctx.db.patch(accompaniment, { accessNeeds: "Necesidad posterior" });
-  });
+  // Repetirla no escribe de nuevo.
   const repeated = await asAdmin.mutation(
     internal.operations.migrations.migrateLegacyAppointments,
     { paginationOpts: { numItems: 10, cursor: null } },
   );
   expect(repeated).toMatchObject({
     scanned: 2,
-    migratedNeeds: 0,
     createdParticipants: 0,
-    unresolvedNeeds: 0,
     isDone: true,
   });
-  for (const appointmentId of [first, second]) {
-    expect(
-      (await t.run(async (ctx) => await ctx.db.get(appointmentId)))?.appliedAccessNeeds,
-    ).toEqual(expectedNeeds);
-  }
   const clean = await t.query(internal.operations.migrations.auditAppointmentParticipants, {
     paginationOpts: { numItems: 10, cursor: null },
   });
-  expect(clean).toMatchObject({
-    missingAppliedAccessNeeds: 0,
-    missingParticipants: 0,
-  });
+  expect(clean).toMatchObject({ missingParticipants: 0 });
 });
 
-test("TI2-152: el historial de estados guarda cada cambio y su índice responde en orden", async () => {
+test("TI2-165: la migración vacía los campos retirados sin perder el cierre ni su motivo", async () => {
   const t = convexTest(schema, modules);
-  const { professional, accompanimentId } = await seedTi118Appointment(t, "estado-a");
-  const other = await seedTi118Appointment(t, "estado-b");
+  await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
+    email: "ti165admin@uct.cl",
+    fullName: "Administrador Ficticio",
+    tokenIdentifier: `${ISSUER}|ti165-mig-adm`,
+  });
+  const student = await seedUser(t, {
+    subject: "ti165-mig-est",
+    email: "ti165mig@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti165-mig-pro",
+    email: "ti165migpro@uct.cl",
+    role: "professional",
+  });
+  const need = { id: "written", label: "Comunicación escrita" };
 
-  // Se escriben fuera de orden para que el índice, y no la inserción, ordene;
-  // el cierre va al final porque cada escritura deja su estado en la fila.
-  await t.run(async (ctx) => {
-    const writer = accompanimentStatusWriter(ctx);
-    await writer.persistStatusChange(accompanimentId, {
-      from: "paused",
-      to: "active",
-      actorId: professional,
-      occurredAt: TI83_MONDAY_9H,
+  // Filas como las dejaron las versiones anteriores a TI2-165, con datos ficticios.
+  const seeded = await t.run(async (ctx) => {
+    const closed = await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "closed",
+      objective: "Objetivo ficticio cerrado",
+      accessNeeds: "Necesidad ficticia",
     });
-    await writer.persistStatusChange(accompanimentId, {
+    const open = await ctx.db.insert("accompaniments", {
+      studentId: student,
+      status: "active",
+      objective: "Objetivo ficticio abierto",
+      accessNeeds: "Necesidad ficticia",
+    });
+    await ctx.db.insert("accompanimentTransitions", {
+      accompanimentId: closed,
       from: "active",
       to: "paused",
       actorId: professional,
       occurredAt: TI83_MONDAY,
-      reason: "Receso ficticio",
     });
-    await writer.persistStatusChange(other.accompanimentId, {
-      from: "active",
-      to: "closed",
-      actorId: other.professional,
-      occurredAt: TI83_MONDAY_9H,
-    });
-    await writer.persistStatusChange(accompanimentId, {
-      from: "active",
+    await ctx.db.insert("accompanimentTransitions", {
+      accompanimentId: closed,
+      from: "paused",
       to: "closed",
       actorId: professional,
-      occurredAt: TI83_MONDAY_10H,
+      reason: "Motivo ficticio del cierre",
+      occurredAt: TI83_MONDAY + 1,
     });
+    await ctx.db.insert("accompanimentTransitions", {
+      accompanimentId: open,
+      from: "active",
+      to: "paused",
+      actorId: professional,
+      occurredAt: TI83_MONDAY,
+    });
+    const closedRequest = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "closed_without_accompaniment",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: TI83_MONDAY,
+      closureReason: "Motivo ficticio de la solicitud",
+      idempotencyKey: "clave-ficticia-1",
+    });
+    const closingTransition = await ctx.db.insert("requestTransitions", {
+      requestId: closedRequest,
+      from: "under_review",
+      to: "closed_without_accompaniment",
+      actorId: professional,
+      occurredAt: TI83_MONDAY + 1,
+    });
+    const orphanRequest = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "closed_without_accompaniment",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: TI83_MONDAY,
+      closureReason: "Motivo ficticio sin transición",
+    });
+    const sentRequest = await ctx.db.insert("requests", {
+      studentId: student,
+      status: "received",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: TI83_MONDAY,
+      idempotencyKey: "clave-ficticia-2",
+    });
+    const exception = await ctx.db.insert("availabilityExceptions", {
+      professionalId: professional,
+      date: TI83_MONDAY,
+      kind: "cancelled",
+      reason: "Motivo ficticio de la excepción",
+    });
+    return {
+      closed,
+      open,
+      closedRequest,
+      closingTransition,
+      orphanRequest,
+      sentRequest,
+      exception,
+    };
+  });
+  const appointmentId = await seedTi83Appointment(t, {
+    accompanimentId: seeded.open,
+    studentId: student,
+    professionalId: professional,
+    startsAt: TI83_MONDAY_9H,
+    endsAt: TI83_MONDAY_10H,
+    status: "completed",
+  });
+  const followUp = await t.run(async (ctx) => {
+    await ctx.db.patch(appointmentId, { appliedAccessNeeds: [need], onlineSupports: [need] });
+    const participant = await ctx.db.insert("appointmentProfessionals", {
+      appointmentId,
+      professionalId: professional,
+      startsAt: TI83_MONDAY_9H,
+      endsAt: TI83_MONDAY_10H,
+    });
+    const record = await ctx.db.insert("followUpRecords", {
+      appointmentId,
+      authorId: professional,
+      nextSteps: "Próximos pasos ficticios",
+      updatedAt: TI83_MONDAY_10H,
+      version: "v1",
+    });
+    const agreement = await ctx.db.insert("followUpAgreements", {
+      recordId: record,
+      description: "Acuerdo ficticio",
+      entryId: "acuerdo-1",
+    });
+    const task = await ctx.db.insert("followUpTasks", {
+      recordId: record,
+      description: "Tarea ficticia",
+      responsible: "student",
+      status: "pending",
+      entryId: "tarea-1",
+    });
+    return { participant, record, agreement, task };
   });
 
-  const history = await t.run(
-    async (ctx) =>
-      await ctx.db
-        .query("accompanimentTransitions")
-        .withIndex("by_accompanimentId_and_occurredAt", (q) =>
-          q.eq("accompanimentId", accompanimentId),
-        )
-        .take(10),
-  );
-  expect(history.map(({ from, to, occurredAt }) => ({ from, to, occurredAt }))).toEqual([
-    { from: "active", to: "paused", occurredAt: TI83_MONDAY },
-    { from: "paused", to: "active", occurredAt: TI83_MONDAY_9H },
-    { from: "active", to: "closed", occurredAt: TI83_MONDAY_10H },
-  ]);
-  expect(history[0]?.reason).toBe("Receso ficticio");
-  expect(history.slice(1).every((row) => !("reason" in row))).toBe(true);
+  const page = { numItems: 10, cursor: null };
+  async function audit(
+    table:
+      | "accompaniments"
+      | "accompanimentTransitions"
+      | "requests"
+      | "appointments"
+      | "appointmentProfessionals"
+      | "followUpRecords"
+      | "followUpAgreements"
+      | "followUpTasks"
+      | "availabilityExceptions",
+  ) {
+    return await t.query(internal.operations.migrations.auditRetiredFields, {
+      table,
+      paginationOpts: page,
+    });
+  }
+  expect(await audit("accompaniments")).toMatchObject({
+    pending: 1,
+    samplePendingIds: [seeded.closed],
+  });
+  expect(await audit("accompanimentTransitions")).toMatchObject({ pending: 3 });
+  expect(await audit("requests")).toMatchObject({ pending: 3 });
+  for (const table of [
+    "appointments",
+    "appointmentProfessionals",
+    "followUpRecords",
+    "followUpAgreements",
+    "followUpTasks",
+    "availabilityExceptions",
+  ] as const) {
+    expect(await audit(table)).toMatchObject({ pending: 1 });
+  }
 
-  // El cierre es la última fila con `to: "closed"`; el acompañamiento no
-  // guarda otra copia de quién cerró, cuándo ni por qué.
-  const closure = await t.run(
+  // Solo un Administrador vigente migra, y un intento rechazado no escribe.
+  const asStudent = t.withIdentity(identityFor("ti165-mig-est", "ti165mig@alu.uct.cl"));
+  await expect(
+    asStudent.mutation(internal.operations.migrations.migrateRetiredFields, {
+      table: "requests",
+      paginationOpts: page,
+    }),
+  ).rejects.toThrow("No autorizado");
+  expect(await audit("requests")).toMatchObject({ pending: 3 });
+
+  const asAdmin = t.withIdentity(identityFor("ti165-mig-adm", "ti165admin@uct.cl"));
+  const migrate = async (table: Parameters<typeof audit>[0]) =>
+    await asAdmin.mutation(internal.operations.migrations.migrateRetiredFields, {
+      table,
+      paginationOpts: page,
+    });
+
+  // Antes de copiar el cierre, sus transiciones no se borran.
+  expect(await migrate("accompanimentTransitions")).toMatchObject({ migrated: 1, kept: 2 });
+  expect(await migrate("accompaniments")).toMatchObject({ migrated: 1, kept: 0 });
+  expect(await migrate("accompanimentTransitions")).toMatchObject({ migrated: 2, kept: 0 });
+  expect(await migrate("requests")).toMatchObject({ migrated: 2, kept: 1 });
+  for (const table of [
+    "appointments",
+    "appointmentProfessionals",
+    "followUpRecords",
+    "followUpAgreements",
+    "followUpTasks",
+    "availabilityExceptions",
+  ] as const) {
+    expect(await migrate(table)).toMatchObject({ migrated: 1, kept: 0 });
+  }
+
+  const rows = await t.run(async (ctx) => ({
+    closed: await ctx.db.get(seeded.closed),
+    open: await ctx.db.get(seeded.open),
+    transitions: await ctx.db.query("accompanimentTransitions").take(10),
+    closedRequest: await ctx.db.get(seeded.closedRequest),
+    closingTransition: await ctx.db.get(seeded.closingTransition),
+    orphanRequest: await ctx.db.get(seeded.orphanRequest),
+    sentRequest: await ctx.db.get(seeded.sentRequest),
+    appointment: await ctx.db.get(appointmentId),
+    participant: await ctx.db.get(followUp.participant),
+    record: await ctx.db.get(followUp.record),
+    agreement: await ctx.db.get(followUp.agreement),
+    task: await ctx.db.get(followUp.task),
+    exception: await ctx.db.get(seeded.exception),
+  }));
+  // El cierre de TI2-152 queda en el acompañamiento, como pide el MER.
+  expect(rows.closed).toMatchObject({
+    closedById: professional,
+    closedAt: TI83_MONDAY + 1,
+    closureReason: "Motivo ficticio del cierre",
+  });
+  expect(rows.open).not.toHaveProperty("closedAt");
+  expect(rows.transitions).toHaveLength(0);
+  // El motivo de la solicitud pasa a la transición del cierre, de donde lo lee el detalle.
+  expect(rows.closingTransition?.reason).toBe("Motivo ficticio de la solicitud");
+  expect(rows.closedRequest).not.toHaveProperty("closureReason");
+  expect(rows.closedRequest).not.toHaveProperty("idempotencyKey");
+  expect(rows.sentRequest).not.toHaveProperty("idempotencyKey");
+  // Sin transición donde copiarlo, el motivo se conserva y la auditoría lo sigue contando.
+  expect(rows.orphanRequest?.closureReason).toBe("Motivo ficticio sin transición");
+  expect(rows.appointment).not.toHaveProperty("appliedAccessNeeds");
+  expect(rows.appointment).not.toHaveProperty("onlineSupports");
+  expect(rows.participant).not.toHaveProperty("startsAt");
+  expect(rows.participant).not.toHaveProperty("endsAt");
+  expect(rows.record).not.toHaveProperty("version");
+  expect(rows.agreement).not.toHaveProperty("entryId");
+  expect(rows.task).not.toHaveProperty("entryId");
+  expect(rows.exception).not.toHaveProperty("reason");
+
+  expect(await audit("requests")).toMatchObject({
+    pending: 1,
+    samplePendingIds: [seeded.orphanRequest],
+  });
+  for (const table of [
+    "accompaniments",
+    "accompanimentTransitions",
+    "appointments",
+    "appointmentProfessionals",
+    "followUpRecords",
+    "followUpAgreements",
+    "followUpTasks",
+    "availabilityExceptions",
+  ] as const) {
+    expect(await audit(table)).toMatchObject({ pending: 0 });
+  }
+
+  // Repetirla no escribe de nuevo.
+  expect(await migrate("accompaniments")).toMatchObject({ migrated: 0, kept: 0 });
+  expect(await migrate("requests")).toMatchObject({ migrated: 0, kept: 1 });
+});
+
+test("TI2-152: el cierre queda en el propio acompañamiento y pausar solo cambia el estado", async () => {
+  const t = convexTest(schema, modules);
+  const { professional, accompanimentId } = await seedTi118Appointment(t, "estado-a");
+  const other = await seedTi118Appointment(t, "estado-b");
+
+  await t.run(async (ctx) => {
+    await accompanimentStatusWriter(ctx).persistStatusChange(accompanimentId, { to: "paused" });
+  });
+  const paused = await t.run(async (ctx) => await ctx.db.get(accompanimentId));
+  expect(paused?.status).toBe("paused");
+  for (const field of ["closedById", "closedAt", "closureReason"]) {
+    expect(paused).not.toHaveProperty(field);
+  }
+
+  await t.run(async (ctx) => {
+    const writer = accompanimentStatusWriter(ctx);
+    await writer.persistStatusChange(accompanimentId, {
+      to: "closed",
+      closure: {
+        closedById: professional,
+        closedAt: TI83_MONDAY_10H,
+        closureReason: "Objetivo ficticio cumplido",
+      },
+    });
+    await writer.persistStatusChange(other.accompanimentId, {
+      to: "closed",
+      closure: { closedById: other.professional, closedAt: TI83_MONDAY_9H },
+    });
+  });
+  const closed = await t.run(async (ctx) => [
+    await ctx.db.get(accompanimentId),
+    await ctx.db.get(other.accompanimentId),
+  ]);
+  expect(closed[0]).toMatchObject({
+    status: "closed",
+    closedById: professional,
+    closedAt: TI83_MONDAY_10H,
+    closureReason: "Objetivo ficticio cumplido",
+  });
+  // Sin motivo, el campo no se escribe.
+  expect(closed[1]).toMatchObject({
+    status: "closed",
+    closedById: other.professional,
+    closedAt: TI83_MONDAY_9H,
+  });
+  expect(closed[1]).not.toHaveProperty("closureReason");
+});
+
+const TI151_TIME_ZONE = "America/Santiago";
+const TI151_RECEIVED_AT = Date.UTC(2026, 10, 4, 15, 0, 0); // 2026-11-04 12:00 America/Santiago
+const TI151_DAY_MS = 24 * 60 * 60 * 1000;
+
+test("TI2-151: solicitudes de derechos persisten índices por titular, estado y plazo, prórroga, respuesta y constancia de envío", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-est",
+    email: "ti151.est@alu.uct.cl",
+    role: "student",
+  });
+  const professional = await seedUser(t, {
+    subject: "ti151-prof",
+    email: "ti151.prof@uct.cl",
+    role: "professional",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-admin",
+    email: "ti151.admin@uct.cl",
+    role: "admin",
+  });
+
+  const accessCreated = await t.run(
     async (ctx) =>
-      await ctx.db
-        .query("accompanimentTransitions")
-        .withIndex("by_accompanimentId_and_occurredAt", (q) =>
-          q.eq("accompanimentId", accompanimentId),
-        )
-        .order("desc")
-        .first(),
+      await createPrivacyRequest(ctx, {
+        kind: "access",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
   );
-  expect(closure).toMatchObject({ to: "closed", actorId: professional });
-  const accompaniment = await t.run(async (ctx) => await ctx.db.get(accompanimentId));
-  expect(accompaniment?.status).toBe("closed");
-  expect(Object.keys(accompaniment ?? {}).sort()).toEqual(
-    ["_creationTime", "_id", "accessNeeds", "objective", "status", "studentId"].sort(),
+  expect(accessCreated.status).toBe("created");
+  if (accessCreated.status !== "created") throw new Error("expected created");
+  expect(accessCreated.request).toMatchObject({
+    kind: "access",
+    status: "received",
+    requesterId: student,
+    requesterRole: "student",
+    channel: "student_app",
+    responseRule: "calendar_30",
+    receivedDate: "2026-11-04",
+    initialDueDate: "2026-12-04",
+  });
+
+  const blockingCreated = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: professional,
+        receivedAt: TI151_RECEIVED_AT + 1000,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  expect(blockingCreated.status).toBe("created");
+  if (blockingCreated.status !== "created") throw new Error("expected created");
+  expect(blockingCreated.request).toMatchObject({
+    kind: "blocking",
+    channel: "institutional_channel",
+    responseRule: "business_2",
+    initialDueDate: "2026-11-06",
+  });
+
+  // Índices por titular, estado y plazo ordenan correctamente.
+  const byStudent = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByRequester(ctx, student, { numItems: 10, cursor: null }),
+  );
+  expect(byStudent.page.map((item) => item.id)).toEqual([accessCreated.requestId]);
+
+  const byReceived = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByStatus(ctx, "received", { numItems: 10, cursor: null }),
+  );
+  // Bloqueo (2 días hábiles) vence antes que acceso (30 días corridos).
+  expect(byReceived.page.map((item) => item.id)).toEqual([
+    blockingCreated.requestId,
+    accessCreated.requestId,
+  ]);
+
+  const dueSoon = await t.run(
+    async (ctx) =>
+      await paginatePrivacyRequestsByDeadline(
+        ctx,
+        { numItems: 10, cursor: null },
+        { dueBefore: accessCreated.request.dueAt },
+      ),
+  );
+  expect(dueSoon.page.map((item) => item.id)).toEqual([blockingCreated.requestId]);
+
+  // Prórroga única: funciona en acceso, actualiza dueAt, y se rechaza en bloqueo o repetición.
+  const extended = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: accessCreated.requestId,
+        days: 15,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        reason: "Verificación de antecedentes en curso",
+      }),
+  );
+  expect(extended.status).toBe("applied");
+  if (extended.status !== "applied") throw new Error("expected applied");
+  expect(extended.request.extension).toMatchObject({
+    days: 15,
+    extendedUntilDate: "2026-12-19",
+    extendedBy: admin,
+  });
+  expect(extended.request.dueAt).toBe(extended.request.extension?.extendedUntilAt);
+  expect(extended.request.dueAt).toBeGreaterThan(extended.request.initialDueAt);
+
+  const duplicateExtension = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: accessCreated.requestId,
+        days: 5,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        reason: "Segunda prórroga no permitida",
+      }),
+  );
+  expect(duplicateExtension).toEqual({ status: "rejected", cause: "extension_already_applied" });
+
+  const blockingExtension = await t.run(
+    async (ctx) =>
+      await extendPrivacyRequestDeadline(ctx, {
+        requestId: blockingCreated.requestId,
+        days: 5,
+        extendedBy: admin,
+        extendedAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        reason: "Bloqueo no admite prórroga",
+      }),
+  );
+  expect(blockingExtension).toEqual({ status: "rejected", cause: "extension_not_allowed" });
+
+  // Transiciones, respuesta fundada y constancia de envío inmutable.
+  const beforeResolvedDelivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "student_app",
+        sentAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        recordedBy: admin,
+        reference: "FOLIO-0001",
+      }),
+  );
+  expect(beforeResolvedDelivery).toEqual({ status: "not_resolved" });
+
+  const inReview = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(inReview.status).toBe("applied");
+  if (inReview.status !== "applied") throw new Error("expected applied");
+  expect(inReview.request.responsibleId).toBe(admin);
+
+  const respondedAt = TI151_RECEIVED_AT + 3 * TI151_DAY_MS;
+  const resolved = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: respondedAt,
+        response: {
+          outcome: "granted",
+          reasons: "Se entrega copia resumida de los datos propios registrados en el prototipo.",
+          responsibleId: admin,
+        },
+      }),
+  );
+  expect(resolved.status).toBe("applied");
+
+  // Una solicitud resuelta no se reabre ni sobrescribe su respuesta.
+  const reopenAttempt = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: accessCreated.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: respondedAt + 1000,
+      }),
+  );
+  expect(reopenAttempt).toEqual({ status: "rejected", cause: "transition_not_allowed" });
+
+  const sentAt = Date.UTC(2026, 10, 10, 13, 0, 0); // 2026-11-10 10:00 America/Santiago
+  const delivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "student_app",
+        sentAt,
+        recordedBy: admin,
+        reference: "FOLIO-2026-0001",
+      }),
+  );
+  expect(delivery.status).toBe("recorded");
+  if (delivery.status !== "recorded") throw new Error("expected recorded");
+  expect(delivery.receipt).toMatchObject({
+    channel: "student_app",
+    sentAt,
+    recordedBy: admin,
+    reference: "FOLIO-2026-0001",
+    agencyClaimDueDate: "2026-12-22",
+  });
+
+  // La constancia de envío no se sobrescribe.
+  const duplicateDelivery = await t.run(
+    async (ctx) =>
+      await recordPrivacyResponseDelivery(ctx, {
+        requestId: accessCreated.requestId,
+        channel: "email",
+        sentAt: sentAt + 1000,
+        recordedBy: admin,
+        reference: "FOLIO-2026-0002",
+      }),
+  );
+  expect(duplicateDelivery).toEqual({ status: "already_recorded" });
+
+  const stored = await t.run(async (ctx) => await getPrivacyRequest(ctx, accessCreated.requestId));
+  expect(stored?.response).toMatchObject({
+    outcome: "granted",
+    responsibleId: admin,
+    respondedAt,
+  });
+  expect(stored?.deliveryReceipt).toMatchObject({
+    channel: "student_app",
+    reference: "FOLIO-2026-0001",
+  });
+});
+
+test("TI2-151: bloqueos temporales conservan alcance, coherencia con temporaryBlockUntil y consulta activa por índice", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-blk-est",
+    email: "ti151.blk.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-blk-admin",
+    email: "ti151.blk.admin@uct.cl",
+    role: "admin",
+  });
+
+  const created = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (created.status !== "created") throw new Error("expected created");
+
+  await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: created.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+
+  const blockStartsAt = TI151_RECEIVED_AT + 2000;
+  const blockEndsAt = blockStartsAt + 10 * TI151_DAY_MS;
+  const resolved = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: created.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: blockStartsAt,
+        response: {
+          outcome: "granted",
+          reasons: "Se concede bloqueo temporal mientras se revisa la rectificación.",
+          responsibleId: admin,
+          temporaryBlockUntil: blockEndsAt,
+        },
+      }),
+  );
+  expect(resolved.status).toBe("applied");
+
+  // Un bloqueo vinculado a la solicitud rechaza un vencimiento distinto al de la respuesta.
+  const mismatch = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: created.requestId,
+        scope: "all_personal_data",
+        startsAt: blockStartsAt,
+        endsAt: blockEndsAt + TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Bloqueo temporal concedido en resolución",
+      }),
+  );
+  expect(mismatch).toEqual({ status: "deadline_mismatch" });
+
+  const fullBlock = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: created.requestId,
+        scope: "all_personal_data",
+        startsAt: blockStartsAt,
+        endsAt: blockEndsAt,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Bloqueo temporal concedido en resolución",
+      }),
+  );
+  expect(fullBlock.status).toBe("created");
+  if (fullBlock.status !== "created") throw new Error("expected created");
+
+  const scopedBlock = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        scope: "appointments",
+        startsAt: blockStartsAt,
+        endsAt: blockStartsAt + 3 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: blockStartsAt,
+        reason: "Suspensión acotada a agenda durante revisión",
+      }),
+  );
+  expect(scopedBlock.status).toBe("created");
+  if (scopedBlock.status !== "created") throw new Error("expected created");
+
+  // Consulta por índice activo: antes de los 3 días aparecen ambos; a los 4 días solo el más largo.
+  const activeEarly = await t.run(
+    async (ctx) =>
+      await listActivePrivacyBlocksForSubject(ctx, student, blockStartsAt + TI151_DAY_MS),
+  );
+  expect(activeEarly.map((b) => b.scope)).toEqual(["appointments", "all_personal_data"]);
+
+  const activeLater = await t.run(
+    async (ctx) =>
+      await listActivePrivacyBlocksForSubject(ctx, student, blockStartsAt + 4 * TI151_DAY_MS),
+  );
+  expect(activeLater.map((b) => b.scope)).toEqual(["all_personal_data"]);
+
+  const byRequest = await t.run(
+    async (ctx) => await listPrivacyBlocksByRequest(ctx, created.requestId),
+  );
+  expect(byRequest.map((b) => b.id)).toEqual([fullBlock.blockId]);
+
+  // Levantar el bloqueo lo saca de los activos y es idempotente.
+  const lifted = await t.run(
+    async (ctx) =>
+      await liftPrivacyBlock(ctx, {
+        blockId: fullBlock.blockId,
+        liftedBy: admin,
+        liftedAt: blockStartsAt + 5 * TI151_DAY_MS,
+        liftReason: "Rectificación completada antes del vencimiento",
+      }),
+  );
+  expect(lifted).toEqual({ status: "lifted", blockId: fullBlock.blockId });
+
+  const liftedAgain = await t.run(
+    async (ctx) =>
+      await liftPrivacyBlock(ctx, {
+        blockId: fullBlock.blockId,
+        liftedBy: admin,
+        liftedAt: blockStartsAt + 6 * TI151_DAY_MS,
+        liftReason: "Reintento",
+      }),
+  );
+  expect(liftedAgain).toEqual({ status: "already_lifted", blockId: fullBlock.blockId });
+
+  const globalActive = await t.run(
+    async (ctx) =>
+      await paginateActivePrivacyBlocks(ctx, blockStartsAt + 5 * TI151_DAY_MS, {
+        numItems: 10,
+        cursor: null,
+      }),
+  );
+  expect(globalActive.page).toEqual([]);
+});
+
+test("TI2-151: reglas de conservación sin plazos inventados y excepciones por obligación o procedimiento abierto", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-ret-est",
+    email: "ti151.ret.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-ret-admin",
+    email: "ti151.ret.admin@uct.cl",
+    role: "admin",
+  });
+
+  // Regla inicial sin plazo inventado (`retentionDays` ausente = pendiente de UCT).
+  const initialRule = await t.run(
+    async (ctx) =>
+      await upsertPrivacyRetentionRule(ctx, {
+        category: "accompaniments",
+        disposition: "anonymize",
+        legalBasisNote: "Pendiente de definición institucional (ADR-0003)",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(initialRule.status).toBe("saved");
+  if (initialRule.status !== "saved") throw new Error("expected saved");
+  expect(initialRule.rule.retentionDays).toBeUndefined();
+
+  // Actualizar la misma categoría no duplica filas.
+  const configuredRule = await t.run(
+    async (ctx) =>
+      await upsertPrivacyRetentionRule(ctx, {
+        category: "accompaniments",
+        retentionDays: 365,
+        disposition: "anonymize",
+        legalBasisNote: "Acuerdo ficticio de prueba UCT",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+  expect(configuredRule.status).toBe("saved");
+  if (configuredRule.status !== "saved") throw new Error("expected saved");
+  expect(configuredRule.ruleId).toBe(initialRule.ruleId);
+
+  const readRule = await t.run(
+    async (ctx) => await readPrivacyRetentionRule(ctx, "accompaniments"),
+  );
+  expect(readRule).toMatchObject({
+    category: "accompaniments",
+    retentionDays: 365,
+    disposition: "anonymize",
+  });
+  const allRules = await t.run(async (ctx) => await listPrivacyRetentionRules(ctx));
+  expect(allRules).toHaveLength(1);
+
+  // Excepción por obligación legal (toda la categoría) y por procedimiento abierto (titular + solicitud).
+  const privacyReq = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "erasure",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (privacyReq.status !== "created") throw new Error("expected created");
+
+  const legalHold = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "legal_obligation",
+        category: "accompaniments",
+        reference: "RES-UCT-FICTICIA-01",
+        startsAt: TI151_RECEIVED_AT,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(legalHold.status).toBe("created");
+
+  const procedureHold = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        privacyRequestId: privacyReq.requestId,
+        reference: "SOL-DERECHOS-FICTICIA-01",
+        startsAt: TI151_RECEIVED_AT,
+        expiresAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+      }),
+  );
+  expect(procedureHold.status).toBe("created");
+  if (procedureHold.status !== "created") throw new Error("expected created");
+
+  const activeByCategory = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForCategory(
+        ctx,
+        "accompaniments",
+        TI151_RECEIVED_AT + TI151_DAY_MS,
+      ),
+  );
+  expect(activeByCategory).toHaveLength(2);
+
+  const activeBySubject = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForSubject(ctx, student, TI151_RECEIVED_AT + TI151_DAY_MS),
+  );
+  expect(activeBySubject.map((item) => item.id)).toEqual([procedureHold.exceptionId]);
+
+  const byPrivacyReq = await t.run(
+    async (ctx) => await listRetentionExceptionsByPrivacyRequest(ctx, privacyReq.requestId),
+  );
+  expect(byPrivacyReq.map((item) => item.id)).toEqual([procedureHold.exceptionId]);
+
+  const liftedException = await t.run(
+    async (ctx) =>
+      await liftPrivacyRetentionException(ctx, {
+        exceptionId: procedureHold.exceptionId,
+        liftedBy: admin,
+        liftedAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        liftReason: "Solicitud resuelta y cerrada",
+      }),
+  );
+  expect(liftedException).toEqual({
+    status: "lifted",
+    exceptionId: procedureHold.exceptionId,
+  });
+
+  const remainingBySubject = await t.run(
+    async (ctx) =>
+      await listActiveRetentionExceptionsForSubject(
+        ctx,
+        student,
+        TI151_RECEIVED_AT + 3 * TI151_DAY_MS,
+      ),
+  );
+  expect(remainingBySubject).toEqual([]);
+});
+
+test("TI2-151: el esquema rechaza contenido sensible en campos de control y no agrega otra bitácora", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-sens-est",
+    email: "ti151.sens.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-sens-admin",
+    email: "ti151.sens.admin@uct.cl",
+    role: "admin",
+  });
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRequests", {
+        kind: "access",
+        status: "received",
+        requesterId: student,
+        requesterRole: "student",
+        channel: "student_app",
+        receivedAt: TI151_RECEIVED_AT,
+        version: "v1",
+        responseRule: "calendar_30",
+        receivedDate: "2026-11-04",
+        initialDueDate: "2026-12-04",
+        initialDueAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        dueAt: TI151_RECEIVED_AT + 30 * TI151_DAY_MS,
+        deadlineTimeZone: TI151_TIME_ZONE,
+        deadlineHolidays: [],
+        updatedAt: TI151_RECEIVED_AT,
+        accessNeeds: "No permitido en campos de control",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyBlocks", {
+        subjectId: student,
+        scope: "appointments",
+        startsAt: TI151_RECEIVED_AT,
+        endsAt: TI151_RECEIVED_AT + TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+        reason: "Control",
+        clinicalNotes: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRetentionRules", {
+        category: "follow_up",
+        disposition: "delete",
+        updatedBy: admin,
+        updatedAt: TI151_RECEIVED_AT,
+        diagnosis: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  await expect(
+    t.run(async (ctx) => {
+      await ctx.db.insert("privacyRetentionExceptions", {
+        kind: "legal_obligation",
+        category: "follow_up",
+        reference: "RES-01",
+        startsAt: TI151_RECEIVED_AT,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT,
+        rut: "No permitido",
+      } as never);
+    }),
+  ).rejects.toThrow(/Validator error/i);
+
+  // No se crea otra tabla de bitácora: solo existe la auditoría de TI2-128.
+  const auditTables = Object.keys(schema.tables).filter((name) => /audit/i.test(name));
+  expect(auditTables).toEqual(["appointmentAuditEvents"]);
+});
+
+test("TI2-151: un bloqueo vinculado no se crea sobre solicitud de bloqueo abierta ni denegada, y un bloqueo futuro no figura como vigente", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-blk-edge-est",
+    email: "ti151.blk.edge.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-blk-edge-admin",
+    email: "ti151.blk.edge.admin@uct.cl",
+    role: "admin",
+  });
+
+  const openBlocking = await t.run(
+    async (ctx) =>
+      await createPrivacyRequest(ctx, {
+        kind: "blocking",
+        requesterId: student,
+        receivedAt: TI151_RECEIVED_AT,
+        timeZone: TI151_TIME_ZONE,
+      }),
+  );
+  if (openBlocking.status !== "created") throw new Error("expected created");
+
+  await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: openBlocking.requestId,
+        to: "in_review",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 1000,
+      }),
+  );
+
+  // Escenario 1: no se puede vincular un bloqueo mientras la solicitud está en revisión.
+  const beforeResolution = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: openBlocking.requestId,
+        scope: "all_personal_data",
+        startsAt: TI151_RECEIVED_AT + 1000,
+        endsAt: TI151_RECEIVED_AT + 5 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 1000,
+        reason: "Intento previo a resolver",
+      }),
+  );
+  expect(beforeResolution).toEqual({ status: "request_not_granted" });
+
+  // Escenario 2: una solicitud de bloqueo denegada tampoco admite un bloqueo vinculado.
+  const denied = await t.run(
+    async (ctx) =>
+      await applyPrivacyRequestTransition(ctx, {
+        requestId: openBlocking.requestId,
+        to: "resolved",
+        actorId: admin,
+        occurredAt: TI151_RECEIVED_AT + 2000,
+        response: {
+          outcome: "denied",
+          reasons: "No corresponde bloqueo temporal en el caso ficticio.",
+          responsibleId: admin,
+        },
+      }),
+  );
+  expect(denied.status).toBe("applied");
+
+  const onDenied = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        requestId: openBlocking.requestId,
+        scope: "all_personal_data",
+        startsAt: TI151_RECEIVED_AT + 2000,
+        endsAt: TI151_RECEIVED_AT + 10 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2000,
+        reason: "Intento sobre solicitud denegada",
+      }),
+  );
+  expect(onDenied).toEqual({ status: "request_not_granted" });
+  expect(
+    await t.run(async (ctx) => await listPrivacyBlocksByRequest(ctx, openBlocking.requestId)),
+  ).toEqual([]);
+
+  // Escenario 3: un bloqueo con inicio futuro no aparece como vigente antes de startsAt.
+  const futureStartsAt = TI151_RECEIVED_AT + 7 * TI151_DAY_MS;
+  const futureEndsAt = TI151_RECEIVED_AT + 14 * TI151_DAY_MS;
+  const scheduled = await t.run(
+    async (ctx) =>
+      await createPrivacyBlock(ctx, {
+        subjectId: student,
+        scope: "follow_up",
+        startsAt: futureStartsAt,
+        endsAt: futureEndsAt,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 3000,
+        reason: "Bloqueo programado para fecha futura",
+      }),
+  );
+  expect(scheduled.status).toBe("created");
+  if (scheduled.status !== "created") throw new Error("expected created");
+
+  const day1 = TI151_RECEIVED_AT + TI151_DAY_MS;
+  expect(
+    await t.run(async (ctx) => await listActivePrivacyBlocksForSubject(ctx, student, day1)),
+  ).toEqual([]);
+  expect(
+    (
+      await t.run(
+        async (ctx) => await paginateActivePrivacyBlocks(ctx, day1, { numItems: 10, cursor: null }),
+      )
+    ).page,
+  ).toEqual([]);
+
+  expect(
+    (
+      await t.run(
+        async (ctx) => await listActivePrivacyBlocksForSubject(ctx, student, futureStartsAt),
+      )
+    ).map((b) => b.id),
+  ).toEqual([scheduled.blockId]);
+  expect(
+    (
+      await t.run(
+        async (ctx) =>
+          await paginateActivePrivacyBlocks(ctx, futureStartsAt, { numItems: 10, cursor: null }),
+      )
+    ).page.map((b) => b.id),
+  ).toEqual([scheduled.blockId]);
+});
+
+test("TI2-151: 50 excepciones vencidas sin levantar no ocultan una obligación legal vigente por categoría ni por titular", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, {
+    subject: "ti151-exp-est",
+    email: "ti151.exp.est@alu.uct.cl",
+    role: "student",
+  });
+  const admin = await seedUser(t, {
+    subject: "ti151-exp-admin",
+    email: "ti151.exp.admin@uct.cl",
+    role: "admin",
+  });
+
+  // 50 excepciones vencidas sin levantar en la misma categoría y para el mismo titular.
+  await t.run(async (ctx) => {
+    for (let i = 0; i < 50; i += 1) {
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        reference: `EXP-VENCIDA-${i + 1}`,
+        startsAt: TI151_RECEIVED_AT,
+        expiresAt: TI151_RECEIVED_AT + TI151_DAY_MS + i,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + i,
+      });
+    }
+  });
+
+  // Una obligación legal vigente (sin vencimiento) creada después de las 50 vencidas.
+  const activeLegal = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "legal_obligation",
+        category: "accompaniments",
+        subjectId: student,
+        reference: "OBL-LEGAL-VIGENTE",
+        startsAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(activeLegal.status).toBe("created");
+  if (activeLegal.status !== "created") throw new Error("expected created");
+
+  // Una excepción con vencimiento futuro también debe aparecer.
+  const activeFutureExpiry = await t.run(
+    async (ctx) =>
+      await createPrivacyRetentionException(ctx, {
+        kind: "open_procedure",
+        category: "accompaniments",
+        subjectId: student,
+        reference: "PROC-VIGENTE-FUTURO",
+        startsAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+        expiresAt: TI151_RECEIVED_AT + 20 * TI151_DAY_MS,
+        createdBy: admin,
+        createdAt: TI151_RECEIVED_AT + 2 * TI151_DAY_MS,
+      }),
+  );
+  expect(activeFutureExpiry.status).toBe("created");
+  if (activeFutureExpiry.status !== "created") throw new Error("expected created");
+
+  const now = TI151_RECEIVED_AT + 5 * TI151_DAY_MS;
+  const byCategory = await t.run(
+    async (ctx) => await listActiveRetentionExceptionsForCategory(ctx, "accompaniments", now),
+  );
+  expect(byCategory.map((e) => e.id).sort()).toEqual(
+    [activeLegal.exceptionId, activeFutureExpiry.exceptionId].sort(),
+  );
+
+  const bySubject = await t.run(
+    async (ctx) => await listActiveRetentionExceptionsForSubject(ctx, student, now),
+  );
+  expect(bySubject.map((e) => e.id).sort()).toEqual(
+    [activeLegal.exceptionId, activeFutureExpiry.exceptionId].sort(),
   );
 });

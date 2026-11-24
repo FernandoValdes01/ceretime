@@ -11,15 +11,13 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
-import {
-  notificationEventsForOnlineAccess,
-  type NotificationEvent,
-} from "../../domain/notifications/notification";
+import { notificationEventsForOnlineAccess } from "../../domain/notifications/notification";
 import type { ModalityPreference } from "../../domain/requests/request";
 import {
   authorizeAppointmentOnlineAccess,
   type AuthorizationReader,
 } from "../authorization/authorize";
+import type { NotificationEventRecorder } from "../notifications/ports";
 
 /**
  * Acceso privado de la atención en línea (TI2-142).
@@ -61,11 +59,6 @@ export interface OnlineAccessStore extends OnlineAccessReader {
   saveReference(appointmentId: string, reference: string): Promise<void>;
 }
 
-/** Registro de los eventos de aviso que produjo la política (TI2-105/TI2-118). */
-export interface NotificationEventRecorder {
-  record(events: readonly NotificationEvent[]): Promise<void>;
-}
-
 export interface OnlineAccessReadDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: OnlineAccessReader;
@@ -94,7 +87,7 @@ function conflict<T>(): ApiResult<T> {
 
 /**
  * Lee la atención y autoriza a quien llama. Una atención inexistente, ajena o
- * de un acompañamiento cerrado se deniega igual, sin revelar cuál faltó.
+ * de un acompañamiento no activo se deniega igual, sin revelar cuál faltó.
  */
 async function loadAuthorizedAppointment(
   deps: OnlineAccessReadDeps,

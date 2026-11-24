@@ -1,15 +1,15 @@
-import type { InstitutionalPopulation } from "../../../../convex/domain/auth/institutional_domain";
+import {
+  HOSTED_DOMAIN_BY_POPULATION,
+  type InstitutionalPopulation,
+} from "../../../../convex/domain/auth/institutional_domain";
 
 export type { InstitutionalPopulation };
 
 /** Las dos cuentas institucionales de Google: cada una pide al proveedor solo su dominio. */
-export const institutionalLogins = [
-  { population: "estudiante", emailSuffix: "@alu.uct.cl" },
-  { population: "personal", emailSuffix: "@uct.cl" },
-] as const satisfies readonly {
-  population: InstitutionalPopulation;
-  emailSuffix: string;
-}[];
+export const institutionalLogins = (["estudiante", "personal"] as const).map((population) => ({
+  population,
+  emailSuffix: `@${HOSTED_DOMAIN_BY_POPULATION[population]}`,
+}));
 
 export const authRoleIds = ["estudiante", "profesional", "practicante", "administrador"] as const;
 

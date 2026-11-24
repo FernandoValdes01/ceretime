@@ -41,6 +41,7 @@ import {
   requestReader,
   requestStore,
 } from "../infrastructure/requests/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { acceptedAccompanimentValidator } from "./accompaniments";
 import { unwrapApiResult } from "./session";
 
@@ -69,8 +70,11 @@ import { unwrapApiResult } from "./session";
  * (`requestStatusUnion`).
  *
  * TI2-143: suma el registro por canal oficial, el contacto y la aceptación
- * de una derivación de entrada y la derivación de salida. Ninguna envía
- * avisos ni se comunica con otra unidad: eso ocurre fuera de la aplicación.
+ * de una derivación de entrada y la derivación de salida. Ninguna se comunica
+ * con otra unidad: eso ocurre fuera de la aplicación.
+ *
+ * TI2-150: cada registro y cada cambio de estado deja su aviso en el sistema
+ * por `notificationEventRecorder`, en la misma mutation.
  */
 
 const requestBaseFields = {
@@ -145,15 +149,12 @@ const createRequestArgs = {
   modalityPreference: v.optional(modalityUnion),
   generalAvailability: v.optional(generalAvailabilityValidator),
   preferredAccessibleInformationChannel: v.optional(v.string()),
-  idempotencyKey: v.optional(v.string()),
 };
 
 /**
  * Registra la solicitud del Estudiante en estado `received`. Solo una
  * cuenta de Estudiante habilitada y vigente puede registrar; otro rol o una
- * cuenta sin vigencia recibe denegación. Con la forma completa, repetir el
- * envío con la misma `idempotencyKey` devuelve la misma solicitud sin crear
- * otra.
+ * cuenta sin vigencia recibe denegación.
  */
 export const createRequest = mutation({
   args: createRequestArgs,
@@ -162,7 +163,12 @@ export const createRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await registerRequest(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, submission: args },
       ),
     );
@@ -264,6 +270,7 @@ export const takeRequest = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -287,6 +294,7 @@ export const requestAdditionalInformation = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -311,6 +319,7 @@ export const acceptRequest = mutation({
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
           accompaniments: accompanimentOpener(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -331,7 +340,12 @@ export const cancelRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await cancelRequestUseCase(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
       ),
     );
@@ -353,6 +367,7 @@ export const closeRequestWithoutAccompaniment = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
@@ -374,7 +389,12 @@ export const respondToInformationRequest = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await respondToInformationRequestUseCase(
-        { students: activeStudentReader(ctx), requests: requestStore(ctx), now: Date.now },
+        {
+          students: activeStudentReader(ctx),
+          requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
       ),
     );
@@ -384,8 +404,8 @@ export const respondToInformationRequest = mutation({
 /**
  * Registra una solicitud recibida por canal oficial (TI2-143), a nombre del
  * Estudiante indicado por su correo institucional. Solo un Profesional con
- * cuenta vigente. El contenido sigue la forma completa de `createRequest`,
- * con su clave de idempotencia. `receivedAt` es cuándo la recibió CERETI y,
+ * cuenta vigente. El contenido sigue la forma completa de `createRequest`.
+ * `receivedAt` es cuándo la recibió CERETI y,
  * si falta, es el momento del registro. Con `originUnit` queda además como
  * derivación de entrada.
  */
@@ -406,6 +426,7 @@ export const registerOfficialRequest = mutation({
           professionals: activeProfessionalReader(ctx),
           students: activeStudentByEmailReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         {
@@ -482,6 +503,7 @@ export const referRequest = mutation({
         {
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
+          notifications: notificationEventRecorder(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },

@@ -30,9 +30,14 @@ function memoryDeps() {
         writes.push(`legacy ${studentId}`);
         return insert(studentId, accessNeeds);
       },
-      registerOnce: async (studentId, submission, receivedAt) => {
-        writes.push(`once ${studentId} ${submission.idempotencyKey} ${receivedAt}`);
+      registerComplete: async (studentId, submission, receivedAt) => {
+        writes.push(`complete ${studentId} ${receivedAt}`);
         return insert(studentId, submission.accessNeeds.map((need) => need.label).join("\n"));
+      },
+    },
+    notifications: {
+      record: async (events) => {
+        for (const event of events) writes.push(`notice ${event.kind} ${event.recipientId}`);
       },
     },
     now: () => NOW,
@@ -66,7 +71,7 @@ describe("registerRequest con puertos (TI2-181)", () => {
         createdAt: 1,
       },
     });
-    expect(writes).toEqual([`legacy ${STUDENT}`]);
+    expect(writes).toEqual([`legacy ${STUDENT}`, `notice request_received ${STUDENT}`]);
   });
 
   test.each([

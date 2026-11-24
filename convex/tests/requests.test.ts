@@ -1019,7 +1019,6 @@ async function snapshotOf(t: SchemaTest, requestId: Id<"requests">) {
       .take(2);
     return {
       status: request?.status,
-      closureReason: request?.closureReason,
       transitions,
       accompaniments: accompaniments.length,
     };
@@ -1087,8 +1086,7 @@ test("TI2-85: el Estudiante cancela su solicitud abierta y queda el registro con
     // y el motivo recortado; no se abre ningún acompañamiento
     const after = await snapshotOf(t, requestId);
     expect(after.status).toBe("cancelled");
-    // Cancelar no escribe razón de cierre: el motivo del Estudiante queda en el registro
-    expect(after.closureReason).toBeUndefined();
+    // El motivo del Estudiante queda solo en el registro del cambio
     expect(after.accompaniments).toBe(0);
     expect(after.transitions).toHaveLength(1);
     expect(after.transitions[0]).toMatchObject({
@@ -1201,7 +1199,6 @@ test("TI2-85: repetir la cancelación o cancelar una aceptada o cerrada se recha
     );
     expect(await snapshotOf(t, endedId)).toEqual({
       status,
-      closureReason: undefined,
       transitions: [],
       accompaniments: 0,
     });
@@ -1231,10 +1228,13 @@ test("TI2-85: el Profesional con toma cierra sin acompañamiento desde revisión
   expect(closed.status).toBe("closed_without_accompaniment");
   const afterReview = await snapshotOf(t, reviewed._id);
   expect(afterReview.status).toBe("closed_without_accompaniment");
-  // La razón vigente queda en la fila, recortada e igual a la del registro
-  expect(afterReview.closureReason).toBe(
-    "La necesidad corresponde a otra unidad de la universidad",
-  );
+  // La razón queda recortada en el registro del cambio y no en la fila (TI2-165)
+  expect(afterReview.transitions.at(-1)).toMatchObject({
+    to: "closed_without_accompaniment",
+    reason: "La necesidad corresponde a otra unidad de la universidad",
+  });
+  const closedRow = await t.run(async (ctx) => await ctx.db.get(reviewed._id));
+  expect(closedRow).not.toHaveProperty("closureReason");
   expect(afterReview.accompaniments).toBe(0);
   expect(afterReview.transitions.map((row) => `${row.from} -> ${row.to}`)).toEqual([
     "received -> under_review",
@@ -1362,7 +1362,6 @@ test("TI2-85: cerrar una recibida, una aceptada o una ya cancelada se rechaza si
     );
     expect(await snapshotOf(t, requestId)).toEqual({
       status,
-      closureReason: undefined,
       transitions: [],
       accompaniments: 0,
     });
@@ -1691,7 +1690,7 @@ test("TI2-141: la razón de cierre llega al detalle del Estudiante y los textos 
 });
 
 /*
- * TI2-141: envío completo con validaciones, límites e idempotencia.
+ * TI2-141: envío completo con validaciones y límites.
  */
 
 const FULL_SUBMISSION = {
@@ -1708,7 +1707,6 @@ const FULL_SUBMISSION = {
     preferredTimeRange: { from: "09:00", to: "12:00" },
   },
   preferredAccessibleInformationChannel: "Correo con letra grande",
-  idempotencyKey: "clave-ficticia-1",
 };
 
 /**
@@ -1764,45 +1762,27 @@ test("TI2-141: el envío completo guarda todos sus campos recortados y su proced
     modalityPreference: "online",
     generalAvailability: FULL_SUBMISSION.generalAvailability,
     preferredAccessibleInformationChannel: FULL_SUBMISSION.preferredAccessibleInformationChannel,
-    idempotencyKey: "clave-ficticia-1",
     provenance: { channel: "student" },
   });
+  expect(row).not.toHaveProperty("idempotencyKey");
   expect(row?.provenance?.receivedAt).toBeGreaterThan(0);
 });
 
-test("TI2-141: reintentar el envío con la misma clave no duplica; otra clave u otro estudiante sí crean", async () => {
+test("TI2-165: sin clave de idempotencia, cada envío completo crea su solicitud", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedProfile(t, "ti141-env-2", "student");
-  const otherId = await seedProfile(t, "ti141-env-3", "student");
   const asStudent = t.withIdentity(identityOf("ti141-env-2"));
 
   const first = await asStudent.mutation(api.presentation.requests.createRequest, FULL_SUBMISSION);
-  // Reintento, aunque cambie el contenido: la clave identifica el envío
-  const retry = await asStudent.mutation(api.presentation.requests.createRequest, {
-    ...FULL_SUBMISSION,
-    needSummary: "Otro texto del mismo envío",
-  });
-  expect(retry._id).toBe(first._id);
-  expect(await requestsOf(t, studentId)).toHaveLength(1);
-
-  // Envíos simultáneos con la misma clave dejan una sola fila
-  const simultaneous = await Promise.all(
-    [1, 2, 3].map(() =>
-      asStudent.mutation(api.presentation.requests.createRequest, {
-        ...FULL_SUBMISSION,
-        idempotencyKey: "clave-simultanea",
-      }),
-    ),
-  );
-  expect(new Set(simultaneous.map((item) => item._id)).size).toBe(1);
+  const second = await asStudent.mutation(api.presentation.requests.createRequest, FULL_SUBMISSION);
+  expect(second._id).not.toBe(first._id);
   expect(await requestsOf(t, studentId)).toHaveLength(2);
 
-  // La clave es del estudiante: la misma en otra cuenta es otro envío
-  const other = await t
-    .withIdentity(identityOf("ti141-env-3"))
-    .mutation(api.presentation.requests.createRequest, FULL_SUBMISSION);
-  expect(other._id).not.toBe(first._id);
-  expect(await requestsOf(t, otherId)).toHaveLength(1);
+  // Un cliente que todavía manda la clave recibe el rechazo del validador, sin escribir
+  await expect(submitAs(t, identityOf("ti141-env-2"), { idempotencyKey: "clave" })).rejects.toThrow(
+    "Validator error",
+  );
+  expect(await requestsOf(t, studentId)).toHaveLength(2);
 });
 
 test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas inválidas sin escribir", async () => {
@@ -1859,13 +1839,10 @@ test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas invá
     ],
     [{ preferredAccessibleInformationChannel: " " }, "Indica cómo prefieres recibir información."],
     [{ preferredAccessibleInformationChannel: "a".repeat(201) }, "supera el máximo permitido (200"],
-    [{ idempotencyKey: "  " }, "La clave del envío debe tener entre 1 y 128"],
-    [{ idempotencyKey: "a".repeat(129) }, "La clave del envío debe tener entre 1 y 128"],
     // Un campo ausente se nombra con el mismo texto que cuando llega vacío
     [{ needSummary: undefined }, "Describe la barrera o necesidad."],
     [{ modalityPreference: undefined }, "Indica si prefieres la modalidad presencial o en línea."],
     [{ generalAvailability: undefined }, "Selecciona al menos un día disponible."],
-    [{ idempotencyKey: undefined }, "La clave del envío debe tener entre 1 y 128"],
     [{ accessNeeds: "Texto suelto" }, "como lista junto con los demás datos"],
     [{ accessNeeds: undefined }, "como lista junto con los demás datos"],
   ];
@@ -1878,7 +1855,6 @@ test("TI2-141: el envío completo rechaza campos vacíos, excesos y formas invá
     needSummary: "a".repeat(2000),
     expectedOutcome: "a".repeat(2000),
     preferredAccessibleInformationChannel: "a".repeat(200),
-    idempotencyKey: "a".repeat(128),
   });
   expect(await requestsOf(t, studentId)).toHaveLength(1);
 });
@@ -2261,7 +2237,6 @@ test("TI2-143: el Profesional registra una solicitud recibida por canal oficial 
     status: "received",
     needSummary: "Necesito apoyo para seguir las clases en línea",
     provenance: { channel: "official_channel", registeredBy: proId, receivedAt: 1000 },
-    idempotencyKey: FULL_SUBMISSION.idempotencyKey,
   });
   expect(row?.incomingReferral).toBeUndefined();
   expect(row?.takenBy).toBeUndefined();
@@ -2274,51 +2249,28 @@ test("TI2-143: el Profesional registra una solicitud recibida por canal oficial 
 
   // Sin fecha de recepción, es el momento del registro
   const before = Date.now();
-  await registerOfficialAs(t, pro, "ti143-est-1@uct.cl", { idempotencyKey: "clave-ficticia-2" });
+  const secondCreated = await registerOfficialAs(t, pro, "ti143-est-1@uct.cl");
   const rows = await requestsOf(t, studentId);
-  const second = rows.find((request) => request.idempotencyKey === "clave-ficticia-2");
+  const second = rows.find((request) => request._id === secondCreated._id);
   expect(second?.provenance?.receivedAt).toBeGreaterThanOrEqual(before);
   expect(second?.provenance?.receivedAt).toBeLessThanOrEqual(Date.now());
 });
 
-test("TI2-143: repetir el registro por canal oficial con la misma clave no duplica", async () => {
+test("TI2-165: repetir el registro por canal oficial crea otra solicitud de quien registra", async () => {
   const t = convexTest(schema, modules);
-  await seedProfile(t, "ti143-pro-2", "professional");
+  const proId = await seedProfile(t, "ti143-pro-2", "professional");
   const studentId = await seedProfile(t, "ti143-est-2", "student");
   const pro = identityOf("ti143-pro-2");
 
+  // Sin clave de idempotencia no hay duplicado que detectar: cada registro es suyo
   const first = await registerOfficialAs(t, pro, "ti143-est-2@uct.cl");
-  const retry = await registerOfficialAs(t, pro, "ti143-est-2@uct.cl", {
-    needSummary: "Otro texto ficticio",
-  });
-  expect(retry._id).toEqual(first._id);
-  expect(await requestsOf(t, studentId)).toHaveLength(1);
-});
-
-test("TI2-143: una clave que ya usó otra persona no entrega esa solicitud a quien registra", async () => {
-  const t = convexTest(schema, modules);
-  await seedProfile(t, "ti143-pro-2a", "professional");
-  await seedProfile(t, "ti143-pro-2b", "professional");
-  const studentId = await seedProfile(t, "ti143-est-2a", "student");
-  const email = "ti143-est-2a@uct.cl";
-  const duplicated = CONFLICT(
-    "Ya existe otra solicitud de este estudiante con esa clave de envío. Genera una clave nueva.",
-  );
-
-  // El Estudiante envió la suya: un Profesional sin toma no la recibe por repetir la clave
-  await submitAs(t, identityOf("ti143-est-2a"));
-  expect(await publicErrorOf(registerOfficialAs(t, identityOf("ti143-pro-2a"), email))).toEqual(
-    duplicated,
-  );
-
-  // Tampoco la que registró otro Profesional
-  await registerOfficialAs(t, identityOf("ti143-pro-2a"), email, { idempotencyKey: "clave-2a" });
-  expect(
-    await publicErrorOf(
-      registerOfficialAs(t, identityOf("ti143-pro-2b"), email, { idempotencyKey: "clave-2a" }),
-    ),
-  ).toEqual(duplicated);
-  expect(await requestsOf(t, studentId)).toHaveLength(2);
+  const second = await registerOfficialAs(t, pro, "ti143-est-2@uct.cl");
+  expect(second._id).not.toEqual(first._id);
+  const rows = await requestsOf(t, studentId);
+  expect(rows).toHaveLength(2);
+  for (const row of rows) {
+    expect(row.provenance).toMatchObject({ channel: "official_channel", registeredBy: proId });
+  }
 });
 
 test("TI2-143: solo un Profesional vigente registra por canal oficial, aunque los campos fallen", async () => {
