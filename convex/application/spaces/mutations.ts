@@ -8,12 +8,24 @@ import {
 } from "../../domain/spaces/space";
 import {
   SPACE_FIELDS_INVALID_ERROR_CODE,
+  conflictError,
   errResult,
   okResult,
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { authorizeSpaceCatalogManage, type AuthorizationReader } from "../authorization/authorize";
+import {
+  findAffectedAppointments,
+  notifySpaceImpact,
+  type ImpactedAppointmentInput,
+} from "../appointments/impact";
+import type {
+  AccompanimentNeedsReader,
+  AvailabilityReader,
+  CompatibilitySpaceSource,
+} from "../availability/ports";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import type { SpaceReader, SpaceWriter } from "./ports";
 
 /**
@@ -46,6 +58,52 @@ export type ManagedSpace = {
 };
 
 type ManageStore = SpaceReader & SpaceWriter;
+
+/**
+ * Impacto de un cambio de sala sobre atenciones futuras (TI2-156).
+ *
+ * Revalida las futuras que usan la sala con la misma regla de reserva. Si la
+ * lectura se trunca, rechaza con `conflict` para no avisar a medias.
+ */
+export interface SpaceChangeImpactDeps {
+  readonly future: {
+    listFutureBySpace(
+      spaceId: string,
+      now: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
+  };
+  readonly auth: AuthorizationReader;
+  readonly availability: AvailabilityReader;
+  readonly needs: AccompanimentNeedsReader;
+  readonly compatibility: CompatibilitySpaceSource;
+  readonly notifications: NotificationEventRecorder;
+  readonly now?: () => number;
+}
+
+async function notifySpaceChangeImpact(
+  deps: SpaceChangeImpactDeps,
+  spaceId: string,
+  actorId: string,
+): Promise<ApiResult<null>> {
+  const now = deps.now === undefined ? Date.now() : deps.now();
+  const future = await deps.future.listFutureBySpace(spaceId, now);
+  if (!future.complete) return errResult(conflictError());
+  if (future.appointments.length === 0) return okResult(null);
+  const affected = await findAffectedAppointments(
+    {
+      auth: deps.auth,
+      availability: deps.availability,
+      needs: deps.needs,
+      compatibility: deps.compatibility,
+    },
+    future.appointments,
+  );
+  await notifySpaceImpact(deps.notifications, affected, { actorId, occurredAt: now });
+  return okResult(null);
+}
 
 function denied<T>(): ApiResult<T> {
   return errResult(unauthorizedError());
@@ -112,6 +170,10 @@ export async function createSpaceCatalogEntry(
  * Reemplaza los campos de una sala sin cambiar su vigencia. La sala
  * inexistente o de otra tabla se deniega igual, y la ubicación de otra
  * sala responde `conflict`.
+ *
+ * Con `impact` (TI2-156), tras escribir revalida las futuras que usan la sala
+ * y avisa a las que dejan de ser compatibles, sin borrarlas. El cambio de
+ * condiciones queda conservado en el catálogo e informado por avisos.
  */
 export async function updateSpaceCatalogEntry(
   auth: AuthorizationReader,
@@ -121,6 +183,7 @@ export async function updateSpaceCatalogEntry(
     readonly version: string;
     readonly spaceId: string;
   } & SpaceFields,
+  impact?: SpaceChangeImpactDeps,
 ): Promise<ApiResult<ManagedSpace>> {
   const denial = await authorizeOrDeny(auth, input.tokenIdentifier);
   if (denial !== null) return denial;
@@ -131,6 +194,14 @@ export async function updateSpaceCatalogEntry(
   if (existing === null) return denied();
   const updated = await store.updateSpace(input.spaceId, fields);
   if (updated.status === "error") return errResult(updated.error);
+  if (impact !== undefined) {
+    const grant = await authorizeSpaceCatalogManage(auth, {
+      tokenIdentifier: input.tokenIdentifier,
+    });
+    if (grant.status === "error") return denied();
+    const notified = await notifySpaceChangeImpact(impact, input.spaceId, grant.data.callerId);
+    if (notified.status === "error") return errResult(notified.error);
+  }
   const managed = await readManaged(store, input.spaceId);
   if (managed === null) return denied();
   return okResult(managed);
@@ -138,8 +209,11 @@ export async function updateSpaceCatalogEntry(
 
 /**
  * Retira o reactiva una sala sin borrarla ni su historial. La sala
- * inexistente o de otra tabla se deniega igual. Retirar no avisa a
- * atenciones confirmadas: eso es tarea del siguiente módulo (TI2-156).
+ * inexistente o de otra tabla se deniega igual.
+ *
+ * Con `impact` (TI2-156) avisa a las futuras afectadas, sin cancelación
+ * automática silenciosa: la atención confirmada nunca desaparece por un
+ * cambio de configuración.
  */
 export async function setSpaceCatalogActive(
   auth: AuthorizationReader,
@@ -150,6 +224,7 @@ export async function setSpaceCatalogActive(
     readonly spaceId: string;
     readonly isActive: boolean;
   },
+  impact?: SpaceChangeImpactDeps,
 ): Promise<ApiResult<ManagedSpace>> {
   const denial = await authorizeOrDeny(auth, input.tokenIdentifier);
   if (denial !== null) return denial;
@@ -158,6 +233,14 @@ export async function setSpaceCatalogActive(
   if (existing === null) return denied();
   const patched = await store.setSpaceActive(input.spaceId, input.isActive);
   if (patched.status === "error") return errResult(patched.error);
+  if (impact !== undefined) {
+    const grant = await authorizeSpaceCatalogManage(auth, {
+      tokenIdentifier: input.tokenIdentifier,
+    });
+    if (grant.status === "error") return denied();
+    const notified = await notifySpaceChangeImpact(impact, input.spaceId, grant.data.callerId);
+    if (notified.status === "error") return errResult(notified.error);
+  }
   const managed = await readManaged(store, input.spaceId);
   if (managed === null) return denied();
   return okResult(managed);

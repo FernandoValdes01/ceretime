@@ -80,6 +80,28 @@ export async function listActiveSpaceRows(
   };
 }
 
+/**
+ * Lee las salas retiradas, paginado (TI2-156, nota de revisión TI2-169).
+ *
+ * Usa el mismo índice `by_isActive` por igualdad: solo trae retiradas, sin
+ * filtrar en memoria. Nunca trunca en silencio.
+ */
+export async function listInactiveSpaceRows(
+  ctx: QueryCtx,
+  input: { readonly limit: number; readonly cursor: string | null },
+): Promise<SpaceCatalogRowPage> {
+  const result = await ctx.db
+    .query("spaces")
+    .withIndex("by_isActive", (q) => q.eq("isActive", false))
+    .order("asc")
+    .paginate({ numItems: input.limit, cursor: input.cursor });
+  return {
+    items: result.page,
+    hasMore: !result.isDone,
+    nextCursor: result.isDone ? null : result.continueCursor,
+  };
+}
+
 /** Contexto con lectura de base de datos (consultas y mutaciones). */
 type DbReader = QueryCtx | MutationCtx;
 

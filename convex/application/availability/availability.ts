@@ -19,6 +19,12 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import {
+  findAffectedAppointments,
+  notifyAvailabilityImpact,
+  type ImpactedAppointmentInput,
+} from "../appointments/impact";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import type { AccessNeed } from "../../domain/requests/request";
 import { assessCompatibility, type CompatibilityOption } from "../../domain/spaces/compatibility";
 import { toSpaceFields } from "../../domain/spaces/space";
@@ -97,6 +103,55 @@ function isValidSearchRange(from: string, to: string): boolean {
 export type PublishBlockInput = Omit<AvailabilityBlock, "id" | "professionalId" | "version">;
 
 /**
+ * Impacto de un cambio de disponibilidad sobre atenciones futuras (TI2-156).
+ *
+ * `future` lista las futuras vigentes del profesional; `needs` y
+ * `compatibility` revalidan cada una con la misma regla de reserva. Si la
+ * lectura se trunca (`complete: false`), el cambio se rechaza con `conflict`
+ * en vez de avisar a medias. `now` solo lo fijan las pruebas.
+ */
+export interface AvailabilityChangeImpactDeps {
+  readonly future: {
+    listFutureByProfessional(
+      professionalId: string,
+      now: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
+  };
+  readonly needs: AccompanimentNeedsReader;
+  readonly compatibility: CompatibilitySpaceSource;
+  readonly notifications: NotificationEventRecorder;
+  readonly now?: () => number;
+}
+
+async function notifyAvailabilityChangeImpact(
+  deps: AvailabilityChangeImpactDeps & {
+    readonly auth: AuthorizationReader;
+    readonly availability: AvailabilityReader;
+  },
+  professionalId: string,
+  actorId: string,
+): Promise<ApiResult<null>> {
+  const now = deps.now === undefined ? Date.now() : deps.now();
+  const future = await deps.future.listFutureByProfessional(professionalId, now);
+  if (!future.complete) return errResult(conflictError());
+  if (future.appointments.length === 0) return okResult(null);
+  const affected = await findAffectedAppointments(
+    {
+      auth: deps.auth,
+      availability: deps.availability,
+      needs: deps.needs,
+      compatibility: deps.compatibility,
+    },
+    future.appointments,
+  );
+  await notifyAvailabilityImpact(deps.notifications, affected, { actorId, occurredAt: now });
+  return okResult(null);
+}
+
+/**
  * Publica un bloque recurrente propio. El dueño sale del actor autorizado,
  * nunca del cliente. Requiere profesional vigente (TI2-86).
  */
@@ -117,6 +172,11 @@ export async function publishAvailabilityBlock(
  * Reemplaza la ventana de un bloque propio. El dueño se lee en el servidor
  * desde la fila guardada: un bloque ajeno o inexistente se deniega igual,
  * sin filtrar existencia.
+ *
+ * Con `impact` (TI2-156), tras escribir revalida las futuras del profesional
+ * y avisa a las que dejan de ser reservables, sin borrarlas. Si la lectura
+ * se trunca, responde `conflict` para que Presentación descarte también la
+ * escritura.
  */
 export async function updateAvailabilityBlock(
   auth: AuthorizationReader,
@@ -126,6 +186,7 @@ export async function updateAvailabilityBlock(
     readonly blockId: string;
     readonly block: PublishBlockInput;
   },
+  impact?: AvailabilityChangeImpactDeps,
 ): Promise<ApiResult<null>> {
   const existing = await store.getBlock(input.blockId);
   if (existing === null) return denied();
@@ -134,12 +195,21 @@ export async function updateAvailabilityBlock(
     professionalId: existing.professionalId,
   });
   if (grant.status === "error") return denied();
-  return store.updateBlock(input.blockId, input.block);
+  const written = await store.updateBlock(input.blockId, input.block);
+  if (written.status === "error" || impact === undefined) return written;
+  const notified = await notifyAvailabilityChangeImpact(
+    { ...impact, auth, availability: store },
+    existing.professionalId,
+    grant.data.callerId,
+  );
+  return notified.status === "error" ? notified : written;
 }
 
 /**
  * Activa o retira un bloque propio sin borrarlo. La reactivación exige que
  * la sala siga vigente; esa comprobación vive en el repositorio (TI2-95).
+ *
+ * Con `impact` (TI2-156) avisa como `updateAvailabilityBlock`, sin cancelar.
  */
 export async function setAvailabilityBlockActive(
   auth: AuthorizationReader,
@@ -149,6 +219,7 @@ export async function setAvailabilityBlockActive(
     readonly blockId: string;
     readonly isActive: boolean;
   },
+  impact?: AvailabilityChangeImpactDeps,
 ): Promise<ApiResult<null>> {
   const existing = await store.getBlock(input.blockId);
   if (existing === null) return denied();
@@ -157,7 +228,14 @@ export async function setAvailabilityBlockActive(
     professionalId: existing.professionalId,
   });
   if (grant.status === "error") return denied();
-  return store.setBlockActive(input.blockId, input.isActive);
+  const written = await store.setBlockActive(input.blockId, input.isActive);
+  if (written.status === "error" || impact === undefined) return written;
+  const notified = await notifyAvailabilityChangeImpact(
+    { ...impact, auth, availability: store },
+    existing.professionalId,
+    grant.data.callerId,
+  );
+  return notified.status === "error" ? notified : written;
 }
 
 /** Entrada de publicación de una excepción propia, sin profesional del cliente. */
@@ -186,11 +264,16 @@ export async function publishAvailabilityException(
 /**
  * Retira una excepción propia. Una excepción ajena o inexistente se deniega
  * igual, sin filtrar existencia.
+ *
+ * Con `impact` (TI2-156) avisa como los bloques: retirar una ventana agregada
+ * puede dejar futuras sin compatibilidad, y retirar una cancelación solo
+ * agrega disponibilidad.
  */
 export async function removeAvailabilityException(
   auth: AuthorizationReader,
   store: AvailabilityReader & AvailabilityWriter,
   input: { readonly tokenIdentifier: string | null; readonly exceptionId: string },
+  impact?: AvailabilityChangeImpactDeps,
 ): Promise<ApiResult<null>> {
   const existing = await store.getException(input.exceptionId);
   if (existing === null) return denied();
@@ -199,7 +282,14 @@ export async function removeAvailabilityException(
     professionalId: existing.professionalId,
   });
   if (grant.status === "error") return denied();
-  return store.removeException(input.exceptionId);
+  const written = await store.removeException(input.exceptionId);
+  if (written.status === "error" || impact === undefined) return written;
+  const notified = await notifyAvailabilityChangeImpact(
+    { ...impact, auth, availability: store },
+    existing.professionalId,
+    grant.data.callerId,
+  );
+  return notified.status === "error" ? notified : written;
 }
 
 /** Disponibilidad propia: bloques vigentes y excepciones del rango pedido. */

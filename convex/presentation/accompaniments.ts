@@ -6,6 +6,7 @@ import {
   updateAccompanimentAssignment,
   type AssignmentScheduler,
 } from "../application/accompaniments/commands";
+import { updateAccompanimentNeeds as updateAccompanimentNeedsUseCase } from "../application/accompaniments/needs";
 import {
   getAccompanimentDetail,
   getInternalNotesUseCase,
@@ -22,16 +23,21 @@ import {
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
+  accompanimentNeedsReader,
+  accompanimentNeedsWriter,
   accompanimentProfessionalsReader,
   accompanimentStatusWriter,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
 import {
   appointmentTransitionRepository,
+  futureAppointmentsReader,
   pendingAppointmentsReader,
 } from "../infrastructure/appointments/repository";
+import { availabilityReader } from "../infrastructure/availability/repository";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
+import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
 
@@ -415,5 +421,42 @@ export const closeAccompaniment = mutation({
       status: result.status,
       cancelledAppointments: result.cancelledAppointments,
     };
+  },
+});
+
+/**
+ * Actualiza las necesidades de acceso del estudiante (TI2-156).
+ *
+ * Solo el estudiante dueño, sobre un acompañamiento activo o en pausa. El
+ * cambio se aplica a atenciones futuras sin alterar lo registrado antes: las
+ * anteriores conservan su fila. Las futuras que dejan de ser compatibles se
+ * avisan a sus profesionales para coordinar una solución, sin cancelarlas.
+ */
+export const updateAccompanimentNeeds = mutation({
+  args: {
+    accompanimentId: v.id("accompaniments"),
+    accessNeeds: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { accompanimentId, accessNeeds }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await updateAccompanimentNeedsUseCase(
+        authorizationReader(ctx),
+        accompanimentNeedsWriter(ctx),
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          accompanimentId,
+          accessNeeds,
+        },
+        {
+          future: futureAppointmentsReader(ctx),
+          availability: availabilityReader(ctx),
+          needs: accompanimentNeedsReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
+      ),
+    );
   },
 });

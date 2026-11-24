@@ -19,8 +19,12 @@ import {
   authorizationReader,
   bookableProfessionalSource,
 } from "../infrastructure/accompaniments/repository";
-import { slotOccupancyReader } from "../infrastructure/appointments/repository";
+import {
+  futureAppointmentsReader,
+  slotOccupancyReader,
+} from "../infrastructure/appointments/repository";
 import { availabilityReader, availabilityWriter } from "../infrastructure/availability/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   availabilityExceptionKindUnion,
@@ -86,6 +90,12 @@ export const updateBlock = mutation({
         authorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, block },
+        {
+          future: futureAppointmentsReader(ctx),
+          needs: accompanimentNeedsReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
       ),
     );
   },
@@ -102,6 +112,12 @@ export const setBlockActive = mutation({
         authorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, isActive },
+        {
+          future: futureAppointmentsReader(ctx),
+          needs: accompanimentNeedsReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
       ),
     );
   },
@@ -142,6 +158,12 @@ export const removeException = mutation({
         authorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, exceptionId },
+        {
+          future: futureAppointmentsReader(ctx),
+          needs: accompanimentNeedsReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
       ),
     );
   },

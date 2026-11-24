@@ -1121,3 +1121,103 @@ export function appointmentAgendaReader(ctx: DbReader) {
     },
   };
 }
+
+// ── TI2-156: atenciones futuras afectadas por cambios de configuración ─────
+//
+// Lecturas para detectar atenciones confirmadas que un cambio de
+// disponibilidad, sala o necesidades puede dejar sin compatibilidad. Solo
+// futuras vigentes (`scheduled`/`rescheduled` con `startsAt` posterior al
+// instante del cambio): las anteriores no cambian y las terminales no se
+// avisan. Nunca trunca en silencio: sobre el tope responde `complete: false`
+// para que el caso de uso rechace en vez de avisar a medias.
+
+/** Atención futura con lo mínimo para evaluar compatibilidad y avisar. */
+export interface FutureActionableAppointment {
+  readonly id: string;
+  readonly accompanimentId: string;
+  readonly studentId: string;
+  readonly professionalId: string;
+  readonly modality: Doc<"appointments">["modality"];
+  readonly spaceId?: string;
+  readonly status: Doc<"appointments">["status"];
+  readonly startAt: number;
+  readonly endAt: number;
+  readonly additionalProfessionalIds: readonly string[];
+}
+
+async function toFutureActionable(
+  ctx: DbReader,
+  row: Doc<"appointments">,
+): Promise<FutureActionableAppointment> {
+  const additional = await additionalProfessionalIdsOf(ctx, row);
+  return {
+    id: row._id as string,
+    accompanimentId: row.accompanimentId as string,
+    studentId: row.studentId as string,
+    professionalId: row.professionalId as string,
+    modality: row.modality,
+    ...(row.spaceId === undefined ? {} : { spaceId: row.spaceId as string }),
+    status: row.status,
+    startAt: row.startsAt,
+    endAt: row.endsAt,
+    additionalProfessionalIds: additional.map((id) => id as string),
+  };
+}
+
+async function collectFutureActionable(
+  ctx: DbReader,
+  rows: Doc<"appointments">[],
+  now: number,
+): Promise<{ readonly complete: boolean; readonly appointments: FutureActionableAppointment[] }> {
+  if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+    return { complete: false, appointments: [] };
+  }
+  const appointments: FutureActionableAppointment[] = [];
+  for (const row of rows) {
+    if (!isCalendarActionableStatus(row.status)) continue;
+    if (row.startsAt <= now) continue;
+    appointments.push(await toFutureActionable(ctx, row));
+  }
+  return { complete: true, appointments };
+}
+
+/**
+ * Atenciones futuras por profesional, espacio o acompañamiento (TI2-156).
+ * Cumple por forma los puertos de impacto sin importar Aplicación. Un
+ * identificador de otra tabla responde como vacío con `complete: true`.
+ */
+export function futureAppointmentsReader(ctx: DbReader) {
+  return {
+    listFutureByProfessional: async (professionalId: string, now: number) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_professionalId_and_startsAt", (q) =>
+          q.eq("professionalId", id).gt("startsAt", now),
+        )
+        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
+      return await collectFutureActionable(ctx, rows, now);
+    },
+    listFutureBySpace: async (spaceId: string, now: number) => {
+      const id = ctx.db.normalizeId("spaces", spaceId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_spaceId_and_startsAt", (q) => q.eq("spaceId", id).gt("startsAt", now))
+        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
+      return await collectFutureActionable(ctx, rows, now);
+    },
+    listFutureByAccompaniment: async (accompanimentId: string, now: number) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_accompanimentId_and_startsAt", (q) =>
+          q.eq("accompanimentId", id).gt("startsAt", now),
+        )
+        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
+      return await collectFutureActionable(ctx, rows, now);
+    },
+  };
+}

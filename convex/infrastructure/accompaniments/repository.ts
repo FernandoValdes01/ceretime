@@ -572,6 +572,34 @@ export function accompanimentStatusWriter(ctx: MutationCtx) {
 }
 
 /**
+ * Escritura de necesidades de acceso del acompañamiento (TI2-156). Cumple por
+ * forma el puerto `AccompanimentNeedsWriter` sin importarlo. Solo cambia el
+ * texto `accessNeeds` para atenciones futuras: las anteriores conservan su
+ * fila y no se tocan.
+ */
+export async function patchAccompanimentAccessNeeds(
+  ctx: MutationCtx,
+  accompanimentId: string,
+  accessNeeds: string,
+): Promise<void> {
+  const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+  if (id === null) {
+    throw new Error("La actualización de necesidades referencia un acompañamiento inexistente.");
+  }
+  await ctx.db.patch(id, { accessNeeds });
+}
+
+/**
+ * Escritor de necesidades para Aplicación (TI2-156).
+ */
+export function accompanimentNeedsWriter(ctx: MutationCtx) {
+  return {
+    saveAccessNeeds: async (accompanimentId: string, accessNeeds: string) =>
+      await patchAccompanimentAccessNeeds(ctx, accompanimentId, accessNeeds),
+  };
+}
+
+/**
  * Lecturas de los profesionales de un acompañamiento (puerto
  * `AccompanimentProfessionalsReader`, TI2-165). Un identificador de otra
  * tabla responde igual que uno inexistente.
