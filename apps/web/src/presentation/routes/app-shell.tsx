@@ -30,7 +30,7 @@ export function SkipLink() {
   );
 }
 
-/** Destino de contenido de las páginas públicas (acceso, índice, denegado). */
+/** Destino de contenido de las páginas públicas (acceso, índice, denegado y no encontrado). */
 export function PublicMain({ children }: { children: ReactNode }) {
   return (
     <main id="contenido" className="app-shell__public" tabIndex={-1}>

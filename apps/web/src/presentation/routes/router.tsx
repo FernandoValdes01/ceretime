@@ -18,7 +18,7 @@ import { studentRoutes } from "./student-routes.ts";
  * - `/` índice, `/login?redirect=…` y `/denegado` son públicas.
  * - `/estudiante`, `/profesional`, `/practicante` y `/administrador` son
  *   layouts protegidos por rol; cada vista cuelga de su layout.
- * - Ruta desconocida: vuelve al índice, que deriva según sesión.
+ * - Ruta desconocida: muestra la página de no encontrado con una salida al inicio.
  *
  * Cómo agregar una ruta: define el `createRoute` en el archivo del área,
  * agrégalo a `addChildren` de ese layout y, si debe aparecer en la

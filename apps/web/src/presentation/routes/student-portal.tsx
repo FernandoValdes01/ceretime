@@ -54,7 +54,7 @@ export function StudentLayout({
 function StudentAccountUnavailable({ onRetry }: { onRetry: () => void }) {
   return (
     <section aria-labelledby="student-unavailable-title" className="student-portal__head">
-      <span className="student-portal__badge">Estudiante acompañado</span>
+      <span className="student-portal__badge">Estudiante</span>
       <h1 id="student-unavailable-title">Portal del Estudiante</h1>
       <p role="alert" className="student-portal__error">
         No pudimos preparar tu cuenta. Inténtalo de nuevo.
@@ -80,7 +80,7 @@ function StudentAccountUnavailable({ onRetry }: { onRetry: () => void }) {
 function StudentAccountNotEnabled() {
   return (
     <section aria-labelledby="student-not-enabled-title" className="student-portal__head">
-      <span className="student-portal__badge">Estudiante acompañado</span>
+      <span className="student-portal__badge">Estudiante</span>
       <h1 id="student-not-enabled-title">Tu cuenta no está habilitada</h1>
       <p className="student-portal__lead">
         Por ahora no puedes usar el portal del Estudiante con esta cuenta. Si crees que es un error,
@@ -163,6 +163,9 @@ export class StudentPanelErrorBoundary extends Component<
 }
 
 function StudentPanelContent() {
+  // La insignia dice solo el rol (TI2-185). La cuenta pendiente tiene su
+  // propia sección y el proceso se ve en cada fila de acompañamiento; la
+  // pantalla no anuncia «acompañado» antes de que exista uno.
   const session = useStudentSession();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const ready = session !== undefined;
@@ -176,7 +179,7 @@ function StudentPanelContent() {
   if (!ready) {
     return (
       <section aria-labelledby="student-home-title" className="student-portal__head">
-        <span className="student-portal__badge">Estudiante acompañado</span>
+        <span className="student-portal__badge">Estudiante</span>
         <h1 id="student-home-title">Portal del Estudiante</h1>
         <p role="status" className="student-portal__loading">
           Cargando tu resumen…
@@ -188,7 +191,7 @@ function StudentPanelContent() {
   if (session.status === "unauthenticated") {
     return (
       <section aria-labelledby="student-home-title" className="student-portal__head">
-        <span className="student-portal__badge">Estudiante acompañado</span>
+        <span className="student-portal__badge">Estudiante</span>
         <h1 id="student-home-title">Portal del Estudiante</h1>
         <p className="student-portal__lead">
           Vuelve al acceso e inicia sesión para ver tu resumen.
@@ -200,7 +203,7 @@ function StudentPanelContent() {
   return (
     <>
       <section aria-labelledby="student-home-title" className="student-portal__head">
-        <span className="student-portal__badge">Estudiante acompañado</span>
+        <span className="student-portal__badge">Estudiante</span>
         <h1 id="student-home-title" ref={headingRef} tabIndex={-1}>
           Portal del Estudiante
         </h1>
