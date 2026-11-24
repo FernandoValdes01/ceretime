@@ -123,8 +123,9 @@ function createAuthPort(): AuthPort {
 }
 
 // Punto único donde la app elige las implementaciones de cada puerto. Los datos siguen siendo
-// demostración local salvo la sesión (ingreso institucional, si hay Site URL), preferencias
-// (AsyncStorage) y voz (módulos nativos); conectar el resto de Convex se hace aquí.
+// demostración local salvo la sesión (ingreso institucional, si hay Site URL), la bandeja y los
+// acompañamientos del profesional (Convex con ingreso institucional), preferencias (AsyncStorage)
+// y voz (módulos nativos); conectar el resto de Convex se hace aquí.
 export const mobileDependencies = {
   ...createDataDependencies(),
   accessibilityPreferencesPort: createLocalAccessibilityPreferencesAdapter(),
