@@ -23,7 +23,7 @@ import {
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
-  accompanimentNeedsReader,
+  accompanimentNeedsAtDateReader,
   accompanimentNeedsWriter,
   accompanimentProfessionalsReader,
   accompanimentStatusWriter,
@@ -452,7 +452,7 @@ export const updateAccompanimentNeeds = mutation({
         {
           future: futureAppointmentsReader(ctx),
           availability: availabilityReader(ctx),
-          needs: accompanimentNeedsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           notifications: notificationEventRecorder(ctx),
         },
