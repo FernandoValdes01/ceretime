@@ -1,5 +1,5 @@
 /**
- * Entrega de avisos por canal (TI2-145).
+ * Entrega de avisos por canal (TI2-145, TI2-159).
  *
  * Dominio puro: no importa Convex ni proveedores. Un aviso persistido puede
  * intentarse por correo o push, y cada canal guarda su propio resultado e
@@ -7,8 +7,8 @@
  * fila por canal. Los códigos de error son estables y genéricos; nunca
  * contienen cuerpos, encabezados ni credenciales del proveedor.
  *
- * El envío real es TI2-159 (correo) y TI2-160 (push); esta forma solo fija lo
- * que la persistencia de TI2-145 necesita distinguir.
+ * TI2-159 agrega la política de reintento del correo (`deliveryRetryAt`); el
+ * push es TI2-160.
  */
 
 /** Canales de entrega declarados. */
@@ -35,13 +35,20 @@ export function isNotificationDeliveryStatus(value: string): value is Notificati
 }
 
 /**
- * Códigos públicos del fallo de entrega, sin detalles del proveedor. El
- * despacho puede reintentar cualquiera; solo distinguen por qué no se envió.
+ * Códigos públicos del fallo de entrega, sin detalles del proveedor. Solo
+ * distinguen por qué no se envió; `deliveryRetryAt` decide con ellos si el
+ * despacho vuelve a intentar. `not_authorized` es la autorización vencida o
+ * revocada del remitente (TI2-159): el aviso espera a que se vuelva a
+ * autorizar, sin perderse. `delivery_uncertain` marca una respuesta perdida
+ * tras invocar al proveedor: no se reintenta automáticamente para no enviar
+ * un segundo correo.
  */
 export const NOTIFICATION_DELIVERY_ERROR_VALUES = [
   "not_configured",
+  "not_authorized",
   "provider_unavailable",
   "invalid_destination",
+  "delivery_uncertain",
 ] as const;
 
 export type NotificationDeliveryError = (typeof NOTIFICATION_DELIVERY_ERROR_VALUES)[number];
@@ -53,13 +60,71 @@ export function isNotificationDeliveryError(value: string): value is Notificatio
 
 /**
  * Resultado persistido de un canal: un solo registro por aviso y canal.
- * `attempts` cuenta los intentos acumulados; no es un historial de textos.
+ * `attempts` cuenta los intentos acumulados; `providerFailureAttempts` cuenta
+ * solo los fallos temporales del proveedor para que los intentos previos sin
+ * credenciales ni autorización no agoten ese presupuesto.
  */
 export interface NotificationDeliveryState {
   readonly channel: NotificationDeliveryChannel;
   readonly status: NotificationDeliveryStatus;
   readonly attempts: number;
+  readonly providerFailureAttempts?: number;
   readonly lastAttemptAt?: number;
   readonly sentAt?: number;
   readonly errorCode?: NotificationDeliveryError;
+}
+
+/**
+ * Intentos máximos ante un proveedor no disponible. Con la espera creciente
+ * de `deliveryRetryAt` cubren cerca de una hora; después la entrega queda
+ * fallida con su código y deja de reintentarse sola.
+ */
+export const MAX_PROVIDER_UNAVAILABLE_ATTEMPTS = 6;
+
+/** Primera espera ante un proveedor no disponible; se duplica en cada intento. */
+const PROVIDER_RETRY_BASE_DELAY_MS = 60_000;
+
+/** Tope de la espera creciente ante un proveedor no disponible. */
+const PROVIDER_RETRY_MAX_DELAY_MS = 30 * 60_000;
+
+/**
+ * Espera entre intentos cuando falta configurar o volver a autorizar al
+ * remitente. No tiene tope de intentos: el aviso no se pierde y sale en el
+ * primer intento posterior a la nueva autorización.
+ */
+export const SENDER_SETUP_RETRY_DELAY_MS = 15 * 60_000;
+
+/**
+ * Instante desde el que la entrega puede volver a intentarse, o `null` si no
+ * se reintenta (TI2-159).
+ *
+ * Una entrega enviada no se repite. Una pendiente puede intentarse ya. Un
+ * destino inválido no mejora al reintentar. La configuración o autorización
+ * faltante espera a que el remitente se repare, sin agotar intentos. Un
+ * proveedor no disponible espera cada vez el doble, hasta
+ * `MAX_PROVIDER_UNAVAILABLE_ATTEMPTS`.
+ */
+export function deliveryRetryAt(state: NotificationDeliveryState): number | null {
+  if (state.status === "sent") return null;
+  const lastAttemptAt = state.lastAttemptAt ?? 0;
+  if (state.status === "pending") return lastAttemptAt;
+  switch (state.errorCode) {
+    case "invalid_destination":
+    case "delivery_uncertain":
+      return null;
+    case "not_configured":
+    case "not_authorized":
+      return lastAttemptAt + SENDER_SETUP_RETRY_DELAY_MS;
+    case "provider_unavailable":
+    case undefined: {
+      const providerAttempts = state.providerFailureAttempts ?? state.attempts;
+      if (providerAttempts >= MAX_PROVIDER_UNAVAILABLE_ATTEMPTS) return null;
+      const exponent = Math.max(providerAttempts - 1, 0);
+      const delay = Math.min(
+        PROVIDER_RETRY_BASE_DELAY_MS * 2 ** exponent,
+        PROVIDER_RETRY_MAX_DELAY_MS,
+      );
+      return lastAttemptAt + delay;
+    }
+  }
 }
