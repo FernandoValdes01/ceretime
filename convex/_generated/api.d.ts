@@ -29,6 +29,7 @@ import type * as application_calendar_calendar_link from "../application/calenda
 import type * as application_follow_up_commands from "../application/follow_up/commands.js";
 import type * as application_follow_up_ports from "../application/follow_up/ports.js";
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
+import type * as application_notifications_dispatch from "../application/notifications/dispatch.js";
 import type * as application_notifications_ports from "../application/notifications/ports.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_notifications from "../application/requests/notifications.js";
@@ -47,6 +48,7 @@ import type * as application_spaces_mutations from "../application/spaces/mutati
 import type * as application_spaces_ports from "../application/spaces/ports.js";
 import type * as application_spaces_queries from "../application/spaces/queries.js";
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as domain_accompaniments_accompaniment from "../domain/accompaniments/accompaniment.js";
 import type * as domain_accompaniments_intern_access from "../domain/accompaniments/intern_access.js";
 import type * as domain_accompaniments_practitioner_assignment from "../domain/accompaniments/practitioner_assignment.js";
@@ -90,6 +92,7 @@ import type * as infrastructure_availability_repository from "../infrastructure/
 import type * as infrastructure_calendar_google_calendar from "../infrastructure/calendar/google_calendar.js";
 import type * as infrastructure_calendar_repository from "../infrastructure/calendar/repository.js";
 import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
+import type * as infrastructure_notifications_gmail_sender from "../infrastructure/notifications/gmail_sender.js";
 import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
 import type * as infrastructure_privacy_repository from "../infrastructure/privacy/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
@@ -100,6 +103,7 @@ import type * as operations_assignments from "../operations/assignments.js";
 import type * as operations_calendar from "../operations/calendar.js";
 import type * as operations_fictitiousData from "../operations/fictitiousData.js";
 import type * as operations_migrations from "../operations/migrations.js";
+import type * as operations_notifications from "../operations/notifications.js";
 import type * as operations_requests from "../operations/requests.js";
 import type * as operations_users from "../operations/users.js";
 import type * as presentation_accompaniments from "../presentation/accompaniments.js";
@@ -140,6 +144,7 @@ declare const fullApi: ApiFromModules<{
   "application/follow_up/commands": typeof application_follow_up_commands;
   "application/follow_up/ports": typeof application_follow_up_ports;
   "application/follow_up/queries": typeof application_follow_up_queries;
+  "application/notifications/dispatch": typeof application_notifications_dispatch;
   "application/notifications/ports": typeof application_notifications_ports;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/notifications": typeof application_requests_notifications;
@@ -158,6 +163,7 @@ declare const fullApi: ApiFromModules<{
   "application/spaces/ports": typeof application_spaces_ports;
   "application/spaces/queries": typeof application_spaces_queries;
   auth: typeof auth;
+  crons: typeof crons;
   "domain/accompaniments/accompaniment": typeof domain_accompaniments_accompaniment;
   "domain/accompaniments/intern_access": typeof domain_accompaniments_intern_access;
   "domain/accompaniments/practitioner_assignment": typeof domain_accompaniments_practitioner_assignment;
@@ -201,6 +207,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/calendar/google_calendar": typeof infrastructure_calendar_google_calendar;
   "infrastructure/calendar/repository": typeof infrastructure_calendar_repository;
   "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;
+  "infrastructure/notifications/gmail_sender": typeof infrastructure_notifications_gmail_sender;
   "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
   "infrastructure/privacy/repository": typeof infrastructure_privacy_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
@@ -211,6 +218,7 @@ declare const fullApi: ApiFromModules<{
   "operations/calendar": typeof operations_calendar;
   "operations/fictitiousData": typeof operations_fictitiousData;
   "operations/migrations": typeof operations_migrations;
+  "operations/notifications": typeof operations_notifications;
   "operations/requests": typeof operations_requests;
   "operations/users": typeof operations_users;
   "presentation/accompaniments": typeof presentation_accompaniments;

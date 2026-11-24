@@ -1,7 +1,9 @@
 import type { PaginationOptions } from "convex/server";
+import { internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import {
+  deliveryRetryAt,
   isNotificationDeliveryChannel,
   isNotificationDeliveryError,
   type NotificationDeliveryChannel,
@@ -27,7 +29,8 @@ import {
  * versión. No acepta textos: el evento se reconstruye con
  * `toNotificationEvent`, así un campo extra (motivo, nota, nombre) no puede
  * llegar a la base. No decide a quién avisar (política de TI2-105/TI2-150), no
- * autoriza lecturas (TI2-127) ni envía (TI2-159/TI2-160).
+ * autoriza lecturas (TI2-127) ni habla con proveedores: encola y reserva las
+ * entregas por correo que despacha TI2-159 y el push queda para TI2-160.
  *
  * Un aviso referencia exactamente una atención o una solicitud. Las entregas
  * viven en una fila por evento y canal, y los reintentos actualizan esa fila:
@@ -170,17 +173,41 @@ export async function recordNotificationEvents(
 }
 
 /**
- * Puerto de registro para los casos de uso (TI2-142): cumple por forma
- * `NotificationEventRecorder` de Aplicación sin importarla. Un evento con
- * referencia inválida no se escribe; el caso de uso ya leyó la atención y el
- * destinatario sale de ella, así que no se espera ese resultado.
+ * Puerto de registro para los casos de uso (TI2-142, TI2-159): cumple por
+ * forma `NotificationEventRecorder` de Aplicación sin importarla. Un evento
+ * con referencia inválida no se escribe; el caso de uso ya leyó la atención y
+ * el destinatario sale de ella, así que no se espera ese resultado.
+ *
+ * Cada aviso nuevo encola su entrega por correo y programa el despacho en la
+ * misma transacción: si el cambio se rechaza, Convex descarta también la
+ * entrega y el envío programado. El envío corre después, en otra función, así
+ * un fallo del proveedor no deshace el cambio. Un reintento del mismo cambio
+ * (`duplicate`) no encola otra entrega.
  */
 export function notificationEventRecorder(ctx: MutationCtx) {
   return {
     record: async (events: readonly NotificationEvent[]): Promise<void> => {
-      await recordNotificationEvents(ctx, events);
+      const results = await recordNotificationEvents(ctx, events);
+      const queuedAt = Date.now();
+      for (const result of results) {
+        if (result.status !== "recorded") continue;
+        await queueEmailDelivery(ctx, result.eventId, queuedAt);
+      }
     },
   };
+}
+
+/** Encola la entrega por correo del aviso y programa su despacho inmediato. */
+async function queueEmailDelivery(
+  ctx: MutationCtx,
+  eventId: Id<"notificationEvents">,
+  queuedAt: number,
+): Promise<void> {
+  const queued = await ensureNotificationDelivery(ctx, eventId, "email", queuedAt);
+  if (queued.status !== "queued") return;
+  await ctx.scheduler.runAfter(0, internal.operations.notifications.dispatchEmailDelivery, {
+    deliveryId: queued.deliveryId,
+  });
 }
 
 /** Evento guardado con su identificador, su recurso y su estado de lectura. */
@@ -402,14 +429,20 @@ export type NotificationDeliveryQueueResult =
 /**
  * Encola la entrega de un aviso por canal. Es idempotente: un aviso puede
  * tener una sola fila por canal y un reintento reutiliza la existente.
+ * `queuedAt` deja la entrega disponible para el despacho desde ese instante
+ * (TI2-159); sin él, la fila queda pendiente sin intento programado.
  */
 export async function ensureNotificationDelivery(
   ctx: MutationCtx,
   eventId: Id<"notificationEvents">,
   channel: NotificationDeliveryChannel,
+  queuedAt?: number,
 ): Promise<NotificationDeliveryQueueResult> {
   if (!isNotificationDeliveryChannel(channel)) {
     throw new Error("El canal de entrega es desconocido.");
+  }
+  if (queuedAt !== undefined && (!Number.isFinite(queuedAt) || queuedAt <= 0)) {
+    throw new Error("La entrega encolada requiere un instante epoch válido.");
   }
   const normalizedEventId = ctx.db.normalizeId("notificationEvents", eventId);
   if (normalizedEventId === null || (await ctx.db.get(normalizedEventId)) === null) {
@@ -429,6 +462,7 @@ export async function ensureNotificationDelivery(
     channel,
     status: "pending",
     attempts: 0,
+    ...(queuedAt === undefined ? {} : { nextAttemptAt: queuedAt }),
   });
   return { status: "queued", deliveryId, attempts: 0 };
 }
@@ -485,12 +519,22 @@ export async function recordNotificationDeliveryAttempt(
   }
 
   const existing = await findDeliveryRow(ctx, normalizedEventId, input.channel);
+  const attempts = (existing?.attempts ?? 0) + 1;
+  const errorCode = input.status === "failed" ? input.errorCode : undefined;
+  const nextAttemptAt =
+    deliveryRetryAt({
+      channel: input.channel,
+      status: input.status,
+      attempts,
+      lastAttemptAt: input.attemptedAt,
+      ...(errorCode === undefined ? {} : { errorCode }),
+    }) ?? undefined;
   if (existing !== null) {
-    const attempts = existing.attempts + 1;
     await ctx.db.patch(existing._id, {
       status: input.status,
       attempts,
       lastAttemptAt: input.attemptedAt,
+      nextAttemptAt,
       ...(input.status === "sent"
         ? { sentAt: input.attemptedAt, errorCode: undefined }
         : { errorCode: input.errorCode }),
@@ -502,11 +546,117 @@ export async function recordNotificationDeliveryAttempt(
     eventId: normalizedEventId,
     channel: input.channel,
     status: input.status,
-    attempts: 1,
+    attempts,
     lastAttemptAt: input.attemptedAt,
+    ...(nextAttemptAt === undefined ? {} : { nextAttemptAt }),
     ...(input.status === "sent" ? { sentAt: input.attemptedAt } : { errorCode: input.errorCode }),
   });
-  return { status: "recorded", deliveryId, attempts: 1 };
+  return { status: "recorded", deliveryId, attempts };
+}
+
+/** Reserva del despacho: cubre el límite de ejecución de una acción de Convex. */
+const EMAIL_DELIVERY_CLAIM_MS = 10 * 60_000;
+
+/** Resultado de reservar una entrega, estructuralmente igual al puerto de Aplicación. */
+export type EmailDeliveryClaimResult =
+  | {
+      readonly status: "claimed";
+      readonly eventId: Id<"notificationEvents">;
+      readonly event: NotificationEvent;
+      readonly recipientEmail: string;
+    }
+  | { readonly status: "no_destination"; readonly eventId: Id<"notificationEvents"> }
+  | { readonly status: "skipped" };
+
+/**
+ * Reserva una entrega por correo para un intento (TI2-159).
+ *
+ * Solo la toma si sigue sin enviarse y su próximo intento ya venció; en la
+ * misma transacción adelanta `nextAttemptAt` por la duración de la reserva,
+ * así un segundo despacho concurrente recibe `skipped`. Si el despacho muere
+ * sin registrar el resultado, la reserva vence y el barrido la retoma.
+ * Devuelve el aviso reconstruido con su forma mínima y el correo del
+ * destinatario, que no sale del servidor.
+ */
+export async function claimEmailDelivery(
+  ctx: MutationCtx,
+  deliveryId: string,
+  now: number,
+): Promise<EmailDeliveryClaimResult> {
+  const normalized = ctx.db.normalizeId("notificationDeliveries", deliveryId);
+  if (normalized === null) return { status: "skipped" };
+  const delivery = await ctx.db.get(normalized);
+  if (delivery === null || delivery.channel !== "email" || delivery.status === "sent") {
+    return { status: "skipped" };
+  }
+  if (delivery.nextAttemptAt === undefined || delivery.nextAttemptAt > now) {
+    return { status: "skipped" };
+  }
+  const eventRow = await ctx.db.get(delivery.eventId);
+  if (eventRow === null) return { status: "skipped" };
+
+  await ctx.db.patch(normalized, { nextAttemptAt: now + EMAIL_DELIVERY_CLAIM_MS });
+  const recipient = await ctx.db.get(eventRow.recipientId);
+  const recipientEmail = recipient?.email.trim() ?? "";
+  if (recipientEmail === "") return { status: "no_destination", eventId: eventRow._id };
+  return {
+    status: "claimed",
+    eventId: eventRow._id,
+    event: notificationEventFromRow(eventRow),
+    recipientEmail,
+  };
+}
+
+/** Forma mínima del aviso guardado, sin lectura ni identificador de la fila. */
+function notificationEventFromRow(row: Doc<"notificationEvents">): NotificationEvent {
+  const stored = toStoredNotificationEvent(row);
+  const base = { recipientId: stored.recipientId, occurredAt: stored.occurredAt };
+  return "appointmentId" in stored
+    ? toNotificationEvent({ ...base, kind: stored.kind, appointmentId: stored.appointmentId })
+    : toNotificationEvent({ ...base, kind: stored.kind, requestId: stored.requestId });
+}
+
+/** Tope de entregas que un barrido vuelve a programar: el resto espera al siguiente. */
+const EMAIL_RETRY_SWEEP_LIMIT = 50;
+
+/**
+ * Entregas por correo cuyo próximo intento ya venció, de la más atrasada a la
+ * más reciente (TI2-159). La cota inferior excluye las filas sin intento
+ * pendiente, que el índice ordena antes que cualquier instante.
+ */
+export async function listDueEmailDeliveries(
+  ctx: DbReader,
+  now: number,
+): Promise<readonly Id<"notificationDeliveries">[]> {
+  const rows = await ctx.db
+    .query("notificationDeliveries")
+    .withIndex("by_channel_and_nextAttemptAt", (q) =>
+      q.eq("channel", "email").gt("nextAttemptAt", 0).lte("nextAttemptAt", now),
+    )
+    .take(EMAIL_RETRY_SWEEP_LIMIT);
+  return rows.map((row) => row._id);
+}
+
+/**
+ * Registra el resultado de un intento de correo a partir del ID serializado
+ * del evento (TI2-159). Ignora referencias inválidas sin lanzar.
+ */
+export async function recordEmailDeliveryAttempt(
+  ctx: MutationCtx,
+  eventId: string,
+  result:
+    | { readonly status: "sent" }
+    | { readonly status: "failed"; readonly errorCode: NotificationDeliveryError },
+  attemptedAt: number,
+): Promise<NotificationDeliveryAttemptResult> {
+  const normalized = ctx.db.normalizeId("notificationEvents", eventId);
+  if (normalized === null) return { status: "invalid_reference" };
+  return await recordNotificationDeliveryAttempt(ctx, normalized, {
+    channel: "email",
+    status: result.status,
+    attemptedAt,
+    ...(result.status === "failed" ? { errorCode: result.errorCode } : {}),
+  });
 }
 
 /** Página de entregas pendientes de un canal, para el despacho posterior. */

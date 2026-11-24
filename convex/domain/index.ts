@@ -342,11 +342,14 @@ export type {
   RequestNotificationSubject,
 } from "./notifications/notification";
 
-// Entrega de avisos por canal: estados, errores e intentos (TI2-145).
+// Entrega de avisos por canal: estados, errores, intentos y reintentos (TI2-145, TI2-159).
 export {
+  MAX_PROVIDER_UNAVAILABLE_ATTEMPTS,
   NOTIFICATION_DELIVERY_CHANNEL_VALUES,
   NOTIFICATION_DELIVERY_ERROR_VALUES,
   NOTIFICATION_DELIVERY_STATUS_VALUES,
+  SENDER_SETUP_RETRY_DELAY_MS,
+  deliveryRetryAt,
   isNotificationDeliveryChannel,
   isNotificationDeliveryError,
   isNotificationDeliveryStatus,

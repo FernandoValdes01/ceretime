@@ -32,6 +32,9 @@ type Env = {
   readonly CONVEX_SITE_URL: string;
   readonly BETTER_AUTH_SECRET: string;
   readonly BETTER_AUTH_TRUSTED_ORIGINS: string | undefined;
+  readonly EMAIL_ALLOWED_RECIPIENTS: string | undefined;
+  readonly GMAIL_SENDER_ADDRESS: string | undefined;
+  readonly GMAIL_SENDER_REFRESH_TOKEN: string | undefined;
   readonly GOOGLE_CLIENT_ID: string;
   readonly GOOGLE_CLIENT_SECRET: string;
   readonly SITE_URL: string;
