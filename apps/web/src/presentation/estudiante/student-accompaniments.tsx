@@ -9,6 +9,7 @@ import { toCalendarCallbackStatus } from "../../application/calendar/calendar-li
 import { accompanimentStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import { StudentAppointmentsSection } from "./student-appointments.tsx";
+import { StudentFollowUpHistory } from "./student-follow-up.tsx";
 import { useOwnAccompanimentDetail } from "./student-accompaniments-data.ts";
 import type { OwnAccompanimentDetail } from "./student-accompaniments-data.ts";
 
@@ -24,8 +25,8 @@ import type { OwnAccompanimentDetail } from "./student-accompaniments-data.ts";
  * minimizada no las trae y la fila se omite sin inventar contenido. Un
  * acompañamiento cerrado conserva su vista en solo lectura. No hay UI, texto
  * oculto ni llamada a `getInternalNotes`: las notas internas no pertenecen al
- * Estudiante. El historial básico se limita a la información disponible del
- * acompañamiento; el aviso final registra ese límite sin fabricar eventos.
+ * Estudiante. Desde TI2-166 muestra el historial de seguimiento del
+ * acompañamiento con la vista `shared`, sin nota interna.
  */
 export function StudentAccompanimentDetailPage({
   accompanimentId,
@@ -149,6 +150,7 @@ function OwnAccompanimentDetailBody({
         calendarStatus={calendarStatus}
         readOnly={closed}
       />
+      <StudentFollowUpHistory accompanimentId={accompanimentId} />
     </>
   );
 }
