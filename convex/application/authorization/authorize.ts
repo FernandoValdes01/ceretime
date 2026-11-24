@@ -34,6 +34,7 @@ import {
   type Role,
 } from "../../domain/authorization/permissions";
 import {
+  conflictError,
   errResult,
   okResult,
   UNAUTHORIZED_ERROR_CODE,
@@ -323,12 +324,24 @@ export async function authorizeAccompanimentStatusChange(
 
 /**
  * Actualizar necesidades de acceso (TI2-156): solo el Estudiante dueño con
- * cuenta vigente, sobre un acompañamiento activo o en pausa.
+ * cuenta vigente, sobre un acompañamiento activo o en pausa. El dueño de un
+ * acompañamiento cerrado recibe `conflict`; quien no es dueño recibe
+ * `unauthorized` aunque esté cerrado, para no revelar cerrados ajenos.
  */
 export async function authorizeAccompanimentNeedsUpdate(
   reader: AuthorizationReader,
   request: AgendaRequest,
 ): Promise<ApiResult<AgendaGrant>> {
+  const profile =
+    request.tokenIdentifier === null
+      ? null
+      : await reader.findProfileByTokenIdentifier(request.tokenIdentifier);
+  if (profile === null) return denied();
+  const accompaniment = await reader.getAccompaniment(request.accompanimentId);
+  if (accompaniment === null || accompaniment.studentId !== profile._id) return denied();
+  if (accompaniment.status === "closed") {
+    return errResult(conflictError());
+  }
   const loaded = await loadAgendaContext(reader, request);
   if (loaded === null || !canUpdateAccompanimentNeeds(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });

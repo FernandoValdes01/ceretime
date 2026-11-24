@@ -6,7 +6,12 @@ import {
   isCalendarActionableStatus,
 } from "../../domain/appointments/appointment";
 import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
-import { addCivilDays, midnightToEpochMs } from "../../domain/calendar/civil_days";
+import {
+  addCivilDays,
+  civilDateOfInstant,
+  civilWeekday,
+  midnightToEpochMs,
+} from "../../domain/calendar/civil_days";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
 
 /**
@@ -1124,6 +1129,22 @@ export function appointmentAgendaReader(ctx: DbReader) {
   };
 }
 
+/**
+ * Participantes adicionales de una atención (TI2-156, marca de coordinación).
+ * Cumple por forma el puerto de la agenda sin importar Aplicación.
+ */
+export function appointmentParticipantsReader(ctx: DbReader) {
+  return {
+    listAdditionalIds: async (appointmentId: string): Promise<readonly string[]> => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      if (id === null) return [];
+      const doc = await getAppointmentById(ctx, id);
+      if (doc === null) return [];
+      return (await additionalProfessionalIdsOf(ctx, doc)).map((row) => row as string);
+    },
+  };
+}
+
 // ── TI2-156: atenciones futuras afectadas por cambios de configuración ─────
 //
 // Lecturas para detectar atenciones confirmadas que un cambio de
@@ -1183,6 +1204,33 @@ async function collectFutureActionable(
   return { complete: true, appointments };
 }
 
+async function listActionableByDateInternal(
+  ctx: DbReader,
+  date: string,
+  now: number,
+): Promise<{ readonly complete: boolean; readonly appointments: Doc<"appointments">[] }> {
+  const dayStart = midnightToEpochMs(date, AGENDA_TIME_ZONE);
+  const dayEnd = midnightToEpochMs(addCivilDays(date, 1), AGENDA_TIME_ZONE);
+  const scheduled = await ctx.db
+    .query("appointments")
+    .withIndex("by_status_and_startsAt", (q) =>
+      q.eq("status", "scheduled").gte("startsAt", dayStart).lt("startsAt", dayEnd),
+    )
+    .take(51);
+  const rescheduled = await ctx.db
+    .query("appointments")
+    .withIndex("by_status_and_startsAt", (q) =>
+      q.eq("status", "rescheduled").gte("startsAt", dayStart).lt("startsAt", dayEnd),
+    )
+    .take(51);
+  if (scheduled.length > 50 || rescheduled.length > 50) {
+    return { complete: false, appointments: [] };
+  }
+  const rows = [...scheduled, ...rescheduled].filter((row) => row.startsAt > now);
+  if (rows.length > 50) return { complete: false, appointments: [] };
+  return { complete: true, appointments: rows };
+}
+
 /**
  * Atenciones futuras por profesional, espacio, acompañamiento o participante
  * (TI2-156). Cumple por forma los puertos de impacto sin importar Aplicación.
@@ -1190,17 +1238,6 @@ async function collectFutureActionable(
  */
 export function futureAppointmentsReader(ctx: DbReader) {
   return {
-    listFutureByProfessional: async (professionalId: string, now: number) => {
-      const id = ctx.db.normalizeId("users", professionalId);
-      if (id === null) return { complete: true, appointments: [] } as const;
-      const rows = await ctx.db
-        .query("appointments")
-        .withIndex("by_professionalId_and_startsAt", (q) =>
-          q.eq("professionalId", id).gt("startsAt", now),
-        )
-        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
-      return await collectFutureActionable(ctx, rows, now);
-    },
     listResponsibleByDate: async (professionalId: string, date: string, now: number) => {
       const id = ctx.db.normalizeId("users", professionalId);
       if (id === null) return { complete: true, appointments: [] } as const;
@@ -1211,44 +1248,56 @@ export function futureAppointmentsReader(ctx: DbReader) {
         .withIndex("by_professionalId_and_startsAt", (q) =>
           q.eq("professionalId", id).gte("startsAt", dayStart).lt("startsAt", dayEnd),
         )
-        .take(50);
+        .take(51);
+      if (rows.length > 50) return { complete: false, appointments: [] } as const;
       return await collectFutureActionable(ctx, rows, now);
     },
-    listFutureByParticipant: async (professionalId: string, now: number) => {
+    listAdditionalByWeekdays: async (
+      professionalId: string,
+      weekdays: readonly number[],
+      now: number,
+    ) => {
       const id = ctx.db.normalizeId("users", professionalId);
       if (id === null) return { complete: true, appointments: [] } as const;
-      const responsible = await ctx.db
-        .query("appointments")
-        .withIndex("by_professionalId_and_startsAt", (q) =>
-          q.eq("professionalId", id).gt("startsAt", now),
-        )
-        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
-      const participations = await ctx.db
-        .query("appointmentProfessionals")
-        .withIndex("by_professionalId", (q) => q.eq("professionalId", id))
-        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
-      if (
-        responsible.length > MAX_APPOINTMENTS_IN_RANGE ||
-        participations.length > MAX_APPOINTMENTS_IN_RANGE
-      ) {
-        return { complete: false, appointments: [] } as const;
-      }
+      const today = civilDateOfInstant(now, AGENDA_TIME_ZONE);
       const seen = new Set<string>();
       const rows: Doc<"appointments">[] = [];
-      for (const row of responsible) {
-        seen.add(row._id as string);
-        rows.push(row);
+      for (let offset = 0; offset < 92; offset += 1) {
+        const date = addCivilDays(today, offset);
+        if (!(weekdays as readonly number[]).includes(civilWeekday(date))) continue;
+        const day = await listActionableByDateInternal(ctx, date, now);
+        if (!day.complete) return { complete: false, appointments: [] } as const;
+        for (const appointment of day.appointments) {
+          if (seen.has(appointment._id as string)) continue;
+          if (appointment.professionalId === id) continue;
+          const participation = await findAppointmentProfessional(ctx, appointment._id, id);
+          if (participation === null) continue;
+          seen.add(appointment._id as string);
+          rows.push(appointment);
+          if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+            return { complete: false, appointments: [] } as const;
+          }
+        }
       }
-      for (const participation of participations) {
-        if (seen.has(participation.appointmentId as string)) continue;
-        const appointment = await ctx.db.get(participation.appointmentId);
-        if (appointment === null) continue;
-        if (appointment.startsAt <= now) continue;
+      return await collectFutureActionable(ctx, rows, now);
+    },
+    listAdditionalByDate: async (professionalId: string, date: string, now: number) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const day = await listActionableByDateInternal(ctx, date, now);
+      if (!day.complete) return { complete: false, appointments: [] } as const;
+      const seen = new Set<string>();
+      const rows: Doc<"appointments">[] = [];
+      for (const appointment of day.appointments) {
+        if (seen.has(appointment._id as string)) continue;
+        if (appointment.professionalId === id) continue;
+        const participation = await findAppointmentProfessional(ctx, appointment._id, id);
+        if (participation === null) continue;
         seen.add(appointment._id as string);
         rows.push(appointment);
-      }
-      if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
-        return { complete: false, appointments: [] } as const;
+        if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+          return { complete: false, appointments: [] } as const;
+        }
       }
       return await collectFutureActionable(ctx, rows, now);
     },

@@ -98,7 +98,11 @@ Las filas que escribieron las versiones anteriores pueden conservar esos campos,
 
 ## Clases de aviso de solicitudes, agenda y justificaciones (TI2-150)
 
-`notificationEventKindUnion` toma sus literales de `NOTIFICATION_EVENT_KIND_VALUES`, así las clases nuevas (`appointment_justification_submitted`, `appointment_justification_reviewed` y los pasos `request_*` de la solicitud) entran al esquema sin otra tabla ni otro campo: cada fila sigue referenciando una atención o una solicitud. Las filas anteriores se leen igual porque ninguna clase existente cambió de nombre. La política de destinatarios está en `docs/contratos-sprint-3/agenda.md` y `docs/contratos-sprint-3/solicitudes.md`.
+`notificationEventKindUnion` toma sus literales de `NOTIFICATION_EVENT_KIND_VALUES`, así las clases nuevas (`appointment_justification_submitted`, `appointment_justification_reviewed` y los pasos `request_*` de la solicitud, más `appointment_availability_changed`, `appointment_space_changed` y `appointment_needs_updated` de TI2-156) entran al esquema sin otra tabla ni otro campo: cada fila sigue referenciando una atención o una solicitud. Las filas anteriores se leen igual porque ninguna clase existente cambió de nombre. La política de destinatarios está en `docs/contratos-sprint-3/agenda.md` y `docs/contratos-sprint-3/solicitudes.md`.
+
+## Versiones de necesidades de acceso (TI2-156)
+
+`accompanimentNeeds` versiona NECESIDADES_ACCESO (`validFrom`, `validUntil?`): una fila por versión vigente, sin borrar historial. `accompaniments.accessNeeds` conserva la copia vigente como caché para la reserva y la búsqueda; `findNeedsAt(accompanimentId, at)` devuelve la vigente a esa fecha para evaluar atenciones (agenda con `needsCoordination`, impacto antes/después). Crear un acompañamiento crea su primera versión (`validFrom: 1`); actualizar cierra la vigente con `validUntil` y crea la nueva con `validFrom` en el instante del cambio. `by_accompanimentId_and_validFrom` recorre las versiones de un acompañamiento en orden. La migración `auditAccompanimentNeeds`/`migrateAccompanimentNeeds` crea la primera versión de los acompañamientos sin versiones.
 
 ## Lectura de avisos, entregas, push y Calendar (TI2-145)
 

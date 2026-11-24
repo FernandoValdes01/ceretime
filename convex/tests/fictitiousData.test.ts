@@ -328,6 +328,7 @@ test("las atenciones sembradas se consultan con la vista y el alcance de cada ro
       "endAt",
       "id",
       "modality",
+      "needsCoordination",
       "startAt",
       "status",
       "view",

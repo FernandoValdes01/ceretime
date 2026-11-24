@@ -15,6 +15,7 @@ import {
   AVAILABILITY_CONTRACT_VERSION,
 } from "../domain/availability/availability";
 import {
+  accompanimentNeedsAtDateReader,
   accompanimentNeedsReader,
   authorizationReader,
   bookableProfessionalSource,
@@ -92,7 +93,7 @@ export const updateBlock = mutation({
         { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, block },
         {
           future: futureAppointmentsReader(ctx),
-          needs: accompanimentNeedsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           notifications: notificationEventRecorder(ctx),
         },
@@ -114,7 +115,7 @@ export const setBlockActive = mutation({
         { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, isActive },
         {
           future: futureAppointmentsReader(ctx),
-          needs: accompanimentNeedsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           notifications: notificationEventRecorder(ctx),
         },
@@ -148,7 +149,7 @@ export const publishException = mutation({
         },
         {
           future: futureAppointmentsReader(ctx),
-          needs: accompanimentNeedsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           notifications: notificationEventRecorder(ctx),
         },
@@ -170,7 +171,7 @@ export const removeException = mutation({
         { tokenIdentifier: identity?.tokenIdentifier ?? null, exceptionId },
         {
           future: futureAppointmentsReader(ctx),
-          needs: accompanimentNeedsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           notifications: notificationEventRecorder(ctx),
         },

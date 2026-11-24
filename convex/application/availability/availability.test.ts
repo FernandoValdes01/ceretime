@@ -194,10 +194,16 @@ function fakeNeeds(needs: readonly AccessNeed[]): AccompanimentNeedsReader {
 function emptyImpact() {
   return {
     future: {
-      listFutureByParticipant: async () => ({ complete: true as const, appointments: [] as const }),
       listResponsibleByDate: async () => ({ complete: true as const, appointments: [] as const }),
+      listAdditionalByWeekdays: async () => ({
+        complete: true as const,
+        appointments: [] as const,
+      }),
+      listAdditionalByDate: async () => ({ complete: true as const, appointments: [] as const }),
     },
-    needs: fakeNeeds([]),
+    needs: {
+      findNeedsAt: async () => null,
+    },
     compatibility: fakeCompatibility(),
     notifications: { record: async () => {} },
   };

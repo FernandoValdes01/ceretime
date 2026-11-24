@@ -26,7 +26,7 @@ import {
 } from "../appointments/impact";
 import type { NotificationEventRecorder } from "../notifications/ports";
 import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
-import { civilDateOfInstant, civilWeekday } from "../../domain/calendar/civil_days";
+import { addCivilDays, civilDateOfInstant, civilWeekday } from "../../domain/calendar/civil_days";
 import type { AccessNeed } from "../../domain/requests/request";
 import { assessCompatibility, type CompatibilityOption } from "../../domain/spaces/compatibility";
 import { toSpaceFields } from "../../domain/spaces/space";
@@ -112,13 +112,6 @@ export type PublishBlockInput = Omit<AvailabilityBlock, "id" | "professionalId" 
  */
 export interface AvailabilityChangeImpactDeps {
   readonly future: {
-    listFutureByParticipant(
-      professionalId: string,
-      now: number,
-    ): Promise<{
-      readonly complete: boolean;
-      readonly appointments: readonly ImpactedAppointmentInput[];
-    }>;
     listResponsibleByDate(
       professionalId: string,
       date: string,
@@ -127,19 +120,35 @@ export interface AvailabilityChangeImpactDeps {
       readonly complete: boolean;
       readonly appointments: readonly ImpactedAppointmentInput[];
     }>;
+    listAdditionalByWeekdays(
+      professionalId: string,
+      weekdays: readonly number[],
+      now: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
+    listAdditionalByDate(
+      professionalId: string,
+      date: string,
+      now: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
   };
-  readonly needs: AccompanimentNeedsReader;
+  readonly needs: {
+    findNeedsAt(
+      accompanimentId: string,
+      at: number,
+    ): Promise<{
+      readonly _id: string;
+      readonly needs: readonly { readonly id: string; readonly label: string }[];
+    } | null>;
+  };
   readonly compatibility: CompatibilitySpaceSource;
   readonly notifications: NotificationEventRecorder;
   readonly now?: () => number;
-}
-
-function weekdayOf(startAt: number): number {
-  return civilWeekday(civilDateOfInstant(startAt, AGENDA_TIME_ZONE));
-}
-
-function dateOf(startAt: number): string {
-  return civilDateOfInstant(startAt, AGENDA_TIME_ZONE);
 }
 
 async function collectAvailabilityCandidates(
@@ -151,12 +160,19 @@ async function collectAvailabilityCandidates(
   | { readonly complete: true; readonly appointments: ImpactedAppointmentInput[] }
   | { readonly complete: false }
 > {
-  const byParticipant = await future.listFutureByParticipant(professionalId, now);
-  if (!byParticipant.complete) return { complete: false };
-  const filtered = byParticipant.appointments.filter((appointment) =>
-    (weekdays as readonly number[]).includes(weekdayOf(appointment.startAt)),
-  );
-  return { complete: true, appointments: [...filtered] };
+  const today = civilDateOfInstant(now, AGENDA_TIME_ZONE);
+  const seen = new Map<string, ImpactedAppointmentInput>();
+  for (let offset = 0; offset < 92; offset += 1) {
+    const date = addCivilDays(today, offset);
+    if (!(weekdays as readonly number[]).includes(civilWeekday(date))) continue;
+    const responsible = await future.listResponsibleByDate(professionalId, date, now);
+    if (!responsible.complete) return { complete: false };
+    for (const appointment of responsible.appointments) seen.set(appointment.id, appointment);
+  }
+  const additional = await future.listAdditionalByWeekdays(professionalId, weekdays, now);
+  if (!additional.complete) return { complete: false };
+  for (const appointment of additional.appointments) seen.set(appointment.id, appointment);
+  return { complete: true, appointments: [...seen.values()] };
 }
 
 async function collectAvailabilityCandidatesByDate(
@@ -168,19 +184,22 @@ async function collectAvailabilityCandidatesByDate(
   | { readonly complete: true; readonly appointments: ImpactedAppointmentInput[] }
   | { readonly complete: false }
 > {
-  const byParticipant = await future.listFutureByParticipant(professionalId, now);
-  if (!byParticipant.complete) return { complete: false };
-  const filtered = byParticipant.appointments.filter(
-    (appointment) => dateOf(appointment.startAt) === date,
-  );
-  return { complete: true, appointments: [...filtered] };
+  const responsible = await future.listResponsibleByDate(professionalId, date, now);
+  if (!responsible.complete) return { complete: false };
+  const additional = await future.listAdditionalByDate(professionalId, date, now);
+  if (!additional.complete) return { complete: false };
+  const seen = new Map<string, ImpactedAppointmentInput>();
+  for (const appointment of [...responsible.appointments, ...additional.appointments]) {
+    seen.set(appointment.id, appointment);
+  }
+  return { complete: true, appointments: [...seen.values()] };
 }
 
 async function evaluateAllBookable(
   deps: {
     readonly auth: AuthorizationReader;
     readonly availability: AvailabilityReader;
-    readonly needs: AccompanimentNeedsReader;
+    readonly needs: AvailabilityChangeImpactDeps["needs"];
     readonly compatibility: CompatibilitySpaceSource;
   },
   appointments: readonly ImpactedAppointmentInput[],

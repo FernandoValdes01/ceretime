@@ -511,6 +511,14 @@ export function accompanimentOpener(ctx: MutationCtx) {
         { accompanimentId, userId: professionalId, assignedRole: "professional" },
         professionalId,
       );
+      const now = Date.now();
+      await ctx.db.insert("accompanimentNeeds", {
+        accompanimentId,
+        accessNeeds: opening.accessNeeds,
+        validFrom: 1,
+        createdBy: professionalId,
+        createdAt: now,
+      });
       const opened = await getAccompanimentById(ctx, accompanimentId);
       if (opened === null) throw new Error("El acompañamiento abierto no quedó guardado.");
       return {

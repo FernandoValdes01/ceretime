@@ -464,7 +464,7 @@ test("otra persona no actualiza necesidades y el cierre responde conflicto", asy
   ).rejects.toThrow("conflict");
 });
 
-test("el tope rechaza sin escribir ni avisar cuando hay demasiadas futuras", async () => {
+test("el tope por día revierte sin escribir ni avisar", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, "ti156-est-tope", "student");
   const professional = await seedUser(t, "ti156-pro-tope", "professional");
@@ -473,29 +473,23 @@ test("el tope rechaza sin escribir ni avisar cuando hay demasiadas futuras", asy
   await seedAssignment(t, accompanimentId, professional);
   const blockId = await seedBlock(t, "ti156-pro-tope", spaceId);
 
-  const day = 24 * 60 * 60 * 1000;
-  for (let batch = 0; batch < 4; batch += 1) {
+  for (let i = 0; i < 51; i += 1) {
     await t.run(async (ctx) => {
-      for (let i = batch * 80; i < Math.min((batch + 1) * 80, 310); i += 1) {
-        await ctx.db.insert("appointments", {
-          accompanimentId,
-          studentId: student,
-          professionalId: professional,
-          spaceId,
-          modality: "inPerson",
-          status: "scheduled",
-          startsAt: at(9) + i * day,
-          endsAt: at(9, 30) + i * day,
-          createdAt: NOW,
-        });
-      }
+      await ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId: student,
+        professionalId: professional,
+        spaceId,
+        modality: "inPerson",
+        status: "scheduled",
+        startsAt: at(9) + i * 1000,
+        endsAt: at(9, 30) + i * 1000,
+        createdAt: NOW,
+      });
     });
   }
 
   const asPro = t.withIdentity(identityFor("ti156-pro-tope"));
-  const before = await t.run(async (ctx) => await ctx.db.get(blockId as Id<"availabilityBlocks">));
-  expect(before?.isActive).toBe(true);
-
   await expect(
     asPro.mutation(api.presentation.availability.setBlockActive, {
       blockId,
@@ -508,4 +502,133 @@ test("el tope rechaza sin escribir ni avisar cuando hay demasiadas futuras", asy
   expect(after?.isActive).toBe(true);
   const notices = await t.run(async (ctx) => await ctx.db.query("notificationEvents").take(20));
   expect(notices).toEqual([]);
+});
+
+test("el historial como adicional no bloquea la edición", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, "ti156-est-hist", "student");
+  const professional = await seedUser(t, "ti156-pro-hist", "professional");
+  const spaceId = await seedSpace(t);
+  const accompanimentId = await seedAccompaniment(t, student, "Sala silenciosa");
+  await seedAssignment(t, accompanimentId, professional);
+  const blockId = await seedBlock(t, "ti156-pro-hist", spaceId);
+  const futureId = await seedAppointment(t, {
+    accompanimentId,
+    studentId: student,
+    professionalId: professional,
+    spaceId,
+    startsAt: at(9),
+    endsAt: at(9, 30),
+    status: "scheduled",
+  });
+
+  for (let i = 0; i < 301; i += 1) {
+    await t.run(async (ctx) => {
+      const pastId = await ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId: student,
+        professionalId: professional,
+        modality: "inPerson",
+        status: "completed",
+        startsAt: pastAt(9) - i * 1000,
+        endsAt: pastAt(9, 30) - i * 1000,
+        createdAt: NOW,
+      });
+      await ctx.db.insert("appointmentProfessionals", {
+        appointmentId: pastId,
+        professionalId: professional,
+      });
+    });
+  }
+
+  const asPro = t.withIdentity(identityFor("ti156-pro-hist"));
+  await asPro.mutation(api.presentation.availability.setBlockActive, {
+    blockId,
+    isActive: false,
+    version: "v1",
+  });
+
+  expect(await appointmentStatus(t, futureId)).toBe("scheduled");
+  expect(await notificationKindsFor(t, futureId)).toContain("appointment_availability_changed");
+});
+
+test("la agenda marca con needsCoordination lo que deja de ser reservable", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId, futureId, pastId } = await seedAgenda(t);
+  const asStudent = t.withIdentity(identityFor("ti156-est"));
+
+  const beforeFuture = await asStudent.query(api.presentation.appointments.getAppointment, {
+    appointmentId: futureId,
+    version: "v1",
+  });
+  const beforePast = await asStudent.query(api.presentation.appointments.getAppointment, {
+    appointmentId: pastId,
+    version: "v1",
+  });
+  expect(beforeFuture.needsCoordination).toBe(false);
+  expect(beforePast.needsCoordination).toBe(false);
+
+  await asStudent.mutation(api.presentation.accompaniments.updateAccompanimentNeeds, {
+    accompanimentId,
+    accessNeeds: "Sala silenciosa\nIntérprete de lengua de señas",
+  });
+
+  const afterFuture = await asStudent.query(api.presentation.appointments.getAppointment, {
+    appointmentId: futureId,
+    version: "v1",
+  });
+  const afterPast = await asStudent.query(api.presentation.appointments.getAppointment, {
+    appointmentId: pastId,
+    version: "v1",
+  });
+  expect(afterFuture.needsCoordination).toBe(true);
+  expect(afterPast.needsCoordination).toBe(false);
+});
+
+test("mover el bloque a otra sala avisa aunque el horario siga cubierto", async () => {
+  const t = convexTest(schema, modules);
+  const { blockId, futureId } = await seedAgenda(t);
+  const asPro = t.withIdentity(identityFor("ti156-pro"));
+  const otherSpace = await t.run(async (ctx) => {
+    return await ctx.db.insert("spaces", {
+      campus: "Campus Ficticio",
+      building: "Edificio Ficticio",
+      floor: "Piso 1",
+      room: "Sala Ficticia 2",
+      accessConditions: "Sala silenciosa",
+      accessInstructions: "Instrucción ficticia",
+      isActive: true,
+    });
+  });
+
+  await asPro.mutation(api.presentation.availability.updateBlock, {
+    blockId,
+    weekday: 1,
+    startMinute: 540,
+    endMinute: 720,
+    slotMinutes: 30,
+    modality: "inPerson",
+    spaceId: otherSpace,
+    version: "v1",
+  });
+
+  expect(await appointmentStatus(t, futureId)).toBe("scheduled");
+  expect(await notificationKindsFor(t, futureId)).toContain("appointment_availability_changed");
+});
+
+test("un profesional ajeno no distingue un acompañamiento cerrado", async () => {
+  const t = convexTest(schema, modules);
+  const { accompanimentId } = await seedAgenda(t);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(accompanimentId, { status: "closed" });
+  });
+  const otherPro = await seedUser(t, "ti156-otro-pro", "professional");
+  void otherPro;
+  const asOther = t.withIdentity(identityFor("ti156-otro-pro"));
+  await expect(
+    asOther.mutation(api.presentation.accompaniments.updateAccompanimentNeeds, {
+      accompanimentId,
+      accessNeeds: "Otra necesidad",
+    }),
+  ).rejects.toThrow("No autorizado");
 });

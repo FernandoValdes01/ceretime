@@ -20,11 +20,7 @@ import {
   notifySpaceImpact,
   type ImpactedAppointmentInput,
 } from "../appointments/impact";
-import type {
-  AccompanimentNeedsReader,
-  AvailabilityReader,
-  CompatibilitySpaceSource,
-} from "../availability/ports";
+import type { AvailabilityReader, CompatibilitySpaceSource } from "../availability/ports";
 import type { NotificationEventRecorder } from "../notifications/ports";
 import type { SpaceReader, SpaceWriter } from "./ports";
 
@@ -77,7 +73,15 @@ export interface SpaceChangeImpactDeps {
   };
   readonly auth: AuthorizationReader;
   readonly availability: AvailabilityReader;
-  readonly needs: AccompanimentNeedsReader;
+  readonly needs: {
+    findNeedsAt(
+      accompanimentId: string,
+      at: number,
+    ): Promise<{
+      readonly _id: string;
+      readonly needs: readonly { readonly id: string; readonly label: string }[];
+    } | null>;
+  };
   readonly compatibility: CompatibilitySpaceSource;
   readonly notifications: NotificationEventRecorder;
   readonly now?: () => number;
@@ -87,7 +91,7 @@ async function evaluateAllSpaceBookable(
   deps: {
     readonly auth: AuthorizationReader;
     readonly availability: AvailabilityReader;
-    readonly needs: AccompanimentNeedsReader;
+    readonly needs: SpaceChangeImpactDeps["needs"];
     readonly compatibility: CompatibilitySpaceSource;
   },
   appointments: readonly ImpactedAppointmentInput[],

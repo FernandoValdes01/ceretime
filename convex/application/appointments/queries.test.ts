@@ -137,7 +137,26 @@ function worldDeps(world: World) {
       ),
     getAppointment: async (id) => rows.find((row) => row.id === id) ?? null,
   };
-  const deps: AppointmentQueryDeps = { auth, appointments };
+  const deps: AppointmentQueryDeps = {
+    auth,
+    appointments,
+    availability: {
+      listActiveBlocks: async () => okResult([]),
+      listExceptions: async () => okResult([]),
+      getBlock: async () => null,
+      getException: async () => null,
+    },
+    needsAtDate: {
+      findNeedsAt: async (accompanimentId) => ({ _id: accompanimentId, needs: [] }),
+    },
+    compatibility: {
+      findCompatibilitySpace: async () => null,
+      listOnlineSupports: async () => [],
+    },
+    participants: {
+      listAdditionalIds: async () => [],
+    },
+  };
   return { deps, log };
 }
 
@@ -280,8 +299,8 @@ describe("atenciones de un acompañamiento", () => {
   test("el Profesional asignado recibe la vista completa y el Estudiante, la compartida", async () => {
     const { cancelReason: _omitted, ...withoutReason } = rows[0];
     const cases = [
-      [professional, { ...rows[0], view: "full" }],
-      [student, { ...withoutReason, view: "shared" }],
+      [professional, { ...rows[0], view: "full", needsCoordination: false }],
+      [student, { ...withoutReason, view: "shared", needsCoordination: false }],
     ] as const;
     for (const [caller, item] of cases) {
       const { deps } = worldDeps({ rows });
@@ -325,6 +344,7 @@ describe("atenciones de un acompañamiento", () => {
             endAt: 2000,
             modality: "online",
             view: "minimized",
+            needsCoordination: false,
           },
         ],
         hasMore: false,
@@ -527,7 +547,7 @@ describe("detalle de una atención", () => {
       const { deps } = worldDeps({ rows: [row] });
       expect(
         await getAppointment(deps, { ...detail, tokenIdentifier: caller.tokenIdentifier }),
-      ).toEqual(okResult({ ...row, view }));
+      ).toEqual(okResult({ ...row, view, needsCoordination: false }));
     }
   });
 
@@ -543,6 +563,7 @@ describe("detalle de una atención", () => {
         endAt: 2000,
         modality: "inPerson",
         view: "minimized",
+        needsCoordination: false,
       }),
     );
   });

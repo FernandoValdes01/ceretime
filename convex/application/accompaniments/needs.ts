@@ -9,11 +9,7 @@ import {
   notifyNeedsImpact,
   type ImpactedAppointmentInput,
 } from "../appointments/impact";
-import type {
-  AccompanimentNeedsReader,
-  AvailabilityReader,
-  CompatibilitySpaceSource,
-} from "../availability/ports";
+import type { AvailabilityReader, CompatibilitySpaceSource } from "../availability/ports";
 import type { NotificationEventRecorder } from "../notifications/ports";
 
 /**
@@ -46,7 +42,15 @@ export interface NeedsUpdateImpactDeps {
     }>;
   };
   readonly availability: AvailabilityReader;
-  readonly needs: AccompanimentNeedsReader;
+  readonly needs: {
+    findNeedsAt(
+      accompanimentId: string,
+      at: number,
+    ): Promise<{
+      readonly _id: string;
+      readonly needs: readonly { readonly id: string; readonly label: string }[];
+    } | null>;
+  };
   readonly compatibility: CompatibilitySpaceSource;
   readonly notifications: NotificationEventRecorder;
   readonly now?: () => number;
@@ -66,22 +70,11 @@ export async function updateAccompanimentNeeds(
   },
   impact: NeedsUpdateImpactDeps,
 ): Promise<ApiResult<null>> {
-  if (input.accompanimentId.trim() === "") {
-    const denied = await authorizeAccompanimentNeedsUpdate(auth, {
-      tokenIdentifier: input.tokenIdentifier,
-      accompanimentId: "invalid",
-    });
-    return denied.status === "error" ? denied : conflict();
-  }
   const grant = await authorizeAccompanimentNeedsUpdate(auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: input.accompanimentId,
   });
-  if (grant.status === "error") {
-    const closedCheck = await auth.getAccompaniment(input.accompanimentId);
-    if (closedCheck !== null && closedCheck.status === "closed") return conflict();
-    return grant;
-  }
+  if (grant.status === "error") return grant;
   const validated = toLegacyAccessNeeds(input.accessNeeds);
   if (validated.status === "error") {
     return errResult(validated.error);

@@ -9,11 +9,7 @@ import {
 } from "../../domain/notifications/notification";
 import { assessCompatibility } from "../../domain/spaces/compatibility";
 import { isBookableProfessional } from "../authorization/authorize";
-import type {
-  AccompanimentNeedsReader,
-  AvailabilityReader,
-  CompatibilitySpaceSource,
-} from "../availability/ports";
+import type { AvailabilityReader, CompatibilitySpaceSource } from "../availability/ports";
 import type { AuthorizationReader } from "../authorization/authorize";
 import type { NotificationEventRecorder } from "../notifications/ports";
 import type { ApiResult } from "../../domain/errors/api_error";
@@ -43,7 +39,15 @@ export interface ImpactedAppointmentInput {
 export interface BookabilityDeps {
   readonly auth: AuthorizationReader;
   readonly availability: AvailabilityReader;
-  readonly needs: AccompanimentNeedsReader;
+  readonly needs: {
+    findNeedsAt(
+      accompanimentId: string,
+      at: number,
+    ): Promise<{
+      readonly _id: string;
+      readonly needs: readonly { readonly id: string; readonly label: string }[];
+    } | null>;
+  };
   readonly compatibility: CompatibilitySpaceSource;
 }
 
@@ -84,8 +88,12 @@ async function coversProfessional(
   } catch {
     return { status: "error", error: conflictError() };
   }
-  const sameModality = expanded.filter((slot) => slot.modality === appointment.modality);
-  const covered = slotsCoverInterval(sameModality, {
+  const sameModalityAndSpace = expanded.filter(
+    (slot) =>
+      slot.modality === appointment.modality &&
+      (appointment.modality !== "inPerson" || slot.spaceId === appointment.spaceId),
+  );
+  const covered = slotsCoverInterval(sameModalityAndSpace, {
     startAt: appointment.startAt,
     endAt: appointment.endAt,
   });
@@ -98,7 +106,7 @@ async function checkCompatibility(
   deps: BookabilityDeps,
   appointment: ImpactedAppointmentInput,
 ): Promise<ApiResult<boolean>> {
-  const needsEntry = await deps.needs.findAccompanimentNeeds(appointment.accompanimentId);
+  const needsEntry = await deps.needs.findNeedsAt(appointment.accompanimentId, appointment.startAt);
   if (needsEntry === null) return { status: "error", error: conflictError() };
   if (appointment.modality === "online") {
     const supports = await deps.compatibility.listOnlineSupports();

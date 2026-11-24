@@ -12,7 +12,7 @@ import {
 import { mutation, query } from "../_generated/server";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
 import {
-  accompanimentNeedsReader,
+  accompanimentNeedsAtDateReader,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
 import { futureAppointmentsReader } from "../infrastructure/appointments/repository";
@@ -135,7 +135,7 @@ export const updateSpace = mutation({
           future: futureAppointmentsReader(ctx),
           auth: authorizationReader(ctx),
           availability: availabilityReader(ctx),
-          needs: accompanimentNeedsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           notifications: notificationEventRecorder(ctx),
         },
@@ -168,7 +168,7 @@ export const setSpaceActive = mutation({
           future: futureAppointmentsReader(ctx),
           auth: authorizationReader(ctx),
           availability: availabilityReader(ctx),
-          needs: accompanimentNeedsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           notifications: notificationEventRecorder(ctx),
         },
