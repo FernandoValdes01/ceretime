@@ -1204,33 +1204,6 @@ async function collectFutureActionable(
   return { complete: true, appointments };
 }
 
-async function listActionableByDateInternal(
-  ctx: DbReader,
-  date: string,
-  now: number,
-): Promise<{ readonly complete: boolean; readonly appointments: Doc<"appointments">[] }> {
-  const dayStart = midnightToEpochMs(date, AGENDA_TIME_ZONE);
-  const dayEnd = midnightToEpochMs(addCivilDays(date, 1), AGENDA_TIME_ZONE);
-  const scheduled = await ctx.db
-    .query("appointments")
-    .withIndex("by_status_and_startsAt", (q) =>
-      q.eq("status", "scheduled").gte("startsAt", dayStart).lt("startsAt", dayEnd),
-    )
-    .take(51);
-  const rescheduled = await ctx.db
-    .query("appointments")
-    .withIndex("by_status_and_startsAt", (q) =>
-      q.eq("status", "rescheduled").gte("startsAt", dayStart).lt("startsAt", dayEnd),
-    )
-    .take(51);
-  if (scheduled.length > 50 || rescheduled.length > 50) {
-    return { complete: false, appointments: [] };
-  }
-  const rows = [...scheduled, ...rescheduled].filter((row) => row.startsAt > now);
-  if (rows.length > 50) return { complete: false, appointments: [] };
-  return { complete: true, appointments: rows };
-}
-
 /**
  * Atenciones futuras por profesional, espacio, acompañamiento o participante
  * (TI2-156). Cumple por forma los puertos de impacto sin importar Aplicación.
@@ -1252,6 +1225,48 @@ export function futureAppointmentsReader(ctx: DbReader) {
       if (rows.length > 50) return { complete: false, appointments: [] } as const;
       return await collectFutureActionable(ctx, rows, now);
     },
+    listResponsibleByWeekdays: async (
+      professionalId: string,
+      weekdays: readonly number[],
+      now: number,
+    ) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const rows: Doc<"appointments">[] = [];
+      let cursor = now;
+      let exhausted = false;
+      for (let round = 0; round < 10; round += 1) {
+        const page = await ctx.db
+          .query("appointments")
+          .withIndex("by_professionalId_and_startsAt", (q) =>
+            q.eq("professionalId", id).gt("startsAt", cursor),
+          )
+          .take(200);
+        if (page.length === 0) {
+          exhausted = true;
+          break;
+        }
+        for (const row of page) {
+          if (
+            (weekdays as readonly number[]).includes(
+              civilWeekday(civilDateOfInstant(row.startsAt, AGENDA_TIME_ZONE)),
+            )
+          ) {
+            rows.push(row);
+            if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+              return { complete: false, appointments: [] } as const;
+            }
+          }
+        }
+        if (page.length < 200) {
+          exhausted = true;
+          break;
+        }
+        cursor = page[page.length - 1].startsAt;
+      }
+      if (!exhausted) return { complete: false, appointments: [] } as const;
+      return await collectFutureActionable(ctx, rows, now);
+    },
     listAdditionalByWeekdays: async (
       professionalId: string,
       weekdays: readonly number[],
@@ -1259,24 +1274,25 @@ export function futureAppointmentsReader(ctx: DbReader) {
     ) => {
       const id = ctx.db.normalizeId("users", professionalId);
       if (id === null) return { complete: true, appointments: [] } as const;
-      const today = civilDateOfInstant(now, AGENDA_TIME_ZONE);
+      const participations = await ctx.db
+        .query("appointmentProfessionals")
+        .withIndex("by_professionalId", (q) => q.eq("professionalId", id))
+        .take(1001);
+      if (participations.length > 1000) return { complete: false, appointments: [] } as const;
       const seen = new Set<string>();
       const rows: Doc<"appointments">[] = [];
-      for (let offset = 0; offset < 92; offset += 1) {
-        const date = addCivilDays(today, offset);
-        if (!(weekdays as readonly number[]).includes(civilWeekday(date))) continue;
-        const day = await listActionableByDateInternal(ctx, date, now);
-        if (!day.complete) return { complete: false, appointments: [] } as const;
-        for (const appointment of day.appointments) {
-          if (seen.has(appointment._id as string)) continue;
-          if (appointment.professionalId === id) continue;
-          const participation = await findAppointmentProfessional(ctx, appointment._id, id);
-          if (participation === null) continue;
-          seen.add(appointment._id as string);
-          rows.push(appointment);
-          if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
-            return { complete: false, appointments: [] } as const;
-          }
+      for (const participation of participations) {
+        if (seen.has(participation.appointmentId as string)) continue;
+        const appointment = await ctx.db.get(participation.appointmentId);
+        if (appointment === null) continue;
+        if (appointment.professionalId === id) continue;
+        if (appointment.startsAt <= now) continue;
+        const weekday = civilWeekday(civilDateOfInstant(appointment.startsAt, AGENDA_TIME_ZONE));
+        if (!(weekdays as readonly number[]).includes(weekday)) continue;
+        seen.add(appointment._id as string);
+        rows.push(appointment);
+        if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+          return { complete: false, appointments: [] } as const;
         }
       }
       return await collectFutureActionable(ctx, rows, now);
@@ -1284,15 +1300,20 @@ export function futureAppointmentsReader(ctx: DbReader) {
     listAdditionalByDate: async (professionalId: string, date: string, now: number) => {
       const id = ctx.db.normalizeId("users", professionalId);
       if (id === null) return { complete: true, appointments: [] } as const;
-      const day = await listActionableByDateInternal(ctx, date, now);
-      if (!day.complete) return { complete: false, appointments: [] } as const;
+      const participations = await ctx.db
+        .query("appointmentProfessionals")
+        .withIndex("by_professionalId", (q) => q.eq("professionalId", id))
+        .take(1001);
+      if (participations.length > 1000) return { complete: false, appointments: [] } as const;
       const seen = new Set<string>();
       const rows: Doc<"appointments">[] = [];
-      for (const appointment of day.appointments) {
-        if (seen.has(appointment._id as string)) continue;
+      for (const participation of participations) {
+        if (seen.has(participation.appointmentId as string)) continue;
+        const appointment = await ctx.db.get(participation.appointmentId);
+        if (appointment === null) continue;
         if (appointment.professionalId === id) continue;
-        const participation = await findAppointmentProfessional(ctx, appointment._id, id);
-        if (participation === null) continue;
+        if (appointment.startsAt <= now) continue;
+        if (civilDateOfInstant(appointment.startsAt, AGENDA_TIME_ZONE) !== date) continue;
         seen.add(appointment._id as string);
         rows.push(appointment);
         if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {

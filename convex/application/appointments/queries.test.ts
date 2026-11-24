@@ -287,6 +287,28 @@ describe("agenda propia", () => {
       okResult({ items: [], hasMore: false, nextCursor: null, version: "v1" }),
     );
   });
+
+  test("un fallo de lectura marca needsCoordination sin tumbar la lista", async () => {
+    const future = appointmentRow("a-1", {
+      startAt: Date.now() + 3_600_000,
+      endAt: Date.now() + 5_400_000,
+    });
+    const { deps } = worldDeps({ rows: [future] });
+    const badDeps: typeof deps = {
+      ...deps,
+      availability: {
+        listActiveBlocks: async () => errResult(conflictError()),
+        listExceptions: async () => errResult(conflictError()),
+        getBlock: async () => null,
+        getException: async () => null,
+      },
+    };
+    const result = await listAppointments(badDeps, listInput());
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("Se esperaba éxito con marca segura");
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data.items[0]).toMatchObject({ id: "a-1", needsCoordination: true });
+  });
 });
 
 describe("atenciones de un acompañamiento", () => {

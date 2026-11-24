@@ -53,6 +53,10 @@ Todas exigen `version: "v1"`, derivan la identidad con `ctx.auth.getUserIdentity
 
 `bookAppointment` sigue siendo la única operación de reserva. El Estudiante reserva como antes. El Profesional asignado la usa para coordinar en nombre del Estudiante dueño, que sale del acompañamiento leído en el servidor; el Profesional que coordina debe ser uno de los profesionales de la atención. Es la única ampliación de permisos: hasta ahora un Profesional que llamaba a `bookAppointment` recibía `unauthorized`.
 
+## Marca de coordinación en la agenda (TI2-156)
+
+`listAppointments` y `getAppointment` devuelven `needsCoordination: boolean` en las tres vistas (`full`, `shared`, `minimized`). Es `true` solo cuando la atención está vigente (`scheduled`/`rescheduled`), empieza en el futuro y ya no es reservable con la configuración vigente (disponibilidad que la cubre, compatibilidad con las necesidades vigentes a su fecha y adicional reservable y cubierto); en cualquier otro caso es `false` y no cambia el estado. Ante un fallo de lectura (tope truncado, versión ausente) se devuelve `true` (revisar) en vez de fallar toda la lista: es lo seguro para no ocultar la agenda por un dato secundario. La vista `minimized` del Practicante también la trae: es un booleano, no revela las necesidades (Ley 21.719), y permite coordinar sin verlas.
+
 ## Respuestas y errores
 
 Se usan solo los códigos de TI2-88 (`ConvexError({code, message})` con esas dos claves) y los clientes distinguen por `code`. No se agrega un código nuevo: Web ya importa `convex/domain` y puede validar el enlace con `normalizeOnlineAccessLink` antes de enviarlo, así muestra la causa exacta con la misma regla del servidor.

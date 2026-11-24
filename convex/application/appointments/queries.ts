@@ -135,12 +135,17 @@ function instantRangeOf(input: ListAppointmentsQuery): InstantRange | null {
   }
 }
 
-/** Marca si la atención futura y vigente dejó de ser reservable (TI2-156). */
+/** Marca si la atención futura y vigente dejó de ser reservable (TI2-156).
+ *
+ * Ante un fallo de lectura (tope truncado, versión ausente) marca `true`
+ * (revisar): es lo seguro, en vez de ocultar toda la agenda por un dato
+ * secundario.
+ */
 async function coordinationFor(
   deps: AppointmentQueryDeps,
   row: Appointment,
   now: number,
-): Promise<boolean | null> {
+): Promise<boolean> {
   if (!isCalendarActionableStatus(row.status) || row.startAt <= now) return false;
   const additionalIds = await deps.participants.listAdditionalIds(row.id);
   const result = await isAppointmentStillBookable(
@@ -158,11 +163,10 @@ async function coordinationFor(
       ...(row.spaceId === undefined ? {} : { spaceId: row.spaceId }),
       startAt: row.startAt,
       endAt: row.endAt,
-      studentId: "",
       ...(additionalIds.length === 0 ? {} : { additionalProfessionalIds: [...additionalIds] }),
     },
   );
-  if (result.status === "error") return null;
+  if (result.status === "error") return true;
   return !result.data;
 }
 
@@ -182,7 +186,6 @@ async function readAccompanimentAgenda(
   for (const row of rows.data) {
     const projected = toAppointmentProjection(row, grant.data.view);
     const needsCoordination = await coordinationFor(deps, row, now);
-    if (needsCoordination === null) return conflict();
     projections.push({ ...projected, needsCoordination });
   }
   return okResult(projections);
@@ -238,7 +241,6 @@ async function readOwnAgenda(
     if (view !== null) {
       const projected = toAppointmentProjection(row, view);
       const needsCoordination = await coordinationFor(deps, row, now);
-      if (needsCoordination === null) return conflict();
       projections.push({ ...projected, needsCoordination });
     }
   }
@@ -322,7 +324,6 @@ export async function getAppointment(
   if (readable === null) return denied();
   const now = deps.now === undefined ? Date.now() : deps.now();
   const needsCoordination = await coordinationFor(deps, readable.appointment, now);
-  if (needsCoordination === null) return conflict();
   return okResult({
     ...toAppointmentProjection(readable.appointment, readable.view),
     needsCoordination,

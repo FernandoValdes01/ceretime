@@ -23,6 +23,7 @@ import {
   getAccompanimentView,
   getAppointmentView,
   getFollowUpView,
+  isProfileActive,
   isProfessionalBookable,
   type AccompanimentView,
   type AccountStatus,
@@ -332,18 +333,14 @@ export async function authorizeAccompanimentNeedsUpdate(
   reader: AuthorizationReader,
   request: AgendaRequest,
 ): Promise<ApiResult<AgendaGrant>> {
-  const profile =
-    request.tokenIdentifier === null
-      ? null
-      : await reader.findProfileByTokenIdentifier(request.tokenIdentifier);
-  if (profile === null) return denied();
-  const accompaniment = await reader.getAccompaniment(request.accompanimentId);
-  if (accompaniment === null || accompaniment.studentId !== profile._id) return denied();
-  if (accompaniment.status === "closed") {
+  const loaded = await loadAgendaContext(reader, request);
+  if (loaded === null) return denied();
+  if (!isProfileActive(loaded.context)) return denied();
+  if (!loaded.context.isOwner) return denied();
+  if (loaded.context.accompanimentStatus === "closed") {
     return errResult(conflictError());
   }
-  const loaded = await loadAgendaContext(reader, request);
-  if (loaded === null || !canUpdateAccompanimentNeeds(loaded.context)) return denied();
+  if (!canUpdateAccompanimentNeeds(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId });
 }
 

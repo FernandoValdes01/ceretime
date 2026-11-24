@@ -194,6 +194,10 @@ function fakeNeeds(needs: readonly AccessNeed[]): AccompanimentNeedsReader {
 function emptyImpact() {
   return {
     future: {
+      listResponsibleByWeekdays: async () => ({
+        complete: true as const,
+        appointments: [] as const,
+      }),
       listResponsibleByDate: async () => ({ complete: true as const, appointments: [] as const }),
       listAdditionalByWeekdays: async () => ({
         complete: true as const,

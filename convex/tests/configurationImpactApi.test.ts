@@ -473,7 +473,7 @@ test("el tope por día revierte sin escribir ni avisar", async () => {
   await seedAssignment(t, accompanimentId, professional);
   const blockId = await seedBlock(t, "ti156-pro-tope", spaceId);
 
-  for (let i = 0; i < 51; i += 1) {
+  for (let i = 0; i < 301; i += 1) {
     await t.run(async (ctx) => {
       await ctx.db.insert("appointments", {
         accompanimentId,
@@ -508,9 +508,11 @@ test("el historial como adicional no bloquea la edición", async () => {
   const t = convexTest(schema, modules);
   const student = await seedUser(t, "ti156-est-hist", "student");
   const professional = await seedUser(t, "ti156-pro-hist", "professional");
+  const otherPro = await seedUser(t, "ti156-pro-hist-otro", "professional");
   const spaceId = await seedSpace(t);
   const accompanimentId = await seedAccompaniment(t, student, "Sala silenciosa");
   await seedAssignment(t, accompanimentId, professional);
+  await seedAssignment(t, accompanimentId, otherPro);
   const blockId = await seedBlock(t, "ti156-pro-hist", spaceId);
   const futureId = await seedAppointment(t, {
     accompanimentId,
@@ -527,7 +529,7 @@ test("el historial como adicional no bloquea la edición", async () => {
       const pastId = await ctx.db.insert("appointments", {
         accompanimentId,
         studentId: student,
-        professionalId: professional,
+        professionalId: otherPro,
         modality: "inPerson",
         status: "completed",
         startsAt: pastAt(9) - i * 1000,
@@ -631,4 +633,86 @@ test("un profesional ajeno no distingue un acompañamiento cerrado", async () =>
       accessNeeds: "Otra necesidad",
     }),
   ).rejects.toThrow("No autorizado");
+});
+
+test("una atención a más de 92 días también avisa", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, "ti156-est-lejos", "student");
+  const professional = await seedUser(t, "ti156-pro-lejos", "professional");
+  const spaceId = await seedSpace(t);
+  const accompanimentId = await seedAccompaniment(t, student, "Sala silenciosa");
+  await seedAssignment(t, accompanimentId, professional);
+  await t.run(async (ctx) => {
+    await ctx.db.insert("availabilityBlocks", {
+      professionalId: professional,
+      weekday: 1,
+      startMinute: 540,
+      endMinute: 720,
+      slotMinutes: 30,
+      modality: "inPerson",
+      spaceId,
+      isActive: true,
+    });
+  });
+  const farId = await t.run(async (ctx) => {
+    return await ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId: student,
+      professionalId: professional,
+      spaceId,
+      modality: "inPerson",
+      status: "scheduled",
+      startsAt: Date.UTC(2027, 3, 5, 13, 0),
+      endsAt: Date.UTC(2027, 3, 5, 13, 30),
+      createdAt: NOW,
+    });
+  });
+  const blocks = await t.run(async (ctx) =>
+    ctx.db
+      .query("availabilityBlocks")
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", professional))
+      .take(5),
+  );
+  const ownBlock = blocks[0];
+  const asPro = t.withIdentity(identityFor("ti156-pro-lejos"));
+  await asPro.mutation(api.presentation.availability.setBlockActive, {
+    blockId: ownBlock._id,
+    isActive: false,
+    version: "v1",
+  });
+  expect(await appointmentStatus(t, farId)).toBe("scheduled");
+  expect(await notificationKindsFor(t, farId)).toContain("appointment_availability_changed");
+});
+
+test("un día lleno en el centro no bloquea a quien no tiene atenciones ese día", async () => {
+  const t = convexTest(schema, modules);
+  const { blockId } = await seedAgenda(t);
+  const otherPro = await seedUser(t, "ti156-pro-centro", "professional");
+  const otherStudent = await seedUser(t, "ti156-est-centro", "student");
+  const otherSpace = await seedSpace(t);
+  const otherAcc = await seedAccompaniment(t, otherStudent, "");
+  await seedAssignment(t, otherAcc, otherPro);
+  for (let i = 0; i < 51; i += 1) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("appointments", {
+        accompanimentId: otherAcc,
+        studentId: otherStudent,
+        professionalId: otherPro,
+        spaceId: otherSpace,
+        modality: "inPerson",
+        status: "scheduled",
+        startsAt: at(9) + i * 60 * 1000,
+        endsAt: at(9, 30) + i * 60 * 1000,
+        createdAt: NOW,
+      });
+    });
+  }
+  const asPro = t.withIdentity(identityFor("ti156-pro"));
+  await asPro.mutation(api.presentation.availability.setBlockActive, {
+    blockId,
+    isActive: false,
+    version: "v1",
+  });
+  const after = await t.run(async (ctx) => await ctx.db.get(blockId as Id<"availabilityBlocks">));
+  expect(after?.isActive).toBe(false);
 });

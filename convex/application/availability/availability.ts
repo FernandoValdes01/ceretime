@@ -25,8 +25,6 @@ import {
   type ImpactedAppointmentInput,
 } from "../appointments/impact";
 import type { NotificationEventRecorder } from "../notifications/ports";
-import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
-import { addCivilDays, civilDateOfInstant, civilWeekday } from "../../domain/calendar/civil_days";
 import type { AccessNeed } from "../../domain/requests/request";
 import { assessCompatibility, type CompatibilityOption } from "../../domain/spaces/compatibility";
 import { toSpaceFields } from "../../domain/spaces/space";
@@ -112,6 +110,14 @@ export type PublishBlockInput = Omit<AvailabilityBlock, "id" | "professionalId" 
  */
 export interface AvailabilityChangeImpactDeps {
   readonly future: {
+    listResponsibleByWeekdays(
+      professionalId: string,
+      weekdays: readonly number[],
+      now: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
     listResponsibleByDate(
       professionalId: string,
       date: string,
@@ -160,15 +166,10 @@ async function collectAvailabilityCandidates(
   | { readonly complete: true; readonly appointments: ImpactedAppointmentInput[] }
   | { readonly complete: false }
 > {
-  const today = civilDateOfInstant(now, AGENDA_TIME_ZONE);
+  const responsible = await future.listResponsibleByWeekdays(professionalId, weekdays, now);
+  if (!responsible.complete) return { complete: false };
   const seen = new Map<string, ImpactedAppointmentInput>();
-  for (let offset = 0; offset < 92; offset += 1) {
-    const date = addCivilDays(today, offset);
-    if (!(weekdays as readonly number[]).includes(civilWeekday(date))) continue;
-    const responsible = await future.listResponsibleByDate(professionalId, date, now);
-    if (!responsible.complete) return { complete: false };
-    for (const appointment of responsible.appointments) seen.set(appointment.id, appointment);
-  }
+  for (const appointment of responsible.appointments) seen.set(appointment.id, appointment);
   const additional = await future.listAdditionalByWeekdays(professionalId, weekdays, now);
   if (!additional.complete) return { complete: false };
   for (const appointment of additional.appointments) seen.set(appointment.id, appointment);

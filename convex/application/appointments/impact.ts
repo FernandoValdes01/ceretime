@@ -36,6 +36,18 @@ export interface ImpactedAppointmentInput {
   readonly additionalProfessionalIds?: readonly string[];
 }
 
+/** Entrada mínima para evaluar si una atención sigue reservable (sin estudiante). */
+export interface EvaluationAppointmentInput {
+  readonly id: string;
+  readonly accompanimentId: string;
+  readonly professionalId: string;
+  readonly modality: "inPerson" | "online";
+  readonly spaceId?: string;
+  readonly startAt: number;
+  readonly endAt: number;
+  readonly additionalProfessionalIds?: readonly string[];
+}
+
 export interface BookabilityDeps {
   readonly auth: AuthorizationReader;
   readonly availability: AvailabilityReader;
@@ -65,7 +77,7 @@ function toSubject(appointment: ImpactedAppointmentInput) {
 async function coversProfessional(
   deps: BookabilityDeps,
   professionalId: string,
-  appointment: ImpactedAppointmentInput,
+  appointment: EvaluationAppointmentInput,
 ): Promise<ApiResult<boolean>> {
   const date = civilDateOfInstant(appointment.startAt, AGENDA_TIME_ZONE);
   const [blocksResult, exceptionsResult] = await Promise.all([
@@ -104,7 +116,7 @@ async function coversProfessional(
 
 async function checkCompatibility(
   deps: BookabilityDeps,
-  appointment: ImpactedAppointmentInput,
+  appointment: EvaluationAppointmentInput,
 ): Promise<ApiResult<boolean>> {
   const needsEntry = await deps.needs.findNeedsAt(appointment.accompanimentId, appointment.startAt);
   if (needsEntry === null) return { status: "error", error: conflictError() };
@@ -137,7 +149,7 @@ async function checkCompatibility(
  */
 export async function isAppointmentStillBookable(
   deps: BookabilityDeps,
-  appointment: ImpactedAppointmentInput,
+  appointment: EvaluationAppointmentInput,
 ): Promise<ApiResult<boolean>> {
   if (
     !(await isBookableProfessional(deps.auth, {
