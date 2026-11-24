@@ -640,8 +640,10 @@ export function needVersionAt(
 
 /**
  * Cierra la vigente y crea la nueva versión, además de la copia en
- * `accompaniments`. Si no hay vigente (fila anterior a la migración), solo
- * crea la nueva desde el inicio.
+ * `accompaniments`. Si no hay versiones (fila anterior a la migración o
+ * semilla sin migrar), crea primero la inicial con el texto vigente antes del
+ * cambio (`validFrom: 1`), así las atenciones pasadas se siguen evaluando con
+ * lo que regía y no con lo nuevo.
  */
 export async function saveVersionedAccessNeeds(
   ctx: MutationCtx,
@@ -655,10 +657,25 @@ export async function saveVersionedAccessNeeds(
   if (id === null || actor === null) {
     throw new Error("La actualización versionada referencia un acompañamiento inexistente.");
   }
+  const row = await getAccompanimentById(ctx, id);
+  if (row === null) {
+    throw new Error("La actualización versionada referencia un acompañamiento inexistente.");
+  }
   const versions = await listNeedVersions(ctx, id);
-  const current = needVersionAt(versions, now);
-  if (current !== null && current.validUntil === undefined) {
-    await ctx.db.patch(current._id, { validUntil: now });
+  if (versions.length === 0) {
+    await ctx.db.insert("accompanimentNeeds", {
+      accompanimentId: id,
+      accessNeeds: row.accessNeeds,
+      validFrom: 1,
+      validUntil: now,
+      createdBy: actor,
+      createdAt: now,
+    });
+  } else {
+    const current = needVersionAt(versions, now);
+    if (current !== null && current.validUntil === undefined) {
+      await ctx.db.patch(current._id, { validUntil: now });
+    }
   }
   await ctx.db.insert("accompanimentNeeds", {
     accompanimentId: id,
