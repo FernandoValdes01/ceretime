@@ -5,6 +5,13 @@ import {
   APPOINTMENT_STATUS_VALUES,
   isCalendarActionableStatus,
 } from "../../domain/appointments/appointment";
+import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import {
+  addCivilDays,
+  civilDateOfInstant,
+  civilWeekday,
+  midnightToEpochMs,
+} from "../../domain/calendar/civil_days";
 import { conflictError, errResult, okResult, type ApiResult } from "../../domain/errors/api_error";
 
 /**
@@ -1118,6 +1125,296 @@ export function appointmentAgendaReader(ctx: DbReader) {
       const id = normalizeAppointmentId(ctx, appointmentId);
       const doc = id === null ? null : await getAppointmentById(ctx, id);
       return doc === null ? null : toAgendaAppointment(doc);
+    },
+  };
+}
+
+/**
+ * Participantes adicionales de una atención (TI2-156, marca de coordinación).
+ * Cumple por forma el puerto de la agenda sin importar Aplicación.
+ */
+export function appointmentParticipantsReader(ctx: DbReader) {
+  return {
+    listAdditionalIds: async (appointmentId: string): Promise<readonly string[]> => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      if (id === null) return [];
+      const doc = await getAppointmentById(ctx, id);
+      if (doc === null) return [];
+      return (await additionalProfessionalIdsOf(ctx, doc)).map((row) => row as string);
+    },
+  };
+}
+
+// ── TI2-156: atenciones futuras afectadas por cambios de configuración ─────
+//
+// Lecturas para detectar atenciones confirmadas que un cambio de
+// disponibilidad, sala o necesidades puede dejar sin compatibilidad. Solo
+// futuras vigentes (`scheduled`/`rescheduled` con `startsAt` posterior al
+// instante del cambio): las anteriores no cambian y las terminales no se
+// avisan. Nunca trunca en silencio: sobre el tope responde `complete: false`
+// para que el caso de uso rechace en vez de avisar a medias.
+
+/** Atención futura con lo mínimo para evaluar compatibilidad y avisar. */
+export interface FutureActionableAppointment {
+  readonly id: string;
+  readonly accompanimentId: string;
+  readonly studentId: string;
+  readonly professionalId: string;
+  readonly modality: Doc<"appointments">["modality"];
+  readonly spaceId?: string;
+  readonly status: Doc<"appointments">["status"];
+  readonly startAt: number;
+  readonly endAt: number;
+  readonly additionalProfessionalIds: readonly string[];
+}
+
+async function toFutureActionable(
+  ctx: DbReader,
+  row: Doc<"appointments">,
+): Promise<FutureActionableAppointment> {
+  const additional = await additionalProfessionalIdsOf(ctx, row);
+  return {
+    id: row._id as string,
+    accompanimentId: row.accompanimentId as string,
+    studentId: row.studentId as string,
+    professionalId: row.professionalId as string,
+    modality: row.modality,
+    ...(row.spaceId === undefined ? {} : { spaceId: row.spaceId as string }),
+    status: row.status,
+    startAt: row.startsAt,
+    endAt: row.endsAt,
+    additionalProfessionalIds: additional.map((id) => id as string),
+  };
+}
+
+async function collectFutureActionable(
+  ctx: DbReader,
+  rows: Doc<"appointments">[],
+  now: number,
+): Promise<{ readonly complete: boolean; readonly appointments: FutureActionableAppointment[] }> {
+  if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+    return { complete: false, appointments: [] };
+  }
+  const appointments: FutureActionableAppointment[] = [];
+  for (const row of rows) {
+    if (!isCalendarActionableStatus(row.status)) continue;
+    if (row.startsAt <= now) continue;
+    appointments.push(await toFutureActionable(ctx, row));
+  }
+  return { complete: true, appointments };
+}
+
+/**
+ * Atenciones futuras del centro donde el profesional participa sin ser el
+ * responsable (TI2-156, TI2-142). Recorre las futuras vigentes del centro por
+ * `by_status_and_startsAt` (`scheduled` y `rescheduled` desde `now`, sin
+ * límite de historial) y confirma la participación con
+ * `by_appointmentId_and_professionalId`. Si el profesional nunca fue adicional
+ * (`take(1)` vacío) no se lee nada más. Con `range` (lectura por fecha) el
+ * rango va en el índice y solo se lee ese día. El tope es sobre las
+ * coincidentes (`MAX_APPOINTMENTS_IN_RANGE`), nunca sobre el historial; si el
+ * barrido no drena (20 páginas por estado) responde `complete: false` en vez
+ * de truncar en silencio.
+ */
+async function collectCenterParticipating(
+  ctx: DbReader,
+  professionalId: Id<"users">,
+  now: number,
+  matchesDate: (startsAt: number) => boolean,
+  range?: { readonly start: number; readonly end: number },
+  pageSize = 200,
+): Promise<{ readonly complete: boolean; readonly appointments: FutureActionableAppointment[] }> {
+  const rows: Doc<"appointments">[] = [];
+  const seen = new Set<string>();
+  const lower = range === undefined ? now : Math.max(now, range.start);
+  for (const status of ["scheduled", "rescheduled"] as const) {
+    let cursor = lower;
+    let first = true;
+    let drained = false;
+    for (let round = 0; round < 20; round += 1) {
+      const page = await ctx.db
+        .query("appointments")
+        .withIndex("by_status_and_startsAt", (q) => {
+          const base = q.eq("status", status);
+          if (range === undefined) {
+            return first ? base.gt("startsAt", cursor) : base.gte("startsAt", cursor);
+          }
+          if (first && cursor === now) {
+            return base.gt("startsAt", cursor).lt("startsAt", range.end);
+          }
+          return base.gte("startsAt", cursor).lt("startsAt", range.end);
+        })
+        .take(pageSize + 1);
+      first = false;
+      if (page.length === 0) {
+        drained = true;
+        break;
+      }
+      let fresh = 0;
+      const limit = Math.min(page.length, pageSize);
+      for (let index = 0; index < limit; index += 1) {
+        const row = page[index] as Doc<"appointments">;
+        if (seen.has(row._id as string)) continue;
+        seen.add(row._id as string);
+        fresh += 1;
+        if (row.startsAt <= now || !matchesDate(row.startsAt)) continue;
+        if (row.professionalId === professionalId) continue;
+        const participation = await findAppointmentProfessional(ctx, row._id, professionalId);
+        if (participation === null) continue;
+        rows.push(row);
+        if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+          return { complete: false, appointments: [] } as const;
+        }
+      }
+      if (page.length <= pageSize) {
+        drained = true;
+        break;
+      }
+      if (fresh === 0) return { complete: false, appointments: [] } as const;
+      cursor = (page[page.length - 1] as Doc<"appointments">).startsAt;
+    }
+    if (!drained) return { complete: false, appointments: [] } as const;
+  }
+  return await collectFutureActionable(ctx, rows, now);
+}
+
+/**
+ * Atenciones futuras por profesional, espacio, acompañamiento o participante
+ * (TI2-156). Cumple por forma los puertos de impacto sin importar Aplicación.
+ * Un identificador de otra tabla responde como vacío con `complete: true`.
+ */
+export function futureAppointmentsReader(ctx: DbReader) {
+  return {
+    listResponsibleByDate: async (professionalId: string, date: string, now: number) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const dayStart = midnightToEpochMs(date, AGENDA_TIME_ZONE);
+      const dayEnd = midnightToEpochMs(addCivilDays(date, 1), AGENDA_TIME_ZONE);
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_professionalId_and_startsAt", (q) =>
+          q.eq("professionalId", id).gte("startsAt", dayStart).lt("startsAt", dayEnd),
+        )
+        .take(51);
+      if (rows.length > 50) return { complete: false, appointments: [] } as const;
+      return await collectFutureActionable(ctx, rows, now);
+    },
+    listResponsibleByWeekdays: async (
+      professionalId: string,
+      weekdays: readonly number[],
+      now: number,
+      pageSize = 200,
+    ) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const rows: Doc<"appointments">[] = [];
+      const seen = new Set<string>();
+      let cursor = now;
+      let first = true;
+      let drained = false;
+      for (let round = 0; round < 20; round += 1) {
+        const page = await ctx.db
+          .query("appointments")
+          .withIndex("by_professionalId_and_startsAt", (q) =>
+            first
+              ? q.eq("professionalId", id).gt("startsAt", cursor)
+              : q.eq("professionalId", id).gte("startsAt", cursor),
+          )
+          .take(pageSize + 1);
+        first = false;
+        if (page.length === 0) {
+          drained = true;
+          break;
+        }
+        let fresh = 0;
+        for (const row of page.slice(0, pageSize)) {
+          if (seen.has(row._id as string)) continue;
+          seen.add(row._id as string);
+          fresh += 1;
+          if (
+            (weekdays as readonly number[]).includes(
+              civilWeekday(civilDateOfInstant(row.startsAt, AGENDA_TIME_ZONE)),
+            )
+          ) {
+            rows.push(row);
+            if (rows.length > MAX_APPOINTMENTS_IN_RANGE) {
+              return { complete: false, appointments: [] } as const;
+            }
+          }
+        }
+        if (page.length <= pageSize) {
+          drained = true;
+          break;
+        }
+        if (fresh === 0) return { complete: false, appointments: [] } as const;
+        cursor = page[page.length - 1].startsAt;
+      }
+      if (!drained) return { complete: false, appointments: [] } as const;
+      return await collectFutureActionable(ctx, rows, now);
+    },
+    listAdditionalByWeekdays: async (
+      professionalId: string,
+      weekdays: readonly number[],
+      now: number,
+      pageSize = 200,
+    ) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const probe = await ctx.db
+        .query("appointmentProfessionals")
+        .withIndex("by_professionalId", (q) => q.eq("professionalId", id))
+        .take(1);
+      if (probe.length === 0) return { complete: true, appointments: [] } as const;
+      const matchesDate = (startsAt: number): boolean =>
+        (weekdays as readonly number[]).includes(
+          civilWeekday(civilDateOfInstant(startsAt, AGENDA_TIME_ZONE)),
+        );
+      return await collectCenterParticipating(ctx, id, now, matchesDate, undefined, pageSize);
+    },
+    listAdditionalByDate: async (
+      professionalId: string,
+      date: string,
+      now: number,
+      pageSize = 200,
+    ) => {
+      const id = ctx.db.normalizeId("users", professionalId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const probe = await ctx.db
+        .query("appointmentProfessionals")
+        .withIndex("by_professionalId", (q) => q.eq("professionalId", id))
+        .take(1);
+      if (probe.length === 0) return { complete: true, appointments: [] } as const;
+      const dayStart = midnightToEpochMs(date, AGENDA_TIME_ZONE);
+      const dayEnd = midnightToEpochMs(addCivilDays(date, 1), AGENDA_TIME_ZONE);
+      const matchesDate = (startsAt: number): boolean => startsAt >= dayStart && startsAt < dayEnd;
+      return await collectCenterParticipating(
+        ctx,
+        id,
+        now,
+        matchesDate,
+        { start: dayStart, end: dayEnd },
+        pageSize,
+      );
+    },
+    listFutureBySpace: async (spaceId: string, now: number) => {
+      const id = ctx.db.normalizeId("spaces", spaceId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_spaceId_and_startsAt", (q) => q.eq("spaceId", id).gt("startsAt", now))
+        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
+      return await collectFutureActionable(ctx, rows, now);
+    },
+    listFutureByAccompaniment: async (accompanimentId: string, now: number) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return { complete: true, appointments: [] } as const;
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_accompanimentId_and_startsAt", (q) =>
+          q.eq("accompanimentId", id).gt("startsAt", now),
+        )
+        .take(MAX_APPOINTMENTS_IN_RANGE + 1);
+      return await collectFutureActionable(ctx, rows, now);
     },
   };
 }

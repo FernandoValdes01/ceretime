@@ -44,6 +44,9 @@ export const APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES = [
   "appointment_online_access_ready",
   "appointment_justification_submitted",
   "appointment_justification_reviewed",
+  "appointment_availability_changed",
+  "appointment_space_changed",
+  "appointment_needs_updated",
 ] as const;
 
 export type AppointmentNotificationEventKind =
@@ -391,6 +394,64 @@ export function notificationEventsForJustificationSubmitted(
 }
 
 /**
+ * Aviso de cambio de disponibilidad que puede afectar la atención (TI2-156).
+ *
+ * No cambia el estado de la atención: la conserva y avisa para coordinar una
+ * solución con los flujos existentes (reagendar o cancelar). Avisa a todos los
+ * participantes salvo a quien hizo el cambio, igual que una transición.
+ */
+export function notificationEventsForAvailabilityChange(
+  subject: NotificationSubject,
+  occurredAt: number,
+  actorId: string,
+): readonly NotificationEvent[] {
+  return eventsFor(
+    "appointment_availability_changed",
+    subject,
+    recipientsFor(subject, ALL_PARTICIPANTS, actorId),
+    occurredAt,
+  );
+}
+
+/**
+ * Aviso de cambio de sala o condiciones que puede afectar la atención (TI2-156).
+ *
+ * El actor es la administración del catálogo, que no participa de la atención,
+ * así que avisa a todos sus participantes. No borra ni cancela la atención.
+ */
+export function notificationEventsForSpaceChange(
+  subject: NotificationSubject,
+  occurredAt: number,
+  actorId: string,
+): readonly NotificationEvent[] {
+  return eventsFor(
+    "appointment_space_changed",
+    subject,
+    recipientsFor(subject, ALL_PARTICIPANTS, actorId),
+    occurredAt,
+  );
+}
+
+/**
+ * Aviso de actualización de necesidades de acceso (TI2-156).
+ *
+ * El estudiante actualiza sus necesidades para atenciones futuras sin alterar
+ * lo registrado antes. Avisa solo a los profesionales de la atención, que
+ * coordinan la solución; el estudiante ya conoce su propio cambio.
+ */
+export function notificationEventsForNeedsUpdated(
+  subject: NotificationSubject,
+  occurredAt: number,
+): readonly NotificationEvent[] {
+  return eventsFor(
+    "appointment_needs_updated",
+    subject,
+    recipientsFor(subject, ["professional"], subject.studentId),
+    occurredAt,
+  );
+}
+
+/**
  * Eventos de una transición de la atención, vacío si esa transición no avisa.
  *
  * Solo acepta pares declarados en `APPOINTMENT_TRANSITIONS`: un par ausente
@@ -591,6 +652,9 @@ const EXTERNAL_NOTIFICATION_TEXTS: Record<NotificationEventKind, ExternalNotific
   },
   appointment_justification_submitted: PENDING_UPDATE_TEXT,
   appointment_justification_reviewed: PENDING_UPDATE_TEXT,
+  appointment_availability_changed: PENDING_UPDATE_TEXT,
+  appointment_space_changed: PENDING_UPDATE_TEXT,
+  appointment_needs_updated: PENDING_UPDATE_TEXT,
   request_received: PENDING_UPDATE_TEXT,
   request_under_review: PENDING_UPDATE_TEXT,
   request_information_requested: PENDING_UPDATE_TEXT,

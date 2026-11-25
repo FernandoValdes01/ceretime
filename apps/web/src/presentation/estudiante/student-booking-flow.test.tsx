@@ -163,6 +163,7 @@ function createFakeBackend() {
     endAt: appointment.endAt,
     status: appointment.status,
     version: "v1",
+    needsCoordination: false,
     ...(exposeFullView && appointment.cancelReason !== undefined
       ? { view: "full" as const, cancelReason: appointment.cancelReason }
       : { view: "shared" as const }),

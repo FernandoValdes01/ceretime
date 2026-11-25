@@ -1,13 +1,27 @@
 import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
+import type { Id } from "../../_generated/dataModel";
 import type { QueryCtx } from "../../_generated/server";
-import { SPACE_CATALOG_CONTRACT_VERSION } from "../../domain/spaces/space";
+import { SPACE_CATALOG_CONTRACT_VERSION, type Space } from "../../domain/spaces/space";
 import {
   AUTHORIZATION_DENIED_MESSAGE,
+  authorizeSpaceCatalogManage,
   authorizeSpaceCatalogRead,
+  type AuthorizationReader,
 } from "../authorization/authorize";
 import { authorizationReader } from "../../infrastructure/accompaniments/repository";
-import { listActiveSpaceRows, toSpace } from "../../infrastructure/spaces/repository";
+import {
+  listActiveSpaceRows,
+  toSpace,
+  type SpaceCatalogRowPage,
+} from "../../infrastructure/spaces/repository";
+import {
+  conflictError,
+  errResult,
+  okResult,
+  unauthorizedError,
+  type ApiResult,
+} from "../../domain/errors/api_error";
 
 /**
  * Casos de uso de lectura del catálogo de espacios (TI2-99).
@@ -63,4 +77,51 @@ export async function listSpaceCatalogUseCase(
     nextCursor: page.nextCursor,
     version: SPACE_CATALOG_CONTRACT_VERSION,
   };
+}
+
+/**
+ * Lista las salas retiradas para Administración (TI2-156, nota TI2-169).
+ *
+ * Solo administración con cuenta vigente, con el mismo permiso que gestiona
+ * el catálogo. Sigue puertos (sin importar Infraestructura) y devuelve
+ * `ApiResult` para que Presentación lo traduzca con `unwrapApiResult`.
+ */
+export interface InactiveSpaceReader {
+  listInactiveSpaces(input: {
+    readonly limit: number;
+    readonly cursor: string | null;
+  }): Promise<SpaceCatalogRowPage>;
+}
+
+export async function listInactiveSpaceCatalogUseCase(
+  auth: AuthorizationReader,
+  store: InactiveSpaceReader,
+  input: {
+    readonly tokenIdentifier: string | null;
+    readonly limit: number;
+    readonly cursor?: string;
+    readonly version: string;
+  },
+): Promise<
+  ApiResult<{
+    readonly items: (Space & { readonly id: Id<"spaces"> })[];
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly version: typeof SPACE_CATALOG_CONTRACT_VERSION;
+  }>
+> {
+  if (input.version !== SPACE_CATALOG_CONTRACT_VERSION) return errResult(conflictError());
+  if (!Number.isInteger(input.limit) || input.limit < 1) return errResult(conflictError());
+  if (input.limit > SPACE_CATALOG_PAGE_LIMIT_MAX) return errResult(conflictError());
+  const grant = await authorizeSpaceCatalogManage(auth, {
+    tokenIdentifier: input.tokenIdentifier,
+  });
+  if (grant.status === "error") return errResult(unauthorizedError());
+  const page = await store.listInactiveSpaces({ limit: input.limit, cursor: input.cursor ?? null });
+  return okResult({
+    items: page.items.map(toSpace),
+    hasMore: page.hasMore,
+    nextCursor: page.nextCursor,
+    version: SPACE_CATALOG_CONTRACT_VERSION,
+  });
 }
