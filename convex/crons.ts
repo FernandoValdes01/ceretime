@@ -12,9 +12,9 @@ import { internal } from "./_generated/api";
 const crons = cronJobs();
 
 crons.interval(
-  "retry due email notification deliveries",
+  "retry due notification deliveries",
   { minutes: 5 },
-  internal.operations.notifications.scheduleDueEmailDeliveries,
+  internal.operations.notifications.scheduleDueNotificationDeliveries,
   {},
 );
 
