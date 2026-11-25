@@ -19,7 +19,6 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import {
   AGENDA_TIME_ZONE,
   civilDateOfInstant,
-  OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
   RECEIVED_AT_FUTURE_MESSAGE,
   REFERRAL_REASON_MAX_LENGTH,
 } from "../../../../../convex/domain/index.ts";
@@ -1740,6 +1739,13 @@ describe("registro por canal oficial (TI2-158)", () => {
     const registrada = await screen.findByRole("heading", { name: "Solicitud registrada" });
     await waitFor(() => expect(document.activeElement).toBe(registrada));
     expect(screen.getByText(/Quedó también como derivación de entrada/)).toBeDefined();
+
+    // Registrar otra lleva el foco al título: el botón desaparece con la confirmación.
+    fireEvent.click(screen.getByRole("button", { name: "Registrar otra solicitud" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { name: "Registrar solicitud por canal oficial" }),
+    );
+    expect(screen.getByLabelText(/Unidad que derivó al estudiante/)).toHaveProperty("value", "");
   });
 
   test("una fecha pasada se envía al mediodía UTC de ese día", async () => {
@@ -1809,10 +1815,15 @@ describe("registro por canal oficial (TI2-158)", () => {
 
   test("cada rechazo muestra un mensaje comprensible y se puede reintentar", async () => {
     comoProfesional();
+    const sinEstudiante = "No hay una cuenta de Estudiante vigente con ese correo.";
+    // Mismo texto con otro código: el campo se marca por el código, no por el mensaje.
+    registerOfficialMock.mockRejectedValueOnce(
+      new ConvexError({ code: "request_fields_invalid", message: sinEstudiante }),
+    );
     registerOfficialMock.mockRejectedValueOnce(
       new ConvexError({
-        code: "request_fields_invalid",
-        message: OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
+        code: "request_student_not_found",
+        message: sinEstudiante,
       }),
     );
     registerOfficialMock.mockRejectedValueOnce(SDK_ERROR);
@@ -1824,12 +1835,14 @@ describe("registro por canal oficial (TI2-158)", () => {
     const registrar = screen.getByRole("button", { name: "Registrar solicitud" });
     const correo = screen.getByLabelText(/Correo institucional del estudiante/);
 
+    fireEvent.click(registrar);
+    expect(await screen.findByText(sinEstudiante)).toBeDefined();
+    expect(correo.getAttribute("aria-invalid")).toBe("false");
+
     // El correo rechazado se marca en su campo y el resumen lleva a él.
     fireEvent.click(registrar);
     expect(
-      await screen.findByRole("link", {
-        name: `Correo del estudiante: ${OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE}`,
-      }),
+      await screen.findByRole("link", { name: `Correo del estudiante: ${sinEstudiante}` }),
     ).toBeDefined();
     expect(correo.getAttribute("aria-invalid")).toBe("true");
 
@@ -1841,7 +1854,7 @@ describe("registro por canal oficial (TI2-158)", () => {
 
     fireEvent.click(registrar);
     expect(await screen.findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();
-    expect(registerOfficialMock).toHaveBeenCalledTimes(3);
+    expect(registerOfficialMock).toHaveBeenCalledTimes(4);
   });
 
   test("un doble clic mientras se registra llama una sola vez", async () => {

@@ -29,13 +29,6 @@ export const REFERRAL_REASON_MAX_LENGTH = REQUEST_TEXT_MAX_LENGTH;
 export const RECEIVED_AT_FUTURE_MESSAGE = "La fecha de recepción no puede ser futura.";
 
 /**
- * Rechazo del registro por canal oficial cuando el correo no es de un
- * Estudiante vigente. La Web lo reconoce para marcar el campo del correo.
- */
-export const OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE =
-  "No hay una cuenta de Estudiante vigente con ese correo.";
-
-/**
  * Derivación de entrada: la unidad que avisó, cuándo, y el contacto y la
  * aceptación con su fecha. El identificador es genérico para no importar
  * `convex/_generated`.

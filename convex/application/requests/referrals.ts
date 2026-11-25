@@ -1,9 +1,13 @@
 import { normalizeEmail } from "../../domain/auth/institutional_domain";
-import { okResult, type ApiResult } from "../../domain/errors/api_error";
+import {
+  errResult,
+  okResult,
+  requestStudentNotFoundError,
+  type ApiResult,
+} from "../../domain/errors/api_error";
 import {
   recordReferralAcceptance as applyReferralAcceptance,
   recordReferralContact as applyReferralContact,
-  OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
   toDestinationUnit,
   toOfficialReceivedAt,
   toOriginUnit,
@@ -98,9 +102,7 @@ export async function registerOfficialRequest<RequestId extends string, UserId e
   const email = normalizeEmail(input.studentEmail);
   if (email === "") return invalidRequestFields("Indica el correo institucional del estudiante.");
   const student = await deps.students.findActiveStudentByEmail(email);
-  if (student === null) {
-    return invalidRequestFields(OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE);
-  }
+  if (student === null) return errResult(requestStudentNotFoundError());
   const requestId = await deps.requests.registerOfficial({
     studentId: student._id,
     submission: submission.data,

@@ -56,7 +56,6 @@ export { isOpenRequestState } from "./requests/transitions";
 export { findRequestTransition } from "./requests/transition_policy";
 // Derivaciones de entrada y de salida (TI2-143): límites y condición de apertura.
 export {
-  OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
   RECEIVED_AT_FUTURE_MESSAGE,
   REFERRAL_REASON_MAX_LENGTH,
   REFERRAL_UNIT_MAX_LENGTH,
@@ -109,6 +108,7 @@ export {
   NO_AVAILABILITY_ERROR_CODE,
   NO_AVAILABILITY_ERROR_MESSAGE,
   REQUEST_FIELDS_INVALID_ERROR_CODE,
+  REQUEST_STUDENT_NOT_FOUND_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_MESSAGE,
   UNAUTHORIZED_ERROR_CODE,

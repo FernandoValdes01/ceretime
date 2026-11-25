@@ -3,9 +3,9 @@ import { Link } from "@tanstack/react-router";
 import {
   AGENDA_TIME_ZONE,
   civilDateOfInstant,
-  OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
   RECEIVED_AT_FUTURE_MESSAGE,
   REFERRAL_UNIT_MAX_LENGTH,
+  REQUEST_STUDENT_NOT_FOUND_ERROR_CODE,
 } from "../../../../../convex/domain/index.ts";
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import {
@@ -56,9 +56,11 @@ import { requestActionFailureOf } from "./request-review-errors.ts";
 export function OfficialRequestFormPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  useEffect(() => {
+  function focusHeading() {
     headingRef.current?.focus();
-  }, []);
+  }
+
+  useEffect(focusHeading, []);
 
   return (
     <section aria-labelledby="official-request-form-title" className={PAGE_CLASS}>
@@ -80,7 +82,7 @@ export function OfficialRequestFormPage() {
           Volver a solicitudes
         </Link>
       </p>
-      <OfficialRequestForm />
+      <OfficialRequestForm onStartAnother={focusHeading} />
     </section>
   );
 }
@@ -149,7 +151,11 @@ type SubmitState =
   | { status: "failed"; message: string }
   | { status: "registered"; incomingReferral: boolean };
 
-function OfficialRequestForm() {
+/**
+ * `onStartAnother` lleva el foco fuera del bloque de confirmación, que
+ * desaparece con su botón: sin él quedaría en `body`.
+ */
+function OfficialRequestForm({ onStartAnother }: { onStartAnother: () => void }) {
   const registerOfficialRequest = useRegisterOfficialRequest();
   const [draft, setDraft] = useState<RequestDraft>(emptyRequestDraft);
   const [provenance, setProvenance] = useState<Provenance>(EMPTY_PROVENANCE);
@@ -218,8 +224,9 @@ function OfficialRequestForm() {
       setSubmitState({ status: "registered", incomingReferral: originUnit !== "" });
     } catch (error) {
       // El correo rechazado se marca en su campo, como un dato que falta.
-      if (publicErrorOf(error)?.message === OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE) {
-        setProvenanceErrors({ studentEmail: OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE });
+      const publicError = publicErrorOf(error);
+      if (publicError?.code === REQUEST_STUDENT_NOT_FOUND_ERROR_CODE) {
+        setProvenanceErrors({ studentEmail: publicError.message });
         setSubmitState({ status: "idle" });
         setSummaryFocusRequest((count) => count + 1);
         return;
@@ -242,6 +249,7 @@ function OfficialRequestForm() {
     setProvenanceErrors({});
     setAttempted(false);
     setSubmitState({ status: "idle" });
+    onStartAnother();
   }
 
   if (submitState.status === "registered") {
