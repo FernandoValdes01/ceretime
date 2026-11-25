@@ -63,11 +63,16 @@ describe("TI2-149: campos que faltan", () => {
 
   test("en la voz del personal los mensajes hablan del estudiante (TI2-158)", () => {
     const errores = findMissingFields(
-      borradorCompleto({ expectedOutcome: "", preferredAccessibleInformationChannel: "" }),
+      borradorCompleto({
+        expectedOutcome: "",
+        modalityPreference: "",
+        preferredAccessibleInformationChannel: "",
+      }),
       "staff",
     );
     expect(errores).toEqual({
       expectedOutcome: "Indica qué espera el estudiante de CERETI.",
+      modalityPreference: "Indica si el estudiante prefiere la modalidad presencial o en línea.",
       preferredAccessibleInformationChannel:
         "Indica cómo prefiere recibir información el estudiante.",
     });

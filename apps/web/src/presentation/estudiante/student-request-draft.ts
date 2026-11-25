@@ -116,7 +116,10 @@ export function findMissingFields(
       "Selecciona al menos una necesidad de acceso o escribe cuál en «Otra necesidad de acceso».";
   }
   if (draft.modalityPreference === "") {
-    errors.modalityPreference = "Indica si prefieres la modalidad presencial o en línea.";
+    errors.modalityPreference =
+      voice === "student"
+        ? "Indica si prefieres la modalidad presencial o en línea."
+        : "Indica si el estudiante prefiere la modalidad presencial o en línea.";
   }
   if (draft.preferredWeekdays.length === 0) {
     errors.preferredWeekdays = "Selecciona al menos un día disponible.";
