@@ -45,6 +45,7 @@ import {
 } from "./staff-portals.tsx";
 import { RequireStaffRole } from "./staff-guard.tsx";
 import { StudentHome, StudentLayout } from "./student-portal.tsx";
+import { toRequestListSearch } from "../gestion/paged-requests.ts";
 import { ScheduleSearchPage } from "../estudiante/schedule-search.tsx";
 import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 
@@ -211,7 +212,8 @@ const professionalRequestDetailApi = getRouteApi("/profesional/solicitudes/$requ
 // `?estado=` desconocido llega igual: se vuelve a reducir al filtro válido.
 export function ProfessionalRequestsRouteComponent() {
   useDocumentTitle("Solicitudes");
-  return <ProfessionalRequestsPage />;
+  const search = toRequestListSearch(professionalRequestsApi.useSearch());
+  return <ProfessionalRequestsPage search={search} />;
 }
 
 export function ProfessionalRequestDetailRouteComponent() {
