@@ -27,6 +27,7 @@ export type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles
 export const AUTHORIZATION_ACTIONS = [
   "accompaniment:read",
   "accompaniment:changeStatus",
+  "accompaniment:updateNeeds",
   "internalNote:read",
   "availability:edit",
   "availability:read",
@@ -178,6 +179,17 @@ export function getFollowUpView(context: AuthorizationContext): FollowUpView | n
 export function canWriteFollowUp(context: AgendaAuthorizationContext): boolean {
   if (!isProfileActive(context) || context.accompanimentStatus !== "active") return false;
   return context.role === "professional" && context.hasActiveProfessionalAssignment;
+}
+
+/**
+ * Actualización de necesidades de acceso (TI2-156): solo el Estudiante dueño
+ * con cuenta vigente, sobre un acompañamiento activo o en pausa. Un
+ * acompañamiento cerrado es de solo lectura.
+ */
+export function canUpdateAccompanimentNeeds(context: AgendaAuthorizationContext): boolean {
+  if (!isProfileActive(context)) return false;
+  if (context.role !== "student" || !context.isOwner) return false;
+  return context.accompanimentStatus === "active" || context.accompanimentStatus === "paused";
 }
 
 /**
@@ -484,6 +496,13 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     action: "accompaniment:changeStatus",
     student: "denegado",
     professional: "permitido solo asignados activos",
+    intern: "denegado",
+    admin: "denegado",
+  },
+  {
+    action: "accompaniment:updateNeeds",
+    student: "permitido solo propios con acompañamiento activo o en pausa",
+    professional: "denegado",
     intern: "denegado",
     admin: "denegado",
   },

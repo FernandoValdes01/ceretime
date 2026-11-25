@@ -137,7 +137,26 @@ function worldDeps(world: World) {
       ),
     getAppointment: async (id) => rows.find((row) => row.id === id) ?? null,
   };
-  const deps: AppointmentQueryDeps = { auth, appointments };
+  const deps: AppointmentQueryDeps = {
+    auth,
+    appointments,
+    availability: {
+      listActiveBlocks: async () => okResult([]),
+      listExceptions: async () => okResult([]),
+      getBlock: async () => null,
+      getException: async () => null,
+    },
+    needsAtDate: {
+      findNeedsAt: async (accompanimentId) => ({ _id: accompanimentId, needs: [] }),
+    },
+    compatibility: {
+      findCompatibilitySpace: async () => null,
+      listOnlineSupports: async () => [],
+    },
+    participants: {
+      listAdditionalIds: async () => [],
+    },
+  };
   return { deps, log };
 }
 
@@ -268,6 +287,28 @@ describe("agenda propia", () => {
       okResult({ items: [], hasMore: false, nextCursor: null, version: "v1" }),
     );
   });
+
+  test("un fallo de lectura marca needsCoordination sin tumbar la lista", async () => {
+    const future = appointmentRow("a-1", {
+      startAt: Date.now() + 3_600_000,
+      endAt: Date.now() + 5_400_000,
+    });
+    const { deps } = worldDeps({ rows: [future] });
+    const badDeps: typeof deps = {
+      ...deps,
+      availability: {
+        listActiveBlocks: async () => errResult(conflictError()),
+        listExceptions: async () => errResult(conflictError()),
+        getBlock: async () => null,
+        getException: async () => null,
+      },
+    };
+    const result = await listAppointments(badDeps, listInput());
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("Se esperaba éxito con marca segura");
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data.items[0]).toMatchObject({ id: "a-1", needsCoordination: true });
+  });
 });
 
 describe("atenciones de un acompañamiento", () => {
@@ -280,8 +321,8 @@ describe("atenciones de un acompañamiento", () => {
   test("el Profesional asignado recibe la vista completa y el Estudiante, la compartida", async () => {
     const { cancelReason: _omitted, ...withoutReason } = rows[0];
     const cases = [
-      [professional, { ...rows[0], view: "full" }],
-      [student, { ...withoutReason, view: "shared" }],
+      [professional, { ...rows[0], view: "full", needsCoordination: false }],
+      [student, { ...withoutReason, view: "shared", needsCoordination: false }],
     ] as const;
     for (const [caller, item] of cases) {
       const { deps } = worldDeps({ rows });
@@ -325,6 +366,7 @@ describe("atenciones de un acompañamiento", () => {
             endAt: 2000,
             modality: "online",
             view: "minimized",
+            needsCoordination: false,
           },
         ],
         hasMore: false,
@@ -527,7 +569,7 @@ describe("detalle de una atención", () => {
       const { deps } = worldDeps({ rows: [row] });
       expect(
         await getAppointment(deps, { ...detail, tokenIdentifier: caller.tokenIdentifier }),
-      ).toEqual(okResult({ ...row, view }));
+      ).toEqual(okResult({ ...row, view, needsCoordination: false }));
     }
   });
 
@@ -543,6 +585,7 @@ describe("detalle de una atención", () => {
         endAt: 2000,
         modality: "inPerson",
         view: "minimized",
+        needsCoordination: false,
       }),
     );
   });

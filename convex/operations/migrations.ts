@@ -560,3 +560,70 @@ export const migrateRetiredFields = internalMutation({
     };
   },
 });
+
+/**
+ * Auditoría de versiones de necesidades (TI2-156): acompañamientos sin
+ * primera versión en `accompanimentNeeds`.
+ */
+export const auditAccompanimentNeeds = internalQuery({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const result = await ctx.db.query("accompaniments").paginate(args.paginationOpts);
+    let missingVersions = 0;
+    const sampleLegacyIds = [];
+    for (const row of result.page) {
+      const versions = await ctx.db
+        .query("accompanimentNeeds")
+        .withIndex("by_accompanimentId_and_validFrom", (q) => q.eq("accompanimentId", row._id))
+        .take(1);
+      if (versions.length === 0) {
+        missingVersions += 1;
+        if (sampleLegacyIds.length < MIGRATION_SAMPLE_SIZE) sampleLegacyIds.push(row._id);
+      }
+    }
+    return {
+      scanned: result.page.length,
+      missingVersions,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      sampleLegacyIds,
+    };
+  },
+});
+
+/**
+ * Crea la primera versión de cada acompañamiento sin versiones, con el texto
+ * vigente y `validFrom: 1`, sin tocar la copia en `accompaniments`.
+ */
+export const migrateAccompanimentNeeds = internalMutation({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    await requireAdminOperator(ctx);
+
+    const result = await ctx.db.query("accompaniments").paginate(args.paginationOpts);
+    let migrated = 0;
+    const migratedIds = [];
+    for (const row of result.page) {
+      const versions = await ctx.db
+        .query("accompanimentNeeds")
+        .withIndex("by_accompanimentId_and_validFrom", (q) => q.eq("accompanimentId", row._id))
+        .take(1);
+      if (versions.length > 0) continue;
+      await ctx.db.insert("accompanimentNeeds", {
+        accompanimentId: row._id,
+        accessNeeds: row.accessNeeds,
+        validFrom: 1,
+        createdAt: Date.now(),
+      });
+      migrated += 1;
+      if (migratedIds.length < MIGRATION_SAMPLE_SIZE) migratedIds.push(row._id);
+    }
+    return {
+      scanned: result.page.length,
+      migrated,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      migratedIds,
+    };
+  },
+});
