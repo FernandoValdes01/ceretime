@@ -84,6 +84,7 @@ Una pantalla por rol usa ya las piezas comunes:
 | --- | --- | --- |
 | Estudiante | `estudiante/student-appointments-page.tsx` | Carga, error con reintento, denegación, vacío y aviso de sala sin resolver |
 | Profesional | `gestion/professional-agenda.tsx` | Carga, error con reintento, denegación, vacío y zona horaria visible |
+| Profesional | `gestion/professional-requests.tsx` (TI2-157) | Carga, vacío, denegación del detalle y de cada acción, y error de acción con mensaje de respaldo |
 | Practicante | `gestion/practitioner-accompaniments.tsx` | Carga, vacío, denegación en lista y detalle |
 | Administrador | `gestion/admin-space-editor.tsx` | Carga, error con reintento, denegación y catálogo vacío |
 

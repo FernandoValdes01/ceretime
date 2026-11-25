@@ -204,8 +204,11 @@ export function ProfessionalIndexRouteComponent() {
   return <ProfessionalHome />;
 }
 
+const professionalRequestsApi = getRouteApi("/profesional/solicitudes");
 const professionalRequestDetailApi = getRouteApi("/profesional/solicitudes/$requestId");
 
+// La búsqueda de una ruta hija suma la de sus padres sin validar, así que un
+// `?estado=` desconocido llega igual: se vuelve a reducir al filtro válido.
 export function ProfessionalRequestsRouteComponent() {
   useDocumentTitle("Solicitudes");
   return <ProfessionalRequestsPage />;
@@ -214,7 +217,9 @@ export function ProfessionalRequestsRouteComponent() {
 export function ProfessionalRequestDetailRouteComponent() {
   useDocumentTitle("Detalle de la solicitud");
   const { requestId } = professionalRequestDetailApi.useParams();
-  return <ProfessionalRequestDetailPage requestId={requestId} />;
+  // El filtro de la bandeja viaja con el detalle para volver con el mismo contexto.
+  const search = toRequestListSearch(professionalRequestDetailApi.useSearch());
+  return <ProfessionalRequestDetailPage requestId={requestId} listSearch={search} />;
 }
 
 const professionalAccompanimentDetailApi = getRouteApi(
