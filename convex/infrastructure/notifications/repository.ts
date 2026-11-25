@@ -3,8 +3,11 @@ import { internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import type {
+  DeliverySendResult,
   EmailDeliveryClaim,
-  EmailSendResult,
+  PushDeliveryClaim,
+  PushSubscriptionReader,
+  PushSubscriptionStore,
   StoredNotification,
 } from "../../application/notifications/ports";
 import {
@@ -23,6 +26,10 @@ import {
   type NotificationEvent,
   type NotificationReadStatus,
 } from "../../domain/notifications/notification";
+import {
+  isAllowedWebPushEndpoint,
+  MAX_PUSH_SUBSCRIPTIONS_PER_USER,
+} from "../../domain/notifications/push";
 
 /**
  * Repositorio de avisos, entregas y suscripciones push (TI2-118, TI2-145).
@@ -194,9 +201,15 @@ export function notificationEventRecorder(ctx: MutationCtx) {
     record: async (events: readonly NotificationEvent[]): Promise<void> => {
       const results = await recordNotificationEvents(ctx, events);
       const queuedAt = Date.now();
-      for (const result of results) {
-        if (result.status !== "recorded") continue;
+      for (let i = 0; i < results.length; i += 1) {
+        const result = results[i];
+        const event = events[i];
+        if (result === undefined || event === undefined || result.status !== "recorded") continue;
         await queueEmailDelivery(ctx, result.eventId, queuedAt);
+        const recipientId = ctx.db.normalizeId("users", event.recipientId);
+        if (recipientId !== null) {
+          await queuePushDeliveryIfSubscribed(ctx, result.eventId, recipientId, queuedAt);
+        }
       }
     },
   };
@@ -223,6 +236,25 @@ async function queueEmailDelivery(
   const queued = await ensureNotificationDelivery(ctx, eventId, "email", queuedAt);
   if (queued.status !== "queued") return;
   await ctx.scheduler.runAfter(0, internal.operations.notifications.dispatchEmailDelivery, {
+    deliveryId: queued.deliveryId,
+  });
+}
+
+/**
+ * Encola push solo si el destinatario tiene al menos una suscripción activa
+ * (TI2-160). Sin push activado no se crea fila ni se programa ningún envío.
+ */
+async function queuePushDeliveryIfSubscribed(
+  ctx: MutationCtx,
+  eventId: Id<"notificationEvents">,
+  recipientId: Id<"users">,
+  queuedAt: number,
+): Promise<void> {
+  const subscriptions = await findPushSubscriptionsForUser(ctx, recipientId);
+  if (subscriptions.length === 0) return;
+  const queued = await ensureNotificationDelivery(ctx, eventId, "push", queuedAt);
+  if (queued.status !== "queued") return;
+  await ctx.scheduler.runAfter(0, internal.operations.notifications.dispatchPushDelivery, {
     deliveryId: queued.deliveryId,
   });
 }
@@ -646,28 +678,43 @@ export async function recordNotificationDeliveryAttempt(
   return { status: "recorded", deliveryId, attempts };
 }
 
+type DeliveryTargetResolution<TClaimed, TNoDestination> =
+  | { readonly status: "ready"; readonly payload: TClaimed }
+  | { readonly status: "missing"; readonly result: TNoDestination };
+
 /**
- * Reserva una entrega por correo para un intento (TI2-159).
+ * Paso de reserva compartido por canal (TI2-159, TI2-160).
  *
- * Solo la toma si sigue sin enviarse y su próximo intento ya venció. En la
- * misma transacción retira `nextAttemptAt`, incrementa `attempts` y deja la
- * fila en `delivery_uncertain`: así un segundo despacho concurrente recibe
- * `skipped` y, si la acción se interrumpe después de llamar a Gmail y antes
- * de registrar `sent`, el barrido automático nunca vuelve a enviarla. Cuando
- * el despacho termina normalmente, `recordEmailDeliveryAttempt` reemplaza ese
- * estado provisional por el resultado real sin duplicar el contador.
- * Devuelve el aviso reconstruido con su forma mínima y el correo del
- * destinatario, que no sale del servidor.
+ * Solo toma la entrega si corresponde al canal, sigue sin enviarse y su
+ * próximo intento ya venció. En la misma transacción retira `nextAttemptAt`,
+ * incrementa `attempts` y deja la fila en `delivery_uncertain`: así un
+ * segundo despacho concurrente recibe `skipped` y, si la acción se interrumpe
+ * después de invocar al proveedor y antes de registrar `sent`, el barrido
+ * automático nunca vuelve a enviarla. Cuando el despacho termina normalmente,
+ * `recordDeliveryAttempt` reemplaza ese estado provisional por el resultado
+ * real sin duplicar el contador.
  */
-export async function claimEmailDelivery(
+async function claimNotificationDelivery<TClaimed, TNoDestination>(
   ctx: MutationCtx,
+  channel: NotificationDeliveryChannel,
   deliveryId: string,
   now: number,
-): Promise<EmailDeliveryClaim> {
+  resolveTarget: (
+    eventRow: Doc<"notificationEvents">,
+  ) => Promise<DeliveryTargetResolution<TClaimed, TNoDestination>>,
+): Promise<
+  | ({
+      readonly status: "claimed";
+      readonly eventId: Id<"notificationEvents">;
+      readonly event: NotificationEvent;
+    } & TClaimed)
+  | TNoDestination
+  | { readonly status: "skipped" }
+> {
   const normalized = ctx.db.normalizeId("notificationDeliveries", deliveryId);
   if (normalized === null) return { status: "skipped" };
   const delivery = await ctx.db.get(normalized);
-  if (delivery === null || delivery.channel !== "email" || delivery.status === "sent") {
+  if (delivery === null || delivery.channel !== channel || delivery.status === "sent") {
     return { status: "skipped" };
   }
   if (delivery.nextAttemptAt === undefined || delivery.nextAttemptAt > now) {
@@ -676,11 +723,10 @@ export async function claimEmailDelivery(
   const eventRow = await ctx.db.get(delivery.eventId);
   if (eventRow === null) return { status: "skipped" };
 
-  const recipient = await ctx.db.get(eventRow.recipientId);
-  const recipientEmail = recipient?.email.trim() ?? "";
-  if (recipientEmail === "") {
+  const target = await resolveTarget(eventRow);
+  if (target.status === "missing") {
     await ctx.db.patch(normalized, { nextAttemptAt: undefined });
-    return { status: "no_destination", eventId: eventRow._id };
+    return target.result;
   }
   await ctx.db.patch(normalized, {
     status: "failed",
@@ -693,8 +739,30 @@ export async function claimEmailDelivery(
     status: "claimed",
     eventId: eventRow._id,
     event: notificationEventFromRow(eventRow),
-    recipientEmail,
+    ...target.payload,
   };
+}
+
+/**
+ * Reserva una entrega por correo para un intento y devuelve el aviso
+ * reconstruido y el correo del destinatario, que no sale del servidor (TI2-159).
+ */
+export async function claimEmailDelivery(
+  ctx: MutationCtx,
+  deliveryId: string,
+  now: number,
+): Promise<EmailDeliveryClaim> {
+  return await claimNotificationDelivery(ctx, "email", deliveryId, now, async (eventRow) => {
+    const recipient = await ctx.db.get(eventRow.recipientId);
+    const recipientEmail = recipient?.email.trim() ?? "";
+    if (recipientEmail === "") {
+      return {
+        status: "missing",
+        result: { status: "no_destination" as const, eventId: eventRow._id },
+      };
+    }
+    return { status: "ready", payload: { recipientEmail } };
+  });
 }
 
 /** Forma mínima del aviso guardado, sin lectura ni identificador de la fila. */
@@ -706,42 +774,44 @@ function notificationEventFromRow(row: Doc<"notificationEvents">): NotificationE
     : toNotificationEvent({ ...base, kind: stored.kind, requestId: stored.requestId });
 }
 
-/** Tope de entregas que un barrido vuelve a programar: el resto espera al siguiente. */
-const EMAIL_RETRY_SWEEP_LIMIT = 50;
+/** Tope de entregas por canal que un barrido vuelve a programar: el resto espera al siguiente. */
+const DELIVERY_RETRY_SWEEP_LIMIT = 50;
 
 /**
- * Entregas por correo cuyo próximo intento ya venció, de la más atrasada a la
- * más reciente (TI2-159). La cota inferior excluye las filas sin intento
- * pendiente, que el índice ordena antes que cualquier instante.
+ * Entregas de un canal cuyo próximo intento ya venció, de la más atrasada a la
+ * más reciente (TI2-159, TI2-160). La cota inferior excluye las filas sin
+ * intento pendiente, que el índice ordena antes que cualquier instante.
  */
-export async function listDueEmailDeliveries(
+export async function listDueDeliveries(
   ctx: DbReader,
+  channel: NotificationDeliveryChannel,
   now: number,
 ): Promise<readonly Id<"notificationDeliveries">[]> {
   const rows = await ctx.db
     .query("notificationDeliveries")
     .withIndex("by_channel_and_nextAttemptAt", (q) =>
-      q.eq("channel", "email").gt("nextAttemptAt", 0).lte("nextAttemptAt", now),
+      q.eq("channel", channel).gt("nextAttemptAt", 0).lte("nextAttemptAt", now),
     )
-    .take(EMAIL_RETRY_SWEEP_LIMIT);
+    .take(DELIVERY_RETRY_SWEEP_LIMIT);
   return rows.map((row) => row._id);
 }
 
 /**
- * Registra el resultado de un intento de correo a partir del ID serializado
- * del evento (TI2-159). Ignora referencias inválidas sin lanzar.
+ * Registra el resultado de un intento por canal a partir del ID serializado
+ * del evento (TI2-159, TI2-160). Ignora referencias inválidas sin lanzar.
  */
-export async function recordEmailDeliveryAttempt(
+export async function recordDeliveryAttempt(
   ctx: MutationCtx,
+  channel: NotificationDeliveryChannel,
   eventId: string,
-  result: EmailSendResult,
+  result: DeliverySendResult,
   attemptedAt: number,
   countAttempt = false,
 ): Promise<NotificationDeliveryAttemptResult> {
   const normalized = ctx.db.normalizeId("notificationEvents", eventId);
   if (normalized === null) return { status: "invalid_reference" };
   return await recordNotificationDeliveryAttempt(ctx, normalized, {
-    channel: "email",
+    channel,
     status: result.status,
     attemptedAt,
     countAttempt,
@@ -779,13 +849,15 @@ export type PushSubscriptionSaveResult =
       readonly created: boolean;
     }
   | { readonly status: "invalid_reference" }
-  | { readonly status: "invalid_subscription" };
+  | { readonly status: "invalid_subscription" }
+  | { readonly status: "limit_reached" };
 
 function normalizePushSubscription(input: PushSubscriptionInput): PushSubscriptionInput | null {
   const endpoint = input.endpoint.trim();
   const p256dh = input.p256dh.trim();
   const auth = input.auth.trim();
   if (endpoint === "" || p256dh === "" || auth === "") return null;
+  if (!isAllowedWebPushEndpoint(endpoint)) return null;
   if (
     input.expirationTime !== undefined &&
     (!Number.isFinite(input.expirationTime) || input.expirationTime <= 0)
@@ -805,8 +877,11 @@ function normalizePushSubscription(input: PushSubscriptionInput): PushSubscripti
  *
  * El endpoint identifica un navegador, no a una persona: si otra sesión del
  * mismo navegador vuelve a suscribirse, la fila se reasigna al usuario actual
- * en vez de duplicarse. Las claves son las públicas del navegador y solo las
- * lee este repositorio.
+ * en vez de duplicarse. Cada persona admite hasta
+ * `MAX_PUSH_SUBSCRIPTIONS_PER_USER` suscripciones activas: actualizar un
+ * endpoint propio existente siempre está permitido, pero agregar o reasignar
+ * una nueva por sobre el límite se rechaza. Las claves son las públicas del
+ * navegador y solo las lee este repositorio.
  */
 export async function savePushSubscription(
   ctx: MutationCtx,
@@ -825,6 +900,13 @@ export async function savePushSubscription(
     .query("pushSubscriptions")
     .withIndex("by_endpoint", (q) => q.eq("endpoint", normalized.endpoint))
     .unique();
+  const addsSubscriptionForUser = existing === null || existing.userId !== userId;
+  if (addsSubscriptionForUser) {
+    const current = await findPushSubscriptionsForUser(ctx, userId);
+    if (current.length >= MAX_PUSH_SUBSCRIPTIONS_PER_USER) {
+      return { status: "limit_reached" };
+    }
+  }
   if (existing !== null) {
     await ctx.db.patch(existing._id, {
       userId,
@@ -882,5 +964,93 @@ export async function findPushSubscriptionsForUser(
   return await ctx.db
     .query("pushSubscriptions")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
-    .take(20);
+    .take(MAX_PUSH_SUBSCRIPTIONS_PER_USER);
+}
+
+/**
+ * Reserva una entrega push para un intento y devuelve el aviso y las
+ * suscripciones vigentes del destinatario (TI2-160).
+ */
+export async function claimPushDelivery(
+  ctx: MutationCtx,
+  deliveryId: string,
+  now: number,
+): Promise<PushDeliveryClaim> {
+  return await claimNotificationDelivery(ctx, "push", deliveryId, now, async (eventRow) => {
+    const rows = await findPushSubscriptionsForUser(ctx, eventRow.recipientId);
+    if (rows.length === 0) {
+      return {
+        status: "missing",
+        result: { status: "no_subscriptions" as const, eventId: eventRow._id },
+      };
+    }
+    return {
+      status: "ready",
+      payload: {
+        subscriptions: rows.map((row) => ({
+          endpoint: row.endpoint,
+          p256dh: row.p256dh,
+          auth: row.auth,
+        })),
+      },
+    };
+  });
+}
+
+/** Retira una suscripción vencida (`404`/`410`) reportada por el servicio push. */
+export async function deleteExpiredPushSubscriptionByEndpoint(
+  ctx: MutationCtx,
+  endpoint: string,
+): Promise<boolean> {
+  const normalized = endpoint.trim();
+  if (normalized === "") return false;
+  const existing = await ctx.db
+    .query("pushSubscriptions")
+    .withIndex("by_endpoint", (q) => q.eq("endpoint", normalized))
+    .unique();
+  if (existing === null) return false;
+  await ctx.db.delete(existing._id);
+  return true;
+}
+
+/**
+ * Lector de suscripciones push para la capa de Aplicación (TI2-160).
+ * Nunca expone endpoints ni claves en las lecturas públicas.
+ */
+export function pushSubscriptionReader(ctx: DbReader): PushSubscriptionReader {
+  return {
+    countForUser: async (userId: string): Promise<number> => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return 0;
+      return (await findPushSubscriptionsForUser(ctx, normalized)).length;
+    },
+  };
+}
+
+/** Almacén de suscripciones push para mutaciones (TI2-160). */
+export function pushSubscriptionStore(ctx: MutationCtx): PushSubscriptionStore {
+  return {
+    ...pushSubscriptionReader(ctx),
+    saveForUser: async (
+      userId: string,
+      input: PushSubscriptionInput,
+      savedAt: number,
+    ): Promise<
+      | { readonly status: "saved"; readonly created: boolean }
+      | { readonly status: "invalid" }
+      | { readonly status: "limit_reached" }
+    > => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return { status: "invalid" };
+      const saved = await savePushSubscription(ctx, normalized, input, savedAt);
+      if (saved.status === "limit_reached") return { status: "limit_reached" };
+      if (saved.status !== "saved") return { status: "invalid" };
+      return { status: "saved", created: saved.created };
+    },
+    deleteForUser: async (userId: string, endpoint: string): Promise<boolean> => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return false;
+      return await deletePushSubscription(ctx, normalized, endpoint);
+    },
+  };
 }
