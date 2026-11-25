@@ -26,6 +26,12 @@ const app = defineApp({
     // Destinos de prueba habilitados, separados por comas. Si existe, ningún
     // correo sale a una dirección fuera de la lista.
     EMAIL_ALLOWED_RECIPIENTS: v.optional(v.string()),
+    // Claves VAPID para Web Push opcional (TI2-160). La clave pública se
+    // entrega al navegador al activar la suscripción; la privada nunca sale
+    // del servidor. Sin ellas, el envío push registra `not_configured`.
+    VAPID_PUBLIC_KEY: v.optional(v.string()),
+    VAPID_PRIVATE_KEY: v.optional(v.string()),
+    VAPID_SUBJECT: v.optional(v.string()),
   },
 });
 // Cast acotado a este borde: Bun aísla `convex` por workspace y el `tsc`

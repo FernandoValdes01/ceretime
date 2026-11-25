@@ -33,6 +33,7 @@ import type * as application_follow_up_queries from "../application/follow_up/qu
 import type * as application_notifications_dispatch from "../application/notifications/dispatch.js";
 import type * as application_notifications_inbox from "../application/notifications/inbox.js";
 import type * as application_notifications_ports from "../application/notifications/ports.js";
+import type * as application_notifications_push from "../application/notifications/push.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_notifications from "../application/requests/notifications.js";
 import type * as application_requests_ports from "../application/requests/ports.js";
@@ -96,6 +97,7 @@ import type * as infrastructure_calendar_repository from "../infrastructure/cale
 import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
 import type * as infrastructure_notifications_gmail_sender from "../infrastructure/notifications/gmail_sender.js";
 import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
+import type * as infrastructure_notifications_web_push_sender from "../infrastructure/notifications/web_push_sender.js";
 import type * as infrastructure_privacy_repository from "../infrastructure/privacy/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
@@ -151,6 +153,7 @@ declare const fullApi: ApiFromModules<{
   "application/notifications/dispatch": typeof application_notifications_dispatch;
   "application/notifications/inbox": typeof application_notifications_inbox;
   "application/notifications/ports": typeof application_notifications_ports;
+  "application/notifications/push": typeof application_notifications_push;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/notifications": typeof application_requests_notifications;
   "application/requests/ports": typeof application_requests_ports;
@@ -214,6 +217,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;
   "infrastructure/notifications/gmail_sender": typeof infrastructure_notifications_gmail_sender;
   "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
+  "infrastructure/notifications/web_push_sender": typeof infrastructure_notifications_web_push_sender;
   "infrastructure/privacy/repository": typeof infrastructure_privacy_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;

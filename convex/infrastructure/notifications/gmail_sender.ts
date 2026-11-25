@@ -15,9 +15,9 @@
  */
 
 import type {
+  DeliverySendResult,
   EmailMessage,
   EmailSender,
-  EmailSendResult,
 } from "../../application/notifications/ports";
 import type { NotificationDeliveryError } from "../../domain/notifications/delivery";
 
@@ -171,7 +171,7 @@ export function gmailEmailSender(
   fetchImpl: typeof fetch = fetch,
 ): EmailSender {
   return {
-    send: async (message: EmailMessage): Promise<EmailSendResult> => {
+    send: async (message: EmailMessage): Promise<DeliverySendResult> => {
       if (config === null) return { status: "failed", errorCode: "not_configured" };
       const to = message.to.trim();
       if (!isValidAddress(to)) return { status: "failed", errorCode: "invalid_destination" };

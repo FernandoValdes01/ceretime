@@ -39,6 +39,9 @@ type Env = {
   readonly GOOGLE_CLIENT_SECRET: string;
   readonly SITE_URL: string;
   readonly TEST_SEEDS_ENABLED: string | undefined;
+  readonly VAPID_PRIVATE_KEY: string | undefined;
+  readonly VAPID_PUBLIC_KEY: string | undefined;
+  readonly VAPID_SUBJECT: string | undefined;
 };
 
 /**
