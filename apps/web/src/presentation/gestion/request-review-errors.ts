@@ -28,7 +28,7 @@ export type RequestAction = "take" | "requestInformation" | "accept" | "close";
 
 /** Mensaje de respaldo: no expone el error y propone el siguiente paso. */
 export const REQUEST_ACTION_FALLBACK_MESSAGE =
-  "No pudimos completar la acción. Revisa tu conexión e inténtalo de nuevo; si el problema sigue, avisa a CERETI por el canal oficial.";
+  "No pudimos completar la acción. Inténtalo de nuevo; si el problema sigue, avisa a CERETI por el canal oficial.";
 
 const CONFLICT_NEXT_STEP: Record<RequestAction, string> = {
   take: "Revisa «Mis tomadas» o elige otra solicitud de la bandeja.",
