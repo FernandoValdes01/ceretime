@@ -1,4 +1,5 @@
-import { getRouteApi, Navigate, Outlet } from "@tanstack/react-router";
+import { getRouteApi, Link, Outlet } from "@tanstack/react-router";
+import { useDocumentTitle } from "./document-title.ts";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
 import { AdminAccountsPage } from "../gestion/admin-accounts.tsx";
 import { AdminSpaceEditorPage } from "../gestion/admin-space-editor.tsx";
@@ -62,11 +63,24 @@ export function RootComponent() {
   );
 }
 
-export function NotFoundRedirect() {
-  return <Navigate to="/" replace />;
+export function NotFoundPage() {
+  useDocumentTitle("Página no encontrada");
+  return (
+    <PublicMain>
+      <section aria-labelledby="not-found-title">
+        <h1 id="not-found-title">Página no encontrada</h1>
+        <p>La dirección que abriste no existe o cambió de lugar.</p>
+        <p>Revisa el enlace o vuelve al inicio para continuar.</p>
+        <p>
+          <Link to="/">Volver al inicio</Link>
+        </p>
+      </section>
+    </PublicMain>
+  );
 }
 
 export function IndexRouteComponent() {
+  useDocumentTitle("Acceso institucional");
   return (
     <PublicMain>
       <IndexPage session={useSessionState()} pair={useSessionAndRole()} />
@@ -75,6 +89,7 @@ export function IndexRouteComponent() {
 }
 
 export function LoginRouteComponent() {
+  useDocumentTitle("Acceso institucional");
   return (
     <PublicMain>
       <LoginPage session={useSessionState()} />
@@ -83,6 +98,7 @@ export function LoginRouteComponent() {
 }
 
 export function DeniedRouteComponent() {
+  useDocumentTitle("Acceso denegado");
   return (
     <PublicMain>
       <DeniedPage />
@@ -113,24 +129,29 @@ export function StudentLayoutRouteComponent() {
 }
 
 export function StudentIndexRouteComponent() {
+  useDocumentTitle("Portal del Estudiante");
   return <StudentHome />;
 }
 
 export function StudentScheduleRouteComponent() {
+  useDocumentTitle("Buscar horarios");
   return <ScheduleSearchPage />;
 }
 
 export function StudentReservationRouteComponent() {
+  useDocumentTitle("Reservar atención");
   return <ReservationFormPage />;
 }
 
 const studentAppointmentDetailApi = getRouteApi("/estudiante/atenciones/$appointmentId");
 
 export function StudentAppointmentsRouteComponent() {
+  useDocumentTitle("Atenciones");
   return <StudentAppointmentsPage />;
 }
 
 export function StudentAppointmentDetailRouteComponent() {
+  useDocumentTitle("Detalle de la atención");
   const { appointmentId } = studentAppointmentDetailApi.useParams();
   return <StudentAppointmentDetailPage appointmentId={appointmentId} />;
 }
@@ -140,19 +161,23 @@ const studentRequestDetailApi = getRouteApi("/estudiante/solicitudes/$requestId"
 const studentAccompanimentDetailApi = getRouteApi("/estudiante/acompanamientos/$accompanimentId");
 
 export function StudentRequestsRouteComponent() {
+  useDocumentTitle("Mis solicitudes");
   return <StudentRequestsPage />;
 }
 
 export function StudentRequestFormRouteComponent() {
+  useDocumentTitle("Nueva solicitud de acompañamiento");
   return <StudentRequestFormPage />;
 }
 
 export function StudentRequestDetailRouteComponent() {
+  useDocumentTitle("Detalle de la solicitud");
   const { requestId } = studentRequestDetailApi.useParams();
   return <StudentRequestDetailPage requestId={requestId} />;
 }
 
 export function StudentAccompanimentDetailRouteComponent() {
+  useDocumentTitle("Detalle del acompañamiento");
   const { accompanimentId } = studentAccompanimentDetailApi.useParams();
   // Marcador de retorno del consentimiento de Calendar (TI2-122). La ruta ya
   // lo valida; acá solo se pasa a la página para mostrar el aviso genérico.
@@ -175,44 +200,33 @@ export function ProfessionalLayoutRouteComponent() {
 }
 
 export function ProfessionalIndexRouteComponent() {
+  useDocumentTitle("Portal del Profesional");
   return <ProfessionalHome />;
 }
 
-const professionalRequestDetailApi = getRouteApi("/profesional/solicitudes/$requestId");
-
 export function ProfessionalRequestsRouteComponent() {
+  useDocumentTitle("Solicitudes");
   return <ProfessionalRequestsPage />;
 }
 
 export function ProfessionalRequestDetailRouteComponent() {
+  useDocumentTitle("Detalle de la solicitud");
   const { requestId } = professionalRequestDetailApi.useParams();
   return <ProfessionalRequestDetailPage requestId={requestId} />;
 }
 
-const professionalAccompanimentDetailApi = getRouteApi(
-  "/profesional/acompanamientos/$accompanimentId",
-);
-
-export function ProfessionalAccompanimentsRouteComponent() {
-  return <ProfessionalAccompanimentsPage />;
-}
-
-export function ProfessionalAccompanimentDetailRouteComponent() {
-  const { accompanimentId } = professionalAccompanimentDetailApi.useParams();
-  return <ProfessionalAccompanimentDetailPage accompanimentId={accompanimentId} />;
-}
-
 export function ProfessionalAvailabilityRouteComponent() {
+  useDocumentTitle("Disponibilidad");
   return <ProfessionalAvailabilityPage />;
 }
 
-const professionalAgendaDetailApi = getRouteApi("/profesional/agenda/$appointmentId");
-
 export function ProfessionalAgendaRouteComponent() {
+  useDocumentTitle("Agenda");
   return <ProfessionalAgendaPage />;
 }
 
 export function ProfessionalAgendaDetailRouteComponent() {
+  useDocumentTitle("Detalle de la atención");
   const { appointmentId } = professionalAgendaDetailApi.useParams();
   return <ProfessionalAgendaDetailPage appointmentId={appointmentId} />;
 }
@@ -238,15 +252,15 @@ const practitionerAccompanimentDetailApi = getRouteApi(
 );
 
 export function PractitionerAccompanimentsRouteComponent() {
+  useDocumentTitle("Acompañamientos asignados");
   return <PractitionerAccompanimentsPage />;
 }
 
 export function PractitionerAccompanimentDetailRouteComponent() {
+  useDocumentTitle("Detalle del acompañamiento");
   const { accompanimentId } = practitionerAccompanimentDetailApi.useParams();
   return <PractitionerAccompanimentDetailPage accompanimentId={accompanimentId} />;
 }
-
-export function AdminLayoutRouteComponent() {
   return (
     <RequireStaffRole
       session={useSessionState()}
@@ -258,14 +272,33 @@ export function AdminLayoutRouteComponent() {
   );
 }
 
+export function PractitionerIndexRouteComponent() {
+  useDocumentTitle("Portal del Practicante");
+  return <PractitionerHome />;
+}
+
+export function PractitionerAccompanimentsRouteComponent() {
+  useDocumentTitle("Acompañamientos asignados");
+  return <PractitionerAccompanimentsPage />;
+}
+
+export function PractitionerAccompanimentDetailRouteComponent() {
+  useDocumentTitle("Detalle del acompañamiento");
+  const { accompanimentId } = practitionerAccompanimentDetailApi.useParams();
+  return <PractitionerAccompanimentDetailPage accompanimentId={accompanimentId} />;
+}
+
 export function AdminIndexRouteComponent() {
+  useDocumentTitle("Portal de Administración");
   return <AdminHome />;
 }
 
 export function AdminAccountsRouteComponent() {
+  useDocumentTitle("Cuentas de personal");
   return <AdminAccountsPage />;
 }
 
 export function AdminSpacesRouteComponent() {
+  useDocumentTitle("Espacios de atención");
   return <AdminSpaceEditorPage />;
 }
