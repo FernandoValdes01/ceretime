@@ -73,12 +73,6 @@ const GESTION_SELECT = `min-h-[44px] rounded-[0.5rem] border border-(--ct-line) 
 const GESTION_BUTTON_DISABLED = "disabled:cursor-not-allowed disabled:opacity-60";
 
 /**
- * Largo máximo de los textos que escribe el Profesional (motivo, objetivo y
- * razón): el mismo límite que el resto de los textos de la solicitud.
- */
-const REVIEW_TEXT_MAX_LENGTH = 2000;
-
-/**
  * Bandeja y tomadas del Profesional (TI2-91, TI2-157).
  *
  * Lee solo queries públicas ya existentes; la autorización vive en Convex.
@@ -756,7 +750,6 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           description="El estudiante recibirá este motivo para completar su solicitud."
           fieldLabel="Motivo"
           requiredMessage="Escribe el motivo."
-          tooLongMessage={`El motivo no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Enviar"
           onCancel={() => closeDialog(null)}
           onSubmit={async (reason) => {
@@ -778,7 +771,6 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           description="Al aceptar se abre un único acompañamiento para el estudiante."
           fieldLabel="Objetivo del acompañamiento"
           requiredMessage="Escribe el objetivo del acompañamiento."
-          tooLongMessage={`El objetivo no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Aceptar"
           onCancel={() => closeDialog(null)}
           onSubmit={async (objective) => {
@@ -811,7 +803,6 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           description="El estudiante leerá esta razón. No incluyas diagnósticos ni etiquetas clínicas."
           fieldLabel="Razón del cierre"
           requiredMessage="Escribe la razón del cierre."
-          tooLongMessage={`La razón no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Cerrar solicitud"
           onCancel={() => closeDialog(null)}
           onSubmit={async (reason) => {
@@ -847,7 +838,7 @@ function ReviewTextDialog({
   description,
   fieldLabel,
   requiredMessage,
-  tooLongMessage,
+  maxLength,
   submitLabel,
   onCancel,
   onSubmit,
@@ -858,7 +849,11 @@ function ReviewTextDialog({
   description: string;
   fieldLabel: string;
   requiredMessage: string;
-  tooLongMessage: string;
+  /**
+   * Solo cuando el Backend fija un largo máximo para el texto: la Web no
+   * inventa topes que el contrato no tiene.
+   */
+  maxLength?: { readonly value: number; readonly message: string };
   submitLabel: string;
   onCancel: () => void;
   onSubmit: (text: string) => Promise<RequestActionFailure | null>;
@@ -876,6 +871,10 @@ function ReviewTextDialog({
   const fieldId = `${id}-text`;
   const errorId = `${id}-text-error`;
   const hintId = `${id}-text-hint`;
+  const describedBy =
+    [fieldError ? errorId : null, maxLength === undefined ? null : hintId]
+      .filter((value) => value !== null)
+      .join(" ") || undefined;
 
   useEffect(() => {
     fieldRef.current?.focus();
@@ -918,8 +917,8 @@ function ReviewTextDialog({
       setFieldError(requiredMessage);
       return;
     }
-    if (trimmed.length > REVIEW_TEXT_MAX_LENGTH) {
-      setFieldError(tooLongMessage);
+    if (maxLength !== undefined && trimmed.length > maxLength.value) {
+      setFieldError(maxLength.message);
       return;
     }
 
@@ -962,10 +961,10 @@ function ReviewTextDialog({
               className={`${GESTION_TEXTAREA} ${fieldError ? GESTION_TEXTAREA_ERROR : ""}`}
               value={text}
               onChange={(event) => setText(event.target.value)}
-              maxLength={REVIEW_TEXT_MAX_LENGTH}
+              maxLength={maxLength?.value}
               rows={4}
               aria-required="true"
-              aria-describedby={fieldError ? `${errorId} ${hintId}` : hintId}
+              aria-describedby={describedBy}
               aria-invalid={fieldError ? "true" : "false"}
               disabled={pending}
             />
@@ -978,9 +977,11 @@ function ReviewTextDialog({
                 {fieldError}
               </p>
             )}
-            <p id={hintId} className="student-portal__hint mt-2!">
-              Máximo {REVIEW_TEXT_MAX_LENGTH} caracteres ({text.length}/{REVIEW_TEXT_MAX_LENGTH})
-            </p>
+            {maxLength === undefined ? null : (
+              <p id={hintId} className="student-portal__hint mt-2!">
+                Máximo {maxLength.value} caracteres ({text.length}/{maxLength.value})
+              </p>
+            )}
           </div>
           {submitFailure && <ActionFailureNotice failure={submitFailure} />}
           <div className="mt-6 flex flex-wrap justify-end gap-3">

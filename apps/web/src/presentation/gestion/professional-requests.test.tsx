@@ -823,19 +823,21 @@ describe("acciones del Profesional (TI2-92)", () => {
     expect(requestInfoMock).not.toHaveBeenCalled();
   });
 
-  test("pedir información valida longitud máxima 2000 caracteres", async () => {
+  test("pedir información no impone un largo que el Backend no pide", async () => {
     comoProfesional();
     mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockResolvedValue(undefined);
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
     const textarea = screen.getByLabelText("Motivo (obligatorio)");
-    const longReason = "a".repeat(2001);
-    fireEvent.change(textarea, { target: { value: longReason } });
+    expect(textarea.hasAttribute("maxlength")).toBe(false);
+    const motivoLargo = "a".repeat(2001);
+    fireEvent.change(textarea, { target: { value: motivoLargo } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    expect(await screen.findByText("El motivo no puede exceder 2000 caracteres.")).toBeDefined();
-    expect(requestInfoMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(requestInfoMock).toHaveBeenCalledTimes(1));
+    expect(requestInfoMock).toHaveBeenCalledWith({ requestId: "req-9", reason: motivoLargo });
   });
 
   test("pedir información ejecuta requestAdditionalInformation con motivo válido", async () => {
