@@ -127,3 +127,78 @@ export interface NotificationReadMarker {
     readAt: number,
   ): Promise<{ readonly readAt: number } | null>;
 }
+
+/** Suscripción del navegador lista para el adaptador push (TI2-160). */
+export interface PushSubscriptionTarget {
+  readonly endpoint: string;
+  readonly p256dh: string;
+  readonly auth: string;
+}
+
+/** Mensaje genérico enviado por Web Push, sin datos del acompañamiento. */
+export interface PushMessage {
+  readonly title: string;
+  readonly body: string;
+}
+
+/** Resultado por suscripción: `expired` indica que el navegador la revocó (404/410). */
+export type PushSendResult =
+  | { readonly status: "sent" }
+  | { readonly status: "expired" }
+  | { readonly status: "failed"; readonly errorCode: NotificationDeliveryError };
+
+/**
+ * Remitente Web Push (TI2-160). Infraestructura lo cumple con VAPID; cambiar
+ * de proveedor no toca el despacho. Nunca lanza por un fallo del servicio.
+ */
+export interface PushSender {
+  send(target: PushSubscriptionTarget, message: PushMessage): Promise<PushSendResult>;
+}
+
+/**
+ * Entrega push reservada para un intento, con las suscripciones vigentes del
+ * destinatario. `no_subscriptions` ocurre cuando la persona desactivó push
+ * antes del intento; `skipped`, si ya se envió o otro despacho la tomó.
+ */
+export type PushDeliveryClaim =
+  | {
+      readonly status: "claimed";
+      readonly eventId: string;
+      readonly event: NotificationEvent;
+      readonly subscriptions: readonly PushSubscriptionTarget[];
+    }
+  | { readonly status: "no_subscriptions"; readonly eventId: string }
+  | { readonly status: "skipped" };
+
+/**
+ * Persistencia de entregas push y limpieza de suscripciones vencidas (TI2-160).
+ */
+export interface PushDeliveryStore {
+  claim(deliveryId: string, now: number): Promise<PushDeliveryClaim>;
+  removeExpiredSubscription(endpoint: string): Promise<void>;
+  recordAttempt(eventId: string, result: EmailSendResult, attemptedAt: number): Promise<void>;
+}
+
+/** Datos que el navegador entrega al activar una suscripción push propia. */
+export interface PushSubscriptionActivationInput {
+  readonly endpoint: string;
+  readonly p256dh: string;
+  readonly auth: string;
+  readonly expirationTime?: number;
+}
+
+/**
+ * Persistencia de suscripciones propias para activar, desactivar y consultar
+ * si el usuario tiene push activo (TI2-160). Nunca devuelve claves ni endpoints.
+ */
+export interface PushSubscriptionStore {
+  countForUser(userId: string): Promise<number>;
+  saveForUser(
+    userId: string,
+    input: PushSubscriptionActivationInput,
+    savedAt: number,
+  ): Promise<
+    { readonly status: "saved"; readonly created: boolean } | { readonly status: "invalid" }
+  >;
+  deleteForUser(userId: string, endpoint: string): Promise<boolean>;
+}

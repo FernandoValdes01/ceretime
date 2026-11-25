@@ -5,6 +5,8 @@ import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import type {
   EmailDeliveryClaim,
   EmailSendResult,
+  PushDeliveryClaim,
+  PushSubscriptionStore,
   StoredNotification,
 } from "../../application/notifications/ports";
 import {
@@ -194,9 +196,15 @@ export function notificationEventRecorder(ctx: MutationCtx) {
     record: async (events: readonly NotificationEvent[]): Promise<void> => {
       const results = await recordNotificationEvents(ctx, events);
       const queuedAt = Date.now();
-      for (const result of results) {
-        if (result.status !== "recorded") continue;
+      for (let i = 0; i < results.length; i += 1) {
+        const result = results[i];
+        const event = events[i];
+        if (result === undefined || event === undefined || result.status !== "recorded") continue;
         await queueEmailDelivery(ctx, result.eventId, queuedAt);
+        const recipientId = ctx.db.normalizeId("users", event.recipientId);
+        if (recipientId !== null) {
+          await queuePushDeliveryIfSubscribed(ctx, result.eventId, recipientId, queuedAt);
+        }
       }
     },
   };
@@ -223,6 +231,25 @@ async function queueEmailDelivery(
   const queued = await ensureNotificationDelivery(ctx, eventId, "email", queuedAt);
   if (queued.status !== "queued") return;
   await ctx.scheduler.runAfter(0, internal.operations.notifications.dispatchEmailDelivery, {
+    deliveryId: queued.deliveryId,
+  });
+}
+
+/**
+ * Encola push solo si el destinatario tiene al menos una suscripción activa
+ * (TI2-160). Sin push activado no se crea fila ni se programa ningún envío.
+ */
+async function queuePushDeliveryIfSubscribed(
+  ctx: MutationCtx,
+  eventId: Id<"notificationEvents">,
+  recipientId: Id<"users">,
+  queuedAt: number,
+): Promise<void> {
+  const subscriptions = await findPushSubscriptionsForUser(ctx, recipientId);
+  if (subscriptions.length === 0) return;
+  const queued = await ensureNotificationDelivery(ctx, eventId, "push", queuedAt);
+  if (queued.status !== "queued") return;
+  await ctx.scheduler.runAfter(0, internal.operations.notifications.dispatchPushDelivery, {
     deliveryId: queued.deliveryId,
   });
 }
@@ -883,4 +910,145 @@ export async function findPushSubscriptionsForUser(
     .query("pushSubscriptions")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
     .take(20);
+}
+
+/**
+ * Reserva una entrega push para un intento y devuelve el aviso y las
+ * suscripciones vigentes del destinatario (TI2-160). Retira `nextAttemptAt`,
+ * contabiliza el intento y deja la fila provisionalmente en
+ * `delivery_uncertain` antes de invocar al servicio push, evitando envíos
+ * duplicados si la acción se interrumpe antes de registrar `sent`.
+ */
+export async function claimPushDelivery(
+  ctx: MutationCtx,
+  deliveryId: string,
+  now: number,
+): Promise<PushDeliveryClaim> {
+  const normalized = ctx.db.normalizeId("notificationDeliveries", deliveryId);
+  if (normalized === null) return { status: "skipped" };
+  const delivery = await ctx.db.get(normalized);
+  if (delivery === null || delivery.channel !== "push" || delivery.status === "sent") {
+    return { status: "skipped" };
+  }
+  if (delivery.nextAttemptAt === undefined || delivery.nextAttemptAt > now) {
+    return { status: "skipped" };
+  }
+  const eventRow = await ctx.db.get(delivery.eventId);
+  if (eventRow === null) return { status: "skipped" };
+
+  const rows = await findPushSubscriptionsForUser(ctx, eventRow.recipientId);
+  if (rows.length === 0) {
+    await ctx.db.patch(normalized, { nextAttemptAt: undefined });
+    return { status: "no_subscriptions", eventId: eventRow._id };
+  }
+  await ctx.db.patch(normalized, {
+    status: "failed",
+    errorCode: "delivery_uncertain",
+    attempts: delivery.attempts + 1,
+    lastAttemptAt: now,
+    nextAttemptAt: undefined,
+  });
+  return {
+    status: "claimed",
+    eventId: eventRow._id,
+    event: notificationEventFromRow(eventRow),
+    subscriptions: rows.map((row) => ({
+      endpoint: row.endpoint,
+      p256dh: row.p256dh,
+      auth: row.auth,
+    })),
+  };
+}
+
+/** Entregas push cuyo próximo intento ya venció (TI2-160). */
+export async function listDuePushDeliveries(
+  ctx: DbReader,
+  now: number,
+): Promise<readonly Id<"notificationDeliveries">[]> {
+  const rows = await ctx.db
+    .query("notificationDeliveries")
+    .withIndex("by_channel_and_nextAttemptAt", (q) =>
+      q.eq("channel", "push").gt("nextAttemptAt", 0).lte("nextAttemptAt", now),
+    )
+    .take(EMAIL_RETRY_SWEEP_LIMIT);
+  return rows.map((row) => row._id);
+}
+
+/** Registra el resultado de un intento push a partir del ID serializado del evento. */
+export async function recordPushDeliveryAttempt(
+  ctx: MutationCtx,
+  eventId: string,
+  result: EmailSendResult,
+  attemptedAt: number,
+  countAttempt = false,
+): Promise<NotificationDeliveryAttemptResult> {
+  const normalized = ctx.db.normalizeId("notificationEvents", eventId);
+  if (normalized === null) return { status: "invalid_reference" };
+  return await recordNotificationDeliveryAttempt(ctx, normalized, {
+    channel: "push",
+    status: result.status,
+    attemptedAt,
+    countAttempt,
+    ...(result.status === "failed" ? { errorCode: result.errorCode } : {}),
+  });
+}
+
+/** Retira una suscripción vencida (`404`/`410`) reportada por el servicio push. */
+export async function deleteExpiredPushSubscriptionByEndpoint(
+  ctx: MutationCtx,
+  endpoint: string,
+): Promise<boolean> {
+  const normalized = endpoint.trim();
+  if (normalized === "") return false;
+  const existing = await ctx.db
+    .query("pushSubscriptions")
+    .withIndex("by_endpoint", (q) => q.eq("endpoint", normalized))
+    .unique();
+  if (existing === null) return false;
+  await ctx.db.delete(existing._id);
+  return true;
+}
+
+/**
+ * Adaptador de suscripciones push para la capa de Aplicación (TI2-160).
+ * Nunca expone endpoints ni claves en las lecturas públicas.
+ */
+export function pushSubscriptionReader(ctx: DbReader): PushSubscriptionStore {
+  return {
+    countForUser: async (userId: string): Promise<number> => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return 0;
+      return (await findPushSubscriptionsForUser(ctx, normalized)).length;
+    },
+    saveForUser: async () => ({ status: "invalid" as const }),
+    deleteForUser: async () => false,
+  };
+}
+
+export function pushSubscriptionStore(ctx: MutationCtx): PushSubscriptionStore {
+  return {
+    countForUser: async (userId: string): Promise<number> => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return 0;
+      return (await findPushSubscriptionsForUser(ctx, normalized)).length;
+    },
+    saveForUser: async (
+      userId: string,
+      input: PushSubscriptionInput,
+      savedAt: number,
+    ): Promise<
+      { readonly status: "saved"; readonly created: boolean } | { readonly status: "invalid" }
+    > => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return { status: "invalid" };
+      const saved = await savePushSubscription(ctx, normalized, input, savedAt);
+      if (saved.status !== "saved") return { status: "invalid" };
+      return { status: "saved", created: saved.created };
+    },
+    deleteForUser: async (userId: string, endpoint: string): Promise<boolean> => {
+      const normalized = ctx.db.normalizeId("users", userId);
+      if (normalized === null) return false;
+      return await deletePushSubscription(ctx, normalized, endpoint);
+    },
+  };
 }
