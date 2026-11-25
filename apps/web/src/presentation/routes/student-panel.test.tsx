@@ -228,6 +228,28 @@ describe("panel inicial del Estudiante", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(await screen.findByText("Aún no tienes solicitudes registradas.")).toBeDefined();
   });
+
+  test("la insignia dice solo el rol en cuenta pendiente (TI2-185)", async () => {
+    mockSession = SESSION;
+    shouldThrowRequests = true;
+    shouldThrowAccompaniments = true;
+    renderPanel();
+
+    expect(await screen.findByText(greetingText())).toBeDefined();
+    expect(screen.getByText("Estudiante")).toBeDefined();
+    expect(screen.queryByText("Estudiante acompañado")).toBeNull();
+  });
+});
+
+test("la insignia dice solo el rol en cuenta no habilitada (TI2-185)", async () => {
+  mockSession = { status: "unauthenticated" };
+  mockRequests = EMPTY_PAGE;
+  mockAccompaniments = EMPTY_PAGE;
+  renderPanel();
+
+  expect(await screen.findByRole("heading", { name: "Portal del Estudiante" })).toBeDefined();
+  expect(screen.getByText("Estudiante")).toBeDefined();
+  expect(screen.queryByText("Estudiante acompañado")).toBeNull();
 });
 
 describe("etiquetas del panel", () => {
