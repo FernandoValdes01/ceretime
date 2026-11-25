@@ -3,6 +3,8 @@ import { convexTest, type TestConvex } from "convex-test";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { api } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
+import { futureAppointmentsReader } from "../infrastructure/appointments/repository";
+import { accompanimentNeedsAtDateReader } from "../infrastructure/accompaniments/repository";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -438,8 +440,6 @@ test("actualizar necesidades versiona y la pasada se evalúa con la anterior", a
   expect(second.validUntil).toBeUndefined();
 
   const evaluated = await t.run(async (ctx) => {
-    const { accompanimentNeedsAtDateReader } =
-      await import("../infrastructure/accompaniments/repository");
     const reader = accompanimentNeedsAtDateReader(ctx);
     const oldEntry = await reader.findNeedsAt(accompanimentId, pastAtMs);
     const newEntry = await reader.findNeedsAt(accompanimentId, Date.now());
@@ -540,22 +540,26 @@ test("el historial como adicional no bloquea la edición", async () => {
     status: "scheduled",
   });
 
-  for (let i = 0; i < 301; i += 1) {
+  // Más participaciones pasadas que cualquier tope histórico (1000): con el
+  // barrido anterior por participaciones esto respondía conflicto.
+  for (let batch = 0; batch < 22; batch += 1) {
     await t.run(async (ctx) => {
-      const pastId = await ctx.db.insert("appointments", {
-        accompanimentId,
-        studentId: student,
-        professionalId: otherPro,
-        modality: "inPerson",
-        status: "completed",
-        startsAt: pastAt(9) - i * 1000,
-        endsAt: pastAt(9, 30) - i * 1000,
-        createdAt: NOW,
-      });
-      await ctx.db.insert("appointmentProfessionals", {
-        appointmentId: pastId,
-        professionalId: professional,
-      });
+      for (let i = 0; i < 50; i += 1) {
+        const pastId = await ctx.db.insert("appointments", {
+          accompanimentId,
+          studentId: student,
+          professionalId: otherPro,
+          modality: "inPerson",
+          status: "completed",
+          startsAt: pastAt(9) - (batch * 50 + i) * 1000,
+          endsAt: pastAt(9, 30) - (batch * 50 + i) * 1000,
+          createdAt: NOW,
+        });
+        await ctx.db.insert("appointmentProfessionals", {
+          appointmentId: pastId,
+          professionalId: professional,
+        });
+      }
     });
   }
 
@@ -596,15 +600,14 @@ test("el paginado no salta atenciones con el mismo inicio en el borde", async ()
       });
     });
   }
-  const found = await t.run(async (ctx) => {
-    const { futureAppointmentsReader } = await import("../infrastructure/appointments/repository");
-    return await futureAppointmentsReader(ctx).listResponsibleByWeekdays(
+  const found = await t.run(async (ctx) =>
+    futureAppointmentsReader(ctx).listResponsibleByWeekdays(
       professional as unknown as string,
       [1],
       NOW,
       2,
-    );
-  });
+    ),
+  );
   expect(found.complete).toBe(true);
   if (!found.complete) throw new Error("Se esperaba lectura completa");
   expect(found.appointments.map((a) => [a.startAt, a.status]).sort()).toEqual([
