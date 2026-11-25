@@ -19,6 +19,7 @@ import type { AccompanimentStatus, AccompanimentView } from "../accompaniments/a
 import type { AppointmentView } from "../appointments/appointment";
 import type { FollowUpView } from "../follow_up/follow_up";
 import type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
+import { isPrivacyRequestResponsibleRole } from "../privacy/privacy_request";
 
 export type { AccompanimentView } from "../accompaniments/accompaniment";
 export type { AccountStatus, InstitutionalStatus, Role } from "../identity/roles";
@@ -45,6 +46,9 @@ export const AUTHORIZATION_ACTIONS = [
   "account:read",
   "account:enable",
   "account:revoke",
+  "privacyRequest:submit",
+  "privacyRequest:readOwn",
+  "privacyRequest:respond",
 ] as const;
 
 export type AuthorizationAction = (typeof AUTHORIZATION_ACTIONS)[number];
@@ -98,6 +102,17 @@ export type AvailabilityAuthorizationContext = {
   readonly institutionalStatus: InstitutionalStatus;
   readonly accountStatus: AccountStatus;
   readonly isAvailabilityOwner: boolean;
+};
+
+/**
+ * Contexto de las solicitudes de derechos de privacidad (TI2-167): rol y
+ * vigencia de la cuenta. El titular y el responsable se resuelven en el
+ * servidor; el cliente nunca los envía.
+ */
+export type PrivacyRequestAuthorizationContext = {
+  readonly role: Role;
+  readonly institutionalStatus: InstitutionalStatus;
+  readonly accountStatus: AccountStatus;
 };
 
 /** La cuenta debe estar habilitada y vigente para cualquier operación. */
@@ -449,6 +464,30 @@ export function canRevokeAccount(context: AccountManagementContext): boolean {
 }
 
 /**
+ * Envío de una solicitud de derechos de privacidad (TI2-167): solo el
+ * Estudiante con cuenta habilitada y vigente, desde la aplicación. Los demás
+ * roles titulares usan el canal institucional y no tienen formulario en la
+ * aplicación.
+ */
+export function canSubmitPrivacyRequest(context: PrivacyRequestAuthorizationContext): boolean {
+  return isProfileActive(context) && context.role === "student";
+}
+
+/** Lectura de las solicitudes propias: la misma regla que el envío. */
+export function canReadOwnPrivacyRequests(context: PrivacyRequestAuthorizationContext): boolean {
+  return canSubmitPrivacyRequest(context);
+}
+
+/**
+ * Revisión y resolución de una solicitud (TI2-167): solo el Administrador con
+ * cuenta habilitada y vigente, como responsable provisional del procedimiento.
+ * La UCT debe designar al responsable institucional definitivo y su reemplazo.
+ */
+export function canRespondToPrivacyRequest(context: PrivacyRequestAuthorizationContext): boolean {
+  return isProfileActive(context) && isPrivacyRequestResponsibleRole(context.role);
+}
+
+/**
  * Gestión del catálogo de espacios (TI2-148): solo el Administrador con
  * cuenta habilitada y vigente. Estudiante, Profesional y Practicante se
  * deniegan aunque tengan cuenta vigente: el catálogo publicado se lee, no
@@ -615,5 +654,26 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     professional: "denegado",
     intern: "denegado",
     admin: "permitido con cuenta vigente, solo profesional o administrador",
+  },
+  {
+    action: "privacyRequest:submit",
+    student: "permitido desde la aplicación, solo con la sesión del titular",
+    professional: "canal institucional, no la aplicación",
+    intern: "canal institucional, no la aplicación",
+    admin: "canal institucional, no la aplicación",
+  },
+  {
+    action: "privacyRequest:readOwn",
+    student: "permitido solo las solicitudes propias",
+    professional: "denegado en la aplicación, usa el canal institucional",
+    intern: "denegado en la aplicación, usa el canal institucional",
+    admin: "denegado en la aplicación, usa el canal institucional",
+  },
+  {
+    action: "privacyRequest:respond",
+    student: "denegado",
+    professional: "denegado",
+    intern: "denegado",
+    admin: "permitido de forma provisional, como responsable de la solicitud",
   },
 ];
