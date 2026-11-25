@@ -5,12 +5,19 @@ import {
   markNotificationRead as markNotificationReadUseCase,
   openNotification as openNotificationUseCase,
 } from "../application/notifications/inbox";
-import { mutation, query } from "../_generated/server";
+import {
+  activateOwnPushSubscription as activateOwnPushSubscriptionUseCase,
+  deactivateOwnPushSubscription as deactivateOwnPushSubscriptionUseCase,
+  getOwnPushStatus as getOwnPushStatusUseCase,
+} from "../application/notifications/push";
+import { env, mutation, query } from "../_generated/server";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import { appointmentAgendaReader } from "../infrastructure/appointments/repository";
 import {
   notificationInboxReader,
   notificationReadMarker,
+  pushSubscriptionReader,
+  pushSubscriptionStore,
 } from "../infrastructure/notifications/repository";
 import { activeRequestViewerReader, requestReader } from "../infrastructure/requests/repository";
 import {
@@ -138,5 +145,86 @@ export const markNotificationRead = mutation({
       ),
     );
     return { ...marked, id: args.notificationId };
+  },
+});
+
+/**
+ * Estado push propio y clave pública VAPID para activar notificaciones en el
+ * navegador (TI2-160). Nunca devuelve endpoints ni claves de suscripción.
+ */
+export const getOwnPushStatus = query({
+  args: {},
+  returns: v.object({
+    enabled: v.boolean(),
+    subscriptionCount: v.number(),
+    vapidPublicKey: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const publicKey = env.VAPID_PUBLIC_KEY?.trim() ?? "";
+    return unwrapApiResult(
+      await getOwnPushStatusUseCase(
+        {
+          auth: authorizationReader(ctx),
+          subscriptions: pushSubscriptionReader(ctx),
+          vapidPublicKey: publicKey === "" ? null : publicKey,
+        },
+        identity?.tokenIdentifier ?? null,
+      ),
+    );
+  },
+});
+
+/** Activa o actualiza la suscripción Web Push propia del navegador actual (TI2-160). */
+export const activatePushSubscription = mutation({
+  args: {
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    expirationTime: v.optional(v.number()),
+  },
+  returns: v.object({ created: v.boolean() }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await activateOwnPushSubscriptionUseCase(
+        {
+          auth: authorizationReader(ctx),
+          subscriptions: pushSubscriptionStore(ctx),
+          now: Date.now,
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          subscription: {
+            endpoint: args.endpoint,
+            p256dh: args.p256dh,
+            auth: args.auth,
+            ...(args.expirationTime === undefined ? {} : { expirationTime: args.expirationTime }),
+          },
+        },
+      ),
+    );
+  },
+});
+
+/** Desactiva la suscripción Web Push propia correspondiente al endpoint (TI2-160). */
+export const deactivatePushSubscription = mutation({
+  args: { endpoint: v.string() },
+  returns: v.object({ deleted: v.boolean() }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await deactivateOwnPushSubscriptionUseCase(
+        {
+          auth: authorizationReader(ctx),
+          subscriptions: pushSubscriptionStore(ctx),
+          now: Date.now,
+        },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          endpoint: args.endpoint,
+        },
+      ),
+    );
   },
 });
