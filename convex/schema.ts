@@ -516,20 +516,30 @@ export default defineSchema({
   // `attempts`, `lastAttemptAt` y el resultado, sin crear otro aviso ni otra
   // fila. `errorCode` es un código estable y genérico: no guarda respuestas,
   // encabezados ni credenciales del proveedor. El envío real es TI2-159
-  // (correo) y TI2-160 (push).
+  // (correo) y TI2-160 (push). `nextAttemptAt` es el instante desde el que
+  // un despacho puede intentar la entrega (TI2-159): lo fija la política de
+  // reintento al registrar cada resultado y se elimina al reservar la entrega
+  // antes de invocar al proveedor, dejando la fila provisionalmente en
+  // `delivery_uncertain` para que el cron no la vuelva a recoger si la acción
+  // se interrumpe antes de confirmar el resultado. Ausente significa que no
+  // queda intento automático pendiente.
   notificationDeliveries: defineTable({
     eventId: v.id("notificationEvents"),
     channel: notificationDeliveryChannelUnion,
     status: notificationDeliveryStatusUnion,
     attempts: v.number(),
+    providerFailureAttempts: v.optional(v.number()),
     lastAttemptAt: v.optional(v.number()),
     sentAt: v.optional(v.number()),
     errorCode: v.optional(notificationDeliveryErrorUnion),
+    nextAttemptAt: v.optional(v.number()),
   })
     // Entrega del evento por canal: una fila basta para decidir y actualizar.
     .index("by_eventId_and_channel", ["eventId", "channel"])
     // Despacho pendiente por canal, sin barrer todas las entregas.
-    .index("by_channel_and_status", ["channel", "status"]),
+    .index("by_channel_and_status", ["channel", "status"])
+    // Barrido de reintentos: entregas del canal cuyo próximo intento ya venció.
+    .index("by_channel_and_nextAttemptAt", ["channel", "nextAttemptAt"]),
 
   // Tabla 'pushSubscriptions': suscripciones Web Push opcionales de cada
   // persona (TI2-145). Guarda el endpoint y las claves públicas del navegador
