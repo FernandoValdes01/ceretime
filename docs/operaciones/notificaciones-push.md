@@ -10,11 +10,11 @@ La publicación de la aplicación web en Vercel y el despliegue de Convex son pa
 
 Todas las variables están declaradas en `convex/convex.config.ts` y se cargan con `bunx convex env set` (agregando `--prod` al apuntar a producción):
 
-| Variable            | Desarrollo / Producción                                                 | Propósito                                                                  |
-| ------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `VAPID_PUBLIC_KEY`  | Clave pública P-256 sin comprimir en base64url (65 bytes)               | Se entrega al navegador mediante `getOwnPushStatus` para crear suscripción |
-| `VAPID_PRIVATE_KEY` | Escalares privados P-256 (`d` de JWK) en base64url (solo secreto)       | Firma el JWT VAPID (`ES256`) en el servidor; nunca sale del backend        |
-| `VAPID_SUBJECT`     | `mailto:<correo_institucional>` (ej. `mailto:wpeneipil2025@alu.uct.cl`) | Identifica al contacto técnico ante el servicio push del navegador         |
+| Variable            | Desarrollo / Producción                                           | Propósito                                                                  |
+| ------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `VAPID_PUBLIC_KEY`  | Clave pública P-256 sin comprimir en base64url (65 bytes)         | Se entrega al navegador mediante `getOwnPushStatus` para crear suscripción |
+| `VAPID_PRIVATE_KEY` | Escalares privados P-256 (`d` de JWK) en base64url (solo secreto) | Firma el JWT VAPID (`ES256`) en el servidor; nunca sale del backend        |
+| `VAPID_SUBJECT`     | `mailto:<correo_de_contacto>`                                     | Identifica al contacto técnico ante el servicio push del navegador         |
 
 Si faltan las variables VAPID y una persona tiene suscripciones activas, los envíos push quedan registrados con `status: "failed"` y `errorCode: "not_configured"` y se vuelven a intentar cada 15 minutos sin perder el aviso ni deshacer el cambio original. Si la persona no activó push, no se crea fila de entrega push ni se intenta ningún envío.
 
@@ -31,7 +31,7 @@ bun -e 'const k = await crypto.subtle.generateKey({name:"ECDSA",namedCurve:"P-25
 ```powershell
 bunx convex env set VAPID_PUBLIC_KEY "<clave_publica>"
 bunx convex env set VAPID_PRIVATE_KEY "<clave_privada>"
-bunx convex env set VAPID_SUBJECT "mailto:wpeneipil2025@alu.uct.cl"
+bunx convex env set VAPID_SUBJECT "mailto:<correo_de_contacto>"
 ```
 
 ## Suscripciones vencidas y entregas con resultado incierto (`delivery_uncertain`)

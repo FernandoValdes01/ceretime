@@ -294,3 +294,64 @@ test("TI2-160: un corte tras reservar la entrega push marca delivery_uncertain y
   });
   expect(retry).toBe("skipped");
 });
+
+test.each([
+  ["delivery_uncertain primero y provider_unavailable después", "uncertain-first"],
+  ["provider_unavailable primero y delivery_uncertain después", "unavailable-first"],
+] as const)(
+  "TI2-160: con dos suscripciones (%s) conserva delivery_uncertain y no vuelve a programar reintento",
+  async (_, order) => {
+    await generateVapidEnv();
+    const firstEndpoint = "https://push.example.test/sub/primera";
+    const secondEndpoint = "https://push.example.test/sub/segunda";
+
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const target = String(url);
+      const isUncertain =
+        (order === "uncertain-first" && target === firstEndpoint) ||
+        (order === "unavailable-first" && target === secondEndpoint);
+      if (isUncertain) {
+        throw new Error("conexión interrumpida tras enviar");
+      }
+      if (target === firstEndpoint || target === secondEndpoint) {
+        return new Response(null, { status: 503 });
+      }
+      return new Response(null, { status: 200 });
+    });
+
+    const t = convexTest(schema, modules);
+    await seedStudent(t, `ti160-multi-${order}`, `multi-${order}@alu.uct.cl`);
+    const student = t.withIdentity(identityFor(`ti160-multi-${order}`));
+
+    await student.mutation(
+      api.presentation.notifications.activatePushSubscription,
+      await generateBrowserSubscription(firstEndpoint),
+    );
+    await student.mutation(
+      api.presentation.notifications.activatePushSubscription,
+      await generateBrowserSubscription(secondEndpoint),
+    );
+
+    await student.mutation(api.presentation.requests.createRequest, REQUEST_SUBMISSION);
+    await t.finishAllScheduledFunctions(() => {
+      vi.setSystemTime(NOW + 1_000);
+    });
+
+    const rows = await pushDeliveries(t);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      channel: "push",
+      status: "failed",
+      attempts: 1,
+      errorCode: "delivery_uncertain",
+    });
+    expect(rows[0]?.nextAttemptAt).toBeUndefined();
+
+    vi.setSystemTime(NOW + 10 * 60_000);
+    const due = await t.mutation(
+      internal.operations.notifications.scheduleDueNotificationDeliveries,
+      {},
+    );
+    expect(due.push).toBe(0);
+  },
+);

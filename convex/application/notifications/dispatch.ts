@@ -111,7 +111,7 @@ export async function dispatchPushDelivery(
 
   const notice = toExternalNotification(claim.event);
   let sentCount = 0;
-  let lastError: NotificationDeliveryError | undefined;
+  let finalError: NotificationDeliveryError | undefined;
 
   for (const subscription of claim.subscriptions) {
     const result = await sendPushSafely(deps.sender, subscription, notice);
@@ -119,15 +119,15 @@ export async function dispatchPushDelivery(
       sentCount += 1;
     } else if (result.status === "expired") {
       await deps.store.removeExpiredSubscription(subscription.endpoint);
-    } else {
-      lastError = result.errorCode;
+    } else if (finalError !== "delivery_uncertain") {
+      finalError = result.errorCode;
     }
   }
 
   const finalResult: EmailSendResult =
     sentCount > 0
       ? { status: "sent" }
-      : { status: "failed", errorCode: lastError ?? "invalid_destination" };
+      : { status: "failed", errorCode: finalError ?? "invalid_destination" };
   await deps.store.recordAttempt(claim.eventId, finalResult, deps.now());
   return finalResult.status;
 }
