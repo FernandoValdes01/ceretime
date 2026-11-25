@@ -304,6 +304,27 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(takeRequestMock).toHaveBeenCalledWith({ requestId: "req-1" });
   });
 
+  test("cada «Tomar» de la bandeja describe su fila para el lector de pantalla", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta(
+      [filaAbierta({ _id: "req-1" }), filaAbierta({ _id: "req-2" })],
+      true,
+    );
+    mockedAuthorized = paginaTomadas([], true);
+    renderAt("/profesional/solicitudes");
+
+    const controles = await screen.findAllByRole("button", { name: "Tomar" });
+    expect(controles).toHaveLength(2);
+    const textos = controles.map((control) => {
+      const fila = document.getElementById(control.getAttribute("aria-describedby") ?? "");
+      return fila?.textContent ?? "";
+    });
+    for (const texto of textos) expect(texto).toMatch(/^Recibida.*Registrada el /);
+    expect(new Set(controles.map((control) => control.getAttribute("aria-describedby"))).size).toBe(
+      2,
+    );
+  });
+
   test("error al tomar en bandeja muestra aviso y permite reintento", async () => {
     comoProfesional();
     mockedOpen = paginaAbierta([filaAbierta({ _id: "req-1" })], true);
@@ -799,7 +820,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     expect(
       await screen.findByRole("dialog", { name: "Pedir información adicional" }),
     ).toBeDefined();
-    expect(await screen.findByLabelText("Motivo *")).toBeDefined();
+    expect(await screen.findByLabelText("Motivo (obligatorio)")).toBeDefined();
   });
 
   test("pedir información valida motivo obligatorio", async () => {
@@ -810,7 +831,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    expect(await screen.findByText("El motivo es obligatorio")).toBeDefined();
+    expect(await screen.findByText("Escribe el motivo.")).toBeDefined();
     expect(requestInfoMock).not.toHaveBeenCalled();
   });
 
@@ -820,12 +841,12 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const textarea = screen.getByLabelText("Motivo *");
+    const textarea = screen.getByLabelText("Motivo (obligatorio)");
     const longReason = "a".repeat(2001);
     fireEvent.change(textarea, { target: { value: longReason } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    expect(await screen.findByText("El motivo no puede exceder 2000 caracteres")).toBeDefined();
+    expect(await screen.findByText("El motivo no puede exceder 2000 caracteres.")).toBeDefined();
     expect(requestInfoMock).not.toHaveBeenCalled();
   });
 
@@ -836,7 +857,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const textarea = screen.getByLabelText("Motivo *");
+    const textarea = screen.getByLabelText("Motivo (obligatorio)");
     fireEvent.change(textarea, { target: { value: "Falta información sobre horario" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
@@ -862,7 +883,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    fireEvent.change(screen.getByLabelText("Motivo *"), {
+    fireEvent.change(screen.getByLabelText("Motivo (obligatorio)"), {
       target: { value: "Falta información sobre horario" },
     });
     // El estado cambia DURANTE el envío: al cerrar, el botón ya no existe.
@@ -904,7 +925,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const textarea = screen.getByLabelText("Motivo *");
+    const textarea = screen.getByLabelText("Motivo (obligatorio)");
     fireEvent.change(textarea, { target: { value: "Motivo válido" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
@@ -928,7 +949,9 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    fireEvent.change(screen.getByLabelText("Motivo *"), { target: { value: "Motivo válido" } });
+    fireEvent.change(screen.getByLabelText("Motivo (obligatorio)"), {
+      target: { value: "Motivo válido" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
     expect(await screen.findByText(REQUEST_ACTION_FALLBACK_MESSAGE)).toBeDefined();
 
@@ -966,7 +989,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const textarea = screen.getByLabelText("Motivo *");
+    const textarea = screen.getByLabelText("Motivo (obligatorio)");
     fireEvent.change(textarea, { target: { value: "Motivo válido" } });
     const enviarBtn = screen.getByRole("button", { name: "Enviar" });
     fireEvent.click(enviarBtn);
@@ -999,7 +1022,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const motivo = await screen.findByLabelText("Motivo *");
+    const motivo = await screen.findByLabelText("Motivo (obligatorio)");
 
     await waitFor(() => expect(document.activeElement).toBe(motivo));
   });
@@ -1026,7 +1049,7 @@ describe("acciones del Profesional (TI2-92)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
     const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
-    const motivo = screen.getByLabelText("Motivo *");
+    const motivo = screen.getByLabelText("Motivo (obligatorio)");
 
     // Desde el último foco (Enviar), Tab envuelve al primero (motivo).
     const enviarBtn = screen.getByRole("button", { name: "Enviar" });
@@ -1112,11 +1135,13 @@ describe("revisión completa del Profesional (TI2-157)", () => {
       }),
     ).toBeDefined();
     expect(within(dialogo).getByText("Tú, como profesional responsable")).toBeDefined();
-    const objetivo = within(dialogo).getByLabelText("Objetivo del acompañamiento *");
+    const objetivo = within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)");
     await waitFor(() => expect(document.activeElement).toBe(objetivo));
 
     fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
-    expect(await within(dialogo).findByText("El objetivo es obligatorio")).toBeDefined();
+    expect(
+      await within(dialogo).findByText("Escribe el objetivo del acompañamiento."),
+    ).toBeDefined();
     expect(objetivo.getAttribute("aria-invalid")).toBe("true");
     expect(acceptRequestMock).not.toHaveBeenCalled();
   });
@@ -1128,7 +1153,7 @@ describe("revisión completa del Profesional (TI2-157)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     const dialogo = await openAcceptDialog();
-    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento *"), {
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
       target: { value: "  Acordar ajustes de comunicación  " },
     });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
@@ -1151,7 +1176,7 @@ describe("revisión completa del Profesional (TI2-157)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     const dialogo = await openAcceptDialog();
-    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento *"), {
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
       target: { value: "Objetivo ficticio" },
     });
     const aceptar = within(dialogo).getByRole("button", { name: "Aceptar" });
@@ -1173,7 +1198,7 @@ describe("revisión completa del Profesional (TI2-157)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     const dialogo = await openAcceptDialog();
-    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento *"), {
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
       target: { value: "Objetivo ficticio" },
     });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
@@ -1206,7 +1231,7 @@ describe("revisión completa del Profesional (TI2-157)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     const dialogo = await openAcceptDialog();
-    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento *"), {
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
       target: { value: "Objetivo ficticio" },
     });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
@@ -1222,7 +1247,7 @@ describe("revisión completa del Profesional (TI2-157)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     const dialogo = await openAcceptDialog();
-    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento *"), {
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
       target: { value: "Objetivo ficticio" },
     });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
@@ -1243,7 +1268,7 @@ describe("revisión completa del Profesional (TI2-157)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     const dialogo = await openAcceptDialog();
-    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento *"), {
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
       target: { value: "Objetivo ficticio" },
     });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
@@ -1264,10 +1289,10 @@ describe("revisión completa del Profesional (TI2-157)", () => {
     expect(within(dialogo).getByText(/El estudiante leerá esta razón/)).toBeDefined();
 
     fireEvent.click(within(dialogo).getByRole("button", { name: "Cerrar solicitud" }));
-    expect(await within(dialogo).findByText("La razón es obligatoria")).toBeDefined();
+    expect(await within(dialogo).findByText("Escribe la razón del cierre.")).toBeDefined();
     expect(closeRequestMock).not.toHaveBeenCalled();
 
-    fireEvent.change(within(dialogo).getByLabelText("Razón del cierre *"), {
+    fireEvent.change(within(dialogo).getByLabelText("Razón del cierre (obligatorio)"), {
       target: { value: "La necesidad corresponde a otra unidad" },
     });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Cerrar solicitud" }));
@@ -1513,17 +1538,17 @@ describe("derivaciones en el detalle del Profesional (TI2-158)", () => {
     expect(
       within(dialogo).getByText(/no se eligen destinatarios ni se envían antecedentes/),
     ).toBeDefined();
-    const unidad = within(dialogo).getByLabelText("Unidad de destino *");
+    const unidad = within(dialogo).getByLabelText("Unidad de destino (obligatorio)");
     await waitFor(() => expect(document.activeElement).toBe(unidad));
 
     fireEvent.click(within(dialogo).getByRole("button", { name: "Derivar" }));
-    expect(await within(dialogo).findByText("La unidad de destino es obligatoria")).toBeDefined();
+    expect(await within(dialogo).findByText("Indica la unidad de destino.")).toBeDefined();
     expect(unidad.getAttribute("aria-invalid")).toBe("true");
     expect(document.activeElement).toBe(unidad);
     expect(referRequestMock).not.toHaveBeenCalled();
 
     fireEvent.change(unidad, { target: { value: "  Unidad ficticia de destino " } });
-    fireEvent.change(within(dialogo).getByLabelText("Razón de la derivación *"), {
+    fireEvent.change(within(dialogo).getByLabelText("Razón de la derivación (obligatorio)"), {
       target: { value: "El apoyo lo entrega esa unidad" },
     });
     fireEvent.click(within(dialogo).getByRole("button", { name: "Derivar" }));
@@ -1549,7 +1574,7 @@ describe("derivaciones en el detalle del Profesional (TI2-158)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Derivar a otra unidad" }));
     const dialogo = await screen.findByRole("dialog", { name: "Derivar a otra unidad" });
-    const unidad = within(dialogo).getByLabelText("Unidad de destino *");
+    const unidad = within(dialogo).getByLabelText("Unidad de destino (obligatorio)");
     const derivar = within(dialogo).getByRole("button", { name: "Derivar" });
 
     derivar.focus();

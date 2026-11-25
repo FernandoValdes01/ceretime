@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -19,6 +19,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 // fuente para no duplicar el sistema de diseño entre portales.
 import "../routes/student-portal.css";
 import { requestStatusLabel } from "./gestion-labels.ts";
+import { DetailRow } from "./detail-row.tsx";
 import {
   usePagedList,
   type RequestListItem,
@@ -177,6 +178,8 @@ function RequestRow({
   /** Solo bandeja: tomar sin pasar por el detalle (denegado sin toma). */
   take?: { disabled: boolean; busy: boolean; onTake: () => void };
 }) {
+  // Cada «Tomar» de la bandeja nombra su fila para el lector de pantalla.
+  const rowId = useId();
   const content = (
     <>
       <span className="student-portal__chip">{requestStatusLabel(request.status)}</span>
@@ -189,7 +192,9 @@ function RequestRow({
   if (listSearch === undefined) {
     return (
       <li className="student-portal__item">
-        <span className={GESTION_ROW}>{content}</span>
+        <span id={rowId} className={GESTION_ROW}>
+          {content}
+        </span>
         {take && (
           <button
             type="button"
@@ -197,6 +202,7 @@ function RequestRow({
             disabled={take.disabled || take.busy}
             onClick={take.onTake}
             aria-busy={take.busy}
+            aria-describedby={rowId}
           >
             {take.busy ? "Tomando…" : "Tomar"}
           </button>
@@ -710,71 +716,40 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
 
   const dialogBusy = openDialog !== null;
 
+  // `#root` centra el texto de toda la Web: el detalle se alinea a la
+  // izquierda como el del acompañamiento.
   return (
-    <>
-      <dl>
-        <div>
-          <dt>Estado</dt>
-          <dd ref={statusRef} tabIndex={-1}>
-            {requestStatusLabel(request.status)}
-          </dd>
-        </div>
-        <div>
-          <dt>{responsible.term}</dt>
-          <dd>{responsible.value}</dd>
-        </div>
-        <div>
-          <dt>Registrada</dt>
-          <dd>{formatAgendaShortDate(request.createdAt)}</dd>
-        </div>
-        <div>
-          <dt>Necesidades de acceso</dt>
-          <dd className="whitespace-pre-line">{request.accessNeeds}</dd>
-        </div>
+    <div className="text-left">
+      <dl className="m-0 divide-y divide-(--ct-line)">
+        <DetailRow label="Estado" valueRef={statusRef}>
+          {requestStatusLabel(request.status)}
+        </DetailRow>
+        <DetailRow label={responsible.term}>{responsible.value}</DetailRow>
+        <DetailRow label="Registrada">{formatAgendaShortDate(request.createdAt)}</DetailRow>
+        <DetailRow label="Necesidades de acceso">{request.accessNeeds}</DetailRow>
         {request.informationRequest === undefined ? null : (
-          <div>
-            <dt>Información pedida al estudiante</dt>
-            <dd className="whitespace-pre-line">{request.informationRequest}</dd>
-          </div>
+          <DetailRow label="Información pedida al estudiante">
+            {request.informationRequest}
+          </DetailRow>
         )}
         {request.informationResponse === undefined ? null : (
-          <div>
-            <dt>Respuesta del estudiante</dt>
-            <dd className="whitespace-pre-line">{request.informationResponse}</dd>
-          </div>
+          <DetailRow label="Respuesta del estudiante">{request.informationResponse}</DetailRow>
         )}
         {request.closureReason === undefined ? null : (
-          <div>
-            <dt>Razón del cierre</dt>
-            <dd className="whitespace-pre-line">{request.closureReason}</dd>
-          </div>
+          <DetailRow label="Razón del cierre">{request.closureReason}</DetailRow>
         )}
         {outgoingReferral === undefined ? null : (
           <>
-            <div>
-              <dt>Derivada a</dt>
-              <dd>
-                {outgoingReferral.destinationUnit}, el{" "}
-                {formatAgendaShortDate(outgoingReferral.referredAt)}
-              </dd>
-            </div>
-            <div>
-              <dt>Razón de la derivación</dt>
-              <dd className="whitespace-pre-line">{outgoingReferral.reason}</dd>
-            </div>
+            <DetailRow label="Derivada a">
+              {outgoingReferral.destinationUnit}, el{" "}
+              {formatAgendaShortDate(outgoingReferral.referredAt)}
+            </DetailRow>
+            <DetailRow label="Razón de la derivación">{outgoingReferral.reason}</DetailRow>
           </>
         )}
-        {provenance === null ? null : (
-          <div>
-            <dt>Procedencia</dt>
-            <dd>{provenance}</dd>
-          </div>
-        )}
+        {provenance === null ? null : <DetailRow label="Procedencia">{provenance}</DetailRow>}
         {request.accompanimentId === undefined ? null : (
-          <div>
-            <dt>Acompañamiento</dt>
-            <dd>Abierto a partir de esta solicitud</dd>
-          </div>
+          <DetailRow label="Acompañamiento">Abierto a partir de esta solicitud</DetailRow>
         )}
       </dl>
 
@@ -787,22 +762,16 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
       {incomingReferral === undefined ? null : (
         <section aria-labelledby="incoming-referral-title" className="student-portal__section">
           <h2 id="incoming-referral-title">Derivación de entrada</h2>
-          <dl>
-            <div>
-              <dt>Unidad que derivó</dt>
-              <dd>
-                {incomingReferral.originUnit}, el{" "}
-                {formatAgendaShortDate(incomingReferral.referredAt)}
-              </dd>
-            </div>
-            <div>
-              <dt>Contacto con el estudiante</dt>
-              <dd>{referralStepLabel(incomingReferral.contactedAt)}</dd>
-            </div>
-            <div>
-              <dt>Aceptación del estudiante</dt>
-              <dd>{referralStepLabel(incomingReferral.acceptedAt)}</dd>
-            </div>
+          <dl className="m-0 divide-y divide-(--ct-line)">
+            <DetailRow label="Unidad que derivó">
+              {incomingReferral.originUnit}, el {formatAgendaShortDate(incomingReferral.referredAt)}
+            </DetailRow>
+            <DetailRow label="Contacto con el estudiante">
+              {referralStepLabel(incomingReferral.contactedAt)}
+            </DetailRow>
+            <DetailRow label="Aceptación del estudiante">
+              {referralStepLabel(incomingReferral.acceptedAt)}
+            </DetailRow>
           </dl>
           {referralStepsOpen && !acceptanceAllowed ? (
             <p className="student-portal__hint">
@@ -923,8 +892,8 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           title="Pedir información adicional"
           description="El estudiante recibirá este motivo para completar su solicitud."
           fieldLabel="Motivo"
-          requiredMessage="El motivo es obligatorio"
-          tooLongMessage={`El motivo no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres`}
+          requiredMessage="Escribe el motivo."
+          tooLongMessage={`El motivo no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Enviar"
           onCancel={() => closeDialog(null)}
           onSubmit={async (reason) => {
@@ -945,8 +914,8 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           title="Aceptar y abrir acompañamiento"
           description="Al aceptar se abre un único acompañamiento para el estudiante."
           fieldLabel="Objetivo del acompañamiento"
-          requiredMessage="El objetivo es obligatorio"
-          tooLongMessage={`El objetivo no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres`}
+          requiredMessage="Escribe el objetivo del acompañamiento."
+          tooLongMessage={`El objetivo no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Aceptar"
           onCancel={() => closeDialog(null)}
           onSubmit={async (objective) => {
@@ -978,8 +947,8 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           title="Cerrar sin acompañamiento"
           description="El estudiante leerá esta razón. No incluyas diagnósticos ni etiquetas clínicas."
           fieldLabel="Razón del cierre"
-          requiredMessage="La razón es obligatoria"
-          tooLongMessage={`La razón no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres`}
+          requiredMessage="Escribe la razón del cierre."
+          tooLongMessage={`La razón no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Cerrar solicitud"
           onCancel={() => closeDialog(null)}
           onSubmit={async (reason) => {
@@ -1000,11 +969,11 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           unitField={{
             label: "Unidad de destino",
             hint: "Nombre de la unidad de la Universidad a la que derivas al estudiante.",
-            requiredMessage: "La unidad de destino es obligatoria",
+            requiredMessage: "Indica la unidad de destino.",
           }}
           fieldLabel="Razón de la derivación"
-          requiredMessage="La razón es obligatoria"
-          tooLongMessage={`La razón no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres`}
+          requiredMessage="Escribe la razón de la derivación."
+          tooLongMessage={`La razón no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Derivar"
           onCancel={() => closeDialog(null)}
           onSubmit={async (reason, destinationUnit = "") => {
@@ -1020,8 +989,13 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           }}
         />
       )}
-    </>
+    </div>
   );
+}
+
+/** Marca visible de campo obligatorio, igual que en el registro por canal oficial. */
+function RequiredMark() {
+  return <span className="font-normal text-(--ct-muted)">(obligatorio)</span>;
 }
 
 /**
@@ -1157,19 +1131,19 @@ function ReviewTextDialog({
       aria-labelledby={titleId}
       onKeyDown={handleKeyDown}
     >
-      <div className="max-h-full w-full max-w-[32rem] overflow-y-auto rounded-lg border border-(--ct-line) bg-(--ct-card) p-6 shadow-[0_4px_12px_rgb(0_0_0/0.05)]">
+      <div className="max-h-full w-full max-w-[32rem] overflow-y-auto rounded-lg border border-(--ct-line) bg-(--ct-card) p-6 text-left shadow-[0_4px_12px_rgb(0_0_0/0.05)]">
         <h2 id={titleId} className="mb-2 text-xl font-semibold text-(--ct-ink)">
           {title}
         </h2>
-        <p className="mb-6 text-base leading-normal text-(--ct-muted)">{description}</p>
+        <p className="mb-6! text-base leading-normal text-(--ct-muted)">{description}</p>
         {children}
         <form onSubmit={handleSubmit} noValidate>
           {unitField === undefined ? null : (
             <div className="mb-6">
               <label htmlFor={unitId} className="mb-2 block text-sm font-semibold text-(--ct-ink)">
-                {unitField.label} <span aria-hidden="true">*</span>
+                {unitField.label} <RequiredMark />
               </label>
-              <p id={unitHintId} className="student-portal__hint mb-2">
+              <p id={unitHintId} className="student-portal__hint mb-2!">
                 {unitField.hint}
               </p>
               <input
@@ -1188,7 +1162,7 @@ function ReviewTextDialog({
               {unitError && (
                 <p
                   id={unitErrorId}
-                  className="mt-2 text-sm font-semibold text-(--ct-danger)"
+                  className="mt-2! text-sm font-semibold text-(--ct-danger)"
                   role="alert"
                 >
                   {unitError}
@@ -1198,7 +1172,7 @@ function ReviewTextDialog({
           )}
           <div className="mb-6">
             <label htmlFor={fieldId} className="mb-2 block text-sm font-semibold text-(--ct-ink)">
-              {fieldLabel} <span aria-hidden="true">*</span>
+              {fieldLabel} <RequiredMark />
             </label>
             <textarea
               id={fieldId}
@@ -1216,13 +1190,13 @@ function ReviewTextDialog({
             {fieldError && (
               <p
                 id={errorId}
-                className="mt-2 text-sm font-semibold text-(--ct-danger)"
+                className="mt-2! text-sm font-semibold text-(--ct-danger)"
                 role="alert"
               >
                 {fieldError}
               </p>
             )}
-            <p id={hintId} className="student-portal__hint mt-2">
+            <p id={hintId} className="student-portal__hint mt-2!">
               Máximo {REVIEW_TEXT_MAX_LENGTH} caracteres ({text.length}/{REVIEW_TEXT_MAX_LENGTH})
             </p>
           </div>
