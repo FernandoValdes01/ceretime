@@ -15,6 +15,7 @@ import type {
   PushSendResult,
   PushSubscriptionTarget,
 } from "../../application/notifications/ports";
+import { parseAllowedWebPushEndpointOrigin } from "../../domain/notifications/push";
 
 /** Claves VAPID del remitente, leídas solo desde variables de entorno. */
 export interface WebPushConfig {
@@ -192,19 +193,11 @@ export async function buildVapidAuthorization(
   return `vapid t=${jwt}, k=${config.publicKey}`;
 }
 
-function parseEndpointOrigin(endpoint: string): string | null {
-  try {
-    const url = new URL(endpoint);
-    if (url.protocol !== "https:") return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Puerto `PushSender` con Web Push (TI2-160). Sin claves VAPID responde
- * `not_configured`; nunca lanza por fallos del servicio push.
+ * `not_configured`; rechaza orígenes ajenos a los proveedores admitidos antes
+ * de invocar `fetch`, deshabilita redirecciones y nunca lanza por fallos del
+ * servicio push.
  */
 export function webPushSender(
   config: WebPushConfig | null,
@@ -214,7 +207,7 @@ export function webPushSender(
   return {
     send: async (target: PushSubscriptionTarget, message: PushMessage): Promise<PushSendResult> => {
       if (config === null) return { status: "failed", errorCode: "not_configured" };
-      const origin = parseEndpointOrigin(target.endpoint);
+      const origin = parseAllowedWebPushEndpointOrigin(target.endpoint);
       if (origin === null) return { status: "failed", errorCode: "invalid_destination" };
 
       let authorization: string;
@@ -235,6 +228,7 @@ export function webPushSender(
       try {
         response = await fetchImpl(target.endpoint, {
           method: "POST",
+          redirect: "manual",
           headers: {
             Authorization: authorization,
             "Content-Encoding": "aes128gcm",
@@ -247,6 +241,9 @@ export function webPushSender(
         // Si se pierde la respuesta tras invocar al servicio push, el aviso
         // pudo haberse entregado y no se reintenta automáticamente.
         return { status: "failed", errorCode: "delivery_uncertain" };
+      }
+      if (response.status >= 300 && response.status < 400) {
+        return { status: "failed", errorCode: "invalid_destination" };
       }
       if (response.ok) return { status: "sent" };
       if (response.status === 404 || response.status === 410) return { status: "expired" };

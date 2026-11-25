@@ -110,11 +110,13 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+const PUSH_PROVIDER_PREFIX = "https://fcm.googleapis.com/fcm/send/";
+
 test("TI2-160: sin activar push no se encola ni se envía nada y el resto funciona igual", async () => {
   const pushEndpointsCalled: string[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
     const target = String(url);
-    if (target.includes("push.example.test")) pushEndpointsCalled.push(target);
+    if (target.startsWith(PUSH_PROVIDER_PREFIX)) pushEndpointsCalled.push(target);
     return new Response(null, { status: 200 });
   });
 
@@ -144,7 +146,7 @@ test("TI2-160: activar push envía mensaje cifrado, registra resultado y un rein
   const pushCalls: string[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
     const target = String(url);
-    if (target.startsWith("https://push.example.test/")) {
+    if (target.startsWith(PUSH_PROVIDER_PREFIX)) {
       pushCalls.push(target);
       return new Response(null, { status: 201 });
     }
@@ -155,7 +157,7 @@ test("TI2-160: activar push envía mensaje cifrado, registra resultado y un rein
   await seedStudent(t, "ti160-con-push", "conpush@alu.uct.cl");
   const student = t.withIdentity(identityFor("ti160-con-push"));
 
-  const sub = await generateBrowserSubscription("https://push.example.test/sub/activo");
+  const sub = await generateBrowserSubscription(`${PUSH_PROVIDER_PREFIX}activo`);
   const activated = await student.mutation(
     api.presentation.notifications.activatePushSubscription,
     sub,
@@ -174,7 +176,7 @@ test("TI2-160: activar push envía mensaje cifrado, registra resultado y un rein
     vi.setSystemTime(NOW + 1_000);
   });
 
-  expect(pushCalls).toEqual(["https://push.example.test/sub/activo"]);
+  expect(pushCalls).toEqual([`${PUSH_PROVIDER_PREFIX}activo`]);
   const rows = await pushDeliveries(t);
   expect(rows).toHaveLength(1);
   expect(rows[0]).toMatchObject({ channel: "push", status: "sent", attempts: 1 });
@@ -191,7 +193,7 @@ test("TI2-160: activar push envía mensaje cifrado, registra resultado y un rein
 test("TI2-160: una suscripción vencida (410 Gone) se retira automáticamente y el cambio se conserva", async () => {
   await generateVapidEnv();
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
-    if (String(url).startsWith("https://push.example.test/")) {
+    if (String(url).startsWith(PUSH_PROVIDER_PREFIX)) {
       return new Response(null, { status: 410 });
     }
     return new Response(null, { status: 200 });
@@ -201,7 +203,7 @@ test("TI2-160: una suscripción vencida (410 Gone) se retira automáticamente y 
   await seedStudent(t, "ti160-vencida", "vencida@alu.uct.cl");
   const student = t.withIdentity(identityFor("ti160-vencida"));
 
-  const sub = await generateBrowserSubscription("https://push.example.test/sub/vencida");
+  const sub = await generateBrowserSubscription(`${PUSH_PROVIDER_PREFIX}vencida`);
   await student.mutation(api.presentation.notifications.activatePushSubscription, sub);
   expect(await pushSubscriptions(t)).toHaveLength(1);
 
@@ -229,7 +231,7 @@ test("TI2-160: desactivar push solo borra suscripciones propias y exige sesión 
   const u1 = t.withIdentity(identityFor("ti160-u1"));
   const u2 = t.withIdentity(identityFor("ti160-u2"));
 
-  const sub1 = await generateBrowserSubscription("https://push.example.test/sub/u1");
+  const sub1 = await generateBrowserSubscription(`${PUSH_PROVIDER_PREFIX}u1`);
   await u1.mutation(api.presentation.notifications.activatePushSubscription, sub1);
 
   // Otra persona no puede desactivar la suscripción de u1.
@@ -259,7 +261,7 @@ test("TI2-160: un corte tras reservar la entrega push marca delivery_uncertain y
   await seedStudent(t, "ti160-corte", "corte-push@alu.uct.cl");
   const student = t.withIdentity(identityFor("ti160-corte"));
 
-  const sub = await generateBrowserSubscription("https://push.example.test/sub/corte");
+  const sub = await generateBrowserSubscription(`${PUSH_PROVIDER_PREFIX}corte`);
   await student.mutation(api.presentation.notifications.activatePushSubscription, sub);
   await student.mutation(api.presentation.requests.createRequest, REQUEST_SUBMISSION);
 
@@ -302,8 +304,8 @@ test.each([
   "TI2-160: con dos suscripciones (%s) conserva delivery_uncertain y no vuelve a programar reintento",
   async (_, order) => {
     await generateVapidEnv();
-    const firstEndpoint = "https://push.example.test/sub/primera";
-    const secondEndpoint = "https://push.example.test/sub/segunda";
+    const firstEndpoint = `${PUSH_PROVIDER_PREFIX}primera`;
+    const secondEndpoint = "https://updates.push.services.mozilla.com/wpush/v2/segunda";
 
     vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
       const target = String(url);
@@ -355,3 +357,62 @@ test.each([
     expect(due.push).toBe(0);
   },
 );
+
+test("TI2-160: activar push rechaza un origen ajeno a los proveedores admitidos", async () => {
+  const fetchSpy = vi.spyOn(globalThis, "fetch");
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti160-origen-ajeno", "ajeno@alu.uct.cl");
+  const student = t.withIdentity(identityFor("ti160-origen-ajeno"));
+
+  const untrusted = await generateBrowserSubscription("https://evil.example.test/push/hook");
+  await expect(
+    student.mutation(api.presentation.notifications.activatePushSubscription, untrusted),
+  ).rejects.toThrow(ConvexError);
+
+  expect(await pushSubscriptions(t)).toHaveLength(0);
+  expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+test("TI2-160: aplica el límite de 20 suscripciones por persona y rechaza la número 21", async () => {
+  const t = convexTest(schema, modules);
+  await seedStudent(t, "ti160-limite", "limite@alu.uct.cl");
+  const student = t.withIdentity(identityFor("ti160-limite"));
+
+  const firstSub = await generateBrowserSubscription(`${PUSH_PROVIDER_PREFIX}disp-1`);
+  await expect(
+    student.mutation(api.presentation.notifications.activatePushSubscription, firstSub),
+  ).resolves.toEqual({ created: true });
+
+  for (let i = 2; i <= 20; i += 1) {
+    const sub = await generateBrowserSubscription(`${PUSH_PROVIDER_PREFIX}disp-${i}`);
+    await expect(
+      student.mutation(api.presentation.notifications.activatePushSubscription, sub),
+    ).resolves.toEqual({ created: true });
+  }
+
+  // Actualizar una suscripción propia ya registrada sigue permitido al llegar al límite.
+  await expect(
+    student.mutation(api.presentation.notifications.activatePushSubscription, firstSub),
+  ).resolves.toEqual({ created: false });
+
+  // La suscripción número 21 se rechaza y no queda guardada sin avisos.
+  const twentyFirst = await generateBrowserSubscription(`${PUSH_PROVIDER_PREFIX}disp-21`);
+  await expect(
+    student.mutation(api.presentation.notifications.activatePushSubscription, twentyFirst),
+  ).rejects.toThrow(ConvexError);
+
+  expect(await pushSubscriptions(t)).toHaveLength(20);
+  const status = await student.query(api.presentation.notifications.getOwnPushStatus, {});
+  expect(status.subscriptionCount).toBe(20);
+
+  // Al retirar una suscripción anterior, la nueva puede activarse.
+  await expect(
+    student.mutation(api.presentation.notifications.deactivatePushSubscription, {
+      endpoint: firstSub.endpoint,
+    }),
+  ).resolves.toEqual({ deleted: true });
+  await expect(
+    student.mutation(api.presentation.notifications.activatePushSubscription, twentyFirst),
+  ).resolves.toEqual({ created: true });
+  expect(await pushSubscriptions(t)).toHaveLength(20);
+});

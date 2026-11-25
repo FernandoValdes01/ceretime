@@ -3271,8 +3271,8 @@ test("TI2-145: la suscripción push es propia y el endpoint no se duplica", asyn
     email: "ti145pushpro@uct.cl",
     role: "professional",
   });
-  const endpointA = "https://push.example.test/subscription-a";
-  const endpointB = "https://push.example.test/subscription-b";
+  const endpointA = "https://fcm.googleapis.com/fcm/send/subscription-a";
+  const endpointB = "https://updates.push.services.mozilla.com/wpush/v2/subscription-b";
 
   const saved = await t.run(async (ctx) => ({
     first: await savePushSubscription(

@@ -205,7 +205,9 @@ export interface PushSubscriptionStore extends PushSubscriptionReader {
     input: PushSubscriptionActivationInput,
     savedAt: number,
   ): Promise<
-    { readonly status: "saved"; readonly created: boolean } | { readonly status: "invalid" }
+    | { readonly status: "saved"; readonly created: boolean }
+    | { readonly status: "invalid" }
+    | { readonly status: "limit_reached" }
   >;
   deleteForUser(userId: string, endpoint: string): Promise<boolean>;
 }

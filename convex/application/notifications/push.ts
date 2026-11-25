@@ -6,6 +6,7 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import { isAllowedWebPushEndpoint } from "../../domain/notifications/push";
 import type { AuthorizationReader } from "../authorization/authorize";
 import type {
   PushSubscriptionActivationInput,
@@ -74,6 +75,9 @@ export async function activateOwnPushSubscription(
 ): Promise<ApiResult<{ readonly created: boolean }>> {
   const userId = await resolveActiveUserId(deps.auth, input.tokenIdentifier);
   if (userId === null) return errResult(unauthorizedError());
+  if (!isAllowedWebPushEndpoint(input.subscription.endpoint)) {
+    return errResult(conflictError());
+  }
   const saved = await deps.subscriptions.saveForUser(userId, input.subscription, deps.now());
   if (saved.status !== "saved") {
     return errResult(conflictError());

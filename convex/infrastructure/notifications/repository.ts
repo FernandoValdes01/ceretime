@@ -26,6 +26,10 @@ import {
   type NotificationEvent,
   type NotificationReadStatus,
 } from "../../domain/notifications/notification";
+import {
+  isAllowedWebPushEndpoint,
+  MAX_PUSH_SUBSCRIPTIONS_PER_USER,
+} from "../../domain/notifications/push";
 
 /**
  * Repositorio de avisos, entregas y suscripciones push (TI2-118, TI2-145).
@@ -845,13 +849,15 @@ export type PushSubscriptionSaveResult =
       readonly created: boolean;
     }
   | { readonly status: "invalid_reference" }
-  | { readonly status: "invalid_subscription" };
+  | { readonly status: "invalid_subscription" }
+  | { readonly status: "limit_reached" };
 
 function normalizePushSubscription(input: PushSubscriptionInput): PushSubscriptionInput | null {
   const endpoint = input.endpoint.trim();
   const p256dh = input.p256dh.trim();
   const auth = input.auth.trim();
   if (endpoint === "" || p256dh === "" || auth === "") return null;
+  if (!isAllowedWebPushEndpoint(endpoint)) return null;
   if (
     input.expirationTime !== undefined &&
     (!Number.isFinite(input.expirationTime) || input.expirationTime <= 0)
@@ -871,8 +877,11 @@ function normalizePushSubscription(input: PushSubscriptionInput): PushSubscripti
  *
  * El endpoint identifica un navegador, no a una persona: si otra sesión del
  * mismo navegador vuelve a suscribirse, la fila se reasigna al usuario actual
- * en vez de duplicarse. Las claves son las públicas del navegador y solo las
- * lee este repositorio.
+ * en vez de duplicarse. Cada persona admite hasta
+ * `MAX_PUSH_SUBSCRIPTIONS_PER_USER` suscripciones activas: actualizar un
+ * endpoint propio existente siempre está permitido, pero agregar o reasignar
+ * una nueva por sobre el límite se rechaza. Las claves son las públicas del
+ * navegador y solo las lee este repositorio.
  */
 export async function savePushSubscription(
   ctx: MutationCtx,
@@ -891,6 +900,13 @@ export async function savePushSubscription(
     .query("pushSubscriptions")
     .withIndex("by_endpoint", (q) => q.eq("endpoint", normalized.endpoint))
     .unique();
+  const addsSubscriptionForUser = existing === null || existing.userId !== userId;
+  if (addsSubscriptionForUser) {
+    const current = await findPushSubscriptionsForUser(ctx, userId);
+    if (current.length >= MAX_PUSH_SUBSCRIPTIONS_PER_USER) {
+      return { status: "limit_reached" };
+    }
+  }
   if (existing !== null) {
     await ctx.db.patch(existing._id, {
       userId,
@@ -948,7 +964,7 @@ export async function findPushSubscriptionsForUser(
   return await ctx.db
     .query("pushSubscriptions")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
-    .take(20);
+    .take(MAX_PUSH_SUBSCRIPTIONS_PER_USER);
 }
 
 /**
@@ -1020,11 +1036,14 @@ export function pushSubscriptionStore(ctx: MutationCtx): PushSubscriptionStore {
       input: PushSubscriptionInput,
       savedAt: number,
     ): Promise<
-      { readonly status: "saved"; readonly created: boolean } | { readonly status: "invalid" }
+      | { readonly status: "saved"; readonly created: boolean }
+      | { readonly status: "invalid" }
+      | { readonly status: "limit_reached" }
     > => {
       const normalized = ctx.db.normalizeId("users", userId);
       if (normalized === null) return { status: "invalid" };
       const saved = await savePushSubscription(ctx, normalized, input, savedAt);
+      if (saved.status === "limit_reached") return { status: "limit_reached" };
       if (saved.status !== "saved") return { status: "invalid" };
       return { status: "saved", created: saved.created };
     },

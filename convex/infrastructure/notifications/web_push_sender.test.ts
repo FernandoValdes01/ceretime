@@ -155,11 +155,11 @@ describe("adaptador Web Push VAPID (TI2-160)", () => {
     });
   });
 
-  test("traduce 201 a sent, 410/404 a expired, 403 a not_authorized y 5xx a provider_unavailable", async () => {
+  test("traduce 201 a sent, 410/404 a expired, 403 a not_authorized, 3xx a invalid_destination y 5xx a provider_unavailable", async () => {
     const config = await generateVapidTestConfig();
     const sub = await generateSubscriberKeys();
     const target = {
-      endpoint: "https://push.example.test/sub/1",
+      endpoint: "https://fcm.googleapis.com/fcm/send/sub-1",
       p256dh: sub.p256dh,
       auth: sub.auth,
     };
@@ -173,6 +173,20 @@ describe("adaptador Web Push VAPID (TI2-160)", () => {
       .mockResolvedValueOnce(new Response(null, { status: 201 }));
     await expect(webPushSender(config, okFetch).send(target, message)).resolves.toEqual({
       status: "sent",
+    });
+    expect(okFetch).toHaveBeenCalledWith(
+      target.endpoint,
+      expect.objectContaining({ method: "POST", redirect: "manual" }),
+    );
+
+    const redirectFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(null, { status: 302, headers: { Location: "https://evil.example.test" } }),
+      );
+    await expect(webPushSender(config, redirectFetch).send(target, message)).resolves.toEqual({
+      status: "failed",
+      errorCode: "invalid_destination",
     });
 
     const goneFetch = vi
@@ -208,5 +222,28 @@ describe("adaptador Web Push VAPID (TI2-160)", () => {
       status: "failed",
       errorCode: "not_configured",
     });
+  });
+
+  test.each([
+    "https://push.example.test/sub/1",
+    "https://fcm.googleapis.com.evil.test/fcm/send/1",
+    "http://fcm.googleapis.com/fcm/send/1",
+    "https://fcm.googleapis.com:8443/fcm/send/1",
+    "https://user:pass@fcm.googleapis.com/fcm/send/1",
+  ])("rechaza el origen ajeno o inválido %s antes de llamar a fetch", async (endpoint) => {
+    const config = await generateVapidTestConfig();
+    const sub = await generateSubscriberKeys();
+    const fetchSpy = vi.fn<typeof fetch>();
+
+    const result = await webPushSender(config, fetchSpy).send(
+      { endpoint, p256dh: sub.p256dh, auth: sub.auth },
+      {
+        title: "Tienes una actualización pendiente",
+        body: "Revisa las novedades en la aplicación.",
+      },
+    );
+
+    expect(result).toEqual({ status: "failed", errorCode: "invalid_destination" });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
