@@ -35,6 +35,9 @@ export type ApiResult<T> = { status: "ok"; data: T } | { status: "error"; error:
  * campos de una solicitud, con la misma idea: un código y el detalle en el
  * mensaje. TI2-146 suma `follow_up_fields_invalid` para los campos del
  * registro de seguimiento: `conflict` queda para lo que depende del estado.
+ * TI2-167 suma `privacy_request_fields_invalid` para los campos de una
+ * solicitud de derechos y de su resolución; el estado y la vigencia del plazo
+ * siguen usando `conflict`.
  */
 export const API_ERROR_CODE_VALUES = [
   "access_needs_empty",
@@ -46,6 +49,7 @@ export const API_ERROR_CODE_VALUES = [
   "assignment_fields_invalid",
   "request_fields_invalid",
   "follow_up_fields_invalid",
+  "privacy_request_fields_invalid",
 ] as const;
 
 /** Código estable de un error público del contrato común. */
@@ -79,6 +83,9 @@ export const REQUEST_FIELDS_INVALID_ERROR_CODE = "request_fields_invalid" as con
 /** Campos del registro de seguimiento inválidos: el mensaje indica qué corregir. */
 export const FOLLOW_UP_FIELDS_INVALID_ERROR_CODE = "follow_up_fields_invalid" as const;
 
+/** Campos de la solicitud de privacidad o de su resolución inválidos. */
+export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_CODE = "privacy_request_fields_invalid" as const;
+
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
 
@@ -104,6 +111,10 @@ export const REQUEST_FIELDS_INVALID_ERROR_MESSAGE = "Los datos de la solicitud n
 /** Mensaje genérico para campos del seguimiento inválidos; el detalle va en el error. */
 export const FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE = "Los datos del seguimiento no son válidos.";
 
+/** Mensaje genérico para campos de la solicitud de privacidad inválidos. */
+export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE =
+  "Los datos de la solicitud de privacidad no son válidos.";
+
 /** Mensaje comprensible para conflicto, sin detalles sensibles. */
 export const CONFLICT_ERROR_MESSAGE = "La solicitud entra en conflicto con el estado actual.";
 
@@ -126,6 +137,7 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   assignment_fields_invalid: ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
   request_fields_invalid: REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
   follow_up_fields_invalid: FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE,
+  privacy_request_fields_invalid: PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
 };
 
 /** Verdadero cuando el código pertenece al contrato público estable. */
