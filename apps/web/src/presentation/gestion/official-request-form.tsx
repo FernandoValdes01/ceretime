@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
-import { REFERRAL_UNIT_MAX_LENGTH } from "../../../../../convex/domain/index.ts";
+import {
+  AGENDA_TIME_ZONE,
+  civilDateOfInstant,
+  OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
+  RECEIVED_AT_FUTURE_MESSAGE,
+  REFERRAL_UNIT_MAX_LENGTH,
+} from "../../../../../convex/domain/index.ts";
+import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import {
   focusRequestField,
   requestFieldFocusTarget,
@@ -43,8 +50,8 @@ import { requestActionFailureOf } from "./request-review-errors.ts";
  * son datos personales de otra persona, en equipos que el personal comparte.
  * Desde TI2-165 el envío no lleva clave de idempotencia: cada registro válido
  * crea una solicitud, así que el botón queda bloqueado mientras se envía y
- * un segundo clic no repite la llamada. El Backend valida cada dato; acá solo
- * se revisa que esté lo obligatorio.
+ * un segundo clic no repite la llamada. El Backend valida cada dato; acá se
+ * revisa lo obligatorio y que la fecha de recepción no sea futura.
  */
 export function OfficialRequestFormPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -102,6 +109,11 @@ type Provenance = {
 
 const EMPTY_PROVENANCE: Provenance = { studentEmail: "", receivedDate: "", originUnit: "" };
 
+/** Fecha civil de hoy en la zona de CERETI, para comparar con la que se escribe. */
+function todayCivilDate(): string {
+  return civilDateOfInstant(Date.now(), AGENDA_TIME_ZONE);
+}
+
 function findMissingProvenance(provenance: Provenance): ProvenanceErrors {
   const errors: ProvenanceErrors = {};
   if (provenance.studentEmail.trim() === "") {
@@ -112,14 +124,19 @@ function findMissingProvenance(provenance: Provenance): ProvenanceErrors {
     errors.receivedDate = "Usa una fecha válida con formato AAAA-MM-DD.";
   } else if (dateIssue === "impossible") {
     errors.receivedDate = "Esa fecha no existe en el calendario.";
+  } else if (dateIssue === null && provenance.receivedDate.trim() > todayCivilDate()) {
+    // Las fechas `AAAA-MM-DD` se comparan como texto.
+    errors.receivedDate = RECEIVED_AT_FUTURE_MESSAGE;
   }
   return errors;
 }
 
 /**
  * Instante de recepción que se envía. La fecha civil se lleva al mediodía UTC
- * de ese día (la mañana en Chile) y nunca después de ahora: elegir hoy no se
- * rechaza como fecha futura. Vacía, el Backend usa el momento del registro.
+ * de ese día (la mañana en Chile). Una fecha futura ya se rechazó junto al
+ * campo, así que el tope en «ahora» solo alcanza a hoy: elegirla temprano en
+ * la mañana no se rechaza como futura. Vacía, el Backend usa el momento del
+ * registro.
  */
 function toReceivedAt(receivedDate: string): number | undefined {
   if (receivedDate === "") return undefined;
@@ -200,6 +217,13 @@ function OfficialRequestForm() {
       });
       setSubmitState({ status: "registered", incomingReferral: originUnit !== "" });
     } catch (error) {
+      // El correo rechazado se marca en su campo, como un dato que falta.
+      if (publicErrorOf(error)?.message === OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE) {
+        setProvenanceErrors({ studentEmail: OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE });
+        setSubmitState({ status: "idle" });
+        setSummaryFocusRequest((count) => count + 1);
+        return;
+      }
       const failure = requestActionFailureOf(error, "registerOfficial");
       setSubmitState({
         status: "failed",

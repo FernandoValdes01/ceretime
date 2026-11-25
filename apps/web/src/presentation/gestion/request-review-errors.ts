@@ -19,7 +19,8 @@ import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
  *   dato corregir.
  * - `conflict`: el estado cambió; el mensaje público dice por qué y la Web
  *   agrega cómo seguir, según la acción.
- * - Cualquier otro fallo, incluida una red caída: mensaje de respaldo.
+ * - Cualquier otro fallo, incluida una red caída: mensaje de respaldo; el
+ *   del registro por canal oficial pide revisar la bandeja antes de reintentar.
  */
 export type RequestActionFailure =
   | { readonly status: "denied" }
@@ -41,6 +42,20 @@ const DETAIL_NEXT_STEP = "El detalle ya muestra el estado vigente; continúa des
 /** Mensaje de respaldo: no expone el error y propone el siguiente paso. */
 export const REQUEST_ACTION_FALLBACK_MESSAGE =
   "No pudimos completar la acción. Inténtalo de nuevo; si el problema sigue, avisa a CERETI por el canal oficial.";
+
+/**
+ * Respaldo del registro por canal oficial. Desde TI2-165 no lleva clave de
+ * idempotencia: si se perdió la respuesta, la solicitud pudo quedar guardada
+ * y reintentar dejaría otra. Por eso pide revisar la bandeja antes.
+ */
+export const REGISTER_OFFICIAL_FALLBACK_MESSAGE =
+  "No sabemos si la solicitud quedó registrada. Revisa la bandeja de triage antes de registrarla de nuevo; si no aparece, inténtalo otra vez.";
+
+function fallbackMessageFor(action: RequestAction): string {
+  return action === "registerOfficial"
+    ? REGISTER_OFFICIAL_FALLBACK_MESSAGE
+    : REQUEST_ACTION_FALLBACK_MESSAGE;
+}
 
 const CONFLICT_NEXT_STEP: Record<RequestAction, string> = {
   take: "Revisa «Mis tomadas» o elige otra solicitud de la bandeja.",
@@ -66,7 +81,7 @@ export function requestActionFailureOf(
 ): RequestActionFailure {
   const publicError = publicErrorOf(error);
   if (publicError === null) {
-    return { status: "rejected", message: REQUEST_ACTION_FALLBACK_MESSAGE };
+    return { status: "rejected", message: fallbackMessageFor(action) };
   }
   switch (publicError.code) {
     case UNAUTHORIZED_ERROR_CODE:
@@ -82,7 +97,7 @@ export function requestActionFailureOf(
         message: `${asSentence(publicError.message)} ${CONFLICT_NEXT_STEP[action]}`,
       };
     default:
-      return { status: "rejected", message: REQUEST_ACTION_FALLBACK_MESSAGE };
+      return { status: "rejected", message: fallbackMessageFor(action) };
   }
 }
 

@@ -3,6 +3,7 @@ import { okResult, type ApiResult } from "../../domain/errors/api_error";
 import {
   recordReferralAcceptance as applyReferralAcceptance,
   recordReferralContact as applyReferralContact,
+  OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
   toDestinationUnit,
   toOfficialReceivedAt,
   toOriginUnit,
@@ -98,7 +99,7 @@ export async function registerOfficialRequest<RequestId extends string, UserId e
   if (email === "") return invalidRequestFields("Indica el correo institucional del estudiante.");
   const student = await deps.students.findActiveStudentByEmail(email);
   if (student === null) {
-    return invalidRequestFields("No hay una cuenta de Estudiante vigente con ese correo.");
+    return invalidRequestFields(OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE);
   }
   const requestId = await deps.requests.registerOfficial({
     studentId: student._id,

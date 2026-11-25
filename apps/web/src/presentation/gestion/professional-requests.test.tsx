@@ -16,7 +16,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { REFERRAL_REASON_MAX_LENGTH } from "../../../../../convex/domain/index.ts";
+import {
+  AGENDA_TIME_ZONE,
+  civilDateOfInstant,
+  OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
+  RECEIVED_AT_FUTURE_MESSAGE,
+  REFERRAL_REASON_MAX_LENGTH,
+} from "../../../../../convex/domain/index.ts";
 import type {
   AuthorizedRequestsPage,
   OpenRequestsPage,
@@ -24,7 +30,10 @@ import type {
 } from "./professional-requests-data.ts";
 import { usePagedList } from "./paged-requests.ts";
 import { PagedItems } from "./professional-requests.tsx";
-import { REQUEST_ACTION_FALLBACK_MESSAGE } from "./request-review-errors.ts";
+import {
+  REGISTER_OFFICIAL_FALLBACK_MESSAGE,
+  REQUEST_ACTION_FALLBACK_MESSAGE,
+} from "./request-review-errors.ts";
 import { ACCESS_DENIED_MESSAGE } from "../shared/view-states.tsx";
 
 /**
@@ -1733,7 +1742,7 @@ describe("registro por canal oficial (TI2-158)", () => {
     expect(screen.getByText(/Quedó también como derivación de entrada/)).toBeDefined();
   });
 
-  test("la fecha de recepción se envía y nunca queda en el futuro", async () => {
+  test("una fecha pasada se envía al mediodía UTC de ese día", async () => {
     comoProfesional();
     registerOfficialMock.mockResolvedValue({ _id: "req-nueva" });
     renderAt("/profesional/solicitudes/registrar");
@@ -1743,14 +1752,59 @@ describe("registro por canal oficial (TI2-158)", () => {
     fireEvent.change(screen.getByLabelText(/Fecha en que CERETI la recibió/), {
       target: { value: "2026-03-10" },
     });
-    const antes = Date.now();
     fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
 
     await waitFor(() => expect(registerOfficialMock).toHaveBeenCalledTimes(1));
     const [datos] = registerOfficialMock.mock.calls[0] as [{ receivedAt: number }];
     expect(datos.receivedAt).toBe(Date.UTC(2026, 2, 10, 12));
-    expect(datos.receivedAt).toBeLessThanOrEqual(antes);
     expect(screen.queryByText(/derivación de entrada/)).toBeNull();
+  });
+
+  test("una fecha futura se rechaza junto al campo y no se envía", async () => {
+    comoProfesional();
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    const fecha = screen.getByLabelText(/Fecha en que CERETI la recibió/);
+    fireEvent.change(fecha, { target: { value: "2099-01-15" } });
+    fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
+
+    expect(
+      await screen.findByRole("link", {
+        name: `Fecha de recepción: ${RECEIVED_AT_FUTURE_MESSAGE}`,
+      }),
+    ).toBeDefined();
+    expect(fecha.getAttribute("aria-invalid")).toBe("true");
+    const descripciones = (fecha.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "");
+    expect(descripciones.some((texto) => texto.includes(RECEIVED_AT_FUTURE_MESSAGE))).toBe(true);
+    expect(registerOfficialMock).not.toHaveBeenCalled();
+  });
+
+  test("la fecha de hoy registra sin quedar después del envío", async () => {
+    // 08:00 en Chile: el mediodía UTC de hoy todavía no llega.
+    const ahora = Date.UTC(2026, 10, 25, 11);
+    const reloj = vi.spyOn(Date, "now").mockReturnValue(ahora);
+    try {
+      comoProfesional();
+      registerOfficialMock.mockResolvedValue({ _id: "req-nueva" });
+      renderAt("/profesional/solicitudes/registrar");
+
+      await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+      completarContenido();
+      fireEvent.change(screen.getByLabelText(/Fecha en que CERETI la recibió/), {
+        target: { value: civilDateOfInstant(ahora, AGENDA_TIME_ZONE) },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
+
+      await waitFor(() => expect(registerOfficialMock).toHaveBeenCalledTimes(1));
+      const [datos] = registerOfficialMock.mock.calls[0] as [{ receivedAt: number }];
+      expect(datos.receivedAt).toBe(ahora);
+    } finally {
+      reloj.mockRestore();
+    }
   });
 
   test("cada rechazo muestra un mensaje comprensible y se puede reintentar", async () => {
@@ -1758,7 +1812,7 @@ describe("registro por canal oficial (TI2-158)", () => {
     registerOfficialMock.mockRejectedValueOnce(
       new ConvexError({
         code: "request_fields_invalid",
-        message: "No hay una cuenta de Estudiante vigente con ese correo.",
+        message: OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
       }),
     );
     registerOfficialMock.mockRejectedValueOnce(SDK_ERROR);
@@ -1768,18 +1822,22 @@ describe("registro por canal oficial (TI2-158)", () => {
     await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
     completarContenido();
     const registrar = screen.getByRole("button", { name: "Registrar solicitud" });
+    const correo = screen.getByLabelText(/Correo institucional del estudiante/);
 
+    // El correo rechazado se marca en su campo y el resumen lleva a él.
     fireEvent.click(registrar);
     expect(
-      await screen.findByText("No hay una cuenta de Estudiante vigente con ese correo."),
+      await screen.findByRole("link", {
+        name: `Correo del estudiante: ${OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE}`,
+      }),
     ).toBeDefined();
-    expect(
-      await screen.findByRole("heading", { name: "No se registró la solicitud" }),
-    ).toBeDefined();
+    expect(correo.getAttribute("aria-invalid")).toBe("true");
 
+    // Un fallo sin código pide revisar la bandeja antes de reintentar.
     fireEvent.click(registrar);
-    expect(await screen.findByText(REQUEST_ACTION_FALLBACK_MESSAGE)).toBeDefined();
+    expect(await screen.findByText(REGISTER_OFFICIAL_FALLBACK_MESSAGE)).toBeDefined();
     expect(screen.queryByText(/CONVEX|Server Error/)).toBeNull();
+    expect(correo.getAttribute("aria-invalid")).toBe("false");
 
     fireEvent.click(registrar);
     expect(await screen.findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();

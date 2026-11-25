@@ -56,6 +56,8 @@ export { isOpenRequestState } from "./requests/transitions";
 export { findRequestTransition } from "./requests/transition_policy";
 // Derivaciones de entrada y de salida (TI2-143): límites y condición de apertura.
 export {
+  OFFICIAL_REQUEST_STUDENT_NOT_FOUND_MESSAGE,
+  RECEIVED_AT_FUTURE_MESSAGE,
   REFERRAL_REASON_MAX_LENGTH,
   REFERRAL_UNIT_MAX_LENGTH,
   referralAllowsAccompaniment,
@@ -128,6 +130,8 @@ export {
   AVAILABILITY_CONTRACT_VERSION,
   AVAILABILITY_EXCEPTION_KIND_VALUES,
 } from "./availability/availability";
+// Fecha civil de un instante en una zona horaria, para comparar con lo que escribe la persona.
+export { civilDateOfInstant } from "./calendar/civil_days";
 export type {
   AvailabilityBlock,
   AvailabilityContractVersion,
