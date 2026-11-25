@@ -32,8 +32,8 @@ export type RequestStateTransition = {
  * derivación ni en la de cierres es inválido, incluidos los saltos y los
  * demás retrocesos.
  *
- * Las filas se declaran con el tipo `Sprint1RequestState`: agregar acá una
- * transición hacia un cierre o hacia la derivación no compila.
+ * Las filas se tipan como `Sprint1RequestState`: agregar acá una transición
+ * hacia un cierre o hacia la derivación no compila.
  */
 export const SPRINT_1_REQUEST_TRANSITIONS = [
   { from: "received", to: "under_review", requiresReason: false },
@@ -128,17 +128,6 @@ export const REQUEST_TRANSITIONS = [
  */
 export function isOpenRequestState(state: string): boolean {
   return REQUEST_TRANSITIONS.some((transition) => transition.from === state);
-}
-
-/**
- * Verdadero si la tabla de transiciones admite pasar de `from` a `to`
- * (TI2-157). Los clientes lo usan para ofrecer solo las acciones que el estado
- * vigente admite, sin copiar la tabla; quién puede intentar cada paso y sus
- * demás condiciones los sigue exigiendo Aplicación. Recibe `string` en `from`
- * para clasificar lo que muestra un cliente.
- */
-export function isRequestTransitionDeclared(from: string, to: RequestState): boolean {
-  return REQUEST_TRANSITIONS.some((transition) => transition.from === from && transition.to === to);
 }
 
 /**

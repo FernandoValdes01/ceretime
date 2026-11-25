@@ -5,7 +5,8 @@ import {
   INITIAL_REQUEST_STATE,
   isOpenRequestState,
   isRequestState,
-  isRequestTransitionDeclared,
+  findRequestTransition,
+  REFERRAL_REASON_MAX_LENGTH,
   REFERRAL_UNIT_MAX_LENGTH,
   referralAllowsAccompaniment,
   REQUEST_STATES,
@@ -77,12 +78,6 @@ const GESTION_TEXTAREA_ERROR =
 /** Selector del filtro: 44px de alto táctil, etiqueta visible y foco de 3px. */
 const GESTION_SELECT = `min-h-[44px] rounded-[0.5rem] border border-(--ct-line) bg-(--ct-card) px-3 text-base text-(--ct-ink) ${GESTION_FOCUS_VISIBLE}`;
 const GESTION_BUTTON_DISABLED = "disabled:cursor-not-allowed disabled:opacity-60";
-
-/**
- * Largo máximo de los textos que escribe el Profesional (motivo, objetivo y
- * razón): el mismo límite que el resto de los textos de la solicitud.
- */
-const REVIEW_TEXT_MAX_LENGTH = 2000;
 
 /**
  * Bandeja y tomadas del Profesional (TI2-91, TI2-157).
@@ -573,7 +568,9 @@ function availableActions(status: string): ReadonlySet<RequestAction> {
   return new Set(
     REVIEW_ACTIONS.filter(
       ({ to, from }) =>
-        (from === undefined || from === status) && isRequestTransitionDeclared(status, to),
+        (from === undefined || from === status) &&
+        isRequestState(status) &&
+        findRequestTransition(status, to) !== undefined,
     ).map(({ action }) => action),
   );
 }
@@ -893,7 +890,6 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           description="El estudiante recibirá este motivo para completar su solicitud."
           fieldLabel="Motivo"
           requiredMessage="Escribe el motivo."
-          tooLongMessage={`El motivo no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Enviar"
           onCancel={() => closeDialog(null)}
           onSubmit={async (reason) => {
@@ -915,7 +911,6 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           description="Al aceptar se abre un único acompañamiento para el estudiante."
           fieldLabel="Objetivo del acompañamiento"
           requiredMessage="Escribe el objetivo del acompañamiento."
-          tooLongMessage={`El objetivo no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Aceptar"
           onCancel={() => closeDialog(null)}
           onSubmit={async (objective) => {
@@ -948,7 +943,6 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           description="El estudiante leerá esta razón. No incluyas diagnósticos ni etiquetas clínicas."
           fieldLabel="Razón del cierre"
           requiredMessage="Escribe la razón del cierre."
-          tooLongMessage={`La razón no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
           submitLabel="Cerrar solicitud"
           onCancel={() => closeDialog(null)}
           onSubmit={async (reason) => {
@@ -973,7 +967,10 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           }}
           fieldLabel="Razón de la derivación"
           requiredMessage="Escribe la razón de la derivación."
-          tooLongMessage={`La razón no puede exceder ${REVIEW_TEXT_MAX_LENGTH} caracteres.`}
+          maxLength={{
+            value: REFERRAL_REASON_MAX_LENGTH,
+            message: `La razón no puede exceder ${REFERRAL_REASON_MAX_LENGTH} caracteres.`,
+          }}
           submitLabel="Derivar"
           onCancel={() => closeDialog(null)}
           onSubmit={async (reason, destinationUnit = "") => {
@@ -1014,7 +1011,7 @@ function ReviewTextDialog({
   description,
   fieldLabel,
   requiredMessage,
-  tooLongMessage,
+  maxLength,
   submitLabel,
   onCancel,
   onSubmit,
@@ -1026,7 +1023,11 @@ function ReviewTextDialog({
   description: string;
   fieldLabel: string;
   requiredMessage: string;
-  tooLongMessage: string;
+  /**
+   * Solo cuando el Backend fija un largo máximo para el texto: la Web no
+   * inventa topes que el contrato no tiene.
+   */
+  maxLength?: { readonly value: number; readonly message: string };
   submitLabel: string;
   onCancel: () => void;
   onSubmit: (text: string, unit?: string) => Promise<RequestActionFailure | null>;
@@ -1048,6 +1049,10 @@ function ReviewTextDialog({
   const fieldId = `${id}-text`;
   const errorId = `${id}-text-error`;
   const hintId = `${id}-text-hint`;
+  const describedBy =
+    [fieldError ? errorId : null, maxLength === undefined ? null : hintId]
+      .filter((value) => value !== null)
+      .join(" ") || undefined;
 
   const unitId = `${id}-unit`;
   const unitErrorId = `${id}-unit-error`;
@@ -1096,8 +1101,8 @@ function ReviewTextDialog({
     const trimmed = text.trim();
     const nextFieldError = !trimmed
       ? requiredMessage
-      : trimmed.length > REVIEW_TEXT_MAX_LENGTH
-        ? tooLongMessage
+      : maxLength !== undefined && trimmed.length > maxLength.value
+        ? maxLength.message
         : null;
     setUnitError(nextUnitError);
     setFieldError(nextFieldError);
@@ -1180,10 +1185,10 @@ function ReviewTextDialog({
               className={`${GESTION_TEXTAREA} ${fieldError ? GESTION_TEXTAREA_ERROR : ""}`}
               value={text}
               onChange={(event) => setText(event.target.value)}
-              maxLength={REVIEW_TEXT_MAX_LENGTH}
+              maxLength={maxLength?.value}
               rows={4}
               aria-required="true"
-              aria-describedby={fieldError ? `${errorId} ${hintId}` : hintId}
+              aria-describedby={describedBy}
               aria-invalid={fieldError ? "true" : "false"}
               disabled={pending}
             />
@@ -1196,9 +1201,11 @@ function ReviewTextDialog({
                 {fieldError}
               </p>
             )}
-            <p id={hintId} className="student-portal__hint mt-2!">
-              Máximo {REVIEW_TEXT_MAX_LENGTH} caracteres ({text.length}/{REVIEW_TEXT_MAX_LENGTH})
-            </p>
+            {maxLength === undefined ? null : (
+              <p id={hintId} className="student-portal__hint mt-2!">
+                Máximo {maxLength.value} caracteres ({text.length}/{maxLength.value})
+              </p>
+            )}
           </div>
           {submitFailure && <ActionFailureNotice failure={submitFailure} />}
           <div className="mt-6 flex flex-wrap justify-end gap-3">

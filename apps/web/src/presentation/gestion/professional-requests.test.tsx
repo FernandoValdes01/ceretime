@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { REFERRAL_REASON_MAX_LENGTH } from "../../../../../convex/domain/index.ts";
 import type {
   AuthorizedRequestsPage,
   OpenRequestsPage,
@@ -835,19 +836,21 @@ describe("acciones del Profesional (TI2-92)", () => {
     expect(requestInfoMock).not.toHaveBeenCalled();
   });
 
-  test("pedir información valida longitud máxima 2000 caracteres", async () => {
+  test("pedir información no impone un largo que el Backend no pide", async () => {
     comoProfesional();
     mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockResolvedValue(undefined);
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
     const textarea = screen.getByLabelText("Motivo (obligatorio)");
-    const longReason = "a".repeat(2001);
-    fireEvent.change(textarea, { target: { value: longReason } });
+    expect(textarea.hasAttribute("maxlength")).toBe(false);
+    const motivoLargo = "a".repeat(2001);
+    fireEvent.change(textarea, { target: { value: motivoLargo } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    expect(await screen.findByText("El motivo no puede exceder 2000 caracteres.")).toBeDefined();
-    expect(requestInfoMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(requestInfoMock).toHaveBeenCalledTimes(1));
+    expect(requestInfoMock).toHaveBeenCalledWith({ requestId: "req-9", reason: motivoLargo });
   });
 
   test("pedir información ejecuta requestAdditionalInformation con motivo válido", async () => {
@@ -1565,6 +1568,37 @@ describe("derivaciones en el detalle del Profesional (TI2-158)", () => {
     expect(screen.getByText("El apoyo lo entrega esa unidad")).toBeDefined();
     expect(screen.getByText("Enviada por el estudiante")).toBeDefined();
     expect(screen.queryByRole("button", { name: "Aceptar y abrir acompañamiento" })).toBeNull();
+  });
+
+  test("la razón de la derivación respeta el tope que fija el Dominio", async () => {
+    comoProfesional();
+    mockedDetail = { ...DERIVADA, incomingReferral: undefined };
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Derivar a otra unidad" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Derivar a otra unidad" });
+    const motivoDerivar = within(dialogo).getByLabelText("Razón de la derivación (obligatorio)");
+    expect(motivoDerivar.getAttribute("maxlength")).toBe(String(REFERRAL_REASON_MAX_LENGTH));
+    expect(
+      within(dialogo).getByText(`Máximo ${REFERRAL_REASON_MAX_LENGTH} caracteres`, {
+        exact: false,
+      }),
+    ).toBeDefined();
+
+    fireEvent.change(within(dialogo).getByLabelText("Unidad de destino (obligatorio)"), {
+      target: { value: "Unidad ficticia" },
+    });
+    fireEvent.change(motivoDerivar, {
+      target: { value: "a".repeat(REFERRAL_REASON_MAX_LENGTH + 1) },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Derivar" }));
+
+    expect(
+      await within(dialogo).findByText(
+        `La razón no puede exceder ${REFERRAL_REASON_MAX_LENGTH} caracteres.`,
+      ),
+    ).toBeDefined();
+    expect(referRequestMock).not.toHaveBeenCalled();
   });
 
   test("Tab recorre la unidad, la razón y los botones sin salir del diálogo", async () => {
