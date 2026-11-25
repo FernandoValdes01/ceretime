@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   ACCOMPANIMENT_CLOSURE_REASON_MAX_LENGTH,
@@ -20,6 +20,7 @@ import {
 } from "./assigned-accompaniments-list.tsx";
 import { isAuthorizationDenial } from "./authorization-denial.ts";
 import { AccompanimentProfessionalsSection } from "./accompaniment-professionals.tsx";
+import { DetailRow } from "./detail-row.tsx";
 import { FollowUpHistory } from "./follow-up-record.tsx";
 import { useAssignedAccompanimentDetail } from "./practitioner-accompaniments-data.ts";
 import {
@@ -177,18 +178,6 @@ function AccompanimentDetailBody({ accompanimentId }: { accompanimentId: string 
       <StudentPanelErrorBoundary subject="el historial de seguimiento" level="section">
         <FollowUpHistory accompanimentId={view._id} />
       </StudentPanelErrorBoundary>
-    </div>
-  );
-}
-
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="py-3">
-      <dt className="text-sm font-semibold text-on-surface">{label}</dt>
-      {/* Las necesidades de acceso llegan unidas por saltos de línea. */}
-      <dd className="m-0 text-base whitespace-pre-line text-on-surface wrap-anywhere">
-        {children}
-      </dd>
     </div>
   );
 }
