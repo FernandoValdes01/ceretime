@@ -1,9 +1,9 @@
 import type { NotificationDeliveryError } from "../../domain/notifications/delivery";
 import { toExternalNotification } from "../../domain/notifications/notification";
 import type {
+  DeliverySendResult,
   EmailDeliveryStore,
   EmailSender,
-  EmailSendResult,
   PushDeliveryStore,
   PushSender,
   PushSendResult,
@@ -31,14 +31,14 @@ export interface EmailDispatchDeps {
   readonly now: () => number;
 }
 
-/** Resultado del despacho de una entrega. */
-export type EmailDispatchOutcome = "sent" | "failed" | "skipped";
+/** Resultado del despacho de una entrega por canal. */
+export type DeliveryDispatchOutcome = "sent" | "failed" | "skipped";
 
 /** Un error inesperado del remitente se registra como proveedor no disponible. */
 async function sendSafely(
   sender: EmailSender,
   message: Parameters<EmailSender["send"]>[0],
-): Promise<EmailSendResult> {
+): Promise<DeliverySendResult> {
   try {
     return await sender.send(message);
   } catch {
@@ -50,7 +50,7 @@ async function sendSafely(
 export async function dispatchEmailDelivery(
   deps: EmailDispatchDeps,
   deliveryId: string,
-): Promise<EmailDispatchOutcome> {
+): Promise<DeliveryDispatchOutcome> {
   const claim = await deps.store.claim(deliveryId, deps.now());
   if (claim.status === "skipped") return "skipped";
   if (claim.status === "no_destination") {
@@ -97,7 +97,7 @@ async function sendPushSafely(
 export async function dispatchPushDelivery(
   deps: PushDispatchDeps,
   deliveryId: string,
-): Promise<EmailDispatchOutcome> {
+): Promise<DeliveryDispatchOutcome> {
   const claim = await deps.store.claim(deliveryId, deps.now());
   if (claim.status === "skipped") return "skipped";
   if (claim.status === "no_subscriptions" || claim.subscriptions.length === 0) {
@@ -124,7 +124,7 @@ export async function dispatchPushDelivery(
     }
   }
 
-  const finalResult: EmailSendResult =
+  const finalResult: DeliverySendResult =
     sentCount > 0
       ? { status: "sent" }
       : { status: "failed", errorCode: finalError ?? "invalid_destination" };

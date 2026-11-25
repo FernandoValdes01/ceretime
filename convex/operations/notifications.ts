@@ -16,7 +16,7 @@ import { env, internalAction, internalMutation } from "../_generated/server";
 import {
   dispatchEmailDelivery as dispatchEmailDeliveryUseCase,
   dispatchPushDelivery as dispatchPushDeliveryUseCase,
-  type EmailDispatchOutcome,
+  type DeliveryDispatchOutcome,
 } from "../application/notifications/dispatch";
 import type { EmailDeliveryClaim, PushDeliveryClaim } from "../application/notifications/ports";
 import {
@@ -33,10 +33,8 @@ import {
   claimEmailDelivery as claimEmailDeliveryRow,
   claimPushDelivery as claimPushDeliveryRow,
   deleteExpiredPushSubscriptionByEndpoint,
-  listDueEmailDeliveries,
-  listDuePushDeliveries,
-  recordEmailDeliveryAttempt as recordEmailDeliveryAttemptRow,
-  recordPushDeliveryAttempt as recordPushDeliveryAttemptRow,
+  listDueDeliveries,
+  recordDeliveryAttempt,
 } from "../infrastructure/notifications/repository";
 import {
   webPushConfigFromEnv,
@@ -149,7 +147,7 @@ export const recordEmailDeliveryAttempt = internalMutation({
   args: { eventId: v.string(), result: sendResultValidator, attemptedAt: v.number() },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await recordEmailDeliveryAttemptRow(ctx, args.eventId, args.result, args.attemptedAt);
+    await recordDeliveryAttempt(ctx, "email", args.eventId, args.result, args.attemptedAt);
     return null;
   },
 });
@@ -168,7 +166,7 @@ function toEmailDeliveryClaim(claim: typeof claimValidator.type): EmailDeliveryC
 export const dispatchEmailDelivery = internalAction({
   args: { deliveryId: v.string() },
   returns: v.union(v.literal("sent"), v.literal("failed"), v.literal("skipped")),
-  handler: async (ctx, args): Promise<EmailDispatchOutcome> => {
+  handler: async (ctx, args): Promise<DeliveryDispatchOutcome> => {
     return await dispatchEmailDeliveryUseCase(
       {
         store: {
@@ -225,7 +223,7 @@ export const recordPushDeliveryAttempt = internalMutation({
   args: { eventId: v.string(), result: sendResultValidator, attemptedAt: v.number() },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await recordPushDeliveryAttemptRow(ctx, args.eventId, args.result, args.attemptedAt);
+    await recordDeliveryAttempt(ctx, "push", args.eventId, args.result, args.attemptedAt);
     return null;
   },
 });
@@ -244,7 +242,7 @@ function toPushDeliveryClaim(claim: typeof pushClaimValidator.type): PushDeliver
 export const dispatchPushDelivery = internalAction({
   args: { deliveryId: v.string() },
   returns: v.union(v.literal("sent"), v.literal("failed"), v.literal("skipped")),
-  handler: async (ctx, args): Promise<EmailDispatchOutcome> => {
+  handler: async (ctx, args): Promise<DeliveryDispatchOutcome> => {
     return await dispatchPushDeliveryUseCase(
       {
         store: {
@@ -276,21 +274,6 @@ export const dispatchPushDelivery = internalAction({
   },
 });
 
-/** Barrido de reintentos para correo (TI2-159). */
-export const scheduleDueEmailDeliveries = internalMutation({
-  args: {},
-  returns: v.number(),
-  handler: async (ctx) => {
-    const due = await listDueEmailDeliveries(ctx, Date.now());
-    for (const deliveryId of due) {
-      await ctx.scheduler.runAfter(0, internal.operations.notifications.dispatchEmailDelivery, {
-        deliveryId,
-      });
-    }
-    return due.length;
-  },
-});
-
 /**
  * Barrido de reintentos compartido por correo y push (TI2-159, TI2-160).
  * Una entrega programada dos veces no sale dos veces: la reserva deja pasar
@@ -301,13 +284,13 @@ export const scheduleDueNotificationDeliveries = internalMutation({
   returns: v.object({ email: v.number(), push: v.number() }),
   handler: async (ctx) => {
     const now = Date.now();
-    const dueEmail = await listDueEmailDeliveries(ctx, now);
+    const dueEmail = await listDueDeliveries(ctx, "email", now);
     for (const deliveryId of dueEmail) {
       await ctx.scheduler.runAfter(0, internal.operations.notifications.dispatchEmailDelivery, {
         deliveryId,
       });
     }
-    const duePush = await listDuePushDeliveries(ctx, now);
+    const duePush = await listDueDeliveries(ctx, "push", now);
     for (const deliveryId of duePush) {
       await ctx.scheduler.runAfter(0, internal.operations.notifications.dispatchPushDelivery, {
         deliveryId,

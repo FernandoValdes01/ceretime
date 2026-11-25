@@ -28,8 +28,8 @@ export interface EmailMessage {
   readonly text: string;
 }
 
-/** Resultado de un envío, con un código estable y genérico si falló. */
-export type EmailSendResult =
+/** Resultado de un envío por canal, con un código estable y genérico si falló. */
+export type DeliverySendResult =
   | { readonly status: "sent" }
   | { readonly status: "failed"; readonly errorCode: NotificationDeliveryError };
 
@@ -39,7 +39,7 @@ export type EmailSendResult =
  * lanza por un fallo del proveedor: lo traduce a `failed`.
  */
 export interface EmailSender {
-  send(message: EmailMessage): Promise<EmailSendResult>;
+  send(message: EmailMessage): Promise<DeliverySendResult>;
 }
 
 /**
@@ -65,7 +65,7 @@ export type EmailDeliveryClaim =
  */
 export interface EmailDeliveryStore {
   claim(deliveryId: string, now: number): Promise<EmailDeliveryClaim>;
-  recordAttempt(eventId: string, result: EmailSendResult, attemptedAt: number): Promise<void>;
+  recordAttempt(eventId: string, result: DeliverySendResult, attemptedAt: number): Promise<void>;
 }
 
 /**
@@ -176,7 +176,7 @@ export type PushDeliveryClaim =
 export interface PushDeliveryStore {
   claim(deliveryId: string, now: number): Promise<PushDeliveryClaim>;
   removeExpiredSubscription(endpoint: string): Promise<void>;
-  recordAttempt(eventId: string, result: EmailSendResult, attemptedAt: number): Promise<void>;
+  recordAttempt(eventId: string, result: DeliverySendResult, attemptedAt: number): Promise<void>;
 }
 
 /** Datos que el navegador entrega al activar una suscripción push propia. */
@@ -188,11 +188,18 @@ export interface PushSubscriptionActivationInput {
 }
 
 /**
+ * Lectura de suscripciones propias para consultar si el usuario tiene push
+ * activo (TI2-160). Nunca devuelve claves ni endpoints.
+ */
+export interface PushSubscriptionReader {
+  countForUser(userId: string): Promise<number>;
+}
+
+/**
  * Persistencia de suscripciones propias para activar, desactivar y consultar
  * si el usuario tiene push activo (TI2-160). Nunca devuelve claves ni endpoints.
  */
-export interface PushSubscriptionStore {
-  countForUser(userId: string): Promise<number>;
+export interface PushSubscriptionStore extends PushSubscriptionReader {
   saveForUser(
     userId: string,
     input: PushSubscriptionActivationInput,

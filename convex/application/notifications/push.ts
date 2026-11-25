@@ -7,7 +7,11 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import type { AuthorizationReader } from "../authorization/authorize";
-import type { PushSubscriptionActivationInput, PushSubscriptionStore } from "./ports";
+import type {
+  PushSubscriptionActivationInput,
+  PushSubscriptionReader,
+  PushSubscriptionStore,
+} from "./ports";
 
 /**
  * Gestión de suscripciones Web Push propias (TI2-160).
@@ -20,7 +24,7 @@ import type { PushSubscriptionActivationInput, PushSubscriptionStore } from "./p
 
 export interface PushStatusDeps {
   readonly auth: AuthorizationReader;
-  readonly subscriptions: PushSubscriptionStore;
+  readonly subscriptions: PushSubscriptionReader;
   readonly vapidPublicKey: string | null;
 }
 

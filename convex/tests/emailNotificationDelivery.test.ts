@@ -199,19 +199,19 @@ test("TI2-159: una falla del proveedor no deshace el cambio que originó el avis
 
   // Antes de vencer la espera, el barrido no vuelve a programar la entrega.
   const beforeDue = await t.mutation(
-    internal.operations.notifications.scheduleDueEmailDeliveries,
+    internal.operations.notifications.scheduleDueNotificationDeliveries,
     {},
   );
-  expect(beforeDue).toBe(0);
+  expect(beforeDue.email).toBe(0);
 
   // Se vuelve a autorizar la cuenta remitente y avanza el reloj hasta el reintento.
   shouldFail = false;
   vi.setSystemTime(NOW + SENDER_SETUP_RETRY_DELAY_MS + 5_000);
   const dueCount = await t.mutation(
-    internal.operations.notifications.scheduleDueEmailDeliveries,
+    internal.operations.notifications.scheduleDueNotificationDeliveries,
     {},
   );
-  expect(dueCount).toBe(1);
+  expect(dueCount.email).toBe(1);
 
   await t.finishAllScheduledFunctions(() => {
     vi.setSystemTime(NOW + SENDER_SETUP_RETRY_DELAY_MS + 6_000);
@@ -298,10 +298,10 @@ test("TI2-159: una respuesta perdida tras invocar a Gmail marca delivery_uncerta
   // Al avanzar el reloj, el barrido no vuelve a programar ni producir un segundo envío.
   vi.setSystemTime(NOW + 60 * 60_000);
   const dueCount = await t.mutation(
-    internal.operations.notifications.scheduleDueEmailDeliveries,
+    internal.operations.notifications.scheduleDueNotificationDeliveries,
     {},
   );
-  expect(dueCount).toBe(0);
+  expect(dueCount.email).toBe(0);
   expect(sendCalls).toBe(1);
 });
 
@@ -344,8 +344,11 @@ test("TI2-159: seis intentos sin credenciales no agotan el presupuesto cuando Gm
   for (let i = 0; i < 5; i += 1) {
     currentTime += SENDER_SETUP_RETRY_DELAY_MS + 1_000;
     vi.setSystemTime(currentTime);
-    const due = await t.mutation(internal.operations.notifications.scheduleDueEmailDeliveries, {});
-    expect(due).toBe(1);
+    const due = await t.mutation(
+      internal.operations.notifications.scheduleDueNotificationDeliveries,
+      {},
+    );
+    expect(due.email).toBe(1);
     await t.finishAllScheduledFunctions(() => {
       currentTime += 1_000;
       vi.setSystemTime(currentTime);
@@ -376,9 +379,10 @@ test("TI2-159: seis intentos sin credenciales no agotan el presupuesto cuando Gm
 
   currentTime += SENDER_SETUP_RETRY_DELAY_MS + 1_000;
   vi.setSystemTime(currentTime);
-  expect(await t.mutation(internal.operations.notifications.scheduleDueEmailDeliveries, {})).toBe(
-    1,
-  );
+  expect(
+    (await t.mutation(internal.operations.notifications.scheduleDueNotificationDeliveries, {}))
+      .email,
+  ).toBe(1);
   await t.finishAllScheduledFunctions(() => {
     currentTime += 1_000;
     vi.setSystemTime(currentTime);
@@ -397,9 +401,10 @@ test("TI2-159: seis intentos sin credenciales no agotan el presupuesto cuando Gm
   return503 = false;
   currentTime += 61_000;
   vi.setSystemTime(currentTime);
-  expect(await t.mutation(internal.operations.notifications.scheduleDueEmailDeliveries, {})).toBe(
-    1,
-  );
+  expect(
+    (await t.mutation(internal.operations.notifications.scheduleDueNotificationDeliveries, {}))
+      .email,
+  ).toBe(1);
   await t.finishAllScheduledFunctions(() => {
     currentTime += 1_000;
     vi.setSystemTime(currentTime);
@@ -458,8 +463,11 @@ test("TI2-159: un corte entre la confirmación de Gmail y el registro de sent no
 
   // Ni el vencimiento de la reserva ni el cron posterior vuelven a despachar a Gmail.
   vi.setSystemTime(NOW + 24 * 60 * 60_000);
-  const due = await t.mutation(internal.operations.notifications.scheduleDueEmailDeliveries, {});
-  expect(due).toBe(0);
+  const due = await t.mutation(
+    internal.operations.notifications.scheduleDueNotificationDeliveries,
+    {},
+  );
+  expect(due.email).toBe(0);
 
   const secondDispatch = await t.action(internal.operations.notifications.dispatchEmailDelivery, {
     deliveryId,
