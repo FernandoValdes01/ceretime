@@ -243,6 +243,17 @@ describe("panel inicial del Estudiante", () => {
   });
 });
 
+test("la insignia dice solo el rol en cuenta no habilitada (TI2-185)", async () => {
+  mockSession = { status: "unauthenticated" };
+  mockRequests = EMPTY_PAGE;
+  mockAccompaniments = EMPTY_PAGE;
+  renderPanel();
+
+  expect(await screen.findByRole("heading", { name: "Portal del Estudiante" })).toBeDefined();
+  expect(screen.getByText("Estudiante")).toBeDefined();
+  expect(screen.queryByText("Estudiante acompañado")).toBeNull();
+});
+
 describe("etiquetas del panel", () => {
   test("traducen estados conocidos y conservan desconocidos", () => {
     expect(requestStatusLabel("received")).toBe("Recibida");
