@@ -432,7 +432,10 @@ export default defineSchema({
     // Atenciones del centro por estado desde un instante: confirma los cruces
     // de un profesional adicional, porque su fila de participante no guarda
     // horario (TI2-165), sin leer las canceladas.
-    .index("by_status_and_startsAt", ["status", "startsAt"]),
+    .index("by_status_and_startsAt", ["status", "startsAt"])
+    // Sincronización automática con Calendar (TI2-162): reintento de
+    // pendientes y de fallos recuperables sin barrer la tabla.
+    .index("by_calendarSyncStatus", ["calendarSyncStatus"]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
   // atención (TI2-138), ATENCION_PROFESIONALES del MER.
