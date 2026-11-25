@@ -5,7 +5,7 @@ import {
   INITIAL_REQUEST_STATE,
   isOpenRequestState,
   isRequestState,
-  isRequestTransitionDeclared,
+  findRequestTransition,
   REQUEST_STATES,
   type RequestState,
 } from "../../../../../convex/domain/index.ts";
@@ -561,7 +561,9 @@ function availableActions(status: string): ReadonlySet<RequestAction> {
   return new Set(
     REVIEW_ACTIONS.filter(
       ({ to, from }) =>
-        (from === undefined || from === status) && isRequestTransitionDeclared(status, to),
+        (from === undefined || from === status) &&
+        isRequestState(status) &&
+        findRequestTransition(status, to) !== undefined,
     ).map(({ action }) => action),
   );
 }
