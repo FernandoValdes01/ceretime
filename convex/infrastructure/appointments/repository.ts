@@ -1229,24 +1229,34 @@ export function futureAppointmentsReader(ctx: DbReader) {
       professionalId: string,
       weekdays: readonly number[],
       now: number,
+      pageSize = 200,
     ) => {
       const id = ctx.db.normalizeId("users", professionalId);
       if (id === null) return { complete: true, appointments: [] } as const;
       const rows: Doc<"appointments">[] = [];
+      const seen = new Set<string>();
       let cursor = now;
-      let exhausted = false;
-      for (let round = 0; round < 10; round += 1) {
+      let first = true;
+      let drained = false;
+      for (let round = 0; round < 20; round += 1) {
         const page = await ctx.db
           .query("appointments")
           .withIndex("by_professionalId_and_startsAt", (q) =>
-            q.eq("professionalId", id).gt("startsAt", cursor),
+            first
+              ? q.eq("professionalId", id).gt("startsAt", cursor)
+              : q.eq("professionalId", id).gte("startsAt", cursor),
           )
-          .take(200);
+          .take(pageSize + 1);
+        first = false;
         if (page.length === 0) {
-          exhausted = true;
+          drained = true;
           break;
         }
-        for (const row of page) {
+        let fresh = 0;
+        for (const row of page.slice(0, pageSize)) {
+          if (seen.has(row._id as string)) continue;
+          seen.add(row._id as string);
+          fresh += 1;
           if (
             (weekdays as readonly number[]).includes(
               civilWeekday(civilDateOfInstant(row.startsAt, AGENDA_TIME_ZONE)),
@@ -1258,13 +1268,14 @@ export function futureAppointmentsReader(ctx: DbReader) {
             }
           }
         }
-        if (page.length < 200) {
-          exhausted = true;
+        if (page.length <= pageSize) {
+          drained = true;
           break;
         }
+        if (fresh === 0) return { complete: false, appointments: [] } as const;
         cursor = page[page.length - 1].startsAt;
       }
-      if (!exhausted) return { complete: false, appointments: [] } as const;
+      if (!drained) return { complete: false, appointments: [] } as const;
       return await collectFutureActionable(ctx, rows, now);
     },
     listAdditionalByWeekdays: async (

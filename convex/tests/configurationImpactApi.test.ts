@@ -421,6 +421,7 @@ test("actualizar necesidades versiona y la pasada se evalúa con la anterior", a
     accessNeeds: "Sala silenciosa\nIntérprete de lengua de señas",
   });
 
+  const pastAtMs = pastAt(9);
   const versions = await t.run(async (ctx) =>
     ctx.db
       .query("accompanimentNeeds")
@@ -435,6 +436,21 @@ test("actualizar necesidades versiona y la pasada se evalúa con la anterior", a
   expect(first.validUntil).toBeDefined();
   expect(second.accessNeeds).toContain("Intérprete");
   expect(second.validUntil).toBeUndefined();
+
+  const evaluated = await t.run(async (ctx) => {
+    const { accompanimentNeedsAtDateReader } =
+      await import("../infrastructure/accompaniments/repository");
+    const reader = accompanimentNeedsAtDateReader(ctx);
+    const oldEntry = await reader.findNeedsAt(accompanimentId, pastAtMs);
+    const newEntry = await reader.findNeedsAt(accompanimentId, Date.now());
+    return {
+      oldNeeds: oldEntry?.needs.map((need) => need.id) ?? null,
+      newNeeds: newEntry?.needs.map((need) => need.id) ?? null,
+    };
+  });
+  expect(evaluated.oldNeeds).toEqual(["Sala silenciosa"]);
+  expect(evaluated.newNeeds).toEqual(expect.arrayContaining(["Sala silenciosa"]));
+  expect(evaluated.newNeeds?.length).toBeGreaterThan(evaluated.oldNeeds?.length ?? 0);
 
   expect(await appointmentStatus(t, futureId)).toBe("scheduled");
   expect(await appointmentStatus(t, pastId)).toBe("completed");
@@ -552,6 +568,49 @@ test("el historial como adicional no bloquea la edición", async () => {
 
   expect(await appointmentStatus(t, futureId)).toBe("scheduled");
   expect(await notificationKindsFor(t, futureId)).toContain("appointment_availability_changed");
+});
+
+test("el paginado no salta atenciones con el mismo inicio en el borde", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, "ti156-est-borde", "student");
+  const professional = await seedUser(t, "ti156-pro-borde", "professional");
+  const spaceId = await seedSpace(t);
+  const accompanimentId = await seedAccompaniment(t, student, "Sala silenciosa");
+  await seedAssignment(t, accompanimentId, professional);
+  for (const [hour, minute, status] of [
+    [8, 0, "scheduled"],
+    [10, 0, "completed"],
+    [10, 0, "scheduled"],
+  ] as const) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId: student,
+        professionalId: professional,
+        spaceId,
+        modality: "inPerson",
+        status,
+        startsAt: at(hour, minute),
+        endsAt: at(hour, minute + 30),
+        createdAt: NOW,
+      });
+    });
+  }
+  const found = await t.run(async (ctx) => {
+    const { futureAppointmentsReader } = await import("../infrastructure/appointments/repository");
+    return await futureAppointmentsReader(ctx).listResponsibleByWeekdays(
+      professional as unknown as string,
+      [1],
+      NOW,
+      2,
+    );
+  });
+  expect(found.complete).toBe(true);
+  if (!found.complete) throw new Error("Se esperaba lectura completa");
+  expect(found.appointments.map((a) => [a.startAt, a.status]).sort()).toEqual([
+    [at(8), "scheduled"],
+    [at(10), "scheduled"],
+  ]);
 });
 
 test("la agenda marca con needsCoordination lo que deja de ser reservable", async () => {
