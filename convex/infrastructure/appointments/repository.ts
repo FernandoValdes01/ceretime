@@ -1210,33 +1210,48 @@ async function collectFutureActionable(
  * `by_status_and_startsAt` (`scheduled` y `rescheduled` desde `now`, sin
  * límite de historial) y confirma la participación con
  * `by_appointmentId_and_professionalId`. Si el profesional nunca fue adicional
- * (`take(1)` vacío) no se lee nada más. El tope es sobre las coincidentes
- * (`MAX_APPOINTMENTS_IN_RANGE`), nunca sobre el historial.
+ * (`take(1)` vacío) no se lee nada más. Con `range` (lectura por fecha) el
+ * rango va en el índice y solo se lee ese día. El tope es sobre las
+ * coincidentes (`MAX_APPOINTMENTS_IN_RANGE`), nunca sobre el historial; si el
+ * barrido no drena (20 páginas por estado) responde `complete: false` en vez
+ * de truncar en silencio.
  */
 async function collectCenterParticipating(
   ctx: DbReader,
   professionalId: Id<"users">,
   now: number,
   matchesDate: (startsAt: number) => boolean,
+  range?: { readonly start: number; readonly end: number },
+  pageSize = 200,
 ): Promise<{ readonly complete: boolean; readonly appointments: FutureActionableAppointment[] }> {
   const rows: Doc<"appointments">[] = [];
   const seen = new Set<string>();
+  const lower = range === undefined ? now : Math.max(now, range.start);
   for (const status of ["scheduled", "rescheduled"] as const) {
-    let cursor = now;
+    let cursor = lower;
     let first = true;
+    let drained = false;
     for (let round = 0; round < 20; round += 1) {
       const page = await ctx.db
         .query("appointments")
-        .withIndex("by_status_and_startsAt", (q) =>
-          first
-            ? q.eq("status", status).gt("startsAt", cursor)
-            : q.eq("status", status).gte("startsAt", cursor),
-        )
-        .take(201);
+        .withIndex("by_status_and_startsAt", (q) => {
+          const base = q.eq("status", status);
+          if (range === undefined) {
+            return first ? base.gt("startsAt", cursor) : base.gte("startsAt", cursor);
+          }
+          if (first && cursor === now) {
+            return base.gt("startsAt", cursor).lt("startsAt", range.end);
+          }
+          return base.gte("startsAt", cursor).lt("startsAt", range.end);
+        })
+        .take(pageSize + 1);
       first = false;
-      if (page.length === 0) break;
+      if (page.length === 0) {
+        drained = true;
+        break;
+      }
       let fresh = 0;
-      const limit = Math.min(page.length, 200);
+      const limit = Math.min(page.length, pageSize);
       for (let index = 0; index < limit; index += 1) {
         const row = page[index] as Doc<"appointments">;
         if (seen.has(row._id as string)) continue;
@@ -1251,10 +1266,14 @@ async function collectCenterParticipating(
           return { complete: false, appointments: [] } as const;
         }
       }
-      if (page.length <= 200) break;
+      if (page.length <= pageSize) {
+        drained = true;
+        break;
+      }
       if (fresh === 0) return { complete: false, appointments: [] } as const;
       cursor = (page[page.length - 1] as Doc<"appointments">).startsAt;
     }
+    if (!drained) return { complete: false, appointments: [] } as const;
   }
   return await collectFutureActionable(ctx, rows, now);
 }
@@ -1337,6 +1356,7 @@ export function futureAppointmentsReader(ctx: DbReader) {
       professionalId: string,
       weekdays: readonly number[],
       now: number,
+      pageSize = 200,
     ) => {
       const id = ctx.db.normalizeId("users", professionalId);
       if (id === null) return { complete: true, appointments: [] } as const;
@@ -1349,9 +1369,14 @@ export function futureAppointmentsReader(ctx: DbReader) {
         (weekdays as readonly number[]).includes(
           civilWeekday(civilDateOfInstant(startsAt, AGENDA_TIME_ZONE)),
         );
-      return await collectCenterParticipating(ctx, id, now, matchesDate);
+      return await collectCenterParticipating(ctx, id, now, matchesDate, undefined, pageSize);
     },
-    listAdditionalByDate: async (professionalId: string, date: string, now: number) => {
+    listAdditionalByDate: async (
+      professionalId: string,
+      date: string,
+      now: number,
+      pageSize = 200,
+    ) => {
       const id = ctx.db.normalizeId("users", professionalId);
       if (id === null) return { complete: true, appointments: [] } as const;
       const probe = await ctx.db
@@ -1362,7 +1387,14 @@ export function futureAppointmentsReader(ctx: DbReader) {
       const dayStart = midnightToEpochMs(date, AGENDA_TIME_ZONE);
       const dayEnd = midnightToEpochMs(addCivilDays(date, 1), AGENDA_TIME_ZONE);
       const matchesDate = (startsAt: number): boolean => startsAt >= dayStart && startsAt < dayEnd;
-      return await collectCenterParticipating(ctx, id, now, matchesDate);
+      return await collectCenterParticipating(
+        ctx,
+        id,
+        now,
+        matchesDate,
+        { start: dayStart, end: dayEnd },
+        pageSize,
+      );
     },
     listFutureBySpace: async (spaceId: string, now: number) => {
       const id = ctx.db.normalizeId("spaces", spaceId);

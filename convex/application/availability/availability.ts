@@ -131,6 +131,7 @@ export interface AvailabilityChangeImpactDeps {
       professionalId: string,
       weekdays: readonly number[],
       now: number,
+      pageSize?: number,
     ): Promise<{
       readonly complete: boolean;
       readonly appointments: readonly ImpactedAppointmentInput[];
@@ -139,6 +140,7 @@ export interface AvailabilityChangeImpactDeps {
       professionalId: string,
       date: string,
       now: number,
+      pageSize?: number,
     ): Promise<{
       readonly complete: boolean;
       readonly appointments: readonly ImpactedAppointmentInput[];

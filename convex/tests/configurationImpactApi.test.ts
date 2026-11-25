@@ -616,6 +616,64 @@ test("el paginado no salta atenciones con el mismo inicio en el borde", async ()
   ]);
 });
 
+test("el barrido del centro no corta en silencio tras 20 páginas", async () => {
+  const t = convexTest(schema, modules);
+  const student = await seedUser(t, "ti156-est-corte", "student");
+  const professional = await seedUser(t, "ti156-pro-corte", "professional");
+  const otherPro = await seedUser(t, "ti156-pro-corte-otro", "professional");
+  const spaceId = await seedSpace(t);
+  const accompanimentId = await seedAccompaniment(t, student, "Sala silenciosa");
+  await seedAssignment(t, accompanimentId, professional);
+  await seedAssignment(t, accompanimentId, otherPro);
+  const base = at(8);
+
+  // 40 futuras de relleno (20 páginas de 2) antes del objetivo.
+  for (let i = 0; i < 40; i += 1) {
+    const startsAt = base + i * 60_000;
+    await t.run(async (ctx) => {
+      await ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId: student,
+        professionalId: otherPro,
+        spaceId,
+        modality: "inPerson",
+        status: "scheduled",
+        startsAt,
+        endsAt: startsAt + 30 * 60_000,
+        createdAt: NOW,
+      });
+    });
+  }
+  const targetStart = base + 40 * 60_000;
+  await t.run(async (ctx) => {
+    const targetId = await ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId: student,
+      professionalId: otherPro,
+      spaceId,
+      modality: "inPerson",
+      status: "scheduled",
+      startsAt: targetStart,
+      endsAt: targetStart + 30 * 60_000,
+      createdAt: NOW,
+    });
+    await ctx.db.insert("appointmentProfessionals", {
+      appointmentId: targetId,
+      professionalId: professional,
+    });
+  });
+
+  const found = await t.run(async (ctx) =>
+    futureAppointmentsReader(ctx).listAdditionalByWeekdays(
+      professional as unknown as string,
+      [1],
+      NOW,
+      2,
+    ),
+  );
+  expect(found.complete).toBe(false);
+});
+
 test("la agenda marca con needsCoordination lo que deja de ser reservable", async () => {
   const t = convexTest(schema, modules);
   const { accompanimentId, futureId, pastId } = await seedAgenda(t);
