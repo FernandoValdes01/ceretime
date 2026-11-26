@@ -76,7 +76,10 @@ test("TI2-147: expireOverdueJustifications es idempotente", async () => {
   });
 
   // Run the expiration job
-  const result1 = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {});
+  const result1 = await t.mutation(
+    internal.operations.appointments.expireOverdueJustifications,
+    {},
+  );
   expect(result1.expired).toBeGreaterThanOrEqual(1);
 
   // Check that the appointment was transitioned
@@ -87,7 +90,10 @@ test("TI2-147: expireOverdueJustifications es idempotente", async () => {
   expect(after1?.status).toBe("no_show_unjustified");
 
   // Run again - should be idempotent
-  const result2 = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {});
+  const result2 = await t.mutation(
+    internal.operations.appointments.expireOverdueJustifications,
+    {},
+  );
   expect(result2.expired).toBe(0);
 });
 
@@ -132,7 +138,10 @@ test("TI2-147: expireOverdueJustifications no toca atenciones dentro del plazo",
     });
   });
 
-  const _result = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {});
+  const _result = await t.mutation(
+    internal.operations.appointments.expireOverdueJustifications,
+    {},
+  );
 
   // The recent appointment should still be no_show
   const after = await t.run(async (ctx) => {
