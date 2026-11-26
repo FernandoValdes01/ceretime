@@ -8,12 +8,11 @@ import {
   getCalendarLinkStatus,
   markCalendarDisconnected,
   revokeCalendarOAuthAccess,
-  type CalendarFutureAppointmentsReader,
   type CalendarLinkMetadataStore,
+  type CalendarLinkSyncScheduler,
   type CalendarOAuthAccess,
   type CalendarOAuthLinkReader,
 } from "./calendar_link";
-import type { CalendarSyncScheduler } from "./sync";
 
 type FakeProfile = {
   readonly _id: string;
@@ -145,19 +144,17 @@ function fakeStore(
   };
 }
 
-function linkSync(future: readonly { readonly appointmentId: string }[] = []): {
-  readonly futureAppointments: CalendarFutureAppointmentsReader;
-  readonly calendarSync: CalendarSyncScheduler & { readonly scheduled: string[] };
+function linkSync(): {
+  readonly linkSync: CalendarLinkSyncScheduler & {
+    readonly scheduled: { readonly userId: string; readonly now: number }[];
+  };
 } {
-  const scheduled: string[] = [];
+  const scheduled: { readonly userId: string; readonly now: number }[] = [];
   return {
-    futureAppointments: {
-      listFutureForSync: async () => [...future],
-    },
-    calendarSync: {
+    linkSync: {
       scheduled,
-      scheduleSync: async (appointmentId) => {
-        scheduled.push(appointmentId);
+      scheduleFutureSync: async (userId, now) => {
+        scheduled.push({ userId, now });
       },
     },
   };
@@ -333,49 +330,36 @@ describe("confirmCalendarLink", () => {
     });
   });
 
-  test("al vincular programa las futuras vigentes, acotadas", async () => {
+  test("al vincular programa el recorrido por páginas de las futuras vigentes", async () => {
     const sync = linkSync();
-    const listed: { userId: string; now: number; limit: number }[] = [];
     const result = await confirmCalendarLink(
       {
         auth: fakeAuth(),
         oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
         store: fakeStore(),
-        futureAppointments: {
-          listFutureForSync: async (userId, now, limit) => {
-            listed.push({ userId, now, limit });
-            return [{ appointmentId: "appointment-1" }, { appointmentId: "appointment-2" }];
-          },
-        },
-        calendarSync: sync.calendarSync,
+        linkSync: sync.linkSync,
         now: () => 3000,
       },
       { tokenIdentifier: "token-student" },
     );
     expect(result.status).toBe("ok");
-    expect(listed).toEqual([{ userId: "user-student", now: 3000, limit: 50 }]);
-    expect(sync.calendarSync.scheduled).toEqual(["appointment-1", "appointment-2"]);
+    expect(sync.linkSync.scheduled).toEqual([{ userId: "user-student", now: 3000 }]);
   });
 
   test("rechazar la autorización no programa nada", async () => {
-    const sync = linkSync([{ appointmentId: "appointment-1" }]);
+    const sync = linkSync();
     const result = await confirmCalendarLink(
       {
         auth: fakeAuth(),
         oauth: fakeOAuth([]),
         store: fakeStore(),
-        futureAppointments: {
-          listFutureForSync: async () => {
-            throw new Error("No debe listar sin vínculo");
-          },
-        },
-        calendarSync: sync.calendarSync,
+        linkSync: sync.linkSync,
         now: () => 3000,
       },
       { tokenIdentifier: "token-student" },
     );
     expect(result).toEqual({ status: "ok", data: { connected: false, status: "not_connected" } });
-    expect(sync.calendarSync.scheduled).toHaveLength(0);
+    expect(sync.linkSync.scheduled).toHaveLength(0);
   });
 });
 

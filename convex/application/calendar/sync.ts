@@ -220,7 +220,8 @@ export async function syncAppointmentToGoogleCalendar(deps: {
       context.ownerId !== null
         ? [{ subject: context.ownerId, everLinked: true }]
         : context.participants;
-    let sawDeletedOrMissing = false;
+    let sawDeleted = false;
+    let sawMissing = false;
     let sawUnavailable = false;
     let sawNotConnected = false;
     for (const target of targets) {
@@ -242,18 +243,18 @@ export async function syncAppointmentToGoogleCalendar(deps: {
         else sawNotConnected = true;
         continue;
       }
-      // Sin dueño el evento puede estar en otro calendario ya probado: se
-      // sigue con el próximo y basta con que alguno responda eliminado o
-      // ausente para darlo por borrado.
       if (context.ownerId !== null) {
         return await finish({ kind: "noop", eventId: deleted.eventId });
       }
-      sawDeletedOrMissing = true;
+      if (deleted.status === "deleted") sawDeleted = true;
+      else sawMissing = true;
     }
-    if (sawDeletedOrMissing) {
-      return await finish({ kind: "noop", eventId: context.reference.eventId });
-    }
+    // Con alguno borrado ese era el calendario; sin borrado, un calendario que
+    // no respondió (`unavailable`) podría tener el evento, así que se
+    // reintenta antes de confirmar un `not_found` de otro calendario.
+    if (sawDeleted) return await finish({ kind: "noop", eventId: context.reference.eventId });
     if (sawUnavailable) return await finish({ kind: "failure", errorCode: "unavailable" });
+    if (sawMissing) return await finish({ kind: "noop", eventId: context.reference.eventId });
     if (sawNotConnected) return await finish({ kind: "failure", errorCode: "not_connected" });
     return await finish({ kind: "not_linked" });
   }

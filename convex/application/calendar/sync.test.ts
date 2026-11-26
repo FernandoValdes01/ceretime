@@ -349,6 +349,42 @@ describe("sincronización automática con Calendar (TI2-162)", () => {
     expect(store.recorded).toEqual([{ kind: "noop", eventId: "event-9" }]);
   });
 
+  test("sin dueño, `not_found` más `unavailable` deja error recuperable", async () => {
+    const loaded = context({
+      status: "cancelled_by_cereti",
+      reference: { eventId: "event-9", addedAt: CREATED_AT },
+      referenceIsCurrent: true,
+      ownerId: null,
+    });
+    const api = (token: string): CalendarSyncGateway => ({
+      createEvent: async (input) => ({ status: "created", eventId: input.googleEventId }),
+      updateEvent: async (input) => ({ status: "updated", eventId: input.googleEventId }),
+      deleteEvent: async (input) => {
+        if (token === "token-student") {
+          return { status: "not_found", eventId: input.googleEventId };
+        }
+        return { status: "unavailable" };
+      },
+    });
+    const access = accessFor({ [STUDENT]: okToken("token-student"), [PRO]: okToken("token-pro") });
+    const row = { startsAt: START_AT, endsAt: END_AT, status: "cancelled_by_cereti" };
+    const store = fakeStore(row);
+    const result = await syncAppointmentToGoogleCalendar({
+      loadAppointment: async () => loaded,
+      resolveAccess: access.resolve,
+      calendarApi: api,
+      store: store.store,
+      reschedule: store.reschedule,
+      now: () => NOW,
+      timeZone: "America/Santiago",
+    });
+    expect(result).toEqual({
+      status: "ok",
+      data: { status: "error", errorCode: "unavailable" },
+    });
+    expect(store.recorded).toEqual([{ kind: "failure", errorCode: "unavailable" }]);
+  });
+
   test("dos despachos: el viejo no pisa al nuevo y el siguiente repara Google", async () => {
     const newStart = START_AT + 60 * 60_000;
     const newEnd = newStart + 60 * 60_000;

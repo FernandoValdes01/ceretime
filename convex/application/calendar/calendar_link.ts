@@ -26,7 +26,6 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import type { AuthorizationReader } from "../authorization/authorize";
-import type { CalendarSyncScheduler } from "./sync";
 import type { CalendarConnectionReader } from "./calendar";
 
 /** Lectura del estado OAuth de la sesión, sin credenciales. */
@@ -172,17 +171,17 @@ export async function getCalendarLinkStatus(
   });
 }
 
-/** Atenciones futuras vigentes de quien vincula, para retomar al vincular. */
-export interface CalendarFutureAppointmentsReader {
-  listFutureForSync(
-    userId: string,
-    now: number,
-    limit: number,
-  ): Promise<readonly { readonly appointmentId: string }[]>;
+/**
+ * Programa el recorrido por páginas de todas las atenciones futuras vigentes
+ * de quien vincula (TI2-162).
+ *
+ * La confirmación del vínculo solo programa el arranque para seguir liviana;
+ * el recorrido en segundo plano pagina por estudiante, responsable y
+ * adicional hasta agotar sin truncar.
+ */
+export interface CalendarLinkSyncScheduler {
+  scheduleFutureSync(userId: string, now: number): Promise<void>;
 }
-
-/** Atenciones que se programan al vincular: acotado a las más próximas. */
-export const CALENDAR_LINK_SYNC_BATCH = 50 as const;
 
 /**
  * Confirma el retorno OAuth y registra los metadatos del vínculo propio.
@@ -192,17 +191,16 @@ export const CALENDAR_LINK_SYNC_BATCH = 50 as const;
  * rechazó la autorización responde `connected: false` sin error, así reservar
  * sigue disponible. La referencia de cuenta se resuelve en el servidor, nunca
  * llega del cliente. Un instante inválido responde `conflict` con el código
- * común. Al vincular programa la sincronización de las atenciones futuras
- * vigentes (acotadas a las más próximas), para retomar las que quedaron sin
- * vínculo sin recorrer todo cada 5 minutos.
+ * común. Al vincular programa el recorrido por páginas de las atenciones
+ * futuras vigentes, para retomar las que quedaron sin vínculo sin truncar ni
+ * recorrer todo cada 5 minutos.
  */
 export async function confirmCalendarLink(
   deps: {
     readonly auth: AuthorizationReader;
     readonly oauth: CalendarOAuthLinkReader;
     readonly store: CalendarLinkMetadataStore;
-    readonly futureAppointments: CalendarFutureAppointmentsReader;
-    readonly calendarSync: CalendarSyncScheduler;
+    readonly linkSync: CalendarLinkSyncScheduler;
     readonly now: () => number;
   },
   input: { readonly tokenIdentifier: string | null },
@@ -225,14 +223,7 @@ export async function confirmCalendarLink(
   if (stored.status === "invalid_reference") return errResult(unauthorizedError());
   const metadata = await deps.store.readMetadata(profile._id);
   const linkedAt = metadata?.linkedAt ?? now;
-  const upcoming = await deps.futureAppointments.listFutureForSync(
-    profile._id,
-    now,
-    CALENDAR_LINK_SYNC_BATCH,
-  );
-  for (const item of upcoming) {
-    await deps.calendarSync.scheduleSync(item.appointmentId);
-  }
+  await deps.linkSync.scheduleFutureSync(profile._id, now);
   return okResult({ connected: true as const, linkedAt, status: stored.status });
 }
 

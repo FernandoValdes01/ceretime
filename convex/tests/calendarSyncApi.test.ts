@@ -304,3 +304,91 @@ test("TI2-162 API: la escritura con verificación deja pasar solo lo vigente", a
   const afterStale = await readSync(t, appointmentId);
   expect(afterStale).toMatchObject({ status: "pending" });
 }, 20_000);
+
+test("TI2-162 API: vincular recorre más de una página y las atenciones donde es adicional", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "paged");
+  const additional = await seedUser(t, { subject: "ti162-sync-add", role: "professional" });
+  const ids: string[] = [];
+  for (let index = 0; index < 55; index += 1) {
+    const start = START_AT + (index + 1) * 60_000;
+    const appointmentId = await seedAppointment(t, {
+      accompanimentId: agenda.accompanimentId,
+      studentId: agenda.student,
+      professionalId: agenda.pro,
+      startsAt: start,
+      endsAt: start + 60_000,
+    });
+    ids.push(appointmentId);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(appointmentId, { calendarSyncStatus: "not_linked" });
+    });
+  }
+  const coordinated = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT + 100 * 60_000,
+    endsAt: START_AT + 101 * 60_000,
+  });
+  await t.run(async (ctx) => {
+    await ctx.db.patch(coordinated, { calendarSyncStatus: "not_linked" });
+    await ctx.db.insert("appointmentProfessionals", {
+      appointmentId: coordinated,
+      professionalId: additional,
+    });
+  });
+
+  // Más de una página como responsable: las 55 más la coordinada quedan pending.
+  let step: {
+    phase: "student" | "responsible" | "additional";
+    cursor: string | null;
+  } | null = { phase: "student", cursor: null };
+  let total = 0;
+  let pages = 0;
+  while (step !== null) {
+    const out: {
+      scheduled: number;
+      done: boolean;
+      next: { phase: "student" | "responsible" | "additional"; cursor: string | null } | null;
+    } = await t.mutation(internal.operations.calendar.scheduleLinkedUserSyncs, {
+      userId: agenda.pro,
+      now: START_AT,
+      phase: step.phase,
+      cursor: step.cursor,
+    });
+    total += out.scheduled;
+    pages += 1;
+    step = out.next;
+  }
+  expect(pages).toBeGreaterThanOrEqual(4);
+  expect(total).toBe(56);
+  expect(await readSync(t, ids[0]!)).toMatchObject({ status: "pending" });
+  expect(await readSync(t, ids[54]!)).toMatchObject({ status: "pending" });
+
+  // Quien participa solo como adicional también retoma su atención.
+  await t.run(async (ctx) => {
+    await ctx.db.patch(coordinated, { calendarSyncStatus: "not_linked" });
+  });
+  let addStep: {
+    phase: "student" | "responsible" | "additional";
+    cursor: string | null;
+  } | null = { phase: "student", cursor: null };
+  let addTotal = 0;
+  while (addStep !== null) {
+    const out: {
+      scheduled: number;
+      done: boolean;
+      next: { phase: "student" | "responsible" | "additional"; cursor: string | null } | null;
+    } = await t.mutation(internal.operations.calendar.scheduleLinkedUserSyncs, {
+      userId: additional,
+      now: START_AT,
+      phase: addStep.phase,
+      cursor: addStep.cursor,
+    });
+    addTotal += out.scheduled;
+    addStep = out.next;
+  }
+  expect(addTotal).toBe(1);
+  expect(await readSync(t, coordinated)).toMatchObject({ status: "pending" });
+}, 20_000);

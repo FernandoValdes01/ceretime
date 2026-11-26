@@ -44,7 +44,11 @@ import {
   resolveBackgroundCalendarAccess,
 } from "../infrastructure/calendar/google_calendar";
 import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
+import { isCalendarActionableStatus } from "../domain/appointments/appointment";
 import { appointmentStatusUnion } from "../infrastructure/validators";
+
+/** Tamaño de página del recorrido de atenciones futuras al vincular. */
+const LINKED_USER_SYNC_PAGE_SIZE = 50;
 
 /** Espera mínima tras programar antes de que el cron tome un `pending`. */
 const SYNC_DISPATCH_GRACE_MS = 60_000;
@@ -582,5 +586,134 @@ export const scheduleDueCalendarSyncs = internalMutation({
       retried += 1;
     }
     return { pending: scheduled, retried };
+  },
+});
+
+const linkedUserSyncPhaseValidator = v.union(
+  v.literal("student"),
+  v.literal("responsible"),
+  v.literal("additional"),
+);
+
+const nextStepValidator = v.union(
+  v.null(),
+  v.object({
+    phase: linkedUserSyncPhaseValidator,
+    cursor: v.union(v.string(), v.null()),
+  }),
+);
+
+/**
+ * Recorrido por páginas de las atenciones futuras vigentes al confirmar el
+ * vínculo (TI2-162).
+ *
+ * Pagina por estudiante dueño, por profesional responsable y por profesional
+ * adicional (`appointmentProfessionals`), marcando `pending` y programando
+ * cada futura vigente. Si una página no termina, programa la siguiente: la
+ * confirmación del vínculo sigue liviana y no se trunca ninguna atención.
+ */
+export const scheduleLinkedUserSyncs = internalMutation({
+  args: {
+    userId: v.string(),
+    now: v.number(),
+    phase: linkedUserSyncPhaseValidator,
+    cursor: v.union(v.string(), v.null()),
+  },
+  returns: v.object({
+    scheduled: v.number(),
+    done: v.boolean(),
+    next: nextStepValidator,
+  }),
+  handler: async (ctx, args) => {
+    const userId = ctx.db.normalizeId("users", args.userId);
+    if (userId === null || !Number.isFinite(args.now)) {
+      return { scheduled: 0, done: true, next: null };
+    }
+    const scheduledAt = Date.now();
+    let scheduled = 0;
+    const enqueueIfEligible = async (
+      appointmentId: typeof userId extends never ? never : string,
+    ) => {
+      const id = normalizeAppointmentId(ctx, appointmentId);
+      if (id === null) return;
+      const doc = await ctx.db.get(id);
+      if (doc === null) return;
+      if (!isCalendarActionableStatus(doc.status) || doc.startsAt < args.now) return;
+      if (
+        doc.calendarSyncStatus === "synced" &&
+        doc.calendarEventId !== undefined &&
+        doc.calendarEventStartsAt === doc.startsAt &&
+        doc.calendarEventEndsAt === doc.endsAt
+      ) {
+        return;
+      }
+      await markSyncPendingRow(ctx, id, scheduledAt);
+      await ctx.scheduler.runAfter(0, internal.operations.calendar.syncAppointmentCalendar, {
+        appointmentId: id,
+      });
+      scheduled += 1;
+    };
+
+    const advance = async (next: {
+      readonly phase: "student" | "responsible" | "additional";
+      readonly cursor: string | null;
+    }) => {
+      await ctx.scheduler.runAfter(0, internal.operations.calendar.scheduleLinkedUserSyncs, {
+        userId: args.userId,
+        now: args.now,
+        phase: next.phase,
+        cursor: next.cursor,
+      });
+      return { scheduled, done: false, next };
+    };
+
+    if (args.phase === "student") {
+      const page = await ctx.db
+        .query("appointments")
+        .withIndex("by_studentId_and_startsAt", (q) =>
+          q.eq("studentId", userId).gte("startsAt", args.now),
+        )
+        .order("asc")
+        .paginate({ numItems: LINKED_USER_SYNC_PAGE_SIZE, cursor: args.cursor });
+      for (const row of page.page) {
+        await enqueueIfEligible(row._id);
+      }
+      return await advance({
+        phase: page.isDone ? "responsible" : "student",
+        cursor: page.isDone ? null : page.continueCursor,
+      });
+    }
+
+    if (args.phase === "responsible") {
+      const page = await ctx.db
+        .query("appointments")
+        .withIndex("by_professionalId_and_startsAt", (q) =>
+          q.eq("professionalId", userId).gte("startsAt", args.now),
+        )
+        .order("asc")
+        .paginate({ numItems: LINKED_USER_SYNC_PAGE_SIZE, cursor: args.cursor });
+      for (const row of page.page) {
+        await enqueueIfEligible(row._id);
+      }
+      return await advance({
+        phase: page.isDone ? "additional" : "responsible",
+        cursor: page.isDone ? null : page.continueCursor,
+      });
+    }
+
+    const page = await ctx.db
+      .query("appointmentProfessionals")
+      .withIndex("by_professionalId", (q) => q.eq("professionalId", userId))
+      .paginate({ numItems: LINKED_USER_SYNC_PAGE_SIZE, cursor: args.cursor });
+    for (const row of page.page) {
+      const doc = await ctx.db.get(row.appointmentId);
+      // Si ya es responsable, el segundo tramo lo tomó: acá solo adicionales.
+      if (doc === null || doc.professionalId === userId) continue;
+      await enqueueIfEligible(row.appointmentId);
+    }
+    if (!page.isDone) {
+      return await advance({ phase: "additional", cursor: page.continueCursor });
+    }
+    return { scheduled, done: true, next: null };
   },
 });
