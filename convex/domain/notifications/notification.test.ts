@@ -22,6 +22,9 @@ import {
   notificationEventsForRequestReceived,
   notificationEventsForRequestTransition,
   notificationEventsForTransition,
+  notificationEventsForAvailabilityChange,
+  notificationEventsForSpaceChange,
+  notificationEventsForNeedsUpdated,
   notificationIdempotencyKey,
   toExternalNotification,
   toNotificationEvent,
@@ -176,6 +179,9 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
       "appointment_online_access_ready",
       "appointment_justification_submitted",
       "appointment_justification_reviewed",
+      "appointment_availability_changed",
+      "appointment_space_changed",
+      "appointment_needs_updated",
       "request_received",
       "request_under_review",
       "request_information_requested",
@@ -233,6 +239,9 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
       },
       appointment_justification_submitted: PENDING,
       appointment_justification_reviewed: PENDING,
+      appointment_availability_changed: PENDING,
+      appointment_space_changed: PENDING,
+      appointment_needs_updated: PENDING,
       request_received: PENDING,
       request_under_review: PENDING,
       request_information_requested: PENDING,
@@ -765,5 +774,55 @@ describe("Avisos de la solicitud (TI2-150)", () => {
         requestChange("accepted", "cancelled"),
       ),
     ).toThrow("no está declarada");
+  });
+});
+
+describe("Avisos de cambios de configuración (TI2-156)", () => {
+  test("el cambio de disponibilidad avisa a todos salvo a quien lo hizo", () => {
+    const byProfessional = notificationEventsForAvailabilityChange(
+      subject,
+      8000,
+      subject.professionalId,
+    );
+    expect(describeAll(byProfessional)).toEqual([
+      { kind: "appointment_availability_changed", recipient: "student" },
+    ]);
+
+    const byStudent = notificationEventsForAvailabilityChange(subject, 8000, subject.studentId);
+    expect(describeAll(byStudent)).toEqual([
+      { kind: "appointment_availability_changed", recipient: "professional" },
+    ]);
+
+    const byAdmin = notificationEventsForAvailabilityChange(subject, 8000, "admin-ficticio-1");
+    expect(describeAll(byAdmin)).toEqual([
+      { kind: "appointment_availability_changed", recipient: "student" },
+      { kind: "appointment_availability_changed", recipient: "professional" },
+    ]);
+  });
+
+  test("el cambio de sala avisa a todos salvo a quien lo hizo", () => {
+    const byAdmin = notificationEventsForSpaceChange(subject, 8000, "admin-ficticio-1");
+    expect(describeAll(byAdmin)).toEqual([
+      { kind: "appointment_space_changed", recipient: "student" },
+      { kind: "appointment_space_changed", recipient: "professional" },
+    ]);
+  });
+
+  test("la actualización de necesidades avisa solo a profesionales", () => {
+    const emitted = notificationEventsForNeedsUpdated(subject, 8000);
+    expect(emitted).toEqual([
+      {
+        kind: "appointment_needs_updated",
+        appointmentId: "atencion-ficticia-1",
+        recipientId: "profesional-ficticio-1",
+        occurredAt: 8000,
+        version: "v1",
+      },
+    ]);
+    const external = toExternalNotification(emitted[0]);
+    expect(external).toEqual({
+      title: "Tienes una actualización pendiente",
+      body: "Revisa las novedades en la aplicación.",
+    });
   });
 });
