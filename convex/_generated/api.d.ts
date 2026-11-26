@@ -36,6 +36,10 @@ import type * as application_notifications_dispatch from "../application/notific
 import type * as application_notifications_inbox from "../application/notifications/inbox.js";
 import type * as application_notifications_ports from "../application/notifications/ports.js";
 import type * as application_notifications_push from "../application/notifications/push.js";
+import type * as application_privacy_commands from "../application/privacy/commands.js";
+import type * as application_privacy_ports from "../application/privacy/ports.js";
+import type * as application_privacy_projection from "../application/privacy/projection.js";
+import type * as application_privacy_queries from "../application/privacy/queries.js";
 import type * as application_reports_ports from "../application/reports/ports.js";
 import type * as application_reports_use_cases from "../application/reports/use_cases.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
@@ -124,6 +128,7 @@ import type * as presentation_availability from "../presentation/availability.js
 import type * as presentation_calendar from "../presentation/calendar.js";
 import type * as presentation_follow_up from "../presentation/follow_up.js";
 import type * as presentation_notifications from "../presentation/notifications.js";
+import type * as presentation_privacy from "../presentation/privacy.js";
 import type * as presentation_reports from "../presentation/reports.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
@@ -164,6 +169,10 @@ declare const fullApi: ApiFromModules<{
   "application/notifications/inbox": typeof application_notifications_inbox;
   "application/notifications/ports": typeof application_notifications_ports;
   "application/notifications/push": typeof application_notifications_push;
+  "application/privacy/commands": typeof application_privacy_commands;
+  "application/privacy/ports": typeof application_privacy_ports;
+  "application/privacy/projection": typeof application_privacy_projection;
+  "application/privacy/queries": typeof application_privacy_queries;
   "application/reports/ports": typeof application_reports_ports;
   "application/reports/use_cases": typeof application_reports_use_cases;
   "application/requests/commands": typeof application_requests_commands;
@@ -252,6 +261,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/calendar": typeof presentation_calendar;
   "presentation/follow_up": typeof presentation_follow_up;
   "presentation/notifications": typeof presentation_notifications;
+  "presentation/privacy": typeof presentation_privacy;
   "presentation/reports": typeof presentation_reports;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
