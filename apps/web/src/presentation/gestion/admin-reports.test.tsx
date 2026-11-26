@@ -140,7 +140,7 @@ describe("AdminReportsPage (TI2-175)", () => {
     mocks.thresholdMutation.mockResolvedValue({
       previousThreshold: 5,
       newThreshold: 8,
-      auditEventId: "audit-1" as Id<"reportThresholdAuditEvents">,
+      auditEventId: "audit-1" as Id<"reportThresholdChanges">,
     });
 
     render(<AdminReportsPage />);

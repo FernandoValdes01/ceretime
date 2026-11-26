@@ -779,10 +779,11 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 
-  // Tabla 'reportThresholdAuditEvents': bitácora append-only de cambios al
+  // Tabla 'reportThresholdChanges': historial append-only de cambios al
   // umbral mínimo de grupo en reportes agregados (TI2-175, ADR-0004). Cada
-  // modificación queda registrada en la misma transacción del cambio.
-  reportThresholdAuditEvents: defineTable({
+  // modificación queda registrada en la misma transacción del cambio, sin
+  // crear una bitácora general paralela a TI2-128.
+  reportThresholdChanges: defineTable({
     actorId: v.id("users"),
     previousThreshold: v.number(),
     newThreshold: v.number(),

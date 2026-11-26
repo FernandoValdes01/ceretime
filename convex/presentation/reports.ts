@@ -122,7 +122,7 @@ function reportSettingsReader(ctx: QueryCtx | MutationCtx): ReportSettingsReader
 
 function reportSettingsWriter(
   ctx: MutationCtx,
-): ReportSettingsWriter<Id<"users">, Id<"reportThresholdAuditEvents">> {
+): ReportSettingsWriter<Id<"users">, Id<"reportThresholdChanges">> {
   return {
     readMinimumGroupSize: () => readMinimumGroupSize(ctx),
     saveMinimumGroupSizeWithAudit: (input) => saveMinimumGroupSizeWithAudit(ctx, input),
@@ -214,7 +214,7 @@ export const exportAggregateReport = mutation({
 
 /**
  * Configura el tamaño mínimo de grupo (>= 5) y registra cada cambio en
- * `reportThresholdAuditEvents`. Solo Administrador.
+ * `reportThresholdChanges`. Solo Administrador.
  */
 export const updateMinimumGroupSize = mutation({
   args: {
@@ -223,7 +223,7 @@ export const updateMinimumGroupSize = mutation({
   returns: v.object({
     previousThreshold: v.number(),
     newThreshold: v.number(),
-    auditEventId: v.union(v.id("reportThresholdAuditEvents"), v.null()),
+    auditEventId: v.union(v.id("reportThresholdChanges"), v.null()),
   }),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();

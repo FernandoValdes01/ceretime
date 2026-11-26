@@ -206,7 +206,7 @@ describe("reportes agregados (TI2-175)", () => {
     expect(updated.auditEventId).not.toBeNull();
 
     const auditEvents = await t.run(async (ctx) => {
-      return await ctx.db.query("reportThresholdAuditEvents").collect();
+      return await ctx.db.query("reportThresholdChanges").collect();
     });
     expect(auditEvents).toHaveLength(1);
     expect(auditEvents[0]).toMatchObject({

@@ -46,7 +46,7 @@ export async function saveMinimumGroupSizeWithAudit(
 ): Promise<{
   readonly previousThreshold: number;
   readonly newThreshold: number;
-  readonly auditEventId: Id<"reportThresholdAuditEvents"> | null;
+  readonly auditEventId: Id<"reportThresholdChanges"> | null;
 }> {
   const existing = await ctx.db
     .query("reportSettings")
@@ -80,7 +80,7 @@ export async function saveMinimumGroupSizeWithAudit(
     };
   }
 
-  const auditEventId = await ctx.db.insert("reportThresholdAuditEvents", {
+  const auditEventId = await ctx.db.insert("reportThresholdChanges", {
     actorId: input.actorId,
     previousThreshold,
     newThreshold: input.newThreshold,
