@@ -67,7 +67,7 @@ async function seedActors(t: ReturnType<typeof convexTest>) {
 }
 
 afterEach(() => {
-  vi.unstubAllEnvs();
+  vi.stubEnv("TEST_SEEDS_ENABLED", "");
 });
 
 describe("reportes agregados (TI2-175)", () => {

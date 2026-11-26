@@ -409,7 +409,7 @@ export const loadReportSamples = internalMutation({
     // - 5 completed inPerson (>= 5)
     // - 5 no_show online (>= 5)
     // - 2 cancelled_by_student inPerson (< 5 -> supresión primaria + complementaria)
-    const insertAppt = async (
+    const insertAppointment = async (
       day: string,
       minuteOffset: number,
       status: Doc<"appointments">["status"],
@@ -430,16 +430,16 @@ export const loadReportSamples = internalMutation({
     };
 
     for (let i = 0; i < 6; i += 1) {
-      await insertAppt("2026-10-06", i * 60, "completed", "online");
+      await insertAppointment("2026-10-06", i * 60, "completed", "online");
     }
     for (let i = 0; i < 5; i += 1) {
-      await insertAppt("2026-10-07", i * 60, "completed", "inPerson");
+      await insertAppointment("2026-10-07", i * 60, "completed", "inPerson");
     }
     for (let i = 0; i < 5; i += 1) {
-      await insertAppt("2026-10-08", i * 60, "no_show", "online");
+      await insertAppointment("2026-10-08", i * 60, "no_show", "online");
     }
     for (let i = 0; i < 2; i += 1) {
-      await insertAppt("2026-10-09", i * 60, "cancelled_by_student", "inPerson");
+      await insertAppointment("2026-10-09", i * 60, "cancelled_by_student", "inPerson");
     }
 
     return { loaded: true };

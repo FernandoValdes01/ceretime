@@ -31,7 +31,7 @@ Cada área define su árbol en un archivo propio. `router.tsx` solo compone la r
 | `student-routes.ts` | Estudiante | `/estudiante`, `/estudiante/solicitudes`, `/estudiante/solicitudes/$requestId`, `/estudiante/horarios`, `/estudiante/reservar`, `/estudiante/atenciones`, `/estudiante/atenciones/$appointmentId` y `/estudiante/acompanamientos/$accompanimentId` |
 | `professional-routes.ts` | Profesional | `/profesional`, `/profesional/solicitudes`, `/profesional/solicitudes/$requestId`, `/profesional/solicitudes/registrar`, `/profesional/disponibilidad`, `/profesional/agenda` y `/profesional/agenda/$appointmentId` |
 | `practitioner-routes.ts` | Practicante | `/practicante`, `/practicante/acompanamientos` y `/practicante/acompanamientos/$accompanimentId` |
-| `admin-routes.ts` | Administrador | `/administrador`, `/administrador/cuentas` y `/administrador/espacios` |
+| `admin-routes.ts` | Administrador | `/administrador`, `/administrador/cuentas`, `/administrador/espacios` y `/administrador/reportes` |
 
 Las URL y las guardias vigentes no cambian: cada layout conserva su `RequireStudent` o `RequireStaffRole`, y las páginas siguen resolviendo sus parámetros con `getRouteApi` sobre la misma ruta.
 
@@ -44,7 +44,7 @@ Las URL y las guardias vigentes no cambian: cada layout conserva su `RequireStud
 | Estudiante | Inicio, Solicitudes, Horarios y Atenciones |
 | Profesional | Inicio, Solicitudes, Agenda y Disponibilidad |
 | Practicante | Inicio y Acompañamientos |
-| Administrador | Inicio, Cuentas y Espacios |
+| Administrador | Inicio, Cuentas, Espacios y Reportes |
 
 El encabezado común vive en `app-shell.tsx` y `app-shell.css`. Marca la sección actual con `aria-current="page"`, distingue el elemento activo con fondo y subrayado (no solo color) y mantiene objetivos táctiles de 44 × 44 px. El portal de Administración usa el mismo encabezado convertido en menú lateral: misma marca, navegación, accesibilidad y cierre de sesión, con el botón abajo a la izquierda y el contenido a ancho completo. El botón «Cerrar sesión» llama a `authClient.signOut()`, espera la invalidación de la sesión y vuelve al índice. Se retiró el enlace «Sesión» que apuntaba a `/login` porque no cerraba la sesión.
 
