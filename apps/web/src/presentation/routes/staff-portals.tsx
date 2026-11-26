@@ -56,8 +56,9 @@ export function AdminHome() {
     <section aria-labelledby="admin-home-title">
       <h1 id="admin-home-title">Portal de Administración</h1>
       <p>
-        Gestiona las cuentas del personal desde <Link to="/administrador/cuentas">Cuentas</Link> y
-        los espacios de atención desde <Link to="/administrador/espacios">Espacios</Link>.
+        Gestiona las cuentas del personal desde <Link to="/administrador/cuentas">Cuentas</Link>,
+        los espacios de atención desde <Link to="/administrador/espacios">Espacios</Link> y los
+        indicadores agregados desde <Link to="/administrador/reportes">Reportes</Link>.
       </p>
     </section>
   );

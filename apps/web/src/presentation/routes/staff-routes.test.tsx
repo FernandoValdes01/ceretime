@@ -393,13 +393,15 @@ describe("límites de navegación por rol (TI2-20)", () => {
       expect(
         href === "/administrador" ||
           href === "/administrador/cuentas" ||
-          href === "/administrador/espacios",
+          href === "/administrador/espacios" ||
+          href === "/administrador/reportes",
       ).toBe(true);
     }
-    // El editor de espacios (TI2-04) y las cuentas (TI2-169) son las vistas
-    // propias del Administrador.
+    // El editor de espacios (TI2-04), las cuentas (TI2-169) y los reportes
+    // agregados (TI2-175) son las vistas propias del Administrador.
     expect(hrefs).toContain("/administrador/espacios");
     expect(hrefs).toContain("/administrador/cuentas");
+    expect(hrefs).toContain("/administrador/reportes");
   });
 
   test("la Administración usa menú lateral con la navegación y el cierre de sesión abajo", async () => {
@@ -419,7 +421,7 @@ describe("límites de navegación por rol (TI2-20)", () => {
       within(nav)
         .getAllByRole("link")
         .map((link) => link.textContent?.trim()),
-    ).toEqual(["Inicio", "Cuentas", "Espacios"]);
+    ).toEqual(["Inicio", "Cuentas", "Espacios", "Reportes"]);
     expect(
       within(sidebar as HTMLElement).getByRole("button", { name: "Cerrar sesión" }),
     ).toBeDefined();

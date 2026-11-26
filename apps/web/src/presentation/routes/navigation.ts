@@ -53,6 +53,7 @@ export const PORTAL_NAVIGATION = {
       { to: "/administrador", label: "Inicio", exact: true },
       { to: "/administrador/cuentas", label: "Cuentas", exact: false },
       { to: "/administrador/espacios", label: "Espacios", exact: false },
+      { to: "/administrador/reportes", label: "Reportes", exact: false },
     ],
   },
 } as const;

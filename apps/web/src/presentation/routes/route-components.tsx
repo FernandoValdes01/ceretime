@@ -1,6 +1,7 @@
 import { getRouteApi, Link, Outlet } from "@tanstack/react-router";
 import { AccessibilityProvider } from "../accessibility/AccessibilityProvider.tsx";
 import { AdminAccountsPage } from "../gestion/admin-accounts.tsx";
+import { AdminReportsPage } from "../gestion/admin-reports.tsx";
 import { AdminSpaceEditorPage } from "../gestion/admin-space-editor.tsx";
 import { OfficialRequestFormPage } from "../gestion/official-request-form.tsx";
 import {
@@ -320,4 +321,9 @@ export function AdminAccountsRouteComponent() {
 export function AdminSpacesRouteComponent() {
   useDocumentTitle("Espacios de atención");
   return <AdminSpaceEditorPage />;
+}
+
+export function AdminReportsRouteComponent() {
+  useDocumentTitle("Reportes agregados");
+  return <AdminReportsPage />;
 }
