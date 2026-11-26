@@ -40,6 +40,8 @@ import type * as application_privacy_commands from "../application/privacy/comma
 import type * as application_privacy_ports from "../application/privacy/ports.js";
 import type * as application_privacy_projection from "../application/privacy/projection.js";
 import type * as application_privacy_queries from "../application/privacy/queries.js";
+import type * as application_reports_ports from "../application/reports/ports.js";
+import type * as application_reports_use_cases from "../application/reports/use_cases.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_notifications from "../application/requests/notifications.js";
 import type * as application_requests_ports from "../application/requests/ports.js";
@@ -85,6 +87,7 @@ import type * as domain_notifications_push from "../domain/notifications/push.js
 import type * as domain_privacy_privacy_controls from "../domain/privacy/privacy_controls.js";
 import type * as domain_privacy_privacy_deadlines from "../domain/privacy/privacy_deadlines.js";
 import type * as domain_privacy_privacy_request from "../domain/privacy/privacy_request.js";
+import type * as domain_reports_report from "../domain/reports/report.js";
 import type * as domain_requests_referral from "../domain/requests/referral.js";
 import type * as domain_requests_request from "../domain/requests/request.js";
 import type * as domain_requests_state from "../domain/requests/state.js";
@@ -106,6 +109,7 @@ import type * as infrastructure_notifications_gmail_sender from "../infrastructu
 import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
 import type * as infrastructure_notifications_web_push_sender from "../infrastructure/notifications/web_push_sender.js";
 import type * as infrastructure_privacy_repository from "../infrastructure/privacy/repository.js";
+import type * as infrastructure_reports_repository from "../infrastructure/reports/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
@@ -125,6 +129,7 @@ import type * as presentation_calendar from "../presentation/calendar.js";
 import type * as presentation_follow_up from "../presentation/follow_up.js";
 import type * as presentation_notifications from "../presentation/notifications.js";
 import type * as presentation_privacy from "../presentation/privacy.js";
+import type * as presentation_reports from "../presentation/reports.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as presentation_spaces from "../presentation/spaces.js";
@@ -168,6 +173,8 @@ declare const fullApi: ApiFromModules<{
   "application/privacy/ports": typeof application_privacy_ports;
   "application/privacy/projection": typeof application_privacy_projection;
   "application/privacy/queries": typeof application_privacy_queries;
+  "application/reports/ports": typeof application_reports_ports;
+  "application/reports/use_cases": typeof application_reports_use_cases;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/notifications": typeof application_requests_notifications;
   "application/requests/ports": typeof application_requests_ports;
@@ -213,6 +220,7 @@ declare const fullApi: ApiFromModules<{
   "domain/privacy/privacy_controls": typeof domain_privacy_privacy_controls;
   "domain/privacy/privacy_deadlines": typeof domain_privacy_privacy_deadlines;
   "domain/privacy/privacy_request": typeof domain_privacy_privacy_request;
+  "domain/reports/report": typeof domain_reports_report;
   "domain/requests/referral": typeof domain_requests_referral;
   "domain/requests/request": typeof domain_requests_request;
   "domain/requests/state": typeof domain_requests_state;
@@ -234,6 +242,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
   "infrastructure/notifications/web_push_sender": typeof infrastructure_notifications_web_push_sender;
   "infrastructure/privacy/repository": typeof infrastructure_privacy_repository;
+  "infrastructure/reports/repository": typeof infrastructure_reports_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
@@ -253,6 +262,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/follow_up": typeof presentation_follow_up;
   "presentation/notifications": typeof presentation_notifications;
   "presentation/privacy": typeof presentation_privacy;
+  "presentation/reports": typeof presentation_reports;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   "presentation/spaces": typeof presentation_spaces;

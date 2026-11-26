@@ -104,6 +104,18 @@ TI2-167 publica `api.presentation.privacy` y aplica esta matriz en Aplicación c
 
 El canal de cada rol se deriva de `privacyRequestChannelForRole` y no se acepta desde el cliente. En la respuesta, el actor de la sesión y `responsibleId` deben ser la misma persona; el dominio rechaza la discrepancia. La designación del responsable institucional definitivo y la dirección del canal externo siguen pendientes de la UCT. La aprobación deja la resolución fundada y el efecto reconocido por el procedimiento; la ejecución material sobre los datos reales sigue pendiente de decisión institucional y una denegación conserva los datos. El bloqueo y la oposición se presentan en la siguiente tarea del módulo. El detalle del procedimiento vive en [Procedimiento de prueba para solicitudes de derechos de privacidad](../../../docs/privacidad-procedimiento.md).
 
+## Matriz de reportes agregados (TI2-175)
+
+TI2-175 publica `api.presentation.reports` y aplica esta matriz en Aplicación con `canReadAggregateReports`, `canExportAggregateReports` y `canConfigureReportThreshold`. La identidad sale del perfil vinculado a la sesión en el servidor y toda denegación responde el error genérico de TI2-88 (`unauthorized`).
+
+| Caso de uso                                            | Estudiante | Profesional | Practicante | Administrador                                                                                               |
+| ------------------------------------------------------ | ---------- | ----------- | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| `report:read` (`getAggregateReport`)                   | Denegado   | Denegado    | Denegado    | Permitido con cuenta vigente, solo indicadores agregados con grupo mínimo y supresión complementaria        |
+| `report:export` (`exportAggregateReport`)              | Denegado   | Denegado    | Denegado    | Permitido con cuenta vigente, exportación CSV/JSON coincidente y registrada en `reportExports`              |
+| `report:configureThreshold` (`updateMinimumGroupSize`) | Denegado   | Denegado    | Denegado    | Permitido con cuenta vigente, solo hacia arriba desde 5 (ADR-0004) y registrado en `reportThresholdChanges` |
+
+Los reportes nunca exponen nombres, correos, notas internas ni necesidades de acceso, y consultar reportes agregados no habilita lectura sobre acompañamientos ni atenciones individuales.
+
 ## Qué queda pendiente de validación
 
-La matriz definitiva, su correspondencia con cargos reales y los permisos exactos del Practicante requieren validación de CERETI y UCT (PV-01, PV-16, PV-17). Los reportes agregados quedan fuera de esta matriz y seguirán la misma separación por capas cuando se implementen. La coordinación de una atención entre varios profesionales (RF-16) se publica en TI2-142 con `canCoordinateAppointment` y el enlace privado con `canUseAppointmentOnlineAccess`; cambiar una atención ya reservada sigue limitado a su responsable: el Profesional solo cambia de horario su propia atención dentro de su propia agenda, y los adicionales no cancelan ni cambian de horario la atención.
+La matriz definitiva, su correspondencia con cargos reales y los permisos exactos del Practicante requieren validación de CERETI y UCT (PV-01, PV-16, PV-17). La coordinación de una atención entre varios profesionales (RF-16) se publica en TI2-142 con `canCoordinateAppointment` y el enlace privado con `canUseAppointmentOnlineAccess`; cambiar una atención ya reservada sigue limitado a su responsable: el Profesional solo cambia de horario su propia atención dentro de su propia agenda, y los adicionales no cancelan ni cambian de horario la atención.

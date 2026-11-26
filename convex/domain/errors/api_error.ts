@@ -54,6 +54,7 @@ export const API_ERROR_CODE_VALUES = [
   "follow_up_fields_invalid",
   "request_student_not_found",
   "privacy_request_fields_invalid",
+  "report_filters_invalid",
 ] as const;
 
 /** Código estable de un error público del contrato común. */
@@ -96,6 +97,9 @@ export const REQUEST_STUDENT_NOT_FOUND_ERROR_CODE = "request_student_not_found" 
 /** Campos de la solicitud de privacidad o de su resolución inválidos. */
 export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_CODE = "privacy_request_fields_invalid" as const;
 
+/** Filtros o umbral de reporte agregado inválidos (TI2-175). */
+export const REPORT_FILTERS_INVALID_ERROR_CODE = "report_filters_invalid" as const;
+
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
 
@@ -129,6 +133,10 @@ export const REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE =
 export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE =
   "Los datos de la solicitud de privacidad no son válidos.";
 
+/** Mensaje genérico para filtros o umbral de reporte inválidos. */
+export const REPORT_FILTERS_INVALID_ERROR_MESSAGE =
+  "Los parámetros del reporte agregado no son válidos.";
+
 /** Mensaje comprensible para conflicto, sin detalles sensibles. */
 export const CONFLICT_ERROR_MESSAGE = "La solicitud entra en conflicto con el estado actual.";
 
@@ -153,6 +161,7 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   follow_up_fields_invalid: FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE,
   request_student_not_found: REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE,
   privacy_request_fields_invalid: PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
+  report_filters_invalid: REPORT_FILTERS_INVALID_ERROR_MESSAGE,
 };
 
 /** Verdadero cuando el código pertenece al contrato público estable. */

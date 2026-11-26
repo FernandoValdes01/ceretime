@@ -55,6 +55,12 @@ import {
 import { REQUEST_PROVENANCE_CHANNEL_VALUES } from "../domain/requests/request";
 import { REQUEST_STATES } from "../domain/requests/state";
 import {
+  REPORT_CONTRACT_VERSION,
+  REPORT_EXPORT_FORMAT_VALUES,
+  REPORT_MODALITY_FILTER_VALUES,
+  REPORT_SUPPRESSION_REASON_VALUES,
+} from "../domain/reports/report";
+import {
   ACCOUNT_STATUS_VALUES,
   INSTITUTIONAL_STATUS_VALUES,
   ROLE_VALUES,
@@ -407,3 +413,32 @@ export const privacyResponseDeliveryReceiptValidator = v.object({
   agencyClaimDueDate: v.string(),
   agencyClaimDueAt: v.number(),
 });
+
+/**
+ * Validadores de reportes agregados, supresión y exportación registrada (TI2-175),
+ * derivados del dominio puro sin duplicar literales.
+ */
+export const reportContractVersionLiteral = v.literal(REPORT_CONTRACT_VERSION);
+
+export const reportExportFormatUnion = v.union(
+  ...REPORT_EXPORT_FORMAT_VALUES.map((value) => v.literal(value)),
+);
+
+export const reportModalityFilterUnion = v.union(
+  ...REPORT_MODALITY_FILTER_VALUES.map((value) => v.literal(value)),
+);
+
+export const reportSuppressionReasonUnion = v.union(
+  ...REPORT_SUPPRESSION_REASON_VALUES.map((value) => v.literal(value)),
+);
+
+export const aggregateCountCellValidator = v.union(
+  v.object({
+    suppressed: v.literal(false),
+    count: v.number(),
+  }),
+  v.object({
+    suppressed: v.literal(true),
+    reason: reportSuppressionReasonUnion,
+  }),
+);

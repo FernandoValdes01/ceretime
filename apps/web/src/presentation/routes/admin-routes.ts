@@ -3,6 +3,7 @@ import {
   AdminAccountsRouteComponent,
   AdminIndexRouteComponent,
   AdminLayoutRouteComponent,
+  AdminReportsRouteComponent,
   AdminSpacesRouteComponent,
 } from "./route-components.tsx";
 import { rootRoute } from "./root-route.ts";
@@ -39,6 +40,17 @@ const adminSpacesRoute = createRoute({
   component: AdminSpacesRouteComponent,
 });
 
+const adminReportsRoute = createRoute({
+  getParentRoute: () => adminLayoutRoute,
+  path: "reportes",
+  component: AdminReportsRouteComponent,
+});
+
 export const adminRoutes = [
-  adminLayoutRoute.addChildren([adminIndexRoute, adminAccountsRoute, adminSpacesRoute]),
+  adminLayoutRoute.addChildren([
+    adminIndexRoute,
+    adminAccountsRoute,
+    adminSpacesRoute,
+    adminReportsRoute,
+  ]),
 ] as const;

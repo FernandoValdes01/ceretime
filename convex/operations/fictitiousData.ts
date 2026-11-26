@@ -302,3 +302,146 @@ export const load = internalMutation({
     return { loaded: true };
   },
 });
+
+/**
+ * Muestra ficticia determinista para reportes agregados (TI2-175).
+ *
+ * Genera grupos por encima (>= 5) y por debajo (< 5) del umbral mínimo en
+ * octubre de 2026 para comprobar en pantalla y exportación tanto la supresión
+ * primaria como la supresión complementaria. Es idempotente y exige
+ * `TEST_SEEDS_ENABLED === "true"`.
+ */
+export const loadReportSamples = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    if (env.TEST_SEEDS_ENABLED !== "true") {
+      throw new Error("Las semillas de prueba no están habilitadas en este entorno");
+    }
+
+    const markerToken = `${ISSUER}|reportes-estudiante-1`;
+    if ((await findProfileByTokenIdentifier(ctx, markerToken)) !== null) {
+      return { loaded: false };
+    }
+
+    const professionalId =
+      (await findProfileByTokenIdentifier(ctx, identityOf("professional").tokenIdentifier))?._id ??
+      (await ctx.runMutation(internal.operations.users.createTestUser, {
+        email: ACCOUNTS.professional.email,
+        fullName: ACCOUNTS.professional.fullName,
+        role: "professional",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+        tokenIdentifier: identityOf("professional").tokenIdentifier,
+      }));
+
+    const studentIds: Id<"users">[] = [];
+    for (let index = 1; index <= 6; index += 1) {
+      const id = await ctx.runMutation(internal.operations.users.createTestUser, {
+        email: `reportes.estudiante${index}@alu.uct.cl`,
+        fullName: `Estudiante Reporte Ficticio ${index}`,
+        role: "student",
+        institutionalStatus: "enabled",
+        accountStatus: "active",
+        tokenIdentifier: `${ISSUER}|reportes-estudiante-${index}`,
+      });
+      studentIds.push(id);
+    }
+
+    const primaryStudentId = studentIds[0] as Id<"users">;
+    const accompanimentId = await ctx.db.insert("accompaniments", {
+      studentId: primaryStudentId,
+      status: "active",
+      objective: "Acompañamiento ficticio para pruebas de reportes agregados.",
+      accessNeeds: "Material digital accesible.",
+    });
+
+    const baseCreatedAt = agendaInstant("2026-10-02", 9 * 60);
+
+    // Solicitudes:
+    // - 6 `accepted` (sobre umbral 5) con primera transición determinista (2h..7h)
+    // - 5 `under_review` (en umbral 5) con primera transición determinista
+    // - 2 `received` (bajo umbral 5 -> supresión primaria, activa complementaria sobre `under_review`)
+    for (let i = 0; i < 6; i += 1) {
+      const createdAt = baseCreatedAt + i * 3_600_000;
+      const reqId = await ctx.db.insert("requests", {
+        studentId: studentIds[i % studentIds.length] as Id<"users">,
+        status: "accepted",
+        accessNeeds: "Apoyo ficticio para pruebas agregadas.",
+        createdAt,
+      });
+      await ctx.db.insert("requestTransitions", {
+        requestId: reqId,
+        from: "received",
+        to: "under_review",
+        actorId: professionalId,
+        occurredAt: createdAt + (i + 2) * 3_600_000,
+      });
+    }
+
+    for (let i = 0; i < 5; i += 1) {
+      const createdAt = baseCreatedAt + (i + 10) * 3_600_000;
+      const reqId = await ctx.db.insert("requests", {
+        studentId: studentIds[i % studentIds.length] as Id<"users">,
+        status: "under_review",
+        accessNeeds: "Apoyo ficticio en revisión.",
+        createdAt,
+      });
+      await ctx.db.insert("requestTransitions", {
+        requestId: reqId,
+        from: "received",
+        to: "under_review",
+        actorId: professionalId,
+        occurredAt: createdAt + 4 * 3_600_000,
+      });
+    }
+
+    for (let i = 0; i < 2; i += 1) {
+      await ctx.db.insert("requests", {
+        studentId: studentIds[i % studentIds.length] as Id<"users">,
+        status: "received",
+        accessNeeds: "Apoyo ficticio recién recibido.",
+        createdAt: baseCreatedAt + (i + 20) * 3_600_000,
+      });
+    }
+
+    // Atenciones en octubre de 2026:
+    // - 6 completed online (>= 5)
+    // - 5 completed inPerson (>= 5)
+    // - 5 no_show online (>= 5)
+    // - 2 cancelled_by_student inPerson (< 5 -> supresión primaria + complementaria)
+    const insertAppointment = async (
+      day: string,
+      minuteOffset: number,
+      status: Doc<"appointments">["status"],
+      modality: "inPerson" | "online",
+    ) => {
+      const startsAt = agendaInstant(day, 9 * 60 + minuteOffset);
+      const appointmentId = await ctx.db.insert("appointments", {
+        accompanimentId,
+        studentId: primaryStudentId,
+        professionalId,
+        modality,
+        status,
+        startsAt,
+        endsAt: startsAt + 45 * 60_000,
+        createdAt: baseCreatedAt,
+      });
+      await syncAppointmentProfessional(ctx, { appointmentId, professionalId });
+    };
+
+    for (let i = 0; i < 6; i += 1) {
+      await insertAppointment("2026-10-06", i * 60, "completed", "online");
+    }
+    for (let i = 0; i < 5; i += 1) {
+      await insertAppointment("2026-10-07", i * 60, "completed", "inPerson");
+    }
+    for (let i = 0; i < 5; i += 1) {
+      await insertAppointment("2026-10-08", i * 60, "no_show", "online");
+    }
+    for (let i = 0; i < 2; i += 1) {
+      await insertAppointment("2026-10-09", i * 60, "cancelled_by_student", "inPerson");
+    }
+
+    return { loaded: true };
+  },
+});

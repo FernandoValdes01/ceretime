@@ -36,6 +36,8 @@ import {
   privacyResponseRuleUnion,
   privacyRetentionDispositionUnion,
   privacyRetentionExceptionKindUnion,
+  reportExportFormatUnion,
+  reportModalityFilterUnion,
   requestStatusUnion,
   requestProvenanceValidator,
   roleUnion,
@@ -223,7 +225,9 @@ export default defineSchema({
     .index("by_student_and_status", ["studentId", "status"])
     // Solicitudes tomadas por cada profesional: base del listado
     // autorizado, una fila por solicitud.
-    .index("by_takenBy", ["takenBy"]),
+    .index("by_takenBy", ["takenBy"])
+    // Solicitudes por fecha de creación: consultas limitadas de reportes agregados (TI2-175).
+    .index("by_createdAt", ["createdAt"]),
 
   // Tabla 'requestTransitions': bitácora append-only de cambios de estado.
   // Cada transición guarda motivo, actor y fecha junto al estado resultante,
@@ -432,7 +436,9 @@ export default defineSchema({
     // Atenciones del centro por estado desde un instante: confirma los cruces
     // de un profesional adicional, porque su fila de participante no guarda
     // horario (TI2-165), sin leer las canceladas.
-    .index("by_status_and_startsAt", ["status", "startsAt"]),
+    .index("by_status_and_startsAt", ["status", "startsAt"])
+    // Atenciones por modalidad y fecha de inicio: consultas limitadas de reportes agregados (TI2-175).
+    .index("by_modality_and_startsAt", ["modality", "startsAt"]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
   // atención (TI2-138), ATENCION_PROFESIONALES del MER.
@@ -761,4 +767,44 @@ export default defineSchema({
     .index("by_subjectId_and_liftedAt_and_expiresAt", ["subjectId", "liftedAt", "expiresAt"])
     // Excepciones originadas por una solicitud de privacidad.
     .index("by_privacyRequestId", ["privacyRequestId"]),
+
+  // Tabla 'reportSettings': configuración única del umbral de grupo mínimo
+  // para reportes agregados (TI2-175, ADR-0004). Solo guarda una fila con
+  // `key: "default"`; si aún no existe, el sistema usa 5 por defecto.
+  reportSettings: defineTable({
+    key: v.literal("default"),
+    minimumGroupSize: v.number(),
+    updatedBy: v.id("users"),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
+
+  // Tabla 'reportThresholdChanges': historial append-only de cambios al
+  // umbral mínimo de grupo en reportes agregados (TI2-175, ADR-0004). Cada
+  // modificación queda registrada en la misma transacción del cambio, sin
+  // crear una bitácora general paralela a TI2-128.
+  reportThresholdChanges: defineTable({
+    actorId: v.id("users"),
+    previousThreshold: v.number(),
+    newThreshold: v.number(),
+    occurredAt: v.number(),
+  })
+    .index("by_occurredAt", ["occurredAt"])
+    .index("by_actorId_and_occurredAt", ["actorId", "occurredAt"]),
+
+  // Tabla 'reportExports': registro append-only de cada exportación de
+  // reportes agregados (TI2-175). Guarda solo actor, formato, periodo, filtro
+  // de modalidad, umbral vigente, bandera de tope y fecha; nunca guarda datos
+  // personales, notas ni necesidades de acceso.
+  reportExports: defineTable({
+    actorId: v.id("users"),
+    format: reportExportFormatUnion,
+    periodFrom: v.string(),
+    periodTo: v.string(),
+    modalityFilter: reportModalityFilterUnion,
+    minimumGroupSize: v.number(),
+    truncated: v.boolean(),
+    exportedAt: v.number(),
+  })
+    .index("by_exportedAt", ["exportedAt"])
+    .index("by_actorId_and_exportedAt", ["actorId", "exportedAt"]),
 });
