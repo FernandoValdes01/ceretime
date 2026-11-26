@@ -136,7 +136,7 @@ function mensajeDeError(error: unknown): string {
 ## Fuera de este contrato
 
 - Bloqueo temporal y oposición: siguiente tarea del módulo.
-- Exportación de datos y ejecución material de la supresión, la rectificación y la portabilidad: decisión institucional pendiente.
+- Exportación de datos y ejecución material de la supresión, la rectificación y la portabilidad: la autorización registrada (`effect: "authorized"`) es la que usan TI2-168 (rectificación), TI2-173 (exportación) y TI2-174 (eliminación o anonimización manual) para aplicar el efecto sobre datos ficticios. La ejecución sobre datos reales queda pendiente de decisión institucional.
 - Pantallas del Estudiante y del Administrador: issues posteriores.
 - Correo, push y otros canales de notificación: TI2-159 y TI2-160.
 - Registro en la bitácora de auditoría de cada lectura o escritura: TI2-176.

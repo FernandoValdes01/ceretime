@@ -259,6 +259,12 @@ export async function extendPrivacyRequestDeadline<RequestId extends string, Use
     );
   }
 
+  const record = await deps.requests.getRequest(input.requestId);
+  if (record === null) return denied();
+  if (deps.now() >= record.dueAt) {
+    return conflict("La prórroga no se puede aplicar con el plazo ya vencido.");
+  }
+
   const result = await deps.requests.extend({
     requestId: input.requestId,
     days: input.days,
